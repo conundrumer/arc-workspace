@@ -16,6 +16,8 @@
     // an 8-connected run of the commonest ink color
   | Dominant {}
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
     .decl bg(c: Color) bg(0).
 }
@@ -71,7 +73,6 @@ triangle(P, Ch) :-
     in(P, _), marker(_, D), corner_dist(P, D, K),
     loose_count.tally(Ch, N), K < N.
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     in(P, Col_in), impl_choice(Ch),
     ( shape(P, Ch), Col = Col_in

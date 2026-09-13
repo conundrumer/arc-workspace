@@ -5,6 +5,7 @@
 //  runs the whole way to the far edge; the others stop short.
 // output: the input, with the full shape placed on each shape and drawn in
 //  params.mark where it reaches past that shape's own extent.
+// review principle: docs/wf-solver/open/peer-priors.md
 
 // What a shape is.
 .type Parse =
@@ -38,6 +39,8 @@
 
 // A shape, keyed by the parse that found it and its id under that parse.
 .type Shape = [parse: Parse, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -177,6 +180,5 @@ restored(P, Ch) :-
 impl_choice([Pa, S, An, Pl]) :-
     parse_choice(Pa), select_choice(S), anchor_choice(An), place_choice(Pl).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- restored(P, Ch), params.mark(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !restored(P, Ch).

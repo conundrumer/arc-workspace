@@ -1,23 +1,23 @@
 // 8698868d
 // draft
-// concept: objects count rank crop
-// One-color squares sit on a background, in two sizes. The large squares
-// tile a region and are the blocks; the small squares are the pieces. Each
-// square encloses background regions: a block's dots, a piece's holes. The
-// output is the region the blocks tile, each block's interior replaced by
-// its piece, with the holes filled in the block's color. Two models of
-// which piece goes into a block; in every pair, the blocks' region counts
-// and the pieces' region counts are the same set, so the models agree:
-//
-//   $Count — the piece that encloses the same number of regions.
-//   $Rank  — the piece at the same rank by region count: the blocks ranked
-//            among themselves, the pieces among themselves. Ranks read
-//            from either end, so the output stands where the two reads
-//            agree.
+// keywords: objects count rank crop
+// input: One-color squares sit on a background, in two sizes. The large
+//  squares tile a region and are the blocks; the small squares are the
+//  pieces. Each square encloses background regions: a block's dots, a
+//  piece's holes.
+// output: The output is the region the blocks tile, each block's interior
+//  replaced by its piece, with the holes filled in the block's color.
 
-#include "../lib.dl"
+// which piece fills each block — data-equivalent on this task, since the
+// blocks' and pieces' region counts are the same set
+.type Choice =
+    // the piece that encloses the same number of regions
+    Count {}
+    // the piece at the same region-count rank as its block, ranks read from
+    // either end so the two agree
+  | Rank {}
 
-.type Choice = Count {} | Rank {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
 }
@@ -108,7 +108,6 @@ core.cell(Id, P) :- block(Id), bbox.box(Id, B), in(P, _), interior(P, B).
 .init layout = Bbox<Unit>
 layout.cell($U(), P) :- block(Id), covered(Id, P).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_grid_out, Col, Ch) :-
     impl_choice(Ch),
     layout.cell($U(), P_grid_in), layout.box($U(), B_l),

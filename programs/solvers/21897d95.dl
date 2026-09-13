@@ -1,32 +1,36 @@
 // 21897d95
-// concept: objects markers mapping d4 lookup
-// The grid is a partition into flat color regions with two kinds of marker
-// drawn over it. An arrow points across a border: the region past its tip
-// takes the color of the arrow's center, or the color of the region the
-// arrow sits on when that center is blank. A bracket turns the whole grid a
-// quarter turn; with no bracket the grid stands. A marker sits on one
-// region: the cells of its box it leaves free show that region's color,
-// and it rejoins the region once read.
-//
-// What an arrow is splits arrow: $ATee reads a T of the arrow color;
-// $AGlyph matches stored charts, closed over D4. An arrow chart with a
-// hole center reads its payload there; the filled one passes its host's
-// color.
-//
-// What a bracket is splits bracket: $BArms reads a patch that is exactly
-// two arms of its own box, and the grid turns the sweep between the pivot's
-// two edges, from the one on a stored axis; $BGlyph matches two stored
-// shapes and turns the way stored with the matched shape.
+// keywords: objects markers mapping d4 lookup
+// input: The grid is a partition into flat color regions with two kinds of
+//  marker drawn over it.
+// output: An arrow points across a border: the region past its tip takes the
+//  color of the arrow's center, or the color of the region the arrow sits on
+//  when that center is blank. A bracket turns the whole grid a quarter turn;
+//  with no bracket the grid stands. A marker sits on one region: the cells
+//  of its box it leaves free show that region's color, and it rejoins the
+//  region once read.
 
-#include "../lib.dl"
+// what an arrow is
+.type ArrowChoice =
+    // reads a T of the arrow color
+    ATee {}
+    // matches stored charts, closed over D4
+  | AGlyph {}
 
-.type ArrowChoice   = ATee {} | AGlyph {}
-.type BracketChoice = BArms {} | BGlyph {}
-.type Choice        = [arrow: ArrowChoice, bracket: BracketChoice]
+// what a bracket is
+.type BracketChoice =
+    // reads a patch that is exactly two arms of its own box; the grid turns
+    // the sweep between the pivot's two edges, from the one on a stored axis
+    BArms {}
+    // matches two stored shapes; the grid turns the way stored with the
+    // matched shape
+  | BGlyph {}
+
+// what an arrow is, and what a bracket is
+.type Choice = [arrow: ArrowChoice, bracket: BracketChoice]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
-
     .decl arrow_color(col: Color) arrow_color(1).
 
     // --- AGlyph ---
@@ -292,7 +296,6 @@ sense($BGlyph(), S) :- bshape.equals(_, Id), params.bracket_sense(Id, S).
 
 // --- the output ---
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_out, Col, [A, B]) :-
     region_of(A, B, P, R), region_out(A, B, R, Col),    // a cell's ending color
     ( sense(B, S), rotation(S, D), apply(D, P, P_out)   // the bracket turns it

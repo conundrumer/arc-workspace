@@ -1,21 +1,23 @@
 // 6e4f6532
 // draft
-// concept: lines objects markers d4 move
-// Walls of solid color line the grid, and the panels between them hold
-// objects and targets. An object is a component with core cells and other
-// cells; a target is a component of core cells alone. Some object cells carry
-// a wall's color and face that wall. Each object moves so that its core lands
-// exactly on a target of the same shape, under a D4 transform that turns
-// every wall-colored cell toward its wall. A rotation is taken when one
-// fits; a reflection only when none does. The vacated cells go to bg.
-//
-// The cases read how a wall-colored cell faces:
-// - Backed: the object cell behind it, away from the wall, backs it.
-// - Edge: it lies on the edge of the object's bounding box toward the wall.
+// keywords: lines objects markers d4 move
+// input: walls of solid color lining the grid, with panels between them
+//  holding objects and targets. An object is a component with core cells
+//  and other cells; a target is a component of core cells alone. Some
+//  object cells carry a wall's color and face that wall.
+// output: Each object moves so that its core lands exactly on a target of
+//  the same shape, under a D4 transform that turns every wall-colored cell
+//  toward its wall. A rotation is taken when one fits; a reflection only
+//  when none does. The vacated cells go to bg.
 
-#include "../lib.dl"
+// how a wall-colored cell faces its wall
+.type Choice =
+    // the object cell behind it, away from the wall, backs it
+    Backed {}
+    // it lies on the edge of the object's bounding box toward the wall
+  | Edge {}
 
-.type Choice = Backed {} | Edge {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl core(col: Color) core(9).
@@ -137,7 +139,6 @@ placed(Ch, P, Col) :-
     fit(Ch, Id, D, Sh), ( c4_elem(D) ; !rotation_fits(Ch, Id) ),  // the move taken
     seated(Id, D, Sh, _, P, Col).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- placed(Ch, P, Col).
 out(P, Col, Ch) :-
     impl_choice(Ch), in(P, C_in), !placed(Ch, P, _),

@@ -1,20 +1,21 @@
 // 230f2e48
-// concept: objects markers move count
-// Every object is a straight arm: an anchor cell (params.anchor) at one end, a
-// joint cell (params.joint) partway along, body cells (params.body) filling the rest.
-// The stretch beyond the joint makes a quarter turn about the joint; the
-// cells it leaves go back to background. Each case turns it toward whichever
-// side of the arm wins a comparison at the joint:
-//
-//   $Inward — the greater distance to the edge.
-//   $Roomy  — the longer unbroken run of background leaving the joint.
+// keywords: objects markers move count
+// output: Every object is a straight arm: an anchor cell (params.anchor) at one
+//  end, a joint cell (params.joint) partway along, body cells (params.body)
+//  filling the rest. The stretch beyond the joint makes a quarter turn about
+//  the joint; the cells it leaves go back to background.
 
-#include "../lib.dl"
-
-.type Choice = Inward {} | Roomy {}
+// which side of the arm the stretch turns toward
+.type Choice =
+    // the greater distance to the edge
+    Inward {}
+    // the longer unbroken run of background leaving the joint
+  | Roomy {}
 
 // An arm paired with one of the two directions it can fold toward.
 .type ArmDir = [id: Ident, d: Dir]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(7).
@@ -63,7 +64,6 @@ tail(Id, P, K) :- from_joint.ray(Id, P, _, K, _), K != 0.
 folded(Q, Ch) :-
     tail(Id, _, K), joint(Id, P), fold_dir(Id, D2, Ch), jump(P, D2, K, Q).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     in(P, Col_in), impl_choice(Ch),
     ( folded(P, Ch), params.body(Col)                    // the folded stretch

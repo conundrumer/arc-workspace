@@ -1,20 +1,22 @@
 // 14b8e18c
-// concept: objects stamp
-// Square objects get corner marks: at each marked corner of an object's
-// bounding box, the two cells one step outside the box along its edges take
-// the mark color. The rest of the grid passes through. A lone cell does not
-// qualify.
-//
-// The cases differ in what makes an object square, and in which corners get
-// marks:
-//   $Square  — its bounding box is square; every box corner is marked.
-//   $Corners — as $Square, but only the box corners the object occupies.
-//   $Box     — the object also covers the whole box border.
-//   $Ring    — the object is exactly the box border, with nothing inside.
+// keywords: objects stamp
+// output: Square objects get corner marks: at each marked corner of an
+//  object's bounding box, the two cells one step outside the box along its
+//  edges take the mark color. The rest of the grid passes through. A lone
+//  cell does not qualify.
 
-#include "../lib.dl"
+// what makes an object square, and which corners get marks
+.type Choice =
+    // its bounding box is square; every box corner is marked
+    Square {}
+    // as $Square, but only the box corners the object occupies
+  | Corners {}
+    // the object also covers the whole box border
+  | Box {}
+    // the object is exactly the box border, with nothing inside
+  | Ring {}
 
-.type Choice = Square {} | Corners {} | Box {} | Ring {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(7).
@@ -84,6 +86,5 @@ mark(P_mark, Ch) :-
 .decl impl_choice(ch: Choice)
 impl_choice($Square()). impl_choice($Corners()). impl_choice($Box()). impl_choice($Ring()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- mark(P, Ch), params.mark_color(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !mark(P, Ch).

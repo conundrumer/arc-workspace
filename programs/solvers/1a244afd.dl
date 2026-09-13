@@ -1,18 +1,22 @@
 // 1a244afd
-// concept: markers lookup
-// Pivot cells and pointer cells scatter over a bg field. Each pivot takes one
-// pointer sharing its row or column, and the pairing that uses every cell
-// exactly once is unique. The pointer is erased, and a mark is painted as far
-// from the pivot as the pointer was, in a turned direction; a mark off the
-// grid is not painted. Cases claim what turns it:
-//   $Turn  — a quarter turn in a stored sense.
-//   $Table — a stored direction correspondence.
+// keywords: markers lookup
+// input: Pivot cells and pointer cells scatter over a bg field. Each pivot
+//  takes one pointer sharing its row or column, and the pairing that uses
+//  every cell exactly once is unique.
+// output: The pointer is erased, and a mark is painted as far from the pivot
+//  as the pointer was, in a turned direction; a mark off the grid is not
+//  painted.
 
-#include "../lib.dl"
-
-.type Choice = Turn {} | Table {}
+// what turns it
+.type Choice =
+    // a quarter turn in a stored sense
+    Turn {}
+    // a stored direction correspondence
+  | Table {}
 
 .type Pair = [pivot: Position, pointer: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(8).
@@ -80,7 +84,6 @@ mark(P_mark, Ch) :-
 .decl impl_choice(ch: Choice)
 impl_choice($Turn()). impl_choice($Table()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- mark(P, Ch), params.mark(Col).
 out(P, Col, Ch) :-
     in(P, Col_in), impl_choice(Ch), !mark(P, Ch),

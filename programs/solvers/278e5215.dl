@@ -1,12 +1,12 @@
 // 278e5215
 // draft
-// concept: crop lines mapping
-// The grid holds a stencil in one color and a legend: a band of colored
-// columns over a line row, as wide as the stencil's box. The output is that
-// box — a stencil cell takes its column's legend color, a blank takes the
-// line color.
+// keywords: crop lines mapping
+// input: The grid holds a stencil in one color and a legend: a band of
+//  colored columns over a line row, as wide as the stencil's box.
+// output: The output is the stencil's box — a stencil cell takes its
+//  column's legend color, a blank takes the line color.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -50,7 +50,6 @@ column_color(P_col, Col) :-
     params.line_dir(D), !dist(P_inner, D, 0),           // off the line edge
     across(A), split(P_inner, A, P_col, _).             // its column
 
-.decl out(p: Position, col: Color)
 out(P_inner, Col) :-
     in(P, _), stencil_box.box($U(), B), crop(P, B, P_inner),    // output cell
     across(A), split(P_inner, A, P_col, _),                     // its column

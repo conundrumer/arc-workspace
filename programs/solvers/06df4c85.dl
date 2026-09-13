@@ -1,15 +1,19 @@
 // 06df4c85
-// concept: decompose span cast
-// A separator lattice cuts the grid into tiles; non-bg tiles are marks.
-// Tiles between two same-colored marks in a tile row or column fill with
-// that color. Every train span crosses only bg tiles; the cases claim what
-// an intervening foreign mark would do: $Over — the fill overwrites it;
-// $Around — it keeps its color and the bg tiles around it still fill;
-// $Block — it cancels the span, which propagates only through bg.
+// keywords: decompose span cast
+// output: A separator lattice cuts the grid into tiles; non-bg tiles are marks.
+//  Tiles between two same-colored marks in a tile row or column fill with that
+//  color. Every train span crosses only bg tiles.
 
-#include "../lib.dl"
+// The cases claim what an intervening foreign mark does
+.type Choice =
+    // the fill overwrites it
+    Over {}
+    // it keeps its color and the bg tiles around it still fill
+  | Around {}
+    // it cancels the span, which propagates only through bg
+  | Block {}
 
-.type Choice = Over {} | Around {} | Block {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -63,6 +67,5 @@ fill($Block(), T, Col) :- reach(Col, D, T), opposite(D, O), reach(Col, O, T).
 .decl covered(ch: Choice, p_grid: Position)
 covered(Ch, P_grid) :- fill(Ch, T, _), tile(P_grid, T).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_grid, Col, Ch) :- fill(Ch, T, Col), tile(P_grid, T).
 out(P_grid, Col, Ch) :- in(P_grid, Col), impl_choice(Ch), !covered(Ch, P_grid).

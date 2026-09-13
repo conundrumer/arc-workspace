@@ -1,17 +1,21 @@
 // 25e02866
 // draft
-// concept: objects overlay border
-// Solid rectangles of one color sit on the background, all of the same size,
-// each carrying a few cells painted in other colors. The output is one such
-// rectangle with every painted cell stacked onto it. The cases differ on which
-// painted cells a rectangle contributes: $Layer every one of them, $Inside only
-// those off its border ring. Every painted cell here sits off the border, so
-// the two agree on every pair.
-// No task data — the family is fully structural.
+// keywords: objects overlay border
+// input: Solid rectangles of one color sit on the background, all of the same
+//  size, each carrying a few cells painted in other colors.
+// output: The output is one such rectangle with every painted cell stacked
+//  onto it. The cases differ on which painted cells a rectangle contributes.
+//  Every painted cell here sits off the border, so the two agree on every
+//  pair. No task data — the family is fully structural.
 
-#include "../lib.dl"
+// which painted cells a rectangle contributes
+.type Choice =
+    // every one of them
+    Layer {}
+    // only those off its border ring
+  | Inside {}
 
-.type Choice = Layer {} | Inside {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {}
 
@@ -52,7 +56,6 @@ paint(P_frame, Col) :-
 // What each panel contributes to the shared frame.
 .decl overlay(p_frame: Position, col: Color, ch: Choice)
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_frame, Col, Ch) :- overlay(P_frame, Col, Ch).
 out(P_frame, Col, Ch) :-
     impl_choice(Ch), panel_cell(_, P_frame),                // a cell of the frame

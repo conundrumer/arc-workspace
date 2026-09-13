@@ -1,11 +1,12 @@
 // 5ffb2104
 // draft
-// concept: objects move
-// A 4-connected block of one color is an object. Every object slides toward
-// params.grav and comes to rest where it first meets the grid edge or an
-// object at rest ahead of it. The cells an object leaves go to background.
+// keywords: objects move
+// input: each 4-connected block of one color is an object.
+// output: every object slides toward params.grav and comes to rest where it
+//  first meets the grid edge or an object at rest ahead of it. The cells an
+//  object leaves go to background.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -60,6 +61,5 @@ settle.dir($U(), D) :- params.grav(D).
 fallen(Q, Col) :-
     obj.label(Col, P, Id), settle.rest($U(), Id, Delta), compose(P, Delta, Q).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- fallen(P, Col).
 out(P, Col) :- in(P, _), !fallen(P, _), params.bg(Col).

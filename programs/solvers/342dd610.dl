@@ -1,9 +1,9 @@
 // 342dd610
-// concept: move
-// Each ink color carries a fixed relative; every ink cell translates
-// by its color's jump. The rest of the grid is bg.
+// keywords: move
+// output: Each ink color carries a fixed relative; every ink cell translates by
+//  its color's jump. The rest of the grid is bg.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(8).
@@ -20,7 +20,6 @@
 .decl moved(p: Position, col: Color)
 moved(P_out, Col) :- in(P_in, Col), params.move(Col, D, K), jump(P_in, D, K, P_out).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- moved(P, Col).
 out(P, Col) :- in(P, _), !moved(P, _), params.bg(Col).
 

@@ -1,9 +1,9 @@
 // 6ea4a07e
-// concept: mapping
-// Recolor a binary input: bg cells take a fill color derived from the input's
-// fg via a fixed mapping; fg cells become bg.
+// keywords: mapping
+// output: Recolor a binary input: bg cells take a fill color derived from the
+//  input's fg via a fixed mapping; fg cells become bg.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -19,6 +19,5 @@
 .decl fill(c: Color)
 fill(Out) :- in(_, Col), params.recolor(Col, Out).
 
-.decl out(p: Position, col: Color)
 out(P, Fill) :- in(P, Col), params.bg(Col), fill(Fill).
 out(P, Bg)   :- in(P, Col), !params.bg(Col), params.bg(Bg).

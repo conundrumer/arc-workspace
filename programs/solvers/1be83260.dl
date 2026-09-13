@@ -1,26 +1,24 @@
 // 1be83260
-// concept: decompose markers scale rank stamp
-// Copies of one template block, drawn in a border color, sit in a lattice
-// of bg separator lines. One copy is the key: it fills the template's
-// holes with colors. The hole rows and hole columns cross in a palette
-// grid, one row per block row and one column per block column, so every
-// block has a palette color. The output paints the template's body in
-// that color; holes and separators stay the border color. Two models of
-// the output frame:
-//
-//   $Repaint  — the block region itself, repainted in place.
-//   $Assemble — the palette expanded, one template block per palette
-//               cell, params.gap cells of border between.
-//
-// $Repaint takes the output's separator width from the input; $Assemble
-// sets it from params.gap.
+// keywords: decompose markers scale rank stamp
+// output: Copies of one template block, drawn in a border color, sit in a
+//  lattice of bg separator lines. One copy is the key: it fills the template's
+//  holes with colors. The hole rows and hole columns cross in a palette grid,
+//  one row per block row and one column per block column, so every block has a
+//  palette color. The output paints the template's body in that color; holes
+//  and separators stay the border color.
 
-#include "../lib.dl"
+// how the output frame is built
+.type Choice =
+    // the block region itself, repainted in place, keeping the input's
+    // separator width
+    Repaint {}
+    // the palette expanded, one template block per palette cell, params.gap
+    // cells of border between
+  | Assemble {}
 
-.type Choice = Repaint {} | Assemble {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
 
     // --- Assemble ---
@@ -90,8 +88,6 @@ palette(P_tile, Col) :-
     hole_frame.pos(A, L1, P1), hole_frame.pos(A2, L2, P2),  // a hole line on each axis
     compose(P1, P2, P_tile), compose(L1, L2, P_intile),     // their places, their crossing
     key_cell(P_intile, Col).                                // the color the key block holds
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- Repaint ---
 

@@ -1,22 +1,24 @@
 // 5751f35e
 // draft
-// concept: symmetry repair border
-// The grid is a nest of concentric rings, each ring drawn in one color, and
-// damage has erased cells to the background. The output redraws the nest
-// whole. Cases:
-//
-//   $Layers   — the shallowest surviving cell of a color fixes that color's
-//               box, and a cell takes the innermost box that covers it.
-//   $Rings    — a ring takes the one color its own surviving cells hold.
-//   $Symmetry — a cell takes the color that survives in its orbit under the
-//               grid's symmetry group.
+// keywords: symmetry repair border
+// input: a nest of concentric rings, each ring drawn in one color, with
+//  damage that has erased cells to the background
+// output: The output redraws the nest whole.
 
-#include "../lib.dl"
+// how a damaged cell recovers its color
+.type Choice =
+    // the shallowest surviving cell of a color fixes that color's box, and a
+    // cell takes the innermost box that covers it
+    Layers {}
+    // a ring takes the one color its own surviving cells hold
+  | Rings {}
+    // a cell takes the color that survives in its orbit under the grid's
+    // symmetry group
+  | Symmetry {}
 
-.type Choice = Layers {} | Rings {} | Symmetry {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     // What the damage leaves behind.
     .decl bg(c: Color) bg(0).
 
@@ -33,8 +35,6 @@ peel.cell($U(), P) :- in(P, _).
 
 .decl ink(p: Position, col: Color)
 ink(P, Col) :- in(P, Col), !params.bg(Col).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // --- Layers ---
 

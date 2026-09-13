@@ -1,25 +1,29 @@
 // 31aa019c
 // draft
-// concept: markers count rank stamp lookup
-// Noise cells of many colors over params.bg. One cell is marked out by its
-// color's cell count; the output holds only that cell, keeping its color,
-// ringed by params.border. Choice = [f, fp] crosses the hypotheses:
-//
-//   f (which cell is marked out):
-//     $ByCount()  — the cell whose color has exactly params.mark_count cells.
-//     $Minority() — the cell whose color has the fewest cells.
-//   fp (the ring):
-//     $Ring()  — structure: the mark's eight neighbors.
-//     $Shape() — data: the params.shape cells, as offsets from the mark.
+// keywords: markers count rank stamp lookup
+// input: Noise cells of many colors sit over params.bg.
+// output: One cell is marked out by its color's cell count; the output holds
+//  only that cell, keeping its color, ringed by params.border.
 
-#include "../lib.dl"
+// which cell is marked out
+.type Find =
+    // the cell whose color has exactly params.mark_count cells
+    ByCount {}
+    // the cell whose color has the fewest cells
+  | Minority {}
 
-.type Find = ByCount {} | Minority {}
-.type Footprint = Ring {} | Shape {}
+// the ring
+.type Footprint =
+    // structure: the mark's eight neighbors
+    Ring {}
+    // data: the params.shape cells, as offsets from the mark
+  | Shape {}
+
 .type Choice = [f: Find, fp: Footprint]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
     .decl border(col: Color) border(2).
 
@@ -80,7 +84,6 @@ footprint(P, Q, $Shape()) :-
 ink(Q, Col, [F, Fp]) :- mark(P, _, F), footprint(P, Q, Fp), params.border(Col).
 ink(P, Col, [F, Fp]) :- mark(P, Col, F), footprint_choice(Fp).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- ink(P, Col, Ch).
 out(P, Bg, [F, Fp]) :-
     in(P, _), find_choice(F), footprint_choice(Fp),    // each claim pair

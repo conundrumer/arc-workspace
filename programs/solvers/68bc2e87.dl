@@ -1,16 +1,15 @@
 // 68bc2e87
 // draft
-// concept: border occlude rank
-// Rectangle outlines, one color each, are drawn over one another on a
-// plain ground. A later outline overwrites the cells of the earlier ones it
-// crosses. The output lists the colors in drawing order, one cell per
-// color, running from the edge params.order_dir names.
-//
-// A color's rectangle is the box its cells bound. Where the outline of that
-// box shows another color, that color was drawn later, and that order,
-// closed transitively, ranks the colors.
+// keywords: border occlude rank
+// output: Rectangle outlines, one color each, are drawn over one another on a
+//  plain ground. A later outline overwrites the cells of the earlier ones it
+//  crosses. The output lists the colors in drawing order, one cell per color,
+//  running from the edge params.order_dir names.
+//  A color's rectangle is the box its cells bound. Where the outline of that
+//  box shows another color, that color was drawn later, and that order, closed
+//  transitively, ranks the colors.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(8).
@@ -41,5 +40,4 @@ order.before($U(), Col, Col2) :- under(Col, Col2).
 listing.dir(D) :- params.order_dir(D).
 listing.dist_set($U(), R) :- order.rank($U(), _, R).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- order.rank($U(), Col, R), listing.pos($U(), R, P).

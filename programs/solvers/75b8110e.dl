@@ -1,15 +1,25 @@
 // 75b8110e
-// family: ea9794b1
+// representative: ea9794b1
 
-#include "../lib.dl"
+// how the grid divides into tiles
+.type DecChoice =
+    // params.tiles arrangement of equal tiles
+    Count {}
+    // tiles of params.tile_dim, as many as the grid holds
+  | Size {}
 
-.type DecChoice = Count {} | Size {}
-.type Choice    = Order {} | Ink {d: DecChoice}
+// whether precedence ranks tiles or inks
+.type Choice =
+    // the foremost tile by position, params.prio, ranks
+    Order {}
+    // the foremost ink by color, params.ink_rank, ranks; d selects the division
+  | Ink {d: DecChoice}
 
 .type InkKey = [d: DecChoice, p: Position]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
 
     // --- Order, Ink(Count) ---
@@ -50,8 +60,6 @@ tile_ink(Dc, P_tile, P_intile, Col) :- tile_cell(Dc, P_tile, P_intile, Col), !pa
 
 .decl ink_at(dc: DecChoice, p: Position, col: Color)
 ink_at(Dc, P, Col) :- tile_ink(Dc, _, P, Col).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 out(P, Col, Ch) :- tiling(Ch, Dc), tile_cell(Dc, _, P, _), !ink_at(Dc, P, _), params.bg(Col).
 

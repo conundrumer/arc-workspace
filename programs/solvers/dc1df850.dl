@@ -1,20 +1,19 @@
 // dc1df850
-// concept: markers lookup stamp
-// Each marker cell paints a one-cell halo on its eight neighbors; the rest
-// of the grid passes through. Halos clip at the grid edge and overwrite
-// what they cover; the data never shows a halo covering other ink.
-//
-// The cases differ in the footprint, and agree on this task's data:
-//
-//   $Grow()  — markers grow one step in all eight directions.
-//   $Stamp() — a stored template, anchored at its marker cell on each marker.
+// keywords: markers lookup stamp
+// output: Each marker cell paints a one-cell halo on its eight neighbors; the
+//  rest of the grid passes through. Halos clip at the grid edge and overwrite
+//  what they cover; the data never shows a halo covering other ink.
 
-#include "../lib.dl"
+// how the halo footprint is computed (data-equivalent on this task)
+.type Choice =
+    // markers grow one step in all eight directions
+    Grow {}
+    // a stored template, anchored at its marker cell on each marker
+  | Stamp {}
 
-.type Choice = Grow {} | Stamp {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl marker(c: Color) marker(2).
 
     // --- $Grow ---
@@ -49,7 +48,6 @@ halo(P, Col, $Stamp()) :-
 .decl impl_choice(ch: Choice)
 impl_choice($Grow()). impl_choice($Stamp()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- halo(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !halo(P, _, Ch).
 

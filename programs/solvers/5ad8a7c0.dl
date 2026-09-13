@@ -1,17 +1,19 @@
 // 5ad8a7c0
 // draft
-// concept: lines markers span rank cross
-// Marks lie in pairs, one pair to a line of the task's axis, and the cells a
-// pair holds between its two marks are its span. Some spans take the mark
-// color, and the rest of the input passes through. Cases differ on which
-// spans fill:
-//
-//   $Shortest — the pairs standing closest together.
-//   $Clear    — the pairs no other mark lies across.
+// keywords: lines markers span rank cross
+// input: Marks lie in pairs, one pair to a line of the task's axis, and the
+//  cells a pair holds between its two marks are its span.
+// output: Some spans take the mark color, and the rest of the input passes
+//  through.
 
-#include "../lib.dl"
+// which spans fill
+.type Choice =
+    // the pairs standing closest together
+    Shortest {}
+    // the pairs no other mark lies across
+  | Clear {}
 
-.type Choice = Shortest {} | Clear {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl mark(col: Color) mark(2).
@@ -47,7 +49,6 @@ span_cell(Src, D, P) :- span(Src, D, _), cast.clear($U(), P, D, K, Src), K != 0.
 
 .decl fill(p: Position, ch: Choice)
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- fill(P, Ch), params.mark(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !fill(P, Ch).
 

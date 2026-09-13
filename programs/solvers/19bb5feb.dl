@@ -1,11 +1,12 @@
 // 19bb5feb
-// concept: rank
-// A panel sits on the background, carrying solid marker blocks of other
-// colors. The output holds the marker colors in their relative arrangement,
-// background where a place is empty: markers rank along each axis, and each
-// marker takes the output cell at its pair of ranks.
+// keywords: rank
+// input: A panel sits on the background, carrying solid marker blocks of
+//  other colors.
+// output: The output holds the marker colors in their relative arrangement,
+//  background where a place is empty: markers rank along each axis, and each
+//  marker takes the output cell at its pair of ranks.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -44,7 +45,6 @@ rank_mark(P_out, Col) :-
 .init rank_frame = Frame2D<Unit>
 rank_frame.extent($U(), A, N) :- place.box(_, P), axis_elem(A), axis_dim(P, A, N).
 
-.decl out(p: Position, col: Color)
 out(P_out, Col) :-
     rank_frame.cell($U(), P_out),
     ( rank_mark(P_out, Col)

@@ -1,28 +1,26 @@
 // 37ce87bb
-// concept: lines count border
-// Bars stand on the base edge: add-colored bars contribute their height,
-// sub-colored bars cancel it. A result bar of the summed height is
-// appended in its own line. Two models of that line:
-//
-//   $Next — the bar spacing continues one pitch past the bars.
-//   $Edge — the line at params.margin from a fixed across edge.
-//
-// The models coincide here (every grid ends one pitch past the last bar);
-// they diverge on a wider grid.
+// keywords: lines count border
+// input: Bars stand on the base edge: add-colored bars contribute their
+//  height, sub-colored bars cancel it.
+// output: A result bar of the summed height is appended in its own line.
 
-#include "../lib.dl"
+// where the result line stands
+.type Choice =
+    // the bar spacing continues one pitch past the bars
+    Next {}
+    // the line at params.margin from a fixed across edge
+  | Edge {}
 
-.type Choice = Next {} | Edge {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
-    .decl bg(c: Color) bg(7).
     .decl base(d: Dir) base(DIR_B).       // edge the bars stand on
     .decl add(c: Color) add(8).           // bar color that adds its height
     .decl sub(c: Color) sub(2).           // bar color that cancels height
     .decl result(c: Color) result(5).     // the appended bar's color
 
     // --- $Next ---
+    .decl bg(c: Color) bg(7).
     .decl pitch(k: number) pitch(2).      // line step between adjacent bars
 
     // --- $Edge ---
@@ -49,9 +47,8 @@ height.minus($U(), P) :- in(P, Col), params.sub(Col).
 .decl result_line(p_line: Position, ch: Choice)
 
 // --- $Next ---
-// One pitch from a bar line, either way across, on a barless grid line.
-// Off-grid candidates filter themselves out; inward candidates land on a
-// neighbor bar.
+// One pitch across from a bar line, on a barless grid line: a candidate
+// off the grid, and one that lands on a neighbor bar, both drop out.
 result_line(P_line2, $Next()) :-
     bar_line(P_line),
     params.base(D), perp_dir(D, D2),  // either way across
@@ -67,12 +64,11 @@ result_line(P_line, $Edge()) :-
 // The result bar: height cells up the result line from the base edge.
 .decl result_cell(p: Position, ch: Choice)
 result_cell(P, Ch) :-
-    line_of(P, P_line), result_line(P_line, Ch),                    // on the result line
+    line_of(P, P_line), result_line(P_line, Ch),
     params.base(D), dist(P, D, K), height.excess($U(), N), K < N.   // within the summed height
 
 .decl impl_choice(ch: Choice)
 impl_choice($Next()). impl_choice($Edge()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- result_cell(P, Ch), params.result(Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !result_cell(P, Ch).

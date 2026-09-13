@@ -1,17 +1,18 @@
 // 7d7772cc
 // draft
-// concept: border markers move
-// A thin fence of one color runs across the grid and, with two arms along
-// the grid edges, pens in one side. On the free side, marks sit in one line
-// parallel to the fence; inside the pen, a gate cell faces each mark across
-// the fence. Each mark moves along its own line: to the cell beside the
-// fence when the gate has its color, else to the far grid edge. Its old
-// cell takes the free side's bg. No task data: the fence, the open side,
-// and the free bg are read from the grid.
-
-#include "../lib.dl"
+// keywords: border markers move
+// input: A thin fence of one color runs across the grid and, with two arms
+//  along the grid edges, pens in one side. On the free side, marks sit in one
+//  line parallel to the fence; inside the pen, a gate cell faces each mark
+//  across the fence. No task data: the fence, the open side, and the free bg
+//  are read from the grid.
+// output: Each mark moves along its own line: to the cell beside the fence
+//  when the gate has its color, else to the far grid edge. Its old cell takes
+//  the free side's bg.
 
 .type Line = [a: Axis, p_line: Position]
+
+.decl out(p: Position, col: Color)
 
 .comp Params {}
 
@@ -63,7 +64,6 @@ rest(Q, Col) :-
     ; !in(G, Col), same_line(A, P, Q), in(Q, _), dist(Q, D, 0)   // gate differs: the far edge
     ).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, Col_in),
     ( rest(P, Col)                                       // a mark lands here

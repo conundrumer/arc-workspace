@@ -1,24 +1,26 @@
 // 18447a8d
 // draft
-// concept: decompose move pack
-// Blank lines cut the grid into bands. Each band holds a staircase in the
-// base color at one edge and a loose piece in the band's own color at the
-// opposite edge. Every staircase keeps its place, and the piece that completes
-// it into a solid block slides in beside it: the piece of whichever band fits,
-// translated until its anchored edge reaches the block's.
-//
-// $Given — the parameters hold the block's margin from the piece edge.
-// $Common — the margin is the one every band admits a piece at.
+// keywords: decompose move pack
+// input: Blank lines cut the grid into bands. Each band holds a staircase in
+//  the base color at one edge and a loose piece in the band's own color at
+//  the opposite edge.
+// output: Every staircase keeps its place, and the piece that completes it
+//  into a solid block slides in beside it: the piece of whichever band fits,
+//  translated until its anchored edge reaches the block's.
 
-#include "../lib.dl"
-
-.type Choice = Given {} | Common {}
+// how the block's margin from the piece edge is known
+.type Choice =
+    // the parameters hold the block's margin from the piece edge
+    Given {}
+    // the margin is the one every band admits a piece at
+  | Common {}
 
 // A band under one candidate margin — the key of a single trial fit.
 .type BandMargin = [p_band: Position, k: number]
 
+.decl out(p: Position, col: Color, c: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(7).
 
     // The staircase color.
@@ -116,7 +118,6 @@ filled(P, Col, Ch) :-
     pair(P_band, P_band2, K, Ch), landed(P_band2, K, P_inner, Col),  // the paired piece, landed
     band_view(P_band, P, P_inner).                                   // back to the grid
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P, Col, Ch) :-
     in(P, Col_in), impl_choice(Ch),
     ( filled(P, Col, Ch)                                          // the piece's new seat

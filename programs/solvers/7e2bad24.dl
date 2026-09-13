@@ -1,19 +1,21 @@
 // 7e2bad24
 // draft
-// concept: markers walk
+// keywords: markers walk
+// input: A diagonal segment of ray color seeds a beam that extends from both
+//  of its ends.
+// output: The beam paints the cells it crosses: empty cells and transparent
+//  walls. A reflective wall turns the beam without being entered. The beam
+//  ends at the grid edge.
 
-// A diagonal segment of ray color seeds a beam that extends from both of its
-// ends. The beam paints the cells it crosses: empty cells and transparent
-// walls. A reflective wall turns the beam without being entered. The beam ends
-// at the grid edge.
-//
-// The cases differ on how a reflective wall turns the beam. $Contact inverts
-// each component of the heading whose side is blocked by a reflective cell.
-// $WallAxis reads the wall ahead as a line and reflects the heading across it.
+// how a reflective wall turns the beam
+.type Choice =
+    // inverts each component of the heading whose side is blocked by a
+    // reflective cell
+    Contact {}
+    // reads the wall ahead as a line and reflects the heading across it
+  | WallAxis {}
 
-#include "../lib.dl"
-
-.type Choice = Contact {} | WallAxis {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color)
@@ -113,6 +115,5 @@ leave(P, D, $WallAxis()) :- enter(P, D, $WallAxis()).
 
 // --- output ---
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- enter(P, _, Ch), params.ray(Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !enter(P, _, Ch).

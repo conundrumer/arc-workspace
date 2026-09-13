@@ -1,19 +1,20 @@
 // 4c3d4a41
 // draft
-// concept: lines move
-//
-// A container stands beside a staging area. That area holds a comb: a bar
-// with teeth of varying height. That comb moves into the container's
-// interior, and each line of the container's contents comes to rest on it.
-// Contents pushed out of the interior are lost, and the staging area empties.
-//
-// The cases differ in how a line's contents come to rest:
-//   $Rigid — they move as one body.
-//   $Stack — they fall cell by cell and stack on the comb.
+// keywords: lines move
+// input: A container stands beside a staging area. That area holds a comb: a
+//  bar with teeth of varying height.
+// output: That comb moves into the container's interior, and each line of the
+//  container's contents comes to rest on it. Contents pushed out of the
+//  interior are lost, and the staging area empties.
 
-#include "../lib.dl"
+// how a line's contents come to rest
+.type Choice =
+    // they move as one body
+    Rigid {}
+    // they fall cell by cell and stack on the comb
+  | Stack {}
 
-.type Choice = Rigid {} | Stack {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -105,7 +106,6 @@ placed(P_slot, Col, $Stack()) :-
 
 // --- out ---
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- in(P, Col), !rewritten(P), impl_choice(Ch).
 out(P, Col, Ch) :- comb(P, Col), impl_choice(Ch).
 out(P, Col, Ch) :- placed(P, Col, Ch).

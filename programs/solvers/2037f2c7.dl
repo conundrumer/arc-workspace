@@ -1,18 +1,21 @@
 // 2037f2c7
 // draft
-// concept: objects crop count
-// Two copies of one shape sit apart on the background, and one copy has cells
-// erased to the background. Each copy is read in its own bounding box, so the
-// two footprints share a frame. The output is that frame cropped to the cells
-// the copies disagree on, those cells in one color.
-//
-// $Xor    — a cell disagrees when exactly one copy fills it.
-// $Damage — the copy filling more cells is the intact one, and a cell
-//   disagrees when only the intact copy fills it.
+// keywords: objects crop count
+// input: Two copies of one shape sit apart on the background, and one copy
+//  has cells erased to the background. Each copy is read in its own bounding
+//  box, so the two footprints share a frame.
+// output: The output is that frame cropped to the cells the copies disagree
+//  on, those cells in one color.
 
-#include "../lib.dl"
+// what counts as a disagreement
+.type Choice =
+    // a cell disagrees when exactly one copy fills it
+    Xor {}
+    // the copy filling more cells is the intact one, and a cell disagrees when
+    // only the intact copy fills it
+  | Damage {}
 
-.type Choice = Xor {} | Damage {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -48,7 +51,6 @@ only_in(Id, P) :-
 .init view = Bbox<Choice>
 view.cell(Ch, P) :- differs(P, Ch).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_inner, Col, Ch) :-
     in(P_grid, _), bbox.box(_, B_copy), crop(P_grid, B_copy, P_shared),   // a cell of the shared frame
     view.box(Ch, B), crop(P_shared, B, P_inner),                           // cropped to the disagreeing cells

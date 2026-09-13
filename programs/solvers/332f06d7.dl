@@ -1,22 +1,23 @@
 // 332f06d7
-// concept: objects markers move walk
-// A corridor of open cells winds across a background. A piece sits at one end
-// of it, and a marker block sits elsewhere. The piece slides along the
-// corridor in straight runs, each run going until one more step would not fit.
-// The output shows the piece at rest, with the corridor filling the place it
-// left.
-//
-//   $Corridor — the piece travels to the corridor's other end: the stop it can
-//               leave only the way it came.
-//   $Goal     — the piece heads for the marker and rests where it cuts the way
-//               to it: the stop with no other stop between it and the marker.
+// keywords: objects markers move walk
+// input: A corridor of open cells winds across a background. A piece sits at
+//  one end of it, and a marker block sits elsewhere.
+// output: The piece slides along the corridor in straight runs, each run
+//  going until one more step would not fit. The output shows the piece at
+//  rest, with the corridor filling the place it left.
 
-#include "../lib.dl"
+// where the piece comes to rest
+.type Choice =
+    // the piece travels to the corridor's other end: the stop it can leave only
+    // the way it came
+    Corridor {}
+    // the piece heads for the marker and rests where it cuts the way to it: the
+    // stop with no other stop between it and the marker
+  | Goal {}
 
-.type Choice = Corridor {} | Goal {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(3).
     .decl piece(col: Color) piece(0).
     .decl corridor(col: Color) corridor(1).
@@ -85,7 +86,6 @@ rest(Delta, $Goal()) :- stop(Delta), !short_of(Delta).
 .decl landed(p: Position, ch: Choice)
 landed(P, Ch) :- rest(Delta, Ch), covered(Delta, P).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- landed(P, Ch), params.piece(Col).
 out(P, Col, Ch) :-
     rest(_, Ch), !landed(P, Ch),           // a cell the piece leaves free

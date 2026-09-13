@@ -1,19 +1,20 @@
 // 505fff84
-// concept: lines markers span rank move
-// Noise rows; the two marker colors bracket one segment per marked row.
-// The output stacks the strictly-between segments: contributing rows take
-// their order positions; each segment shifts flush to the edge.
-//
-// Cases (data-equivalent on this task — every marked row has 1 west of 8):
-//   $Set()   — the marker pair brackets a segment regardless of side
-//   $Sided() — each marker has a fixed end: params.side's color sits at its dir
+// keywords: lines markers span rank move
+// input: Noise rows; the two marker colors bracket one segment per marked
+//  row.
+// output: The output stacks the strictly-between segments: contributing
+//  rows take their order positions; each segment shifts flush to the edge.
 
-#include "../lib.dl"
+// data-equivalent on this task — every marked row has 1 west of 8
+.type Choice =
+    // the marker pair brackets a segment regardless of side
+    Set {}
+    // each marker has a fixed end: params.side's color sits at its dir
+  | Sided {}
 
-.type Choice = Set {} | Sided {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl axis(a: Axis)
     axis(AXIS_H).            // marked lines run along this axis
 
@@ -66,7 +67,6 @@ rows.member(Ch, Row, Row) :- seg_split(_, Row, _, Ch).
 .init shift = Bbox<SegKey>
 shift.cell([Ch, Row], P_along) :- seg_split(P_along, Row, _, Ch).
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P_out, Col, Ch) :-
     rows.pos(Ch, Row, P_outer_v),                          // the row's out position
     seg_split(P_along, Row, Col, Ch),                      // a segment cell with its color

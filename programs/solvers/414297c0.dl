@@ -1,27 +1,31 @@
 // 414297c0
 // draft
-// concept: crop markers objects stamp lookup
-// A solid canvas rectangle holds scattered dots — single cells in other
-// colors. Off the canvas sit glyphs: a key cell in a dot's color, with ink
-// cells around it. The output is the canvas, with each dot's glyph stamped
-// on it, the key landing on the dot. Choice = [sp, pt] crosses the hypotheses:
-//
-//   sp (how far a glyph runs from its key):
-//     $Near()   — one step off the key, in any of the eight directions.
-//     $Object() — the rest of the key's 8-connected object.
-//   pt (which of the cells off the canvas a glyph is drawn in):
-//     $Stored() — data: the cells holding params.ink.
-//     $Copied() — structure: all of them, each stamped in the color it
-//                 holds.
+// keywords: crop markers objects stamp lookup
+// input: A solid canvas rectangle holds scattered dots — single cells in
+//  other colors. Off the canvas sit glyphs: a key cell in a dot's color,
+//  with ink cells around it.
+// output: The output is the canvas, with each dot's glyph stamped on it, the
+//  key landing on the dot.
 
-#include "../lib.dl"
+// how far a glyph runs from its key
+.type Spread =
+    // one step off the key, in any of the eight directions
+    Near {}
+    // the rest of the key's 8-connected object
+  | Object {}
 
-.type Spread = Near {} | Object {}
-.type Paint = Stored {} | Copied {}
+// which of the cells off the canvas a glyph is drawn in
+.type Paint =
+    // data: the cells holding params.ink
+    Stored {}
+    // structure: all of them, each stamped in the color it holds
+  | Copied {}
+
 .type Choice = [sp: Spread, pt: Paint]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
 
     // --- $Stored ---
@@ -94,7 +98,6 @@ stamp(P_stamp, Ink, Ch) :-
 .decl impl_choice(ch: Choice)
 impl_choice([Sp, Pt]) :- spread_choice(Sp), paint_choice(Pt).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_out, Col, Ch) :- stamp(P_out, Col, Ch).
 out(P_out, Col, Ch) :-
     impl_choice(Ch), canvas_view(P, P_out), in(P, Col),

@@ -1,23 +1,25 @@
 // 3ad05f52
 // draft
-// concept: decompose walk span
-// Walls cut the grid into rooms, and a doorway is a gap in a wall. Paint — the
-// one color that is neither params.bg nor params.wall — sits in one room and spreads
-// through the doorways into every room reachable from there.
-//
-// The outside, the widest region, holds no paint of its own. The doorways that
-// open onto it join the buildings across it, and the two cases differ in the
-// ground they carry the paint over:
-//
-//   $Span — the box the outward doorways span together.
-//   $Duct — the box each opposed pair of outward doorways spans.
+// keywords: decompose walk span
+// input: Walls cut the grid into rooms, and a doorway is a gap in a wall.
+// output: Paint — the one color that is neither params.bg nor params.wall —
+//  sits in one room and spreads through the doorways into every room
+//  reachable from there.
+//  The outside, the widest region, holds no paint of its own. The doorways
+//  that open onto it join the buildings across it, and the two cases differ
+//  in the ground they carry the paint over.
 
-#include "../lib.dl"
-
-.type Choice = Span {} | Duct {}
+// the ground the outward doorways carry paint over
+.type Choice =
+    // the box the outward doorways span together
+    Span {}
+    // the box each opposed pair of outward doorways spans
+  | Duct {}
 
 .decl impl_choice(ch: Choice)
 impl_choice($Span()). impl_choice($Duct()).
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -93,7 +95,6 @@ flood.node(Ch, P) :- impl_choice(Ch), in(P, _), !wall_cell(P), !outside(P).
 flood.node(Ch, P) :- crossing(P, Ch).
 flood.seed(Ch, P) :- impl_choice(Ch), in(P, Col), paint(Col).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col_out, Ch) :-
     in(P, Col), impl_choice(Ch),
     ( flood.reach(Ch, P), paint(Col_out)      // the paint reaches it

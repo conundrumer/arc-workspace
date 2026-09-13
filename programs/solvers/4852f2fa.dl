@@ -1,20 +1,22 @@
 // 4852f2fa
 // draft
-// concept: markers crop tile-arrangement count select stamp
-// One shape sits on a blank grid beside scattered single-cell markers.
-// The output repeats the shape's bounding box along one axis, one copy per
-// marker.
-//
-//   $Copy()  — each copy reproduces the box's content.
-//   $Stamp() — each copy paints the shape's footprint, the rest of the box
-//              background.
-//
-// No marker falls inside the box, so the pairs do not show what the copies
-// carry there.
+// keywords: markers crop tile-arrangement count select stamp
+// input: One shape sits on a blank grid beside scattered single-cell
+//  markers.
+// output: The output repeats the shape's bounding box along one axis, one
+//  copy per marker.
 
-#include "../lib.dl"
+// what a copy paints where the box's own content would appear — no
+// marker falls inside the box, so the pairs do not show what the copies
+// carry there
+.type Choice =
+    // each copy reproduces the box's content
+    Copy {}
+    // each copy paints the shape's footprint, the rest of the box
+    // background
+  | Stamp {}
 
-.type Choice = Copy {} | Stamp {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -45,8 +47,6 @@ place(P_grid_out, P_grid_in) :-
     bbox.box($U(), B), in(P_grid_in, _),
     crop(P_grid_in, B, P_intile),                          // box cell in the tile frame
     concat_slab(P_tile, P_intile, A, 0, P_grid_out).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // --- $Copy ---
 out(P_grid_out, Col, $Copy()) :- place(P_grid_out, P_grid_in), in(P_grid_in, Col).

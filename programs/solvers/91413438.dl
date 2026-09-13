@@ -1,10 +1,10 @@
 // 91413438
-// concept: tile-arrangement count rank
-// The input's bg-cell count sets the side of a square tile arrangement;
-// its ink-cell count sets how many tiles carry a copy of the input,
-// filled in reading order. The remaining tiles are bg.
+// keywords: tile-arrangement count rank
+// output: The input's bg-cell count sets the side of a square tile arrangement;
+//  its ink-cell count sets how many tiles carry a copy of the input, filled in
+//  reading order. The remaining tiles are bg.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -31,7 +31,6 @@ lex.cell($U(), P) :- tiles.cell($U(), P).
 .decl copy(p_tile: Position)
 copy(T) :- lex.rank($U(), T, R), copy_count.tally($U(), N), R < N.
 
-.decl out(p: Position, col: Color)
 out(P_grid, Col) :-
     tiles.cell($U(), P_tile), in(P_intile, Col_in),   // tile slot, tile content
     ( copy(P_tile), Col = Col_in                      // a copy — the input

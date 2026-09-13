@@ -1,11 +1,12 @@
 // 4ff4c9da
 // draft
-// concept: objects stamp
-// Mark-colored cells cover whole blobs of one other color, so no mark cell
-// touches that covered color. Every blob of that covered color whose
-// footprint equals a mark blob's footprint takes the mark color.
+// keywords: objects stamp
+// input: Mark-colored cells cover whole blobs of one other color, so no mark
+//  cell touches that covered color.
+// output: Every blob of that covered color whose footprint equals a mark
+//  blob's footprint takes the mark color.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl mark(col: Color) mark(8).
@@ -41,6 +42,5 @@ footprint.observed_member(Id, P_inner) :-
 .decl copy_cell(p: Position)
 copy_cell(P) :- footprint.equals(Id, _), blobs.label(_, P, Id).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- copy_cell(P), params.mark(Col).
 out(P, Col) :- in(P, Col), !copy_cell(P).

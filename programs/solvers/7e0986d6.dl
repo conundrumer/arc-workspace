@@ -1,19 +1,22 @@
 // 7e0986d6
 // draft
-// concept: repair count objects
-// Solid rectangles of one color sit on the bg, and a second color sprinkles
-// single cells over the grid: some inside the rectangles, some on the bg.
-// The output clears the sprinkle from the bg and restores the rectangles
-// under it. A sprinkle cell is inside a rectangle when the rectangle color
-// lies on both sides of one of its corners.
-//
-//   $Sparse   — the rectangle color is the commonest non-bg color.
-//   $Isolated — the sprinkle color is the one with a cell that touches no
-//               cell of its own color; the rectangle color is the other.
+// keywords: repair count objects
+// input: Solid rectangles of one color sit on the bg, and a second color
+//  sprinkles single cells over the grid: some inside the rectangles, some on
+//  the bg.
+// output: The output clears the sprinkle from the bg and restores the
+//  rectangles under it. A sprinkle cell is inside a rectangle when the
+//  rectangle color lies on both sides of one of its corners.
 
-#include "../lib.dl"
+// which color is the rectangle and which is the sprinkle
+.type Choice =
+    // the rectangle color is the commonest non-bg color
+    Sparse {}
+    // the sprinkle color is the one with a cell that touches no cell of its own
+    // color; the rectangle color is the other
+  | Isolated {}
 
-.type Choice = Sparse {} | Isolated {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -62,7 +65,6 @@ within(P, Ch) :-
     neighbor(P, D1, Q1), in(Q1, Col),
     neighbor(P, D2, Q2), in(Q2, Col).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     in(P, C), impl_choice(Ch),
     ( !sprinkle(P, Ch), Col = C                       // bg and rectangle cells stay

@@ -1,16 +1,18 @@
 // e9afcf9a
-// concept: permutation lookup d4
-// The output permutes the input's cells: at odd column indices the two rows
-// swap, and even columns stay put.
-//
-//   $LabeledGrids — the permutation as data: an input label grid and an
-//                   output label grid, paired by shared label.
-//   $Size         — the permutation composed: divide the grid into tiles of
-//                   params.tile_size, and apply a D4 per inner column.
+// keywords: permutation lookup d4
+// output: The output permutes the input's cells: at odd column indices the two
+//  rows swap, and even columns stay put.
 
-#include "../lib.dl"
+// how the permutation is derived
+.type Choice =
+    // the permutation as data: an input label grid and an output label grid,
+    // paired by shared label
+    LabeledGrids {}
+    // the permutation composed: divide the grid into tiles of params.tile_size,
+    // and apply a D4 per inner column
+  | Size {}
 
-.type Choice = LabeledGrids {} | Size {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     // --- LabeledGrids ---
@@ -56,7 +58,6 @@ perm(P_grid_in, P_grid_out, $Size()) :-
     params.col_transform(P_inner_axis, T),                     // that column's transform
     apply(T, P_grid_in, P_grid_out).
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col, Ch) :- in(P_grid_in, Col), perm(P_grid_in, P_grid_out, Ch).
 
 .type AxisCell = [a: Axis, p_in: Position]

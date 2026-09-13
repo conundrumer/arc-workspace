@@ -1,74 +1,65 @@
 // 1e81d6f9
-// concept: objects markers select
-// A marker cell at params.target_offset inside a corner-anchored L of params.mask_color
-// identifies a target color; that color is erased to params.bg everywhere else. Two
-// models of what is kept:
-//
-//   $Marker — only the marker cell is kept.
-//   $Bbox   — the whole region is kept: the bounding box of the connected
-//             component of mask cells at the corner, so a stray mask cell
-//             elsewhere cannot extend it.
+// keywords: objects markers select
+// input: a marker cell sits at params.target_offset from params.target_corner.
+// output: the marker's color is erased to params.bg outside what is kept.
 
-#include "../lib.dl"
+// what is kept
+.type Choice =
+    // the marker cell alone
+    Marker {}
+    // the bounding box of the mask region at the corner
+  | Bbox {}
 
-.type Choice = Marker {} | Bbox {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl target_corner(d: DiagDir) target_corner(DIAG_TL).
     .decl target_offset(off: number) target_offset(1).
     .decl bg(c: Color) bg(0).
-    .decl mask_color(c: Color) mask_color(5).
 
-    .decl target_anchor(p: Position)
-    target_anchor(P) :- target_corner(Diag), target_offset(K), edge_inset(Diag, K, P).
+    // --- Bbox ---
+    .decl mask_color(c: Color) mask_color(5).
 }
 
 .init params = Params
 
-// --- shared: the marker identifies the target color ---
+.decl impl_choice(ch: Choice)
+impl_choice($Marker()). impl_choice($Bbox()).
 
 .decl target_pos(p: Position)
 target_pos(P) :-
-    in(P, _),                                                        // input cell
-    params.target_corner(Diag), params.target_anchor(P_anchor),      // marker anchor
-    corner_anchor(Diag, P_anchor, P).                                // match at corner
+    in(P, _), params.target_corner(Diag), params.target_offset(K),
+    diag_dist(P, Diag, _, K, K).    // that far from both edges of the corner
 
 .decl target_color(c: Color)
 target_color(Col) :- in(P, Col), target_pos(P).
 
-// --- Bbox: the connected corner region of mask cells, bounded ---
+// The cells each case keeps; the target color survives nowhere else.
+.decl kept(p: Position, ch: Choice)
+
+out(P, Col_out, Ch) :-
+    in(P, Col), impl_choice(Ch),                            // grid cell, per case
+    ( !target_color(Col), Col_out = Col                     // non-target — passes
+    ; kept(P, Ch), Col_out = Col                            // kept — stays
+    ; target_color(Col), !kept(P, Ch), params.bg(Col_out)   // target elsewhere — erased
+    ).
+
+// --- Marker ---
+
+kept(P, $Marker()) :- target_pos(P).
+
+// --- Bbox ---
 
 .decl mask(p: Position)
 mask(P) :- in(P, MaskCol), params.mask_color(MaskCol).
 
-// The frame's connected component, seeded from a mask cell on a corner edge;
-// a stray mask cell elsewhere does not touch those edges, so it stays out.
+// The mask region at the corner: the component touching the corner's two edges,
+// so a stray mask cell elsewhere stays out.
 .init region = Reach<Unit>
 region.node($U(), P) :- mask(P).
 region.seed($U(), P) :- mask(P), params.target_corner(Diag), dir_of(Diag, _, D), dist(P, D, 0).
 
-// The region's bounding box.
 .init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- region.reach($U(), P).
 
-// A grid cell the box covers.
-.decl boxed(p: Position)
-boxed(P) :- in(P, _), bbox.box($U(), B), inside(P, B).
-
-.decl out(p: Position, col: Color, c: Choice)
-
-// --- Marker --- only the marker cell is kept.
-out(P, Col_out, $Marker()) :-
-    in(P, Col),                                              // grid cell
-    ( !target_color(Col), Col_out = Col                      // non-target — passes
-    ; target_pos(P), Col_out = Col                           // the marker — kept
-    ; target_color(Col), !target_pos(P), params.bg(Col_out)  // target elsewhere — erased
-    ).
-
-// --- Bbox --- the whole corner region is kept.
-out(P, Col_out, $Bbox()) :-
-    in(P, Col),                                              // grid cell
-    ( !target_color(Col), Col_out = Col                      // non-target — passes
-    ; boxed(P), Col_out = Col                                // in the region — kept
-    ; target_color(Col), !boxed(P), params.bg(Col_out)       // target outside — erased
-    ).
+kept(P, $Bbox()) :- in(P, _), bbox.box($U(), B), inside(P, B).

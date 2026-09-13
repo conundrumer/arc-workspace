@@ -1,22 +1,21 @@
 // 137eaa0f
-// concept: overlay objects markers move
-// Fragments scattered over bg, each holding one params.key cell. Fragments
-// overlay, aligned on their key cells. Two hypotheses of what collects and of
-// the output frame:
-//
-//   $Frame  — cells within the params.frame stamp placed with its params.anchor on
-//             a key collect; output is the stamp.
-//   $Object — each key's 8-connected object collects; output is the
-//             overlay's bbox.
+// keywords: overlay objects markers move
+// input: Fragments scattered over bg, each holding one params.key cell.
+// output: Fragments overlay, aligned on their key cells.
 
-#include "../lib.dl"
+// what collects into a fragment, and the output frame
+.type Choice =
+    // cells within the params.frame stamp placed with its params.anchor on a
+    // key collect; output is the stamp
+    Frame {}
+    // each key's 8-connected object collects; output is the overlay's bbox
+  | Object {}
 
-.type Choice = Frame {} | Object {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
 
-    // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl key(c: Color) key(5).
 
@@ -33,8 +32,6 @@
 
 .decl mark(p: Position)
 mark(A) :- in(A, Col), params.key(Col).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // --- $Frame ---
 

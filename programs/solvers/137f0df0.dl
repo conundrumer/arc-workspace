@@ -1,11 +1,12 @@
 // 137f0df0
-// concept: lines span
-// The input holds a field of blocks, cut by lines that carry no block. A
-// block-free line that crosses the field's bounding box is painted along its
-// whole length: params.inside_paint where it crosses the box, params.outside_paint on
-// the stretches beyond. A block-free line clear of the box is left alone.
+// keywords: lines span
+// input: The input holds a field of blocks, cut by lines that carry no block.
+// output: A block-free line that crosses the field's bounding box is painted
+//  along its whole length: params.inside_paint where it crosses the box,
+//  params.outside_paint on the stretches beyond. A block-free line clear of
+//  the box is left alone.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -39,7 +40,6 @@ gap_cell(P) :-
     in(P, _), axis_elem(A), !block_line(A, P),
     covered(Q), same_line(A, P, Q).   // the line meets the field's box
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     gap_cell(P),
     ( covered(P), params.inside_paint(Col)     // inside the field's box

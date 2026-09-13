@@ -1,10 +1,10 @@
 // dce56571
-// concept: count
-// Ink of one color on bg. The output is bg except a line of
-// the ink color whose length is the ink-cell count, centered on both
-// axes, running along params.axis.
+// keywords: count
+// output: Ink of one color on bg. The output is bg except a line of the ink
+//  color whose length is the ink-cell count, centered on both axes, running
+//  along params.axis.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(8).
@@ -37,6 +37,5 @@ centrality.before($U(), Q, P) :- center_line(Q, Kq), center_line(P, K), Kq > K.
 .decl line_cell(p: Position)
 line_cell(P) :- ink_count.tally($U(), N), centrality.rank($U(), P, M), M < N.
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- line_cell(P), ink(_, Col).
 out(P, Col) :- in(P, _), !line_cell(P), params.bg(Col).

@@ -1,15 +1,17 @@
 // 67b4a34d
-// concept: crop symmetry repair
-// shape: latent-canvas
-// A grid symmetric about its center, occluded by a solid mask-color patch;
-// the output is the occluded content, restored from symmetric counterparts.
-//
-//   $Full   — every element applies: the grid is fully symmetric.
-//   $Detect — the group is detected: elements unbroken on clean cells.
+// keywords: crop symmetry repair latent-canvas
+// output: A grid symmetric about its center, occluded by a solid mask-color
+//  patch; the output is the occluded content, restored from symmetric
+//  counterparts.
 
-#include "../lib.dl"
+// which D4 elements the grid is symmetric under
+.type Choice =
+    // every element applies: the grid is fully symmetric
+    Full {}
+    // the group is detected: elements unbroken on clean cells
+  | Detect {}
 
-.type Choice = Full {} | Detect {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .decl mask(col: Color) mask(3).
@@ -27,8 +29,6 @@ hole.cell($U(), P) :- in(P, Col), params.mask(Col).
 // Each masked cell in the hole's own frame, which the output is read in.
 .decl hole_cell(p: Position, p_inner: Position)
 hole_cell(P, P_inner) :- hole.cell($U(), P), hole.box($U(), B), crop(P, B, P_inner).
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- $Full ---
 

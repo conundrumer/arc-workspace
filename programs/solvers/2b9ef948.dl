@@ -1,21 +1,23 @@
 // 2b9ef948
-// concept: markers move cast
-// A box of frame color encloses a cell of the grid's one free color, and a
-// trail of path color lies elsewhere, with a free-colored cell beside one end
-// and a frame-colored cell beside the other. The box travels by the offset
-// from the free end to the frame end. In the output the free color floods the
-// grid, and the moved box, with the diagonals it casts, shows in frame color.
-// Two hypotheses of what casts them:
-//
-//   $Core   — the core, so the diagonals cross at the middle of the box.
-//   $Corner — each corner of the box, each ray running outward.
-//
-// They coincide on a box one cell thick around its core, as in every pair
-// here, and diverge on a thicker one, where only $Core paints inside it.
+// keywords: markers move cast
+// input: A box of frame color encloses a cell of the grid's one free color,
+//  and a trail of path color lies elsewhere, with a free-colored cell beside
+//  one end and a frame-colored cell beside the other.
+// output: The box travels by the offset from the free end to the frame end.
+//  In the output the free color floods the grid, and the moved box, with
+//  the diagonals it casts, shows in frame color.
 
-#include "../lib.dl"
+// what casts the diagonals
+.type Choice =
+    // the core, so the diagonals cross at the middle of the box
+    Core {}
+    // each corner of the box, each ray running outward
+  | Corner {}
 
-.type Choice = Core {} | Corner {}
+// The cases coincide on a box one cell thick around its core, as in every
+// pair here, and diverge on a thicker one, where only Core paints inside it.
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -82,7 +84,6 @@ corner_ray.mark(Dg, P) :- moved_box(P), bx.box($U(), B), box_corner(P, B, Dg).
 
 ink(P, $Corner()) :- corner_ray.ray(_, P, _, _, _).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     in(P, _), impl_choice(Ch),
     ( ink(P, Ch), params.frame(Col)    // the moved box and its diagonals

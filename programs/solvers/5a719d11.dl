@@ -1,12 +1,12 @@
 // 5a719d11
 // draft
-// concept: decompose move
-// Uniform lines cut the grid into panels, which pair off across one axis. A
-// panel holds a mark drawn on a ground color. Each mark leaves its panel and
-// lands at the same place inside the panel it pairs with, drawn in the ground
-// color of the panel it came from.
+// keywords: decompose move
+// input: Uniform lines cut the grid into panels, which pair off across one
+//  axis. A panel holds a mark drawn on a ground color.
+// output: Each mark leaves its panel and lands at the same place inside the
+//  panel it pairs with, drawn in the ground color of the panel it came from.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     // The axis a panel pairs across.
@@ -54,7 +54,6 @@ parse.cell($U(), P, Col) :- in(P, Col).
 
 // --- program ---
 
-.decl out(p: Position, col: Color)
 out(P_grid, Col) :-
     parse.panel_cell($U(), T, P_grid, P_intile),
     params.pair_axis(A), flip_of(A, D), apply(D, T, T2),                    // the panel it pairs with

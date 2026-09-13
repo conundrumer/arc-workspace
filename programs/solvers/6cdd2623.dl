@@ -1,24 +1,30 @@
 // 6cdd2623
 // draft
-// concept: markers border cast span rank
-// Noise cells of several colors sit on a bg ground. One color, the line
-// color, appears only on the grid border, as marks facing each other in
-// pairs across the grid. The output erases the noise and draws a line of
-// the line color across the grid from each mark, along the axis of the
-// edge it sits on. Choice = [s, d] crosses the hypotheses:
-//
-//   s (which color draws the lines):
-//     $Border() — the color whose every cell lies on the border.
-//     $Rarest() — the color with the fewest cells.
-//   d (what a mark draws):
-//     $Cast() — a mark at one end draws the whole line.
-//     $Span() — a line needs a mark at each end.
+// keywords: markers border cast span rank
+// input: Noise cells of several colors sit on a bg ground. One color, the
+//  line color, appears only on the grid border, as marks facing each other
+//  in pairs across the grid.
+// output: The output erases the noise and draws a line of the line color
+//  across the grid from each mark, along the axis of the edge it sits on.
+//  Choice = [s, d] crosses the hypotheses:
 
-#include "../lib.dl"
+// which color draws the lines
+.type Select =
+    // the color whose every cell lies on the border
+    Border {}
+    // the color with the fewest cells
+  | Rarest {}
 
-.type Select = Border {} | Rarest {}
-.type Draw = Cast {} | Span {}
+// what a mark draws
+.type Draw =
+    // a mark at one end draws the whole line
+    Cast {}
+    // a line needs a mark at each end
+  | Span {}
+
 .type Choice = [s: Select, d: Draw]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -70,6 +76,5 @@ mark_cast.mark([S, A], M) :- in(M, Col), line_color(Col, S), dist(M, D, 0), axis
 line(P, [S, $Cast()]) :- mark_cast.ray([S, _], P, _, _, _).
 line(P, [S, $Span()]) :- mark_cast.between([S, _], P).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, [S, D]) :- line(P, [S, D]), line_color(Col, S).
 out(P, Col, Ch) :- in(P, _), impl_choice(Ch), !line(P, Ch), params.bg(Col).

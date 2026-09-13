@@ -1,19 +1,24 @@
 // 5623160b
 // draft
-// concept: objects markers move
-// The grid holds structures of the anchor color, with pieces of other colors
-// against them. The anchors hold their place. Every piece detaches and travels
-// away from the anchor it touches, until its leading cell reaches the grid
-// edge. Three readings of what one piece is:
-//
-//   $ByColor — every cell of one color, however it is spread.
-//   $ByRun   — a connected run of one color.
-//   $ByLayer — one color's cells inside a connected region of non-ground cells.
+// keywords: objects markers move
+// input: structures of the anchor color, with pieces of other colors
+//  against them
+// output: The anchors hold their place. Every piece detaches and travels
+//  away from the anchor it touches, until its leading cell reaches the grid
+//  edge.
 
-#include "../lib.dl"
+// what one piece is
+.type Choice =
+    // every cell of one color, however it is spread
+    ByColor {}
+    // a connected run of one color
+  | ByRun {}
+    // one color's cells inside a connected region of non-ground cells
+  | ByLayer {}
 
-.type Choice = ByColor {} | ByRun {} | ByLayer {}
 .type Piece = [ch: Choice, id: Ident, col: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(7).
@@ -76,6 +81,5 @@ ink(Q, Col, Ch) :-
     Pc = [Ch, _, Col], piece_cell(Pc, P), move_dir(Pc, D),  // the piece and its heading
     bbox.box(Pc, B), dist(B, D, K), jump(P, D, K, Q).       // jumped flush to the edge ahead
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- ink(P, Col, Ch).
 out(P, Col, Ch) :- in(P, _), !ink(P, _, Ch), params.bg(Col), impl_choice(Ch).

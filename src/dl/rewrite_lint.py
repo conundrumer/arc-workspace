@@ -1531,8 +1531,11 @@ class _Lint:
 
     def decl_placement(self) -> None:
         """Every reference inside one section or comp the declaration is
-        not in: move the declaration there."""
+        not in: move the declaration there. `out` is the interface, declared
+        under `Choice`, so its placement is fixed."""
         for name, decl in self.ix.decls[TOP].items():
+            if name == "out":
+                continue
             key = (TOP, name)
             spots: set[str | None] = set()
             for r in self.ix.refs_of(key):

@@ -1,29 +1,35 @@
 // 20fb2937
 // draft
-// concept: decompose crop markers mapping stamp lookup
-// A line of a single color cuts the grid into a header and a field. The header
-// splits into bands; each band holds a color swatch and a tile whose single
-// mark names the key color that swatch answers to. Every field cell carrying a
-// key color grows into a block. The output is the field alone.
-//
-// The cases claim what the header's cut reads:
-// $Count  — the tiles along each axis.
-// $Size — a tile's extent on each axis.
-//
-// And what a marked field cell becomes:
-// $Neighbor — the mark and its eight neighbors take the swatch color.
-// $Stamp    — a stored shape, seated on the mark, takes the swatch color.
-// $Blit     — the swatch tile itself is copied, held at the cell its band's
-//             key mark occupies.
+// keywords: decompose crop markers mapping stamp lookup
+// input: A line of a single color cuts the grid into a header and a field. The
+//  header splits into bands; each band holds a color swatch and a tile whose
+//  single mark names the key color that swatch answers to.
+// output: Every field cell carrying a key color grows into a block. The
+//  output is the field alone.
 
-#include "../lib.dl"
+// what the header's cut reads
+.type DecChoice =
+    // the tiles along each axis
+    Count {}
+    // a tile's extent on each axis
+  | Size {}
 
-.type DecChoice = Count {} | Size {}
-.type Paint = Neighbor {} | Stamp {} | Blit {}
+// what a marked field cell becomes
+.type Paint =
+    // the mark and its eight neighbors take the swatch color
+    Neighbor {}
+    // a stored shape, seated on the mark, takes the swatch color
+  | Stamp {}
+    // the swatch tile itself is copied, held at the cell its band's key mark
+    // occupies
+  | Blit {}
+
+// what the header's cut reads, and what a marked field cell becomes
 .type Choice = [d: DecChoice, paint: Paint]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(7).
 
     // Which side of the cutting line the header sits on.
@@ -119,8 +125,6 @@
         divide_by_size(P_hdr, A2, K2, 0, P_layer, P_inner_layer),    // layers abut along
         compose(P_inner_band, P_inner_layer, P_intile).
 
-    // --- shared ---
-
     .decl swatch(key: Key, dc: DecChoice, p_band: Position, p_intile: Position, col: Color)
     swatch(Ky, Dc, P_band, P_intile, Col) :-
         header_cell(Ky, Dc, P_layer, P_band, P_intile, Col),
@@ -183,7 +187,6 @@ paint_choice($Neighbor()). paint_choice($Stamp()). paint_choice($Blit()).
 .decl impl_choice(ch: Choice)
 impl_choice([Dc, Pt]) :- dec_choice(Dc), paint_choice(Pt).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :-
     parse.field($U(), P, _), impl_choice(Ch), !paint(P, _, Ch), params.bg(Col).

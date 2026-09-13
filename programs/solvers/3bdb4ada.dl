@@ -1,20 +1,20 @@
 // 3bdb4ada
 // draft
-// concept: objects parity border
-// Solid rectangles on the bg. A dash covers part of each rectangle: along
-// params.dash_axis that dash runs params.dash cells of ink, then params.gap cells of bg,
-// and the covered cells in a gap run go to bg. Two hypotheses about which cells
-// the dash covers:
-//
-//   $Midline()  — the center line across the dash axis.
-//   $Interior() — the cells off the rectangle's rim.
-//
-// Every rectangle here is three cells across the dash axis, where the two
-// hypotheses name the same cells.
+// keywords: objects parity border
+// output: Solid rectangles on the bg. A dash covers part of each rectangle:
+//  along params.dash_axis that dash runs params.dash cells of ink, then
+//  params.gap cells of bg, and the covered cells in a gap run go to bg. Every
+//  rectangle here is three cells across the dash axis, where the two
+//  hypotheses name the same cells.
 
-#include "../lib.dl"
+// which cells the dash covers
+.type Choice =
+    // the center line across the dash axis
+    Midline {}
+    // the cells off the rectangle's rim
+  | Interior {}
 
-.type Choice = Midline {} | Interior {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -71,6 +71,5 @@ impl_choice($Interior()).
 .decl erased(p: Position, ch: Choice)
 erased(P, Ch) :- dash_cover(P, Ch), !ink_run(P).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- erased(P, Ch), params.bg(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !erased(P, Ch).

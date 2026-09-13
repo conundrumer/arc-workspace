@@ -1,18 +1,19 @@
 // 496994bd
-// concept: d4 move
-// An ink block against one edge, bg elsewhere. The output adds the block's
-// reflected copy at the opposite edge.
-//
-// Cases (data-equivalent — the block is flush at its edge in every pair):
-//   $Mirror() — ink unioned with its whole-grid reflection
-//   $Seat()   — block reflection seated flush at the opposite edge
+// keywords: d4 move
+// input: an ink block sits against one edge, bg elsewhere.
+// output: the output adds the block's reflected copy at the opposite edge.
 
-#include "../lib.dl"
+// where the reflected copy comes from; the block is flush at its edge in
+// every pair, so the pairs cannot separate the cases
+.type Choice =
+    // ink unioned with its whole-grid reflection
+    Mirror {}
+    // block reflection seated flush at the opposite edge
+  | Seat {}
 
-.type Choice = Mirror {} | Seat {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
 
     // --- Mirror ---
@@ -48,7 +49,6 @@ img(P2, Col, $Seat()) :-
 
 // --- Output ---
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- impl_choice(Ch), ink(P, Col).
 out(P, Col, Ch) :- img(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !ink(P, _), !img(P, _, Ch), params.bg(Col).

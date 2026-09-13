@@ -1,12 +1,12 @@
 // 42f83767
 // draft
-// concept: decompose scale rank stamp
-// A legend of color blocks and a strip of stencils sit side by side, and a
-// composition grid sits across from them. Legend block i names stencil i.
-// The output replaces each composition cell with the stencil its color names,
-// drawn in that color.
+// keywords: decompose scale rank stamp
+// output: A legend of color blocks and a strip of stencils sit side by side,
+//  and a composition grid sits across from them. Legend block i names stencil
+//  i. The output replaces each composition cell with the stencil its color
+//  names, drawn in that color.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -67,7 +67,6 @@ stencil_cell(P_block, P_intile, Col) :-
 legend_color(P_block, Col) :-
     legend.box($U(), B), block_cell(B, P, P_block, _), legend_cell(P), in(P, Col).
 
-.decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
     composition.box($U(), B), composition.cell($U(), P),  // composition cell
     crop(P, B, P_tile), in(P, Col_tile),

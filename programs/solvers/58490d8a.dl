@@ -1,21 +1,23 @@
 // 58490d8a
 // draft
-// concept: markers objects count
-// A panel of params.panel sits on the grid and holds marker cells. Elsewhere the
-// grid holds shapes in the marker colors. The output is the panel, with each
-// marker's row carrying one copy of the marker per shape of its color. The copies
-// sit params.period apart and run toward params.spread_dir.
-//
-// The cases differ in where a row's run of copies starts:
-//   $FromMark — at the marker.
-//   $FromEdge — at the row's first slot, the one furthest against params.spread_dir.
+// keywords: markers objects count
+// input: A panel of params.panel sits on the grid and holds marker cells.
+//  Elsewhere the grid holds shapes in the marker colors.
+// output: The output is the panel, with each marker's row carrying one copy
+//  of the marker per shape of its color. The copies sit params.period apart
+//  and run toward params.spread_dir.
 
-#include "../lib.dl"
-
-.type Choice = FromMark {} | FromEdge {}
+// the cases differ in where a row's run of copies starts
+.type Choice =
+    // at the marker
+    FromMark {}
+    // at the row's first slot, the one furthest against params.spread_dir
+  | FromEdge {}
 
 // A marker's run of copies, under one case.
 .type Run = [src: Position, ch: Choice]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl panel(col: Color) panel(0).
@@ -86,7 +88,6 @@ spread.dir($FromEdge(), D) :- params.spread_dir(D0), ( D = D0 ; opposite(D0, D) 
 .decl impl_choice(ch: Choice)
 impl_choice($FromMark()). impl_choice($FromEdge()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_inner, Col, Ch) :- copy(P_inner, Col, Ch).
 out(P_inner, Col, Ch) :-
     panel_cell(P_inner), impl_choice(Ch),

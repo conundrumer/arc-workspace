@@ -1,9 +1,9 @@
 // ccd554ac
-// concept: tile-arrangement
-// Self-tensor: output = input ⊗ input — one tile per input cell, each a full
-// copy of the input.
+// keywords: tile-arrangement
+// output: Self-tensor: output = input ⊗ input — one tile per input cell, each a
+//  full copy of the input.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     // No task data — siblings vary only the input.
@@ -11,7 +11,6 @@
 
 .init params = Params
 
-.decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
     in(P_tile, _),                                    // one tile per input cell
     in(P_intile, Col),                                // tile content: the input

@@ -1,27 +1,30 @@
 // 25d8a9c8
-// concept: lines lookup count classify
-// Each slice's cells are recolored uniformly: params.uniform_color if the
-// slice has a single color, else params.non_uniform_color. Slices run along
-// params.axis. Whole-slice replacement — input colors are discarded.
-//
-// Cartesian over (detect, stage); out's choice column is a record:
-//
-//   detect:
-//     $PairExist() — same-slice pair with distinct colors
-//     $Count()     — distinct-color count, mapped per-count via params.count_color
-//
-//   stage:
-//     $PerCell()  — slice classification → single replacement color
-//     $SliceMap() — slice classification → row template
+// keywords: lines lookup count classify
+// input: The grid decomposes into slices along params.axis.
+// output: Each slice's cells are recolored uniformly: params.uniform_color if
+//  the slice has a single color, else params.non_uniform_color. Whole-slice
+//  replacement — input colors are discarded. Cartesian over (detect, stage);
+//  out's choice column is a record:
 
-#include "../lib.dl"
+// detect
+.type Detect =
+    // same-slice pair with distinct colors
+    PairExist {}
+    // distinct-color count, mapped per-count via params.count_color
+  | Count {}
 
-.type Detect = PairExist {} | Count {}
-.type Stage  = PerCell {} | SliceMap {}
+// stage
+.type Stage =
+    // slice classification → single replacement color
+    PerCell {}
+    // slice classification → row template
+  | SliceMap {}
+
 .type Choice = [detect: Detect, stage: Stage]
 
+.decl out(p: Position, col: Color, c: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl axis(a: Axis) axis(AXIS_H).
 
     // --- $PairExist + $PerCell ---
@@ -74,8 +77,6 @@
 parse.cell($U(), P, Col) :- in(P, Col).
 
 // --- Output ---
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- $PairExist + $PerCell ---
 out(P, Col, [$PairExist(), $PerCell()]) :-

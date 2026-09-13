@@ -1,14 +1,14 @@
 // 269e22fb
 // draft
-// concept: grow lookup d4
+// keywords: grow lookup d4
+// input: One chart of ink and blank cells underlies every pair. The input is
+//  a window cut from the chart in some pose, its ink and blank rendered in
+//  the pair's two colors.
+// output: The output is the whole chart in that pose and rendering. Nothing
+//  marks the pose or the color roles, so the program takes the rendering the
+//  input lays onto without contradiction.
 
-// One chart of ink and blank cells underlies every pair. The input is a
-// window cut from the chart in some pose, its ink and blank rendered in the
-// pair's two colors; the output is the whole chart in that pose and
-// rendering. Nothing marks the pose or the color roles, so the program takes
-// the rendering the input lays onto without contradiction.
-
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     RIGID(chart,
@@ -63,7 +63,6 @@ chart([Ink, Blank, D], P, Col) :-
 occ.cell(R, P, Col) :- chart(R, P, Col).
 occ.shape(R, P, Col) :- render(R), in(P, Col).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     occ.occurrence(R, _),  // the rendering the input fits
     chart(R, P, Col).      // shown whole

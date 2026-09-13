@@ -1,14 +1,17 @@
 // a699fb00
-// concept: lines span
-// Dashed lines: params.dot cells alternating with bg along params.axis. The gaps fill
-// with params.fill. Two models of which bg cells are gaps, tagged on out's Choice:
-//
-//   $Flank — a bg cell with a dot on both along-axis neighbors.
-//   $Span  — a bg cell with a dot on both along-axis sides in its line.
+// keywords: lines span
+// output: Dashed lines: params.dot cells alternating with bg along params.axis.
+//  The gaps fill with params.fill. The two cases model differently which bg
+//  cells count as gaps.
 
-#include "../lib.dl"
+// which bg cells count as gaps
+.type Choice =
+    // a bg cell with a dot on both along-axis neighbors
+    Flank {}
+    // a bg cell with a dot on both along-axis sides in its line
+  | Span {}
 
-.type Choice = Flank {} | Span {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl axis(a: Axis) axis(AXIS_H).   // lines run along this axis
@@ -18,8 +21,6 @@
 }
 
 .init params = Params
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // --- Flank ---
 

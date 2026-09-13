@@ -1,12 +1,13 @@
 // 15663ba9
 // draft
-// concept: objects enclose
-// The ink draws closed curves one cell wide. A cell where the curve turns is
-// repainted by the side the turn opens onto: params.open_paint when the open
-// quadrant lies in the space that reaches the grid edge, params.enclosed_paint when
-// it lies in the space the curve cuts off. Every other cell passes through.
+// keywords: objects enclose
+// output: The ink draws closed curves one cell wide. A cell where the curve
+//  turns is repainted by the side the turn opens onto: params.open_paint when
+//  the open quadrant lies in the space that reaches the grid edge,
+//  params.enclosed_paint when it lies in the space the curve cuts off. Every
+//  other cell passes through.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -49,7 +50,6 @@ bend(P, Open) :-
 .decl faces_open(p: Position)
 faces_open(P) :- bend(P, Open), dir_of(Open, _, D), neighbor(P, D, Q), !enclosed(Q).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     bend(P, _),
     ( faces_open(P), params.open_paint(Col)

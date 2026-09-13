@@ -1,22 +1,35 @@
 // e345f17b
-// family: fafffa47
-// Layout: 1×2 horizontally-side-by-side 4×4 subgrids.
+// representative: fafffa47
 
-#include "../lib.dl"
+// decompose
+.type DecChoice =
+    // pre-tabulated in the parameters via tile_pos
+    Table {}
+    // derived in the program by tile count
+  | Count {}
+    // derived in the program by tile size
+  | Size {}
 
-.type DecChoice = Table {} | Count {} | Size {}
-.type Body      = Lookup {} | Nor {}
+// combine
+.type Body =
+    // combine table keyed on (outer pos, color); set-equality match
+    Lookup {}
+    // NOR via non-existence: no non-BG input contribution
+  | Nor {}
+
 .type Choice    = [d: DecChoice, b: Body]
 
 .type CombineMember = [p: Position, col: Color]
 .type CombineKey    = [p: Position, dc: DecChoice]
 
+.decl out(p: Position, col: Color, c: Choice)
+
 .comp Params {
     .init helpers = ParamsHelpers
 
+    // --- Table, Size decompose data ---
+    // the tile's extent on both axes
     .decl frame_dim(k: number) frame_dim(4).
-    .decl frame(p: Position)
-    frame(P) :- frame_dim(K), helpers.frame_pos([K, K], P).
 
     // --- Table decompose data ---
     .decl arr_dim(a: Axis, n: number)
@@ -57,11 +70,6 @@ combine_match.observed_member([P_grid_out, Dc], [P_tile, C]) :-
 
 // --- Decompose cases ---
 
-.decl dec_choice(dc: DecChoice)
-dec_choice($Table()).
-dec_choice($Count()).
-dec_choice($Size()).
-
 .decl decompose(p: Position, p_outer: Position, p_inner: Position, dc: DecChoice)
 decompose(P_grid, P_tile, P_intile, $Table()) :- params.tile_decompose(P_grid, P_tile, P_intile).
 decompose(P_grid, P_tile, P_intile, $Count()) :-
@@ -82,13 +90,12 @@ filled(P_grid_out, Dc) :-
 
 // --- Output ---
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col_out, [Dc, $Lookup()]) :-
     params.combine_out(Id, Col_out),                             // entry's output color
     combine_match.equals([P_grid_out, Dc], Id).                  // cell's tiles == entry's members
 
 out(P_grid_out, Col, [Dc, $Nor()]) :-
-    dec_choice(Dc), params.frame(P_grid_out),        // choice × cell
+    decompose(_, _, P_grid_out, Dc),                   // output cell of the case's decomposition
     ( !filled(P_grid_out, Dc), params.out_fill(Col)    // NOR=1: no contribution
     ; filled(P_grid_out, Dc), params.bg(Col)           // NOR=0: some contribution
     ).

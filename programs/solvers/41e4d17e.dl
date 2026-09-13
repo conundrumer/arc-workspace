@@ -1,18 +1,21 @@
 // 41e4d17e
-// concept: objects cast enclose
-// Hollow squares of ink sit on a background. A center cell casts a horizontal
-// and a vertical line, each running the whole grid. A line paints the
-// background it crosses and leaves ink as it is, so it runs on through the
-// square it came from.
-//
-// A square's outline and its hole share a center, so what casts is
-// underdetermined: $Object casts from each body of ink, $Hole from each
-// region the ink closes off from the grid edge.
+// keywords: objects cast enclose
+// input: Hollow squares of ink sit on a background.
+// output: A center cell casts a horizontal and a vertical line, each running
+//  the whole grid. A line paints the background it crosses and leaves ink as
+//  it is, so it runs on through the square it came from.
 
-#include "../lib.dl"
+// a square's outline and its hole share a center, so what casts is
+// underdetermined
+.type Choice =
+    // casts from each body of ink
+    Object {}
+    // casts from each region the ink closes off from the grid edge
+  | Hole {}
 
-.type Choice = Object {} | Hole {}
 .type Caster = [ch: Choice, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(8).
@@ -50,7 +53,6 @@ painted(P, Ch) :-
     crop(P_c, B, P_inner), centered(P_inner),            // the cell centered in that box
     axis_elem(A), same_line(A, P, P_c).                  // sharing a line with it, on either axis
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     in(P, C_in), impl_choice(Ch),
     ( painted(P, Ch), params.paint(Col)

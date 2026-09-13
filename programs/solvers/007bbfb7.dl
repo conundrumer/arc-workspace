@@ -1,18 +1,20 @@
 // 007bbfb7
-// concept: tile-arrangement scale stamp
-// The input tiled by itself: the output decomposes into an input-shaped
-// arrangement of input-shaped tiles, and a cell is filled iff its tile index
-// and its intile position are both active (non-bg) input cells. Two models
-// of the fill color, tagged on out's Choice:
-//
-//   $Stamp — the intile position's color: active tiles hold copies of the input.
-//   $Mask  — the tile index's color: the input scaled up, masked by the pattern.
-//
+// keywords: tile-arrangement scale stamp
+// output: The input tiled by itself: the output decomposes into an
+//  input-shaped arrangement of input-shaped tiles, and a cell is filled
+//  iff its tile index and its intile position are both active (non-bg)
+//  input cells.
+
 // Coincide on monochrome inputs; diverge when colors vary.
 
-#include "../lib.dl"
+// the fill color
+.type Choice =
+    // the intile position's color: active tiles hold copies of the input
+    Stamp {}
+    // the tile index's color: the input scaled up, masked by the pattern
+  | Mask {}
 
-.type Choice = Stamp {} | Mask {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -28,8 +30,6 @@ cell(P_grid_out, P_tile, P_intile) :-
 
 .decl active(p: Position)
 active(P) :- in(P, Col), !params.bg(Col).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // --- $Stamp ---
 out(P_grid_out, Col, $Stamp()) :-

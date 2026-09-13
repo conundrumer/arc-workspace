@@ -1,12 +1,13 @@
 // 758abdf0
 // draft
-// concept: lines markers count move
-// A solid line of the wall color runs along one grid edge, and marks stand in
-// short runs along the axis that leads away from it. A run shorter than full
-// grows one cell away from the wall. A full run leaves: its cells clear to bg,
-// and a run of the same length lands against the far edge in the wall's color.
+// keywords: lines markers count move
+// input: A solid line of the wall color runs along one grid edge, and marks
+//  stand in short runs along the axis that leads away from it.
+// output: A run shorter than full grows one cell away from the wall. A
+//  full run leaves: its cells clear to bg, and a run of the same length
+//  lands against the far edge in the wall's color.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(7).
@@ -53,7 +54,6 @@ placed(Q, Col) :-
 .decl vacated(p: Position)
 vacated(P) :- run(Id, P), len.tally(Id, N), params.full(N).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, Col_in),
     ( placed(P, Col)                                   // landed or grown

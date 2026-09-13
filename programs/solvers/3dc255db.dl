@@ -1,20 +1,22 @@
 // 3dc255db
 // draft
-// concept: objects markers enclose cast count
-// Two objects in contact pair up: the bigger one holds the smaller one. The
-// holder stands open on one side; on the opposite side its walls close to a
-// lone cell — the spout. The output removes the held cells and runs a line of
-// their color out of the spout, one cell per held cell, cut short at the grid
-// edge.
-//
-// The cases read the open side differently. $Pour floods the cavity from the
-// held cells and takes the side of the holder's box the flood reaches.
-// $Sight takes a side that no wall obstructs on a straight line from any held
-// cell.
+// keywords: objects markers enclose cast count
+// output: Two objects in contact pair up: the bigger one holds the smaller one.
+//  The holder stands open on one side; on the opposite side its walls close to
+//  a lone cell — the spout. The output removes the held cells and runs a line
+//  of their color out of the spout, one cell per held cell, cut short at the
+//  grid edge.
 
-#include "../lib.dl"
+// how the open side is read
+.type Choice =
+    // floods the cavity from the held cells, and takes the side of the
+    // holder's box the flood reaches
+    Pour {}
+    // takes a side that no wall obstructs on a straight line from any held
+    // cell
+  | Sight {}
 
-.type Choice = Pour {} | Sight {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -107,7 +109,6 @@ paint(P, Col, Ch) :-
 .decl impl_choice(ch: Choice)
 impl_choice($Pour()). impl_choice($Sight()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :-
     in(P, C_in), impl_choice(Ch), !paint(P, _, Ch),

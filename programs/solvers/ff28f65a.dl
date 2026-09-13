@@ -1,23 +1,26 @@
 // ff28f65a
-// concept: objects lookup count rank stamp
-// Count the blocks — params.block_shape in params.block_color — then mark that many
-// cells of the output frame's X (both corner diagonals), in reading order.
-//
-// Two models detect the blocks:
-//   $Object    — connected components whose cells are the shape.
-//   $Placement — placements where the shape lands fully on the color;
-//                touching blocks count separately, where $Object merges them.
-//
-// The count renders two ways:
-//   $Fill   — mark along the X's reading order (rule).
-//   $Lookup — select the stored count->grid from a table (table).
-// Choice = [detect, render] crosses the two independent choice points.
+// keywords: objects lookup count rank stamp
+// input: the blocks — params.block_shape drawn in params.block_color
+// output: renders how many blocks the input holds
 
-#include "../lib.dl"
+// two models detect the blocks
+.type Detect =
+    // connected components whose cells are the shape
+    Object {}
+    // placements where the shape lands fully on the color; touching blocks
+    // count separately, where $Object merges them
+  | Placement {}
 
-.type Detect = Object {} | Placement {}
-.type Render = Fill {} | Lookup {}
+// the count renders two ways
+.type Render =
+    // mark along the X's reading order (rule)
+    Fill {}
+    // select the stored count->grid from a table (table)
+  | Lookup {}
+
 .type Choice = [detect: Detect, render: Render]
+
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
@@ -28,6 +31,8 @@
     .decl block_shape(p: Position)
     block_shape(P) :- block_dim(N), helpers.frame_pos([N, N], P).
 
+    // --- $Fill ---
+
     .decl mark(c: Color) mark(1).
     .decl bg(c: Color) bg(0).
     .decl out_dim(n: number) out_dim(3).
@@ -37,7 +42,9 @@
     .decl out_pos(p: Position)
     out_pos(P) :- out_dim(N), helpers.frame_pos([N, N], P).
 
-    // The output grid for each count the pairs exhibit.
+    // --- $Lookup ---
+
+    // The output grid for each count.
     .decl lookup_grid(n: number, p: Position, col: Color)
     GRID_3x3(lookup_grid, 1,
         1, 0, 0,
@@ -84,7 +91,6 @@
 
     .init blocks = Tally<Key, Ident>
     blocks.item(K, Id) :- same.equals([K, Id], $U()).
-    blocks.domain(K) :- cell(K, _, _).
 }
 
 .init parse = Parse<Unit>
@@ -103,9 +109,9 @@ placements.item($U(), P) :- occ.occurrence($U(), P).
 total(N, $Object())    :- parse.blocks.tally($U(), N).
 total(N, $Placement()) :- placements.tally($U(), N).
 
-// --- render ---
+// --- $Fill ---
 
-// The X: cells on either diagonal of the output frame, in reading order.
+// The X: the cells on either diagonal of the output frame.
 .init diag = Diagonal<Unit>
 diag.cell($U(), P)   :- params.out_pos(P).
 diag.corner($U(), D) :- diag_dir_elem(D).
@@ -116,15 +122,16 @@ lex.axis($U(), A) :- params.lex_axis(A).
 lex.cell($U(), P) :- diag.diagonal($U(), P, _).
 
 .decl marked(p: Position, detect: Detect)
+// Mark along that order, as far as the count reaches.
 marked(P, Det) :- lex.rank($U(), P, K), total(N, Det), K < N.
 
-.decl out(p: Position, col: Color, c: Choice)
+out(P, Col, [Det, $Fill()]) :-
+    params.out_pos(P), total(_, Det),
+    ( marked(P, Det),  params.mark(Col)
+    ; !marked(P, Det), params.bg(Col) ).
 
-// $Fill (rule) — mark along the reading order.
-out(P, Mark, [Det, $Fill()]) :- marked(P, Det), params.mark(Mark).
-out(P, BG,   [Det, $Fill()]) :- params.out_pos(P), total(_, Det), !marked(P, Det), params.bg(BG).
+// --- $Lookup ---
 
-// $Lookup (table) — select the stored grid for the count.
 out(P, Col, [Det, $Lookup()]) :- total(N, Det), params.lookup_grid(N, P, Col).
 
 .comp Determine {

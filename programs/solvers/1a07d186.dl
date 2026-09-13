@@ -1,14 +1,15 @@
 // 1a07d186
 // draft
-// concept: lines move
-// A line is one whole row or column of one non-bg color, and loose colored
-// cells sit off the lines. Lines stay put. Each loose cell moves to the line
-// of its own color and stops against it, keeping its place along the line. A
-// loose cell whose color has no line is cleared.
-
-#include "../lib.dl"
+// keywords: lines move
+// input: A line is one whole row or column of one non-bg color, and loose
+//  colored cells sit off the lines.
+// output: Lines stay put. Each loose cell moves to the line of its own color
+//  and stops against it, keeping its place along the line. A loose cell
+//  whose color has no line is cleared.
 
 .type Line = [a: Axis, l: Position]
+
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -39,7 +40,6 @@ arrive(P_grid_out, Col) :-
     axis_of(D, A), nearer(D, L_in, L),                           // it lies toward D from the line
     compose(L, Across, P_foot), neighbor(P_foot, D, P_grid_out). // beside the line cell it aims at
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, _),
     ( line_cell(P, Col)                                      // the line itself

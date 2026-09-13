@@ -1,22 +1,23 @@
 // 67c52801
 // draft
-// concept: objects markers pack move d4 lookup
-// A ground row lies along one edge, and the row beside it is a marker row:
-// ground-colored, with bg gaps that are the slots. Colored rectangles float
-// above. Each rectangle drops into the one slot its extent fits, the pieces
-// packing the slots exactly, and stands on the ground from the marker row up.
-//
-// Cases:
-// - Turn — a dropped piece keeps its shape, turned so the fitting extent
-//   lies across the slot: it stands as high as its other extent.
-// - Fixed — a dropped piece stands a stored height.
+// keywords: objects markers pack move d4 lookup
+// output: A ground row lies along one edge, and the row beside it is a marker
+//  row: ground-colored, with bg gaps that are the slots. Colored rectangles
+//  float above. Each rectangle drops into the one slot its extent fits, the
+//  pieces packing the slots exactly, and stands on the ground from the marker
+//  row up.
 
-#include "../lib.dl"
+// what fixes a dropped piece's height
+.type Choice =
+    // the piece keeps its shape, turned so the fitting extent lies across
+    // the slot: it stands as high as its other extent
+    Turn {}
+    // the piece stands a stored height
+  | Fixed {}
 
-.type Choice = Turn {} | Fixed {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
 
     // The edge the ground row lies along.
@@ -109,7 +110,6 @@ filled(P, Col, Ch) :-
     slots.label($U(), M, Sl), rays.ray($U(), P, _, K, M),  // above its slot
     K < H.                                                 // within its height
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     in(P, C_in), impl_choice(Ch),
     ( filled(P, Col, Ch)                  // a dropped piece

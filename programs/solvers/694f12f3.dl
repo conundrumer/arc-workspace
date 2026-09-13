@@ -1,26 +1,34 @@
 // 694f12f3
 // draft
-// concept: objects rank border lookup
-// Solid rectangles on a background. Each rectangle keeps its outline, and
-// its interior fills with a color that its place in the size order picks.
-// Choice = [a, k, i]:
-//
-//   a (which end of the size order is first):
-//     $Large() — the biggest rectangle
-//     $Small() — the smallest rectangle
-//   k (how the place picks the color):
-//     $Table()   — a stored color per rank
-//     $Extreme() — one color for the first rectangle, another for the rest
-//   i (what the interior is):
-//     $Box()   — the cells strictly inside the rectangle's bounding box
-//     $Erode() — the rectangle's cells off its rim
+// keywords: objects rank border lookup
+// input: solid rectangles on a background
+// output: Each rectangle keeps its outline, and its interior fills with a
+//  color that its place in the size order picks.
 
-#include "../lib.dl"
+// which end of the size order is first
+.type Anchor =
+    // the biggest rectangle
+    Large {}
+    // the smallest rectangle
+  | Small {}
 
-.type Anchor = Large {} | Small {}
-.type Kind = Table {} | Extreme {}
-.type Interior = Box {} | Erode {}
+// how the place picks the color
+.type Kind =
+    // a stored color per rank
+    Table {}
+    // one color for the first rectangle, another for the rest
+  | Extreme {}
+
+// what the interior is
+.type Interior =
+    // the cells strictly inside the rectangle's bounding box
+    Box {}
+    // the rectangle's cells off its rim
+  | Erode {}
+
 .type Choice = [a: Anchor, k: Kind, i: Interior]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -112,7 +120,6 @@ inner_cell(Id, P, $Erode()) :- parse.rects.label($U(), P, Id), !rim.rim(Id, P).
 
 // --- output ---
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, [A, K, I]) :- inner_cell(Id, P, I), fill(Id, Col, A, K).
 out(P, Col, [A, K, I]) :-
     in(P, Col), interior_choice(I), !inner_cell(_, P, I),

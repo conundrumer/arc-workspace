@@ -1,18 +1,24 @@
 // 6ecd11f4
 // draft
-// concept: objects crop scale overlay
-// Two objects sit apart on bg: a large monochrome shape and a small
-// multicolored square. The shape is a blown-up mask with the square's cell
-// arrangement: each of its blocks is one square cell. The output is the
-// square with each cell kept where the shape's block is inked and erased to
-// bg where it is not. Two cases of which object is the square:
-//
-//   $Multicolor — the object whose cells disagree on color.
-//   $Smallest   — the object with the smallest bounding box.
+// keywords: objects crop scale overlay
+// input: two objects on bg: a large monochrome shape and a small
+//  multicolored square
+// output: The shape is a blown-up mask with the square's cell arrangement:
+//  each of its blocks is one square cell. The output is the square with
+//  each cell kept where the shape's block is inked and erased to bg where it
+//  is not.
 
-#include "../lib.dl"
+// which object is the square
+.type Choice =
+    // the object whose cells disagree on color
+    Multicolor {}
+    // the object with the smallest bounding box
+  | Smallest {}
 
-.type Choice = Multicolor {} | Smallest {}
+// Each block cell votes for its square cell: the square's color where the
+// shape inks it, bg where it does not. A block the shape fills or leaves
+// empty agrees; a mixed block gives its cell no single color.
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color)  bg(0).
@@ -66,10 +72,6 @@ blocks.cell(P_inner) :- shape_cell(_, _, P_inner).
 blocks.dim(Ch, A, N) :- square_id(Ch, Id), box_size(Id, A, N).
 blocks.gap(0).
 
-// Each block cell votes for its square cell: the square's color where the
-// shape inks it, bg where it does not. A block the shape fills or leaves
-// empty agrees; a mixed block gives its cell no single color.
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_out, Col, Ch) :-
     square_id(Ch, Sq), in(P_grid, Col_sq),
     boxes.box(Sq, B_sq), crop(P_grid, B_sq, P_out),      // square cell, at its output place

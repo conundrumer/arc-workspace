@@ -1,23 +1,17 @@
 // 8b7bacbf
 // draft
-// concept: objects markers border
-// Hollow boxes and wires lie on a background. An object is same-colored
-// ink, 8-connected. A marker is the one cell of its color, and the color
-// beside it is its guide color. Objects touch side by side, and the
-// marker's circuit is the objects reached from it by touching, boxes and
-// wires of other colors included. A hollow box fills with the marker's
-// color where a guide-colored object of its circuit touches it.
-//
-// The circuit stands in for a wire's continuation under a wire that
-// crosses it: the crossing wire touches both parts. It also reaches a wire
-// that another wire of the circuit merely touches.
-//
-// A hole is a background region walled in one color, the grid edge
-// counting as wall; its box is the wall with the same-colored ink
-// 4-connected to it, so two boxes of one color that meet at a corner stay
-// apart.
+// keywords: objects markers border
+// input: Hollow boxes and wires lie on a background. An object is
+//  same-colored ink, 8-connected. A marker is the one cell of its color, and
+//  the color beside it is its guide color. Objects touch side by side, and
+//  the marker's circuit is the objects reached from it by touching, boxes
+//  and wires of other colors included. A hole is a background region walled
+//  in one color, the grid edge counting as wall; its box is the wall with
+//  the same-colored ink 4-connected to it.
+// output: A hollow box fills with the marker's color where a guide-colored
+//  object of its circuit touches it.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {}
 
@@ -52,7 +46,10 @@ multi_cell(Col) :- ink(P, Col), ink(Q, Col), P != Q.
 .decl marker(p: Position, col: Color)
 marker(P, M) :- ink(P, M), !multi_cell(M).
 
-// The marker's circuit: the objects reached from it by touching.
+// The marker's circuit: the objects reached from it by touching. The
+// circuit stands in for a wire's continuation under a wire that crosses it:
+// the crossing wire touches both parts. It also reaches a wire that another
+// wire of the circuit merely touches.
 .decl circuit(m: Color, w: Ident)
 circuit(M, W) :- marker(P, M), object.label(M, P, W).
 circuit(M, W2) :- circuit(M, W), contact(W, W2).
@@ -72,7 +69,8 @@ wall(H, P, Col) :- region.label($U(), Q, H), beside(Q, P, Col).
 .init wall_color = Unanimous<Ident, Color>
 wall_color.item(H, Col) :- wall(H, _, Col).
 
-// A hole's box: its wall, and the same-colored ink 4-connected to the wall.
+// A hole's box: its wall, and the same-colored ink 4-connected to the wall,
+// so two boxes of one color that meet at a corner stay apart.
 .init box = Reach<Ident>
 box.node(H, P) :- wall_color.value(H, Col), ink(P, Col).
 box.seed(H, P) :- wall(H, P, _).
@@ -85,6 +83,5 @@ touch(H, W) :- box.reach(H, P), beside(P, Q, _), !box.reach(H, Q), object.label(
 .decl fill(p: Position, col: Color)
 fill(P, M) :- region.label($U(), P, H), touch(H, W), live(W, M).
 
-.decl out(p: Position, col: Color)
 out(P, M) :- fill(P, M).
 out(P, Col) :- in(P, Col), !fill(P, _).

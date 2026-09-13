@@ -1,21 +1,25 @@
 // 1c786137
 // draft
-// concept: crop border objects select enclose
-// Colored noise fills the grid, and one rectangle outline sits in it, drawn in
-// a color that appears nowhere else. The output is what the outline holds: the
-// cells of its box strictly inside its edges.
-//
-// $Rect — the outline is the color whose cells are exactly the edges of their
-//   own box.
-// $Solo — the outline is the color whose cells form a single connected object.
-// $Drawn — the outline is a rectangle drawn by four same-color runs, and the
-//   one holding the most cells wins.
-// $Enclose — the outline is any wall of one color, and what it holds is the
-//   region that wall cuts off from the grid edge; the largest region wins.
+// keywords: crop border objects select enclose
+// output: Colored noise fills the grid, and one rectangle outline sits in it,
+//  drawn in a color that appears nowhere else. The output is what the outline
+//  holds: the cells of its box strictly inside its edges.
 
-#include "../lib.dl"
+// which color and structure count as the outline
+.type Choice =
+    // the outline is the color whose cells are exactly the edges of their own
+    // box
+    Rect {}
+    // the outline is the color whose cells form a single connected object
+  | Solo {}
+    // the outline is the rectangle drawn by four same-color runs that holds
+    // the most cells
+  | Drawn {}
+    // the outline is any wall of one color; what it holds is the largest
+    // region that such a wall cuts off from the grid edge
+  | Enclose {}
 
-.type Choice = Rect {} | Solo {} | Drawn {} | Enclose {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {}
 
@@ -24,7 +28,6 @@
 .decl color(col: Color)
 color(Col) :- in(_, Col).
 
-// Each color's own bounding box.
 .init cbox = Bbox<Color>
 cbox.cell(Col, P) :- in(P, Col).
 
@@ -40,17 +43,15 @@ outline_box(B, Ch) :- marker(Col, Ch), cbox.box(Col, B).
 .decl window(p: Position, ch: Choice)
 window(P, Ch) :- outline_box(B, Ch), in(P, _), interior(P, B).
 
-// The box that window crops to.
 .init window_bbox = Bbox<Choice>
 window_bbox.cell(Ch, P) :- window(P, Ch).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_inner, Col, Ch) :- window_bbox.box(Ch, B), in(P, Col), crop(P, B, P_inner).
 
 // --- Rect ---
 
-// The color and its box's edges part company somewhere: a gap in the edges, or
-// a cell in the hole.
+// The color's cells are not exactly the edges of its box: a gap in the edges,
+// or a cell in the hole.
 .decl misdrawn(col: Color)
 misdrawn(Col) :- cbox.box(Col, B), in(P, _), box_edge(P, B, _), !in(P, Col).
 misdrawn(Col) :- cbox.box(Col, B), in(P, Col), interior(P, B).
@@ -69,7 +70,6 @@ marker(Col, $Solo()) :- color(Col), !color_part.clash(Col).
 
 // --- Drawn ---
 
-// The rectangles each color draws.
 .init drect = Outlines<Color>
 drect.node(Col, P) :- in(P, Col).
 
@@ -86,10 +86,8 @@ closed.cell(Col, P) :- color(Col), in(P, Col2), Col2 != Col.
 
 .type Region = [col: Color, id: Ident]
 
-.decl region(k: Region, p: Position)
-region([Col, Id], P) :- closed.region(Col, P, Id).
-
 .init biggest_region = Mode<Unit, Region, Position>
-biggest_region.item($U(), K, P) :- region(K, P).
+biggest_region.item($U(), [Col, Id], P) :- closed.region(Col, P, Id).
 
-window(P, $Enclose()) :- biggest_region.mode($U(), K), region(K, P).
+window(P, $Enclose()) :-
+    biggest_region.mode($U(), [Col, Id]), closed.region(Col, P, Id).

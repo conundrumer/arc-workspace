@@ -1,13 +1,13 @@
 // 673ef223
 // draft
-// concept: lines markers cast
-// Two bars of params.bar color lie along params.axis. A mark beside a bar
-// flags the bar cell on its line, as that cell's place in the bar, and the
-// flag carries to the cell at that place in every bar. Each flagged bar
-// cell casts the mark color across params.axis through bg until ink or the
-// grid edge stops it, and each mark becomes params.cap.
+// keywords: lines markers cast
+// output: Two bars of params.bar color lie along params.axis. A mark beside a
+//  bar flags the bar cell on its line, as that cell's place in the bar, and the
+//  flag carries to the cell at that place in every bar. Each flagged bar cell
+//  casts the mark color across params.axis through bg until ink or the grid
+//  edge stops it, and each mark becomes params.cap.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -52,7 +52,6 @@ cast.blocked($U(), P) :- in(P, Col), !params.bg(Col).
 cast.mark($U(), P) :-
     bar_cell(Id, P, P_along), bar_place(Id, P_along, P_inner), flagged(P_inner).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- cast.clear($U(), P, _, _, _), params.mark(Col).
 out(P, Col) :-
     in(P, C_in), !cast.clear($U(), P, _, _, _),

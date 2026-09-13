@@ -1,20 +1,20 @@
 // 8f215267
 // draft
-// concept: objects count border enclose
-// Hollow frames, one color each, stand in a background field, with small
-// blobs of their colors around them. The output keeps each frame, erases the
-// blobs, and writes dots on the frame's middle line: one per blob of the
-// frame's color, params.spacing apart, counted in from the params.dot_dir
-// edge.
-//
-// Cases claim what makes an object a frame:
-//   $Rect — it draws a rectangle outline and has no cell inside it.
-//   $Enclose — it closes a region off from the grid edge; its box is its
-//     bounding box.
+// keywords: objects count border enclose
+// input: Hollow frames, one color each, stand in a background field, with
+//  small blobs of their colors around them.
+// output: The output keeps each frame, erases the blobs, and writes dots on
+//  the frame's middle line: one per blob of the frame's color,
+//  params.spacing apart, counted in from the params.dot_dir edge.
 
-#include "../lib.dl"
+// what makes an object a frame
+.type Choice =
+    // it draws a rectangle outline and has no cell inside it
+    Rect {}
+    // it closes a region off from the grid edge; its box is its bounding box
+  | Enclose {}
 
-.type Choice = Rect {} | Enclose {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // The frame edge the dots count in from.
@@ -87,7 +87,6 @@ kept(P, Col, Ch) :-                                                           //
     dist(P_inner, D, K), params.spacing(W), stride(K, W, 0, I, 0),            // the I-th dot slot from the edge
     blobs.tally([Col, Ch], N), I <= N.                                        // one slot per blob
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     in(P, _), impl_choice(Ch),
     ( kept(P, Col, Ch)                                 // frame or dot

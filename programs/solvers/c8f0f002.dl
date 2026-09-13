@@ -1,8 +1,7 @@
 // c8f0f002
-// family: 0d3d703e
-// Color substitution via a mapping relation.
+// representative: 0d3d703e
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl mapping(c_from: Color, c_to: Color)
@@ -11,6 +10,5 @@
 
 .init params = Params
 
-.decl out(p: Position, col: Color)
 out(P, Col_out) :- in(P, Col_in), params.mapping(Col_in, Col_out).
 out(P, Col)     :- in(P, Col), !params.mapping(Col, _).

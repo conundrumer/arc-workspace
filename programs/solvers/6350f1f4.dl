@@ -1,27 +1,24 @@
 // 6350f1f4
 // draft
-// concept: decompose scale repair stamp
-// Separator lines cut the grid into a square arrangement of square blocks,
-// as many blocks along an axis as cells along a block. Each block is either
-// a copy of one two-colored template or a solid field of one color, and
-// noise has eaten cells of both, separator lines included. The blocks that
-// still show two colors overlay into the repaired template. Two models of
-// what each block becomes:
-//
-//   $Expand — the template stamped on itself: a block whose tile position
-//             is a minor cell of the template holds a copy of the template,
-//             and every other block a solid field of the dominant color.
-//   $Invert — each block swaps state: a solid block becomes a copy of the
-//             template, and a template copy a solid field of the template's
-//             other color.
-//
-// On every pair the input is solid exactly at the template's minor cells,
-// so its arrangement is the template itself and the two models agree. They
-// diverge on an arrangement that is not the template.
+// keywords: decompose scale repair stamp
+// input: Separator lines cut the grid into a square arrangement of square
+//  blocks, as many blocks along an axis as cells along a block.
+// output: Each block is either a copy of one two-colored template or a solid
+//  field of one color, and noise has eaten cells of both, separator lines
+//  included. The blocks that still show two colors overlay into the
+//  repaired template.
 
-#include "../lib.dl"
+// what each block becomes
+.type Choice =
+    // the template stamped on itself: a block whose tile position is a minor
+    // cell of the template holds a copy of the template, and every other block
+    // a solid field of the dominant color
+    Expand {}
+    // each block swaps state: a solid block becomes a copy of the template, and
+    // a template copy a solid field of the template's other color
+  | Invert {}
 
-.type Choice = Expand {} | Invert {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl sep(col: Color) sep(0).
@@ -69,11 +66,13 @@ block_color.item(P_tile, Col) :- cell(P_tile, _, Col).
 .decl template(p_intile: Position, col: Color)
 template(P_intile, Col) :- block_color.clash(P_tile), cell(P_tile, P_intile, Col).
 
-.decl out(p: Position, col: Color, ch: Choice)
-
 out(P, Sep, Ch) :-
     impl_choice(Ch), in(P, _),
     !lattice.tile_of($U(), P, _), params.sep(Sep).  // a separator cell
+
+// On every pair here the input is solid exactly at the template's minor
+// cells, so its arrangement is the template itself and the two cases agree.
+// They diverge on an arrangement that is not the template.
 
 // --- $Expand ---
 

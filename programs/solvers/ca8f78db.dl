@@ -1,22 +1,26 @@
 // ca8f78db
-// concept: wallpaper repair lines
-// A wallpaper — all-bg separator rows alternating with one repeating
-// pattern row — corrupted by noise patches; the output restores it.
-//
-//   $Shift  — translation repair, detected: a shift unbroken on clean
-//             cells maps each noise cell to a clean counterpart.
-//   $Period — translation repair, stored: cells a stored period apart
-//             along its axis are equal. Only the vertical period is task
-//             data; the horizontal one varies per pair, so it has no row.
-//   $Rows   — line structure: rows with a clean non-bg cell are pattern
-//             rows and equal each other; the rest are separators, all bg.
+// keywords: wallpaper repair lines
+// input: a wallpaper: all-bg separator rows alternating with one repeating
+//  pattern row
+// output: Noise patches corrupt cells of the wallpaper. Each case restores
+//  the corrupted cells.
 
-#include "../lib.dl"
+// how a corrupted cell's replacement is found
+.type Choice =
+    // translation repair, detected: a shift unbroken on clean cells maps each
+    // noise cell to a clean counterpart
+    Shift {}
+    // translation repair, stored: cells a stored period apart along its axis
+    // are equal. Only the vertical period is task data; the horizontal one
+    // varies per pair, so it has no row.
+  | Period {}
+    // line structure: rows with a clean non-bg cell are pattern rows and equal
+    // each other; the rest are separators, all bg
+  | Rows {}
 
-.type Choice = Shift {} | Period {} | Rows {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl noise(col: Color) noise(0).
 
     // --- $Period ---
@@ -37,8 +41,6 @@ si.cell($U(), P, Col) :- clean(P, Col).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Shift()). impl_choice($Period()). impl_choice($Rows()).
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // Clean cells pass through under every case.
 out(P, Col, Ch) :- impl_choice(Ch), clean(P, Col).

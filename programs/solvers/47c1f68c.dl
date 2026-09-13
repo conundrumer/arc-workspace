@@ -1,25 +1,29 @@
 // 47c1f68c
 // draft
-// concept: decompose symmetry tile-arrangement d4 lookup
-// A full row and a full column of one color cut the grid into four equal
-// quadrants. One quadrant holds a pattern; the other three are blank. The
-// output drops the cutting lines and carries the pattern into all four
-// quadrants, painted in the cutting lines' color.
-//
-// Cases (data-equivalent on this task):
-//   $Complete() — the ink completes under params.sym over the output frame
-//   $Lookup()   — per-tile D4 table over the anchor quadrant's pattern
-//   $Mirror()   — per-axis: the tile on the anchor's side passes through,
-//                 the far side flips
-//   $Unfold()   — reflection tiling: each tile reflects its neighbor across
-//                 the shared boundary, seeded at the anchor tile
+// keywords: decompose symmetry tile-arrangement d4 lookup
+// input: A full row and a full column of one color cut the grid into four
+//  equal quadrants. One quadrant holds a pattern; the other three are
+//  blank.
+// output: The output drops the cutting lines and carries the pattern into
+//  all four quadrants, painted in the cutting lines' color.
 
-#include "../lib.dl"
+// how the pattern in the anchor quadrant is carried into the other
+// quadrants — data-equivalent on this task
+.type Choice =
+    // the ink completes under params.sym over the output frame
+    Complete {}
+    // per-tile D4 table over the anchor quadrant's pattern
+  | Lookup {}
+    // per-axis: the tile on the anchor's side passes through, the far side
+    // flips
+  | Mirror {}
+    // reflection tiling: each tile reflects its neighbor across the shared
+    // boundary, seeded at the anchor tile
+  | Unfold {}
 
-.type Choice = Complete {} | Lookup {} | Mirror {} | Unfold {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
     .decl divisor(n: number) divisor(2).
     .decl gap(g: number) gap(1).
@@ -118,7 +122,6 @@ paint(P_grid_out, $Unfold()) :-
 impl_choice($Complete()). impl_choice($Lookup()).
 impl_choice($Mirror()). impl_choice($Unfold()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_grid_out, Col, Ch) :- paint(P_grid_out, Ch), line_color(Col).
 out(P_grid_out, Col, Ch) :-
     cell(_, _, _, P_grid_out), impl_choice(Ch), !paint(P_grid_out, Ch), params.bg(Col).

@@ -1,26 +1,32 @@
 // 58f5dbd5
 // draft
-// concept: objects crop stamp rank
-// The grid holds solid one-color blocks, laid out with a background border
-// between and around them, beside small keys of scattered cells. A key names
-// the block of its own color, and a key in a color no block carries goes
-// unused. The output shows the blocks in their arrangement, each with its key
-// punched out of it. Choice = [punch, frame] crosses the two hypotheses the
-// pairs leave open:
-//
-//   punch — where the key lands on the block:
-//     $Center()   — the key sits centered in the block.
-//     $Interior() — the key fills the block's interior, the block less its rim.
-//   frame — where the output frame comes from:
-//     $Crop()    — the input, over the block box let out by params.border.
-//     $Arrange() — the blocks laid out at their places, each inside a border
-//                  of that same width.
+// keywords: objects crop stamp rank
+// input: The grid holds solid one-color blocks, laid out with a background
+//  border between and around them, beside small keys of scattered cells. A
+//  key names the block of its own color, and a key in a color no block
+//  carries goes unused.
+// output: The output shows the blocks in their arrangement, each with its
+//  key punched out of it.
 
-#include "../lib.dl"
+// punch — where the key lands on the block
+.type Punch =
+    // the key sits centered in the block
+    Center {}
+    // the key fills the block's interior, the block less its rim
+  | Interior {}
 
-.type Punch  = Center {} | Interior {}
-.type Frame  = Crop {} | Arrange {}
+// frame — where the output frame comes from
+.type Frame =
+    // the input, over the block box let out by params.border
+    Crop {}
+    // the blocks laid out at their places, each inside a border of that same
+    // width
+  | Arrange {}
+
+// [punch, frame] crosses the two hypotheses the pairs leave open
 .type Choice = [punch: Punch, frame: Frame]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // Width of the background border around the blocks.
@@ -124,7 +130,6 @@ arrange_frame.extent($U(), A, N) :-
 
 // --- output ---
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_out, Col, [Pu, Fr]) :-                                    // punched out
     view(P, P_out, Fr), hole(P, Pu), bg_mode.mode($U(), Col).
 out(P_out, Col, [Pu, Fr]) :-                                    // kept

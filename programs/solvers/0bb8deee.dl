@@ -1,19 +1,20 @@
 // 0bb8deee
-// concept: decompose crop move lookup
-// A cross of one full row and one full column, each a single non-bg color,
-// cuts the grid into four unequal quadrants, one shape per quadrant. The
-// output crops each shape to its bounding box and reassembles the crops.
-//
-// $Concat — the crops abut in the quadrants' own arrangement; the output
-// frame follows their sizes.
-// $Place — a stored table seats each quadrant's crop in the output canvas.
+// keywords: decompose crop move lookup
+// output: A cross of one full row and one full column, each a single non-bg
+//  color, cuts the grid into four unequal quadrants, one shape per quadrant.
+//  The output crops each shape to its bounding box and reassembles the crops.
 
-#include "../lib.dl"
+// how the crops are reassembled
+.type Choice =
+    // the crops abut in the quadrants' own arrangement; the output frame
+    // follows their sizes
+    Concat {}
+    // a stored table seats each quadrant's crop in the output canvas
+  | Place {}
 
-.type Choice = Concat {} | Place {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
 
     // --- Place ---
@@ -55,8 +56,6 @@ hull.cell(P_tile, P) :- parse.frame.tile_of($U(), P, P_tile), in(P, Col), !param
 crop_cell(P_tile, P_intile, Col) :-
     parse.frame.tile_of($U(), P, P_tile), in(P, Col),   // quadrant cell
     hull.box(P_tile, B), crop(P, B, P_intile).          // in the shape's box
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- Concat ---
 out(P_grid_out, Col, $Concat()) :-

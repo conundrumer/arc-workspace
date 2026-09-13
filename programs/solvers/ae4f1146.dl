@@ -1,17 +1,17 @@
 // ae4f1146
-// concept: objects crop count rank select
-// Solid blocks sit on bg. The block with the most mark-colored cells is
-// kept, cropped to its bounding box. Two models of a block:
-//
-//   $Object — a 4-adjacency component.
-//   $Window — an all-ink square window of side params.dim.
-//
-// The models coincide here (no blocks touch); they diverge when blocks
-// touch.
+// keywords: objects crop count rank select
+// output: Solid blocks sit on bg. The block with the most mark-colored cells is
+//  kept, cropped to its bounding box. The two models coincide when no blocks
+//  touch, and diverge when blocks touch.
 
-#include "../lib.dl"
+// what structure counts as a block
+.type Choice =
+    // a 4-adjacency component
+    Object {}
+    // an all-ink square window of side params.dim
+  | Window {}
 
-.type Choice = Object {} | Window {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -26,8 +26,6 @@
 }
 
 .init params = Params
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // --- $Object ---
 

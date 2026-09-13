@@ -1,27 +1,35 @@
 // 00dbd492
-// concept: objects enclose lookup count
-// Hollow squares on params.bg, each with a lone cell inside; the empty cells a
-// square holds take on a color the square selects.
-//
-// $Recolor delimits the empty region and colors it from a table, crossing
-// two independent nodes:
-//   region — $Box:     bg cells inside an object's bounding box.
-//            $Enclose: bg cells that cannot reach the grid edge.
-//   key    — $Size:    the region's extent.
-//            $Count:   the region's cell count.
-// $Replace makes the whole object the key: its cell set selects a stored
-// patch, which overwrites the object's window.
+// keywords: objects enclose lookup count
+// input: hollow squares on params.bg, each holding a lone cell inside
+// output: Each square selects fill data from a table; the output writes
+//  it over the square's empty region or its whole window.
 
-#include "../lib.dl"
+// how the empty region is delimited
+.type Region =
+    // bg cells inside the object's bounding box
+    Box {}
+    // bg cells that cannot reach the grid edge
+  | Enclose {}
 
-.type Region = Box {} | Enclose {}
-.type Key    = Size {} | Count {}
-.type Choice = Recolor {r: Region, k: Key} | Replace {}
+// how the region's size is measured
+.type Key =
+    // the region's extent
+    Size {}
+    // the region's cell count
+  | Count {}
+
+// how the fill is found
+.type Choice =
+    // delimits the empty region and colors it from a table, by region and key
+    Recolor {r: Region, k: Key}
+    // the whole object's pattern selects a patch that overwrites its window
+  | Replace {}
 
 .type RegionKey = [r: Region, id: Ident]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
 
     // --- $Size ---
@@ -173,7 +181,6 @@ impl_choice($Recolor($Enclose(), $Size())).
 impl_choice($Recolor($Enclose(), $Count())).
 impl_choice($Replace()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- painted(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, _, Ch).
 

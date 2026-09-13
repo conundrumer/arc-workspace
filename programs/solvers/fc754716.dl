@@ -1,9 +1,9 @@
 // fc754716
-// concept: border
-// A single non-bg dot. The output paints the grid border with the dot's
-// color; every other cell is bg.
+// keywords: border
+// output: A single non-bg dot. The output paints the grid border with the dot's
+//  color; every other cell is bg.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -17,6 +17,5 @@ ink(Col) :- in(_, Col), !params.bg(Col).
 .decl is_border(p: Position)
 is_border(P) :- in(P, _), dir_elem(D), dist(P, D, 0).   // on any edge
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- is_border(P), ink(Col).
 out(P, Col) :- in(P, _), interior(P, ZERO), params.bg(Col).

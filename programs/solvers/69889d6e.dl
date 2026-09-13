@@ -1,30 +1,32 @@
 // 69889d6e
 // draft
-// concept: markers walk
-// A lone walker cell on an empty grid, with a few obstacle cells. The
-// walker climbs a staircase toward params.corner: it alternates one step
-// along each of the corner's two directions, starting on params.first_axis,
-// and paints its color on every cell it enters. When the cell ahead is
-// blocked, it turns in place: it takes the other direction next, without a
-// move, so the alternation shifts by one step. The walk ends at the grid
-// edge. The cases differ on what blocks:
-//
-//   $Wall  — only the wall color blocks; other ink is walked over.
-//   $Solid — any ink blocks.
+// keywords: markers walk
+// input: the walker cell, and the cells that block it
+// output: the walker climbs a staircase toward params.corner: it alternates one
+//  step along each of the corner's two directions, starting on
+//  params.first_axis, and paints its color on every cell it enters. When the
+//  cell ahead is blocked, it turns in place, taking the other direction next
+//  without a move. The walk ends at the grid edge.
 
-#include "../lib.dl"
+// what blocks the walker
+.type Choice =
+    // only the wall color blocks; other ink is walked over
+    Wall {}
+    // any ink blocks
+  | Solid {}
 
-.type Choice = Wall {} | Solid {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
-    .decl bg(c: Color) bg(0).
     .decl walker(c: Color) walker(2).
     .decl corner(d: DiagDir) corner(DIAG_TR).
     .decl first_axis(a: Axis) first_axis(AXIS_V).
 
     // --- Wall ---
     .decl wall(c: Color) wall(1).
+
+    // --- Solid ---
+    .decl bg(c: Color) bg(0).
 }
 
 .init params = Params
@@ -50,6 +52,5 @@ walk(Ch, P2, D2) :-
     ; blocked(Ch, Q), P2 = P                       // blocked: turn in place
     ).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- walk(Ch, P, _), params.walker(Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !walk(Ch, P, _).

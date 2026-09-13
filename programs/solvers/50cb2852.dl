@@ -1,16 +1,17 @@
 // 50cb2852
-// concept: objects border
-// Solid one-color rectangles on params.bg; each keeps its outline and repaints
-// its interior to params.fill.
-//
-// Two models pick the interior:
-//   $Box   — cells strictly inside a component's bounding box.
-//   $Erode — ink cells whose four neighbors are all ink; off-grid is
-//            non-ink.
+// keywords: objects border
+// input: solid one-color rectangles on params.bg
+// output: Each rectangle keeps its outline and repaints its interior to
+//  params.fill.
 
-#include "../lib.dl"
+// how the interior is picked
+.type Choice =
+    // cells strictly inside a component's bounding box
+    Box {}
+    // ink cells whose four neighbors are all ink; off-grid is non-ink
+  | Erode {}
 
-.type Choice = Box {} | Erode {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -46,6 +47,5 @@ inner_cell(P, $Erode()) :- ink(P), !exposed.rim($U(), P).
 .decl impl_choice(ch: Choice)
 impl_choice($Box()). impl_choice($Erode()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- inner_cell(P, Ch), params.fill(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !inner_cell(P, Ch).

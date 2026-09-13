@@ -1,16 +1,16 @@
 // 195c6913
 // draft
-// concept: markers objects walk rank
-// Two color fields split the grid, a wall and a corridor. Swatches sit on
-// the wall as a legend: those lined up with one another spell a repeating
-// color pattern, and the one standing off that line gives the stop color.
-// Each lone legend cell seeds a walk from its frame edge into the corridor.
-// The walk alternates two headings, each run going as far as the corridor
-// allows and painting the pattern one cell per step. A run that moved and
-// then met the wall marks that wall cell with the stop color; a run that
-// leaves the frame just ends. The swatches are erased to the wall.
+// keywords: markers objects walk rank
+// input: Two color fields split the grid, a wall and a corridor. Swatches sit
+//  on the wall as a legend: those lined up with one another spell a repeating
+//  color pattern, and the one standing off that line gives the stop color.
+// output: Each lone legend cell seeds a walk from its frame edge into the
+//  corridor. The walk alternates two headings, each run going as far as the
+//  corridor allows and painting the pattern one cell per step. A run that
+//  moved and then met the wall marks that wall cell with the stop color; a
+//  run that leaves the frame just ends. The swatches are erased to the wall.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     // The strip is read toward this direction, and lies along its axis.
@@ -119,7 +119,6 @@ phase(Q, K2) :- phase(P, K), step(P, _, Q), cycle.succ($U(), K, K2).
 
 // --- output ---
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- phase(P, K), pattern(K, Col).           // the painted walk
 out(P, Col) :- stop(P), swatch_col(Id, Col), !on_strip(Id).  // the stop marks
 out(P, Col) :- swatch_cell(P), wall(Col).              // the erased swatches

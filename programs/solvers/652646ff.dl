@@ -1,19 +1,27 @@
 // 652646ff
 // draft
-// concept: lookup occlude rank
-// Diamonds of one shape, each in its own color, are drawn over one another on
-// a plain ground, and stray cells of further colors litter the grid. A
-// diamond that lies behind another shows with the covered cells missing.
-// The output redraws every diamond whole, one per tile, stacked from the
-// front of the pile.
-//
-// What shows of a diamond is a piece of it, so a color's diamond is the
-// placement of params.shape that its cells occur in, and a color whose cells
-// lie too far apart for any placement is litter. Where two diamonds meet, the
-// color that shows is the one in front, and that order, closed transitively,
-// ranks the tiles.
+// keywords: lookup occlude rank
+// input: figures of one shape, each in its own color, drawn over one
+//  another on a plain ground, with stray cells of further colors littering
+//  the grid
+// output: one tile per figure, each figure redrawn whole, stacked from the
+//  front of the pile.
+//  A figure that lies behind another shows with its covered cells missing,
+//  so a color's figure is the placement of params.shape that its cells occur
+//  in, and a color whose cells fit no placement is litter. The cells two
+//  figures share say which of them is in front, and that order, closed
+//  transitively, ranks the tiles.
 
-#include "../lib.dl"
+// what the shared cells say about which figure is in front
+.type Choice =
+    // A covered cell never shows, so one shared cell showing a color puts that
+    // color in front. Shared cells showing both colors are no pile.
+    Existence {}
+    // The color that shows on more of the shared cells is in front. Shared
+    // cells showing both colors still rank the two colors.
+  | Majority {}
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // The figure a color draws, in a frame of its own.
@@ -32,6 +40,9 @@
 
 .init params = Params
 
+.decl impl_choice(ch: Choice)
+impl_choice($Existence()). impl_choice($Majority()).
+
 .init bg_mode = Mode<Unit, Color, Position>
 bg_mode.item($U(), Col, P) :- in(P, Col).
 
@@ -44,8 +55,9 @@ bg(Col) :- bg_mode.mode($U(), Col).
 .decl ink(col: Color)
 ink(Col) :- in(_, Col), !bg(Col).
 
-// A color's cells occur in the figure: the cells take the shape role and the
-// whole figure the cell role, so a placement is read in the figure's frame.
+// A color's cells occur in the figure: those cells take the shape role and
+// the whole figure the cell role, so a placement carries the grid into the
+// figure's frame.
 .init occ = Occurrences<Color, Unit>
 occ.cell(Col, P_intile, $U()) :- ink(Col), params.shape(P_intile).  // the whole figure
 occ.shape(Col, P_grid, $U()) :- ink(Col), in(P_grid, Col).          // what shows of it
@@ -53,26 +65,26 @@ occ.shape(Col, P_grid, $U()) :- ink(Col), in(P_grid, Col).          // what show
 // The whole figure a color draws, covered cells included.
 .decl drawn(col: Color, p: Position)
 drawn(Col, P_grid) :-
-    occ.occurrence(Col, P_place), relative(P_place, ZERO, B),  // the figure's frame at that placement
-    params.shape(P_intile), compose(B, P_intile, P_grid).
+    occ.occurrence(Col, P_place), params.shape(P_intile),
+    relative(P_place, P_intile, P_grid).   // the figure cell back in the grid
 
 // --- pile ---
 
-// Where two figures meet, the color that shows is the one in front.
-.decl front(col: Color, col2: Color)
-front(Col, Col2) :-
-    drawn(Col, P_grid), drawn(Col2, P_grid), Col != Col2,   // a cell of both figures
-    in(P_grid, Col).                                        // Col is the one showing
-front(Col, Col2) :- front(Col, Mid), front(Mid, Col2).
+// A cell two figures both cover, so one of them hides the other there.
+.decl shared(col: Color, col2: Color, p: Position)
+shared(Col, Col2, P_grid) :- drawn(Col, P_grid), drawn(Col2, P_grid), Col != Col2.
 
-.init stack = Order<Unit, Color>
-stack.elem($U(), Col) :- drawn(Col, _).
-stack.before($U(), Col, Col2) :- front(Col, Col2).
+.decl front(col: Color, col2: Color, ch: Choice)
+front(Col, Col2, Ch) :- front(Col, Mid, Ch), front(Mid, Col2, Ch).   // the pile is an order
+
+.init stack = Order<Choice, Color>
+stack.elem(Ch, Col) :- drawn(Col, _), impl_choice(Ch).
+stack.before(Ch, Col, Col2) :- front(Col, Col2, Ch).
 
 // The figure's tile, at its rank from the edge the stack runs from.
-.decl tile(col: Color, p_tile: Position)
-tile(Col, P_tile) :-
-    stack.rank($U(), Col, R), stack.rank_desc($U(), Col, R2),
+.decl tile(col: Color, p_tile: Position, ch: Choice)
+tile(Col, P_tile, Ch) :-
+    stack.rank(Ch, Col, R), stack.rank_desc(Ch, Col, R2),
     params.stack_dir(D), axis_inset(D, R, R2, P_tile).
 
 // The tile's own frame, read off the shape's.
@@ -80,13 +92,28 @@ tile(Col, P_tile) :-
 tile_frame.extent($U(), A, N) :-
     axis_elem(A), params.shape(P_intile), axis_dim(P_intile, A, N).
 
-.decl out(p: Position, col: Color)
-out(P_grid, Col) :-
-    tile(Col_fig, P_tile), tile_frame.cell($U(), P_intile),
+out(P_grid, Col, Ch) :-
+    tile(Col_fig, P_tile, Ch), tile_frame.cell($U(), P_intile),
     params.stack_dir(D), axis_of(D, A), concat_slab(P_tile, P_intile, A, 0, P_grid),
     ( params.shape(P_intile), Col = Col_fig   // the figure, redrawn whole
     ; !params.shape(P_intile), bg(Col)        // its ground
     ).
+
+// --- Existence ---
+
+front(Col, Col2, $Existence()) :- shared(Col, Col2, P_grid), in(P_grid, Col).  // Col shows there
+
+// --- Majority ---
+
+// The two figures of a shared cell, as the key of the count.
+.type Pair = [col: Color, col2: Color]
+
+// How far the first color outshows the second on the cells they share.
+.init lead = Excess<Pair, Position>
+lead.plus([Col, Col2], P_grid) :- shared(Col, Col2, P_grid), in(P_grid, Col).
+lead.minus([Col, Col2], P_grid) :- shared(Col, Col2, P_grid), in(P_grid, Col2).
+
+front(Col, Col2, $Majority()) :- lead.excess([Col, Col2], _).
 
 .comp Determine {
     // One figure of one example, keyed by the color that draws it.

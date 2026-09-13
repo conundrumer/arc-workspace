@@ -1,24 +1,24 @@
 // 2faf500b
 // draft
-// concept: objects markers decompose move
-// Shapes lie on a bg field. Each shape carries marks that cut it: on one of
-// the two axes, every line of the shape holds a mark. The shape comes apart
-// at that cut — each part steps one cell outward along the axis — and the
-// marks are dropped. Two parses of where the cut runs, tagged on out's
-// Choice:
-//
-//   $Marks()   — line by line, at that line's own mark.
-//   $Midline() — straight across the middle of the shape.
-//
-// Every shape here is twice as long on the cut axis as across it, and every
-// mark sits on one of its line's two middle cells, so the parses agree.
+// keywords: objects markers decompose move
+// input: shapes lie on a bg field. Each shape carries marks that cut it: on
+//  one of the two axes, every line of the shape holds a mark.
+// output: the shape comes apart at that cut — each part steps one cell
+//  outward along the axis — and the marks are dropped. Every shape here is
+//  twice as long on the cut axis as across it, and every mark sits on one of
+//  its line's two middle cells, so the parses agree.
 
-#include "../lib.dl"
-
-.type Choice = Marks {} | Midline {}
+// where the cut runs
+.type Choice =
+    // line by line, at that line's own mark
+    Marks {}
+    // straight across the middle of the shape
+  | Midline {}
 
 .decl impl_choice(ch: Choice)
 impl_choice($Marks()). impl_choice($Midline()).
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -73,7 +73,6 @@ moved(Q, Col, $Midline()) :-
     dist_pair(P_inner, D, K, K_far), K < K_far,            // the cell lies in the half toward D
     neighbor(P, D, Q).                                     // and steps one further
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     in(P, _), impl_choice(Ch),
     ( moved(P, Col, Ch)                 // a cell that landed here

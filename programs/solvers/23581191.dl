@@ -1,14 +1,16 @@
 // 23581191
-// concept: markers cross
-// Each mark paints its full row and column in its color; a cell where
-// crosses meet gets params.cross_color. Cases differ on what counts as a meeting:
-//
-//   $Color() — lines of two distinct colors cover the cell.
-//   $Mark()  — crosses of two distinct marks cover the cell.
+// keywords: markers cross
+// output: Each mark paints its full row and column in its color; a cell
+//  where crosses meet gets params.cross_color.
 
-#include "../lib.dl"
+// what counts as a meeting
+.type Choice =
+    // lines of two distinct colors cover the cell
+    Color {}
+    // crosses of two distinct marks cover the cell
+  | Mark {}
 
-.type Choice = Color {} | Mark {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -41,7 +43,6 @@ collide($Mark(), P) :- cover_mark.clash(P).
 .decl impl_choice(ch: Choice)
 impl_choice($Color()). impl_choice($Mark()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     impl_choice(Ch), in(P, _),
     ( collide(Ch, P), params.cross_color(Col)         // crosses meet

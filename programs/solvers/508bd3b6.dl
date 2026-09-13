@@ -1,19 +1,20 @@
 // 508bd3b6
 // draft
-// concept: markers walk
+// keywords: markers walk
+// input: a diagonal run of marks, which aims a beam along it
+// output: The beam runs along that diagonal in both directions and paints
+//  the empty cells it crosses. It ends at the grid edge or on a colored
+//  cell. A wall turns the beam: when a wall sits beside it toward one
+//  component of its heading, that component inverts.
 
-// A diagonal run of marks aims a beam. The beam runs along that diagonal
-// in both directions and paints the empty cells it crosses. It ends at the
-// grid edge or on a colored cell. A wall turns it: when a wall sits beside
-// the beam toward one component of its heading, that component inverts.
-// The cases differ on which walls turn a beam:
-//
-//   $Surface() — any wall cell.
-//   $Side()    — only a wall covering a whole side of the grid.
+// which walls turn the beam
+.type Choice =
+    // any wall cell
+    Surface {}
+    // only a wall covering a whole side of the grid
+  | Side {}
 
-#include "../lib.dl"
-
-.type Choice = Surface {} | Side {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -81,6 +82,5 @@ beam(Q, D_out, Ch) :-
 .decl painted(p: Position, ch: Choice)
 painted(P, Ch) :- beam(P, _, Ch), in(P, Bg), params.bg(Bg).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- painted(P, Ch), params.paint(Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, Ch).

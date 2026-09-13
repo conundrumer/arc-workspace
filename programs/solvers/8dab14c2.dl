@@ -1,14 +1,14 @@
 // 8dab14c2
 // draft
-// concept: markers cast
-// A shape of one color sits on a background, and its edges carry anomalies.
-// A dent is a one-cell gap in a straight edge. A bump is a shape cell that
-// touches the dent-filled shape on one side only, its root. The clean shape
-// is the shape with its dents filled and its bumps removed. Each anomaly
-// crosses the clean shape along its own line and imprints the far edge: a
-// bump takes the far edge cell, and a dent adds the cell past it.
+// keywords: markers cast
+// output: A shape of one color sits on a background, and its edges carry
+//  anomalies. A dent is a one-cell gap in a straight edge. A bump is a shape
+//  cell that touches the dent-filled shape on one side only, its root. The
+//  clean shape is the shape with its dents filled and its bumps removed. Each
+//  anomaly crosses the clean shape along its own line and imprints the far
+//  edge: a bump takes the far edge cell, and a dent adds the cell past it.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(8).
@@ -62,7 +62,6 @@ added(Q2) :-
     dent(P, D_open), opposite(D_open, D),      // inward from the opening
     cross.rest($U(), P, D, Q), neighbor(Q, D, Q2), in(Q2, _).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, C_in),
     ( taken(P), params.bg(Col)

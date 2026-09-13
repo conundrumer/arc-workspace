@@ -1,15 +1,16 @@
 // 6cbe9eb8
 // draft
-// concept: rank move border
-// The input is a striped background with rectangles drawn over it, one
-// color each: a block, whose box it covers, or else an outline, whose cells
-// all lie on its box's edge lines. The output is the largest rectangle's
-// box, with the rectangles nested by size: each sits at params.corner of
-// the previous one's interior, the inside of an outline's rim or the whole
-// of a block. A smaller rectangle paints over a larger one; the rest of the
-// frame is params.bg.
+// keywords: rank move border
+// input: A striped background holds rectangles, one color each: a block,
+//  whose box it covers, or else an outline, whose cells all lie on its box's
+//  edge lines.
+// output: The output is the largest rectangle's box, with the rectangles
+//  nested by size: each sits at params.corner of the previous one's
+//  interior, the inside of an outline's rim or the whole of a block. A
+//  smaller rectangle paints over a larger one; the rest of the frame is
+//  params.bg.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -86,6 +87,5 @@ paint(Col, P) :-
 .decl covered(col: Color, p: Position)
 covered(Col, P) :- nest.before($U(), Col, Col2), paint(Col2, P).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- paint(Col, P), !covered(Col, P).
 out(P, Col) :- frame.cell($U(), P), !paint(_, P), params.bg(Col).

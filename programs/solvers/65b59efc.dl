@@ -1,15 +1,15 @@
 // 65b59efc
 // draft
-// concept: decompose overlay scale markers stamp mapping
-// Dashed separator lines cut the scene into a lattice of N×N tiles: a band
-// of templates, one per strip, each drawn in its own color; a band of
-// markers; and a legend band with one color under each template. The
-// marker tiles of every strip overlay into one N×N arrangement. The output
-// is that arrangement scaled by N: a marked cell becomes the template
-// drawn in the marker's color, painted in the legend color under that
-// template; an unmarked cell stays bg.
+// keywords: decompose overlay scale markers stamp mapping
+// input: dashed separator lines cut the scene into a lattice of N×N tiles: a
+//  band of templates, one per strip, each drawn in its own color; a band of
+//  markers; and a legend band with one color under each template
+// output: The marker tiles of every strip overlay into one N×N arrangement.
+//  The output is that arrangement scaled by N: a marked cell becomes the
+//  template drawn in the marker's color, painted in the legend color under
+//  that template; an unmarked cell stays bg.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -83,7 +83,6 @@ painted(P_outer, P_inner, Col) :-
     template_cell(P_strip, P_inner, C),             // the template drawn in its color
     legend_cell(P_strip, Col), !params.bg(Col).     // the legend color under that template
 
-.decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
     marker_cell(P_outer, _), template_cell(_, P_inner, _),  // an arrangement cell, a template cell
     concat_2d(P_outer, P_inner, 0, P_grid_out),             // the arrangement scaled by the tile

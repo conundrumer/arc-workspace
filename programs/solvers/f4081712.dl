@@ -1,10 +1,14 @@
 // f4081712
-// family: 67b4a34d
-// shape: latent-canvas
+// representative: 67b4a34d
 
-#include "../lib.dl"
+// which D4 elements the grid is symmetric under
+.type Choice =
+    // every element applies: the grid is fully symmetric
+    Full {}
+    // the group is detected: elements unbroken on clean cells
+  | Detect {}
 
-.type Choice = Full {} | Detect {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .decl mask(col: Color) mask(3).
@@ -22,8 +26,6 @@ bbox.cell($U(), P) :- in(P, Col), params.mask(Col).
 // Each masked cell in the hole's frame, which is the output frame.
 .decl hole(p: Position, p_inner: Position)
 hole(P, P_inner) :- bbox.cell($U(), P), bbox.box($U(), B), crop(P, B, P_inner).
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- $Full ---
 

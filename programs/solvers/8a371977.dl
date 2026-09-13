@@ -1,25 +1,27 @@
 // 8a371977
 // draft
-// concept: decompose objects border enclose
-// Background lines separate a lattice of ink tiles. The tiles on the
-// lattice's outer ring take one color and the tiles inside another; the
-// background stays. Three hypotheses on out's Choice:
-//
-//   $Lattice — the background lines cut the grid into parts, a tile is a
-//              part that holds ink, and the ring is the tiles on the
-//              bounding box of the tile arrangement.
-//   $Blobs   — a tile is a connected component of ink, and the ring is the
-//              tiles that touch the bounding box of all ink.
-//   $Sight   — a tile is a connected component of ink, and the ring is the
-//              tiles with no other tile between them and the grid edge in
-//              some cardinal direction.
+// keywords: decompose objects border enclose
+// input: Ink tiles sit on a background.
+// output: The tiles on the outer ring take one color and the tiles inside
+//  another; the background stays.
+// review principle: docs/wf-solver/open/peer-priors.md
 
-#include "../lib.dl"
+// what a tile is, and how the ring tiles are found
+.type Choice =
+    // the background lines cut the grid into parts, a tile is a part that holds
+    // ink, and the ring is the tiles on the bounding box of the tile
+    // arrangement
+    Lattice {}
+    // a tile is a connected component of ink, and the ring is the tiles that
+    // touch the bounding box of all ink
+  | Blobs {}
+    // a tile is a connected component of ink, and the ring is the tiles with no
+    // other tile between them and the grid edge in some cardinal direction
+  | Sight {}
 
-.type Choice = Lattice {} | Blobs {} | Sight {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(1).
     .decl ring(c: Color) ring(2).
     .decl within(c: Color) within(3).
@@ -33,10 +35,9 @@ ink(P) :- in(P, Col), !params.bg(Col).
 .decl impl_choice(ch: Choice)
 impl_choice($Lattice()). impl_choice($Blobs()). impl_choice($Sight()).
 
-// The cells of the ring tiles, per hypothesis.
+// The cells of the ring tiles.
 .decl ring_cell(p: Position, ch: Choice)
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- in(P, Col), params.bg(Col), impl_choice(Ch).
 out(P, Col, Ch) :- ring_cell(P, Ch), params.ring(Col).
 out(P, Col, Ch) :- ink(P), impl_choice(Ch), !ring_cell(P, Ch), params.within(Col).
@@ -73,8 +74,8 @@ hull.cell($U(), P) :- ink(P).
 
 // P shares a tile with a cell on the hull's edge.
 ring_cell(P, $Blobs()) :-
-    blob.label($U(), P, Id), blob.label($U(), Q, Id),   // P and Q in one tile
-    hull.box($U(), B), box_edge(Q, B, _).               // Q on the hull
+    blob.conn($U(), P, Q),                   // P and Q in one tile
+    hull.box($U(), B), box_edge(Q, B, _).    // Q on the hull
 
 // --- $Sight ---
 

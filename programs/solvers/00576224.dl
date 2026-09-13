@@ -1,20 +1,22 @@
 // 00576224
-// concept: tile-arrangement lookup d4
-// 3×3 tile arrangement of input copies: the outer bands of tiles show the
-// input, the middle band its left-right flip.
-//
-// Cases (data-equivalent on this task):
-//   $Lookup() — per-tile D4 table
-//   $Alt()    — bands alternate plain and flipped, plain at the anchor edge
-//   $Mid()    — the centered band flips, off-center bands pass through
-//
+// keywords: tile-arrangement lookup d4
+// output: 3×3 tile arrangement of input copies: the outer bands of tiles
+//  show the input, the middle band its left-right flip.
+
 // bc4146bd carries the alternating strip as $Lookup + $Unfold; $Unfold
 // (reflection tiling) is defeated here — a vertical stack reflects TB
 // across shared boundaries, but the middle band flips LR.
 
-#include "../lib.dl"
+// three models of the tile arrangement, data-equivalent on this task
+.type Choice =
+    // per-tile D4 table
+    Lookup {}
+    // bands alternate plain and flipped, plain at the anchor edge
+  | Alt {}
+    // the centered band flips, off-center bands pass through
+  | Mid {}
 
-.type Choice = Lookup {} | Alt {} | Mid {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
@@ -41,8 +43,6 @@
 }
 
 .init params = Params
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- Lookup ---
 out(P_grid, Col, $Lookup()) :-

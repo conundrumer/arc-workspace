@@ -1,15 +1,16 @@
 // 891232d6
 // draft
-// concept: markers walk
-// Horizontal wall segments lie on a blank grid, and markers sit on the
-// bottom edge. Each marker starts a walker that climbs until a wall cell
-// lies directly ahead, slides aside under the wall to its end, and climbs
-// on past it. The walk paints its trail, the cell where it turns aside,
-// the struck wall cell, and the corner where it climbs on. Where the walker
-// cannot turn — at the top edge, or where a wall cell cuts the slide off
-// under the wall or just past its end — it halts and paints a marker.
+// keywords: markers walk
+// input: Horizontal wall segments lie on a blank grid, and markers sit on
+//  the bottom edge.
+// output: Each marker starts a walker that climbs until a wall cell lies
+//  directly ahead, slides aside under the wall to its end, and climbs on
+//  past it. The walk paints its trail, the cell where it turns aside, the
+//  struck wall cell, and the corner where it climbs on. Where the walker
+//  cannot turn — at the top edge, or where a wall cell cuts the slide off
+//  under the wall or just past its end — it halts and paints a marker.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl wall(col: Color) wall(7).
@@ -69,7 +70,6 @@ mark(R, Col) :- turned(_, R), params.onward(Col).
 mark(W, Col) :- turned(B, _), params.climb_dir(D), neighbor(B, D, W), params.hit(Col).
 mark(Q, Col) :- climb_leg(_, Q), !turned(Q, _), params.marker(Col).  // the walker halts
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, Col_in),
     ( mark(P, Col)

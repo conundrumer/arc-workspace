@@ -1,16 +1,20 @@
 // 62ab2642
 // draft
-// concept: objects count rank
-// Ink lines cut the grid into blank regions. The region holding the most cells
-// and the region holding the fewest each take their own color, and the rest of
-// the grid passes through.
-// Choice = what joins two blank cells into one region:
-//   $Orth() — cardinal adjacency.
-//   $Diag() — cardinal or diagonal adjacency.
+// keywords: objects count rank
+// input: Ink lines cut the grid into blank regions.
+// output: The region holding the most cells and the region holding the
+//  fewest each take their own color, and the rest of the grid passes
+//  through.
+// review principle: docs/wf-solver/open/peer-priors.md
 
-#include "../lib.dl"
+// what joins two blank cells into one region
+.type Choice =
+    // cardinal adjacency
+    Orth {}
+    // cardinal or diagonal adjacency
+  | Diag {}
 
-.type Choice = Orth {} | Diag {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -65,7 +69,6 @@ parse.region($Diag(), P, Id) :- diag.label($U(), P, Id).
 paint(P, Col, Ch) :- parse.biggest(Ch, P), params.big_paint(Col).
 paint(P, Col, Ch) :- parse.smallest(Ch, P), params.small_paint(Col).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).
 

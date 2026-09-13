@@ -1,11 +1,11 @@
 // 305b1341
 // draft
 // keywords: overlay select parity rank
-// input: a legend sits at the params.legend_corner corner: one line per entry,
-//  a dot color beside the fill color it takes. Away from the legend, each dot
+// input: a legend sits on the params.legend_side edge: each entry is a dot
+//  color beside the fill color it takes. Away from the legend, each dot
 //  color's cells make a panel of evenly spaced dots.
-// output: every panel is drawn grown by one ring, with the fill color around
-//  the dots. Where two panels overlap, the output shows the one on top.
+// output: every panel grows by one ring and is drawn with the fill color
+//  around its dots. Where two panels overlap, the output shows the one on top.
 
 // what a panel holds
 .type Dots =
@@ -33,17 +33,23 @@
 
 .type Choice = [dots: Dots, panel: Panel, stack: Stack]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
     .decl bg(col: Color) bg(0).
 
-    // The legend's corner, and the axis its entries run along.
-    .decl legend_corner(d: DiagDir) legend_corner(DIAG_TL).
-    .decl legend_axis(a: Axis) legend_axis(AXIS_V).
+    // The edge the legend's dot colors sit on.
+    .decl legend_side(d: Dir) legend_side(DIR_L).
 
     // --- $Lattice ---
 
     .decl dot_size(k: number) dot_size(1).
     .decl dot_gap(g: number) dot_gap(1).
+
+    // --- $Legend ---
+
+    // The quarter turn from legend_side to the edge the first entry lies on.
+    .decl legend_sense(s: Sense) legend_sense(SENSE_CW).
 }
 
 .init params = Params
@@ -62,16 +68,11 @@ dots_choice(Ds) :- impl_choice([Ds, _, _]).
 
 // --- the legend ---
 
-// The legend's edges: its entries run from d_run, their dots lie on d_side.
-.decl legend_dirs(d_run: Dir, d_side: Dir)
-legend_dirs(D_run, D_side) :-
-    params.legend_corner(D), params.legend_axis(A), diag_dirs(D, A, D_run, D_side).
-
 // An entry: a dot color on the legend's edge, beside the fill color it takes.
 .decl legend(dot: Color, fill: Color, p_dot: Position, p_fill: Position)
 legend(Dot, Fill, P, Q) :-
-    legend_dirs(_, D_side), in(P, Dot), dist(P, D_side, 0), !params.bg(Dot),  // dot on the legend's edge
-    neighbor(Q, D_side, P), in(Q, Fill), !params.bg(Fill).                    // the fill color beside it
+    params.legend_side(D_side), in(P, Dot), dist(P, D_side, 0), !params.bg(Dot),  // dot on the legend's edge
+    neighbor(Q, D_side, P), in(Q, Fill), !params.bg(Fill).                        // the fill color beside it
 
 // --- the panels ---
 
@@ -84,7 +85,7 @@ panel_cell(Dot, P) :-
 .init bbox = Bbox<Color>
 bbox.cell(Dot, P) :- panel_cell(Dot, P).
 
-// The dot lattice over the box, anchored on it.
+// The dot lattice over the box.
 .decl lattice(dot: Color, p: Position)
 lattice(Dot, P) :-
     in(P, _), bbox.box(Dot, B), crop(P, B, P_inner),  // the cell in the box's frame
@@ -115,9 +116,9 @@ panel(Dot, Q, Ds, Pn) :-
 .decl above(dot: Color, dot2: Color, ch: Choice)
 above(Dot, Dot2, [Ds, Pn, $Legend()]) :-
     impl_choice([Ds, Pn, $Legend()]),
-    legend_dirs(D_run, _),                                      // the legend runs from D_run
-    legend(Dot, _, P, _), legend(Dot2, _, P2, _),               // two entries
-    nearer(D_run, P, P2).                                       // the nearer draws over the farther
+    params.legend_side(D), params.legend_sense(S), turn(S, D, D_run),  // the legend runs from D_run
+    legend(Dot, _, P, _), legend(Dot2, _, P2, _),                      // two entries
+    nearer(D_run, P, P2).                                              // the nearer draws over the farther
 
 above(Dot, Dot2, [Ds, Pn, $Occlusion()]) :-
     impl_choice([Ds, Pn, $Occlusion()]),
@@ -137,10 +138,9 @@ paint(Dot, P, Ink, Ds, Pn) :-
 .decl covered(p: Position, dot: Color, ch: Choice)
 covered(P, Dot, [Ds, Pn, St]) :-
     impl_choice([Ds, Pn, St]),
-    paint(Dot, P, _, Ds, Pn),                                   // Dot paints here
-    paint(Dot2, P, _, Ds, Pn), above(Dot2, Dot, [Ds, Pn, St]).  // and a panel over it does too
+    paint(Dot, P, _, Ds, Pn), paint(Dot2, P, _, Ds, Pn),
+    above(Dot2, Dot, [Ds, Pn, St]).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, [Ds, Pn, St]) :-
     impl_choice([Ds, Pn, St]), in(P, _),
     ( paint(Dot, P, Col, Ds, Pn), !covered(P, Dot, [Ds, Pn, St])  // the top panel here

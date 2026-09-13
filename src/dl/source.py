@@ -545,7 +545,7 @@ def build_determine_source(source: str, params: dict[str, list[str]]) -> str:
 
 KEYWORDS_DOC = REPO_ROOT / "docs" / "wf-solver" / "keywords.md"
 
-KEYWORD_FIELD_RE = re.compile(r"^// (keywords|concept|shape): (.*)$")
+KEYWORD_FIELD_RE = re.compile(r"^// (keywords): (.*)$")
 KEYWORD_BULLET_RE = re.compile(r"^- `([^`]+)`")
 
 
@@ -563,11 +563,9 @@ def doc_keywords(text: str) -> dict[str, list[str]]:
 
 
 def header_keywords(source: str) -> list[str]:
-    """The keywords of a solver's `// keywords:` line. The retired
-    `concept:` and `shape:` fields are read the same way, and a header that
-    carries both gives the keywords of both. A field's second line is not
-    read. The header is the leading comment block, so the first line that
-    is not a comment ends it."""
+    """The keywords of a solver's `// keywords:` line. A field's second
+    line is not read. The header is the leading comment block, so the first
+    line that is not a comment ends it."""
     fields: dict[str, list[str]] = {}
     for line in source.splitlines():
         if not line.strip().startswith("//"):

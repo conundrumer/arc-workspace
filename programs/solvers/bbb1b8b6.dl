@@ -1,28 +1,31 @@
 // bbb1b8b6
-// concept: overlay decompose
-// A separator splits the grid into a base tile and a piece tile, each a
-// shape over bg. If the piece fits the base's bg holes, the output is the
-// base with the piece painted in; otherwise the base unchanged.
-//
-// out's choice column = [cr, d]:
-//
-//   cr (fit criterion, data-equivalent here — every train piece is an exact
-//   complement or collides):
-//     $Exact() — piece == holes
-//     $Fit()   — collision-free: piece ⊆ holes
-//
-//   d (split):
-//     $Count() — by tile count
-//     $Size()  — by tile size
+// keywords: overlay decompose
+// input: A separator splits the grid into a base tile and a piece tile, each a
+//  shape over bg.
+// output: If the piece fits the base's bg holes, the output is the base with
+//  the piece painted in; otherwise the base unchanged.
 
-#include "../lib.dl"
+// the fit criterion; data-equivalent here — every train piece is an exact
+// complement or collides
+.type Criterion =
+    // piece == holes
+    Exact {}
+    // collision-free: piece ⊆ holes
+  | Fit {}
 
-.type Criterion = Exact {} | Fit {}
-.type DecChoice = Count {} | Size {}
+// how the separator cuts the grid into the base and piece tiles
+.type DecChoice =
+    // by tile count
+    Count {}
+    // by tile size
+  | Size {}
+
+// the fit criterion and the tile split
 .type Choice    = [cr: Criterion, d: DecChoice]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl base_dir(d: Dir) base_dir(DIR_L).   // edge the base tile sits toward
     .decl gap(g: number) gap(1).            // separator width
@@ -76,7 +79,6 @@ unfit([Cr, Dc]) :- impl_choice([Cr, Dc]), piece(P, _, Dc), !hole(P, Dc).
 // --- Exact ---
 unfit([$Exact(), Dc]) :- dec_choice(Dc), hole(P, Dc), !piece(P, _, Dc).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, [Cr, Dc]) :-
     impl_choice([Cr, Dc]), !unfit([Cr, Dc]),    // the piece fits
     ( piece(P, Col, Dc)                         // the piece itself

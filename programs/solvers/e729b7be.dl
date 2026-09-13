@@ -1,18 +1,20 @@
 // e729b7be
-// concept: symmetry markers repair d4
-//
-// A full-height line, interrupted by a marker where the marker row
-// crosses it; markers also end that row at both edges. The shape beside
-// the line reappears half-turned on the far side. $Sym completes the
-// grid's half-turn symmetry about the frame center; $Marker completes
-// it about the marked crossing.
+// keywords: symmetry markers repair d4
+// input: a full-height line of params.line; a params.marker sits on it, and
+//  another at each end of that marker's row; a shape sits beside the line
+// output: each background cell takes the color of its half-turn counterpart,
+//  so the shape reappears on the far side of the line
 
-#include "../lib.dl"
+// which center the half turn is about
+.type Choice =
+    // the frame center
+    Sym {}
+    // the marked crossing
+  | Marker {}
 
-.type Choice = Sym {} | Marker {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(7).
 
     // --- Sym ---
@@ -23,7 +25,7 @@
     // --- Marker ---
     .decl line(c: Color) line(4).
     .decl marker(c: Color) marker(8).
-    // The transform completing the grid about the crossing.
+    // The transform taken about the crossing.
     .decl transform(d: D4) transform(D4_HT).
 }
 
@@ -32,29 +34,26 @@
 .decl impl_choice(ch: Choice)
 impl_choice($Sym()). impl_choice($Marker()).
 
-// Each cell's counterpart value, per case; painted onto bg cells.
+// The color of each cell's counterpart, per case.
 .decl image(p: Position, col: Color, ch: Choice)
 
 // --- Sym ---
-image(P, Col, $Sym()) :-
-    in(P2, Col), !params.bg(Col),         // ink cell
-    params.sym(D), apply(D, P2, P).       // its symmetric counterpart
+image(P2, Col, $Sym()) :-
+    in(P, Col), !params.bg(Col),         // ink cell
+    params.sym(D), apply(D, P, P2).      // its symmetric counterpart
 
 // --- Marker ---
-// The crossing: the marker colinear with a line cell — the line is
-// interrupted only there, so edge markers align with no line cell.
-.decl center(p: Position)
-center(C) :-
-    in(C, Colm), params.marker(Colm),      // a marker
-    in(Q, Coll), params.line(Coll),        // a line cell
-    axis_elem(A), same_line(A, C, Q).
+// The crossing: the marker with line cells on both sides of it.
+.init crossing = Between<Unit>
+crossing.axis($U(), A) :- axis_elem(A).
+crossing.cell($U(), P) :- in(P, Col), params.marker(Col).
+crossing.mark($U(), P) :- in(P, Col), params.line(Col).
 
 image(P2, Col, $Marker()) :-
-    in(P, Col), center(C), relative(C, P, V),   // a cell's offset from the crossing
+    in(P, Col), crossing.between($U(), C), relative(C, P, V),  // a cell's offset from the crossing
     params.transform(D), apply(D, V, V2),
-    compose(C, V2, P2).                         // seated back at the crossing
+    compose(C, V2, P2).                                        // seated back at the crossing
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col_out, Ch) :-
     impl_choice(Ch), in(P, Col),
     ( !params.bg(Col), Col_out = Col                     // non-bg — kept
@@ -67,7 +66,7 @@ out(P, Col_out, Ch) :-
     d4m.src(E, P, Col) :- ex_out(E, P, Col).
     d4m.dst(E, P, Col) :- ex_out(E, P, Col).
 
-    // The stabilizer: what every train output is invariant under.
+    // What every train output is invariant under.
     .decl sym(d: D4)
     sym(D) :- d4_elem(D), !d4m.mismatch(_, D).
 }

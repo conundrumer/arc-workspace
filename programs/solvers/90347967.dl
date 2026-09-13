@@ -1,10 +1,11 @@
 // 90347967
-// concept: markers d4
-// The grid re-seats transformed by params.transform about its params.marker cell;
-// uncovered cells are bg. Seating the grid equals seating the ink object:
-// transforms are injective, so bg images land clear of the object's.
+// keywords: markers d4
+// output: The grid re-seats transformed by params.transform about its
+//  params.marker cell; uncovered cells are bg. Seating the grid equals seating
+//  the ink object: transforms are injective, so bg images land clear of the
+//  object's.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -21,7 +22,6 @@ moved(P_out, Col) :-
     params.transform(D), apply(D, V, V2),
     compose(M, V2, P_out).                       // seated back at the marker
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, _),                               // grid cell
     ( moved(P, Col)                         // content lands here

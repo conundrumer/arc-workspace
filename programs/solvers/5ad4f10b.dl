@@ -1,24 +1,27 @@
 // 5ad4f10b
 // draft
-// concept: crop scale select
-// Two colors sit on bg. One is drawn thick, in blocks at least two cells
-// across: it is the figure, and it draws a picture at a fat-pixel scale.
-// The other is never drawn thick: it is the speck color, scattered over the
-// grid. The output is the figure's picture at unit scale, painted in the
-// speck color. The choice is how wide that picture is:
-//
-//   $Extent — the picture is params.dim pixels across, so the pixel size
-//             follows from the box the figure occupies.
-//   $Pixels — the pixels are as large as the figure's own content allows,
-//             so the picture's extent follows from that size.
+// keywords: crop scale select
+// input: Two colors sit on bg. One is drawn thick, in blocks at least two
+//  cells across: it is the figure, and it draws a picture at a fat-pixel
+//  scale. The other is never drawn thick: it is the speck color, scattered
+//  over the grid.
+// output: The output is the figure's picture at unit scale, painted in the
+//  speck color.
 
-#include "../lib.dl"
-
-.type Choice = Extent {} | Pixels {}
+// how wide the picture is
+.type Choice =
+    // the picture is params.dim pixels across, so the pixel size follows from
+    // the box the figure occupies
+    Extent {}
+    // the pixels are as large as the figure's own content allows, so the
+    // picture's extent follows from that size
+  | Pixels {}
 
 // A run of the drawing: the cells of one block of a candidate pixel size,
 // on one line of the axis that size is measured on.
 .type Run = [a: Axis, s: number, p_outer: Position, p_across: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -66,7 +69,6 @@ filled(P_tile, Ch) :-
     pixel(P_inner, P_tile, Ch),          // a cell of the pixel
     drawing(P_inner, Col), figure(Col).  // holding figure, not blank
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_tile, Col, Ch) :-
     pixel(_, P_tile, Ch),
     ( filled(P_tile, Ch), speck(Col)        // a drawn pixel

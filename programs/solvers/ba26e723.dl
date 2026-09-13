@@ -1,11 +1,11 @@
 // ba26e723
 // draft
-// concept: lines mapping
-// Cells whose color is a params.mapping key are recolored to the mapped color,
-// but only at positions where (dist from params.anchor) mod params.period equals
-// params.phase. Other cells pass through.
+// keywords: lines mapping
+// output: Cells whose color is a params.mapping key are recolored to the mapped
+//  color, but only at positions where (dist from params.anchor) mod
+//  params.period equals params.phase. Other cells pass through.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl anchor(d: Dir) anchor(DIR_L).
@@ -27,6 +27,5 @@ on_stride(P) :-
 .decl recolored(p: Position)
 recolored(P) :- in(P, Col), params.mapping(Col, _), on_stride(P).
 
-.decl out(p: Position, col: Color)
 out(P, Col_out) :- in(P, Col_in), params.mapping(Col_in, Col_out), on_stride(P).
 out(P, Col)     :- in(P, Col), !recolored(P).

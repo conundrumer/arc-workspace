@@ -1,21 +1,24 @@
 // 13e47133
-// concept: objects markers walk cast
-// Wall lines cut the grid into regions. Depth runs inward from a region's
-// boundary: each marker cell colors its own depth, an unmarked depth takes
-// the background, and that palette — depth 0 through the deepest marked
-// depth — repeats over the deeper cells. The cases differ on the depth
-// metric: $Peel peels (ring 0 is the cells the boundary touches, and each
-// next ring is what peeling the previous one exposes); $Sight casts (a
-// cell's depth is the fewest cells between it and the outside along a
-// straight ray, over the eight directions). Every wall here is a straight
-// run, which makes the two metrics agree on every pair; a lone wall cell
-// would split them.
+// keywords: objects markers walk cast
+// input: Wall lines cut the grid into regions.
+// output: Depth runs inward from a region's boundary: each marker cell
+//  colors its own depth, an unmarked depth takes the background, and that
+//  palette — depth 0 through the deepest marked depth — repeats over the
+//  deeper cells. Every wall here is a straight run, which makes the two
+//  depth metrics agree on every pair; a lone wall cell would split them.
+
+// the depth metric a region uses
+.type Choice =
+    // ring 0 is the cells the boundary touches, and each next ring is what
+    // peeling the previous one exposes
+    Peel {}
+    // a cell's depth is the fewest cells between it and the outside along a
+    // straight ray, over the eight directions
+  | Sight {}
+
+.decl out(p: Position, col: Color, c: Choice)
+
 // No task data — the family is fully structural.
-
-#include "../lib.dl"
-
-.type Choice = Peel {} | Sight {}
-
 .comp Params {}
 
 .init params = Params
@@ -87,8 +90,6 @@ mark(Id, K, Col, C) :-
 .type IdC = [id: Ident, c: Choice]
 .init pal_len = Tally<IdC, number>
 pal_len.item([Id, C], K) :- region(P, Id), depth(P, K, C), mark(Id, K_mark, _, C), K <= K_mark.
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // The walls keep their color.
 out(P, Col, C) :- in(P, Col), wall(Col), impl_choice(C).

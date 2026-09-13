@@ -1,26 +1,32 @@
 // 48634b99
 // draft
-// concept: objects markers count rank scale
-// Bars of params.bar on params.bg, one cell wide, lying along params.axis. One bar is a
-// gauge: a run of params.mark fills it from one end. The output clears the gauge
-// and fills another bar from the same end. Choice = [t, f] crosses the two
-// hypotheses the pairs leave open:
-//
-//   t (which bar the gauge moves to):
-//     $Step() — the bar longer than the gauge by params.step.
-//     $Next() — the shortest bar longer than the gauge.
-//   f (how far the fill reaches):
-//     $Grow() — the gauge's filled run, one cell longer.
-//     $Half() — the half of the bar at the gauge's end.
+// keywords: objects markers count rank scale
+// input: bars of params.bar on params.bg, one cell wide, lying along
+//  params.axis. One bar is a gauge: a run of params.mark fills it from one
+//  end.
+// output: the output clears the gauge and fills another bar from the same
+//  end.
 
-#include "../lib.dl"
+// which bar the gauge moves to
+.type Target =
+    // the bar longer than the gauge by params.step
+    Step {}
+    // the shortest bar longer than the gauge
+  | Next {}
 
-.type Target = Step {} | Next {}
-.type Fill = Grow {} | Half {}
+// how far the fill reaches
+.type Fill =
+    // the gauge's filled run, one cell longer
+    Grow {}
+    // the half of the bar at the gauge's end
+  | Half {}
+
+// which bar the gauge moves to, crossed with how far the fill reaches
 .type Choice = [t: Target, f: Fill]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(7).
     .decl bar(col: Color) bar(8).
     .decl mark(col: Color) mark(9).
@@ -115,7 +121,6 @@ filled(P, [T, $Half()]) :-
 
 // --- output ---
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- filled(P, Ch), params.mark(Col).
 out(P, Col, [T, F]) :-
     in(P, _), target_choice(T), fill_choice(F),

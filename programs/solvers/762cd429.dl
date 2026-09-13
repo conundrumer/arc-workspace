@@ -1,31 +1,31 @@
 // 762cd429
 // draft
-// concept: scale walk
-// A 2-by-2 seed sits against the left edge. Copies of the seed extend from it
-// to the right, each copy twice the size of the previous one and adjacent to
-// it. The line where the seed's two rows meet stays fixed: the top row's
-// copies grow upward, the bottom row's downward. Copies past the grid are cut
-// off.
-//
-// A cell past the seed is the image of the cell whose scaled block covers it:
-// on each side, the seed's back corner cell scales onto the cell just past
-// the seed's front corner. Two models of the growth direction:
-//
-//   $Stored — the direction is task data.
-//   $Away   — the seed touches one grid edge and grows away from it.
-//
-// Coincide here: the seed touches the left edge and grows right.
+// keywords: scale walk
+// input: A 2-by-2 seed sits against one edge of the grid.
+// output: Copies of the seed extend away from that edge, each copy twice the
+//  size of the previous one and adjacent to it. The line where the seed's two
+//  rows meet stays fixed: each side of the seed grows to its own side of that
+//  line. Copies past the grid are cut off.
+//  A cell past the seed is the image of the cell whose scaled block covers it:
+//  on each side, the seed's back corner cell scales onto the cell just past the
+//  seed's front corner.
 
-#include "../lib.dl"
+// how the growth direction is read
+.type Choice =
+    // the direction is task data
+    Stored {}
+    // the seed touches one grid edge and grows away from it
+  | Away {}
 
-.type Choice = Stored {} | Away {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl factor(f: number) factor(2).
 
     // --- $Stored ---
+    // Coincides with $Away on this task: the seed touches the left edge and
+    // grows right.
     .decl grow(d: Dir) grow(DIR_R).
 }
 
@@ -76,7 +76,6 @@ source(Q, P, Ch) :-
 copy(P, Col, Ch) :- seed.cell($U(), P), in(P, Col), impl_choice(Ch).
 copy(Q, Col, Ch) :- source(Q, P, Ch), copy(P, Col, Ch).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     in(P, _), impl_choice(Ch),
     ( copy(P, Col, Ch)                    // seed or copy cell

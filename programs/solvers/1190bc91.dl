@@ -1,18 +1,21 @@
 // 1190bc91
-// concept: objects markers cast
-// The input holds one color sequence — a line running from a free end (the
-// anchor) to the grid edge — and short marker runs. Every sequence cell casts
-// its four diagonals in its own color; a ray stops at the first cell a nearer
-// sequence cell already lit, and where rays overlap the nearer cell wins.
-// What the rays leave unlit takes a marker color:
-//
-//   $Sector — the anchor's own diagonals cut the grid into four sectors, and
-//             a marker colors the sector it sits in.
-//   $Flood  — a marker's color spreads through the unlit cells around it.
+// keywords: objects markers cast
+// input: the input holds one color sequence — a line running from a free end
+//  (the anchor) to the grid edge — and short marker runs.
+// output: every sequence cell casts its four diagonals in its own color; a
+//  ray stops at the first cell a nearer sequence cell already lit, and where
+//  rays overlap, the nearer cell wins. what the rays leave unlit takes a
+//  marker color:
 
-#include "../lib.dl"
+// how the unlit cells take a marker color
+.type Choice =
+    // the anchor's own diagonals cut the grid into four sectors, and a marker
+    // colors the sector it sits in
+    Sector {}
+    // a marker's color spreads through the unlit cells around it
+  | Flood {}
 
-.type Choice = Sector {} | Flood {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -92,7 +95,6 @@ area.node($Flood(), P) :- in(P, _), !paint(P, _).
 .decl fill(ch: Choice, id: Ident, col: Color)
 fill(Ch, Id, Col) :- marker(P, Col), area.label(Ch, P, Id).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     impl_choice(Ch), paint(P, K),        // a lit cell, in the color of
     seq_idx(P_seq, K), in(P_seq, Col).   // the sequence cell that lit it

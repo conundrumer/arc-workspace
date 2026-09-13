@@ -1,15 +1,16 @@
 // 58c02a16
 // draft
-// concept: wallpaper scale stamp
-// A pattern block sits in a corner of the input, closed off by two
-// separator lines; the rest of the input is blank. The output repeats the
-// pattern against itself at two scales. A cell is inked when its place
-// inside its block is an inked pattern cell. It takes the pattern's own
-// color when its block's place among the blocks is an inked pattern cell,
-// and the separator color when that place is blank. Both places wrap, so
-// the layout stays periodic where the grid holds no whole number of blocks.
+// keywords: wallpaper scale stamp
+// input: A pattern block sits in a corner of the input, closed off by two
+//  separator lines; the rest of the input is blank.
+// output: The output repeats the pattern against itself at two scales. A cell
+//  is inked when its place inside its block is an inked pattern cell. It
+//  takes the pattern's own color when its block's place among the blocks is
+//  an inked pattern cell, and the separator color when that place is blank.
+//  Both places wrap, so the layout stays periodic where the grid holds no
+//  whole number of blocks.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(7).
@@ -62,7 +63,6 @@ block_ink(P_coarse, Col) :-
     ; params.bg(C), sep(Col)   // blank: the separator color
     ).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     phase(P, P_fine, P_coarse), in(P_fine, C),
     ( params.bg(C), params.bg(Col)          // blank inside the block

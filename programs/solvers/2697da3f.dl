@@ -1,15 +1,15 @@
 // 2697da3f
 // draft
-// concept: tile-arrangement d4
-// One figure on a blank field. The output is a canvas carrying four copies
-// of it, each flush against one edge and centered across it, leaving a blank
-// square in the middle: on each axis the canvas runs figure-depth,
-// figure-span, figure-depth. The copy at params.arm keeps the input's
-// orientation, and the group params.sym carries it to the other three arms.
-// Every figure here mirrors across the arm axis, so the rotations and the
-// diagonal mirrors agree on this task.
+// keywords: tile-arrangement d4
+// input: One figure on a blank field.
+// output: A canvas carrying four copies of that figure, each flush against
+//  one edge and centered across it, leaving a blank square in the middle: on
+//  each axis the canvas runs figure-depth, figure-span, figure-depth. The copy
+//  at params.arm keeps the input's orientation, and the group params.sym
+//  carries it to the other three arms. Every figure here mirrors across the
+//  arm axis, so the rotations and the diagonal mirrors agree on this task.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -52,7 +52,7 @@ arm_margin(B) :-
 .decl placed(p: Position, col: Color)
 placed(P_canvas, Col) :-
     ink(P, Col), fig.box($U(), B), crop(P, B, P_inner),    // the figure in its own frame
-    arm_margin(B_arm), compose(P_inner, B_arm, P_canvas).  // set into its arm
+    arm_margin(B_arm), compose(B_arm, P_inner, P_canvas).  // set into its arm
 
 // The margins already span the canvas, so a placed cell reads its extent.
 .init canvas = Frame2D<Unit>
@@ -61,6 +61,5 @@ canvas.extent($U(), A, N) :- axis_elem(A), placed(P, _), axis_dim(P, A, N).
 .decl painted(p: Position, col: Color)
 painted(P2, Col) :- placed(P, Col), params.sym(S), sym_member(S, R), apply(R, P, P2).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- painted(P, Col).
 out(P, Col) :- canvas.cell($U(), P), !painted(P, _), params.bg(Col).

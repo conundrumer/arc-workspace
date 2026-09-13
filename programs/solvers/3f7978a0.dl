@@ -1,18 +1,20 @@
 // 3f7978a0
-// concept: crop markers select
-// Two parallel params.bar lines over bg and noise, each end capped one step
-// beyond by a params.cap cell. Output is the spanned region cropped, content
-// passing through. Two hypotheses of the region's along-axis extent:
-//
-//   $Cap  — the cap cells bound it: the region is the bbox of bars and caps.
-//   $Grow — the bar bbox grows one step along the axis; the caps are noise.
+// keywords: crop markers select
+// input: two parallel params.bar lines over bg and noise, each end capped one
+//  step beyond by a params.cap cell
+// output: The spanned region crops out, with its content passing through
+//  unchanged.
 
-#include "../lib.dl"
+// the region's extent along the axis
+.type Choice =
+    // the cap cells bound it: the region is the bbox of bars and caps
+    Cap {}
+    // the bar bbox grows one step along the axis; the caps are noise
+  | Grow {}
 
-.type Choice = Cap {} | Grow {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bar(c: Color) bar(5).
     .decl axis(a: Axis) axis(AXIS_V).
 
@@ -41,5 +43,4 @@ hull.cell($Cap(), P) :- stepped(P), in(P, Col), params.cap(Col).
 // --- $Grow ---
 hull.cell($Grow(), P) :- stepped(P).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_out, Col, Ch) :- in(P, Col), hull.box(Ch, B), crop(P, B, P_out).

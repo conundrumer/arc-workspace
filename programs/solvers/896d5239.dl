@@ -1,13 +1,13 @@
 // 896d5239
 // draft
-// concept: markers merge span
-// A noise grid of two colors carries chevrons in params.mark: an apex mark
-// with a diagonal arm toward each corner of one cardinal, each arm a chain
-// of marks within params.reach steps of one another. The closed wedge
-// between the arms fills with params.fill, as deep toward that cardinal as
-// the farthest arm mark; mark cells stay.
+// keywords: markers merge span
+// input: A noise grid of two colors carries chevrons in params.mark: an apex
+//  mark with a diagonal arm toward each corner of one cardinal, each arm a
+//  chain of marks within params.reach steps of one another.
+// output: The closed wedge between the two arms fills with params.fill, as
+//  deep toward that cardinal as the farthest arm mark; mark cells stay.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl mark(col: Color) mark(3).
@@ -58,6 +58,5 @@ filled(Q) :-
     dir_of(Diag, _, D), arm(A, Diag, G),                         // an arm mark G
     dist(Q, D, Kq), dist(G, D, Kg), Kq >= Kg.                    // Q no deeper than G
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- filled(P), params.fill(Col).
 out(P, Col) :- in(P, Col), !filled(P).

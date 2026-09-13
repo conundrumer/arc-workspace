@@ -1,23 +1,24 @@
 // 54d9e175
 // draft
-// concept: decompose objects markers mapping
-// One cell of each region of the grid carries a color that params.mapping
-// keys, and every cell of that region takes that color's image. A cell in no
-// region keeps its own color.
-//
-// Cases read the regions:
-//   $Lines()  — the tiles that lines wholly of params.separator cut.
-//   $Period() — the tiles of a params.tile_size decomposition, params.gap apart.
-//   $Flood()  — the connected runs of cells other than params.separator.
+// keywords: decompose objects markers mapping
+// output: One cell of each region of the grid carries a color that
+//  params.mapping keys, and every cell of that region takes that color's image.
+//  A cell in no region keeps its own color.
 
-#include "../lib.dl"
-
-.type Choice = Lines {} | Period {} | Flood {}
+// the cases read the regions differently
+.type Choice =
+    // the tiles that lines wholly of params.separator cut
+    Lines {}
+    // the tiles of a params.tile_size decomposition, params.gap apart
+  | Period {}
+    // the connected runs of cells other than params.separator
+  | Flood {}
 
 .type Line = [a: Axis, l: Position]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl mapping(c_cell: Color, c_fill: Color)
     mapping(1, 6).
     mapping(2, 7).
@@ -77,7 +78,6 @@ same_region(P, Q, $Flood()) :- region.conn($U(), P, Q).
 paint(P, Col_fill, Ch) :-
     same_region(P, Q, Ch), in(Q, Col), params.mapping(Col, Col_fill).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     in(P, Col_in), impl_choice(Ch),
     ( paint(P, Col, Ch)                // in a region — its color

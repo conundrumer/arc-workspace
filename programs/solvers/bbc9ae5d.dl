@@ -1,22 +1,27 @@
 // bbc9ae5d
-// concept: grow cast move
-// Input is a single line: an ink run anchored at one end, bg beyond. The
-// output is line-length / params.divisor rows: the input, then each row
-// continuing the previous one toward params.diag.
-//
-//   $Grow  — the run grows: ink spreads a step per row down the stack and
-//            toward params.diag, gaining a cell at its open end.
-//   $Slide — the row slides: cells cast diagonal rays toward params.diag;
-//            vacated cells take the anchor-end color.
+// keywords: grow cast move
+// input: A single line: an ink run anchored at one end, bg beyond.
+// output: The output stacks line-length / params.divisor rows: the input row,
+//  then each following row continuing the previous one toward params.diag.
 
-#include "../lib.dl"
+// how each row continues from the one before it
+.type Choice =
+    // the run grows: ink spreads a step per row down the stack and toward
+    // params.diag
+    Grow {}
+    // the row slides: its cells cast rays toward params.diag, and the vacated
+    // cells take the anchor-end color
+  | Slide {}
 
-.type Choice = Grow {} | Slide {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    .decl bg(col: Color) bg(0).
     .decl diag(d: DiagDir) diag(DIAG_BR).     // advance along the line, stack across
     .decl divisor(n: number) divisor(2).      // stacked rows = line length / divisor
+
+    // --- Grow ---
+
+    .decl bg(col: Color) bg(0).
 }
 
 .init params = Params
@@ -41,8 +46,6 @@ seated(P_out, Col) :-
     same_dist(D_adv, P_in, P_out),                       // aligned along the line
     opposite(D_stack, D_seed), dist(P_out, D_seed, 0).   // on the seed edge
 
-.decl out(p: Position, col: Color, c: Choice)
-
 // --- Grow ---
 
 .decl grown(p: Position, col: Color)
@@ -65,14 +68,12 @@ rays.dir($U(), D)  :- params.diag(D).
 rays.cell($U(), P) :- frame.cell($U(), P).
 rays.mark($U(), P) :- seated(P, _).
 
-.decl slid(p: Position, col: Color)
-slid(P, Col) :- rays.ray($U(), P, _, _, Q), seated(Q, Col).
-
-// Color at the run's anchored end — the seated cell at the corner the slide leaves.
+// The color at the run's anchored end — the corner the slide leaves.
 .decl anchor_color(col: Color)
 anchor_color(Col) :-
     seated(P, Col),
     params.diag(Diag), diag_opposite(Diag, Anchor), corner_dist(P, Anchor, 0).
 
-out(P, Col, $Slide()) :- slid(P, Col).
-out(P, Col, $Slide()) :- frame.cell($U(), P), !slid(P, _), anchor_color(Col).
+out(P, Col, $Slide()) :- rays.ray($U(), P, _, _, Q), seated(Q, Col).
+out(P, Col, $Slide()) :-
+    frame.cell($U(), P), !rays.ray($U(), P, _, _, _), anchor_color(Col).

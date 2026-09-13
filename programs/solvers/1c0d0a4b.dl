@@ -1,14 +1,18 @@
 // 1c0d0a4b
-// concept: decompose wallpaper lines mapping
-// 3×3 tiles on a 1-wide bg separator lattice, borders included. Tile
-// content complements: non-bg → bg, bg → params.paint. Separator cells stay
-// bg. Separator identification (data-equivalent on this task):
-//   $Period() — the lattice: sep_w-wide lines every sep_w + tile_w
-//   $Blank()  — all-bg grid lines
+// keywords: decompose wallpaper lines mapping
+// output: 3×3 tiles on a 1-wide bg separator lattice, borders included. Tile
+//  content complements: non-bg → bg, bg → params.paint. Separator cells stay
+//  bg.
 
-#include "../lib.dl"
+// which cells belong to the separator lattice; data-equivalent on this task
+.type Choice =
+    // the lattice: sep_w-wide lines every sep_w + tile_w
+    Period {}
+    // all-bg grid lines
+  | Blank {}
 
-.type Choice = Period {} | Blank {}
+// Separator stays bg; ink erases; tile bg complements to paint.
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -45,8 +49,6 @@ sep(P, $Blank()) :-
     in(P, _), axis_elem(A),                    // each axis
     split(P, A, _, Ac), !ink_line(A, Ac).      // its line has no ink
 
-// Separator stays bg; ink erases; tile bg complements to paint.
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Bg, Ch)    :- sep(P, Ch), params.bg(Bg).
 out(P, Bg, Ch)    :- ink(P), impl_choice(Ch), params.bg(Bg).
 out(P, Paint, Ch) :- in(P, Col), params.bg(Col), impl_choice(Ch), !sep(P, Ch), params.paint(Paint).

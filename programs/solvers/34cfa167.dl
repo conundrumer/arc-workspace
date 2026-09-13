@@ -1,20 +1,22 @@
 // 34cfa167
 // draft
-// concept: objects wallpaper cast span
-// Two blocks of one color sit at opposite corners of a rectangle. One of
-// them carries two arms: marked lines running from its two sides toward
-// the other block. The output draws the rectangle: a block at each
-// corner, and along each side a rail that repeats the arm's marks up to
-// the next block, with a plain line one cell outside the rail in the
-// color of the mark against the block. Cases, for the distance at which
-// the marks repeat (the pairs do not separate them):
-//
-//   $Given  — params.period, the task's repeat distance.
-//   $Extend — one cell past the arm's last mark.
+// keywords: objects wallpaper cast span
+// input: Two blocks of one color sit at opposite corners of a rectangle. One
+//  of them carries two arms: marked lines running from its two sides toward
+//  the other block.
+// output: The output draws the rectangle: a block at each corner, and along
+//  each side a rail that repeats the arm's marks up to the next block, with a
+//  plain line one cell outside the rail in the color of the mark against the
+//  block.
 
-#include "../lib.dl"
+// the distance at which the marks repeat, which the pairs do not separate
+.type Choice =
+    // params.period, the task's repeat distance
+    Given {}
+    // one cell past the arm's last mark
+  | Extend {}
 
-.type Choice = Given {} | Extend {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // The corner blocks' color.
@@ -146,6 +148,5 @@ paint(P_grid, Col, Ch) :-
     side(D, V, D_out), compose(Q, V, P_rail),                       // in each rail
     neighbor(P_rail, D_out, P_grid).                                // one cell out
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch), in(P, _).
 out(P, Col, Ch) :- in(P, _), bg(Col), impl_choice(Ch), !paint(P, _, Ch).

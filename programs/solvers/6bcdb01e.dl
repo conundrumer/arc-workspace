@@ -1,15 +1,16 @@
 // 6bcdb01e
 // draft
-// concept: markers walk
-// Wall cells are scattered over a bg field, and a two-cell seed stub sits
-// among them. A walker leaves each end of the stub heading away from the
-// other cell, and runs straight until the way ahead closes, at a wall or at
-// the grid edge. Where exactly one side is open there, it turns to that side
-// and runs again; where both sides are open, or neither, the walk ends. The
-// output paints the cells the walker runs over in the seed color. The walker
-// crosses its own path freely.
+// keywords: markers walk
+// input: wall cells scattered over a bg field, with a two-cell seed stub
+//  among them
+// output: A walker leaves each end of the stub heading away from the other
+//  cell, and runs straight until the way ahead closes, at a wall or at the
+//  grid edge. Where exactly one side is open there, it turns to that side
+//  and runs again; where both sides are open, or neither, the walk ends.
+//  The output paints the cells the walker runs over in the seed color. The
+//  walker crosses its own path freely.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl wall(col: Color) wall(8).
@@ -40,7 +41,6 @@ leg(E, D2) :-
 .decl path(p: Position)
 path(P) :- leg(A, D), open.run($U(), A, D, P).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, Col_in),
     ( path(P), params.seed(Col)   // painted cell

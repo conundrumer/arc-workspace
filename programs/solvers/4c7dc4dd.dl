@@ -1,23 +1,23 @@
 // 4c7dc4dd
 // draft
-// concept: objects induce parity span d4
-// Four square frames sit in a noisy field, each holding a panel of drawn
-// cells over unfilled ones. One panel is empty: it is the slot the answer
-// fills. Of the other three, two stand as a demonstration — one completion
-// rule carries the first onto the second exactly — and the answer is the
-// third panel read under that rule.
-//
-// The rules the input may demonstrate:
-//   extend  — the marks lie on a canvas whose color is constant along both
-//             diagonal families; the panel shows one half of it, and the
-//             completion shows the other half.
-//   span    — a mark on each side of an unfilled cell in its row or column
-//             fills it, in the panel's own color.
-//   reflect — the marks span a window of a pattern symmetric under D4; the
-//             completion repeats that window at every image of it, and lays
-//             the panel's own color over what no image reaches.
+// keywords: objects induce parity span d4
+// input: Four square frames sit in a noisy field, each holding a panel of
+//  drawn cells over unfilled ones. One panel is empty: it is the slot the
+//  answer fills.
+// output: Of the other three, two stand as a demonstration — one completion
+//  rule carries the first onto the second exactly — and the answer is the
+//  third panel read under that rule. The rules the input may demonstrate:
+//  extend  — the marks lie on a canvas whose color is constant along both
+//  diagonal families; the panel shows one half of it, and the completion
+//  shows the other half.
+//  span    — a mark on each side of an unfilled cell in its row or column
+//  fills it, in the panel's own color.
+//  reflect — the marks span a window of a pattern symmetric under D4; the
+//  completion repeats that window at every image of it, and lays the
+//  panel's own color over what no image reaches.
 
-#include "../lib.dl"
+// The panel the demonstration leaves, read under the rule it demonstrates.
+.decl out(p: Position, col: Color)
 
 .comp Params {
     // The color of a panel's unfilled cells.
@@ -162,8 +162,6 @@ catalog.render($Reflect(), Pan, P_inner, Col) :-
 
 // --- output ---
 
-// The panel the demonstration leaves, read under the rule it demonstrates.
-.decl out(p: Position, col: Color)
 out(P_inner, Col) :-
     content(Pan), Pan != Pan1, Pan != Pan2,
     catalog.demo(R, Pan1, Pan2), catalog.render(R, Pan, P_inner, Col).

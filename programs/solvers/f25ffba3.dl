@@ -1,24 +1,30 @@
 // f25ffba3
-// concept: tile-arrangement d4
-// Input has a data slab anchored at one edge; the rest is empty. Output
-// is the data slab plus its images under a D4 set, filling the grid.
-//
-//   $Stamp     — take the slab by its depth from the data edge, and stamp
-//                each of its cells under every D4 in params.stamps.
-//   $Augment   — stamp every non-bg input cell under every D4 in
-//                params.stamps, and bg-fill what no stamp covers.
-//   $TileCount — divide the input into params.n_tiles along the data edge's
-//                axis; each output tile applies its params.tile_d4 to the
-//                data tile.
-//   $TileSize  — the same arrangement, over tiles as deep as the data slab,
-//                params.slab_depth.
+// keywords: tile-arrangement d4
+// input: a data slab anchored at one edge, the rest empty
+// output: the data slab plus its images under a D4 set, filling the grid
 
-#include "../lib.dl"
+// how the slab's images are placed
+.type Choice =
+    // stamp every cell within params.slab_depth of the data edge under
+    // every D4 in params.stamps
+    Stamp {}
+    // stamp every non-bg input cell under every D4 in params.stamps, and
+    // bg-fill what no stamp covers
+  | Augment {}
+    // divide the input into params.n_tiles along the data edge's axis; each
+    // output tile applies its params.tile_d4 to the data tile
+  | TileCount {}
+    // the same arrangement, over tiles as deep as the data slab,
+    // params.slab_depth
+  | TileSize {}
 
-.type Choice = Stamp {} | Augment {} | TileCount {} | TileSize {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
+    // --- Stamp, TileCount, TileSize ---
     .decl data_dir(d: Dir) data_dir(DIR_B).
+
+    // --- Stamp, Augment ---
     .decl stamps(d: D4)
     stamps(D4_ID).
     stamps(D4_TB).
@@ -31,6 +37,10 @@
     .decl bg(c: Color) bg(0).
 
     // --- TileCount, TileSize ---
+    // The tiles run along the data edge's axis.
+    .decl tile_axis(a: Axis)
+    tile_axis(A) :- data_dir(D), axis_of(D, A).
+
     .decl tile_d4(p_tile: Position, d: D4)
     GRID_2x1(tile_d4,
         D4_TB,
@@ -41,8 +51,6 @@
 }
 
 .init params = Params
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- Stamp ---
 out(P_grid_out, Col, $Stamp()) :-
@@ -65,24 +73,21 @@ out(P, Bg, $Augment()) :-
 // The data tile's cells: the tile at the data edge, under each split.
 .decl data_cell(p_intile: Position, col: Color, c: Choice)
 data_cell(P_intile, Col, $TileCount()) :-
-    in(P_grid_in, Col),                                            // input cell
-    params.data_dir(D_data), axis_of(D_data, A_tile),              // tile axis from data edge
-    params.n_tiles(N),                                             // tile count
-    divide_slab(P_grid_in, A_tile, N, 0, P_in_outer, P_intile),    // divide input
-    dist(P_in_outer, D_data, 0).                                   // data tile at the data edge
+    in(P_grid_in, Col),                                                 // input cell
+    params.tile_axis(A_tile), params.n_tiles(N),                        // tile axis, tile count
+    divide_slab(P_grid_in, A_tile, N, 0, P_in_outer, P_intile),         // divide input
+    params.data_dir(D_data), dist(P_in_outer, D_data, 0).               // data tile at the data edge
 data_cell(P_intile, Col, $TileSize()) :-
     in(P_grid_in, Col),                                                 // input cell
-    params.data_dir(D_data), axis_of(D_data, A_tile),                   // tile axis from data edge
-    params.slab_depth(K),                                               // tile size
+    params.tile_axis(A_tile), params.slab_depth(K),                     // tile axis, tile size
     divide_by_size_slab(P_grid_in, A_tile, K, 0, P_in_outer, P_intile), // divide input
-    dist(P_in_outer, D_data, 0).                                        // data tile at the data edge
+    params.data_dir(D_data), dist(P_in_outer, D_data, 0).               // data tile at the data edge
 
 out(P_grid_out, Col, C) :-
     data_cell(P_intile, Col, C),                                   // the data tile's cell
     params.tile_d4(P_out_outer, D),                                // per-output-tile D4
     apply(D, P_intile, P_out_intile),                              // inner under that D4
-    params.data_dir(D_data), axis_of(D_data, A_tile),              // tile axis from data edge
-    concat_slab(P_out_outer, P_out_intile, A_tile, 0, P_grid_out). // recompose
+    params.tile_axis(A_tile), concat_slab(P_out_outer, P_out_intile, A_tile, 0, P_grid_out).  // recompose
 
 .comp Determine {
     // Input cells of the train pairs; a test input has no output to read.
@@ -114,7 +119,7 @@ out(P_grid_out, Col, C) :-
     n_tiles(N) :-
         pair_cell(_, P_grid, _), slab_cut(A, K),
         divide_by_size(P_grid, A, K, 0, P_outer, _),
-        axis_dim(P_outer, A, N).            // tile count, off the arrangement's extent
+        axis_dim(P_outer, A, N).            // tile count: the arrangement's extent
 
     // Each example's ink must stamp onto its output.
     .init stamp = D4Map<Example, Color>

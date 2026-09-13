@@ -1,32 +1,33 @@
 // ea9794b1
-// concept: overlay decompose lookup rank
-// The grid divides into a tile arrangement, each tile drawn in its own
-// ink. The output overlays the tiles: the highest-precedence ink present
-// fills each cell, bg where every tile is empty. Each tile keeps one ink
-// in every pair, so tile and ink precedence are indistinguishable:
-//
-//   $Order() — per-tile ranks stored in params.prio.
-//   $Ink()   — per-ink ranks stored in params.ink_rank.
-//
-// Every grid of the task is 10×10, so the division reads two ways, and the
-// $Ink case carries both as a DecChoice field:
-//
-//   $Count() — params.tiles arrangement of equal tiles.
-//   $Size()  — tiles of params.tile_dim, as many as the grid holds.
-//
-// $Order() takes no DecChoice field: params.prio keys the 2×2 arrangement,
-// so the $Size() reading is total only where the grid holds two tiles per
-// axis.
+// keywords: overlay decompose lookup rank
+// input: the grid divides into a tile arrangement, each tile drawn in its own
+//  ink
+// output: The output overlays the tiles: the highest-precedence ink present
+//  fills each cell, bg where every tile is empty. Each tile keeps one ink in
+//  every pair, so tile and ink precedence are indistinguishable.
 
-#include "../lib.dl"
+// how the arrangement is decomposed; every grid of the task is 10×10, so the
+// division reads two ways
+.type DecChoice =
+    // params.tiles arrangement of equal tiles
+    Count {}
+    // tiles of params.tile_dim, as many as the grid holds
+  | Size {}
 
-.type DecChoice = Count {} | Size {}
-.type Choice    = Order {} | Ink {d: DecChoice}
+// whose precedence orders the overlay; $Order() takes no DecChoice field:
+// params.prio keys the 2×2 arrangement, so the $Size() reading is total only
+// where the grid holds two tiles per axis
+.type Choice    =
+    // per-tile ranks stored in params.prio
+    Order {}
+    // per-ink ranks stored in params.ink_rank
+  | Ink {d: DecChoice}
 
 .type InkKey = [d: DecChoice, p: Position]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
 
     // --- Order, Ink(Count) ---
@@ -67,8 +68,6 @@ tile_ink(Dc, P_tile, P_intile, Col) :- tile_cell(Dc, P_tile, P_intile, Col), !pa
 
 .decl ink_at(dc: DecChoice, p: Position, col: Color)
 ink_at(Dc, P, Col) :- tile_ink(Dc, _, P, Col).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 out(P, Col, Ch) :- tiling(Ch, Dc), tile_cell(Dc, _, P, _), !ink_at(Dc, P, _), params.bg(Col).
 

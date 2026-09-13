@@ -1,18 +1,20 @@
 // 12422b43
-// concept: lines markers stamp
-// A params.marker bar anchored at the edge opposite params.flow spans the unit lines;
-// ink (non-bg, non-marker) fills the leading lines. The unit lines' ink
-// repeats along params.flow over the bg remainder.
-//
-// Two models place the copies:
-//   $Stamp — seat the unit one pattern-length past itself, then step it one
-//            unit-length at a time while it stays on the grid.
-//   $Tile  — the remainder divides into unit-sized tiles; each tile takes
-//            the unit's ink.
+// keywords: lines markers stamp
+// input: a params.marker bar anchored at the edge opposite params.flow spans
+//  the unit lines; ink (non-bg, non-marker) fills the leading lines.
+// output: the unit lines' ink repeats along params.flow over the bg
+//  remainder.
 
-#include "../lib.dl"
+// two models place the copies
+.type Choice =
+    // seat the unit one pattern-length past itself, then step it one
+    // unit-length at a time while it stays on the grid
+    Stamp {}
+    // the remainder divides into unit-sized tiles; each tile takes the unit's
+    // ink
+  | Tile {}
 
-.type Choice = Stamp {} | Tile {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -74,6 +76,5 @@ copy(P, Col, $Tile()) :-
 .decl impl_choice(ch: Choice)
 impl_choice($Stamp()). impl_choice($Tile()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- copy(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !copy(P, _, Ch).

@@ -1,14 +1,14 @@
 // 84551f4c
 // draft
-// concept: objects walk d4 move
-// Bars stand on the ground edge: runs of ink rising from it. A bar of the
-// pusher color topples: it turns a quarter turn about its base cell and lies
-// along the ground. A standing bar that a toppled bar's cell touches in the
-// fall direction topples too, and the chain continues. A toppled bar's cells
-// clear, and its turned cells paint where they land; every other cell keeps
-// its input color.
+// keywords: objects walk d4 move
+// input: Bars stand on the ground edge: runs of ink rising from it.
+// output: A bar of the pusher color topples: it turns a quarter turn about
+//  its base cell and lies along the ground. A standing bar that a toppled
+//  bar's cell touches in the fall direction topples too, and the chain
+//  continues. A toppled bar's cells clear, and its turned cells paint where
+//  they land; every other cell keeps its input color.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -67,7 +67,6 @@ landed(P_out, Col) :-
 .decl cleared(p: Position)
 cleared(P) :- toppled(P_base), bar_cell(P_base, P).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, Col_in),
     ( landed(P, Col)                                     // a turned cell lands here

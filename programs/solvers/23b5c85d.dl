@@ -1,24 +1,30 @@
 // 23b5c85d
 // draft
-// concept: objects crop select count
-// Solid colored rectangles overlap on a bg field, so some are partly hidden.
-// No two share a color, so color individuates them. The output is the bounding
-// box of the object with the fewest cells. Choice = [l, r] crosses what an
-// object covers with what its box carries:
-//
-//   l (the object's cells):
-//     $Box()     — the whole rectangle, the hidden part included.
-//     $Visible() — only the cells whose color still shows.
-//   r (fill the box):
-//     $Keep() — the object's cells keep their color, the rest of the box is bg.
-//     $Crop() — the box carries the input through, occluders included.
+// keywords: objects crop select count
+// input: Solid colored rectangles overlap on a bg field, so some are
+//  partly hidden. No two share a color, so color individuates them.
+// output: The bounding box of the object with the fewest cells.
 
-#include "../lib.dl"
+// the object's cells
+.type Size =
+    // the whole rectangle, the hidden part included
+    Box {}
+    // only the cells whose color still shows
+  | Visible {}
 
-.type Size = Box {} | Visible {}
-.type Render = Keep {} | Crop {}
-.type Choice = [l: Size, r: Render]
-.type Sized = [l: Size, col: Color]
+// fill the box
+.type Render =
+    // the object's cells keep their color, the rest of the box is bg
+    Keep {}
+    // the box carries the input through, occluders included
+  | Crop {}
+
+// what an object covers, crossed with what its box carries
+.type Choice = [s: Size, r: Render]
+
+.type Obj = [s: Size, col: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -29,29 +35,27 @@
 .init boxes = Bbox<Color>
 boxes.cell(Col, P) :- in(P, Col), !params.bg(Col).
 
-// --- Size cases: what the object covers ---
+// --- Size cases ---
 
-.decl obj_cell(l: Size, col: Color, p: Position)
+.decl obj_cell(s: Size, col: Color, p: Position)
 obj_cell($Box(), Col, P) :- in(P, _), boxes.box(Col, B), inside(P, B).
 obj_cell($Visible(), Col, P) :- boxes.cell(Col, P).
 
-.init size = Tally<Sized, Position>
-size.item([L, Col], P) :- obj_cell(L, Col, P).
+.init size = Tally<Obj, Position>
+size.item([S, Col], P) :- obj_cell(S, Col, P).
 
 .init sel = ArgExtremes<Size, Color>
-sel.cand(L, Col, N) :- size.tally([L, Col], N).
+sel.cand(S, Col, N) :- size.tally([S, Col], N).
 
-// --- Render cases: fill the winner's box ---
+// --- Render cases ---
 
-.decl out(p: Position, col: Color, ch: Choice)
-
-out(P_inner, Col, [L, $Keep()]) :-
-    sel.low(L, Col_win, _),                                // the smallest object
-    in(P, _), boxes.box(Col_win, B), crop(P, B, P_inner),  // its box, viewed from itself
-    ( obj_cell(L, Col_win, P), Col = Col_win        // an object cell keeps its color
-    ; !obj_cell(L, Col_win, P), params.bg(Col)      // the rest of the box is blank
+out(P_inner, Col, [S, $Keep()]) :-
+    sel.low(S, Col_win, _),                                          // the smallest object
+    in(P_grid, _), boxes.box(Col_win, B), crop(P_grid, B, P_inner),  // its box, viewed from itself
+    ( obj_cell(S, Col_win, P_grid), Col = Col_win                    // an object cell keeps its color
+    ; !obj_cell(S, Col_win, P_grid), params.bg(Col)                  // the rest of the box is blank
     ).
 
-out(P_inner, Col, [L, $Crop()]) :-
-    sel.low(L, Col_win, _),                                  // the smallest object
-    in(P, Col), boxes.box(Col_win, B), crop(P, B, P_inner).  // its box carries the input through
+out(P_inner, Col, [S, $Crop()]) :-
+    sel.low(S, Col_win, _),                                            // the smallest object
+    in(P_grid, Col), boxes.box(Col_win, B), crop(P_grid, B, P_inner).  // its box carries the input

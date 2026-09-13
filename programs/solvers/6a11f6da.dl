@@ -1,27 +1,31 @@
 // 6a11f6da
-// concept: overlay decompose rank
-// Layout: vertically-stacked 5×5 ink slabs. Output is the per-cell
-// overlay: the highest-priority candidate wins; no ink is bg.
-//
-// out's choice column = [d, c]:
-//
-//   d (find the slabs):
-//     $Count() — by tile count
-//     $Size()  — by tile size
-//   c (priority):
-//     $Palette() — color order
-//     $Stack()   — slab order
+// keywords: overlay decompose rank
+// input: vertically-stacked 5×5 ink slabs
+// output: The per-cell overlay: the highest-priority candidate wins; no ink
+//  is bg.
 
-#include "../lib.dl"
+// find the slabs
+.type DecChoice =
+    // by tile count
+    Count {}
+    // by tile size
+  | Size {}
 
-.type DecChoice = Count {} | Size {}
-.type Prio      = Palette {} | Stack {}
+// priority
+.type Prio =
+    // color order
+    Palette {}
+    // slab order
+  | Stack {}
+
+// decompose paired with priority
 .type Choice    = [d: DecChoice, c: Prio]
 
 .type CellKey = [o: Position, d: DecChoice]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl tile_axis(a: Axis) tile_axis(AXIS_V).
 
@@ -69,7 +73,6 @@ cand(P_out, P_tile, Col, Dc) :-
     in(P_grid, Col), !params.bg(Col),                     // inked input cell
     decompose(P_grid, P_tile, P_out, Dc).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(O, Bg, [Dc, C]) :-
     prio_choice(C), decompose(_, _, O, Dc), params.bg(Bg), !cand(O, _, _, Dc).
 

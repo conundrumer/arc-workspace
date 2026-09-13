@@ -1,16 +1,15 @@
 // 57edb29d
-// concept: objects crop scale induce
-// Solid colored rectangles sit on the background. Each carries the same
-// design of marks, inset from its own edges, and the rectangles differ in
-// size. One rectangle carries no mark. The output is that rectangle with
-// the design on it.
-//
-// A mark holds its distance to the nearer edge on each axis, so the design
-// keeps its corners and its middle stretches. A rectangle too narrow to
-// separate two corners shows them merged, so the design is the union of
-// what the rectangles carry.
+// keywords: objects crop scale induce
+// input: Solid colored rectangles sit on the background. Each carries the same
+//  design of marks, inset from its own edges, and the rectangles differ in
+//  size. One rectangle carries no mark.
+// output: The output is that rectangle with the design on it. A mark holds
+//  its distance to the nearer edge on each axis, so the design keeps its
+//  corners and its middle stretches. A rectangle too narrow to separate two
+//  corners shows them merged, so the design is the union of what the
+//  rectangles carry.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(4).
@@ -60,7 +59,6 @@ design(P_inner, Col) :-
     mark(_, M_inner, Col), perp(A, A2),
     anchored(P_inner, M_inner, A), anchored(P_inner, M_inner, A2).
 
-.decl out(p: Position, col: Color)
 out(P_inner, Col) :-
     target_cell(Id, P_inner),
     ( design(P_inner, Col)                  // design cell

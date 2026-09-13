@@ -1,19 +1,21 @@
 // 41ace6b5
 // draft
-// concept: lines count cast
-// A ruler of two colored lines runs across the grid. A bar stands on each
-// ruler cell the line colors skip, holding cap ink and stem ink. The output
-// redraws every bar from the ruler: the cap stands off the cap line, a stem
-// as long as the bar's own stem ink hangs off the stem line, params.rest covers
-// what is left of the bar, and params.bg clears what lies beyond the cap. Every
-// cap is drawn to one height; Choice says which:
-//
-//   $Tallest() — the tallest cap the input holds.
-//   $Common()  — the cap height most bars hold.
+// keywords: lines count cast
+// input: A ruler of two colored lines runs across the grid. A bar stands on
+//  each ruler cell the line colors skip, holding cap ink and stem ink.
+// output: The output redraws every bar from the ruler: the cap stands off
+//  the cap line, a stem as long as the bar's own stem ink hangs off the stem
+//  line, params.rest covers what is left of the bar, and params.bg clears
+//  what lies beyond the cap.
 
-#include "../lib.dl"
+// every cap is drawn to one height; which height
+.type Choice =
+    // the tallest cap the input holds
+    Tallest {}
+    // the cap height most bars hold
+  | Common {}
 
-.type Choice = Tallest {} | Common {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(7).
@@ -96,8 +98,6 @@ cap_height(N, $Common()) :- common.mode($U(), N).
 .decl impl_choice(ch: Choice)
 impl_choice($Tallest()).
 impl_choice($Common()).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // Off the cap line stands the cap.
 out(P, Col, Ch) :-

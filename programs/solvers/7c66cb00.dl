@@ -1,14 +1,15 @@
 // 7c66cb00
 // draft
-// concept: lines objects markers move mapping
-// Full-width bands cross the grid: each is a run of lines with a uniform
-// interior color and one other color at both ends. Shapes sit on a background
-// elsewhere. Each shape falls toward one edge of the grid into the band whose
-// interior color is the shape's own, comes to rest on the band's far edge in
-// its own columns, and takes the band's end color. Everything outside the
-// bands becomes background.
+// keywords: lines objects markers move mapping
+// input: full-width bands crossing the grid, each a run of lines with a
+//  uniform interior color and one other color at both ends; shapes sit on a
+//  background elsewhere
+// output: Each shape falls toward one edge of the grid into the band whose
+//  interior color is the shape's own, comes to rest on the band's far edge in
+//  its own columns, and takes the band's end color. Everything outside the
+//  bands becomes background.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     // The edge the shapes fall toward.
@@ -81,7 +82,6 @@ landed(P_out, C_end) :-
     shape(Id, P, Col), fall(Id, Delta), compose(P, Delta, P_out),    // a shape cell, fallen
     band_cell(Col, P_out), band_line(_, C_end, Col).                 // cut to its band, in its end color
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, C_in),
     ( landed(P, Col)                                 // a fallen shape cell

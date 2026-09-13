@@ -1,15 +1,28 @@
 // 195ba7dc
-// family: 5d2a5c43
-// Layout: two 5×6 subgrids side by side, separated by a column.
+// representative: 5d2a5c43
 
-#include "../lib.dl"
+// how the input decomposes into tiles
+.type DecChoice =
+    // pre-tabulated in the parameters via tile_pos
+    Table {}
+    // derived in the program by tile count
+  | Count {}
+    // derived in the program by tile size
+  | Size {}
 
-.type DecChoice = Table {} | Count {} | Size {}
-.type Body      = Lookup {} | Or {}
+// how the tiles combine into the output
+.type Body =
+    // combine table keyed on (outer pos, color); set-equality match
+    Lookup {}
+    // OR via existence: any non-bg input contribution
+  | Or {}
+
 .type Choice    = [d: DecChoice, b: Body]
 
 .type CombineMember = [p: Position, col: Color]
 .type CombineKey    = [p: Position, dc: DecChoice]
+
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
@@ -88,7 +101,6 @@ filled(P_grid_out, Dc) :-
 
 // --- Output ---
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col_out, [Dc, $Lookup()]) :-
     params.combine_out(Id, Col_out),
     combine_match.equals([P_grid_out, Dc], Id).     // cell's tiles == entry's members

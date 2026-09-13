@@ -1,14 +1,15 @@
 // 212895b5
-// concept: markers cast walk
-// A solid block of one color sits on a field of scattered lone cells. The
-// block emits eight arms, one per compass direction. A corner arm casts
-// straight out along its diagonal. A side arm is a turtle: it starts at the
-// middle of its side heading out, steps along its heading, and after each
-// step turns by the rotation the gait gives the phase, so the four side arms
-// are rotated copies of one path. Every arm halts before the first scattered
-// cell it meets, or at the grid edge; the rest of the input is kept.
+// keywords: markers cast walk
+// input: A solid block of one color sits on a field of scattered lone cells.
+// output: The block emits eight arms, one per compass direction. A corner arm
+//  casts straight out along its diagonal. A side arm is a turtle: it starts
+//  at the middle of its side heading out, steps along its heading, and after
+//  each step turns by the rotation the gait gives the phase, so the four
+//  side arms are rotated copies of one path. Every arm halts before the
+//  first scattered cell it meets, or at the grid edge; the rest of the input
+//  is kept.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl block(col: Color) block(8).
@@ -83,7 +84,6 @@ turtle(Q, H2, K2) :-
 paint(P, Col) :- diag_arm(P), params.diag_paint(Col).
 paint(P, Col) :- turtle(P, _, _), !parse.block_cell($U(), P), params.arm_paint(Col).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- in(P, Col_in), ( paint(P, Col) ; !paint(P, _), Col = Col_in ).
 
 .type ArmKey = [e: Example, d: Dir]

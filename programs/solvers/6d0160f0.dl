@@ -1,12 +1,13 @@
 // 6d0160f0
 // draft
-// concept: decompose markers select move
-// A separator lattice cuts the grid into a 3×3 arrangement of 3×3 tiles. One
-// cell of one tile holds params.marker. That tile moves to the arrangement
-// position that the marker's position within its tile names; every other
-// tile is blank, and the separators stay.
+// keywords: decompose markers select move
+// input: A separator lattice cuts the grid into a 3×3 arrangement of 3×3
+//  tiles. One cell of one tile holds params.marker.
+// output: That tile moves to the arrangement position that the marker's
+//  position within its tile names; every other tile is blank, and the
+//  separators stay.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -27,7 +28,6 @@ tile(P_grid, P_tile, P_intile) :-
 .decl marked(p_src: Position, p_dst: Position)
 marked(P_src, P_dst) :- in(P, Col), params.marker(Col), tile(P, P_src, P_dst).
 
-.decl out(p: Position, col: Color)
 out(P_grid, Col) :-
     tile(P_grid, P_tile, P_intile),
     ( marked(P_src, P_tile), tile(P_in, P_src, P_intile), in(P_in, Col)  // the marked tile lands here

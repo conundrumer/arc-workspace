@@ -1,29 +1,30 @@
 // 6773b310
-// concept: decompose markers count
-// Separator lines cut the grid into an arrangement of equal tiles.
-// Output is one cell per tile: params.mark where the tile holds a marker pair,
-// params.bg elsewhere. Two choice points cross; Choice = [m, d]:
-//
-//   m (what marks a tile):
-//     $Pair()  — two distinct marker cells exist in the tile.
-//     $Count() — the marker count equals params.pair_count.
-//   d (what fixes the tiling):
-//     $TileCount() — a params.divisor × params.divisor arrangement.
-//     $Size()      — tiles of params.tile_size on both axes.
-//
-// A count→value table is defeated: the test exhibits a zero-marker tile,
-// absent from train.
+// keywords: decompose markers count
+// output: Separator lines cut the grid into an arrangement of equal tiles.
+//  Output is one cell per tile: params.mark where the tile holds a marker pair,
+//  params.bg elsewhere.
 
-#include "../lib.dl"
+// what marks a tile
+.type Mark =
+    // two distinct marker cells exist in the tile
+    Pair {}
+    // the marker count equals params.pair_count
+  | Count {}
 
-.type Mark      = Pair {} | Count {}
-.type DecChoice = TileCount {} | Size {}
+// what fixes the tiling
+.type DecChoice =
+    // a params.divisor × params.divisor arrangement
+    TileCount {}
+    // tiles of params.tile_size on both axes
+  | Size {}
+
 .type Choice    = [m: Mark, d: DecChoice]
 
 .type TileKey = [d: DecChoice, p_tile: Position]
 
+.decl out(p: Position, col: Color, c: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl marker(c: Color) marker(6).
     .decl mark(c: Color) mark(1).
     .decl bg(c: Color) bg(0).
@@ -62,8 +63,6 @@ tile(P_tile, Dc) :- tile_cell(P_tile, _, _, Dc).
 .decl tile_marker(p_tile: Position, p_intile: Position, dc: DecChoice)
 tile_marker(P_tile, P_intile, Dc) :- tile_cell(P_tile, P_intile, Col, Dc), params.marker(Col).
 
-.decl out(p: Position, col: Color, c: Choice)
-
 // --- Pair ---
 .decl paired(p_tile: Position, dc: DecChoice)
 paired(P_tile, Dc) :- tile_marker(P_tile, P1, Dc), tile_marker(P_tile, P2, Dc), P1 != P2.
@@ -72,6 +71,8 @@ out(P_tile, Col, [$Pair(), Dc]) :- paired(P_tile, Dc), params.mark(Col).
 out(P_tile, Col, [$Pair(), Dc]) :- tile(P_tile, Dc), !paired(P_tile, Dc), params.bg(Col).
 
 // --- Count ---
+// A count→value table is defeated: the test exhibits a zero-marker tile,
+// absent from train.
 .init markers = Tally<TileKey, Position>
 markers.item([Dc, P_tile], P_intile) :- tile_marker(P_tile, P_intile, Dc).
 markers.domain([Dc, P_tile]) :- tile(P_tile, Dc).

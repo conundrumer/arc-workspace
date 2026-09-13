@@ -1,19 +1,22 @@
 // 810b9b61
 // draft
-// concept: objects border enclose mapping
-// Cells of the recolor table's ink color draw shapes. A shape that is a
-// closed rectangle takes the table's fill color; every other cell passes
-// through.
-//
-// $Rect — a rectangle outline drawn in ink; the outline recolors.
-// $Object — an ink component that draws the whole outline of its bounding
-//   box, with an inside; the component recolors.
-// $Enclose — an ink component one step from a region that ink closes off
-//   from the grid edge; the component recolors.
+// keywords: objects border enclose mapping
+// output: Cells of the recolor table's ink color draw shapes. A shape that is a
+//  closed rectangle takes the table's fill color; every other cell passes
+//  through.
 
-#include "../lib.dl"
+// how a closed rectangle is recognized
+.type Choice =
+    // a rectangle outline drawn in ink; the outline recolors
+    Rect {}
+    // an ink component that draws the whole outline of its bounding box, with
+    // an inside; the component recolors
+  | Object {}
+    // an ink component one step from a region that ink closes off from the grid
+    // edge; the component recolors
+  | Enclose {}
 
-.type Choice = Rect {} | Object {} | Enclose {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl recolor(c_ink: Color, c_fill: Color)
@@ -31,7 +34,6 @@ ink(Col, P) :- in(P, Col), params.recolor(Col, _).
 // The ink cells each case recolors.
 .decl painted(p: Position, ch: Choice)
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Fill, Ch) :- painted(P, Ch), in(P, Col), params.recolor(Col, Fill).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, Ch).
 

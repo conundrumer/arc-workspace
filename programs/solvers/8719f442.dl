@@ -1,24 +1,26 @@
 // 8719f442
 // draft
-// concept: grow scale tile-arrangement stamp
-// The output is a grid of input-sized tiles: the input frame grown by one
-// ring. The block inside the ring scales the input up, a tile per cell, and
-// each fg cell on an input edge stamps a copy of the input into the tile one
-// step past that edge. The rest is bg. The block's color, on out's Choice:
-//
-//   $Scaled — a fg cell's tile takes the cell's color.
-//   $Stored — a fg cell's tile takes params.fill.
-//   $Hub    — as $Stored, and the center tile takes params.fill whatever the
-//             center cell holds.
-//
-// Coincide on inputs of one color with a fg center.
+// keywords: grow scale tile-arrangement stamp
+// input: the tile grid is the input frame grown by one ring, one
+//  input-sized tile per grown cell
+// output: The block inside the ring scales the input up, a tile per cell;
+//  each fg cell on an input edge stamps a copy of the input into the tile
+//  one step past that edge. Elsewhere the output is bg.
 
-#include "../lib.dl"
+// which color the block's cells take — data-equivalent on this task, whose
+// inputs are one fg color with a fg center
+.type Choice =
+    // a fg cell's tile takes the cell's color
+    Scaled {}
+    // a fg cell's tile takes params.fill
+  | Stored {}
+    // like Stored, and the center tile also takes params.fill, whether or
+    // not the center cell is fg
+  | Hub {}
 
-.type Choice = Scaled {} | Stored {} | Hub {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
 
     .decl ring_width(k: number) ring_width(1).
@@ -63,7 +65,6 @@ copy(P_tile) :-
 // A block tile with its color, per case.
 .decl block(p_tile: Position, col: Color, ch: Choice)
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_grid_out, Col, Ch) :-
     cell(P_grid_out, P_tile, P_intile), impl_choice(Ch),
     ( block(P_tile, Col, Ch)                                      // block tile

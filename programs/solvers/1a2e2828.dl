@@ -1,12 +1,13 @@
 // 1a2e2828
-// concept: lines select
-// Full-length stripes cross; at each crossing one stripe shows through.
-// The top stripe is covered by none, so its lines stay uniform. Output
-// 1×1: the top stripe's color.
-
-#include "../lib.dl"
+// keywords: lines select
+// input: Full-length stripes cross; at each crossing one stripe shows
+//  through.
+// output: The top stripe is covered by none, so its lines stay uniform.
+//  Output 1×1: the top stripe's color.
 
 .type Line = [a: Axis, p_across: Position]
+
+.decl out(p: Position, col: Color)
 
 .comp Params {
 }
@@ -16,5 +17,4 @@
 .init line_color = Unanimous<Line, Color>
 line_color.item([A, P_across], Col) :- in(P, Col), axis_elem(A), split(P, A, _, P_across).
 
-.decl out(p: Position, col: Color)
 out(ZERO, Col) :- line_color.value(_, Col).

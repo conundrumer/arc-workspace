@@ -1,11 +1,11 @@
 // 5b6cbef5
-// concept: tile-arrangement stamp
-// Fractal self-tensor: output = input ⊗ input. The grid is an N×N arrangement of
-// N×N tiles (N = input extent); the input plays both roles — P_tile gates each
-// tile, P_intile addresses within it. A non-bg gate fills the tile with a copy
-// of the input; a bg gate fills it with bg.
+// keywords: tile-arrangement stamp
+// output: Fractal self-tensor: output = input ⊗ input. The grid is an N×N
+//  arrangement of N×N tiles (N = input extent); the input plays both roles —
+//  P_tile gates each tile, P_intile addresses within it. A non-bg gate fills
+//  the tile with a copy of the input; a bg gate fills it with bg.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color)
@@ -14,7 +14,6 @@
 
 .init params = Params
 
-.decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
     in(P_tile, C_gate), !params.bg(C_gate),           // gate: tile's input cell non-bg
     in(P_intile, Col),                                // tile content: the input, copied

@@ -1,17 +1,19 @@
 // 54db823b
 // draft
-// concept: objects count select
-// Non-bg cells form objects, and each object holds some cells of params.mark.
-// The object with the fewest mark cells is erased to params.bg. Nothing else
-// changes.
-//
-// The cases differ in what the erasure covers:
-//   $Cells — the erased object's own cells.
-//   $Box   — its bounding box.
+// keywords: objects count select
+// input: Non-bg cells form objects, and each object holds some cells of
+//  params.mark.
+// output: The object with the fewest mark cells is erased to params.bg.
+//  Nothing else changes.
 
-#include "../lib.dl"
+// the cases differ in what the erasure covers
+.type Choice =
+    // the erased object's own cells
+    Cells {}
+    // its bounding box
+  | Box {}
 
-.type Choice = Cells {} | Box {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -46,7 +48,6 @@ erased_object(O, P) :- fewest.low($U(), O, _), parse.objs.label($U(), P, O).
 .decl impl_choice(ch: Choice)
 impl_choice($Cells()). impl_choice($Box()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- erased_cell(P, Ch), params.bg(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !erased_cell(P, Ch).
 

@@ -1,50 +1,60 @@
 // 4522001f
-// concept: markers stamp lookup d4
-// A 2x2 block sits against a grid corner, its cell at the grid center
-// colored params.mark. On the params.canvas frame, the stored box params.box stamps
-// along the diagonal from that corner.
-// Choice = $Pair() | $Loc(l, r, f):
-//
-//   $Pair() — the task as one stored exemplar pair: the rotation matching
-//             params.pair_in onto the input applies to params.pair_out.
-//
-//   l (the boxes' corner):
-//     $Corner() — the grid corner the block touches.
-//     $Mark()   — the block corner opposite the mark cell.
-//   r (the boxes):
-//     $Grow()  — params.box and one diagonal step.
-//     $Fit()   — params.box chained while it fits whole.
-//     $Stamp() — params.mask, the output's paint as one stored picture.
-//   f (box color):
-//     $Block() — the block's non-mark color.
-//     $Ink()   — an independent params.ink.
-//
-// Stored pictures (params.box, params.mask) are drawn at their own corner and
-// rotated to the located corner.
-//
-// Coincide here: the block touches the corner opposite the mark, the
-// stored box seats at that corner at twice the block's size, two boxes
-// exactly fit the frame, the mask stores that same two-box picture,
-// every pair is a joint rotation of the stored exemplar, and the block
-// color equals params.ink.
+// keywords: markers stamp lookup d4
+// input: a 2x2 block sits against a grid corner, its cell at the grid center
+//  colored params.mark
+// output: A D4 rotation, found from the input, carries a stored picture onto
+//  the canvas; background fills elsewhere.
 
-#include "../lib.dl"
+// Coincide here: the block touches the corner opposite the mark, the stored
+// box seats at that corner, two boxes exactly fit the frame, the mask stores
+// that same two-box picture, every pair is a joint rotation of the stored
+// exemplar, and the block color equals params.ink.
 
-.type Locate = Corner {} | Mark {}
-.type Render = Grow {} | Fit {} | Stamp {}
-.type Paint  = Block {} | Ink {}
-.type Choice = Pair {} | Loc {l: Locate, r: Render, f: Paint}
+// the boxes' corner
+.type Locate =
+    // the grid corner the block touches
+    Corner {}
+    // the block corner opposite the mark cell
+  | Mark {}
+
+// the boxes
+.type Render =
+    // params.box and one diagonal step
+    Grow {}
+    // params.box chained while it fits whole
+  | Fit {}
+    // the whole picture, stored as params.mask
+  | Stamp {}
+
+// box color
+.type Paint =
+    // the block's non-mark color
+    Block {}
+    // an independent params.ink
+  | Ink {}
+
+// how the rotation is found and what it carries
+.type Choice =
+    // the task as one stored exemplar pair: the rotation matching
+    // params.pair_in onto the input applies to params.pair_out
+    Pair {}
+    // a box or mask run located from the block
+  | Loc {l: Locate, r: Render, f: Paint}
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
 
-    // --- shared ---
+    // --- $Loc ---
     .decl bg(c: Color) bg(0).
-    .decl mark(c: Color) mark(2).
 
     .decl canvas_dim(n: number) canvas_dim(9).
     .decl canvas(p: Position)
     canvas(P) :- canvas_dim(N), helpers.frame_pos([N, N], P).
+
+    // --- $Mark, $Block ---
+    .decl mark(c: Color) mark(2).
 
     // --- $Ink ---
     .decl ink(c: Color) ink(3).
@@ -140,8 +150,8 @@ sq.edge(L, D2, K) :-
 .decl sq_jump(l: Locate, v: Offset)
 sq_jump(L, V) :-
     diag(L, Diag), diag_opposite(Diag, Od), diag_dirs(Od, A, O1, O2),   // dirs away from the corner
-    sq.box(L, B), params.canvas(P), perp(A, A2),                        // the box in the canvas frame
-    box_extent(B, P, A, K1), box_extent(B, P, A2, K2),                  // its extents
+    sq.box(L, B), params.canvas(P),                                     // the box in the canvas frame
+    perp(A, A2), box_extent(B, P, A, K1), box_extent(B, P, A2, K2),     // its extents on both axes
     jump_offset(O1, K1, V1), jump_offset(O2, K2, V2), compose(V1, V2, V). // one box along each
 
 // --- $Grow ---
@@ -178,7 +188,6 @@ lit(Q, Col, $Loc(L, $Stamp(), F)) :-
 .decl impl_choice(ch: Choice)
 impl_choice($Loc(L, R, F)) :- locate_choice(L), render_choice(R), paint_choice(F).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- lit(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), params.canvas(P), !lit(P, _, Ch), params.bg(Col).
 
@@ -198,17 +207,14 @@ out(Q, Col, $Pair()) :-
     .init first = Canon<Example>
     first.equiv(E, E2) :- ex_out(E, _, _), ex_out(E2, _, _).
 
-    .decl fex(e: Example)
-    fex(E) :- first.rep(E, E).
-
     .decl pair_in(p: Position, col: Color)
-    pair_in(P, Col) :- fex(E), ex_in(E, P, Col).
+    pair_in(P, Col) :- first.rep(E, E), ex_in(E, P, Col).
 
     .decl pair_out(p: Position, col: Color)
-    pair_out(P, Col) :- fex(E), ex_out(E, P, Col).
+    pair_out(P, Col) :- first.rep(E, E), ex_out(E, P, Col).
 
     .decl mask(p: Position)
-    mask(P) :- fex(E), ex_out(E, P, Col), !params.bg(Col).
+    mask(P) :- first.rep(E, E), ex_out(E, P, Col), !params.bg(Col).
 
     .decl ink(c: Color)
     ink(Col) :- ex_out(_, _, Col), !params.bg(Col).

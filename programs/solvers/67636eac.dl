@@ -1,26 +1,26 @@
 // 67636eac
 // draft
-// concept: objects color-class crop rank
-// One-color shapes lie on a blank grid, strung out along one axis. The
-// output sets their bounding-box crops side by side along that axis in
-// their order: the blank lines between the boxes are removed. Choice =
-// [g, a] crosses the hypotheses:
-//
-//   g (what a shape is):
-//     $ByColor()   — the cells of one color.
-//     $Connected() — an 8-connected component of non-bg cells.
-//   a (the layout axis):
-//     $Separate() — no two boxes share a line of it.
-//     $Spread()   — the longer axis of the shapes' joint bounding box.
-//     $Long()     — the longer axis of the grid.
-//
-// Every pair's shapes are one component each, of distinct colors, and the
-// three axis rules agree on every pair.
+// keywords: objects color-class crop rank
+// output: One-color shapes lie on a blank grid, strung out along one axis. The
+//  output sets their bounding-box crops side by side along that axis in their
+//  order: the blank lines between the boxes are removed.
 
-#include "../lib.dl"
+// what a shape is
+.type Group =
+    // the cells of one color
+    ByColor {}
+    // an 8-connected component of non-bg cells
+  | Connected {}
 
-.type Group = ByColor {} | Connected {}
-.type AxisRule = Separate {} | Spread {} | Long {}
+// the layout axis
+.type AxisRule =
+    // no two boxes share a line of it
+    Separate {}
+    // the longer axis of the shapes' joint bounding box
+  | Spread {}
+    // the longer axis of the grid
+  | Long {}
+
 .type Choice = [g: Group, a: AxisRule]
 
 // A shape under a grouping.
@@ -28,6 +28,8 @@
 
 // The lines of one axis under a grouping.
 .type Lines = [g: Group, a: Axis]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -42,6 +44,8 @@ group_choice($ByColor()). group_choice($Connected()).
 ink(P) :- in(P, Col), !params.bg(Col).
 
 // --- Group cases: the shapes ---
+// Each pair's shapes are one component each, of distinct colors, so the two
+// cases agree.
 
 .decl shape_cell(g: Group, id: Ident, p: Position)
 
@@ -70,6 +74,7 @@ box_cell(G, Id, P, P_inner) :- bbox.box([G, Id], B), in(P, _), crop(P, B, P_inne
 box_line(G, Id, A, L) :- box_cell(G, Id, P, _), axis_elem(A), split(P, A, L, _).
 
 // --- AxisRule cases: the layout axis ---
+// The three axis rules agree on every pair.
 
 .decl layout_axis(ch: Choice, a: Axis)
 
@@ -100,7 +105,6 @@ layout_axis([G, $Long()], A) :-
 packed.axis([G, A], A) :- group_choice(G), axis_elem(A).
 packed.member([G, A], L, L) :- box_line(G, _, A, L).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_grid, Col, [G, R]) :-
     layout_axis([G, R], A),
     in(P, Col), box_cell(G, _, P, P_inner),             // a box cell, in its crop frame

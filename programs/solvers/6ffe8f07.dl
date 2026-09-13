@@ -1,12 +1,12 @@
 // 6ffe8f07
 // draft
-// concept: cast
-// Every params.source cell casts a beam in each cardinal direction. The beam
-// paints the cells it crosses params.beam and stops before the first
-// params.wall cell; every other color is painted over. Source cells keep
-// their color.
+// keywords: cast
+// output: Every params.source cell casts a beam in each cardinal direction. The
+//  beam paints the cells it crosses params.beam and stops before the first
+//  params.wall cell; every other color is painted over. Source cells keep their
+//  color.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl source(c: Color) source(8).
@@ -22,6 +22,5 @@ cast.cell($U(), P) :- in(P, Col), !params.source(Col).
 cast.mark($U(), P) :- in(P, Col), params.source(Col).
 cast.blocked($U(), P) :- in(P, Col), params.wall(Col).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- cast.clear($U(), P, _, _, _), params.beam(Col).
 out(P, Col) :- in(P, Col), !cast.clear($U(), P, _, _, _).

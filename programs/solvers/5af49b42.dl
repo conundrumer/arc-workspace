@@ -1,16 +1,19 @@
 // 5af49b42
 // draft
-// concept: objects markers stamp border
-// The non-bg cells make connected pieces of two kinds: bars and marks. A mark's
-// color names one cell of one bar, and a copy of that bar lands with that cell
-// on the mark, clipped at the grid edge. Every other cell keeps its color.
-//
-//   $Object — a bar is a piece of several cells, a mark a piece of one.
-//   $Edge — a bar is a piece reaching the grid edge, a mark one strictly inside.
+// keywords: objects markers stamp border
+// input: The non-bg cells make connected pieces, split into bars and marks.
+// output: A mark's color names one cell of one bar, and a copy of that bar
+//  lands with that cell on the mark, clipped at the grid edge. Every other
+//  cell keeps its color.
 
-#include "../lib.dl"
+// what makes a piece a bar rather than a mark
+.type Choice =
+    // a bar is a piece of several cells, a mark a piece of one
+    Object {}
+    // a bar is a piece reaching the grid edge, a mark one strictly inside
+  | Edge {}
 
-.type Choice = Object {} | Edge {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -42,7 +45,6 @@ stamp(P2, Col, Ch) :-
     bar(Id, P, Col, Ch), shift(Id, V, Ch),
     compose(P, V, P2), in(P2, _).          // where that cell lands, clipped
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     in(P, Col_in), impl_choice(Ch),
     ( stamp(P, Col, Ch)                    // a copied bar cell

@@ -1,12 +1,13 @@
 // 5b37cb25
 // draft
-// concept: markers border
-// A frame of four colored edges surrounds a canvas. Blobs of one color sit on
-// the canvas background, and bites are taken out of them. A bite is a
-// five-cell background diamond that the blob closes on every side but one, and
-// it is filled with the color of the frame edge its open side faces.
+// keywords: markers border
+// input: A frame of four colored edges surrounds a canvas. Blobs of one color
+//  sit on the canvas background, and bites are taken out of them: a bite is a
+//  five-cell background diamond that the blob closes on every side but one.
+// output: The bite is filled with the color of the frame edge its open side
+//  faces.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {}
 
@@ -56,6 +57,5 @@ paint(Q, Col) :-
     bite.value(P, D), edge_color(D, Col),            // the edge the bite faces
     ( Q = P ; dir_elem(D2), neighbor(P, D2, Q) ).    // the diamond's five cells
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- paint(P, Col).
 out(P, Col) :- in(P, Col), !paint(P, _).

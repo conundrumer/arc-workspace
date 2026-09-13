@@ -1,19 +1,21 @@
 // 825aa9e9
 // draft
-// concept: objects move
-// A floor of one color lies along one edge of the grid, and shapes of another
-// color hang above it on a background. Each shape falls toward the floor as
-// one body and comes to rest one cell short of what lies beneath it: the
-// floor, or the grid edge where the floor has a hole.
-//
-//   $FloorColor — the floor is the color that stands on the fall edge; every
-//                 other non-bg cell belongs to a falling shape.
-//   $Grounded   — an object that touches the fall edge stands; every other
-//                 object falls.
+// keywords: objects move
+// input: a floor of one color along one edge of the grid, with shapes of
+//  another color hanging above it on a background
+// output: Each shape falls toward the floor as one body and comes to rest
+//  one cell short of what lies beneath it: the floor, or the grid edge
+//  where the floor has a hole.
 
-#include "../lib.dl"
+// how the floor is told apart from the falling shapes
+.type Choice =
+    // the floor is the color that stands on the fall edge; every other non-bg
+    // cell belongs to a falling shape
+    FloorColor {}
+    // an object that touches the fall edge stands; every other object falls
+  | Grounded {}
 
-.type Choice = FloorColor {} | Grounded {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(7).
@@ -97,7 +99,6 @@ landed(Ch, P2, Col) :-
 .decl vacated(ch: Choice, p: Position)
 vacated(Ch, P) :- travel(Ch, Id, _), mover_cell(Ch, Id, P).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- landed(Ch, P, Col).
 out(P, Col, Ch) :-
     impl_choice(Ch), in(P, C_in), !landed(Ch, P, _),

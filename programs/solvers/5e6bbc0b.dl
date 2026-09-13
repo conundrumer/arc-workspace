@@ -1,23 +1,23 @@
 // 5e6bbc0b
 // draft
-// concept: markers lines parity move cast count
-// The input is a checkerboard of two colors, with one cell replaced by a mark.
-// That mark sits on a grid edge, and the cells of the class it covers fall
-// toward that edge. Each line along the fall direction packs its cells of that
-// class solid against the edge; the mark covers one of them and keeps its own
-// place. On the mark's line the block casts a run outward from its far end, as
-// long as that end stands from the edge.
-//
-// Two models of which cells fall:
-//
-//   $Stored — the falling color is task data, and the mark stands for one
-//             more cell of it.
-//   $Parity — the falling cells are the mark's own checkerboard class, the
-//             cells whose corner distance shares the mark's phase.
+// keywords: markers lines parity move cast count
+// output: The input is a checkerboard of two colors, with one cell replaced by
+//  a mark. That mark sits on a grid edge, and the cells of the class it covers
+//  fall toward that edge. Each line along the fall direction packs its cells of
+//  that class solid against the edge; the mark covers one of them and keeps its
+//  own place. On the mark's line the block casts a run outward from its far
+//  end, as long as that end stands from the edge.
 
-#include "../lib.dl"
+// which cells fall
+.type Choice =
+    // the falling color is task data, and the mark stands for one more cell of
+    // it
+    Stored {}
+    // the falling cells are the mark's own checkerboard class, the cells whose
+    // corner distance shares the mark's phase
+  | Parity {}
 
-.type Choice = Stored {} | Parity {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl mark(col: Color) mark(8).
@@ -103,7 +103,6 @@ cast_cell(Q, Ch) :-
     beam.ray(Ch, Q, _, K, S), K != 0,        // out from the far end S
     fall(D), dist(S, D, N), K <= N.          // no further than S stands from the edge
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     impl_choice(Ch), in(P, _),
     ( mark_cell(P), params.mark(Col)                          // the mark keeps its cell

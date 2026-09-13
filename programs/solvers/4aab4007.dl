@@ -1,22 +1,25 @@
 // 4aab4007
 // draft
-// concept: lines border repair lookup
-// A grid damaged by holes of one color; the output restores it. Bands run
-// along the two edges of one corner, each band one color. Stripes cover
-// the rest: each line of one diagonal axis holds a single color, except a
-// legend at the corner. A damaged stripe cell takes the color of an
-// intact cell on its stripe. A damaged band cell takes its band's color:
-// stored per band ($Stored), or read off the band's intact cells
-// ($Uniform).
+// keywords: lines border repair lookup
+// input: a grid damaged by holes of one color. Bands run along the two edges
+//  of one corner, each band one color. Stripes cover the rest: each line of
+//  one diagonal axis holds a single color, except a legend at the corner.
+// output: the output restores the grid. A damaged stripe cell takes the
+//  color of an intact cell on its stripe. A damaged band cell takes its
+//  band's color.
 
-#include "../lib.dl"
-
-.type Choice = Stored {} | Uniform {}
+// how a damaged band cell finds its color
+.type Choice =
+    // stored per band
+    Stored {}
+    // read off the band's intact cells
+  | Uniform {}
 
 .type Pair = [k1: number, k2: number]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl hole(col: Color) hole(0).
 
     // The corner the bands and the legend are anchored at.
@@ -74,7 +77,6 @@ legend_cell(P) :- parse.corner_dists($U(), P, K1, K2), params.legend(K1, K2).
 .decl stripe(p: Position)
 stripe(P) :- in(P, _), !parse.band_cell($U(), P, _), !legend_cell(P).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- parse.intact($U(), P, Col), impl_choice(Ch).
 
 out(P, Col, Ch) :-

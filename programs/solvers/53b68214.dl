@@ -1,19 +1,20 @@
 // 53b68214
-// concept: grow wallpaper
-// The input is periodic along params.growth: the period is the shortest shift
-// it agrees with itself under. The output frame extends the input toward
-// params.growth, and the pattern continues period by period into the new
-// cells. Two models of the grown extent:
-//
-//   $Square() — it matches the perpendicular extent.
-//   $Canvas() — it is stored (params.out_dim); the perpendicular passes through.
-//
-// The models coincide here (width and canvas are both 10 in every pair);
-// they diverge when the input width differs from the canvas.
+// keywords: grow wallpaper
+// input: the input is periodic along params.growth: the period is the
+//  shortest shift it agrees with itself under
+// output: The output frame extends the input toward params.growth, and the
+//  pattern continues period by period into the new cells. The models
+//  coincide here (width and canvas are both 10 in every pair); they diverge
+//  when the input width differs from the canvas.
 
-#include "../lib.dl"
+// two models of the grown extent
+.type Choice =
+    // it matches the perpendicular extent
+    Square {}
+    // it is stored (params.out_dim); the perpendicular passes through
+  | Canvas {}
 
-.type Choice = Square {} | Canvas {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl growth(d: Dir) growth(DIR_B).
@@ -45,8 +46,6 @@ frame.extent($Canvas(), A2, W) :- width(W), params.growth(D), axis_of(D, A), per
 placed(Ch, P_grid, P_in) :-
     frame.cell(Ch, P_grid), in(P_in, _),
     params.growth(D), opposite(D, O), slab_anchor(O, P_in, P_grid).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // The input in place; the pattern continues one period at a time.
 out(P_grid, Col, Ch) :- placed(Ch, P_grid, P_in), in(P_in, Col).

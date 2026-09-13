@@ -1,20 +1,21 @@
 // 1f0c79e5
 // draft
-// concept: markers cast
-//
-// A block of colored cells sits on a blank grid. Each cell carrying the mark
-// color names a diagonal heading by where it sits in the block. Toward every
-// named heading the block casts a trail: each block cell sends a ray to the
-// edge, in the block's other color.
-//
-// The block is 2x2 in every pair, so the two parses of "where it sits"
-// agree here. They part on a larger block:
-//   $Corner   — the mark is at a corner of the block's bbox.
-//   $Quadrant — the mark is in a quadrant of the block's bbox.
+// keywords: markers cast
+// input: A block of colored cells sits on a blank grid, with cells of the
+//  mark color inside it.
+// output: Each mark cell names a diagonal heading by where it sits in the
+//  block. Toward every named heading the block casts a trail: each block cell
+//  sends a ray to the edge, in the block's other color.
 
-#include "../lib.dl"
+// where a mark sits in the block, named two ways; the block is 2x2 in every
+// pair, so the two ways agree here and part only on a larger block
+.type Choice =
+    // the mark is at a corner of the block's bbox
+    Corner {}
+    // the mark is in a quadrant of the block's bbox
+  | Quadrant {}
 
-.type Choice = Corner {} | Quadrant {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -50,7 +51,6 @@ ray.dir(Ch, D)   :- heading(D, Ch).
 ray.mark(Ch, P)  :- impl_choice(Ch), block(P).
 ray.cell(Ch, P)  :- impl_choice(Ch), in(P, _).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     impl_choice(Ch), in(P, _),
     ( ray.ray(Ch, P, _, _, _), trail(Col)        // on a trail

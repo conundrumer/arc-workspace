@@ -1,23 +1,21 @@
 // 97999447
-// concept: markers lookup walk cast
-// Each non-bg dot emits a ray toward params.ray_dir, to the grid edge; cells off
-// every ray pass through. Two models of the ray's coloring, tagged on out's
-// Choice:
-//
-//   $Toggle — the ray walks the dot's two-color cycle: dot color and
-//             params.alt_color alternate, the dot itself on-color.
-//   $Mask   — the ray tiles a periodic mask: params.slot is the slot domain,
-//             params.mask its fixed-color overrides, unmarked slots echo the
-//             dot. The dot sits at slot 0.
-//
-// Coincide while the mask is a single override on period 2.
+// keywords: markers lookup walk cast
+// output: each non-bg dot emits a ray toward params.ray_dir, to the grid edge;
+//  cells off every ray pass through.
 
-#include "../lib.dl"
+// how the ray is colored
+.type Choice =
+    // the ray walks the dot's two-color cycle: dot color and params.alt_color
+    // alternate, the dot itself on-color
+    Toggle {}
+    // the ray tiles a periodic mask: params.slot is the slot domain,
+    // params.mask its fixed-color overrides, unmarked slots echo the dot. The
+    // dot sits at slot 0.
+  | Mask {}
 
-.type Choice = Toggle {} | Mask {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl ray_dir(d: Dir) ray_dir(DIR_R).
 
@@ -25,6 +23,7 @@
     .decl alt_color(c: Color) alt_color(5).
 
     // --- Mask ---
+    // Coincides with Toggle when the mask holds one override on period 2.
     .decl slot(k: number)
     slot(0). slot(1).
     .decl mask(k: number, col: Color) mask(1, 5).
@@ -48,7 +47,6 @@ on_ray(P, M, K) :- rays.cast($U(), P, _, K, Src), mark(Src, M).
 .decl impl_choice(ch: Choice)
 impl_choice($Toggle()). impl_choice($Mask()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !on_ray(P, _, _).   // off every ray
 
 // --- Toggle ---

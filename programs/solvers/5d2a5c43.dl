@@ -1,26 +1,33 @@
 // 5d2a5c43
-// concept: decompose lookup
-// Layout: 1×2 horizontally-side-by-side 6×4 subgrids with 1-col gap.
-//
-// out's choice column = [d, b]:
-//
-//   d (decompose):
-//     $Table() — pre-tabulated in the parameters via tile_pos
-//     $Count() — derived in the program by tile count
-//     $Size()  — derived in the program by tile size
-//
-//   b (program):
-//     $Lookup() — combine table keyed on (outer pos, color); set-equality match
-//     $Or()     — OR via existence: any non-BG input contribution
+// keywords: decompose lookup
+// input: The input decomposes into two 6×4 tiles side by side, with a
+//  1-column gap between them.
+// output: The output is one 6×4 grid. Each output cell takes its color from
+//  the pair of corresponding tile cells, one from each of the two subgrids.
 
-#include "../lib.dl"
+// how the two tiles are found
+.type DecChoice =
+    // pre-tabulated in the parameters via tile_pos
+    Table {}
+    // derived in the program by tile count
+  | Count {}
+    // derived in the program by tile size
+  | Size {}
 
-.type DecChoice = Table {} | Count {} | Size {}
-.type Body      = Lookup {} | Or {}
+// how a pair of tile cells combines into the output cell's color
+.type Body =
+    // combine table keyed on (outer pos, color); set-equality match
+    Lookup {}
+    // OR via existence: any non-BG input contribution
+  | Or {}
+
+// which decompose method and which combine rule apply
 .type Choice    = [d: DecChoice, b: Body]
 
 .type CombineMember = [p: Position, col: Color]
 .type CombineKey    = [p: Position, dc: DecChoice]
+
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
@@ -100,7 +107,6 @@ filled(P_grid_out, Dc) :-
 
 // --- Output ---
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col_out, [Dc, $Lookup()]) :-
     params.combine_out(Id, Col_out),                             // entry's output color
     combine_match.equals([P_grid_out, Dc], Id).                  // cell's tiles == entry's members

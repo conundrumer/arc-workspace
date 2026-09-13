@@ -1,30 +1,31 @@
 // 4be741c5
 // draft
-// concept: lines rank count
-// The grid is a stack of ragged color bands. Each band runs across the grid
-// on one axis, so on that axis every color reaches both edges; along the
-// other axis the bands follow one another. The output is one cell per band,
-// on a one-cell-wide strip along the stacking axis, in stacking order.
-//
-// A band ranks by its leading line — the line it holds nearest the end of
-// the stack. Either end serves: the ranks swap ends with it, and the strip
-// comes out the same. Two parses of which lines a band holds:
-//
-//   $Present  — the lines its color appears on.
-//   $Majority — the lines its color is the commonest on.
-//
-// They coincide on these pairs, and diverge on a band whose color is
-// nowhere the commonest, which $Majority drops from the stack.
+// keywords: lines rank count
+// input: The grid is a stack of ragged color bands. Each band runs across
+//  the grid on one axis, so on that axis every color reaches both edges;
+//  along the other axis the bands follow one another.
+// output: The output is one cell per band, on a one-cell-wide strip along
+//  the stacking axis, in stacking order. A band ranks by its leading line —
+//  the line it holds nearest the end of the stack. Either end serves: the
+//  ranks swap ends with it, and the strip comes out the same.
 
-#include "../lib.dl"
-
-.type Choice = Present {} | Majority {}
+// which lines count as a band's own: presence of its color, or where its
+// color is commonest. The two agree except on a band whose color is
+// nowhere the commonest.
+.type Choice =
+    // the lines its color appears on
+    Present {}
+    // the lines its color is the commonest on, dropping such a band from
+    // the stack
+  | Majority {}
 
 // A case, read from one end of the stacking axis.
 .type CaseDir = [ch: Choice, d: Dir]
 
 // One band of that parse.
 .type CaseBand = [ch: Choice, d: Dir, col: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {}
 
@@ -69,7 +70,6 @@ commonest.item(L, Col, P) :- in(P, Col), line(P, L).
 
 band_line($Majority(), Col, L) :- commonest.mode(L, Col).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     lead.low([Ch, D, Col], K),                      // the band's leading line
     place.rank([Ch, D], K, R),                      // bands ahead of it

@@ -1,24 +1,26 @@
 // 351d6448
 // draft
-// concept: decompose induce move
-// Panels stacked along one axis hold the successive frames of an animation.
-// Each frame differs from the one before by a fixed set of recolorings — the
-// wave — and the wave travels the same relative between every pair of
-// frames. Every recoloring a step shows is a sighting of the wave. A cell
-// takes a recoloring only where it still holds the color that recoloring
-// replaces, so a step can show less than the whole wave. The output is the
-// next frame: the last one with the wave advanced over it once more.
-//
-// The cases name what the cut into panels reads:
-//   $Count()  — the panels along the axis.
-//   $Size() — a panel's extent.
+// keywords: decompose induce move
+// input: Panels stacked along one axis hold the successive frames of an
+//  animation.
+// output: Each frame differs from the one before by a fixed set of
+//  recolorings — the wave — and the wave travels the same relative between
+//  every pair of frames. Every recoloring a step shows is a sighting of the
+//  wave. A cell takes a recoloring only where it still holds the color that
+//  recoloring replaces, so a step can show less than the whole wave. The
+//  output is the next frame: the last one with the wave advanced over it once
+//  more.
 
-#include "../lib.dl"
+// what the cut into panels reads
+.type Choice =
+    // the panels along the axis
+    Count {}
+    // a panel's extent
+  | Size {}
 
-.type Choice = Count {} | Size {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl panel_gap(g: number) panel_gap(1).
 
     // Time runs toward this edge, so the last frame sits on it.
@@ -104,7 +106,6 @@ refuted(Ch, V) :-
     succ_panel(Ch, P_tile, _), wave(Ch, V, P_tile, P_intile, _, _),
     !panel(Ch, P_tile, P_intile, _).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_intile, Col, Ch) :-
     cand(Ch, V, _), !refuted(Ch, V),                                // the velocity left standing
     panel(Ch, P_tile, P_intile, Col0), !succ_panel(Ch, P_tile, _),  // a cell of the last frame

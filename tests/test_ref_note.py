@@ -20,7 +20,7 @@ def fixed_repo(tmp_path_factory):
     root = tmp_path_factory.mktemp("fixed") / "repo"
     solvers = root / "programs" / "solvers"
     solvers.mkdir(parents=True)
-    (solvers / "aaaa1111.dl").write_text("// aaaa1111\n// concept: a shape\n")
+    (solvers / "aaaa1111.dl").write_text("// aaaa1111\n// keywords: lines\n")
     for stem in ("bbbb2222", "cccc3333"):
         (solvers / f"{stem}.dl").write_text(f"// {stem}\n// draft\n")
     return root

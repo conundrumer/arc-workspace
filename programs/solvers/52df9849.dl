@@ -1,13 +1,14 @@
 // 52df9849
 // draft
-// concept: lines occlude
-// Shapes overlap on a plain ground. Each shape is a segment swept along one
-// of the four axes: a bar, a block, a diagonal line. The input draws shapes
-// over one another, so a covered shape shows with a piece missing. The
-// output brings the covered shapes to the front: each one continues through
-// its occluder, and that occluder keeps what is left.
+// keywords: lines occlude
+// input: shapes overlap on a plain ground; each shape is a segment swept
+//  along one of the four axes: a bar, a block, a diagonal line. The input
+//  draws shapes over one another, so a covered shape shows with a piece
+//  missing.
+// output: The output brings the covered shapes to the front: each one
+//  continues through its occluder, and that occluder keeps what is left.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(7).
@@ -46,6 +47,5 @@ unsupported(Col, A) :- sweep(Col, A, P), in(P, Bg), params.bg(Bg).
 .decl hidden(p: Position, col: Color)
 hidden(P, Col) :- sweep(Col, A, P), !unsupported(Col, A), !in(P, Col).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- hidden(P, Col).
 out(P, Col) :- in(P, Col), !hidden(P, _).

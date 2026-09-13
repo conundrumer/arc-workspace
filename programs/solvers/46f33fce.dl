@@ -1,17 +1,19 @@
 // 46f33fce
-// concept: scale decompose markers stamp
-// Sparse dots over bg. A lattice cuts the grid into equal tiles; a dot's whole
-// tile renders in its color, bg elsewhere. Output is the result scaled
-// ×params.scale. Cases claim what the lattice is read by:
-//   $Count — the tile count.
-//   $Size  — the tile size.
+// keywords: scale decompose markers stamp
+// input: Sparse dots over bg. A lattice cuts the grid into equal tiles.
+// output: A dot's whole tile renders in its color, bg elsewhere. Output is
+//  the result scaled ×params.scale.
 
-#include "../lib.dl"
+// what the lattice is read by
+.type Choice =
+    // the tile count
+    Count {}
+    // the tile size
+  | Size {}
 
-.type Choice = Count {} | Size {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl scale(s: number) scale(2).
 
@@ -50,7 +52,6 @@ render(P, Col, Ch) :-
 .init subf = Frame2D<Unit>
 subf.extent($U(), A, S) :- axis_elem(A), params.scale(S).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_out, Col, Ch) :-
     render(P_in, Col, Ch),
     subf.cell($U(), P_sub), concat_2d(P_in, P_sub, 0, P_out).

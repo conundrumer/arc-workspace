@@ -1,31 +1,36 @@
 // 136b0064
-// concept: decompose markers walk lookup count
-// A divider splits the input into a legend panel of glyphs and a blank canvas
-// panel holding one marker cell. Each glyph names a move: a direction with a
-// distance. The output is the canvas: a pen starts at the marker and draws one
-// stroke per glyph, in reading order from params.order_corner with
-// params.order_axis primary. A stroke steps one cell toward params.advance,
-// then runs the move's distance toward the move's direction in the glyph's
-// color; the pen ends where the run ends.
-//
-// out's choice column = [m, d]:
-//
-//   m (what identifies a glyph):
-//     $Count() — the glyph's cell count keys the move table
-//     $Glyph() — the glyph's footprint matches a stored catalog
-//     $Color() — the glyph's color keys the move table
-//   d (decompose — how the divider cuts the grid into panels):
-//     $TileCount() — by panel count
-//     $Size()      — by panel size
+// keywords: decompose markers walk lookup count
+// input: A divider splits the grid into a legend panel of glyphs and a blank
+//  canvas panel holding one marker cell.
+// output: Each glyph names a move: a direction with a distance. The output
+//  is the canvas: a pen starts at the marker and draws one stroke per glyph,
+//  in reading order from params.order_corner with params.order_axis primary.
+//  A stroke steps one cell toward params.advance, then runs the move's
+//  distance toward the move's direction in the glyph's color; the pen ends
+//  where the run ends.
 
-#include "../lib.dl"
+// what identifies a glyph
+.type Move =
+    // the glyph's cell count keys the move table
+    Count {}
+    // the glyph's footprint matches a stored catalog
+  | Glyph {}
+    // the glyph's color keys the move table
+  | Color {}
 
-.type Move      = Count {} | Glyph {} | Color {}
-.type DecChoice = TileCount {} | Size {}
+// decompose — how the divider cuts the grid into panels
+.type DecChoice =
+    // by panel count
+    TileCount {}
+    // by panel size
+  | Size {}
+
+// how a glyph's move is identified, crossed with how the grid decomposes into panels
 .type Choice    = [m: Move, d: DecChoice]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl marker(c: Color) marker(5).
 
@@ -219,7 +224,6 @@ stroke.mark([T, Ch], P) :- stroke_end(T, P, Ch).
 ink(P, Col, [M, Dc]) :- stroke.between([T, [M, Dc]], P), parse.glyph_color(Dc, T, Col).
 ink(P, Col, [M, Dc]) :- parse.marker_cell(Dc, P), params.marker(Col), move_choice(M).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, [M, Dc]) :-
     parse.canvas(Dc, _, P), impl_choice([M, Dc]),
     ( ink(P, Col, [M, Dc])                     // painted cell

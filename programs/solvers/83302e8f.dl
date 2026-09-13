@@ -1,18 +1,19 @@
 // 83302e8f
 // draft
-// concept: decompose objects enclose classify
-// A lattice of wall lines, one non-bg color, cuts a bg grid into tiles.
-// Some wall cells are missing: gaps. The output paints every bg cell the
-// sealed color or the leaky color, and the walls stay. Three models of
-// which bg cells are leaky:
-//
-//   $Flood — the bg cells that reach a gap.
-//   $Tile  — the gaps, and the tiles a gap touches.
-//   $Solid — no lattice: a bg component that is not a solid rectangle.
+// keywords: decompose objects enclose classify
+// output: The output paints every bg cell the sealed color or the leaky
+//  color, and the walls stay.
 
-#include "../lib.dl"
+// which bg cells are leaky
+.type Choice =
+    // the bg cells that reach a gap
+    Flood {}
+    // the gaps, and the tiles a gap touches
+  | Tile {}
+    // no lattice: a bg component that is not a solid rectangle
+  | Solid {}
 
-.type Choice = Flood {} | Tile {} | Solid {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -24,8 +25,6 @@
 
 .decl impl_choice(ch: Choice)
 impl_choice($Flood()). impl_choice($Tile()). impl_choice($Solid()).
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // Walls stay.
 out(P, Col, Ch) :- in(P, Col), !params.bg(Col), impl_choice(Ch).

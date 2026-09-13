@@ -1,25 +1,28 @@
 // f45f5ca7
-// concept: move border
-// Edge-column marks relocate along their lines: each color lands a fixed
-// distance from the edge (8→1, 2→2, 4→3, 3→4); the rest is bg.
-//
-// out's choice column = [e, m]:
-//
-//   e (edge):
-//     $Dir()  — params.dir names the edge
-//     $Edge() — the edge every mark sits on
-//
-//   m (move):
-//     $Jump() — displace the mark k cells away from the edge
-//     $Seat() — seat the mark's line cell at dist k from the edge
-//
-// Pairs coincide here — every mark sits on the edge at dist 0.
+// keywords: move border
+// output: Edge-column marks relocate along their lines: each color lands a
+//  fixed distance from the edge (8→1, 2→2, 4→3, 3→4); every other cell is bg.
 
-#include "../lib.dl"
+// Every mark already sits at distance 0 from the edge, so the edge and move
+// choices give the same output on every pair.
 
-.type EdgeSrc = Dir {} | Edge {}
-.type Move    = Jump {} | Seat {}
+// edge
+.type EdgeSrc =
+    // params.dir names the edge
+    Dir {}
+    // the edge every mark sits on
+  | Edge {}
+
+// move
+.type Move =
+    // displace the mark k cells away from the edge
+    Jump {}
+    // seat the mark's line cell at dist k from the edge
+  | Seat {}
+
 .type Choice  = [e: EdgeSrc, m: Move]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -83,7 +86,6 @@ moved(Q, Col, [E, $Seat()]) :-
 impl_choice([$Dir(),  $Jump()]). impl_choice([$Dir(),  $Seat()]).
 impl_choice([$Edge(), $Jump()]). impl_choice([$Edge(), $Seat()]).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- moved(P, Col, Ch).
 out(P, Col, Ch) :-
     impl_choice(Ch), in(P, _),      // choice × cell

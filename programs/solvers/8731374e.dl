@@ -1,12 +1,13 @@
 // 8731374e
 // draft
-// concept: crop markers cast select count
-// A solid block of one color sits in colored noise, with a few flaw cells of
-// another color inside it. The block is the largest rectangle outlined in one
-// color. The output crops the block; each flaw casts its color along its row
-// and its column across the crop, and the rest keeps the block's color.
+// keywords: crop markers cast select count
+// input: a solid block of one color sits in colored noise, with a few flaw
+//  cells of another color inside it; the block is the largest rectangle
+//  outlined in one color
+// output: the output crops the block; each flaw casts its color along its
+//  row and its column across the crop, and the rest keeps the block's color
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {}
 
@@ -42,7 +43,6 @@ flaw(P_inner, Col) :- view(P, P_inner), in(P, Col), !block(Col, _).
 .decl flaw_line(p: Position, col: Color)
 flaw_line(P, Col) :- view(_, P), flaw(Q, Col), axis_elem(A), same_line(A, P, Q).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     view(_, P),
     ( flaw_line(P, Col)

@@ -1,34 +1,35 @@
 // 4c177718
 // draft
-// concept: decompose markers crop stamp lookup
-// A line of one color cuts the grid into two panels. The scene panel holds
-// one shape, in the anchor color. The legend panel holds a copy of that
-// shape, an arrow, and a payload shape. The arrow names a direction, and
-// the output is the scene panel with the payload's box stamped against the
-// shape's box on that side, aligned across the arrow.
-//
-// What the payload attaches to splits target:
-//
-//   $Colored  — the scene cells in the anchor color.
-//   $Template — where the legend's copy occurs in the scene.
-//
-// How the arrow names a direction splits aim:
-//
-//   $Widest — it points away from the widest edge of its box, the bar.
-//   $Glyph  — its picture is a stored chart, in a pose that carries the
-//             chart's tip direction.
+// keywords: decompose markers crop stamp lookup
+// input: A line of one color cuts the grid into two panels. The scene panel
+//  holds one shape, in the anchor color. The legend panel holds a copy of
+//  that shape, an arrow, and a payload shape.
+// output: The arrow names a direction, and the output is the scene panel
+//  with the payload's box stamped against the shape's box on that side,
+//  aligned across the arrow.
 
-#include "../lib.dl"
+// what the payload attaches to
+.type Target =
+    // the scene cells in the anchor color
+    Colored {}
+    // where the legend's copy occurs in the scene
+  | Template {}
 
-.type Target = Colored {} | Template {}
-.type Aim    = Widest {} | Glyph {}
+// how the arrow names a direction
+.type Aim =
+    // it points away from the widest edge of its box, the bar
+    Widest {}
+    // its picture is a stored chart, in a pose that carries the chart's tip
+    // direction
+  | Glyph {}
+
 .type Choice = [target: Target, aim: Aim]
 
 .type Line = [a: Axis, l: Position]
 
-.comp Params {
-    // --- shared ---
+.decl out(p: Position, col: Color, c: Choice)
 
+.comp Params {
     .decl bg(col: Color) bg(0).
     .decl divider(col: Color) divider(5).
     .decl anchor(col: Color) anchor(1).
@@ -157,7 +158,6 @@ stamp(Q, Col, Ch) :-
 impl_choice([$Colored(), $Widest()]).  impl_choice([$Colored(), $Glyph()]).
 impl_choice([$Template(), $Widest()]). impl_choice([$Template(), $Glyph()]).
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P_intile, Col, Ch) :- stamp(P_intile, Col, Ch).
 out(P_intile, Col, Ch) :-
     cell(P_intile, Col), impl_choice(Ch), !stamp(P_intile, _, Ch).

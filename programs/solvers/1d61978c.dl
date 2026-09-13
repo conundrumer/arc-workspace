@@ -1,11 +1,12 @@
 // 1d61978c
 // draft
-// concept: lines count
-// Marks of one color lie in diagonal streaks; each streak runs on one of the
-// two diagonal axes. Marks of the axis carrying more of them turn major_paint,
-// the rest minor_paint.
+// keywords: lines count
+// input: marks of one color lie in diagonal streaks; each streak runs on one
+//  of the two diagonal axes.
+// output: marks of the axis carrying more of them turn major_paint, the rest
+//  minor_paint.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl mark(col: Color) mark(5).
@@ -27,7 +28,6 @@ streak(P, A) :-
 cmp.plus(A, P) :- streak(P, A).
 cmp.minus(A, P) :- streak(P, A2), diag_perp(A, A2).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- in(P, Col), !params.mark(Col).
 out(P, Col) :-
     streak(P, A),

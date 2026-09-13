@@ -1,21 +1,23 @@
 // 60a26a3e
 // draft
-// concept: markers span enclose
-// A bg field carries hollow diamonds, each sealing one bg cell at its center.
-// Two centers in one row or column are joined by a line of params.line, drawn
-// over the bg cells between them. A center is not drawn over, so a center that
-// two others flank keeps its own cell. The cases split on what makes a bg cell
-// a center:
-//
-//   $Ringed   — a params.ring cell at each of its four cardinals.
-//   $Enclosed — no bg path joins it to the grid edge.
+// keywords: markers span enclose
+// input: a bg field carries hollow diamonds, each sealing one bg cell at its
+//  center.
+// output: two centers in one row or column are joined by a line of
+//  params.line, drawn over the bg cells between them. A center is not drawn
+//  over, so a center that two others flank keeps its own cell.
+// review principle: docs/wf-solver/open/peer-priors.md
 
-#include "../lib.dl"
+// what makes a bg cell a center
+.type Choice =
+    // a params.ring cell at each of its four cardinals
+    Ringed {}
+    // no bg path joins it to the grid edge
+  | Enclosed {}
 
-.type Choice = Ringed {} | Enclosed {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl line(c: Color) line(1).
 
@@ -59,6 +61,5 @@ link.axis(Ch, A) :- impl_choice(Ch), axis_elem(A).
 link.mark(Ch, P) :- center(Ch, P).
 link.cell(Ch, P) :- impl_choice(Ch), bg_cell(P), !center(Ch, P).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- link.between(Ch, P), params.line(Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !link.between(Ch, P).

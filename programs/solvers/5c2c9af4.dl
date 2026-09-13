@@ -1,18 +1,19 @@
 // 5c2c9af4
 // draft
-// concept: markers walk border
-// Three dots of one color sit equally spaced along a diagonal. The output draws
-// concentric square outlines around the middle dot, spaced by the gap between
-// neighboring dots, as far out as the grid shows any part of one. Every dot lies
-// on an outline, so what a cell off the outlines does is underdetermined; two
-// models, tagged on out's Choice:
-//
-//   $Passthrough() — a cell off the outlines keeps its input color.
-//   $Repaint()     — a cell off the outlines gets params.bg.
+// keywords: markers walk border
+// output: Three dots of one color sit equally spaced along a diagonal. The
+//  output draws concentric square outlines around the middle dot, spaced by the
+//  gap between neighboring dots, as far out as the grid shows any part of one.
+//  Every dot lies on an outline.
 
-#include "../lib.dl"
+// what a cell off the outlines does
+.type Choice =
+    // a cell off the outlines keeps its input color
+    Passthrough {}
+    // a cell off the outlines gets params.bg
+  | Repaint {}
 
-.type Choice = Passthrough {} | Repaint {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -50,8 +51,6 @@ drawn(B, P) :- outline(B), in(P, _), box_edge(P, B, _).
 // grid, and so does every outline beyond it.
 outline(B) :- center(B).
 outline(B2) :- drawn(B, _), spread(B_spread), compose(B, B_spread, B2).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // --- $Passthrough ---
 out(P, Col, $Passthrough()) :- drawn(_, P), mark(_, Col).

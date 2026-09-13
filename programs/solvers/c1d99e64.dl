@@ -1,9 +1,10 @@
 // c1d99e64
-// concept: lines
-// One ink color over bg. Rows and columns free of ink repaint params.line;
-// the rest passes through.
+// keywords: lines
+// input: one ink color over bg
+// output: rows and columns free of ink repaint params.line; the rest
+//  passes through
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -20,6 +21,5 @@ has_ink(A, P_across) :- in(P, Col), !params.bg(Col), axis_elem(A), split(P, A, _
 .decl on_bg_line(p: Position)
 on_bg_line(P) :- in(P, _), axis_elem(A), split(P, A, _, P_across), !has_ink(A, P_across).
 
-.decl out(p: Position, col: Color)
 out(P, C)   :- on_bg_line(P), params.line(C).
 out(P, Col) :- in(P, Col), !on_bg_line(P).

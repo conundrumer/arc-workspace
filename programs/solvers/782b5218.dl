@@ -1,21 +1,22 @@
 // 782b5218
 // draft
-// concept: border enclose cast
-// A barrier of params.barrier cells crosses a field of noise in one other
-// color. The output keeps the barrier, paints its params.fill_dir side in
-// the noise color, and clears the other side to bg. Two hypotheses of
-// which cells are the fill side:
-//
-//   $Region — the non-barrier cells that cannot reach the edge opposite
-//             fill_dir without crossing the barrier.
-//   $Cast   — the cells on a ray cast from a barrier cell toward fill_dir.
+// keywords: border enclose cast
+// input: A barrier of params.barrier cells crosses a field of noise in one
+//  other color.
+// output: The output keeps the barrier, paints its params.fill_dir side in
+//  the noise color, and clears the other side to bg.
 
-#include "../lib.dl"
+// which cells are the fill side
+.type Choice =
+    // the non-barrier cells that cannot reach the edge opposite fill_dir
+    // without crossing the barrier
+    Region {}
+    // the cells on a ray cast from a barrier cell toward fill_dir
+  | Cast {}
 
-.type Choice = Region {} | Cast {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl barrier(c: Color) barrier(2).
     .decl fill_dir(d: Dir) fill_dir(DIR_B).
@@ -58,7 +59,6 @@ flow.mark($U(), P) :- barrier_cell(P).
 
 fill_cell(P, $Cast()) :- flow.ray($U(), P, _, _, _).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     in(P, C_in), impl_choice(Ch),
     ( barrier_cell(P), Col = C_in                        // barrier kept

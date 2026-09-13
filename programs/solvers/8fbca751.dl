@@ -1,11 +1,12 @@
 // 8fbca751
 // draft
-// concept: merge bbox
-// Ink cells over bg. Two ink cells that share a row or a column belong to one
-// group, transitively. Each group's bounding box has its bg cells recolored
-// params.fill.
+// keywords: merge bbox
+// input: Ink cells over bg.
+// output: Two ink cells that share a row or a column belong to one group,
+//  transitively. Each group's bounding box has its bg cells recolored
+//  params.fill.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -28,7 +29,6 @@ group_box.cell(Id, P) :- group.id(P, Id).
 .decl filled(p: Position)
 filled(P) :- in(P, Col), params.bg(Col), group_box.box(_, B), inside(P, B).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, Col_in),
     ( filled(P), params.fill(Col)

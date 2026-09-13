@@ -1,11 +1,12 @@
 // 60d73be6
 // draft
-// concept: lines d4
-// A cross of two full lines of one color stands on a plain field, and marks
-// lie in one of the four quarters the cross cuts. Each mark is reflected in
-// both lines of the cross, so it reaches all four quarters.
+// keywords: lines d4
+// input: a cross of two full lines of one color stands on a plain field, and
+//  marks lie in one of the four quarters the cross cuts.
+// output: each mark is reflected in both lines of the cross, so it reaches
+//  all four quarters.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color)
@@ -39,7 +40,6 @@ image(Q, Col) :-
     relative(L, P, V), apply(F, V, V2), compose(L, V2, Q),    // read in the line's frame, flipped, seated back
     in(Q, _).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- image(P, Col).
 out(P, Col) :- in(P, Col), !image(P, _).
 

@@ -1,21 +1,22 @@
 // 8e5a5113
-// concept: tile-arrangement decompose lookup d4 walk
-// Three full-height tiles split by separator columns; the pattern tile's
-// successive quarter-turn images fill the empty tiles. Flip parses are
-// defeated (train 1: the second tile matches no reflection of its pattern).
-//
-// Cases (data-equivalent on this task):
-//   $StepCount() — tiles by count; each tile toward params.flow_dir carries its
-//                  neighbor's params.rot image
-//   $StepSize()  — the same walk, over tiles by size
-//   $Lookup()    — per-tile D4 table applied to the pattern content
+// keywords: tile-arrangement decompose lookup d4 walk
+// output: Three full-height tiles split by separator columns; the pattern
+//  tile's successive quarter-turn images fill the empty tiles. Flip parses are
+//  defeated (train 1: the second tile matches no reflection of its pattern).
 
-#include "../lib.dl"
+// data-equivalent on this task
+.type Choice =
+    // tiles by count; each tile toward params.flow_dir carries its neighbor's
+    // params.rot image
+    StepCount {}
+    // the same walk, over tiles by size
+  | StepSize {}
+    // per-tile D4 table applied to the pattern content
+  | Lookup {}
 
-.type Choice = StepCount {} | StepSize {} | Lookup {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color)
     bg(0).
 
@@ -88,8 +89,6 @@ tile_cell(P_grid, P_tile, P_intile, $StepSize()) :-
 .decl src(p_tile: Position, p_intile: Position, col: Color, c: Choice)
 src(P_tile, P_intile, Col, C) :-
     tile_cell(P_grid, P_tile, P_intile, C), in(P_grid, Col), !params.bg(Col).
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // Separator passthrough — cells the divide leaves undecomposed.
 out(P, Col, C) :- in(P, Col), impl_choice(C), !tile_cell(P, _, _, C).

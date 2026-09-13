@@ -1,23 +1,23 @@
 // d47aa2ff
-// concept: decompose select
-// Side-by-side panels, split by a separator. Output is one panel frame: ink
-// every panel carries is kept, in the color the panels agree on; ink one
-// panel alone carries becomes that panel's mark color. A cell the panels
-// ink in different colors falls to bg.
-//
-// Cases (data-equivalent on this task) name how the split is found:
-//   $Count() — by tile count
-//   $Size()  — by tile size
+// keywords: decompose select
+// output: Side-by-side panels split by a separator. Output is one panel
+//  frame. Ink that every panel carries is kept, in the color the panels
+//  agree on. Ink that one panel alone carries becomes that panel's mark
+//  color. A cell the panels ink in different colors falls to bg.
 
-#include "../lib.dl"
-
-.type Choice = Count {} | Size {}
+// how the split is found, data-equivalent on this task
+.type Choice =
+    // by tile count
+    Count {}
+    // by tile size
+  | Size {}
 
 // A cell of the output frame under one case.
 .type CellK = [p: Position, ch: Choice]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
 
     .decl panel_axis(a: Axis) panel_axis(AXIS_H).
@@ -69,8 +69,6 @@ parse.grid($U(), P, Col) :- in(P, Col).
 // The ink colors the panels put on a cell.
 .init agree = Unanimous<CellK, Color>
 agree.item([P, Ch], Col) :- parse.ink($U(), _, P, Col, Ch).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // One-sided ink is marked with its panel's color.
 out(P, Col, Ch) :-

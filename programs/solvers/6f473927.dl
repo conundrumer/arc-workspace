@@ -1,21 +1,22 @@
 // 6f473927
 // draft
-// concept: tile-arrangement d4 mapping
-// The ink leans against one edge of the grid, on params.axis: the edge its
-// bounding box lies nearer to. The output is a 2-tile arrangement along
-// that axis: the input at the tile away from the ink edge, and at the ink
-// edge the input's reflection across it, recolored.
-//
-// Cases (data-equivalent on this task):
-//   $Table()    — params.mirror maps each color of the reflection.
-//   $Negative() — the silhouette: bg becomes params.shade, ink becomes bg.
+// keywords: tile-arrangement d4 mapping
+// input: ink leaning against one edge of the grid, on params.axis: the edge
+//  its bounding box lies nearer to
+// output: The output is a 2-tile arrangement along that axis: the input at
+//  the tile away from the ink edge, and at the ink edge the input's
+//  reflection across it, recolored.
 
-#include "../lib.dl"
+// how the ink-edge tile is recolored — data-equivalent on this task
+.type Choice =
+    // params.mirror maps each color of the reflection
+    Table {}
+    // the silhouette: bg becomes params.shade, ink becomes bg
+  | Negative {}
 
-.type Choice = Table {} | Negative {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl axis(a: Axis) axis(AXIS_H).
     .decl n_tiles(n: number) n_tiles(2).
@@ -72,7 +73,6 @@ impl_choice($Negative()).
 
 .decl recolor(c_in: Color, c_out: Color, ch: Choice)
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_grid, Col_out, Ch) :-
     in(P, Col), parse.place($U(), P, P_own, P_mirror),
     ( P_grid = P_own, Col_out = Col, impl_choice(Ch)    // the input's own tile, as is

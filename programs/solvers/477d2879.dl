@@ -1,20 +1,23 @@
 // 477d2879
 // draft
-// concept: objects markers border pack
-// Lines of one color cut the grid into open parts. Single cells of other
-// colors are marks. A mark names either the lines it touches or the open
-// parts it touches; the named cells take its color, and the mark keeps its
-// own. Every line and every open part is named.
-//
-// The hypothesis is which marks name lines. $Line reads the mark's placement: a
-// mark that touches only free ends of lines carries those lines on, so it
-// names them; any other mark names the open parts. $Cover reads the naming as
-// a pairing: each part is named exactly once, and that forces each mark's
-// choice.
+// keywords: objects markers border pack
+// input: Lines of one color cut the grid into open parts. Single cells of
+//  other colors are marks.
+// output: A mark names either the lines it touches or the open parts it
+//  touches; the named cells take its color, and the mark keeps its own.
+//  Every line and every open part is named.
 
-#include "../lib.dl"
+// which marks name lines
+.type Choice =
+    // the mark's placement: a mark that touches only free ends of lines
+    // carries those lines on, so it names them; any other mark names the
+    // open parts
+    Line {}
+    // the naming as a pairing: each part is named exactly once, and that
+    // forces each mark's choice
+  | Cover {}
 
-.type Choice = Line {} | Cover {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // The open ground the lines cut.
@@ -89,6 +92,5 @@ paint(R, Col, $Cover()) :-
 .decl impl_choice(ch: Choice)
 impl_choice($Line()). impl_choice($Cover()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- mark(P, Col), impl_choice(Ch).
 out(P, Col, Ch) :- part.label(_, P, R), paint(R, Col, Ch).

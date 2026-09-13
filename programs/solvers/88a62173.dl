@@ -1,18 +1,21 @@
 // 88a62173
 // draft
-// concept: decompose select count
-// A cross of blank lines cuts the grid into a 2×2 arrangement of equal tiles.
-// Three tiles carry one pattern and the fourth its own; the output is the
-// rarest tile: the one whose pattern the fewest tiles carry.
-//
-// The cases find the tiles:
-//   $Count — by tile count and gap.
-//   $Size  — by tile size and gap.
-//   $Cross — by the cross: a line of one color is a divider.
+// keywords: decompose select count
+// input: A cross of blank lines cuts the grid into a 2×2 arrangement of
+//  equal tiles.
+// output: Three tiles carry one pattern and the fourth its own; the output
+//  is the rarest tile: the one whose pattern the fewest tiles carry.
 
-#include "../lib.dl"
+// how the cases find the tiles
+.type Choice =
+    // by tile count and gap
+    Count {}
+    // by tile size and gap
+  | Size {}
+    // by the cross: a line of one color is a divider
+  | Cross {}
 
-.type Choice = Count {} | Size {} | Cross {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // --- Count, Size ---
@@ -74,5 +77,4 @@ alike.item([T, Ch], T2) :- same.equals([T, Ch], [T2, Ch]).
 .init rarest = ArgExtremes<Choice, Position>
 rarest.cand(Ch, T, N) :- alike.tally([T, Ch], N).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_intile, Col, Ch) :- rarest.low(Ch, T, _), tile_val(T, P_intile, Col, Ch).

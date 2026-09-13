@@ -1,15 +1,14 @@
 // 878187ab
 // draft
-// concept: count rank cast
+// keywords: count rank cast
+// input: scattered cells of two colors sit on a bg grid
+// output: Each color's cell count becomes an extent: the larger count runs
+//  along params.long_axis, the smaller across it. A box of those extents,
+//  filled params.fill, sits in the params.anchor corner of a bare square
+//  canvas of side params.canvas_side. The two corner diagonals rising from
+//  the ends of the box's long edge at the anchor paint params.x_color.
 
-// Scattered cells of two colors sit on a bg grid. Each color's cell count is
-// an extent: the larger count runs along params.long_axis, the smaller across
-// it. A box of those extents, filled params.fill, sits in the params.anchor
-// corner of a bare square canvas of side params.canvas_side. The two corner
-// diagonals rising from the ends of the box's long edge at the anchor paint
-// params.x_color.
-
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(7).
@@ -64,7 +63,6 @@ paint(P_grid_out, Col) :-
     ; !xdiag.diagonal($U(), P_inner, _), params.fill(Col)
     ).
 
-.decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
     canvas.cell($U(), P_grid_out),
     ( paint(P_grid_out, Col)                 // the box

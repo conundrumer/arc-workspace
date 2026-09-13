@@ -1,17 +1,20 @@
 // e633a9e5
-// concept: scale lookup border
-// Nonuniform scale-up: each input cell becomes a tile, and the tiles keep
-// the input's arrangement. Three models, tagged on out's Choice:
-//
-//   $Edge()  — a cell is params.fat wide along an axis where it touches a grid
-//              edge of that axis, and unit wide elsewhere.
-//   $Table() — per-line extents stored in params.ext, keyed by the line's position.
-//   $Map()   — pure data: params.map stores the cell correspondence from input
-//              positions to output positions.
+// keywords: scale lookup border
+// output: Nonuniform scale-up: each input cell becomes a tile, and the tiles
+//  keep the input's arrangement.
 
-#include "../lib.dl"
+// how a cell's tile size is found
+.type Choice =
+    // a cell is params.fat wide along an axis where it touches a grid edge of
+    // that axis, and unit wide elsewhere
+    Edge {}
+    // per-line extents stored in params.ext, keyed by the line's position
+  | Table {}
+    // pure data: params.map stores the cell correspondence from input positions
+    // to output positions
+  | Map {}
 
-.type Choice = Edge {} | Table {} | Map {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
@@ -64,8 +67,6 @@
 }
 
 .init params = Params
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // Per-case axis-only intile positions of a cell's tile.
 .decl ax_pos(ch: Choice, p_tile: Position, a: Axis, p_in_ax: Position)

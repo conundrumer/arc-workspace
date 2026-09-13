@@ -1,9 +1,9 @@
 // 1e0a9b12
-// concept: lines move
-// Gravity: each line's ink packs against the params.grav edge, order kept;
-// elsewhere background.
+// keywords: lines move
+// output: Gravity: each line's ink packs against the params.grav edge, order
+//  kept; elsewhere background.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl grav(d: Dir) grav(DIR_B).
@@ -31,6 +31,5 @@ fallen(Q, Col) :-
     ink(P_across, K, Col), pack.rank(P_across, K, R),
     place(Q, P_across, R).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- fallen(P, Col).
 out(P, Col) :- in(P, _), params.bg(Col), !fallen(P, _).

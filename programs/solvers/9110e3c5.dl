@@ -4,12 +4,14 @@
 // input: cells of several colors scattered over params.bg
 // output: the 3x3 glyph that the ink color keys
 
-// What makes a color the ink.
+// what makes a color the ink
 .type Choice =
     // it covers the most cells
     Count {}
     // it forms the largest 4-component
   | Object {}
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -63,8 +65,6 @@
 
 .init parse = Parse<Unit>
 parse.cell($U(), P, Col) :- in(P, Col).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // --- Count ---
 out(P, Col, $Count()) :- parse.common.mode($U(), Key), params.glyph(Key, P, Col).

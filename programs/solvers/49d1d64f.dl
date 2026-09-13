@@ -1,10 +1,10 @@
 // 49d1d64f
-// concept: grow border
-// Grow the grid by one ring: the input seats one cell in from every output
-// edge, each input edge cell replicates one step past its edge, and the
-// ring's corners get params.bg.
+// keywords: grow border
+// output: Grow the grid by one ring: the input seats one cell in from every
+//  output edge, each input edge cell replicates one step past its edge, and the
+//  ring's corners get params.bg.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl ring_width(k: number) ring_width(1).
@@ -21,7 +21,6 @@
 .decl seated(p_in: Position, p_out: Position)
 seated(P_in, P_out) :- in(P_in, _), params.seat_delta(Delta), compose(P_in, Delta, P_out).
 
-.decl out(p: Position, col: Color)
 out(P_out, Col) :-
     in(P_in, Col_in), seated(P_in, P_seat),                   // input cell at its seat
     ( P_out = P_seat, Col = Col_in                            // the seat itself

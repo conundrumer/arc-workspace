@@ -1,17 +1,19 @@
 // 8b9c3697
 // draft
-// concept: objects move span
-// The grid is a background, the commonest color, with movers of params.mover
-// and anchors of a third color on it. An anchor is a component; its cavity
-// is the cells with anchor cells of it on both sides along a row or a
-// column. Each mover slides toward each cardinal direction until its next
-// step would leave the frame or cover a cell that is neither background nor
-// its own. When that step would cover an anchor cell and the rest lies
-// wholly in that anchor's cavity, the mover stays at rest, and the cells it
-// passed over, its start included, take params.trail. Every other mover is
-// erased.
+// keywords: objects move span
+// input: The grid is a background, the commonest color, with movers of
+//  params.mover and anchors of a third color on it. An anchor is a
+//  component; its cavity is the cells with anchor cells of it on both sides
+//  along a row or a column.
+// output: Each mover slides toward each cardinal direction until its next
+//  step would leave the frame or cover a cell that is neither background nor
+//  its own. When that step would cover an anchor cell and the rest lies
+//  wholly in that anchor's cavity, the mover stays at rest, and the cells it
+//  passed over, its start included, take params.trail. Every other mover is
+//  erased.
+// review principle: docs/wf-solver/open/peer-priors.md
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl mover(col: Color) mover(2).
@@ -101,7 +103,6 @@ trail(P) :-
 cleared(P, Col) :- in(P, Col), !mover(_, P).
 cleared(P, Col) :- mover(_, P), bg(Col).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- landed(P), params.mover(Col).
 out(P, Col) :- trail(P), params.trail(Col).
 out(P, Col) :- cleared(P, Col), !landed(P), !trail(P).

@@ -1,11 +1,11 @@
 // 178fcbfb
 // draft
-// concept: markers cast
-// Isolated dots on a blank grid. Each dot paints the whole line through it,
-// in its own color; the color says which line family — row or column. Where
-// two lines cross, one family shows over the other.
+// keywords: markers cast
+// output: Isolated dots on a blank grid. Each dot paints the whole line through
+//  it, in its own color; the color says which line family — row or column.
+//  Where two lines cross, one family shows over the other.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -30,7 +30,6 @@ painted(P, A, Col) :-
 .decl top_paint(p: Position, col: Color)
 top_paint(P, Col) :- params.top_axis(A), painted(P, A, Col).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, _),
     ( top_paint(P, Col)                       // the winning family

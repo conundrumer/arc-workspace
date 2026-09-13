@@ -1,18 +1,20 @@
 // 4364c1c4
 // draft
-// concept: objects move lookup
-// A bg field holds figures, each two touching parts of different colors. The
-// parts meet along a seam, and each slides one step parallel to that seam:
-// the part on the seam's top side goes left, the one on its bottom side goes
-// right. The cells a part leaves become bg. Cases claim what fixes the
-// direction:
-//   $Turn  — a quarter turn from the side of the seam the part sits on, in
-//            a stored sense.
-//   $Table — a stored side-to-direction correspondence.
+// keywords: objects move lookup
+// output: A bg field holds figures, each two touching parts of different
+//  colors. The parts meet along a seam, and each slides one step parallel to
+//  that seam: the part on the seam's top side goes left, the one on its bottom
+//  side goes right. The cells a part leaves become bg.
 
-#include "../lib.dl"
+// what fixes the slide direction
+.type Choice =
+    // a quarter turn from the side of the seam the part sits on, in a stored
+    // sense
+    Turn {}
+    // a stored side-to-direction correspondence
+  | Table {}
 
-.type Choice = Turn {} | Table {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // The slide distance.
@@ -81,7 +83,6 @@ moved(Q, Col, Ch) :-
 .decl impl_choice(ch: Choice)
 impl_choice($Turn()). impl_choice($Table()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     in(P, _), impl_choice(Ch),
     ( moved(P, Col, Ch)                         // a part landed here

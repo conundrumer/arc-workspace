@@ -1,21 +1,19 @@
 // 11852cab
-// concept: symmetry d4 repair
-// A partial symmetric figure sits on a bg field. Its bounding box is the
-// frame the symmetry acts in, and the output adds each figure cell's images
-// under the transforms the case admits. Cases:
-//
-//   $Stored()  — params.sym names the group.
-//   $Derived() — the transforms the figure itself never contradicts.
-//
-// Coincide here: every figure is consistent with all of D4, so both cases
-// apply the full group.
+// keywords: symmetry d4 repair
+// input: a partial symmetric figure on a bg field, in its bounding box.
+// output: the figure gains each of its cells' images under the transforms the
+//  case admits.
 
-#include "../lib.dl"
+// the transforms the case admits
+.type Choice =
+    // params.sym names the group
+    Stored {}
+    // the transforms the figure itself never contradicts
+  | Derived {}
 
-.type Choice = Stored {} | Derived {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
 
     // --- $Stored ---
@@ -38,15 +36,9 @@
     .decl figure(key: Key, p_inner: Position, col: Color)
     figure(K, P_inner, Col) :- cell(K, P, Col), !params.bg(Col), inner(K, P, P_inner).
 
-    .init sym4 = D4Map<Key, Color>
-    sym4.src(K, P, Col) :- figure(K, P, Col).
-    sym4.dst(K, P, Col) :- figure(K, P, Col).
-
-    .decl map(key: Key, d: D4)
-    map(K, D) :- sym4.map(K, D).
-
-    .decl compatible(key: Key, d: D4)
-    compatible(K, D) :- sym4.compatible(K, D).
+    .init self = D4Map<Key, Color>
+    self.src(K, P, Col) :- figure(K, P, Col).
+    self.dst(K, P, Col) :- figure(K, P, Col).
 }
 
 // --- shared ---
@@ -66,7 +58,6 @@ paint(P_grid, Col, Ch) :-
 .decl impl_choice(ch: Choice)
 impl_choice($Stored()). impl_choice($Derived()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).
 
@@ -76,7 +67,7 @@ transform(D, $Stored()) :- params.sym(S), sym_member(S, D).
 
 // --- $Derived ---
 
-transform(D, $Derived()) :- parse.compatible($U(), D).
+transform(D, $Derived()) :- parse.self.compatible($U(), D).
 
 .comp Determine {
     // The completed figure of each train output.
@@ -85,7 +76,7 @@ transform(D, $Derived()) :- parse.compatible($U(), D).
 
     // A transform some output figure lacks.
     .decl missing(d: D4)
-    missing(D) :- ex_out(E, _, _), d4_elem(D), !parse.map(E, D).
+    missing(D) :- ex_out(E, _, _), d4_elem(D), !parse.self.map(E, D).
 
     // Name the shared set as a subgroup value.
     .init named = KeyedSetCompare<Unit, Sym, D4>

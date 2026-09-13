@@ -1,22 +1,25 @@
 // 44f52bb0
-// concept: symmetry lookup classify
-// Classify input by D4-symmetry; emit a fixed output per class.
-//
-// Two impls; out's choice column tags each:
-//
-//   $Direct     — emit params.sym_out if input is invariant under params.sym_group;
-//                 params.asym_out otherwise.
-//   $GroupMatch — params.mapping_sym lists candidate sym groups; pick the largest
-//                 group that leaves the input invariant; emit that entry's
-//                 params.mapping_out.
+// keywords: symmetry lookup classify
+// output: Classify the input by its D4-symmetry, and emit the fixed output
+//  stored for that class.
 
-#include "../lib.dl"
+// how the input's invariance is tested to pick its class
+.type Choice =
+    // emit params.sym_out if the input is invariant under
+    // params.sym_group, params.asym_out otherwise
+    Direct {}
+    // pick the largest group of params.mapping_sym that leaves the input
+    // invariant; emit that entry's params.mapping_out
+  | GroupMatch {}
 
-.type Choice = Direct {} | GroupMatch {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     // --- $Direct ---
-    // The group whose invariance defines the symmetric class.
+    // The group whose invariance defines the symmetric class. The pairs do
+    // not fix its value: the order-2 subgroups of SYM_BOX classify them
+    // alike. The determination takes the largest group the symmetric pairs
+    // share.
     .decl sym_group(s: Sym) sym_group(SYM_BOX).
 
     .decl sym_out(p: Position, col: Color)
@@ -26,10 +29,9 @@
     GRID_1x1(asym_out, 7)
 
     // --- $GroupMatch ---
-    // Each entry holds a sym group and an output grid. Entries are matched
-    // against the input's invariance set; the largest matched group is
-    // chosen. The trivial-group entry is the always-matches fallback
-    // (size 1 → lowest priority).
+    // A sym group and the output grid of its class. The trivial group
+    // matches every input, so its entry answers an input that no other
+    // entry matches.
     .decl mapping_sym(id: Ident, s: Sym)
     mapping_sym(0, SYM_BOX).
     mapping_sym(1, SYM_1).
@@ -52,9 +54,9 @@ syms_non_invariant(D) :- d4.mismatch($U(), D), params.sym_group(S), sym_member(S
 
 // --- $GroupMatch ---
 
-// Pick the largest group the input is invariant under: invariance beyond what
-// a group requires still matches it, so the test is covers, not equals.
-// Assumes group sizes are unique; a tie would emit conflicting cells.
+// The largest group the input is invariant under. Invariance beyond what a
+// group requires still matches it, so the test is covers, not equals. Two
+// entries of one size would emit conflicting cells.
 .init group = KeyedSetCompare<Unit, Ident, D4>
 group.pattern_member(Id, D) :- params.mapping_sym(Id, S), sym_member(S, D).
 group.observed_member($U(), D) :- d4_elem(D), !d4.mismatch($U(), D).
@@ -64,13 +66,9 @@ best_id.cand($U(), Id, N) :- group.covers($U(), Id), group.pattern_size(Id, N).
 
 // --- Output ---
 
-.decl out(p: Position, col: Color, c: Choice)
+out(P, Col, $Direct()) :- params.sym_out(P, Col), !syms_non_invariant(_).
+out(P, Col, $Direct()) :- params.asym_out(P, Col), syms_non_invariant(_).
 
-// $Direct
-out(P, Col, $Direct()) :- params.sym_out(P, Col),  !syms_non_invariant(_).
-out(P, Col, $Direct()) :- params.asym_out(P, Col),  syms_non_invariant(_).
-
-// $GroupMatch
 out(P, Col, $GroupMatch()) :- best_id.high($U(), Id, _), params.mapping_out(Id, P, Col).
 
 .comp Determine {
@@ -87,7 +85,6 @@ out(P, Col, $GroupMatch()) :- best_id.high($U(), Id, _), params.mapping_out(Id, 
     out_cmp.pattern_member(E, [P, Col]) :- ex_out(E, P, Col).
     out_cmp.observed_member(E, M) :- out_cmp.pattern_member(E, M).
 
-    // Two train pairs whose outputs disagree.
     .decl differs(e1: Example, e2: Example)
     differs(E1, E2) :- paired(E1), paired(E2), !out_cmp.equals(E1, E2).
 
@@ -108,10 +105,11 @@ out(P, Col, $GroupMatch()) :- best_id.high($U(), Id, _), params.mapping_out(Id, 
     .decl asym_out(p: Position, col: Color)
     asym_out(P, Col) :- ex_out(E, P, Col), sym_broken(E).
 
-    // The symmetric class's invariance set, named as a subgroup.
+    // A transform some symmetric pair breaks.
     .decl inv_broken(d: D4)
     inv_broken(D) :- paired(E), !sym_broken(E), d4.mismatch(E, D).
 
+    // The symmetric class's invariance set, named as a subgroup.
     .init named = KeyedSetCompare<Unit, Sym, D4>
     named.pattern_member(S, D) :- sym_member(S, D).
     named.observed_member($U(), D) :- d4_elem(D), !inv_broken(D).

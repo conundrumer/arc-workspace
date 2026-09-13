@@ -1,16 +1,19 @@
 // 0becf7df
-// concept: markers mapping lookup
-// A key block sits at a corner; its cells pair up and paired colors swap.
-// Cells outside the key recolor by the swap; the key and unmapped colors
-// pass through. $Line pairs the two cells on each key line along a
-// stored axis; $Map pairs cells by a stored position correspondence.
+// keywords: markers mapping lookup
+// output: A key block sits at a corner; its cells pair up and paired colors
+//  swap. Cells outside the key recolor by the swap; the key and unmapped
+//  colors pass through.
 
-#include "../lib.dl"
+// how the key's cells pair up
+.type Choice =
+    // pairs the two cells on each key line along a stored axis
+    Line {}
+    // pairs cells by a stored position correspondence
+  | Map {}
 
-.type Choice = Line {} | Map {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     // Corner the key block sits at.
     .decl corner(d: DiagDir)
     corner(DIAG_TL).
@@ -71,7 +74,6 @@ mapping(C1, C2, $Map()) :-
     corner_anchor(Diag, P1, I1), in(P1, C1),
     corner_anchor(Diag, P2, I2), in(P2, C2).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col_out, Ch) :-
     impl_choice(Ch), in(P, Col),
     ( key_cell(P), Col_out = Col                          // key cell — kept

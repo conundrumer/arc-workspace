@@ -1,12 +1,13 @@
 // 4df5b0ae
 // draft
-// concept: objects rank move
-// A shape is a connected group of same-colored non-background cells. The
-// output sweeps the shapes into one corner: a shape keeps its form and rests
-// on the edge the corner lies on, and the shapes stand side by side along that
-// edge in ascending cell count, the smallest at the corner.
+// keywords: objects rank move
+// input: A shape is a connected group of same-colored non-background cells.
+// output: The output sweeps the shapes into one corner: a shape keeps its
+//  form and rests on the edge the corner lies on, and the shapes stand side
+//  by side along that edge in ascending cell count, the smallest at the
+//  corner.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(7).
@@ -61,6 +62,5 @@ paint(P_grid_out, Col) :-
     in(P_grid_out, _), dist(P_grid_out, D, R),                           // an output grid cell, seated at that place
     rest_dir(D_rest), same_dist(D_rest, P_inner, P_grid_out).            // as far off the rest edge as in its own box
 
-.decl out(p: Position, col: Color)
 out(P_grid, Col) :- paint(P_grid, Col).
 out(P_grid, Col) :- in(P_grid, _), !paint(P_grid, _), params.bg(Col).

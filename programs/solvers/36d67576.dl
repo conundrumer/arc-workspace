@@ -1,24 +1,21 @@
 // 36d67576
 // draft
-// concept: objects markers d4
-// Every connected group of non-background cells is a part: a shape plus one
-// anchor cell. Exactly one part also carries marks — that part is the model.
-// Read from its own anchor, each part's shape is the model's shape under a D4
-// transform, and the model's marks come along under that transform.
-//
-// Choice names what a carried mark meets:
-//
-//   $Fill()  — a mark lands only on an empty cell.
-//   $Stamp() — a mark replaces the cell it lands on.
-//
-// No pair separates the two: every carried mark lands on an empty cell.
-//
-// A shape symmetric about its anchor matches under several transforms. The
-// program keeps them all, so the output stands where they agree.
+// keywords: objects markers d4
+// input: Every connected group of non-background cells is a part: a shape
+//  plus one anchor cell. Exactly one part also carries marks — that part is
+//  the model.
+// output: Read from its own anchor, each part's shape is the model's shape
+//  under a D4 transform, and the model's marks come along under that
+//  transform.
 
-#include "../lib.dl"
+// what a carried mark meets when it lands
+.type Choice =
+    // a mark lands only on an empty cell
+    Fill {}
+    // a mark replaces the cell it lands on
+  | Stamp {}
 
-.type Choice = Fill {} | Stamp {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -56,13 +53,16 @@ poses.pattern_member(D, V_img) :-
     d4_elem(D), apply(D, V, V_img).        // under each transform
 poses.observed_member(Id, V) :- shape_cell(Id, V).
 
+// A shape symmetric about its anchor matches under several transforms; the
+// program keeps them all, so the output stands where they agree.
 .decl carried(p: Position, col: Color)
 carried(P, Col) :-
     mark_cell(_, V, Col),                    // a mark of the model
     poses.equals(Id, D), apply(D, V, V_img), // turned by the part's pose
     anchor_at(Id, A), compose(A, V_img, P).  // placed from the part's anchor
 
-// Where each case lays a carried mark down.
+// Where each case lays a carried mark down. No pair separates the two:
+// every carried mark lands on an empty cell.
 .decl applied(p: Position, col: Color, ch: Choice)
 
 // --- Fill ---
@@ -78,7 +78,6 @@ applied(P, Col, $Stamp()) :- carried(P, Col).
 .decl impl_choice(ch: Choice)
 impl_choice($Fill()). impl_choice($Stamp()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     in(P, Col_in), impl_choice(Ch),
     ( applied(P, Col, Ch)                 // the mark laid down

@@ -1,20 +1,20 @@
 // 30f42897
-// concept: wallpaper parity count
-// The grid's border is a cycle of cells, and the input's non-bg cells are one
-// block on that cycle. The output keeps the input and repeats the block around
-// the cycle. The sense the cycle runs in is not observable, so the program runs
-// both. What spaces the copies is underdetermined:
-//
-//   $Alternate() — stretches of the block's length alternate painted and blank
-//                  around the cycle.
-//   $Period()    — the block recurs every params.period_blocks stretches.
+// keywords: wallpaper parity count
+// input: the grid's border is a cycle of cells, and the input's non-bg cells
+//  are one block on that cycle
+// output: the input, with the block repeated around the cycle. The sense the
+//  cycle runs in is not observable, so the program runs both.
 
-#include "../lib.dl"
+// what spaces the copies
+.type Choice =
+    // painted and blank stretches alternate around the cycle
+    Alternate {}
+    // the block recurs every params.period_blocks stretches
+  | Period {}
 
-.type Choice = Alternate {} | Period {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(8).
 
     // --- $Period ---
@@ -31,8 +31,7 @@ mark(P, Col) :- in(P, Col), !params.bg(Col).
 .init block = Tally<Unit, Position>
 block.item($U(), P) :- mark(P, _).
 
-// The border as a cycle, walked in sense s: from a cell on edge D, the step
-// toward turn(S, D) runs along that edge. At a corner only one of the cell's
+// The border as a cycle, walked in sense s. At a corner only one of the cell's
 // two edges keeps the step on the grid, so each cell has one successor.
 .init ring = CycleWalk<Sense, Position>
 ring.succ(S, P, Q) :-
@@ -71,7 +70,6 @@ paint(S, Q, $Period()) :-
 
 // --- output ---
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(_, P, Ch), mark(_, Col).   // the block's color
 out(P, Col, Ch) :-
     impl_choice(Ch), sense_elem(S),      // each case, under each sense

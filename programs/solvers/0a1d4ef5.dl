@@ -1,17 +1,21 @@
 // 0a1d4ef5
-// concept: objects rank
-// Solid one-color rectangles sit on a field of noise, laid out in a grid:
-// on each axis the rectangles group into bands, and the output is that
-// layout — one cell per rectangle, holding its color, at its band's rank
-// on each axis. The cases contest what makes a band: $Runs groups spans
-// into runs of adjacent occupied lines, so a gap of empty lines separates
-// bands; $Overlap groups spans that share a line, closed transitively.
+// keywords: objects rank
+// output: Solid one-color rectangles sit on a field of noise, laid out in a
+//  grid: on each axis the rectangles group into bands, and the output is
+//  that layout — one cell per rectangle, holding its color, at its band's
+//  rank on each axis.
 
-#include "../lib.dl"
-
-.type Choice = Runs {} | Overlap {}
+// what makes a band
+.type Choice =
+    // groups spans into runs of adjacent occupied lines, so a gap of empty
+    // lines separates bands
+    Runs {}
+    // groups spans that share a line, closed transitively
+  | Overlap {}
 .type RegionAxis = [id: Ident, a: Axis]
 .type ChoiceAxis = [c: Choice, a: Axis]
+
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .decl min_side(k: number) min_side(3).
@@ -83,7 +87,6 @@ block_band($Overlap(), A, Id, B) :- cls.id([Id, A], B).
 layout.axis([C, A], A) :- block_band(C, A, _, _).
 layout.member([C, A], B, P_line) :- block_band(C, A, Id, B), region_line(Id, A, P_line).
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P, Col, C) :-
     region.label(Col, _, Id),                                          // the rectangle's color
     block_band(C, A, Id, B), block_band(C, A2, Id, B2), perp(A, A2),   // its band on each axis

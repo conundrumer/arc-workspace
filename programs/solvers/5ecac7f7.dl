@@ -1,32 +1,33 @@
 // 5ecac7f7
 // draft
-// concept: decompose objects rank lookup select
-// Cuts of one color split the grid into panels that stand side by side.
-// Every panel holds as many shapes as there are panels, also side by side;
-// a shape is connected cells of one color. The output is one panel: each
-// panel contributes one of its shapes, at the place that shape holds inside
-// its own panel, and the rest of the output is background.
-//
-// Two models of the cut:
-//
-//   $Separator — the lines that carry params.sep are the cuts.
-//   $Divide    — params.panels equal panels, params.gap apart.
-//
-// Two models of which shape a panel contributes:
-//
-//   $Diagonal — the shape whose place among the panel's shapes is the
-//               panel's own place among the panels.
-//   $Lookup   — the shape at the place params.pick stores for the panel's
-//               place.
+// keywords: decompose objects rank lookup select
+// output: Cuts of one color split the grid into panels that stand side by side.
+//  Every panel holds as many shapes as there are panels, also side by side; a
+//  shape is connected cells of one color. The output is one panel: each panel
+//  contributes one of its shapes, at the place that shape holds inside its own
+//  panel, and the rest of the output is background.
 
-#include "../lib.dl"
+// which lines cut the grid into panels
+.type Cut =
+    // the lines that carry params.sep are the cuts
+    Separator {}
+    // params.panels equal panels, params.gap apart
+  | Divide {}
 
-.type Cut = Separator {} | Divide {}
-.type Pick = Diagonal {} | Lookup {}
+// which shape a panel contributes
+.type Pick =
+    // the shape whose place among the panel's shapes is the panel's own place
+    // among the panels
+    Diagonal {}
+    // the shape at the place params.pick stores for the panel's place
+  | Lookup {}
+
+// which cut and which pick apply
 .type Choice = [cut: Cut, pick: Pick]
 
+.decl out(p: Position, col: Color, c: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(7).
     .decl axis(a: Axis) axis(AXIS_H).   // panels and shapes both run along it
 
@@ -130,7 +131,6 @@ picked(P_intile, Col, [Cut, $Lookup()]) :-
     parse.place($U(), Cut, P_intile, Col, P_panel, P_shape),
     params.pick(P_panel, P_shape).
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P_intile, Col, Ch) :- picked(P_intile, Col, Ch).
 out(P_intile, Col, [Cut, Pk]) :-
     impl_choice([Cut, Pk]),

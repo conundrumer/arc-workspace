@@ -1,20 +1,21 @@
 // 2281f1f4
-// concept: lines markers stamp cross
-// Markers (params.marker) sit on the two header edges of corner params.header; each
-// marks its line. Cells where marked lines cross paint params.fill. Two hypotheses
-// of what a marked line carries off the crossings, tagged on out's Choice:
-//
-//   $Cross — nothing: crossings paint, the rest passes through.
-//   $Stamp — lines marked from the selector edge re-render as the pattern
-//            header (the params.pattern_axis edge of the corner): marker cells
-//            params.fill, the rest params.bg.
+// keywords: lines markers stamp cross
+// output: Markers (params.marker) sit on the two header edges of corner
+//  params.header; each marks its line. Cells where marked lines cross paint
+//  params.fill.
 
-#include "../lib.dl"
+// what a marked line carries off the crossings
+.type Choice =
+    // nothing: crossings paint, the rest passes through
+    Cross {}
+    // lines marked from the selector edge re-render as the pattern header (the
+    // params.pattern_axis edge of the corner): marker cells params.fill, the
+    // rest params.bg
+  | Stamp {}
 
-.type Choice = Cross {} | Stamp {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl marker(c: Color) marker(5).
     .decl fill(c: Color) fill(2).
     .decl header(d: DiagDir) header(DIAG_TR).
@@ -31,8 +32,6 @@ marked(P, D) :-
     in(P, _), params.header(Diag), dir_of(Diag, A, D),
     params.marker(M), in(Q, M), dist(Q, D, 0),   // marker on edge d
     same_line(A, P, Q).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // --- Cross ---
 

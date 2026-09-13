@@ -1,24 +1,28 @@
 // 15660dd6
-// concept: decompose markers select mapping
-// Bordered panels sit in a lattice, and a label outside the lattice names each
-// panel band. Every panel column holds one distinguished panel (the donor)
-// and copies of one stencil. The output is one band of the lattice: each
-// column's stencil painted in its donor's color, ringed in the label of the
-// donor's band.
-//
-// Two hypotheses name the donor of a column:
-//   $Solid — the panel whose interior holds one color.
-//   $Odd   — the panel no other panel of the column matches.
-//
-// Two hypotheses render the interior:
-//   $Map  — params.ink maps to the donor's color; other colors pass through.
-//   $Mask — non-background cells take the donor's color, the rest params.bg.
+// keywords: decompose markers select mapping
+// input: bordered panels sit in a lattice, and a label outside the lattice
+//  names each panel band. Every panel column holds one distinguished panel
+//  (the donor) and copies of one stencil.
+// output: one band of the lattice: each column's stencil painted in its
+//  donor's color, ringed in the label of the donor's band.
 
-#include "../lib.dl"
+// two hypotheses name the donor of a column
+.type Donor =
+    // the panel whose interior holds one color
+    Solid {}
+    // the panel no other panel of the column matches
+  | Odd {}
 
-.type Donor = Solid {} | Odd {}
-.type Render = Map {} | Mask {}
+// two hypotheses render the interior
+.type Render =
+    // params.ink maps to the donor's color; other colors pass through
+    Map {}
+    // non-background cells take the donor's color, the rest params.bg
+  | Mask {}
+
 .type Choice = [donor: Donor, render: Render]
+
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(8).
@@ -137,8 +141,6 @@ out_pos(P_col, P_intile, P) :-
     params.layout_axis(A),
     split(P_lat, A, P_along, _), split(P_intile, A, _, P_across),
     compose(P_along, P_across, P).
-
-.decl out(p: Position, col: Color, c: Choice)
 
 out(P, Col, [D, R]) :-
     out_pos(P_col, P_intile, P), ring_pos(P_intile),

@@ -1,15 +1,17 @@
 // aa18de87
-// concept: lines span
-// Diagonal rays, one color per input. Bg cells between two ray cells on
-// their line fill with params.fill. Two models of which lines fill, tagged on
-// out's Choice:
-//
-//   $Axis — lines along params.axis only.
-//   $Iso  — lines along both axes; no orientation parameter.
+// keywords: lines span
+// output: Diagonal rays, one color per input. Bg cells between two ray cells on
+//  their line fill with params.fill. The two cases model differently which
+//  lines fill.
 
-#include "../lib.dl"
+// which lines fill
+.type Choice =
+    // lines along params.axis only
+    Axis {}
+    // lines along both axes; no orientation parameter
+  | Iso {}
 
-.type Choice = Axis {} | Iso {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -20,8 +22,6 @@
 }
 
 .init params = Params
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // --- Axis ---
 

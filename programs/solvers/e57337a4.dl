@@ -1,15 +1,17 @@
 // e57337a4
-// concept: decompose markers
-// Downscale fold: the input decomposes into a 3×3 arrangement of 5×5
-// tiles; each tile maps to one output cell — the mark color if the tile
-// holds a mark cell, else the canvas color (most-frequent in the input).
-// Decomposition hypothesis (data-equivalent on 15×15):
-//   $Count() — tile count params.divisor
-//   $Size()  — tile size params.tile
+// keywords: decompose markers
+// output: Downscale fold: the input decomposes into a 3×3 arrangement of 5×5
+//  tiles; each tile maps to one output cell — the mark color if the tile holds
+//  a mark cell, else the canvas color (most-frequent in the input).
 
-#include "../lib.dl"
+// Decomposition hypothesis (data-equivalent on 15×15)
+.type Choice =
+    // tile count params.divisor
+    Count {}
+    // tile size params.tile
+  | Size {}
 
-.type Choice = Count {} | Size {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl mark(c: Color) mark(0).
@@ -38,6 +40,5 @@ tile_of(P, T, $Size()) :- in(P, _), params.tile(K), divide_by_size_2d(P, K, 0, T
 .decl marked(p_tile: Position, ch: Choice)
 marked(T, Ch) :- in(P, Col), params.mark(Col), tile_of(P, T, Ch).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(T, Col, Ch) :- marked(T, Ch), params.mark(Col).
 out(T, Col, Ch) :- tile_of(_, T, Ch), !marked(T, Ch), canvas.mode($U(), Col).

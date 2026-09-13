@@ -1,22 +1,23 @@
 // 64efde09
 // draft
-// concept: objects markers d4 cast
-// Congruent 2-wide bars sit on a background in different D4 poses, with a
-// few single cells among them. A single cell is the tip of a beam that one
-// bar casts: an open lane runs from it back to a cell of that bar, and the
-// tip fixes the beam's color, its source cell in the bar, and its heading.
-// The D4 element carrying one bar onto another carries a source cell and a
-// heading with it, so every bar casts one beam per single cell. A beam
-// colors the background cells of the line running out of its source.
-//
-// The cases differ in what tells a beam's heading from its reverse:
-//   $Edge — the tip lies on the grid edge the beam runs to.
-//   $Lane — the beam leaves the bar by the lane where one color covers the
-//           most cells.
+// keywords: objects markers d4 cast
+// input: congruent 2-wide bars on a background in different D4 poses, with a
+//  few single cells among them
+// output: A single cell is the tip of a beam that one bar casts: an open lane
+//  runs from it back to a cell of that bar, and the tip fixes the beam's
+//  color, its source cell in the bar, and its heading. The D4 element
+//  carrying one bar onto another carries a source cell and a heading with
+//  it, so every bar casts one beam per single cell. A beam colors the
+//  background cells of the line running out of its source.
 
-#include "../lib.dl"
+// The cases differ in what tells a beam's heading from its reverse
+.type Choice =
+    // the tip lies on the grid edge the beam runs to
+    Edge {}
+    // the beam leaves the bar by the lane where one color covers the most cells
+  | Lane {}
 
-.type Choice = Edge {} | Lane {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(8).
@@ -119,6 +120,5 @@ beam.cell([S, Ch], P) :- emit(S, _, _, Ch), in(P, Col), params.bg(Col).
 .decl paint(p: Position, col: Color, ch: Choice)
 paint(P, Col, Ch) :- emit(S, _, Col, Ch), beam.ray([S, Ch], P, _, _, _).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).

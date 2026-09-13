@@ -1,11 +1,12 @@
 // 6d58a25d
 // draft
-// concept: objects markers cast
-// A shape of one color sits among scattered markers of another color. Where a
-// marker lies past the shape toward params.dir in the shape's line, the
-// marker's color fills that line from the shape to the grid edge.
+// keywords: objects markers cast
+// input: a shape of one color among scattered markers of another color
+// output: Where a marker lies past the shape toward params.dir in the
+//  shape's line, the marker's color fills that line from the shape to the
+//  grid edge.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -36,6 +37,5 @@ fill(P, Col) :-
     cast.ray($U(), P, D, _, Src),                               // on a cast
     cast.ray($U(), Q, D, _, Src), in(Q, Col), !params.bg(Col).  // its marker
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- fill(P, Col).
 out(P, Col) :- in(P, Col), !fill(P, _).

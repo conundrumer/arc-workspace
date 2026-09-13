@@ -1,17 +1,21 @@
 // 140c817e
-// concept: markers cast stamp
-// Marks sit on a plain field. Each mark draws its whole row and column
-// in the line color and carries a decoration: the center color on the
-// mark cell, the corner color on its four diagonal neighbors, clipped
-// to the grid. The center covers the lines, witnessed at each mark,
-// where its own row and column cross. No pair puts a corner on another
-// mark's line, so the corner's layer is a choice: CornerOver paints the
-// whole decoration over the lines; CornerUnder lets a crossing line
-// cover the corners. The rest of the field passes through.
+// keywords: markers cast stamp
+// input: Marks sit on a plain field.
+// output: Each mark draws its whole row and column in the line color and
+//  carries a decoration: the center color on the mark cell, the corner
+//  color on its four diagonal neighbors, clipped to the grid. The center
+//  covers the lines, witnessed at each mark, where its own row and column
+//  cross. No pair puts a corner on another mark's line, so the corner's
+//  layer is a choice. The rest of the field passes through.
 
-#include "../lib.dl"
+// how the corner decoration layers against the crossing lines
+.type Choice =
+    // the whole decoration paints over the lines
+    CornerOver {}
+    // a crossing line covers the corners
+  | CornerUnder {}
 
-.type Choice = CornerOver {} | CornerUnder {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     // The row and column drawn through each mark.
@@ -40,8 +44,6 @@ crossed(P) :- in(P, _), mark(M), axis_elem(A), same_line(A, P, M).
 // A mark's diagonal neighbor, clipped to the grid.
 .decl corner_cell(p: Position)
 corner_cell(P) :- mark(M), diag_dir_elem(D), neighbor(M, D, P), in(P, _).
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- CornerOver ---
 

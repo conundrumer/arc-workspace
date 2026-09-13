@@ -1,18 +1,20 @@
 // 6b9890af
 // draft
-// concept: crop scale border
+// keywords: crop scale border
+// input: a rectangle outline in the frame color, and a small object of
+//  another color, sitting apart on bg
+// output: The output is the outline's box, cropped: its edge lines keep the
+//  frame color, and its hole holds the object blown up to fill it, each
+//  object cell a block, bg elsewhere.
 
-// A rectangle outline in the frame color and a small object of another color
-// sit apart on bg. The output is the outline's box, cropped: its edge lines
-// keep the frame color, and its hole holds the object blown up to fill it,
-// each object cell a block, bg elsewhere.
-//
-// $Stored — the frame color is stored.
-// $Drawn — the frame color is the one whose cells draw a rectangle outline.
+// how the frame color is found
+.type Choice =
+    // the frame color is stored
+    Stored {}
+    // the frame color is the one whose cells draw a rectangle outline
+  | Drawn {}
 
-#include "../lib.dl"
-
-.type Choice = Stored {} | Drawn {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color)  bg(0).
@@ -67,7 +69,6 @@ blocks.cell(P_hole) :- hole.cell(Ch, P), hole.box(Ch, B), crop(P, B, P_hole).
 blocks.dim(Ch, A, N) :- object_box.cell(Ch, P), object_box.box(Ch, B), box_extent(B, P, A, N).
 blocks.gap(0).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_inner, Col, Ch) :-
     frame_box.box(Ch, B), in(P_grid, _), crop(P_grid, B, P_inner),  // box cell, in the box's frame
     ( box_edge(P_grid, B, _), frame_col(Col, Ch)                    // edge line

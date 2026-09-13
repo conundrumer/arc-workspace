@@ -1,18 +1,21 @@
 // 6c434453
 // draft
-// concept: stamp enclose
-// Ink shapes on bg. Every hollow 3×3 ring (eight ink cells around one bg
-// cell) is replaced in place: its hole and the four cells beside it become a
-// plus of params.fill, and its corners clear to bg. Other shapes pass through.
-//
-//   $Stamp — the ring and the plus are stored grids; Occurrences finds the
-//            ring's placements and the plus stamps over each.
-//   $Flank — a bg cell with ink on all four sides is a hole; it and its
-//            cardinal neighbors take params.fill, its diagonal neighbors bg.
+// keywords: stamp enclose
+// output: Ink shapes on bg. Every hollow 3×3 ring (eight ink cells around one
+//  bg cell) is replaced in place: its hole and the four cells beside it become
+//  a plus of params.fill, and its corners clear to bg. Other shapes pass
+//  through.
 
-#include "../lib.dl"
+// how the ring and its replacement are found
+.type Choice =
+    // the ring and the plus are stored grids; Occurrences finds the ring's
+    // placements and the plus stamps over each
+    Stamp {}
+    // a bg cell with ink on all four sides is a hole; it and its cardinal
+    // neighbors take params.fill, its diagonal neighbors bg
+  | Flank {}
 
-.type Choice = Stamp {} | Flank {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     // --- $Stamp ---
@@ -64,8 +67,6 @@ replaced(Q, Col) :-
     ; dir_elem(D), neighbor(P, D, Q), params.fill(Col)     // its sides
     ; diag_dir_elem(D), neighbor(P, D, Q), params.bg(Col)  // its corners
     ).
-
-.decl out(p: Position, col: Color, c: Choice)
 
 out(P, Col, $Stamp()) :- stamped(P, Col).
 out(P, Col, $Stamp()) :- in(P, Col), !stamped(P, _).

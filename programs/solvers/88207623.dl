@@ -1,23 +1,29 @@
 // 88207623
 // draft
-// concept: lines objects markers d4
-// Line segments of params.line stand on params.bg. A shape of params.shape
-// leans on each line, and a lone dot of another color lies beside it. The
-// shape is reflected across its line in the dot's color; the input shows
-// through elsewhere. Choice = [s, m] crosses the hypotheses:
-//
-//   s (which shape cells a line reflects):
-//     $Attached() — the shape cells 8-connected to the line.
-//     $Spanned()  — the shape cells in the line's band: its rows.
-//   m (which dot colors a line's reflection):
-//     $Beside() — the dot in the line's band.
-//     $Sample() — the dot on the reflection: its mirror is a shape cell.
+// keywords: lines objects markers d4
+// input: Line segments of params.line stand on params.bg. A shape of
+//  params.shape leans on each line, and a lone dot of another color lies
+//  beside it.
+// output: The shape is reflected across its line in the dot's color; the
+//  input shows through elsewhere. Choice = [s, m] crosses the hypotheses.
 
-#include "../lib.dl"
+// which shape cells a line reflects
+.type Shape =
+    // the shape cells 8-connected to the line
+    Attached {}
+    // the shape cells in the line's band: its rows
+  | Spanned {}
 
-.type Shape = Attached {} | Spanned {}
-.type Marker = Beside {} | Sample {}
+// which dot colors a line's reflection
+.type Marker =
+    // the dot in the line's band
+    Beside {}
+    // the dot on the reflection: its mirror is a shape cell
+  | Sample {}
+
 .type Choice = [s: Shape, m: Marker]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -95,7 +101,6 @@ paint(Q, Col, [S, $Sample()]) :- image(Id, Q, S), dot(P, Col), image(Id, P, S).
 
 // --- Output ---
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, [S, M]) :-
     in(P, Col), shape_choice(S), marker_choice(M), !paint(P, _, [S, M]).    // shows through

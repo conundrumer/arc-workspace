@@ -1,13 +1,14 @@
 // 1efba499
 // draft
-// concept: lines move
-// The grid's dominant color forms a wall, thin along one axis. Loose cells of
-// other colors sit on either side of it. Along a line that crosses the wall, a
-// loose cell on one side and a loose cell on the other trade sides: each ends
-// up against the wall's far face. A line whose loose cells all sit on one side
-// keeps them where they are.
+// keywords: lines move
+// input: The grid's dominant color forms a wall, thin along one axis. Cells
+//  of the other colors are loose, sitting on either side of the wall.
+// output: Along a line that crosses the wall, a loose cell on one side and a
+//  loose cell on the other trade sides: each ends up against the wall's far
+//  face. A line whose loose cells all sit on one side keeps them where they
+//  are.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -70,6 +71,5 @@ ink(P_land, Col) :-
     same_line(A, P, P_land), touch(P_land, D).   // lands on the wall's far face
 ink(P, Col) :- loose(P, Col), !crossing(P, _, _).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- ink(P, Col).
 out(P, Col) :- in(P, _), !ink(P, _), params.bg(Col).

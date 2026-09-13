@@ -1,18 +1,21 @@
 // 3ee1011a
 // draft
-// concept: objects count rank
-// Bars lie on the background, one color each. The output is a square of
-// concentric frames: its side is the longest bar's cell count, and each
-// frame takes one bar's color. The cases differ on which bar:
-//   $Rank — the bars in descending order of count, one per frame inward.
-//   $Stamp — each bar fills the centered square of its own count, and a
-//     smaller square covers a larger one.
-// Every pair's counts step down by 2 from the longest, so the cases agree
-// there; a bar whose count breaks the step splits them.
+// keywords: objects count rank
+// input: bars lying on the background, one color each
+// output: The output is a square of concentric frames; its side is the
+//  longest bar's cell count, and each frame takes one bar's color.
+//  Every pair's counts step down by 2 from the longest, so the cases agree
+//  there; a bar whose count breaks the step splits them.
 
-#include "../lib.dl"
+// which bar each frame's color comes from
+.type Choice =
+    // the bars in descending order of count, one per frame inward
+    Rank {}
+    // each bar fills the centered square of its own count, and a smaller square
+    // covers a larger one
+  | Stamp {}
 
-.type Choice = Rank {} | Stamp {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -34,8 +37,6 @@ canvas.extent($U(), A, N) :- axis_elem(A), longest.high($U(), N).
 // The concentric frames, counted inward from the canvas border.
 .init rim = Rim<Unit>
 rim.cell($U(), P) :- canvas.cell($U(), P).
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- Rank ---
 

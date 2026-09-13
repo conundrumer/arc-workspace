@@ -1,21 +1,24 @@
 // 79fb03f4
 // draft
-// concept: markers cast walk
-// A params.flow cell sends a stream along its row in params.flow_dir. Where the
-// stream meets a marker (any other non-bg cell), it detours around it on both
-// sides: it steps aside, runs past the marker, and steps back. The stream meets
-// the markers inside a detour in turn, and detours around them one row further
-// out. The stream can enter a detour when its first cell is free, or when the
-// stream on that row already runs up to it. The pairs leave open what a marker
-// inside a detour that cannot be passed does to the detour:
-//
-//   $Enter() — a detour is drawn when the stream can enter it.
-//   $Complete() — a detour is drawn when the stream can traverse it: it can
-//     enter, and every marker inside it has a traversable detour of its own.
+// keywords: markers cast walk
+// input: A params.flow cell sits in the grid; a marker is any other non-bg
+//  cell.
+// output: The flow cell sends a stream along its row in params.flow_dir.
+//  Where the stream meets a marker, it detours around it on both sides: it
+//  steps aside, runs past the marker, and steps back. The stream meets the
+//  markers inside a detour in turn, and detours around them one row further
+//  out. The stream can enter a detour when its first cell is free, or when
+//  the stream on that row already runs up to it.
 
-#include "../lib.dl"
+// what a marker inside a detour that cannot be passed does to the detour
+.type Choice =
+    // a detour is drawn when the stream can enter it
+    Enter {}
+    // a detour is drawn when the stream can traverse it: it can enter, and
+    // every marker inside it has a traversable detour of its own
+  | Complete {}
 
-.type Choice = Enter {} | Complete {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -81,7 +84,6 @@ enterable(Q, S, K) :-
 // The detour around marker Q toward S is drawn.
 .decl open(q: Position, s: Dir, ch: Choice)
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, K) :- stream(P, K), params.flow(Col).
 out(P, Col, K) :- in(P, Col), impl_choice(K), !stream(P, K).
 

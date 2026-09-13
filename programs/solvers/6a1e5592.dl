@@ -1,12 +1,13 @@
 // 6a1e5592
 // draft
-// concept: objects move pack
-// A wall along one grid edge has notches cut into it, and sprites lie on
-// the bg beyond it. The sprites translate to cover the notch cells exactly,
-// each sprite used once and landing nowhere on the wall. A sprite's landed
-// cells take the fill color and its old cells clear.
+// keywords: objects move pack
+// input: a wall along one grid edge, with notches cut into it, and sprites
+//  lying on the bg beyond it
+// output: The sprites translate to cover the notch cells exactly, each
+//  sprite used once and landing nowhere on the wall. A sprite's landed
+//  cells take the fill color and its old cells clear.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -52,7 +53,6 @@ forcing.conflict($U(), Pc, Pc2) :- covers(Pc, P), covers(Pc2, P), Pc != Pc2.
 .decl plugged(p: Position)
 plugged(P) :- forcing.forced($U(), Pc), covers(Pc, P).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- in(P, Col), params.wall(Col).
 out(P, Col) :- plugged(P), params.fill(Col).
 out(P, Col) :-

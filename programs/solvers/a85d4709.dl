@@ -1,18 +1,19 @@
 // a85d4709
-// concept: lines markers lookup
-// Each slice along params.axis is recolored by its content. Two models of the
-// recolor:
-//
-//   $Lookup         — set-keyed slice template; the matching entry's
-//                     params.mapping_out recolors the slice (by set-equality)
-//   $MarkerPosition — the params.marker cell's within-slice position keys
-//                     params.position_color
+// keywords: lines markers lookup
+// output: Each slice along params.axis is recolored by its content. Two models
+//  of the recolor exist.
 
-#include "../lib.dl"
-
-.type Choice = Lookup {} | MarkerPosition {}
+// which model recolors the slice
+.type Choice =
+    // set-keyed slice template; the matching entry's params.mapping_out
+    // recolors the slice (by set-equality)
+    Lookup {}
+    // the params.marker cell's within-slice position keys params.position_color
+  | MarkerPosition {}
 
 .type SliceMember = [p: Position, col: Color]
+
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .decl axis(a: Axis) axis(AXIS_H).
@@ -45,8 +46,6 @@ slice_match.observed_member(P_across, [P_inner, C]) :- slice_cell(P_across, P_in
 
 .decl cell_split(p: Position, p_inner: Position, p_across: Position) inline
 cell_split(P, P_inner, P_across) :- in(P, _), params.axis(A), split(P, A, P_inner, P_across).
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- $Lookup ---
 

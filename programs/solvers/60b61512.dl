@@ -1,19 +1,21 @@
 // 60b61512
 // draft
-// concept: objects mapping stamp
-// Ink shapes lie on params.bg, each spanning three cells on both axes. Each
-// shape's region is painted params.fill, over its background cells only. The
-// cases differ in what the region covers:
-//
-//   $Box   — every cell of the shape's bounding box.
-//   $Stamp — a stored footprint, read in that box's own frame.
+// keywords: objects mapping stamp
+// input: ink shapes lie on params.bg, each spanning three cells on both
+//  axes.
+// output: each shape's region is painted params.fill, over its background
+//  cells only.
 
-#include "../lib.dl"
+// what the region covers
+.type Choice =
+    // every cell of the shape's bounding box
+    Box {}
+    // a stored footprint, read in that box's own frame
+  | Stamp {}
 
-.type Choice = Box {} | Stamp {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
     .decl fill(col: Color) fill(7).
 
@@ -46,20 +48,20 @@ region(P, $Box()) :- in(P, _), bx.box(_, B), inside(P, B).
 
 // --- Stamp ---
 
-region(P, $Stamp()) :- in(P, _), bx.box(_, B), crop(P, B, P_inner), params.footprint(P_inner).
+region(P, $Stamp()) :-
+    in(P, _), bx.box(_, B), crop(P, B, P_inner), params.footprint(P_inner).
 
-// --- out ---
+// --- output ---
 
-.decl recolor(p: Position, ch: Choice)
-recolor(P, Ch) :- region(P, Ch), in(P, Col), params.bg(Col).
+.decl painted(p: Position, ch: Choice)
+painted(P, Ch) :- region(P, Ch), in(P, Col), params.bg(Col).
 
-.decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- recolor(P, Ch), params.fill(Col).
-out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !recolor(P, Ch).
-
-.type EI = [e: Example, id: Ident]
+out(P, Col, Ch) :- painted(P, Ch), params.fill(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, Ch).
 
 .comp Determine {
+    .type EI = [e: Example, id: Ident]
+
     .init objs = Components8<Example>
     objs.node(E, P) :- ex_in(E, P, Col), !params.bg(Col).
 
@@ -69,6 +71,6 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !recolor(P, Ch).
     // Box cells an output leaves non-background, in the box's own frame.
     .decl footprint(p: Position)
     footprint(P_inner) :-
-        ex_in(E, P, _), bx.box([E, Id], B), crop(P, B, P_inner),
+        bx.box([E, _], B), crop(P, B, P_inner),
         ex_out(E, P, Col), !params.bg(Col).
 }

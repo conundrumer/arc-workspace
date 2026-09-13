@@ -1,13 +1,14 @@
 // 6ad5bdfd
 // draft
-// concept: objects markers move
-// A wall of params.wall fills one full edge line of the grid. The other
-// non-bg cells form objects: the 4-connected blocks of one color. Every
-// object slides toward the wall's edge and comes to rest where it first
-// meets the wall or an object at rest ahead of it. The cells an object
-// leaves go to bg.
+// keywords: objects markers move
+// input: a wall of params.wall filling one full edge line of the grid;
+//  the other non-bg cells forming objects, the 4-connected blocks of one
+//  color
+// output: Every object slides toward the wall's edge and comes to rest
+//  where it first meets the wall or an object at rest ahead of it. The
+//  cells an object leaves go to bg.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -72,7 +73,6 @@ settle.blocked($U(), P) :- wall(P).
 fallen(Q, Col) :-
     obj.label(Col, P, Id), settle.rest($U(), Id, Delta), compose(P, Delta, Q).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- fallen(P, Col).
 out(P, Col) :- wall(P), in(P, Col).
 out(P, Col) :- in(P, _), !fallen(P, _), !wall(P), params.bg(Col).  // vacated or empty

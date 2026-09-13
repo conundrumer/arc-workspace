@@ -1,24 +1,22 @@
 // 8cb8642d
 // draft
-// concept: objects border markers span depth
-// Solid rectangles sit on a bg field. Each is a one-cell frame of one color
-// around a filled inside, and one inside cell, the marker, holds another
-// color. The output empties the inside to bg and draws the inside's X in the
-// marker's color: the diagonals from the inside's four corners toward its
-// center.
-//
-//   $Join   — each arm runs from its corner while it stays on the corner's
-//             side of the inside; the arm ends are joined along the line
-//             they share.
-//   $Medial — an inside cell is drawn when its nearest edge is not unique:
-//             the medial axis of the inside.
-// They diverge on an inside whose short extent is even and shorter than the
-// other: $Join joins the arm ends along both center lines, $Medial draws
-// the arms alone.
+// keywords: objects border markers span depth
+// output: Solid rectangles sit on a bg field. Each is a one-cell frame of one
+//  color around a filled inside, and one inside cell, the marker, holds another
+//  color. The output empties the inside to bg and draws the inside's X in the
+//  marker's color: the diagonals from the inside's four corners toward its
+//  center.
 
-#include "../lib.dl"
+// how the inside's drawn cells are found
+.type Choice =
+    // each arm runs from its corner while it stays on the corner's side of the
+    // inside; the arm ends are joined along the line they share
+    Join {}
+    // an inside cell is drawn when its nearest edge is not unique: the medial
+    // axis of the inside
+  | Medial {}
 
-.type Choice = Join {} | Medial {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -97,7 +95,6 @@ drawn(Id, P_inner, $Medial()) :-
 
 // --- output ---
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     hole_view(Id, P, P_inner), impl_choice(Ch),
     ( drawn(Id, P_inner, Ch), marker_color(Id, Col)   // drawn: the marker color

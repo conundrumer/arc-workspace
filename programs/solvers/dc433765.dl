@@ -1,9 +1,9 @@
 // dc433765
-// concept: markers move
-// The mover cell steps one cell toward the target cell: per axis, one cell
-// toward the edge the target is strictly nearer. The target stays.
+// keywords: markers move
+// output: The mover cell steps one cell toward the target cell: per axis, one
+//  cell toward the edge the target is strictly nearer. The target stays.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -32,7 +32,6 @@ moved(P) :-
     perp(A1, A2), axis_step(A1, S1), axis_step(A2, S2),
     compose(Pm, S1, P1), compose(P1, S2, P).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- target_at(P), params.target(Col).
 out(P, Col) :- moved(P), params.mover(Col).
 out(P, Col) :- in(P, _), !target_at(P), !moved(P), params.bg(Col).

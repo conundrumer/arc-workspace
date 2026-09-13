@@ -1,15 +1,17 @@
 // 256b0a75
 // draft
-// concept: markers cast border
-// Four corner brackets mark a box: three drawn in params.frame, the fourth in
-// another color, which is the box's fill. The box is redrawn solid — outline
-// in params.frame, interior in the fill — and each side sweeps outward to the grid
-// edge, so the four arms take the fill color too. Single cells of other colors
-// litter the grid; one lying in an arm colors that line from itself outward,
-// so an arm cell shows the nearest such cell between it and the bbox. Cells
-// outside the box and its arms pass through.
+// keywords: markers cast border
+// input: Four corner brackets mark a box: three drawn in params.frame,
+//  the fourth in another color, which becomes the box's fill. Single
+//  cells of other colors litter the grid.
+// output: The box is redrawn solid, outline in params.frame and interior
+//  in the fill, and each side sweeps outward to the grid edge, so the
+//  four arms take the fill color too. A litter cell lying in an arm
+//  colors that line from itself outward, so an arm cell shows the
+//  nearest such litter cell between it and the box. Cells outside the
+//  box and its arms pass through.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -64,7 +66,6 @@ painted(P, Col) :- cast.clear(D, P, _, _, Src), mark(Src, Col, D).
 
 // --- output ---
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     bbox.box($U(), B), in(P, _),
     ( box_edge(P, B, _), params.frame(Col)  // the outline, redrawn whole

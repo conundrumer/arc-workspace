@@ -1,16 +1,18 @@
 // e98196ab
-// concept: overlay decompose lookup
-// Layout: 2×1 vertically-stacked 5×11 subgrids with 1-row gap.
-// Output is the per-cell overlay: each panel's ink passes through.
-//
-// out's choice column (decompose):
-//   $Table() — pre-tabulated in the parameters via tile_pos
-//   $Count() — derived in the program, by tile count
-//   $Size()  — derived in the program, by tile size
+// keywords: overlay decompose lookup
+// output: Layout: 2×1 vertically-stacked 5×11 subgrids with 1-row gap. Output
+//  is the per-cell overlay: each panel's ink passes through.
 
-#include "../lib.dl"
+// out's choice column (decompose)
+.type Choice =
+    // pre-tabulated in the parameters via tile_pos
+    Table {}
+    // derived in the program, by tile count
+  | Count {}
+    // derived in the program, by tile size
+  | Size {}
 
-.type Choice = Table {} | Count {} | Size {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
@@ -68,7 +70,6 @@ ink(P_frame, Col, Dc) :-
 
 // --- Output ---
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P, Col, Dc) :- ink(P, Col, Dc).
 out(P, Col, Dc) :-
     decompose(_, _, P, Dc), !ink(P, _, Dc),         // frame cell with no ink

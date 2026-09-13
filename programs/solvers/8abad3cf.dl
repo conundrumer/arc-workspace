@@ -1,26 +1,25 @@
 // 8abad3cf
 // draft
-// concept: count rank
-// Each non-background color's cells number a perfect square. The output
-// packs each color into a solid square of that many cells, and lays the
-// squares in a row from params.pack_dir, resting on the edge a quarter turn
-// away, with params.gap background lines between them.
-//
-// The cases claim what orders the squares in the row:
-//   $BySide()  — ascending in side.
-//   $ByPlace() — the reverse of the order the colors first appear in, read
-//                from params.corner along params.order_axis.
+// keywords: count rank
+// input: Each non-background color's cells number a perfect square.
+// output: Each color's cells pack into a solid square, and the squares
+//  stand in a row from params.pack_dir, resting on the edge a quarter turn
+//  away, with params.gap background lines between them.
+// review principle: docs/wf-solver/open/determinable.md
 
-#include "../lib.dl"
+// what orders the squares in the row
+.type Choice =
+    // ascending in side
+    BySide {}
+    // the reverse of the order the colors first appear in, read from
+    // params.corner along params.order_axis
+  | ByPlace {}
 
-.type Choice = BySide {} | ByPlace {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(7).
 
-    // The row starts at pack_dir; the squares rest on the edge a quarter
-    // turn away.
     .decl pack_dir(d: Dir) pack_dir(DIR_L).
     .decl rest_sense(s: Sense) rest_sense(SENSE_CC).
 
@@ -84,7 +83,7 @@ debut.cand(Col, R) :- ink.item(Col, P_grid), reading.rank($U(), P_grid, R).
 
 row.before($ByPlace(), Col, Col2) :- debut.low(Col, R), debut.low(Col2, R2), R2 < R.
 
-// --- the offsets ---
+// --- the places ---
 
 // The row read from either edge of its axis: the square one place inward
 // of another.
@@ -92,21 +91,22 @@ row.before($ByPlace(), Col, Col2) :- debut.low(Col, R), debut.low(Col2, R2), R2 
 inward(Ch, D, Col, Col2) :- params.pack_dir(D), row.next(Ch, Col, Col2).
 inward(Ch, D2, Col2, Col) :- params.pack_dir(D), opposite(D, D2), row.next(Ch, Col, Col2).
 
-// A square's offset from an edge of the row's axis: zero for the square at
-// the edge, and one square's side and one gap past the square outward of it.
-.decl edge_off(ch: Choice, d: Dir, col: Color, off: Box)
-edge_off(Ch, D, Col, ZERO) :- params.pack_dir(D), row.first(Ch, Col).
-edge_off(Ch, D2, Col, ZERO) :- params.pack_dir(D), opposite(D, D2), row.last(Ch, Col).
-edge_off(Ch, D, Col2, Off2) :-
-    edge_off(Ch, D, Col, Off), inward(Ch, D, Col, Col2),            // the offset so far
-    side(Col, K), edge_inset(D, K, Dk), compose(Off, Dk, Off1),     // past the outward square
-    params.gap(G), edge_inset(D, G, Dg), compose(Off1, Dg, Off2).   // and the gap
+// A square's box measured from an edge of the row's axis. The square at
+// that edge takes the whole frame; each square further in insets the box of
+// the square outward of it by that square's side and one gap.
+.decl edge_box(ch: Choice, d: Dir, col: Color, b: Box)
+edge_box(Ch, D, Col, ZERO) :- params.pack_dir(D), row.first(Ch, Col).
+edge_box(Ch, D2, Col, ZERO) :- params.pack_dir(D), opposite(D, D2), row.last(Ch, Col).
+edge_box(Ch, D, Col2, B2) :-
+    edge_box(Ch, D, Col, B), inward(Ch, D, Col, Col2),                 // the box so far
+    side(Col, K), edge_inset(D, K, B_side), compose(B, B_side, B1),    // past the outward square
+    params.gap(G), edge_inset(D, G, B_gap), compose(B1, B_gap, B2).    // and the gap
 
-// The offset at both edges of the row's axis.
-.decl row_off(ch: Choice, col: Color, off: Box)
-row_off(Ch, Col, Off) :-
-    opposite(D, D2), edge_off(Ch, D, Col, Off1), edge_off(Ch, D2, Col, Off2),
-    compose(Off1, Off2, Off).
+// The square's place in the row: its box at both edges of the row's axis.
+.decl row_box(ch: Choice, col: Color, b: Box)
+row_box(Ch, Col, B) :-
+    opposite(D, D2), edge_box(Ch, D, Col, B1), edge_box(Ch, D2, Col, B2),
+    compose(B1, B2, B).
 
 // The output's lines across the row: those of the tallest square, counted
 // from the rest edge.
@@ -117,15 +117,14 @@ rows.dist_set($U(), J) :- square_cell(_, P_inner), params.rest_dir(D), dist(P_in
 .decl paint(ch: Choice, p: Position, col: Color)
 paint(Ch, P_grid, Col) :-
     square_cell(Col, P_inner),
-    params.rest_dir(D_rest), dist(P_inner, D_rest, J), rows.pos($U(), J, P_v),   // its line across the row
-    params.pack_dir(D), axis_of(D, A), split(P_inner, A, P_along, _),             // its place along the row
-    row_off(Ch, Col, Off), compose(Off, P_along, P_h),
-    compose(P_v, P_h, P_grid).
+    params.rest_dir(D_rest), dist(P_inner, D_rest, J), rows.pos($U(), J, P_line),  // its line across the row
+    params.pack_dir(D), axis_of(D, A), split(P_inner, A, P_along, _),              // its place along the square
+    row_box(Ch, Col, B), compose(B, P_along, P_place),                             // that place in the row
+    compose(P_line, P_place, P_grid).
 
 .init canvas = Frame2D<Choice>
 canvas.extent(Ch, A, N) :- paint(Ch, P_grid, _), axis_elem(A), axis_dim(P_grid, A, N).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_grid, Col, Ch) :-
     canvas.cell(Ch, P_grid),
     ( paint(Ch, P_grid, Col)                    // a square's cell

@@ -1,30 +1,32 @@
 // 8f2ea7aa
 // draft
-// concept: tile-arrangement crop decompose select scale stamp
-// A 3×3 shape sits in one 3×3 block of a blank 9×9 grid. The output is the
-// shape tiled by itself: a block holds the shape iff its index is an ink cell
-// of the shape. Choice = [pa, f] crosses the hypotheses:
-//
-//   pa (the shape and the output decomposition):
-//     $Crop()   — the ink's bounding box; the output is shape ⊗ shape.
-//     $Divide() — the block holding ink, in a params.tile_dim division of
-//                 the grid; the output keeps the input frame.
-//   f (fill color):
-//     $Stamp() — the intile position's color: copies of the shape.
-//     $Mask()  — the block index's color: the shape scaled up, masked by
-//                itself.
-//
-// The parses coincide when the ink's box is one block; the fills coincide on
-// a monochrome shape.
+// keywords: tile-arrangement crop decompose select scale stamp
+// input: A 3×3 shape sits in one 3×3 block of a blank 9×9 grid.
+// output: The output is the shape tiled by itself: a block holds the shape
+//  iff its index is an ink cell of the shape.
 
-#include "../lib.dl"
+// the shape and the output decomposition
+.type Parse =
+    // the ink's bounding box; the output is shape ⊗ shape
+    Crop {}
+    // the block holding ink, in a params.tile_dim division of the grid; the
+    // output keeps the input frame
+  | Divide {}
 
-.type Parse = Crop {} | Divide {}
-.type Fill = Stamp {} | Mask {}
+// fill color
+.type Fill =
+    // the intile position's color: copies of the shape
+    Stamp {}
+    // the block index's color: the shape scaled up, masked by itself
+  | Mask {}
+
+// the parse crossed with the fill; the parses coincide when the ink's box
+// is one block, and the fills coincide on a monochrome shape
 .type Choice = [pa: Parse, f: Fill]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
 
     // --- $Divide ---
@@ -67,8 +69,6 @@ shape(P_intile, Col, $Divide()) :-
 active(P, Pa) :- shape(P, Col, Pa), !params.bg(Col).
 
 // --- Fill cases: the color of a filled block's cells ---
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // $Stamp — copies of the shape at its active cells.
 out(P_grid_out, Col, [Pa, $Stamp()]) :-

@@ -1,11 +1,12 @@
 // 39a8645d
 // draft
-// concept: objects crop count
-// Pieces on params.bg, each of one color and 8-connected. Two pieces are copies
-// when they hold the same color and the same cells up to translation. The
-// output is a piece with the most copies, cropped to its bbox.
+// keywords: objects crop count
+// output: Pieces on params.bg, each of one color and 8-connected. Two pieces
+//  are copies when they hold the same color and the same cells up to
+//  translation. The output is a piece with the most copies, cropped to its
+//  bbox.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -42,7 +43,6 @@ commonest.item($U(), Id, Id2) :- copy(Id, Id2).
 
 // --- output ---
 
-.decl out(p: Position, col: Color)
 out(P_inner, Col) :-
     commonest.mode($U(), Id),                          // a piece with the most copies
     bbox.box(Id, B), in(P, _), crop(P, B, P_inner),     // its box, cell by cell

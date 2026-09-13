@@ -1,14 +1,15 @@
 // 83eb0a57
 // draft
-// concept: objects crop markers move count rank
-// Solid rectangles lie on a bg field, each a body color with marks drawn on
-// it. The largest is the canvas, and its body color is the one it has most of.
-// Every rectangle, with its body repainted in the canvas body color, occurs
-// exactly once in the canvas: the canvas at its own origin, a piece where its
-// marks coincide with the canvas marks. The output is the canvas frame with
-// every rectangle laid at its occurrence, the smaller on top.
+// keywords: objects crop markers move count rank
+// input: Solid rectangles lie on a bg field, each a body color with marks
+//  drawn on it. The largest is the canvas, and its body color is the one it
+//  has most of.
+// output: Every rectangle, with its body repainted in the canvas body color,
+//  occurs exactly once in the canvas: the canvas at its own origin, a piece
+//  where its marks coincide with the canvas marks. The output is the canvas
+//  frame with every rectangle laid at its occurrence, the smaller on top.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {}
 
@@ -58,5 +59,4 @@ layer(Id, P, Col) :- occ.occurrence(Id, M), rect(Id, P_inner, Col), compose(M, P
 .init top = ArgExtremes<Position, Ident>
 top.cand(P, Id, N) :- layer(Id, P, _), size.tally(Id, N).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- top.low(P, Id, _), layer(Id, P, Col).

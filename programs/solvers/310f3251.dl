@@ -1,10 +1,10 @@
 // 310f3251
-// concept: tile-arrangement stamp
-// Output tiles the input scale×scale. Each ink cell casts a mark one
-// diagonal step toward params.mark_diag, wrapping at the frame edges (torus);
-// ink occludes marks.
+// keywords: tile-arrangement stamp
+// output: Output tiles the input scale×scale. Each ink cell casts a mark one
+//  diagonal step toward params.mark_diag, wrapping at the frame edges (torus);
+//  ink occludes marks.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -42,7 +42,6 @@ tile_content(P, Col) :- in(P, _), !ink(P, _), !mark_at(P), params.bg(Col).
 .init arr = Frame2D<Unit>
 arr.extent($U(), A, N) :- axis_elem(A), params.scale(N).
 
-.decl out(p: Position, col: Color)
 out(P_grid, Col) :-
     tile_content(P_intile, Col),
     arr.cell($U(), P_tile),

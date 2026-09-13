@@ -1,11 +1,12 @@
 // 64a7c07e
 // draft
-// concept: objects move
-// Blobs of ink sit on the background. Each blob slides one blob-length
-// toward params.move_dir, so it lands flush beside where it stood, and the
-// cells it leaves go back to background.
+// keywords: objects move
+// input: blobs of ink on the background
+// output: Each blob slides one blob-length toward params.move_dir, so it
+//  lands flush beside where it stood, and the cells it leaves go back to
+//  background.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -32,7 +33,6 @@ landed(Q, Col) :-
     bbox.box(Id, B), box_extent(B, P, A, N),     // the blob's extent along it
     jump(P, D, N, Q).                            // one blob-length onward
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, _),
     ( landed(P, Col)                    // a blob cell landed here

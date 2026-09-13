@@ -1,14 +1,15 @@
 // 7491f3cf
 // draft
-// concept: decompose overlay markers border lookup
-// Uniform lines cut the grid into a strip of panels. The mask panel draws a
-// line across itself and a lone marker on one side of it. Two pattern
-// panels are layers, top and under, and the blank panel's color is the
-// ground. The blank panel is painted: the marker's side shows the top
-// layer, the far side shows the under layer, and the line shows the top
-// layer's ink over the under layer.
+// keywords: decompose overlay markers border lookup
+// input: Uniform lines cut the grid into a strip of panels. The mask panel
+//  draws a line across itself and a lone marker on one side of it. Two
+//  pattern panels are layers, top and under, and the blank panel's color
+//  is the ground.
+// output: The blank panel is painted: the marker's side shows the top
+//  layer, the far side shows the under layer, and the line shows the top
+//  layer's ink over the under layer.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     // The panels, by their tile in the strip.
@@ -105,7 +106,6 @@ render(P, Col) :-
     ; !top_ink(P, _), !under(P, _), bg(Col)
     ).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, _),
     ( out_cell(P, P_intile), render(P_intile, Col)   // the blank panel, painted

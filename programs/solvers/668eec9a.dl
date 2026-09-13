@@ -1,13 +1,14 @@
 // 668eec9a
 // draft
-// concept: rank
-// shape: percept-shadow
-// Diagonal and straight lines of distinct colors lie on the background. The
-// output is a fixed frame of solid rows: each line takes the row whose
-// distance from params.stack_dir is the count of lines farther from
-// params.order_dir than it, and the rows no line takes are background.
+// keywords: rank
+// input: lines of distinct colors on the background
+// output: solid rows in a stored frame: each line takes the row whose distance
+//  from params.stack_dir is the count of lines farther from params.order_dir
+//  than it, and the rows no line takes are background.
+// review principle: docs/wf-solver/open/coverage-rules.md
+// review principle: docs/wf-solver/open/underdetermined-scope.md
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(7).
@@ -29,8 +30,7 @@
 .init near = Extremes<Color>
 near.cand(Col, K) :- in(P, Col), !params.bg(Col), params.order_dir(D), dist(P, D, K).
 
-// Lines ranked from the far end: a line's rank is the count of lines
-// farther from the ordering edge.
+// A line's rank is the count of lines farther from the ordering edge.
 .init stack = Ordinal<Unit>
 stack.idx_set($U(), K) :- near.low(_, K).
 
@@ -40,7 +40,6 @@ line_row(R, Col) :- near.low(Col, K), stack.rank_desc($U(), K, R).
 .init frame = Frame2D<Unit>
 frame.extent($U(), A, N) :- params.out_extent(A, N).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     frame.cell($U(), P), params.stack_dir(D), dist(P, D, R),
     ( line_row(R, Col)                       // the line stacked here

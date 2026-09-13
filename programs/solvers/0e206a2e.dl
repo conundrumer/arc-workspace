@@ -1,23 +1,31 @@
 // 0e206a2e
-// concept: objects markers d4 move
-// Loose single cells mark where the grid's objects belong. Every object
-// carries anchor cells that some set of markers repeats color for color; the
-// object moves onto that set under the D4 transform which makes every anchor
-// meet its own color, and its original cells go to bg. Choice = [a, m]
-// crosses two hypotheses:
-//
-//   a (which object cells are anchors):
-//     $Minority() — the cells whose color is not the object's commonest.
-//     $Marked()   — the cells whose color also occurs on a loose marker.
-//   m (a marker no object lands on):
-//     $Consumed() — goes to bg: markers are seats the move consumes.
-//     $Kept()     — persists: markers are paint the objects land on.
+// keywords: objects markers d4 move
+// input: The grid's objects (its multi-cell parts) and markers (its loose
+//  single cells).
+// output: Every object carries anchor cells that some set of markers repeats
+//  color for color; the object moves onto that set under the D4 transform
+//  that makes every anchor meet its own color, and its original cells go to
+//  bg.
 
-#include "../lib.dl"
+// which object cells are anchors
+.type Anchors =
+    // the cells whose color is not the object's commonest
+    Minority {}
+    // the cells whose color also occurs on a loose marker
+  | Marked {}
 
-.type Anchors = Minority {} | Marked {}
-.type Markers = Consumed {} | Kept {}
+// a marker no object lands on
+.type Markers =
+    // goes to bg: markers are seats the move consumes
+    Consumed {}
+    // persists: markers are paint the objects land on
+  | Kept {}
+
+// which cells anchor an object's move, crossed with what an unused marker
+// becomes
 .type Choice  = [a: Anchors, m: Markers]
+
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -84,7 +92,6 @@ placed(P_out, Col, Ch) :-
 .decl vacant(p: Position, ch: Anchors)
 vacant(P, Ch) :- in(P, _), anchors_choice(Ch), !placed(P, _, Ch).
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P, Col, [Ch, M]) :- placed(P, Col, Ch), markers_choice(M).
 
 // --- $Consumed ---

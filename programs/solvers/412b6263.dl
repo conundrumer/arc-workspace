@@ -1,21 +1,21 @@
 // 412b6263
-// concept: tile-arrangement d4 border count
-// The output is a lattice: copies of the input under params.xform fill the tiles,
-// and lines of params.line_width run between the copies and around them. The
-// separators and the ring are the same lines, so one width serves both. A
-// frame cell off the copies takes params.line_col on a copy's row or column, and
-// params.bg where two lines cross.
-//
-// Two hypotheses about the copy count:
-//   $Layout — the tile arrangement is stored per axis in params.tiles.
-//   $Count  — the copies stack along params.stack_axis, one per input object.
+// keywords: tile-arrangement d4 border count
+// output: The output is a lattice: copies of the input under params.xform fill
+//  the tiles, and lines of params.line_width run between the copies and around
+//  them. The separators and the ring are the same lines, so one width serves
+//  both. A frame cell off the copies takes params.line_col on a copy's row or
+//  column, and params.bg where two lines cross.
 
-#include "../lib.dl"
+// Two hypotheses about the copy count
+.type Choice =
+    // the tile arrangement is stored per axis in params.tiles
+    Layout {}
+    // the copies stack along params.stack_axis, one per input object
+  | Count {}
 
-.type Choice = Layout {} | Count {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(7).
     .decl line_col(col: Color) line_col(1).
     .decl xform(d: D4) xform(D4_CC).
@@ -80,7 +80,6 @@ copy_line(Ch, P_grid) :-
     frame.cell(Ch, P_grid), axis_elem(A),
     copy_cell(Ch, Q, _), same_line(A, P_grid, Q).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_grid, Col, Ch) :- copy_cell(Ch, P_grid, P_intile), content(P_intile, Col).
 out(P_grid, Col, Ch) :-
     frame.cell(Ch, P_grid), !copy_cell(Ch, P_grid, _),   // a frame cell off the copies

@@ -1,14 +1,16 @@
 // 6a980be1
 // draft
-// concept: lines wallpaper span cast
-// A frame of some color borders the grid. Inside it, two params.line lines
-// run across the scene, and the strip between them holds a pattern that
-// repeats along the lines, in params.pattern on params.bg. The output drops
-// the frame and continues the scene over the whole grid: the lines run edge
-// to edge, the strip repeats its pattern by its shortest period, and each
-// pattern line outside the strip takes the frame's color.
+// keywords: lines wallpaper span cast
+// input: a frame of some color bordering the grid; inside it, two
+//  params.line lines running across the scene, with a strip between them
+//  that holds a pattern repeating along the lines, in params.pattern on
+//  params.bg
+// output: The output drops the frame and continues the scene over the
+//  whole grid: the lines run edge to edge, the strip repeats its pattern by
+//  its shortest period, and each pattern line outside the strip takes the
+//  frame's color.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -63,7 +65,6 @@ on_pattern_line(P) :-
     in(P, _), strip_out(Q, C), params.pattern(C),
     strip_span.axis($U(), A2), same_line(A2, P, Q).
 
-.decl out(p: Position, col: Color)
 out(P, C) :- line_cell(P), params.line(C).
 out(P, C) :- strip_out(P, C).
 out(P, C) :-

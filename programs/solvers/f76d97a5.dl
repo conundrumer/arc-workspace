@@ -1,10 +1,10 @@
 // f76d97a5
-// concept: mapping
-// Recolor a binary input: marker positions take the input's main color
-// (the unique non-marker color in the grid); the main color elsewhere
-// becomes background.
+// keywords: mapping
+// output: Recolor a binary input: marker positions take the input's main color
+//  (the unique non-marker color in the grid); the main color elsewhere becomes
+//  background.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl marker(c: Color) marker(5).
@@ -16,6 +16,5 @@
 .decl main(col: Color)
 main(Col) :- in(_, Col), !params.marker(Col).
 
-.decl out(p: Position, col: Color)
 out(P, Main) :- in(P, Col), params.marker(Col), main(Main).
 out(P, Bg)   :- in(P, Col), !params.marker(Col), params.bg(Bg).

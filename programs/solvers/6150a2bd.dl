@@ -1,8 +1,7 @@
 // 6150a2bd
-// family: 67a3c6ac
-// Apply a D4 transform to every cell.
+// representative: 67a3c6ac
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl transform(d: D4)
@@ -11,5 +10,4 @@
 
 .init params = Params
 
-.decl out(p: Position, col: Color)
 out(P_grid_out, Col) :- in(P_grid_in, Col), params.transform(D), apply(D, P_grid_in, P_grid_out).

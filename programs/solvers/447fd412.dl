@@ -37,6 +37,8 @@ impl_choice([$Ink(), $Cells()]).
 impl_choice([$Whole(), $Box()]).
 impl_choice([$Whole(), $Cells()]).
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
     // The drawing's color.
     .decl ink(col: Color) ink(1).
@@ -105,7 +107,6 @@ covers(Id, P, B) :- carry(T0, Id, P, B), !astray(T0, Id).
 .decl stamped(p: Position, col: Color, ch: Choice)
 stamped(Q, Col, [Cr, Cv]) :- covered_cell(P, Q, Cv), carried(P, Col, Cr).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- stamped(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !stamped(P, _, Ch).
 

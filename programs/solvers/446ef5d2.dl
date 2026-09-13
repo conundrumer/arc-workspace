@@ -1,22 +1,19 @@
 // 446ef5d2
 // draft
-// concept: objects markers pack
+// keywords: objects markers pack
+// output: A picture is drawn over a field color, cut into pieces, and the
+//  pieces lie scattered on the background. A mark of its own color sits
+//  diagonally off the corner of one piece.
+//  The output rebuilds the picture: the pieces pack a rectangle, each used
+//  once, with the marked piece where it lies and its marked corner at the
+//  rectangle's corner. The rectangle shows only the field along its edge, and
+//  where two pieces meet with the picture running off both of the facing sides,
+//  the cells they face agree.
+//  The packing derives by elimination: a placement that strands a rectangle
+//  cell is out, a cell left with one placement forces it, and a placement that
+//  clashes with a forced one is out.
 
-// A picture is drawn over a field color, cut into pieces, and the pieces lie
-// scattered on the background. A mark of its own color sits diagonally off
-// the corner of one piece.
-//
-// The output rebuilds the picture: the pieces pack a rectangle, each used
-// once, with the marked piece where it lies and its marked corner at the
-// rectangle's corner. The rectangle shows only the field along its edge, and
-// where two pieces meet with the picture running off both of the facing
-// sides, the cells they face agree.
-//
-// The packing derives by elimination: a placement that strands a rectangle
-// cell is out, a cell left with one placement forces it, and a placement
-// that clashes with a forced one is out.
-
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {}
 
@@ -186,7 +183,6 @@ painted(B, P, Col) :-
 .decl unsettled(b: Box)
 unsettled(B) :- rect_cell(B, P), !painted(B, P, _).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     rect(B), !unsettled(B), in(P, _),  // the rectangle the pieces pack
     ( painted(B, P, Col)               // inside it, the picture

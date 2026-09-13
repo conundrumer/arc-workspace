@@ -1,16 +1,18 @@
 // 68b67ca3
-// concept: decompose lookup select
-// 6×6 input collapsed to 3×3 by per-axis division; the cell at corner
-// params.anchor of each subgrid is kept, and the others drop.
-//
-// out's choice column (decompose):
-//   $LabeledGrids() — tabulated as in/out label grids paired by shared label
-//   $Count()        — by tile count
-//   $Size()         — by tile size
+// keywords: decompose lookup select
+// output: 6×6 input collapsed to 3×3 by per-axis division; the cell at corner
+//  params.anchor of each subgrid is kept, and the others drop.
 
-#include "../lib.dl"
+// out's choice column (decompose)
+.type Choice =
+    // tabulated as in/out label grids paired by shared label
+    LabeledGrids {}
+    // by tile count
+  | Count {}
+    // by tile size
+  | Size {}
 
-.type Choice = LabeledGrids {} | Count {} | Size {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     // --- LabeledGrids ---
@@ -64,7 +66,6 @@ perm(P_grid_in, P_grid_out, $Size()) :-
     divide_by_size_2d(P_grid_in, K, 0, P_grid_out, P_intile),
     corner_anchor(D, P_intile, ZERO).                     // the tile's corner-D cell
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col, Impl) :-
     impl_choice(Impl), in(P_grid_in, Col),   // choice × input cell
     perm(P_grid_in, P_grid_out, Impl).       // the cell's image

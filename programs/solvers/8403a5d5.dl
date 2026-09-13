@@ -1,50 +1,59 @@
 // 8403a5d5
 // draft
-// concept: markers cast parity walk lookup stamp
-// One marker on the bottom row. From its column toward params.dir, columns
-// alternate: a bar of the marker's color, then a gap column holding one
-// params.dot cell at an edge; the dots alternate between the two edges.
-// Cells before the marker stay bg. Cases:
-//
-//   $Walk(f)  — a walk along the marker's row: each step skips the gap
-//               column and flips the dot edge.
-//   $Banner() — a stored periodic banner: params.slot the period,
-//               params.bar_slot the bar slots, params.dot_slot each dot
-//               slot with its edge.
-//   $Stamp()  — params.template_bar and params.template_dot, the whole
-//               trail as one stored shape, anchored on the marker.
-//
-//   f (the first dot's edge):
-//     $Dir()  — params.first_edge names it.
-//     $Away() — the edge across from the one the marker sits on.
-//
-// Coincide here: every marker sits on the bottom edge, the banner and the
-// templates hold the alternating trail at the grids' full height, and no
-// trail is wider than the templates.
+// keywords: markers cast parity walk lookup stamp
+// output: One marker casts a trail toward params.dir: the lines across the
+//  trail alternate between a bar line of the marker's color and a gap line
+//  that holds one params.dot cell at one end, and that end flips at each gap;
+//  all other cells bg.
+//  Coincide here: every marker sits on the bottom edge, the banner and the
+//  templates hold the alternating trail at the grids' full height, and no
+//  trail is wider than the templates.
 
-#include "../lib.dl"
+// the first dot's side
+.type First =
+    // params.first_side names it
+    Stored {}
+    // the side across from the edge the marker sits on
+  | Away {}
 
-.type First = Dir {} | Away {}
-.type Choice = Walk {f: First} | Banner {} | Stamp {}
+// how the alternating trail is produced
+.type Choice =
+    // a walk along the trail: each step skips the gap line and flips the
+    // dot's end
+    Walk {f: First}
+    // a stored periodic banner: params.slot the period, params.bar_slot
+    // the bar slots, params.dot_slot each dot slot with its side
+  | Banner {}
+    // params.template_bar and params.template_dot, the whole trail as one
+    // stored shape, anchored on the marker
+  | Stamp {}
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl dot(c: Color) dot(5).
 
-    // --- Walk, Banner ---
+    // --- $Walk, $Banner ---
     .decl dir(d: Dir) dir(DIR_R).   // the trail extends from the marker this way
     .decl bar_axis(a: Axis)         // bars run across the trail
     bar_axis(A) :- dir(D), axis_of(D, A0), perp(A0, A).
+    // A bar line's two ends, each named by its quarter turn from the trail.
+    .decl side(s: Sense, d: Dir)
+    side(S, E) :- dir(D), turn(S, D, E).
 
-    // --- $Walk($Dir) ---
-    .decl first_edge(d: Dir) first_edge(DIR_T).   // the first dot's edge
+    // --- $Walk($Stored) ---
+    .decl first_side(s: Sense) first_side(SENSE_CC).   // the first dot's side
+    .decl first_edge(d: Dir)
+    first_edge(E) :- first_side(S), side(S, E).
 
     // --- $Banner ---
     .decl slot(k: number)
     slot(0). slot(1). slot(2). slot(3).
     .decl bar_slot(k: number) bar_slot(0). bar_slot(2).
-    .decl dot_slot(k: number, d: Dir) dot_slot(1, DIR_T). dot_slot(3, DIR_B).
+    .decl dot_slot(k: number, s: Sense) dot_slot(1, SENSE_CC). dot_slot(3, SENSE_CW).
+    .decl dot_edge(k: number, d: Dir)   // the end of the line the slot's dot sits at
+    dot_edge(K, E) :- dot_slot(K, S), side(S, E).
 
     // --- $Stamp ---
     // Trail cells as offsets from the marker, `@` on the marker cell.
@@ -96,18 +105,19 @@ next(P, Q) :- in(P, _), params.dir(D), neighbor(P, D, Q), in(Q, _).
 // --- $Walk ---
 
 .decl first_choice(f: First)
-first_choice($Dir()). first_choice($Away()).
+first_choice($Stored()). first_choice($Away()).
 
 // The first dot's edge, per hypothesis.
 .decl first_edge(f: First, e: Dir)
-first_edge($Dir(), E)  :- params.first_edge(E).
+first_edge($Stored(), E) :- params.first_edge(E).
 first_edge($Away(), E) :-
     marker(P, _), dir_elem(E0), dist(P, E0, 0),   // an edge the marker sits on
-    params.bar_axis(A), axis_of(E0, A),            // across the trail
+    params.bar_axis(A), axis_of(E0, A),           // across the trail
     opposite(E0, E).
 
-// The walk along the marker's row: a bar cell with the edge of the dot
-// after it, then the gap cell after the bar; the edge flips at each step.
+// The walk along the trail: a bar cell, the gap cell after it, then the next
+// bar cell. Each step carries the end its gap's dot sits at, and that end
+// flips at the next step.
 .decl bar(f: First, p: Position, e: Dir)
 .decl gap(f: First, p: Position, e: Dir)
 bar(F, P, E) :- marker(P, _), first_edge(F, E).
@@ -122,19 +132,23 @@ dotted(Q, $Walk(F)) :- gap(F, M, E), bar_line(M, Q), dist(Q, E, 0).
 .init slots = IndexCycle<Unit>
 slots.idx($U(), K) :- params.slot(K).
 
-// Walk the marker's row toward the trail direction, advancing the slot cycle.
+// Walk the trail from the marker, advancing the slot cycle at each step.
 .decl slot_at(p: Position, k: number)
 slot_at(P, 0) :- marker(P, _).
 slot_at(Q, K2) :- slot_at(P, K), slots.succ($U(), K, K2), next(P, Q).
 
 lit(Q, $Banner())    :- slot_at(P, K), params.bar_slot(K), bar_line(P, Q).
-dotted(Q, $Banner()) :- slot_at(P, K), params.dot_slot(K, E), bar_line(P, Q), dist(Q, E, 0).
+dotted(Q, $Banner()) :-
+    slot_at(P, K), params.dot_edge(K, E),   // a dot slot's cell, the dot's end
+    bar_line(P, Q), dist(Q, E, 0).          // that end of its line
 
 // --- $Stamp ---
 
 // Each template offset seated on the marker, on-grid.
-lit(Q, $Stamp())    :- marker(P, _), params.template_bar(Delta), compose(P, Delta, Q), in(Q, _).
-dotted(Q, $Stamp()) :- marker(P, _), params.template_dot(Delta), compose(P, Delta, Q), in(Q, _).
+lit(Q, $Stamp()) :-
+    marker(P, _), params.template_bar(Delta), compose(P, Delta, Q), in(Q, _).
+dotted(Q, $Stamp()) :-
+    marker(P, _), params.template_dot(Delta), compose(P, Delta, Q), in(Q, _).
 
 // --- Output ---
 
@@ -143,7 +157,6 @@ impl_choice($Walk(F)) :- first_choice(F).
 impl_choice($Banner()).
 impl_choice($Stamp()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- lit(P, Ch), marker(_, Col).
 out(P, Col, Ch) :- dotted(P, Ch), params.dot(Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, Ch), !dotted(P, Ch), params.bg(Col).
@@ -152,31 +165,33 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, Ch), !dotted(P, Ch), param
     .decl fmark(e: Example, p: Position, col: Color)
     fmark(E, P, Col) :- ex_in(E, P, Col), !params.bg(Col).
 
-    // The trail axis: the marker's row runs along it.
+    // The axis the trail runs along.
     .decl trail_axis(a: Axis)
     trail_axis(A) :- params.dir(D), axis_of(D, A).
 
-    // The marker's row, cast toward the trail direction.
+    // The cast from the marker toward the trail direction.
     .init trail = Ray<Example>
     trail.dir(E, D) :- fmark(E, _, _), params.dir(D).
     trail.cell(E, P) :- ex_in(E, P, _).
     trail.mark(E, P) :- fmark(E, P, _).
 
-    // Step I of the trail: each output cell of the column I steps from the
+    // Step I of the trail: each output cell of the bar line I steps from the
     // marker, with its color.
     .decl step_cell(e: Example, i: number, p: Position, col: Color)
     step_cell(E, I, Q, Col) :-
-        trail.ray(E, P, _, I, _), params.bar_axis(A), same_line(A, P, Q), ex_out(E, Q, Col).
+        trail.ray(E, P, _, I, _),                 // I steps along the trail
+        params.bar_axis(A), same_line(A, P, Q),   // its line across the trail
+        ex_out(E, Q, Col).
 
-    // A bar step: some cell of its column takes the marker's color.
+    // A bar step: some cell of its line takes the marker's color.
     .decl bar_step(e: Example, i: number)
     bar_step(E, I) :- step_cell(E, I, _, Col), fmark(E, _, Col).
 
-    // A dot step: the dot at its column's edge Ed.
-    .decl dot_step(e: Example, i: number, ed: Dir)
-    dot_step(E, I, Ed) :-
+    // A dot step: the dot at the S end of its line.
+    .decl dot_step(e: Example, i: number, s: Sense)
+    dot_step(E, I, S) :-
         step_cell(E, I, Q, Dot), params.dot(Dot),
-        dir_elem(Ed), params.bar_axis(A), axis_of(Ed, A), dist(Q, Ed, 0).
+        params.side(S, Ed), dist(Q, Ed, 0).
 
     // --- $Banner ---
 
@@ -201,14 +216,15 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, Ch), !dotted(P, Ch), param
     .decl bar_slot(k: number)
     bar_slot(K) :- bar_step(_, I), period(N), stride(I, N, 0, _, K).
 
-    .decl dot_slot(k: number, d: Dir)
-    dot_slot(K, Ed) :- dot_step(_, I, Ed), period(N), stride(I, N, 0, _, K).
+    .decl dot_slot(k: number, s: Sense)
+    dot_slot(K, S) :- dot_step(_, I, S), period(N), stride(I, N, 0, _, K).
 
     // --- $Stamp ---
 
     // Each bar cell and dot cell as an offset from the marker.
     .decl template_bar(delta: Offset)
-    template_bar(Delta) :- fmark(E, P, Col), ex_out(E, Q, Col), relative(P, Q, Delta).
+    template_bar(Delta) :-
+        fmark(E, P, Col), ex_out(E, Q, Col), relative(P, Q, Delta).
 
     .decl template_dot(delta: Offset)
     template_dot(Delta) :-

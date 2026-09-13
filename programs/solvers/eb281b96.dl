@@ -1,22 +1,20 @@
 // eb281b96
-// concept: tile-arrangement lookup d4
-// 4×1 vertical fold: alternating D4_ID / D4_TB tiles overlap by one
-// row (gap −1), so each boundary row is shared; output rows trace a
-// triangle wave between the input's first and last rows.
-//
-// Cases (data-equivalent on this task):
-//   $Lookup() — per-tile D4 table
-//   $Unfold() — reflection tiling: each tile reflects its neighbor across
-//               the shared boundary row, seeded at the anchor tile
+// keywords: tile-arrangement lookup d4
+// output: 4×1 vertical fold: alternating D4_ID / D4_TB tiles overlap by one
+//  row (gap -1), so each boundary row is shared.
 
-#include "../lib.dl"
+// how each tile's content is produced, data-equivalent on this task
+.type Choice =
+    // per-tile D4 table
+    Lookup {}
+    // reflection tiling: each tile reflects its neighbor across the shared
+    // boundary row, seeded at the anchor tile
+  | Unfold {}
 
-.type Choice = Lookup {} | Unfold {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl tile_axis(a: Axis) tile_axis(AXIS_V).
-    .decl tile_count(n: number) tile_count(4).
     .decl tile_gap(g: number) tile_gap(-1).
 
     // --- Lookup ---
@@ -28,23 +26,21 @@
         D4_TB)
 
     // --- Unfold ---
+    .decl tile_count(n: number) tile_count(4).
     .decl anchor(d: Dir) anchor(DIR_T).
 }
 
 .init params = Params
 
-// The tile arrangement. $Lookup keys its table by these positions;
-// $Unfold walks them.
+// The tile arrangement.
 .init arr = AxisFrame<Unit>
 arr.extent($U(), A, N) :- params.tile_axis(A), params.tile_count(N).
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- Lookup ---
 out(P_grid, Col, $Lookup()) :-
     in(P_in, Col),                                           // input cell
     params.tile(P_tile, D), apply(D, P_in, P_intile),        // d4 image at tile
-    params.tile_axis(A), params.tile_gap(G),                 // tile params
+    params.tile_axis(A), params.tile_gap(G),
     concat_slab(P_tile, P_intile, A, G, P_grid).             // recompose with passthrough
 
 // --- Unfold ---
@@ -85,12 +81,9 @@ out(P_grid, Col, $Unfold()) :-
     .decl axial(d: D4)
     axial(D) :- d4_elem(D), !across_moved(D).
 
-    .decl paired(e: Example)
-    paired(E) :- ex_out(E, _, _).
-
     .decl placed(e: Example, p_tile: Position, d: D4, p_grid: Position, col: Color)
     placed(E, P_tile, D, P_grid, Col) :-
-        ex_in(E, P, Col), paired(E),                    // cell of a train input
+        ex_in(E, P, Col), ex_out(E, _, _),              // cell of a train pair's input
         axial(D), apply(D, P, P_intile),                // its image under an axial transform
         arr.cell($U(), A, P_tile), tile_gap(G),         // tile position and gap
         concat_slab(P_tile, P_intile, A, G, P_grid).    // recompose with passthrough

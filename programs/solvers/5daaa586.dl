@@ -1,18 +1,17 @@
 // 5daaa586
 // draft
-// concept: crop lines cast
-// Two full rows and two full columns cross the grid, and the output is the
-// box those four lines bound. A cell inside that box runs out to a border
-// line that matches its color, filling the run.
-//
-// The cases differ on what the cell matches against.
-// EndMatch: the one border cell where the cell's own row or column ends.
-// LineMatch: the color a whole border line holds, so the four lines are
-// colored objects and a cell seeks the line that is its own color.
+// keywords: crop lines cast
+// output: Two full rows and two full columns cross the grid, and the output is
+//  the box those four lines bound. A cell inside that box runs out to a border
+//  line that matches its color, filling the run.
 
-#include "../lib.dl"
-
-.type Choice = EndMatch {} | LineMatch {}
+// what a cell's run matches against
+.type Choice =
+    // the one border cell where the cell's own row or column ends
+    EndMatch {}
+    // the color a whole border line holds, so the four lines are colored
+    // objects and a cell seeks the line that is its own color
+  | LineMatch {}
 
 // A cast is keyed by its case and its direction, so each mark casts only the
 // way it matched.
@@ -21,6 +20,8 @@
 .decl impl_choice(ch: Choice)
 impl_choice($EndMatch()).
 impl_choice($LineMatch()).
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color)
@@ -66,7 +67,6 @@ cast.mark([Ch, D], P) :- mark(P, D, Ch).
 .decl fill(p: Position, col: Color, ch: Choice)
 fill(P, Col, Ch) :- cast.ray([Ch, D], P, D, _, S), in(S, Col).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_crop, Col, Ch) :-
     impl_choice(Ch), bound_box.box($U(), B), in(P, _), crop(P, B, P_crop),
     ( fill(P, Col, Ch)

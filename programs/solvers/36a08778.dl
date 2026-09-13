@@ -1,34 +1,33 @@
 // 36a08778
 // draft
-// concept: markers cast walk span
-// Water sits as a two-cell stub on an edge and pours into the grid. The pour
-// runs on until a block bars the way; there it passes the block's end and
-// pours on. Every cell the water reaches turns the water color, and nothing
-// else changes. Cases:
-//
-//   flow (how the water passes a barring block):
-//     $Step()  — a cell at a time across the block's top; a block in the
-//                way stops it.
-//     $Shell() — the struck block's whole top, one cell past each end,
-//                turns to water at once.
-//
-//   seat (where the pour direction comes from):
-//     $Dir()  — params.fall names it.
-//     $Stub() — the stub's own line, away from the edge it sits on.
-//
-// Coincide here: every stub is a vertical pair on the top edge; and where a
-// block does stand on another's shell row (test 1), the water past it
-// arrives by another pour.
+// keywords: markers cast walk span
+// input: Water sits as a two-cell stub on an edge.
+// output: The stub pours into the grid. The pour runs on until a block bars
+//  the way; there it passes the block's end and pours on. Every cell the
+//  water reaches turns the water color, and nothing else changes.
 
-#include "../lib.dl"
+// how the water passes a barring block
+.type Flow =
+    // a cell at a time across the block's top; a block in the way stops it
+    Step {}
+    // the struck block's whole top, one cell past each end, turns to water at
+    // once
+  | Shell {}
 
-.type Flow = Step {} | Shell {}
-.type Seat = Dir {} | Stub {}
+// where the pour direction comes from
+.type Seat =
+    // params.fall names it
+    Dir {}
+    // the stub's own line, away from the edge it sits on
+  | Stub {}
+
+// how the water passes a block, and where its direction comes from
 .type Choice = [flow: Flow, seat: Seat]
 .type Stream = [ch: Choice, d: Dir]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl water(col: Color) water(6).
     .decl block(col: Color) block(2).
 
@@ -58,6 +57,8 @@ stub_flow(Id, D) :-
     stub.label($U(), P, Id), opposite(D, E), dist(P, E, 0),  // a stub cell on edge E
     neighbor(P, D, Q), source(Q).                            // the stub runs on from it
 
+// Every stub in this data is a vertical pair on the top edge, so $Dir and
+// $Stub agree on the pour direction.
 .decl pour(s: Seat, p: Position, d: Dir)
 pour($Dir(), P, D)  :- source(P), params.fall(D).
 pour($Stub(), P, D) :- stub.label($U(), P, Id), stub_flow(Id, D).
@@ -107,10 +108,11 @@ shell(D, B, P) :-
     opposite(D, D_back), neighbor(Q, D_back, P),  // one step back
     in(P, _), !block(P).
 
+// Where a block stands on another's shell row (test 1), the water past it
+// arrives by another pour, so $Step and $Shell agree there too.
 stream.mark([[$Shell(), S], D], Q) :- barred([$Shell(), S], D, _, B), shell(D, B, Q).
 
 // --- output ---
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- wet(Ch, _, P), params.water(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !wet(Ch, _, P).

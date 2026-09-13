@@ -1,20 +1,22 @@
 // b60334d2
-// concept: markers lookup stamp
-// Marker cells on an empty grid; each grows a 3×3 ring — corner cells
-// one color, side cells another — and erases to bg. Cases
-// (data-equivalent on this task):
-//
-//   $Stamp — a stored template of offsets, seated on the marker.
-//   $Halo  — per-role: side neighbors paint params.side_col; corner neighbors
-//            paint params.corner_col ($Fixed) or the marker's own color ($Prop).
-
-#include "../lib.dl"
+// keywords: markers lookup stamp
+// output: Marker cells on an empty grid; each grows a 3×3 ring — corner cells
+//  one color, side cells another — and erases to bg. The cases are
+//  data-equivalent on this task.
 
 .type Corner = Fixed {} | Prop {}
-.type Choice = Stamp {} | Halo {corner: Corner}
+
+// how a marker's ring is drawn
+.type Choice =
+    // a stored template of offsets, seated on the marker
+    Stamp {}
+    // per-role: side neighbors paint params.side_col; corner neighbors paint
+    // params.corner_col ($Fixed) or the marker's own color ($Prop)
+  | Halo {corner: Corner}
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl marker(c: Color) marker(5).
 
@@ -64,7 +66,6 @@ halo(P, Col, $Stamp()) :-
 impl_choice($Stamp()).
 impl_choice($Halo(Cr)) :- impl_corner(Cr).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- halo(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !halo(P, _, Ch), params.bg(Col).
 

@@ -1,24 +1,26 @@
 // 27a77e38
 // draft
-// concept: decompose count
-// A field of colors fills one half of the grid; a gray line and blank cells
-// fill the rest. The output copies the input and stamps a commonest color on
-// the far edge, centered. Cases for the domain the count runs over —
-// data-equivalent here, since no field cell carries a ground color:
-//   $Half — the half of the grid the field lies in
-//   $Ink  — every cell whose color is not a ground color
+// keywords: decompose count
+// input: A field of colors fills one half of the grid; a gray line and blank
+//  cells fill the rest.
+// output: The input, with a commonest color stamped on the far edge, centered.
 
-#include "../lib.dl"
+// the domain the count runs over; no field cell carries a ground color, so the
+// pairs do not separate the two
+.type Choice =
+    // the half of the grid the field lies in
+    Half {}
+    // every cell whose color is not a ground color
+  | Ink {}
 
-.type Choice = Half {} | Ink {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     // The half the field lies in.
     .decl field_dir(d: Dir) field_dir(DIR_T).
 
     // --- Ink ---
-    // The ground: the blank cells' color and the line's.
+    // The blank cells' color and the line's.
     .decl ground(col: Color)
     ground(0). ground(5).
 }
@@ -36,14 +38,30 @@ target(P) :-
     opposite(D, D_far), dist(P, D_far, 0),    // on the edge away from the field
     perp_dir(D, D2), dist_pair(P, D2, K, K).  // centered across the split
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- in(P, Col), !target(P), impl_choice(Ch).
 out(P, Col, Ch) :- target(P), tally.mode(Ch, Col).
 
 // --- Half ---
+// strictly nearer the field's side — the center line is in neither half
 tally.item($Half(), Col, P) :-
-    in(P, Col), params.field_dir(D),  // input cell, and the field's side
-    dist_pair(P, D, K, K2), K < K2.   // strictly nearer it — the center line is in neither half
+    in(P, Col), params.field_dir(D), dist_pair(P, D, K, K2), K < K2.
 
 // --- Ink ---
 tally.item($Ink(), Col, P) :- in(P, Col), !params.ground(Col).
+
+.comp Determine {
+    // The one cell the output changes.
+    .decl stamp(e: Example, p: Position)
+    stamp(E, P) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
+
+    .decl field_dir(d: Dir)
+    field_dir(D) :- stamp(_, P), opposite(D, D_far), dist(P, D_far, 0).
+
+    // The field half, as the program reads it.
+    .decl field_cell(e: Example, p: Position)
+    field_cell(E, P) :-
+        ex_in(E, P, _), field_dir(D), dist_pair(P, D, K, K2), K < K2.
+
+    .decl ground(col: Color)
+    ground(Col) :- ex_in(E, P, Col), !field_cell(E, P).
+}

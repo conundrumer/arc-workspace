@@ -1,18 +1,17 @@
 // 6165ea8f
 // draft
-// concept: markers d4 rank pairwise
-// A line at one edge of the grid lists colors, one cell each. Away from
-// that line, each listed color draws one shape.
-//
-// The output is a comparison matrix over the listed colors, taken in the
-// order the list gives them. Each color labels one row and one column, in
-// a header line along each edge of the header corner. Every matrix entry
-// is a square block, blocks separated by a gap. The block where two
-// colors meet is params.alike when a D4 element carries one shape onto
-// the other and params.unlike when none does; the diagonal, where a color
-// meets itself, and the corner the two header lines share are bg.
+// keywords: markers d4 rank pairwise
+// input: a line at one edge of the grid lists colors, one cell each. Away
+//  from that line, each listed color draws one shape.
+// output: the output is a comparison matrix over the listed colors, taken in
+//  the order the list gives them. Each color labels one row and one column,
+//  in a header line along each edge of the header corner. Every matrix entry
+//  is a square block, blocks separated by a gap. The block where two colors
+//  meet is params.alike when a D4 element carries one shape onto the other
+//  and params.unlike when none does; the diagonal, where a color meets
+//  itself, and the corner the two header lines share are bg.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -117,7 +116,6 @@ painted(P_grid_out, Col) :-
 .init sheet = Frame2D<Unit>
 sheet.extent($U(), A, N) :- painted(P, _), axis_elem(A), axis_dim(P, A, N).
 
-.decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
     sheet.cell($U(), P_grid_out),
     ( painted(P_grid_out, Col)                    // a matrix entry

@@ -1,29 +1,33 @@
 // cf98881b
-// concept: overlay decompose lookup rank
-// Layout: 1×3 horizontally-side-by-side 4×4 ink panes with 1-col dividers.
-// Output is the per-cell overlay: the highest-priority inked pane wins;
-// no ink is bg. The divider color is never read.
-//
-// out's choice column = [d, b]:
-//
-//   d (decompose):
-//     $Table() — pre-tabulated in the parameters via tile_pos
-//     $Count() — derived in the program by pane count
-//     $Size()  — derived in the program by pane size
-//
-//   b (priority):
-//     $Spatial() — pane order: the pane nearest params.stack_dir wins
-//     $Palette() — color order: the params.ink_rank priority ranks
-//     $Stack()   — pane order: the params.pane_rank priority ranks
+// keywords: overlay decompose lookup rank
+// input: 1×3 horizontally-side-by-side 4×4 ink panes with 1-col dividers
+// output: The per-cell overlay: the highest-priority inked pane wins; no
+//  ink is bg. The divider color is never read.
 
-#include "../lib.dl"
+// decompose
+.type DecChoice =
+    // pre-tabulated in the parameters via tile_pos
+    Table {}
+    // derived in the program by pane count
+  | Count {}
+    // derived in the program by pane size
+  | Size {}
 
-.type DecChoice = Table {} | Count {} | Size {}
-.type Body      = Spatial {} | Palette {} | Stack {}
+// priority
+.type Body =
+    // pane order: the pane nearest params.stack_dir wins
+    Spatial {}
+    // color order: the params.ink_rank priority ranks
+  | Palette {}
+    // pane order: the params.pane_rank priority ranks
+  | Stack {}
+
 .type Choice    = [d: DecChoice, b: Body]
 
 // The overlay runs per output cell, and each decompose case has its own.
 .type Cell      = [o: Position, dc: DecChoice]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
@@ -103,7 +107,6 @@ body_choice($Spatial()).
 body_choice($Palette()).
 body_choice($Stack()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(O, Bg, [Dc, B]) :-
     dec_choice(Dc), body_choice(B), params.frame(O),   // choice × cell
     params.bg(Bg), !cand(O, _, _, Dc).

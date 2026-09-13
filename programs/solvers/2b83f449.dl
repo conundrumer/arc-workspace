@@ -1,17 +1,17 @@
 // 2b83f449
 // draft
-// concept: lines walk
-// Corridors of params.bg lie between floors of params.wall, with params.dot at corridor ends
-// and 3-cell bars of params.bar in the floors. Each bar stands up into a params.post,
-// and its two side cells open as a gap in the floor.
-//
-// Posts and walls cut a corridor into runs. A dot enters a run at one end and
-// crosses to the other; where the floor under that end opens, it drops into
-// the run below. It stops where it cannot drop: at the end it arrived at when
-// a wall backs that end, else at the far end. Dots stopping at one end fill
-// the run from that end inward.
+// keywords: lines walk
+// input: Corridors of params.bg lie between floors of params.wall, with
+//  params.dot at corridor ends and 3-cell bars of params.bar in the floors.
+//  Each bar stands up into a params.post, and its two side cells open as a
+//  gap in the floor.
+// output: Posts and walls cut a corridor into runs. A dot enters a run at
+//  one end and crosses to the other; where the floor under that end opens,
+//  it drops into the run below. It stops where it cannot drop: at the end
+//  it arrived at when a wall backs that end, else at the far end. Dots
+//  stopping at one end fill the run from that end inward.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(8).
@@ -118,7 +118,6 @@ settled(P) :-
 
 // --- output ---
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, C_in),
     ( post_cell(P), params.post(Col)               // the standing bar

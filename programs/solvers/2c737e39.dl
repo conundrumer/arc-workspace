@@ -1,17 +1,19 @@
 // 2c737e39
 // draft
-// concept: objects markers stamp
-// A drawing sits on bg with one of its cells in params.mark — its anchor — and one
-// more params.mark cell elsewhere is the target. The input stands, and a copy of the
-// drawing stamps with its anchor on the target; the anchor prints bg, so the
-// target is consumed. Two hypotheses of what the copy carries:
-//
-//   $Transparent — the drawing's cells, leaving the rest of the landing alone.
-//   $Opaque      — its bounding box, bg included.
+// keywords: objects markers stamp
+// input: A drawing sits on bg with one of its cells in params.mark — its
+//  anchor — and one more params.mark cell elsewhere is the target.
+// output: The input stands, and a copy of the drawing stamps with its
+//  anchor on the target; the anchor prints bg, so the target is consumed.
 
-#include "../lib.dl"
+// what the copy carries
+.type Choice =
+    // the drawing's cells, leaving the rest of the landing alone
+    Transparent {}
+    // its bounding box, bg included
+  | Opaque {}
 
-.type Choice = Transparent {} | Opaque {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -62,6 +64,5 @@ bbox.cell($U(), P) :- drawn(P, _).
 
 footprint(P, $Opaque()) :- bbox.box($U(), B), in(P, _), inside(P, B).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- stamp(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !stamp(P, _, Ch).

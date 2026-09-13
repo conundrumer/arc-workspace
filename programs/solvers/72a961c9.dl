@@ -1,21 +1,22 @@
 // 72a961c9
 // draft
-// concept: markers cast lookup
-// A line of one color crosses the grid, and a few of its cells are marks of
-// other colors. Each mark projects its color params.reach cells away toward
-// params.dir, and the cells between the mark and its projection take the
-// line's color.
-//
-// The cases differ on where the line's color comes from:
-//   $Stored   — params.line.
-//   $Dominant — the commonest non-bg color of the grid.
+// keywords: markers cast lookup
+// input: a line of one color crosses the grid, and a few of its cells are
+//  marks of other colors
+// output: Each mark projects its color params.reach cells away toward
+//  params.dir, and the cells between the mark and its projection take the
+//  line's color.
 
-#include "../lib.dl"
+// The cases differ on where the line's color comes from
+.type Choice =
+    // params.line
+    Stored {}
+    // the commonest non-bg color of the grid
+  | Dominant {}
 
-.type Choice = Stored {} | Dominant {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
     .decl dir(d: Dir) dir(DIR_T).
 
@@ -69,7 +70,6 @@ paint(P, Col, Ch) :-
     ; K < R, parse.line(Ch, Col)      // between the mark and its projection
     ).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).
 

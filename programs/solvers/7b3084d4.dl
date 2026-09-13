@@ -1,17 +1,19 @@
 // 7b3084d4
 // draft
-// concept: objects markers count pack d4
-// Scattered pieces pack exactly into a square whose area is their cell
-// count. A marker cell rides on one piece; the packing lands that marker on
-// a corner of the square. Each piece may rotate before it packs, and every
-// cell of the square takes the color of the piece cell covering it.
-//
-// ByColor: a piece is a color's cells, and the marker joins the color it
-// touches. ByComponent: a piece is an 8-connected component of the content.
+// keywords: objects markers count pack d4
+// output: Scattered pieces pack exactly into a square whose area is their cell
+//  count. A marker cell rides on one piece; the packing lands that marker on a
+//  corner of the square. Each piece may rotate before it packs, and every cell
+//  of the square takes the color of the piece cell covering it.
 
-#include "../lib.dl"
+// what counts as one piece
+.type Choice =
+    // a color's cells; the marker joins the color it touches
+    ByColor {}
+    // an 8-connected component of the content
+  | ByComponent {}
 
-.type Choice = ByColor {} | ByComponent {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -128,5 +130,4 @@ pruning.conflict(Ch, Pc, Pc2) :-
     placement(Ch, _, Pc), placement(Ch, _, Pc2), Pc != Pc2,
     covers(Pc, P, _), covers(Pc2, P, _).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- pruning.alive(Ch, Pc, _), !unplaced(Ch), covers(Pc, P, Col).

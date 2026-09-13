@@ -1,22 +1,23 @@
 // 15113be4
-// concept: decompose scale stamp
-// Separator lines cut the grid into cells of ink on background. A
-// separator-bordered block holds the key: its interior is a cell-sized
-// footprint scaled up, in a color found nowhere else. Every cell whose ink
-// covers the footprint has that footprint repainted in the key's color.
-//
-// Cases name what the cut reads:
-//   $Count() — the cells along an axis.
-//   $Size()  — a cell's extent.
+// keywords: decompose scale stamp
+// input: separator lines cut the grid into cells of ink on background. A
+//  separator-bordered block holds the key: its interior is a cell-sized
+//  footprint scaled up, in a color found nowhere else.
+// output: every cell whose ink covers the footprint has that footprint
+//  repainted in the key's color.
 
-#include "../lib.dl"
-
-.type Choice = Count {} | Size {}
+// what the cut reads
+.type Choice =
+    // the cells along an axis
+    Count {}
+    // a cell's extent
+  | Size {}
 
 .type CoverKey = [ch: Choice, p_tile: Position]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
     .decl ink(col: Color) ink(1).
     .decl sep(col: Color) sep(4).
@@ -94,7 +95,6 @@ stamp(P, Ch) :-
     cell_at(P, P_tile, P_intile, Ch),
     cover.covers([Ch, P_tile], Ch), footprint(P_intile, Ch).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !stamp(P, Ch).
 out(P, Col, Ch) :- stamp(P, Ch), parse.key_color($U(), Col).
 

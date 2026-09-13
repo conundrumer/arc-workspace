@@ -1,21 +1,23 @@
 // 27a28665
-// concept: lookup count classify
-// Silhouette → 1×1 output. Input is bg + one non-bg color over a 3×3
-// frame; non-bg cells form a shape. Two models:
-//
-//   $Lookup()   — full shape → output table; silhouette == pattern.
-//   $Classify() — extract (center on, corner count) and branch.
+// keywords: lookup count classify
+// input: the non-background cells of a 3x3 grid form a shape, the silhouette.
+// output: one cell, in the color the silhouette gives.
 
-#include "../lib.dl"
+// what of the silhouette gives the color
+.type Choice =
+    // the whole shape, looked up in a table of shapes
+    Lookup {}
+    // whether the center is on, and the corner count
+  | Classify {}
 
-.type Choice = Lookup {} | Classify {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
 
     .decl bg(c: Color) bg(0).
 
-    // --- $Lookup data ---
+    // --- $Lookup ---
     .decl pattern_member(id: Ident, p: Position)
     .decl pattern_out(id: Ident, c: Color)
 
@@ -43,20 +45,20 @@
         _, 1, _)
     pattern_out(3, 6).
 
-    // --- $Classify data ---
+    // --- $Classify ---
     .decl center_pos(p: Position)
     center_pos([1, 1, 1, 1]).
 
     .decl in_dim(n: number) in_dim(3).
     .decl corner_pos(p: Position)
     corner_pos(P) :-
-        diag_dir_elem(D),                       // enumerate the 4 corners
+        diag_dir_elem(D),                           // each corner
         in_dim(N), helpers.frame_pos([N, N], P),    // P in the input frame
-        corner_anchor(D, P, ZERO).            // P at corner D
+        corner_anchor(D, P, ZERO).                  // P at corner D
 
     .decl center_off_out(c: Color) center_off_out(1).
 
-    // Corner count → output color, for the counts the pairs exhibit.
+    // Corner count → output color.
     .decl center_on_out(n: number, c: Color)
     center_on_out(0, 6).
     center_on_out(2, 3).
@@ -77,9 +79,6 @@
     .init corners = Tally<Key, Position>
     corners.item(K, P) :- params.corner_pos(P), silhouette(K, P).
     corners.domain(K) :- cell(K, _, _).
-
-    .decl corner_count(k: Key, n: number)
-    corner_count(K, N) :- corners.tally(K, N).
 }
 
 .init parse = Parse<Unit>
@@ -89,24 +88,22 @@ parse.cell($U(), P, Col) :- in(P, Col).
 lookup_match.pattern_member(Id, P) :- params.pattern_member(Id, P).
 lookup_match.observed_member($U(), P) :- parse.silhouette($U(), P).
 
-.decl out(p: Position, col: Color, c: Choice)
-
 // --- $Lookup ---
 out(ZERO, Col_out, $Lookup()) :-
-    params.pattern_out(Id, Col_out),                                // entry's output color
-    lookup_match.equals($U(), Id).                                  // silhouette == entry's shape
+    params.pattern_out(Id, Col_out),        // entry's output color
+    lookup_match.equals($U(), Id).          // silhouette == entry's shape
 
 // --- $Classify ---
 out(ZERO, Col, $Classify()) :-
-    !parse.center_on($U()),                                // center off
+    !parse.center_on($U()),                 // center off
     params.center_off_out(Col).
 
 out(ZERO, Col, $Classify()) :-
-    parse.center_on($U()), parse.corner_count($U(), N),     // center on, count corners
+    parse.center_on($U()), parse.corners.tally($U(), N),    // center on, its corner count
     params.center_on_out(N, Col).
 
 .comp Determine {
-    // Train pairs only — the ex_out atom holds the test inputs out.
+    // Train pairs only: the ex_out atom holds the test inputs out.
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col), ex_out(E, _, _).
 
@@ -133,5 +130,5 @@ out(ZERO, Col, $Classify()) :-
     .decl center_on_out(n: number, c: Color)
     center_on_out(N, Col) :-
         ex_out(E, _, Col),
-        parse.center_on(E), parse.corner_count(E, N).
+        parse.center_on(E), parse.corners.tally(E, N).
 }

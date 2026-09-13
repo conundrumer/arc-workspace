@@ -1,13 +1,16 @@
 // 73182012
-// family: 2013d3e2
-// 8×8 figure; output is its 4×4 top-left region.
+// representative: 2013d3e2
 
-#include "../lib.dl"
+// how the corner region is bounded
+.type Choice =
+    // one quadrant of the box
+    Half {}
+    // the fixed-size window at the box corner
+  | Window {}
 
-.type Choice = Half {} | Window {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
 
     // --- Half ---
@@ -29,8 +32,6 @@ bbox.cell($U(), P) :- ink(P).
 
 .decl box_cell(p_box: Position, col: Color)
 box_cell(P_box, Col) :- bbox.box($U(), B), in(P, Col), crop(P, B, P_box).
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- Half ---
 out(P_out, Col, $Half()) :-

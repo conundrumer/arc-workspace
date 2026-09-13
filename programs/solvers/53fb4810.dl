@@ -1,22 +1,23 @@
 // 53fb4810
 // draft
-// concept: objects markers wallpaper cast
-// Each band of cells that are neither background nor anchor color rests
-// against an anchor. The band's pattern continues away from that anchor to
-// the frame edge, one period at a step, and covers whatever it lands on. Two
-// models of the period:
-//
-//   $Extent — the band as a whole is the repeating tile.
-//   $Period — the tile is the shortest period the band's own pattern shows,
-//             read through damage.
-//
-// Coincide on every pair: each continuing band's shortest period is its
-// extent, and each band that shows a shorter one reaches the frame edge on
-// its growth side, so it continues under neither case.
+// keywords: objects markers wallpaper cast
+// input: each band of cells that are neither background nor anchor color
+//  rests against an anchor
+// output: The band's pattern continues away from that anchor to the frame
+//  edge, one period at a step, and covers whatever it lands on. Coincide on
+//  every pair: each continuing band's shortest period is its extent, and
+//  each band that shows a shorter one reaches the frame edge on its growth
+//  side, so it continues under neither case.
 
-#include "../lib.dl"
+// two models of the period
+.type Choice =
+    // the band as a whole is the repeating tile
+    Extent {}
+    // the tile is the shortest period the band's own pattern shows, read
+    // through damage
+  | Period {}
 
-.type Choice = Extent {} | Period {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(8).
@@ -54,7 +55,6 @@ pattern(Id, Q, Col, Ch) :-
 .decl beyond(p: Position, col: Color, ch: Choice)
 beyond(P, Col, Ch) :- pattern(Id, P, Col, Ch), !bands.label($U(), P, Id).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     in(P, C), impl_choice(Ch),
     ( beyond(P, Col, Ch)                 // under a continuation

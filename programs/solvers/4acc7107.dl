@@ -1,17 +1,16 @@
 // 4acc7107
 // draft
-// concept: objects rank move
-// Monochrome shapes of several colors lie scattered on the grid. The output
-// files them into a corner: each color takes a lane, and each shape takes a
-// slot in its color's lane.
-//
-// A shape ranks by its distance to the lane edge, and a color ranks by its
-// nearest shape. Lanes pile from the lane edge in color rank, each lane as
-// wide as its widest shape. Within a lane, shapes pile from the corner's
-// other edge in shape rank, each shape hugging the lane edge. A blank line
-// separates adjacent lanes, and adjacent slots.
+// keywords: objects rank move
+// input: Monochrome shapes of several colors lie scattered on the grid.
+// output: The output files them into a corner: each color takes a lane, and
+//  each shape takes a slot in its color's lane. A shape ranks by its
+//  distance to the lane edge, and a color ranks by its nearest shape. Lanes
+//  pile from the lane edge in color rank, each lane as wide as its widest
+//  shape. Within a lane, shapes pile from the corner's other edge in shape
+//  rank, each shape hugging the lane edge. A blank line separates adjacent
+//  lanes, and adjacent slots.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -109,6 +108,5 @@ move(Id, V) :- anchor(Id, A), slot(Id, P_slot), relative(A, P_slot, V).
 .decl placed(p: Position, col: Color)
 placed(P_out, Col) :- shapes.label(Col, P, Id), move(Id, V), compose(P, V, P_out).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- placed(P, Col).
 out(P, Col) :- in(P, _), !placed(P, _), params.bg(Col).

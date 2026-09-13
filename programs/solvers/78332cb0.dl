@@ -1,13 +1,14 @@
 // 78332cb0
 // draft
-// concept: decompose continue rank
-// Separator lines cut the grid into equal tiles, each holding one shape on
-// bg. A shape that touches an edge of its tile continues in the tile whose
-// facing edge is touched at the same place. The shapes chain tile to tile
-// along one axis, and the output lays the tiles out along that axis in
-// the chain's order, one separator line between neighbors.
+// keywords: decompose continue rank
+// input: Separator lines cut the grid into equal tiles, each holding one
+//  shape on bg.
+// output: A shape that touches an edge of its tile continues into the tile
+//  whose facing edge is touched at the same place. The shapes chain tile to
+//  tile along one axis, and the output lays the tiles out along that axis in
+//  the chain's order, one separator line between neighbors.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(7).
@@ -70,7 +71,6 @@ placed(P_grid_out, Col) :-
 .init sheet = Frame2D<Unit>
 sheet.extent($U(), A, N) :- placed(P, _), axis_elem(A), axis_dim(P, A, N).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     sheet.cell($U(), P),
     ( placed(P, Col)                      // tile cell

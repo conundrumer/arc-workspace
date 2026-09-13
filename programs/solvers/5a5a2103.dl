@@ -1,33 +1,35 @@
 // 5a5a2103
 // draft
-// concept: decompose markers stamp lookup count
-// A separator lattice cuts the grid into equal square tiles. Some of those
-// tiles are a legend: a legend tile holds a solid square, and gives its color
-// to every tile on one line through it. One further tile holds a shape, and
-// the rest are blank. The output stamps that shape into every tile, in the
-// color the legend gives it, and passes the separator cells through. The cases
-// differ in which tiles they read as the legend, and in the line family a
-// legend color spreads along.
-//
-//   $Edge      — the legend tiles are the inked tiles on the arrangement's
-//                params.legend_dir edge; the color spreads across that
-//                edge's axis.
-//   $Footprint — the legend tiles are the inked tiles whose ink is exactly
-//                params.marker; the color spreads along params.spread_axis.
-//   $Twin      — the legend tiles are the inked tiles whose ink another tile
-//                repeats; the color spreads along params.spread_axis.
-//   $Line      — the legend tiles fill the tile line that holds the most
-//                inked tiles; the color spreads along that line's family.
+// keywords: decompose markers stamp lookup count
+// input: A separator lattice cuts the grid into equal square tiles.
+// output: Some of those tiles are a legend: a legend tile holds a solid
+//  square, and gives its color to every tile on one line through it. One
+//  further tile holds a shape, and the rest are blank. The output stamps
+//  that shape into every tile, in the color the legend gives it, and passes
+//  the separator cells through.
 
-#include "../lib.dl"
-
-.type Choice = Edge {} | Footprint {} | Twin {} | Line {}
+// which tiles are read as the legend, and the line family a legend color
+// spreads along
+.type Choice =
+    // the legend tiles are the inked tiles on the arrangement's
+    // params.legend_dir edge; the color spreads across that edge's axis
+    Edge {}
+    // the legend tiles are the inked tiles whose ink is exactly params.marker;
+    // the color spreads along params.spread_axis
+  | Footprint {}
+    // the legend tiles are the inked tiles whose ink another tile repeats; the
+    // color spreads along params.spread_axis
+  | Twin {}
+    // the legend tiles fill the tile line that holds the most inked tiles; the
+    // color spreads along that line's family
+  | Line {}
 
 // A line of the tile arrangement, as the axis component its tiles share.
 .type TileLine = [a: Axis, l: Position]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
     .decl tile_dim(k: number) tile_dim(4).
     .decl gap(g: number) gap(1).
@@ -125,7 +127,6 @@ tile_color(Ch, P_tile, Col) :-
     parse.ink($U(), P_legend, _, Col), legend_tile(Ch, P_legend),  // a legend entry
     spread(Ch, A), parse.tile($U(), _, P_tile, _), same_line(A, P_legend, P_tile).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_grid, Col, Ch) :-
     parse.tile($U(), P_grid, P_tile, P_intile), tile_color(Ch, P_tile, Col_row),
     ( stamp(Ch, P_intile), Col = Col_row       // stamped cell

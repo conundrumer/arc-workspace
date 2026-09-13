@@ -1,29 +1,31 @@
 // 3d31c5b3
-// concept: overlay decompose lookup rank
-// The grid divides along params.axis into a stack of tiles, each drawn in its
-// own ink. The output overlays the tiles: the highest-precedence ink
-// present fills each cell, bg where every tile is empty. Each tile keeps
-// one ink in every pair, so tile and ink precedence are indistinguishable.
-//
-// out's choice column = [d, c]:
-//
-//   d (find the tiles):
-//     $Count() — by tile count
-//     $Size()  — by tile size
-//   c (precedence):
-//     $Order() — per-tile ranks
-//     $Ink()   — per-ink ranks
+// keywords: overlay decompose lookup rank
+// output: The grid divides along params.axis into a stack of tiles, each drawn
+//  in its own ink. The output overlays the tiles: the highest-precedence ink
+//  present fills each cell, bg where every tile is empty. Each tile keeps one
+//  ink in every pair, so tile and ink precedence are indistinguishable.
 
-#include "../lib.dl"
+// find the tiles
+.type DecChoice =
+    // by tile count
+    Count {}
+    // by tile size
+  | Size {}
 
-.type DecChoice = Count {} | Size {}
-.type Prec      = Order {} | Ink {}
+// precedence
+.type Prec =
+    // per-tile ranks
+    Order {}
+    // per-ink ranks
+  | Ink {}
+
 .type Choice    = [d: DecChoice, c: Prec]
 
 .type CellKey = [p: Position, d: DecChoice]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
     .decl axis(a: Axis) axis(AXIS_V).
 
@@ -67,8 +69,6 @@ tile_ink(P_tile, P_intile, Col, Dc) :-
 
 .decl ink_at(p: Position, col: Color, dc: DecChoice)
 ink_at(P, Col, Dc) :- tile_ink(_, P, Col, Dc).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 .decl prec_choice(c: Prec)
 prec_choice($Order()). prec_choice($Ink()).

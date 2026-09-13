@@ -1,19 +1,22 @@
 // 38007db0
 // draft
-// concept: decompose select
-// One-color lines cut the grid into a rectangular arrangement of tiles. A
-// band is the tiles at one place along params.stack_axis, and one tile of each
-// band stands out. The output shows those tiles with the separators around
-// them, each kept at its band's place along the stacking axis. Claims about
-// which tile stands out, tagged on out's Choice:
-//
-//   $BandUnique  — no equal tile in its own band.
-//   $GridUnique  — no equal tile anywhere in the grid.
-//   $GridDeviant — outside the grid's largest class of equal tiles.
+// keywords: decompose select
+// input: One-color lines cut the grid into a rectangular arrangement of
+//  tiles. A band is the tiles at one place along params.stack_axis.
+// output: A tile stands out in its band. The output shows that tile with
+//  the separators around it, kept at its band's place along the stacking
+//  axis.
 
-#include "../lib.dl"
+// which tile stands out
+.type Choice =
+    // no equal tile in its own band
+    BandUnique {}
+    // no equal tile anywhere in the grid
+  | GridUnique {}
+    // outside the grid's largest class of equal tiles
+  | GridDeviant {}
 
-.type Choice = BandUnique {} | GridUnique {} | GridDeviant {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl stack_axis(a: Axis) stack_axis(AXIS_V).
@@ -83,7 +86,6 @@ norm.item($U(), T, T2) :- same.equals(T, T2).
 
 odd(T, $GridDeviant()) :- tile(T), !norm.mode($U(), T).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_out, Col, Ch) :-
     odd(T, Ch), block.cell(T, P_grid), in(P_grid, Col),            // a cell of a standout block
     block.box(T, B), crop(P_grid, B, P_inner),                     // in the block's frame

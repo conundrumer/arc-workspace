@@ -1,25 +1,25 @@
 // 272f95fa
 // draft
-// concept: decompose stamp cast lookup
-// Lines of one color cut the grid into a tile arrangement. The center tile
-// and its four cardinal neighbors each take a color; every other tile, and
-// the lines, keep the input. Models of which tile takes which color:
-//
-//   $Plus   — a plus footprint stamps at the center tile, one color per arm
-//             direction.
-//   $Cast   — the center tile casts each arm color along its direction, out
-//             to the edge of the arrangement.
-//   $Lookup — a stored table keyed by tile position.
-//
-// Every pair's arrangement is 3x3, where the one-step footprint and the cast
-// to the edge cover the same tiles.
+// keywords: decompose stamp cast lookup
+// input: Lines of one color cut the grid into a tile arrangement. Every
+//  pair's arrangement is 3x3.
+// output: The center tile and its four cardinal neighbors each take a color;
+//  every other tile, and the lines, keep the input.
 
-#include "../lib.dl"
+// which tile takes which color. On a 3x3 arrangement, the one-step footprint
+// and the cast to the edge cover the same tiles.
+.type Choice =
+    // a plus footprint stamps at the center tile, one color per arm direction
+    Plus {}
+    // the center tile casts each arm color along its direction, out to the edge
+    // of the arrangement
+  | Cast {}
+    // a stored table keyed by tile position
+  | Lookup {}
 
-.type Choice = Plus {} | Cast {} | Lookup {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl line(col: Color) line(8).
 
     .decl center_paint(col: Color) center_paint(6).
@@ -66,7 +66,6 @@ paint(P, Col, C) :- parse.df.tile_of($U(), P, P_tile), tile_ink(P_tile, Col, C).
 .decl impl_choice(ch: Choice)
 impl_choice($Plus()). impl_choice($Cast()). impl_choice($Lookup()).
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P, Col, C) :- paint(P, Col, C).
 out(P, Col, C) :- in(P, Col), impl_choice(C), !paint(P, _, C).
 

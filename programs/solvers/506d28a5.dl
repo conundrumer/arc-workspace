@@ -1,15 +1,29 @@
 // 506d28a5
-// family: 5d2a5c43
-// Layout: two 4×5 subgrids stacked, with a 1-row gap.
+// representative: 5d2a5c43
 
-#include "../lib.dl"
+// how the grid splits into its two tiles
+.type DecChoice =
+    // a stored tile arrangement
+    Table {}
+    // split by a stored tile count
+  | Count {}
+    // split by a tile size equal to the output frame
+  | Size {}
 
-.type DecChoice = Table {} | Count {} | Size {}
-.type Body      = Lookup {} | Or {}
+// how the two tiles' cells combine into the output color
+.type Body =
+    // the pair of tile colors is looked up in a stored table
+    Lookup {}
+    // out_fill where some tile's cell is filled, bg otherwise
+  | Or {}
+
+// how the grid splits, crossed with how the tiles combine
 .type Choice    = [d: DecChoice, b: Body]
 
 .type CombineMember = [p: Position, col: Color]
 .type CombineKey    = [p: Position, dc: DecChoice]
+
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
@@ -88,7 +102,6 @@ filled(P_grid_out, Dc) :-
 
 // --- Output ---
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col_out, [Dc, $Lookup()]) :-
     params.combine_out(Id, Col_out),
     combine_match.equals([P_grid_out, Dc], Id).     // cell's tiles == entry's members

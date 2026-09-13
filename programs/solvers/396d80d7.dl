@@ -1,11 +1,12 @@
 // 396d80d7
 // draft
-// concept: stamp
-// A figure of two colors sits on params.bg. Every bg cell that touches the figure
-// at a corner alone takes the core color: the figure color that no such cell
-// touches. The rest of the input passes through.
+// keywords: stamp
+// input: A figure of two colors sits on params.bg.
+// output: Every bg cell that touches the figure at a corner alone takes the
+//  core color: the figure color that no such cell touches. The rest of the
+//  input passes through.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(7).
@@ -37,7 +38,6 @@ shell(Col) :- corner_only(P), beside(P, _, Col).
 .decl core(col: Color)
 core(Col) :- ink(_, Col), !shell(Col).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, C_in),
     ( corner_only(P), core(Col)       // the corner cells take the core color

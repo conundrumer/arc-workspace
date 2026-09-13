@@ -1,18 +1,18 @@
 // 981571dc
-// concept: symmetry repair
-// A symmetric wallpaper corrupted by noise patches; each noise cell
-// restores from a symmetric counterpart. The wallpaper's symmetry center
-// is offset from the grid center.
+// keywords: symmetry repair
+// output: The clean cells show a pattern symmetric about a stored center. A
+//  noise cell takes the color of a clean cell in its orbit under the pattern's
+//  symmetry group.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl noise(col: Color) noise(0).
 
-    // Wallpaper symmetry center, as its offset from the grid center.
+    // The pattern's symmetry center, as its offset from the grid center.
     .decl center(v: Offset) center([1, -1, 1, -1]).
 
-    // The wallpaper's symmetry group.
+    // The pattern's symmetry group.
     .decl sym(s: Sym) sym(SYM_D4).
 }
 
@@ -21,21 +21,20 @@
 .decl clean(p: Position, col: Color)
 clean(P, Col) :- in(P, Col), !params.noise(Col).
 
-// Symmetric counterpart: a cell's image under one of the stored symmetries.
+// A cell's image under one of the stored symmetries.
 .decl counterpart(p: Position, q: Position)
 counterpart(P, Q) :-
     params.center(V), in(P, _), relative(V, P, P_inner),          // a cell seen from the center
     params.sym(S), sym_member(S, D), apply(D, P_inner, Q_inner),  // its image under a stored symmetry
     compose(V, Q_inner, Q), in(Q, _).                             // that image, back in the grid
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- clean(P, Col).
 out(P, Col) :-
     in(P, N), params.noise(N),            // corrupted cell
     counterpart(P, Q), clean(Q, Col).
 
 .comp Determine {
-    // Candidate mirror lines on one axis, as offsets from the grid center.
+    // Candidate mirror lines of each axis, as offsets from the grid center.
     .decl cand(a: Axis, v: Offset)
     cand(A, V) :-
         ex_out(_, P, _),
@@ -43,13 +42,12 @@ out(P, Col) :-
         jump_offset(D, K, V).
     cand(A, ZERO) :- axis_elem(A).      // the grid center line itself
 
-    // Where a candidate's mirror carries each cell: the grid-center flip of
-    // the axis, then twice the candidate's offset.
+    // Where a candidate's mirror carries each cell.
     .decl mirrored(e: Example, a: Axis, v: Offset, p: Position, q: Position)
     mirrored(E, A, V, P, Q) :-
-        ex_out(E, P, _), cand(A, V),
-        flip_of(A, D), apply(D, P, P1),
-        compose(V, V, V_twice), compose(P1, V_twice, Q).
+        ex_out(E, P, _), cand(A, V), relative(V, P, P_inner),  // a cell seen from the candidate
+        flip_of(A, D), apply(D, P_inner, Q_inner),             // its image across that line
+        compose(V, Q_inner, Q).
 
     // A candidate whose mirror carries some cell onto a different color.
     .decl mirror_mismatch(a: Axis, v: Offset)

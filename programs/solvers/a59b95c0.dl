@@ -1,9 +1,10 @@
 // a59b95c0
-// concept: tile-arrangement count
-// Layout: N×N tiling of input copies, N = the distinct color count. No
-// task data — the family is fully structural.
+// keywords: tile-arrangement count
+// output: The output arranges N×N copies of the input, where N is the count
+//  of distinct colors in the input. The family is fully structural, with no
+//  task data to store.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {}
 
@@ -15,7 +16,6 @@ palette.item($U(), Col) :- in(_, Col).
 .init arr = Frame2D<Unit>
 arr.extent($U(), A, N) :- axis_elem(A), palette.tally($U(), N).
 
-.decl out(p: Position, col: Color)
 out(P_grid, Col) :-
     in(P_intile, Col),                              // input cell as intile pos
     arr.cell($U(), P_tile),                         // tile pos (N×N arrangement)

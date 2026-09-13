@@ -1,11 +1,12 @@
 // 83b6b474
 // draft
-// concept: objects count pack
-// Colored shapes lie scattered on a background. The output is the square whose
-// border holds as many cells as the shapes. The shapes translate onto that
-// border and pack it exactly; the inside is background.
+// keywords: objects count pack
+// input: colored shapes scattered on a background
+// output: The output is the square whose border holds as many cells as the
+//  shapes. The shapes translate onto that border and pack it exactly; the
+//  inside is background.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {}
 
@@ -75,7 +76,6 @@ covers([Col, B], P) :-
 pruning.cand($U(), [Col, B], Col) :- occ.occurrence(Col, B).
 pruning.conflict($U(), Cd, Cd2) :- covers(Cd, P), covers(Cd2, P).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     side(K), square.cell(K, P),
     ( pruning.alive($U(), Cd, Col), covers(Cd, P)  // a surviving shape covers the ring cell

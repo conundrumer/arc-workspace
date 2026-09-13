@@ -1,12 +1,12 @@
 // 22208ba4
 // draft
-// concept: objects move
-// A block sits at each corner of the grid. A block whose color another corner
-// block also carries steps inward — one block-length toward each edge of the
-// opposite corner — and leaves background behind. A block with a color no
-// other corner block has stays put.
+// keywords: objects move
+// output: A block sits at each corner of the grid. A block whose color another
+//  corner block also carries steps inward — one block-length toward each edge
+//  of the opposite corner — and leaves background behind. A block with a color
+//  no other corner block has stays put.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(7).
@@ -44,7 +44,6 @@ moved_cell(Q, Col) :-
 .decl vacated(p: Position)
 vacated(P) :- mover(Id, _), blocks.label(_, P, Id).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, Col_in),
     ( moved_cell(P, Col)                                     // block's new place

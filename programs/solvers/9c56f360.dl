@@ -1,17 +1,20 @@
 // 9c56f360
-// concept: lines move
-// The mover-colored cells in each line pack toward the dir edge against
-// the nearest barrier, order kept; vacated cells become background.
-//   $Wall  — only the wall color blocks; other ink is passed over.
-//   $Solid — any other ink blocks.
+// keywords: lines move
+// output: The mover-colored cells in each line pack toward the dir edge against
+//  the nearest barrier, order kept; vacated cells become background.
 
-#include "../lib.dl"
+// what blocks the pack
+.type Choice =
+    // only the wall color blocks; other ink is passed over
+    Wall {}
+    // any other ink blocks
+  | Solid {}
 
-.type Choice = Wall {} | Solid {}
 .type StripKey = [ch: Choice, p_across: Position]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl mover(c: Color) mover(3).
     .decl dir(d: Dir) dir(DIR_L).
@@ -76,7 +79,6 @@ moved(Ch, P2) :-
     seat.rank([Ch, P_across], K2, R),            // strip cell at that rank
     place(P2, P_across, K2).                     // its position
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- params.mover(Col), moved(Ch, P).
 out(P, Col, Ch) :- params.bg(Col), impl_choice(Ch), mover(P), !moved(Ch, P).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !mover(P), !moved(Ch, P).

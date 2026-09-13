@@ -1,20 +1,22 @@
 // 85fa5666
 // draft
-// concept: objects markers permutation d4 lookup cast
-// Each square of params.square carries four marks, one diagonally off each
-// corner. Each mark moves to another corner of its square and casts a ray
-// from there outward along the corner's diagonal to the grid edge. The
-// squares stay; everything else is background.
-//
-// Which corner a mark moves to splits the cases: $Turn applies a stored D4
-// element to the corners; $Table stores the permutation.
+// keywords: objects markers permutation d4 lookup cast
+// input: each square of params.square carries four marks, one diagonally off
+//  each corner
+// output: each mark moves to another corner of its square and casts a ray
+//  from there outward along the corner's diagonal to the grid edge. The
+//  squares stay; everything else is background.
 
-#include "../lib.dl"
+// which corner a mark moves to
+.type Choice =
+    // a stored D4 element permutes the corners
+    Turn {}
+    // a stored table permutes the corners
+  | Table {}
 
-.type Choice = Turn {} | Table {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl square(c: Color) square(2).
 
@@ -83,7 +85,6 @@ lit(P, Col, C) :-
     source(D, D_from, C), parse.seat($U(), Id, D_from, Q_from),  // the corner its mark comes from
     in(Q_from, Col).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, C) :-
     in(P, Col_in), impl_choice(C),
     ( lit(P, Col, C)                                          // a ray cell

@@ -7,6 +7,8 @@
 //  two midlines quarter the square, and each quarter of a ring takes the cell
 //  that sits in that place in the ring's block.
 
+.decl out(p: Position, col: Color)
+
 .comp Params {
     .decl block_size(k: number) block_size(2).
 
@@ -48,7 +50,6 @@ out_frame(P_intile, P_grid_out) :-
 .init peel = Rim<Unit>
 peel.cell($U(), P) :- out_frame(_, P).
 
-.decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
     peel.depth($U(), P_grid_out, K),         // the cell's ring
     nesting.rank($U(), P_tile, K),           // the block that ring draws

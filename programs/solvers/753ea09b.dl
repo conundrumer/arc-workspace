@@ -1,16 +1,15 @@
 // 753ea09b
 // draft
-// concept: objects border enclose
-// Two rails run edge to edge across the grid, with rungs of a second ink
-// color between them; the bg between the rails takes the rail color.
-//
-// The bg is the commonest color and the rail color the commonest ink. A
-// rail is an 8-connected rail-colored component that touches the grid
-// edge, so rail-colored fragments off the edge are not rails. The non-rail
-// cells split into 4-connected regions, and a region beside two distinct
-// rails lies between them.
+// keywords: objects border enclose
+// input: Two rails run edge to edge across the grid, with rungs of a second
+//  ink color between them. The bg is the commonest color and the rail color
+//  the commonest ink. A rail is an 8-connected rail-colored component that
+//  touches the grid edge, so rail-colored fragments off the edge are not
+//  rails. The non-rail cells split into 4-connected regions.
+// output: A region beside two distinct rails lies between them: its bg
+//  cells take the rail color. Every other cell stays as it is.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {}
 
@@ -46,6 +45,5 @@ between(R) :- beside(R, Id), beside(R, Id2), Id != Id2.
 .decl fill(p: Position)
 fill(P) :- in(P, Col), bg_mode.mode($U(), Col), regions.label($U(), P, R), between(R).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- fill(P), ink_mode.mode($U(), Col).
 out(P, Col) :- in(P, Col), !fill(P).

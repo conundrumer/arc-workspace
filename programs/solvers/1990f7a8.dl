@@ -1,21 +1,23 @@
 // 1990f7a8
 // draft
-// concept: objects move rank
-// Four shapes lie scattered over bg. The output is a 2×2 arrangement of
-// blocks with a bg gutter, each shape drawn in the block at the corner it
-// claims, positioned as it sits in its bounding box.
-//
-// Which corner a shape claims:
-//   $Grid — the corner of the grid frame its box is nearest.
-//   $Span — the corner of the four boxes' joint span its box is nearest,
-//           so the blocks reproduce the shapes' mutual arrangement.
+// keywords: objects move rank
+// input: Four shapes lie scattered over bg.
+// output: The output is a 2×2 arrangement of blocks with a bg gutter, each
+//  shape drawn in the block at the corner it claims, positioned as it sits
+//  in its bounding box.
 
-#include "../lib.dl"
-
-.type Choice = Grid {} | Span {}
+// which corner a shape claims
+.type Choice =
+    // the corner of the grid frame its box is nearest
+    Grid {}
+    // the corner of the four boxes' joint span its box is nearest, so the
+    // blocks reproduce the shapes' mutual arrangement
+  | Span {}
 
 .decl impl_choice(ch: Choice)
 impl_choice($Grid()). impl_choice($Span()).
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
@@ -69,7 +71,6 @@ paint(P_grid_out, Col, Ch) :-
     quad.quadrant([Id, Ch], _, Diag),                    // the shape's corner
     block(P_grid_out, P_tile, P_intile), corner_dist(P_tile, Diag, 0).   // in the block at that corner
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), params.frame(P), !paint(P, _, Ch), params.bg(Col).
 

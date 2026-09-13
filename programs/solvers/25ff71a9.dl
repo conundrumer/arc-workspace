@@ -1,17 +1,18 @@
 // 25ff71a9
-// concept: walk move
-// Grid content moves by params.shift_k toward params.shift_dir. The edge behavior is
-// underdetermined — the departing rows are bg in every pair:
-//
-//   $Shift() — translate; the vacated rows fill with params.bg
-//   $Cycle() — rows rotate as a cycle; the shift edge wraps to the far edge
+// keywords: walk move
+// output: Grid content moves by params.shift_k toward params.shift_dir. The
+//  edge behavior is underdetermined — the departing rows are bg in every pair:
 
-#include "../lib.dl"
+// the edge behavior
+.type Choice =
+    // translate; the vacated rows fill with params.bg
+    Shift {}
+    // rows rotate as a cycle; the shift edge wraps to the far edge
+  | Cycle {}
 
-.type Choice = Shift {} | Cycle {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl shift_dir(d: Dir) shift_dir(DIR_B).
     .decl shift_k(k: number) shift_k(1).
 
@@ -20,8 +21,6 @@
 }
 
 .init params = Params
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // --- Shift ---
 

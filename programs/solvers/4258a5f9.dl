@@ -1,15 +1,19 @@
 // 4258a5f9
 // draft
-// family: dc1df850
-// Every marker sits away from the grid edge, on an otherwise empty field, so
-// the program's edge clipping and its passthrough over ink go unwitnessed here.
+// representative: dc1df850
 
-#include "../lib.dl"
+// every marker sits away from the grid edge, on an otherwise empty field, so
+// the program's edge clipping and its passthrough over ink go unwitnessed
+// here
+.type Choice =
+    // markers grow one step in all eight directions
+    Grow {}
+    // a stored template, anchored at its marker cell on each marker
+  | Stamp {}
 
-.type Choice = Grow {} | Stamp {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl marker(c: Color) marker(5).
 
     // --- $Grow ---
@@ -44,7 +48,6 @@ halo(P, Col, $Stamp()) :-
 .decl impl_choice(ch: Choice)
 impl_choice($Grow()). impl_choice($Stamp()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- halo(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !halo(P, _, Ch).
 

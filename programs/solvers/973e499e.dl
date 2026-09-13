@@ -1,10 +1,10 @@
 // 973e499e
-// concept: tile-arrangement stamp
-// Self-tile. Output decomposes into tiles laid out like the input; the
-// tile at P_tile is a copy of the input keeping cells of color
-// in(P_tile), others bg.
+// keywords: tile-arrangement stamp
+// output: Self-tile. Output decomposes into tiles laid out like the input; the
+//  tile at P_tile is a copy of the input keeping cells of color in(P_tile),
+//  others bg.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -12,7 +12,6 @@
 
 .init params = Params
 
-.decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
     in(P_tile, Col), in(P_intile, Col),                 // matched: tile & intile share Col
     concat_2d(P_tile, P_intile, 0, P_grid_out).         // 2D recompose

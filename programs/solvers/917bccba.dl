@@ -35,6 +35,8 @@ landing_choice($Corner()). landing_choice($Slide()).
 .decl impl_choice(ch: Choice)
 impl_choice([R, L]) :- rect_choice(R), landing_choice(L).
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
     .decl bg(c: Color) bg(0).
 
@@ -124,7 +126,6 @@ rect_cell(P, R) :- in(P, Col), parse.rect($U(), R, Col, _).
 .decl cross(p: Position, ch: Choice)
 cross(P, Ch) :- params.corner(D), parse.crossing($U(), Ch, D, P).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, [R, L]) :-
     in(P, C), impl_choice([R, L]),
     ( rect_cell(P, R), Col = C                                             // the rectangle stays

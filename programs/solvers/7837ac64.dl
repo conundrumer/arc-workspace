@@ -1,28 +1,33 @@
 // 7837ac64
 // draft
-// concept: decompose markers crop scale span
-// Lines of one color cut the grid into a lattice of tiles. Some crossings of
-// those lines carry a mark in another color. The output is the tile
-// arrangement in miniature, one cell per tile: a tile whose four corner
-// crossings carry marks of one color takes that color, and every other tile
-// is bg. Choice = [l, s] crosses two hypotheses:
-//
-//   l (which lines frame the tiles):
-//     $Lattice() — every cutting line.
-//     $Marked()  — the cutting lines that carry a mark, so an unmarked line
-//                  between marked ones frames no tile of its own.
-//   s (what the miniature is cropped to):
-//     $Marks()   — the tiles the marks' bounding box reaches.
-//     $Blocks()  — the bounding box of the colored tiles.
+// keywords: decompose markers crop scale span
+// input: Lines of one color cut the grid into a lattice of tiles. Some
+//  crossings of those lines carry a mark in another color.
+// output: the tile arrangement in miniature, one cell per tile: a tile whose
+//  four corner crossings carry marks of one color takes that color, and every
+//  other tile is bg.
 
-#include "../lib.dl"
+// which lines frame the tiles
+.type Lines =
+    // every cutting line
+    Lattice {}
+    // the cutting lines that carry a mark, so an unmarked line between marked
+    // ones frames no tile of its own
+  | Marked {}
 
-.type Lines = Lattice {} | Marked {}
-.type Span = Marks {} | Blocks {}
+// what the miniature is cropped to
+.type Span =
+    // the tiles the marks' bounding box reaches
+    Marks {}
+    // the bounding box of the colored tiles
+  | Blocks {}
+
 .type Choice = [l: Lines, s: Span]
 
 // A tile of one frame.
 .type FrameTile = [l: Lines, p_tile: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -44,11 +49,8 @@ on_line(P, A) :- in(P, _), axis_elem(A), split(P, A, L, _), !gapped_line(L).
 .decl node(p: Position)
 node(P) :- on_line(P, A), perp(A, A2), on_line(P, A2).
 
-// The color of the lines.
 .decl line_color(col: Color)
-line_color(Col) :-
-    in(P, Col), on_line(P, A),       // a line cell
-    perp(A, A2), !on_line(P, A2).    // off the crossings
+line_color(Col) :- in(P, Col), on_line(P, _), !node(P).
 
 .decl mark(p: Position, col: Color)
 mark(P, Col) :- node(P), in(P, Col), !line_color(Col).
@@ -59,22 +61,21 @@ mark(P, Col) :- node(P), in(P, Col), !line_color(Col).
 lines_choice($Lattice()).
 lines_choice($Marked()).
 
-.init df = DividerTiles<Lines>
-df.cell(L, P) :- in(P, _), lines_choice(L).
+.init tiles = DividerTiles<Lines>
+tiles.cell(L, P) :- in(P, _), lines_choice(L).
 
 // $Lattice — every cutting line.
-df.divider($Lattice(), A, Ln) :- on_line(P, A), split(P, A, Ln, _).
+tiles.divider($Lattice(), A, Ln) :- on_line(P, A), split(P, A, Ln, _).
 
 // $Marked — the cutting lines a mark sits on.
-df.divider($Marked(), A, Ln) :- mark(P, _), axis_elem(A), split(P, A, Ln, _).
+tiles.divider($Marked(), A, Ln) :- mark(P, _), axis_elem(A), split(P, A, Ln, _).
 
 // --- blocks ---
 
-// The mark at corner d of a tile: one diagonal step from it toward the
-// tile lands in the tile.
+// The mark at corner d of a tile.
 .decl corner_mark(l: Lines, p_tile: Position, d: DiagDir, col: Color)
 corner_mark(L, P_tile, D, Col) :-
-    mark(P, Col), diag_opposite(D, D2), neighbor(P, D2, Q), df.tile_of(L, Q, P_tile).
+    mark(P, Col), diag_opposite(D, D2), neighbor(P, D2, Q), tiles.tile_of(L, Q, P_tile).
 
 // The one color of a tile's corner marks.
 .init corner_color = Unanimous<FrameTile, Color>
@@ -88,28 +89,25 @@ bare_corner(L, P_tile) :-
 .decl block(l: Lines, p_tile: Position, col: Color)
 block(L, P_tile, Col) :- corner_color.value([L, P_tile], Col), !bare_corner(L, P_tile).
 
-// --- the miniature ---
+// --- Span cases: what the miniature is cropped to ---
 
 // The box the miniature is cropped to.
 .init span_box = Bbox<Choice>
-
-// --- Span cases: what the miniature is cropped to ---
 
 // $Marks — the tiles the marks' bounding box reaches.
 .init marks_box = Bbox<Unit>
 marks_box.cell($U(), P) :- mark(P, _).
 
 span_box.cell([L, $Marks()], P_tile) :-
-    marks_box.box($U(), B), in(P, _), inside(P, B), df.tile_of(L, P, P_tile).
+    marks_box.box($U(), B), tiles.tile_of(L, P, P_tile), inside(P, B).
 
 // $Blocks — the bounding box of the colored tiles.
 span_box.cell([L, $Blocks()], P_tile) :- block(L, P_tile, _).
 
 // --- output ---
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_grid_out, Col, [L, S]) :-
-    span_box.box([L, S], B), df.tile_of(L, _, P_tile), crop(P_tile, B, P_grid_out),
+    span_box.box([L, S], B), tiles.tile_of(L, _, P_tile), crop(P_tile, B, P_grid_out),
     ( block(L, P_tile, Col)                       // four corners, one mark color
     ; !block(L, P_tile, _), params.bg(Col)        // any other tile
     ).

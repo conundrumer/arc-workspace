@@ -1,22 +1,23 @@
 // 73251a56
-// concept: symmetry cast count repair classify
-// A pattern symmetric under a D4 reflection, damaged by hole blobs. Under
-// $Slide and $Bg, holes repaint from their mirror cell, and the cases split
-// on the residual holes — the mirror is also a hole; fix-line cells are
-// their own mirror:
-//
-//   $Slide() — from the nearest intact cell along the symmetry's fix axis
-//   $Bg()    — fix-line holes from the line's own color, the rest from the
-//              dominant color
-//   $Label() — the pattern's color-class partition as data: a stored label
-//              grid; every hole repaints from its class's intact cells
+// keywords: symmetry cast count repair classify
+// input: A pattern symmetric under a D4 reflection, damaged by hole blobs.
+// output: Intact cells keep their color. Each hole repaints from a source
+//  the case picks.
 
-#include "../lib.dl"
+// what a hole repaints from
+.type Choice =
+    // from the nearest intact cell along the symmetry's fix axis
+    Slide {}
+    // fix-line holes from the line's own color, the rest from the dominant
+    // color
+  | Bg {}
+    // the pattern's color-class partition as data: a stored label grid; every
+    // hole repaints from its class's intact cells
+  | Label {}
 
-.type Choice = Slide {} | Bg {} | Label {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl hole(col: Color) hole(0).
 
     // --- Slide, Bg ---
@@ -78,8 +79,8 @@ residual(P) :- hole(P), mirror(P, Q), hole(Q).
 .decl on_fix(p: Position)
 on_fix(P) :- in(P, _), mirror(P, P).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- impl_choice(Ch), intact(P, Col).
+// A hole repaints from its mirror cell.
 out(P, Col, Ch) :- sym_choice(Ch), hole(P), mirror(P, Q), intact(Q, Col).
 
 // --- Slide ---

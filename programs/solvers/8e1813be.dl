@@ -1,15 +1,15 @@
 // 8e1813be
 // draft
-// concept: lines markers rank
-// One-color stripes run across the grid, all along one axis, and a
-// square sits among them, cutting some of them short. The output stacks
-// the stripes in their spatial order, each as the segment it would draw
-// across the square: one line per stripe, as wide as the square.
-
-#include "../lib.dl"
+// keywords: lines markers rank
+// output: One-color stripes run across the grid, all along one axis, and a
+//  square sits among them, cutting some of them short. The output stacks the
+//  stripes in their spatial order, each as the segment it would draw across the
+//  square: one line per stripe, as wide as the square.
 
 // A line perpendicular to axis a, at along-position p_line on a.
 .type Line = [a: Axis, p_line: Position]
+
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -39,7 +39,6 @@ layout.member(A, P_line, P_line) :- stripe.value([A, P_line], _), !mixed_axis(A)
 .init square = Bbox<Unit>
 square.cell($U(), P) :- in(P, Col), params.square(Col).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     stripe.value([A, P_line], Col), layout.pos(A, P_line, P_pos),    // the stripe's output line
     square.cell($U(), Q), square.box($U(), B), crop(Q, B, P_inner),  // a square cell in the square's frame

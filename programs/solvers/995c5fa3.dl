@@ -1,30 +1,25 @@
 // 995c5fa3
-// concept: decompose lookup classify
-// Layout: gap-separated tiles along params.tile_axis; each tile shows a
-// catalog pattern. Output is a tile_count-sided square: the row at each
-// tile's index (params.tile_dir → params.row_dir) fills with the tile's class
-// color.
-//
-// out's choice column = [cl, d]:
-//
-//   cl (classifier, data-equivalent on this task — every tile matches a
-//   catalog entry):
-//     $Lookup()  — tile content equals a catalog entry
-//     $HoleBox() — the holes' bbox margin keys a color table; hole-free
-//                  tiles take params.full_color
-//
-//   d (split):
-//     $Count() — by tile count
-//     $Size()  — by tile size
-//
-// [$Lookup(), $Count()] gets no case: the catalog's entries are tile-sized, so
-// the count reading matches an entry only where it agrees with the size
-// reading, and the size reading subsumes it.
+// keywords: decompose lookup classify
+// output: Layout: gap-separated tiles along params.tile_axis; each tile shows a
+//  catalog pattern. Output is a tile_count-sided square: the row at each tile's
+//  index (params.tile_dir → params.row_dir) fills with the tile's class color.
 
-#include "../lib.dl"
+// how a tile's class is read (data-equivalent on this task: every tile
+// matches a catalog entry)
+.type Classifier =
+    // tile content equals a catalog entry
+    Lookup {}
+    // the holes' bbox margin keys a color table; hole-free tiles take
+    // params.full_color
+  | HoleBox {}
 
-.type Classifier = Lookup {} | HoleBox {}
-.type DecChoice  = Count {} | Size {}
+// split
+.type DecChoice =
+    // by tile count
+    Count {}
+    // by tile size
+  | Size {}
+
 .type Choice     = [cl: Classifier, d: DecChoice]
 
 .type TileMember = [p: Position, col: Color]
@@ -32,8 +27,9 @@
 // A tile of one split.
 .type TileK = [p_tile: Position, dc: DecChoice]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl tile_axis(a: Axis) tile_axis(AXIS_H).
     .decl tile_gap(g: number) tile_gap(1).
 
@@ -115,14 +111,15 @@ row_tile(P_out, P_tile, Dc) :-
     frame.cell($U(), P_out), params.row_dir(D_row), dist(P_out, D_row, K),
     tile_cell(P_tile, _, _, Dc), params.tile_dir(D_tile), dist(P_tile, D_tile, K).
 
-.decl out(p: Position, col: Color, ch: Choice)
-
 // --- Lookup ---
 
 .init tile_match = KeyedSetCompare<Position, Ident, TileMember>
 tile_match.pattern_member(Id, [P_intile, C]) :- params.mapping_member(Id, P_intile, C).
 tile_match.observed_member(P_tile, [P_intile, C]) :- tile_cell(P_tile, P_intile, C, $Size()).
 
+// Lookup reads only the size split: the catalog's entries are tile-sized, so
+// the count split matches an entry only where it agrees with the size split,
+// which subsumes it. [$Lookup(), $Count()] gets no case.
 out(P_out, Col, [$Lookup(), $Size()]) :-
     row_tile(P_out, P_tile, $Size()),
     params.mapping_out(Id, Col),                 // entry's color

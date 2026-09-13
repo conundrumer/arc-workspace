@@ -1,13 +1,14 @@
 // 182e5d0f
 // draft
-// concept: objects markers move
-// Wire runs across the grid, ending in a plug — a wire cell flanked along an
-// axis by two caps. The rest of the wire is cord. A bead beside a cord slides
-// its whole length and comes to rest on the cord cell against the plug; the
-// cord it travelled and the seat it left go to background. A cord no bead
-// touches, and a bead beside no cord, stay as they are.
+// keywords: objects markers move
+// input: Wire runs across the grid, ending in a plug — a wire cell flanked
+//  along an axis by two caps. The rest of the wire is cord.
+// output: A bead beside a cord slides its whole length and comes to rest on
+//  the cord cell against the plug; the cord it travelled and the seat it left
+//  go to background. A cord no bead touches, and a bead beside no cord, stay
+//  as they are.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(7).
@@ -49,7 +50,6 @@ consumed(P) :- entry(P, _).
 .decl landing(p: Position)
 landing(P) :- plug(P0), dir_elem(D), neighbor(P0, D, P), cord_run.reach($U(), P).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, Col_in),
     ( landing(P), params.bead(Col)                  // the bead's new seat

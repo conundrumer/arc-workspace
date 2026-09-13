@@ -1,12 +1,13 @@
 // 5adee1b2
 // draft
-// concept: objects markers enclose border mapping
-// A legend at one edge lists, per shape color, the border color that goes
-// with it. Each shape of a listed color takes a border: its bounding box,
-// grown one cell on each side, painted in the shape's border color at every
-// empty cell the shape does not close off from the grid edge.
+// keywords: objects markers enclose border mapping
+// input: A legend at one edge lists, per shape color, the border color that
+//  goes with it.
+// output: Each shape of a listed color takes a border: its bounding box,
+//  grown one cell on each side, painted in the shape's border color at every
+//  empty cell the shape does not close off from the grid edge.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -64,6 +65,5 @@ painted(P, Col) :-
     outside.reach(S, P),                                // the shape does not enclose it
     shapes.label(Col_s, _, S), border_color(Col_s, Col).  // the shape color's border color
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- painted(P, Col).
 out(P, Col) :- in(P, Col), !painted(P, _).

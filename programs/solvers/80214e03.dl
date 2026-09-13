@@ -1,20 +1,23 @@
 // 80214e03
 // draft
-// concept: lines decompose merge d4
-// One-color blocks, each with a few bg holes, fill a box on a bg field.
-// The blocks lie on a grid: on each axis, the lines fuse into block-lines,
-// and the block-lines induce a tile frame. The output is that frame under
-// a D4 transform, one cell per tile holding the tile's color. The cases
-// contest what separates two adjacent lines: $Content separates lines
-// with different color sets; $Contrast separates lines where two cells
-// of different colors touch across them.
+// keywords: lines decompose merge d4
+// input: One-color blocks with bg holes fill a box on a bg field. The
+//  blocks lie on a grid: on each axis, the lines fuse into block-lines,
+//  and the block-lines induce a tile frame.
+// output: that frame under a D4 transform, one cell per tile holding the
+//  tile's color.
 
-#include "../lib.dl"
-
-.type Choice = Content {} | Contrast {}
+// what separates two adjacent lines
+.type Choice =
+    // separates lines with different color sets
+    Content {}
+    // separates lines where two cells of different colors touch across them
+  | Contrast {}
 .type Line = [a: Axis, p: Position]
 .type ChoiceLine = [c: Choice, l: Line]
 .type ChoiceAxis = [c: Choice, a: Axis]
+
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -29,7 +32,6 @@ impl_choice($Contrast()).
 
 // --- lines ---
 
-// The colors on a line.
 .decl line_color(l: Line, col: Color)
 line_color([A, L], Col) :- in(P, Col), !params.bg(Col), axis_elem(A), split(P, A, L, _).
 
@@ -69,7 +71,6 @@ block_line.equiv([C, L], [C, L3]) :-
 layout.axis([C, A], A) :- impl_choice(C), axis_elem(A).
 layout.member([C, A], B, L) :- block_line.id([C, [A, L]], B).
 
-// The tile a cell sits in.
 .decl tile_of(c: Choice, p: Position, p_tile: Position)
 tile_of(C, P, P_tile) :-
     in(P, _), perp(A, A2), split(P, A, L, _), split(P, A2, L2, _),   // the cell's line on each axis
@@ -77,7 +78,6 @@ tile_of(C, P, P_tile) :-
     layout.pos([C, A], B, P_line), layout.pos([C, A2], B2, P_line2), // the block-lines' output lines
     compose(P_line, P_line2, P_tile).                                // where the two lines cross
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P_out, Col, C) :-
     in(P, Col), !params.bg(Col), tile_of(C, P, P_tile),   // the tile's color
     params.transform(T), apply(T, P_tile, P_out).

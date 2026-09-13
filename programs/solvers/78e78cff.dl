@@ -1,25 +1,24 @@
 // 78e78cff
 // draft
-// concept: markers border cast
-// A broken frame of one ink sits on a plain ground, with one lone cell of
-// a third color inside it. That cell's color fills the frame's box and
-// runs out of the box in straight lines wherever the frame leaves a gap;
-// the frame itself stays.
-//
-// The colors come from the grid: the ground is the commonest color, the
-// seed is the lone cell of its color, and the frame is the remaining ink.
-//
-// Cases, which diverge only where a frame cell lies on the seed's row or
-// column inside the box:
-//   $Leak      — the seed floods the box through non-frame cells, and every
-//                flooded cell casts cardinal rays, halted by frame cells,
-//                which carry the fill out of the bbox.
-//   $Crosshair — the seed's row and column are axes; each non-frame box
-//                cell on an axis casts across it, halted by frame cells.
+// keywords: markers border cast
+// input: A broken frame of one ink sits on a plain ground, with one lone cell
+//  of a third color inside it. The ground is the commonest color, the seed is
+//  the lone cell of its color, and the frame is the remaining ink.
+// output: The seed's color fills the frame's box and runs out of the box in
+//  straight lines wherever the frame leaves a gap; the frame itself stays.
 
-#include "../lib.dl"
+// how the fill escapes the box; the cases diverge only where a frame cell
+// lies on the seed's row or column inside the box
+.type Choice =
+    // the seed floods the box through non-frame cells, and every flooded cell
+    // casts cardinal rays, halted by frame cells, which carry the fill out of
+    // the bbox
+    Leak {}
+    // the seed's row and column are axes; each non-frame box cell on an axis
+    // casts across it, halted by frame cells
+  | Crosshair {}
 
-.type Choice = Leak {} | Crosshair {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {}
 
@@ -76,6 +75,5 @@ cross.blocked(A, P) :- axis_elem(A), frame(P).
 
 fill(P, $Crosshair()) :- cross.clear(_, P, _, _, _).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- fill(P, Ch), seed(_, Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !fill(P, Ch).

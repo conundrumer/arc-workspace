@@ -1,17 +1,17 @@
 // 66ac4c3b
 // draft
-// concept: lines markers d4 mapping
-// Two parallel marker lines of distinct colors carry ink at the same
-// positions along them, and shapes in one marker's color hang off the
-// other marker's line. The output adds the input's reflection across the
-// midline between the marker lines, with the marker colors swapped: the
-// lines land on each other, and the shapes land past the far line in its
-// color. Colors, axis, and spacing vary per input, so there is no task
-// data.
-
-#include "../lib.dl"
+// keywords: lines markers d4 mapping
+// input: two parallel marker lines of distinct colors, carrying ink at the
+//  same positions along them, with shapes in one marker's color hanging off
+//  the other marker's line
+// output: The output adds the input's reflection across the midline between
+//  the marker lines, with the marker colors swapped: the lines land on each
+//  other, and the shapes land past the far line in its color. Colors, axis,
+//  and spacing vary per input, so there is no task data.
 
 .type Line = [a: Axis, p_line: Position]
+
+.decl out(p: Position, col: Color)
 
 .comp Params {}
 
@@ -55,6 +55,5 @@ painted(Q, Col2) :-
     relative(P_line, P, V), apply(F, V, V_img), compose(P_line2, V_img, Q),
     in(Q, _).                                          // the image lands on the grid
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- painted(P, Col).
 out(P, Col) :- in(P, Col), !painted(P, _).   // bg stands

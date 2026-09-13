@@ -1,16 +1,18 @@
 // 253bf280
 // draft
-// concept: markers span
-// Cells between two marks on their row or column fill with params.fill. No line
-// holds three marks, so what a stroke does to a mark it crosses is open.
-// Two hypotheses, tagged on out's Choice:
-//
-//   $Spare — the stroke covers bg cells; a crossed mark stays a mark.
-//   $Paint — the stroke covers every cell it crosses, marks included.
+// keywords: markers span
+// input: marks scattered on the grid, no line holding more than two
+// output: Cells between two marks on their row or column fill with
+//  params.fill.
 
-#include "../lib.dl"
+// what a stroke does to a mark it crosses
+.type Choice =
+    // the stroke covers bg cells; a crossed mark stays a mark
+    Spare {}
+    // the stroke covers every cell it crosses, marks included
+  | Paint {}
 
-.type Choice = Spare {} | Paint {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -35,7 +37,6 @@ between(Ch, P) :-
     rays.ray(Ch, P, D, K, _), K != 0,     // a mark reaches P from one side
     rays.ray(Ch, P, O, K2, _), K2 != 0.   // and one from the other
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, F, Ch)   :- between(Ch, P), params.fill(F).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !between(Ch, P).
 

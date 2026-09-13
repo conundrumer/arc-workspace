@@ -1,12 +1,12 @@
 // 7ed72f31
 // draft
-// concept: objects markers symmetry d4
-// Shapes lie on a field, each touching a run of params.mirror cells: a
-// single cell, or a straight line. The shape reappears reflected in its
-// mirror: through the cell, or across the line. The input stays; the image
-// paints only field cells.
+// keywords: objects markers symmetry d4
+// input: Shapes lie on a field, each touching a run of params.mirror cells: a
+//  single cell, or a straight line.
+// output: The shape reappears reflected in its mirror: through the cell, or
+//  across the line. The input stays; the image paints only field cells.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl mirror(c: Color) mirror(2).
@@ -52,7 +52,6 @@ image(Q, Col) :-
     shape(_, P, Col), image_along(P, A, Al), perp(A, A2), image_along(P, A2, Al2),
     compose(Al, Al2, Q).
 
-.decl out(p: Position, col: Color)
 out(P, Col_out) :-
     in(P, Col),
     ( ink(P, _), Col_out = Col                    // ink stays

@@ -1,18 +1,20 @@
 // 1b59e163
 // draft
-// concept: objects markers move count
-// The grid holds multi-cell shapes and lone dots on bg. Each shape moves onto
-// every dot colored like its anchor cell, landing that cell on the dot; the
-// shape leaves nothing behind, and a dot no shape answers stays bg. Two
-// hypotheses of which cell of a shape is its anchor:
-//
-//   $Odd   — the cell of the shape's rarest color.
-//   $Match — any cell of the shape; the dot's color picks it.
+// keywords: objects markers move count
+// output: The grid holds multi-cell shapes and lone dots on bg. Each shape
+//  moves onto every dot colored like its anchor cell, landing that cell on the
+//  dot; the shape leaves nothing behind, and a dot no shape answers stays bg.
 
-#include "../lib.dl"
+// which cell of a shape is its anchor
+.type Choice =
+    // the cell of the shape's rarest color
+    Odd {}
+    // any cell of the shape; the dot's color picks it
+  | Match {}
 
-.type Choice = Odd {} | Match {}
 .type ShapeColor = [id: Ident, col: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(4).
@@ -68,6 +70,5 @@ anchor(P, $Odd()) :- rare.low(Id, Col, _), shape_cell(Id, P, Col).
 
 anchor(P, $Match()) :- shape_cell(_, P, _).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Bg, Ch)  :- in(P, _), impl_choice(Ch), !paint(P, _, Ch), params.bg(Bg).

@@ -1,20 +1,21 @@
 // 1f642eb9
 // draft
-// concept: markers cast
-// A block of params.block sits in the grid, with single cells of other colors
-// around it, each in line with it. Every such cell sends its color along its
-// line to the block's near side; the rest of the grid passes through, the
-// sending cell included.
-//
-// The block is a solid rectangle in every pair, so the data does not say what
-// stops a travelling color.
-// $Block — the block's own cells stop it.
-// $Box — the block's bounding box stops it, whether or not the block reaches
-//   that far.
+// keywords: markers cast
+// input: A block of params.block sits in the grid, with single cells of other
+//  colors around it, each in line with it.
+// output: Every such cell sends its color along its line to the block's near
+//  side; the rest of the grid passes through, the sending cell included.
 
-#include "../lib.dl"
+// what stops a travelling color; the block is a solid rectangle in every
+// pair, so the data does not say which
+.type Choice =
+    // the block's own cells stop it
+    Block {}
+    // the block's bounding box stops it, whether or not the block reaches that
+    // far
+  | Box {}
 
-.type Choice = Block {} | Box {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -43,7 +44,6 @@ rays.mark(Ch, P) :- marker(P, _), impl_choice(Ch).
 .decl paint(p: Position, col: Color, ch: Choice)
 paint(Q, Col, Ch) :- rays.stop(Ch, Q, _, _, P), marker(P, Col).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).
 

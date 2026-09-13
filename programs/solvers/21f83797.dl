@@ -1,19 +1,20 @@
 // 21f83797
 // draft
-// concept: markers cast span
-// Marks sit on a blank canvas. Each mark's row and column are drawn across
-// the whole grid, and the box the marks span is filled with params.fill
-// inside those lines. The line color splits the cases:
-//
-//   $Ink()  — an independent params.line.
-//   $Mark() — the casting mark's own color.
+// keywords: markers cast span
+// input: Marks sit on a blank canvas.
+// output: Each mark's row and column are drawn across the whole grid, and
+//  the box the marks span is filled with params.fill inside those lines.
 
-#include "../lib.dl"
+// what color the drawn lines take
+.type Choice =
+    // an independent params.line
+    Ink {}
+    // the casting mark's own color
+  | Mark {}
 
-.type Choice = Ink {} | Mark {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
     .decl fill(col: Color) fill(1).
 
@@ -40,7 +41,6 @@ bbox.cell($U(), P) :- mark(P).
 .decl spanned(p: Position)
 spanned(P) :- in(P, _), bbox.box($U(), B), inside(P, B).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     impl_choice(Ch), in(P, _), !on_line(P, _),
     ( spanned(P), params.fill(Col)

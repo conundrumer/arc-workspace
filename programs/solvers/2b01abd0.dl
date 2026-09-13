@@ -1,11 +1,13 @@
 // 2b01abd0
 // draft
-// concept: lines d4 mapping
-// A line of params.line cuts the grid, and a two-color figure sits on one side. The
-// figure stays in place with its two colors exchanged, and its reflection across
-// the line appears on the other side in the original colors.
+// keywords: lines d4 mapping
+// input: A line of params.line cuts the grid, and a two-color figure sits
+//  on one side.
+// output: The figure stays in place with its two colors exchanged, and its
+//  reflection across the line appears on the other side in the original
+//  colors.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -42,6 +44,5 @@ swap(C, C2) :- figure(_, C), figure(_, C2), C != C2.
 ink(P, C2) :- figure(P, C), swap(C, C2).                // in place, colors exchanged
 ink(Q, C) :- figure(P, C), mirror(P, Q).                // reflected, colors kept
 
-.decl out(p: Position, col: Color)
 out(P, C) :- ink(P, C).
 out(P, C) :- in(P, C), !ink(P, _).                      // line and bg stand

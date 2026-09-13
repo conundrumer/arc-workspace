@@ -1,12 +1,13 @@
 // 264363fd
-// concept: objects markers stamp cast
-// Solid rectangles and one loose template sit on a background. Each
-// rectangle's minority-colored cells are markers. The template stamps onto
-// every marker, its box center landing on the marker, clipped to the
-// rectangle; each tip of the template then casts a ray of its own color
-// onward across the rectangle. The template itself is erased.
+// keywords: objects markers stamp cast
+// input: Solid rectangles and one loose template sit on a background. Each
+//  rectangle's minority-colored cells are markers.
+// output: The template stamps onto every marker, its box center landing on
+//  the marker, clipped to the rectangle; each tip of the template then casts a
+//  ray of its own color onward across the rectangle. The template itself is
+//  erased.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {}
 
@@ -101,5 +102,4 @@ paint(P, Col) :-
     spikes.ray(Id, P, D, K, Src), K != 0.
 paint(P, Col) :- tmpl(P, _), bg(Col).            // the template is erased
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- in(P, C0), ( paint(P, Col) ; !paint(P, _), Col = C0 ).

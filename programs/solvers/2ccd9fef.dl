@@ -1,24 +1,25 @@
 // 2ccd9fef
-// concept: decompose induce move rank
-// Equal panels stacked along one axis hold the frames of an animation drawn
-// over a shared template. The plainest panel — fewest distinct colors —
-// holds the template alone, and time runs toward it; the split is the one
-// whose template leaves fewest cells unexplained. Content lies in runs
-// along the growth axis — the axis whose every line holds the same number
-// of runs in every frame — and each run's two ends move at a constant
-// velocity, read off the last step. The output is the next frame: the last
-// frame's runs with each end displaced once more, their content carried by
-// the end that moves, and recolored by the turn the steps agree on.
-//
-// The velocity read pairs each last-frame run with a run of the frame
-// before; the cases differ on what carries that correspondence along a
-// line:
-//   $Rank — runs of equal rank from the line's edge correspond.
-//   $Hue  — runs whose colors carry across the step's turn correspond.
+// keywords: decompose induce move rank
+// input: Equal panels stacked along one axis hold the frames of an
+//  animation drawn over a shared template. The plainest panel — fewest
+//  distinct colors — holds the template alone, and time runs toward it;
+//  the split is the one whose template leaves fewest cells unexplained.
+//  Content lies in runs along the growth axis — the axis whose every line
+//  holds the same number of runs in every frame.
+// output: Each run's two ends move at a constant velocity, read off the
+//  last step. The output is the next frame: the last frame's runs with
+//  each end displaced once more, their content carried by the end that
+//  moves, and recolored by the turn the steps agree on. The velocity read
+//  pairs each last-frame run with a run of the frame before.
 
-#include "../lib.dl"
+// what carries that correspondence along a line
+.type Choice =
+    // runs of equal rank from the line's edge correspond
+    Rank {}
+    // runs whose colors carry across the step's turn correspond
+  | Hue {}
 
-.type Choice = Rank {} | Hue {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {}
 
@@ -229,6 +230,5 @@ paint(Ch, Q, Col) :-
 
 // --- output ---
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_intile, Col, Ch) :- paint(Ch, P_intile, Col).
 out(P_intile, Col, Ch) :- impl_choice(Ch), tpl(P_intile, Col), !paint(Ch, P_intile, _).

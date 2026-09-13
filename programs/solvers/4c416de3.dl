@@ -1,18 +1,21 @@
 // 4c416de3
-// concept: objects markers d4 stamp
-// Outlines drawn in params.frame bound boxes. A box corner may seat a stamp: a
-// one-color shape drawn around that corner. At least one corner carries its
-// stamp whole; the others carry a single cell of it, or nothing. The output
-// completes every started stamp: that shape carried onto the corner, in the
-// color of the cell already drawn there.
-//
-// $Cover — a stamp covers every cell of its footprint.
-// $Fill — a stamp fills only background and the outline it is drawn over;
-// ink already on the grid stays.
+// keywords: objects markers d4 stamp
+// input: Outlines drawn in params.frame bound boxes. A box corner may seat a
+//  stamp: a one-color shape drawn around that corner. At least one corner
+//  carries its stamp whole; the others carry a single cell of it, or
+//  nothing.
+// output: The output completes every started stamp: that shape carried onto
+//  the corner, in the color of the cell already drawn there.
 
-#include "../lib.dl"
+// which cells of a completed stamp get painted
+.type Choice =
+    // a stamp covers every cell of its footprint
+    Cover {}
+    // a stamp fills only background and the outline it is drawn over; ink
+    // already on the grid stays
+  | Fill {}
 
-.type Choice = Cover {} | Fill {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     // The color the outlines are drawn in.
@@ -76,8 +79,6 @@ stamp(P_site, P) :-
 painted(P, Col) :-
     stamp(P_site, P),               // a cell of the stamp at a site
     stamp(P_site, Q), ink(Q, Col).  // in the color of the part already drawn
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- Cover ---
 

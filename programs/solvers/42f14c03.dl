@@ -1,19 +1,21 @@
 // 42f14c03
 // draft
-// concept: objects crop pack count
-// The grid holds several objects. One of them has holes in its box, and the
-// other objects are the pieces that go in those holes. That object is the
-// one whose every hole takes a piece. The output is its box: the object's
-// own cells keep its color, and each hole takes the color of its piece.
-//
-// A piece goes in a hole when:
-//   $Shape — their cell sets are congruent.
-//   $Dims  — their boxes share their extents.
-//   $Size  — they hold as many cells.
+// keywords: objects crop pack count
+// output: The grid holds several objects. One of them has holes in its box, and
+//  the other objects are the pieces that go in those holes. That object is the
+//  one whose every hole takes a piece. The output is its box: the object's own
+//  cells keep its color, and each hole takes the color of its piece.
 
-#include "../lib.dl"
+// A piece goes in a hole when
+.type Choice =
+    // their cell sets are congruent
+    Shape {}
+    // their boxes share their extents
+  | Dims {}
+    // they hold as many cells
+  | Size {}
 
-.type Choice = Shape {} | Dims {} | Size {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {}
 
@@ -64,7 +66,6 @@ unfillable(O, Ch) :- hole_cell([O, Id], _), impl_choice(Ch), !fits([O, Id], _, C
 .decl frame(o: Ident, ch: Choice)
 frame(O, Ch) :- hole(O, _), impl_choice(Ch), !unfillable(O, Ch).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_inner, Col, Ch) :-
     frame(F, Ch), bbox.box(F, B),
     ( obj_cell(F, Col, P)                            // the frame's own cell, in its color

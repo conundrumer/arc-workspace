@@ -1,20 +1,21 @@
 // 639f5a19
 // draft
-// concept: objects border lookup
-// Solid ink rectangles sit on the background. Each one is repainted: a band
-// runs inside its edges, and each band cell takes the color of the quadrant
-// of the object's bounding box it sits in. What the band encloses takes one
-// color. Choice = how deep a cell lies:
-//
-//   $Inset() — distance to the nearest edge of the bounding box.
-//   $Erode() — erosion from the object's own outline.
-//
-// Every object here is a solid rectangle, where the two depths agree; a
-// ragged object splits them.
+// keywords: objects border lookup
+// input: Solid ink rectangles sit on the background.
+// output: Each one is repainted: a band runs inside its edges, and each band
+//  cell takes the color of the quadrant of the object's bounding box it sits
+//  in. What the band encloses takes one color.
 
-#include "../lib.dl"
+// how deep a cell lies
+.type Choice =
+    // distance to the nearest edge of the bounding box
+    Inset {}
+    // erosion from the object's own outline
+  | Erode {}
 
-.type Choice = Inset {} | Erode {}
+// --- shared ---
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -49,6 +50,8 @@ quad.cell(Id, P_inner) :- box_cell(Id, _, P_inner).
 .decl impl_choice(ch: Choice)
 impl_choice($Inset()). impl_choice($Erode()).
 
+// Every object here is a solid rectangle, where the two depths agree; a
+// ragged object splits them.
 .decl band_cell(p: Position, ch: Choice)
 
 // --- $Inset ---
@@ -65,10 +68,6 @@ rim.cell(Id, P) :- objs.label($U(), P, Id).
 
 // Fewer steps inward from the object's outline than the band is deep.
 band_cell(P, $Erode()) :- rim.depth(_, P, K), params.band_depth(N), K < N.
-
-// --- shared ---
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 out(P, Col, Ch) :- in(P, Col), params.bg(Col), impl_choice(Ch).
 

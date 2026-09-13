@@ -1,16 +1,19 @@
 // 67a423a3
 // draft
-// concept: lines cross stamp
-// Two lines cross, one per axis, and the crossing cell belongs to one of
-// them. The eight cells around the crossing take params.ring. Cases
-// differ on what a line is:
-//
-//   $Span  — a row or column with no bg cell.
-//   $Color — the cells of one non-bg color, all in one row or column.
+// keywords: lines cross stamp
+// input: Two lines cross, one per axis.
+// output: The eight cells around the crossing take params.ring; every other
+//  cell keeps its color.
+// review principle: docs/wf-solver/open/peer-priors.md
 
-#include "../lib.dl"
+// what a line is
+.type Choice =
+    // a row or column with no bg cell
+    Span {}
+    // the cells of one non-bg color, all in one row or column
+  | Color {}
 
-.type Choice = Span {} | Color {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -19,30 +22,32 @@
 
 .init params = Params
 
-// A line along A, at across position L.
+// The line along A that P sits on, named by its across position.
+.decl cell_line(p: Position, a: Axis, l: Position)
+cell_line(P, A, L) :- in(P, _), axis_elem(A), split(P, A, _, L).
+
 .decl line(a: Axis, l: Position, ch: Choice)
 
 // --- $Span ---
 // The line along A at L holds a bg cell.
 .decl gapped(a: Axis, l: Position)
-gapped(A, L) :- in(P, Col), params.bg(Col), axis_elem(A), split(P, A, _, L).
+gapped(A, L) :- cell_line(P, A, L), in(P, Col), params.bg(Col).
 
-line(A, L, $Span()) :- in(P, _), axis_elem(A), split(P, A, _, L), !gapped(A, L).
+line(A, L, $Span()) :- cell_line(_, A, L), !gapped(A, L).
 
 // --- $Color ---
 // The line along A that holds every cell of Col, when there is one.
 .type ColorAxis = [col: Color, a: Axis]
 .init color_line = Unanimous<ColorAxis, Position>
-color_line.item([Col, A], L) :- in(P, Col), !params.bg(Col), axis_elem(A), split(P, A, _, L).
+color_line.item([Col, A], L) :- cell_line(P, A, L), in(P, Col), !params.bg(Col).
 
 line(A, L, $Color()) :- color_line.value([_, A], L).
 
 // Lines along both axes meet at P.
 .decl crossing(p: Position, ch: Choice)
 crossing(P, Ch) :-
-    in(P, _),
-    line(A, L, Ch), split(P, A, _, L),                    // on a line along A
-    perp(A, A2), line(A2, L2, Ch), split(P, A2, _, L2).   // and on one across
+    cell_line(P, A, L), line(A, L, Ch),                    // on a line along A
+    perp(A, A2), cell_line(P, A2, L2), line(A2, L2, Ch).   // and on one across
 
 // The eight cells around a crossing.
 .decl ring(p: Position, ch: Choice)
@@ -51,7 +56,6 @@ ring(P, Ch) :- crossing(C, Ch), dir8_elem(D), neighbor(C, D, P).
 .decl impl_choice(ch: Choice)
 impl_choice($Span()). impl_choice($Color()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     impl_choice(Ch), in(P, C_in),
     ( ring(P, Ch), params.ring(Col)    // around a crossing

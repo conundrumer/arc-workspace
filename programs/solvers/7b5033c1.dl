@@ -1,12 +1,12 @@
 // 7b5033c1
 // draft
-// concept: walk rank
-// The non-bg cells draw one snake: a simple 4-connected path in colored
-// segments. The output straightens the snake into a line along
-// params.line_axis: the k-th path cell from the end nearer an edge lands k
-// from that edge. Either end may lead the walk, so both run, keyed by edge.
+// keywords: walk rank
+// input: a simple 4-connected path of non-bg cells, in colored segments
+// output: The path straightens into a line along params.line_axis: the k-th
+//  path cell from the end nearer an edge lands k from that edge. Either end
+//  may lead the walk, so both run, keyed by edge.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl line_axis(a: Axis) line_axis(AXIS_V).
@@ -58,7 +58,6 @@ total.item($U(), P) :- ink(P).
 .init line = AxisFrame<Unit>
 line.extent($U(), A, N) :- params.line_axis(A), total.tally($U(), N).
 
-.decl out(p: Position, col: Color)
 out(P_out, Col) :-
     path.rank(D, P, K), in(P, Col),           // k-th path cell from the head at edge D
     line.cell($U(), _, P_out), dist(P_out, D, K).  // k from edge D of the line

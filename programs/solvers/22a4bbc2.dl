@@ -1,15 +1,16 @@
 // 22a4bbc2
-// concept: lines objects rank
-// A stack of one-color bars fills the grid; every third bar down the
-// stack, the first included, recolors to the mark color. Cases differ in
-// what a bar is:
-//
-//   $Run()    — a maximal band of same-color rows
-//   $Object() — a connected component of one color
+// keywords: lines objects rank
+// output: A stack of one-color bars fills the grid; every third bar down the
+//  stack, the first included, recolors to the mark color.
 
-#include "../lib.dl"
+// what a bar is
+.type Choice =
+    // a maximal band of same-color rows
+    Run {}
+    // a connected component of one color
+  | Object {}
 
-.type Choice = Run {} | Object {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -91,6 +92,5 @@ mark_cell($Run(), P) :-
 mark_cell($Object(), P) :-
     mark_margin($Object(), K), obj_margin(Id, K), comps.label(_, P, Id).
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P, Col, Ch) :- mark_cell(Ch, P), params.mark(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !mark_cell(Ch, P).

@@ -1,15 +1,17 @@
 // 7f4411dc
-// concept: stamp select
-// Denoise: solid ink rectangles survive; scattered single cells clear to
-// bg. Ink color varies per pair. What survives:
-//
-//   $Square  — a cell under an occurrence of the solid square of side
-//              params.square_dim on the ink.
-//   $Support — a cell with ink neighbors in two distinct directions.
+// keywords: stamp select
+// output: Denoise: solid ink rectangles survive; scattered single cells clear
+//  to bg. Ink color varies per pair.
 
-#include "../lib.dl"
+// what survives
+.type Choice =
+    // a cell under an occurrence of the solid square of side params.square_dim
+    // on the ink
+    Square {}
+    // a cell with ink neighbors in two distinct directions
+  | Support {}
 
-.type Choice = Square {} | Support {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -44,8 +46,6 @@ support(P, D) :- ink_at(P), dir_elem(D), !rim.rim_dir($U(), P, D).
 
 .decl support_kept(p: Position)
 support_kept(P) :- support(P, D1), support(P, D2), D1 != D2.
-
-.decl out(p: Position, col: Color, c: Choice)
 
 out(P, Col, $Square()) :- square_kept(P), in(P, Col).
 out(P, Col, $Square()) :- in(P, _), !square_kept(P), params.bg(Col).

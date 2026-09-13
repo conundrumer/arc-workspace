@@ -1,15 +1,16 @@
 // 42a50994
-// concept: objects select
-// Noise dots; a dot with a companion among its eight surrounding cells
-// stays; a lone dot becomes bg. Each pair's dots share one color, which
-// hides what counts as a companion; two models, tagged on out's Choice:
-//
-//   $Ink  — any non-bg cell.
-//   $Self — a cell of the dot's own color.
+// keywords: objects select
+// output: Noise dots; a dot with a companion among its eight surrounding cells
+//  stays; a lone dot becomes bg.
 
-#include "../lib.dl"
+// each pair's dots share one color, which hides what counts as a companion
+.type Choice =
+    // any non-bg cell
+    Ink {}
+    // a cell of the dot's own color
+  | Self {}
 
-.type Choice = Ink {} | Self {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color)
@@ -32,6 +33,5 @@ grouped(P, $Self()) :- ink(P, Col), dir8_elem(D), neighbor(P, D, P2), ink(P2, Co
 .decl impl_choice(ch: Choice)
 impl_choice($Ink()). impl_choice($Self()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- grouped(P, Ch), in(P, Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !grouped(P, Ch), params.bg(Col).

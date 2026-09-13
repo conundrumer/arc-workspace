@@ -1,22 +1,23 @@
 // 5168d44c
 // draft
-// concept: markers move walk lookup
-// A ring of params.ring cells with one hole surrounds a dot of a line of evenly
-// spaced params.dot cells. The ring moves along that line toward params.corner; every
-// dot stays. The cases differ in what fixes where the ring lands:
-//
-//   $Next — the next dot along the line.
-//   $Jump — a stored distance.
-//   $Fit  — the nearest spot ahead whose footprint holds no dot.
-//
-// Coincide when the dots are two apart.
+// keywords: markers move walk lookup
+// input: a ring of params.ring cells with one hole, surrounding a dot of a
+//  line of evenly spaced params.dot cells
+// output: The ring moves along that line toward params.corner; every dot
+//  stays.
 
-#include "../lib.dl"
+// what fixes where the ring lands (coincide when the dots are two apart)
+.type Choice =
+    // the next dot along the line
+    Next {}
+    // a stored distance
+  | Jump {}
+    // the nearest spot ahead whose footprint holds no dot
+  | Fit {}
 
-.type Choice = Next {} | Jump {} | Fit {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
     .decl ring(col: Color) ring(2).
     .decl dot(col: Color) dot(3).
@@ -84,7 +85,6 @@ target(Q, $Jump()) :- center(C), move_dir(D), params.step(K), jump(C, D, K, Q).
 .decl new_ring(p: Position, ch: Choice)
 new_ring(P, Ch) :- target(Q, Ch), shape(V), compose(Q, V, P).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- impl_choice(Ch), dot_cell(P), params.dot(Col).
 out(P, Col, Ch) :- new_ring(P, Ch), params.ring(Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !dot_cell(P), !new_ring(P, Ch), params.bg(Col).

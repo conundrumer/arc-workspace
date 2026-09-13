@@ -1,21 +1,21 @@
 // 79cce52d
-// concept: lines markers walk count border
-// A one-cell border sits on the two edges of params.corner; the rest is the
-// payload. Each border band holds one marker cell. Per axis, the payload's
-// lines rotate as a cycle so the line beside the corner lands on the
-// marker's line.
-//
-// Two models for which band cell is the marker, tagged on out's Choice:
-//   $Marked()    — the cell of the designated params.marker_col.
-//   $Singleton() — the band cell whose color appears params.marker_count times in
-//                  its band, the color itself unnamed.
+// keywords: lines markers walk count border
+// input: A one-cell border sits on the two edges of params.corner; the rest
+//  is the payload. Each border band holds one marker cell.
+// output: Per axis, the payload's lines rotate as a cycle so the line
+//  beside the corner lands on the marker's line.
 
-#include "../lib.dl"
+// which band cell is the marker
+.type Choice =
+    // the cell of the designated params.marker_col
+    Marked {}
+    // the band cell whose color appears params.marker_count times in its band,
+    // the color itself unnamed
+  | Singleton {}
 
-.type Choice = Marked {} | Singleton {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl corner(d: DiagDir) corner(DIAG_TL).   // the border bands meet here
 
     // --- Marked ---
@@ -94,7 +94,6 @@ out_along(A, P, Q, Ch) :-
     line_rotation(A, K_in, K_out, Ch),
     frame.cell($U(), A, Q), line_idx(A, Q, K_out).   // the output line at that index
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_out, Col, Ch) :-
     kept(P, Col),
     perp(A1, A2),

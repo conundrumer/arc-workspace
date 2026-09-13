@@ -1,14 +1,14 @@
 // 16b78196
-// concept: objects pack
-// A bar spans the grid and its edge is notched. The loose pieces translate to
-// the bar and to each other, each resting flush on the face it meets in a fit
-// that pins it: one step along the contact, and the piece hangs over a gap in
-// the host's face or collides with it. Every piece is used once and no two
-// overlap; a placement is refuted when holding the piece there drops some
-// piece out of reach. The output paints the assembly and leaves background
-// where the pieces came from.
+// keywords: objects pack
+// output: A bar spans the grid and its edge is notched. The loose pieces
+//  translate to the bar and to each other, each resting flush on the face it
+//  meets in a fit that pins it: one step along the contact, and the piece hangs
+//  over a gap in the host's face or collides with it. Every piece is used once
+//  and no two overlap; a placement is refuted when holding the piece there
+//  drops some piece out of reach. The output paints the assembly and leaves
+//  background where the pieces came from.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -151,6 +151,5 @@ refuted(O, Delta) :- placement(O, Delta), obj_cell(O2, _), !beside(O, Delta, O2,
 filled(Q, Col) :-
     place_cell(O, Delta, Q), !refuted(O, Delta), obj_color(O, Col).
 
-.decl out(p: Position, col: Color)
 out(Q, Col) :- filled(Q, Col).
 out(Q, Col) :- in(Q, _), !filled(Q, _), params.bg(Col).

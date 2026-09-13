@@ -1,18 +1,19 @@
 // a8610ef7
-// concept: symmetry lookup classify
-// Recolor each cell by its own color and the color of its image under
-// params.mirror.
-//
-//   $Direct — bg passes through; a non-bg cell takes params.matched or
-//             params.unmatched by whether its image is non-bg.
-//   $Lookup — a stored table takes the two colors to the output color.
+// keywords: symmetry lookup classify
+// output: Recolor each cell by its own color and the color of its image under
+//  params.mirror.
 
-#include "../lib.dl"
+// which model recolors a cell from its own color and its image's color
+.type Choice =
+    // bg passes through; a non-bg cell takes params.matched or params.unmatched
+    // by whether its image is non-bg
+    Direct {}
+    // a stored table takes the two colors to the output color
+  | Lookup {}
 
-.type Choice = Direct {} | Lookup {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl mirror(d: D4) mirror(D4_TB).
 
     // --- Direct ---
@@ -29,8 +30,6 @@
 }
 
 .init params = Params
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- Direct ---
 

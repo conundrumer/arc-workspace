@@ -1,14 +1,15 @@
 // 8b28cd80
 // draft
-// concept: markers scale cast walk
-// One marked cell in a 3x3 input. The output spreads the input's cells apart
-// by a gap and draws a square spiral in the mark's color around the mark's
-// cell. Square rings around that center alternate between the mark's color and
-// bg. Along one diagonal ray cast from beside the center, each ring's cell
-// takes the color of the ring inside it, which joins every ring to the ring
-// two out: the rings become one spiral.
+// keywords: markers scale cast walk
+// input: One marked cell in a 3x3 input.
+// output: The output spreads the input's cells apart by a gap and draws a
+//  square spiral in the mark's color around the mark's cell. Square rings
+//  around that center alternate between the mark's color and bg. Along one
+//  diagonal ray cast from beside the center, each ring's cell takes the
+//  color of the ring inside it, which joins every ring to the ring two out:
+//  the rings become one spiral.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -72,7 +73,6 @@ seam.dir($U(), Dg) :- params.seam(Dg).
 seam.cell($U(), P) :- frame.cell($U(), P).
 seam.mark($U(), P) :- center(B, _), params.arm(D), neighbor(B, D, P).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     ring_cell(B, P),
     ( !seam.ray($U(), P, _, _, _), ring(B, Col)                       // a ring cell keeps its ring's color

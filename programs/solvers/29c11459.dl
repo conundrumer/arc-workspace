@@ -1,21 +1,22 @@
 // 29c11459
-// concept: lines markers cast
-// A mark at each end of a row; the row fills with the marks' colors, half
-// each, and the middle cell gets the clash color. Every mark sits on its
-// edge, so three fill priors coincide on the data; one case each, tagged
-// on out's Choice:
-//
-//   $Meet() — fronts advance in lockstep from the two marks toward each
-//             other; cells behind a mark stay bg. Fronts landing on one
-//             cell clash there.
-//   $Near() — the whole row splits by nearest mark; cells behind a mark
-//             are its territory too. Equidistant cells clash.
-//   $Half() — each mark fills the grid half it sits in; the centered cell
-//             clashes.
+// keywords: lines markers cast
+// input: A mark sits at each end of a row.
+// output: The row fills with the marks' colors, half each, and the middle
+//  cell gets the clash color.
 
-#include "../lib.dl"
+// which fill prior colors the row; every mark sits on its edge, so the
+// three coincide on this data
+.type Choice =
+    // fronts advance in lockstep from the two marks toward each other; cells
+    // behind a mark stay bg. Fronts landing on one cell clash there.
+    Meet {}
+    // the whole row splits by nearest mark; cells behind a mark are its
+    // territory too. Equidistant cells clash.
+  | Near {}
+    // each mark fills the grid half it sits in; the centered cell clashes
+  | Half {}
 
-.type Choice = Meet {} | Near {} | Half {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -51,8 +52,6 @@ front(P1, C1) :- walk(_, P1, C1, P2, _), P1 != P2.
 
 .decl clash_cell(p: Position)
 clash_cell(P) :- walk(_, P, _, P, _).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // --- $Meet ---
 

@@ -1,35 +1,34 @@
 // a68b268e
-// concept: overlay decompose lookup rank
-// A divider cross splits the grid into a tile arrangement, each tile drawn
-// in its own ink. The output overlays the tiles: the highest-precedence
-// ink present fills each cell, bg where every tile is empty. Each tile
-// keeps one ink in every pair, so spatial and chromatic precedence are
-// indistinguishable; the spatial parse splits table/rule:
-//
-//   $Scan()  — tiles rank in reading order from params.lex_corner along
-//              params.lex_axis.
-//   $Order() — per-tile ranks stored in params.prio.
-//   $Ink()   — per-ink ranks stored in params.ink_rank.
-//
-// Every grid of the task is 9×9, so the division reads two ways, and the
-// $Scan and $Ink cases carry both as a DecChoice field:
-//
-//   $Count() — params.tiles arrangement of equal tiles.
-//   $Size()  — tiles of params.tile_dim, as many as the grid holds.
-//
-// $Order() takes no DecChoice field: params.prio keys the 2×2 arrangement,
-// so the $Size() reading is total only where the grid holds two tiles per
-// axis.
+// keywords: overlay decompose lookup rank
+// input: A divider cross splits the grid into a tile arrangement, each tile
+//  drawn in its own ink.
+// output: The output overlays the tiles: the highest-precedence ink present
+//  fills each cell, bg where every tile is empty. Each tile keeps one ink in
+//  every pair, so spatial and chromatic precedence are indistinguishable.
 
-#include "../lib.dl"
+// how the grid divides into tiles, indistinguishable here since every grid
+// is 9×9
+.type DecChoice =
+    // params.tiles arrangement of equal tiles
+    Count {}
+    // tiles of params.tile_dim, as many as the grid holds
+  | Size {}
 
-.type DecChoice = Count {} | Size {}
-.type Choice    = Scan {d: DecChoice} | Order {} | Ink {d: DecChoice}
+// whether the overlay ranks by tile (spatial) precedence, as a rule or a
+// stored table, or by ink (chromatic) precedence, a stored table
+.type Choice =
+    // tiles rank in reading order from params.lex_corner along params.lex_axis
+    Scan {d: DecChoice}
+    // per-tile ranks stored in params.prio
+  | Order {}
+    // per-ink ranks stored in params.ink_rank
+  | Ink {d: DecChoice}
 
 .type CellKey = [d: DecChoice, p: Position]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
     .decl gap(g: number) gap(1).
 
@@ -59,7 +58,9 @@
 .decl dec_choice(dc: DecChoice)
 dec_choice($Count()). dec_choice($Size()).
 
-// The division each case reads.
+// The division each case reads. Order takes no DecChoice field: params.prio
+// keys the 2×2 arrangement, so a Size pairing would be total only where the
+// grid holds two tiles per axis.
 .decl tiling(ch: Choice, dc: DecChoice)
 tiling($Scan(Dc), Dc) :- dec_choice(Dc).
 tiling($Order(), $Count()).
@@ -83,7 +84,6 @@ tile_ink(Dc, P_tile, P_intile, Col) :- tile_cell(Dc, P_tile, P_intile, Col), !pa
 .decl ink_at(dc: DecChoice, p: Position, col: Color)
 ink_at(Dc, P, Col) :- tile_ink(Dc, _, P, Col).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- tiling(Ch, Dc), tile_cell(Dc, _, P, _), !ink_at(Dc, P, _), params.bg(Col).
 
 // --- Scan ---

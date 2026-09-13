@@ -1,22 +1,23 @@
 // 50aad11f
 // draft
-// concept: objects markers crop tile-arrangement rank
-// Shapes in one color lie on a blank grid, each with a marker cell of its
-// own color beside it. The shapes separate along one axis; the output lays
-// their bounding-box crops out along that axis in their order, each crop
-// painted in its marker's color.
-//
-//   $Aligned() — a shape takes the color of the marker on its band: the
-//                marker shares a line across the layout axis with it.
-//   $Ranked()  — a shape takes the color of the marker at its own place in
-//                the marker order along the layout axis.
-//
-// Every pair puts each marker on its own shape's band, which hides which
-// parse pairs them.
+// keywords: objects markers crop tile-arrangement rank
+// input: shapes in one color on a blank grid, separated along one axis,
+//  each with a marker cell of its own color beside it
+// output: The output lays the shapes' bounding-box crops out along that
+//  axis in their order, each crop painted by the color a shape's marker
+//  gives it.
 
-#include "../lib.dl"
+// how a shape gets its marker's color (each pair puts every marker on its
+// own shape's band, which hides which reading it is)
+.type Choice =
+    // a shape takes the color of the marker on its band: the marker shares a
+    // line across the layout axis with it
+    Aligned {}
+    // a shape takes the color of the marker at its own place in the marker
+    // order along the layout axis
+  | Ranked {}
 
-.type Choice = Aligned {} | Ranked {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -72,7 +73,6 @@ shape_color(Id, Col, $Ranked()) :-
     order.pos($U(), Id, P_place),
     mark_order.pos($U(), P_mark, P_place), mark(P_mark, Col).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_grid_out, Col, Ch) :-
     in(P_grid_in, _), bbox.box(Id, B), crop(P_grid_in, B, P_intile),   // a box cell, in the box's frame
     order.pos($U(), Id, P_tile),                                       // the shape's place in the layout

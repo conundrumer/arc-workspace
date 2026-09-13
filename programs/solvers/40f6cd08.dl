@@ -1,23 +1,22 @@
 // 40f6cd08
 // draft
-// concept: objects scale border
-// Solid rectangles sit on the background. One holds a stack of nested color
-// layers; the rest hold a single color. Every rectangle comes out carrying
-// the stack, resized to its own bbox.
-//
-// A layer is one color's bounding box inside the pattern rectangle, held as
-// four margins. A cell takes the innermost layer whose margins its own box
-// position clears.
-//
-// The outermost layer's margins are all zero, and every plain rectangle
-// already carries its color, so no pair separates these two cases:
-//
-//   $Repaint — the whole stack paints, outermost layer included.
-//   $Overlay — only the inner layers paint, over the rectangle's own color.
+// keywords: objects scale border
+// input: Solid rectangles sit on the background. One holds a stack of nested
+//  color layers; the rest hold a single color. A layer is one color's
+//  bounding box inside the pattern rectangle, held as four margins.
+// output: Every rectangle comes out carrying the stack, resized to its own
+//  bbox. A cell takes the innermost layer whose margins its own box position
+//  clears.
 
-#include "../lib.dl"
+// the outermost layer's margins are all zero, and every plain rectangle
+// already carries its color, so no pair separates these two cases
+.type Choice =
+    // the whole stack paints, outermost layer included
+    Repaint {}
+    // only the inner layers paint, over the rectangle's own color
+  | Overlay {}
 
-.type Choice = Repaint {} | Overlay {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -71,7 +70,6 @@ impl_choice($Repaint()). impl_choice($Overlay()).
 // The stack paints; elsewhere the input passes through.
 .decl stamp(p: Position, col: Color, ch: Choice)
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- stamp(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !stamp(P, _, Ch).
 

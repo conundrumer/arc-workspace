@@ -1,11 +1,12 @@
 // 03560426
-// concept: objects walk
-// The input holds separate solid rectangles. In the output they chain from
-// the grid corner opposite params.corner, ordered by distance from params.order: each
-// block's near corner lands where the previous block's far corner landed,
-// and the later block takes that cell.
+// keywords: objects walk
+// input: separate solid rectangles
+// output: The output chains them from the grid corner opposite
+//  params.corner, ordered by distance from params.order: each block's near
+//  corner lands where the previous block's far corner landed, and the
+//  later block takes that cell.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -60,6 +61,5 @@ place(Id, P, P_out) :-
 .decl taken(id: Ident, p: Position)
 taken(Id, P) :- place(Id, _, P), beyond(Id, Id2), place(Id2, _, P).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- place(Id, P_in, P), !taken(Id, P), in(P_in, Col).
 out(P, Col) :- in(P, _), !place(_, _, P), params.bg(Col).

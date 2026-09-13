@@ -1,20 +1,22 @@
 // 7d1f7ee8
 // draft
-// concept: objects border enclose
-// Outlines of one color each sit in a bg field, some nested inside others.
-// Every ink cell inside an outermost outline takes that outline's color,
-// nested outlines included. Ink inside no outline keeps its color.
-//
-// $Rect — an outline is a rectangle drawn by four same-color runs, and it
-//   encloses its box. The outermost rectangles are those no other
-//   rectangle's box contains.
-// $Enclose — an outline is any wall of one color, and it encloses what it
-//   cuts off from the grid edge. The outermost walls are the ink no color
-//   cuts off.
+// keywords: objects border enclose
+// input: Outlines of one color each sit in a bg field, some nested inside
+//  others.
+// output: Every ink cell inside an outermost outline takes that outline's
+//  color, nested outlines included. Ink inside no outline keeps its color.
 
-#include "../lib.dl"
+// what counts as an outline, and which outlines are outermost
+.type Choice =
+    // an outline is a rectangle drawn by four same-color runs, and it encloses
+    // its box. The outermost rectangles are those no other rectangle's box
+    // contains.
+    Rect {}
+    // an outline is any wall of one color, and it encloses what it cuts off
+    // from the grid edge. The outermost walls are the ink no color cuts off.
+  | Enclose {}
 
-.type Choice = Rect {} | Enclose {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -32,7 +34,6 @@ impl_choice($Rect()). impl_choice($Enclose()).
 // An ink cell inside an outermost outline of color col.
 .decl enclosed(p: Position, col: Color, ch: Choice)
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- enclosed(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !enclosed(P, _, Ch).
 

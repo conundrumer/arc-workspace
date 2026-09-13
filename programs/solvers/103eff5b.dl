@@ -1,18 +1,20 @@
 // 103eff5b
-// concept: scale d4 stamp
-// A key of loose colored cells sits apart from a monochrome shape. The shape is
-// the key blown up: each key cell becomes a block, after a fixed turn. The
-// output paints the blocks in their key cells' colors; the rest of the grid
-// passes through.
-//
-// $Recolor — the shape's own cells take their block's color; the shape carries
-//   the key's mask.
-// $Stamp — the blown-up key is drawn into the shape's bounding box; the shape
-//   supplies the box alone.
+// keywords: scale d4 stamp
+// input: A key of loose colored cells, apart from a monochrome shape.
+// output: The shape is the key blown up: each key cell becomes a block, after
+//  a fixed turn. The output paints the blocks in their key cells' colors; the
+//  rest of the grid passes through.
 
-#include "../lib.dl"
+// whether the shape's own ink or the blown-up key supplies each block's mask
+.type Choice =
+    // the shape's own cells take their block's color; the shape carries the
+    // key's mask
+    Recolor {}
+    // the blown-up key is drawn into the shape's bounding box; the shape
+    // supplies the box alone
+  | Stamp {}
 
-.type Choice = Recolor {} | Stamp {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .decl bg(col: Color)  bg(0).
@@ -57,8 +59,6 @@ box_view(P, P_inner) :- in(P, _), shape_box.box($U(), B), crop(P, B, P_inner).
 blocks.cell(P_inner) :- box_view(_, P_inner).
 blocks.dim($U(), A, N) :- tile_col(P_tile, _), axis_elem(A), axis_dim(P_tile, A, N).
 blocks.gap(0).
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- Recolor ---
 

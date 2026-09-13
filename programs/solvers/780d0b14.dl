@@ -1,13 +1,13 @@
 // 780d0b14
 // draft
-// concept: decompose scale
-// Bg lines cut the grid into an arrangement of tiles, each a single color
-// with bg holes. The output is the arrangement: one cell per tile, in the
-// tile's color.
-
-#include "../lib.dl"
+// keywords: decompose scale
+// input: Bg lines cut the grid into an arrangement of tiles, each a single
+//  color with bg holes.
+// output: The arrangement: one cell per tile, in the tile's color.
 
 .type Line = [a: Axis, l: Position]
+
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -27,5 +27,4 @@ frame.divider($U(), A, L) :- line_color.value([A, L], Col), params.bg(Col).
 .init tile_color = Unanimous<Position, Color>
 tile_color.item(P_tile, Col) :- frame.tile_of($U(), P, P_tile), in(P, Col), !params.bg(Col).
 
-.decl out(p: Position, col: Color)
 out(P_tile, Col) :- tile_color.value(P_tile, Col).

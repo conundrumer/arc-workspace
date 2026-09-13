@@ -1,13 +1,15 @@
 // 82819916
 // draft
-// concept: lines mapping induce
-// One line is complete, inked across its whole extent: the template. Every
-// other inked line is a stub: a few cells, the rest blank. Each inked line
-// is a recoloring of the template, demonstrated by its inked cells: at
-// each, the template's color maps to the line's own. The output draws
-// every inked line as the template through its recoloring.
+// keywords: lines mapping induce
+// input: lines along params.axis; one is complete, inked across its whole
+//  extent (the template), and every other inked line is a stub of a few
+//  cells with the rest blank
+// output: Each inked line is a recoloring of the template, demonstrated by
+//  its inked cells: at each, the template's color maps to the line's own.
+//  The output draws every inked line as the template through its
+//  recoloring.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -41,7 +43,6 @@ template_color(P_along, C) :- cell_split(_, C, P_along, P_tpl), !blank(P_tpl).
 recolor(P_line, C_tpl, C) :-
     cell_split(_, C, P_along, P_line), !params.bg(C), template_color(P_along, C_tpl).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     cell_split(P, C_in, P_along, P_line),
     ( !inked(P_line), Col = C_in                                     // blank line

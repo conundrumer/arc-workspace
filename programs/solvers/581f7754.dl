@@ -1,15 +1,16 @@
 // 581f7754
 // draft
-// concept: objects markers move
-// The commonest color is the background, and the objects are the connected
-// runs of the rest. A one-cell object on the grid's edge is an anchor: it
-// fixes the line that runs from it across the grid, perpendicular to that
-// edge. Every object holds exactly one cell of an anchor's color, and the
-// object translates so that this marker cell lands on its anchor's line,
-// keeping the marker's distance to that edge. Cells carried off the grid are
-// dropped. An anchor's own cell is its marker, so an anchor stays put.
+// keywords: objects markers move
+// input: The commonest color is the background, and the objects are the
+//  connected runs of the rest. A one-cell object on the grid's edge is an
+//  anchor: it fixes the line that runs from it across the grid, perpendicular
+//  to that edge. Every object holds exactly one cell of an anchor's color.
+// output: The object translates so that this marker cell lands on its
+//  anchor's line, keeping the marker's distance to that edge. Cells carried
+//  off the grid are dropped. An anchor's own cell is its marker, so an anchor
+//  stays put.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {}
 
@@ -54,7 +55,6 @@ moved(Q, Col) :-
     obj_cell(Id, P, Col),                // object cell
     shift(Id, V), compose(P, V, Q).      // carried by its object's shift
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, _),
     ( moved(P, Col)

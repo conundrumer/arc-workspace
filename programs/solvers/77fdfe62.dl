@@ -1,23 +1,30 @@
 // 77fdfe62
-// concept: decompose crop markers classify select
-// Corner colors sit in the grid's corner cells; separator lines fence an
-// ink-mask interior. The output is the interior alone, each ink cell
-// taking the corner color of its quadrant. Two independent nodes, tagged
-// on out's Choice:
-//
-//   interior — $Lines: cells fenced off by full separator lines on all
-//              four sides; $Margin: cells at least params.margin inside.
-//   blank    — non-ink interior cells: $Pass passes them through; $Bg
-//              writes params.bg.
+// keywords: decompose crop markers classify select
+// input: Corner colors sit in the grid's corner cells; separator lines fence
+//  an ink-mask interior.
+// output: The interior alone, each ink cell taking the corner color of its
+//  quadrant.
 
-#include "../lib.dl"
+// how the interior is found
+.type Interior =
+    // cells fenced off by full separator lines on all four sides
+    Lines {}
+    // cells at least params.margin inside
+  | Margin {}
 
-.type Interior = Lines {} | Margin {}
-.type Blank = Pass {} | Bg {}
+// how non-ink interior cells render
+.type Blank =
+    // passes them through
+    Pass {}
+    // writes params.bg
+  | Bg {}
+
+// two independent choices: how the interior is found, and how blank cells render
 .type Choice = [interior: Interior, blank: Blank]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl ink(c: Color) ink(8).
 
     // --- $Lines ---
@@ -93,8 +100,6 @@ quad.cell(Ic, P_inner) :- interior_cell(Ic, _, P_inner).
 
 .decl blank_elem(b: Blank)
 blank_elem($Pass()). blank_elem($Bg()).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // Ink takes the corner color of its quadrant.
 out(P_inner, Col, [Ic, Bl]) :-

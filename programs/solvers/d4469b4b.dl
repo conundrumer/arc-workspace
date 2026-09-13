@@ -1,31 +1,31 @@
 // d4469b4b
-// concept: lookup classify cross
-// Noise in a single ink color keys a fixed 3x3 glyph — plus, T, or
-// corner-L. The noise pattern carries nothing; only its color selects.
-// Every glyph is a full row and column through one point, so the render
-// splits table/rule, tagged on out's Choice:
-//
-//   $Cross()  — the table stores the cross center; the glyph is the row
-//               and column through it, params.mark over params.bg.
-//   $Lookup() — the table stores the finished grid.
+// keywords: lookup classify cross
+// output: Noise in a single ink color keys a fixed 3x3 glyph. The pattern
+//  carries nothing; only its color selects.
 
-#include "../lib.dl"
+// table or rule render of the glyph; every glyph is a full row and column
+// through one point, so both stand
+.type Choice =
+    // the table stores the glyph's center; the glyph is the row and column
+    // through it
+    Cross {}
+    // the table stores the finished grid
+  | Lookup {}
 
-.type Choice = Cross {} | Lookup {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
 
-    .decl bg(col: Color) bg(0).
-
     // --- $Cross ---
+    .decl bg(col: Color) bg(0).
     .decl mark(col: Color) mark(5).
     .decl out_dim(n: number) out_dim(3).
 
-    .decl cross(key: Color, p: Position)
-    cross(1, [1, 1, 1, 1]).
-    cross(2, [0, 2, 1, 1]).
-    cross(3, [2, 0, 2, 0]).
+    .decl center(key: Color, p: Position)
+    center(1, [1, 1, 1, 1]).
+    center(2, [0, 2, 1, 1]).
+    center(3, [2, 0, 2, 0]).
 
     .decl out_pos(p: Position)
     out_pos(P) :- out_dim(N), helpers.frame_pos([N, N], P).
@@ -48,17 +48,17 @@
 
 .init params = Params
 
-.decl out(p: Position, col: Color, ch: Choice)
-
 // --- $Cross ---
 .decl cross_cell(p: Position)
 cross_cell(P) :-
-    in(_, Key), params.cross(Key, Q),   // stored center
-    params.out_pos(P),
-    axis_elem(A), same_line(A, P, Q).
+    in(_, Key), params.center(Key, Q),                     // the ink's center
+    params.out_pos(P), axis_elem(A), same_line(A, P, Q).   // P on its row or column
 
-out(P, Col, $Cross()) :- cross_cell(P), params.mark(Col).
-out(P, Col, $Cross()) :- params.out_pos(P), !cross_cell(P), params.bg(Col).
+out(P, Col, $Cross()) :-
+    params.out_pos(P),
+    ( cross_cell(P), params.mark(Col)
+    ; !cross_cell(P), params.bg(Col)
+    ).
 
 // --- $Lookup ---
 out(P, Col, $Lookup()) :- in(_, Key), params.glyph(Key, P, Col).
@@ -74,6 +74,6 @@ out(P, Col, $Lookup()) :- in(_, Key), params.glyph(Key, P, Col).
         glyph(Key, P, _), glyph(Key, Q, Col), !params.mark(Col),   // a non-mark cell
         axis_elem(A), same_line(A, P, Q).
 
-    .decl cross(key: Color, p: Position)
-    cross(Key, P) :- glyph(Key, P, _), !mismatch(Key, P).
+    .decl center(key: Color, p: Position)
+    center(Key, P) :- glyph(Key, P, _), !mismatch(Key, P).
 }

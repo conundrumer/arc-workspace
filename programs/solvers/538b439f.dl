@@ -1,15 +1,15 @@
 // 538b439f
 // draft
-// concept: objects lines d4 span
-// A line of one color crosses a plain field. Solid rectangles and dust
-// sit on the field. Each rectangle is reflected in the line, and the
-// span between the rectangle and its image is painted the line's color,
-// over any dust it covers; nothing else changes.
-//
-// A rectangle is a component that fills its bounding box and reaches more
-// than one line on both axes. Every dust component fails one of those.
+// keywords: objects lines d4 span
+// input: a line of one color crosses a plain field; solid rectangles and
+//  dust sit on the field. A rectangle is a component that fills its
+//  bounding box and reaches more than one line on both axes; every dust
+//  component fails one of those.
+// output: Each rectangle is reflected in the line, and the span between the
+//  rectangle and its image is painted the line's color, over any dust it
+//  covers; nothing else changes.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {}
 
@@ -81,6 +81,5 @@ paint(P, Col) :-
     ; !rect(Id, P, _), !image(Id, P, _), divider(_, _, Col)
     ).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- paint(P, Col).
 out(P, Col) :- in(P, Col), !paint(P, _).

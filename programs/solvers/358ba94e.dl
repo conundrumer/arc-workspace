@@ -1,21 +1,21 @@
 // 358ba94e
 // draft
-// concept: objects crop count enclose
-// Several solid squares sit apart on a bg field, each with a few cells punched
-// out of its inside. Each square carries a count; one square's count is matched
-// by no other square, and the output is that square, cropped to its own bbox.
-// Cases claim what the count runs over:
-//
-//   $Ink      — the square's own cells.
-//   $Holes    — the bg cells inside the square's bbox.
-//   $Cavities — the bg regions the square closes off.
-//
-// The squares here share one size and every punched cell stands alone, so the
-// three counts move together.
+// keywords: objects crop count enclose
+// input: Several solid squares sit apart on a bg field, each with a few cells
+//  punched out of its inside.
+// output: Each square carries a count; one square's count is matched by no
+//  other square, and the output is that square, cropped to its own bbox.
 
-#include "../lib.dl"
+// what the count runs over
+.type Choice =
+    // the square's own cells
+    Ink {}
+    // the bg cells inside the square's bbox
+  | Holes {}
+    // the bg regions the square closes off
+  | Cavities {}
 
-.type Choice = Ink {} | Holes {} | Cavities {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -30,6 +30,8 @@ pieces.node($U(), P) :- in(P, Col), !params.bg(Col).
 .init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- pieces.label($U(), P, Id).
 
+// The squares here share one size and every punched cell stands alone, so the
+// three counts move together.
 .decl score(id: Ident, ch: Choice, n: number)
 
 // --- $Ink ---
@@ -63,7 +65,6 @@ score(Id, $Cavities(), N) :- cavity_count.tally(Id, N).
 .decl shared(id: Ident, ch: Choice)
 shared(Id, Ch) :- score(Id, Ch, N), score(Id2, Ch, N), Id != Id2.
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_inner, Col, Ch) :-
     score(Id, Ch, _), !shared(Id, Ch),      // the square nothing ties with
     bbox.box(Id, B), in(P, Col), crop(P, B, P_inner).  // cropped to its own box

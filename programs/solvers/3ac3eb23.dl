@@ -1,36 +1,41 @@
 // 3ac3eb23
-// concept: markers parity walk lookup stamp
-// Top-row markers each cast a period-2 trail down the grid: the marker's
-// cell on even rows, its two side neighbors on odd rows; all other cells
-// bg. Cases:
-//
-//   $Parity(s) — alternation: centers every second cell from the marker,
-//                flanks diagonal from each center; no parameter.
-//   $Walk(s)   — two zigzag walks; the side direction flips each step.
-//   $Banner(s) — a stored periodic banner: params.slot the period, params.banner
-//                the lit radius at each slot.
-//   $Stamp()   — params.template, the whole trail as one stored shape of
-//                offsets, seated on each marker.
-//
-//   s (marker edge — the trail extends away from it):
-//     $Dir()  — params.dir names it.
-//     $Edge() — the edge each marker sits on.
-//
-// Coincide here: every marker sits on the top edge, the banner and
-// template fills are the parity trail (the template at the grids' full
-// height), and every grid is wider than one column.
+// keywords: markers parity walk lookup stamp
+// output: Each marker casts a period-2 trail away from its edge: the marker's
+//  own cell at every second step, its two side neighbors at the steps between;
+//  all other cells bg.
+//  Coincide here: every marker sits on the top edge, the banner and template
+//  fills are the parity trail (the template at the grids' full height), and
+//  every grid is wider than one column.
 
-#include "../lib.dl"
+// marker edge — the trail extends away from it
+.type Seat =
+    // params.dir names it
+    Dir {}
+    // the edge each marker sits on
+  | Edge {}
 
-.type Seat = Dir {} | Edge {}
-.type Choice = Parity {s: Seat} | Walk {s: Seat} | Banner {s: Seat} | Stamp {}
+// how each marker's trail is cast
+.type Choice =
+    // alternation: centers every second cell from the marker, flanks
+    // diagonal from each center; no parameter
+    Parity {s: Seat}
+    // two zigzag walks; the side direction flips each step
+  | Walk {s: Seat}
+    // a stored periodic banner: params.slot the period's slots, params.banner
+    // the lit radius at each
+  | Banner {s: Seat}
+    // params.template, the whole trail as one stored shape of offsets,
+    // seated on each marker
+  | Stamp {}
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // --- shared ---
     .decl bg(c: Color) bg(0).
 
     // --- $Dir ---
-    .decl dir(d: Dir) dir(DIR_T).   // marker edge; the trail extends away from it
+    .decl dir(d: Dir) dir(DIR_T).   // the marker edge
 
     // --- $Banner ---
     .decl slot(k: number)
@@ -58,45 +63,43 @@ marker(P, Col) :- in(P, Col), !params.bg(Col).
 // Trail cells, per case.
 .decl lit(p: Position, col: Color, ch: Choice)
 
-// --- Seat cases: the marker edge ---
+// --- Seat cases ---
 
 .decl seat_choice(s: Seat)
 seat_choice($Dir()). seat_choice($Edge()).
 
-// Trail seeds: each marker with its edge, per seat hypothesis.
-.decl seed(s: Seat, col: Color, e: Dir, p: Position)
-seed($Dir(), Col, E, P)  :- marker(P, Col), params.dir(E).
-seed($Edge(), Col, E, P) :- marker(P, Col), dir_elem(E), dist(P, E, 0).
+// Trail seeds: each marker with the direction its trail runs — away from the
+// edge its seat names.
+.decl seed(s: Seat, col: Color, d: Dir, p: Position)
+seed($Dir(), Col, D, P)  :- marker(P, Col), params.dir(E), opposite(E, D).
+seed($Edge(), Col, D, P) :- marker(P, Col), dir_elem(E), dist(P, E, 0), opposite(E, D).
 
 // --- $Parity ---
 
-// Centers: the marker and every second cell away from the edge.
-.decl center(s: Seat, col: Color, e: Dir, p: Position)
-center(S, Col, E, P) :- seed(S, Col, E, P).
-center(S, Col, E, Q) :-
-    center(S, Col, E, P),
-    opposite(E, D),               // away from the marker edge
+// Centers: the marker and every second cell along the trail.
+.decl center(s: Seat, col: Color, d: Dir, p: Position)
+center(S, Col, D, P) :- seed(S, Col, D, P).
+center(S, Col, D, Q) :-
+    center(S, Col, D, P),
     neighbor(P, D, M), in(M, _),  // the skipped cell
     neighbor(M, D, Q), in(Q, _).
 
 lit(P, Col, $Parity(S)) :- center(S, Col, _, P).
 
-// Flanks: the diagonal neighbors of each center, away from the edge.
+// Flanks: the diagonal neighbors of each center, ahead of it.
 lit(Q, Col, $Parity(S)) :-
-    center(S, Col, E, P),
-    opposite(E, D), dir_of(Diag, _, D),   // corners away from the edge
+    center(S, Col, D, P),
+    dir_of(Diag, _, D),           // the two corners ahead
     neighbor(P, Diag, Q), in(Q, _).
 
 // --- $Walk ---
 
-// Two zigzag walks per marker; the side direction flips each step.
-.decl walk(s: Seat, col: Color, e: Dir, p: Position, side: Dir)
-walk(S, Col, E, P, Ds) :- seed(S, Col, E, P), perp_dir(E, Ds).
-walk(S, Col, E, Q, Ds2) :-
-    walk(S, Col, E, P, Ds),
-    opposite(E, D), neighbor(P, D, M),   // away from the marker edge
-    neighbor(M, Ds, Q), in(Q, _),        // and to the side
-    opposite(Ds, Ds2).                   // flip for the next step
+.decl walk(s: Seat, col: Color, d: Dir, p: Position, side: Dir)
+walk(S, Col, D, P, Ds) :- seed(S, Col, D, P), perp_dir(D, Ds).
+walk(S, Col, D, Q, Ds2) :-
+    walk(S, Col, D, P, Ds),
+    neighbor(P, D, M), neighbor(M, Ds, Q), in(Q, _),   // a step on, then to the side
+    opposite(Ds, Ds2).                                 // flip for the next step
 
 lit(P, Col, $Walk(S)) :- walk(S, Col, _, P, _).
 
@@ -105,17 +108,17 @@ lit(P, Col, $Walk(S)) :- walk(S, Col, _, P, _).
 .init slots = IndexCycle<Unit>
 slots.idx($U(), K) :- params.slot(K).
 
-// Walk the marker's line away from the edge, advancing the slot cycle.
-.decl slot_at(s: Seat, col: Color, e: Dir, p: Position, k: number)
-slot_at(S, Col, E, P, 0) :- seed(S, Col, E, P).
-slot_at(S, Col, E, Q, K2) :-
-    slot_at(S, Col, E, P, K), slots.succ($U(), K, K2),    // next slot
-    opposite(E, D), neighbor(P, D, Q), in(Q, _).          // away from the marker edge
+// Walk the marker's line, advancing the slot cycle at each step.
+.decl slot_at(s: Seat, col: Color, d: Dir, p: Position, k: number)
+slot_at(S, Col, D, P, 0) :- seed(S, Col, D, P).
+slot_at(S, Col, D, Q, K2) :-
+    slot_at(S, Col, D, P, K), slots.succ($U(), K, K2),   // next slot
+    neighbor(P, D, Q), in(Q, _).
 
 // Light each slot's radius, both sides of the line.
 lit(Q, Col, $Banner(S)) :-
-    slot_at(S, Col, E, P, K), params.banner(K, R),  // slot cell, its lit radius
-    perp_dir(E, Ds), jump(P, Ds, R, Q), in(Q, _).   // out to that radius, each side
+    slot_at(S, Col, D, P, K), params.banner(K, R),  // slot cell, its lit radius
+    perp_dir(D, Ds), jump(P, Ds, R, Q), in(Q, _).   // out to that radius, each side
 
 // --- $Stamp ---
 
@@ -131,7 +134,6 @@ impl_choice($Walk(S))   :- seat_choice(S).
 impl_choice($Banner(S)) :- seat_choice(S).
 impl_choice($Stamp()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- lit(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, _, Ch), params.bg(Col).
 

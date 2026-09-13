@@ -1,29 +1,28 @@
 // 5833af48
 // draft
-// concept: objects scale tile-arrangement stamp
-// Three solid blocks sit on bg. One block is monochrome: it is the canvas,
-// and its one color is the fill. One block holds params.blank: it is the
-// stamp, whose params.ink cells are the footprint. The third is the plan: a
-// picture of the tile arrangement, drawn at a pixel size of its own, whose
-// params.ink cells say which tiles carry the stamp.
-//
-// The output is the canvas divided into stamp-sized tiles, with the
-// footprint stamped in the tiles the plan marks. How the plan's pixels map
-// onto those tiles is the choice:
-//
-//   $Ratio  — the plan covers the same arrangement as the canvas, so it
-//             divides into one part per tile.
-//   $Blocks — the plan's pixels are as large as its own content allows, so
-//             the pixel size is read off the plan and the arrangement
-//             follows from it.
+// keywords: objects scale tile-arrangement stamp
+// input: Three solid blocks sit on bg. One block is monochrome: it is the
+//  canvas, and its one color is the fill. One block holds params.blank: it is
+//  the stamp, whose params.ink cells are the footprint. The third is the
+//  plan: a picture of the tile arrangement, drawn at a pixel size of its
+//  own, whose params.ink cells say which tiles carry the stamp.
+// output: The output is the canvas divided into stamp-sized tiles, with the
+//  footprint stamped in the tiles the plan marks.
 
-#include "../lib.dl"
-
-.type Choice = Ratio {} | Blocks {}
+// how the plan's pixels map onto the canvas's tiles
+.type Choice =
+    // the plan covers the same arrangement as the canvas, so it divides into
+    // one part per tile
+    Ratio {}
+    // the plan's pixels are as large as its own content allows, so the pixel
+    // size is read off the plan and the arrangement follows from it
+  | Blocks {}
 
 // A band of the plan: one block of a candidate pixel size, at one place
 // across the axis it is measured on.
 .type Band = [a: Axis, s: number, p_outer: Position, p_across: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -89,7 +88,6 @@ inked(P_grid_out, Ch) :-
     tiles.tile($U(), P_grid_out, P_tile, P_intile),
     marked(P_tile, Ch), footprint(P_intile).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_grid_out, Col, Ch) :-
     impl_choice(Ch), tiles.tile($U(), P_grid_out, _, _),
     ( inked(P_grid_out, Ch), params.ink(Col)      // stamped

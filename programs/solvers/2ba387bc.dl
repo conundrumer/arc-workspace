@@ -1,12 +1,13 @@
 // 2ba387bc
 // draft
-// concept: objects classify rank
-// The input scatters equal squares, each a hollow ring or a solid block. The
-// output arranges them in two columns: hollow squares at params.hole_side, solid
-// ones opposite, each column stacked in reading order from params.corner and
-// padded with background to the taller column's height.
+// keywords: objects classify rank
+// input: equal squares, each a hollow ring or a solid block, scattered
+//  over the grid
+// output: the squares arrange in two columns: hollow squares at
+//  params.hole_side, solid ones opposite, each column stacked in reading order
+//  from params.corner and padded with background to the taller column's height.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -34,7 +35,7 @@ square(Id, P, Col) :- comps.label(Col, P, Id).
 .init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- square(Id, P, _).
 
-// Hollow: the box encloses a cell the square does not cover.
+// The box covers a cell the square does not.
 .decl hollow(id: Ident)
 hollow(Id) :- in(P, _), bbox.box(Id, B), inside(P, B), !square(Id, P, _).
 
@@ -51,8 +52,8 @@ order_axis(A2) :- class_axis(A), perp(A, A2).
 .decl stack(id: Ident, d: Dir)
 stack(Id, D) :-
     square(Id, _, _), params.hole_side(D0),
-    ( hollow(Id), D = D0             // hollow: the hole side
-    ; !hollow(Id), opposite(D0, D)   // solid: the column opposite
+    ( hollow(Id), D = D0
+    ; !hollow(Id), opposite(D0, D)
     ).
 
 // Each square compares as its box.
@@ -82,7 +83,7 @@ cells.extent($U(), A, N) :- axis_elem(A), params.tile_dim(N).
 
 .decl square_tile(id: Ident, p_tile: Position)
 square_tile(Id, P_tile) :-
-    stack(Id, D), bbox.box(Id, B),                   // the square's column and box
+    stack(Id, D), bbox.box(Id, B),
     order.rank(D, B, R),                             // its place in that column
     tiles.cell($U(), P_tile), dist(P_tile, D, 0),    // the column's tiles
     params.corner(Cn), order_axis(A),
@@ -93,7 +94,6 @@ tile_cell(P_tile, P_intile, Col) :-
     square_tile(Id, P_tile), square(Id, P, Col),
     bbox.box(Id, B), crop(P, B, P_intile).
 
-.decl out(p: Position, col: Color)
 out(P_grid, Col) :-
     tiles.cell($U(), P_tile), cells.cell($U(), P_intile),
     concat_2d(P_tile, P_intile, 0, P_grid),

@@ -1,17 +1,20 @@
 // 7b7f7511
-// concept: decompose crop count
-// The input is one pattern repeated along an axis; the output is the
-// pattern once. The repeat axis varies per pair; it is found as the
-// axis whose equal-size tiles all agree.
-//
-//   $Dup  — the repeat count is task data (params.copies).
-//   $Tile — the repeat count is free.
+// keywords: decompose crop count
+// output: The input is one pattern repeated along an axis; the output is the
+//  pattern once. The repeat axis varies per pair; it is found as the axis whose
+//  equal-size tiles all agree.
 
-#include "../lib.dl"
+// how the repeat count is fixed
+.type Choice =
+    // the repeat count is task data (params.copies)
+    Dup {}
+    // the repeat count is free
+  | Tile {}
 
-.type Choice = Dup {} | Tile {}
 .type SlabCell = [a: Axis, p_inner: Position]
 .type TileCell = [a: Axis, k: number, p_inner: Position]
+
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     // --- Dup ---
@@ -20,8 +23,6 @@
 }
 
 .init params = Params
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- Dup ---
 

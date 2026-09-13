@@ -1,19 +1,22 @@
 // 20981f0e
-// concept: decompose move lookup
-// A lattice of dots marks the lines that cut the grid into tiles, one piece to
-// a tile. Each piece translates within its own tile, keeping its shape and
-// color; the dots stand.
-//
-// $Center — the piece's box lands centered in its tile.
-// $Slot   — the piece's box lands at a stored margin within its tile.
-// $Clear  — a piece against a wall of its tile steps once off it.
+// keywords: decompose move lookup
+// input: A lattice of dots marks the lines that cut the grid into tiles, one
+//  piece to a tile.
+// output: Each piece translates within its own tile, keeping its shape and
+//  color; the dots stand.
 
-#include "../lib.dl"
+// where within its tile the piece lands
+.type Choice =
+    // the piece's box lands centered in its tile
+    Center {}
+    // the piece's box lands at a stored margin within its tile
+  | Slot {}
+    // a piece against a wall of its tile steps once off it
+  | Clear {}
 
-.type Choice = Center {} | Slot {} | Clear {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
 
     .decl dot(col: Color) dot(2).
@@ -92,7 +95,6 @@ place(P_tile, Delta, $Clear()) :-
 .decl moved(p: Position, col: Color, ch: Choice)
 moved(Q, Col, Ch) :- piece(P_tile, P, Col), place(P_tile, Delta, Ch), compose(P, Delta, Q).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- moved(P, Col, Ch).
 out(P, Col, Ch) :-
     in(P, Col_in), impl_choice(Ch), !moved(P, _, Ch),

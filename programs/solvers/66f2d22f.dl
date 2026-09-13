@@ -1,16 +1,28 @@
 // 66f2d22f
-// family: fafffa47
-// Input is two side-by-side halves; output is their per-cell fold — fill where
-// neither half is marked (NOR).
+// representative: fafffa47
 
-#include "../lib.dl"
+// decompose
+.type DecChoice =
+    // pre-tabulated in the parameters via tile_pos
+    Table {}
+    // derived in the program by tile count
+  | Count {}
+    // derived in the program by tile size
+  | Size {}
 
-.type DecChoice = Table {} | Count {} | Size {}
-.type Body      = Nor {} | Lookup {}
+// combine
+.type Body =
+    // NOR via non-existence: no non-BG input contribution
+    Nor {}
+    // combine table keyed on (outer pos, color); set-equality match
+  | Lookup {}
+
 .type Choice    = [d: DecChoice, b: Body]
 
 .type CombineMember = [p: Position, col: Color]
 .type CombineKey    = [p: Position, dc: DecChoice]
+
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
@@ -82,7 +94,6 @@ filled(P_grid_out, Dc) :-
 
 // --- Output ---
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col_out, [Dc, $Lookup()]) :-
     params.combine_out(Id, Col_out),                             // entry's output color
     combine_match.equals([P_grid_out, Dc], Id).                  // cell's tiles == entry's members

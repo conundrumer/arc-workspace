@@ -1,15 +1,17 @@
 // a87f7484
-// concept: decompose count select
-// Input stacks square tiles along one axis; the axis varies per pair. Each
-// tile is one color's ink mask on bg. Output one tile.
-//
-// Cases (data-equivalent on this task):
-//   $Count — the tile with the most ink cells.
-//   $Shape — the tile whose ink mask no other tile has.
+// keywords: decompose count select
+// output: Input stacks square tiles along one axis; the axis varies per pair.
+//  Each tile is one color's ink mask on bg. Output one tile. The two cases
+//  are data-equivalent on this task.
 
-#include "../lib.dl"
+// which tile the output selects
+.type Choice =
+    // the tile with the most ink cells
+    Count {}
+    // the tile whose ink mask no other tile has
+  | Shape {}
 
-.type Choice = Count {} | Shape {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -26,8 +28,6 @@ tile_val(T, P, Col) :-
 
 .decl ink(p_tile: Position, p_intile: Position)
 ink(T, P) :- tile_val(T, P, Col), !params.bg(Col).
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- $Count ---
 .init densest = Mode<Unit, Position, Position>

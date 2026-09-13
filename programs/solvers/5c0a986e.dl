@@ -1,12 +1,12 @@
 // 5c0a986e
 // draft
-// concept: objects cast lookup
-// Each ink color forms one block on a background field. A block casts a
-// diagonal ray, leaving from the corner of its box that the ray heads toward
-// and running over background cells to the grid edge. Which corner that is, is
-// a property of the color.
+// keywords: objects cast lookup
+// output: Each ink color forms one block on a background field. A block casts a
+//  diagonal ray, leaving from the corner of its box that the ray heads toward
+//  and running over background cells to the grid edge. Which corner that is, is
+//  a property of the color.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -31,7 +31,6 @@ beam.mark(Col, P) :-
     bx.cell(Col, P), bx.box(Col, B), box_corner(P, B, D).
 beam.cell(Col, P) :- params.heading(Col, _), in(P, Bg), params.bg(Bg).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- beam.ray(Col, P, _, _, _).
 out(P, Col) :- in(P, Col), !beam.ray(_, P, _, _, _).
 

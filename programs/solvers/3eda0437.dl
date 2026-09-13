@@ -1,18 +1,21 @@
 // 3eda0437
 // draft
-// concept: count rank
-// The input is ink scattered on background. A hole box is a rectangle of pure
-// background; the box with the highest score is painted params.paint, and every
-// other cell is kept. Choice is the score:
-//
-//   $Area()  — the cells the box holds, over the boxes that are regions.
-//              A box one cell thick is a line, and a line is not a region.
-//   $Block() — the squares of side params.block the box holds. A line holds
-//              none, so this score needs no region test.
+// keywords: count rank
+// input: ink scattered on background, with hole boxes: rectangles of pure
+//  background
+// output: The hole box with the highest score is painted params.paint, and
+//  every other cell is kept.
 
-#include "../lib.dl"
+// the score that ranks hole boxes
+.type Choice =
+    // the cells the box holds, over the boxes that are regions. A box one
+    // cell thick is a line, and a line is not a region
+    Area {}
+    // the squares of side params.block the box holds. A line holds none, so
+    // this score needs no region test.
+  | Block {}
 
-.type Choice = Area {} | Block {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -104,7 +107,6 @@ score(B, N, $Block()) :- params.block(K), parse.seats($U(), B, K, N).
 
 // --- Output ---
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- filled(P, Ch), params.paint(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !filled(P, Ch).
 

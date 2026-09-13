@@ -1,12 +1,16 @@
 // ac0a08a4
-// concept: scale count
-// Layout: N× scale. Each input cell expands to an N×N block of the same
-// color in the output frame. N is counted from the input's non-bg cells:
-// $Cells counts the cells; $Colors counts the distinct colors.
+// keywords: scale count
+// output: Layout: N× scale. Each input cell expands to an N×N block of the same
+//  color in the output frame. N is counted from the input's non-bg cells.
 
-#include "../lib.dl"
+// how N is counted
+.type Choice =
+    // N is the count of non-bg cells
+    Cells {}
+    // N is the count of distinct non-bg colors
+  | Colors {}
 
-.type Choice = Cells {} | Colors {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -31,7 +35,6 @@ palette.item($U(), Col) :- on(_, Col).
 
 block.extent($Colors(), A, N) :- axis_elem(A), palette.tally($U(), N).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_grid_out, Col, Ch) :-
     in(P_tile, Col),                                  // input cell as tile pos
     block.cell(Ch, P_intile),                         // intile pos (N×N frame)

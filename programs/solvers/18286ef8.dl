@@ -1,20 +1,23 @@
 // 18286ef8
 // draft
-// concept: decompose markers move cast scale
-// Divider lines cut the grid into an arrangement of tiles. One tile holds a
-// solid block with a gaze cell at its center; the other tiles hold scattered
-// markers, one of them the target color. The gaze cell relocates within its
-// block, swapping with the cell it lands on, and the target marker takes the
-// gaze color.
-//
-// $Step — the gaze steps one cell toward the tile holding the target.
-// $Slide — the gaze slides that way until the rim of its tile.
-// $Map — the gaze's tile is a scale model of the tile arrangement, and the
-// gaze lands on the cell that stands for the target's tile.
+// keywords: decompose markers move cast scale
+// input: Divider lines cut the grid into an arrangement of tiles. One tile
+//  holds a solid block with a gaze cell at its center; the other tiles hold
+//  scattered markers, one of them the target color.
+// output: The gaze cell relocates within its block, swapping with the cell
+//  it lands on, and the target marker takes the gaze color.
 
-#include "../lib.dl"
+// where the gaze lands
+.type Choice =
+    // the gaze steps one cell toward the tile holding the target
+    Step {}
+    // the gaze slides that way until the rim of its tile
+  | Slide {}
+    // the gaze's tile is a scale model of the tile arrangement, and the
+    // gaze lands on the cell that stands for the target's tile
+  | Map {}
 
-.type Choice = Step {} | Slide {} | Map {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // The color of the cutting lines.
@@ -97,7 +100,6 @@ dest(Q, $Map()) :-
 
 // --- output ---
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(Q, Col, Ch) :- dest(Q, Ch), params.gaze(Col).             // the gaze lands
 out(P, Col, Ch) :- gaze_cell(P, _), dest(Q, Ch), in(Q, Col).  // leaving what it displaced
 out(P, Col, Ch) :- target_cell(P), params.gaze(Col), impl_choice(Ch).  // the marker lights up

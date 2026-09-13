@@ -1,25 +1,28 @@
 // 1caeab9d
 // draft
-// concept: objects move
-// Blocks of several colors sit at different heights on bg. Every block slides
-// vertically until its top row meets the top row of the anchor block, keeping
-// its columns. Two hypotheses of what a block is:
-//
-//   $ByColor  — all cells of one color, however they are spread.
-//   $ByObject — one connected piece.
+// keywords: objects move
+// output: Every block slides along the axis of params.align_dir. It stops
+//  where its line on that edge meets the anchor block's line, and its place
+//  across the axis does not change.
 
-#include "../lib.dl"
+// what a block is
+.type Choice =
+    // all cells of one color, however they are spread
+    ByColor {}
+    // one connected piece
+  | ByObject {}
 
-.type Choice = ByColor {} | ByObject {}
 .type Grp = [ch: Choice, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
 
-    // The block the others come to.
+    // The color of the block the others come to.
     .decl anchor(col: Color) anchor(1).
 
-    // The edge whose row the blocks share once moved. Every block in this task
+    // The edge whose line the blocks share once moved. Every block in this task
     // is the same shape, so the opposite edge fits the pairs as well.
     .decl align_dir(d: Dir) align_dir(DIR_T).
 }
@@ -54,9 +57,9 @@ bbox.cell([Ch, Id], P) :- group(Ch, P, Id).
 // The line a block leads with, as an axis-only position.
 .decl front(ky: Grp, l: Position)
 front(Ky, L) :-
-    params.align_dir(D), bbox.cell(Ky, P),
-    bbox.box(Ky, B), box_edge(P, B, D),  // the block's cell on that edge
-    axis_of(D, A), split(P, A, L, _).    // its line along the move axis
+    params.align_dir(D),
+    bbox.cell(Ky, P), bbox.box(Ky, B), box_edge(P, B, D),  // the block's cell on that edge
+    axis_of(D, A), split(P, A, L, _).                      // its line along the move axis
 
 // The move that brings a block's front line onto the anchor's.
 .decl slide(ky: Grp, delta: Offset)
@@ -72,6 +75,5 @@ moved(P_out, Col, Ch) :-
     slide([Ch, Id], Delta),        // its block's move
     compose(P, Delta, P_out).      // where it lands
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- moved(P, Col, Ch).
 out(P, Col, Ch) :- in(P, _), params.bg(Col), impl_choice(Ch), !moved(P, _, Ch).

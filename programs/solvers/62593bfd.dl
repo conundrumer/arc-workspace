@@ -1,17 +1,18 @@
 // 62593bfd
 // draft
-// concept: objects move count d4
-// Single-colored blobs sit on a background. Each blob slides flush to an edge:
-// a blob that has a partner goes to params.paired_dir, a blob with no partner
-// to the opposite edge.
-//
-// The cases differ in what makes two blobs partners:
-//   $Size  — they hold the same number of cells.
-//   $Shape — a D4 transform carries one onto the other.
+// keywords: objects move count d4
+// input: single-colored blobs sit on a background.
+// output: each blob slides flush to an edge: a blob that has a partner goes
+//  to params.paired_dir, a blob with no partner to the opposite edge.
 
-#include "../lib.dl"
+// what makes two blobs partners
+.type Choice =
+    // they hold the same number of cells
+    Size {}
+    // a D4 transform carries one onto the other
+  | Shape {}
 
-.type Choice = Size {} | Shape {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // Where a partnered blob goes.
@@ -90,6 +91,5 @@ paint(Q, Col, Ch) :-
     bbox.box(Id, B), dist(B, D, K),            // its box's margin from that edge
     jump(P, D, K, Q).                          // slid flush
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- in(P, _), bg_mode.mode($U(), Col), impl_choice(Ch), !paint(P, _, Ch).

@@ -1,15 +1,19 @@
 // 17b866bd
-// concept: decompose markers stamp
-// A lattice of params.line-wide lines cuts the grid into params.block-square blocks;
-// line crossings are params.node-colored junctions. A junction holding any other
-// color is a mark: it restores to params.node, and its color paints the block
-// toward params.corner of it. Two hypotheses on what the paint covers:
-//   $Holes — the block's params.hole cells recolor.
-//   $Stamp — a stored footprint stamps over the block.
+// keywords: decompose markers stamp
+// input: A lattice of params.line-wide lines cuts the grid into
+//  params.block-square blocks; line crossings are params.node-colored
+//  junctions.
+// output: A junction holding any other color is a mark: it restores to
+//  params.node, and its color paints the block toward params.corner of it.
 
-#include "../lib.dl"
+// what the paint covers
+.type Choice =
+    // the block's params.hole cells recolor
+    Holes {}
+    // a stored footprint stamps over the block
+  | Stamp {}
 
-.type Choice = Holes {} | Stamp {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .decl line(k: number) line(1).
@@ -100,7 +104,6 @@ fill(Q, Col, $Stamp()) :-
     painted(Id, Col), parse.box($U(), Id, B),
     params.stamp(P_inner), compose(B, P_inner, Q).
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P, Col, Ch) :- fill(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), parse.mark($U(), P, _), params.node(Col).
 out(P, Col, Ch) :-

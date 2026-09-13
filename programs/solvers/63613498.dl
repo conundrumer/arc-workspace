@@ -1,24 +1,42 @@
 // 63613498
 // draft
-// concept: objects match
-// Shapes of several colors sit on params.bg, and a frame in params.mark walls
-// off params.panel, a corner of the grid. The shape inside that corner is the
-// key. One shape outside holds the key's cells up to translation; that shape
-// takes params.mark, and the rest of the grid passes through.
+// keywords: objects match
+// input: Shapes of several colors sit on params.bg, and cells in params.mark
+//  are no shape content. One shape lies in a cut-off corner of the grid:
+//  the key.
+// output: The one other shape that holds the key's cells up to translation
+//  takes params.mark, and the rest of the grid passes through.
 
-#include "../lib.dl"
+// how the cut-off corner is delimited
+.type Choice =
+    // a stored box
+    Panel {}
+    // the part of the grid the wall separates, at a stored corner
+  | Wall {}
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
 
-    // The frame's color: never shape content, and the color the twin takes.
+    // The wall's color: never shape content, and the color the twin takes.
     .decl mark(c: Color) mark(5).
 
-    // The corner the key sits in, as margins from each edge.
+    // --- $Panel ---
+
+    // The cut-off corner, as margins from each edge.
     .decl panel(b: Box) panel([0, 7, 0, 7]).
+
+    // --- $Wall ---
+
+    // The corner the wall cuts off.
+    .decl corner(d: DiagDir) corner(DIAG_TL).
 }
 
 .init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Panel()). impl_choice($Wall()).
 
 // --- shapes ---
 
@@ -35,29 +53,56 @@ shape_inner(Id, P_inner) :-
 
 // --- the key and its twin ---
 
-// The key's box lies within the panel, so every cell of it does.
-.decl key(id: Ident)
-key(Id) :- bbox.box(Id, B), params.panel(B_panel), inside(B, B_panel).
+.decl key(id: Ident, ch: Choice)
 
 .init same = KeyedSetCompare<Ident, Ident, Position>
 same.pattern_member(Id, P_inner) :- shape_inner(Id, P_inner).
 same.observed_member(Id, P_inner) :- shape_inner(Id, P_inner).
 
-// The twin is the shape other than the key that holds the key's cells.
-.decl twin(p: Position)
-twin(P) :- key(K), same.equals(Id, K), !key(Id), shapes.label($U(), P, Id).
+// The shape other than the key that holds the key's cells.
+.decl twin(p: Position, ch: Choice)
+twin(P, Ch) :- key(K, Ch), same.equals(Id, K), !key(Id, Ch), shapes.label($U(), P, Id).
 
 // --- output ---
 
-.decl out(p: Position, col: Color)
-out(P, Col_out) :-
-    in(P, Col),
-    ( twin(P), params.mark(Col_out)  // the twin takes the mark
-    ; !twin(P), Col_out = Col        // the rest passes through
+out(P, Col_out, Ch) :-
+    in(P, Col), impl_choice(Ch),
+    ( twin(P, Ch), params.mark(Col_out)  // the twin takes the mark
+    ; !twin(P, Ch), Col_out = Col        // the rest passes through
     ).
+
+// --- $Panel ---
+
+// The key's box lies within the panel, so every cell of it does.
+key(Id, $Panel()) :- bbox.box(Id, B), params.panel(B_panel), inside(B, B_panel).
+
+// --- $Wall ---
+
+// The part the wall cuts off: the grid apart from the wall, reached from the
+// corner cell.
+.init walled_off = Reach<Unit>
+walled_off.node($U(), P) :- in(P, Col), !params.mark(Col).
+walled_off.seed($U(), P) :-
+    walled_off.node($U(), P), params.corner(D), box_corner(P, ZERO, D).
+
+// The key is a shape in that part.
+key(Id, $Wall()) :- shapes.label($U(), P, Id), walled_off.reach($U(), P).
 
 .comp Determine {
     // The mark is the color the output paints the twin.
     .decl mark(c: Color)
     mark(Col) :- ex_in(E, P, Col_in), ex_out(E, P, Col), Col != Col_in.
+
+    // The part the output paints in, of the parts the wall cuts each train
+    // grid into. The ex_out atom holds the test inputs out.
+    .init painted = Reach<Example>
+    painted.node(E, P) :- ex_in(E, P, Col), !params.mark(Col), ex_out(E, _, _).
+    painted.seed(E, P) :- ex_in(E, P, Col), ex_out(E, P, Col_out), Col != Col_out.
+
+    // The panel is the box of the part the output leaves alone.
+    .init panel_box = Bbox<Example>
+    panel_box.cell(E, P) :- painted.node(E, P), !painted.reach(E, P).
+
+    .decl panel(b: Box)
+    panel(B) :- panel_box.box(_, B).
 }

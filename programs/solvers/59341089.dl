@@ -1,11 +1,15 @@
 // 59341089
-// family: 4c4377d9
-// 1×4 tile arrangement of input copies: identity and D4_LR alternate,
-// the input at the anchor-end tile.
+// representative: 4c4377d9
 
-#include "../lib.dl"
+// data-equivalent on this task
+.type Choice =
+    // per-tile D4 table
+    Lookup {}
+    // reflection tiling: each tile reflects its neighbor across the shared
+    // boundary, seeded at the anchor tile
+  | Unfold {}
 
-.type Choice = Lookup {} | Unfold {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
@@ -25,8 +29,6 @@
 }
 
 .init params = Params
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- Lookup ---
 out(P_grid, Col, $Lookup()) :-

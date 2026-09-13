@@ -1,11 +1,12 @@
 // 2753e76c
 // draft
-// concept: objects count rank
-// Solid rectangles of several colors lie on the grid. The output is a bar
-// chart of how many rectangles each color has: one row per color, rows
-// ordered by count, each bar as many cells long as that color's count.
+// keywords: objects count rank
+// input: Solid rectangles of several colors lie on the grid.
+// output: The output is a bar chart of how many rectangles each color has:
+//  one row per color, rows ordered by count, each bar as many cells long as
+//  that color's count.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -48,7 +49,6 @@ bar(P, Col) :-
     dist(P, D_rank, R),         // the color's row
     dist(P, D_bar, K), K < N.   // N cells out from the bar edge
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     chart.cell($U(), P),
     ( bar(P, Col)                   // bar cell

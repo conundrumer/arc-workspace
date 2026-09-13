@@ -1,11 +1,11 @@
 // 11dc524f
-// concept: objects move d4
-// A shape of params.shape_color faces a block of params.mirror_color. The block's
-// facing edge is a mirror: the shape slides up against that edge, and its
-// reflection appears on the far side in params.mirror_color. The grid is
-// otherwise params.bg.
+// keywords: objects move d4
+// input: a shape of params.shape_color faces a block of params.mirror_color.
+// output: the block's facing edge is a mirror: the shape slides up against
+//  that edge, and its reflection appears on the far side in
+//  params.mirror_color. the grid is otherwise params.bg.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(7).
@@ -77,6 +77,5 @@ paint(P_grid_out, Col_out) :-
       params.mirror_color(Col_out)                                  // its reflection
     ).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- paint(P, Col).
 out(P, Col) :- in(P, _), !paint(P, _), params.bg(Col).

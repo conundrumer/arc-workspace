@@ -1,11 +1,14 @@
 // 7c9b52a0
 // draft
-// concept: overlay objects
-// Panels of one size sit on a frame color, each a params.bg canvas holding
-// some ink. The frame color is the grid's commonest color. The panels stack
-// on one canvas of their size: ink cells win, and the rest stays params.bg.
+// keywords: overlay objects
+// input: panels of one size on a frame color, each a params.bg canvas holding
+//  some ink. No canvas cell takes ink from two panels.
+// output: the panels stack on one canvas: each cell takes the ink of the panel
+//  that inks it, and stays params.bg where no panel inks it.
+// review principle: docs/wf-solver/open/coverage-rules.md
+// review principle: docs/wf-solver/open/underdetermined-scope.md
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -17,23 +20,20 @@
 .init frame = Mode<Unit, Color, Position>
 frame.item($U(), Col, P) :- in(P, Col).
 
-// A panel is a connected region of non-frame cells.
 .init panels = Components<Unit>
 panels.node($U(), P) :- in(P, Col), !frame.mode($U(), Col).
 
-// Each panel's own box.
 .init panel = Bbox<Ident>
 panel.cell(Id, P) :- panels.label($U(), P, Id).
 
 // The shared canvas: every panel's cells, in the panel's own frame.
-.decl canvas(p_grid: Position, p: Position)
-canvas(P_grid, P) :- panel.cell(Id, P_grid), panel.box(Id, B), crop(P_grid, B, P).
+.decl canvas(p_grid: Position, p_frame: Position)
+canvas(P_grid, P_frame) :-
+    panel.cell(Id, P_grid), panel.box(Id, B), crop(P_grid, B, P_frame).
 
-// Ink stacked onto the canvas.
 .decl ink(p: Position, col: Color)
-ink(P, Col) :- canvas(P_grid, P), in(P_grid, Col), !params.bg(Col).
+ink(P_frame, Col) :- canvas(P_grid, P_frame), in(P_grid, Col), !params.bg(Col).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     canvas(_, P),
     ( ink(P, Col)                    // inked

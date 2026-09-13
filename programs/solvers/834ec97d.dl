@@ -1,19 +1,19 @@
 // 834ec97d
-// concept: markers cast parity
-// A single marker cell on bg. The marker steps one cell toward params.dir;
-// alternating columns anchored at the marker's column fill with params.fill from
-// the marker's row to the opposite edge. Two models of the alternation,
-// tagged on out's Choice:
-//
-//   $Period — the column jump is task data in the parameters.
-//   $Parity — every-other-column alternation: two unit steps over a skipped
-//             column, no parameter.
-//
-// Coincide at period 2.
+// keywords: markers cast parity
+// input: a single marker cell on bg
+// output: The marker steps one cell toward params.dir; alternating columns
+//  anchored at the marker's column fill with params.fill from the marker's
+//  row to the opposite edge.
 
-#include "../lib.dl"
+// how the alternating columns are picked; coincide at period 2
+.type Choice =
+    // the column jump is task data in the parameters
+    Period {}
+    // every-other-column alternation: two unit steps over a skipped column, no
+    // parameter
+  | Parity {}
 
-.type Choice = Period {} | Parity {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -62,7 +62,6 @@ rays.mark(Ch, P) :- beam(P, Ch).
 .decl moved(p: Position)
 moved(Q) :- marker(P, _), params.dir(D), neighbor(P, D, Q).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- rays.ray(Ch, P, _, _, _), params.fill(Col).
 out(P, Col, Ch) :- impl_choice(Ch), moved(P), marker(_, Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !rays.ray(Ch, P, _, _, _), !moved(P), params.bg(Col).

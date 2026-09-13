@@ -1,19 +1,22 @@
 // 54dc2872
 // draft
-// concept: objects markers move
-// The grid holds L-shaped pieces and lone marks. Each L carries a tag: one
-// cell of another color, sitting in its concave corner. The tag's color names
-// a mark, and the L moves so that its bend lands on that mark. An L whose tag
-// names no mark stays.
-//
-//   $Translate — the bend lands on the mark wherever the mark lies.
-//   $Slide — the L travels along the diagonal away from the corner its arms
-//            straddle, so it reaches only a mark on that ray. Every move in
-//            the pairs runs along that diagonal.
+// keywords: objects markers move
+// input: The grid holds L-shaped pieces and lone marks. Each L carries a tag:
+//  one cell of another color, sitting in its concave corner.
+// output: The tag's color names a mark, and the L moves so that its bend
+//  lands on that mark. An L whose tag names no mark stays.
+// review principle: docs/wf-solver/open/peer-priors.md
+// review principle: docs/wf-solver/open/coverage-rules.md
 
-#include "../lib.dl"
+// how far a tagged L can travel to reach its mark
+.type Choice =
+    // the bend lands on the mark wherever the mark lies
+    Translate {}
+    // the L travels along the diagonal away from the corner its arms
+    // straddle, so it reaches only a mark on that ray
+  | Slide {}
 
-.type Choice = Translate {} | Slide {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -37,7 +40,7 @@ multi_cell(Id) :- piece(Id, P, _), piece(Id, Q, _), P != Q.
 .decl mark(col: Color, p: Position)
 mark(Col, P) :- piece(Id, P, Col), !multi_cell(Id).
 
-// The L's own color, against the one cell of another color it carries.
+// The L's own color is the commonest of its cells: its tag is one cell.
 .init own_color = Mode<Ident, Color, Position>
 own_color.item(Id, Col, P) :- piece(Id, P, Col).
 
@@ -47,8 +50,8 @@ arm(Id, P) :- piece(Id, P, Col), own_color.mode(Id, Col).
 .decl tag(id: Ident, col: Color)
 tag(Id, Col) :- piece(Id, P, Col), !arm(Id, P).
 
-// The bend is where the two arms meet: the arm cell holding arms on both
-// cardinal sides of one corner. That corner is the L's concave side.
+// The bend is where the two arms meet, and its corner is the one the arms
+// straddle: the L's concave side.
 .decl bend(id: Ident, p: Position, corner: DiagDir)
 bend(Id, P, G) :-
     arm(Id, P), diag_dirs(G, _, D, D2),
@@ -68,17 +71,16 @@ shift(Id, V) :- bend(Id, B, _), target(Id, T), relative(B, T, V).
 .decl vacated(p: Position, ch: Choice)
 vacated(P, Ch) :-
     moves(Id, Ch),
-    ( piece(Id, P, _)   // the L's old cells
-    ; target(Id, P)     // the consumed mark
+    ( piece(Id, P, _)
+    ; target(Id, P)
     ).
 
 .decl render(p: Position, col: Color, ch: Choice)
 render(P, Col, Ch) :- piece(_, P, Col), impl_choice(Ch), !vacated(P, Ch).
 render(P2, Col, Ch) :-
     piece(Id, P, Col), moves(Id, Ch),
-    shift(Id, V), compose(P, V, P2).      // where that cell lands
+    shift(Id, V), compose(P, V, P2).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     in(P, _), impl_choice(Ch),
     ( render(P, Col, Ch)

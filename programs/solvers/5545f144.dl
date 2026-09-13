@@ -1,34 +1,28 @@
 // 5545f144
 // draft
-// concept: decompose objects markers symmetry walk d4
-// Drawn lines cut the grid into panels, and each panel is one snapshot of one
-// scene: an arrow, and loose dots. The arrow is the widest set of drawn cells
-// that a mirror through one of them carries onto itself, that cell — the tip —
-// being the one furthest along the mirror's line. A dot at the arrow's corner
-// joins the piece the arrow sits in, and what the mirror leaves out of the
-// piece is a dot again.
-//
-// The arrow travels its own lines and eats the dots, going straight on or
-// turning a quarter. Two models of which dot it takes:
-//
-//   $Momentum — the dot straight ahead, and only with the way ahead clear,
-//               the nearest dot aside.
-//   $Nearest  — the nearest dot on any of the three ways.
-//
-// They coincide here — no dot aside is ever nearer than the dot ahead — and
-// diverge where one is. The output shows the arrow where it comes to rest, in
-// the panel's own frame.
-//
-// Every snapshot leads to the same rest, so the program reads them all and
-// leaves the output where they agree.
+// keywords: decompose objects markers symmetry walk d4
+// input: Drawn lines cut the grid into panels, and each panel is one snapshot
+//  of one scene: an arrow, and loose dots. The arrow is the widest set of
+//  drawn cells that a mirror through one of them carries onto itself, that
+//  cell — the tip — being the one furthest along the mirror's line.
+// output: The arrow travels its own lines and eats the dots, going straight
+//  on or turning a quarter. The output shows the arrow where it comes to
+//  rest, in the panel's own frame. Every snapshot leads to the same rest, so
+//  the program reads them all and leaves the output where they agree.
 
-#include "../lib.dl"
-
-.type Choice = Momentum {} | Nearest {}
+// which dot the arrow takes next
+.type Choice =
+    // the dot straight ahead, and only with the way ahead clear, the nearest
+    // dot aside
+    Momentum {}
+    // the nearest dot on any of the three ways
+  | Nearest {}
 
 .type Line = [a: Axis, l: Position]
 .type Cand = [t: Position, d: Dir]
 .type Stance = [pan: Position, p: Position, d: Dir]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {}
 
@@ -86,6 +80,8 @@ tip(Pan, T, D) :- widest.high(Pan, [T, D], _).
 .decl arrow(pan: Position, p: Position)
 arrow(Pan, P) :- widest.high(Pan, [T, D], _), sym_cell(T, D, P).
 
+// A dot at the arrow's corner joins the piece the arrow sits in (figure is
+// 8-connected), and what the mirror leaves out of that piece is a dot again.
 .decl dot(pan: Position, p: Position)
 dot(Pan, P) :- ink(Pan, P, _), !arrow(Pan, P).
 
@@ -110,6 +106,8 @@ way(D, D2) :- perp_dir(D, D2).
 .init steps = Extremes<Stance>
 steps.cand([Pan, P, D], K) :- way(D, D2), reach(Pan, P, D2, _, K).
 
+// The two cases coincide here — no dot aside is ever nearer than the dot
+// ahead — and diverge only where one is.
 .decl impl_choice(ch: Choice)
 impl_choice($Momentum()). impl_choice($Nearest()).
 
@@ -149,7 +147,6 @@ placed(Pan, P2, Ch) :-
 .init frame = Bbox<Position>
 frame.cell(Pan, P) :- panel_cell(Pan, P).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_inner, Col, Ch) :-
     panel_cell(Pan, P), frame.box(Pan, B), crop(P, B, P_inner),  // a panel cell in its panel's frame
     impl_choice(Ch),

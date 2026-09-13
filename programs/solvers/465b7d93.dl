@@ -1,18 +1,20 @@
 // 465b7d93
 // draft
-// concept: markers border scale
-// A rectangular frame of params.frame stands on a field of params.bg, and a small shape
-// of one other color sits outside it. The shape is erased, and its color
-// paints the frame's inner rim. Two models of which sides get the rim:
-//
-//   $Corner  — the shape is an L; its corner cell names a corner of the frame,
-//              and the rim runs along that corner's two sides.
-//   $Stretch — the shape is the rim in miniature: a side gets its rim line when
-//              the shape's edge line on that side is solid.
+// keywords: markers border scale
+// input: A rectangular frame of params.frame stands on a field of params.bg,
+//  and a small shape of one other color sits outside it.
+// output: The shape is erased, and its color paints the frame's inner rim.
 
-#include "../lib.dl"
+// which sides get the rim
+.type Choice =
+    // the shape is an L; its corner cell names a corner of the frame, and the
+    // rim runs along that corner's two sides
+    Corner {}
+    // the shape is the rim in miniature: a side gets its rim line when the
+    // shape's edge line on that side is solid
+  | Stretch {}
 
-.type Choice = Corner {} | Stretch {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(7).
@@ -66,7 +68,6 @@ edge_hole(D) :- shape_box.box($U(), B), in(P, _), box_edge(P, B, D), !mark(P, _)
 
 paint(P, $Stretch()) :- field.rim_dir($U(), P, D), !edge_hole(D).
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P, Col, Ch) :- paint(P, Ch), mark(_, Col).
 out(P, Col, Ch) :-
     in(P, Col_in), impl_choice(Ch), !paint(P, Ch),

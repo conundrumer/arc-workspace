@@ -1,15 +1,17 @@
 // 8ee62060
-// concept: decompose d4
-// The grid divides into params.block_size blocks. Each block keeps its
-// contents; the d4 transform applies to the block-grid coordinates.
-//
-// The blocks sit on a diagonal of the block-grid, so every d4 element that
-// moves that diagonal produces the same output; the task fixes none. One
-// $Blocks candidate per element in params.block_d4.
+// keywords: decompose d4
+// input: The grid divides into params.block_size blocks.
+// output: Each block keeps its contents; the d4 transform applies to the
+//  block-grid coordinates. The blocks sit on a diagonal of the block-grid, so
+//  every d4 element that moves that diagonal produces the same output; the
+//  task fixes none. One $Blocks candidate per element in params.block_d4.
 
-#include "../lib.dl"
+// which d4 element the blocks sit on
+.type Choice =
+    // the d4 transform applied to the block-grid coordinates
+    Blocks {d: D4}
 
-.type Choice = Blocks {d: D4}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .decl block_d4(d: D4)
@@ -24,7 +26,6 @@
 
 .init params = Params
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P_out, Col, $Blocks(D)) :-
     in(P_in, Col),                                                // input cell
     params.block_d4(D), params.block_size(K),                     // params

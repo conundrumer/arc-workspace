@@ -1,13 +1,13 @@
 // 6855a6e4
 // draft
-// concept: markers d4
-// A params.mover shape sits outside each bracket of params.mirror, beyond
-// its back bar. Every mover cell casts every way and reflects across the
-// first mirror cell it meets, so each shape lands inside its bracket,
-// mirrored. The movers' old places clear to params.bg, and the rest of the
-// input is kept.
+// keywords: markers d4
+// output: A params.mover shape sits outside each bracket of params.mirror,
+//  beyond its back bar. Every mover cell casts every way and reflects across
+//  the first mirror cell it meets, so each shape lands inside its bracket,
+//  mirrored. The movers' old places clear to params.bg, and the rest of the
+//  input is kept.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -33,7 +33,6 @@ image(Q) :-
     axis_of(D, A), flip_of(A, F),                                 // the flip across that mirror
     relative(B, P, V), apply(F, V, V2), compose(B, V2, Q).    // taken about the mirror cell
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, Col_in),
     ( image(P), params.mover(Col)                                  // the mover's image

@@ -1,22 +1,33 @@
 // 99b1bc43
-// family: 3428a4f5
-// Layout: 2×1 vertically-stacked 4×4 subgrids with 1-row separator.
+// representative: 3428a4f5
 
-#include "../lib.dl"
+// decompose
+.type DecChoice =
+    // tabulated in the parameters
+    Table {}
+    // by tile count
+  | Count {}
+    // by tile size
+  | Size {}
 
-.type DecChoice = Table {} | Count {} | Size {}
-.type Body      = Lookup {} | Xor {}
+// combine
+.type Body =
+    // a table keyed on the colors at the cell's tiles
+    Lookup {}
+    // filled where exactly one tile is non-bg
+  | Xor {}
+
 .type Choice    = [d: DecChoice, b: Body]
 
 .type CombineMember = [p: Position, col: Color]
 .type CombineKey    = [p: Position, dc: DecChoice]
 
+.decl out(p: Position, col: Color, c: Choice)
+
 .comp Params {
     .init helpers = ParamsHelpers
 
     .decl frame_dim(k: number) frame_dim(4).
-    .decl frame(p: Position)
-    frame(P) :- frame_dim(K), helpers.frame_pos([K, K], P).
 
     // --- Table decompose data ---
     .decl arr_dim(a: Axis, n: number)
@@ -38,7 +49,7 @@
     .decl divisor(n: number)
     divisor(2).
 
-    // --- Lookup program data ---
+    // --- Lookup combine data ---
     .decl combine_member(id: Ident, p_outer: Position, c: Color)
     .decl combine_out(id: Ident, c_out: Color)
 
@@ -47,7 +58,9 @@
     combine_member(2, [0,1,0,0], 0). combine_member(2, [1,0,0,0], 2). combine_out(2, 3).
     combine_member(3, [0,1,0,0], 1). combine_member(3, [1,0,0,0], 2). combine_out(3, 0).
 
-    // --- Xor program data ---
+    // --- Xor combine data ---
+    .decl frame(p: Position)
+    frame(P) :- frame_dim(K), helpers.frame_pos([K, K], P).
     .decl bg(c: Color) bg(0).
     .decl out_fill(c: Color) out_fill(3).
     .decl fill_at(n: number) fill_at(1).
@@ -70,15 +83,15 @@ dec_choice($Size()).
 .decl decompose(p: Position, p_outer: Position, p_inner: Position, dc: DecChoice)
 decompose(P_grid, P_tile, P_intile, $Table()) :- params.tile_decompose(P_grid, P_tile, P_intile).
 decompose(P_grid, P_tile, P_intile, $Count()) :-
-    in(P_grid, _),                                                      // input position
-    params.divide_axis(A), params.divisor(N), params.divide_gap(G),     // params
+    in(P_grid, _), params.divide_axis(A), params.divide_gap(G),
+    params.divisor(N),                                              // tile count
     divide_slab(P_grid, A, N, G, P_tile, P_intile).
 decompose(P_grid, P_tile, P_intile, $Size()) :-
-    in(P_grid, _),                                                      // input position
-    params.divide_axis(A), params.frame_dim(K), params.divide_gap(G),   // params: tile size = output frame extent
+    in(P_grid, _), params.divide_axis(A), params.divide_gap(G),
+    params.frame_dim(K),                                            // tile size = output frame extent
     divide_by_size_slab(P_grid, A, K, G, P_tile, P_intile).
 
-// --- Xor program: fill count parameterized by decompose choice ---
+// --- Xor ---
 
 .init filled = Tally<CombineKey, Position>
 filled.item([P_grid_out, Dc], P_grid_in) :-
@@ -87,14 +100,12 @@ filled.domain([P_grid_out, Dc]) :- params.frame(P_grid_out), dec_choice(Dc).
 
 // --- Output ---
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col_out, [Dc, $Lookup()]) :-
-    params.combine_out(Id, Col_out),                             // entry's output color
-    combine_match.equals([P_grid_out, Dc], Id).                  // cell's tiles == entry's members
+    params.combine_out(Id, Col_out),
+    combine_match.equals([P_grid_out, Dc], Id).     // cell's tiles == entry's members
 
 out(P_grid_out, Col, [Dc, $Xor()]) :-
-    dec_choice(Dc), params.frame(P_grid_out),      // choice × cell
-    filled.tally([P_grid_out, Dc], N),             // the cell's fill count
-    ( params.fill_at(N), params.out_fill(Col)      // count hits the fill threshold
-    ; !params.fill_at(N), params.bg(Col)           // count off the threshold
+    filled.tally([P_grid_out, Dc], N),             // non-bg tiles at the cell
+    ( params.fill_at(N), params.out_fill(Col)
+    ; !params.fill_at(N), params.bg(Col)
     ).

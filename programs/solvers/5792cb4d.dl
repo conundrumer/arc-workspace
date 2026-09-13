@@ -1,12 +1,13 @@
 // 5792cb4d
 // draft
-// concept: objects permutation rank
-// The non-bg cells form one chain, and its ends are the two cells that have
-// a single neighbor. The output reverses the chain's colors: each cell takes
-// the color of the cell that stands as far from one end as it stands from
-// the other.
+// keywords: objects permutation rank
+// input: the non-bg cells, forming one chain whose ends are the two cells
+//  that have a single neighbor
+// output: The output reverses the chain's colors: each cell takes the
+//  color of the cell that stands as far from one end as it stands from
+//  the other.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(8).
@@ -37,7 +38,6 @@ chain.elem(E, P) :- lone.value(E, _), node(P).
 chain.before(E, P, Q) :- step(E, P, Q).
 chain.before(E, P, R) :- chain.before(E, P, Q), chain.before(E, Q, R).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- in(P, Col), params.bg(Col).
 out(P, Col) :-
     chain.rank(E, P, R),       // cells behind P

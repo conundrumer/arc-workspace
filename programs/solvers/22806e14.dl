@@ -1,16 +1,19 @@
 // 22806e14
 // draft
-// concept: objects markers count
-// Same-color objects sit on a background: solid rectangles, and one marker
-// that leaves a hole in its own bbox. Each rectangle with a center cell takes
-// the marker's color there. The marker itself survives when it places enough
-// marks:
-//   $MarkerSize — at least as many marks as the marker has cells.
-//   $Majority   — more rectangles marked than unmarked.
+// keywords: objects markers count
+// output: Same-color objects sit on a background: solid rectangles, and one
+//  marker that leaves a hole in its own bbox. Each rectangle with a center cell
+//  takes the marker's color there. The marker itself survives when it places
+//  enough marks.
 
-#include "../lib.dl"
+// what counts as enough marks
+.type Choice =
+    // at least as many marks as the marker has cells
+    MarkerSize {}
+    // more rectangles marked than unmarked
+  | Majority {}
 
-.type Choice = MarkerSize {} | Majority {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(7).
@@ -78,7 +81,6 @@ gone(P, Ch) :- erase(Ch), marker_cell(P).
 impl_choice($MarkerSize()).
 impl_choice($Majority()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     mark(P), impl_choice(Ch),     // a marked center
     marker_cell(Q), in(Q, Col).   // takes the marker's color

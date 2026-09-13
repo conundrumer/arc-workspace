@@ -22,6 +22,8 @@
 
 .type SpanKey = [e: Example, s: Span]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
     .decl bg(c: Color) bg(0).
 
@@ -95,7 +97,6 @@ rect(B_rect, [M, S]) :-
 .decl drawn(p: Position, ch: Choice)
 drawn(P, Ch) :- in(P, _), rect(B, Ch), box_edge(P, B, _).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, [M, S]) :- drawn(P, [M, S]), ink(Col, M).
 out(P, Col, [M, S]) :- in(P, Col), mark_choice(M), span_choice(S), !drawn(P, [M, S]).
 

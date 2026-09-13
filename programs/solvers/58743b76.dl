@@ -1,14 +1,23 @@
 // 58743b76
 // draft
-// concept: scale
+// keywords: scale
+// input: A canvas of marks on a plain ground fills a rectangle of the grid,
+//  and a key block of colored cells sits apart from it; filler covers the
+//  rest.
+// output: Each mark takes the color of the key cell that its place in the
+//  canvas picks. Every other cell passes through.
 
-// A canvas of marks on a plain ground fills a rectangle of the grid, and a key
-// block of colored cells sits apart from it; filler covers the rest. The key is
-// the canvas shrunk: the canvas splits into one part per key cell, and each mark
-// takes the color of the key cell at its part's place. Every other cell passes
-// through.
+// how a mark's place in the canvas picks a key cell; the key is 2x2 in every
+// pair, so the two ways agree there and part only on a larger key
+.type Choice =
+    // the canvas splits into one part per key cell, and the mark takes the
+    // key cell at its part's place
+    Shrunk {}
+    // the mark lies toward a corner of the canvas, and takes the key cell at
+    // that corner
+  | Corner {}
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color)  bg(0).
@@ -18,6 +27,9 @@
 }
 
 .init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Shrunk()). impl_choice($Corner()).
 
 // --- the canvas, viewed in its own box ---
 
@@ -35,20 +47,31 @@ mark(P_grid) :- on_canvas(P_grid, _), in(P_grid, Col), !params.bg(Col).
 
 .init key = Bbox<Unit>
 key.cell($U(), P_grid) :-
-    in(P_grid, Col), !params.filler(Col),  // a colored cell
-    !on_canvas(P_grid, _).                 // outside the canvas
+    in(P_grid, Col), !params.filler(Col), !on_canvas(P_grid, _).
 
-// --- the canvas split into one part per key cell ---
+out(P_grid, Col, Ch) :- in(P_grid, Col), !mark(P_grid), impl_choice(Ch).
 
+// --- Shrunk ---
+
+// The canvas split into one part per key cell.
 .init part = Divide2D<Unit>
 part.cell(P_inner) :- on_canvas(_, P_inner).
 part.dim($U(), A, N) :- key.cell($U(), P), key.box($U(), B), box_extent(B, P, A, N).
 part.gap(0).
 
-.decl out(p: Position, col: Color)
-out(P_grid, Col) :-
+out(P_grid, Col, $Shrunk()) :-
     mark(P_grid), on_canvas(P_grid, P_inner),  // a mark, placed in the canvas
     part.tile($U(), P_inner, P_tile, _),       // the part of the canvas it falls in
     key.cell($U(), P_key), key.box($U(), B),
     crop(P_key, B, P_tile), in(P_key, Col).    // the color of the key cell at that place
-out(P_grid, Col) :- in(P_grid, Col), !mark(P_grid).
+
+// --- Corner ---
+
+.init place = DiagPlacement<Unit>
+place.cell($U(), P_inner) :- on_canvas(_, P_inner).
+
+out(P_grid, Col, $Corner()) :-
+    mark(P_grid), on_canvas(P_grid, P_inner),     // a mark, placed in the canvas
+    place.quadrant($U(), P_inner, D),             // the corner of the canvas it lies toward
+    key.cell($U(), P_key), key.box($U(), B),
+    box_corner(P_key, B, D), in(P_key, Col).      // the color of the key cell at that corner

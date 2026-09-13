@@ -1,29 +1,28 @@
 // 50846271
 // draft
-// concept: markers stamp induce
-// Plus-shaped crosses are drawn over the grid, every cross in a grid with the
-// same arm. Some cells of each cross carry params.mark, and those marks are
-// all that shows where the crosses are. The output completes every cross: the
-// cells of it that hold no mark become params.fill.
-//
-// A placement is a plus at a center, reaching the marks within its arm, and
-// the arm is one that leaves every mark to a cross of its own. The cases
-// differ in where a plus may lie and in which placements are the crosses:
-//
-//   $Backed — a plus lies on non-bg cells throughout, and the crosses are the
-//             maximal placements, those no other placement out-covers. One
-//             arm alone works here, so nothing selects among arms.
-//   $Packed — the same pluses, and the crosses are the placements every exact
-//             cover of the marks holds, by elimination.
-//   $Free   — a plus lies anywhere, the crosses are the maximal placements,
-//             and the shortest arm that works is the one.
+// keywords: markers stamp induce
+// input: placements — a plus at a center, reaching the marks within its
+//  arm; the arm is one that leaves every mark to a cross of its own
+// output: Plus-shaped crosses of one shared arm are drawn over the grid.
+//  Marks show where each cross lies: the cells of a cross that carry no
+//  mark become params.fill, and marked cells stay as they are.
 
-#include "../lib.dl"
+// which placements are the crosses, and where a plus may lie
+.type Choice =
+    // a plus lies on non-bg cells throughout, and the crosses are the maximal
+    // placements, those no other placement out-covers. One arm alone works
+    // here, so nothing selects among arms.
+    Backed {}
+    // the same pluses, and the crosses are the placements every exact cover of
+    // the marks holds, by elimination
+  | Packed {}
+    // a plus lies anywhere, the crosses are the maximal placements, and the
+    // shortest arm that works is the one
+  | Free {}
 
-.type Choice = Backed {} | Packed {} | Free {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl mark(col: Color) mark(2).
     .decl fill(col: Color) fill(8).
 
@@ -99,7 +98,6 @@ completed(Ch, P) :-
     span(Ch, K), cross(Ch, K, C), plus(K, C, P),   // a cell of a cross
     !mark(P).                                      // the marks stay as they are
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- in(P, Col), span(Ch, _), !completed(Ch, P).
 out(P, Col, Ch) :- completed(Ch, P), params.fill(Col).
 

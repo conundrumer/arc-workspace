@@ -1,34 +1,32 @@
 // 332efdb3
-// concept: wallpaper lookup border
-// Wallpaper: bg ground with a regular grid of interior dots. Three
-// divide-based models:
-//
-//   $Stripes() — divide_by_size on each axis with K=1, G=1. Cells on a
-//                tile row or col → bg; cells on neither → dot.
-//   $Motif()   — the stored 3×3 motif seats at each grid corner and
-//                extends by the lattice generators params.period; overlapping
-//                stamps agree on their shared rows/cols.
-//   $Inset()   — the frame inside the border; divide_by_size_2d with K=1,
-//                G=1 on that interior places tile cells at the dot
-//                positions. Interior tile → dot, border and gap → bg.
+// keywords: wallpaper lookup border
+// output: the input's frame, filled with the wallpaper: a bg ground with a dot
+//  every other cell on both axes, one cell in from the border
 
-#include "../lib.dl"
+// which model reconstructs the wallpaper
+.type Choice =
+    // each axis splits into tiles with a gap between them; a cell on a tile
+    // line of either axis is bg, and a cell on neither is the dot color
+    Stripes {}
+    // the stored motif seats at every corner and repeats by the lattice period
+  | Motif {}
+    // a border rings the dot field, and that field splits into tiles on both
+    // axes at once; an interior tile cell is the dot color, the border and the
+    // gaps are bg
+  | Inset {}
 
-.type Choice = Stripes {} | Motif {} | Inset {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
+    // --- $Stripes, $Inset ---
     .decl bg(c: Color) bg(1).
     .decl dot(c: Color) dot(0).
-
-    // --- $Stripes / $Inset shared params ---
     .decl tile_size(k: number) tile_size(1).
     .decl tile_gap(g: number) tile_gap(1).
 
-    // --- $Motif data ---
-    // The wallpaper lattice's generators, every direction.
-    .decl period(delta: Offset)
-    period([2, -2, 0, 0]). period([-2, 2, 0, 0]).
-    period([0, 0, 2, -2]). period([0, 0, -2, 2]).
+    // --- $Motif ---
+    .decl period(a: Axis, k: number)
+    period(AXIS_V, 2). period(AXIS_H, 2).
 
     .decl motif(p: Position, c: Color)
     GRID_3x3(motif,
@@ -37,26 +35,23 @@
         1, 1, 1)
 
     // --- $Inset ---
-    // The ring of bg around the dot field.
+    // The bg ring around the dot field.
     .decl border_width(k: number) border_width(1).
 }
 
 .init params = Params
 
-.decl out(p: Position, col: Color, c: Choice)
-
 // --- $Stripes ---
 .decl on_tile(p: Position)
 on_tile(P) :-
-    in(P, _),
-    axis_elem(A),                                       // enumerate axes
+    in(P, _), axis_elem(A),
     params.tile_size(K), params.tile_gap(G),
-    divide_by_size(P, A, K, G, _, _).                   // axis tile cell
+    divide_by_size(P, A, K, G, _, _).                   // a tile cell of that axis, not a gap
 
 out(P, Col, $Stripes()) :-
-    in(P, _),                                  // grid cell
-    ( on_tile(P), params.bg(Col)               // on a stripe — bg
-    ; !on_tile(P), params.dot(Col)             // off every stripe — the dot color
+    in(P, _),
+    ( on_tile(P), params.bg(Col)
+    ; !on_tile(P), params.dot(Col)
     ).
 
 // --- $Motif ---
@@ -65,7 +60,8 @@ out(Q, Col, $Motif()) :-
     diag_dir_elem(Dg), corner_anchor(Dg, Pm, Q).        // seated at each corner
 out(Q2, Col, $Motif()) :-
     out(Q, Col, $Motif()),
-    params.period(J), compose(Q, J, Q2), in(Q2, _).          // extended by the lattice
+    params.period(A, K), axis_of(D, A), jump(Q, D, K, Q2),   // a lattice step in each cardinal
+    in(Q2, _).
 
 // --- $Inset ---
 .decl interior_tile(p: Position)
@@ -76,10 +72,11 @@ interior_tile(P) :-
     divide_by_size_2d(P_inner, K, G, _, _).                              // on a tile, not a gap
 
 out(P, Col, $Inset()) :-
-    in(P, _),                                  // grid cell
-    ( interior_tile(P), params.dot(Col)        // on an interior tile — the dot color
-    ; !interior_tile(P), params.bg(Col)        // the border, or an interior gap — bg
+    in(P, _),
+    ( interior_tile(P), params.dot(Col)
+    ; !interior_tile(P), params.bg(Col)
     ).
+
 
 .type Window = [e: Example, diag: DiagDir]
 
@@ -90,22 +87,18 @@ out(P, Col, $Inset()) :-
     .init unbroken = Extremes<Axis>
     unbroken.cand(A, K) :- si.cand(_, A, K, _), !si.mismatch(_, A, K).
 
-    // The lattice generators: the smallest repeating shift on each axis,
-    // in each direction.
-    .decl period(delta: Offset)
-    period(Delta) :- si.cand(_, A, K, Delta), unbroken.low(A, K).
+    // The lattice period on each axis: the smallest repeating shift.
+    .decl period(a: Axis, k: number)
+    period(A, K) :- unbroken.low(A, K).
 
-    .decl span(a: Axis, k: number)
-    span(A, K) :- period(Delta), si.cand(_, A, K, Delta).
-
-    // The closed unit cell: cells within one generator of a corner,
-    // boundary included.
+    // The closed unit cell: cells within one period of a corner, boundary
+    // included.
     .decl window(w: Window, q: Position)
     window([E, Dg], Q) :-
         ex_out(E, Q, _), diag_dir_elem(Dg),
         diag_dist(Q, Dg, A, K1, K2),
-        span(A, S1), K1 <= S1,
-        perp(A, A2), span(A2, S2), K2 <= S2.
+        period(A, S1), K1 <= S1,
+        perp(A, A2), period(A2, S2), K2 <= S2.
 
     // Each window's cells in the motif's own frame.
     .init wframe = Bbox<Window>

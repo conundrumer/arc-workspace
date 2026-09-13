@@ -1,22 +1,23 @@
 // 6d1d5c90
-// concept: markers walk count
-// A band params.band_width wide at params.marker_edge holds one off-color cell. Drop it,
-// then shift the rest toward params.shift_dir by that cell's distance from the
-// opposite edge. The rows form a cycle (adjacency runs toward shift_dir, and
-// the shift edge wraps to the far edge), so the shift rotates each row that
-// many steps along the cycle.
-//
-// Two models for which cell is the marker, tagged on out's Choice:
-//   $Marked()    — the cell of the designated params.marker_color.
-//   $Singleton() — the band cell whose color appears params.marker_count times, the
-//                  color itself unnamed.
+// keywords: markers walk count
+// input: A band params.band_width wide at params.marker_edge holds one
+//  off-color cell.
+// output: Drop that cell, then shift the rest toward params.shift_dir by its
+//  distance from the opposite edge. The rows form a cycle (adjacency runs
+//  toward shift_dir, and the shift edge wraps to the far edge), so the shift
+//  rotates each row that many steps along the cycle.
 
-#include "../lib.dl"
+// Two models for which cell is the marker, tagged on out's Choice
+.type Choice =
+    // the cell of the designated params.marker_color
+    Marked {}
+    // the band cell whose color appears params.marker_count times, the color
+    // itself unnamed
+  | Singleton {}
 
-.type Choice = Marked {} | Singleton {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl marker_edge(d: Dir) marker_edge(DIR_L).      // edge the band sits on
     .decl shift_dir(d: Dir) shift_dir(DIR_B).          // rows rotate toward this edge
     .decl band_width(k: number) band_width(1).         // the band is one column
@@ -72,7 +73,6 @@ rot.step($U(), M)     :- shift_amt(M, _).   // the shifts in use
 rows.dir(FE)     :- row_origin(FE).
 rows.dist_set($U(), K) :- row_idx(K).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_out, Col, Ch) :-
     in(P_in, Col), params.marker_edge(ME),
     params.band_width(K), edge_inset(ME, K, B), crop(P_in, B, P_kept),   // a cell the drop keeps

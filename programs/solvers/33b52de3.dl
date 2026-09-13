@@ -1,12 +1,13 @@
 // 33b52de3
 // draft
-// concept: decompose scale
-// The grid holds a field of tiles in a uniform arrangement, and a block of
-// colored cells. That block is the arrangement in miniature: one cell per
-// tile, in the same frame. Each tile takes the color of the miniature cell at
-// its place; the rest of the grid passes through.
+// keywords: decompose scale
+// input: The grid holds a field of tiles in a uniform arrangement, and a
+//  block of colored cells. That block is the arrangement in miniature: one
+//  cell per tile, in the same frame.
+// output: Each tile takes the color of the miniature cell at its place; the
+//  rest of the grid passes through.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -27,7 +28,6 @@ mini.cell($U(), P) :- in(P, Col), !params.bg(Col), !params.tile_col(Col).
 .init field = Bbox<Unit>
 field.cell($U(), P) :- in(P, Col), params.tile_col(Col).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- in(P, Col), !params.tile_col(Col).
 out(P, Col) :-
     field.cell($U(), P), field.box($U(), B_field),

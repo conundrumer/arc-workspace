@@ -15,8 +15,9 @@
     // the box's extent along params.axis
   | Extent {}
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
     .decl out_dim(n: number) out_dim(2).   // output extent, both axes
 
@@ -59,5 +60,4 @@ winner.cand($Extent(), Col, N) :-
 .init canvas = Frame2D<Unit>
 canvas.extent($U(), A, N) :- axis_elem(A), params.out_dim(N).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- canvas.cell($U(), P), winner.high(Ch, Col, _).

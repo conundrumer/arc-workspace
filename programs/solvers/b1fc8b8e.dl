@@ -1,36 +1,40 @@
 // b1fc8b8e
-// concept: classify lookup count pack
-// Classify the ink: made of whole copies of the unit or not. Emit a fixed
-// 5x5 pattern per class — four copies of the class's 2x2 tile behind a bg
-// cross.
-//
-// Cartesian over (detect, render); out's choice column is a record:
-//
-//   detect:
-//     $Shape     — every ink cell lies inside some placement of params.unit fully
-//                  on ink; outcome picks params.covered_class / params.broken_class.
-//     $Partition — the ink splits into disjoint copies of params.unit, same
-//                  outcome parameters. Stricter than $Shape: a 2x3 block of ink is
-//                  covered by overlapping placements but splits into none.
-//     $Count     — ink count, mapped per-count via params.class_count.
-//
-//   render:
-//     $Grid    — stored grid per class.
-//     $Arrange — stored tile per class, laid out by params.arrange; gap cells get
-//                params.bg.
-//     $Corner  — stored tile anchored at each corner of params.canvas; uncovered
-//                cells get params.bg.
+// keywords: classify lookup count pack
+// output: Classify the ink: made of whole copies of the unit or not. Emit a
+//  fixed 5x5 pattern per class — four copies of the class's 2x2 tile behind a
+//  bg cross.
 
-#include "../lib.dl"
+// how the ink is classified
+.type Detect =
+    // every ink cell lies inside some placement of params.unit fully on ink;
+    // outcome picks params.covered_class / params.broken_class
+    Shape {}
+    // the ink splits into disjoint copies of params.unit, same outcome
+    // parameters. Stricter than $Shape: a 2x3 block of ink is covered by
+    // overlapping placements but splits into none.
+  | Partition {}
+    // ink count, mapped per-count via params.class_count
+  | Count {}
 
-.type Detect = Shape {} | Partition {} | Count {}
-.type Render = Grid {} | Arrange {} | Corner {}
+// how a class renders
+.type Render =
+    // stored grid per class
+    Grid {}
+    // stored tile per class, laid out by params.arrange; gap cells get
+    // params.bg
+  | Arrange {}
+    // stored tile anchored at each corner of params.canvas; uncovered cells get
+    // params.bg
+  | Corner {}
+
+// how the ink is classified, crossed with how the class renders
 .type Choice = [detect: Detect, render: Render]
+
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
 
-    // --- shared ---
     .decl ink(c: Color) ink(8).
 
     // --- $Shape / $Partition ---
@@ -154,8 +158,6 @@ class(Id, $Partition()) :- parse.ink_at($U(), _), !unpacked(_), params.covered_c
 
 // --- $Count ---
 class(Id, $Count()) :- parse.ink_count($U(), N), params.class_count(Id, N).
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- $Grid ---
 out(P, Col, [D, $Grid()]) :- class(Id, D), params.class_grid(Id, P, Col).

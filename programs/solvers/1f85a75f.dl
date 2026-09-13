@@ -1,23 +1,30 @@
 // 1f85a75f
 // draft
-// concept: objects crop count select
-// Noise cells of several colors lie scattered on bg, and one solid shape sits
-// among them in a color of its own. The output is the shape's bounding box.
-// Choice = [l, r] crosses what marks the shape with what its box carries:
-//
-//   l (find the shape):
-//     $Big()    — the largest connected group of one color.
-//     $Rare()   — every cell of the color with the fewest cells.
-//     $Intact() — every cell of the color that breaks into the fewest groups.
-//   r (fill the box):
-//     $Keep()  — the found cells keep their color, the rest of the box is bg.
-//     $Crop()  — the box carries the input through, noise included.
+// keywords: objects crop count select
+// input: Noise cells of several colors lie scattered on bg, and one shape in a
+//  color of its own sits among them. Ink connects into groups within its color.
+// output: The box the shape spans.
 
-#include "../lib.dl"
+// find the shape
+.type Locate =
+    // the largest connected group of one color
+    Big {}
+    // every cell of the color with the fewest cells
+  | Rare {}
+    // every cell of the color that breaks into the fewest groups
+  | Intact {}
 
-.type Locate = Big {} | Rare {} | Intact {}
-.type Render = Keep {} | Crop {}
+// fill the box
+.type Render =
+    // the found cells keep their color, the rest of the box is bg
+    Keep {}
+    // the box carries the input through, noise included
+  | Crop {}
+
+// crosses what marks the shape with what its box carries
 .type Choice = [l: Locate, r: Render]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -34,10 +41,8 @@ grp.node(Col, P) :- ink(P, Col).
 
 .decl shape(p: Position, l: Locate)
 
-// $Rare and $Intact both take every cell of the color scoring lowest; they
-// differ in what the score counts.
-.init color_score = ArgExtremes<Locate, Color>
-shape(P, L) :- color_score.low(L, Col, _), ink(P, Col).
+.init bbox = Bbox<Locate>
+bbox.cell(L, P) :- shape(P, L).
 
 // --- $Big ---
 
@@ -46,28 +51,31 @@ biggest.item($U(), Id, P) :- grp.label(_, P, Id).
 
 shape(P, $Big()) :- biggest.mode($U(), Id), grp.label(_, P, Id).
 
+// --- $Rare, $Intact ---
+
+// Both take every cell of the color scoring lowest.
+.init color_score = ArgExtremes<Locate, Color>
+shape(P, L) :- color_score.low(L, Col, _), ink(P, Col).
+
 // --- $Rare ---
 
-.init color_size = Tally<Color, Position>
-color_size.item(Col, P) :- ink(P, Col).
-color_score.cand($Rare(), Col, N) :- color_size.tally(Col, N).
+.init cell_count = Tally<Color, Position>
+cell_count.item(Col, P) :- ink(P, Col).
+color_score.cand($Rare(), Col, N) :- cell_count.tally(Col, N).
 
 // --- $Intact ---
 
-.init piece_count = Tally<Color, Ident>
-piece_count.item(Col, Id) :- grp.label(Col, _, Id).
-color_score.cand($Intact(), Col, N) :- piece_count.tally(Col, N).
+.init group_count = Tally<Color, Ident>
+group_count.item(Col, Id) :- grp.label(Col, _, Id).
+color_score.cand($Intact(), Col, N) :- group_count.tally(Col, N).
 
-// --- The box the shape spans ---
-
-.init bbox = Bbox<Locate>
-bbox.cell(L, P) :- shape(P, L).
-
-.decl out(p: Position, col: Color, ch: Choice)
+// --- $Keep ---
 
 out(P_inner, Col, [L, $Keep()]) :-
     in(P_grid, _), bbox.box(L, B), crop(P_grid, B, P_inner),
     ( shape(P_grid, L), in(P_grid, Col)           // a shape cell keeps its color
     ; !shape(P_grid, L), params.bg(Col) ).        // the rest of the box is blank
+
+// --- $Crop ---
 
 out(P_inner, Col, [L, $Crop()]) :- in(P_grid, Col), bbox.box(L, B), crop(P_grid, B, P_inner).

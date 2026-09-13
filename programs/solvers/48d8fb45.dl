@@ -1,19 +1,22 @@
 // 48d8fb45
 // draft
-// concept: objects markers crop select
-// Several one-color shapes sit on a bg grid, and a mark cell sits just above
-// one of them. The output is a 3x3 crop holding that shape.
-//
-// $Object — the marked shape, drawn in its own bbox.
-// $Interior — the marked shape's box, with everything it contains.
-// $Window — a window stored at the mark, with everything it contains.
+// keywords: objects markers crop select
+// input: several one-color shapes sit on a bg grid, and a mark cell sits just
+//  above one of them.
+// output: the output is a 3x3 crop holding the marked shape.
 
-#include "../lib.dl"
+// where the crop's box comes from, and what it keeps inside it
+.type Choice =
+    // the marked shape, drawn in its own bbox
+    Object {}
+    // the marked shape's box, with everything it contains
+  | Interior {}
+    // a window stored at the mark, with everything it contains
+  | Window {}
 
-.type Choice = Object {} | Interior {} | Window {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
     .decl mark(col: Color) mark(5).
 
@@ -40,8 +43,6 @@ marked(P, Col) :-
 // The marked shape's box, and the grid seen from it.
 .init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- marked(P, _).
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- Object ---
 out(P_inner, Col, $Object()) :-

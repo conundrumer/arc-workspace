@@ -1,26 +1,31 @@
 // 31d5ba1a
-// concept: decompose lookup count
-// Layout: two 3×5 subgrids stacked.
-//
-// out's choice column = [d, b]:
-//
-//   d (decompose):
-//     $Table() — tabulated in the parameters
-//     $Count() — by tile count
-//     $Size()  — by tile size
-//
-//   b (combine):
-//     $Lookup() — a table keyed on the colors at the cell's tiles
-//     $Xor()    — filled where exactly one tile is non-bg
+// keywords: decompose lookup count
+// input: The input decomposes into two 3×5 tiles, stacked vertically.
+// output: Each output cell takes a color derived from the colors of the two
+//  tiles at that same cell.
 
-#include "../lib.dl"
+// how the grid decomposes into the two tiles
+.type DecChoice =
+    // tabulated in the parameters
+    Table {}
+    // by tile count
+  | Count {}
+    // by tile size
+  | Size {}
 
-.type DecChoice = Table {} | Count {} | Size {}
-.type Body      = Lookup {} | Xor {}
+// how the two tiles' colors combine into the output color
+.type Body =
+    // a table keyed on the colors at the cell's tiles
+    Lookup {}
+    // filled where exactly one tile is non-bg
+  | Xor {}
+
 .type Choice    = [d: DecChoice, b: Body]
 
 .type CombineMember = [p: Position, col: Color]
 .type CombineKey    = [p: Position, dc: DecChoice]
+
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
@@ -96,7 +101,6 @@ filled.domain([P_grid_out, Dc]) :- params.frame(P_grid_out), dec_choice(Dc).
 
 // --- Output ---
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col_out, [Dc, $Lookup()]) :-
     params.combine_out(Id, Col_out),
     combine_match.equals([P_grid_out, Dc], Id).     // cell's tiles == entry's members

@@ -1,26 +1,31 @@
 // 1acc24af
 // draft
-// concept: objects enclose cast d4 classify
-// A wall of params.wall spans the grid, with notches cut into the side the params.piece
-// components lie on. A piece turns params.mark when some placement of it covers a
-// whole notch and keeps all of its cells in the space a piece can reach.
-// Choice = [a, g] crosses the hypotheses:
-//
-//   a (the space a piece can reach):
-//     $Slide() — the wall-free cells connected to the open edge.
-//     $Drop()  — the cells with no wall between them and the open edge.
-//   g (how a piece may be turned):
-//     $Rot()   — rotations only.
-//     $Flip()  — all of D4.
-//
-// The pairs separate neither axis: both a cases reach the same cells in every
-// pair, and every piece that plugs does so by a rotation.
+// keywords: objects enclose cast d4 classify
+// input: A wall of params.wall spans the grid, with notches cut into the
+//  side the params.piece components lie on.
+// output: A piece turns params.mark when some placement of it covers a
+//  whole notch and keeps all of its cells in the space a piece can reach.
+//  Choice = [a, g] crosses the hypotheses. The pairs separate neither axis:
+//  both a cases reach the same cells in every pair, and every piece that
+//  plugs does so by a rotation.
 
-#include "../lib.dl"
+// the space a piece can reach
+.type Access =
+    // the wall-free cells connected to the open edge
+    Slide {}
+    // the cells with no wall between them and the open edge
+  | Drop {}
 
-.type Access = Slide {} | Drop {}
-.type Group  = Rot {} | Flip {}
+// how a piece may be turned
+.type Group =
+    // rotations only
+    Rot {}
+    // all of D4
+  | Flip {}
+
 .type Choice = [a: Access, g: Group]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl wall(col: Color) wall(1).
@@ -121,7 +126,6 @@ plugs(Id, A, G) :-
 .decl marked(p: Position, ch: Choice)
 marked(P, [A, G]) :- piece_cell(Id, P), plugs(Id, A, G).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, [A, G]) :-
     in(P, Col_in), access_choice(A), group_choice(G),
     ( marked(P, [A, G]), params.mark(Col)    // a piece that plugs a notch

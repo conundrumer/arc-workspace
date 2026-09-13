@@ -1,11 +1,11 @@
 // feca6190
-// concept: lines cast count
-// A single line of cells with scattered ink. The output is a square of
-// side (ink count) × (line length); the line seats flush at the corner
-// opposite params.sweep, and every seated cell casts a diagonal ray toward
-// params.sweep — the line sliding one step per row. Cells on no ray are bg.
+// keywords: lines cast count
+// output: A single line of cells with scattered ink. The output is a square of
+//  side (ink count) × (line length); the line seats flush at the corner
+//  opposite params.sweep, and every seated cell casts a diagonal ray toward
+//  params.sweep — the line sliding one step per row. Cells on no ray are bg.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -43,6 +43,5 @@ rays.dir($U(), D)  :- params.sweep(D).
 rays.cell($U(), P) :- frame.cell($U(), P).
 rays.mark($U(), P) :- seated(P, _).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- rays.ray($U(), P, _, _, Q), seated(Q, Col).
 out(P, Col) :- frame.cell($U(), P), !rays.ray($U(), P, _, _, _), params.bg(Col).

@@ -1,19 +1,21 @@
 // 29623171
 // draft
-// concept: decompose count
-// A separator lattice cuts the grid into an arrangement of equal square tiles,
-// which hold marks on bg. The tiles with the most marks fill solid in their
-// mark color; the rest clear to bg, and separators stay. Cases claim what
-// the lattice is read by:
-//   $Count  — the tile count.
-//   $Size — the tile size.
+// keywords: decompose count
+// input: A separator lattice cuts the grid into an arrangement of equal
+//  square tiles, which hold marks on bg.
+// output: The tiles with the most marks fill solid in their mark color; the
+//  rest clear to bg, and separators stay.
 
-#include "../lib.dl"
+// what the lattice is read by
+.type Choice =
+    // the tile count
+    Count {}
+    // the tile size
+  | Size {}
 
-.type Choice = Count {} | Size {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl gap(g: number) gap(1).
     .decl bg(col: Color) bg(0).
 
@@ -51,7 +53,6 @@ most.item(Ch, T, P_grid) :- mark(T, P_grid, _, Ch).
 .decl fill(p_tile: Position, col: Color, ch: Choice)
 fill(T, Col, Ch) :- most.mode(Ch, T), mark(T, _, Col, Ch).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_grid, Col, Ch) :-
     tile(P_grid, T, Ch),
     ( fill(T, Col, Ch)                       // a winning tile, filled solid

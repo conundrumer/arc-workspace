@@ -11,7 +11,7 @@ You review the open issues the brief lists, with the candidate fixes the check a
 - A tooling change that makes a report clearer or more relevant to the solver argues for a fix. A change fitted to one situation does not.
 - A doc wording change that only makes a rule more precise, with no rule drawn from one file, is a fix.
 - A fix is not an option when some reachable outcome of it violates a principle in `docs/wf-solver/principles.md`; the default on such an issue is drop. When the principle itself looks wrong, the call says so instead.
-- A fix that cites a draft solver is not an option.
+- A fix that cites a solver is judged by the editing note of `docs/wf-solver/principles.md`, and a citation of a draft solver takes the pending form that note gives.
 - A keyword addition or a gloss change is a proposal, tier 4.
 - A fix to a principle returns options beside the default: keep the change, amend the existing text, or leave the text; each with the wording it puts in the file, its consequence over approved solvers, and a witness where the readings differ.
 - Each reason for or against states its evidence, or the likelihood and what makes it real. Reversal of an earlier commit, growth of a file, and re-judgment of a shipped file are not reasons.

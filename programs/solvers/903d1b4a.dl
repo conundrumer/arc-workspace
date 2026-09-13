@@ -1,9 +1,14 @@
 // 903d1b4a
-// family: b8825c91
+// representative: b8825c91
 
-#include "../lib.dl"
+// which D4 elements can repair a corrupted cell
+.type Choice =
+    // any D4 image that lands on a clean cell repairs it
+    Full {}
+    // only a D4 element the clean cells hold as their own symmetry repairs it
+  | Detect {}
 
-.type Choice = Full {} | Detect {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .decl noise(col: Color) noise(3).
@@ -13,8 +18,6 @@
 
 .decl clean(p: Position, col: Color)
 clean(P, Col) :- in(P, Col), !params.noise(Col).
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- $Full ---
 

@@ -1,19 +1,22 @@
 // 3d6c6e23
 // draft
-// concept: lines count rank
-// Each line of pixels collapses into a pile on the floor: a triangle
-// centered on the line, one cell wider to each side per row, holding
-// exactly as many cells as the line has pixels. The pixels fill it in rank
-// order from the apex down, and the input pixels go to bg.
-//
-// Choice = the order the pixels fill in:
-//   $Fall() — the order they stand in the line, the topmost first.
-//   $Sink() — by color group, the largest group at the base; within a group
-//             the fall order stands.
+// keywords: lines count rank
+// output: Each line of pixels collapses into a pile on the floor: a triangle
+//  centered on the line, one cell wider to each side per row, holding exactly
+//  as many cells as the line has pixels. The pixels fill it in rank order from
+//  the apex down, and the input pixels go to bg.
 
-#include "../lib.dl"
+// the order the pixels fill in
+.type Choice =
+    // the order they stand in the line, the topmost first
+    Fall {}
+    // by color group, the largest group at the base; within a group the fall
+    // order stands
+  | Sink {}
 
-.type Choice = Fall {} | Sink {}
+// --- shared ---
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -98,9 +101,6 @@ fill.before([L, $Sink()], P1, P2) :-
     ; C1 = C2, above(L, P1, P2)                                    // within a group, the fall order
     ).
 
-// --- shared ---
-
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     lex.rank([L, S], P, R),                            // a pile cell, in fill order
     fill.rank([L, Ch], P_px, R), pixel(P_px, L, Col).  // the pixel of that rank

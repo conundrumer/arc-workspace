@@ -1,21 +1,21 @@
 // 35ab12c3
-// concept: markers cast move
-// Cells of one color are the corners of an outline. Each cell sights the
-// nearest same-color cell along each of the eight directions, and a sight
-// is drawn when the cell's other sights do not straddle it. Cases (the
-// pairs never separate them):
-//
-//   $Rays  — every cell draws each of its own unstraddled sights.
-//   $Joins — a line is drawn when it is unstraddled at both of its ends.
-//
-// A color of a single cell draws no outline. That lone mark touches a cell
-// of another color, and it restates that color's whole outline, shifted by
-// the step between the two cells. The shifted copy paints only where nothing
-// is drawn.
+// keywords: markers cast move
+// input: Cells of one color are the corners of an outline.
+// output: Each cell sights the nearest same-color cell along each of the
+//  eight directions, and a sight is drawn when the cell's other sights do
+//  not straddle it. A color of a single cell draws no outline. That lone
+//  mark touches a cell of another color, and it restates that color's whole
+//  outline, shifted by the step between the two cells. The shifted copy
+//  paints only where nothing is drawn.
 
-#include "../lib.dl"
+// which sights draw a line, which the pairs never separate
+.type Choice =
+    // every cell draws each of its own unstraddled sights
+    Rays {}
+    // a line is drawn when it is unstraddled at both of its ends
+  | Joins {}
 
-.type Choice = Rays {} | Joins {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -82,7 +82,6 @@ shadow(P_grid, Col, Ch) :-
     shape(Base, P, Ch), compose(P, V, P_grid),     // that color's outline, shifted
     in(P_grid, _), !shape(_, P_grid, Ch).          // onto free grid
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- shape(Col, P, Ch).
 out(P, Col, Ch) :- shadow(P, Col, Ch).
 out(P, Col, Ch) :-

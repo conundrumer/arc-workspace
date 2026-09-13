@@ -1,16 +1,18 @@
 // 8e301a54
 // draft
-// concept: objects count move
-// Shapes of several colors lie on params.bg. Each shape moves toward
-// params.move_dir by as many cells as it has, and the cells that leave the
-// frame are lost. Cases differ in what a shape is:
-//
-//   $Hue()    — every cell of one color
-//   $Object() — a connected component of non-bg cells, whatever their colors
+// keywords: objects count move
+// output: Shapes of several colors lie on params.bg. Each shape moves toward
+//  params.move_dir by as many cells as it has, and the cells that leave the
+//  frame are lost. Cases differ in what a shape is:
 
-#include "../lib.dl"
+// what a shape is
+.type Choice =
+    // every cell of one color
+    Hue {}
+    // a connected component of non-bg cells, whatever their colors
+  | Object {}
 
-.type Choice = Hue {} | Object {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(7).
@@ -53,7 +55,6 @@ shape_cell(P, N, $Object()) :- objects.label($U(), P, Id), object_size.tally(Id,
 landed(Q, Col, Ch) :-
     shape_cell(P, N, Ch), ink(P, Col), params.move_dir(D), jump(P, D, N, Q).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     in(P, _), impl_choice(Ch),
     ( landed(P, Col, Ch)

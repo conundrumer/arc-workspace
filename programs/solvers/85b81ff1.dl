@@ -1,28 +1,31 @@
 // 85b81ff1
 // draft
-// concept: decompose lines objects count rank move
-// Comb panels stand side by side across one-cell bg gaps: a solid spine
-// column and a tooth column with some teeth missing. The output reorders
-// the panels by ink count, the least-inked at params.least_dir; the gaps
-// stay.
-//
-//   $Tile(d)  — equal tiles across a bg gap, ranked by ink and permuted.
-//     d = $Count() — by tile count
-//     d = $Size()  — by tile size
-//   $Lines    — the lines holding both ink and bg, ranked by ink and
-//               permuted among their own places.
-//   $Objects  — the connected ink objects, ranked by size; each moves into
-//               the bounding box of the object at its rank's place.
+// keywords: decompose lines objects count rank move
+// output: Each case finds a set of units and ranks them by ink, ascending.
+//  It then permutes them along params.axis so the unit of rank R sits R
+//  places from params.least_dir, the least-inked unit closest to that edge.
 
-#include "../lib.dl"
+// which decomposition splits the gap
+.type DecChoice =
+    // split by a fixed tile count
+    Count {}
+    // split by a fixed tile size
+  | Size {}
 
-.type DecChoice = Count {} | Size {}
-.type Choice = Tile {d: DecChoice} | Lines {} | Objects {}
+// which kind of unit is reordered, and how
+.type Choice =
+    // equal tiles across a bg gap, ranked by ink and permuted
+    Tile {d: DecChoice}
+    // lines holding both ink and bg, ranked by ink and permuted among their own places
+  | Lines {}
+    // connected ink objects, ranked by size, each moved into the bounding box of the object at its rank's place
+  | Objects {}
 
 .type TileKey = [t: Position, d: DecChoice]
 
+.decl out(p: Position, col: Color, c: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
 
     // The edge the least-inked unit sits at.
@@ -46,8 +49,6 @@
 
 .decl ink(p: Position)
 ink(P) :- in(P, Col), !params.bg(Col).
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- Tile ---
 

@@ -1,10 +1,11 @@
 // 626c0bcc
 // draft
-// concept: pack lookup
-// The input holds a region of ink. That region admits one partition into the
-// stored pieces, and each piece paints its cells the color it is stored under.
+// keywords: pack lookup
+// input: The input holds a region of ink.
+// output: That region admits one partition into the stored pieces, and each
+//  piece paints its cells the color it is stored under.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl ink(col: Color) ink(8).
@@ -57,7 +58,6 @@ fill.cand($U(), [P, Col, P_spot], P) :- covers(Col, P_spot, P).
 fill.conflict($U(), [P, Col, P_spot], [P2, Col2, P_spot2]) :-
     covers(Col, P_spot, P), covers(Col2, P_spot2, P2), clash(Col, P_spot, Col2, P_spot2).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- fill.alive($U(), [P, Col, _], P).
 out(P, Col) :- in(P, Col), !params.ink(Col).
 

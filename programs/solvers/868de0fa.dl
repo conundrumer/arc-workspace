@@ -1,22 +1,23 @@
 // 868de0fa
 // draft
-// concept: objects border enclose parity
-// Square outlines drawn in one ink color. Each outline's hole fills by the
-// parity of the outline's side: an odd side gives a hole with a center cell,
-// which takes odd_fill; an even side gives a hole with none, which takes
-// even_fill.
-//
-// $Rect — an outline is a rectangle drawn by four ink runs, and its hole is
-//   what the rectangle holds strictly within its edges.
-// $Enclose — an outline is any ink wall, and its hole is the region that wall
-//   cuts off from the grid edge.
+// keywords: objects border enclose parity
+// input: square outlines drawn in one ink color
+// output: each outline's hole fills by the parity of the outline's side: an
+//  odd side gives a hole with a center cell, which takes odd_fill; an even
+//  side gives a hole with none, which takes even_fill
 
-#include "../lib.dl"
+// how an outline and its hole are found
+.type Choice =
+    // an outline is a rectangle drawn by four ink runs, and its hole is what
+    // the rectangle holds strictly within its edges
+    Rect {}
+    // an outline is any ink wall, and its hole is the region that wall cuts off
+    // from the grid edge
+  | Enclose {}
 
-.type Choice = Rect {} | Enclose {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl ink(col: Color) ink(1).
 
     .decl odd_fill(col: Color) odd_fill(7).
@@ -75,6 +76,5 @@ fill(P, Col, $Enclose()) :-
     ; !region_odd(Id), params.even_fill(Col)
     ).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- fill(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !fill(P, _, Ch).

@@ -1,18 +1,20 @@
 // ca8de6ea
-// concept: lookup walk
-// 5×5 X-pattern collapsed to dense 3×3. The X has three rings about the
-// center: outer corners, inner X cells, center. Two models:
-//
-//   $LabeledGrids — the collapse as data: in/out label grids paired by
-//                   shared label
-//   $Cycle        — the collapse composed: each X-arm cell maps to the
-//                   ring cell at its own diagonal on the output's 8-cell
-//                   SENSE_CW cycle, advanced by a per-ring shift (corner ring 0,
-//                   inner ring +1 — the 45° twist as one successor step)
+// keywords: lookup walk
+// input: a 5×5 X-pattern, with three rings about the center: outer
+//  corners, inner X cells, center
+// output: the pattern collapses to a dense 3×3 grid
 
-#include "../lib.dl"
+// how the collapse is derived
+.type Choice =
+    // the collapse as data: in/out label grids paired by shared label
+    LabeledGrids {}
+    // the collapse composed: each X-arm cell maps to the ring cell at its own
+    // diagonal on the output's 8-cell SENSE_CW cycle, advanced by a per-ring
+    // shift (corner ring 0, inner ring +1 — the 45° twist as one successor
+    // step)
+  | Cycle {}
 
-.type Choice = LabeledGrids {} | Cycle {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     // --- LabeledGrids data ---
@@ -92,7 +94,6 @@ perm(P_in, P_out, $Cycle()) :-
     in(P_in, _), centered(P_in),   // the center, the rotation's fixed point
     params.out_center(P_out).      // maps to the output center
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col, Impl) :-
     impl_choice(Impl), in(P_grid_in, Col),   // choice × input cell
     perm(P_grid_in, P_grid_out, Impl).       // the cell's image

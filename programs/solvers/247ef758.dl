@@ -1,22 +1,22 @@
 // 247ef758
 // draft
-// concept: decompose objects markers cross stamp
-//
-// A separator line cuts the grid into a legend and a bordered frame. The
-// legend holds one shape per color; the frame's border carries marks off its
-// own ground color, each marking the line it sits on. A shape whose color
-// marks lines of both axes is stamped, centered, at every crossing of its
-// lines. Where two shapes land on one cell, the one listed earlier in the
-// legend keeps it. Two models of which shapes the legend loses:
-//
-//   $Stamped — the shapes that go somewhere: a shape with a crossing.
-//   $Marked  — the shapes the border calls: a shape whose color is marked at
-//              all, so a color marked on one axis alone leaves and lands
-//              nowhere.
+// keywords: decompose objects markers cross stamp
+// input: A separator line cuts the grid into a legend and a bordered
+//  frame. The legend holds one shape per color; the frame's border carries
+//  marks off its own ground color, each marking the line it sits on.
+// output: A shape whose color marks lines of both axes is stamped,
+//  centered, at every crossing of its lines. Where two shapes land on one
+//  cell, the one listed earlier in the legend keeps it.
 
-#include "../lib.dl"
+// which shapes the legend loses
+.type Choice =
+    // the shapes that go somewhere: a shape with a crossing
+    Stamped {}
+    // the shapes the border calls: a shape whose color is marked at all, so a
+    // color marked on one axis alone leaves and lands nowhere
+  | Marked {}
 
-.type Choice = Stamped {} | Marked {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // An empty cell, in the legend and in the frame alike.
@@ -128,7 +128,6 @@ erased(P, $Marked()) :- shape_cell(Col, P), header(_, _, Col).
 .decl impl_choice(ch: Choice)
 impl_choice($Stamped()). impl_choice($Marked()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col), !hidden(P, Col), impl_choice(Ch).
 out(P, Col, Ch) :- erased(P, Ch), params.bg(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !erased(P, Ch), !paint(P, _).

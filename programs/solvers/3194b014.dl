@@ -1,17 +1,20 @@
 // 3194b014
 // draft
-// concept: objects count
-// Shapes of solid color sit on a field of bg and scattered noise. The output
-// is a 3×3 swatch of the biggest shape's color. Choice = what "biggest"
-// measures:
-//
-//   $Cells() — the cells the shape occupies.
-//   $Span()  — the cells its bounding box covers.
+// keywords: objects count
+// input: Non-bg cells form connected components: shapes of solid color, and
+//  scattered noise.
+// output: The output is a 3×3 swatch of the color of the biggest component.
 
-#include "../lib.dl"
+// what "biggest" measures
+.type Choice =
+    // the cells the shape occupies
+    Cells {}
+    // the cells its bounding box covers
+  | Span {}
 
-.type Choice = Cells {} | Span {}
 .type Comp = [col: Color, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
@@ -34,7 +37,6 @@ comp_cell([Col, Id], P) :- comps.label(Col, P, Id).
 
 .init biggest = Mode<Choice, Comp, Position>
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- biggest.mode(Ch, [Col, _]), params.out_pos(P).
 
 // --- $Cells ---

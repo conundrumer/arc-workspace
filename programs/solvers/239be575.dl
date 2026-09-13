@@ -1,24 +1,30 @@
 // 239be575
 // draft
-// concept: objects classify lookup
-// Two blocks of params.mark sit among scattered params.link cells. The mark
-// and link cells form one graph, and the 1×1 output reports whether every
-// mark cell lies in a single connected component of it. Nothing reads the
-// 2×2 block shape.
-// Choice = [a, r] crosses two choice points:
-//
-//   a (what an edge is):
-//     $Orth() — cardinal adjacency.
-//     $Diag() — cardinal or diagonal adjacency.
-//   r (how the verdict renders):
-//     $Wire()  — joined shows the link color, apart shows bg.
-//     $Table() — a stored color per verdict.
+// keywords: objects classify lookup
+// input: Two blocks of params.mark sit among scattered params.link cells;
+//  the mark and link cells form one graph.
+// output: The 1×1 output reports whether every mark cell lies in a single
+//  connected component of that graph. Nothing reads the 2×2 block shape.
+// review principle: docs/wf-solver/open/peer-priors.md
 
-#include "../lib.dl"
+// what an edge is
+.type Adj =
+    // cardinal adjacency
+    Orth {}
+    // cardinal or diagonal adjacency
+  | Diag {}
 
-.type Adj    = Orth {} | Diag {}
-.type Render = Wire {} | Table {}
+// how the verdict renders
+.type Render =
+    // joined shows the link color, apart shows bg
+    Wire {}
+    // a stored color per verdict
+  | Table {}
+
+// what counts as an edge, crossed with how the verdict renders
 .type Choice = [a: Adj, r: Render]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl mark(c: Color) mark(2).
@@ -64,8 +70,6 @@ apart($Orth()) :- mark_cell(P), mark_cell(Q), !orth.conn($U(), P, Q).
 diag.node($U(), P) :- node(P).
 
 apart($Diag()) :- mark_cell(P), mark_cell(Q), !diag.conn($U(), P, Q).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // --- $Wire ---
 out(ZERO, Col, [A, $Wire()]) :- joined(A), params.link(Col).

@@ -1,10 +1,10 @@
 // 85c4e7cd
-// concept: permutation
-// Concentric square rings, one color per ring. Output reverses the ring
-// colors: each ring takes the color of the ring as deep from the center
-// as it is from the border.
+// keywords: permutation
+// input: the grid decomposes into concentric square rings, one color per ring
+// output: each ring takes the color of the ring as deep from the center as it
+//  is from the border
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     // No task data — siblings vary only the input.
@@ -22,7 +22,6 @@ rings.idx_set($U(), K) :- peel.depth($U(), _, K).
 .decl ring_color(k: number, col: Color)
 ring_color(K, Col) :- peel.depth($U(), P, K), in(P, Col).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     peel.depth($U(), P, K), rings.rank($U(), K, R),   // rings outside this one
     rings.rank_desc($U(), K2, R),                     // the ring as deep from the center

@@ -1,21 +1,24 @@
 // 5b526a93
 // draft
-// concept: objects cross stamp lookup border
-// Hollow squares stand on background. Each square's placement lies on one
-// line per axis, and a square sits at some of the crossings of those lines.
-// Every crossing carries a square, and a crossing cell still holding
-// background takes params.fill. Choice = what a crossing carries:
-//
-//   $Lookup()  — the stored params.footprint cells.
-//   $Copy()    — the cells the squares themselves fill.
-//   $Outline() — the edge cells of the crossing's own box.
+// keywords: objects cross stamp lookup border
+// input: Hollow squares stand on background. Each square's placement lies on
+//  one line per axis, and a square sits at some of the crossings of those
+//  lines.
+// output: Every crossing carries a square, and a crossing cell still holding
+//  background takes params.fill.
 
-#include "../lib.dl"
+// what a crossing carries
+.type Choice =
+    // the stored params.footprint cells
+    Lookup {}
+    // the cells the squares themselves fill
+  | Copy {}
+    // the edge cells of the crossing's own box
+  | Outline {}
 
-.type Choice = Lookup {} | Copy {} | Outline {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
     .decl fill(col: Color) fill(8).
 
@@ -69,7 +72,6 @@ covered(P, $Outline()) :- site(S), in(P, _), box_edge(P, S, _).
 .decl stamp(p: Position, ch: Choice)
 stamp(P, Ch) :- covered(P, Ch), in(P, Col), params.bg(Col).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- stamp(P, Ch), params.fill(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !stamp(P, Ch).
 

@@ -1,23 +1,22 @@
 // 2601afb7
 // draft
-// concept: lines permutation move count
-// Bars stand in a row, each filling part of one line. Every bar takes
-// the color of the bar behind it and the reach of the bar ahead of it, both
-// steps wrapping around the row.
-//
-// Two hypotheses on what the bar ahead hands over:
-//   $Move   — its cells, which move onto this line and keep their place along
-//             the line.
-//   $Length — its cell count, and the new bar is drawn that long from the edge
-//             the bars stand on.
+// keywords: lines permutation move count
+// input: Bars stand in a row, each filling part of one line.
+// output: Every bar takes the color of the bar behind it and the reach of the
+//  bar ahead of it, both steps wrapping around the row. Two hypotheses on
+//  what the bar ahead hands over:
 
-#include "../lib.dl"
+// what the bar ahead hands over
+.type Choice =
+    // its cells, which move onto this line and keep their place along the line
+    Move {}
+    // its cell count, and the new bar is drawn that long from the edge the bars
+    // stand on
+  | Length {}
 
-.type Choice = Move {} | Length {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
-
     .decl bg(col: Color) bg(7).
 
     // The direction colors travel; the bars are ordered along its axis, and
@@ -83,7 +82,6 @@ parse.dir($U(), D) :- params.color_dir(D).
 .decl impl_choice(ch: Choice)
 impl_choice($Move()). impl_choice($Length()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 // Each bar is painted the color of the bar behind it.
 out(P, Col, Ch) :-
     ink(L, P, Ch),

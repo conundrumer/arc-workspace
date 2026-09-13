@@ -1,19 +1,31 @@
 // 4e7e0eb9
 // draft
-// concept: decompose d4 select count
-// The grid lays square sections out in a lattice, a separator between
-// them. Inside its border, a section's field is quartered by its two
-// halving lines: four blocks, one solid color each. A halving line inked
-// end to end is a divider, and the blocks mirror across it. A section with
-// no divider takes one color over all four blocks.
-//
-// Cases (that color):
-//   $Blank  — the color of the blocks that are not params.blank.
-//   $Rarest — the color the fewest blocks carry.
+// keywords: decompose d4 select count
+// input: The grid lays square sections out in a lattice, a separator between
+//  them. Inside its border, a section's field is quartered by its two halving
+//  lines: four blocks, one solid color each. Ink may sit on a halving line.
+// output: The blocks mirror across each halving line that is a divider. A
+//  section with no divider takes one color over all four blocks.
+// review principle: docs/wf-solver/open/peer-priors.md
 
-#include "../lib.dl"
+// which halving lines are dividers
+.type Ink =
+    // a line inked end to end
+    Whole {}
+    // a line carrying any ink
+  | Any {}
 
-.type Choice = Blank {} | Rarest {}
+// the color an undivided section takes
+.type Fill =
+    // the color of the blocks that are not params.blank
+    Blank {}
+    // the color the fewest blocks carry
+  | Rarest {}
+
+// the divider test crossed with the undivided fill
+.type Choice = [i: Ink, f: Fill]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -59,58 +71,76 @@ block_col(P_sec, Blk, Col) :- block_cell(P_grid, P_sec, Blk), in(P_grid, Col).
 
 // --- dividers ---
 
-// A bg cell on the line halving the field on axis a.
+// A cell of the line halving the field on axis a.
+.decl mid_cell(p_grid: Position, p_sec: Position, p_field: Position, a: Axis)
+mid_cell(P_grid, P_sec, P_field, A) :-
+    field_cell(P_grid, P_sec, P_field), dist_pair(P_field, D, K, K), axis_of(D, A).
+
+.decl ink_choice(i: Ink)
+ink_choice($Whole()). ink_choice($Any()).
+
+.decl divider(p_sec: Position, a: Axis, i: Ink)
+
+// --- $Whole ---
+
 .decl mid_bg(p_sec: Position, a: Axis)
-mid_bg(P_sec, A) :-
-    field_cell(P_grid, P_sec, P_field), in(P_grid, Col), params.bg(Col),  // a bg cell
-    dist_pair(P_field, D, K, K), axis_of(D, A).                           // centered on axis a
+mid_bg(P_sec, A) :- mid_cell(P_grid, P_sec, _, A), in(P_grid, Col), params.bg(Col).
 
-// A halving line inked end to end.
-.decl divider(p_sec: Position, a: Axis)
-divider(P_sec, A) :- section_cell(_, P_sec, _), axis_elem(A), !mid_bg(P_sec, A).
+// No bg cell on the line.
+divider(P_sec, A, $Whole()) :- section_cell(_, P_sec, _), axis_elem(A), !mid_bg(P_sec, A).
 
-.decl divided(p_sec: Position)
-divided(P_sec) :- divider(P_sec, _).
+// --- $Any ---
+
+// An inked cell on the line, away from where the two lines cross. The
+// crossing cell lies on both lines, so it tells neither of them apart.
+divider(P_sec, A, $Any()) :-
+    mid_cell(P_grid, P_sec, P_field, A), !centered(P_field),
+    in(P_grid, Col), !params.bg(Col).
 
 // --- mirroring ---
 
+.decl divided(p_sec: Position, i: Ink)
+divided(P_sec, I) :- divider(P_sec, _, I).
+
 // Where a side of the field goes: the far side across a divider, itself
 // where the line halving its axis is not one.
-.decl side_img(p_sec: Position, d: Dir, d_img: Dir)
-side_img(P_sec, D, E) :-
-    section_cell(_, P_sec, _), axis_of(D, A),
-    ( divider(P_sec, A), opposite(D, E)   // across the divider
-    ; !divider(P_sec, A), E = D           // no divider on this axis
+.decl side_img(p_sec: Position, d: Dir, d_img: Dir, i: Ink)
+side_img(P_sec, D, E, I) :-
+    section_cell(_, P_sec, _), axis_of(D, A), ink_choice(I),
+    ( divider(P_sec, A, I), opposite(D, E)   // across the divider
+    ; !divider(P_sec, A, I), E = D           // no divider on this axis
     ).
 
 // A block is a corner of the field, so its image is the corner its two
 // sides go to.
-.decl block_img(p_sec: Position, blk: DiagDir, img: DiagDir)
-block_img(P_sec, Blk, Img) :-
+.decl block_img(p_sec: Position, blk: DiagDir, img: DiagDir, i: Ink)
+block_img(P_sec, Blk, Img, I) :-
     diag_dirs(Blk, A, D1, D2),
-    side_img(P_sec, D1, E1), side_img(P_sec, D2, E2),
+    side_img(P_sec, D1, E1, I), side_img(P_sec, D2, E2, I),
     diag_dirs(Img, A, E1, E2).
 
-.decl impl_choice(ch: Choice)
-impl_choice($Blank()). impl_choice($Rarest()).
+.decl fill_choice(f: Fill)
+fill_choice($Blank()). fill_choice($Rarest()).
 
 // The color a section with no divider takes over all its blocks.
-.decl fill(p_sec: Position, col: Color, ch: Choice)
+.decl fill(p_sec: Position, col: Color, f: Fill)
 
-.decl out(p: Position, col: Color, ch: Choice)
-out(P_grid, Col, Ch) :-
-    block_cell(P_grid, P_sec, Blk), divided(P_sec),          // a divided section's block
-    block_img(P_sec, Blk, Img), block_col(P_sec, Img, Col),  // takes its image's color
-    impl_choice(Ch).
-out(P_grid, Col, Ch) :- block_cell(P_grid, P_sec, _), !divided(P_sec), fill(P_sec, Col, Ch).
-out(P_grid, Col, Ch) :- in(P_grid, Col), !block_cell(P_grid, _, _), impl_choice(Ch).
+out(P_grid, Col, [I, F]) :-
+    block_cell(P_grid, P_sec, Blk), divided(P_sec, I),             // a divided section's block
+    block_img(P_sec, Blk, Img, I), block_col(P_sec, Img, Col),     // takes its image's color
+    fill_choice(F).
+out(P_grid, Col, [I, F]) :-
+    block_cell(P_grid, P_sec, _), ink_choice(I), !divided(P_sec, I), fill(P_sec, Col, F).
+out(P_grid, Col, [I, F]) :-
+    in(P_grid, Col), !block_cell(P_grid, _, _), ink_choice(I), fill_choice(F).
 
 // --- $Blank ---
 
-.init ink = Unanimous<Position, Color>
-ink.item(P_sec, Col) :- block_col(P_sec, _, Col), !params.blank(Col).
+// The one color the blocks other than params.blank carry.
+.init unblank = Unanimous<Position, Color>
+unblank.item(P_sec, Col) :- block_col(P_sec, _, Col), !params.blank(Col).
 
-fill(P_sec, Col, $Blank()) :- ink.value(P_sec, Col).
+fill(P_sec, Col, $Blank()) :- unblank.value(P_sec, Col).
 
 // --- $Rarest ---
 

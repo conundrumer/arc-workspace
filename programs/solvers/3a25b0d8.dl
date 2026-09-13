@@ -1,24 +1,24 @@
 // 3a25b0d8
 // draft
-// concept: objects crop symmetry enclose rank
-// shape: percept-shadow
-// Two figures of walls, each closing off a set of holes. One figure is drawn
-// in the wall color alone; the other has its holes painted. The output is the
-// plain figure, cropped to its box, each hole painted the color of the hole
-// that answers to it.
-//
-// The figures are not the same drawing: their walls run differently and their
-// holes have different shapes, so holes answer to each other by place. A hole
-// lies to one side of a midline or across it, which is its class; within a
-// class the holes follow one another along the axis the midline runs. Class
-// and rank pair the two figures' holes one to one.
-//
-// $Stored reads the midline's axis from the parameters; $Mirror takes it from the
-// axis a figure folds onto itself across.
+// keywords: objects crop symmetry enclose rank percept-shadow
+// input: Two figures of walls, each closing off a set of holes. One figure is
+//  drawn in the wall color alone; the other has its holes painted. The two
+//  figures are drawn differently, so their holes answer to each other by
+//  place, not by shape.
+// output: The plain figure, cropped to its box, each hole painted the color of
+//  the hole that answers to it. A hole lies to one side of a midline or across
+//  it, which is its class; within a class the holes follow one another along
+//  the axis the midline runs. Class and rank pair the two figures' holes one
+//  to one.
 
-#include "../lib.dl"
+// where the midline's axis comes from
+.type Choice =
+    // reads the axis from the parameters
+    Stored {}
+    // takes the axis a figure folds onto itself across
+  | Mirror {}
 
-.type Choice = Stored {} | Mirror {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // --- Stored ---
@@ -53,7 +53,7 @@ plain(F, Col) :- fig_col.value(F, Col).
 .decl wall_cell(f: Ident, p: Position)
 wall_cell(F, P) :- fig(F, P), in(P, Col), plain(_, Col).
 
-// A figure's own bbox, and the cells it covers in that figure's own frame.
+// A figure's box, and the grid cells it holds, in that box's own frame.
 .init bbox = Bbox<Ident>
 bbox.cell(F, P) :- fig(F, P).
 
@@ -70,8 +70,8 @@ hole(F, R) :- closed.region(F, _, R).
 .decl hole_inner(r: Ident, p_inner: Position)
 hole_inner(R, P_inner) :- closed.region(F, P, R), fig_inner(F, P, P_inner).
 
-// The axis the midline inverts, one hypothesis per case. A hole's class is its
-// side on that axis, and its rank runs along the perpendicular.
+// The axis the midline inverts. A hole's class is its side on that axis, and
+// its rank runs along the perpendicular.
 .decl class_axis(ch: Choice, a: Axis)
 
 // --- Stored ---
@@ -104,19 +104,13 @@ off_side(A, R, D) :-
 .decl side(a: Axis, r: Ident, d: Dir)
 side(A, R, D) :- hole(_, R), class_dir(A, D), !off_side(A, R, D).
 
-// Holes of one class hold the same sides. A hole across the midline holds
+// Holes of one class hold the same side. A hole across the midline holds
 // neither, and those are one class too.
-.type HoleClass = [a: Axis, r: Ident]
-
-.init sides = KeyedSetCompare<HoleClass, HoleClass, Dir>
-sides.pattern_member([A, R], D) :- side(A, R, D).
-sides.observed_member(Ky, D) :- sides.pattern_member(Ky, D).
-
 .decl same_class(a: Axis, r: Ident, r2: Ident)
 same_class(A, R, R2) :-
     class_axis(_, A), hole(_, R), hole(_, R2),
-    ( sides.equals([A, R], [A, R2])
-    ; !side(A, R, _), !side(A, R2, _)    // or neither, which equals does not compare
+    ( side(A, R, D), side(A, R2, D)      // the same side
+    ; !side(A, R, _), !side(A, R2, _)    // or neither
     ).
 
 // How far toward an edge of the box a hole reaches.
@@ -146,7 +140,6 @@ partner(A, R, R_src) :-
 .init hole_col = Unanimous<Ident, Color>
 hole_col.item(R, Col) :- closed.region(_, P, R), in(P, Col).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_inner, Col, Ch) :-
     class_axis(Ch, A),                                     // the case's midline axis
     plain(F, C_wall), fig_inner(F, P, P_inner),            // a cell of the plain figure's box

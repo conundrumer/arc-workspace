@@ -1,25 +1,27 @@
 // 84ba50d3
 // draft
-// concept: objects lines move rank
-// A full line of params.divider crosses the grid, and shapes of params.shape
-// sit on one side of it. Each shape falls toward params.fall_dir. A shape's
-// rows are its lines across the fall; a wide row holds more than one cell.
-// The divider stops a shape by one of its rows: that row comes to rest
-// against the divider, and the rest of the shape stays with it, on or past
-// the divider. A shape the divider does not stop falls to the far edge. A
-// divider cell that a shape cell lands beyond is erased.
-//
-//   $Widest — the divider stops a shape by its widest row, when that row is
-//             unique and wide.
-//   $Sieve  — the divider stops every wide row, so the shape rests on its
-//             wide row nearest the divider.
+// keywords: objects lines move rank
+// input: A full line of params.divider crosses the grid, and shapes of
+//  params.shape sit on one side of it.
+// output: Each shape falls toward params.fall_dir. A shape's rows are its
+//  lines across the fall; a wide row holds more than one cell. The divider
+//  stops a shape by one of its rows: that row comes to rest against the
+//  divider, and the rest of the shape stays with it, on or past the divider.
+//  A shape the divider does not stop falls to the far edge. A divider cell
+//  that a shape cell lands beyond is erased.
 
-#include "../lib.dl"
+// which row of a shape the divider stops it by
+.type Choice =
+    // the divider stops a shape by its widest row, when that row is unique and
+    // wide
+    Widest {}
+    // the divider stops every wide row, so the shape rests on its wide row
+    // nearest the divider
+  | Sieve {}
 
-.type Choice = Widest {} | Sieve {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(8).
     .decl shape(col: Color) shape(1).
     .decl divider(col: Color) divider(2).
@@ -136,7 +138,6 @@ pierced(P, Ch) :-
 .decl standing(p: Position, ch: Choice)
 standing(P, Ch) :- divider_cell(P), impl_choice(Ch), !pierced(P, Ch).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     in(P, _), impl_choice(Ch),
     ( landed(P, Ch), params.shape(Col)                       // a shape lands here

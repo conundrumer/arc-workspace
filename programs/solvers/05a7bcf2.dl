@@ -1,18 +1,21 @@
 // 05a7bcf2
-// concept: lines cast move
-// Two full lines cross the grid: a bare wall line of params.wall, and a line of
-// params.push carrying a ragged profile on its wall-facing side. Shapes of params.shape
-// sit on the wall's other side. Every line running across the walls that holds
-// a shape cell is rebuilt: the shape's cells take params.mark, params.shape casts from
-// there to the wall, and params.wall fills on to the far edge, with the push
-// structure resting against that edge. Two models of how it gets there:
-//
-//   $Slide — it moves as one body.
-//   $Pack  — each line's push cells fall and stack.
+// keywords: lines cast move
+// input: two full lines cross the grid: a bare wall line of params.wall, and
+//  a line of params.push carrying a ragged profile on its wall-facing side.
+//  Shapes of params.shape sit on the wall's other side.
+// output: every line running across the walls that holds a shape cell is
+//  rebuilt: the shape's cells take params.mark, params.shape casts from
+//  there to the wall, and params.wall fills on to the far edge, with the
+//  push structure resting against that edge.
 
-#include "../lib.dl"
+// Two models of how it gets there
+.type Choice =
+    // it moves as one body
+    Slide {}
+    // each line's push cells fall and stack
+  | Pack {}
 
-.type Choice = Slide {} | Pack {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .decl wall(col: Color) wall(8).
@@ -97,7 +100,6 @@ fall.idx_set(P_line, K) :- push_cell(P), place(P, P_line, K).
 // A push cell with R of its line's push cells nearer the edge lands R from it.
 placed(P2, $Pack()) :- fall.rank(P_line, K, R), place(P2, P_line, R).
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P, Col, Ch) :- in(P, Col), short(P), impl_choice(Ch).
 out(P, Col, Ch) :- shape_cell(P), params.mark(Col), impl_choice(Ch).
 out(P, Col, Ch) :- gap(P), params.shape(Col), impl_choice(Ch).

@@ -1,28 +1,33 @@
 // 25c199f5
 // draft
-// concept: decompose move
-// Dividers cut the input into panels, each holding one shape on
-// background. The shapes pile up line by line in one panel-sized frame,
-// settling against the edge of params.order_corner: the panel nearest that
-// corner stacks first, and each line keeps the cells it had in its panel.
-//
-// out's choice column = [d, l]:
-//
-//   d (find the panels):
-//     $Count()  — by tile count
-//     $Size() — by tile size
-//   l (which lines a panel contributes):
-//     $Rows()  — the lines it inks, so a blank line inside a shape closes up
-//     $Bands() — every line the shape spans, blank ones included
+// keywords: decompose move
+// input: Dividers cut the input into panels, each holding one shape on
+//  background.
+// output: The shapes pile up line by line in one panel-sized frame,
+//  settling against the edge of params.order_corner: the panel nearest
+//  that corner stacks first, and each line keeps the cells it had in its
+//  panel.
 
-#include "../lib.dl"
+// how the panels are found
+.type DecChoice =
+    // by tile count
+    Count {}
+    // by tile size
+  | Size {}
 
-.type DecChoice = Count {} | Size {}
-.type Lines     = Rows {} | Bands {}
-.type Choice    = [d: DecChoice, l: Lines]
+// which lines a panel contributes
+.type Lines =
+    // the lines it inks, so a blank line inside a shape closes up
+    Rows {}
+    // every line the shape spans, blank ones included
+  | Bands {}
+
+// how the panels are found, crossed with which lines a panel contributes
+.type Choice = [d: DecChoice, l: Lines]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(7).
 
     // The panels lie along order_axis, one divider between them.
@@ -119,7 +124,6 @@ moved(P_grid_out, Col, [Dc, L]) :-
 lines_choice($Rows()).
 lines_choice($Bands()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, [Dc, L]) :-
     out_cell(P, Dc), lines_choice(L),
     ( moved(P, Col, [Dc, L])                        // a line landed here

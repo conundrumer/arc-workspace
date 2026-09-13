@@ -1,19 +1,21 @@
 // 7bb29440
 // draft
-// concept: objects crop count rank select
-// Solid blocks of params.body sit apart on params.bg, each with a few cells of
-// other colors. The block with the fewest such cells is kept, cropped to its
-// bounding box. The cases differ on what counts as one of those cells:
-//
-//   $Marks — a cell of a stored mark color, params.mark.
-//   $Body  — any cell that is not params.body.
+// keywords: objects crop count rank select
+// input: solid blocks of params.body that sit apart on params.bg, each with a
+//  few cells of other colors
+// output: The block with the fewest such cells is kept, cropped to its
+//  bounding box.
 
-#include "../lib.dl"
+// what counts as one of those cells
+.type Choice =
+    // a cell of a stored mark color, params.mark
+    Marks {}
+    // any cell that is not params.body
+  | Body {}
 
-.type Choice = Marks {} | Body {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
 
     // --- Marks ---
@@ -59,7 +61,6 @@ cleanest.cand(Ch, Id, N) :- marks.tally([Ch, Id], N).
 .init crop_box = Bbox<Choice>
 crop_box.cell(Ch, P) :- cleanest.low(Ch, Id, _), blocks.label($U(), P, Id).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_out, Col, Ch) :- crop_box.box(Ch, B), in(P, Col), crop(P, B, P_out).
 
 .comp Determine {

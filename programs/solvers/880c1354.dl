@@ -1,19 +1,21 @@
 // 880c1354
 // draft
-// concept: perimeter objects permutation
-// Regions sit around the grid's border, separated by a band of fixed colors.
-// Each region's color moves to the next region in the task's sense around the
-// border. What a region is:
-//
-//   $ByColor()  — the cells of one color.
-//   $ByObject() — one connected component of one color.
+// keywords: perimeter objects permutation
+// input: Regions sit around the grid's border, separated by a band of fixed
+//  colors.
+// output: Each region's color moves to the next region in the task's sense
+//  around the border.
 
-#include "../lib.dl"
+// what a region is
+.type Choice =
+    // the cells of one color
+    ByColor {}
+    // one connected component of one color
+  | ByObject {}
 
-.type Choice = ByColor {} | ByObject {}
+.decl out(p: Position, c: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     // The colors of the band between the regions. They stay put.
     .decl fixed(c: Color)
     fixed(4).
@@ -37,7 +39,7 @@ border_step(P, Q) :-
     in(P, _), params.sense(S), turn(S, D, D_step), dist(P, D, 0),   // a cell on edge D
     neighbor(P, D_step, Q), in(Q, _).                               // the step along that edge
 
-// The first region cell after p along the border: the band is skipped.
+// The first region cell after p along the border.
 .decl next_cell(p: Position, q: Position)
 next_cell(P, Q) :- border_step(P, Q), region(Q, _).
 next_cell(P, Q) :- border_step(P, P2), in(P2, C), params.fixed(C), next_cell(P2, Q).
@@ -46,7 +48,6 @@ next_cell(P, Q) :- border_step(P, P2), in(P2, C), params.fixed(C), next_cell(P2,
 impl_choice($ByColor()).
 impl_choice($ByObject()).
 
-.decl out(p: Position, c: Color, ch: Choice)
 out(P, C, Ch) :- impl_choice(Ch), in(P, C), params.fixed(C).
 
 // --- $ByColor ---

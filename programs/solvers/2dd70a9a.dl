@@ -1,20 +1,22 @@
 // 2dd70a9a
-// concept: markers walk cast
-// Wall cells are scattered over the grid, and two two-cell stubs sit among
-// them: a source stub and a target stub. The output draws a path in the
-// source color. The walker leaves along the source stub's own line, runs
-// straight until the way ahead closes, turns a quarter turn there, and runs
-// again; it arrives where the target lies one step on. The cases differ on
-// which path the task draws:
-//
-//   $Toward — the walker turns toward the target's side at each halt, and
-//             the walk that arrives is drawn.
-//   $Jog    — the path runs out along the source stub's line, links across
-//             once, and comes in along the target stub's line.
+// keywords: markers walk cast
+// input: wall cells are scattered over the grid, and two two-cell stubs sit
+//  among them: a source stub and a target stub
+// output: the output draws a path in the source color. The walker leaves
+//  along the source stub's own line, runs straight until the way ahead
+//  closes, turns a quarter turn there, and runs again; it arrives where the
+//  target lies one step on.
 
-#include "../lib.dl"
+// which path the task draws
+.type Choice =
+    // the walker turns toward the target's side at each halt, and the walk that
+    // arrives is drawn
+    Toward {}
+    // the path runs out along the source stub's line, links across once, and
+    // comes in along the target stub's line
+  | Jog {}
 
-.type Choice = Toward {} | Jog {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -82,7 +84,6 @@ leg_goal(A, D) :- run(A, D, E), at_target(E, D).
 .decl path_cell(p: Position, ch: Choice)
 path_cell(P, Ch) :- on_path(A, D, Ch), run(A, D, P).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- path_cell(P, Ch), params.source(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !path_cell(P, Ch).
 

@@ -1,18 +1,20 @@
 // 470c91de
-// concept: objects markers move
-// Each non-background color fills a rectangle with one corner cell taken away.
-// The rectangle slides one step toward that corner and is painted whole; every
-// other cell becomes params.bg. Two models of what names the corner:
-//
-//   $Mark — a params.marker cell sits at that corner of the color's box.
-//   $Gap  — the color's own cells are its box minus exactly that corner.
+// keywords: objects markers move
+// input: Each non-background color fills a rectangle with one corner cell
+//  taken away.
+// output: The rectangle slides one step toward that corner and is painted
+//  whole; every other cell becomes params.bg.
 
-#include "../lib.dl"
+// what names the corner
+.type Choice =
+    // a params.marker cell sits at that corner of the color's box
+    Mark {}
+    // the color's own cells are its box minus exactly that corner
+  | Gap {}
 
-.type Choice = Mark {} | Gap {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(7).
 
     // --- Mark ---
@@ -62,6 +64,5 @@ painted(Q, Col, Ch) :-
     in(P, _), inside(P, B),                     // a cell of it
     neighbor(P, D, Q), in(Q, _).                // one step toward D
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P, Col, Ch) :- painted(P, Col, Ch).
 out(P, Bg, Ch) :- in(P, _), impl_choice(Ch), !painted(P, _, Ch), params.bg(Bg).

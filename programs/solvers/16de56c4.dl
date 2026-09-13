@@ -1,21 +1,23 @@
 // 16de56c4
 // draft
-// concept: lines wallpaper cast span
-// Each row and each column is read on its own. A line whose ink is two cells
-// of one color, plus at most one cell of another, carries a rhythm: the pair's
-// spacing, repeated across the line. The rhythm fills the line's empty cells
-// with the pair's color. When that other cell sits on the rhythm, its color
-// takes the rhythm's cells instead, repainting the pair.
-//
-// Cases name how far the intruder's paint reaches:
-//   $Cast — the rhythm advances from the pair and halts at the intruder
-//   $Span — the rhythm's cells between the outermost ink
-
-#include "../lib.dl"
+// keywords: lines wallpaper cast span
+// input: each row and each column is read on its own. A line whose ink is two
+//  cells of one color, plus at most one cell of another, carries a rhythm: the
+//  pair's spacing, repeated across the line.
+// output: the rhythm fills the line's empty cells with the pair's color. When
+//  that other cell sits on the rhythm, its color takes the rhythm's cells
+//  instead, repainting the pair.
 
 .type Line = [a: Axis, across: Position]
 .type LineColor = [ln: Line, col: Color]
-.type Choice = Cast {} | Span {}
+// how far the intruder's paint reaches
+.type Choice =
+    // the rhythm advances from the pair and halts at the intruder
+    Cast {}
+    // the rhythm's cells between the outermost ink
+  | Span {}
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -117,7 +119,6 @@ fill(Ln, P, $Span()) :-
 
 // --- output ---
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     impl_choice(Ch),
     ( paint(P, Col, Ch)                                      // painted cell

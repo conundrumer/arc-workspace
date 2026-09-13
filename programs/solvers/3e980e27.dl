@@ -1,11 +1,13 @@
 // 3e980e27
 // draft
-// concept: objects markers stamp d4
-// Non-bg cells form 8-connected shapes, and a cell with nothing beside it is
-// a bare marker. Its color also marks one cell of a shape; that shape stamps
-// onto the bare marker, marker cell on marker cell, turned by that color's D4.
+// keywords: objects markers stamp d4
+// input: non-bg cells forming 8-connected shapes; a shape of one cell with no
+//  neighbor is a bare marker
+// output: A bare marker's color also marks a cell inside a shape; that shape
+//  stamps onto the marker, marker cell on marker cell, turned by that color's
+//  D4.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -52,7 +54,6 @@ paint(Q, Col) :-
     apply(D, V, V2), compose(P, V2, Q),              // that cell, laid marker on marker
     in(Q, _).                                        // on the grid
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- paint(P, Col).
 out(P, Col) :- in(P, Col), !paint(P, _).
 

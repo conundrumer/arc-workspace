@@ -1,19 +1,22 @@
 // 3bd67248
-// concept: objects cast border
-// A wall column sits against one side edge. The floor row (params.floor_dir edge)
-// paints params.floor_color; the corner diagonal rising from the wall's foot
-// paints params.diag_color. Painting spares non-bg cells. All grids are square,
-// hiding where the diagonal anchors:
-//
-//   $Anchored() — the diagonal's corner is task data (params.corner)
-//   $Foot()     — the corner is derived: where the wall meets the floor
-//   $WallEnd()  — wall side and floor end both derived; only a turn sense
-//                 (params.sense) is data — the floor sits at the wall's end
-//                 reached by turning its inward normal by the sense
+// keywords: objects cast border
+// output: A wall column sits against one side edge. The floor row
+//  (params.floor_dir edge) paints params.floor_color; the corner diagonal
+//  rising from the wall's foot paints params.diag_color. Painting spares non-bg
+//  cells. All grids are square.
 
-#include "../lib.dl"
+// where the diagonal anchors
+.type Choice =
+    // the diagonal's corner is task data (params.corner)
+    Anchored {}
+    // the corner is derived: where the wall meets the floor
+  | Foot {}
+    // wall side and floor end both derived; only a turn sense (params.sense) is
+    // data — the floor sits at the wall's end reached by turning its inward
+    // normal by the sense
+  | WallEnd {}
 
-.type Choice = Anchored {} | Foot {} | WallEnd {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -53,8 +56,6 @@ diag.cell(Ch, P) :- impl_choice(Ch), bg_cell(P).
 
 .decl floor_paint(p: Position)
 floor_paint(P) :- bg_cell(P), params.floor_dir(D), dist(P, D, 0).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // --- Anchored ---
 

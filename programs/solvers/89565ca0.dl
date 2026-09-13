@@ -1,21 +1,21 @@
 // 89565ca0
-// concept: objects cast enclose count rank
-// Frames of distinct colors lie stacked on the background, and specks of one
-// further color litter the grid. A frame's lines run on under whatever hides
-// them — a speck, or a frame lying over it: a hidden cell carries the line when
-// the two cells behind it on that line already do, and only background stops a
-// line. Each frame closes off some number of compartments from the grid edge.
-// The output is a bar chart, one row per frame from params.rank_dir in ascending
-// compartment count, each row that many cells of the frame's color from the
-// params.bar_sense side and specks for the rest.
-//
-// Frames of equal compartment count can take either row; each assignment of
-// frames to rows is a resolution.
-
-#include "../lib.dl"
+// keywords: objects cast enclose count rank
+// input: Frames of distinct colors lie stacked on the background, and
+//  specks of one further color litter the grid.
+// output: A frame's lines run on under whatever hides them — a speck, or a
+//  frame lying over it: a hidden cell carries the line when the two cells
+//  behind it on that line already do, and only background stops a line.
+//  Each frame closes off some number of compartments from the grid edge.
+//  The output is a bar chart, one row per frame from params.rank_dir in
+//  ascending compartment count, each row that many cells of the frame's
+//  color from the params.bar_sense side and specks for the rest. Frames of
+//  equal compartment count can take either row; each assignment of frames
+//  to rows is a resolution.
 
 .type TiebreakResolution =
     End {} | Sit {row: number, f: Color, rest: TiebreakResolution}
+
+.decl out(p: Position, col: Color, res: TiebreakResolution)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -99,7 +99,6 @@ seat(F, K) :- row(K), fewer.rank($U(), F, R), R <= K.
 .init ties = TiebreakResolutions<Unit, number, Color>
 ties.cand($U(), K, F) :- seat(F, K).
 
-.decl out(p: Position, col: Color, res: TiebreakResolution)
 out(P, Col, Res) :-
     chart.cell($U(), P), params.rank_dir(D), dist(P, D, K),
     ties.assign($U(), Res, K, F), size.tally(F, N),   // the frame seated in this row

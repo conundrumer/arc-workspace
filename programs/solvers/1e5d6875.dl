@@ -1,25 +1,29 @@
 // 1e5d6875
 // draft
-// concept: objects move d4 lookup
-//
-// The grid holds L-trominoes of two colors, each filling three corners of a
-// 2x2 bbox. Every piece emits a copy of itself one diagonal step away, painted
-// in a color the piece's color selects; the step direction follows from the
-// piece's color and the box corner the piece leaves open. A copy reaching past
-// the frame drops, and where two copies land on one cell stored precedence
-// picks the color. Choice = [s, p] crosses the hypotheses:
-//
-//   s (the step direction):
-//     $Rotate() — a stored rotation per piece color turns the open corner.
-//     $Lookup() — a stored table keyed by piece color and open corner.
-//   p (a copy landing on a piece cell):
-//     $Keep()  — the piece keeps its cell.
-//     $Cover() — the copy paints over it.
+// keywords: objects move d4 lookup
+// input: the grid holds L-trominoes of two colors, each filling three corners
+//  of a 2x2 bbox.
+// output: every piece emits a copy of itself one diagonal step away, painted
+//  in a color the piece's color selects; the step direction follows from the
+//  piece's color and the box corner the piece leaves open. A copy reaching
+//  past the frame drops, and where two copies land on one cell, stored
+//  precedence picks the color.
 
-#include "../lib.dl"
+// the step direction
+.type Step =
+    // a stored rotation per piece color turns the open corner
+    Rotate {}
+    // a stored table keyed by piece color and open corner
+  | Lookup {}
 
-.type Step = Rotate {} | Lookup {}
-.type Paint = Keep {} | Cover {}
+// a copy landing on a piece cell
+.type Paint =
+    // the piece keeps its cell
+    Keep {}
+    // the copy paints over it
+  | Cover {}
+
+// the step direction crossed with whether a copy covers the piece it lands on
 .type Choice = [s: Step, p: Paint]
 
 // A piece: its color and its component id.
@@ -28,8 +32,9 @@
 // A cell under one step hypothesis — the key copies contend on.
 .type MarkKey = [p: Position, s: Step]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(7).
 
     // The color each piece color's copy paints.
@@ -112,8 +117,6 @@ mark_cell(Q, M, S) :-
 
 .init win = ArgExtremes<MarkKey, Color>
 win.cand([P, S], M, R) :- mark_cell(P, M, S), params.mark_rank(M, R).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // --- Keep ---
 out(P, Col, [S, $Keep()]) :- in(P, Col), !params.bg(Col), step_choice(S).

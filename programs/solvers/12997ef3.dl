@@ -1,21 +1,21 @@
 // 12997ef3
-// concept: markers crop tile-arrangement rank stamp mapping
-// A stencil shape in one color sits on a blank grid beside a line of
-// single-cell markers. The output lays out one tile per marker along the
-// marker line's axis, in marker order; each tile is the stencil's bounding
-// box carrying that marker's color.
-//
-//   $Stamp()   — the footprint alone in the marker's color; the rest of the
-//                box is background.
-//   $Recolor() — the box copied, with the stencil color mapped to the
-//                marker's.
-//
-// Every pair's box holds stencil and background only, which hides whether a
-// tile reproduces what else the box covers.
+// keywords: markers crop tile-arrangement rank stamp mapping
+// input: a stencil shape in one color sits on a blank grid beside a line of
+//  single-cell markers.
+// output: the output lays out one tile per marker along the marker line's
+//  axis, in marker order; each tile is the stencil's bounding box carrying
+//  that marker's color. every pair's box holds stencil and background only,
+//  which hides whether a tile reproduces what else the box covers:
 
-#include "../lib.dl"
+// whether a tile reproduces the box's other content
+.type Choice =
+    // the footprint alone in the marker's color; the rest of the box is
+    // background
+    Stamp {}
+    // the box copied, with the stencil color mapped to the marker's
+  | Recolor {}
 
-.type Choice = Stamp {} | Recolor {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -56,8 +56,6 @@ place(P_grid_out, P_grid_in, Col) :-
     bbox.box($U(), B), in(P_grid_in, _),
     crop(P_grid_in, B, P_intile),                    // box cell in the tile frame
     concat_slab(P_tile, P_intile, A, 0, P_grid_out).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // --- $Stamp ---
 out(P_grid_out, Col, $Stamp()) :-

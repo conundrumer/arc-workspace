@@ -1,10 +1,11 @@
 // 025d127b
-// concept: objects move
-// Each 8-connected shape advances one cell toward params.dir. A cell steps
-// unless it sits on the shape's leading edge, or its landing site is
-// itself stuck.
+// keywords: objects move
+// input: 8-connected shapes
+// output: Each shape advances one cell toward params.dir. A cell steps
+//  unless it sits on the shape's leading edge, or its landing site is
+//  itself stuck.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -38,6 +39,5 @@ stuck(P) :- target(P, P2), stuck(P2).
 slid(P, Col)  :- ink(P, Col), stuck(P).
 slid(P2, Col) :- ink(P, Col), !stuck(P), target(P, P2).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- slid(P, Col).
 out(P, Col) :- in(P, _), params.bg(Col), !slid(P, _).

@@ -1,8 +1,8 @@
 // 48131b3c
-// concept: tile-arrangement mapping
-// Output arranges 2×2 copies of the input with its two colors swapped.
+// keywords: tile-arrangement mapping
+// output: Output arranges 2×2 copies of the input with its two colors swapped.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl copies(n: number) copies(2).
@@ -21,7 +21,6 @@ swapped(P, C2) :- in(P, C1), palette(C2), C2 != C1.
 .init arrangement = Frame2D<Unit>
 arrangement.extent($U(), A, N) :- axis_elem(A), params.copies(N).
 
-.decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
     arrangement.cell($U(), P_tile),                 // tile pos in the arrangement
     swapped(P_intile, Col),                         // intile pos

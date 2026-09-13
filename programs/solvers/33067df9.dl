@@ -1,16 +1,15 @@
 // 33067df9
-// concept: decompose scale merge
+// keywords: decompose scale merge
+// input: The input is a lattice: single-cell tiles ruled off by single-cell
+//  lines, with a line on every side.
+// output: The output redraws that lattice on a fixed square canvas, with
+//  two-cell lines and tiles as large as the canvas admits. Like-colored tiles
+//  join. Along the run axis, neighbors join into a run; across it, a run
+//  joins the run one step over when the two cover the same tiles. A joined
+//  group paints the box its output tiles span, so the lines inside the group
+//  are painted over.
 
-// The input is a lattice: single-cell tiles ruled off by single-cell lines,
-// with a line on every side. The output redraws that lattice on a fixed
-// square canvas, with two-cell lines and tiles as large as the canvas admits.
-//
-// Like-colored tiles join. Along the run axis, neighbors join into a run;
-// across it, a run joins the run one step over when the two cover the same
-// tiles. A joined group paints the box its output tiles span, so the lines
-// inside the group are painted over.
-
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -107,7 +106,6 @@ paint(P_grid_out, Col) :-
     canvas.cell($U(), P_grid_out), inside(P_grid_out, B),  // a canvas cell the box covers
     group.id(P_tile, Id), ink(P_tile, Col).                // painted in the group's color
 
-.decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
     canvas.cell($U(), P_grid_out),
     ( paint(P_grid_out, Col)                   // a group's box

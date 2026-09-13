@@ -1,16 +1,18 @@
 // 2013d3e2
-// concept: decompose crop
-// A figure sits on background. Output is the corner region of its
-// bounding box.
-//   $Half   — one quadrant of the box.
-//   $Window — the fixed-size window at the box corner.
+// keywords: decompose crop
+// input: A figure sits on background.
+// output: Output is the corner region of its bounding box.
 
-#include "../lib.dl"
+// how the corner region is bounded
+.type Choice =
+    // one quadrant of the box
+    Half {}
+    // the fixed-size window at the box corner
+  | Window {}
 
-.type Choice = Half {} | Window {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
 
     // --- Half ---
@@ -29,8 +31,6 @@ bbox.cell($U(), P) :- in(P, Col), !params.bg(Col).
 
 .decl box_cell(p_box: Position, col: Color)
 box_cell(P_box, Col) :- in(P_grid, Col), bbox.box($U(), B), crop(P_grid, B, P_box).
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- Half ---
 out(P_out, Col, $Half()) :-

@@ -1,9 +1,10 @@
 // 28bf18c6
-// concept: crop tile-arrangement
-// One shape on bg. The output arranges params.copies copies of the shape's
-// bounding-box crop along params.axis.
+// keywords: crop tile-arrangement
+// input: One shape lies on bg.
+// output: The output arranges params.copies copies of the shape's
+//  bounding-box crop along params.axis.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -19,7 +20,6 @@ shape_box.cell($U(), P) :- in(P, Col), !params.bg(Col).
 .init strip = AxisFrame<Unit>
 strip.extent($U(), A, N) :- params.axis(A), params.copies(N).
 
-.decl out(p: Position, col: Color)
 out(P_grid, Col) :-
     in(P, Col), shape_box.box($U(), B), crop(P, B, P_intile),  // a cell of the shape's box
     strip.cell($U(), A, P_copy),                               // copy index

@@ -1,28 +1,28 @@
 // ed74f2f2
-// concept: decompose crop lookup
-// A 1×2 arrangement of 3×3 tiles, gap 1, behind a 1-cell bg border. The
-// params.key_tile selects a color from a stored tile table; the output is the
-// params.target_tile with its ink repainted that color, bg passed through.
-//
-// Every grid of the task is 5×9, so the decomposition reads two ways:
-//
-//   $Table() — the tile of each grid cell stored as parameter data.
-//   $Count() — the bordered frame divided into params.arr_dim tiles per axis.
-//
-// The division by tile size gets no case: params.key_tile is a position of
-// the tile arrangement, so a grid the two divisions read differently leaves
-// the arrangement without that tile, and the size reading emits nothing.
+// keywords: decompose crop lookup
+// input: a 1×2 arrangement of 3×3 tiles, gap 1, behind a 1-cell bg border
+// output: The params.key_tile selects a color from a stored tile table. The
+//  output is the params.target_tile with its ink repainted that color, bg
+//  passed through.
 
-#include "../lib.dl"
-
-.type Choice = Table {} | Count {}
+// how the arrangement is decomposed; every grid of the task is 5×9, so the
+// decomposition reads two ways. The division by tile size gets no case:
+// params.key_tile is a position of the tile arrangement, so a grid the two
+// divisions read differently leaves the arrangement without that tile, and
+// the size reading emits nothing
+.type Choice =
+    // the tile of each grid cell stored as parameter data
+    Table {}
+    // the bordered frame divided into params.arr_dim tiles per axis
+  | Count {}
 
 .type KeyCell = [p: Position, col: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
 
-    // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl key_tile(p: Position) key_tile([0, 0, 0, 1]).
     .decl target_tile(p: Position) target_tile([0, 0, 1, 0]).
@@ -105,7 +105,6 @@ target(Ch, P_intile, Col) :-
     in(P_grid, Col),
     decompose(Ch, P_grid, P_tile, P_intile), params.target_tile(P_tile).    // the target tile's cells
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     target(Ch, P, C), !params.bg(C),                            // target ink cell
     key_match.equals(Ch, Id), params.key_color(Id, Col).        // key's color

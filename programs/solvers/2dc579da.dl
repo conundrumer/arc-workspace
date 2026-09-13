@@ -1,17 +1,20 @@
 // 2dc579da
 // draft
-// concept: decompose crop select
-// A cross cuts the grid into equal quadrants. Three are blank and the fourth
-// holds one off-color cell; the output is that quadrant. Three cases of what
-// makes it special, differing in what the quadrant is compared against:
-//
-// $Clash — itself: it is not all one color.
-// $Ink   — the grid: it holds a cell off the commonest color.
-// $Odd   — the other quadrants: none of them matches it.
+// keywords: decompose crop select
+// input: a cross cuts the grid into equal quadrants
+// output: three quadrants are blank and the fourth holds one off-color cell.
+//  The output is that quadrant.
 
-#include "../lib.dl"
+// what makes the quadrant special
+.type Choice =
+    // itself: it is not all one color
+    Clash {}
+    // the grid: it holds a cell off the commonest color
+  | Ink {}
+    // the other quadrants: none of them matches it
+  | Odd {}
 
-.type Choice = Clash {} | Ink {} | Odd {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl divisor(n: number) divisor(2).
@@ -62,5 +65,4 @@ special(P_tile, $Odd()) :- tile(P_tile), !matched(P_tile).
 
 // --- output ---
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_intile, Col, Ch) :- special(P_tile, Ch), tile_cell(P_tile, P_intile, Col).

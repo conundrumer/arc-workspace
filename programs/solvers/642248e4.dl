@@ -1,11 +1,12 @@
 // 642248e4
 // draft
-// concept: lines markers rank
-// Two opposite edges of the grid each carry a solid line in its own color, and
-// marks are scattered over the interior. Each mark grows one cell toward the
-// nearer of the two lines, in that line's color.
+// keywords: lines markers rank
+// input: Two opposite edges of the grid each carry a solid line in its own
+//  color, and marks are scattered over the interior.
+// output: Each mark grows one cell toward the nearer of the two lines, in
+//  that line's color.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     // The scattered cells that grow toward a line.
@@ -25,7 +26,6 @@ tail(Q, Col) :-
     line.value(D, Col), dist_pair(P, D, K, K2), K < K2,   // its nearer line
     neighbor(P, D, Q).                                    // the cell on that side
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, Col_in),
     ( tail(P, Col)                 // a grown cell

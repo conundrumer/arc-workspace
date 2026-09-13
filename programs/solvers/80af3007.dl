@@ -1,12 +1,13 @@
 // 80af3007
 // draft
-// concept: tile-arrangement crop scale stamp
-// The ink draws a picture at a fat-pixel scale: each pixel is a block of
-// params.scale cells across. The output is the picture tiled by itself: a
-// cell is ink iff the pixel it lies in and its position within that pixel
-// are both inked pixels of the picture.
+// keywords: tile-arrangement crop scale stamp
+// input: The ink draws a picture at a fat-pixel scale: each pixel is a block
+//  of params.scale cells across.
+// output: The output is the picture tiled by itself: a cell is ink iff the
+//  pixel it lies in and its position within that pixel are both inked pixels
+//  of the picture.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -45,7 +46,6 @@ cell(P_grid_out, P_tile, P_intile) :-
 stamp(P_grid_out) :-
     cell(P_grid_out, P_tile, P_intile), inked(P_tile), inked(P_intile).
 
-.decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
     cell(P_grid_out, _, _),
     ( stamp(P_grid_out), params.ink(Col)

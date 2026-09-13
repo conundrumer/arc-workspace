@@ -1,35 +1,40 @@
 // 281123b4
 // draft
-// concept: overlay decompose lookup rank
-// Separator columns split the grid into panels, each drawn in its own ink.
-// The output overlays the panels on one frame, each cell taking its color
-// from the four panel contributions there. Each panel keeps one ink in every
-// pair, so spatial and chromatic precedence are indistinguishable.
-//
-// out's choice column = [d, c]:
-//
-//   d (find the panels):
-//     $Count()  — by tile count
-//     $Size() — by tile size
-//   c (combine the contributions):
-//     $Order()  — precedence over panel positions: the winning ink fills the
-//                 cell, bg where every panel is empty.
-//     $Ink()    — precedence over inks, the same otherwise.
-//     $Lookup() — a table keyed on the four contributions; every entry fires
-//                 in the train pairs.
+// keywords: overlay decompose lookup rank
+// input: Separator columns split the grid into panels, each drawn in its own
+//  ink.
+// output: The output overlays the panels on one frame, each cell taking its
+//  color from the four panel contributions there.
 
-#include "../lib.dl"
+// find the panels
+.type DecChoice =
+    // by tile count
+    Count {}
+    // by tile size
+  | Size {}
 
-.type DecChoice = Count {} | Size {}
-.type Combine   = Order {} | Ink {} | Lookup {}
+// combine the contributions — each panel keeps one ink in every pair, so
+// spatial and chromatic precedence are indistinguishable
+.type Combine =
+    // precedence over panel positions: the winning ink fills the cell, bg where
+    // every panel is empty
+    Order {}
+    // precedence over inks, the same otherwise
+  | Ink {}
+    // a table keyed on the four contributions; every entry fires in the train
+    // pairs
+  | Lookup {}
+
+// how the panels are found and combined
 .type Choice    = [d: DecChoice, c: Combine]
 
 .type RankKey = [ch: Choice, p: Position]
 .type CombineKey = [p: Position, d: DecChoice]
 .type CombineMember = [p: Position, col: Color]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl panel_axis(a: Axis) panel_axis(AXIS_H).
     .decl gap(g: number) gap(1).
 
@@ -99,8 +104,6 @@ parse.cell($U(), P, Col) :- in(P, Col).
 
 .decl ink_at(p: Position, col: Color, dc: DecChoice)
 ink_at(P, Col, Dc) :- parse.tile_ink($U(), _, P, Col, Dc).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // The precedence cases; $Lookup reads the empty cell from its own entry.
 .decl rank_choice(c: Combine)

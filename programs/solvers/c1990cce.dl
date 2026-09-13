@@ -1,27 +1,31 @@
 // c1990cce
-// concept: grow markers cast wallpaper
-// A 1×W row, bg except one ink cell. The output grows the row into a W×W
-// square: the ink casts two diagonal rays toward the far edge (a V), and
-// echo diagonals of params.echo on params.echo_axis fill the open cone between them.
-// Choice = [v, e] crosses the hypotheses:
-//
-//   v (V color):
-//     $VSeed()  — the ink's own color propagates to the V.
-//     $VFixed() — an independent params.v_color.
-//   e (echo placement):
-//     $Emit()   — every params.spacing-th cell along the mirror arm's line
-//                 casts an echo ray.
-//     $Stripe() — echoes at every params.period-th diagonal offset from the
-//                 echo-axis arm.
+// keywords: grow markers cast wallpaper
+// input: a 1×W row, bg except one ink cell
+// output: the output grows the row into a W×W square: the ink casts two
+//  diagonal rays toward the far edge (a V), and echo diagonals of
+//  params.echo on params.echo_axis fill the open cone between them
 
-#include "../lib.dl"
+// V color
+.type VSrc =
+    // the ink's own color propagates to the V
+    VSeed {}
+    // an independent params.v_color
+  | VFixed {}
 
-.type VSrc   = VSeed {} | VFixed {}
-.type Echo   = Emit {} | Stripe {}
+// echo placement
+.type Echo =
+    // every params.spacing-th cell along the mirror arm's line casts an echo
+    // ray
+    Emit {}
+    // echoes at every params.period-th diagonal offset from the echo-axis arm
+  | Stripe {}
+
+// V color crossed with echo placement
 .type Choice = [v: VSrc, e: Echo]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
     .decl grow(d: Dir) grow(DIR_B).
     .decl echo_axis(da: DiagAxis) echo_axis(DAXIS_DG).
@@ -125,7 +129,6 @@ v_color(Col, $VFixed()) :- params.v_color(Col).
 
 // --- Output ---
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, [V, E]) :- arm(P), v_color(Col, V), echo_choice(E).
 out(P, Col, [V, E]) :- echo(P, E), params.echo(Col), v_choice(V).
 out(P, Col, [V, E]) :-

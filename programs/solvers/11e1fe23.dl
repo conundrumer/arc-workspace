@@ -1,15 +1,20 @@
 // 11e1fe23
-// concept: scale move cross
-// Colored marks sit at the corners of a square. The output keeps the marks
-// and adds a small copy of them at the square's center: each mark's color one
-// diagonal step out, and the center painted. The cases differ in how a mark
-// finds its step. $Shrink reads the corner of the marks' bounding box the mark
-// occupies; $Converge reads the quadrant of the box it lies in; $Cross drops
-// the box and meets the diagonal rays the marks cast.
+// keywords: scale move cross
+// input: colored marks sit at the corners of a square.
+// output: the output keeps the marks and adds a small copy of them at the
+//  square's center: each mark's color one diagonal step out, and the center
+//  painted. the cases differ in how a mark finds its step:
 
-#include "../lib.dl"
+// how a mark finds its step
+.type Choice =
+    // the corner of the marks' bounding box the mark occupies
+    Shrink {}
+    // the quadrant of the box it lies in
+  | Converge {}
+    // drops the box and meets the diagonal rays the marks cast
+  | Cross {}
 
-.type Choice = Shrink {} | Converge {} | Cross {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -87,6 +92,5 @@ mini(P, Col, $Cross()) :-
 
 // --- out ---
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- mini(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !mini(P, _, Ch).

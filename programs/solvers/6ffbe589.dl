@@ -1,13 +1,14 @@
 // 6ffbe589
 // draft
-// concept: objects crop count d4 merge select
-// One figure, drawn in several colors with one-cell gaps in its lines, and
-// stray cells far from it. Cells with at most one cell between them cluster;
-// the figure is the largest cluster, and the output is the crop of its
-// bounding box. Each color of the figure turns about the crop's center by one
-// quarter turn in params.sense per stray cell of that color outside the box.
+// keywords: objects crop count d4 merge select
+// input: a figure drawn in several colors with one-cell gaps in its lines,
+//  and stray cells far from it. Cells with at most one cell between them
+//  cluster, and the figure is the largest cluster.
+// output: The output is the crop of the figure's bounding box. Each color
+//  of the figure turns about the crop's center by one quarter turn in
+//  params.sense per stray cell of that color outside the box.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -59,6 +60,5 @@ rot.step($U(), N) :- turns.tally(_, N).
 .decl landed(p: Position, col: Color)
 landed(P, Col) :- cropped(P0, Col), turns.tally(Col, N), rot.walk($U(), P0, N, P).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- landed(P, Col).
 out(P, Col) :- cropped(P, _), !landed(P, _), params.bg(Col).

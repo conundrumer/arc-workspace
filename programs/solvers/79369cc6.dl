@@ -1,14 +1,14 @@
 // 79369cc6
 // draft
-// concept: markers stamp d4
-// The template is the bounding box of the fill-colored cells; its other
-// cells carry the mark color. Wherever a D4 image of the template's mark
-// cells appears in the grid, the image's fill cells are painted in the fill
-// color. A placement whose fill cell lands on a mark is not a match. A
-// stamp may hang off the grid edge: its marks must all be on the grid, its
-// fill cells need not.
+// keywords: markers stamp d4
+// input: The template is the bounding box of the fill-colored cells; its
+//  other cells carry the mark color.
+// output: Wherever a D4 image of the template's mark cells appears in the
+//  grid, the image's fill cells are painted in the fill color. A placement
+//  whose fill cell lands on a mark is not a match. A stamp may hang off the
+//  grid edge: its marks must all be on the grid, its fill cells need not.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     // The color the stamp paints, and the color the stamp matches on.
@@ -49,7 +49,6 @@ blocked(D, M) :- fill_at(D, M, P), occ.cell(D, P, $U()).
 .decl stamped(p: Position)
 stamped(P) :- fill_at(D, M, P), !blocked(D, M).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, Col_in),
     ( stamped(P), params.fill(Col)    // painted by a stamp

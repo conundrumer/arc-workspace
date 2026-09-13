@@ -1,18 +1,19 @@
 // d406998b
-// concept: rank parity
-// One params.dot cell per grid column. Alternate dots recolor to params.mark,
-// starting at params.anchor. Two models of what alternates, tagged on out's Choice:
-//
-//   $Stripes  — grid columns: a dot at even dist from the anchor edge recolors.
-//   $Sequence — the dot sequence: dots ranked by dist from the anchor edge;
-//               even ranks recolor.
-//
-// Coincide while every column holds a dot; diverge when a column is empty
-// (ranks compress past it, column parity doesn't).
+// keywords: rank parity
+// output: One params.dot cell per grid column. Alternate dots recolor to
+//  params.mark, starting at params.anchor. Coincide while every column
+//  holds a dot; diverge when a column is empty (ranks compress past it,
+//  column parity doesn't).
 
-#include "../lib.dl"
+// two models of what alternates, tagged on out's Choice
+.type Choice =
+    // grid columns: a dot at even dist from the anchor edge recolors
+    Stripes {}
+    // the dot sequence: dots ranked by dist from the anchor edge; even ranks
+    // recolor
+  | Sequence {}
 
-.type Choice = Stripes {} | Sequence {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl anchor(d: Dir) anchor(DIR_R).   // alternation starts here
@@ -29,8 +30,6 @@
 // Each dot cell with its dist from the anchor edge.
 .decl dot_dist(p: Position, k: number)
 dot_dist(P, K) :- in(P, Dot), params.dot(Dot), params.anchor(D), dist(P, D, K).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // --- $Stripes ---
 

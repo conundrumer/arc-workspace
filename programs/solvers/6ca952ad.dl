@@ -1,11 +1,11 @@
 // 6ca952ad
 // draft
-// concept: objects move count
-// Gravity on the heavy objects: an object of at least params.heavy cells
-// translates flush against the params.grav edge; a lighter object stays.
-// Elsewhere background.
+// keywords: objects move count
+// output: Gravity on the heavy objects: an object of at least params.heavy
+//  cells translates flush against the params.grav edge; a lighter object stays.
+//  Elsewhere background.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(7).
@@ -45,6 +45,5 @@ fallen(Q, Col) :-
     ; !falls(Id), Q = P                                                     // light: stays
     ).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- fallen(P, Col).
 out(P, Col) :- in(P, _), !fallen(P, _), params.bg(Col).

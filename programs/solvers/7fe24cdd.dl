@@ -1,15 +1,17 @@
 // 7fe24cdd
-// concept: tile-arrangement lookup d4
-// 2×2 tile arrangement of input rotations, spun clockwise around the
-// arrangement. Two models:
-//
-//   $Table — per-tile D4 table
-//   $Spin  — each tile takes the rotation that carries the anchor tile
-//            position to its own
+// keywords: tile-arrangement lookup d4
+// output: 2×2 tile arrangement of input rotations, spun clockwise around the
+//  arrangement.
 
-#include "../lib.dl"
+// how each tile's rotation is set
+.type Choice =
+    // per-tile D4 table
+    Table {}
+    // each tile takes the rotation that carries the anchor tile position to its
+    // own
+  | Spin {}
 
-.type Choice = Table {} | Spin {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     // --- Table ---
@@ -23,8 +25,6 @@
 }
 
 .init params = Params
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- Table ---
 out(P_grid, Col, $Table()) :-

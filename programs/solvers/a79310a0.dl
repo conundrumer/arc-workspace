@@ -1,9 +1,9 @@
 // a79310a0
-// concept: move
-// The ink shape translates params.shift_k toward params.shift_dir and recolors to
-// params.mark; the rest of the grid is params.bg.
+// keywords: move
+// output: The ink shape translates params.shift_k toward params.shift_dir and
+//  recolors to params.mark; the rest of the grid is params.bg.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl ink(c: Color) ink(8).
@@ -23,6 +23,5 @@ shift_image(P_out) :-
     params.shift_dir(D), params.shift_k(K), jump(P_in, D, K, P_out),
     in(P_out, _).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- shift_image(P), params.mark(Col).
 out(P, Col) :- in(P, _), !shift_image(P), params.bg(Col).

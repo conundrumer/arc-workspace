@@ -1,12 +1,10 @@
 // 7039b2d7
 // draft
-// family: 1190e5a7
-// Every region has the same color, and a divider may lie on the grid edge
-// (train2 input col 0).
-
-#include "../lib.dl"
+// representative: 1190e5a7
 
 .type Line = [a: Axis, p_line: Position]
+
+.decl out(p: Position, col: Color)
 
 .comp Params {}
 
@@ -14,6 +12,9 @@
 
 .init line_color = Unanimous<Line, Color>
 line_color.item([A, P_line], Col) :- in(P, Col), axis_elem(A), split(P, A, P_line, _).
+
+// Every region has the same color, and a divider may lie on the grid edge
+// (train2 input col 0).
 
 // A band is a run of adjacent non-divider lines — one row or column of
 // regions. A divider color is one that fills a whole line.
@@ -26,7 +27,6 @@ bands.node(A, P_line) :- line_color.item([A, P_line], Col), !line_color.value(_,
 layout.axis(A, A) :- axis_elem(A).
 layout.member(A, B, P_line) :- bands.label(A, P_line, B).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P_in, Col),                                               // an input cell
     axis_elem(A), perp(A, A2), split(P_in, A, P_line, P_line2),  // its two lines

@@ -1,13 +1,13 @@
 // 234bbc79
 // draft
-// concept: objects markers move
-// Colored pieces lie along one axis. Each piece carries joint cells on the
-// ends it links from, and a joint takes the color of the piece it touches.
-// The blank lines close up, and every piece but the first slides across the
-// chain until the joint it trails with lands beside the joint the piece before
-// it leads with.
+// keywords: objects markers move
+// output: Colored pieces lie along one axis. Each piece carries joint cells on
+//  the ends it links from, and a joint takes the color of the piece it touches.
+//  The blank lines close up, and every piece but the first slides across the
+//  chain until the joint it trails with lands beside the joint the piece before
+//  it leads with.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -98,6 +98,5 @@ slide(Id, Delta) :-
 place(Id, P_dest) :-
     slide(Id, Delta), piece_cell(Id, P_pack), compose(P_pack, Delta, P_dest).
 
-.decl out(p: Position, col: Color)
 out(P_dest, Col) :- place(Id, P_dest), obj.label(Col, _, Id).
 out(P, Col) :- remap(_, P), !place(_, P), params.bg(Col).

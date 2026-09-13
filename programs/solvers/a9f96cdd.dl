@@ -1,18 +1,19 @@
 // a9f96cdd
-// concept: markers lookup stamp
-// One marker cell on an empty grid; its four diagonal neighbors take
-// per-corner colors, clipped at the grid edge; the rest of the output is
-// bg, marker included. Cases (data-equivalent on this task):
-//
-//   $Arms  — per-corner: the neighbor toward diag paints params.arm(diag).
-//   $Stamp — a stored template of offsets, seated on the marker.
+// keywords: markers lookup stamp
+// output: One marker cell on an empty grid; its four diagonal neighbors take
+//  per-corner colors, clipped at the grid edge; the rest of the output is bg,
+//  marker included. The two cases are data-equivalent on this task.
 
-#include "../lib.dl"
+// how the marker's halo is painted
+.type Choice =
+    // per-corner: the neighbor toward diag paints params.arm(diag)
+    Arms {}
+    // a stored template of offsets, seated on the marker
+  | Stamp {}
 
-.type Choice = Arms {} | Stamp {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl marker(c: Color) marker(2).
 
@@ -48,7 +49,6 @@ halo(P, Col, $Stamp()) :-
 .decl impl_choice(ch: Choice)
 impl_choice($Arms()). impl_choice($Stamp()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- halo(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !halo(P, _, Ch), params.bg(Col).
 

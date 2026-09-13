@@ -1,10 +1,10 @@
 // 009d5c81
-// concept: markers lookup
-// The input holds a shape and a key of marker cells. The key's pattern
-// selects a color from a stored table; the output paints the shape in that
-// color and clears the key.
+// keywords: markers lookup
+// input: a shape and a key of marker cells
+// output: The key's pattern selects a color from a stored table; the
+//  output paints the shape in that color and clears the key.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -55,7 +55,6 @@ key_match.observed_member($U(), P_inkey) :- parse.key_shape($U(), P_inkey).
 .decl ink_cell(p: Position)
 ink_cell(P) :- in(P, Col), params.ink(Col).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- ink_cell(P), key_match.equals($U(), Id), params.key_out(Id, Col).
 out(P, Col) :- in(P, _), !ink_cell(P), params.bg(Col).
 

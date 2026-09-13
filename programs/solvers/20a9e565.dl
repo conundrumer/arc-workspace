@@ -1,15 +1,15 @@
 // 20a9e565
-// concept: objects markers crop induce walk
-// shape: latent-canvas
-// The input shows one figure at successive growth stages, packed along an
-// axis with a fixed gap, each stage nesting the previous when stages align
-// at their trailing edges. Marker cells frame a window over a slot the
-// scene has not drawn. The scene grows on: each cell of a layer moves by
-// the delta its layer most shares with the layer one period below, and a new
-// cell's color is what the drawn stages' color-invariances reach. The
-// output is the window's view of the grown scene.
+// keywords: objects markers crop induce walk latent-canvas
+// input: The input shows one figure at successive growth stages, packed along
+//  an axis with a fixed gap, each stage nesting the previous when stages align
+//  at their trailing edges. Marker cells frame a window over a slot the scene
+//  has not drawn.
+// output: The scene grows on: each cell of a layer moves by the delta its
+//  layer most shares with the layer one period below, and a new cell's color
+//  is what the drawn stages' color-invariances reach. The output is the
+//  window's view of the grown scene.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -309,7 +309,6 @@ shown(P, C) :-
     target(L, Lg), trail_dir(Td), dist(Lg, Td, T), jump(P, Td, T, Y),
     content(L, Y), col_reach(L, Y, C).
 
-.decl out(p: Position, col: Color)
 out(P_inner, C) :-
     in(P, _), win.box($U(), B), crop(P, B, P_inner),   // a window cell in the window's frame
     ( shown(P, C)                   // scene cell

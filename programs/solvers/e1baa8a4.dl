@@ -1,10 +1,10 @@
 // e1baa8a4
-// concept: decompose
-// Unequal rectilinear color blocks in a product arrangement (row bands ×
-// col bands). Output is one cell per block: consecutive identical grid
-// lines collapse, per axis. No task data — the family is fully structural.
+// keywords: decompose
+// output: Unequal rectilinear color blocks in a product arrangement (row bands
+//  × col bands). Output is one cell per block: consecutive identical grid lines
+//  collapse, per axis. No task data — the family is fully structural.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {}
 
@@ -30,5 +30,4 @@ bands.domain([D, K]) :- edge_dist(_, D, K).
 .init place = DirPack<Position>
 place.edge(P, D, I) :- edge_dist(P, D, K), bands.tally([D, K], I).
 
-.decl out(p: Position, col: Color)
 out(P_out, Col) :- in(P, Col), place.box(P, P_out).

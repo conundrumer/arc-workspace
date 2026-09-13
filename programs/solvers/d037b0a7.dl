@@ -1,9 +1,9 @@
 // d037b0a7
-// concept: markers cast
-// Each mark casts its color through bg toward the params.dir edge in its
-// line; a mark in the way stops the cast.
+// keywords: markers cast
+// output: Each mark casts its color through bg toward the params.dir edge in
+//  its line; a mark in the way stops the cast.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -18,6 +18,5 @@ flow.cell($U(), P) :- in(P, _).
 flow.mark($U(), P) :- in(P, Col), !params.bg(Col).
 flow.blocked($U(), P) :- in(P, Col), !params.bg(Col).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- flow.clear($U(), P, _, _, P_mark), in(P_mark, Col).  // the mark's color
 out(P, Col) :- in(P, Col), !flow.clear($U(), P, _, _, _).           // no cast reached it

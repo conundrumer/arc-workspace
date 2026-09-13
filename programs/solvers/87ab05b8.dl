@@ -1,23 +1,30 @@
 // 87ab05b8
-// concept: decompose markers lookup select
-// Noise cells on a bg ground; one cell carries params.marker. The output erases
-// everything and fills the 2×2 region holding the marker. The 4×4 grids leave
-// both the region rule and the fill color underdetermined; Choice = [l, f]
-// crosses the hypotheses:
-//
-//   l (locate the region):
-//     $Count()  — grid divided into a params.divisor arrangement; the marker's tile.
-//     $Block()  — grid tiled by params.tile_dim blocks; the marker's block.
-//     $Corner() — a params.block_dim block seated at the marker's nearest corner.
-//   f (fill color):
-//     $Marker() — the marker's own color propagates to the fill.
-//     $Fixed()  — an independent params.fill.
+// keywords: decompose markers lookup select
+// input: noise cells sit on a bg ground; one cell carries params.marker
+// output: the output erases everything and fills the 2×2 region holding
+//  the marker
 
-#include "../lib.dl"
+// locate the region
+.type Locate =
+    // grid divided into a params.divisor arrangement; the marker's tile
+    Count {}
+    // grid tiled by params.tile_dim blocks; the marker's block
+  | Block {}
+    // a params.block_dim block seated at the marker's nearest corner
+  | Corner {}
 
-.type Locate = Count {} | Block {} | Corner {}
-.type Fill   = Marker {} | Fixed {}
+// fill color
+.type Fill =
+    // the marker's own color propagates to the fill
+    Marker {}
+    // an independent params.fill
+  | Fixed {}
+
+// which region locates the marker, crossed with which color fills it — the
+// 4×4 grids leave both underdetermined
 .type Choice = [l: Locate, f: Fill]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl marker(c: Color) marker(2).
@@ -82,7 +89,6 @@ fill_color(Col, $Fixed())  :- params.fill(Col).
 
 // --- Output ---
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, [L, F]) :- region(P, L), fill_color(Col, F).
 out(P, Col, [L, F]) :-
     in(P, _), locate_choice(L), !region(P, L),    // cell outside the region

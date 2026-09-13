@@ -1,11 +1,11 @@
 // 8e2edd66
-// concept: tile-arrangement stamp
-// Fractal of the input's complement. The output is an input-shaped
-// arrangement of input-sized tiles: at each bg cell of the input the
-// tile is the input's complement, drawn in the input's ink color; at
-// each ink cell the tile is blank.
+// keywords: tile-arrangement stamp
+// output: Fractal of the input's complement. The output is an input-shaped
+//  arrangement of input-sized tiles: at each bg cell of the input the tile is
+//  the input's complement, drawn in the input's ink color; at each ink cell the
+//  tile is blank.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color)
@@ -33,6 +33,5 @@ ink_at(P_grid) :-
     bg_cell(P_tile), bg_cell(P_intile),
     concat_2d(P_tile, P_intile, 0, P_grid).
 
-.decl out(p: Position, col: Color)
 out(P, C) :- ink_at(P), ink(C).
 out(P, C) :- out_cell(P), !ink_at(P), params.bg(C).

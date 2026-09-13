@@ -1,18 +1,19 @@
 // 8597cfd7
-// concept: decompose count span rank
-// A separator line splits the grid into a before and an after panel; each
-// panel holds one bar per ink color. The output is a block of the color
-// whose bar grew more across the separator. Two measures of bar length:
-//
-//   $Count — cells of the color in the panel.
-//   $Span  — slices the color's cells span in the panel.
-//
-// The measures coincide here (every bar is solid); they diverge on a bar
-// with a hole.
+// keywords: decompose count span rank
+// input: A separator line splits the grid into a before and an after panel;
+//  each panel holds one bar per ink color.
+// output: The output is a block of the color whose bar grew more across the
+//  separator. The measures coincide here (every bar is solid); they diverge
+//  on a bar with a hole.
 
-#include "../lib.dl"
+// how a bar's length is measured
+.type Choice =
+    // cells of the color in the panel
+    Count {}
+    // slices the color's cells span in the panel
+  | Span {}
 
-.type Choice = Count {} | Span {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl sep(c: Color) sep(5).
@@ -73,5 +74,4 @@ winner.cand(Ch, Col, N) :- growth.excess([Col, Ch], N).
 .init frame = Frame2D<Unit>
 frame.extent($U(), A, N) :- axis_elem(A), params.out_dim(N).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- frame.cell($U(), P), winner.high(Ch, Col, _).

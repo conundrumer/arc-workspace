@@ -1,13 +1,11 @@
 // 6e19193c
 // draft
-// concept: objects cast
-//
-// Arrowheads sit on a blank grid: each object leaves one corner of its
-// bounding box empty. That empty corner is the tip. From the tip, the
-// object casts a diagonal ray in its own color, away from the box, to the
-// grid edge. The tip cell itself stays blank.
+// keywords: objects cast
+// input: objects on bg, each missing one corner of its bounding box: the tip
+// output: From the tip, the object casts a diagonal ray in its own color,
+//  away from the box, to the grid edge. The tip cell itself stays blank.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -40,7 +38,6 @@ ray.cell(Id, P) :- paint(Id, _), in(P, _).
 .decl trail(p: Position, col: Color)
 trail(P, Col) :- ray.ray(Id, P, _, K, _), K != 0, paint(Id, Col).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, Col_in),
     ( trail(P, Col)                    // on a trail

@@ -1,12 +1,12 @@
 // 55783887
 // draft
-// concept: markers span cast
-// Two line marks sharing a diagonal delimit a span, and the span fills with
-// the line color. A cast mark on a span emits the whole perpendicular
-// diagonal line through itself, in the cast color. Paint covers unmarked
-// cells only, so every mark keeps its color.
+// keywords: markers span cast
+// input: Two line marks sharing a diagonal delimit a span.
+// output: The span fills with the line color. A cast mark on a span emits
+//  the whole perpendicular diagonal line through itself, in the cast color.
+//  Paint covers unmarked cells only, so every mark keeps its color.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl line_color(col: Color) line_color(1).
@@ -34,6 +34,5 @@ emit(P, DA2) :-
 paint(P, Col) :- span.between(_, P), blank(P), params.line_color(Col).
 paint(P, Col) :- emit(Q, DA), same_line(DA, P, Q), blank(P), params.cast_color(Col).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- paint(P, Col).
 out(P, Col) :- in(P, Col), !paint(P, _).

@@ -1,19 +1,23 @@
 // 5117e062
 // draft
-// concept: markers objects crop select
-// Several one-color figures sit on bg. One cell of one figure carries params.mark.
-// The output is the box of the region the mark designates, with the mark cell
-// taking the region's color.
-//   $Object — the figure the mark sits in.
-//   $Touch  — the mark and the cells that touch it.
-//   $Window — the params.win_dim window centered on the mark.
+// keywords: markers objects crop select
+// input: several one-color figures on bg, one cell of one figure carrying
+//  params.mark
+// output: The output is the box of the region the mark designates, with
+//  the mark cell taking the region's color.
 
-#include "../lib.dl"
+// which region the mark designates
+.type Choice =
+    // the figure the mark sits in
+    Object {}
+    // the mark and the cells that touch it
+  | Touch {}
+    // the params.win_dim window centered on the mark
+  | Window {}
 
-.type Choice = Object {} | Touch {} | Window {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
     .decl mark(col: Color) mark(8).
 
@@ -62,7 +66,6 @@ fill.item(Ch, Col) :- region(Ch, P), in(P, Col), !params.bg(Col), !params.mark(C
 .init view = Bbox<Choice>
 view.cell(Ch, P) :- region(Ch, P).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_inner, Col, Ch) :-
     in(P, Col_in), view.box(Ch, B), crop(P, B, P_inner),
     ( params.mark(Col_in), fill.value(Ch, Col)

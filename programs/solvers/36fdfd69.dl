@@ -1,22 +1,23 @@
 // 36fdfd69
 // draft
-// concept: objects markers span
-// The grid is a noise field in two colors, one of them params.bg, with cells of
-// params.mark scattered on it. Marks with at most one cell between them cluster,
-// and each cluster's bounding box takes params.fill. The other noise color changes
-// from pair to pair, so no parameter names it and the fill's target is stated by
-// exclusion. No box the pairs exhibit holds a params.bg cell, and the cases contest
-// what the fill spares:
-//
-//   $Solid   — every non-mark cell of the box takes params.fill.
-//   $Recolor — params.bg is empty ground, not noise: it stays where a box covers it.
+// keywords: objects markers span
+// input: The grid is a noise field in two colors, one of them params.bg,
+//  with cells of params.mark scattered on it. Marks with at most one cell
+//  between them cluster.
+// output: In each cluster's bounding box, the cells that are not marks
+//  take params.fill.
 
-#include "../lib.dl"
+// what the fill spares within a box. No box the pairs exhibit covers a
+// params.bg cell, so on the pairs the cases agree.
+.type Choice =
+    // every non-mark cell of the box takes params.fill
+    Solid {}
+    // params.bg is empty ground, not noise: it stays where a box covers it
+  | Recolor {}
 
-.type Choice = Solid {} | Recolor {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl mark(col: Color) mark(2).
     .decl fill(col: Color) fill(4).
 
@@ -43,7 +44,9 @@ bbox.cell(Id, P) :- cluster.label($U(), P, Id).
 impl_choice($Solid()). impl_choice($Recolor()).
 
 .decl unmarked(p: Position, col: Color)
-unmarked(P, Col) :- bbox.box(_, B), in(P, Col), inside(P, B), !params.mark(Col).
+unmarked(P, Col) :-
+    in(P, Col), !params.mark(Col),   // a cell that is not a mark
+    bbox.box(_, B), inside(P, B).    // inside a cluster's box
 
 // The box cells the fill takes.
 .decl repaint(p: Position, c: Choice)
@@ -54,6 +57,5 @@ repaint(P, $Solid()) :- unmarked(P, _).
 // --- Recolor ---
 repaint(P, $Recolor()) :- unmarked(P, Col), !params.bg(Col).
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P, Col, C) :- repaint(P, C), params.fill(Col).
 out(P, Col, C) :- in(P, Col), impl_choice(C), !repaint(P, C).

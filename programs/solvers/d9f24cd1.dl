@@ -1,18 +1,19 @@
 // d9f24cd1
-// concept: markers walk
-// Each mark walks away from the mark edge, painting the mark color; a
-// block-colored cell ahead deflects the walk one cell to the dodge side.
-// Two models of the mark edge:
-//
-//   $Dir  — params.dir names it.
-//   $Edge — the edge each mark sits on.
-//
-// The models coincide here (every mark is on the bottom edge); they
-// diverge when marks sit on another edge.
+// keywords: markers walk
+// output: Each mark walks away from the mark edge, painting the mark color; a
+//  block-colored cell ahead deflects the walk one cell to the dodge side.
 
-#include "../lib.dl"
+// which edge is the mark edge
+.type Choice =
+    // params.dir names it
+    Dir {}
+    // the edge each mark sits on
+  | Edge {}
 
-.type Choice = Dir {} | Edge {}
+// The cases coincide here — every mark is on the bottom edge — and diverge
+// when marks sit on another edge.
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl mark(c: Color) mark(2).
@@ -53,6 +54,5 @@ walk(P2, W, Ch) :-
 .decl impl_choice(ch: Choice)
 impl_choice($Dir()). impl_choice($Edge()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- walk(P, _, Ch), params.mark(Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !walk(P, _, Ch).

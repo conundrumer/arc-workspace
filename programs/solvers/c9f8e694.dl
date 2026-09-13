@@ -1,45 +1,47 @@
 // c9f8e694
-// family: c7d4e6ad
-// Cells of color in params.targets are substituted with a per-slice replacement
-// color. Slices run along params.axis.
+// representative: c7d4e6ad
 
-#include "../lib.dl"
+// what supplies the slice's replacement color
+.type Choice =
+    // the cell at edge params.anchor (positional)
+    Anchor {}
+    // the slice's unique non-bg non-target color (content-defined)
+  | Unique {}
 
-.type Choice = Anchor {} | Unique {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    // anchor
+    .decl targets(c: Color) targets(5).
+    .decl axis(a: Axis) axis(AXIS_H).
+
+    // --- Anchor ---
     .decl anchor(d: Dir) anchor(DIR_L).
 
-    // unique
-    .decl targets(c: Color) targets(5).
+    // --- Unique ---
     .decl bg(c: Color) bg(0).
-    .decl axis(a: Axis) axis(AXIS_H).
 }
 
 .init params = Params
 
-// Per-slice replacement color, parameterized by impl choice.
+// Each input cell with the slice it lies in.
+.decl cell_slice(p: Position, col: Color, p_across: Position)
+cell_slice(P, Col, P_across) :- in(P, Col), params.axis(A), split(P, A, _, P_across).
+
+// Per-slice replacement color.
 .decl slice_repl(p_across: Position, col: Color, c: Choice)
 
 slice_repl(P_across, Col, $Anchor()) :-
-    in(P, Col),
-    params.anchor(D), dist(P, D, 0),
-    params.axis(A), split(P, A, _, P_across).
+    cell_slice(P, Col, P_across), params.anchor(D), dist(P, D, 0).
 
 slice_repl(P_across, Col, $Unique()) :-
-    in(P, Col), !params.targets(Col), !params.bg(Col),
-    params.axis(A), split(P, A, _, P_across).
+    cell_slice(_, Col, P_across), !params.targets(Col), !params.bg(Col).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Anchor()).
 impl_choice($Unique()).
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P, Col_out, Impl) :-
-    impl_choice(Impl), in(P, Col),
-    ( params.targets(Col),                             // a target cell
-      params.axis(A), split(P, A, _, P_across),
-      slice_repl(P_across, Col_out, Impl)         // its slice's replacement
-    ; !params.targets(Col), Col_out = Col         // not a target — kept
+    impl_choice(Impl), cell_slice(P, Col, P_across),
+    ( params.targets(Col), slice_repl(P_across, Col_out, Impl)   // a target cell takes its slice's replacement
+    ; !params.targets(Col), Col_out = Col                        // not a target — kept
     ).

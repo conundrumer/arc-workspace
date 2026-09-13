@@ -1,9 +1,10 @@
 // ce039d91
-// concept: symmetry
-// Symmetric-cell highlight: a params.mark cell whose whole-grid image under params.sym
-// is also marked recolors to params.fill; every other cell passes through.
+// keywords: symmetry
+// output: Symmetric-cell highlight: a params.mark cell whose whole-grid image
+//  under params.sym is also marked recolors to params.fill; every other cell
+//  passes through.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl mark(c: Color) mark(5).
@@ -18,6 +19,5 @@ symmetric(P) :-
     in(P, M), params.mark(M),                   // marked cell
     params.sym(D), apply(D, P, Q), in(Q, M).    // image also marked
 
-.decl out(p: Position, col: Color)
 out(P, F)   :- symmetric(P), params.fill(F).
 out(P, Col) :- in(P, Col), !symmetric(P).

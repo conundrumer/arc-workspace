@@ -1,20 +1,23 @@
 // 80a900e0
 // draft
-// concept: objects markers cast
-// On a two-color checkerboard, shapes are 8-connected objects of one color.
-// A straight diagonal segment casts a ray from each end, perpendicular to
-// itself, in its own color, over background cells. In the pairs every
-// segment lies against a diamond of another color, and only the ray leaving
-// the diamond shows.
-//
-//   $Halt — each end casts both perpendicular directions; a ray halts at the
-//           first object cell.
-//   $Away — each end casts only away from the object cell across from the
-//           ray; the ray crosses the whole grid.
+// keywords: objects markers cast
+// input: Objects, each an 8-connected set of one color, on a two-color
+//  checkerboard.
+// output: A diagonal segment casts a ray from each end, perpendicular to
+//  itself, in its own color, over background cells. In the pairs every
+//  segment lies against a diamond of another color, and only the ray leaving
+//  the diamond shows.
 
-#include "../lib.dl"
+// which directions each end casts, and where a ray stops
+.type Choice =
+    // each end casts both perpendicular directions; a ray halts at the first
+    // object cell
+    Halt {}
+    // each end casts only away from the object cell across from the ray; the
+    // ray crosses the whole grid
+  | Away {}
 
-.type Choice = Halt {} | Away {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color)
@@ -43,13 +46,11 @@ aligned(Id, Da, P, Q) :-
 bent(Id, Da) :-
     object(Id, P, _), object(Id, Q, _), diag_axis_elem(Da), !aligned(Id, Da, P, Q).
 
-// The object lies on one line of the diagonal family.
-.decl along(id: Ident, da: DiagAxis)
-along(Id, Da) :- object(Id, _, _), diag_axis_elem(Da), !bent(Id, Da).
-
-// A segment: an object of several cells along one diagonal.
+// A segment: an object of several cells, all on one diagonal line.
 .decl segment(id: Ident, da: DiagAxis)
-segment(Id, Da) :- along(Id, Da), object(Id, P, _), object(Id, Q, _), P != Q.
+segment(Id, Da) :-
+    object(Id, P, _), object(Id, Q, _), P != Q,    // several cells
+    diag_axis_elem(Da), !bent(Id, Da).             // none of them off the line
 
 .init rim = Rim8<Ident>
 rim.cell(Id, P) :- object(Id, P, _).
@@ -87,6 +88,5 @@ rays.dir([P_end, $Away()], D) :-
 .decl painted(p: Position, col: Color, ch: Choice)
 painted(P, Col, Ch) :- rays.clear([P_end, Ch], P, _, _, _), object(_, P_end, Col).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- painted(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, _, Ch).

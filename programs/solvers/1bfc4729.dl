@@ -1,21 +1,21 @@
 // 1bfc4729
 // draft
-// concept: markers border lookup cast
-// Two marks sit in the grid, one in each half of the task axis. Each half is
-// painted in its mark's color: the grid border where it runs through the half,
-// and one full line across the half.
-//
-// Cases (data-equivalent on this task — every mark sits two cells in from
-// its half's outer edge):
-//   $StoredLine() — the line sits at a stored distance from the outer edge
-//   $MarkLine()   — the line is the mark's own line
+// keywords: markers border lookup cast
+// output: Two marks sit in the grid, one in each half of the task axis. Each
+//  half is painted in its mark's color: the grid border where it runs through
+//  the half, and one full line across the half.
 
-#include "../lib.dl"
+// where each half's line sits; data-equivalent on this task, since every mark
+// sits two cells in from its half's outer edge
+.type Choice =
+    // the line sits at a stored distance from the outer edge
+    StoredLine {}
+    // the line is the mark's own line
+  | MarkLine {}
 
-.type Choice = StoredLine {} | MarkLine {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
 
     // The axis the two halves stack along.
@@ -59,6 +59,5 @@ ink(P, Col, $MarkLine()) :-
     half(P, D), mark(D, Col, P_mark),           // the half's color
     same_dist(D, P, P_mark).                    // the mark's line
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P, Col, Ch) :- ink(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !ink(P, _, Ch), params.bg(Col).

@@ -1,18 +1,20 @@
 // 10fcaaa3
-// concept: tile-arrangement stamp lookup
-// A few marks sit on a bg ground. The output is a params.copies×params.copies
-// arrangement of the input, with a halo stamped around every mark of the
-// arrangement; the halo fills bg cells only. Cases claim its footprint:
-//
-//   $Corners() — one step toward each corner, painted params.paint.
-//   $Table()   — a stored params.footprint stamp, anchored on the mark.
+// keywords: tile-arrangement stamp lookup
+// input: a few marks on a bg ground, tiled into a params.copies×params.copies
+//  arrangement.
+// output: a halo is stamped around every mark of the arrangement, filling bg
+//  cells only.
 
-#include "../lib.dl"
+// the halo's footprint
+.type Choice =
+    // one step toward each corner, painted params.paint
+    Corners {}
+    // a stored params.footprint stamp, anchored on the mark
+  | Table {}
 
-.type Choice = Corners {} | Table {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
     .decl copies(n: number) copies(2).
 
@@ -20,7 +22,7 @@
     .decl paint(col: Color) paint(8).
 
     // --- Table ---
-    // Halo cells as offsets from the mark, `@` on the mark's cell.
+    // Halo cells as offsets from the mark.
     .decl footprint(delta: Offset, col: Color)
     GRID_STAMP_SPARSE_3x3(footprint,
         8,  _, 8,
@@ -30,29 +32,33 @@
 
 .init params = Params
 
-// copies×copies arrangement of a grid.
+// copies×copies arrangement of a grid, and the marks on its bg ground.
 .comp Parse<Key> {
-    .decl grid(key: Key, p: Position, col: Color)  // input
+    .decl cell(key: Key, p: Position, col: Color)  // input
 
     .init arrangement = Frame2D<Unit>
     arrangement.extent($U(), A, N) :- axis_elem(A), params.copies(N).
 
     .decl tiled(key: Key, p: Position, col: Color)
     tiled(K, P_grid_out, Col) :-
-        arrangement.cell($U(), P_tile),                 // tile pos in the arrangement
-        grid(K, P_intile, Col),                         // intile pos
-        concat_2d(P_tile, P_intile, 0, P_grid_out).     // 2D recompose
+        arrangement.cell($U(), P_tile), cell(K, P_intile, Col),
+        concat_2d(P_tile, P_intile, 0, P_grid_out).  // one copy of the grid per tile
+
+    .decl mark(key: Key, p: Position)
+    mark(K, P) :- tiled(K, P, Col), !params.bg(Col).
+
+    .decl ground(key: Key, p: Position)
+    ground(K, P) :- tiled(K, P, Col), params.bg(Col).
 }
 
 .init parse = Parse<Unit>
-parse.grid($U(), P, Col) :- in(P, Col).
+parse.cell($U(), P, Col) :- in(P, Col).
 
 // The halo as offsets from the mark.
 .decl stamp(off: Offset, col: Color, ch: Choice)
 
 // --- Corners ---
 
-// One step toward each corner.
 stamp(Off, Col, $Corners()) :-
     diag_dir_elem(Diag), step_offset(Diag, Off), params.paint(Col).
 
@@ -65,39 +71,32 @@ impl_choice($Corners()). impl_choice($Table()).
 
 .decl halo(p: Position, col: Color, ch: Choice)
 halo(P, Col, Ch) :-
-    parse.tiled($U(), Q, Col_m), !params.bg(Col_m),  // a mark of the arrangement
-    stamp(Off, Col, Ch), compose(Q, Off, P),         // the stamp seated on it
-    parse.tiled($U(), P, Col_p), params.bg(Col_p).   // its target: an on-grid bg cell
+    parse.mark($U(), Q),                      // a mark of the arrangement
+    stamp(Off, Col, Ch), compose(Q, Off, P),  // the stamp seated on it
+    parse.ground($U(), P).                    // its target: an on-grid bg cell
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- halo(P, Col, Ch).
 out(P, Col, Ch) :- parse.tiled($U(), P, Col), impl_choice(Ch), !halo(P, _, Ch).
 
 .comp Determine {
     .init parse = Parse<Example>
-    parse.grid(E, P, Col) :- ex_in(E, P, Col).
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
 
     // Cells the stamp painted: output ink where the arrangement holds bg.
     .decl painted(e: Example, p: Position, col: Color)
-    painted(E, P, Col) :-
-        ex_out(E, P, Col), !params.bg(Col),
-        parse.tiled(E, P, Cb), params.bg(Cb).
+    painted(E, P, Col) :- ex_out(E, P, Col), !params.bg(Col), parse.ground(E, P).
 
-    // A candidate footprint cell: a painted cell read as an offset from some
-    // mark, beside the cell that witnesses it.
+    // A candidate footprint cell: a painted cell as an offset from some mark.
     .decl witness(off: Offset, e: Example, p: Position, col: Color)
     witness(Off, E, P, Col) :-
-        painted(E, P, Col),
-        parse.tiled(E, M, Cm), !params.bg(Cm),  // a mark of the arrangement
-        relative(M, P, Off).
+        painted(E, P, Col), parse.mark(E, M), relative(M, P, Off).
 
     // A candidate some seating of it contradicts.
     .decl mismatch(off: Offset, col: Color)
     mismatch(Off, Col) :-
         witness(Off, _, _, Col),
-        parse.tiled(E, M, Cm), !params.bg(Cm), compose(M, Off, P),  // seated on a mark
-        parse.tiled(E, P, Cb), params.bg(Cb),                       // its target is bg
-        ex_out(E, P, C2), C2 != Col.                                // the output holds something else
+        parse.mark(E, M), compose(M, Off, P), parse.ground(E, P),  // seated on a mark, over bg
+        ex_out(E, P, C2), C2 != Col.                               // the output holds something else
 
     // The painted cells each surviving candidate accounts for.
     .decl explains(off: Offset, e: Example, p: Position, col: Color)

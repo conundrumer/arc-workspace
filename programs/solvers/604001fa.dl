@@ -1,12 +1,13 @@
 // 604001fa
 // draft
-// concept: objects markers lookup
-// An object is an 8-connected component of non-background cells: a shape with
-// a mark attached. A mark is three cells in a 2x2 box, so one corner of that
-// box stays empty, and that corner names a color. The output erases the marks
-// and paints each shape in the color its mark names.
+// keywords: objects markers lookup
+// input: an object is an 8-connected component of non-background cells: a
+//  shape with a mark attached. A mark is three cells in a 2x2 box, so one
+//  corner of that box stays empty, and that corner names a color.
+// output: the output erases the marks and paints each shape in the color its
+//  mark names.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -48,7 +49,6 @@
 .init parse = Parse<Unit>
 parse.cell($U(), P, Col) :- in(P, Col).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, _),
     ( parse.shape_cell($U(), P, Id),                                        // a shape cell

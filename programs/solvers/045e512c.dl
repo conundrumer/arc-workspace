@@ -1,20 +1,22 @@
 // 045e512c
-// concept: objects markers cast
-// One template shape on params.bg, with fragments of it elsewhere. Each fragment
-// lies inside a copy of the template one step away; the output marches copies
-// along that step, in the fragment's color, until they leave the grid.
-//
-// The cases differ in what fixes the step's length:
-//   $Reach  — the farthest copy the fragment still fits inside.
-//   $Stride — a stored pitch.
-//   $Abut   — the template's extent plus a stored gap.
+// keywords: objects markers cast
+// input: a template shape on params.bg, with fragments of it elsewhere,
+//  each fragment lying inside a copy of the template one step away
+// output: The output marches copies along that step, in the fragment's
+//  color, until they leave the grid.
 
-#include "../lib.dl"
+// what fixes the step's length
+.type Choice =
+    // the farthest copy the fragment still fits inside
+    Reach {}
+    // a stored pitch
+  | Stride {}
+    // the template's extent plus a stored gap
+  | Abut {}
 
-.type Choice = Reach {} | Stride {} | Abut {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
 
     // --- Stride ---
@@ -104,6 +106,5 @@ copy(Id, P2, Ch) :-
 .decl impl_choice(ch: Choice)
 impl_choice($Reach()). impl_choice($Stride()). impl_choice($Abut()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- copy(Id, P, Ch), object(Id, Col, _).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !copy(_, P, Ch).

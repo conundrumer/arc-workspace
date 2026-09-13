@@ -1,26 +1,27 @@
 // 337b420f
 // draft
-// concept: decompose overlay objects select move count
-// Separators cut the input into equal panels, and each panel holds one
-// large shape with a smaller decoy. The output frame is one panel, and
-// every large shape keeps the place it holds in its own panel. Where two
-// shapes would meet, one shape slides along a cardinal direction, by the
-// shortest slide that clears the meeting.
-//
-// The cases differ on what the cut reads:
-//
-//   $Count  — the panels along the axis.
-//   $Size — a panel's extent.
-//
-// And on which shape slides:
-//
-//   $Least — the shape whose clearing slide is shortest.
-//   $Yield — the smallest shape that can clear the meeting.
+// keywords: decompose overlay objects select move count
+// input: Separators cut the input into equal panels, and each panel holds
+//  one large shape with a smaller decoy.
+// output: The output frame is one panel, and every large shape keeps the
+//  place it holds in its own panel. Where two shapes would meet, one shape
+//  slides along a cardinal direction, by the shortest slide that clears the
+//  meeting.
 
-#include "../lib.dl"
+// what the panel cut reads
+.type DecChoice =
+    // the panels along the axis
+    Count {}
+    // a panel's extent
+  | Size {}
 
-.type DecChoice = Count {} | Size {}
-.type Move = Least {} | Yield {}
+// which shape slides
+.type Move =
+    // the shape whose clearing slide is shortest
+    Least {}
+    // the smallest shape that can clear the meeting
+  | Yield {}
+
 .type Choice = [d: DecChoice, move: Move]
 
 // A frame cell under one arrangement.
@@ -32,8 +33,9 @@
 // A panel under one cut.
 .type Panel = [dc: DecChoice, p_panel: Position]
 
+.decl out(p: Position, col: Color, c: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(8).
     .decl panel_axis(a: Axis) panel_axis(AXIS_H).
     .decl sep_width(g: number) sep_width(1).
@@ -162,7 +164,6 @@ mover(Dc, M, $Yield()) :- smallest.low(Dc, M, _).   // the fewest cells
 paint(P, Col, [Dc, Mv]) :-
     chosen(Dc, M, D, K, Mv), holder.value([Dc, M, D, K, P], Id), piece(Dc, Id, Col).
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Bg, [Dc, Mv]) :-
     frame(Dc, P), params.bg(Bg), impl_choice([Dc, Mv]), !paint(P, _, [Dc, Mv]).

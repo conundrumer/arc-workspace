@@ -1,8 +1,8 @@
 // 7953d61e
-// concept: tile-arrangement lookup d4
-// 2×2 tile arrangement of input rotations — a per-tile D4 table.
+// keywords: tile-arrangement lookup d4
+// output: 2×2 tile arrangement of input rotations — a per-tile D4 table.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl tile_d4(p: Position, d: D4)
@@ -13,7 +13,6 @@
 
 .init params = Params
 
-.decl out(p: Position, col: Color)
 out(P_grid, Col) :-
     in(P_in, Col),                                            // input cell
     params.tile_d4(P_tile, D), apply(D, P_in, P_intile),      // d4 image at tile

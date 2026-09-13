@@ -1,17 +1,19 @@
 // 7c8af763
 // draft
-// concept: objects decompose markers count
-// Lines of one color cut the grid into bg regions. Marks in other colors sit
-// on the lines. Each region fills with the color of the majority of the
-// marks that touch it. Two parses of the regions:
-//
-//   $Region — the connected components of bg.
-//   $Tile   — the tiles of the lattice of full lines, the lines with no bg
-//             cell.
+// keywords: objects decompose markers count
+// input: lines of one color cutting the grid into bg regions, with marks in
+//  other colors on the lines
+// output: Each region fills with the color of the majority of the marks that
+//  touch it.
 
-#include "../lib.dl"
+// how a region is parsed
+.type Choice =
+    // the connected components of bg
+    Region {}
+    // the tiles of the lattice of full lines, the lines with no bg cell
+  | Tile {}
 
-.type Choice = Region {} | Tile {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -29,7 +31,6 @@ touch(P, Q, Col) :-
     in(P, _), dir_elem(D), neighbor(P, D, Q),
     in(Q, Col), !params.bg(Col), !params.line(Col).
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P, Col, Ch) :- in(P, Col), !params.bg(Col), impl_choice(Ch).
 
 // --- Region ---

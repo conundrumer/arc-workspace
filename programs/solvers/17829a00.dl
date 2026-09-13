@@ -1,11 +1,12 @@
 // 17829a00
 // draft
-// concept: objects move
-// A border line caps each end of params.axis, one color per border. The objects
-// between them wear those two colors. Each object slides along the axis to
-// the border matching its color and stops against it, leaving params.bg behind.
+// keywords: objects move
+// output: A border line caps each end of params.axis, one color per border. The
+//  objects between them wear those two colors. Each object slides along the
+//  axis to the border matching its color and stops against it, leaving
+//  params.bg behind.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(7).
@@ -54,7 +55,6 @@ landed(P2, Col) :-
     slide.rest(Id, ZERO, _, Delta),              // the object at rest
     obj.label(Col, P, Id), compose(P, Delta, P2).  // its cells, carried there
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- border_cell(_, P), in(P, Col).
 out(P, Col) :- landed(P, Col).
 out(P, Col) :- inner_cell(P), !landed(P, _), params.bg(Col).

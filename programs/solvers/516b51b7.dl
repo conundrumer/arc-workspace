@@ -1,26 +1,33 @@
 // 516b51b7
 // draft
-// concept: objects walk border parity lookup
-// Solid ink rectangles sit on the background. Each one gains concentric
-// rings: its outline keeps its ink, and every cell inside takes a color
-// that follows how deep it lies. Choice = [m, p] crosses two choice points:
-//
-//   m (how deep a cell lies):
-//     $Peel()  — erosion from the object's own outline.
-//     $Box()   — distance to the nearest edge of the object's bounding box.
-//   p (the color at a depth):
-//     $Cycle() — the colors of params.ring repeat over the depths.
-//     $Table() — params.ring_at holds one color per depth.
-//
-// Every object here is a solid rectangle, where the two depths agree; a
-// ragged object would split them. No depth passes the last entry of
-// params.ring_at.
+// keywords: objects walk border parity lookup
+// input: solid ink rectangles on the background
+// output: Each rectangle gains concentric rings: its outline keeps its
+//  ink, and every cell inside takes a color that follows how deep it
+//  lies.
 
-#include "../lib.dl"
+// how deep a cell lies (the two metrics agree on this task, since every
+// object is a solid rectangle; a ragged object would split them)
+.type Metric =
+    // erosion from the object's own outline
+    Peel {}
+    // distance to the nearest edge of the object's bounding box
+  | Box {}
 
-.type Metric = Peel {} | Box {}
-.type Palette = Cycle {} | Table {}
+// the color at a depth
+.type Palette =
+    // the colors of params.ring repeat over the depths
+    Cycle {}
+    // params.ring_at holds one color per depth; no depth passes its last
+    // entry
+  | Table {}
+
+// how deep a cell lies, crossed with the color at a depth
 .type Choice = [m: Metric, p: Palette]
+
+// --- shared ---
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -71,10 +78,6 @@ box_depth.cand(P, K) :-
     dir_elem(D), dist(P_inner, D, K).
 
 depth(P, K, $Box()) :- box_depth.low(P, K).
-
-// --- shared ---
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // The background and every object's outline keep their color.
 out(P, Col, [M, Pal]) :-

@@ -1,14 +1,16 @@
 // 5582e5ca
-// concept: count rank
-// The input frame filled with one uniform color. Models of the fill
-// color, data-equivalent on this task — the winning color appears
-// exactly 3 times in every pair:
-//   $Mode  — the most frequent color
-//   $Count — the color with a stored occurrence count
+// keywords: count rank
+// output: The input frame filled with one uniform color.
 
-#include "../lib.dl"
+// the fill color: two models, data-equivalent on this task since the
+//  winning color appears exactly 3 times in every pair
+.type Choice =
+    // the most frequent color
+    Mode {}
+    // the color with a stored occurrence count
+  | Count {}
 
-.type Choice = Mode {} | Count {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // --- Count ---
@@ -19,8 +21,6 @@
 
 .init tally = Mode<Unit, Color, Position>
 tally.item($U(), Col, P) :- in(P, Col).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // --- Mode ---
 out(P, Col, $Mode()) :- in(P, _), tally.mode($U(), Col).

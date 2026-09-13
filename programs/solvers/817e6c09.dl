@@ -1,11 +1,12 @@
 // 817e6c09
 // draft
-// concept: objects rank parity
-// Blocks of params.ink rank by distance from the params.anchor edge, nearest
-// first. Every other block in that order, the nearest included, recolors to
-// params.mark; other cells pass through.
+// keywords: objects rank parity
+// input: connected components of params.ink
+// output: Blocks rank by distance from the params.anchor edge, nearest
+//  first. Every other block in that order, the nearest included, recolors
+//  to params.mark; other cells pass through.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl anchor(d: Dir) anchor(DIR_R).   // alternation starts here
@@ -38,6 +39,5 @@ marked(P) :-
     block_dist(Id, K), seq.rank($U(), K, R),                          // block's rank from anchor
     params.mark_run(Kr), params.keep_run(G), stride(R, Kr, G, _, _).  // in a marked run
 
-.decl out(p: Position, col: Color)
 out(P, M)   :- marked(P), params.mark(M).
 out(P, Col) :- in(P, Col), !marked(P).

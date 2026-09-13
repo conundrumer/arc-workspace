@@ -1,20 +1,21 @@
 // 2685904e
 // draft
-// concept: lines count cast
-// A bar on one edge states a length N. The separator casts a band N deep
-// back toward that edge. Beyond the separator a pattern line holds one
-// color per column; a column whose color occurs N times there takes that
-// color through the band.
-//
-// The band is blank in every input, so what an unselected band cell holds
-// is underdetermined; two models:
-//
-//   $Passthrough() — it keeps its input color.
-//   $Repaint()     — the band is drawn fresh, so it goes params.bg.
+// keywords: lines count cast
+// input: A bar on one edge states a length N. Beyond a separator, a pattern
+//  line holds one color per column.
+// output: The separator casts a band N deep back toward the bar's edge; a
+//  column whose color occurs N times there takes that color through the band.
+//  The band is blank in every input, so what an unselected band cell holds is
+//  underdetermined; two models:
 
-#include "../lib.dl"
+// what an unselected band cell holds
+.type Choice =
+    // it keeps its input color
+    Passthrough {}
+    // the band is drawn fresh, so it goes params.bg
+  | Repaint {}
 
-.type Choice = Passthrough {} | Repaint {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // Edge the separator and the pattern line are measured from; the
@@ -66,8 +67,6 @@ paint(P, Col) :-
     length.tally($U(), N), freq.tally(Col, N),                   // as frequent as the bar is long
     pattern_cell(P_pat, Col),                                    // the column holding that color
     params.base_dir(D), axis_of(D, A), same_line(A, P, P_pat).   // and P is in it
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // --- $Passthrough ---
 out(P, Col, $Passthrough()) :- paint(P, Col).

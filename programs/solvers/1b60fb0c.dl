@@ -1,18 +1,23 @@
 // 1b60fb0c
 // draft
-// concept: symmetry repair d4
-// A one-color figure sits in the grid. The output adds, in a second color, the
-// cells that a placed quarter turn of the figure reaches and the input leaves
-// empty. $Complete reads the figure as closed under the turn and paints the
-// whole orbit, taking the placement whose orbit is smallest; $Copy lays down a
-// single turned copy, at the placement that overlaps the figure most.
+// keywords: symmetry repair d4
+// input: A one-color figure sits in the grid.
+// output: The output adds, in a second color, the cells that a placed turn of
+//  the figure reaches and the input leaves empty.
 
-#include "../lib.dl"
-
-.type Choice = Complete {} | Copy {}
+// whether the turn closes or applies once
+.type Choice =
+    // closes the figure under the turn and paints the whole orbit, at the
+    // placement whose orbit is smallest
+    Complete {}
+    // lays down a single turned copy, at the placement that overlaps the
+    // figure most
+  | Copy {}
 
 .decl impl_choice(ch: Choice)
 impl_choice($Complete()). impl_choice($Copy()).
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl ink(col: Color) ink(1).
@@ -26,21 +31,21 @@ impl_choice($Complete()). impl_choice($Copy()).
 .decl ink_cell(p: Position)
 ink_cell(P) :- in(P, Col), params.ink(Col).
 
-// A placement of the turn is the shift that carries one ink cell's turned
-// image onto another ink cell.
+// A placement of the turn is a shift that carries one ink cell's turned image
+// onto another ink cell.
 .decl placement(delta: Offset)
 placement(Delta) :-
     ink_cell(P), params.sym(D), apply(D, P, P_turn),  // an ink cell, turned
-    ink_cell(Q), relative(P_turn, Q, Delta).      // onto another ink cell
+    ink_cell(Q), relative(P_turn, Q, Delta).          // onto another ink cell
 
 // The placed turn, and the cells it reaches from the ink. Cells off the grid
 // stay in.
-.decl turn_step(delta: Offset, p: Position, q: Position)
 .decl orbit(delta: Offset, p: Position)
+.decl turn_step(delta: Offset, p: Position, q: Position)
+orbit(Delta, P) :- placement(Delta), ink_cell(P).
 turn_step(Delta, P, Q) :-
     orbit(Delta, P),                                                 // a cell in play
     params.sym(D), apply(D, P, P_turn), compose(P_turn, Delta, Q).   // turned, then placed
-orbit(Delta, P) :- placement(Delta), ink_cell(P).
 orbit(Delta, Q) :- turn_step(Delta, _, Q).
 
 // A cell the turn adds that the input does not hold.
@@ -58,7 +63,7 @@ smallest.cand($U(), Delta, N) :- size.tally(Delta, N).
 
 restored(P, $Complete()) :-
     smallest.low($U(), Delta, _), orbit(Delta, P),   // the completed figure
-    in(P, Col), !params.ink(Col).                    // erased here
+    in(P, _), !ink_cell(P).                          // empty in the input
 
 // --- Copy ---
 
@@ -69,9 +74,8 @@ copy_cell(Delta, Q) :- turn_step(Delta, P, Q), ink_cell(P).
 fittest.item($U(), Delta, P) :- copy_cell(Delta, P), ink_cell(P).
 
 restored(P, $Copy()) :-
-    fittest.mode($U(), Delta), copy_cell(Delta, P),   // the best-fit copy
-    in(P, Col), !params.ink(Col).                     // empty here
+    fittest.mode($U(), Delta), copy_cell(Delta, P),  // the best-fit copy
+    in(P, _), !ink_cell(P).                          // empty in the input
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !restored(P, Ch).
 out(P, Col, Ch) :- restored(P, Ch), params.fill(Col).

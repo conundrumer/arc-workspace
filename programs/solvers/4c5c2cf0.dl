@@ -1,18 +1,21 @@
 // 4c5c2cf0
 // draft
-// concept: markers symmetry d4 lookup
-// Two shapes, one color each, sit on an empty grid: a pivot and a mover.
-// Every shape cell is copied to its image under each element of params.group
-// about the pivot's center. params.group fixes the pivot, so the pivot lands on
-// itself and only the mover multiplies; an image off the grid is dropped.
-// The cases find the pivot in two ways, and agree on every pair:
-//
-//   $Fixed — the pivot is the shape params.group fixes.
-//   $Known — the pivot is the shape whose footprint is params.pivot_shape.
+// keywords: markers symmetry d4 lookup
+// input: Two shapes, one color each, sit on an empty grid: a pivot and a
+//  mover.
+// output: Every shape cell is copied to its image under each element of
+//  params.group about the pivot's center. params.group fixes the pivot, so
+//  the pivot lands on itself and only the mover multiplies; an image off
+//  the grid is dropped.
 
-#include "../lib.dl"
+// how the pivot is found; the two ways agree on every pair
+.type Choice =
+    // the pivot is the shape params.group fixes
+    Fixed {}
+    // the pivot is the shape whose footprint is params.pivot_shape
+  | Known {}
 
-.type Choice = Fixed {} | Known {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -72,7 +75,6 @@ copy(P_img, Col, Ch) :-
     params.group(S), sym_member(S, D), apply(D, P_rel, P_rel2),   // one image per group element
     compose(B, P_rel2, P_img), in(P_img, _).                      // seated back on the grid
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- copy(P, Col, Ch).
 out(P, Col, Ch) :- in(P, _), pivot(_, Ch), !copy(P, _, Ch), params.bg(Col).
 

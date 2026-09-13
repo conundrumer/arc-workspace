@@ -1,39 +1,53 @@
 // 94f9d214
-// family: fafffa47
-// Layout: 2×1 vertically-stacked 4×4 subgrids.
-#include "../lib.dl"
+// representative: fafffa47
 
-.type DecChoice = Table {} | Count {} | Size {}
-.type Body      = Lookup {} | Nor {}
-.type Choice    = [d: DecChoice, b: Body]
+// decompose
+.type DecChoice =
+    // the decomposition tabulated in the parameters
+    Table {}
+    // divided by tile count
+  | Count {}
+    // divided by tile size
+  | Size {}
+
+// combine
+.type Body =
+    // the cell's tiles, one color each, looked up in a stored table
+    Lookup {}
+    // NOR: no tile contributes a non-bg cell
+  | Nor {}
+
+.type Choice = [d: DecChoice, b: Body]
 
 .type CombineMember = [p: Position, col: Color]
-.type CombineKey    = [p: Position, dc: DecChoice]
+.type CombineKey = [p: Position, dc: DecChoice]
+
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
 
-    .decl frame_dim(k: number) frame_dim(4).
-    .decl frame(p: Position)
-    frame(P) :- frame_dim(K), helpers.frame_pos([K, K], P).
+    // --- Table, Size ---
+    // a tile's extent on both axes
+    .decl tile_dim(k: number) tile_dim(4).
 
-    // --- Table decompose data ---
+    // --- Table ---
     .decl arr_dim(a: Axis, n: number)
     arr_dim(AXIS_V, 2). arr_dim(AXIS_H, 1).
     .decl tile_decompose(p: Position, p_outer: Position, p_inner: Position)
     tile_decompose(P_grid, P_tile, P_intile) :-
-        arr_dim(AXIS_V, Av), arr_dim(AXIS_H, Ah), frame_dim(K),
+        arr_dim(AXIS_V, Av), arr_dim(AXIS_H, Ah), tile_dim(K),
         helpers.tile_pos([Av, Ah], [K, K], [0, 0], P_grid, P_tile, P_intile).
 
-    // --- Count, Size decompose data ---
+    // --- Count, Size ---
     .decl divide_axis(a: Axis)
     divide_axis(AXIS_V).
 
-    // --- Count decompose data ---
+    // --- Count ---
     .decl divisor(n: number)
     divisor(2).
 
-    // --- Lookup program data ---
+    // --- Lookup ---
     .decl combine_member(id: Ident, p_outer: Position, c: Color)
     .decl combine_out(id: Ident, c_out: Color)
 
@@ -42,52 +56,44 @@
     combine_member(2, [0,1,0,0], 0). combine_member(2, [1,0,0,0], 1). combine_out(2, 0).
     combine_member(3, [0,1,0,0], 3). combine_member(3, [1,0,0,0], 1). combine_out(3, 0).
 
-    // --- Nor program data ---
+    // --- Nor ---
     .decl bg(c: Color) bg(0).
     .decl out_fill(c: Color) out_fill(2).
 }
 
 .init params = Params
 
+// --- Table, Count, Size ---
+
+.decl decompose(p: Position, p_outer: Position, p_inner: Position, dc: DecChoice)
+decompose(P_grid, P_tile, P_intile, $Table()) :- params.tile_decompose(P_grid, P_tile, P_intile).
+decompose(P_grid, P_tile, P_intile, $Count()) :-
+    in(P_grid, _), params.divide_axis(A), params.divisor(N),
+    divide_slab(P_grid, A, N, 0, P_tile, P_intile).
+decompose(P_grid, P_tile, P_intile, $Size()) :-
+    in(P_grid, _), params.divide_axis(A), params.tile_dim(K),
+    divide_by_size_slab(P_grid, A, K, 0, P_tile, P_intile).
+
+// --- Lookup ---
+
 .init combine_match = KeyedSetCompare<CombineKey, Ident, CombineMember>
 combine_match.pattern_member(Id, [P_outer, C]) :- params.combine_member(Id, P_outer, C).
 combine_match.observed_member([P_grid_out, Dc], [P_tile, C]) :-
     decompose(P_grid_in, P_tile, P_grid_out, Dc), in(P_grid_in, C).
 
-// --- Decompose cases ---
-
-.decl dec_choice(dc: DecChoice)
-dec_choice($Table()).
-dec_choice($Count()).
-dec_choice($Size()).
-
-.decl decompose(p: Position, p_outer: Position, p_inner: Position, dc: DecChoice)
-decompose(P_grid, P_tile, P_intile, $Table()) :- params.tile_decompose(P_grid, P_tile, P_intile).
-decompose(P_grid, P_tile, P_intile, $Count()) :-
-    in(P_grid, _),                                                 // input position
-    params.divide_axis(A), params.divisor(N),                      // params
-    divide_slab(P_grid, A, N, 0, P_tile, P_intile).
-decompose(P_grid, P_tile, P_intile, $Size()) :-
-    in(P_grid, _),                                                 // input position
-    params.divide_axis(A), params.frame_dim(K),                    // params: tile size = output frame extent
-    divide_by_size_slab(P_grid, A, K, 0, P_tile, P_intile).
-
-// --- Nor program: filled relation parameterized by decompose choice ---
-
-.decl filled(o: Position, dc: DecChoice)
-filled(P_grid_out, Dc) :-
-    in(P_grid_in, Col), !params.bg(Col),            // non-bg input cell
-    decompose(P_grid_in, _, P_grid_out, Dc).        // decomposes to output cell
-
-// --- Output ---
-
-.decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col_out, [Dc, $Lookup()]) :-
-    params.combine_out(Id, Col_out),                             // entry's output color
-    combine_match.equals([P_grid_out, Dc], Id).                  // cell's tiles == entry's members
+    combine_match.equals([P_grid_out, Dc], Id),    // the cell's tiles are the entry's members
+    params.combine_out(Id, Col_out).
+
+// --- Nor ---
+
+.decl filled(p: Position, dc: DecChoice)
+filled(P_grid_out, Dc) :-
+    in(P_grid_in, Col), !params.bg(Col),        // non-bg input cell
+    decompose(P_grid_in, _, P_grid_out, Dc).
 
 out(P_grid_out, Col, [Dc, $Nor()]) :-
-    dec_choice(Dc), params.frame(P_grid_out),        // choice × cell
+    decompose(_, _, P_grid_out, Dc),                   // a cell of the tile frame
     ( !filled(P_grid_out, Dc), params.out_fill(Col)    // NOR=1: no contribution
     ; filled(P_grid_out, Dc), params.bg(Col)           // NOR=0: some contribution
     ).

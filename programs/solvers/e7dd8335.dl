@@ -1,14 +1,16 @@
 // e7dd8335
-// concept: objects
-// A shape of one color over bg; the half of it toward params.dir recolors
-// params.fill. Two hypotheses of what owns a half, tagged on out's Choice:
-//
-//   $Whole — one box over all ink; its near half recolors.
-//   $Each  — per 8-connected component: each component's own near half.
+// keywords: objects
+// output: A shape of one color over bg; the half of it toward params.dir
+//  recolors params.fill.
 
-#include "../lib.dl"
+// what owns a half
+.type Choice =
+    // one box over all ink; its near half recolors
+    Whole {}
+    // per 8-connected component: each component's own near half
+  | Each {}
 
-.type Choice = Whole {} | Each {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -50,6 +52,5 @@ half(P, Ch) :-
 .decl impl_choice(ch: Choice)
 impl_choice($Whole()). impl_choice($Each()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, F, Ch)   :- half(P, Ch), params.fill(F).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !half(P, Ch).

@@ -1,33 +1,33 @@
 // 8886d717
 // draft
-// concept: markers objects cast
-// A line of one color runs along one grid edge. The rest of the grid is two
-// regions, with marks scattered in both. A mark in the absorbing region takes
-// that region's color. A mark in the extending region stays and copies itself
-// one cell toward the edge line.
-//
-// Choice = [region, border] crosses two independent choice points.
-//
-// How a mark reads the region it sits in:
-//   $Cell    — each mark cell reads its own non-mark neighbors.
-//   $Cluster — a connected cluster of marks reads the neighbors of the whole
-//              cluster.
-//
-// Which edge the line runs along:
-//   $Stored  — the edge line of one color, and that color is params.border.
-//   $Uniform — any edge line of one color.
-//
-// Coincide here: every cluster has uniform surroundings, and no input has a
-// second edge line of one color.
+// keywords: markers objects cast
+// input: A line of one color runs along one grid edge. The rest of the grid
+//  is two regions, with marks scattered in both.
+// output: A mark in the absorbing region takes that region's color. A mark
+//  in the extending region stays and copies itself one cell toward the edge
+//  line. Choice = [region, border] crosses two independent choice points.
+//  Coincide here: every cluster has uniform surroundings, and no input has a
+//  second edge line of one color.
 
-#include "../lib.dl"
+// how a mark reads the region it sits in
+.type Region =
+    // each mark cell reads its own non-mark neighbors
+    Cell {}
+    // a connected cluster of marks reads the neighbors of the whole cluster
+  | Cluster {}
 
-.type Region = Cell {} | Cluster {}
-.type Border = Stored {} | Uniform {}
+// which edge the line runs along
+.type Border =
+    // the edge line of one color, and that color is params.border
+    Stored {}
+    // any edge line of one color
+  | Uniform {}
+
 .type Choice = [region: Region, border: Border]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl mark(col: Color) mark(8).
     // Marks in this region take its color.
     .decl absorb(col: Color) absorb(2).
@@ -91,7 +91,6 @@ border_dir(D, $Uniform()) :- edge_color.value(D, _).
 .decl copy(p: Position, ch: Choice)
 copy(Q, [R, B]) :- region(P, Col, R), params.extend(Col), border_dir(D, B), neighbor(P, D, Q).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col_m, Ch) :- copy(P, Ch), params.mark(Col_m).
 out(P, Col_out, [R, B]) :-
     region(P, Col, R), border_choice(B),

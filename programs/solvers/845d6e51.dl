@@ -1,23 +1,24 @@
 // 845d6e51
 // draft
-// concept: objects border induce d4
-// A grey border walls off a corner of the grid: the legend, holding one
-// shape per color. Outside it lie green shapes, each congruent to a legend
-// shape under some D4 element. Every green shape takes the color of the
-// legend shape it is congruent to; the rest of the grid is unchanged.
-//
-// Choice: what separates the legend shapes from the shapes to recolor.
-//   $Boxed:  the legend is the objects inside the box the frame cells span;
-//            every other object is recolored.
-//   $Marked: the objects of the query color are recolored; every other
-//            object is the legend.
+// keywords: objects border induce d4
+// input: A wall of params.frame cuts off a corner of the grid; the other ink
+//  cells form same-colored objects, which split into a legend and the objects
+//  to recolor.
+// output: Each object to recolor takes the color of the legend object whose
+//  shape it matches under params.shape_sym; every other cell is unchanged.
 
-#include "../lib.dl"
+// what separates the legend shapes from the shapes to recolor
+.type Choice =
+    // the legend is the objects inside the box the frame cells span; every
+    // other object is recolored
+    Boxed {}
+    // the objects of the query color are recolored; every other object is
+    // the legend
+  | Marked {}
 
-.type Choice = Boxed {} | Marked {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl frame(c: Color) frame(5).
     // The group under which a shape and a legend shape are the same shape.
@@ -46,7 +47,6 @@ obj.node(Col, P) :- in(P, Col), !params.bg(Col), !params.frame(Col).
 .init border = Bbox<Unit>
 border.cell($U(), P) :- in(P, Col), params.frame(Col).
 
-// A cell the border's box covers.
 .decl boxed(p: Position)
 boxed(P) :- in(P, _), border.box($U(), B), inside(P, B).
 
@@ -67,7 +67,7 @@ obj_box.cell(Id, P) :- obj.label(_, P, Id).
 .decl shape(id: Ident, p_inner: Position)
 shape(Id, P_inner) :- obj_box.cell(Id, P), obj_box.box(Id, B), crop(P, B, P_inner).
 
-// Each query shape against each legend shape, in their boxes.
+// Each query shape against each legend shape.
 .type Pair = [ch: Choice, q: Ident, l: Ident]
 .init cong = D4Map<Pair, Unit>
 cong.src([Ch, Q, L], P_inner, $U()) :- query(Ch, Q), legend(Ch, L), shape(Q, P_inner).
@@ -88,14 +88,11 @@ onto(K, D) :- cong.map(K, D), !over(K, D).
 
 // --- output ---
 
-// A query shape takes the color of the legend shape that some element of
-// the group carries it onto.
 .decl recolor(ch: Choice, p: Position, col: Color)
 recolor(Ch, P, Col) :-
     onto([Ch, Q, L], D), params.shape_sym(S), sym_member(S, D),  // Q has L's shape
     obj.label(_, P, Q), obj.label(Col, _, L).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     in(P, C_in), impl_choice(Ch),
     ( recolor(Ch, P, Col)                 // a matched query shape takes its legend color

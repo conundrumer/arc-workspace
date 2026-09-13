@@ -1,11 +1,12 @@
 // 184a9768
-// concept: objects enclose pack
-// Frames stand among loose pieces: an object is a frame when it closes
-// background off from the grid edge. The pieces translate into the holes so
-// closed and fill them exactly, each hole cell taking the color of the piece
-// that covers it. Everything outside the frames clears.
+// keywords: objects enclose pack
+// input: Frames stand among loose pieces: an object is a frame when it
+//  closes background off from the grid edge.
+// output: The pieces translate into the holes so closed and fill them
+//  exactly, each hole cell taking the color of the piece that covers it.
+//  Everything outside the frames clears.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -74,7 +75,6 @@ frame_cell(P, Col) :- obj_cell(O, Col, P), frame(O).
 .decl fill(p: Position, col: Color)
 fill(P, Col) :- pruning.alive($U(), Cd, O), covers(Cd, P), obj_cell(O, Col, _).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, _),
     ( frame_cell(P, Col)                           // the frame stays

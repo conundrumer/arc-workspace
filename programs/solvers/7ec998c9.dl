@@ -1,12 +1,13 @@
 // 7ec998c9
 // draft
-// concept: markers cast parity
-// A single mark sits on a plain field. The mark's line along the axis is
-// drawn in the line color, and where it meets each edge it turns and runs
-// along that edge to the corner: a Z or an S through the mark. Both turns
-// take one sense, the mark's shade on a checkerboard anchored at a corner.
+// keywords: markers cast parity
+// input: A single mark sits on a plain field.
+// output: The mark's line along the axis is drawn in the line color, and
+//  where it meets each edge it turns and runs along that edge to the corner:
+//  a Z or an S through the mark. Both turns take one sense, the mark's shade
+//  on a checkerboard anchored at a corner.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     // The Z's color.
@@ -30,8 +31,8 @@ field.item($U(), Col, P) :- in(P, Col).
 .decl mark(p: Position)
 mark(P) :- in(P, Col), !field.mode($U(), Col).
 
-// The checkerboard, shaded by sense: seeded at the anchor corner, each
-// unit step swaps sense.
+// The checkerboard: seeded at the anchor corner, each unit step swaps
+// sense.
 .decl shade(p: Position, s: Sense)
 shade(P, S) :-
     in(P, _), params.corner(Diag), corner_dist(P, Diag, 0),   // the anchor corner cell
@@ -42,25 +43,19 @@ shade(Q, S2) :-
 
 // The Z's legs: rays keyed by their cast direction. The stem casts from
 // the mark both ways along the axis; each arm casts from the stem's end
-// on the edge, turned by the sense.
+// on the edge, in the direction the mark's shade turns to.
 .init leg = Ray<Dir>
 leg.dir(D, D) :- dir_elem(D).
 leg.cell(D, P) :- dir_elem(D), in(P, _), !mark(P).
 
 leg.mark(D, P) :- params.axis(A), axis_of(D, A), mark(P).
-
-// The Z turns with the mark's shade.
-.decl elbow(p: Position, d2: Dir)
-elbow(P, D2) :-
+leg.mark(D2, P) :-
     mark(M), leg.cast(D, P, D, _, M), dist(P, D, 0),   // the stem's end on edge D
     shade(M, S), turn(S, D, D2).
-
-leg.mark(D2, P) :- elbow(P, D2).
 
 .decl lit(p: Position)
 lit(P) :- leg.ray(_, P, _, _, _).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, Col_in),
     ( lit(P), params.line(Col)     // the Z

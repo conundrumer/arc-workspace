@@ -1,18 +1,20 @@
 // 29ec7d0e
-// concept: wallpaper repair count
-// A wallpaper — one square tile repeating on both axes — corrupted by
-// noise patches; the output restores it. The period varies per pair, so
-// no case stores one. Propagation composes across axes, reaching holes
-// with no clean mate on either of their own lines.
-//
-//   $Shift — translation repair, detected: values propagate along shifts
-//            unbroken on clean cells.
-//   $Count — the clean color count is the period: values propagate along
-//            jumps of that length.
+// keywords: wallpaper repair count
+// input: A wallpaper — one square tile repeating on both axes — corrupted
+//  by noise patches.
+// output: The output restores the wallpaper: propagation composes across
+//  axes, reaching holes with no clean mate on either of their own lines.
 
-#include "../lib.dl"
+// how the repair finds the period-preserving shift
+.type Choice =
+    // translation repair, detected: values propagate along shifts unbroken on
+    // clean cells
+    Shift {}
+    // the clean color count is the period: values propagate along jumps of that
+    // length
+  | Count {}
 
-.type Choice = Shift {} | Count {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .decl noise(col: Color) noise(0).
@@ -29,7 +31,8 @@ si.cell($U(), P, Col) :- clean(P, Col).
 .decl impl_choice(ch: Choice)
 impl_choice($Shift()). impl_choice($Count()).
 
-// Each case's period-preserving shifts.
+// Each case's period-preserving shifts. The period varies per pair, so no
+// case stores one as a parameter.
 .decl shift(ch: Choice, delta: Offset)
 
 // Values propagate from clean cells along each case's shifts.
@@ -39,7 +42,6 @@ restored(Ch, P2, Col) :-
     restored(Ch, P, Col), shift(Ch, Delta),
     compose(P, Delta, P2), in(P2, _).
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P, Col, Ch) :- restored(Ch, P, Col).
 
 // --- $Shift ---

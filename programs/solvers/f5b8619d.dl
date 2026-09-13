@@ -1,10 +1,10 @@
 // f5b8619d
-// concept: tile-arrangement lines markers
-// One marker color over bg. Bg cells on a marker's params.axis line repaint
-// params.shade; markers pass through. Output is the repainted grid arranged
-// per params.tile.
+// keywords: tile-arrangement lines markers
+// output: One marker color over bg. Bg cells on a marker's params.axis line
+//  repaint params.shade; markers pass through. Output is the repainted grid
+//  arranged per params.tile.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .init helpers = ParamsHelpers
@@ -32,7 +32,6 @@ marked(P) :-
 repainted(P, C)   :- marked(P), params.shade(C).
 repainted(P, Col) :- in(P, Col), !marked(P).
 
-.decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
     repainted(P_in, Col),                      // repainted-input cell
     params.tile(P_tile),                       // tile-frame pos

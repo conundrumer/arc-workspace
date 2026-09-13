@@ -1,19 +1,18 @@
 // d23f8c26
-// concept: decompose select
-// One column is kept; every other cell becomes bg.
-//
-// Cases (data-equivalent on this task — odd widths, single middle gap):
-//   $Center() — the grid's center line on the task axis: cells equidistant
-//               from that axis's two edges
-//   $Gap()    — the separator of a uniform 2-split: cells the divide leaves
-//               undecomposed
+// keywords: decompose select
+// output: One column is kept. Every other cell becomes bg.
 
-#include "../lib.dl"
+// data-equivalent on this task — odd widths, single middle gap
+.type Choice =
+    // the grid's center line on the task axis: cells equidistant from that
+    // axis's two edges
+    Center {}
+    // the separator of a uniform 2-split: cells the divide leaves undecomposed
+  | Gap {}
 
-.type Choice = Center {} | Gap {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color)
     bg(0).
 
@@ -29,8 +28,6 @@
 }
 
 .init params = Params
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- Center ---
 .decl on_center(p: Position)

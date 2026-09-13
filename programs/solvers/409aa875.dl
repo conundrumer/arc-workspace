@@ -1,21 +1,23 @@
 // 409aa875
-// concept: markers cast count lookup
+// keywords: markers cast count lookup
+// input: marks read as three-cell arrowheads: an apex, with an arm one
+//  eighth-turn to each side of one direction
+// output: The arrowhead aims the opposite way, shoots a fixed distance along
+//  that aim, and marks the cell it reaches. A cell more than one shot reaches
+//  takes the clash color instead. A shot that reaches an arrowhead marks that
+//  arrowhead whole.
 
-// Every mark is a three-cell arrowhead: an apex, and an arm one eighth-turn
-// to each side of one direction. The arrowhead aims the opposite way, shoots
-// a fixed distance along that aim, and marks the cell it reaches. A cell more
-// than one shot reaches takes the clash color instead. A shot that reaches an
-// arrowhead marks that arrowhead whole.
-// The cases differ on how an arrowhead is read: $Local takes the apex and its
-// two arms off the grid; $Glyph matches a stored footprint and reads the apex
-// and the aim from the parameters, closed over D4.
+// how an arrowhead is read
+.type Choice =
+    // takes the apex and its two arms off the grid
+    Local {}
+    // matches a stored footprint and reads the apex and the aim from the
+    // parameters, closed over D4
+  | Glyph {}
 
-#include "../lib.dl"
-
-.type Choice = Local {} | Glyph {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(7).
 
     // The color a shot leaves, and the color where more than one lands.
@@ -123,7 +125,6 @@ paint(P, Col, Ch) :-
     shot(P_hit, _, Ch), arrow_cell(A, P_hit, Ch),  // an arrowhead a shot reaches
     arrow_cell(A, P, Ch), params.mark(Col).        // marked whole
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).
 

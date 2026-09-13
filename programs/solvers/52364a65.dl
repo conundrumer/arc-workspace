@@ -1,17 +1,19 @@
 // 52364a65
 // draft
-// concept: objects select rank
-// Each non-bg color is one object. Every object loses the params.depth layers
-// nearest the params.peel_dir edge of its own bounding box. The rest stays put,
-// and the vacated cells become params.bg.
-//
-// The cases differ in what a layer is:
-//   $Strip    — one cell of the box, counted from that edge.
-//   $Occupied — one line the object occupies, counted from that edge.
+// keywords: objects select rank
+// input: each non-bg color is one object
+// output: Every object loses the params.depth layers nearest the
+//  params.peel_dir edge of its own bounding box. The rest stays put, and the
+//  vacated cells become params.bg.
 
-#include "../lib.dl"
+// The cases differ in what a layer is
+.type Choice =
+    // one cell of the box, counted from that edge
+    Strip {}
+    // one line the object occupies, counted from that edge
+  | Occupied {}
 
-.type Choice = Strip {} | Occupied {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(8).
@@ -60,6 +62,5 @@ layer($Occupied(), P, K) :-
 .decl peeled(ch: Choice, p: Position)
 peeled(Ch, P) :- layer(Ch, P, K), params.depth(N), K < N.
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !peeled(Ch, P).
 out(P, Col, Ch) :- peeled(Ch, P), params.bg(Col).

@@ -1,19 +1,20 @@
 // 1c02dbbe
 // draft
-// concept: markers span
-// A slab covers most of the grid. Like-colored marks come in threes: one on a
-// corner of the slab, two in the margins beside it. Each color paints a
-// rectangle of the slab reaching from its corner mark to the crossing of the
-// two margin marks' lines; everything off the slab clears to background.
-//
-// The cases differ in how the three marks pick the rectangle:
-//   $Span — the marks bound a box; the part of it on the slab is painted.
-//   $Cut  — the mark on the slab anchors; a slab cell is painted when no like
-//           mark's line runs between it and the anchor.
+// keywords: markers span
+// output: A slab covers most of the grid. Like-colored marks come in threes:
+//  one on a corner of the slab, two in the margins beside it. Each color paints
+//  a rectangle of the slab reaching from its corner mark to the crossing of the
+//  two margin marks' lines; everything off the slab clears to background.
 
-#include "../lib.dl"
+// how the three marks pick the rectangle
+.type Choice =
+    // the marks bound a box; the part of it on the slab is painted
+    Span {}
+    // the mark on the slab anchors; a slab cell is painted when no like mark's
+    // line runs between it and the anchor
+  | Cut {}
 
-.type Choice = Span {} | Cut {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -62,7 +63,6 @@ paint(P, Col, $Cut()) :- slab_cell(P), mark(Col, _), !separated(Col, P).
 .decl impl_choice(ch: Choice)
 impl_choice($Span()). impl_choice($Cut()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     impl_choice(Ch), in(P, _),
     ( paint(P, Col, Ch)                                         // painted by its color

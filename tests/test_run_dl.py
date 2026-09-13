@@ -525,17 +525,16 @@ def test_keywords_reads_the_one_keywords_line(keyworded, capsys):
     assert out.endswith("unknown keywords: 2\n")
 
 
-def test_keywords_reads_the_retired_concept_and_shape_fields(keyworded, capsys):
-    """A header that has not migrated carries `concept:` and `shape:`, and
-    the index counts the keywords of both fields."""
+def test_keywords_reads_the_keywords_field_alone(keyworded, capsys):
+    """The retired `concept:` and `shape:` fields count for nothing."""
     _solver(keyworded, "aaaa1111", "concept: lines cast",
             "shape: latent-canvas")
 
     assert cli.cmd_keywords([]) == 0
     out = capsys.readouterr().out
-    assert "     1  lines\n" in out
-    assert "     1  cast\n" in out
-    assert "     1  latent-canvas\n" in out
+    assert "     0  lines\n" in out
+    assert "     0  cast\n" in out
+    assert "     0  latent-canvas\n" in out
 
 
 def test_keywords_reads_the_named_stems_alone(keyworded, capsys):

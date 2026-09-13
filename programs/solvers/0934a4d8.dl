@@ -1,13 +1,12 @@
 // 0934a4d8
-// concept: symmetry decompose crop repair
-// shape: latent-canvas
-// A mosaic occluded by a solid block of a mask color; the output is the
-// block's content. The mosaic overhangs the grid and decomposes into an
-// arrangement of square tiles; each tile carries the subgroup of
-// whole-mosaic transforms that holds on its cells. A hidden cell restores
-// from a visible cell that a transform of its tile's subgroup reaches.
+// keywords: symmetry decompose crop repair latent-canvas
+// input: a mosaic that overhangs the grid and decomposes into an arrangement
+//  of square tiles, occluded by a solid block of params.mask
+// output: The output is the block's content. Each tile carries the subgroup of
+//  whole-mosaic transforms that holds on its cells, and a hidden cell restores
+//  from a visible cell that a transform of its tile's subgroup reaches.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl mask(col: Color) mask(8).
@@ -38,7 +37,6 @@ mosaic(P_grid, P_mosaic) :- in(P_grid, _), params.mosaic_margin(B), compose(P_gr
 .init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- in(P, Col), params.mask(Col).
 
-.decl out(p: Position, col: Color)
 out(P_inner, Col) :-
     bbox.cell($U(), P), bbox.box($U(), B),
     crop(P, B, P_inner),                               // hole cell, in the crop frame
@@ -52,7 +50,7 @@ out(P_inner, Col) :-
     .decl cell(e: Example, p: Position, col: Color)
     cell(E, P, Col) :- ex_in(E, P, Col), !params.mask(Col).
 
-    // Axis positions the examples' cells occupy, and cells split by axis.
+    // The axis positions the inputs occupy.
     .decl apos(a: Axis, along: Position)
     apos(A, Along) :- ex_in(_, P, _), axis_elem(A), split(P, A, Along, _).
 
@@ -106,7 +104,7 @@ out(P_inner, Col) :-
 
     // --- proposal: D4Map.broken ---
     // The cell where a transform breaks: its image holds a differing clean
-    // cell. `conflict` with the cell kept; the tile labels partition it.
+    // cell. `conflict` with the cell kept.
     .decl broken(e: Example, p: Position, d: D4)
     broken(E, P, D) :-
         inv.src(E, P, V), d4_elem(D), apply(D, P, P2),

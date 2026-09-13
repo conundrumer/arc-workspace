@@ -1,11 +1,11 @@
 // 7e4d4f7c
-// concept: lines mapping
-// The output holds params.out_h rows measured from params.header_dir, over the
-// input's across extent. Every row but the last takes the input row at its
-// own depth. The last row takes the input's row at depth 0, recolored: bg
-// passes through, and every other color becomes params.marker.
+// keywords: lines mapping
+// output: The output holds params.out_h rows measured from params.header_dir,
+//  over the input's across extent. Every row but the last takes the input row
+//  at its own depth. The last row takes the input's row at depth 0, recolored:
+//  bg passes through, and every other color becomes params.marker.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl header_dir(d: Dir) header_dir(DIR_T).
@@ -35,8 +35,6 @@ out_cell(P) :-
     out_along.cell($U(), A, P_along),                        // along-axis frame cell
     in(P_in, _), split(P_in, A, _, P_across),                // an input cell's across part
     compose(P_along, P_across, P).                           // glue to a 2D out cell
-
-.decl out(p: Position, col: Color)
 
 // The tail row matches its input cells on the across line alone: it does
 // not share depth-from-header with input row 0.

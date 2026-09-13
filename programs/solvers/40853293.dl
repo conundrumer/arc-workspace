@@ -1,11 +1,11 @@
 // 40853293
 // draft
-// concept: markers span cross
-// A color's two marks share a row or a column, and the cells between them
-// fill with that color. Where two spans cross, the span on params.over_axis takes
-// the cell.
+// keywords: markers span cross
+// input: pairs of same-colored marks that share a row or a column
+// output: The cells between a pair fill with its color. Where two spans
+//  cross, the span on params.over_axis takes the cell.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -31,7 +31,6 @@ spans.mark(Col, P) :- mark(Col, P).
 .decl over(p: Position, col: Color)
 over(P, Col) :- spans.between(Col, P), mark_axis(Col, A), params.over_axis(A).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, C_in),
     ( over(P, Col)                          // the over-axis span takes the cell

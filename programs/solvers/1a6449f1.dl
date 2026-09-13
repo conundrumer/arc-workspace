@@ -1,16 +1,19 @@
 // 1a6449f1
-// concept: crop objects border enclose select count
-// Colored noise fills the grid, and rings of one color sit in it. The output
-// crops the ring whose inside holds the most cells.
-//
-// $Rect — a ring is a rectangle drawn by four same-color runs, and its inside
-//   is what that rectangle holds strictly within its edges.
-// $Enclose — a ring is any wall of one color, and its inside is the region
-//   that wall cuts off from the grid edge, cropped to the region's own box.
+// keywords: crop objects border enclose select count
+// input: Colored noise fills the grid, and rings of one color sit in it.
+// output: The input cropped to the box of the ring inside that holds the most
+//  cells.
 
-#include "../lib.dl"
+// what a ring is, and what counts as its inside
+.type Choice =
+    // a ring is a rectangle drawn by four same-color runs, and its inside is
+    // what that rectangle holds strictly within its edges
+    Rect {}
+    // a ring is any wall of one color, and its inside is the region that wall
+    // cuts off from the grid edge
+  | Enclose {}
 
-.type Choice = Rect {} | Enclose {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -22,7 +25,13 @@
 .decl ink(col: Color)
 ink(Col) :- in(_, Col), !params.bg(Col).
 
-.decl out(p: Position, col: Color, ch: Choice)
+// What the winning ring holds.
+.decl window(p: Position, ch: Choice)
+
+.init window_bbox = Bbox<Choice>
+window_bbox.cell(Ch, P) :- window(P, Ch).
+
+out(P_inner, Col, Ch) :- window_bbox.box(Ch, B), in(P, Col), crop(P, B, P_inner).
 
 // --- Rect ---
 
@@ -36,10 +45,7 @@ hole(B, P) :- drect.box(_, B), in(P, _), interior(P, B).
 .init biggest_hole = Mode<Unit, Box, Position>
 biggest_hole.item($U(), B, P) :- hole(B, P).
 
-.init hole_bbox = Bbox<Box>
-hole_bbox.cell(B, P) :- biggest_hole.mode($U(), B), hole(B, P).
-
-out(P_inner, Col, $Rect()) :- hole_bbox.box(_, B), in(P, Col), crop(P, B, P_inner).
+window(P, $Rect()) :- biggest_hole.mode($U(), B), hole(B, P).
 
 // --- Enclose ---
 
@@ -50,13 +56,7 @@ closed.cell(Col, P) :- ink(Col), in(P, C), C != Col.
 
 .type Region = [col: Color, id: Ident]
 
-.decl region(k: Region, p: Position)
-region([Col, Id], P) :- closed.region(Col, P, Id).
-
 .init biggest_region = Mode<Unit, Region, Position>
-biggest_region.item($U(), K, P) :- region(K, P).
+biggest_region.item($U(), [Col, Id], P) :- closed.region(Col, P, Id).
 
-.init region_bbox = Bbox<Region>
-region_bbox.cell(K, P) :- biggest_region.mode($U(), K), region(K, P).
-
-out(P_inner, Col, $Enclose()) :- region_bbox.box(_, B), in(P, Col), crop(P, B, P_inner).
+window(P, $Enclose()) :- biggest_region.mode($U(), [Col, Id]), closed.region(Col, P, Id).

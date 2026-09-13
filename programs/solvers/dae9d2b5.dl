@@ -1,40 +1,46 @@
 // dae9d2b5
-// concept: decompose lookup
-// Layout: 1×2 horizontally-side-by-side 3×3 subgrids.
-//
-// out's choice column = [d, b]:
-//
-//   d (decompose):
-//     $Table() — pre-tabulated in the parameters via tile_pos
-//     $Count() — derived in the program by tile count
-//     $Size()  — derived in the program by tile size
-//
-//   b (combine):
-//     $Lookup() — combine table keyed on (outer pos, color); set-equality match
-//     $Or()     — OR via existence: any non-BG input contribution
+// keywords: decompose lookup
+// input: two 3×3 subgrids side by side
+// output: each output cell combines the colors the two subgrids hold at
+//  that cell
 
-#include "../lib.dl"
+// decompose
+.type DecChoice =
+    // tabulated in the parameters
+    Table {}
+    // by tile count
+  | Count {}
+    // by tile size
+  | Size {}
 
-.type DecChoice = Table {} | Count {} | Size {}
-.type Body      = Lookup {} | Or {}
+// combine
+.type Body =
+    // a table keyed on the colors at the cell's tiles
+    Lookup {}
+    // filled where some tile is non-bg
+  | Or {}
+
+// how the tiles are found, crossed with how they combine
 .type Choice    = [d: DecChoice, b: Body]
 
 .type CombineMember = [p: Position, col: Color]
 .type CombineKey    = [p: Position, dc: DecChoice]
 
+.decl out(p: Position, col: Color, c: Choice)
+
 .comp Params {
     .init helpers = ParamsHelpers
 
-    .decl frame_dim(k: number) frame_dim(3).
-    .decl frame(p: Position)
-    frame(P) :- frame_dim(K), helpers.frame_pos([K, K], P).
+    // --- Table, Size decompose data ---
+    // a tile's extent on both axes
+    .decl tile_dim(k: number) tile_dim(3).
 
     // --- Table decompose data ---
     .decl arr_dim(a: Axis, n: number)
     arr_dim(AXIS_V, 1). arr_dim(AXIS_H, 2).
     .decl tile_decompose(p: Position, p_outer: Position, p_inner: Position)
     tile_decompose(P_grid, P_tile, P_intile) :-
-        arr_dim(AXIS_V, Av), arr_dim(AXIS_H, Ah), frame_dim(K),
+        arr_dim(AXIS_V, Av), arr_dim(AXIS_H, Ah), tile_dim(K),
         helpers.tile_pos([Av, Ah], [K, K], [0, 0], P_grid, P_tile, P_intile).
 
     // --- Count, Size decompose data ---
@@ -68,38 +74,30 @@ combine_match.observed_member([P_grid_out, Dc], [P_tile, C]) :-
 
 // --- Decompose cases ---
 
-.decl dec_choice(dc: DecChoice)
-dec_choice($Table()).
-dec_choice($Count()).
-dec_choice($Size()).
-
 .decl decompose(p: Position, p_outer: Position, p_inner: Position, dc: DecChoice)
 decompose(P_grid, P_tile, P_intile, $Table()) :- params.tile_decompose(P_grid, P_tile, P_intile).
 decompose(P_grid, P_tile, P_intile, $Count()) :-
-    in(P_grid, _),                                                 // input position
-    params.divide_axis(A), params.divisor(N),                      // params
+    in(P_grid, _), params.divide_axis(A), params.divisor(N),     // tile count
     divide_slab(P_grid, A, N, 0, P_tile, P_intile).
 decompose(P_grid, P_tile, P_intile, $Size()) :-
-    in(P_grid, _),                                                 // input position
-    params.divide_axis(A), params.frame_dim(K),                    // params
+    in(P_grid, _), params.divide_axis(A), params.tile_dim(K),    // tile size
     divide_by_size_slab(P_grid, A, K, 0, P_tile, P_intile).
 
-// --- Or body: filled relation parameterized by decompose choice ---
+// --- Or ---
 
-.decl filled(o: Position, dc: DecChoice)
+.decl filled(p: Position, dc: DecChoice)
 filled(P_grid_out, Dc) :-
-    in(P_grid_in, Col), !params.bg(Col),            // non-bg input cell
-    decompose(P_grid_in, _, P_grid_out, Dc).        // decomposes to output cell
+    in(P_grid_in, Col), !params.bg(Col),        // non-bg input cell
+    decompose(P_grid_in, _, P_grid_out, Dc).
 
 // --- Output ---
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col_out, [Dc, $Lookup()]) :-
-    params.combine_out(Id, Col_out),                             // entry's output color
-    combine_match.equals([P_grid_out, Dc], Id).                  // cell's tiles == entry's members
+    params.combine_out(Id, Col_out),
+    combine_match.equals([P_grid_out, Dc], Id).     // cell's tiles == entry's members
 
 out(P_grid_out, Col, [Dc, $Or()]) :-
-    dec_choice(Dc), params.frame(P_grid_out),        // choice × cell
-    ( filled(P_grid_out, Dc), params.out_fill(Col)    // OR=1: some contribution
-    ; !filled(P_grid_out, Dc), params.bg(Col)         // OR=0: no contribution
+    decompose(_, _, P_grid_out, Dc),                // a cell of the tile frame
+    ( filled(P_grid_out, Dc), params.out_fill(Col)
+    ; !filled(P_grid_out, Dc), params.bg(Col)
     ).

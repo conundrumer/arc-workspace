@@ -1,12 +1,13 @@
 // 45a5af55
 // draft
-// concept: lines grow rank
-// The input is a stack of one-color lines. The output is a square of nested
-// rings: the line at distance K from the outer edge paints the ring at depth K.
-// The side spans the stack and its mirror image about the innermost stripe —
-// the run of lines at the inner edge sharing its color.
+// keywords: lines grow rank
+// input: A stack of one-color lines.
+// output: A square of nested rings: the line at distance K from the outer
+//  edge paints the ring at depth K. The side spans the stack and its mirror
+//  image about the innermost stripe — the run of lines at the inner edge
+//  sharing its color.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     // The input edge the innermost stripe sits on.
@@ -52,7 +53,6 @@ frame.extent($U(), A, N) :- axis_elem(A), side(N).
 .init peel = Rim<Unit>
 peel.cell($U(), P) :- frame.cell($U(), P).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     peel.depth($U(), P, K),                                // the cell's ring
     params.inner_dir(D_in), opposite(D_in, D_out),

@@ -1,14 +1,16 @@
 // 6aa20dc0
 // draft
-// concept: objects markers scale d4 stamp
-// A template — the one multicolored object — carries mark colors at its
-// corners. Elsewhere, single-color squares sit in pairs at opposite corners
-// of a box that the template divides into tiles, one per template cell.
-// Each such box takes the template, scaled to the tiles and turned so its
-// marks land on the squares. The template is symmetric across the diagonal
-// through its marks, so the two turns that land them draw the same picture.
+// keywords: objects markers scale d4 stamp
+// input: a template — the one multicolored object — carrying mark colors at
+//  its corners; elsewhere, single-color squares sitting in pairs at
+//  opposite corners of a box that the template divides into tiles, one per
+//  template cell
+// output: Each such box takes the template, scaled to the tiles and turned
+//  so its marks land on the squares. The template is symmetric across the
+//  diagonal through its marks, so the two turns that land them draw the
+//  same picture.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {}
 
@@ -85,6 +87,5 @@ stamp(P, Col) :-
     tiles.tile($U(), P_inner, P_tile, _),                        // the tile it lies in
     fit.compatible(Pair, D), tmpl(Q, Col), apply(D, Q, P_tile).  // the turned template there
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- stamp(P, Col).
 out(P, Col) :- in(P, Col), !stamp(P, _).

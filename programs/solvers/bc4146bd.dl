@@ -1,11 +1,14 @@
 // bc4146bd
-// family: 4c4377d9
-// 1×5 tile arrangement of input copies: identity and D4_LR alternate,
-// the input at the anchor-end tile.
+// representative: 4c4377d9
 
-#include "../lib.dl"
+// how each tile's D4 pose is found
+.type Choice =
+    // read from the tile_d4 table
+    Lookup {}
+    // derived by reflecting outward from the anchor tile, tile by tile
+  | Unfold {}
 
-.type Choice = Lookup {} | Unfold {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
@@ -27,8 +30,6 @@
 }
 
 .init params = Params
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- Lookup ---
 out(P_grid, Col, $Lookup()) :-

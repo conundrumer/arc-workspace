@@ -1,21 +1,22 @@
 // 2072aba6
-// concept: scale wallpaper stamp
-// 2× scale-up: ink cells become checkered tiles, bg cells blank tiles.
-// Two models of the checker phase, tagged on out's Choice:
-//   $Table   — each ink cell hosts a stored template.
-//   $Checker — one grid-global checkerboard, corner-anchored, masked to
-//              the scaled ink silhouette.
-//
-// Coincide at scale 2: every tile anchors at even parity.
+// keywords: scale wallpaper stamp
+// output: 2x scale-up: ink cells become checkered tiles, bg cells blank
+//  tiles.
 
-#include "../lib.dl"
+// Two models of the checker phase, tagged on out's Choice. They coincide at
+// scale 2: every tile anchors at even parity.
+.type Choice =
+    // each ink cell hosts a stored template
+    Table {}
+    // one grid-global checkerboard, corner-anchored, masked to the scaled ink
+    // silhouette
+  | Checker {}
 
-.type Choice = Table {} | Checker {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
 
-    // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl ink(c: Color) ink(5).
 
@@ -57,8 +58,6 @@ cell(P_grid_out, P_tile, P_intile) :-
 inked(P_grid_out, P_intile) :-
     cell(P_grid_out, P_tile, P_intile),
     in(P_tile, Ink), params.ink(Ink).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // Blank outside the silhouette — shared.
 out(P_grid_out, Bg, Ch) :-

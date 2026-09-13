@@ -1,20 +1,22 @@
 // 5bd6f4ac
-// concept: decompose crop select
-// Output is the 3×3 block at corner params.diag of a noise grid. The 9×9 inputs
-// leave the locate rule underdetermined:
-//
-//   $Corner() — a params.window block seated at the corner
-//   $Count()  — grid divided into a params.divisor arrangement; the corner tile
-//   $Block()  — grid tiled by params.tile_dim blocks; the corner block
+// keywords: decompose crop select
+// output: Output is the 3×3 block at corner params.diag of a noise grid. The
+//  9×9 inputs leave the locate rule underdetermined.
 
-#include "../lib.dl"
+// which structure locates the corner block
+.type Choice =
+    // a params.window block seated at the corner
+    Corner {}
+    // grid divided into a params.divisor arrangement; the corner tile
+  | Count {}
+    // grid tiled by params.tile_dim blocks; the corner block
+  | Block {}
 
-.type Choice = Corner {} | Count {} | Block {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
 
-    // --- shared ---
     .decl diag(d: DiagDir)
     diag(DIAG_TR).
 
@@ -31,8 +33,6 @@
 }
 
 .init params = Params
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- Corner ---
 out(P_out, Col, $Corner()) :-

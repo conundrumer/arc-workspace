@@ -1,23 +1,25 @@
 // 4290ef0e
 // draft
-// concept: objects overlay repair span rank
-// Each non-bg color draws one square ring: an arm of K cells runs from every
-// corner along both edges it meets, and a side the arms do not fill is hollow
-// in the middle. The rings differ in size, and the grid edge cuts some of them
-// off — a cut ring's size comes back by reflecting its cells through its
-// center, the middle of a hollow side. The output is the widest ring's frame,
-// with every ring nested concentric in it. Choice says which depth a ring
-// lands on:
-//
-//   $Size() — the depth whose frame is as wide as the ring.
-//   $Rank() — one depth in from the next wider ring.
+// keywords: objects overlay repair span rank
+// input: Each non-bg color draws one square ring: an arm of K cells runs
+//  from every corner along both edges it meets, and a side the arms do not
+//  fill is hollow in the middle. The rings differ in size, and the grid edge
+//  cuts some of them off — a cut ring's size comes back by reflecting its
+//  cells through its center, the middle of a hollow side.
+// output: The output is the widest ring's frame, with every ring nested
+//  concentric in it.
 
-#include "../lib.dl"
-
-.type Choice = Size {} | Rank {}
+// which depth a ring lands on
+.type Choice =
+    // the depth whose frame is as wide as the ring
+    Size {}
+    // one depth in from the next wider ring
+  | Rank {}
 
 .type LineKey = [col: Color, a: Axis, l: Position]
 .type RunKey = [line: LineKey, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {}
 
@@ -132,6 +134,5 @@ paint(P, Col, Ch) :-
     crop(P, B, P_inner), perp_dir(D, D2), dist(P_inner, D2, K),  // how far along that edge from one end
     arm.high(Col, K_arm), K < K_arm.                             // inside the arm that runs from that end
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- canvas.cell($U(), P), impl_choice(Ch), !paint(P, _, Ch), bg(Col).

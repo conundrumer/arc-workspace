@@ -1,26 +1,32 @@
 // a3df8b1e
-// concept: markers walk
-//
-// A lone marker sits in a corner. A diagonal ray leaves it,
-// reflecting off the side walls, and stops at the far edge. The output
-// draws the ray's trace on the background.
-//
-// Direction cases: $Stored reads the advance dir and turn sense
-// from the parameters; $Seat derives both from the corner the marker sits in.
-// Ink cases: $Prop draws in the marker's color; $Fixed in a stored color.
+// keywords: markers walk
+// input: A lone marker sits in a corner.
+// output: A diagonal ray leaves it, reflecting off the side walls, and stops
+//  at the far edge. The output draws the ray's trace on the background.
 
-#include "../lib.dl"
+// how the ray's advance direction and heading are set
+.type DirCase =
+    // reads the advance dir from the parameters
+    Stored {}
+    // derives both from the corner the marker sits in
+  | Seat {}
 
-.type DirCase = Stored {} | Seat {}
-.type InkCase = Prop {} | Fixed {}
+// what color the ray draws
+.type InkCase =
+    // draws in the marker's color
+    Prop {}
+    // draws in a stored color
+  | Fixed {}
+
 .type Choice = [dir: DirCase, ink: InkCase]
+
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
 
     // --- $Stored ---
     .decl dir(d: Dir) dir(DIR_T).
-    .decl sense(s: Sense) sense(SENSE_CW).
 
     // --- $Seat ---
     .decl axis(a: Axis) axis(AXIS_V).
@@ -40,30 +46,29 @@ impl_choice([$Seat(), $Prop()]).   impl_choice([$Seat(), $Fixed()]).
 seed(P, Col) :- in(P, Col), !params.bg(Col).
 
 // Advance dir and initial heading per direction case.
-.decl setup(dc: DirCase, u: Dir, h: Dir)
-setup($Stored(), U, H) :- params.dir(U), params.sense(S), turn(S, U, H).
-setup($Seat(), U, H) :-
-    seed(P, _), corner_dist(P, Diag, 0),       // the corner the marker sits in
-    diag_opposite(Diag, Opp),                  // ray leaves toward the opposite corner
-    params.axis(A), dir_of(Opp, A, U),
-    perp(A, A2), dir_of(Opp, A2, H).
+.decl launch(dc: DirCase, u: Dir, h: Dir)
+// The marker sits against both side walls, so a heading into a wall flips at
+// the first step and the two headings draw one trace. The heading is not
+// observable, and the program takes both.
+launch($Stored(), U, H) :- params.dir(U), perp_dir(U, H).
+launch($Seat(), U, H) :-
+    seed(P, _), corner_dist(P, Diag, 0),        // the corner the marker sits in
+    diag_opposite(Diag, Opp),                   // ray leaves toward the opposite corner
+    params.axis(A), diag_dirs(Opp, A, U, H).    // advance along the axis, heading across it
 
-// The bouncing walk: state = (cell, heading across the advance axis). At a
-// side wall the heading flips; with room, the ray steps one cell diagonally.
-// It stops at the advance edge.
+// The bouncing walk: the state is a cell with a heading across the advance axis.
 .decl trace(dc: DirCase, p: Position, h: Dir)
-trace(DC, P, H) :- setup(DC, _, H), seed(P, _).
+trace(DC, P, H) :- launch(DC, _, H), seed(P, _).
 trace(DC, P, H2) :- trace(DC, P, H), dist(P, H, 0), opposite(H, H2).   // reflect
 trace(DC, P2, H) :-
-    trace(DC, P, H), setup(DC, U, _),
+    trace(DC, P, H), launch(DC, U, _),
     !dist(P, H, 0), !dist(P, U, 0),            // room toward the heading and the advance edge
-    axis_of(U, A), diag_dirs(Diag, A, U, H),   // the diagonal U and H span
+    diag_dirs(Diag, _, U, H),                  // the diagonal U and H span
     neighbor(P, Diag, P2).
 
 .decl traced(dc: DirCase, p: Position)
 traced(DC, P) :- trace(DC, P, _).
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P, Col, [DC, $Prop()])  :- traced(DC, P), seed(_, Col).
 out(P, Col, [DC, $Fixed()]) :- traced(DC, P), params.ink(Col).
 out(P, Col, [DC, IC]) :- impl_choice([DC, IC]), in(P, _), !traced(DC, P), params.bg(Col).

@@ -1,23 +1,24 @@
 // 0a938d79
-// concept: markers lines walk
-// Two marks sit on edges of one axis, and each casts a line across the
-// grid. The lines then repeat by the step from one mark to the other,
-// colors alternating, until the walk leaves the grid; the strip before
-// the leading line stays bg. Two models of which mark leads:
-//
-//   $Corner — the mark nearer the params.origin side.
-//   $Margin — the mark whose side holds the narrower empty strip, so the
-//             pattern fills the wider one.
-//
-// They coincide here — the marks huddle at the params.origin side in every
-// pair — and diverge when the marks huddle at the opposite side.
+// keywords: markers lines walk
+// output: Two marks sit on edges of one axis, and each casts a line across
+//  the grid. The lines then repeat by the step from one mark to the other,
+//  colors alternating, until the walk leaves the grid; the strip before the
+//  leading line stays bg.
 
-#include "../lib.dl"
+// which mark leads
+.type Choice =
+    // the mark nearer the params.origin side
+    Corner {}
+    // the mark whose side holds the narrower empty strip, so the pattern
+    // fills the wider one
+  | Margin {}
 
-.type Choice = Corner {} | Margin {}
+// The cases coincide here — the marks huddle at the params.origin side in
+// every pair — and diverge when the marks huddle at the opposite side.
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
 
     // --- Corner ---
@@ -81,7 +82,6 @@ line(P2, Col2, Ch) :-
     compose(P, Delta, P2), cell_line(_, P2),    // still a line of the grid
     other_col(Col, Col2).                       // the colors alternate
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- cell_line(P, P_line), line(P_line, Col, Ch).
 out(P, Col, Ch) :-
     impl_choice(Ch), cell_line(P, P_line), !line(P_line, _, Ch), params.bg(Col).

@@ -1,22 +1,33 @@
 // 6df30ad6
 // draft
-// concept: markers select rank count
-// A gray shape sits among single-cell dots of several colors. The output
-// keeps the shape alone, recolored with the color of the dot nearest it.
-// Nearness is read by growing the shape outward in rings until a ring holds
-// a dot. `grow` is the ring shape: $Square grows under 8-adjacency, $Diamond
-// under 4-adjacency. `tie` settles a first ring that holds dots of several
-// colors: $Nearer orders its dots by the other growth's rings, so a square
-// ring's corners lie farther than its sides and a diamond ring's diagonal
-// cells lie nearer than its axis tips; $Most takes the color with the most
-// dots in the ring. Train 1 contradicts [$Diamond, $Most], so impl_choice
-// omits it.
+// keywords: markers select rank count
+// input: a gray shape sits among single-cell dots of several colors
+// output: The output keeps the shape alone, recolored with the color of the
+//  dot nearest it. Nearness is read by growing the shape outward in rings
+//  until a ring holds a dot; Choice = [grow, tie] crosses the hypotheses.
+//  Train 1 contradicts [$Diamond, $Most], so impl_choice omits it.
 
-#include "../lib.dl"
+// the ring shape
+.type Grow =
+    // grows under 8-adjacency
+    Square {}
+    // grows under 4-adjacency
+  | Diamond {}
 
-.type Grow = Square {} | Diamond {}
-.type Tie = Nearer {} | Most {}
+// settles a first ring that holds dots of several colors
+.type Tie =
+    // orders its dots by the other growth's rings, so a square ring's
+    // corners lie farther than its sides and a diamond ring's diagonal
+    // cells lie nearer than its axis tips
+    Nearer {}
+    // the color with the most dots in the ring
+  | Most {}
+
 .type Choice = [grow: Grow, tie: Tie]
+
+// --- shared ---
+
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .decl bg(c: Color)
@@ -91,8 +102,5 @@ most.item(G, Col, P) :- first.low(G, P, _), dot(P, Col).
 
 fill(Col, [G, $Most()]) :- most.mode(G, Col).
 
-// --- shared ---
-
-.decl out(p: Position, col: Color, c: Choice)
 out(P, Col, C) :- shape(P), fill(Col, C), impl_choice(C).
 out(P, Col, C) :- in(P, _), !shape(P), params.bg(Col), impl_choice(C).

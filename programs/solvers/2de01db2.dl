@@ -1,16 +1,17 @@
 // 2de01db2
-// concept: lines lookup count
-// Each line (along params.axis) holds one main color plus scattered noise; the
-// output inverts the main mask: main cells -> params.bg, every other cell -> main.
-//
-// Two models identify a line's main color:
-//   $Palette — the line's color from the stored main-color set (data).
-//   $Owned   — the largest color confined to the line: noise crosses
-//              lines (ops).
+// keywords: lines lookup count
+// input: the grid splits into lines along params.axis, one main color per line
+// output: a cell on its line's main color takes params.bg, and every other cell
+//  takes that main color.
 
-#include "../lib.dl"
+// which model identifies a line's main color
+.type Choice =
+    // the line's color from the stored main-color set
+    Palette {}
+    // the commonest color confined to the line: any other color crosses lines
+  | Owned {}
 
-.type Choice = Palette {} | Owned {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl axis(a: Axis) axis(AXIS_H).
@@ -42,7 +43,7 @@ main(P_line, Col, $Palette()) :- line_color(P_line, Col), params.ink(Col).
 .decl shared(col: Color)
 shared(Col) :- line_color(L1, Col), line_color(L2, Col), L1 != L2.
 
-// The line's owned inks, by cell count.
+// The line's own colors, by cell count.
 .init own_count = Mode<Position, Color, Position>
 own_count.item(P_line, Col, P) :- cell_line(P, Col, P_line), !shared(Col).
 
@@ -50,7 +51,6 @@ main(P_line, Col, $Owned()) :- own_count.mode(P_line, Col).
 
 // --- Output ---
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P, Col, Ch) :-
     cell_line(P, C_in, P_line),                           // cell, its color, its line
     ( main(P_line, Col, Ch), C_in != Col                  // off the line's main color — takes it

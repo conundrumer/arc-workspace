@@ -1,12 +1,13 @@
 // 321b1fc6
 // draft
-// concept: objects stamp
-// A multicolored template and several params.blank blocks sit over bg, and
-// each block has the template's footprint. The template stamps at each block:
-// aligning the two bounding boxes carries the template onto the block. Every
-// cell the stamp misses is bg, which erases the template.
+// keywords: objects stamp
+// input: A multicolored template and several params.blank blocks sit over bg,
+//  and each block has the template's footprint.
+// output: The template stamps at each block: aligning the two bounding boxes
+//  carries the template onto the block. Every cell the stamp misses is bg,
+//  which erases the template.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -37,7 +38,6 @@ shift(V) :-
 .decl image(p: Position, col: Color)
 image(P, Col) :- template(P_tmpl, Col), shift(V), compose(P_tmpl, V, P).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, _),
     ( image(P, Col)                 // stamped cell

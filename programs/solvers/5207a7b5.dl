@@ -1,14 +1,15 @@
 // 5207a7b5
 // draft
-// concept: markers walk
-// A bar of one color hangs from an edge of the grid, and a filled region
-// grows out of it one column at a time. The bar's own column is filled as
-// deep as the bar reaches. Each next column toward the slant's side reaches
-// `rise` cells deeper, and each column the other way `rise` cells shallower,
-// until the region runs out of the grid. The bar's column keeps the bar's
-// color, and every other filled cell takes the color of its side of the bar.
+// keywords: markers walk
+// input: a bar of one color hangs from an edge of the grid
+// output: A filled region grows out of the bar one column at a time. The
+//  bar's own column is filled as deep as the bar reaches. Each next column
+//  toward the slant's side reaches `rise` cells deeper, and each column the
+//  other way `rise` cells shallower, until the region runs out of the grid.
+//  The bar's column keeps the bar's color, and every other filled cell
+//  takes the color of its side of the bar.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -50,7 +51,6 @@ region(Q) :-
     ( params.slant(V), compose(P, V, Q)      // one column across, at the slant
     ; params.base(B), neighbor(P, B, Q) ).   // one cell back toward the base edge
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     region(P), bar_cell(Q),
     ( params.rise_axis(A), same_line(A, P, Q), params.bar(Col)  // the bar's own column

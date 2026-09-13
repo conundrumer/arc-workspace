@@ -1,28 +1,36 @@
 // 2bcee788
 // draft
-// concept: markers d4 rank
-// A one-color shape on bg, with a marker line laid against one of its sides.
-// The output fills the grid with params.ground, keeps the shape, and adds its
-// mirror image across a wall between shape and marker; the marker cells fall
-// under the image. Choice = [l, w] crosses two hypotheses:
-//
-//   l (which ink is the marker):
-//     $Stored()   — the cells of params.marker.
-//     $Minority() — the scarcer of the two ink colors.
-//   w (the wall — the mirror is the center of the box its two lines bound):
-//     $Edge()  — the shape's edge line and the line just outside it; the
-//                marker only names a direction.
-//     $Seam()  — the marker's line and the line it faces.
-//     $Image() — the shape's edge line and the marker's line, so the marker
-//                is the image of that edge line.
-//
-// The marker abuts the shape in every pair, so the three w hypotheses agree here.
+// keywords: markers d4 rank
+// input: a one-color shape on bg, with a marker line laid against one of
+//  its sides
+// output: The output fills the grid with params.ground, keeps the shape,
+//  and adds its mirror image across a wall between shape and marker; the
+//  marker cells fall under the image.
 
-#include "../lib.dl"
+// which ink is the marker
+.type Locate =
+    // the cells of params.marker
+    Stored {}
+    // the scarcer of the two ink colors
+  | Minority {}
 
-.type Locate = Stored {} | Minority {}
-.type Wall   = Edge {} | Seam {} | Image {}
+// the wall — the mirror is the center of the box its two lines bound
+.type Wall =
+    // the shape's edge line and the line just outside it; the marker only names
+    // a direction
+    Edge {}
+    // the marker's line and the line it faces
+  | Seam {}
+    // the shape's edge line and the marker's line, so the marker is the image
+    // of that edge line
+  | Image {}
+
+// The marker abuts the shape in every pair, so the three wall hypotheses
+// agree here.
+
 .type Choice = [l: Locate, w: Wall]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -113,7 +121,6 @@ paint(Q, Col, [L, W]) :-
     ; mirror(P, Q, W, L)            // and reappears across the mirror
     ).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, [L, W]) :-
     in(P, _), locate_choice(L), wall_choice(W),

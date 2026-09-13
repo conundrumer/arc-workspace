@@ -1,22 +1,32 @@
 // 642d658d
-// concept: count rank
-// Noise grid with plus shapes: four same-colored arms around a center
-// cell. Detect × select models of the 1×1 output color, data-equivalent
-// on this task — the winning arm color has exactly two pluses in every
-// pair under every detect:
-//   detect $Center — pluses sit on cells of a stored center color
-//   detect $Halo   — any cell ringed by one non-bg color; bg is the
-//                    pair's dominant color (bg varies across pairs)
-//   detect $Footprint — arms at a stored set of offsets around the center,
-//                    on cells of the center color
-//   select $Mode   — the arm color with the most pluses
-//   select $Count  — the arm color with a stored plus count
+// keywords: count rank
+// input: A noise grid holds plus shapes: four same-colored arms around a
+//  center cell.
+// output: The output is one cell, painted the arm color that the select
+//  model picks among the arm colors the detect model finds.
 
-#include "../lib.dl"
+// which cells count as a plus
+.type Detect =
+    // pluses sit on cells of a stored center color
+    Center {}
+    // any cell ringed by one non-bg color; bg is the pair's dominant color,
+    // which varies across pairs
+  | Halo {}
+    // arms at a stored set of offsets around the center, on cells of the
+    // center color
+  | Footprint {}
 
-.type Detect = Center {} | Halo {} | Footprint {}
-.type Select = Mode {} | Count {}
+// which arm color wins
+.type Select =
+    // the arm color with the most pluses
+    Mode {}
+    // the arm color with a stored plus count
+  | Count {}
+
+// which cells count as a plus, crossed with which arm color wins
 .type Choice = [detect: Detect, select: Select]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // --- $Center ---
@@ -68,7 +78,8 @@ plus($Footprint(), P, Col) :- fp_arm(P, _, Col), !fp_mismatch(P, Col).
 .init plus_count = Mode<Detect, Color, Position>
 plus_count.item(Dt, Col, P) :- plus(Dt, P, Col).
 
-.decl out(p: Position, col: Color, ch: Choice)
+// The two selects are data-equivalent on this task: under every detect, the
+// winning arm color has exactly two pluses in every pair.
 
 // --- $Mode ---
 out(ZERO, Col, [Dt, $Mode()]) :- plus_count.mode(Dt, Col).

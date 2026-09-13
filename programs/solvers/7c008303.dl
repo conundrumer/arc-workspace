@@ -1,12 +1,12 @@
 // 7c008303
 // draft
-// concept: decompose crop scale select
-// A cross of one full row and one full column cuts the grid into four
-// quadrants: a small key, a large pattern, and two blank quadrants. The
-// output is the pattern, divided into one block per key cell, with each
-// inked cell recolored by the key cell of its block.
+// keywords: decompose crop scale select
+// input: a cross of one full row and one full column, cutting the grid into
+//  four quadrants: a small key, a large pattern, and two blank quadrants
+// output: The output is the pattern, divided into one block per key cell,
+//  with each inked cell recolored by the key cell of its block.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -55,7 +55,6 @@ blocks.cell(P_intile) :- role(_, T_pat), quadrant_cell(T_pat, P_intile, _).
 blocks.dim($U(), A, N) :- role(T_key, _), tile_extent(T_key, A, N).
 blocks.gap(0).
 
-.decl out(p: Position, col: Color)
 out(P_intile, Col) :-
     role(T_key, T_pat), quadrant_cell(T_pat, P_intile, C),       // pattern cell
     ( params.bg(C), Col = C                                      // blank stays

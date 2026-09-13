@@ -1,16 +1,17 @@
 // af902bf9
-// concept: markers span
-// Marker cells sit at the corners of axis-aligned rectangles; each
-// rectangle's strict interior fills with params.fill. Two models of what
-// delimits an interior cell, tagged on out's Choice:
-//
-//   $Rect — a marker pair in opposite quadrants of the cell whose two
-//           mixed corners are also markers.
-//   $Quad — a marker strictly inside each of the cell's four quadrants.
+// keywords: markers span
+// input: Marker cells sit at the corners of axis-aligned rectangles.
+// output: Each rectangle's strict interior fills with params.fill.
 
-#include "../lib.dl"
+// what delimits an interior cell
+.type Choice =
+    // a marker pair in opposite quadrants of the cell whose two mixed corners
+    // are also markers
+    Rect {}
+    // a marker strictly inside each of the cell's four quadrants
+  | Quad {}
 
-.type Choice = Rect {} | Quad {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl marker(c: Color) marker(4).
@@ -31,8 +32,6 @@ empty(P) :- in(P, Col), params.bg(Col).
 quad_mark(P, Diag, Q) :-
     empty(P), mark(Q), diag_dirs(Diag, _, D1, D2),
     nearer(D1, Q, P), nearer(D2, Q, P).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // --- Rect ---
 

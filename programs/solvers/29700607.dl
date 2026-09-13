@@ -1,18 +1,22 @@
 // 29700607
 // draft
-// concept: markers span cast
-// The non-bg cells on the header edge are headers; the rest of the ink is
-// markers. Each header and the marker of its color are joined by a wire with
-// one turn: it runs from the header along the head axis to the elbow — the
-// marker's place along that axis, the header's across it — then turns toward
-// the marker. A header whose color has no marker never turns and runs off the
-// far edge. Every other cell is bg. The cases claim where the turned leg ends:
-// $AtMarker at the marker, $ToEdge at the frame edge beyond it. Every marker
-// sits on a frame edge, so the two agree on all pairs.
+// keywords: markers span cast
+// input: The non-bg cells on the header edge are headers; the rest of the
+//  ink is markers.
+// output: Each header and the marker of its color are joined by a wire with
+//  one turn: it runs from the header along the head axis to the elbow — the
+//  marker's place along that axis, the header's across it — then turns
+//  toward the marker. A header whose color has no marker never turns and
+//  runs off the far edge. Every other cell is bg.
 
-#include "../lib.dl"
+// where the turned leg ends
+.type Choice =
+    // the leg ends at the marker
+    AtMarker {}
+    // the leg ends at the frame edge beyond the marker
+  | ToEdge {}
 
-.type Choice = AtMarker {} | ToEdge {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -67,10 +71,10 @@ side(Col, D) :-
     params.head_dir(D_head), perp_dir(D_head, D),    // a turn leaves the head axis
     path.ray(Col, M, D, _, E).                       // the marker lies that way
 
+// every marker sits on a frame edge, so this rule agrees with $AtMarker on every pair
 wire(Col, P, $ToEdge()) :- elbow(E, Col), side(Col, D), path.ray(Col, P, D, _, E).
 
 // --- output ---
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- wire(Col, P, Ch).
 out(P, Col, Ch) :- in(P, _), impl_choice(Ch), !wire(_, P, Ch), params.bg(Col).

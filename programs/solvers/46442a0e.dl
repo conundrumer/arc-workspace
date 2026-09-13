@@ -1,18 +1,21 @@
 // 46442a0e
-// concept: tile-arrangement lookup d4
-// 2×2 tile arrangement of input copies — the rotation peer of the
-// 3af2c5a8 family: the anchor-corner tile is the input; the other tiles
-// are its quarter-turn images. Flip-based cases are ruled out (train 2 /
-// test: the off-anchor tiles are rotations of an asymmetric input).
-//
-// Cases (data-equivalent on this task):
-//   $Lookup() — per-tile D4 table
-//   $Rot()    — rotational closure: each C4 element applied jointly to
-//               the anchor tile's position and content
+// keywords: tile-arrangement lookup d4
+// output: A 2×2 arrangement of input copies: the anchor-corner tile holds
+//  the input, and the other tiles hold its quarter-turn images.
 
-#include "../lib.dl"
+// The rotation peer of the 3af2c5a8 family. Flip-based cases are ruled out:
+// train 2 and the test both show the off-anchor tiles as rotations of an
+// asymmetric input.
 
-.type Choice = Lookup {} | Rot {}
+// data-equivalent on this task
+.type Choice =
+    // per-tile D4 table
+    Lookup {}
+    // rotational closure: each C4 element applied jointly to the anchor tile's
+    // position and content
+  | Rot {}
+
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
@@ -33,8 +36,6 @@
 }
 
 .init params = Params
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- Lookup ---
 out(P_grid, Col, $Lookup()) :-

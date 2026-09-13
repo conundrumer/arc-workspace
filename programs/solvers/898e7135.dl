@@ -1,13 +1,15 @@
 // 898e7135
-// concept: objects enclose scale d4 pack
-// A board sits among loose pieces and scattered noise cells on params.bg.
-// The board is the object that closes background off from the grid edge;
-// the regions it closes off are its holes. Each piece is a hole scaled up
-// by one factor and turned by a D4 element. The output is the board scaled
-// by that factor, in the board's color, with each hole painted in the color
-// of the piece that fits it. The noise fits no hole and plays no part.
+// keywords: objects enclose scale d4 pack
+// input: A board sits among loose pieces and scattered noise cells on
+//  params.bg. The board is the object that closes background off from the
+//  grid edge; the regions it closes off are its holes.
+// output: Each piece is a hole scaled up by one factor and turned by a D4
+//  element. The output is the board scaled by that factor, in the board's
+//  color, with each hole painted in the color of the piece that fits it. The
+//  noise fits no hole and plays no part.
 
-#include "../lib.dl"
+// Board cells keep the board's color; each hole takes its piece's color.
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -95,8 +97,6 @@ scale(K) :- scale_cand(K), !unfit_hole(K).
 
 // --- output ---
 
-// Board cells keep the board's color; each hole takes its piece's color.
-.decl out(p: Position, col: Color)
 out(P_out, Col) :-
     scale(K), block.cell(K, P_blk),               // each cell becomes a block
     board_box.box(Id, B), crop(P, B, P_board),    // a cell of the board's box

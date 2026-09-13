@@ -1,18 +1,18 @@
 // 9caf5b84
-// concept: count rank select
-// Colors rank by cell count; the frequent colors keep their cells, and
-// every other cell becomes params.mark. Two hypotheses on where the cut sits,
-// data-equivalent on this task — every pair has exactly five colors:
-//
-//   $Keep — the params.keep_n most frequent colors survive.
-//   $Drop — the params.drop_n least frequent colors repaint.
+// keywords: count rank select
+// output: Colors rank by cell count; the frequent colors keep their cells, and
+//  every other cell becomes params.mark.
 
-#include "../lib.dl"
+// where the cut between kept and marked colors sits
+.type Choice =
+    // the params.keep_n most frequent colors survive
+    Keep {}
+    // the params.drop_n least frequent colors repaint
+  | Drop {}
 
-.type Choice = Keep {} | Drop {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl mark(c: Color) mark(7).
 
     // --- Keep ---
@@ -33,6 +33,8 @@ by_count.before($U(), Col, Col2) :-
     color_count.tally(Col, N), color_count.tally(Col2, N2),  // two colors' counts
     N < N2.                                                  // the rarer one comes first
 
+// Two hypotheses on where the cut sits, data-equivalent on this task —
+// every pair has exactly five colors.
 .decl survives(col: Color, ch: Choice)
 
 // --- Keep ---
@@ -46,6 +48,5 @@ survives(Col, $Drop()) :- by_count.rank($U(), Col, R), params.drop_n(K), R >= K.
 .decl impl_choice(ch: Choice)
 impl_choice($Keep()). impl_choice($Drop()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- in(P, Col), survives(Col, Ch).
 out(P, Col, Ch) :- in(P, C0), impl_choice(Ch), !survives(C0, Ch), params.mark(Col).

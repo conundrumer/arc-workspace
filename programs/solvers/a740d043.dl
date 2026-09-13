@@ -1,9 +1,9 @@
 // a740d043
-// concept: crop mapping
-// Output is the grid cropped to the ink's bounding box; bg cells inside
-// repaint to params.hole.
+// keywords: crop mapping
+// output: Output is the grid cropped to the ink's bounding box; bg cells inside
+//  repaint to params.hole.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(1).
@@ -18,7 +18,6 @@ ink(P, Col) :- in(P, Col), !params.bg(Col).
 .init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- ink(P, _).
 
-.decl out(p: Position, col: Color)
 out(P_inner, Col) :-
     ( ink(P, Col)                                 // ink — carried in
     ; in(P, C), params.bg(C), params.hole(Col)    // bg — the hole color

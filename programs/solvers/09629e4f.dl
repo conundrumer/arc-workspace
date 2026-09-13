@@ -1,17 +1,19 @@
 // 09629e4f
-// concept: decompose select scale rank
-// A separator lattice cuts the grid into a 3×3 arrangement of 3×3 tiles. One
-// tile is a template: its cell at position q gives the uniform fill color
-// for the tile at arrangement position q — the template scaled up onto
-// the arrangement, separators kept. Cases claim what tells the template
-// apart:
-//   $Sparse — the tile with the most bg cells.
-//   $Marker — the tile with no cell of params.marker; the marker color tags
-//             every other tile.
+// keywords: decompose select scale rank
+// output: A separator lattice cuts the grid into a 3×3 arrangement of 3×3
+//  tiles. One tile is a template: its cell at position q gives the uniform
+//  fill color for the tile at arrangement position q — the template scaled
+//  up onto the arrangement, separators kept.
 
-#include "../lib.dl"
+// what tells the template apart
+.type Choice =
+    // the tile with the most bg cells
+    Sparse {}
+    // the tile with no cell of params.marker; the marker color tags every other
+    // tile
+  | Marker {}
 
-.type Choice = Sparse {} | Marker {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl tile_dim(k: number) tile_dim(3).
@@ -49,7 +51,6 @@ has_marker(T) :- tile(P, T, _), in(P, Col), params.marker(Col).
 template($Marker(), T) :- tile(_, T, _), !has_marker(T).
 
 // --- output ---
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_grid, Col, Ch) :-
     tile(P_grid, P_tile, _),      // output cell's tile
     template(Ch, Q),

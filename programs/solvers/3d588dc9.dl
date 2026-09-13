@@ -1,15 +1,15 @@
 // 3d588dc9
 // draft
-// concept: objects markers border
-// A wedge is an object packed into one corner of its box, so its far side is
-// a diagonal slant. A key is an object shaped like the stored footprint: a
-// block with a stem out of one end. A wedge claims the keys beyond its slant,
-// and names the side its corner points to on the face axis. A key opens when
-// its claimants agree on one side and its stem does not already stick out of
-// that side; it then loses its stem, and its block's edge on that side turns
-// the face color. Everything else passes through.
+// keywords: objects markers border
+// output: A wedge is an object packed into one corner of its box, so its far
+//  side is a diagonal slant. A key is an object shaped like the stored
+//  footprint: a block with a stem out of one end. A wedge claims the keys
+//  beyond its slant, and names the side its corner points to on the face axis.
+//  A key opens when its claimants agree on one side and its stem does not
+//  already stick out of that side; it then loses its stem, and its block's edge
+//  on that side turns the face color. Everything else passes through.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(7).
@@ -129,7 +129,6 @@ cleared(P) :- open(Id, _), stem_cell(Id, P).
 .decl faced(p: Position)
 faced(P) :- open(Id, D), block_edge(Id, D, P).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, Col_in),
     ( faced(P), params.face(Col)               // the opened face

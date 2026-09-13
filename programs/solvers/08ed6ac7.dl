@@ -1,20 +1,26 @@
 // 08ed6ac7
-// concept: lines objects rank
-// Ink bars recolor by size order: the r-th bar takes the r-th color of a
-// stored sequence; all other cells pass through. Choice = [s, a]:
-//
-//   s (what a bar is):
-//     $Object() — a connected component of ink
-//     $Line()   — a grid line along params.axis holding ink
-//   a (which end of the size order is rank 0):
-//     $Tall()  — the biggest bar
-//     $Short() — the smallest bar
+// keywords: lines objects rank
+// output: Ink bars recolor by size order: the r-th bar takes the r-th color of
+//  a stored sequence; all other cells pass through.
 
-#include "../lib.dl"
+// what a bar is
+.type Seg =
+    // a connected component of ink
+    Object {}
+    // a grid line along params.axis holding ink
+  | Line {}
 
-.type Seg    = Object {} | Line {}
-.type Anchor = Tall {} | Short {}
+// which end of the size order is rank 0
+.type Anchor =
+    // the biggest bar
+    Tall {}
+    // the smallest bar
+  | Short {}
+
+// what a bar is, crossed with which end of the size order is rank 0
 .type Choice = [s: Seg, a: Anchor]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl ink(col: Color) ink(5).
@@ -73,7 +79,6 @@ seg_choice($Object()). seg_choice($Line()).
 .decl anchor_choice(a: Anchor)
 anchor_choice($Tall()). anchor_choice($Short()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, [$Object(), A]) :-
     objs.label($U(), P, Id), obj_size.tally(Id, N), size_color($Object(), A, N, Col).
 out(P, Col, [$Line(), A]) :-

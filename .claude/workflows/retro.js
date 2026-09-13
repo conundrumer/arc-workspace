@@ -1,6 +1,6 @@
 export const meta = {
   name: 'retro',
-  description: 'Rule on what console sessions called out beyond their own tasks: read, check, review, fix, resolve, verify, sweep.',
+  description: 'Rule on what console sessions called out beyond their own tasks: read, check, review, fix, resolve, clean up, verify, sweep.',
   phases: [
     { title: 'Read', detail: 'one agent turns the window into issues' },
     { title: 'Sweep', detail: 'one agent sweeps the parameter values of every solver the window names, beside the check and review stages; then one agent writes a review line into each solver a parameter stays open in', model: 'sonnet' },
@@ -8,7 +8,8 @@ export const meta = {
     { title: 'Review', detail: 'one agent asks the two questions over every open issue and takes a default', model: 'fable' },
     { title: 'Fix', detail: 'code targets one at a time, every prose target in one agent that fixes then prunes, every other target in parallel' },
     { title: 'Resolve', detail: 'one agent per solver that took a review line in this run, which acts on the line and writes its report' },
-    { title: 'Consistency', detail: 'one agent reads the solvers the resolve stage acted on side by side and reports where they read the docs differently' },
+    { title: 'Consistency', detail: 'one agent groups the acted-on review lines by the rule that decides each; then one agent per group reads its solvers side by side and reports where they read that rule differently' },
+    { title: 'Cleanup', detail: 'one agent per solver the run wrote, which runs Simplify then Prune over it' },
     { title: 'Verify', detail: 'one agent per changed target, one agent for the prose targets together, one agent for the checks, then one round over the other files those findings name', model: 'sonnet' },
   ],
 }
@@ -32,7 +33,11 @@ export const meta = {
 //                      issue's task ids, which a fix over a principle writes a review line into.
 //                      The fixes are ruled: the prune step keeps their substance.
 //   { resolve: [...] } Resolve over the given task ids, whatever review lines their headers hold.
-//                      It reaches Consistency after it, and no other stage.
+//                      It reaches Consistency and Cleanup after it, and no other stage.
+//   { sweep: [...] }   in a resolve run alone: the solver stems the run sweeps first. The sweep
+//                      writes its review lines, then Resolve takes those solvers beside the ones
+//                      args.resolve names, which may be an empty list. The returned object carries
+//                      the sweep and the sweep lines.
 
 // The judgment a call took. A tier-4 fix is not made in the first run.
 const TIER = {
@@ -279,9 +284,52 @@ const RESOLVE_SCHEMA = {
   required: ['acted', 'left', 'report', 'diff', 'verification'],
 }
 
+const CLEANUP_SCHEMA = {
+  type: 'object',
+  properties: {
+    changed: { type: 'string', description: 'what changed, or `no change` with the reason' },
+    run: { type: 'string', description: 'the run result after the pass, and any failure or finding the first run already had' },
+    concerns: { type: 'array', items: { type: 'string' }, description: 'what looks wrong in the hypothesis and needs the caller\'s ruling' },
+  },
+  required: ['changed', 'run', 'concerns'],
+}
+
+const GROUP_SCHEMA = {
+  type: 'object',
+  properties: {
+    assignments: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          task_id: { type: 'string' },
+          line: { type: 'string', description: 'the review line, verbatim' },
+          group: { type: 'string', description: 'a short kebab-case id for the rule the line falls under; lines one rule decides share it' },
+          rule: { type: 'string', description: 'the rule that decides the line, as doc and section' },
+        },
+        required: ['task_id', 'line', 'group', 'rule'],
+      },
+    },
+  },
+  required: ['assignments'],
+}
+
 const CONSISTENCY_SCHEMA = {
   type: 'object',
   properties: {
+    misgrouped: {
+      type: 'array',
+      description: 'the lines of the group that its rule does not decide',
+      items: {
+        type: 'object',
+        properties: {
+          task_id: { type: 'string' },
+          line: { type: 'string' },
+          rule: { type: 'string', description: 'the rule that decides the line, as doc and section' },
+        },
+        required: ['task_id', 'line', 'rule'],
+      },
+    },
     divergences: {
       type: 'array',
       items: {
@@ -300,7 +348,7 @@ const CONSISTENCY_SCHEMA = {
       },
     },
   },
-  required: ['divergences'],
+  required: ['divergences', 'misgrouped'],
 }
 
 // ---------------------------------------------------------------- tasks
@@ -416,10 +464,29 @@ const resolveTask = (taskId) => [
   'Never run a git command that changes state.',
 ].join('\n')
 
-const consistencyTask = (resolved) => [
-  'Compare these solvers. Each entry names one solver, its report, and the review lines the Resolve stage acted on in it.',
+const cleanupTask = (taskId, source) => [
+  `Run Simplify, then Prune, over the whole of programs/solvers/${taskId}.dl.`,
+  source,
+  'Scratch goes under `.scratch/<task_id>/`.',
+].join('\n')
+
+// The seed key of a review line: its kind, its head, and the start of its point.
+const seedKey = (line) => {
+  const m = /^\/\/\s*review\s+(\w+):\s*(.*?)\s+—\s+(.*)$/.exec(line)
+  return m ? `${m[1]}|${m[2]}|${m[3].slice(0, 40)}` : line.slice(0, 60)
+}
+
+const groupTask = (lines) => [
+  'Group these review lines. Each entry names the solver the line stood in, the line, and a seed key from its text.',
   '',
-  JSON.stringify(resolved.map(r => ({
+  JSON.stringify(lines, null, 2),
+].join('\n')
+
+const consistencyTask = (group, rule, members) => [
+  `Compare these solvers, the group \`${group}\`, under the rule ${rule}. Each entry names one solver, its report, and the review lines the Resolve stage acted on in it under that rule.`,
+  `Scratch goes under \`.scratch/retro/consistency/${group}/\`.`,
+  '',
+  JSON.stringify(members.map(r => ({
     task_id: r.task_id,
     solver: r.target,
     report: `${REPORT_DIR}/${r.task_id}/retro.md`,
@@ -472,11 +539,11 @@ const asFixAndPrune = (task) =>
 
 // The roles a run reaches, by the run it is.
 const READ_ROLES = ['retro-read', 'retro-check', 'retro-review']
-const FIX_ROLES = ['retro-fix', 'solver', 'retro-prune', 'retro-verify', 'retro-consistency']
-// The sweep lines stage runs in a full run alone.
+const FIX_ROLES = ['retro-fix', 'solver', 'retro-prune', 'retro-verify', 'retro-group', 'retro-consistency', 'cleanup']
+// The sweep lines stage runs in a full run, and in a resolve run given stems to sweep.
 const SWEEP_ROLES = ['retro-sweep']
-const RESOLVE_ROLES = ['solver', 'retro-consistency']
-const rolesNeeded = () => args && args.resolve ? RESOLVE_ROLES
+const RESOLVE_ROLES = ['solver', 'retro-group', 'retro-consistency', 'cleanup']
+const rolesNeeded = () => args && args.resolve ? [...RESOLVE_ROLES, ...(args.sweep ? SWEEP_ROLES : [])]
   : args && args.fixes ? FIX_ROLES
     : args && args.dry ? READ_ROLES
       : [...READ_ROLES, ...FIX_ROLES, ...SWEEP_ROLES]
@@ -545,25 +612,45 @@ async function verifyStage(made, runChecks = true) {
   return { findings, checks: checks ? checks.checks : [] }
 }
 
-// The window names the solvers the sessions wrote. One agent sweeps each of
-// them, so a parameter value the pairs leave open is reported beside the calls.
+// The items one agent takes, in order.
+const chunks = (items, size) => {
+  const out = []
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
+  return out
+}
+
+// The label one agent of a chunked stage carries.
+const chunkLabel = (name, i, n) => (n > 1 ? `${name}:${i + 1}/${n}` : name)
+
+// The window names the solvers the sessions wrote. The stems go in chunks of
+// at most 25, one agent per chunk, so a parameter value the pairs leave open is
+// reported beside the calls.
 async function sweepStage(stems) {
   if (!stems.length) return null
-  const sweep = await agent(sweepTask(stems), { label: 'sweep', phase: 'Sweep', schema: SWEEP_SCHEMA, model: 'sonnet', effort: 'low' })
-  if (!sweep) return null
-  log(`${sweep.sweeps.filter(s => s.params.length).length} of ${sweep.sweeps.length} swept solvers hold a parameter the pairs leave open`)
-  return sweep.sweeps
+  const parts = chunks(stems, 25)
+  const done = (await parallel(parts.map((part, i) => () =>
+    agent(sweepTask(part), { label: chunkLabel('sweep', i, parts.length), phase: 'Sweep', schema: SWEEP_SCHEMA, model: 'sonnet', effort: 'low' })
+  ))).filter(Boolean)
+  if (!done.length) return null
+  const sweeps = done.flatMap(d => d.sweeps)
+  log(`${sweeps.filter(s => s.params.length).length} of ${sweeps.length} swept solvers hold a parameter the pairs leave open`)
+  return sweeps
 }
 
 // A solver the sweep leaves a parameter open in returns to draft and takes one
-// review line per open parameter.
+// review line per open parameter. The solvers go in chunks of at most 20, one
+// agent per chunk.
 async function sweepLinesStage(sweeps) {
   const open = (sweeps || []).filter(s => s.params && s.params.length)
   if (!open.length) return null
-  const lines = await agent(asRole('retro-sweep', sweepLinesTask(open)), { label: 'sweep-lines', phase: 'Sweep', schema: SWEEP_LINES_SCHEMA, ...HANDBOOK })
-  if (!lines) return null
-  log(`${lines.solvers.reduce((n, s) => n + s.lines.length, 0)} review lines over ${lines.solvers.length} solvers`)
-  return lines.solvers
+  const parts = chunks(open, 20)
+  const done = (await parallel(parts.map((part, i) => () =>
+    agent(asRole('retro-sweep', sweepLinesTask(part)), { label: chunkLabel('sweep-lines', i, parts.length), phase: 'Sweep', schema: SWEEP_LINES_SCHEMA, ...HANDBOOK })
+  ))).filter(Boolean)
+  if (!done.length) return null
+  const solvers = done.flatMap(d => d.solvers)
+  log(`${solvers.reduce((n, s) => n + s.lines.length, 0)} review lines over ${solvers.length} solvers`)
+  return solvers
 }
 
 // What the docs settle is settled in this run: a draft that took a review line
@@ -581,16 +668,58 @@ async function resolveStage(taskIds) {
   return done
 }
 
-// The Resolve stage takes each solver on its own. One agent then reads the
-// solvers it acted on side by side, so a point two of them read differently is
-// reported as a divergence.
+// The Resolve stage takes each solver on its own. One agent then groups the
+// lines it acted on by the rule that decides each, and one agent per group
+// reads that group's solvers side by side, so a point two of them read
+// differently is reported as a divergence. A group of one solver runs no
+// agent, and a line the group's rule does not decide comes back as misgrouped.
 async function consistencyStage(resolved) {
   const acted = (resolved || []).filter(r => r && (r.acted || []).length)
   if (acted.length < 2) return null
-  const r = await agent(asRole('retro-consistency', consistencyTask(acted)), { label: 'consistency', phase: 'Consistency', schema: CONSISTENCY_SCHEMA, ...HANDBOOK })
-  if (!r) return null
-  log(`${r.divergences.filter(d => !d.principled).length} unprincipled of ${r.divergences.length} consistency entries over ${acted.length} solvers`)
-  return r.divergences
+  const lines = acted.flatMap(r => r.acted.map(line => ({ task_id: r.task_id, line, seed: seedKey(line) })))
+  const g = await agent(asRole('retro-group', groupTask(lines)), { label: 'group', phase: 'Consistency', schema: GROUP_SCHEMA, ...HANDBOOK })
+  if (!g) return null
+  const groups = [...byKey(g.assignments, a => a.group)].map(([id, as]) => ({ id, rule: as[0].rule, lines: as }))
+  const runs = groups.filter(gr => new Set(gr.lines.map(a => a.task_id)).size >= 2)
+  log(`${groups.length} groups over ${lines.length} lines; ${runs.length} hold two or more solvers`)
+  const byId = new Map(acted.map(r => [r.task_id, r]))
+  const results = (await parallel(runs.map((gr, i) => async () => {
+    const ids = [...new Set(gr.lines.map(a => a.task_id))]
+    const members = ids.map(t => ({ ...byId.get(t), acted: gr.lines.filter(a => a.task_id === t).map(a => a.line) }))
+    const r = await agent(asRole('retro-consistency', consistencyTask(gr.id, gr.rule, members)), { label: chunkLabel('consistency', i, runs.length), phase: 'Consistency', schema: CONSISTENCY_SCHEMA, ...HANDBOOK })
+    return r && { group: gr.id, ...r }
+  }))).filter(Boolean)
+  const divergences = results.flatMap(r => r.divergences.map(d => ({ group: r.group, ...d })))
+  const misgrouped = results.flatMap(r => (r.misgrouped || []).map(m => ({ group: r.group, ...m })))
+  log(`${divergences.filter(d => !d.principled).length} unprincipled of ${divergences.length} consistency entries over ${results.length} groups; ${misgrouped.length} misgrouped lines`)
+  return { groups, divergences, misgrouped }
+}
+
+// The solvers a run wrote: a solver fix that changed the file, and a resolve
+// that changed the file. Each owes the cleanup pass of the procedure.
+const cleanupItems = (made, resolved) => {
+  const items = new Map()
+  for (const m of made || []) {
+    if (m.kind !== 'solver' || !(m.edit.diff || '').trim()) continue
+    for (const t of m.targets) items.set(t.replace(/^programs\/solvers\/|\.dl$/g, ''), `A solver fix of this run wrote it; its diff is under ${diffPath(t)}.`)
+  }
+  for (const r of resolved || []) {
+    if (!(r.diff || '').trim()) continue
+    items.set(r.task_id, `The Resolve stage of this run wrote it; its report is at ${r.report}.`)
+  }
+  return [...items].map(([task_id, source]) => ({ task_id, source }))
+}
+
+// One agent per solver the run wrote. A cleanup agent writes a solver, so it
+// runs as the plain handbook agent.
+async function cleanupStage(items) {
+  if (!items.length) return null
+  const done = (await parallel(items.map(({ task_id, source }) => async () => {
+    const r = await agent(asRole('cleanup', cleanupTask(task_id, source)), { label: `cleanup:${task_id}`, phase: 'Cleanup', schema: CLEANUP_SCHEMA, agentType: 'handbook' })
+    return r && { task_id, target: solverTarget(task_id), ...r }
+  }))).filter(Boolean)
+  log(`${done.filter(r => !/^no change/i.test(r.changed)).length} of ${done.length} solvers changed in cleanup; ${done.reduce((n, r) => n + r.concerns.length, 0)} concerns`)
+  return done
 }
 
 // The drafts a run wrote a review line into: the solvers its fixes name, and the
@@ -637,14 +766,26 @@ async function followupStage(verify) {
 const missing = rolesNeeded().filter(name => typeof ROLES[name] !== 'string' || !ROLES[name].trim())
 if (missing.length) return { error: `args.roles is missing ${missing.join(', ')}. Pass each role's text from .claude/roles/<name>.md under args.roles.` }
 
-// The solvers the caller names, whatever their headers hold.
+// The solvers the caller names, whatever their headers hold. A run given stems
+// to sweep sweeps them first, and resolves the solvers its lines marked beside
+// the ones the caller names.
 if (args && args.resolve) {
+  const toSweep = (args.sweep || [])
+  let sweep = null
+  let sweepLines = null
+  if (toSweep.length) {
+    phase('Sweep')
+    sweep = await sweepStage(toSweep)
+    sweepLines = await sweepLinesStage(sweep)
+  }
   phase('Resolve')
-  const resolved = await resolveStage(args.resolve)
+  const resolved = await resolveStage([...args.resolve, ...resolveStems(null, sweepLines)])
   phase('Consistency')
   const consistency = await consistencyStage(resolved)
+  phase('Cleanup')
+  const cleanup = await cleanupStage(cleanupItems(null, resolved))
   return { tally: null, closed: null, calls: null, fixes: null, entries: null, resolve: resolved,
-           consistency, verify: null, followups: null, sweep: null, sweep_lines: null, borderline_drops: null }
+           consistency, cleanup, verify: null, followups: null, sweep, sweep_lines: sweepLines, borderline_drops: null }
 }
 
 if (args && args.fixes) {
@@ -654,10 +795,12 @@ if (args && args.fixes) {
   const resolved = await resolveStage(resolveStems(made, null))
   phase('Consistency')
   const consistency = await consistencyStage(resolved)
+  phase('Cleanup')
+  const cleanup = await cleanupStage(cleanupItems(made, resolved))
   phase('Verify')
   const verify = await verifyStage(made)
   const followups = await followupStage(verify)
-  return { fixes: made.filter(m => m.kind !== 'entry'), entries: made.filter(m => m.kind === 'entry'), resolve: resolved, consistency, verify, followups }
+  return { fixes: made.filter(m => m.kind !== 'entry'), entries: made.filter(m => m.kind === 'entry'), resolve: resolved, consistency, cleanup, verify, followups }
 }
 
 phase('Read')
@@ -724,6 +867,9 @@ const resolved = dry ? null : await resolveStage(resolveStems(made, sweepLines))
 phase('Consistency')
 const consistency = dry ? null : await consistencyStage(resolved)
 
+phase('Cleanup')
+const cleanup = dry ? null : await cleanupStage(cleanupItems(made, resolved))
+
 phase('Verify')
 const verify = made.length ? await verifyStage(made) : null
 const followups = verify ? await followupStage(verify) : null
@@ -738,6 +884,7 @@ return {
   entries: made.filter(m => m.kind === 'entry'),
   resolve: resolved,
   consistency,
+  cleanup,
   verify,
   followups,
   sweep,

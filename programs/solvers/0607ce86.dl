@@ -1,16 +1,18 @@
 // 0607ce86
-// concept: objects repair select
-// The grid holds an arrangement of identical solid rectangles under noise:
-// single cells painted over the bg, and cells inside the rectangles
-// repainted. The output stamps one undamaged copy at every rectangle and
-// clears the rest of the grid.
-//
-//   $Vote — each cell of the copy frame takes the color most copies carry.
-//   $Copy — the copy the others confirm most is undamaged; it stamps whole.
+// keywords: objects repair select
+// output: The grid holds an arrangement of identical solid rectangles under
+//  noise: single cells painted over the bg, and cells inside the rectangles
+//  repainted. The output stamps one undamaged copy at every rectangle and
+//  clears the rest of the grid.
 
-#include "../lib.dl"
+// The cases differ in how the undamaged copy is recovered
+.type Choice =
+    // each cell of the copy frame takes the color most copies carry
+    Vote {}
+    // the copy the others confirm most is undamaged; it stamps whole
+  | Copy {}
 
-.type Choice = Vote {} | Copy {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
@@ -52,8 +54,6 @@ copy_view(Id, P, P_intile) :- bbox.cell(Id, P), bbox.box(Id, B), crop(P, B, P_in
 // Each copy's color at each cell of that frame.
 .decl copy_color(id: Ident, p_intile: Position, col: Color)
 copy_color(Id, P_intile, Col) :- copy_view(Id, P, P_intile), in(P, Col).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !solid(P), params.bg(Col).
 

@@ -1,11 +1,12 @@
 // 3391f8c0
 // draft
-// concept: objects stamp
-// Two colors each appear as copies of one shape, and the two shapes fill the
-// same bbox. Every copy is replaced by the other color's shape, in that other
-// color, drawn into the copy's own bbox.
+// keywords: objects stamp
+// input: Two colors each appear as copies of one shape, and the two shapes
+//  fill the same bbox.
+// output: Every copy is replaced by the other color's shape, in that other
+//  color, drawn into the copy's own bbox.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -40,6 +41,5 @@ paint(P, Col2) :-
     shape(Col2, P_inner),                             // that color's shape
     in(P, _), bbox.box(Id, B), crop(P, B, P_inner).   // in this copy's bbox, blank cells included
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- paint(P, Col).
 out(P, Col) :- in(P, _), !paint(P, _), params.bg(Col).

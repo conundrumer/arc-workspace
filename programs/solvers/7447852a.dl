@@ -1,27 +1,30 @@
 // 7447852a
 // draft
-// concept: objects rank wallpaper lookup
-// A zigzag line runs across a strip and cuts the bg into pockets. Every
-// third pocket from the left, the first included, fills with the mark
-// color. Two models of what repeats:
-//
-//   $Rank()  — the pockets: bg components ranked by their margin from the
-//              anchor edge; the ranks in a marked block of the rhythm fill.
-//   $Stamp() — a stored stamp of mark cells, one period wide, seats on the
-//              anchor edge and repeats along the strip, over the input.
+// keywords: objects rank wallpaper lookup
+// input: A zigzag line runs across a strip and cuts the bg into pockets.
+// output: The pocket at the anchor edge fills with the mark color, and every
+//  third pocket after it.
 
-#include "../lib.dl"
+// what repeats
+.type Choice =
+    // the pockets: bg components ordered by their margin from the anchor
+    // edge; a rhythm over that order says which of them fill
+    Rank {}
+    // a stored stamp of mark cells, one period wide, seats on the anchor edge
+    // and repeats along the strip, over the input
+  | Stamp {}
 
-.type Choice = Rank {} | Stamp {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    .decl bg(c: Color) bg(0).
     .decl mark(c: Color) mark(4).
 
     // The repetition runs from this edge.
     .decl anchor(d: Dir) anchor(DIR_L).
 
     // --- $Rank ---
+    .decl bg(c: Color) bg(0).
+
     // The rhythm along the pocket sequence: mark_run marked pockets, then
     // keep_run kept, repeating.
     .decl mark_run(k: number) mark_run(1).
@@ -62,12 +65,12 @@ pocket_margin(Id, K) :- params.anchor(D), pocket_box.box(Id, B), dist(B, D, K).
 .init seq = Ordinal<Unit>
 seq.idx_set($U(), K) :- pocket_margin(_, K).
 
-.decl mark_margin(k: number)
-mark_margin(K) :-
-    seq.rank($U(), K, R),
+.decl marked_pocket(id: Ident)
+marked_pocket(Id) :-
+    pocket_margin(Id, K), seq.rank($U(), K, R),                      // the pocket's place
     params.mark_run(N), params.keep_run(G), stride(R, N, G, _, _).   // in a marked block
 
-mark_cell($Rank(), P) :- mark_margin(K), pocket_margin(Id, K), pockets.label(_, P, Id).
+mark_cell($Rank(), P) :- marked_pocket(Id), pockets.label(_, P, Id).
 
 // --- $Stamp ---
 
@@ -79,7 +82,6 @@ mark_cell($Stamp(), Q2) :-
     params.anchor(D), axis_of(D, A), axis_of(O, A),      // either way along the strip
     params.period(K), jump(Q, O, K, Q2), in(Q2, _).      // one period on
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P, Col, Ch) :- mark_cell(Ch, P), params.mark(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !mark_cell(Ch, P).
 
@@ -99,7 +101,6 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !mark_cell(Ch, P).
         ex_out(E, P, _), params.anchor(D), axis_of(D, A), perp(A, A2),   // the across axis
         axis_dim(P, A2, N).                                              // the strip's extent
 
-    // A cell the pair marks.
     .decl marked(e: Example, q: Position)
     marked(E, Q) :- ex_in(E, Q, C_in), ex_out(E, Q, C_out), C_in != C_out.
 

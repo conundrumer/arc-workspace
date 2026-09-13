@@ -1,11 +1,12 @@
 // bc1d5164
-// concept: overlay
-// Four 3×3 blocks seated at the input's corners overlay into the 3×3
-// output: a cell shows ink where any block shows ink at that seat, bg
-// otherwise. The blocks share the input's middle row and skip its middle
-// column; both fall out of seating 3×3 blocks on a 5×7 grid.
+// keywords: overlay
+// input: Four 3×3 blocks seated at the input's corners. The blocks share the
+//  input's middle row and skip its middle column; both fall out of seating
+//  3×3 blocks on a 5×7 grid.
+// output: The blocks overlay into the 3×3 output: a cell shows ink where any
+//  block shows ink at that seat, bg otherwise.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .init helpers = ParamsHelpers
@@ -28,6 +29,5 @@ contribution(P_out, Col) :-
     diag_dir_elem(Diag), params.frame(P_out),     // each corner's view of the frame
     corner_anchor(Diag, P_in, P_out).             // same seat from that corner
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- contribution(P, Col).
 out(P, Col) :- params.frame(P), !contribution(P, _), params.bg(Col).

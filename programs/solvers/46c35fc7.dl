@@ -1,22 +1,24 @@
 // 46c35fc7
 // draft
-// concept: objects permutation d4 walk lookup
-// Ink cells ring holes in the params.bg field, eight around one. Each ring's
-// colors move around it; the rest of the grid passes through.
-//
-// Models for the move, tagged on out's Choice:
-//   $Rotate() — the corners turn a quarter in params.corner_sense, the edges a
-//               quarter in params.edge_sense.
-//   $Cycle()  — the seats form a cycle running in params.cycle_sense; the corners
-//               advance params.corner_step seats along it, the edges params.edge_step.
-//   $Table()  — params.move states the move per direction.
+// keywords: objects permutation d4 walk lookup
+// input: Ink cells ring holes in the params.bg field, eight around one.
+// output: Each ring's colors move around it; the rest of the grid passes
+//  through.
 
-#include "../lib.dl"
+// what the move around each ring is
+.type Choice =
+    // the corners turn a quarter in params.corner_sense, the edges a quarter in
+    // params.edge_sense
+    Rotate {}
+    // the seats form a cycle running in params.cycle_sense; the corners advance
+    // params.corner_step seats along it, the edges params.edge_step
+  | Cycle {}
+    // params.move states the move per direction
+  | Table {}
 
-.type Choice = Rotate {} | Cycle {} | Table {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(7).
 
     // --- Rotate ---
@@ -66,7 +68,6 @@ impl_choice($Rotate()). impl_choice($Cycle()). impl_choice($Table()).
 // The direction a ring cell's color moves to.
 .decl moved(d: Dir8, d_out: Dir8, ch: Choice)
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !parse.ring($U(), _, _, P, _).
 out(P_out, Col, Ch) :-
     parse.ring($U(), P_hole, D, _, Col),            // a ring cell, by direction

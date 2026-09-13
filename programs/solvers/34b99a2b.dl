@@ -1,15 +1,29 @@
 // 34b99a2b
-// family: 3428a4f5
-// Layout: two 5×4 subgrids side by side, with a 1-column gap.
+// representative: 3428a4f5
 
-#include "../lib.dl"
+// how the grid decomposes into two subgrids
+.type DecChoice =
+    // tabulated in the parameters
+    Table {}
+    // by tile count
+  | Count {}
+    // by tile size
+  | Size {}
 
-.type DecChoice = Table {} | Count {} | Size {}
-.type Body      = Lookup {} | Xor {}
+// how the two subgrids' colors combine into the output cell
+.type Body =
+    // a table keyed on the colors at the cell's tiles
+    Lookup {}
+    // filled where exactly one tile is non-bg
+  | Xor {}
+
+// the decompose case paired with the combine case
 .type Choice    = [d: DecChoice, b: Body]
 
 .type CombineMember = [p: Position, col: Color]
 .type CombineKey    = [p: Position, dc: DecChoice]
+
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
@@ -20,6 +34,7 @@
     frame(P) :- frame_dim(AXIS_V, Fv), frame_dim(AXIS_H, Fh), helpers.frame_pos([Fv, Fh], P).
 
     // --- Table decompose data ---
+    // Two 5×4 subgrids side by side, with a 1-column gap.
     .decl arr_dim(a: Axis, n: number)
     arr_dim(AXIS_V, 1). arr_dim(AXIS_H, 2).
     .decl gap(g: number) gap(1).
@@ -89,7 +104,6 @@ filled.domain([P_grid_out, Dc]) :- params.frame(P_grid_out), dec_choice(Dc).
 
 // --- Output ---
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col_out, [Dc, $Lookup()]) :-
     params.combine_out(Id, Col_out),
     combine_match.equals([P_grid_out, Dc], Id).     // cell's tiles == entry's members

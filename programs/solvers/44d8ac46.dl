@@ -1,26 +1,30 @@
 // 44d8ac46
 // draft
-// concept: objects enclose symmetry classify
-// Hollow ink shapes sit on params.bg, each holding one or more empty regions. Some
-// regions take params.fill; every other cell passes through. In every pair the
-// filled regions are the solid squares.
-//
-// Choice = [r, t] crosses two independent hypotheses:
-//
-//   r (what a hole is):
-//     $Enclose — a bg region the grid edge cannot reach.
-//     $Box     — a bg region inside a shape's bounding bbox.
-//   t (which holes take the fill):
-//     $Block   — the hole covers its own box, and that box is square.
-//     $Sym     — the hole is invariant under params.hole_sym.
+// keywords: objects enclose symmetry classify
+// input: hollow ink shapes on params.bg, each holding one or more empty regions
+// output: some of those regions take params.fill, and every other cell passes
+//  through
 
-#include "../lib.dl"
+// what a hole is
+.type Region =
+    // a bg region inside a shape's box
+    Box {}
+    // a bg region the grid edge cannot reach
+  | Enclose {}
 
-.type Region = Box {} | Enclose {}
-.type Test   = Block {} | Sym {}
+// which holes take the fill
+.type Test =
+    // the hole covers its own box, and that box is square
+    Block {}
+    // the hole is invariant under params.hole_sym
+  | Sym {}
+
+// crosses two independent hypotheses
 .type Choice = [r: Region, t: Test]
 
 .type Hole = [r: Region, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -36,7 +40,7 @@
 .decl bg_cell(p: Position)
 bg_cell(P) :- in(P, Col), params.bg(Col).
 
-// A cell set seen from its own box, where its symmetries live.
+// A cell set with its box, and the transforms it survives inside that box.
 .comp Parse<Key> {
     .decl cell(key: Key, p: Position)  // input
 
@@ -109,7 +113,6 @@ impl_choice([$Enclose(), $Sym()]).
 .decl painted(p: Position, ch: Choice)
 painted(P, [R, T]) :- hole([R, Id], P), filled([R, Id], T).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- painted(P, Ch), params.fill(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, Ch).
 

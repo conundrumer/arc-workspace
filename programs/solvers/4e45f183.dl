@@ -1,33 +1,37 @@
 // 4e45f183
 // draft
-// concept: decompose markers move span count
-// The grid is an arrangement of square tiles, ruled off by lines, with a
-// line on every side. Each tile carries marks in one color on a field of
-// another. Where the marks sit within a tile names that tile's seat in the
-// arrangement: on each axis they sit toward one edge or toward neither, and
-// the seat is the tile at that edge or the middle tile. The output moves
-// each tile to its seat.
-//
-// Choice = [d, l] crosses the hypotheses:
-//
-//   d (what the ruling is read by):
-//     $Count()  — the tile count.
-//     $Size() — the tile size.
-//   l (where the marks sit):
-//     $Reach() — the box they span lies nearer one edge than the other.
-//     $Bulk()  — those nearer one edge outnumber those nearer the other.
+// keywords: decompose markers move span count
+// input: The grid is an arrangement of square tiles, ruled off by lines, with
+//  a line on every side. Each tile carries marks in one color on a field of
+//  another.
+// output: Where the marks sit within a tile names that tile's seat in the
+//  arrangement: on each axis they sit toward one edge or toward neither, and
+//  the seat is the tile at that edge or the middle tile. The output moves each
+//  tile to its seat.
 
-#include "../lib.dl"
+// what the ruling is read by
+.type DecChoice =
+    // the tile count
+    Count {}
+    // the tile size
+  | Size {}
 
-.type DecChoice = Count {} | Size {}
-.type Lean = Reach {} | Bulk {}
+// where the marks sit
+.type Lean =
+    // the box they span lies nearer one edge than the other
+    Reach {}
+    // those nearer one edge outnumber those nearer the other
+  | Bulk {}
+
+// the ruling's read, crossed with where the marks sit
 .type Choice = [d: DecChoice, l: Lean]
 
 .type TileCase = [p_tile: Position, dc: DecChoice]
 .type TileDir = [p_tile: Position, dir: Dir, dc: DecChoice]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl line_width(k: number) line_width(1).
 
     // --- Count ---
@@ -133,7 +137,6 @@ seat(P_tile, P_seat, Ch) :-
     seat_line(P_tile, A, P1, Ch), perp(A, A2),
     seat_line(P_tile, A2, P2, Ch), compose(P1, P2, P_seat).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_grid_out, Col, [Dc, L]) :-
     tile(P_grid_in, P_tile, P_intile, Dc), in(P_grid_in, Col),  // a tile's cell
     seat(P_tile, P_seat, [Dc, L]),

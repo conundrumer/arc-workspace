@@ -1,14 +1,15 @@
 // 4a21e3da
 // draft
-// concept: markers move span
-// The marker, one params.mark cell, sits on the frame border. The line running
-// across the grid from the marker's edge cuts the params.ink object in three.
-// The ink on the line stays where it is. The ink on each side travels as one
-// piece, flush into the corner that side's edge makes with the marker's edge.
-// The line itself is painted params.mark, from the marker to the farthest ink cell
-// on it, around the ink cells in between.
+// keywords: markers move span
+// input: the marker, one params.mark cell, sits on the frame border. The line
+//  running across the grid from the marker's edge cuts the params.ink object
+//  in three.
+// output: the ink on the line stays where it is. The ink on each side travels
+//  as one piece, flush into the corner that side's edge makes with the
+//  marker's edge. The line itself is painted params.mark, from the marker to
+//  the farthest ink cell on it, around the ink cells in between.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(1).
@@ -68,6 +69,5 @@ paint(P, Col) :- cut_ink(P), params.ink(Col).
 paint(P, Col) :- moved(P), params.ink(Col).
 paint(P, Col) :- span.between($U(), P), !cut_ink(P), params.mark(Col).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- paint(P, Col).
 out(P, Col) :- in(P, _), !paint(P, _), params.bg(Col).

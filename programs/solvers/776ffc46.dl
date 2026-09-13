@@ -1,12 +1,13 @@
 // 776ffc46
 // draft
-// concept: objects border induce
-// Rectangles drawn in the frame color each hold a reference shape in one
-// color. Loose shapes outside the rectangles that are congruent to a
-// reference, by translation, take that reference's color; the rest of the
-// grid is unchanged.
+// keywords: objects border induce
+// input: Rectangles drawn in the frame color each hold a reference shape in
+//  one color.
+// output: Loose shapes outside the rectangles that are congruent to a
+//  reference, by translation, take that reference's color; the rest of the
+//  grid is unchanged.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -48,7 +49,6 @@ recolor(P, Col) :-
     loose.label($U(), P, Id), same_shape.equals(Id, B),  // the loose shape matches rectangle B
     ref.cell(B, P_ref), ink(P_ref, Col).                // B's reference color
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, C_in),
     ( recolor(P, Col)                 // a matched loose shape takes its reference's color

@@ -1,21 +1,23 @@
 // 539a4f51
 // draft
-// concept: grow wallpaper
-// Both grids are built from nested L-shells at params.corner: every cell at a
-// given Chebyshev distance from that corner carries one color. The input shows
-// the leading shells of a periodic sequence and leaves the rest bg. The output
-// is a larger frame carrying the same sequence, continued by cycling through
-// the shells the input shows. Two models of the output frame:
-//
-//   $Scale()  — params.scale copies of the input frame on each axis.
-//   $Canvas() — a stored square of params.out_dim.
+// keywords: grow wallpaper
+// input: both grids are built from nested L-shells at params.corner: every
+//  cell at a given Chebyshev distance from that corner carries one color.
+//  The input shows the leading shells of a periodic sequence and leaves the
+//  rest bg.
+// output: The output is a larger frame carrying the same sequence,
+//  continued by cycling through the shells the input shows.
 
-#include "../lib.dl"
+// two models of the output frame
+.type Choice =
+    // params.scale copies of the input frame on each axis
+    Scale {}
+    // a stored square of params.out_dim
+  | Canvas {}
 
-.type Choice = Scale {} | Canvas {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl corner(d: DiagDir) corner(DIAG_TL).
 
@@ -56,7 +58,6 @@ cyc.idx($U(), K) :- shell_color(K, _).
 wrap.succ($U(), K, K2) :- cyc.succ($U(), K, K2).
 wrap.step($U(), K) :- shell(_, K).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_grid, Col, Ch) :-
     frame_cell(Ch, P_grid), shell(P_grid, K),
     wrap.walk($U(), 0, K, K2), shell_color(K2, Col).

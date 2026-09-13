@@ -1,10 +1,11 @@
 // 423a55dc
-// concept: move
-// One shape on params.bg, sheared: each ink cell slides by its distance from
-// the shape box's params.anchor edge, toward params.anchor turned params.sense. Cells
-// sliding off the grid clip away.
+// keywords: move
+// input: One shape sits on params.bg.
+// output: The shape is sheared: each ink cell slides by its distance from
+//  the shape box's params.anchor edge, toward params.anchor turned
+//  params.sense. Cells sliding off the grid clip away.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -27,6 +28,5 @@ sheared(P, P2) :-
     params.sense(S), turn(S, D_anc, D_sh),               // slide dir: anchor turned by sense
     jump(P, D_sh, K, P2), in(P2, _).                     // slide; clip off-grid
 
-.decl out(p: Position, col: Color)
 out(P2, Col) :- sheared(P, P2), ink(P, Col).
 out(P, Bg)   :- in(P, _), params.bg(Bg), !sheared(_, P).

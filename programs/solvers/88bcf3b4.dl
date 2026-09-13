@@ -1,13 +1,15 @@
 // 88bcf3b4
 // draft
-// concept: objects markers walk count
-// Poles rise from the grid edge, and a worm hangs off the tip of each one.
-// The worm is redrawn with its cell count as a walk from its root beside the
-// tip: it heads for the nearest object ahead of the tip on its side of the
-// pole, follows that object's contour on the same side, and leaves on the
-// diagonal that runs on along the pole and back across its line.
+// keywords: objects markers walk count
+// input: Poles rise from the grid edge, and a worm hangs off the tip of
+//  each one.
+// output: The worm is redrawn with its cell count as a walk from its root
+//  beside the tip: it heads for the nearest object ahead of the tip on its
+//  side of the pole, follows that object's contour on the same side, and
+//  leaves on the diagonal that runs on along the pole and back across its
+//  line.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {}
 
@@ -152,7 +154,6 @@ body(W, P) :- walk.rank(W, P, R), size.tally(W, N), R < N.
 .decl worm_cell(p: Position)
 worm_cell(P) :- worm(W, _, _, _), object(W, P).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- body(W, P), objs.label(Col, _, W).
 out(P, Col) :-
     in(P, Col_in), !body(_, P),

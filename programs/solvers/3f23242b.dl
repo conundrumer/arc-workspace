@@ -1,26 +1,24 @@
 // 3f23242b
 // draft
-// concept: markers stamp cast lookup border
-// Each mark seats a bracket on itself: a rim, a stalk from the mark out to
-// one rim edge, and a line that crosses the whole grid along another rim
-// edge. The bracket covers the line where the two meet, and every other
-// cell passes through.
-//
-// Cases:
-//   $Lookup — the bracket is a stored grid.
-//   $Frame  — each rim edge paints in its own color, one axis's edges take
-//             the corners, and the mark casts the stalk.
+// keywords: markers stamp cast lookup border
+// output: Each mark seats a bracket of ink on itself, and a line runs along one
+//  bracket edge across the whole grid. The bracket covers the line where the two
+//  meet, and every other cell passes through.
 
-#include "../lib.dl"
+// how the bracket's ink is derived
+.type Choice =
+    // the bracket is a stored grid
+    Lookup {}
+    // each bracket edge paints in its own color, one axis's edges take the
+    // corners, and the mark casts a stalk
+  | Frame {}
 
-.type Choice = Lookup {} | Frame {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl mark(col: Color) mark(3).
 
-    // The bracket cell that lands on the mark; its margins are the
-    // bracket's frame.
+    // The bracket cell that lands on the mark.
     .decl seat(p: Position) seat([2, 2, 2, 2]).
 
     // The bracket edge the line runs along, and the line's color.
@@ -79,7 +77,7 @@ paint(P, Col, Ch) :- line_cell(P), params.ground_paint(Col), impl_choice(Ch).
 paint(P_grid, Col, $Lookup()) :- placed(P_box, P_grid), params.shape(P_box, Col).
 
 // --- Frame ---
-// The stalk the mark casts, which the rim halts.
+// The stalk the mark casts, which the bracket's edges halt.
 .init stalk = Ray<Unit>
 stalk.cell($U(), P) :- box.cell($U(), P).
 stalk.mark($U(), P) :- params.seat(P).
@@ -102,7 +100,6 @@ frame_ink(P, Col) :- stalk.clear($U(), P, _, K, _), K != 0, params.arm_paint(Col
 
 paint(P_grid, Col, $Frame()) :- placed(P_box, P_grid), frame_ink(P_box, Col).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).
 
@@ -157,6 +154,6 @@ out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).
 
     .decl arm_dir(d: Dir)
     arm_dir(D) :-
-        shape(P, _), interior(P, ZERO),                            // ink off the rim
+        shape(P, _), interior(P, ZERO),                            // ink off the edges
         params.seat(P_seat), dir_elem(D), neighbor(P_seat, D, P).  // beside the mark
 }

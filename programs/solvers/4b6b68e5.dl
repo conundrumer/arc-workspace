@@ -1,18 +1,21 @@
 // 4b6b68e5
 // draft
-// concept: objects enclose count
-// Outlines and lone specks lie on params.bg. Each outline is kept, the cells it
-// closes off take the commonest color among the specks trapped there, and the
-// rest of the grid is erased.
-//
-// $Shape counts the specks of a whole outline together; $Region counts each
-// cavity's own.
+// keywords: objects enclose count
+// input: Outlines and lone specks lie on params.bg.
+// output: Each outline is kept, the cells it closes off take the commonest
+//  color among the specks trapped there, and the rest of the grid is
+//  erased.
 
-#include "../lib.dl"
-
-.type Choice = Shape {} | Region {}
+// whether the commonest color is tallied over a whole outline or per cavity
+.type Choice =
+    // tallies the specks of a whole outline together
+    Shape {}
+    // tallies each cavity of an outline on its own
+  | Region {}
 
 .type Cavity = [id: Ident, region: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -57,7 +60,6 @@ fill(P, Col, $Region()) :- closed.region(Id, P, R), region_specks.mode([Id, R], 
 .decl impl_choice(ch: Choice)
 impl_choice($Shape()). impl_choice($Region()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     impl_choice(Ch), in(P, Col_in),                    // every cell, per case
     ( fill(P, Col, Ch)                                 // enclosed, so filled

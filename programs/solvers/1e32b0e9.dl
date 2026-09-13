@@ -1,27 +1,33 @@
 // 1e32b0e9
 // draft
-// concept: decompose overlay stamp rank select
-// A separator lattice cuts the grid into an arrangement of equal square tiles,
-// some holding a shape. One footprint stamps into every tile, painting the
-// separator's color on the bg cells it lands on. Choice = [d, s] crosses the
-// hypotheses:
-//
-//   d (what the lattice is read by):
-//     $Count()  — the tile count.
-//     $Size() — the tile size.
-//   s (where the footprint comes from):
-//     $Union()   — every tile's shape overlaid.
-//     $Largest() — the shape of the tile with the most cells.
-//     $Corner()  — the shape of the tile at params.corner.
+// keywords: decompose overlay stamp rank select
+// input: a separator lattice cuts the grid into an arrangement of equal
+//  square tiles, some holding a shape.
+// output: one footprint stamps into every tile, painting the separator's
+//  color on the bg cells it lands on.
 
-#include "../lib.dl"
+// what the lattice is read by
+.type DecChoice =
+    // the tile count
+    Count {}
+    // the tile size
+  | Size {}
 
-.type DecChoice = Count {} | Size {}
-.type Source = Union {} | Largest {} | Corner {}
+// where the footprint comes from
+.type Source =
+    // every tile's shape overlaid
+    Union {}
+    // the shape of the tile with the most cells
+  | Largest {}
+    // the shape of the tile at params.corner
+  | Corner {}
+
+// the tile read crossed with the footprint source
 .type Choice = [d: DecChoice, s: Source]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
     .decl gap(g: number) gap(1).
 
@@ -85,6 +91,5 @@ stamped(P_grid, [Dc, S]) :-
     tile(P_grid, _, P_intile, Dc), stamp(P_intile, [Dc, S]),  // the footprint lands here
     in(P_grid, Col), params.bg(Col).                          // on a bg cell
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_grid, Col, [Dc, S]) :- stamped(P_grid, [Dc, S]), divider_color(Col, Dc).
 out(P_grid, Col, Ch) :- in(P_grid, Col), impl_choice(Ch), !stamped(P_grid, Ch).

@@ -1,9 +1,10 @@
 // ce9e57f2
-// concept: lines rank
-// Bars of bar color stand on the base edge, one per line. In each bar, the
-// cells strictly nearer the base end than the far end recolor to mark.
+// keywords: lines rank
+// input: bars of bar color on the base edge, one per line
+// output: In each bar, the cells strictly nearer the base end than the far
+//  end recolor to mark.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bar(col: Color) bar(2).
@@ -25,6 +26,5 @@ marked(P) :-
     bars.cell(Ac, P), bars.box(Ac, B), crop(P, B, P_inner),  // bar cell in its bar's frame
     params.base(D), dist_pair(P_inner, D, K, K2), K < K2.
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- marked(P), params.mark(Col).
 out(P, Col) :- in(P, Col), !marked(P).

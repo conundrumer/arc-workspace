@@ -1,25 +1,26 @@
 // f8b3ba0a
-// concept: decompose objects count rank
-// Color blocks on bg, one color dominant. Output is a 1D layout along
-// axis_of(params.rank_dir): the minority colors, anchored at params.rank_dir, in
-// descending count order; the dominant (max-count) color is dropped.
-// Extent = number of minority colors. Models of what is counted, tagged on
-// out's Choice:
-//
-//   $Cells   — cells of each color.
-//   $Blocks  — connected components of each color.
-//   $Lattice — tiles of the separator lattice (the frame inside the border,
-//              divided by tile size) of each color.
-//
+// keywords: decompose objects count rank
+// input: Color blocks on bg, one color dominant.
+// output: Output is a 1D layout along axis_of(params.rank_dir): the minority
+//  colors, anchored at params.rank_dir, in descending count order; the
+//  dominant (max-count) color is dropped. Extent = number of minority colors.
+//  Minority colors that share a count share a rank, colliding at one output
+//  position; a max-count tie drops every tied color.
+
 // $Cells/$Blocks coincide while every block has one size; $Blocks/$Lattice
 // coincide while every block is a lattice tile.
-//
-// Flagged: minority colors sharing a count share a rank — colliding `out`
-// facts at one Position; a max-count tie drops every tied color.
 
-#include "../lib.dl"
+// what is counted for each color
+.type Choice =
+    // cells of each color
+    Cells {}
+    // connected components of each color
+  | Blocks {}
+    // tiles of the separator lattice (the frame inside the border, divided by
+    // tile size) of each color
+  | Lattice {}
 
-.type Choice = Cells {} | Blocks {} | Lattice {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -103,7 +104,6 @@ parse.count_of($Lattice(), Col, N) :- tile_count.tally(Col, N).
 col.dir(D_opp) :- params.rank_dir(D), opposite(D, D_opp).
 col.dist_set(Ch, R) :- parse.minority_rank(Ch, _, R).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- parse.minority_rank(Ch, Col, Rk), col.pos(Ch, Rk, P).
 
 .comp Determine {

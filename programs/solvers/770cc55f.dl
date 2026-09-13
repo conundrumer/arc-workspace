@@ -1,11 +1,12 @@
 // 770cc55f
 // draft
-// concept: lines markers cast rank
-// A params.sep line crosses the grid, and a bar of ink sits on each edge of
-// params.axis. The longer bar's cells that face a cell of the other bar cast
-// params.fill through bg toward the separator, which stops the cast.
+// keywords: lines markers cast rank
+// input: A params.sep line crosses the grid, and a bar of ink sits on each
+//  edge of params.axis.
+// output: The longer bar's cells that face a cell of the other bar cast
+//  params.fill through bg toward the separator, which stops the cast.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -40,6 +41,5 @@ flow.blocked($U(), P) :- in(P, Col), params.sep(Col).
 .decl filled(p: Position)
 filled(P) :- flow.clear($U(), P, _, _, _).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- filled(P), params.fill(Col).
 out(P, Col) :- in(P, Col), !filled(P).

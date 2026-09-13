@@ -1,24 +1,28 @@
 // 3345333e
 // draft
-// concept: symmetry repair
-// A figure mirror-symmetric across a line of params.axis, occluded by a solid
-// rectangle of a second color. The output erases the rectangle and restores
-// what it hid. The mirror line varies per pair, so each case derives it, as
-// the frame its flip acts in. Cases:
-//
-//   $Complete — the line centers the figure's extent in the lines the
-//               rectangle misses; every figure cell gains its mirror image.
-//   $Patch    — the same line; only the occluded cells fill.
-//   $Fitted   — the line no visible figure cell contradicts: each cell's
-//               image is a figure cell or an occluded one. Both scopes
-//               agree under it, so it carries one case.
+// keywords: symmetry repair
+// input: A figure mirror-symmetric across a line of params.axis, occluded by
+//  a solid rectangle of a second color.
+// output: The output erases the rectangle and restores what it hid. The
+//  mirror line varies per pair, so each case derives it, as the frame its
+//  flip acts in.
 
-#include "../lib.dl"
-
-.type Choice = Complete {} | Patch {} | Fitted {}
+// which frame the mirror repair acts in
+.type Choice =
+    // the line centers the figure's extent in the lines the rectangle misses;
+    // every figure cell gains its mirror image
+    Complete {}
+    // the same line; only the occluded cells fill
+  | Patch {}
+    // the line no visible figure cell contradicts: each cell's image is a
+    // figure cell or an occluded one. Both scopes agree under it, so it carries
+    // one case
+  | Fitted {}
 
 // Two figure cells a candidate mirror swaps.
 .type Pair = [p: Position, q: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -94,7 +98,6 @@ paint(Q, Col, Ch) :-
 .decl impl_choice(ch: Choice)
 impl_choice($Complete()). impl_choice($Patch()). impl_choice($Fitted()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :-
     in(P, Col_in), impl_choice(Ch), !paint(P, _, Ch),

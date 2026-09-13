@@ -1,18 +1,23 @@
 // 3e6067c3
 // draft
-// concept: objects markers walk
-// Boxes hold a colored label; single cells spell a color sequence. Consecutive
-// entries of the sequence name boxes that a clear straight corridor joins, and
-// each crossed corridor fills with the color of the box the walk leaves.
-//
-// $Route — the sequence is a complete route, so a slot stands only on boxes
-//   the rest of the sequence can still be walked from.
-// $Walk — the sequence is walked from its start for as far as corridors carry
-//   it, so a branch that dies still paints what it crossed.
+// keywords: objects markers walk
+// input: boxes holding a colored label, and single cells spelling a color
+//  sequence
+// output: Consecutive entries of the sequence name boxes that a clear
+//  straight corridor joins, and each crossed corridor fills with the color of
+//  the box the walk leaves.
 
-#include "../lib.dl"
+// whether the walk must complete the whole sequence to count, or paints as
+// far as it gets
+.type Choice =
+    // the sequence is a complete route, so a slot stands only on boxes the rest
+    // of the sequence can still be walked from
+    Route {}
+    // the sequence is walked from its start for as far as corridors carry it,
+    // so a branch that dies still paints what it crossed
+  | Walk {}
 
-.type Choice = Route {} | Walk {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // The edge the sequence reads from.
@@ -112,7 +117,6 @@ fill(P, Col, Ch) :-
     joined(Id, Id2), corridor(Id, Id2, P),                   // the clear corridor between them
     label_color(Id, Col).                                    // painted by the box it leaves
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- fill(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !fill(P, _, Ch).
 

@@ -1,13 +1,14 @@
 // 458e3a53
 // draft
-// concept: decompose select rank
-// Uniform lines cut the grid into tiles. Most tiles hold a pattern; a few
-// hold one color each. The output is one cell per one-color tile, holding
-// its color, at its rank on each axis.
-
-#include "../lib.dl"
+// keywords: decompose select rank
+// input: Uniform lines cut the grid into tiles. Most tiles hold a pattern; a
+//  few hold one color each.
+// output: One cell per one-color tile, holding its color, at its rank on each
+//  axis.
 
 .type Line = [a: Axis, l: Position]
+
+.decl out(p: Position, col: Color)
 
 .comp Params {}
 
@@ -29,7 +30,6 @@ tile_color.item(P_tile, Col) :- tiles.tile_of($U(), P, P_tile), in(P, Col).
 layout.axis(A, A) :- axis_elem(A).
 layout.member(A, L, L) :- tile_color.value(P_tile, _), axis_elem(A), split(P_tile, A, L, _).
 
-.decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
     tile_color.value(P_tile, Col),                        // a one-color tile
     axis_elem(A), perp(A, A2), split(P_tile, A, L, L2),   // its two tile lines

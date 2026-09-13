@@ -1,27 +1,28 @@
 // 456873bc
 // draft
-// concept: decompose scale stamp repair
-// The grid divides into square tiles separated by gaps, and holds a fractal:
-// a tile carries a copy of the tile shape at each place the shape inks. Tile
-// side and tile count are one number, so a tile's place in the arrangement
-// and a cell's place inside a tile live in the same frame. A band of cover
-// color hides one slab of tiles.
-//
-// The output completes the arrangement and marks, inside every copy, the cell
-// at that copy's own place. Two models of what it draws:
-//
-//   $Draw    — the fractal, drawn from the shape alone.
-//   $Restore — the cover is damage: the input stands elsewhere, and only the
-//              cells the cover hides are drawn.
-//
-// They diverge on an input whose visible copies depart from the shape.
+// keywords: decompose scale stamp repair
+// output: The grid divides into square tiles separated by gaps, and holds a
+//  fractal: a tile carries a copy of the tile shape at each place the shape
+//  inks. Tile side and tile count are one number, so a tile's place in the
+//  arrangement and a cell's place inside a tile live in the same frame. A band
+//  of cover color hides one slab of tiles.
+//  The output completes the arrangement and marks, inside every copy, the cell
+//  at that copy's own place.
 
-#include "../lib.dl"
+// what the fractal's ink comes from
+.type Choice =
+    // the fractal, drawn from the shape alone
+    Draw {}
+    // the cover is damage: the input stands elsewhere, and only the cells the
+    // cover hides are drawn
+  | Restore {}
 
-.type Choice = Draw {} | Restore {}
+// The two cases diverge on an input whose visible copies depart from the
+// shape.
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
     .decl ink(col: Color) ink(2).
     .decl mark(col: Color) mark(8).
@@ -58,8 +59,6 @@ inked(P_grid) :- cell(P_grid, P_tile, P_intile), shape(P_tile), shape(P_intile).
 // Inside a copy, the cell at the copy's own place.
 .decl marked(p_grid: Position)
 marked(P_grid) :- cell(P_grid, P_tile, P_tile), shape(P_tile).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // --- $Draw ---
 out(P_grid, Col, $Draw()) :- inked(P_grid), !marked(P_grid), params.ink(Col).

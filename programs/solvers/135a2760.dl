@@ -1,14 +1,14 @@
 // 135a2760
-// concept: decompose wallpaper repair
-// Uniform lines cut the grid into framed panels, and each panel's
-// interior is a wallpaper damaged in a few cells. Each axis takes the
-// interior's shortest period; each interior cell takes the modal color
-// of its orbit under the lattice.
-
-#include "../lib.dl"
+// keywords: decompose wallpaper repair
+// input: uniform lines cut the grid into framed panels, and each panel's
+//  interior is a wallpaper damaged in a few cells.
+// output: each axis takes the interior's shortest period; each interior cell
+//  takes the modal color of its orbit under the lattice.
 
 .type PanelAxis = [t: Position, a: Axis]
 .type Line = [a: Axis, l: Position]
+
+.decl out(p: Position, col: Color)
 
 .comp Params {
 }
@@ -53,6 +53,5 @@ orbit.equiv(P, Q) :-
 .init pattern = Mode<Ident, Color, Position>
 pattern.item(Cls, Col, P) :- orbit.id(P, Cls), in(P, Col).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- orbit.id(P, Cls), pattern.mode(Cls, Col).
 out(P, Col) :- in(P, Col), !inner_cell(_, P).

@@ -1,17 +1,19 @@
 // 72ca375d
 // draft
-// concept: objects crop symmetry select
-// Pieces on params.bg, each 8-connected. The output is the one piece whose
-// crop is symmetric.
-//
-// Cases (data-equivalent on this task):
-//   $Stored — the symmetry is task data: the crop fixed by params.sym.
-//   $Any    — symmetric-vs-asymmetric is the concept: the crop fixed by
-//             some nontrivial D4 element.
+// keywords: objects crop symmetry select
+// input: pieces on params.bg, each 8-connected
+// output: the crop of the one piece whose box content is symmetric
 
-#include "../lib.dl"
+// where the symmetry test comes from — data-equivalent on this task, since the
+// crop that params.sym fixes is the one crop with a symmetry
+.type Choice =
+    // the symmetry is task data: the crop fixed by params.sym
+    Stored {}
+    // symmetric-vs-asymmetric is the concept: the crop fixed by some nontrivial
+    // D4 element
+  | Any {}
 
-.type Choice = Stored {} | Any {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -22,8 +24,6 @@
 
 .init params = Params
 
-// --- pieces ---
-
 .init pieces = Components8<Unit>
 pieces.node($U(), P) :- in(P, Col), !params.bg(Col).
 
@@ -32,7 +32,7 @@ bbox.cell(Id, P) :- pieces.label($U(), P, Id).
 
 // The piece's crop: the content of its box, free of placement.
 .decl cropped(id: Ident, p_inner: Position, col: Color)
-cropped(Id, P_inner, Col) :- bbox.box(Id, B), in(P, Col), crop(P, B, P_inner).
+cropped(Id, P_inner, Col) :- bbox.box(Id, B), in(P_grid, Col), crop(P_grid, B, P_inner).
 
 // The crop's own symmetries.
 .init inv = D4Map<Ident, Color>
@@ -48,5 +48,4 @@ chosen(Id, $Stored()) :- params.sym(D), inv.map(Id, D).
 // --- $Any ---
 chosen(Id, $Any()) :- inv.has_sym(Id).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_inner, Col, Ch) :- chosen(Id, Ch), cropped(Id, P_inner, Col).

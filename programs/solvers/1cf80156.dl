@@ -1,8 +1,8 @@
 // 1cf80156
-// concept: crop
-// Output is the grid cropped to the ink's bounding box.
+// keywords: crop
+// output: Output is the grid cropped to the ink's bounding box.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -13,5 +13,4 @@
 .init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- in(P, Col), !params.bg(Col).
 
-.decl out(p: Position, col: Color)
 out(P_inner, Col) :- in(P_grid, Col), bbox.box($U(), B), crop(P_grid, B, P_inner).

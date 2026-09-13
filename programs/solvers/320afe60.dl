@@ -1,22 +1,23 @@
 // 320afe60
 // draft
-// concept: objects enclose move
-// A shape that leaves a cell of its box empty and closes no region off from
-// the grid edge is open; every other shape — one that closes a region off, or
-// that fills its box — is closed. Each shape slides flush to an edge and takes
-// its class's color: closed toward params.closed_dir in params.closed_paint, open toward
-// the opposite edge in params.open_paint.
-//
-// Two hypotheses on what stands solid while a shape is judged:
-//   $Own   — the shape alone. A gap is a box cell it does not cover, and a
-//            hole is a region it closes off by itself.
-//   $Joint — all the ink. A gap is a background cell of the box, and a hole is
-//            a region the ink closes off together, which counts for every
-//            shape on its rim.
+// keywords: objects enclose move
+// output: A shape that leaves a cell of its box empty and closes no region off
+//  from the grid edge is open; every other shape — one that closes a region
+//  off, or that fills its box — is closed. Each shape slides flush to an edge
+//  and takes its class's color: closed toward params.closed_dir in
+//  params.closed_paint, open toward the opposite edge in params.open_paint.
 
-#include "../lib.dl"
+// Two hypotheses on what stands solid while a shape is judged
+.type Choice =
+    // the shape alone. A gap is a box cell it does not cover, and a hole is a
+    // region it closes off by itself.
+    Own {}
+    // all the ink. A gap is a background cell of the box, and a hole is a
+    // region the ink closes off together, which counts for every shape on its
+    // rim.
+  | Joint {}
 
-.type Choice = Own {} | Joint {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(4).
@@ -90,6 +91,5 @@ paint(Q, Col, Ch) :-
     bbox.box(Id, B), dist(B, D, K),      // its box's margin from that edge
     jump(P, D, K, Q).                    // slid flush
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- in(P, _), params.bg(Col), impl_choice(Ch), !paint(P, _, Ch).

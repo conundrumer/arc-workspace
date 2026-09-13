@@ -1,21 +1,24 @@
 // 72322fa7
 // draft
-// concept: markers objects induce stamp
-// Figures lie on a bg field: a center cell of one color with arms of
-// another color around it, at the ends of a row, a column, both (a plus),
-// or both diagonals (an X). Each intact figure demonstrates a template,
-// keyed by its center color: the arm color and where each arm sits. The
-// damaged copies show only the center or only the arms, and the output
-// completes each from the template its color names. The cases differ on
-// what an intact figure is:
-//   $Line   — a cell with cells of one other color at both ends of a line
-//             through it; each such line gives two arms.
-//   $Figure — a touching group of cells with a hub, a cell every other cell
-//             of the group touches; the other cells are its arms.
+// keywords: markers objects induce stamp
+// input: figures on a bg field: a center cell of one color with arms of
+//  another color around it, at the ends of a row, a column, both (a plus), or
+//  both diagonals (an X)
+// output: Each intact figure demonstrates a template, keyed by its center
+//  color: the arm color and where each arm sits. The damaged copies show only
+//  the center or only the arms, and the output completes each from the
+//  template its color names.
 
-#include "../lib.dl"
+// what an intact figure is
+.type Choice =
+    // a cell with cells of one other color at both ends of a line through it;
+    // each such line gives two arms
+    Line {}
+    // a touching group of cells with a hub, a cell every other cell of the
+    // group touches; the other cells are its arms
+  | Figure {}
 
-.type Choice = Line {} | Figure {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -77,6 +80,5 @@ arms.shape([C, Cc], V, Ca) :- template(C, Cc, V, Ca).
 
 fill(P, Cc, C) :- arms.occurrence([C, Cc], P), empty(P).
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P, Col, C) :- fill(P, Col, C).
 out(P, Col, C) :- in(P, Col), impl_choice(C), !fill(P, _, C).

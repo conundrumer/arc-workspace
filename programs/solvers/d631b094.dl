@@ -1,9 +1,9 @@
 // d631b094
-// concept: count
-// Cells of one color on bg. Output is a 1-cell-wide bar of that color
-// along params.bar_axis, extent = the cell count.
+// keywords: count
+// output: Cells of one color on bg. Output is a 1-cell-wide bar of that color
+//  along params.bar_axis, extent = the cell count.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -21,5 +21,4 @@ total.item($U(), P) :- on(P, _).
 .init bar = AxisFrame<Unit>
 bar.extent($U(), A, N) :- params.bar_axis(A), total.tally($U(), N).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- bar.cell($U(), _, P), on(_, Col).

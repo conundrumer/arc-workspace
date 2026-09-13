@@ -1,18 +1,19 @@
 // 15696249
-// concept: tile-arrangement lines markers stamp
-// The output is an input-shaped arrangement of input-sized tiles: tiles at
-// gate cells hold copies of the input; the rest are bg. Two models of the
-// gate, tagged on out's Choice:
-//
-//   $Line  — cells of the input's monochrome line (row or column).
-//   $Color — cells holding the monochrome line's color.
-//
-// Coincide while that color stays on its line; diverge on a stray cell of it.
+// keywords: tile-arrangement lines markers stamp
+// output: an input-shaped arrangement of input-sized tiles: tiles at gate
+//  cells hold copies of the input; the rest are bg.
 
-#include "../lib.dl"
+// two models of the gate; they coincide while that color stays on its line,
+// and diverge on a stray cell of it
+.type Choice =
+    // cells of the input's monochrome line (row or column)
+    Line {}
+    // cells holding the monochrome line's color
+  | Color {}
 
-.type Choice = Line {} | Color {}
 .type LineKey = [a: Axis, p_across: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -36,7 +37,6 @@ gate(P, $Line()) :-
 // --- $Color ---
 gate(P, $Color()) :- in(P, Col), line_color.value(_, Col).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_grid_out, Col, Ch) :-
     impl_choice(Ch), in(P_tile, _), in(P_intile, Col_in),   // tile slot, tile content
     ( gate(P_tile, Ch), Col = Col_in                        // gate open — the input, copied

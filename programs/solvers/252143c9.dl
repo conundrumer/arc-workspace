@@ -1,12 +1,13 @@
 // 252143c9
 // draft
-// concept: decompose markers cast
-// A bg cross through the grid center cuts four quadrants, each speckled in
-// its own color. The center cell of the cross carries one of those four
-// colors. The output erases the speckle and casts that color as a diagonal
-// ray from the center toward the matching quadrant's corner.
+// keywords: decompose markers cast
+// input: a bg cross through the grid center, cutting four quadrants each
+//  speckled in its own color
+// output: The center cell of the cross carries one of those four colors.
+//  The output erases the speckle and casts that color as a diagonal ray
+//  from the center toward the matching quadrant's corner.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(7).
@@ -34,7 +35,6 @@ ray.dir($U(), D)  :- target(D, _).
 ray.cell($U(), P) :- in(P, _).
 ray.mark($U(), P) :- center(P).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, _),
     ( ray.ray($U(), P, _, _, _), target(_, Col)    // the cast ray

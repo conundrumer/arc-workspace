@@ -1,10 +1,11 @@
 // 45737921
 // draft
-// concept: objects mapping
-// Objects of two colors sit on the background. Each object cell takes its
-// object's other color; the background stands.
+// keywords: objects mapping
+// input: Objects of two colors sit on the background.
+// output: Each object cell takes its object's other color; the background
+//  stands.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -24,6 +25,5 @@ obj_color(Id, Col) :- obj.label($U(), P, Id), figure(P, Col).
 .decl swap(id: Ident, col: Color, col2: Color)
 swap(Id, C, C2) :- obj_color(Id, C), obj_color(Id, C2), C != C2.
 
-.decl out(p: Position, col: Color)
 out(P, C2) :- obj.label($U(), P, Id), figure(P, C), swap(Id, C, C2).
 out(P, C) :- in(P, C), params.bg(C).

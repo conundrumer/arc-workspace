@@ -1,13 +1,13 @@
 // 1b8318e3
-// concept: objects move
-// Blocks of one color sit among single-cell dots of other colors. The blocks
-// stay. Each dot slides along a row, a column, or a diagonal until it touches
-// a block, taking the slide with the fewest steps; a cardinal slide wins a tie
-// with a diagonal one. A diagonal slide counts only point on: it rests on a
-// cell that touches the block at a corner alone, with that corner ahead.
-// Another dot on the way rules a slide out.
+// keywords: objects move
+// output: Blocks of one color sit among single-cell dots of other colors. The
+//  blocks stay. Each dot slides along a row, a column, or a diagonal until it
+//  touches a block, taking the slide with the fewest steps; a cardinal slide
+//  wins a tie with a diagonal one. A diagonal slide counts only point on: it
+//  rests on a cell that touches the block at a corner alone, with that corner
+//  ahead. Another dot on the way rules a slide out.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -59,7 +59,6 @@ arrive(T, Col) :-
     ( cardinal_low(P, T)       // a cardinal slide wins the tie
     ; !cardinal_low(P, _) ).   // no cardinal slide among the shortest
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, _),
     ( in(P, Col), params.block(Col)                    // the blocks stay

@@ -1,17 +1,13 @@
 // 20270e3b
-// concept: objects markers move
-// Two pieces sit on a bg field. Each is a wall of ordinary colors plus a
-// socket of marker cells, and the two socket footprints are congruent. The
-// join seats one piece on the other with the footprints registered one
-// cardinal step apart; a seating counts only when every socket falls under
-// the mate's wall. The output is the joined walls cropped to their bounding
-// box, bg elsewhere.
-//
-// The join is symmetric: seating either piece on the other gives the same
-// figure up to a translation, which the crop removes, so both seatings
-// paint one output.
+// keywords: objects markers move
+// input: Two pieces sit on a bg field. Each is a wall of ordinary colors plus
+//  a socket of marker cells, and the two socket footprints are congruent.
+// output: The join seats one piece on the other with the footprints
+//  registered one cardinal step apart; a seating counts only when every
+//  socket falls under the mate's wall. The output is the joined walls
+//  cropped to their bounding box, bg elsewhere.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(1).
@@ -40,7 +36,9 @@ socket(Id, P) :- piece(Id, P), in(P, Col), params.socket_color(Col).
 .init socket_box = Bbox<Ident>
 socket_box.cell(Id, P) :- socket(Id, P).
 
-// Piece m seated on piece h: m's cell p lands at p_seat.
+// Piece m seated on piece h: m's cell p lands at p_seat. The join is
+// symmetric: seating either piece on the other gives the same figure up to a
+// translation, which the crop removes, so both seatings paint one output.
 .decl seat(h: Ident, m: Ident, d: Dir, p: Position, p_seat: Position)
 seat(H, M, D, P, P_seat) :-
     piece(M, P), socket_box.box(M, B_m), relative(B_m, P, P_rel),  // a cell of the seated piece, in its footprint's frame
@@ -80,7 +78,6 @@ sheet.extent($U(), A, N) :-
     figure_box.box(J, B), figure_box.cell(J, P),   // the figure's box, and a cell of the grid frame
     axis_elem(A), box_extent(B, P, A, N).          // the box's extent on each axis
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     sheet.cell($U(), P),
     ( painted(P, Col)                 // a wall cell

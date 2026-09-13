@@ -1,21 +1,23 @@
 // 5b692c0f
 // draft
-// concept: objects symmetry markers repair d4 count
-// Each object carries a line of params.mark cells — its mirror axis — and one
-// further mark cell off that line. One side of the axis holds the object's
-// true half; the other side is corrupted, and the output overwrites it with
-// the reflection of the true half.
-//
-// The cases differ in which side is the source:
-//   $Mark:  the side holding the most off-axis marks.
-//   $Count: the side holding the most object cells.
+// keywords: objects symmetry markers repair d4 count
+// input: Each object carries a line of params.mark cells — its mirror axis —
+//  and one further mark cell off that line.
+// output: One side of the axis holds the object's true half; the other side
+//  is corrupted, and the output overwrites it with the reflection of the
+//  true half.
 
-#include "../lib.dl"
-
-.type Choice = Mark {} | Count {}
+// which side is the source
+.type Choice =
+    // the side holding the most off-axis marks
+    Mark {}
+    // the side holding the most object cells
+  | Count {}
 
 .type Line = [a: Axis, l: Position]
 .type ObjCase = [id: Ident, ch: Choice]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -82,6 +84,5 @@ fill(P, Col, Ch) :-
     side_pick.mode([Id, Ch], D), side(Id, D, Q), in(Q, Col),  // a source cell
     mirror(Id, Q, P).                                         // its image across the axis
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- fill(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !fill(P, _, Ch).

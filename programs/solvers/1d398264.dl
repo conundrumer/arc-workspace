@@ -1,12 +1,13 @@
 // 1d398264
 // draft
-// concept: markers cast
-// A 3x3 block of colored cells sits on an empty grid. The block's one
-// interior cell is its center; each of the eight cells around the center
-// casts a ray of its own color outward, along the line from the center
-// through it, to the grid edge. The rest of the input is kept.
+// keywords: markers cast
+// input: a 3x3 block of colored cells on an empty grid. The block's one
+//  interior cell is its center.
+// output: each of the eight cells around the center casts a ray of its own
+//  color outward, along the line from the center through it, to the grid
+//  edge. The rest of the input is kept.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -34,7 +35,6 @@ painted(P, Col) :-
     burst.ray(_, P, _, K, Src), K != 0,    // beyond the casting cell
     in(Src, Col).                          // that cell's color
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, Col_in),
     ( painted(P, Col)                      // on a ray

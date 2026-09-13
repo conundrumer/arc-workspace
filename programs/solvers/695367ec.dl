@@ -1,11 +1,12 @@
 // 695367ec
-// concept: wallpaper count
-// Input: a solid n×n block of color C. Output: a fixed 15×15 frame ruled into
-// n×n background cells by 1-wide lines of color C, grown from the top-left
-// corner — a line wherever the distance from an anchor edge is ≡ n (mod n+1).
-// The run length n and the ink C are read off the input block.
+// keywords: wallpaper count
+// input: a solid n×n block of color C
+// output: A fixed 15×15 frame ruled into n×n background cells by 1-wide
+//  lines of color C, grown from the top-left corner — a line wherever the
+//  distance from an anchor edge is ≡ n (mod n+1). The run length n and the
+//  ink C are read off the input block.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .init helpers = ParamsHelpers
@@ -54,6 +55,5 @@ ruled(P) :-
     params.anchor(Diag), dir_of(Diag, _, D),
     !on_tile(P, D).
 
-.decl out(p: Position, col: Color)
 out(P, C)   :- ruled(P), ink(C).
 out(P, Bg)  :- params.frame(P), !ruled(P), params.bg(Bg).

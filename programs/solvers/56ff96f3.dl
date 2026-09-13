@@ -1,10 +1,10 @@
 // 56ff96f3
 // draft
-// concept: markers span
-// Each non-bg color marks cells. The box bounding a color's marks fills with
-// that color.
+// keywords: markers span
+// input: each non-bg color's marked cells
+// output: The box bounding a color's marks fills with that color.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -19,6 +19,5 @@ bbox.cell(Col, P) :- in(P, Col), !params.bg(Col).    // a color's marks
 .decl spanned(p: Position, col: Color)
 spanned(P, Col) :- bbox.box(Col, B), in(P, _), inside(P, B).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- spanned(P, Col).
 out(P, Col) :- in(P, Col), !spanned(P, _).       // elsewhere, the input

@@ -1,11 +1,11 @@
 // 494ef9d7
 // draft
-// concept: lines move
-// Colored cells scatter on a background, two to a line at most. Some color
-// pairs attract: on a line holding exactly such a pair, the far cell moves to
-// rest against the near one. Every other line stands.
+// keywords: lines move
+// input: colored cells scatter on a background, two to a line at most.
+// output: some color pairs attract: on a line holding exactly such a pair,
+//  the far cell moves to rest against the near one. Every other line stands.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -53,7 +53,6 @@ pairs.observed_member(L, Col) :- parse.mark($U(), L, _, Col).
 .decl pair_line(l: Position)
 pair_line(L) :- pairs.equals(L, _).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, C_in), parse.line_of($U(), P, L),
     ( !pair_line(L), Col = C_in                                   // line untouched

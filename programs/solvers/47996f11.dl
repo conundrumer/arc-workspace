@@ -1,22 +1,21 @@
 // 47996f11
 // draft
-// concept: symmetry repair
-// A pattern symmetric about a center offset from the grid center, corrupted
-// by patches of one color; each corrupted cell restores from a symmetric
-// counterpart. Cases:
-//
-//   $Stored()  — params.sym names the symmetry group.
-//   $Derived() — the transforms the clean cells never contradict.
-//
-// Coincide here: the clean cells contradict no element of D4, so both cases
-// apply the full group.
+// keywords: symmetry repair
+// input: A pattern symmetric about a center offset from the grid center,
+//  corrupted by patches of one color.
+// output: Each corrupted cell restores from a symmetric counterpart.
 
-#include "../lib.dl"
+// which transforms restore a corrupted cell — coincide here: the clean
+// cells contradict no element of D4, so both cases apply the full group
+.type Choice =
+    // params.sym names the symmetry group
+    Stored {}
+    // the transforms the clean cells never contradict
+  | Derived {}
 
-.type Choice = Stored {} | Derived {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl noise(col: Color) noise(6).
 
     // The symmetry center, as its offset from the grid center.
@@ -44,7 +43,6 @@ counterpart(P, Q, Ch) :-
 .decl impl_choice(ch: Choice)
 impl_choice($Stored()). impl_choice($Derived()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- clean(P, Col), impl_choice(Ch).
 out(P, Col, Ch) :-
     in(P, N), params.noise(N),                     // corrupted cell

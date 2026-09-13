@@ -1,12 +1,13 @@
 // 551d5bf1
 // draft
-// concept: objects border cast
-// Rectangle outlines are drawn on a blank grid, some with border cells
-// missing. The output paints the inside of every rectangle, and each missing
-// border cell lets the paint leak out along its line, away from the
-// rectangle, to the grid edge.
+// keywords: objects border cast
+// input: Rectangle outlines are drawn on a blank grid, some with border cells
+//  missing.
+// output: The output paints the inside of every rectangle, and each missing
+//  border cell lets the paint leak out along its line, away from the
+//  rectangle, to the grid edge.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl outline(col: Color) outline(1).
@@ -32,7 +33,6 @@ leak.mark(D, P) :- bbox.box(Id, B), in(P, _), box_edge(P, B, D), !bbox.cell(Id, 
 paint(P) :- bbox.box(_, B), in(P, _), interior(P, B).  // inside a rectangle
 paint(P) :- leak.ray(D, P, D, _, _).                   // out through a gap
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, Col0),
     ( paint(P), params.ink(Col)   // painted cell

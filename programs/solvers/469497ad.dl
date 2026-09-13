@@ -1,16 +1,20 @@
 // 469497ad
 // draft
-// concept: scale lines count cast
-// A block of ink sits in a bg field, beside a legend: the grid lines that
-// hold no bg. The output is the input scaled by the count of distinct non-bg
-// colors, with a diagonal beam cast outward from each corner of the scaled
-// block. Two parses of what a beam meets, tagged on out's Choice:
-//   $Halt    — the beam stops at the first non-bg cell.
-//   $Through — the beam crosses non-bg and paints the bg beyond.
+// keywords: scale lines count cast
+// input: A block of ink sits in a bg field, beside a legend: the grid
+//  lines that hold no bg.
+// output: The output is the input scaled by the count of distinct non-bg
+//  colors, with a diagonal beam cast outward from each corner of the
+//  scaled block.
 
-#include "../lib.dl"
+// what a beam meets when it crosses non-bg ink
+.type Choice =
+    // the beam stops at the first non-bg cell
+    Halt {}
+    // the beam crosses non-bg and paints the bg beyond
+  | Through {}
 
-.type Choice = Halt {} | Through {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -64,7 +68,6 @@ beam_cell(P_grid, $Through()) :- diag.ray(_, P_grid, _, _, _).
 .decl impl_choice(ch: Choice)
 impl_choice($Halt()). impl_choice($Through()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_grid, Col, Ch) :- beam_cell(P_grid, Ch), params.beam(Col).
 out(P_grid, Col, Ch) :-
     impl_choice(Ch), scaled(P_grid, _, Col), !beam_cell(P_grid, Ch).

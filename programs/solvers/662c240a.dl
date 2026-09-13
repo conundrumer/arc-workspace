@@ -1,29 +1,32 @@
 // 662c240a
-// concept: decompose symmetry select
-// Input stacks square tiles along params.tile_axis; output the one tile that
-// lacks the symmetry the others share.
-//
-// out's choice column = [d, s], data-equivalent on this task:
-//
-//   d (find the tiles):
-//     $Count() — by tile count
-//     $Size()  — by tile size
-//   s (which tile is the odd one):
-//     $Shared() — the shared symmetry is task data: output the tile not
-//                 fixed by params.sym.
-//     $Asym()   — symmetric-vs-asymmetric is the concept: output the tile
-//                 fixed by no nontrivial D4 element.
+// keywords: decompose symmetry select
+// input: square tiles stacked along params.tile_axis
+// output: The output is the one tile that lacks the symmetry the others
+//  share.
 
-#include "../lib.dl"
+// find the tiles
+.type DecChoice =
+    // by tile count
+    Count {}
+    // by tile size
+  | Size {}
 
-.type DecChoice = Count {} | Size {}
-.type SymChoice = Shared {} | Asym {}
+// which tile is the odd one
+.type SymChoice =
+    // the shared symmetry is task data: output the tile not fixed by params.sym
+    Shared {}
+    // symmetric-vs-asymmetric is the concept: output the tile fixed by no
+    // nontrivial D4 element
+  | Asym {}
+
+// two independent choices, data-equivalent on this task
 .type Choice    = [d: DecChoice, s: SymChoice]
 
 .type TileKey = [t: Position, d: DecChoice]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl tile_axis(a: Axis) tile_axis(AXIS_V).
 
     // --- Count ---
@@ -51,8 +54,6 @@ tile_val(T, P, Col, $Size()) :-
 .init inv = D4Map<TileKey, Color>
 inv.src([T, Dc], P, Col) :- tile_val(T, P, Col, Dc).
 inv.dst([T, Dc], P, Col) :- tile_val(T, P, Col, Dc).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // --- Shared ---
 out(P, Col, [Dc, $Shared()]) :-

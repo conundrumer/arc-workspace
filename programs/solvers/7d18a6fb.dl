@@ -1,22 +1,25 @@
 // 7d18a6fb
 // draft
-// concept: decompose crop markers move stamp
-// A one-color legend block holds marker cells. A marker's color names a shape
-// elsewhere in the grid; shapes no marker names are left out. The output holds
-// each named shape, cropped to its bounding box, placed by its marker.
-//
-// $Legend — the legend divides into quadrants, one marker each; the output
-//           canvas is the legend's frame, and each quadrant is the frame of
-//           its marker's crop.
-// $Concat — the legend divides into quadrants, one marker each; the crops abut
-//           in the quadrant arrangement, one gap apart, and the output frame
-//           follows their sizes.
-// $Stamp  — the output canvas is the legend's frame, and each crop stamps with
-//           its center on its marker.
+// keywords: decompose crop markers move stamp
+// input: A one-color legend block holds marker cells. A marker's color names a
+//  shape elsewhere in the grid.
+// output: Shapes no marker names are left out. The output holds each named
+//  shape, cropped to its bounding box, placed by its marker.
 
-#include "../lib.dl"
+// where the extracted shapes go in the output
+.type Choice =
+    // the legend divides into quadrants, one marker each; the output canvas is
+    // the legend's frame, and each quadrant is the frame of its marker's crop
+    Legend {}
+    // the legend divides into quadrants, one marker each; the crops abut in the
+    // quadrant arrangement, one gap apart, and the output frame follows their
+    // sizes
+  | Concat {}
+    // the output canvas is the legend's frame, and each crop stamps with its
+    // center on its marker
+  | Stamp {}
 
-.type Choice = Legend {} | Concat {} | Stamp {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -70,7 +73,6 @@ quadrant_ink(P_tile, P_intile, Col) :-
 .decl canvas(ch: Choice, p: Position)
 .decl ink(ch: Choice, p: Position, col: Color)
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     canvas(Ch, P),
     ( ink(Ch, P, Col)

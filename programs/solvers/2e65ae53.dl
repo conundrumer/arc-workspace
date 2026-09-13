@@ -1,12 +1,13 @@
 // 2e65ae53
 // draft
-// concept: objects decompose induce
-// Frames drawn in one ink color are cut by their own lines into the same tile
-// arrangement. The filled tiles of all the frames together show one color per
-// tile position. The output fills every tile of every frame with its
-// position's color.
+// keywords: objects decompose induce
+// input: frames drawn in one ink color are cut by their own lines into the
+//  same tile arrangement
+// output: the filled tiles of all the frames together show one color per
+//  tile position. The output fills every tile of every frame with its
+//  position's color.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -49,6 +50,5 @@ tile_color(P_tile, Col) :- cut.tile_of(_, P, P_tile), in(P, Col), !params.bg(Col
 .decl painted(p: Position, col: Color)
 painted(P, Col) :- cut.tile_of(_, P, P_tile), tile_color(P_tile, Col).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- painted(P, Col).
 out(P, Col) :- in(P, Col), !painted(P, _).

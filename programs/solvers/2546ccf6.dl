@@ -1,17 +1,21 @@
 // 2546ccf6
 // draft
-// concept: decompose d4
-// Lines of a single color cut the grid into a lattice of tiles. A shape fills
-// three tiles of a 2x2 block, mirrored in each of the two cuts between them;
-// the fourth tile takes the image that completes the block.
-//
-// $Shape — only the block color's cells cross into the missing tile.
-// $Tile  — the whole source tile crosses.
+// keywords: decompose d4
+// input: Lines of a single color cut the grid into a lattice of tiles.
+// output: A shape fills three tiles of a 2x2 block, mirrored in each of
+//  the two cuts between them; the fourth tile takes the image that
+//  completes the block.
 
-#include "../lib.dl"
+// what crosses into the missing tile
+.type Choice =
+    // only the block color's cells cross
+    Shape {}
+    // the whole source tile crosses
+  | Tile {}
 
-.type Choice = Shape {} | Tile {}
 .type Line = [a: Axis, l: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -32,7 +36,6 @@ line_color.item([A, L], Col) :- axis_elem(A), in(P, Col), split(P, A, L, _).
 lattice.cell($U(), P) :- in(P, _).
 lattice.divider($U(), A, L) :- line_color.value([A, L], Col), !params.bg(Col).
 
-// Each tile's box. A cell on a cut sits in no tile.
 .init tile_box = Bbox<Position>
 tile_box.cell(P_tile, P) :- lattice.tile_of($U(), P, P_tile).
 
@@ -46,21 +49,27 @@ tile_holds(Col, P_tile) :- lattice.tile_of($U(), P, P_tile), in(P, Col), !params
 
 // --- block ---
 
-// The other three tiles of a block, seen from the fourth: across each of the
-// two cuts, and across the corner between them.
+// Where a block's other three tiles lie, seen from the fourth: across each of
+// the two cuts, and across the corner between them.
 .decl block_dir(diag: DiagDir, d: Dir8)
 block_dir(G, D) :- dir_of(G, _, D).
 block_dir(G, G) :- diag_dir_elem(G).
 
-// The tile a block is missing: it lacks col, and the three tiles toward
-// corner diag hold col.
+// One of those tiles, when it holds col.
+.decl block_tile(col: Color, p_tile: Position, diag: DiagDir, d: Dir8, s: Position)
+block_tile(Col, P_tile, G, D, S) :-
+    lattice.tile_of($U(), _, P_tile), block_dir(G, D),  // a direction of the block
+    neighbor(P_tile, D, S), tile_holds(Col, S).         // the tile there, holding col
+
+// Some direction of the block leads to no tile holding col.
+.decl block_broken(col: Color, p_tile: Position, diag: DiagDir)
+block_broken(Col, P_tile, G) :-
+    block_tile(Col, P_tile, G, _, _), block_dir(G, D), !block_tile(Col, P_tile, G, D, _).
+
+// The tile a block is missing: it lacks col, and the block's other three hold it.
 .decl gap(col: Color, p_tile: Position, diag: DiagDir)
 gap(Col, P_tile, G) :-
-    lattice.tile_of($U(), _, P_tile), !tile_holds(Col, P_tile),
-    diag_dirs(G, _, D1, D2),
-    neighbor(P_tile, D1, S1), tile_holds(Col, S1),  // across each cut
-    neighbor(P_tile, D2, S2), tile_holds(Col, S2),
-    neighbor(P_tile, G, S3), tile_holds(Col, S3).   // and across the corner
+    block_tile(Col, P_tile, G, _, _), !tile_holds(Col, P_tile), !block_broken(Col, P_tile, G).
 
 // Reflection in the cut, or the pair of cuts, crossed on the way toward d.
 .decl reflect(d: Dir8, p_intile: Position, p_out: Position)
@@ -72,10 +81,10 @@ reflect(G, P, Q) :-
 // A cell of col's block and the cell of the missing tile it mirrors onto.
 .decl mirror(col: Color, p_src: Position, p_dst: Position)
 mirror(Col, P_src, P_dst) :-
-    gap(Col, P_tile, G), block_dir(G, D), neighbor(P_tile, D, S),  // a tile of the block
-    tile_cell(S, P_src, P_intile),                                 // a cell of it
-    reflect(D, P_intile, P_out),                                   // reflected across the cuts
-    tile_cell(P_tile, P_dst, P_out).                               // landing in the missing tile
+    gap(Col, P_tile, G), block_tile(Col, P_tile, G, D, S),  // a tile of the block
+    tile_cell(S, P_src, P_intile),                          // a cell of it
+    reflect(D, P_intile, P_out),                            // reflected across the cuts
+    tile_cell(P_tile, P_dst, P_out).                        // landing in the missing tile
 
 // --- output ---
 
@@ -87,6 +96,5 @@ paint(P_dst, Col, $Shape()) :- mirror(Col, P_src, P_dst), in(P_src, Col).
 // --- Tile ---
 paint(P_dst, Col, $Tile()) :- mirror(_, P_src, P_dst), in(P_src, Col).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).

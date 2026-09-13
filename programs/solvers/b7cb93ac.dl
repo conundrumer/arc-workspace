@@ -1,16 +1,15 @@
 // b7cb93ac
-// concept: objects pack
-// Scattered colored pieces assemble into a rectangle. A piece is a connected
-// same-colored region; it turns but never reflects, and the largest piece —
-// the anchor — keeps the pose the input shows. A placement stands while
-// every piece still finds room beside it. Each cell takes the color of
-// the piece placed over it.
-//
-// Congruent pieces of distinct colors are interchangeable: each valid
-// assignment of pieces to spots is a resolution, and out carries one grid
-// per resolution.
+// keywords: objects pack
+// output: Scattered colored pieces assemble into a rectangle. A piece is a
+//  connected same-colored region; it turns but never reflects, and the largest
+//  piece — the anchor — keeps the pose the input shows. A placement stands
+//  while every piece still finds room beside it. Each cell takes the color of
+//  the piece placed over it.
+//  Congruent pieces of distinct colors are interchangeable: each valid
+//  assignment of pieces to spots is a resolution, and out carries one grid per
+//  resolution.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color, res: TiebreakResolution)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -92,7 +91,6 @@ pruning.conflict($U(), Cd, Cd2) :- covers(Cd, P), covers(Cd2, P).
 .init ties = TiebreakResolutions<Unit, Position, Piece>
 ties.cand($U(), B, Pc) :- pruning.alive($U(), [_, B], Pc).
 
-.decl out(p: Position, col: Color, res: TiebreakResolution)
 out(P, Col, R) :-
     ties.assign($U(), R, B, [Col, Id]),                         // this resolution's seat
     pruning.alive($U(), [T, B], [Col, Id]), covers([T, B], P).  // the seated piece's cells

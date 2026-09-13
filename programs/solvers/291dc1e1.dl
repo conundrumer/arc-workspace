@@ -1,22 +1,24 @@
 // 291dc1e1
-// concept: objects markers rank d4
-// Solid rectangular blocks lie on the background. A marked cell sits at one
-// grid corner, and a colored line runs along each of the two edges that corner
-// joins. The output stacks the blocks in the reading order that runs from the
-// marked corner, each turned to lie across the stack and centered on the
-// longest.
-//
-// The cases claim the primary axis of that reading order:
-//   $Marked() — the axis the line colored primary_col runs along.
-//   $Aspect() — the grid's short axis.
-//   $Lanes()  — the axis the blocks stratify along.
+// keywords: objects markers rank d4
+// input: Solid rectangular blocks lie on the background. A marked cell sits
+//  at one grid corner, and a colored line runs along each of the two edges
+//  that corner joins.
+// output: The output stacks the blocks in the reading order that runs from
+//  the marked corner, each turned to lie across the stack and centered on
+//  the longest.
 
-#include "../lib.dl"
+// The cases claim the primary axis of that reading order
+.type Choice =
+    // the axis the line colored primary_col runs along
+    Marked {}
+    // the grid's short axis
+  | Aspect {}
+    // the axis the blocks stratify along
+  | Lanes {}
 
-.type Choice = Marked {} | Aspect {} | Lanes {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(8).
     .decl mark(col: Color) mark(0).
 
@@ -148,7 +150,6 @@ unstratified(A) :-
 slot.dir(D) :- params.stack_dir(D).
 slot.dist_set(Ch, R) :- reading.rank(Ch, _, R).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_grid, Col, Ch) :-
     reading.rank(Ch, B, R), parse.bbox.box([$U(), Id], B),    // the block, by its ranked box
     slot.pos(Ch, R, P_tile),                                  // its place in the stack

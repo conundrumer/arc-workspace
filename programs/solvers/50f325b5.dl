@@ -1,30 +1,63 @@
 // 50f325b5
 // draft
-// concept: markers stamp d4
-// The input carries a shape drawn in the mark color. Every D4 image of that
-// shape which lands on cells all carrying the field color takes the mark
-// color; every other cell keeps its input color.
+// keywords: markers stamp d4 rank
+// input: a shape drawn in the mark color
+// output: Every D4 image of that shape that lands entirely on field-color
+//  cells takes the mark color; every other cell keeps its input color.
 
-#include "../lib.dl"
+// which color draws the shape
+.type Choice =
+    // params.mark names it
+    Stored {}
+    // the rarest color in the grid
+  | Minority {}
+
+// one case's shape under one D4 element
+.type Pose = [ch: Choice, d: D4]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    .decl mark(col: Color) mark(8).
     .decl field(col: Color) field(3).
+
+    // --- Stored ---
+    .decl mark(col: Color) mark(8).
 }
 
 .init params = Params
 
+.decl impl_choice(ch: Choice)
+impl_choice($Stored()). impl_choice($Minority()).
+
+.decl mark(ch: Choice, col: Color)
+
+// --- Stored ---
+
+mark($Stored(), Col) :- params.mark(Col).
+
+// --- Minority ---
+
+.init size = Tally<Color, Position>
+size.item(Col, P) :- in(P, Col).
+
+.init rare = ArgExtremes<Unit, Color>
+rare.cand($U(), Col, N) :- size.tally(Col, N).
+
+mark($Minority(), Col) :- rare.low($U(), Col, _).
+
+// --- the stamp ---
+
 // Every D4 image of the drawn shape, sought among the field cells.
-.init seek = Occurrences<D4, Unit>
-seek.shape(D, P_img, $U()) :-
-    in(P, Col), params.mark(Col), d4_elem(D), apply(D, P, P_img).
-seek.cell(D, P, $U()) :- in(P, Col), params.field(Col), d4_elem(D).
+.init seek = Occurrences<Pose, Unit>
+seek.shape([Ch, D], P_img, $U()) :-
+    in(P, Col), mark(Ch, Col), d4_elem(D), apply(D, P, P_img).
+seek.cell([Ch, D], P, $U()) :-
+    in(P, Col), params.field(Col), impl_choice(Ch), d4_elem(D).
 
-.decl stamped(p: Position)
-stamped(P_out) :-
-    seek.occurrence(D, Sh),                              // a landing
-    seek.shape(D, P_img, _), compose(Sh, P_img, P_out).  // each of its cells
+.decl stamped(p: Position, ch: Choice)
+stamped(P_out, Ch) :-
+    seek.occurrence([Ch, D], Sh),                              // a landing
+    seek.shape([Ch, D], P_img, _), compose(Sh, P_img, P_out).  // each of its cells
 
-.decl out(p: Position, col: Color)
-out(P, Col) :- stamped(P), params.mark(Col).
-out(P, Col) :- in(P, Col), !stamped(P).
+out(P, Col, Ch) :- stamped(P, Ch), mark(Ch, Col).
+out(P, Col, Ch) :- in(P, Col), !stamped(P, Ch), impl_choice(Ch).

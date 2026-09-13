@@ -1,18 +1,21 @@
 // 50c07299
 // draft
-// concept: move count d4
-// A single segment of params.ink runs along params.dir on a params.bg field. The output
-// erases that segment and draws a new one further along the same line: it
-// starts at the cell just beyond the segment's leading end, and it holds one
-// cell more than the segment. Choice says what fixes the new segment:
-//
-//   $Turn()  — the segment, grown by that cell, turned half about it.
-//   $Count() — the run from that cell on, reaching as many steps along
-//              params.dir as the segment has cells.
+// keywords: move count d4
+// input: a single segment of params.ink running along params.dir on a
+//  params.bg field
+// output: The output erases the segment and draws a new one further along
+//  the same line: it starts at the cell just beyond the segment's leading
+//  end, and it holds one cell more than the segment.
 
-#include "../lib.dl"
+// what fixes the new segment
+.type Choice =
+    // the segment, grown by that cell, turned half about it
+    Turn {}
+    // the run from that cell on, reaching as many steps along params.dir as the
+    // segment has cells
+  | Count {}
 
-.type Choice = Turn {} | Count {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(7).
@@ -63,6 +66,5 @@ size.item($U(), P) :- mark(P).
 
 drawn(Q, $Count()) :- line.ray($U(), Q, _, K, _), size.tally($U(), N), K <= N.
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- drawn(P, Ch), params.ink(Col).
 out(P, Col, Ch) :- in(P, _), impl_choice(Ch), !drawn(P, Ch), params.bg(Col).

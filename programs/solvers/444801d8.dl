@@ -1,18 +1,19 @@
 // 444801d8
 // draft
-// concept: objects markers border
-// A box of params.wall cells holds a seed cell of another color, and one side
-// of its wall is broken. The seed's color paints the box's non-wall cells
-// and the line one step beyond the broken side. Two models of that side:
-//
-//   $Dir — params.open_dir names it.
-//   $Gap — the side whose wall line is broken.
-//
-// Every box here breaks on the top, so the models agree.
+// keywords: objects markers border
+// output: A box of params.wall cells holds a seed cell of another color, and
+//  one side of its wall is broken. The seed's color paints the box's non-wall
+//  cells and the line one step beyond the broken side.
 
-#include "../lib.dl"
+// which side is open; every box here breaks on the top, so the two models
+// agree
+.type Choice =
+    // params.open_dir names it
+    Dir {}
+    // the side whose wall line is broken
+  | Gap {}
 
-.type Choice = Dir {} | Gap {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -60,6 +61,5 @@ paint(P, Col, Ch) :-
 .decl impl_choice(ch: Choice)
 impl_choice($Dir()). impl_choice($Gap()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).

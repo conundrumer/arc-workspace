@@ -1,23 +1,24 @@
 // 88e364bc
 // draft
-// concept: enclose markers move count
-// Walls of several colors close off regions on params.bg, with params.marker
-// cells inside. Each wall color has a legend: a solid block of that color
-// holding arrows, each a line of enclosed cells whose head is one color and
-// whose tail another. A marker slides in the direction of the enclosing
-// color's arrow, through the cells that color closes off, until the next step
-// would leave them.
-//
-// The cases differ in what marks an arrow's head:
-//   $Stored   — the head color is params.head.
-//   $Minority — the head color is the rarer of the legend's colors.
+// keywords: enclose markers move count
+// input: Walls of several colors close off regions on params.bg, with
+//  params.marker cells inside. Each wall color has a legend: a solid block
+//  of that color holding arrows, each a line of enclosed cells whose head
+//  is one color and whose tail another.
+// output: A marker slides in the direction of the enclosing color's arrow,
+//  through the cells that color closes off, until the next step would
+//  leave them.
 
-#include "../lib.dl"
+// what marks an arrow's head
+.type Choice =
+    // the head color is params.head
+    Stored {}
+    // the head color is the rarer of the legend's colors
+  | Minority {}
 
-.type Choice = Stored {} | Minority {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl marker(c: Color) marker(4).
 
@@ -94,6 +95,5 @@ landed(Q, Ch) :- marker_cell(P), slide.rest([_, Ch], P, _, Q).
 cleared(P, Col) :- in(P, Col), !marker_cell(P).
 cleared(P, Col) :- marker_cell(P), params.bg(Col).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- landed(P, Ch), params.marker(Col).
 out(P, Col, Ch) :- impl_choice(Ch), cleared(P, Col), !landed(P, Ch).

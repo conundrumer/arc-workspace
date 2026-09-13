@@ -1,9 +1,9 @@
 // dbc1a6ce
-// concept: markers span
-// Bg cells between two marks on their row or column fill with params.fill;
-// marks stay.
+// keywords: markers span
+// output: Bg cells between two marks on their row or column fill with
+//  params.fill; marks stay.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -17,6 +17,5 @@ spans.axis($U(), A) :- axis_elem(A).
 spans.cell($U(), P) :- in(P, Bg), params.bg(Bg).
 spans.mark($U(), Q) :- in(Q, Col), !params.bg(Col).
 
-.decl out(p: Position, col: Color)
 out(P, F)   :- spans.between($U(), P), params.fill(F).
 out(P, Col) :- in(P, Col), !spans.between($U(), P).

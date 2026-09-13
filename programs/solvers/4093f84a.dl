@@ -1,59 +1,118 @@
 // 4093f84a
 // draft
-// concept: lines markers count
-// A solid stripe of params.stripe spans the grid edge to edge on one axis, with dots
-// of one other color on both sides of it. The output drops the dots: on each
-// line across the stripe, the stripe grows out of its edge by one cell per dot
-// on that side.
+// keywords: lines markers count lookup
+// input: a stripe of params.stripe spanning the grid edge to edge on one
+//  axis, with dots of one other color on both sides of it
+// output: the dots are dropped; on each line across the stripe, the stripe
+//  grows out of its edge by the length that the dots on that side of that
+//  line set
 
-#include "../lib.dl"
+// what the dots on one side of one line set
+.type Choice =
+    // the growth is one cell per dot
+    Count {}
+    // the dot count selects the stored length
+  | Table {}
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
     .decl stripe(col: Color) stripe(5).
+
+    // --- $Table ---
+    // dot count -> the length the stripe grows
+    .decl length(n: number, len: number)
+    length(1, 1).
+    length(2, 2).
 }
 
 .init params = Params
 
-// One line's growing side: the direction out, and the stripe cell it grows from.
-.type Side = [d: Dir, src: Position]
+.comp Parse<Key> {
+    .decl cell(k: Key, p: Position, col: Color)
 
-.decl stripe_cell(p: Position)
-stripe_cell(P) :- in(P, Col), params.stripe(Col).
+    // One grid and one side of its stripe.
+    .type Beam = [k: Key, d: Dir]
+    // One line across the stripe on one side: the stripe cell it grows from.
+    .type Line = [k: Key, d: Dir, src: Position]
 
-.decl dot(p: Position)
-dot(P) :- in(P, Col), !params.bg(Col), !params.stripe(Col).
+    .decl stripe_cell(k: Key, p: Position)
+    stripe_cell(K, P) :- cell(K, P, Col), params.stripe(Col).
 
-.init bbox = Bbox<Unit>
-bbox.cell($U(), P) :- stripe_cell(P).
+    .decl dot(k: Key, p: Position)
+    dot(K, P) :- cell(K, P, Col), !params.bg(Col), !params.stripe(Col).
 
-// The stripe reaches both edges of one axis; the sides lie across that axis.
-.decl side(d: Dir)
-side(D) :-
-    bbox.box($U(), B),
-    axis_elem(A), split(B, A, ZERO, _),   // the axis the stripe spans
-    perp(A, A2), axis_of(D, A2).
+    .init bbox = Bbox<Key>
+    bbox.cell(K, P) :- stripe_cell(K, P).
 
-// The stripe's outermost cell on each side looks out along its line.
-.init spread = Ray<Dir>
-spread.dir(D, D) :- side(D).
-spread.cell(D, P) :- side(D), in(P, _).
-spread.mark(D, P) :-
-    side(D), stripe_cell(P), bbox.box($U(), B), box_edge(P, B, D).
+    // The stripe reaches both edges of one axis; the sides lie across that axis.
+    .decl side(k: Key, d: Dir)
+    side(K, D) :-
+        bbox.box(K, B),
+        axis_elem(A), split(B, A, ZERO, _),   // the axis the stripe spans
+        perp(A, A2), axis_of(D, A2).
 
-.init pile = Tally<Side, Position>
-pile.item([D, Src], P) :- spread.ray(D, P, D, _, Src), dot(P).
+    // The stripe's outermost cell on each side casts out along its line.
+    .init spread = Ray<Beam>
+    spread.dir([K, D], D) :- side(K, D).
+    spread.cell([K, D], P) :- side(K, D), cell(K, P, _).
+    spread.mark([K, D], P) :-
+        side(K, D), stripe_cell(K, P), bbox.box(K, B), box_edge(P, B, D).
+
+    // P lies N cells out toward D from the stripe's edge cell Src.
+    .decl outward(k: Key, p: Position, d: Dir, n: number, src: Position)
+    outward(K, P, D, N, Src) :- spread.ray([K, D], P, D, N, Src).
+
+    .init pile = Tally<Line, Position>
+    pile.item([K, D, Src], P) :- outward(K, P, D, _, Src), dot(K, P).
+
+    // The dots on one side of one line.
+    .decl dots(k: Key, d: Dir, src: Position, n: number)
+    dots(K, D, Src, N) :- pile.tally([K, D, Src], N).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Count()). impl_choice($Table()).
+
+// How far the stripe grows on one side of one line.
+.decl growth(d: Dir, src: Position, len: number, ch: Choice)
 
 // The stripe, and the growth each line takes on each side.
-.decl painted(p: Position)
-painted(P) :- stripe_cell(P).
-painted(P) :-
-    spread.ray(D, P, D, K, Src), K != 0,   // K cells out from the stripe
-    pile.tally([D, Src], N), K <= N.       // within the line's dot count
+.decl painted(p: Position, ch: Choice)
+painted(P, Ch) :- parse.stripe_cell($U(), P), impl_choice(Ch).
+painted(P, Ch) :-
+    parse.outward($U(), P, D, K, Src), K != 0,   // K cells out from the stripe
+    growth(D, Src, N, Ch), K <= N.               // within the line's growth
 
-.decl out(p: Position, col: Color)
-out(P, Col) :-
-    in(P, _),
-    ( painted(P), params.stripe(Col)     // the stripe and its growth
-    ; !painted(P), params.bg(Col)        // bare ground
+out(P, Col, Ch) :-
+    in(P, _), impl_choice(Ch),
+    ( painted(P, Ch), params.stripe(Col)     // the stripe and its growth
+    ; !painted(P, Ch), params.bg(Col)        // bare ground
     ).
+
+// --- $Count ---
+growth(D, Src, N, $Count()) :- parse.dots($U(), D, Src, N).
+
+// --- $Table ---
+growth(D, Src, Len, $Table()) :- parse.dots($U(), D, Src, N), params.length(N, Len).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // One line of one example, on one side of the stripe.
+    .type Line = [e: Example, d: Dir, src: Position]
+
+    // The cells the output grew out of the stripe on that line.
+    .init grown = Tally<Line, Position>
+    grown.item([E, D, Src], P) :-
+        parse.outward(E, P, D, K, Src), K != 0,
+        ex_out(E, P, Col), params.stripe(Col).
+
+    .decl length(n: number, len: number)
+    length(N, Len) :- parse.dots(E, D, Src, N), grown.tally([E, D, Src], Len).
+}

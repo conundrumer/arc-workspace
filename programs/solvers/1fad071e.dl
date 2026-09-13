@@ -1,25 +1,30 @@
 // 1fad071e
-// concept: objects count stamp
-// Count the 2x2 squares of params.block_color (a second color's squares and
-// single-cell noise are distractors), then draw the count as a bar in a
-// fixed out_dim row: cells within count of params.bar_edge get the bar color,
-// the rest params.bg.
-//
-// The block shape is a position set. Two models detect its occurrences:
-//   $Object    — connected components equal to the shape.
-//   $Placement — placements whose footprint lands fully on the color; counts
-//                touching squares separately, where $Object merges them.
-//
-// The bar color is its own hypothesis: a fixed color ($Fixed) or the counted
-// color ($Counted). Choice = [detect, mark] crosses the independent
-// decisions. A count->row lookup render is ruled out: the test count never
-// occurs in train.
+// keywords: objects count stamp
+// input: squares of params.block_color, params.block_dim on a side, beside a
+//  second color's squares and single-cell noise.
+// output: Count those squares, then draw the count as a bar in a fixed out_dim
+//  grid: the cells within the count of params.bar_edge take the bar's color,
+//  the rest params.bg.
 
-#include "../lib.dl"
+// how the block shape's occurrences are found
+.type Detect =
+    // connected components equal to the shape
+    Object {}
+    // placements whose footprint lands fully on the color; counts touching
+    // squares separately, where $Object merges them
+  | Placement {}
 
-.type Detect = Object {} | Placement {}
-.type Mark = Fixed {} | Counted {}
+// the bar's color
+.type Mark =
+    // a fixed color
+    Fixed {}
+    // the counted color
+  | Counted {}
+
+// the two decisions are independent, so the cases cross them
 .type Choice = [detect: Detect, mark: Mark]
+
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
@@ -30,7 +35,6 @@
     .decl block_shape(p: Position)
     block_shape(P) :- block_dim(N), helpers.frame_pos([N, N], P).
 
-    .decl mark(c: Color) mark(1).
     .decl bg(c: Color) bg(0).
 
     .decl out_dim(a: Axis, n: number)
@@ -40,6 +44,10 @@
 
     .decl out_pos(p: Position)
     out_pos(P) :- out_dim(AXIS_V, V), out_dim(AXIS_H, H), helpers.frame_pos([V, H], P).
+
+    // --- $Fixed ---
+    // the bar's color
+    .decl mark(c: Color) mark(1).
 }
 
 .init params = Params
@@ -70,9 +78,6 @@
     .init blocks = Tally<Key, Ident>
     blocks.item(K, Id) :- block(K, Id).
     blocks.domain(K) :- cell(K, _, _).
-
-    .decl block_count(k: Key, n: number)
-    block_count(K, N) :- blocks.tally(K, N).
 }
 
 .init parse = Parse<Unit>
@@ -80,24 +85,28 @@ parse.cell($U(), P, Col) :- in(P, Col).
 parse.color($U(), Col)   :- params.block_color(Col).
 parse.shape($U(), P)     :- params.block_shape(P).
 
-// ============================================================
-// $Placement: placements where the shape occurs (Occurrences)
-// ============================================================
+// The count the bar draws.
+.decl total(n: number, detect: Detect)
 
+// --- $Object ---
+total(N, $Object()) :- parse.blocks.tally($U(), N).
+
+// --- $Placement ---
 .init occ = Occurrences<Unit, Unit>
 occ.cell($U(), P, $U())  :- parse.on($U(), P).
 occ.shape($U(), P, $U()) :- params.block_shape(P).
 
-// ============================================================
-// Output
-// ============================================================
-
-.decl total(n: number, detect: Detect)
-total(N, $Object())    :- parse.block_count($U(), N).
 .init placements = Tally<Unit, Position>
 placements.item($U(), P) :- occ.occurrence($U(), P).
 
 total(N, $Placement()) :- placements.tally($U(), N).
+
+// --- $Fixed, $Counted ---
+.decl bar_mark(col: Color, mark: Mark)
+bar_mark(Col, $Fixed())   :- params.mark(Col).
+bar_mark(Col, $Counted()) :- params.block_color(Col).
+
+// --- Output ---
 
 .decl marked(p: Position, detect: Detect)
 marked(P, Det) :-
@@ -105,19 +114,13 @@ marked(P, Det) :-
     params.bar_edge(D), dist(P, D, K),    // distance from the bar edge
     total(N, Det), K < N.                 // within the count
 
-// The two hypotheses on the bar's color.
-.decl bar_mark(col: Color, mark: Mark)
-bar_mark(Col, $Fixed())   :- params.mark(Col).
-bar_mark(Col, $Counted()) :- params.block_color(Col).
-
-.decl out(p: Position, col: Color, c: Choice)
 out(P, Col, [Det, M]) :- marked(P, Det), bar_mark(Col, M).
 out(P, BG,  [Det, M]) :-
     params.out_pos(P), total(_, Det), !marked(P, Det), bar_mark(_, M), params.bg(BG).
 
-.type Cand = [e: Example, col: Color, k: number]
-
 .comp Determine {
+    .type Cand = [e: Example, col: Color, k: number]
+
     // The bar an output draws: its non-bg cells, and its length.
     .decl bar(e: Example, p: Position, col: Color)
     bar(E, P, Col) :- ex_out(E, P, Col), !params.bg(Col).
@@ -168,7 +171,7 @@ out(P, BG,  [Det, M]) :-
 
     // A candidate whose count misses some bar's length.
     .decl mismatch(col: Color, k: number)
-    mismatch(Col, K) :- parse.block_count([E, Col, K], N), bar_len.tally(E, M), N != M.
+    mismatch(Col, K) :- parse.blocks.tally([E, Col, K], N), bar_len.tally(E, M), N != M.
 
     // The block the bars count.
     .decl block(col: Color, k: number)

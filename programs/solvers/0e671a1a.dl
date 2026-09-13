@@ -1,10 +1,11 @@
 // 0e671a1a
-// concept: markers span
-// Marks, each named by its color, are joined into a chain. A leg turns once,
-// at the elbow standing with the destination along params.axis and with the source
-// across it, and its two straight halves are drawn in params.path over background.
+// keywords: markers span
+// input: Marks, each named by its color.
+// output: The marks are joined into a chain. A leg turns once, at the elbow
+//  standing with the destination along params.axis and with the source across
+//  it, and its two straight halves are drawn in params.path over background.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -55,7 +56,6 @@ span.mark([S, D], P) :-
     ; parse.mark($U(), D, P)          // the destination mark
     ; parse.elbow($U(), S, D, P) ).   // the elbow between them
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- span.between(_, P), params.path(Col).
 out(P, Col) :- in(P, Col), !span.between(_, P).
 

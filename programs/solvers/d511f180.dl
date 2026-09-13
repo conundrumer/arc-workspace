@@ -1,10 +1,8 @@
 // d511f180
 // draft
-// family: 0d3d703e
-// Color swap via a symmetric mapping relation. The mapping is declared
-// one-direction and closed under symmetry by a rule.
+// representative: 0d3d703e
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl mapping(c_from: Color, c_to: Color)
@@ -14,6 +12,5 @@
 
 .init params = Params
 
-.decl out(p: Position, col: Color)
 out(P, Col_out) :- in(P, Col_in), params.mapping(Col_in, Col_out).
 out(P, Col)     :- in(P, Col), !params.mapping(Col, _).

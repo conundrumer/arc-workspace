@@ -1,18 +1,22 @@
 // 42918530
 // draft
-// concept: decompose stamp classify
-// Background lines cut the grid into boxes. A box is a solid outline of one
-// color around an interior, and that interior is blank or carries a design.
-// The boxes of one color form a group, and at most one box of a group carries
-// a design.
-//
-// $Fill — a blank box takes its group's design; a box with a design of its own
-// keeps that one.
-// $Merge — every box of a group takes the group's design.
+// keywords: decompose stamp classify
+// input: Background lines cut the grid into boxes. A box is a solid outline
+//  of one color around an interior, and that interior is blank or carries a
+//  design. The boxes of one color form a group, and at most one box of a
+//  group carries a design.
+// output: Each box's outline stays. Its interior comes out showing its
+//  group's design, or blank if the group carries none.
 
-#include "../lib.dl"
+// which boxes of a group take the group's design
+.type Choice =
+    // a blank box takes its group's design; a box with a design of its own
+    // keeps that one
+    Fill {}
+    // every box of a group takes the group's design
+  | Merge {}
 
-.type Choice = Fill {} | Merge {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -76,7 +80,6 @@ show(T, P_intile, $Fill()) :-
 // --- Merge ---
 show(T, P_intile, $Merge()) :- box_color(T, Col), group_design(Col, P_intile).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     box_view(T, P, P_intile),                                   // box cell
     ( show(T, P_intile, Ch), box_color(T, Col)                  // shown, in the box's color

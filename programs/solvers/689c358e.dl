@@ -1,18 +1,21 @@
 // 689c358e
 // draft
-// concept: objects markers cast
-// A border ring encloses a bg canvas holding crosses, one per color. Each
-// cross has a long bar and a short bar, and the short bar crosses the long
-// one off its middle. On the long bar's line, the grid edge cell on one side
-// takes the cross's color and the one on the other side takes the far color.
-//
-// The cases pick the colored side:
-// - Nearer: the grid edge the cross's box is nearer, along the long axis.
-// - Pointer: the side of its own box the cross's center is displaced toward.
+// keywords: objects markers cast
+// input: A border ring encloses a bg canvas holding crosses, one per color.
+//  Each cross has a long bar and a short bar, and the short bar crosses the
+//  long one off its middle.
+// output: On the long bar's line, the grid edge cell on one side takes the
+//  cross's color, and the one on the other side takes the far color.
+// review principle: docs/wf-solver/open/peer-priors.md
 
-#include "../lib.dl"
+// the side that takes the cross's color
+.type Choice =
+    // the grid edge the cross's box is nearer, along the long axis
+    Nearer {}
+    // the side of its own box the cross's center is displaced toward
+  | Pointer {}
 
-.type Choice = Nearer {} | Pointer {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(7).
@@ -22,17 +25,16 @@
 
 .init params = Params
 
-// A cross cell: canvas ink, keyed by the cross's color.
 .decl cross_cell(c: Color, p: Position)
 cross_cell(C, P) :- in(P, C), !params.bg(C), interior(P, ZERO).
 
 .init bbox = Bbox<Color>
 bbox.cell(C, P) :- cross_cell(C, P).
 
-// The cell where the bars cross: the one cross cell off the cross's rim.
 .init rim = Rim<Color>
 rim.cell(C, P) :- cross_cell(C, P).
 
+// The cell where the bars cross.
 .decl center(c: Color, p: Position)
 center(C, P) :- cross_cell(C, P), !rim.rim(C, P).
 
@@ -64,6 +66,5 @@ mark(P_edge, Col, Ch) :-
     ; opposite(D, Opp), dist(P_edge, Opp, 0), params.far(Col)  // far side
     ).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- mark(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !mark(P, _, Ch).

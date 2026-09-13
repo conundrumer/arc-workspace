@@ -1,12 +1,13 @@
 // 7666fa5d
 // draft
-// concept: markers span
-// Non-bg marks form 8-connected diagonal lines. Between two lines, along the
-// fill axis across them, bg cells take the fill color; the marks stay. A
-// line steps past bg cells, and those cells count as line cells, so the
-// fill covers the whole band the lines bound.
+// keywords: markers span
+// input: Non-bg marks form 8-connected diagonal lines.
+// output: Between two lines, along the fill axis across them, bg cells take
+//  the fill color; the marks stay. A line steps past bg cells, and those
+//  cells count as line cells, so the fill covers the whole band the lines
+//  bound.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(8).
@@ -45,6 +46,5 @@ strict(P) :-
     wall.ray($U(), P, D, K, _), K != 0,
     wall.ray($U(), P, O, K2, _), K2 != 0.
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- strict(P), params.fill(Col).
 out(P, Col) :- in(P, Col), !strict(P).

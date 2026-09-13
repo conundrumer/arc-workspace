@@ -1,21 +1,23 @@
 // 1e97544e
 // draft
-// concept: wallpaper repair walk
-// The background is a striped pattern: one-cell-wide stripes run down the
-// grid, and every stripe jogs one cell sideways where it crosses the main
-// diagonal, so a diagonal step always moves one place along the color order.
-// Holes damage the pattern; the output restores them and keeps the rest.
-//
-// $Stripe reads the geometry: a stripe is one line, and it carries one color.
-// $Cycle reads the advance: the intact cells give a color cycle, and each
-// diagonal step walks one place along it.
+// keywords: wallpaper repair walk
+// input: the background is a striped pattern: one-cell-wide stripes run down
+//  the grid, and every stripe jogs one cell sideways where it crosses the
+//  main diagonal, so a diagonal step always moves one place along the color
+//  order. Holes damage the pattern.
+// output: the output restores the holes and keeps the rest.
 
-#include "../lib.dl"
+// how the pattern's law is read
+.type Choice =
+    // reads the geometry: a stripe is one line, and it carries one color
+    Stripe {}
+    // reads the advance: the intact cells give a color cycle, and each
+    // diagonal step walks one place along it
+  | Cycle {}
 
-.type Choice = Stripe {} | Cycle {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl hole(col: Color) hole(0).
 
     // --- stripe ---
@@ -42,7 +44,6 @@ intact(P, Col) :- in(P, Col), !params.hole(Col).
 .decl damaged(p: Position)
 damaged(P) :- in(P, Col), params.hole(Col).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- intact(P, Col), impl_choice(Ch).
 
 // --- stripe ---

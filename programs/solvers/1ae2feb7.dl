@@ -1,13 +1,14 @@
 // 1ae2feb7
 // draft
-// concept: lines wallpaper rank
-// A separator line splits the grid into an inked side and a blank canvas. Each
-// line of the inked side holds runs of solid color. Every run divides the
-// canvas into blocks of its own length, counting from the separator, and claims
-// the separator-side cell of each block. Where several runs claim one cell, the
-// run nearest the separator wins.
+// keywords: lines wallpaper rank
+// input: A separator line splits the grid into an inked side and a blank
+//  canvas. Each line of the inked side holds runs of solid color.
+// output: Every run divides the canvas into blocks of its own length,
+//  counting from the separator, and claims the separator-side cell of each
+//  block. Where several runs claim one cell, the run nearest the separator
+//  wins.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     // Runs and the pattern they claim extend along this axis; the separator
@@ -94,7 +95,6 @@ won.cand(P, Id, K) :- claim(P, Id), canvas_dir(D), run_box.box(Id, B), dist(B, D
 .decl painted(p: Position, col: Color)
 painted(P, Col) :- won.low(P, Id, _), run(Id, _, Col).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, Col_in),
     ( !canvas(P), Col = Col_in                         // separator and inked side, unchanged

@@ -1,28 +1,35 @@
 // 39e1d7f9
 // draft
-// concept: decompose objects stamp
-// Drawn lines cut the grid into a lattice of tiles, and each tile holds a
-// single color, so the lattice reads as a small grid of colored cells. In
-// that small grid one object spans several cells — the motif — and the
-// other objects are single cells. The output copies the motif onto every
-// single cell. The pairs leave both the seating cell and the copy's extent
-// underdetermined; Choice = [sp, st] crosses the hypotheses:
-//
-//   sp (what a copy carries):
-//     $Whole()  — every cell of the motif.
-//     $Ring()   — the cells beside the seating cell.
-//   st (which motif cell seats a copy):
-//     $Match()  — the cell carrying the single cell's color.
-//     $Unique() — the cell whose color no other motif cell carries.
-//     $Center() — the cell at the center of the motif's box.
+// keywords: decompose objects stamp
+// input: Drawn lines cut the grid into a lattice of tiles, each tile holding a
+//  single color, so the lattice reads as a small grid of colored cells. In
+//  that small grid, one object spans several cells, the motif, and every
+//  other object is a single cell.
+// output: The output copies the motif onto every single cell.
+// review principle: docs/wf-solver/open/peer-priors.md
 
-#include "../lib.dl"
+// what a copy carries
+.type Span =
+    // every cell of the motif
+    Whole {}
+    // the cells beside the seating cell
+  | Ring {}
 
-.type Span = Whole {} | Ring {}
-.type Seat = Match {} | Unique {} | Center {}
+// which motif cell seats a copy
+.type Seat =
+    // the cell carrying the single cell's color
+    Match {}
+    // the cell whose color no other motif cell carries
+  | Unique {}
+    // the cell at the center of the motif's box
+  | Center {}
+
+// what a copy carries, crossed with which motif cell seats it
 .type Choice = [sp: Span, st: Seat]
 
 .type Line = [a: Axis, l: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -75,14 +82,14 @@ span_choice($Ring()).
 
 // $Whole — every cell of the motif.
 footprint(P_tile_seat, V, Col, $Whole()) :-
-    motif(P_tile_seat, _), motif(P_tile_mark, Col),  // the seating cell, and any motif cell
-    relative(P_tile_seat, P_tile_mark, V).       // the offset between them
+    motif(P_tile_seat, _), motif(P_tile_motif, Col),  // the seating cell, and any motif cell
+    relative(P_tile_seat, P_tile_motif, V).           // the offset between them
 
 // $Ring — the cells beside the seating cell.
 footprint(P_tile_seat, V, Col, $Ring()) :-
-    motif(P_tile_seat, _),                                   // the seating cell
-    dir8_elem(D), neighbor(P_tile_seat, D, P_tile_mark),     // one step out
-    motif(P_tile_mark, Col), step_offset(D, V).               // onto a motif cell, at that step's offset
+    motif(P_tile_seat, _),                                 // the seating cell
+    dir8_elem(D), neighbor(P_tile_seat, D, P_tile_motif),  // one step out
+    motif(P_tile_motif, Col), step_offset(D, V).           // onto a motif cell, at that step's offset
 
 // --- Seat cases: which motif cell lands on a single cell ---
 
@@ -98,21 +105,20 @@ seat(P_tile_seed, P_tile_seat, $Match()) :-
     seed(P_tile_seed), ink(P_tile_seed, Col), motif(P_tile_seat, Col).
 
 // $Unique — the motif cell whose color no other motif cell carries.
-.init motif_hue = Unanimous<Color, Position>
-motif_hue.item(Col, P_tile) :- motif(P_tile, Col).
+.init color_cell = Unanimous<Color, Position>
+color_cell.item(Col, P_tile) :- motif(P_tile, Col).
 
 seat(P_tile_seed, P_tile_seat, $Unique()) :-
-    seed(P_tile_seed), motif_hue.value(_, P_tile_seat).
+    seed(P_tile_seed), color_cell.value(_, P_tile_seat).
 
 // $Center — the motif cell at the center of the motif's box.
 .init motif_box = Bbox<Unit>
 motif_box.cell($U(), P_tile) :- motif(P_tile, _).
 
 seat(P_tile_seed, P_tile_seat, $Center()) :-
-    seed(P_tile_seed),                             // each single cell
-    motif(P_tile_seat, _), motif_box.box($U(), B),
-    crop(P_tile_seat, B, P_inner),                 // a motif cell, seen from the box
-    centered(P_inner).                             // the box's center
+    seed(P_tile_seed), motif(P_tile_seat, _),               // each single cell, and a motif cell
+    motif_box.box($U(), B), crop(P_tile_seat, B, P_inner),  // seen from the motif's box
+    centered(P_inner).                                      // at that box's center
 
 // --- output ---
 
@@ -125,8 +131,8 @@ paint(P_tile, Col, [Sp, St]) :-
 .decl paint_cell(p: Position, col: Color, ch: Choice)
 paint_cell(P, Col, Ch) :- lattice.tile_of($U(), P, P_tile), paint(P_tile, Col, Ch).
 
-.decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :- paint_cell(P, Col, Ch).
 out(P, Col, [Sp, St]) :-
-    in(P, Col), span_choice(Sp), seat_choice(St),  // a grid cell, under each case
-    !paint_cell(P, _, [Sp, St]).                   // no copy covers it
+    in(P, Col_in), span_choice(Sp), seat_choice(St),  // a grid cell, under each case
+    ( paint_cell(P, Col, [Sp, St])                    // a copy covers it
+    ; !paint_cell(P, _, [Sp, St]), Col = Col_in       // otherwise the input's color
+    ).

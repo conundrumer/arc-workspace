@@ -1,21 +1,20 @@
 // a406ac07
-// concept: lines markers border select cross
-// A header line along each edge of corner params.header; each header cell
-// colors the grid line it heads. A cell whose two header colors agree is
-// painted that color. Three models, tagged on out's Choice — two read a
-// designated header corner and differ on what the unmatched rest does;
-// the third designates nothing:
-//
-//   $Passthrough() — unmatched cells keep their input color.
-//   $Repaint()     — header edges keep their input; unmatched cells off
-//                    them get params.bg.
-//   $Coincide()    — no header edges: non-bg cells pass through, and a bg
-//                    cell is painted the color that appears on both its
-//                    row and its column.
+// keywords: lines markers border select cross
+// output: A cell is painted the color shared between its row and its
+//  column: read from the two edges of a header corner, or, with no header,
+//  from any ink already on the lines.
 
-#include "../lib.dl"
+// how the line colors are read, and what an unmatched cell becomes
+.type Choice =
+    // unmatched cells keep their input color
+    Passthrough {}
+    // header edges keep their input; unmatched cells off them get params.bg
+  | Repaint {}
+    // no header edges: non-bg cells pass through, and a bg cell is painted the
+    // color that appears on both its row and its column
+  | Coincide {}
 
-.type Choice = Passthrough {} | Repaint {} | Coincide {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // --- $Passthrough, $Repaint ---
@@ -41,8 +40,6 @@ line_color(P, D, Col) :-
 agree(P, Col) :-
     params.header(Diag), diag_dirs(Diag, _, D1, D2),
     line_color(P, D1, Col), line_color(P, D2, Col).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // --- $Passthrough ---
 out(P, Col, $Passthrough()) :- agree(P, Col).

@@ -1,11 +1,12 @@
 // 746b3537
-// concept: lines
-// Striped input: lines along one axis are uniform. The output is the
-// sequence of stripe colors across them, one cell per run, 1 wide.
-
-#include "../lib.dl"
+// keywords: lines
+// input: Striped input: lines along one axis are uniform.
+// output: The output is the sequence of stripe colors across them, one
+//  cell per run, 1 wide.
 
 .type Line = [a: Axis, p_across: Position]
+
+.decl out(p: Position, col: Color)
 
 .comp Params {
     // No task data — siblings vary only the input.
@@ -33,5 +34,4 @@ runs.node(Col, P_line) :- seq_axis(A), in(P, Col), split(P, A, P_line, _).
 seq.axis($U(), A) :- seq_axis(A).
 seq.member($U(), Id, P_line) :- runs.label(_, P_line, Id).
 
-.decl out(p: Position, col: Color)
 out(P_out, Col) :- runs.label(Col, _, Id), seq.pos($U(), Id, P_out).

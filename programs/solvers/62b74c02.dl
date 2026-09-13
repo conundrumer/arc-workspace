@@ -1,20 +1,28 @@
 // 62b74c02
-// concept: lines span stamp select
-// An ink block anchored at one edge, the rest bg. The output stamps a copy
-// of the block flush at the empty edge and fills the span between: each line
-// there takes the color of the block's boundary cell in it. Two independent
-// choice points:
-//
-//   dir:  the empty edge — $Dir: params.dir names it; $Edge: the edge no ink
-//         touches.
-//   fill: which boundary of the block is copied — $Outer: at the anchor edge;
-//         $Inner: facing the gap.
+// keywords: lines span stamp select
+// output: An ink block sits anchored at one edge of the grid, the rest bg.
+//  The output stamps a copy of the block flush at the empty edge, and fills
+//  the span between the block and the copy: each line in the span takes the
+//  color of the block's boundary cell on that line.
 
-#include "../lib.dl"
+// the empty edge
+.type DirCh =
+    // the edge params.dir names
+    Dir {}
+    // the edge no ink touches
+  | Edge {}
 
-.type DirCh = Dir {} | Edge {}
-.type FillCh = Outer {} | Inner {}
+// which boundary of the block is copied
+.type FillCh =
+    // the boundary at the anchor edge
+    Outer {}
+    // the boundary facing the gap
+  | Inner {}
+
+// the empty edge, crossed with which boundary of the block is copied
 .type Choice = [dir: DirCh, fill: FillCh]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -66,7 +74,6 @@ fill(P, Col, Dc, Fc) :-
 .decl fill_choice(fc: FillCh)
 fill_choice($Outer()). fill_choice($Inner()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, [Dc, Fc]) :- ink(P, Col), empty_dir(_, Dc), fill_choice(Fc).
 out(P, Col, [Dc, Fc]) :- copy(P, Col, Dc), fill_choice(Fc).
 out(P, Col, [Dc, Fc]) :- fill(P, Col, Dc, Fc).

@@ -1,18 +1,20 @@
 // 0ca9ddb6
-// concept: markers lookup stamp
-// Lone dots sit on an empty grid. A marked dot grows a one-step star in
-// its paired color — cardinal arms for 1, diagonal arms for 2; dots of
-// any other color are inert, and the rest of the input is kept. Stars
-// clip at the grid edge and overwrite what they cover; the data never
-// shows a star covering other ink. Cases (data-equivalent on this task):
-//
-//   $Ray    — arms by kind, colored per mark: params.arm_paint cardinal,
-//             params.diag_paint diagonal; arms reach params.radius cells.
-//   $Lookup — a stored mask per mark, as offsets from the mark.
+// keywords: markers lookup stamp
+// output: Lone dots sit on an empty grid. A marked dot grows a one-step star
+//  in its paired color — cardinal arms for 1, diagonal arms for 2; dots of any
+//  other color are inert, and the rest of the input is kept. Stars clip at the
+//  grid edge and overwrite what they cover; the data never shows a star
+//  covering other ink.
 
-#include "../lib.dl"
+// how a mark's star footprint is computed (data-equivalent on this task)
+.type Choice =
+    // arms by kind, colored per mark: params.arm_paint cardinal,
+    // params.diag_paint diagonal; arms reach params.radius cells
+    Ray {}
+    // a stored mask per mark, as offsets from the mark
+  | Lookup {}
 
-.type Choice = Ray {} | Lookup {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // --- $Ray ---
@@ -75,7 +77,6 @@ painted(P_grid, Col, $Lookup()) :-
     params.template(M, V), compose(P, V, P_grid),         // offset from the mark
     in(P_grid, _).                                        // clip to the grid
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- painted(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, _, Ch).
 

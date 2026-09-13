@@ -1,9 +1,9 @@
 // a416b8f3
-// concept: tile-arrangement
-// Layout: 1×2 horizontal duplication. Output is two copies of input placed
-// side by side along the tile axis.
+// keywords: tile-arrangement
+// output: The output places params.copies copies of the input side by side
+//  along params.tile_axis.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .init helpers = ParamsHelpers
@@ -18,7 +18,6 @@
 
 .init params = Params
 
-.decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
     in(P_in, Col),                                  // input cell
     params.tile(P_tile),                            // tile-frame pos (axis-only)

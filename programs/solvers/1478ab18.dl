@@ -1,24 +1,32 @@
 // 1478ab18
-// concept: markers span rank
-// Marks sit on a plain field, two of them spanning a diagonal. The output draws
-// the right isosceles triangle on that diagonal in params.ink: the diagonal is the
-// hypotenuse and the legs meet at one corner of the box it spans. Marks keep
-// their color where the triangle crosses them. The other marks say which
-// diagonal and which corner; Choice = [l, v] crosses the hypotheses:
-//
-//   l (which mark pair spans the hypotenuse):
-//     $Longest()  — the diagonal mark pair with the greatest separation.
-//     $Cornered() — the diagonal mark pair with a mark at a box corner.
-//   v (which box corner carries the right angle):
-//     $Free()     — the corner that is not a mark.
-//     $Pointed()  — the corner with a mark diagonally adjacent.
-//     $Inside()   — the corner whose closed triangle holds a non-vertex mark.
+// keywords: markers span rank
+// input: Marks sit on a plain field, two of them spanning a diagonal.
+// output: The output draws the right isosceles triangle on that diagonal in
+//  params.ink: the diagonal is the hypotenuse and the legs meet at one
+//  corner of the box it spans. Marks keep their color where the triangle
+//  crosses them. The other marks say which diagonal and which corner.
 
-#include "../lib.dl"
+// which mark pair spans the hypotenuse
+.type Locate =
+    // the diagonal mark pair with the greatest separation
+    Longest {}
+    // the diagonal mark pair with a mark at a box corner
+  | Cornered {}
 
-.type Locate = Longest {} | Cornered {}
-.type Vertex = Free {} | Pointed {} | Inside {}
+// which box corner carries the right angle
+.type Vertex =
+    // the corner that is not a mark
+    Free {}
+    // the corner with a mark diagonally adjacent
+  | Pointed {}
+    // the corner whose closed triangle holds a non-vertex mark
+  | Inside {}
+
+// which mark pair spans the hypotenuse, crossed with which corner carries
+// the right angle
 .type Choice = [l: Locate, v: Vertex]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl mark(col: Color) mark(5).
@@ -119,6 +127,5 @@ span.mark(Ch, P) :- vertex(P, Ch).
 .decl paint(p: Position, ch: Choice)
 paint(P, Ch) :- span.between(Ch, P), !mark(P).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Ch), params.ink(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, Ch).

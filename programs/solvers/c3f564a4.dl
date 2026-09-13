@@ -1,20 +1,22 @@
 // c3f564a4
-// concept: wallpaper repair lines
-// A diagonal-stripe wallpaper — one color per stripe, the stripe sequence
-// periodic — corrupted by noise patches; the output restores it. The
-// period varies per pair, so no case stores one.
-//
-//   $Shift — translation repair, detected: a shift unbroken on clean
-//            cells maps each noise cell to a clean counterpart.
-//   $Diag  — line structure: each stripe is one color; a noise cell
-//            copies from a clean cell on its own stripe.
+// keywords: wallpaper repair lines
+// input: a diagonal-stripe wallpaper — one color per stripe, the stripe
+//  sequence periodic — corrupted by noise patches
+// output: the output restores the wallpaper. The period varies per pair,
+//  so no case stores one.
 
-#include "../lib.dl"
+// how a noise cell finds its clean counterpart
+.type Choice =
+    // translation repair, detected: a shift unbroken on clean cells maps each
+    // noise cell to a clean counterpart
+    Shift {}
+    // line structure: each stripe is one color; a noise cell copies from a
+    // clean cell on its own stripe
+  | Diag {}
 
-.type Choice = Shift {} | Diag {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl noise(col: Color) noise(0).
 
     // --- $Diag ---
@@ -31,8 +33,6 @@ si.cell($U(), P, Col) :- clean(P, Col).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Shift()). impl_choice($Diag()).
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // Clean cells pass through under every case.
 out(P, Col, Ch) :- impl_choice(Ch), clean(P, Col).

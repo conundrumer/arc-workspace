@@ -1,13 +1,14 @@
 // 3bd292e8
 // draft
-// concept: objects border count rank
-// Cells of params.wall pass through. They cut the rest of the grid into regions,
-// and a wall cell between two region cells on one axis puts their regions on
-// opposite sides, so the regions two-color. The side that holds the region with
-// the fewest cells takes params.small_side, and the other side takes
-// params.other_side.
+// keywords: objects border count rank
+// input: Cells of params.wall cut the rest of the grid into regions. A wall
+//  cell between two region cells on one axis puts their regions on opposite
+//  sides, so the regions two-color.
+// output: Wall cells pass through. The side that holds the region with the
+//  fewest cells takes params.small_side, and the other side takes
+//  params.other_side.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl wall(col: Color) wall(2).
@@ -39,7 +40,6 @@ area.item(A, P) :- region.label($U(), P, A).
 .init smallest = ArgExtremes<Unit, Ident>
 smallest.cand($U(), A, N) :- area.tally(A, N).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- in(P, Col), params.wall(Col).
 out(P, Col) :-
     region.label($U(), P, A), smallest.low($U(), B, _),  // P's region, the smallest region

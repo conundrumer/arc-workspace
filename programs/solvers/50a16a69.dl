@@ -1,13 +1,14 @@
 // 50a16a69
 // draft
-// concept: wallpaper move
-// A periodic pattern covers part of the grid, and a filler color covers
-// the rest, in whole grid lines. The output is that pattern moved one step,
-// then continued over the whole grid. The pattern's translation lattice is
-// its shortest unbroken shift on each axis, and every cell takes the color
-// its lattice class holds after the move.
+// keywords: wallpaper move
+// input: a periodic pattern covering part of the grid, with a filler color
+//  over whole grid lines, and its translation lattice — the shortest
+//  unbroken shift on each axis
+// output: The output moves the pattern one step and continues it over the
+//  whole grid: every cell takes the color that its lattice class holds
+//  after the move.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl move_dir(d: Dir) move_dir(DIR_L).
@@ -36,7 +37,6 @@ period_step(P, Q) :-
 orbit(P, P) :- in(P, _).
 orbit(P, Q) :- orbit(P, R), period_step(R, Q).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     orbit(P, Q),                                    // a cell of P's class
     pattern(R, Col), params.move_dir(D), neighbor(R, D, Q).  // what the move puts there

@@ -1,11 +1,11 @@
 // d13f3404
-// concept: grow cast
-// A 3×3 pattern on a larger square canvas: the pattern seats flush at the
-// corner opposite params.sweep, and every seated ink cell casts a diagonal ray
-// toward params.sweep — the pattern sliding one diagonal step per copy, trailing
-// its ink. Cells on no ray are bg.
+// keywords: grow cast
+// output: A 3×3 pattern sits on a larger square canvas. The pattern seats
+//  flush at the corner opposite params.sweep. Every seated ink cell casts a
+//  diagonal ray toward params.sweep, sliding the pattern one diagonal step
+//  per copy and trailing its ink. Cells on no ray are bg.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -31,6 +31,5 @@ rays.dir($U(), D)  :- params.sweep(D).
 rays.cell($U(), P) :- frame.cell($U(), P).
 rays.mark($U(), P) :- seated(P, _).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- rays.ray($U(), P, _, _, Q), seated(Q, Col).
 out(P, Col) :- frame.cell($U(), P), !rays.ray($U(), P, _, _, _), params.bg(Col).

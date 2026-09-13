@@ -1,12 +1,12 @@
 // 696d4842
 // draft
-// concept: objects markers cast walk move
-// Each shape is a path of one color with two ends. A dot lies on the line
-// that one end continues along. The shape crawls toward that dot until it
-// touches it: the near end grows along the line, and for each cell it
-// gains, the far end gives up one cell, which takes the dot's color.
+// keywords: objects markers cast walk move
+// output: Each shape is a path of one color with two ends. A dot lies on the
+//  line that one end continues along. The shape crawls toward that dot until it
+//  touches it: the near end grows along the line, and for each cell it gains,
+//  the far end gives up one cell, which takes the dot's color.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -73,7 +73,6 @@ crawl.take(P_end, P, Q) :-
 .decl vacated(p: Position, col: Color)
 vacated(Q, Col) :- crawl.take(P_end, _, Q), faces(P_end, P_dot), in(P_dot, Col).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, Col_in),
     ( growth(P_end, P), in(P_end, Col)              // the shape grows

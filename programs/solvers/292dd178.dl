@@ -1,18 +1,22 @@
 // 292dd178
 // draft
-// concept: objects border walk cast
-// Rectangular outlines in params.wall each miss one cell of their perimeter.
-// The cells strictly inside an outline's bounding box take params.fill, which
-// also runs out through the missing perimeter cell, away from that box.
-//
-// $Flow — the fill is a substance. It pushes outward from the interior and
-//   params.wall stops it, so it escapes only where the perimeter is broken.
-// $Cast — the broken perimeter cell is a marker. It emits a ray outward along
-//   the side it sits on, across the whole frame.
+// keywords: objects border walk cast
+// input: Rectangular outlines in params.wall each miss one cell of their
+//  perimeter.
+// output: The cells strictly inside an outline's bounding box take
+//  params.fill, which also runs out through the missing perimeter cell, away
+//  from that box.
 
-#include "../lib.dl"
+// how the fill reaches outside the box through the break
+.type Choice =
+    // the fill is a substance. It pushes outward from the interior and
+    // params.wall stops it, so it escapes only where the perimeter is broken.
+    Flow {}
+    // the broken perimeter cell is a marker. It emits a ray outward along the
+    // side it sits on, across the whole frame.
+  | Cast {}
 
-.type Choice = Flow {} | Cast {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl wall(col: Color) wall(1).
@@ -66,6 +70,5 @@ painted(P, $Cast()) :- cast.ray(_, P, _, _, _).
 .decl impl_choice(ch: Choice)
 impl_choice($Flow()). impl_choice($Cast()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- painted(P, Ch), params.fill(Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, Ch).

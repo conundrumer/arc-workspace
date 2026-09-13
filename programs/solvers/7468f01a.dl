@@ -1,9 +1,10 @@
 // 7468f01a
-// concept: crop d4
-// A rectangle on bg, carrying a second color. Output is the rectangle
-// cut out, with params.transform applied.
+// keywords: crop d4
+// input: A rectangle on bg, carrying a second color.
+// output: The output is the rectangle cut out, with params.transform
+//  applied.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -18,7 +19,6 @@ ink(P, Col) :- in(P, Col), !params.bg(Col).
 .init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- ink(P, _).
 
-.decl out(p: Position, col: Color)
 out(P_out, Col) :-
     ink(P, Col), bbox.box($U(), B), crop(P, B, P_inner),    // cell in the box frame
     params.transform(D), apply(D, P_inner, P_out).

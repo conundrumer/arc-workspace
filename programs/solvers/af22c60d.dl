@@ -1,13 +1,12 @@
 // af22c60d
-// concept: symmetry repair
-// A grid whose pattern is mirror-symmetric on each axis, occluded by cells
-// of a mask color; the output restores them. Each axis mirror reflects a
-// band of the grid onto itself and carries the perpendicular coordinate
-// through, so a cell outside one band still has an image under the other.
-// A masked cell takes the color of a visible cell one of the mirrors
-// reaches.
+// keywords: symmetry repair
+// output: A grid whose pattern is mirror-symmetric on each axis, occluded by
+//  cells of a mask color; the output restores them. Each axis mirror reflects a
+//  band of the grid onto itself and carries the perpendicular coordinate
+//  through, so a cell outside one band still has an image under the other. A
+//  masked cell takes the color of a visible cell one of the mirrors reaches.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl mask(col: Color) mask(0).
@@ -33,7 +32,6 @@ mirror(P, Q) :-
     jump(P_flip, D, K, Q),                  // shift onto the band
     in(Q, _).                               // image is a grid cell
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- in(P, Col), !masked(P).
 out(P, Col) :- masked(P), mirror(P, Q), !masked(Q), in(Q, Col).
 

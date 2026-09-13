@@ -1,23 +1,21 @@
 // 1da012fc
-// concept: objects markers rank
-// shape: percept-shadow
-// A solid legend box holds one marker per shape. The markers and the
-// shapes outside the box are two constellations of the same size, and each
-// shape takes the color of the marker at its own place in the reading
-// order. A marker is one cell, but a shape spreads over many, so two
-// models of a shape's place:
-//
-//   $Separated — a shape precedes another when it lies wholly ahead along
-//                the reading axis, or they meet there and it lies wholly
-//                ahead across.
-//   $Anchor    — a shape stands at its bounding box's reading corner.
-//
-// They coincide here; they diverge when two shapes meet along the reading
-// axis and their spans across it meet too.
+// keywords: objects markers rank percept-shadow
+// input: a solid legend box holds one marker per shape. The markers and the
+//  shapes outside the box are two constellations of the same size.
+// output: each shape takes the color of the marker at its own place in the
+//  reading order.
 
-#include "../lib.dl"
+// a shape's place in the reading order — a marker is one cell, but a shape
+// spreads over many, so two models of it. They diverge when two shapes meet
+// along the reading axis and their spans across it meet too.
+.type Choice =
+    // a shape precedes another when it lies wholly ahead along the reading
+    // axis, or they meet there and it lies wholly ahead across
+    Separated {}
+    // a shape stands at its bounding box's reading corner
+  | Anchor {}
 
-.type Choice = Separated {} | Anchor {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -25,8 +23,11 @@
     // The legend box's fill.
     .decl legend(col: Color) legend(5).
 
-    // Reading order: the corner it starts from, and the axis it runs
-    // along before stepping across.
+    // Reading order: the corner it starts from, and the axis it runs along
+    // before stepping across. The pairs fix neither value: no two objects of
+    // a constellation tie along an axis, so both constellations run in the
+    // same order along either axis, and reversing the order pairs them the
+    // same way.
     .decl corner(d: DiagDir) corner(DIAG_TL).
     .decl axis(a: Axis) axis(AXIS_V).
 }
@@ -40,7 +41,7 @@ bbox.cell($U(), P) :- in(P, Col), params.legend(Col).
 .decl box_cell(p: Position)
 box_cell(P) :- in(P, _), bbox.box($U(), B), inside(P, B).
 
-// Objects, individuated alike on both sides of the bbox.
+// Objects, individuated alike on both sides of the legend box.
 .init comps = Components8<Unit>
 comps.node($U(), P) :-
     in(P, Col), !params.bg(Col),
@@ -63,8 +64,21 @@ shape(Id) :- obj(Id), !marker(Id).
 peers(A, B) :- marker(A), marker(B).
 peers(A, B) :- shape(A), shape(B).
 
+.decl impl_choice(ch: Choice)
+impl_choice($Separated()). impl_choice($Anchor()).
+
 .init reading = Order<Choice, Ident>
 reading.elem(Ch, Id) :- obj(Id), impl_choice(Ch).
+
+.decl shape_cell(p: Position)
+shape_cell(P) :- comps.label($U(), P, Id), shape(Id).
+
+out(P, Col, Ch) :-
+    shape_cell(P), comps.label($U(), P, Id),
+    reading.rank(Ch, Id, R),                    // the shape's place
+    reading.rank(Ch, Id2, R), marker(Id2),      // the marker at that place
+    comps.label($U(), P_marker, Id2), in(P_marker, Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !shape_cell(P).
 
 // --- Separated ---
 
@@ -105,17 +119,3 @@ lex.cell($U(), B) :- obox.box(_, B).
 reading.before($Anchor(), Id1, Id2) :-
     peers(Id1, Id2),
     obox.box(Id1, B1), obox.box(Id2, B2), lex.before($U(), B1, B2).
-
-.decl impl_choice(ch: Choice)
-impl_choice($Separated()). impl_choice($Anchor()).
-
-.decl shape_cell(p: Position)
-shape_cell(P) :- comps.label($U(), P, Id), shape(Id).
-
-.decl out(p: Position, col: Color, ch: Choice)
-out(P, Col, Ch) :-
-    shape_cell(P), comps.label($U(), P, Id),
-    reading.rank(Ch, Id, R),                    // the shape's place
-    reading.rank(Ch, Id2, R), marker(Id2),      // the marker at that place
-    comps.label($U(), P_marker, Id2), in(P_marker, Col).
-out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !shape_cell(P).

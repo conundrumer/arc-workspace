@@ -1,24 +1,29 @@
 // cbded52d
-// concept: decompose markers span cast
-// A separator lattice cuts the grid into a tile arrangement over a base
-// color. Two same-color marks (non-base cells) at one intile position,
-// aligned along a tile row or column, act on their line: $Span fills the
-// tiles between them; $Line fills the whole line.
-//
-// Every grid of the task is 8×8, so the lattice reads two ways, and the
-// two readings cross with the two fills:
-//
-//   $Count() — params.arr tiles per axis.
-//   $Size()  — tiles of params.tile_dim, as many as the grid holds.
+// keywords: decompose markers span cast
+// input: a separator lattice cuts the grid into a tile arrangement over a
+//  base color
+// output: Two same-color marks (non-base cells) at one intile position,
+//  aligned along a tile row or column, act on their line.
 
-#include "../lib.dl"
+// the grid is 8×8, so its tile arrangement reads two ways
+.type DecChoice =
+    // params.arr tiles per axis
+    Count {}
+    // tiles of params.tile_dim, as many as the grid holds
+  | Size {}
 
-.type DecChoice = Count {} | Size {}
-.type Fill      = Span {} | Line {}
+// how a marked line fills
+.type Fill =
+    // fills the tiles between the two marks
+    Span {}
+    // fills the whole line
+  | Line {}
+
 .type Choice    = [d: DecChoice, f: Fill]
 
+.decl out(p: Position, col: Color, c: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl gap(g: number) gap(1).
     .decl base(col: Color) base(1).
 
@@ -77,6 +82,5 @@ filled([Dc, F], P_grid, Col) :-
     fill([Dc, F], P_tile, [Dc, Col, P_intile]),
     tile(Dc, P_grid, P_tile, P_intile).
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P, Col, Ch) :- filled(Ch, P, Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !filled(Ch, P, _).

@@ -1,13 +1,17 @@
 // 070dd51e
-// concept: markers span
-// Non-bg marks come in same-colored pairs sharing a row or column; a span
-// of the pair's color connects them. Where spans cross, the span along the
-// over axis wins. Cases split what a span may paint: $PaintAll paints every
-// cell it covers; $PaintBg paints only bg cells, so marks persist.
+// keywords: markers span
+// output: Non-bg marks come in same-colored pairs sharing a row or column; a
+//  span of the pair's color connects them. Where spans cross, the span along
+//  the over axis wins.
 
-#include "../lib.dl"
+// Cases split what a span may paint
+.type Choice =
+    // it paints every cell it covers
+    PaintAll {}
+    // it paints only bg cells, so marks persist
+  | PaintBg {}
 
-.type Choice = PaintAll {} | PaintBg {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -42,8 +46,6 @@ over_span(P) :- span(P, _, A), params.over_axis(A).
 .decl top_span(p: Position, col: Color)
 top_span(P, Col) :- span(P, Col, A), params.over_axis(A).
 top_span(P, Col) :- span(P, Col, _), !over_span(P).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // --- PaintAll ---
 out(P, Col, $PaintAll()) :- top_span(P, Col).

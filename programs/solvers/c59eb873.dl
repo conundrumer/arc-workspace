@@ -1,8 +1,7 @@
 // c59eb873
-// family: 60c09cac
-// Layout: 2× scale.
+// representative: 60c09cac
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .init helpers = ParamsHelpers
@@ -14,7 +13,6 @@
 
 .init params = Params
 
-.decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
     in(P_tile, Col),                                  // input cell as tile pos
     params.intile(P_intile),                          // intile pos (2×2 frame)

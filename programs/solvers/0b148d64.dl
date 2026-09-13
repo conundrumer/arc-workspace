@@ -1,15 +1,17 @@
 // 0b148d64
-// concept: decompose crop select
-// An ink-free band of rows and one of columns cut the grid into four panels.
-// Each panel is drawn in a single ink color; three panels share one color and
-// the fourth has its own. The output is that fourth panel.
-//
-// $Panel — the whole rectangle the cut gives that panel.
-// $Ink   — the bounding box of that panel's ink.
+// keywords: decompose crop select
+// output: An ink-free band of rows and one of columns cut the grid into four
+//  panels. Each panel is drawn in a single ink color; three panels share one
+//  color and the fourth has its own. The output is that fourth panel.
 
-#include "../lib.dl"
+// what the crop's box is
+.type Choice =
+    // the whole rectangle the cut gives that panel
+    Panel {}
+    // the bounding box of that panel's ink
+  | Ink {}
 
-.type Choice = Panel {} | Ink {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -59,7 +61,6 @@ odd_panel(Q) :- color_panel.value(_, Q).
 // The cells each case reads its box over.
 .decl viewed(ch: Choice, p: Position)
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_inner, Col, Ch) :- viewed(Ch, P), view.box(Ch, B), crop(P, B, P_inner), in(P, Col).
 
 // --- Panel ---

@@ -1,21 +1,21 @@
 // 17b80ad2
-// concept: lines markers cast
-// Lines flagged by a params.mark cell on the mark edge fill: each ink cell
-// casts its color through bg away from the edge, stopped by the next
-// ink; unflagged lines pass through. Two models of the mark edge:
-//
-//   $Dir  — params.dir names it.
-//   $Edge — the edge each mark sits on.
-//
-// The models coincide here (every mark is on the bottom edge); they
-// diverge when marks sit on another edge.
+// keywords: lines markers cast
+// output: Lines flagged by a params.mark cell on the mark edge fill: each ink
+//  cell casts its color through bg away from the edge, stopped by the next
+//  ink; unflagged lines pass through.
 
-#include "../lib.dl"
-
-.type Choice = Dir {} | Edge {}
+// data-equivalent here, since every mark sits on the bottom edge; diverges
+// when marks sit on another edge
+.type Choice =
+    // params.dir names it
+    Dir {}
+    // the edge each mark sits on
+  | Edge {}
 
 // A flagged line's mark edge, under one model.
 .type FlowKey = [d: Dir, ch: Choice]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -58,6 +58,5 @@ painted(P, Col, Ch) :- flow.clear([_, Ch], P, _, _, P_ink), in(P_ink, Col).
 .decl impl_choice(ch: Choice)
 impl_choice($Dir()). impl_choice($Edge()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- painted(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, _, Ch).

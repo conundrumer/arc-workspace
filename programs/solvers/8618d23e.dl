@@ -1,23 +1,32 @@
 // 8618d23e
-// concept: decompose grow lookup move
-// The input's two halves along the stack axis pull apart diagonally:
-// each half reseats in a grown frame, and the vacated band fills with
-// params.filler. Choice cases, all data-equivalent here:
-//   $Derive(g, s) — relative derived from a corner seat and growth:
-//     g $Iso()     — one width: separator and lateral shift are the same
-//                    parameter (params.sep)
-//     g $Aniso()   — per-axis widths (params.sep_dim rows)
-//     s $Derived() — each half seats at the params.diag corner on its own
-//                    side of the stack
-//     s $Table()   — explicit side → corner map (params.seat_of)
-//   $Disp() — table: params.arr slabs along the stack axis, per-slab
-//             relative vector (params.disp)
+// keywords: decompose grow lookup move
+// output: The input's two halves along the stack axis pull apart diagonally:
+//  each half reseats in a grown frame, and the vacated band fills with
+//  params.filler.
 
-#include "../lib.dl"
+// how wide the growth is
+.type Growth =
+    // one width: separator and lateral shift share params.sep
+    Iso {}
+    // per-axis widths, params.sep_dim
+  | Aniso {}
 
-.type Growth = Iso {} | Aniso {}
-.type Seats  = Derived {} | Table {}
-.type Choice = Derive { g: Growth, s: Seats } | Disp {}
+// which corner each half seats at
+.type Seats =
+    // each half seats at the params.diag corner on its own side of the stack
+    Derived {}
+    // an explicit side-to-corner map, params.seat_of
+  | Table {}
+
+// how the reseat offset is computed — data-equivalent on this task
+.type Choice =
+    // relative derived from a corner seat and a growth
+    Derive { g: Growth, s: Seats }
+    // a stored table of relative vectors, one per params.arr slab along the
+    // stack axis
+  | Disp {}
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl axis(a: Axis) axis(AXIS_V).      // stack axis
@@ -101,7 +110,6 @@ seated(P_out, Col, $Disp()) :-
 .init frame = Frame2D<Choice>
 frame.extent(Ch, A, N) :- seated(P, _, Ch), axis_elem(A), axis_dim(P, A, N).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- seated(P, Col, Ch).
 out(P, Col, Ch) :- frame.cell(Ch, P), !seated(P, _, Ch), params.filler(Col).
 

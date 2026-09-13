@@ -1,17 +1,19 @@
 // 32597951
-// concept: markers mapping
-// Inside the bounding box of the marker cells, qualifying cells take params.to;
-// everything else passes through. Two hypotheses of which cells qualify:
-//
-//   $From — cells of the stored color params.from.
-//   $Ink  — every non-marker cell.
+// keywords: markers mapping
+// input: Marker cells sit in the grid, marking out a bounding box.
+// output: Inside that box, qualifying cells take params.to; everything else
+//  passes through.
 
-#include "../lib.dl"
+// which cells qualify
+.type Choice =
+    // cells of the stored color params.from
+    From {}
+    // every non-marker cell
+  | Ink {}
 
-.type Choice = From {} | Ink {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl marker(c: Color) marker(8).
     .decl to(c: Color) to(3).
 
@@ -37,6 +39,5 @@ recolor(P, $From()) :-
 recolor(P, $Ink()) :-
     in(P, Col), !params.marker(Col), bbox.box($U(), B), inside(P, B).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- recolor(P, Ch), params.to(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !recolor(P, Ch).

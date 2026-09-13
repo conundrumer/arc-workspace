@@ -1,12 +1,12 @@
 // 1c56ad9f
 // draft
-// concept: lines move
-// One figure sits on the background, and a wave displaces its lines. A
-// line's phase is its distance from the figure's params.anchor edge folded into
-// a params.period cycle; params.wave gives the phase's step as a quarter turn off the
-// anchor, and a phase with no fact holds still.
+// keywords: lines move
+// output: One figure sits on the background, and a wave displaces its lines. A
+//  line's phase is its distance from the figure's params.anchor edge folded
+//  into a params.period cycle; params.wave gives the phase's step as a quarter
+//  turn off the anchor, and a phase with no fact holds still.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -49,7 +49,6 @@ moved(Q, Col) :-
     ; !step_dir(K, _), Q = P              // this phase holds still
     ).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, _),
     ( moved(P, Col)                  // a stepped cell landed here

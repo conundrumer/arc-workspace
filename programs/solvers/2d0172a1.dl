@@ -1,23 +1,20 @@
 // 2d0172a1
-// concept: objects enclose rank
-// shape: percept-shadow
-// Wandering curves of one ink nest inside one another. The output redraws
-// them as rectangles: each boundary line of the input becomes one output
-// line, and neighbouring lines sit one blank line apart.
-//
-// A container curve draws an outline, and marks the two lines it draws on
-// each axis. Any other curve collapses to a single cell, and its one mark
-// per axis spans its whole footprint. Marks that overlap along an axis take
-// the same output line, which is what carries relative position across the
-// redraw.
-//
-// The cases differ on what makes a curve a container:
-//   $Hollow — it closes some cell off from the grid edge.
-//   $Nest   — it closes another curve off from the grid edge.
+// keywords: objects enclose rank percept-shadow
+// input: wandering curves of one ink nest inside one another
+// output: The output redraws them as rectangles: each boundary line of
+//  the input becomes one output line, and neighbouring lines sit one blank
+//  line apart. A container curve draws an outline, and marks the two lines
+//  it draws on each axis. Any other curve collapses to a single cell, and
+//  its one mark per axis spans its whole footprint. Marks that overlap
+//  along an axis take the same output line, which is what carries relative
+//  position across the redraw.
 
-#include "../lib.dl"
-
-.type Choice = Hollow {} | Nest {}
+// what makes a curve a container
+.type Choice =
+    // it closes some cell off from the grid edge
+    Hollow {}
+    // it closes another curve off from the grid edge
+  | Nest {}
 
 // The mark curve x contributes on the d side of its bbox.
 .type Mark = [ch: Choice, x: Ident, d: Dir]
@@ -25,6 +22,8 @@
 .type CaseAxis = [ch: Choice, a: Axis]
 
 .type CaseFig = [ch: Choice, x: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // The blank line between neighbouring figures, which also holds a
@@ -164,6 +163,5 @@ fig_box(Ch, X, B) :-
 .decl ink(ch: Choice, p: Position)
 ink(Ch, P) :- fig_box(Ch, _, B), frame.cell(Ch, P), box_edge(P, B, _).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- ink(Ch, P), fg(Col).
 out(P, Col, Ch) :- frame.cell(Ch, P), !ink(Ch, P), bg(Col).

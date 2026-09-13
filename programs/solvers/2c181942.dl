@@ -1,14 +1,14 @@
 // 2c181942
-// concept: objects markers d4
-// A hub of bars, one per side of its box, sits among loose pieces on
-// params.bg. The hub is the one object where colors meet; every piece is a
-// single color. A bar's color names the piece that belongs to it, and that
-// piece carries a notch: a side of its box whose cells straddle the middle.
-// The output keeps the hub and docks each named piece, turned so its notch
-// faces the hub and shifted so the notch fills the seat just beyond its
-// bar. Pieces no bar names are dropped.
+// keywords: objects markers d4
+// input: A hub of bars, one per side of its box, sits among loose pieces on
+//  params.bg. The hub is the one object where colors meet; every piece is a
+//  single color. A bar's color names the piece that belongs to it, and that
+//  piece carries a notch: a side of its box whose cells straddle the middle.
+// output: The output keeps the hub and docks each named piece, turned so its
+//  notch faces the hub and shifted so the notch fills the seat just beyond
+//  its bar. Pieces no bar names are dropped.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(8).
@@ -104,7 +104,6 @@ placed(Id, P_grid) :-
 paint(P, Col) :- hub(P), in(P, Col).
 paint(P, Col) :- placed(Id, P), piece(Id, _, Col).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, _),
     ( paint(P, Col)

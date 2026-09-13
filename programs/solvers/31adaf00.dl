@@ -1,10 +1,11 @@
 // 31adaf00
-// concept: stamp
-// Two colors speckle the grid. Where the background holds a solid square of side
-// two or more, that square is repainted in the mark color; a square that meets a
-// strictly larger one is displaced. Every other cell keeps its input color.
+// keywords: stamp
+// output: Two colors speckle the grid. Where the background holds a solid
+//  square of side two or more, that square is repainted in the mark color; a
+//  square that meets a strictly larger one is displaced. Every other cell keeps
+//  its input color.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -53,6 +54,5 @@ painted(P) :-
     bg_square(B, _), !displaced(B),  // a drawn square
     in(P, _), inside(P, B).          // its cells
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- painted(P), params.mark(Col).
 out(P, Col) :- in(P, Col), !painted(P).

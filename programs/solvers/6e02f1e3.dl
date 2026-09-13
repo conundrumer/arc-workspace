@@ -1,19 +1,21 @@
 // 6e02f1e3
-// concept: lookup count classify
-// Classify the input by its distinct color count and emit the class's
-// symbol: one color — the top edge row; two — the TL diagonal; three —
-// the TR diagonal.
-//
-// The render is the table/rule choice:
-//   $Lookup — select the stored count->grid from a table (table).
-//   $Figure — draw the count's figure spec (edge row or corner diagonal)
-//             in params.mark on params.bg (rule). The canvas is a second table/rule
-//             node: the input frame ($Input) or a stored dim ($Fixed).
-
-#include "../lib.dl"
+// keywords: lookup count classify
+// output: Classify the input by its distinct color count and emit the
+//  class's symbol: one color — the top edge row; two — the TL diagonal;
+//  three — the TR diagonal.
 
 .type Canvas = Input {} | Fixed {}
-.type Choice = Lookup {} | Figure {canvas: Canvas}
+
+// the render: table or rule
+.type Choice =
+    // select the stored count->grid from a table
+    Lookup {}
+    // draw the count's figure spec (edge row or corner diagonal) in
+    // params.mark on params.bg; the canvas is a second table/rule choice:
+    // the input frame ($Input) or a stored dim ($Fixed)
+  | Figure {canvas: Canvas}
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
@@ -62,8 +64,6 @@
 
 .init parse = Parse<Unit>
 parse.cell($U(), P, Col) :- in(P, Col).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // --- Lookup ---
 out(P, Col, $Lookup()) :- parse.ncolors($U(), N), params.lookup_grid(N, P, Col).

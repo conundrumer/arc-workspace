@@ -1,12 +1,12 @@
 // 846bdb03
 // draft
-// concept: crop markers d4
-// Four corner marks and two bars between them frame an empty box; a two-color
-// shape floats elsewhere. The output is the box, with the shape filling its
-// interior, oriented so that each color of the shape touches the bar of that
-// color.
+// keywords: crop markers d4
+// input: Four corner marks and two bars between them frame an empty box; a
+//  two-color shape floats elsewhere.
+// output: The output is the box, with the shape filling its interior,
+//  oriented so that each color of the shape touches the bar of that color.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -62,7 +62,6 @@ defect(T) :- transform(T), bar(D, Col), !touches(T, D, Col).
 
 // --- output ---
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- cropped(P, Col), !core.cell($U(), P).
 out(P, Col) :-
     core.cell($U(), P), core.box($U(), B), crop(P, B, P_inner),

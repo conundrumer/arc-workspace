@@ -11,6 +11,8 @@
 //  scene, and the output is that scene, cropped to the cells the fragments
 //  cover.
 
+.decl out(p: Position, col: Color)
+
 .comp Params {}
 
 .init params = Params
@@ -97,7 +99,6 @@ sheet.extent(Base, A, N) :-
 .decl paint(base: Ident, p_inner: Position, col: Color)
 paint(Base, P_inner, Col) :- scene(Base, P, Col), view.box(Base, B), crop(P, B, P_inner).
 
-.decl out(p: Position, col: Color)
 out(P_inner, Col) :-
     sheet.cell(Base, P_inner),
     ( paint(Base, P_inner, Col)                  // painted by a fragment

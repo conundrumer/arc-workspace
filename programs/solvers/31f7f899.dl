@@ -1,19 +1,20 @@
 // 31f7f899
-// concept: objects lines rank move
-// A spine of one color runs across the grid; bars of other colors cross it,
-// each covering a run of lines. Every bar keeps its color and its footprint on
-// the spine, and the bars exchange their reaches, so the reaches grow from one
-// end of the spine to the other.
-//
-// Two hypotheses on the exchange:
-//   $Spans   — the reaches are one pool, handed out in size order along the
-//              spine.
-//   $Profile — every line keeps the number of bars covering it, and its covers
-//              go to the bars nearest the far end of the spine.
+// keywords: objects lines rank move
+// input: A spine of one color runs across the grid; bars of other colors cross
+//  it, each covering a run of lines.
+// output: Every bar keeps its color and its footprint on the spine, and the
+//  bars exchange their reaches, so the reaches grow from one end of the spine
+//  to the other.
 
-#include "../lib.dl"
+// Two hypotheses on the exchange
+.type Choice =
+    // the reaches are one pool, handed out in size order along the spine
+    Spans {}
+    // every line keeps the number of bars covering it, and its covers go to the
+    // bars nearest the far end of the spine
+  | Profile {}
 
-.type Choice = Spans {} | Profile {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(8).
@@ -95,7 +96,6 @@ paint(P, Col, $Profile()) :-
 .decl impl_choice(ch: Choice)
 impl_choice($Spans()). impl_choice($Profile()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :-
     in(P, Col_in), impl_choice(Ch), !paint(P, _, Ch),  // a cell no bar covers

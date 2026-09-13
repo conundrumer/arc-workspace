@@ -1,10 +1,10 @@
 // 3de23699
-// concept: markers crop span
-// Marks of one color sit at the corners of a rectangle, and a pattern in
-// another color lies strictly inside it. The output is the rectangle's open
-// interior, with the pattern redrawn in the mark color.
+// keywords: markers crop span
+// output: Marks of one color sit at the corners of a rectangle, and a pattern
+//  in another color lies strictly inside it. The output is the rectangle's open
+//  interior, with the pattern redrawn in the mark color.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -34,7 +34,6 @@ mark(Col) :- ink(_, Col), ink(_, Col2), Col != Col2, !escapes(Col, Col2).
 .init hole_bbox = Bbox<Unit>
 hole_bbox.cell($U(), P) :- mark(Col), hole(Col, P).
 
-.decl out(p: Position, col: Color)
 out(P_inner, Col_out) :-
     mark(Col), hole(Col, P),                       // an interior cell
     hole_bbox.box($U(), B), crop(P, B, P_inner),   // seen from the rectangle itself

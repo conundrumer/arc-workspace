@@ -1,13 +1,13 @@
 // 58e15b12
 // draft
-// concept: objects walk
-// Each non-bg color draws a pair of one-cell-wide bars along params.bar_axis,
-// of equal extent and aligned with each other. The pair repeats along that
-// axis, both ways: each repeat sits one bar length further on and one cell
-// wider on each side. Where two colors' repeats meet, the cell takes
-// params.overlap.
+// keywords: objects walk
+// output: Each non-bg color draws a pair of one-cell-wide bars along
+//  params.bar_axis, of equal extent and aligned with each other. The pair
+//  repeats along that axis, both ways: each repeat sits one bar length
+//  further on and one cell wider on each side. Where two colors' repeats
+//  meet, the cell takes params.overlap.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -41,7 +41,6 @@ trace(Col, Q, D_step, D_out) :-
 .init drawn = Unanimous<Position, Color>
 drawn.item(P, Col) :- trace(Col, P, _, _).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, _),
     ( drawn.value(P, Col)                      // one color reaches the cell

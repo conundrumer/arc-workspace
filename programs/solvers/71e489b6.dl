@@ -1,13 +1,14 @@
 // 71e489b6
 // draft
-// concept: objects stamp denoise
-// Solid figure and ground regions with stray cells. A figure cell that the
-// figure does not continue through is noise, and joins the ground. An input
-// ground cell in no 2x2 block of ground is a hole, unless its thin cluster is
-// a passage that joins the solid ground at two places. A hole keeps its color,
-// and its eight neighbors take params.halo.
+// keywords: objects stamp denoise
+// input: solid figure and ground regions, with stray cells on each
+// output: A figure cell that the figure does not continue through is noise,
+//  and joins the ground. An input ground cell in no 2x2 block of ground is a
+//  hole, unless its thin cluster is a passage that joins the solid ground at
+//  two places. A hole keeps its color, and its eight neighbors take
+//  params.halo.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl ground(c: Color) ground(0).
@@ -63,7 +64,6 @@ hole(P) :- in(P, C), params.ground(C), cluster.label($U(), P, Id), !passage(Id).
 .decl halo(p: Position)
 halo(P) :- hole(Q), dir8_elem(D), neighbor(Q, D, P), in(P, _), !hole(P).
 
-.decl out(p: Position, col: Color)
 out(P, C) :-
     in(P, C_in),
     ( halo(P), params.halo(C)

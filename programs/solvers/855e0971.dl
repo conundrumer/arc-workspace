@@ -1,14 +1,14 @@
 // 855e0971
 // draft
-// concept: lines markers cast
-// The grid is a stack of bands: stripes of one color each, stacked along
-// one axis, which varies per input. Each band holds marker cells. A marker
-// casts its color both ways along the stacking axis and stops at its band's
-// edge.
-
-#include "../lib.dl"
+// keywords: lines markers cast
+// input: The grid is a stack of bands: stripes of one color each, stacked
+//  along one axis, which varies per input. Each band holds marker cells.
+// output: A marker casts its color both ways along the stacking axis and
+//  stops at its band's edge.
 
 .type Line = [a: Axis, p_line: Position]
+
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl marker(c: Color) marker(0).
@@ -45,7 +45,6 @@ cast.cell(Col, P) :- band_of(_, Col), in(P, _).
 cast.mark(Col, P) :- band_of(P, Col), in(P, M), params.marker(M).
 cast.blocked(Col, P) :- band_of(_, Col), in(P, _), !band_of(P, Col).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, C_in),
     ( cast.clear(_, P, _, _, _), params.marker(Col)   // on a marker's cast

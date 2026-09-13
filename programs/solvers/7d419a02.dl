@@ -1,33 +1,38 @@
 // 7d419a02
 // draft
-// concept: decompose markers walk
-// Bg lines cut the grid into equal bands stacked along one axis. A
-// params.mark block sits in one band. The other bands lose their ink to
-// params.fill, except inside a cone that opens from the block: in the
-// bands beside the block's band the cone covers the block's own lines,
-// and each band further out widens it by one step on each side. The
-// block's own band is untouched. Choice = [s, i]:
-//
-//   s (the step, one band out):
-//     $Fixed()  — params.step.
-//     $Marker() — the block's extent across the bands.
-//     $Band()   — the band width.
-//   i (the ink):
-//     $Stored()  — params.ink.
-//     $Derived() — every color that is neither bg nor the mark.
-//
-// Coincide here: the step, the block's extent, and the band width are
-// all 2, and the only other color is the ink.
+// keywords: decompose markers walk
+// input: Bg lines cut the grid into equal bands stacked along one axis. A
+//  params.mark block sits in one band.
+// output: The other bands lose their ink to params.fill, except inside a cone
+//  that opens from the block: in the bands beside the block's band the cone
+//  covers the block's own lines, and each band further out widens it by one
+//  step on each side. The block's own band is untouched.
+//  Coincide here: the step, the block's extent, and the band width are all 2,
+//  and the only other color is the ink.
 
-#include "../lib.dl"
+// the step, one band out
+.type Step =
+    // params.step
+    Fixed {}
+    // the block's extent across the bands
+  | Marker {}
+    // the band width
+  | Band {}
 
-.type Step = Fixed {} | Marker {} | Band {}
-.type Ink = Stored {} | Derived {}
+// the ink
+.type Ink =
+    // params.ink
+    Stored {}
+    // every color that is neither bg nor the mark
+  | Derived {}
+
+// the cone's step size, crossed with which colors count as ink
 .type Choice = [s: Step, i: Ink]
 .type Line = [a: Axis, l: Position]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl mark(c: Color) mark(6).
 
@@ -137,6 +142,5 @@ faded(P, [S, I]) :-
     band_of(P, T), !mark_band(T),                         // off the block's band
     line(P, X), step_choice(S), !shade(S, _, T, X).       // outside the cone
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- faded(P, Ch), params.fill(Col).
 out(P, Col, [S, I]) :- step_choice(S), ink_choice(I), in(P, Col), !faded(P, [S, I]).

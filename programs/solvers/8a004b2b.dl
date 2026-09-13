@@ -1,14 +1,14 @@
 // 8a004b2b
 // draft
-// concept: crop markers objects scale stamp
-// Marker cells bound a frame. Outside it, a small blueprint is drawn. Inside
-// it stand square blocks, each one blueprint cell drawn at scale. The
-// output is the frame with the whole blueprint drawn at that scale: each
-// blueprint cell becomes a tile with a block's side, and the drawing sits
-// where every block lands on a tile of its color. Frame cells the drawing
-// leaves alone keep their color.
+// keywords: crop markers objects scale stamp
+// input: Marker cells bound a frame. Outside it, a small blueprint is drawn.
+//  Inside it stand square blocks, each one blueprint cell drawn at scale.
+// output: The output is the frame with the whole blueprint drawn at that
+//  scale: each blueprint cell becomes a tile with a block's side, and the
+//  drawing sits where every block lands on a tile of its color. Frame cells
+//  the drawing leaves alone keep their color.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -77,6 +77,5 @@ painted(P_inner, Col) :-
     seat.occurrence($U(), P_seat), frame_cell(P_inner, _),
     compose(P_seat, P_inner, P_draw), drawing(P_draw, Col).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- painted(P, Col).
 out(P, Col) :- frame_cell(P, Col), !painted(P, _).

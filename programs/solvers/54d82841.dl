@@ -1,21 +1,22 @@
 // 54d82841
 // draft
-// concept: markers objects cast
-// A cup is a wall of ink around one bg cell, open on a single side.
-// Every cup puts a mark on the grid edge. The cases differ on the line
-// the mark sits in and the edge that line runs to:
-//
-//   $Opening() — the open cell's line along its free side.
-//   $Fall()    — the open cell's line along params.fall.
-//   $Center()  — the cup's center line across params.fall, so the cup's
-//                own shape fixes the line and not the cell it holds.
+// keywords: markers objects cast
+// input: A cup is a wall of ink around one bg cell, open on a single side.
+// output: Every cup puts a mark on the grid edge.
 
-#include "../lib.dl"
+// the cases differ on the line the mark sits in and the edge that line runs to
+.type Choice =
+    // the open cell's line along its free side
+    Opening {}
+    // the open cell's line along params.fall
+  | Fall {}
+    // the cup's center line across params.fall, so the cup's own shape fixes
+    // the line and not the cell it holds
+  | Center {}
 
-.type Choice = Opening {} | Fall {} | Center {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl mark(c: Color) mark(4).
 
@@ -72,7 +73,6 @@ mark_cell(Ch, Q) :-
 .decl impl_choice(ch: Choice)
 impl_choice($Opening()). impl_choice($Fall()). impl_choice($Center()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     impl_choice(Ch), in(P, Col_in),
     ( mark_cell(Ch, P), params.mark(Col)     // the mark

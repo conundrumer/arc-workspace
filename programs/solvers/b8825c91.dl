@@ -1,14 +1,16 @@
 // b8825c91
-// concept: symmetry repair
-// A grid symmetric about its center, corrupted by a noise color; each
-// noise cell is restored from a symmetric counterpart.
-//
-//   $Full   — every element applies: the grid is fully symmetric.
-//   $Detect — the group is detected: elements unbroken on clean cells.
+// keywords: symmetry repair
+// output: A grid symmetric about its center, corrupted by a noise color; each
+//  noise cell is restored from a symmetric counterpart.
 
-#include "../lib.dl"
+// which D4 elements the repair draws on
+.type Choice =
+    // every element applies: the grid is fully symmetric
+    Full {}
+    // the group is detected: elements unbroken on clean cells
+  | Detect {}
 
-.type Choice = Full {} | Detect {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .decl noise(col: Color) noise(4).
@@ -18,8 +20,6 @@
 
 .decl clean(p: Position, col: Color)
 clean(P, Col) :- in(P, Col), !params.noise(Col).
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- $Full ---
 

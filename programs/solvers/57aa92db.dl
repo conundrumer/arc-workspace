@@ -1,15 +1,16 @@
 // 57aa92db
 // draft
-// concept: objects markers scale stamp
-// Every object carries a mark in the one color they all share, and its own
-// color elsewhere. Each object is a copy of one shape drawn in tiles the size
-// of its mark: the template is the copy showing the most tiles, the rest
-// showing their mark and one tile beside it. The output draws every copy in
-// full on the background: the shape at the object's tile size, seated so the
-// shape's mark tile covers the object's mark, in the object's own color apart
-// from that mark tile, which keeps the shared color.
+// keywords: objects markers scale stamp
+// input: Objects carry a mark in the one color they all share, and their own
+//  color elsewhere. Each object is a copy of one shape drawn in tiles the
+//  size of its mark: the template is the copy showing the most tiles, the
+//  rest showing their mark and one tile beside it.
+// output: The output draws every copy in full on the background: the shape
+//  at the object's tile size, seated so the shape's mark tile covers the
+//  object's mark, in the object's own color apart from that mark tile, which
+//  keeps the shared color.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -85,7 +86,6 @@ stamp(O, P_grid, C_shape) :-
     block_inner(O, _, P_intile), concat_2d(P_tile, P_intile, 0, P_stamp),
     compose(P_stamp, V, P_grid), in(P_grid, _).
 
-.decl out(p: Position, col: Color)
 out(P_grid, Col) :-
     stamp(O, P_grid, C_shape),
     ( mark_col(C_shape), Col = C_shape       // the mark keeps the shared color

@@ -1,16 +1,19 @@
 // 833966f4
-// concept: permutation lookup d4
-// 5×1 cell permutation: two pairs of adjacent rows swap around a fixed
-// center row. Cases:
-//
-//   $LabeledGrids() — the permutation as data: paired labeled grids
-//   $Count()        — the permutation composed: parts by tile count around the
-//                     center gap row, each part flipped
-//   $Size()         — the same composition, over parts by tile size
+// keywords: permutation lookup d4
+// output: 5×1 cell permutation: two pairs of adjacent rows swap around a
+//  fixed center row.
 
-#include "../lib.dl"
+// how the permutation is derived
+.type Choice =
+    // the permutation as data: paired labeled grids
+    LabeledGrids {}
+    // the permutation composed: parts by tile count around the center gap row,
+    // each part flipped
+  | Count {}
+    // the same composition, over parts by tile size
+  | Size {}
 
-.type Choice = LabeledGrids {} | Count {} | Size {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     // --- LabeledGrids ---
@@ -77,7 +80,6 @@ perm(P_grid_in, P_grid_out, C) :-
 perm(P_grid_in, P_grid_in, C) :-
     by_divide(C), in(P_grid_in, _), !part(P_grid_in, _, _, C).   // gap row passthrough
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P_grid_out, Col, Impl) :-
     impl_choice(Impl), in(P_grid_in, Col),   // choice × input cell
     perm(P_grid_in, P_grid_out, Impl).       // the cell's image

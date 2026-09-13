@@ -1,20 +1,22 @@
 // 890034e9
 // draft
-// concept: markers border stamp
-// Colored noise fills the grid. One color draws nothing but a rectangle
-// outline, and the outline's hole has a twin elsewhere in the noise. The
-// output draws the same outline around the twin.
-//
-// $Content — the twin is another occurrence of the hole's cells with their
-//   colors.
-// $Empty — the twin is another empty rectangle of the hole's extents.
+// keywords: markers border stamp
+// input: Colored noise fills the grid. One color draws nothing but a
+//  rectangle outline, and the outline's hole has a twin elsewhere in the
+//  noise.
+// output: The output draws the same outline around the twin.
 
-#include "../lib.dl"
-
-.type Choice = Content {} | Empty {}
+// what the hole's twin is
+.type Choice =
+    // the twin is another occurrence of the hole's cells with their colors
+    Content {}
+    // the twin is another empty rectangle of the hole's extents
+  | Empty {}
 
 // A frame's twin search, per case.
 .type FrameKey = [ch: Choice, b: Box]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // --- Empty ---
@@ -63,6 +65,5 @@ twin(Ch, B, P) :- occ.occurrence([Ch, B], M), hole(B, S), compose(M, S, P).
 outline(Ch, B, Q) :-
     twin(Ch, B, P), dir8_elem(D), neighbor(P, D, Q), in(Q, _), !twin(Ch, B, Q).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(Q, Col, Ch) :- outline(Ch, B, Q), frame(Col, B).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !outline(Ch, _, P).

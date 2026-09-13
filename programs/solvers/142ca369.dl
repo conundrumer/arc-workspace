@@ -1,21 +1,23 @@
 // 142ca369
-// concept: markers walk lookup
+// keywords: markers walk lookup
+// input: Markers launch diagonal rays that paint the empty cells they cross.
+// output: Every other colored cell is a wall: where one lies beside the
+//  ray's cell on an axis the ray advances along, that component of the
+//  direction inverts and the ray carries the wall's color from that cell
+//  on. A ray ends at the grid edge or on an occupied cell.
 
-// Markers launch diagonal rays that paint the empty cells they cross. Every
-// other colored cell is a wall: where one lies beside the ray's cell on an
-// axis the ray advances along, that component of the direction inverts and
-// the ray carries the wall's color from that cell on. A ray ends at the grid
-// edge or on an occupied cell. The cases differ on what a marker is: $Gap
-// reads an L-triomino locally, aiming away from the empty corner its arms
-// straddle; $Glyph matches a stored shape and reads its launch cell and aim
-// from the parameters, closed over D4.
+// what a marker is
+.type Choice =
+    // an L-triomino read locally, aiming away from the empty corner its
+    // arms straddle
+    Gap {}
+    // a stored shape whose launch cell and aim come from the parameters,
+    // closed over D4
+  | Glyph {}
 
-#include "../lib.dl"
-
-.type Choice = Gap {} | Glyph {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color)
     bg(0).
 
@@ -130,7 +132,6 @@ enter(P_next, D, Col, Ch) :-
 .decl paint(p: Position, col: Color, ch: Choice)
 paint(P, Col, Ch) :- ray(P, _, Col, Ch), in(P, Bg), params.bg(Bg).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).
 

@@ -1,22 +1,23 @@
 // e3497940
-// concept: decompose d4
-// Layout: two 10×4 subgrids side by side, separated by a column.
-// The far subgrid folds across the separator onto the base subgrid; ink
-// keeps its color.
-//
-// out's choice column (decompose):
-//   $Table() — tabulated in the parameters
-//   $Count() — by tile count
-//   $Size()  — by tile size
+// keywords: decompose d4
+// output: Layout: two 10×4 subgrids side by side, separated by a column. The
+//  far subgrid folds across the separator onto the base subgrid; ink keeps its
+//  color.
 
-#include "../lib.dl"
+// out's choice column (decompose)
+.type Choice =
+    // tabulated in the parameters
+    Table {}
+    // by tile count
+  | Count {}
+    // by tile size
+  | Size {}
 
-.type Choice = Table {} | Count {} | Size {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
 
-    // --- shared ---
     .decl frame_dim(a: Axis, n: number)
     frame_dim(AXIS_V, 10). frame_dim(AXIS_H, 4).
     .decl frame(p: Position)
@@ -80,7 +81,6 @@ ink(P, Col, Ch) :-
 
 // --- Output ---
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P, Col, Ch) :- ink(P, Col, Ch).
 out(P, Col, Ch) :-
     impl_choice(Ch), params.frame(P), params.bg(Col), !ink(P, _, Ch).

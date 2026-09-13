@@ -1,9 +1,9 @@
 // 0d3d703e
-// concept: mapping
-// Color swap via a symmetric mapping relation. The mapping is declared
-// one-direction per pair and closed under symmetry by a rule.
+// keywords: mapping
+// output: Color swap via a symmetric mapping relation. The mapping is declared
+//  one-direction per pair and closed under symmetry by a rule.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl mapping(c_from: Color, c_to: Color)
@@ -16,6 +16,5 @@
 
 .init params = Params
 
-.decl out(p: Position, col: Color)
 out(P, Col_out) :- in(P, Col_in), params.mapping(Col_in, Col_out).
 out(P, Col)     :- in(P, Col), !params.mapping(Col, _).

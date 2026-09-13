@@ -1,20 +1,23 @@
 // 484b58aa
-// concept: wallpaper repair lines
-// A periodic pattern covers the grid, damaged by holes of one color. Each
-// damaged cell takes the color of an intact cell in its orbit under the
-// pattern's periods. The period varies per pair, so no case stores one.
-//
-//   $Lattice — the grid is one wallpaper: its period on each axis is the
-//              shortest witnessed unbroken shift of the intact cells.
-//   $Lines   — the grid is a stack of independent lines along a stored
-//              axis, each line with its own such shift.
+// keywords: wallpaper repair lines
+// input: A periodic pattern covers the grid, damaged by holes of one
+//  color.
+// output: Each damaged cell takes the color of an intact cell in its
+//  orbit under the pattern's periods. The period varies per pair, so no
+//  case stores one.
 
-#include "../lib.dl"
+// the scope the period is measured over
+.type Choice =
+    // the grid is one wallpaper: its period on each axis is the shortest
+    // witnessed unbroken shift of the intact cells
+    Lattice {}
+    // the grid is a stack of independent lines along a stored axis, each line
+    // with its own such shift
+  | Lines {}
 
-.type Choice = Lattice {} | Lines {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl hole(col: Color) hole(0).
 
     // --- $Lines ---
@@ -46,8 +49,6 @@ orbit(Ch, P, Q2) :-
     orbit(Ch, P, Q),                                 // reached so far
     step(Ch, P, Delta), compose(Q, Delta, Q2),       // one period on
     in(Q2, _).                                       // inside the frame
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // Intact cells pass through under every case.
 out(P, Col, Ch) :- impl_choice(Ch), intact(P, Col).

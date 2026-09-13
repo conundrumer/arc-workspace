@@ -1,22 +1,22 @@
 // 5289ad53
 // draft
-// concept: objects lines count rank
-// Marks of two colors lie scattered on a background. The output is a fixed
-// frame holding one cell per mark, laid out in reading order, the colors in
-// params.color_rank order; params.fill takes the cells left over.
-//
-// The cases claim what one mark is:
-//   $Blocks() — a connected component of a mark color.
-//   $Runs()   — a contiguous segment of a mark color within one line of
-//               params.run_axis.
-//   $Lines()  — a line of params.line_axis the mark color reaches.
+// keywords: objects lines count rank
+// input: marks lie scattered on a background, in the params.color_rank colors
+// output: a params.dim frame holds one cell per mark, in reading order, the
+//  colors in params.color_rank order; params.fill takes the cells left over.
 
-#include "../lib.dl"
+// The cases claim what one mark is
+.type Choice =
+    // a connected component of a mark color
+    Blocks {}
+    // a contiguous segment of a mark color within one line of params.run_axis
+  | Runs {}
+    // a line of params.line_axis the mark color reaches
+  | Lines {}
 
-.type Choice = Blocks {} | Runs {} | Lines {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     // The mark colors, in the order their marks render.
     .decl color_rank(col: Color, r: number)
         color_rank(3, 0). color_rank(2, 1).
@@ -27,7 +27,7 @@
     .decl dim(a: Axis, n: number)
         dim(AXIS_V, 2). dim(AXIS_H, 3).
 
-    // The reading order the marks render in: from corner, major axis first.
+    // The reading order the marks render in: a corner and the primary axis.
     .decl corner(d: DiagDir) corner(DIAG_TL).
     .decl order_axis(a: Axis) order_axis(AXIS_V).
 
@@ -58,9 +58,9 @@ mark($Blocks(), Col, Id) :- blocks.label(Col, _, Id).
 
 // --- Runs ---
 
-// Components within one line: the perpendicular steps connect nothing.
 .type ColorLine = [col: Color, line: Position]
 
+// Within one line, a component is a run: a perpendicular step leaves the key.
 .init runs = Components<ColorLine>
 runs.node([Col, L], P) :- mark_cell(Col, P), params.run_axis(A), split(P, A, _, L).
 
@@ -73,7 +73,7 @@ lines.equiv(P, Q) :-
     mark_cell(Col, P), mark_cell(Col, Q),          // one color
     params.line_axis(A), same_line(A, P, Q).       // one line
 
-mark($Lines(), Col, Id) :- lines.id(P, Id), mark_cell(Col, P).
+mark($Lines(), Col, Id) :- mark_cell(Col, P), lines.id(P, Id).
 
 // --- the block of cells each color renders into ---
 
@@ -107,7 +107,6 @@ slot(Ch, P, Col) :-
     preceding.tally([Ch, Col], S), S <= R,    // the color's block has started
     through.tally([Ch, Col], E), R < E.       // and has not ended
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     frame.cell($U(), P), impl_choice(Ch),
     ( slot(Ch, P, Col)                   // a mark's cell

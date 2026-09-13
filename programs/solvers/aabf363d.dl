@@ -1,20 +1,20 @@
 // aabf363d
-// concept: markers count rank
-// One non-bg color (the marker) repaints every other non-bg color: target
-// cells take the marker color, marker cells become bg.
-//
-// Three models of marker identification:
-//
-//   $Anchor   — the color at corner params.marker_corner (positional)
-//   $ByCount  — the color appearing in exactly params.marker_count cells
-//   $Minority — the rarest color
+// keywords: markers count rank
+// output: One non-bg color (the marker) repaints every other non-bg color:
+//  target cells take the marker color, marker cells become bg.
 
-#include "../lib.dl"
+// which model identifies the marker color
+.type Choice =
+    // the color at corner params.marker_corner (positional)
+    Anchor {}
+    // the color appearing in exactly params.marker_count cells
+  | ByCount {}
+    // the rarest color
+  | Minority {}
 
-.type Choice = Anchor {} | ByCount {} | Minority {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
 
     // --- $Anchor ---
@@ -50,7 +50,6 @@ rarest.cand($U(), Col, N) :- color_count.tally(Col, N).
 marker(P, Col, $Minority()) :- in(P, Col), rarest.low($U(), Col, _).
 
 // --- Output ---
-.decl out(p: Position, col: Color, c: Choice)
 out(P, BG, Impl) :- marker(P, _, Impl), params.bg(BG).
 out(P, BG, Impl) :- marker(_, _, Impl), in(P, BG), params.bg(BG).
 out(P, MarkerCol, Impl) :-

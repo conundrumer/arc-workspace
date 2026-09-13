@@ -1,25 +1,28 @@
 // e179c5f4
-// concept: markers walk
-// A lone mark in a corner launches a ball diagonally away from the corner;
-// it reflects off the walls beside the travel axis and exits at the far
-// edge. Path cells take the ball color, all others params.fill. Choice = [t, f]
-// crosses:
-//
-//   t (travel axis — the walls beside it reflect):
-//     $Axis() — params.axis names it.
-//     $Long() — the grid's long axis.
-//   f (ball color):
-//     $Mark() — the mark's own color.
-//     $Ink()  — an independent params.ink.
-//
-// Coincide here: every grid is longest along V, and the mark color equals
-// params.ink.
+// keywords: markers walk
+// output: A lone mark in a corner launches a ball diagonally away from the
+//  corner; it reflects off the walls beside the travel axis and exits at the
+//  far edge. Path cells take the ball color, all others params.fill.
+//  Coincide here: every grid is longest along V, and the mark color equals
+//  params.ink.
 
-#include "../lib.dl"
+// travel axis — the walls beside it reflect
+.type Travel =
+    // params.axis names it
+    Axis {}
+    // the grid's long axis
+  | Long {}
 
-.type Travel = Axis {} | Long {}
-.type Paint  = Mark {} | Ink {}
+// ball color
+.type Paint =
+    // the mark's own color
+    Mark {}
+    // an independent params.ink
+  | Ink {}
+
 .type Choice = [t: Travel, f: Paint]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -78,7 +81,6 @@ paint(Col, $Ink())  :- params.ink(Col).
 
 // --- Output ---
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, [T, F]) :- walk(T, P, _), paint(Col, F).
 out(P, Col, [T, F]) :-
     in(P, _), travel_choice(T), !walk(T, P, _),    // off the path

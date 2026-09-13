@@ -1,33 +1,32 @@
 // 543a7ed5
 // draft
-// concept: objects enclose border
-// Shapes of a non-bg color sit on a bg field, and each shape keeps its own
-// cells. Two classes of bg are repainted: the bg a shape holds inside itself
-// turns params.fill, and the bg just outside a shape turns params.outline.
-//
-// Every shape in the pairs is a rectangle with a solid border, and that
-// separates neither class. Choice crosses the two readings of each:
-//
-//   fill (the bg inside)
-//     $Enclosed() — the bg that no shape lets reach the grid edge.
-//     $Boxed()    — the bg inside a shape's bounding box.
-//   outline (the bg just outside)
-//     $Band()     — the outside bg one 8-step off a shape cell.
-//     $Ring()     — the band ring_width out from a shape's bounding box.
-//
-// $Boxed with $Band is left out. Where a box's border is not solid shape,
-// some bg cell on that border is both inside the box and one step off the
-// shape, so the two readings claim it for different colors. Where the border
-// is solid, that combination agrees with $Boxed and $Ring everywhere.
+// keywords: objects enclose border
+// input: Shapes of a non-bg color sit on a bg field, and each shape keeps
+//  its own cells.
+// output: Two classes of bg are repainted: the bg a shape holds inside
+//  itself turns params.fill, and the bg just outside a shape turns
+//  params.outline.
 
-#include "../lib.dl"
+// which bg counts as inside a shape
+.type Fill =
+    // the bg that no shape lets reach the grid edge
+    Enclosed {}
+    // the bg inside a shape's bounding box
+  | Boxed {}
 
-.type Fill = Enclosed {} | Boxed {}
-.type Outline = Band {} | Ring {}
+// which bg counts as just outside a shape
+.type Outline =
+    // the outside bg one 8-step off a shape cell
+    Band {}
+    // the band ring_width out from a shape's bounding box
+  | Ring {}
+
+// crosses the two readings: fill, the bg inside; outline, the bg just outside
 .type Choice = [fill: Fill, outline: Outline]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(8).
     .decl fill(c: Color) fill(4).
     .decl outline(c: Color) outline(3).
@@ -85,12 +84,17 @@ outline_cell(P, $Ring()) :- bg_cell(P), ring(_, P).
 
 // --- output ---
 
+// Every shape in the pairs is a rectangle with a solid border, and that
+// separates neither class, so $Boxed with $Band is left out: where a box's
+// border is not a solid shape, some bg cell on that border is both inside
+// the box and one step off the shape, so the two readings claim it for
+// different colors. Where the border is solid, that combination agrees with
+// $Boxed and $Ring everywhere.
 .decl impl_choice(ch: Choice)
 impl_choice([$Enclosed(), $Band()]).
 impl_choice([$Enclosed(), $Ring()]).
 impl_choice([$Boxed(), $Ring()]).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, [F, O]) :- impl_choice([F, O]), fill_cell(P, F), params.fill(Col).
 out(P, Col, [F, O]) :- impl_choice([F, O]), outline_cell(P, O), params.outline(Col).
 out(P, Col, [F, O]) :-

@@ -1,11 +1,12 @@
 // 4a1cacc2
 // draft
-// concept: markers cast
-// A single mark sits on a plain field. That mark is nearer one corner of
-// the frame on both axes; the box it spans with that corner's cell fills
-// with the mark's color, and the rest of the field passes through.
+// keywords: markers cast
+// input: a single mark sits on a plain field. That mark is nearer one corner
+//  of the frame on both axes.
+// output: the box the mark spans with that corner's cell fills with the
+//  mark's color, and the rest of the field passes through.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(8).
@@ -27,7 +28,6 @@ bbox.cell($U(), P) :- in(P, _), place.quadrant($U(), _, Diag), corner_dist(P, Di
 .decl covered(p: Position)
 covered(P) :- in(P, _), bbox.box($U(), B), inside(P, B).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, C0),
     ( covered(P), mark(_, Col)   // the box takes the mark's color

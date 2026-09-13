@@ -1,15 +1,18 @@
 // 4f537728
 // draft
-// concept: markers decompose cast
-// Bg lines cut the grid into blocks of one base color, and one block carries
-// a mark color. That color spreads from the mark along rows and columns.
-//
-// $Cell  — the base cells of the mark's own rows and columns.
-// $Block — every block in line with the mark's block, filled whole.
+// keywords: markers decompose cast
+// input: Bg lines cut the grid into blocks of one base color, and one block
+//  carries a mark color.
+// output: That color spreads from the mark along rows and columns.
 
-#include "../lib.dl"
+// how far the mark color spreads
+.type Choice =
+    // the base cells of the mark's own rows and columns
+    Cell {}
+    // every block in line with the mark's block, filled whole
+  | Block {}
 
-.type Choice = Cell {} | Block {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -52,6 +55,5 @@ painted(P, $Block()) :-
     mark(P_mark, _), blocks.tile_of($U(), P_mark, P_tile_mark),      // the mark's block
     axis_elem(A), same_line(A, P_tile, P_tile_mark).                 // in line with it
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- painted(P, Ch), mark(_, Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, Ch).

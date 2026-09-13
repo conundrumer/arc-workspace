@@ -1,9 +1,10 @@
 // 28a6681f
-// concept: walk
-// Walls of every other color hold a body of water, and the water settles
-// under gravity, one cell at a time.
+// keywords: walk
+// input: Walls of every other color hold a body of water.
+// output: The water settles under gravity, one cell at a time.
 
-#include "../lib.dl"
+// One grid per pour order; a cell the orders settle differently gets both.
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -94,8 +95,6 @@ rest(S, T, P) :-
     path(S, T, P), stands(S, T, P),
     held(S, T, P, L1), opposite(L1, L2), held(S, T, P, L2).
 
-// One grid per pour order; a cell the orders settle differently gets both.
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     in(P, C), sense_elem(S),
     ( wall(P), Col = C                            // a wall keeps its color

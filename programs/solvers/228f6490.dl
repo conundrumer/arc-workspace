@@ -1,19 +1,21 @@
 // 228f6490
-// concept: objects enclose move count
-// Walls of one color close off holes, and loose shapes of other colors lie
-// around the grid. A shape whose footprint is a hole's moves into it: the hole
-// takes the shape's color, and the shape's cells go back to the background.
-// Several shapes can fit one hole, and the cases differ in which one moves:
-//
-//   $Unique — the shape whose color no other shape carries.
-//   $AllFit — the shape whose color has no shape that fits nowhere.
+// keywords: objects enclose move count
+// output: Walls of one color close off holes, and loose shapes of other colors
+//  lie around the grid. A shape whose footprint is a hole's moves into it: the
+//  hole takes the shape's color, and the shape's cells go back to the
+//  background. Several shapes can fit one hole.
 
-#include "../lib.dl"
-
-.type Choice = Unique {} | AllFit {}
+// which shape moves, when several fit one hole
+.type Choice =
+    // the shape whose color no other shape carries
+    Unique {}
+    // the shape whose color has no shape that fits nowhere
+  | AllFit {}
 
 // A shape: one connected run of a single color.
 .type Shape = [col: Color, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -78,7 +80,6 @@ erase(P, Ch) :- taken(_, S, Ch), shape(S, P).
 .decl impl_choice(ch: Choice)
 impl_choice($Unique()). impl_choice($AllFit()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- fill(P, Col, Ch).
 out(P, Col, Ch) :- erase(P, Ch), params.bg(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !fill(P, _, Ch), !erase(P, Ch).

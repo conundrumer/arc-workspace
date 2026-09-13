@@ -1,12 +1,12 @@
 // 8dae5dfc
 // draft
-// concept: objects permutation merge
-// Each object is a nest of concentric rings. Adjacent rings of one color
-// fuse into one layer. The output reverses the layer colors of each
-// object: the layer k-th from the outside takes the color of the layer
-// k-th from the inside, and every layer keeps its width.
+// keywords: objects permutation merge
+// output: Each object is a nest of concentric rings. Adjacent rings of one
+//  color fuse into one layer. The output reverses the layer colors of each
+//  object: the layer k-th from the outside takes the color of the layer k-th
+//  from the inside, and every layer keeps its width.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(c: Color)
@@ -44,8 +44,6 @@ nest.elem(Obj, Id) :- object(P, Obj), layer(P, Id).
 nest.before(Obj, Id, Id2) :-
     nest.elem(Obj, Id), nest.elem(Obj, Id2),
     layer_depth.low(Id, K), layer_depth.low(Id2, K2), K < K2.
-
-.decl out(p: Position, col: Color)
 
 // The background stays.
 out(P, Col) :- in(P, Col), params.bg(Col).

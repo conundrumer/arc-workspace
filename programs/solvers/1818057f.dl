@@ -1,16 +1,18 @@
 // 1818057f
-// concept: stamp
-// Wherever the 5-cell plus footprint lands fully on the field color, those
-// cells turn params.mark; the rest passes through. A plus may sit inside a larger
-// blob — only footprint cells recolor. Two models:
-//
-//   $Shape — the plus is stored data; Occurrences finds its placements.
-//   $Flank — a field cell with field cells on all four sides; it and its
-//            neighbors recolor.
+// keywords: stamp
+// output: Wherever the 5-cell plus footprint lands fully on the field color,
+//  those cells turn params.mark; the rest passes through. A plus may sit
+//  inside a larger blob — only footprint cells recolor.
 
-#include "../lib.dl"
+// how the plus footprint is found
+.type Choice =
+    // the plus is stored data; Occurrences finds its placements
+    Shape {}
+    // a field cell with field cells on all four sides; it and its neighbors
+    // recolor
+  | Flank {}
 
-.type Choice = Shape {} | Flank {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .decl field(c: Color) field(4).
@@ -47,8 +49,6 @@ flanked(P) :- field_at(P), !exposed.rim($U(), P).
 .decl flank_covered(p: Position)
 flank_covered(P) :- flanked(P).
 flank_covered(P2) :- flanked(P), dir_elem(D), neighbor(P, D, P2).
-
-.decl out(p: Position, col: Color, c: Choice)
 
 out(P, Col, $Shape()) :- shape_covered(P), params.mark(Col).
 out(P, Col, $Shape()) :- in(P, Col), !shape_covered(P).

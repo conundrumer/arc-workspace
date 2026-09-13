@@ -1,15 +1,18 @@
 // 2bee17df
 // draft
-// concept: lines span rank
-// The grid holds an open region of params.open, walled off by other colors. Rows
-// and columns of that region are painted params.fill when they qualify:
-//
-//   $Clear  — every cell of the line inside the region's bounding box is open.
-//   $Widest — the line carries the most open cells of its axis.
+// keywords: lines span rank
+// input: an open region of params.open, walled off by other colors
+// output: Rows and columns of that region are painted params.fill when
+//  they qualify.
 
-#include "../lib.dl"
+// what makes a line qualify
+.type Choice =
+    // every cell of the line inside the region's bounding box is open
+    Clear {}
+    // the line carries the most open cells of its axis
+  | Widest {}
 
-.type Choice = Clear {} | Widest {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl open(col: Color) open(0).
@@ -52,7 +55,6 @@ widest.item(A, L, P) :- open_cell(P), line_of(P, A, L).
 
 painted(P, $Widest()) :- open_cell(P), line_of(P, A, L), widest.mode(A, L).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col_out, Ch) :-
     in(P, Col), impl_choice(Ch),               // grid cell, per case
     ( painted(P, Ch), params.fill(Col_out)     // on a qualifying line

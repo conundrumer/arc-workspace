@@ -1,19 +1,21 @@
 // 25094a63
 // draft
-// concept: stamp
-// Solid monochrome rectangles hide in a noise field. Wherever a footprint
-// lands on cells that all share one color, those cells turn params.paint; the
-// rest passes through. Overlapping seats cover a bigger rectangle whole, so
-// a rectangle recolors exactly when it reaches the footprint's size on both
-// axes. Two models of the footprint:
-//
-//   $Shape — the footprint is a stored mask.
-//   $Side  — the footprint is a square of stored side, so the task marks
-//            rectangles that are big enough, not rectangles of a stored shape.
+// keywords: stamp
+// input: solid monochrome rectangles in a noise field.
+// output: Wherever a footprint lands on cells that all share one color,
+//  those cells turn params.paint; the rest passes through. Overlapping
+//  seats cover a bigger rectangle whole, so a rectangle recolors exactly
+//  when it reaches the footprint's size on both axes.
 
-#include "../lib.dl"
+// what the footprint is
+.type Choice =
+    // the footprint is a stored mask
+    Shape {}
+    // the footprint is a square of stored side, so the task marks the
+    // rectangles that are big enough
+  | Side {}
 
-.type Choice = Shape {} | Side {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl paint(col: Color) paint(4).
@@ -60,7 +62,6 @@ occ.shape([Ch, Col], S, $U()) :- footprint(Ch, S), in(_, Col).
 .decl covered(ch: Choice, p: Position)
 covered(Ch, P) :- occ.occurrence([Ch, _], M), footprint(Ch, S), compose(M, S, P).
 
-.decl out(p: Position, col: Color, c: Choice)
 out(P, Col, Ch) :- covered(Ch, P), params.paint(Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !covered(Ch, P).
 
@@ -94,8 +95,7 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !covered(Ch, P).
     occ.cell([E, K, Col], P, $U())  :- ex_in(E, P, Col), cand(K).
     occ.shape([E, K, Col], S, $U()) :- square.cell(K, S), ex_in(E, _, Col).
 
-    // A footprint that lands over a cell the transform left alone is too
-    // small.
+    // A square that seats over a cell the output kept is too small.
     .decl refuted(k: number)
     refuted(K) :-
         occ.occurrence([E, K, _], M),           // a seated square

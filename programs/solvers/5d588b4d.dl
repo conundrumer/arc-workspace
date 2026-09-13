@@ -1,21 +1,21 @@
 // 5d588b4d
 // draft
-// concept: markers count span rank
-// The input holds marks of one color on a bg ground, and the marks give one
-// number. The output writes runs of that color: their lengths climb 1, 2,
-// ... up to that number and fall back to 1, with one bg cell between a run
-// and the next. That sequence fills the output in reading order at the
-// input's width, and bg pads the last line.
-//
-// A run's length is the size of a diagonal of the square whose side is that
-// number, since those sizes climb and fall the same way.
-//
-//   $Count — the number is how many marks there are.
-//   $Span  — the number is how far the marks reach along their axis.
+// keywords: markers count span rank
+// input: The input holds marks of one color on a bg ground. The marks give
+//  one number.
+// output: The output writes runs of that color: their lengths climb 1, 2,
+//  ... up to that number and fall back to 1, with one bg cell between a run and
+//  the next. That sequence fills the output in reading order at the input's
+//  width, and bg pads the last line.
+//  A run's length is the size of a diagonal of the square whose side is that
+//  number, since those sizes climb and fall the same way.
 
-#include "../lib.dl"
-
-.type Choice = Count {} | Span {}
+// what the number counts
+.type Choice =
+    // the number is how many marks there are
+    Count {}
+    // the number is how far the marks reach along their axis
+  | Span {}
 
 // One run of the sequence: the case it belongs to, and the run's index.
 .type Run = [ch: Choice, k: number]
@@ -23,8 +23,9 @@
 // One cell of the sequence: its run, and its place along that run.
 .type Item = [run: number, slot: number]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(0).
     .decl read_corner(d: DiagDir) read_corner(DIAG_TL).
     .decl read_axis(a: Axis) read_axis(AXIS_V).
@@ -101,7 +102,6 @@ filled(Ch, P) :-
     canvas.cell(Ch, P), read_dir(D1, D2),
     dist(P, D1, R), dist(P, D2, C).                   // the same place in the output
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- filled(Ch, P), mark(_, Col).
 out(P, Col, Ch) :- canvas.cell(Ch, P), !filled(Ch, P), params.bg(Col).
 

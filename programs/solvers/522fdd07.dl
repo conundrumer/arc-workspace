@@ -1,26 +1,27 @@
 // 522fdd07
 // draft
-// concept: objects border lookup
-// Solid one-color squares sit apart on params.bg. Each is redrawn concentric with
-// itself and one ring smaller; a square with no ring to spare comes back at
-// params.bloom, the largest size. The sizes therefore run as a cycle.
-//
-// Three models redraw a square:
-//   $Box    — the cells strictly inside its bounding box.
-//   $Erode  — its cells that keep every cardinal neighbor.
-//   $Lookup — a concentric square of the extent params.next_extent gives, which
-//             holds the wrap as one more entry.
+// keywords: objects border lookup
+// input: solid one-color squares sit apart on params.bg
+// output: Each is redrawn concentric with itself and one ring smaller; a
+//  square with no ring to spare comes back at params.bloom, the largest
+//  size. The sizes therefore run as a cycle.
 
-#include "../lib.dl"
-
-.type Choice = Box {} | Erode {} | Lookup {}
+// Three models redraw a square
+.type Choice =
+    // the cells strictly inside its bounding box
+    Box {}
+    // its cells that keep every cardinal neighbor
+  | Erode {}
+    // a concentric square of the extent params.next_extent gives, which holds
+    // the wrap as one more entry
+  | Lookup {}
 
 // A target square: the case that asks for it, and the square it comes from.
 .type Target = [ch: Choice, id: Ident]
 
-.comp Params {
-    // --- shared ---
+.decl out(p: Position, col: Color, ch: Choice)
 
+.comp Params {
     .decl bg(col: Color) bg(7).
 
     // --- Box, Erode ---
@@ -106,7 +107,6 @@ placed(Ch, Id, P) :-
 paint(Ch, P, Col) :- shrunk(Ch, Id, P), obj(Id, Col).
 paint(Ch, P, Col) :- placed(Ch, Id, P), obj(Id, Col).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(Ch, P, Col).
 out(P, Col, Ch) :- in(P, _), impl_choice(Ch), !paint(Ch, P, _), params.bg(Col).
 

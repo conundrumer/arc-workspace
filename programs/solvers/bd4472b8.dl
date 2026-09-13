@@ -1,19 +1,13 @@
 // bd4472b8
-// concept: tile-arrangement decompose d4
-// A header row (W colors) and a separator row sit above an empty body of height
-// N·W. Each of the N blocks restacks the header as stripes — header color k
-// becomes the block's k-th row. Header and separator pass through.
-//
-// Model: transpose the header into the blank with one D4 transform, tiled N
-// times. The transform swaps the header's strip coordinate onto the block's
-// stacking coordinate — a pure coordinate permutation, so it carries no order,
-// index, or origin, and the match is Position equality. The header's location
-// washes into the discarded perpendicular component: only "which cells are
-// blank" depends on where the header sits, not the layout. The header is one
-// cell thick and the fill broadcasts, so reflection and rotation coincide —
-// the diagonal axis is the only learned bit.
+// keywords: tile-arrangement decompose d4
+// input: A header row (W colors) and a separator row sit above an empty body
+//  of height N·W.
+// output: Each of the N blocks restacks the header as stripes — header color
+//  k becomes the block's k-th row — by transposing the header into the blank
+//  with one D4 transform along params.diag, tiled N times. Header and
+//  separator pass through.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl header_dir(d: Dir) header_dir(DIR_T).
@@ -45,6 +39,5 @@ fill(P_b, Col) :-
     divide(P_body, A, N, 0, _, P_inner),               // split blank into N blocks
     stripe(P_inner, Col).                              // match the transposed header
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- in(P, Col), !fill(P, _).          // header + separator pass through
 out(P, Col) :- fill(P, Col).                     // body filled

@@ -1,11 +1,11 @@
 // 3cd86f4f
-// concept: lines grow move
-// Shear: the grid's params.slide-lines slide against each other, one cell per
-// line — the across-lines rotate by params.sense onto a diagonal, widening the
-// frame by (lines - 1). Vacated cells are bg. Either cross dir spells the
-// same map; the rule derives it from both.
+// keywords: lines grow move
+// output: Shear: the grid's params.slide-lines slide against each other, one
+//  cell per line — the across-lines rotate by params.sense onto a diagonal,
+//  widening the frame by (lines - 1). Vacated cells are bg. Either cross dir
+//  spells the same map; the rule derives it from both.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl slide(a: Axis) slide(AXIS_H).     // axis the lines slide along
@@ -35,6 +35,5 @@ frame(P) :-
     params.slide(A), split(P1, A, Along, _), split(P2, A, _, Across),
     compose(Along, Across, P).
 
-.decl out(p: Position, col: Color)
 out(P_out, Col) :- in(P_in, Col), shear(P_in, P_out).
 out(P, Col) :- frame(P), !image(P), params.bg(Col).

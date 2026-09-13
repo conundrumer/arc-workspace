@@ -20,6 +20,7 @@
     // holding it, and the ring.
   | Nest {}
 
+// what the ring wraps, and how the output is drawn
 .type Choice = [wrap: Wrap, render: Render]
 
 .decl out(p: Position, col: Color, ch: Choice)

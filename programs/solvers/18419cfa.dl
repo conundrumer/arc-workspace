@@ -1,24 +1,27 @@
 // 18419cfa
 // draft
-// concept: objects markers repair d4
-// Walls of params.frame close off interiors, each holding a partial params.ink pattern.
-// Every pattern gains its mirror image within its own interior; the rest of the
-// grid passes through. Models of which mirrors apply:
-//
-//   $Klein    — every reflection of params.sym.
-//   $OneSided — the reflection across the midline the pattern lies to one side of.
-//   $Doorway  — the reflection across the axis the wall's two gaps open along.
+// keywords: objects markers repair d4
+// input: Walls of params.frame close off interiors, each holding a partial
+//  params.ink pattern.
+// output: Every pattern gains its mirror image within its own interior; the
+//  rest of the grid passes through.
 
-#include "../lib.dl"
+// which mirrors apply
+.type Choice =
+    // every transform of params.sym
+    Group {}
+    // the reflection across the midline the pattern lies to one side of
+  | OneSided {}
+    // the reflection that inverts the axis the wall's gaps open along
+  | Doorway {}
 
-.type Choice = Klein {} | OneSided {} | Doorway {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl frame(col: Color) frame(8).
     .decl ink(col: Color) ink(2).
 
-    // --- Klein ---
+    // --- Group ---
     .decl sym(s: Sym) sym(SYM_BOX).
 }
 
@@ -49,7 +52,7 @@ parse.cell($U(), P, Col) :- in(P, Col).
 
 .decl ink_cell(id: Ident, p_inner: Position)
 ink_cell(Id, P_inner) :-
-    in(P, Col), params.ink(Col),                  // ink cell
+    in(P, Col), params.ink(Col),                 // ink cell
     parse.inner($U(), Id, P, P_inner).           // in its interior's frame
 
 // The reflections each interior's pattern completes under.
@@ -61,9 +64,9 @@ paint(P_grid_out, Ch) :-
     flip(Id, D, Ch), apply(D, P_inner, P_inner2),  // its mirror image
     parse.inner($U(), Id, P_grid_out, P_inner2).   // back on the grid
 
-// --- Klein ---
+// --- Group ---
 
-flip(Id, D, $Klein()) :- ink_cell(Id, _), params.sym(S), sym_member(S, D).
+flip(Id, D, $Group()) :- ink_cell(Id, _), params.sym(S), sym_member(S, D).
 
 // --- OneSided ---
 
@@ -95,9 +98,8 @@ flip(Id, D_flip, $Doorway()) :- doorway(Id, A), flip_of(A, D_flip).
 // --- output ---
 
 .decl impl_choice(ch: Choice)
-impl_choice($Klein()). impl_choice($OneSided()). impl_choice($Doorway()).
+impl_choice($Group()). impl_choice($OneSided()). impl_choice($Doorway()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, Ch).
 out(P, Col, Ch) :- paint(P, Ch), params.ink(Col).
 

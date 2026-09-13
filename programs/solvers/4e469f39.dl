@@ -1,22 +1,24 @@
 // 4e469f39
 // draft
-// concept: objects border cast
-// Each object is a rectangular outline with a gap: one cell missing from a
-// wall. The outline's inside fills with params.fill, and that fill escapes
-// through the gap — one step out of the wall, then a ray to the grid edge,
-// running toward the wall's longer arm.
-//
-// Two models of the gapped wall:
-//   $Dir  — params.open_dir names it.
-//   $Hole — the wall whose line holds a bg cell.
-// The pairs do not separate those two: every gap sits on a top wall.
+// keywords: objects border cast
+// input: Each object is a rectangular outline with a gap: one cell missing
+//  from a wall.
+// output: The outline's inside fills with params.fill, and that fill escapes
+//  through the gap — one step out of the wall, then a ray to the grid edge,
+//  running toward the wall's longer arm.
 
-#include "../lib.dl"
-
-.type Choice = Dir {} | Hole {}
+// two models of the gapped wall, which the pairs do not separate: every gap
+// sits on a top wall
+.type Choice =
+    // params.open_dir names it
+    Dir {}
+    // the wall whose line holds a bg cell
+  | Hole {}
 
 // An object's spill, under one model.
 .type SpillKey = [o: Ident, ch: Choice]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -74,6 +76,5 @@ paint(P, Ch) :-
     bbox.box(_, B), inside(P, B).                  // within an outline's box
 paint(P, Ch) :- spill.ray([_, Ch], P, _, _, _).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Ch), params.fill(Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, Ch).

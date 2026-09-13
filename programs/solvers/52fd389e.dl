@@ -1,11 +1,12 @@
 // 52fd389e
 // draft
-// concept: objects markers count border
-// Rectangles of params.body sit on the grid, each holding marker cells of one
-// other color. A band of that marker color surrounds its rectangle, as many
-// cells thick as the rectangle holds markers.
+// keywords: objects markers count border
+// input: rectangles of params.body sit on the grid, each holding marker
+//  cells of one other color
+// output: A band of that marker color surrounds its rectangle, as many
+//  cells thick as the rectangle holds markers.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl body(col: Color) body(4).
@@ -37,6 +38,5 @@ ring_box(Id, B) :-
 .decl ring(id: Ident, p: Position)
 ring(Id, P) :- in(P, _), ring_box(Id, B), inside(P, B), !within(Id, P).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- ring(Id, P), marker(Id, _, Col).
 out(P, Col) :- in(P, Col), !ring(_, P).

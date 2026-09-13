@@ -1,23 +1,24 @@
 // 2f0c5170
 // draft
-// concept: objects markers crop stamp lookup
-// Two canvas panels sit on the bg. One holds a glyph of several marks; the
-// other holds one mark alone. The glyph moves so that one of its marks, its
-// handle, covers the lone mark. The output is the lone mark's panel with the
-// moved glyph on it.
-//
-//   $Match — the handle is the glyph mark colored like the lone mark.
-//   $Odd   — the handle is the glyph mark whose color the glyph's other
-//            marks do not share.
-//   $Ink   — the glyph is drawn in a stored ink; the handle is the mark
-//            that is not.
+// keywords: objects markers crop stamp lookup
+// input: two canvas panels sit on the bg. One holds a glyph of several
+//  marks; the other holds one mark alone.
+// output: the glyph moves so that one of its marks, its handle, covers the
+//  lone mark. The output is the lone mark's panel with the moved glyph on it.
 
-#include "../lib.dl"
+// what the glyph's handle is
+.type Choice =
+    // the handle is the glyph mark colored like the lone mark
+    Match {}
+    // the handle is the glyph mark whose color the glyph's other marks do not
+    // share
+  | Odd {}
+    // the glyph is drawn in a stored ink; the handle is the mark that is not
+  | Ink {}
 
-.type Choice = Match {} | Odd {} | Ink {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(c: Color) bg(8).
     .decl canvas(c: Color) canvas(0).
 
@@ -75,7 +76,6 @@ travel(V, Ch) :- handle(P, Ch), lone_mark(_, P2, _), relative(P, P2, V).
 .decl stamped(p: Position, col: Color, ch: Choice)
 stamped(Q, Col, Ch) :- glyph_mark(P, Col), travel(V, Ch), compose(P, V, Q).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_inner, Col, Ch) :-
     impl_choice(Ch), lone_mark(Id, _, _),                     // the lone mark's panel
     bbox.cell(Id, P), bbox.box(Id, B), crop(P, B, P_inner),   // a cell of it, read from its box

@@ -1,18 +1,20 @@
 // 342ae2ed
 // draft
-// concept: objects cast span
-// Solid rectangles sit on a background field, two of each color. The two
-// rectangles of a color face each other across a diagonal: a corner of one
-// lies on the diagonal from the other's facing corner. The field between
-// those corners takes the color. Every input cell keeps its own.
-//
-// Cases, on how far the paint reaches: $Cast — the corner shoots a ray that
-// stops at the first figure it meets; $Span — the two corners delimit an
-// extent, and every field cell in it is painted.
+// keywords: objects cast span
+// input: Solid rectangles sit on a background field, two of each color. The
+//  two rectangles of a color face each other across a diagonal: a corner of
+//  one lies on the diagonal from the other's facing corner.
+// output: The field between those corners takes the color. Every input cell
+//  keeps its own.
 
-#include "../lib.dl"
+// how far the paint reaches between a pair's facing corners
+.type Choice =
+    // the corner shoots a ray that stops at the first figure it meets
+    Cast {}
+    // the two corners delimit an extent, and every field cell in it is painted
+  | Span {}
 
-.type Choice = Cast {} | Span {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(7).
@@ -59,6 +61,5 @@ paint(P, Col, $Span()) :-
     link(Col, D, P1, K_end),                  // the pair's facing corners, K_end apart
     shot.ray($U(), P, D, K, P1), K < K_end.   // every field cell short of the far one
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).

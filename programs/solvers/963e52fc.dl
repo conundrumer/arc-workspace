@@ -1,16 +1,19 @@
 // 963e52fc
-// concept: wallpaper grow
-// The input continues periodically: the output is the grid extended to
-// params.scale times its extent along params.dir, each new cell repeating the
-// color one period back. The period is the shortest shift along params.dir
-// under which the input agrees with itself.
-//
-//   $Line — one period per across-line.
-//   $Grid — one period for the whole grid.
+// keywords: wallpaper grow
+// output: The input continues periodically: the output is the grid extended to
+//  params.scale times its extent along params.dir, each new cell repeating the
+//  color one period back. The period is the shortest shift along params.dir
+//  under which the input agrees with itself.
 
-#include "../lib.dl"
+// the period's scope
+.type Choice =
+    // one period per across-line
+    Line {}
+    // one period for the whole grid
+  | Grid {}
 
-.type Choice = Line {} | Grid {}
+// The input, then each cell repeating the one a period back.
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl dir(d: Dir) dir(DIR_R).         // growth direction
@@ -46,8 +49,6 @@ base(P_grid_out, Col) :-
 // The period the continuation repeats by, per case and line.
 .decl period_at(ch: Choice, line: Position, k: number)
 
-// The input, then each cell repeating the one a period back.
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- impl_choice(Ch), base(P, Col).
 out(P_grid_out, Col, Ch) :-
     out(P, Col, Ch),

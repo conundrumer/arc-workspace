@@ -1,16 +1,19 @@
 // 05f2a901
-// concept: objects move
-// Two objects lie along one axis: the params.mover one and the params.anchor one. The
-// mover slides toward the anchor and stops on contact; the anchor stays.
-//
-// The cases differ in what counts as contact:
-//   $Block  — head-on: the next step would put a mover cell on an anchor cell.
-//   $Touch  — any side: a mover cell comes to rest beside an anchor cell.
-//   $Extent — head-on between the two bounding boxes.
+// keywords: objects move
+// output: Two objects lie along one axis: the params.mover one and the
+//  params.anchor one. The mover slides toward the anchor and stops on contact;
+//  the anchor stays.
 
-#include "../lib.dl"
+// The cases differ in what counts as contact
+.type Choice =
+    // head-on: the next step would put a mover cell on an anchor cell
+    Block {}
+    // any side: a mover cell comes to rest beside an anchor cell
+  | Touch {}
+    // head-on between the two bounding boxes
+  | Extent {}
 
-.type Choice = Block {} | Touch {} | Extent {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -109,6 +112,5 @@ landed(Ch, P2) :- slide.rest(Ch, ZERO, _, Delta), mover_cell(P), compose(P, Delt
 cleared(P, Col) :- in(P, Col), !mover_cell(P).
 cleared(P, Col) :- mover_cell(P), params.bg(Col).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- landed(Ch, P), params.mover(Col).
 out(P, Col, Ch) :- slide.rest(Ch, ZERO, _, _), cleared(P, Col), !landed(Ch, P).

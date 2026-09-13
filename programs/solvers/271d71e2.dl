@@ -1,17 +1,16 @@
 // 271d71e2
-// concept: objects markers move count
-// A marker line abuts a framed block on one side, its handle, and another
-// marker line lies ahead in that direction. The block slides toward that line
-// and stops on it, or earlier when it runs out of empty gauge cells: the
-// block's interior is a gauge of filled and empty cells, and one empty cell
-// fills per step of travel. The filled cells sit at the leading edge, the
-// handle side. The handle travels with the block, the line ahead stays, and
-// the vacated ground becomes bg.
-//
-// The gauge fills in a sweep from the leading edge: nearest that edge first,
-// then toward the side a quarter turn from the heading.
+// keywords: objects markers move count
+// input: A marker line abuts a framed block on one side, its handle, and
+//  another marker line lies ahead in that direction.
+// output: The block slides toward that line and stops on it, or earlier when
+//  it runs out of empty gauge cells: the block's interior is a gauge of
+//  filled and empty cells, and one empty cell fills per step of travel. The
+//  filled cells sit at the leading edge, the handle side. The handle travels
+//  with the block, the line ahead stays, and the vacated ground becomes bg.
+//  The gauge fills in a sweep from the leading edge: nearest that edge first,
+//  then toward the side a quarter turn from the heading.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(6).
@@ -112,7 +111,6 @@ paint(P_out, Col) :-
     ; fills(P), params.filled(Col)             // fills
     ).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- paint(P, Col).
 out(P, Col) :-
     !paint(P, _),

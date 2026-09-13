@@ -1,39 +1,40 @@
 // 22eb0ac0
-// concept: lines markers span
-// Marker cells sit on the two params.axis edges; a line whose two edge cells hold
-// the same color fills with it, the rest passes through. Two hypotheses of where
-// markers may sit and what fills, tagged on out's Choice:
-//
-//   $Flood — matching markers on a line's two edge cells flood the whole line.
-//   $Span  — any same-colored marker pair in a line paints the cells between,
-//            marks included.
+// keywords: lines markers span
+// output: A line along params.axis that holds two cells of one color takes
+//  that color; every other cell passes through.
 
-#include "../lib.dl"
+// which pair of cells counts, and how far its color reaches
+.type Choice =
+    // the line's two edge cells, when they agree: the whole line
+    Flood {}
+    // any two cells of one non-bg color: the cells between them, the pair
+    // included
+  | Span {}
 
-.type Choice = Flood {} | Span {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl axis(a: Axis) axis(AXIS_H).   // lines run along this axis
+
+    // --- Span ---
     .decl bg(c: Color) bg(0).
 }
 
 .init params = Params
 
-.decl out(p: Position, col: Color, ch: Choice)
-
 // --- Flood ---
 
-// Line (keyed by across component) whose two edge cells hold the same marker color.
+// Line, keyed by its across component, whose two edge cells hold one color.
 .decl edge_match(ac: Position, col: Color)
 edge_match(Ac, Col) :-
-    params.axis(A), axis_of(D, A), opposite(D, D2),       // the line's two edges
-    in(P1, Col), dist(P1, D, 0), split(P1, A, _, Ac),     // marker on edge d
+    params.axis(A), axis_of(D, A), opposite(D, D2),    // the line's two edges
+    in(P1, Col), dist(P1, D, 0), split(P1, A, _, Ac),  // cell on edge d, its line
     in(P2, Col), dist(P2, D2, 0), same_line(A, P1, P2).
 
 out(P, Col_out, $Flood()) :-
-    in(P, Col), params.axis(A), split(P, A, _, Ac),   // grid cell, its line
-    ( edge_match(Ac, Col_out)                         // the line's two edges agree — flood
-    ; !edge_match(Ac, _), Col_out = Col               // no match — cell as-is
+    in(P, Col), params.axis(A), split(P, A, _, Ac),  // grid cell, its line
+    ( edge_match(Ac, Col_out)                        // the edges agree — flood
+    ; !edge_match(Ac, _), Col_out = Col              // no match — as-is
     ).
 
 // --- Span ---

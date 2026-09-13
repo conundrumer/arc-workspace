@@ -1,22 +1,29 @@
 // 7ee1c6ea
 // draft
-// concept: border enclose mapping
-// A rectangle outline in params.frame sits in a field of params.bg and two
-// ink colors. Inside the outline, the two ink colors trade places; the
-// outline and everything outside it stay as they are.
-//
-// Choice crosses two independent points:
-//   inside  — $Box:     the cells strictly inside the frame's bounding box.
-//             $Enclose: the region the frame cuts off from the grid edge.
-//   palette — $Held:    the two ink colors are those the inside holds.
-//             $Field:   the two ink colors are those of the whole grid, less
-//                       the frame.
+// keywords: border enclose mapping
+// input: A rectangle outline in params.frame sits in a field of params.bg and
+//  two ink colors.
+// output: Inside the outline, the two ink colors trade places; the outline
+//  and everything outside it stay as they are.
 
-#include "../lib.dl"
+// which cells count as inside the outline
+.type Inside =
+    // the cells strictly inside the frame's bounding box
+    Box {}
+    // the region the frame cuts off from the grid edge
+  | Enclose {}
 
-.type Inside  = Box {} | Enclose {}
-.type Palette = Held {} | Field {}
+// which two colors trade places
+.type Palette =
+    // the two ink colors are those the inside holds
+    Held {}
+    // the two ink colors are those of the whole grid, less the frame
+  | Field {}
+
+// the inside test and the palette rule, chosen independently
 .type Choice  = [i: Inside, pal: Palette]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -66,6 +73,5 @@ swap(Col, Col2, Ch) :- ink(Col, Ch), ink(Col2, Ch), Col != Col2.
 .decl traded(p: Position, col: Color, ch: Choice)
 traded(P, Col2, [I, Pal]) :- within(P, I), in(P, Col), swap(Col, Col2, [I, Pal]).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- traded(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !traded(P, _, Ch).

@@ -1,20 +1,22 @@
 // 2c0b0aff
 // draft
-// concept: objects crop count select
-// Rectangular panels on params.bg, each stippled with params.mark in single cells,
-// pairs, and crosses. The output is the panel holding the most crosses.
-//
-// The cases differ in what identifies a cross:
-//   $Plus  — structure: a mark whose four cardinal neighbors are marks.
-//   $Shape — data: an occurrence of the params.shape footprint.
-//   $Size  — data: a mark object of params.piece_size cells.
+// keywords: objects crop count select
+// input: rectangular panels on params.bg, each stippled with params.mark in
+//  single cells, pairs, and crosses
+// output: The output is the panel holding the most crosses.
 
-#include "../lib.dl"
+// what identifies a cross
+.type Choice =
+    // structure: a mark whose four cardinal neighbors are marks
+    Plus {}
+    // data: an occurrence of the params.shape footprint
+  | Shape {}
+    // data: a mark object of params.piece_size cells
+  | Size {}
 
-.type Choice = Plus {} | Shape {} | Size {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
     .decl mark(col: Color) mark(3).
 
@@ -97,7 +99,6 @@ most.cand($Size(), Id, N) :- piece_count.tally(Id, N).
 .init view = Bbox<Choice>
 view.cell(Ch, P) :- most.high(Ch, Id, _), panel(Id, P).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_inner, Col, Ch) :- view.cell(Ch, P), view.box(Ch, B), crop(P, B, P_inner), in(P, Col).
 
 .comp Determine {

@@ -1,19 +1,36 @@
 // 8a6d367c
 // draft
-// concept: crop border markers objects scale select
-// Small shapes sit beside a rectangular frame. Inside the frame, a partial
-// fill covers whole blocks of a coarse grid. The output is the frame, cropped,
-// with its inside painted as the one shape whose pattern the fill fits: each
-// block is a pattern cell, filled where the pattern has a cell.
-//
-// $Color — a shape is the cells of one color.
-// $Piece — a shape is an 8-connected piece of one color.
-// $Object — a shape is an 8-connected object, whatever its colors.
+// keywords: crop border enclose markers objects scale select
+// input: Small shapes sit beside a frame drawn in one color. Inside the
+//  frame, a partial fill covers whole blocks of a coarse grid.
+// output: The output crops the frame and paints its inside as the one shape
+//  whose pattern the fill fits: each block is a pattern cell, filled where the
+//  pattern holds a cell.
 
-#include "../lib.dl"
+// how the frame is found
+.type Parse =
+    // the frame is a rectangle outline, and its inside is what that
+    // rectangle holds strictly within its edges
+    Rect {}
+    // the frame is a wall of one color, and its inside is the region that
+    // wall cuts off from the grid edge
+  | Enclose {}
 
-.type Choice = Color {} | Piece {} | Object {}
+// what a shape is
+.type Kind =
+    // a shape is the cells of one color
+    Color {}
+    // a shape is an 8-connected piece of one color
+  | Piece {}
+    // a shape is an 8-connected object, whatever its colors
+  | Object {}
+
+// how the frame is found, crossed with what a shape is
+.type Choice = [k: Kind, pa: Parse]
+
 .type Shape = [ch: Choice, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(8).
@@ -21,42 +38,39 @@
 
 .init params = Params
 
-.decl impl_choice(ch: Choice)
-impl_choice($Color()). impl_choice($Piece()). impl_choice($Object()).
+.decl parse_choice(pa: Parse)
+parse_choice($Rect()). parse_choice($Enclose()).
+
+.decl kind_choice(k: Kind)
+kind_choice($Color()). kind_choice($Piece()). kind_choice($Object()).
 
 .decl ink(col: Color)
 ink(Col) :- in(_, Col), !params.bg(Col).
 
-// The rectangles each color draws.
-.init drect = Outlines<Color>
-drect.node(Col, P) :- ink(Col), in(P, Col).
-
-// The ink each rectangle holds.
-.decl held(b: Box, p: Position, col: Color)
-held(B, P, Col) :- drect.box(_, B), in(P, Col), interior(P, B), ink(Col).
-
-// The frame: the rectangle that holds ink of another color.
-.decl frame(b: Box, col: Color)
-frame(B, Col) :- drect.box(Col, B), held(B, _, C), C != Col.
+// The frame each parse finds: the box the output crops to, the color it is
+// drawn in, the cells that draw it, and the cells it holds.
+.decl frame(pa: Parse, b: Box, col: Color)
+.decl wall_cell(pa: Parse, p: Position)
+.decl inside_cell(pa: Parse, p: Position)
 
 // The fill: the ink the frame holds.
-.decl fill(p: Position, col: Color)
-fill(P, Col) :- frame(B, _), held(B, P, Col).
+.decl fill(pa: Parse, p: Position, col: Color)
+fill(Pa, P, Col) :- inside_cell(Pa, P), in(P, Col), ink(Col).
 
 // The frame's inside, in its own frame.
-.init hole = Bbox<Unit>
-hole.cell($U(), P) :- frame(B, _), in(P, _), interior(P, B).
+.init hole = Bbox<Parse>
+hole.cell(Pa, P) :- inside_cell(Pa, P).
 
-.decl hole_view(p: Position, p_inner: Position)
-hole_view(P, P_inner) :- hole.cell($U(), P), hole.box($U(), B), crop(P, B, P_inner).
+.decl hole_view(pa: Parse, p: Position, p_inner: Position)
+hole_view(Pa, P, P_inner) :- inside_cell(Pa, P), hole.box(Pa, B), crop(P, B, P_inner).
 
 // A grid cell the frame's box covers.
-.decl covered(p: Position)
-covered(P) :- frame(B, _), in(P, _), inside(P, B).
+.decl covered(pa: Parse, p: Position)
+covered(Pa, P) :- frame(Pa, B, _), in(P, _), inside(P, B).
 
 // The shapes' cells: the ink outside the frame.
-.decl outside(p: Position, col: Color)
-outside(P, Col) :- in(P, Col), ink(Col), !covered(P).
+.decl outside(pa: Parse, p: Position, col: Color)
+outside(Pa, P, Col) :- parse_choice(Pa), in(P, Col), ink(Col), !covered(Pa, P).
 
 .decl shape_cell(s: Shape, p: Position)
 
@@ -69,7 +83,7 @@ pattern_cell(S, P_tile) :- shape_cell(S, P), pattern.box(S, B), crop(P, B, P_til
 
 // The frame's inside divided into a shape's pattern of blocks.
 .init blocks = Divide2D<Shape>
-blocks.cell(P_inner) :- hole_view(_, P_inner).
+blocks.cell(P_inner) :- hole_view(_, _, P_inner).
 blocks.dim(S, A, N) :- shape_cell(S, P), pattern.box(S, B), box_extent(B, P, A, N).
 blocks.gap(0).
 
@@ -77,37 +91,83 @@ blocks.gap(0).
 // pattern leaves empty.
 .decl contradicted(s: Shape)
 contradicted(S) :-
-    fill(P_grid, _), hole_view(P_grid, P_inner),
+    S = [[_, Pa], _],                                     // the shape's own parse
+    fill(Pa, P_grid, _), hole_view(Pa, P_grid, P_inner),  // a fill cell of that inside
     blocks.tile(S, P_inner, P_tile, _), !pattern_cell(S, P_tile).
 
-.decl out(p: Position, col: Color, ch: Choice)
-out(P_grid_out, Col, Ch) :-
-    frame(B, Col), in(P_grid_in, _), box_edge(P_grid_in, B, _),
-    crop(P_grid_in, B, P_grid_out), impl_choice(Ch).
-out(P_grid_out, Col, Ch) :-
-    hole_view(P_grid_in, P_inner), frame(B, _), crop(P_grid_in, B, P_grid_out),
-    blocks.tile(S, P_inner, P_tile, _), !contradicted(S), S = [Ch, _],  // the shape the fill hints at
-    ( pattern_cell(S, P_tile), fill(_, Col)      // a pattern cell: filled
+out(P_grid_out, Col, [K, Pa]) :-
+    frame(Pa, B, Col), wall_cell(Pa, P_grid_in),      // the frame as drawn
+    crop(P_grid_in, B, P_grid_out), kind_choice(K).
+out(P_grid_out, Col, [K, Pa]) :-
+    hole_view(Pa, P_grid_in, P_inner),                // a cell of the inside
+    frame(Pa, B, _), crop(P_grid_in, B, P_grid_out),  // its place in the output
+    blocks.tile(S, P_inner, P_tile, _),               // the block it sits in
+    S = [[K, Pa], _], !contradicted(S),               // a shape the fill fits
+    ( pattern_cell(S, P_tile), fill(Pa, _, Col)  // a pattern cell: filled
     ; !pattern_cell(S, P_tile), params.bg(Col)   // else bg
     ).
 
+// --- Rect ---
+
+// The rectangles each color draws.
+.init drect = Outlines<Color>
+drect.node(Col, P) :- ink(Col), in(P, Col).
+
+// The frame: the rectangle that holds ink of another color.
+frame($Rect(), B, Col) :-
+    drect.box(Col, B),                            // a rectangle the color draws
+    in(P, C), interior(P, B), ink(C), C != Col.   // ink of another color inside
+
+wall_cell($Rect(), P) :- frame($Rect(), B, _), in(P, _), box_edge(P, B, _).
+inside_cell($Rect(), P) :- frame($Rect(), B, _), in(P, _), interior(P, B).
+
+// --- Enclose ---
+
+// Each ink color walls the rest of the grid off.
+.init closed = Closed<Color>
+closed.cell(Col, P) :- ink(Col), in(P, C), C != Col.
+
+.type Ring = [col: Color, id: Ident]
+
+// The wall around a region one color closes off.
+.decl ring_wall(r: Ring, p: Position)
+ring_wall([Col, Id], P) :-
+    closed.region(Col, Q, Id),                    // a cell the wall closes off
+    dir8_elem(D), neighbor(Q, D, P), in(P, Col).  // the wall cell beside it
+
+// The box the wall spans: it runs around the region, so the box holds it too.
+.init ring_box = Bbox<Ring>
+ring_box.cell(R, P) :- ring_wall(R, P).
+
+// The frame: the wall whose region holds ink of another color.
+.decl frame_ring(r: Ring)
+frame_ring([Col, Id]) :- closed.region(Col, P, Id), in(P, C), ink(C), C != Col.
+
+frame($Enclose(), B, Col) :- frame_ring([Col, Id]), ring_box.box([Col, Id], B).
+wall_cell($Enclose(), P) :- frame_ring(R), ring_wall(R, P).
+inside_cell($Enclose(), P) :- frame_ring([Col, Id]), closed.region(Col, P, Id).
+
 // --- Color ---
 
-.init color_class = Canon<Position>
-color_class.equiv(P, Q) :- outside(P, Col), outside(Q, Col).
+.type ParseCell = [pa: Parse, p: Position]
 
-shape_cell([$Color(), Id], P) :- color_class.id(P, Id).
+.init color_class = Canon<ParseCell>
+color_class.equiv([Pa, P], [Pa, Q]) :- outside(Pa, P, Col), outside(Pa, Q, Col).
+
+shape_cell([[$Color(), Pa], Id], P) :- color_class.id([Pa, P], Id).
 
 // --- Piece ---
 
-.init pieces = Components8<Color>
-pieces.node(Col, P) :- outside(P, Col).
+.type ParseColor = [pa: Parse, col: Color]
 
-shape_cell([$Piece(), Id], P) :- pieces.label(_, P, Id).
+.init pieces = Components8<ParseColor>
+pieces.node([Pa, Col], P) :- outside(Pa, P, Col).
+
+shape_cell([[$Piece(), Pa], Id], P) :- pieces.label([Pa, _], P, Id).
 
 // --- Object ---
 
-.init parts = Components8<Unit>
-parts.node($U(), P) :- outside(P, _).
+.init parts = Components8<Parse>
+parts.node(Pa, P) :- outside(Pa, P, _).
 
-shape_cell([$Object(), Id], P) :- parts.label($U(), P, Id).
+shape_cell([[$Object(), Pa], Id], P) :- parts.label(Pa, P, Id).

@@ -1,17 +1,20 @@
 // 3aa6fb7a
 // draft
-// concept: objects stamp lookup
-// Ink lies on params.bg in L-triominoes: three cells of a 2x2 square, the fourth
-// empty. That empty cell takes params.fill; the rest passes through. The hypotheses of
-// what marks a cell:
-//
-//   $Corner — ink on both dirs of one corner and across it.
-//   $Glyph  — the gap of a stored L, matched in any pose.
-//   $Box    — a bg cell inside an object's bounding bbox.
+// keywords: objects stamp lookup
+// input: Ink lies on params.bg in L-triominoes: three cells of a 2x2 square,
+//  the fourth empty.
+// output: That empty cell takes params.fill; the rest passes through.
 
-#include "../lib.dl"
+// what marks a cell
+.type Choice =
+    // ink on both dirs of one corner and across it
+    Corner {}
+    // the gap of a stored L, matched in any pose
+  | Glyph {}
+    // a bg cell inside an object's bounding bbox
+  | Box {}
 
-.type Choice = Corner {} | Glyph {} | Box {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // --- shared ---
@@ -73,7 +76,6 @@ part_box.cell(Id, P) :- parts.label($U(), P, Id).
 
 mark(P, $Box()) :- empty(P), part_box.box(_, B), inside(P, B).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- mark(P, Ch), params.fill(Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !mark(P, Ch).
 

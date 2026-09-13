@@ -1,24 +1,30 @@
 // 5614dbcf
 // draft
-// concept: decompose count select
-// The grid divides into an arrangement of equal tiles, and the output is that
-// arrangement: one cell per tile. Two choice points cross; Choice = [f, d]:
-//
-//   f (what fixes a tile's color):
-//     $Vote()  — the color most of the tile's cells carry.
-//     $Solid() — every cell but the params.noise ones carries one color, and
-//                that color is the tile's.
-//   d (what fixes the tiling):
-//     $Count()  — a params.divisor × params.divisor arrangement.
-//     $Size() — tiles of params.tile_size on both axes.
+// keywords: decompose count select
+// output: The grid divides into an arrangement of equal tiles, and the output
+//  is that arrangement: one cell per tile.
 
-#include "../lib.dl"
+// what fixes a tile's color
+.type Fill =
+    // the color most of the tile's cells carry
+    Vote {}
+    // every cell but the params.noise ones carries one color, and that color is
+    // the tile's
+  | Solid {}
 
-.type Fill      = Vote {} | Solid {}
-.type DecChoice = Count {} | Size {}
+// what fixes the tiling
+.type DecChoice =
+    // a params.divisor × params.divisor arrangement
+    Count {}
+    // tiles of params.tile_size on both axes
+  | Size {}
+
+// two choice points cross
 .type Choice    = [f: Fill, d: DecChoice]
 
 .type TileKey = [d: DecChoice, p_tile: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // --- Count ---
@@ -42,8 +48,6 @@ tile(P_grid, P_tile, $Count()) :-
 // --- Size ---
 tile(P_grid, P_tile, $Size()) :-
     in(P_grid, _), params.tile_size(K), divide_by_size_2d(P_grid, K, 0, P_tile, _).
-
-.decl out(p: Position, col: Color, ch: Choice)
 
 // --- Vote ---
 

@@ -1,18 +1,16 @@
 // 332202d5
 // draft
-// concept: lines cast
+// keywords: lines cast
+// input: The input draws a divider line in `divider_color`, and several
+//  marked lines across it, each in its own color. Every crossing shows
+//  `cross_color`, and the rest of the grid is `bg`.
+// output: Each marked line's color moves off the line into the field: a
+//  field cell takes the color of the nearest marked line along the stacking
+//  axis. Where the nearest marked lines disagree, the cell takes `cross_color`.
+//  Every line is redrawn in `cross_color`, and every crossing in
+//  `divider_color`.
 
-// The input draws a divider line in `divider_color`, and several marked lines
-// across it, each in its own color. Every crossing shows `cross_color`, and
-// the rest of the grid is `bg`.
-//
-// In the output each marked line's color moves off the line into the field: a
-// field cell takes the color of the nearest marked line along the stacking
-// axis. Where the nearest marked lines disagree, the cell takes `cross_color`.
-// Every line is redrawn in `cross_color`, and every crossing in
-// `divider_color`.
-
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     // The axis the marked lines stack along; the divider runs along it.
@@ -75,7 +73,6 @@ field(P_along, Col) :- agree.clash(P_along), params.cross_color(Col).
 
 // --- output ---
 
-.decl out(p: Position, col: Color)
 out(P, Col) :-
     cell_split(P, _, P_along, P_across),
     ( mark(P_along, _), divider(P_across), params.divider_color(Col)  // crossing

@@ -1,9 +1,9 @@
 // 32e9702f
-// concept: move
-// Every mark shifts one step toward params.dir; a mark pushed off the grid
-// vanishes. All other cells become params.fill.
+// keywords: move
+// output: Every mark shifts one step toward params.dir; a mark pushed off the
+//  grid vanishes. All other cells become params.fill.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl dir(d: Dir) dir(DIR_L).    // shift direction
@@ -19,6 +19,5 @@ moved(Q, Col) :-
     params.dir(D), neighbor(P, D, Q),
     in(Q, _).                        // lands on the grid
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- moved(P, Col).
 out(P, F)   :- in(P, _), !moved(P, _), params.fill(F).

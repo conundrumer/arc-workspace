@@ -1,10 +1,10 @@
 // 681b3aeb
-// concept: objects pack
-// The input scatters colored shapes. They translate into a square that they
-// pack exactly one way, and every cell takes the color of the shape covering
-// it.
+// keywords: objects pack
+// input: Colored shapes lie on the bg, one shape per color.
+// output: The shapes translate into a square that they pack exactly one way,
+//  and every cell takes the color of the shape covering it.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -29,8 +29,7 @@ frame.extent($U(), A, N) :- axis_elem(A), params.side(N).
 occ.shape(Col, P_inner, $U()) :- bbox.cell(Col, P), bbox.box(Col, B), crop(P, B, P_inner).
 occ.cell(Col, P, $U()) :- bbox.cell(Col, _), frame.cell($U(), P).
 
-// A piece: one color's shape at one placement, named by its margins in the
-// square.
+// A piece: one color's shape at one placement in the square.
 .type Piece = [col: Color, b: Position]
 
 .decl covers(piece: Piece, p: Position)
@@ -43,5 +42,4 @@ covers([Col, B], P) :-
 .init forcing = CoverForcing<Unit, Piece>
 forcing.covers($U(), Pc, P) :- covers(Pc, P).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- forcing.forced($U(), [Col, B]), covers([Col, B], P).

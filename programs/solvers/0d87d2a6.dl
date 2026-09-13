@@ -1,22 +1,28 @@
 // 0d87d2a6
-// concept: markers objects cast span
-// Objects of params.body sit in the grid, and params.mark cells sit on its
-// edges. A marker sends a line across the grid along its edge's axis; the
-// lines and the objects they catch turn params.paint. The pairs leave two
-// points open, and Choice = [d, s] crosses them:
-//
-//   d (how a line is drawn):
-//     $Cast()   — a marker at one end draws the whole line.
-//     $Span()   — a line needs a marker at each end.
-//   s (which objects a line catches):
-//     $Graze()  — an object that touches the line.
-//     $Pierce() — an object the line runs through.
+// keywords: markers objects cast span
+// output: Objects of params.body sit in the grid, and params.mark cells sit on
+//  its edges. A marker sends a line across the grid along its edge's axis; the
+//  line and the objects it catches turn params.paint. The rest of the input
+//  stays as it is.
 
-#include "../lib.dl"
+// how a line is drawn
+.type Draw =
+    // a marker at one end draws the whole line
+    Cast {}
+    // a line needs a marker at each end
+  | Span {}
 
-.type Draw   = Cast {} | Span {}
-.type Spread = Graze {} | Pierce {}
+// which objects a line catches
+.type Spread =
+    // an object that touches the line
+    Graze {}
+    // an object the line runs through
+  | Pierce {}
+
+// how a line is drawn, crossed with which objects it catches
 .type Choice = [d: Draw, s: Spread]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl mark(col: Color) mark(1).
@@ -66,6 +72,5 @@ reach.node([D, $Graze()], P) :- line(P, D).
 painted(P, [D, S]) :- line(P, D), spread_choice(S).   // the line itself
 painted(P, Ch) :- reach.reach(Ch, P).                 // the objects it catches
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- painted(P, Ch), params.paint(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, Ch).

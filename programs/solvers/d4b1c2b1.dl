@@ -1,10 +1,10 @@
 // d4b1c2b1
-// concept: scale count
-// Layout: N× scale — each input cell expands to an N×N block of its
-// color, N = the distinct color count. No task data — the family is
-// fully structural.
+// keywords: scale count
+// output: Layout: N× scale. Each input cell expands to an N×N block of its
+//  color. N is the count of distinct colors in the input. The model takes
+//  no task data, so the family is fully structural.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {}
 
@@ -16,7 +16,6 @@ palette.item($U(), Col) :- in(_, Col).
 .init block = Frame2D<Unit>
 block.extent($U(), A, N) :- axis_elem(A), palette.tally($U(), N).
 
-.decl out(p: Position, col: Color)
 out(P_grid_out, Col) :-
     in(P_tile, Col),                                // input cell as tile pos
     block.cell($U(), P_intile),                     // intile pos (N×N block)

@@ -1,24 +1,24 @@
 // 8d510a79
 // draft
-// concept: decompose markers cast lookup
-// A uniform line divides the grid in two. Each mark casts its color
-// through bg along the line's perpendicular, stopped by the divider or
-// the grid edge. Two models of a mark's cast direction:
-//
-//   $Relative — by color: params.toward colors cast toward the divider,
-//               params.away colors cast away from it.
-//   $Table    — params.cast_dir maps (color, side the divider lies on) to
-//               the direction.
+// keywords: decompose markers cast lookup
+// output: A uniform line divides the grid in two. Each mark casts its color
+//  through bg along the line's perpendicular, stopped by the divider or the
+//  grid edge. Two models of a mark's cast direction:
 
-#include "../lib.dl"
-
-.type Choice = Relative {} | Table {}
+// how a mark's cast direction is found
+.type Choice =
+    // by color: params.toward colors cast toward the divider, params.away
+    // colors cast away from it
+    Relative {}
+    // params.cast_dir maps (color, side the divider lies on) to the direction
+  | Table {}
 
 // Marks casting toward d, under one model.
 .type CastKey = [d: Dir, ch: Choice]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
 
     // --- Relative ---
@@ -89,7 +89,6 @@ painted(P, Col, Ch) :- cast.clear([_, Ch], P, _, _, Src), parse.mark($U(), Src, 
 .decl impl_choice(ch: Choice)
 impl_choice($Relative()). impl_choice($Table()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- painted(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, _, Ch).
 

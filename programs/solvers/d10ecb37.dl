@@ -1,22 +1,22 @@
 // d10ecb37
-// concept: decompose crop select
-// Output is the 2×2 block at corner params.diag. The even-dimensioned inputs
-// leave the locate rule underdetermined:
-//
-//   $Corner() — a params.window block seated at the corner
-//   $Block()  — grid tiled by params.tile_dim blocks; the corner block
-//
-// A divisor arrangement is defeated: the 12×6 pair's corner tile is 6×3,
-// not 2×2.
+// keywords: decompose crop select
+// output: Output is the 2×2 block at the corner params.diag names.
+//  Even-dimensioned inputs leave the locate rule underdetermined. A divisor
+//  arrangement is defeated: the 12×6 pair's corner tile would be 6×3, not
+//  2×2.
 
-#include "../lib.dl"
+// how the corner block is located
+.type Choice =
+    // a params.window block seated at the corner
+    Corner {}
+    // grid tiled by params.tile_dim blocks; the corner block
+  | Block {}
 
-.type Choice = Corner {} | Block {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
     .init helpers = ParamsHelpers
 
-    // --- shared ---
     .decl diag(d: DiagDir)
     diag(DIAG_TL).
 
@@ -30,8 +30,6 @@
 }
 
 .init params = Params
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // --- Corner ---
 out(P_out, Col, $Corner()) :-

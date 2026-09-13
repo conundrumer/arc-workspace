@@ -1,14 +1,16 @@
 // 6d75e8bb
-// concept: objects
-// A shape over bg; bg cells inside its bounding box recolor params.fill. Two
-// hypotheses of what owns a box, tagged on out's Choice:
-//
-//   $Whole — one box over all ink.
-//   $Each  — per 8-connected component: each component's own bbox.
+// keywords: objects
+// input: a shape over bg
+// output: bg cells inside its bounding box recolor params.fill.
 
-#include "../lib.dl"
+// what owns a box
+.type Choice =
+    // one box over all ink
+    Whole {}
+    // per 8-connected component: each component's own bbox
+  | Each {}
 
-.type Choice = Whole {} | Each {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -42,6 +44,5 @@ filled(P, $Each()) :- in(P, Col), params.bg(Col), comp_box.box(_, B), inside(P, 
 .decl impl_choice(ch: Choice)
 impl_choice($Whole()). impl_choice($Each()).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, F, Ch)   :- filled(P, Ch), params.fill(F).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !filled(P, Ch).

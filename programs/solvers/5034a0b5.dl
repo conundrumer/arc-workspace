@@ -1,24 +1,26 @@
 // 5034a0b5
 // draft
-// concept: markers objects move
-// A one-cell frame borders the grid. Each side of that frame carries one
-// color, and the four corners carry the interior's background color. Marks
-// sit inside that frame. A mark whose color is a side's color takes one step
-// toward that side; a mark whose color no side carries stays, and so does a
-// mark that would step onto the frame. The marks step at once, so a mark may
-// step onto the cell another mark leaves.
-//
-// The cases differ on what takes the step.
-// $Cell — each mark steps on its own.
-// $Object — marks of one color that touch step together, and the whole group
-//   stays when any of its marks would step onto the frame.
+// keywords: markers objects move
+// input: A one-cell frame borders the grid. Each side of that frame carries
+//  one color, and the four corners carry the interior's background color.
+//  Marks sit inside that frame.
+// output: A mark whose color is a side's color takes one step toward that
+//  side; a mark whose color no side carries stays, and so does a mark that
+//  would step onto the frame. The marks step at once, so a mark may step
+//  onto the cell another mark leaves.
 
-#include "../lib.dl"
-
-.type Choice = Cell {} | Object {}
+// what takes the step
+.type Choice =
+    // each mark steps on its own
+    Cell {}
+    // marks of one color that touch step together, and the whole group stays
+    // when any of its marks would step onto the frame
+  | Object {}
 
 .decl impl_choice(ch: Choice)
 impl_choice($Cell()). impl_choice($Object()).
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {}
 
@@ -70,7 +72,6 @@ blocked(P, $Object()) :- obj.conn(_, P, P2), faces_frame(P2).
 
 // --- output ---
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     in(P, Col_in), impl_choice(Ch),
     ( move(_, P, Col, Ch)                                      // a mark arrives

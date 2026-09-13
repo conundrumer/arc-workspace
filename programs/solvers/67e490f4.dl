@@ -1,25 +1,31 @@
 // 67e490f4
 // draft
-// concept: objects enclose rank crop d4 count
-// A stencil sits among scattered pieces: one block of a single color with
-// cutouts, each a region of the field color inside the block. The
-// output is the stencil's box, each cutout filled with the commonest color
-// among the pieces of its shape. A piece has a cutout's shape when some
-// element of params.shape_sym carries the cutout onto it.
-//
-// Choice = [s, r], two independent choice points:
-//   s — what marks the stencil out among the objects:
-//       $Bordering: the object that borders a closed field region.
-//       $Largest:   the object with the most cells.
-//   r — what a cutout is:
-//       $Box:    a field component inside the stencil's box.
-//       $Closed: a field region closed off from the grid edge.
+// keywords: objects enclose rank crop d4 count
+// input: A stencil sits among scattered pieces: one block of a single color
+//  with cutouts, each a region of the field color inside the block.
+// output: The stencil's box, each cutout filled with the commonest color among
+//  the pieces of that cutout's shape. A piece has a cutout's shape when some
+//  element of params.shape_sym carries the cutout onto it.
+// review principle: docs/wf-solver/open/peer-priors.md
+// review principle: docs/wf-solver/open/coverage-rules.md
 
-#include "../lib.dl"
+// what marks the stencil out among the objects
+.type Stencil =
+    // the object that borders a closed field region
+    Bordering {}
+    // the object with the most cells
+  | Largest {}
 
-.type Stencil = Bordering {} | Largest {}
-.type Region = Box {} | Closed {}
+// what a cutout is
+.type Region =
+    // a field component inside the stencil's box
+    Box {}
+    // a field region closed off from the grid edge
+  | Closed {}
+
 .type Choice = [s: Stencil, r: Region]
+
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // The group under which a piece and a cutout are the same shape.
@@ -53,18 +59,17 @@ obj.node(Col, P) :- in(P, Col), !field.mode($U(), Col).
 
 .decl stencil(id: Ident, s: Stencil)
 
-// --- $Bordering ---
+// --- Bordering ---
 stencil(Id, $Bordering()) :-
     closed.region($U(), P, _), dir_elem(D), neighbor(P, D, Q),   // beside a closed cell
     obj.label(_, Q, Id).
 
-// --- $Largest ---
+// --- Largest ---
 .init biggest = Mode<Unit, Ident, Position>
 biggest.item($U(), Id, P) :- obj.label(_, P, Id).
 
 stencil(Id, $Largest()) :- biggest.mode($U(), Id).
 
-// The stencil's box.
 .init stencil_box = Bbox<Stencil>
 stencil_box.cell(S, P) :- stencil(Id, S), obj.label(_, P, Id).
 
@@ -72,13 +77,13 @@ stencil_box.cell(S, P) :- stencil(Id, S), obj.label(_, P, Id).
 
 .decl cutout(ch: Choice, p: Position, id: Ident)
 
-// --- $Box ---
+// --- Box ---
 .init boxed = Components<Stencil>
 boxed.node(S, P) :- stencil_box.box(S, B), field_cell(P), inside(P, B).
 
 cutout([S, $Box()], P, Id) :- boxed.label(S, P, Id).
 
-// --- $Closed ---
+// --- Closed ---
 cutout([S, $Closed()], P, Id) :- stencil_choice(S), closed.region($U(), P, Id).
 
 // --- shapes ---
@@ -95,9 +100,9 @@ obj_shape.cell(Id, P) :- obj.label(_, P, Id).
 .type Pair = [cut: Cut, obj: Ident]
 .init cong = D4Map<Pair, Unit>
 cong.src([C, O], P_inner, $U()) :-
-    cut_shape.cell(C, P), cut_shape.box(C, B), crop(P, B, P_inner), obj.label(_, _, O).
+    cut_shape.cell(C, P), cut_shape.box(C, B), crop(P, B, P_inner), obj_shape.box(O, _).
 cong.dst([C, O], P_inner, $U()) :-
-    cut_shape.cell(C, _), obj_shape.cell(O, P), obj_shape.box(O, B), crop(P, B, P_inner).
+    obj_shape.cell(O, P), obj_shape.box(O, B), crop(P, B, P_inner), cut_shape.box(C, _).
 
 // An object cell that no cutout cell reaches under D, which the
 // into-reading of `map` allows.
@@ -111,9 +116,8 @@ over(K, D) :-
 .decl onto(pair: Pair, d: D4)
 onto(K, D) :- cong.map(K, D), !over(K, D).
 
-// The commonest color among the objects of the cutout's shape: those some
-// element of the group carries the cutout onto. The stencil surrounds its
-// cutouts, so it never has a cutout's shape.
+// The commonest color among the objects of the cutout's shape. The stencil
+// surrounds its cutouts, so it never has a cutout's shape.
 .init fill = Mode<Cut, Color, Ident>
 fill.item(C, Col, O) :-
     onto([C, O], D), params.shape_sym(S), sym_member(S, D),   // the object has the cutout's shape
@@ -121,9 +125,8 @@ fill.item(C, Col, O) :-
 
 // --- output ---
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P_inner, Col, [S, R]) :-
-    stencil_box.box(S, B), in(P, _), crop(P, B, P_inner), region_choice(R),
+    stencil_box.box(S, B), crop(P, B, P_inner), region_choice(R),
     ( obj.label(Col, P, Id), stencil(Id, S)                        // the block itself
     ; cutout([S, R], P, Id), fill.mode([[S, R], Id], Col)          // a filled cutout
     ).

@@ -1,18 +1,20 @@
 // 3979b1a8
-// concept: grow lookup wallpaper cast
-// The input becomes one corner of a larger output. Outside it, the
-// diagonal through the growth corner continues periodically, and each
-// diagonal cell paints two arms one shell out: a step toward the corner,
-// then a ray back across.
-//   $Scale  — the output is the input scaled up.
-//   $Canvas — the output is a fixed canvas.
+// keywords: grow lookup wallpaper cast
+// output: The input becomes one corner of a larger output. Outside it, the
+//  diagonal through the growth corner continues periodically, and each diagonal
+//  cell paints two arms one shell out: a step toward the corner, then a ray
+//  back across.
 
-#include "../lib.dl"
+// what the output frame is
+.type Choice =
+    // the output is the input scaled up
+    Scale {}
+    // the output is a fixed canvas
+  | Canvas {}
 
-.type Choice = Scale {} | Canvas {}
+.decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl growth(d: DiagDir) growth(DIAG_BR).
     .decl period(n: number) period(3).
 
@@ -63,8 +65,6 @@ on_diag(Ch, P) :- frame_cell(Ch, P), params.growth(Diag), diag_dist(P, Diag, _, 
 .decl period_jump(delta: Position)
 period_jump(Delta) :-
     params.growth(Diag), params.period(N), jump_offset(Diag, N, Delta).
-
-.decl out(p: Position, col: Color, c: Choice)
 
 // The input in place.
 out(P_grid, Col, Ch) :- placed(Ch, P_grid, P_in), in(P_in, Col).

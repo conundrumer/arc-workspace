@@ -1,16 +1,19 @@
 // 25d487eb
 // draft
-// concept: markers cast
-// A solid arrowhead of one color carries a mark cell of a second color on its
-// base. The mark casts a ray of its own color out to the grid edge, so the ray
-// shows past the arrowhead's tip. Two models of the cast direction:
-//
-//   $Away — away from the box edge the mark sits on.
-//   $Open — toward the grid edge the arrowhead's box is farthest from.
+// keywords: markers cast
+// input: A solid arrowhead of one color carries a mark cell of a second color
+//  on its base.
+// output: The mark casts a ray of its own color out to the grid edge, so the
+//  ray shows past the arrowhead's tip. Two models of the cast direction:
 
-#include "../lib.dl"
+// the cast direction
+.type Choice =
+    // away from the box edge the mark sits on
+    Away {}
+    // toward the grid edge the arrowhead's box is farthest from
+  | Open {}
 
-.type Choice = Away {} | Open {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -62,7 +65,6 @@ rays.mark(Ch, P) :- impl_choice(Ch), mark(P, _).
 .decl beam(ch: Choice, p: Position, col: Color)
 beam(Ch, P, Col) :- rays.ray(Ch, P, _, _, Src), mark(Src, Col).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     in(P, Col_in), impl_choice(Ch),
     ( beam(Ch, P, Col)                  // on the ray — the casting mark's color

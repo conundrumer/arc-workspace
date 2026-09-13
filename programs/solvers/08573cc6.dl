@@ -1,21 +1,22 @@
 // 08573cc6
-// concept: markers walk
-// A lone dot and a two-cell legend at the top-left corner. The output is a
-// rectangular spiral walked outward from the dot: arms turn with a fixed
-// sense, each arm one cell longer than the last, and the walk ends with the
-// first arm the grid edge cuts short. The legend's two colors paint the arms
-// by axis; the cases differ on how the corner marker's axis is picked:
-//
-//   $Start  — the corner marker colors the axis of the walk's first arm; the
-//             alternation is read off the walk itself.
-//   $Stored — the corner marker colors a stored axis.
+// keywords: markers walk
+// output: A lone dot and a two-cell legend at the top-left corner. The output
+//  is a rectangular spiral walked outward from the dot: arms turn with a fixed
+//  sense, each arm one cell longer than the last, and the walk ends with the
+//  first arm the grid edge cuts short. The legend's two colors paint the arms
+//  by axis.
 
-#include "../lib.dl"
+// The cases differ on how the corner marker's axis is picked
+.type Choice =
+    // the corner marker colors the axis of the walk's first arm; the
+    // alternation is read off the walk itself
+    Start {}
+    // the corner marker colors a stored axis
+  | Stored {}
 
-.type Choice = Start {} | Stored {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
     .decl dot(col: Color) dot(1).
     .decl marker_corner(d: DiagDir) marker_corner(DIAG_TL).
@@ -86,7 +87,6 @@ corner_axis(A, $Start()) :- params.start_dir(D), axis_of(D, A).
 // --- $Stored ---
 corner_axis(A, $Stored()) :- params.color_axis(A).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :-
     arm_cell(P, D), axis_of(D, A),                          // arm cell, its axis
     ( corner_axis(A, Ch), corner_color(Col)                 // on the corner's axis

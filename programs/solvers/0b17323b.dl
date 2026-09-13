@@ -1,19 +1,19 @@
 // 0b17323b
-// concept: markers cast
-// Marks of params.mark_color sit on one diagonal, evenly spaced. The output
-// keeps the input and continues the sequence in params.new_color, stepping by
-// the mark spacing until it leaves the grid.
-//
-//   $Ray  — the sequence runs toward params.dir, and continues past that end.
-//   $Line — the diagonal has no privileged end; the sequence continues
-//           past both.
+// keywords: markers cast
+// output: Marks of params.mark_color sit on one diagonal, evenly spaced. The
+//  output keeps the input and continues the sequence in params.new_color,
+//  stepping by the mark spacing until it leaves the grid.
 
-#include "../lib.dl"
+// which ends of the diagonal the sequence continues from
+.type Choice =
+    // the sequence runs toward params.dir, and continues past that end
+    Ray {}
+    // the diagonal has no privileged end; the sequence continues past both
+  | Line {}
 
-.type Choice = Ray {} | Line {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl mark_color(col: Color) mark_color(1).
     .decl new_color(col: Color) new_color(2).
 
@@ -53,7 +53,6 @@ walk(Ch, P_next) :-
 .decl added(ch: Choice, p: Position)
 added(Ch, P) :- walk(Ch, P), !mark(P).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- added(Ch, P), params.new_color(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !added(Ch, P).
 

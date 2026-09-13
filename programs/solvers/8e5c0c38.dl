@@ -1,20 +1,20 @@
 // 8e5c0c38
-// concept: objects symmetry repair d4
-// Shapes lie on the background, each a mirror-symmetric figure with a few
-// stray cells added. The output keeps, per shape, the cells whose mirror image
-// across the figure's axis is also in the shape, and erases the rest. The axis
-// is the placement of the flip that lands the most shape cells on shape cells.
-// Two hypotheses of what a shape is:
-//
-//   $ByColor  — all cells of one color.
-//   $ByObject — one connected piece.
-//
-// Placements can tie for a shape; each choice among tied placements is a
-// resolution.
+// keywords: objects symmetry repair d4
+// input: Shapes lie on the background, each a mirror-symmetric figure with a
+//  few stray cells added.
+// output: The output keeps, per shape, the cells whose mirror image across the
+//  figure's axis is also in the shape, and erases the rest. The axis is the
+//  placement of the flip that lands the most shape cells on shape cells.
+//  Placements can tie for a shape; each choice among tied placements is a
+//  resolution.
 
-#include "../lib.dl"
+// what a shape is
+.type Choice =
+    // all cells of one color
+    ByColor {}
+    // one connected piece
+  | ByObject {}
 
-.type Choice = ByColor {} | ByObject {}
 .type Grp = [ch: Choice, id: Ident]
 
 // A shape's placement of the flip.
@@ -22,6 +22,8 @@
 
 .type TiebreakResolution =
     End {} | Sit {shape: Ident, at: Placement, rest: TiebreakResolution}
+
+.decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
 
 .comp Params {
     // The axis the flip inverts.
@@ -79,7 +81,6 @@ ties.cand(Ch, Id, [Id, Delta]) :- fit.mode([Ch, Id], Delta).
 .decl kept(p: Position, ch: Choice, res: TiebreakResolution)
 kept(P, Ch, R) :- ties.assign(Ch, R, Id, [Id, Delta]), mirrored([Ch, Id], Delta, P).
 
-.decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
 out(P, Col, Ch, R) :-
     in(P, Col_in), ties.resolution(Ch, R),
     ( kept(P, Ch, R), Col = Col_in       // a mirrored cell stays

@@ -1,12 +1,13 @@
 // 3490cc26
-// concept: objects markers walk
-// The grid holds equal-sized blocks, one of them colored params.seed. Two blocks
-// reach each other when they lie on one line with no third block between
-// them. From the seed, the chain steps to the nearest block it reaches and
-// does not already hold. Each link fills the cells between its two blocks in
-// params.path.
+// keywords: objects markers walk
+// input: The grid holds equal-sized blocks, one of them colored params.seed.
+//  Two blocks reach each other when they lie on one line with no third block
+//  between them.
+// output: From the seed, the chain steps to the nearest block it reaches and
+//  does not already hold. Each link fills the cells between its two blocks in
+//  params.path.
 
-#include "../lib.dl"
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(0).
@@ -66,6 +67,5 @@ span.cell([B, B2], B3) :- hop(B, B2), ( B3 = B ; B3 = B2 ).
 .decl link_cell(p: Position)
 link_cell(P) :- span.box(_, B), in(P, _), inside(P, B), !blocks.node($U(), P).
 
-.decl out(p: Position, col: Color)
 out(P, Col) :- in(P, Col), !link_cell(P).
 out(P, Col) :- link_cell(P), params.path(Col).

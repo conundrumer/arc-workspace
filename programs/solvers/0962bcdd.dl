@@ -1,17 +1,19 @@
 // 0962bcdd
-// concept: markers lookup stamp
-// Plus-shaped marks — a center cell whose four cardinal neighbors share
-// one arm color — grow: cardinal rays extend in the arm color, diagonal
-// rays in the center color, the rest passes through. $Ray casts the rays
-// to a stored radius; $Lookup stamps stored role masks anchored on the
-// marker.
+// keywords: markers lookup stamp
+// output: Plus-shaped marks — a center cell whose four cardinal neighbors
+//  share one arm color — grow: cardinal rays extend in the arm color,
+//  diagonal rays in the center color, the rest passes through.
 
-#include "../lib.dl"
+// how the marker's growth is drawn
+.type Choice =
+    // casts the rays to a stored radius
+    Ray {}
+    // stamps stored role masks anchored on the marker
+  | Lookup {}
 
-.type Choice = Ray {} | Lookup {}
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
 
     // --- Ray ---
@@ -96,7 +98,6 @@ paint(P_grid, Col, $Lookup()) :-
 
 // --- out ---
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(P, _, Ch).
 

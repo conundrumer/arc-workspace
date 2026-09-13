@@ -1,25 +1,25 @@
 // 4612dd53
 // draft
-// concept: lines count objects
-// The marks draw a lattice of dashed lines inside their bounding box: some
-// rows and some columns of that box carry a line. The output repairs each
-// line, painting its missing cells in the fill color; every other cell keeps
-// what it holds.
-//
-// The cases differ in what makes a row or column a line:
-//
-//   $Threshold — its marks reach a stored count.
-//   $Majority  — its marks outnumber its gaps.
-//   $Segment   — two of its marks are adjacent along it.
+// keywords: lines count objects
+// input: The marks draw a lattice of dashed lines inside their bounding box:
+//  some rows and some columns of that box carry a line.
+// output: The output repairs each line, painting its missing cells in the
+//  fill color; every other cell keeps what it holds.
 
-#include "../lib.dl"
-
-.type Choice = Threshold {} | Majority {} | Segment {}
+// what makes a row or column a line
+.type Choice =
+    // its marks reach a stored count
+    Threshold {}
+    // its marks outnumber its gaps
+  | Majority {}
+    // two of its marks are adjacent along it
+  | Segment {}
 
 .type LineKey = [a: Axis, l: Position]
 
+.decl out(p: Position, col: Color, ch: Choice)
+
 .comp Params {
-    // --- shared ---
     .decl bg(col: Color) bg(0).
     .decl fill(col: Color) fill(2).
 
@@ -74,6 +74,5 @@ impl_choice($Threshold()). impl_choice($Majority()). impl_choice($Segment()).
 .decl repaired(ch: Choice, p: Position)
 repaired(Ch, P) :- line(Ch, A, L), line_gap(A, L, P).
 
-.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, Ch) :- repaired(Ch, P), params.fill(Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !repaired(Ch, P).
