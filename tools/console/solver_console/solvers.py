@@ -2,6 +2,7 @@
 those reports carry."""
 
 import hashlib
+import json
 import re
 from pathlib import Path
 
@@ -98,10 +99,91 @@ def write_solver(item_id: str, text: str) -> None:
         tmp.unlink(missing_ok=True)
 
 
+# A header field: `// <word>: <value>`, or `// review <kind>: <value>`. A
+# value continues on lines of `//` and two spaces.
+HEADER_FIELD = re.compile(r"^//\s*(\w+)(?:\s+(\w+))?:\s*(.*)$")
+CONTINUATION = re.compile(r"^//  \s*(.*)$")
+# The body annotation a session writes above a form that stands in for the
+# principled one.
+WORKAROUND = re.compile(r"^\s*//\s*@workaround:\s*(.*)$", re.M)
+# The kinds of review need, in the order the lens offers them: `principle`,
+# `workaround`, and `sweep` are read from the file's lines, `proposal` from
+# its comps.
+NEED_KINDS = ("principle", "proposal", "workaround", "sweep")
+
+
+def header_end(lines: list[str]) -> int:
+    """The count of lines in the leading comment block."""
+    n = 0
+    while n < len(lines) and lines[n].strip().startswith("//"):
+        n += 1
+    return n
+
+
+def header_fields(text: str) -> list[tuple[str, str | None, str]]:
+    """The header's fields as (word, kind, value), continuation lines joined
+    into the value."""
+    out: list[tuple[str, str | None, str]] = []
+    lines = text.splitlines()
+    for line in lines[:header_end(lines)]:
+        line = line.strip()
+        if m := HEADER_FIELD.match(line):
+            out.append((m.group(1), m.group(2), m.group(3).strip()))
+        elif out and (m := CONTINUATION.match(line)):
+            word, kind, value = out[-1]
+            out[-1] = (word, kind, f"{value} {m.group(1).strip()}".strip())
+    return out
+
+
+def header_of(item_id: str) -> dict:
+    """The `input:` and `output:` lines of the solver's header."""
+    fields = {w: v for w, k, v in header_fields(solver_text(item_id)) if k is None}
+    return {"input": fields.get("input", ""), "output": fields.get("output", "")}
+
+
+def needs_of(item_id: str) -> dict[str, list[str]]:
+    """What the solver holds for the user's review, by kind."""
+    text = solver_text(item_id)
+    out: dict[str, list[str]] = {k: [] for k in NEED_KINDS}
+    for word, kind, value in header_fields(text):
+        if word == "review" and kind:
+            out.setdefault(kind, []).append(value)
+    out["proposal"] = comps_of(item_id)
+    out["workaround"] = [m.strip() for m in WORKAROUND.findall(text)]
+    return out
+
+
+def _review_span(lines: list[str]) -> list[int]:
+    """The indices of the header's review lines, continuations included."""
+    at: list[int] = []
+    for n in range(header_end(lines)):
+        line = lines[n].strip()
+        if (m := HEADER_FIELD.match(line)) and m.group(1) == "review":
+            at.append(n)
+        elif at and at[-1] == n - 1 and CONTINUATION.match(line):
+            at.append(n)
+    return at
+
+
+def _cleared() -> dict[str, list[str]]:
+    try:
+        raw = json.loads(config.REVIEWS_FILE.read_text())
+    except (OSError, ValueError):
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _save_cleared(table: dict[str, list[str]]) -> None:
+    config.REVIEWS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = config.REVIEWS_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(table, indent=1))
+    tmp.replace(config.REVIEWS_FILE)
+
+
 def _retag(item_id: str, mark: bool) -> bool:
     """Put the draft line in the header block, or take it out. The line goes
-    under the task-id line, so it reads before the doc header. True when the
-    file changed."""
+    under the task-id line. The review lines leave with the draft line, held
+    aside so they return with it. True when the file changed."""
     p = solver_path(item_id)
     try:
         lines = p.read_text().splitlines(True)
@@ -110,6 +192,7 @@ def _retag(item_id: str, mark: bool) -> bool:
     at = [n for n, line in enumerate(lines) if line.strip() == DRAFT]
     if mark == bool(at):
         return False
+    held = _cleared()
     if mark:
         first = 1 if lines and lines[0].startswith("//") else 0
         # the line the tag goes under may be the last one, and a last line
@@ -117,8 +200,18 @@ def _retag(item_id: str, mark: bool) -> bool:
         if first and not lines[first - 1].endswith("\n"):
             lines[first - 1] += "\n"
         lines.insert(first, DRAFT + "\n")
+        if back := held.pop(item_id, None):
+            end = header_end(lines)
+            if end and not lines[end - 1].endswith("\n"):
+                lines[end - 1] += "\n"
+            lines[end:end] = [line + "\n" for line in back]
+            _save_cleared(held)
     else:
-        for n in reversed(at):
+        gone = _review_span(lines)
+        if gone:
+            held[item_id] = [lines[n].rstrip("\n") for n in gone]
+            _save_cleared(held)
+        for n in reversed(sorted(set(at) | set(gone))):
             del lines[n]
     write_solver(item_id, "".join(lines))
     return True
@@ -280,7 +373,7 @@ def callout_rank(entries: list[str]) -> int | None:
     return min(ranks) if ranks else None
 
 
-# What a rank is worth to the triage sort. A P3 is a note the worker left, not
+# What a rank is worth to a sort over callouts. A P3 is a note the worker left, not
 # a ruling it wants, so it lands in the same band as a report that raised
 # nothing, where comps and the acting callouts order it.
 CALLOUT_WEIGHT = {0: 0, 1: 1, 2: 2, 3: 9}
@@ -344,7 +437,7 @@ def title_of(item_id: str) -> str:
     if not p.exists():
         return ""
     for line in p.read_text().splitlines()[:4]:
-        m = re.match(r"//\s*((concept|family):.*)", line)
+        m = re.match(r"//\s*((keywords|representative):.*)", line)
         if m:
             return m.group(1)
     return ""

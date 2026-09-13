@@ -99,7 +99,7 @@ function LensHost({lens, snap, selId, setSelId, pins, cli, view, setView, taskOp
   </div>`;
   return html`
     <div id="main">
-      <${Rail} sections=${L.sections} filter=${filter} setFilter=${setFilter}/>
+      <${Rail} sections=${L.sections} tools=${L.tools} filter=${filter} setFilter=${setFilter}/>
       <div id="judge">
         <div id="judge-head">${L.head}</div>
         ${body}
@@ -147,7 +147,7 @@ function App(){
   },[]);
 
   /* ---- actions ---- */
-  const commitApproved=useCallback(async()=>{
+  const commitScope=useCallback(async()=>{
     const r=await post("/api/commit");
     if(r.ok) toast('git commit -m "'+r.msg+'"');
   },[]);
@@ -178,7 +178,7 @@ function App(){
       const n=live.current.night||{};
       const queueText="admits tasks from the queue: up to "+(n.target??6)
         +" items in flight, create → refine";
-      const finText="starts finalize passes over the unfinalized solvers, in triage order: up to "
+      const finText="starts finalize passes over the unfinalized solvers, in the lens's review order: up to "
         +(n.finalize_target??3)+" in flight";
       const ends = n.end && n.end*1000>Date.now() ? " Ends at "+hhmmDay(n.end)+"." : "";
       const ok=confirm("Autopilot "+(n.source==="unfinalized" ? finText
@@ -204,7 +204,7 @@ function App(){
   return html`
     <${Topbar} view=${view} setView=${setView} wave=${waveN} items=${items}
       progress=${progress} usage=${usage} night=${night} nightOpen=${nightOpen}
-      committer=${committer} commitOpen=${commitOpen} onCommit=${commitApproved}
+      committer=${committer} commitOpen=${commitOpen} onCommit=${commitScope}
       toggleNight=${()=>setNightOpen(o=>{ localStorage.setItem("nightOpen", o?"":"1"); return !o; })}
       toggleCommit=${()=>setCommitOpen(o=>{ localStorage.setItem("commitOpen", o?"":"1"); return !o; })}
       auto=${auto} onAuto=${onAuto}

@@ -70,9 +70,22 @@ export function PeekHead({d, onDismiss, onApprove}){
       onClick=${()=>onDismiss(d.id)}>✕ dismiss</button>
   </div>`;
 }
+/* the solver's header lines and its review needs, above the reports */
+function PeekNeeds({d}){
+  const h=d.header||{}, needs=d.needs||{};
+  const kinds=Object.keys(needs).filter(k=>(needs[k]||[]).length);
+  if(!h.input && !h.output && !kinds.length) return null;
+  return html`<div class="peekneeds">
+    ${h.input && html`<div><span class="lbl">input</span> ${h.input}</div>`}
+    ${h.output && html`<div><span class="lbl">output</span> ${h.output}</div>`}
+    ${kinds.map(k=>html`<div key=${k}><span class="lbl">${k}</span>
+      <ul>${needs[k].map((t,i)=>html`<li key=${i}>${t}</li>`)}</ul></div>`)}
+  </div>`;
+}
 export function PeekBody({d}){
   const reports=d.reports||[];
   return html`<div id="judge-scroll">
+    <${PeekNeeds} d=${d}/>
     ${reports.map((r,i)=>[
       html`<div class="railhead" key=${"h"+i}><span>${r.stage+" report"}</span></div>`,
       html`<pre class="peektext" key=${"t"+i}>${r.text}</pre>`,

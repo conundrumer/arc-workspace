@@ -48,7 +48,7 @@ def test_a_draft_read_stands_until_the_file_changes(srv, monkeypatch):
     assert srv.is_draft("aaa")
     assert srv.is_draft("aaa")
     assert reads == ["aaa"]
-    write_solver(srv, "aaa", "// concept: a shape\n")
+    write_solver(srv, "aaa", "// keywords: a shape\n")
     assert not srv.is_draft("aaa")
     assert reads == ["aaa", "aaa"]
 
@@ -73,7 +73,7 @@ def test_a_lens_approval_moves_the_item_the_console_holds(srv):
     assert it["state"] == srv.APPROVED
     assert not srv.is_draft("aaa")
     assert it["feed"][-1]["text"] == "approved"
-    srv.pre(it).update(solver="// concept: a shape, revised\n")
+    srv.pre(it).update(solver="// keywords: a shape, revised\n")
     assert srv.act_revert("aaa") == {"ok": True}
     assert not srv.is_draft("aaa")
 
@@ -106,7 +106,7 @@ def test_a_lens_approval_stands_through_a_turn_in_flight(srv):
     assert srv.act_approve_solver({"id": "aaa"}) == {"ok": True}
     assert it["state"] == srv.APPROVED
     assert not srv.is_draft("aaa")
-    write_solver(srv, "aaa", "// concept: a shape, revised\n")
+    write_solver(srv, "aaa", "// keywords: a shape, revised\n")
     w["state"] = "idle"
     srv.finish_turn(it, {"result": tagged("done")}, None, time.time(),
                     "finalize", False)
@@ -127,13 +127,15 @@ def test_the_lens_route_reads_git_with_the_lock_down(srv, monkeypatch):
     assert free == [True]
 
 
-def test_the_oldest_commit_breaks_the_last_tie(srv, monkeypatch):
+def test_a_row_carries_when_its_solver_was_added(srv, monkeypatch):
+    """The row reports the first commit for the page to show; the review
+    order does not read it."""
     for tid in ("aaa", "bbb", "ccc"):
         backlog_solver(srv, tid)
     monkeypatch.setattr(srv, "solver_ages", lambda: {"aaa": 200, "bbb": 100})
     rows = srv.backlog_view()
-    assert [r["id"] for r in rows] == ["bbb", "aaa", "ccc"]   # ccc: not committed yet
-    assert [r["added"] for r in rows] == [100, 200, None]
+    assert [r["id"] for r in rows] == ["aaa", "bbb", "ccc"]
+    assert [r["added"] for r in rows] == [200, 100, None]   # ccc: not committed yet
 
 
 def test_dismiss_drops_a_task_from_the_backlog(srv):
@@ -146,76 +148,74 @@ def test_dismiss_drops_a_task_from_the_backlog(srv):
     assert "no solver" in srv.act_dismiss({"id": "zzz"})["error"]
 
 
-def test_the_backlog_order_bands(srv):
-    """One task per band, in the order the sort produces. The ids descend as
-    the bands do, so only the sort key can put the rows in this order. The
-    last two bands tie on every term of the key, and the id separates them."""
-    for tid in ("t01", "t02", "t03", "t04", "t05", "t06",
-                "t07", "t08", "t09", "t10", "t12"):
-        backlog_solver(srv, tid)
-    # a task whose session added an entry: the ledger line carries it
-    srv.ledger_append({"task": "t12", "stage": "refine", "model": "claude-opus-5",
-                       "source": "console", "entries": [f"{PROP}/Border.md"]})
-    # a missing solver: the pass landed and wrote a report, but no file
-    srv.save_report("t11", "refine", "no file written")
-    item(srv, "t11", srv.NEEDS_REVIEW, chain=srv.default_chain())
-    srv.save_report("t10", "refine",
-                    "done\n\n## Callouts\n\n1. [P0] run_dl crashes on this task\n")
-    srv.act_flag({"id": "t09", "level": 1})
-    srv.act_flag({"id": "t08", "level": 2})
-    srv.save_report("t07", "refine",
-                    "done\n\n## Callouts\n\n1. [P1] the pin is a guess\n")
-    srv.save_report("t06", "refine",
-                    "done\n\n## Callouts\n\n1. [P2] the pin is a guess\n")
-    write_solver(srv, "t05", "// draft\n// concept: tiles\n.comp CornerDist {\n}\n")
-    srv.save_report("t04", "refine", REPORT)   # two entries, no marks
-    srv.save_report("t03", "refine",
-                    "done\n\n## Callouts\n\n1. [P3] the name reads oddly\n")
-    srv.save_report("t01", "refine", "done, nothing to raise\n")
+NAMING = "Naming — the comp name says the mechanism"
+SCOPE = "Scope — the rule reaches outside its own example"
+SWEEP = "tile size — the pairs leave the largest tile untested"
+SWEEP2 = "gap width — the pairs show one gap only"
+
+
+def draft(*, reviews=(), comps=(), workarounds=(), rules=0) -> str:
+    """A draft solver: the header, the review lines a retro left in it, and a
+    body of `rules` facts, which is its dl size."""
+    lines = ["// tid", "// draft", "// keywords: tiling", "// output: a grid"]
+    lines += [f"// review {kind}: {text}" for kind, text in reviews]
+    lines.append("")
+    for name in comps:
+        lines += [f".comp {name} {{", "    .decl d(x: number)", "}"]
+    lines += [f"// @workaround: {text}" for text in workarounds]
+    lines.append(".decl out(x: number)")
+    lines += [f"out({n})." for n in range(rules)]
+    return "\n".join(lines) + "\n"
+
+
+def test_the_review_order_bands(srv):
+    """Under the principle priority: the missing solver, then the rows carrying
+    a principle need, the widest reach first, then the rest. The solver size
+    breaks a tie, and the id breaks the last one."""
+    write_solver(srv, "aaa", draft(reviews=[("principle", NAMING)]))
+    write_solver(srv, "bbb", draft(reviews=[("principle", NAMING)]))
+    write_solver(srv, "ccc", draft(reviews=[("principle", SCOPE)]))
+    write_solver(srv, "ddd", draft(rules=1))
+    write_solver(srv, "eee", draft(rules=3, workarounds=["a scan, not the functor"]))
+    # a pass that wrote no solver: the absence of a reading leads
+    srv.save_report("zzz", "refine", "no file written")
+    item(srv, "zzz", srv.NEEDS_REVIEW, chain=srv.default_chain())
 
     rows = srv.backlog_view()
-    assert [r["id"] for r in rows] == [
-        "t11",   # no solver
-        "t10",   # P0
-        "t12",   # an entry
-        "t09",   # flag 1
-        "t08",   # flag 2
-        "t07",   # P1
-        "t06",   # P2
-        "t05",   # a comp
-        "t04",   # callout entries with no mark
-        "t03",   # P3
-        "t01",   # a report that raised nothing
-        "t02",   # nothing at all
-    ]
+    assert [r["id"] for r in rows] == ["zzz", "aaa", "bbb", "ccc", "eee", "ddd"]
     by_id = {r["id"]: r for r in rows}
-    assert by_id["t12"]["entries"] == ["Border"] and by_id["t11"]["entries"] == []
-    assert by_id["t11"]["no_solver"] and not by_id["t10"]["no_solver"]
-    assert by_id["t10"]["callout_rank"] == 0
-    assert by_id["t09"]["flag"] == 1
-    assert by_id["t08"]["flag"] == 2
-    assert by_id["t07"]["callout_rank"] == 1
-    assert by_id["t06"]["callout_rank"] == 2
-    assert by_id["t05"]["comps"] == ["CornerDist"]
-    assert by_id["t05"]["comps_unproposed"] == ["CornerDist"]
-    assert by_id["t05"]["callout_rank"] is None
-    assert by_id["t04"]["callout_n"] == 2
-    assert by_id["t04"]["reports"] == ["refine"]
-    assert by_id["t03"]["callout_rank"] == 3
-    assert by_id["t03"]["callout_act"] == 0
-    assert by_id["t02"]["reports"] == []
-    assert by_id["t02"]["title"] == "concept: a shape"
-def test_a_self_rank_outsorts_comps_and_counts(srv):
-    for tid in ("aaa", "bbb", "ccc"):
-        backlog_solver(srv, tid)
-    write_solver(srv, "aaa", "// draft\n// concept: tiles\n.comp CornerDist {\n}\n")
-    srv.save_report("bbb", "refine", REPORT)   # two entries, no marks
-    srv.save_report("ccc", "refine",
-                    "done\n\n## Callouts\n\n1. [P2] the pin is a guess\n")
-    rows = srv.backlog_view()
-    assert [r["id"] for r in rows] == ["ccc", "aaa", "bbb"]
-    assert rows[0]["callout_rank"] == 2
-    assert rows[1]["callout_rank"] is None
+    assert by_id["zzz"]["no_solver"]
+    # aaa and bbb name one heading, so each reaches the other
+    assert by_id["aaa"]["reach"]["principle"] == 2
+    assert by_id["bbb"]["reach"]["principle"] == 2
+    assert by_id["ccc"]["reach"]["principle"] == 1
+    assert by_id["eee"]["reach"] == {"principle": 0, "proposal": 0,
+                                     "workaround": 1, "sweep": 0}
+    assert by_id["eee"]["dl_size"] == 3 and by_id["ddd"]["dl_size"] == 1
+
+
+def test_the_priority_leads_the_rows_holding_its_kind(srv):
+    write_solver(srv, "aaa", draft(reviews=[("principle", NAMING)]))
+    write_solver(srv, "bbb", draft(comps=["CornerDist"]))
+    write_solver(srv, "ccc", draft(workarounds=["a scan, not the functor"]))
+    assert [r["id"] for r in srv.backlog_view()] == ["aaa", "bbb", "ccc"]
+    srv.act_priority({"kind": "proposal"})
+    assert [r["id"] for r in srv.backlog_view()] == ["bbb", "aaa", "ccc"]
+    srv.act_priority({"kind": "workaround"})
+    assert [r["id"] for r in srv.backlog_view()] == ["ccc", "aaa", "bbb"]
+
+
+def test_a_sweep_line_is_a_need_and_leads_under_the_sweep_priority(srv):
+    """A `// review sweep:` line counts as a sweep need, and the sweep
+    priority puts the rows holding one first."""
+    write_solver(srv, "aaa", draft(reviews=[("principle", NAMING)]))
+    write_solver(srv, "bbb", draft(reviews=[("sweep", SWEEP), ("sweep", SWEEP2)]))
+    assert srv.needs_of("bbb")["sweep"] == [SWEEP, SWEEP2]
+    rows = {r["id"]: r for r in srv.backlog_view()}
+    assert rows["bbb"]["reach"]["sweep"] == 2
+    assert rows["aaa"]["reach"]["sweep"] == 0
+    srv.act_priority({"kind": "sweep"})
+    assert [r["id"] for r in srv.backlog_view()] == ["bbb", "aaa"]
 
 
 def test_callout_act_counts_only_the_entries_that_ask(srv):
@@ -253,17 +253,17 @@ def test_a_dismissed_solverless_task_leaves_the_backlog(srv):
 
 
 def test_the_lens_ranks_the_finalize_passes_in_flight(srv):
-    for tid in ("aaa", "bbb", "ccc"):
-        backlog_solver(srv, tid)
-    srv.save_report("bbb", "refine", "## Callouts\n\n1. [P1] a call")
+    write_solver(srv, "aaa", draft())
+    write_solver(srv, "bbb", draft(reviews=[("principle", NAMING)]))
+    write_solver(srv, "ccc", draft())
     item(srv, "aaa", srv.NEEDS_REVIEW, chain=srv.default_chain(), phase="finalize")
     item(srv, "bbb", srv.NEEDS_REVIEW, chain=srv.default_chain(), phase="finalize")
     item(srv, "ccc", srv.NEEDS_REVIEW, chain=srv.default_chain(), phase="refine")
     view = srv.lens_view()
     assert view["items"] == []
     assert [r["id"] for r in view["finalizing"]] == ["bbb", "aaa"]
-    assert view["finalizing"][0]["callout_n"] == 1
-    assert "flag" in view["finalizing"][0]
+    assert view["finalizing"][0]["reach"]["principle"] == 1
+    assert view["priority"] == "principle"
 
 
 def test_a_task_the_console_holds_stays_out_of_the_backlog(srv):
@@ -306,16 +306,9 @@ def test_an_unfinalized_row_is_rebuilt_only_when_its_files_change(srv):
     backlog_solver(srv, "bbb")
     assert [r["id"] for r in srv.backlog_view()] == ["aaa", "bbb"]
     assert srv.ROW_CACHE["aaa"] is first
-    backlog_solver(srv, "aaa", "// draft\n// concept: a shape, revised\n")
-    assert srv.backlog_view()[0]["title"] == "concept: a shape, revised"
+    backlog_solver(srv, "aaa", "// draft\n// keywords: a shape, revised\n")
+    assert srv.backlog_view()[0]["title"] == "keywords: a shape, revised"
     assert srv.ROW_CACHE["aaa"] is not first
-
-
-def test_a_flag_shows_up_without_waiting_for_the_scan(srv):
-    backlog_solver(srv, "aaa")
-    srv.backlog_view()
-    srv.act_flag({"id": "aaa", "level": 1})
-    assert srv.backlog_view()[0]["flag"] == 1
 
 
 # ---------- starting a finalize pass ----------
@@ -401,3 +394,60 @@ def test_concurrent_saves_publish_one_whole_state(srv):
     writer.join(timeout=2)
     assert errors == []
     assert json.loads(srv.STATE_FILE.read_text())["items"][0]["id"] == "a"
+
+
+# ---------- what a solver holds for review ----------
+
+REVIEWED = """\
+// aaa
+// draft
+// keywords: tiling
+// input: a grid of tiles
+// output: the grid with every tile recolored
+// review principle: Naming — the comp name says the mechanism
+//  and not the shape it reads
+
+.comp CornerDist {
+    // @workaround: the seam is found by a scan, not by the box functor
+    .decl d(x: number)
+}
+.decl out(x: number)
+out(1).
+"""
+
+
+def test_the_needs_read_the_review_lines_the_comps_and_the_workarounds(srv):
+    """A review value continues on a line of `//` and two spaces, and the
+    proposal needs come from the comps the solver declares."""
+    write_solver(srv, "aaa", REVIEWED)
+    assert srv.needs_of("aaa") == {
+        "principle": ["Naming — the comp name says the mechanism "
+                      "and not the shape it reads"],
+        "proposal": ["CornerDist"],
+        "workaround": ["the seam is found by a scan, not by the box functor"],
+        "sweep": []}
+
+
+def test_approval_clears_the_review_lines_and_withdrawing_it_puts_them_back(srv):
+    """The review lines are the user's open asks of a draft, so they leave
+    with the draft line and come back where they stood."""
+    write_solver(srv, "aaa", REVIEWED)
+    assert srv.clear_draft("aaa")
+    text = srv.solver_text("aaa")
+    assert "// draft" not in text and "review principle" not in text
+    assert json.loads(srv.REVIEWS_FILE.read_text()) == {"aaa": [
+        "// review principle: Naming — the comp name says the mechanism",
+        "//  and not the shape it reads"]}
+    assert srv.mark_draft("aaa")
+    assert srv.solver_text("aaa") == REVIEWED
+    assert json.loads(srv.REVIEWS_FILE.read_text()) == {}
+
+
+def test_the_peek_route_carries_the_header_and_the_needs(srv):
+    write_solver(srv, "aaa", REVIEWED)
+    body = get(srv, "/api/peek/aaa")["body"]
+    assert body["title"] == "keywords: tiling"
+    assert body["header"]["input"] == "a grid of tiles"
+    assert body["needs"]["proposal"] == ["CornerDist"]
+    assert body["needs"]["principle"][0].startswith("Naming —")
+    assert get(srv, "/api/peek/zzz")["status"] == 404

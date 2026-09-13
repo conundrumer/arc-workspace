@@ -13,7 +13,7 @@ from . import config, ledger, prompts, solvers, store, workers
 # lists the passes in flight over the unfinalized solvers, and they run to
 # hundreds, so a row is built from its files once and reused until one of them
 # changes; what the ledger says of a task — its passes and its entries — is
-# joined on every request, as is the flag table.
+# joined on every request, as is each need's reach across the rows.
 
 # task id -> (the file state the row was built from, the row)
 ROW_CACHE: dict[str, tuple[tuple, dict]] = {}
@@ -26,6 +26,7 @@ def backlog_row(item_id: str, proposals: str, ts_size: int | None,
     calls = solvers.task_callouts(item_id)
     return {"id": item_id, "title": solvers.title_of(item_id), "comps": comps,
             "comps_unproposed": solvers.unproposed(comps, proposals),
+            "header": solvers.header_of(item_id), "needs": solvers.needs_of(item_id),
             "callouts": calls, "callout_n": len(calls),
             "callout_rank": solvers.callout_rank(calls),
             "callout_act": solvers.callout_act(calls),
@@ -159,50 +160,71 @@ def finalize_ready(it: dict) -> bool:
             and bool(solvers.report_of(it, it["phase"])))
 
 
-# The triage order. A missing solver leads: it outranks a flag because it is
-# not a reading of the task but the absence of one. A P0 — broken tooling —
-# follows it, ahead of the flags, since the breakage may hold up other passes
-# too. A task whose sessions added an entry comes next: the entry waits on a
-# judgment, and the pass that made it is the one to read with it.
-# -callout_n runs late, so a report carrying only P3s still edges out one
-# that raised nothing once everything ahead of it ties. The oldest commit
-# breaks the last tie, so a task does not wait behind newer ids; a solver
-# not committed yet is the newest of all.
-def triage_key(row: dict) -> tuple:
-    return (0 if row["no_solver"] else 1,
-            0 if row["callout_rank"] == 0 else 1,
-            0 if row["entries"] else 1,
-            row["flag"] or 9,
-            solvers.callout_weight(row["callout_rank"]),
-            0 if row["comps"] else 1,
-            -row["callout_act"], -row["callout_n"],
-            row["added"] if row["added"] is not None else float("inf"),
-            row["id"])
+# The review order. A missing solver leads: it is not a reading of the task
+# but the absence of one. Then the rows holding the kind in priority, the
+# widest reach first; then the rest. The solver's rule-literal count breaks
+# ties, the larger first, and the id the last.
+def review_key(priority: str):
+    def key(row: dict) -> tuple:
+        reach = row["reach"].get(priority, 0)
+        return (0 if row["no_solver"] else 1,
+                0 if reach else 1,
+                -reach,
+                -(row["dl_size"] if row["dl_size"] is not None else -1),
+                row["id"])
+    return key
+
+
+# What a principle need names: the section heading before the dash.
+def _heading(text: str) -> str:
+    return text.split(" — ", 1)[0].strip()
+
+
+def reach_of(rows: list[dict]) -> None:
+    """Each row's reach per kind: for a principle, the rows whose review
+    lines name the same heading; for a proposal, the rows declaring the same
+    comp; for a workaround or a sweep, its lines. A row without the kind
+    reaches 0."""
+    headings: dict[str, int] = {}
+    comps: dict[str, int] = {}
+    for row in rows:
+        for text in set(map(_heading, row["needs"]["principle"])):
+            headings[text] = headings.get(text, 0) + 1
+        for name in set(row["needs"]["proposal"]):
+            comps[name] = comps.get(name, 0) + 1
+    for row in rows:
+        needs = row["needs"]
+        row["reach"] = {
+            "principle": max((headings[_heading(t)] for t in needs["principle"]), default=0),
+            "proposal": max((comps[n] for n in needs["proposal"]), default=0),
+            "workaround": len(needs["workaround"]),
+            "sweep": len(needs["sweep"]),
+        }
 
 
 def lens_view(ages: dict[str, int] | None = None) -> dict:
-    """What the finalize lens lists, each list in triage order: the
-    unfinalized solvers, and the tasks with a finalize pass in flight, whose
-    rows the lens sorts on once the pass's cache is cold.
+    """What the finalize lens lists, each list in review order under the
+    priority: the unfinalized solvers, and the tasks with a finalize pass in
+    flight, whose rows the lens sorts on once the pass's cache is cold.
 
     The rows are ordered in part by when each solver was added, which is a
     git read. A caller that must not hold LOCK through a subprocess takes
     that read itself and passes it in."""
     with store.LOCK:
-        table = ledger.flags()
+        priority = ledger.priority()
         held = {it["id"] for it in store.STATE["items"]
                 if it["state"] != store.COMMITTED and not finalize_ready(it)}
         finalizing = {it["id"] for it in store.STATE["items"] if it["phase"] == "finalize"}
         scan = backlog_scan(ages)
-        for row in scan:
-            row["flag"] = (table.get(row["id"]) or {}).get("level", 0)
-    rows = sorted((row for row in scan if row["id"] not in held), key=triage_key)
-    passes = sorted((row for row in scan if row["id"] in finalizing), key=triage_key)
-    return {"items": rows, "finalizing": passes}
+    reach_of(scan)
+    key = review_key(priority)
+    rows = sorted((row for row in scan if row["id"] not in held), key=key)
+    passes = sorted((row for row in scan if row["id"] in finalizing), key=key)
+    return {"items": rows, "finalizing": passes, "priority": priority}
 
 
 def backlog_view(ages: dict[str, int] | None = None) -> list[dict]:
-    """The unfinalized solvers in triage order."""
+    """The unfinalized solvers in review order."""
     return lens_view(ages)["items"]
 
 

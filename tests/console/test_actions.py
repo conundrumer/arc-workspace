@@ -7,7 +7,7 @@ import threading
 import time
 import types
 
-from .conftest import PROP, item, worker, write_solver
+from .conftest import PROP, get, item, worker, write_solver
 
 # ---------- actions ----------
 
@@ -19,14 +19,14 @@ def test_approve_and_withdraw(srv):
     """Approval takes the draft line out of the solver file, and withdrawing
     it puts the line back under the task-id line."""
     it = item(srv, "a", srv.NEEDS_REVIEW, updated=True)
-    write_solver(srv, "a", "// a\n// draft\n// concept: tiles\n")
+    write_solver(srv, "a", "// a\n// draft\n// keywords: tiles\n")
     assert srv.act_approve("a") == {"ok": True}
     assert it["state"] == srv.APPROVED
     assert it["updated"] is False
-    assert srv.solver_text("a") == "// a\n// concept: tiles\n"
+    assert srv.solver_text("a") == "// a\n// keywords: tiles\n"
     assert srv.act_unapprove("a") == {"ok": True}
     assert it["state"] == srv.NEEDS_REVIEW
-    assert srv.solver_text("a") == "// a\n// draft\n// concept: tiles\n"
+    assert srv.solver_text("a") == "// a\n// draft\n// keywords: tiles\n"
 
 
 def test_the_tag_goes_under_a_task_id_line_that_ends_the_file(srv):
@@ -224,11 +224,11 @@ def test_a_revert_of_an_approved_solver_leaves_it_approved(srv):
     """Approval takes the tag off, and a revert of the turn that followed it
     puts back the file the user approved."""
     it = item(srv, "a", srv.APPROVED, dirty=False)
-    it["pre"] = {"hash": "", "solver": "// a\n// concept: tiles\n", "proposals": "",
+    it["pre"] = {"hash": "", "solver": "// a\n// keywords: tiles\n", "proposals": "",
                  "dirty": False, "files": {}}
-    write_solver(srv, "a", "// a\n// draft\n// concept: tiles, revised\n")
+    write_solver(srv, "a", "// a\n// draft\n// keywords: tiles, revised\n")
     assert srv.act_revert("a") == {"ok": True}
-    assert srv.solver_text("a") == "// a\n// concept: tiles\n"
+    assert srv.solver_text("a") == "// a\n// keywords: tiles\n"
 
 
 def test_revert_needs_a_change_to_undo(srv):
@@ -498,31 +498,20 @@ def test_the_passes_name_the_model_of_each_stage_latest_landing(srv):
         "b": [{"stage": "legacy", "model": "fable"}, {"stage": "create", "model": "codex"}]}
 
 
-# ---------- flags ----------
+# ---------- the lens priority ----------
 
-def test_a_flag_is_set_cleared_and_kept(srv, monkeypatch):
-    monkeypatch.setattr(srv, "now", lambda: 900.0)
-    assert srv.act_flag({"id": "a", "level": 1}) == {"ok": True, "level": 1}
-    assert srv.flags() == {"a": {"level": 1, "ts": 900}}
-    srv.act_flag({"id": "a", "level": 3})
-    assert srv.flags()["a"]["level"] == 3
-    assert srv.act_flag({"id": "a", "level": 0}) == {"ok": True, "level": 0}
-    assert srv.flags() == {}
+def test_the_priority_is_set_and_read_back(srv):
+    assert srv.priority() == "principle"      # the first kind, until one is set
+    assert srv.act_priority({"kind": "workaround"}) == {"ok": True, "kind": "workaround"}
+    assert srv.priority() == "workaround"
+    assert get(srv, "/api/state")["body"]["priority"] == "workaround"
 
 
-def test_flags_outlive_the_process(srv):
-    srv.act_flag({"id": "a", "level": 2})
-    srv.FLAGS = None                       # what a restart reads
-    assert srv.flags() == {"a": {"level": 2, "ts": srv.flags()["a"]["ts"]}}
-    assert json.loads(srv.FLAGS_FILE.read_text())["a"]["level"] == 2
-
-
-def test_a_flag_survives_the_item_being_dropped(srv):
-    item(srv, "a", srv.NEEDS_REVIEW)
-    srv.act_flag({"id": "a", "level": 1})
-    srv.act_drop("a")
-    assert srv.STATE["items"] == []
-    assert srv.flags()["a"]["level"] == 1
+def test_the_priority_outlives_the_process(srv):
+    srv.act_priority({"kind": "proposal"})
+    srv.PRIORITY = None                       # what a restart reads
+    assert srv.priority() == "proposal"
+    assert json.loads(srv.PRIORITY_FILE.read_text()) == {"kind": "proposal"}
 
 
 # ---------- retro ----------
@@ -530,7 +519,7 @@ def test_a_flag_survives_the_item_being_dropped(srv):
 def test_a_retro_records_when_it_ran(srv, monkeypatch):
     assert srv.retro_mark() == 0
     monkeypatch.setattr(srv, "now", lambda: 900.0)
-    assert srv.act_retro() == {"ok": True, "ts": 900}
+    assert srv.mark_retro() == {"ok": True, "ts": 900}
     assert srv.retro_mark() == 900
     assert json.loads(srv.RETRO_FILE.read_text()) == {"ts": 900}
 
@@ -547,14 +536,14 @@ def test_the_retro_mark_is_written_beside_the_file_and_renamed(srv, monkeypatch)
 
     monkeypatch.setattr(srv, "RETRO_FILE", Watched(srv.RETRO_FILE))
     monkeypatch.setattr(srv, "now", lambda: 900.0)
-    srv.act_retro()
+    srv.mark_retro()
     assert Watched.written == ["retro.tmp"]
     assert srv.retro_mark() == 900
 
 
 def test_a_retro_lists_the_tasks_whose_callouts_landed_since_the_mark(srv, monkeypatch):
     monkeypatch.setattr(srv, "now", lambda: 900.0)
-    srv.act_retro()
+    srv.mark_retro()
     # a's refine callouts landed before the mark; its finalize turns since
     # filed no report, so the mark already covers what it carries
     srv.save_report("a", "refine", "done\n\n## Callouts\n\n- [P2] read already\n")
@@ -571,11 +560,11 @@ def test_a_retro_lists_the_tasks_whose_callouts_landed_since_the_mark(srv, monke
         "items": [{"id": "b", "title": "", "ts": 950, "callouts": ["[P2] a doc gap"]}]}
 
 
-def test_a_flag_level_is_held_to_the_three(srv):
-    assert "level" in srv.act_flag({"id": "a", "level": 4})["error"]
-    assert "level" in srv.act_flag({"id": "a", "level": "high"})["error"]
-    assert srv.act_flag({"id": "", "level": 1})["error"] == "no task id"
-    assert srv.flags() == {}
+def test_a_priority_outside_the_kinds_is_refused(srv):
+    assert "kind must be one of" in srv.act_priority({"kind": "urgent"})["error"]
+    assert "kind must be one of" in srv.act_priority({})["error"]
+    assert srv.priority() == "principle"
+    assert not srv.PRIORITY_FILE.exists()
 
 
 # ---------- commit ----------
@@ -615,7 +604,11 @@ def commit_repo(srv, tmp_path, monkeypatch):
 STATUS = (" M programs/solvers/aaaa1111.dl\n"
           "?? programs/solvers/bbbb2222.dl\n"
           "?? docs/wf-solver/proposals/EDGE_GAP.md\n"
-          " M programs/lib.dl\n")
+          " M programs/lib.dl\n"
+          " M src/dl/lint.py\n"
+          "?? src/dl/scratch.py\n")
+# The scope one committer run takes.
+SCOPE = ["programs/lib.dl"]
 
 
 def test_a_commit_carries_the_unapproved_solvers_beside_the_approved_ones(
@@ -623,13 +616,14 @@ def test_a_commit_carries_the_unapproved_solvers_beside_the_approved_ones(
     commit_repo(srv, tmp_path, monkeypatch)
     approved = item(srv, "aaaa1111", srv.APPROVED)
     unapproved = item(srv, "bbbb2222", srv.NEEDS_REVIEW)
-    monkeypatch.setattr(srv, "run_committer", lambda: None)
+    monkeypatch.setattr(srv, "run_committer", lambda paths: None)
     calls = fake_git(srv, monkeypatch, STATUS,
                      head="programs/solvers/aaaa1111.dl")
 
     assert srv.act_commit()["ok"] is True
     add = next(c for c in calls if c[1] == "add")
-    # lib.dl sits outside the commit's scope: the committer session takes it.
+    # the console stages the solvers and the proposals entries; lib.dl is the
+    # committer's, and no item here claims it
     assert add[2:] == ["docs/wf-solver/proposals/EDGE_GAP.md",
                        "programs/solvers/aaaa1111.dl",
                        "programs/solvers/bbbb2222.dl"]
@@ -650,7 +644,7 @@ def test_an_approved_item_with_no_solver_file_stays_out_of_the_add(
     commit_repo(srv, tmp_path, monkeypatch)
     item(srv, "aaaa1111", srv.APPROVED)
     item(srv, "cccc3333", srv.APPROVED)      # its pass wrote no solver
-    monkeypatch.setattr(srv, "run_committer", lambda: None)
+    monkeypatch.setattr(srv, "run_committer", lambda paths: None)
     calls = fake_git(srv, monkeypatch, STATUS,
                      head="programs/solvers/aaaa1111.dl")
 
@@ -662,12 +656,114 @@ def test_an_approved_item_with_no_solver_file_stays_out_of_the_add(
     assert commit[3] == "Add cccc3333; update aaaa1111 (carries bbbb2222)"
 
 
+def test_a_commit_with_nothing_approved_takes_the_drafts(srv, tmp_path,
+                                                         monkeypatch):
+    commit_repo(srv, tmp_path, monkeypatch)
+    (tmp_path / "programs" / "solvers" / "aaaa1111.dl").write_text(
+        "// aaaa1111\n// draft\n")
+    drafted = item(srv, "bbbb2222", srv.NEEDS_REVIEW)
+    monkeypatch.setattr(srv, "run_committer", lambda paths: None)
+    calls = fake_git(srv, monkeypatch, STATUS,
+                     head="programs/solvers/aaaa1111.dl")
+
+    assert srv.act_commit()["ok"] is True
+    add = next(c for c in calls if c[1] == "add")
+    assert add[2:] == ["docs/wf-solver/proposals/EDGE_GAP.md",
+                       "programs/solvers/aaaa1111.dl",
+                       "programs/solvers/bbbb2222.dl"]
+    commit = next(c for c in calls if c[1] == "commit")
+    assert commit[3] == "Add bbbb2222; update aaaa1111 (drafts)"
+    assert drafted["state"] == srv.NEEDS_REVIEW
+
+
+def test_a_commit_with_no_changed_file_is_refused(srv, tmp_path, monkeypatch):
+    commit_repo(srv, tmp_path, monkeypatch)
+    item(srv, "aaaa1111", srv.APPROVED)
+    monkeypatch.setattr(srv, "run_committer", lambda paths: None)
+    calls = fake_git(srv, monkeypatch, status="")
+
+    assert srv.act_commit() == {"error": "nothing to commit"}
+    assert not any(c[1] in ("add", "commit") for c in calls)
+
+
+def committer_scope(srv, monkeypatch):
+    """The scope act_commit hands the committer, once its thread reaches the
+    run."""
+    scopes, started = [], threading.Event()
+
+    def record(paths):
+        scopes.append(paths)
+        started.set()
+
+    monkeypatch.setattr(srv, "run_committer", record)
+    return scopes, started
+
+
+def test_the_committer_takes_the_files_the_items_claim(srv, tmp_path,
+                                                       monkeypatch):
+    """The scope is what the items recorded as worker writes. A file the user
+    changed under the same directory stays out, and so does one git does not
+    track."""
+    commit_repo(srv, tmp_path, monkeypatch)
+    item(srv, "aaaa1111", srv.APPROVED,
+         shared_writes=["programs/lib.dl", "src/dl/scratch.py"])
+    # a draft lands shared writes too
+    item(srv, "bbbb2222", srv.NEEDS_REVIEW, shared_writes=["programs/lib.dl"])
+    scopes, started = committer_scope(srv, monkeypatch)
+    fake_git(srv, monkeypatch, STATUS, head="programs/solvers/aaaa1111.dl")
+
+    assert "committer running" in srv.act_commit()["msg"]
+    assert started.wait(10)
+    assert scopes == [["programs/lib.dl"]]
+
+
+def test_a_change_no_item_claims_starts_no_committer(srv, tmp_path, monkeypatch):
+    """The user's own edits sit under the same directories as the workers', so
+    a press over them alone runs no committer."""
+    commit_repo(srv, tmp_path, monkeypatch)
+    item(srv, "aaaa1111", srv.APPROVED)
+    scopes, _ = committer_scope(srv, monkeypatch)
+    fake_git(srv, monkeypatch, STATUS, head="programs/solvers/aaaa1111.dl")
+
+    assert "committer" not in srv.act_commit()["msg"]
+    assert scopes == []
+
+
+def test_the_brief_names_the_files_the_committer_takes(srv):
+    brief = srv.commit_brief(["programs/lib.dl", "src/dl/cli.py"])
+    assert ("Scope: these files, which solver workers changed: programs/lib.dl,"
+            " src/dl/cli.py. Leave every other change alone.") in brief
+    assert "stage no untracked file" in brief
+
+
+def test_a_committer_run_clears_the_files_it_left_clean(srv, tmp_path,
+                                                        monkeypatch):
+    """A path the run committed comes off the items, so the next press does
+    not name it again. A path it left changed stays."""
+    fake = tmp_path / "claude.sh"
+    fake.write_text("#!/bin/sh\nexit 0\n")
+    fake.chmod(0o755)
+    monkeypatch.setattr(srv, "ROOT", tmp_path)
+    monkeypatch.setattr(srv, "CLAUDE", str(fake))
+    monkeypatch.setattr(srv, "COMMITTER_FLAGS", [])
+    it = item(srv, "aaaa1111", srv.APPROVED,
+              shared_writes=["programs/lib.dl", "src/dl/cli.py"])
+    fake_git(srv, monkeypatch, " M src/dl/cli.py\n")
+    srv.COMMITTER.update(running=True, note=None, started=time.time(), feed=[])
+
+    srv.run_committer(["programs/lib.dl", "src/dl/cli.py"])
+    assert it["shared_writes"] == ["src/dl/cli.py"]
+
+
 def test_a_commit_subject_counts_the_carried_solvers_past_a_few(srv):
     assert srv.commit_subject([], ["aaaa1111"], ["bbbb2222", "cccc3333"]) == \
         "Update aaaa1111 (carries bbbb2222, cccc3333)"
     many = [f"{n}" * 8 for n in range(5)]
     assert srv.commit_subject(["aaaa1111"], [], many) == \
         "Add aaaa1111 (carries 5 unapproved solvers)"
+    # a drafts-only subject counts its own lists the same way
+    assert srv.commit_subject(many, ["aaaa1111"], drafts=True) == \
+        "Add 5 solvers; update aaaa1111 (drafts)"
 
 
 # ---------- committer feed ----------
@@ -690,7 +786,7 @@ def test_committer_entries_read_what_the_session_says_and_runs(srv):
 def test_a_commit_waits_for_the_running_solver_sessions(srv, tmp_path, monkeypatch):
     commit_repo(srv, tmp_path, monkeypatch)
     item(srv, "aaaa1111", srv.APPROVED)
-    monkeypatch.setattr(srv, "run_committer", lambda: None)
+    monkeypatch.setattr(srv, "run_committer", lambda paths: None)
     calls = fake_git(srv, monkeypatch, STATUS, head="programs/solvers/aaaa1111.dl")
     srv.PROCS[("cccc3333", "create")] = {"state": "running"}
     try:
@@ -715,7 +811,7 @@ def test_a_committer_the_timeout_ends_leaves_nothing_reading_it(srv, tmp_path,
     monkeypatch.setattr(srv, "COMMIT_TIMEOUT", .2)
     srv.COMMITTER.update(running=True, note=None, started=time.time(), feed=[])
     done = threading.Event()
-    threading.Thread(target=lambda: (srv.run_committer(), done.set()),
+    threading.Thread(target=lambda: (srv.run_committer(SCOPE), done.set()),
                      daemon=True).start()
     assert done.wait(10)
     assert srv.COMMITTER["running"] is False
@@ -735,7 +831,7 @@ def test_a_committer_does_not_start_after_a_shutdown(srv, tmp_path, monkeypatch)
     monkeypatch.setattr(srv, "COMMITTER_FLAGS", [])
     srv.shutdown_workers()
     srv.COMMITTER.update(running=True, note=None, started=time.time(), feed=[])
-    srv.run_committer()
+    srv.run_committer(SCOPE)
     assert not marker.exists()
     assert srv.COMMITTER["running"] is False
     assert "shutting down" in srv.COMMITTER["note"]
@@ -764,7 +860,7 @@ def test_a_shutdown_between_the_spawn_and_the_publish_ends_the_session(
     monkeypatch.setattr(srv.subprocess, "Popen", popen)
     srv.COMMITTER.update(running=True, note=None, started=time.time(), feed=[])
     done = threading.Event()
-    threading.Thread(target=lambda: (srv.run_committer(), done.set()),
+    threading.Thread(target=lambda: (srv.run_committer(SCOPE), done.set()),
                      daemon=True).start()
     assert done.wait(10)
     assert not marker.exists()
@@ -798,7 +894,7 @@ def test_a_committer_that_cannot_start_clears_its_flag(srv, tmp_path, monkeypatc
     monkeypatch.setattr(srv, "ROOT", tmp_path)
     monkeypatch.setattr(srv, "CLAUDE", str(tmp_path / "no-such-claude"))
     srv.COMMITTER.update(running=True, note=None, started=time.time(), feed=[])
-    srv.run_committer()
+    srv.run_committer(SCOPE)
     assert srv.COMMITTER["running"] is False
     assert "committer failed" in srv.COMMITTER["note"]
     with srv.LOCK:

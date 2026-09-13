@@ -1,6 +1,5 @@
-"""The append-only record of stage landings and rulings, and the triage
-flags kept beside it."""
-
+"""The append-only record of stage landings and rulings, and the lens's
+priority kept beside it."""
 import json
 import sys
 
@@ -104,57 +103,39 @@ def seed_entries() -> None:
         it["entries"] = sorted(table.get(it["id"], ()))
 
 
-# ---------- flags ----------
+# ---------- priority ----------
 #
-# Triage rulings, keyed by task and held apart from the console's items: a
-# flag outlives the item it was raised on, and a task with no item can carry
-# one. Level 1 sorts first.
+# The kind of review need the lens puts first. The lens sets it, and the
+# admitter reads the same order.
 
-FLAGS: dict | None = None
+PRIORITY: str | None = None
 
 
-def flags() -> dict:
-    global FLAGS
-    if FLAGS is None:
-        FLAGS = {}
+def priority() -> str:
+    global PRIORITY
+    if PRIORITY is None:
         try:
-            raw = json.loads(config.FLAGS_FILE.read_text())
+            raw = json.loads(config.PRIORITY_FILE.read_text())
         except (OSError, ValueError):
             raw = {}
-        if isinstance(raw, dict):
-            for tid, entry in raw.items():
-                if isinstance(entry, dict) and entry.get("level") in (1, 2, 3):
-                    FLAGS[str(tid)] = {"level": entry["level"],
-                                       "ts": entry.get("ts") or 0}
-    return FLAGS
+        kind = raw.get("kind") if isinstance(raw, dict) else None
+        PRIORITY = kind if kind in solvers.NEED_KINDS else solvers.NEED_KINDS[0]
+    return PRIORITY
 
 
-def save_flags() -> None:
-    config.FLAGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = config.FLAGS_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(flags(), indent=1))
-    tmp.replace(config.FLAGS_FILE)
-
-
-def act_flag(body: dict) -> dict:
-    item_id = str(body.get("id") or "").strip()
-    if not item_id:
-        return {"error": "no task id"}
-    try:
-        level = int(body.get("level", 0))
-    except (TypeError, ValueError):
-        level = -1
-    if level not in (0, 1, 2, 3):
-        return {"error": "level must be 0, 1, 2, or 3"}
+def act_priority(body: dict) -> dict:
+    global PRIORITY
+    kind = str(body.get("kind") or "").strip()
+    if kind not in solvers.NEED_KINDS:
+        return {"error": "kind must be one of " + ", ".join(solvers.NEED_KINDS)}
     with store.LOCK:
-        table = flags()
-        if level:
-            table[item_id] = {"level": level, "ts": int(store.now())}
-        else:
-            table.pop(item_id, None)
-        save_flags()
+        PRIORITY = kind
+        config.PRIORITY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = config.PRIORITY_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"kind": kind}))
+        tmp.replace(config.PRIORITY_FILE)
     store.bump()
-    return {"ok": True, "level": level}
+    return {"ok": True, "kind": kind}
 
 
 # ---------- retro ----------
@@ -173,7 +154,7 @@ def retro_mark() -> int:
     return int(raw.get("ts") or 0) if isinstance(raw, dict) else 0
 
 
-def act_retro() -> dict:
+def mark_retro() -> dict:
     ts = int(store.now())
     with store.LOCK:
         config.RETRO_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -182,7 +163,6 @@ def act_retro() -> dict:
         tmp = config.RETRO_FILE.with_suffix(".tmp")
         tmp.write_text(json.dumps({"ts": ts}))
         tmp.replace(config.RETRO_FILE)
-    store.bump()
     return {"ok": True, "ts": ts}
 
 

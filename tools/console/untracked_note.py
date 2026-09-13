@@ -3,9 +3,10 @@ file git does not already track.
 
 The console commits programs/solvers/ and docs/wf-solver/proposals/ itself,
 every changed and untracked file in them, and the committer runs after that
-over what is left: the tracked changes a session made elsewhere. So an
-untracked file the committer sees is a stray one, outside its scope. The brief
-already says to leave those alone; the hook is what holds when it is not read.
+over the files the brief names: the tracked changes the solver sessions made
+elsewhere. So an untracked file the committer sees is a stray one, outside its
+scope. The brief already says to leave those alone; the hook is what holds when
+it is not read.
 
 A staging call has to arrive on its own, because a command that stages and
 commits at once stages after this hook has read the index.

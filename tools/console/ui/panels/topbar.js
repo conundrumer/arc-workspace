@@ -83,8 +83,8 @@ export function Topbar({view, setView, wave, items, progress, usage, night, nigh
         <button disabled=${waveCtl.busy} onClick=${waveCtl.start}>start</button>
       </span>
       ${extra}
-      <button class="primary" disabled=${!items.some(it=>it.state==="approved")}
-        title="commit the approved solvers, and carry the unruled drafts beside them"
+      <button class="primary" disabled=${committer.running}
+        title="commit every changed solver and proposals entry, approved or draft"
         onClick=${onCommit}>commit</button>
     </div>
   </div>`;

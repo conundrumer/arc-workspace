@@ -123,8 +123,8 @@ def night_admit(inputs: TickInputs) -> list[str]:
 
 
 def night_finalize(inputs: TickInputs) -> list[str]:
-    """Start the finalize pass of the next unfinalized solver, in triage
-    order. Caller holds LOCK.
+    """Start the finalize pass of the next unfinalized solver, in the lens's
+    review order. Caller holds LOCK.
 
     A task the console holds is a candidate only when its item is done up to
     finalize: one mid-chain, cut, or already finalizing is passed over in

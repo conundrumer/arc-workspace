@@ -12,7 +12,8 @@ SAMPLE_FILE = STATE_DIR / "usage-samples.jsonl"
 LOG_DIR = STATE_DIR / "logs"
 REPORT_DIR = STATE_DIR / "reports"
 LEDGER = REPORT_DIR / "ledger.jsonl"
-FLAGS_FILE = STATE_DIR / "flags.json"
+REVIEWS_FILE = STATE_DIR / "reviews.json"
+PRIORITY_FILE = STATE_DIR / "priority.json"
 RETRO_FILE = STATE_DIR / "retro.json"
 SOLVERS = ROOT / "programs" / "solvers"
 LIB = ROOT / "programs" / "lib.dl"
@@ -159,16 +160,19 @@ NIGHT_WORKER_CAP = 30
 # What the console's own commit stages: every changed or untracked file
 # under these paths goes in, approved or not.
 COMMIT_STAGE = ["programs/solvers", "docs/wf-solver/proposals"]
-# What a worker session is allowed to leave behind. The brief and the
-# leftovers check read the same list, so widening it moves both.
-COMMIT_SCOPE = ["programs", "docs/wf-solver", "src/dl", "scripts", "tests"]
-COMMIT_BRIEF = f"""Commit the changes that solver workers left in the working tree.
 
-Scope: files git already tracks, under {", ".join(p + "/" for p in COMMIT_SCOPE)}. A session that hits a gap in the runner fixes it there, so those changes belong in the same sweep. Leave changes outside that scope alone.
+
+def commit_brief(paths: list[str]) -> str:
+    """The committer's brief over `paths`: the files solver workers changed."""
+    return f"""Commit the changes that solver workers left in the working tree.
+
+Scope: these files, which solver workers changed: {", ".join(paths)}. Leave every other change alone.
 
 The console has already committed {" and ".join(p + "/" for p in COMMIT_STAGE)}, so what git does not track there is a stray file, not work: stage no untracked file, and say in your report what you left.
 
 Read git status and the diffs, and recent git log for message style. Group the changes into clean commits the way the log does; write each message from what the diff shows."""
+
+
 COMMIT_TIMEOUT = 900  # seconds a committer session may run
 COMMITTER_FLAGS = [
     # The stream feeds the committer panel, so a run in progress can be read.
@@ -176,11 +180,11 @@ COMMITTER_FLAGS = [
     "--allowedTools", "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)",
     "Bash(git show:*)", "Bash(git add:*)", "Bash(git commit:*)",
     "Bash(git restore:*)",
-    # untracked_note.py holds the scope the brief states: the console has
-    # committed the solvers and the proposals entries itself, so an untracked
-    # file left in the tree is outside the committer's scope. Restoring the
-    # index is how the committer answers a refusal, so that call is allowed
-    # too.
+    # untracked_note.py holds the untracked rule the brief states: the console
+    # has committed the solvers and the proposals entries itself, so an
+    # untracked file left in the tree is outside the committer's scope.
+    # Restoring the index is how the committer answers a refusal, so that call
+    # is allowed too.
     "--settings", str(HERE / "committer-settings.json"),
     "--add-dir", str(REF_DIR),
     "--exclude-dynamic-system-prompt-sections",

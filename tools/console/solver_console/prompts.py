@@ -129,14 +129,14 @@ CALLOUT_RATES = [
      "a trailing qualification on a settled call, not a discrete open item"),
 ]
 
-CALLOUT_BRIEF = """Your report is in. Now step back from the pass and write the callouts: entries deserving the user's attention — open items only the user can settle, calls you made that only the user can ratify, and anything else they should see.
+CALLOUT_BRIEF = """Your report is in. Now step back from the pass and write the callouts: entries deserving the user's attention — open items only the user can settle, and anything else they should see. Decide every call from the principles and your reading of them; report a call only when the reading is a stretch, naming the rule and the tighter reading.
 
 Rank each entry P1-P3 by kind: match the entry against a description below and take that kind's band. Match on the description, not the label; an entry outside every description ranks on your own judgment. The rate is how often the user engages the kind when a report raises it:
 {rates}
 
 An entry a description excludes, such as a name local to this solver, is not a callout at all: leave it out.
 
-P0 stands apart from that scale: use it only for a clear mechanical problem with the tooling — the runner, the linter, or the audit crashing, giving a wrong result, or lacking something the procedure needed. A P0 jumps the triage queue, so a judgment call never carries it.
+P0 stands apart from that scale: use it only for a clear mechanical problem with the tooling — the runner, the linter, or the audit crashing, giving a wrong result, or lacking something the procedure needed. A P0 is the first thing the user reads, so a judgment call never carries it.
 
 Reply with only the callouts, between `<callouts>` and `</callouts>` tags: a numbered list, each entry one or two lines opening with its `[P1]`-`[P3]` mark. With nothing to raise, the block holds the single word `none`."""
 
@@ -144,7 +144,7 @@ Reply with only the callouts, between `<callouts>` and `</callouts>` tags: a num
 # again in these words, which ask for a record of the pass and not for what
 # the session considered. The console cuts the refused ask out of the
 # transcript first, so the retry is judged on this message alone.
-REFUSED_CALLOUT_BRIEF = """Write the callouts as a document for the user: the open items only the user can settle, and the calls only the user can ratify. Rank each entry P1-P3 by kind, matched on the description:
+REFUSED_CALLOUT_BRIEF = """Write the callouts as a document for the user: the open items only the user can settle, and the calls whose reading of the principles is a stretch, each naming the rule and the tighter reading. Rank each entry P1-P3 by kind, matched on the description:
 {rates}
 
 Reply with only the callouts, between `<callouts>` and `</callouts>` tags: a numbered list, each entry one or two lines opening with its `[P1]`-`[P3]` mark. With nothing to raise, the block holds the single word `none`."""

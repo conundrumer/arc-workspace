@@ -44,10 +44,10 @@ def test_a_landing_tags_the_solver_as_unapproved(srv, monkeypatch):
     monkeypatch.setattr(srv, "launch", lambda *a, **kw: None)
     it = item(srv, "a", srv.RUNNING, phase="create", landed=[], rev=0,
               sessions={"create": "cs", "refine": None})
-    write_solver(srv, "a", "// a\n// concept: tiles\n")
+    write_solver(srv, "a", "// a\n// keywords: tiles\n")
     srv.finish_turn(it, {"result": tagged("the report")}, None, time.time(),
                     "create", True)
-    assert srv.solver_text("a") == "// a\n// draft\n// concept: tiles\n"
+    assert srv.solver_text("a") == "// a\n// draft\n// keywords: tiles\n"
 
 
 def test_the_tag_a_landing_writes_is_not_the_sessions_edit(srv):
@@ -55,12 +55,12 @@ def test_the_tag_a_landing_writes_is_not_the_sessions_edit(srv):
     untagged file and its landing tags the file again. That line is the
     console's own, and a turn that changed nothing else stays clean."""
     it = item(srv, "a", srv.NEEDS_REVIEW, dirty=False)
-    write_solver(srv, "a", "// a\n// concept: tiles\n")
+    write_solver(srv, "a", "// a\n// keywords: tiles\n")
     w = worker(srv, it, phase="refine")
     srv.start_turn(it, w, "refine")
     srv.finish_turn(it, {"result": tagged("nothing to change")}, None,
                     time.time(), "refine", False)
-    assert srv.solver_text("a") == "// a\n// draft\n// concept: tiles\n"
+    assert srv.solver_text("a") == "// a\n// draft\n// keywords: tiles\n"
     assert it["dirty"] is False
     assert it["seen_hash"]["refine"] == srv.solver_hash("a")
 
@@ -72,13 +72,13 @@ def test_a_second_session_is_not_charged_with_the_tag(srv):
     it = item(srv, "a", srv.RUNNING, phase="create", landed=["create", "refine"],
               sessions={"create": "cs", "refine": "rs"}, dirty=False,
               lastActive={"create": None, "refine": None})
-    write_solver(srv, "a", "// a\n// concept: tiles\n")   # approved: no tag
+    write_solver(srv, "a", "// a\n// keywords: tiles\n")   # approved: no tag
     first = worker(srv, it, phase="create", state="running")
     srv.start_turn(it, first, "create", state="running")
     second = worker(srv, it, phase="refine", state="running")
     srv.start_turn(it, second, "refine", state="running")
     srv.finish_turn(it, {"result": tagged("done")}, None, time.time(), "create", False)
-    assert srv.solver_text("a") == "// a\n// draft\n// concept: tiles\n"
+    assert srv.solver_text("a") == "// a\n// draft\n// keywords: tiles\n"
     first["state"] = "idle"
     srv.finish_turn(it, {"result": tagged("nothing to change")}, None,
                     time.time(), "refine", False)
@@ -89,12 +89,12 @@ def test_a_slash_turn_on_an_approved_item_leaves_the_tag_off(srv):
     """A slash command runs no model turn and leaves the item approved, so
     the file it lands on stays as the approval left it."""
     it = item(srv, "a", srv.APPROVED)
-    write_solver(srv, "a", "// a\n// concept: tiles\n")
+    write_solver(srv, "a", "// a\n// keywords: tiles\n")
     w = worker(srv, it, phase="refine")
     srv.start_turn(it, w, "refine", slash=True)
     srv.finish_turn(it, {"result": "compacted"}, None, time.time(), "refine", False)
     assert it["state"] == srv.APPROVED
-    assert srv.solver_text("a") == "// a\n// concept: tiles\n"
+    assert srv.solver_text("a") == "// a\n// keywords: tiles\n"
 
 
 def test_a_callout_landing_leaves_an_approved_item_approved(srv):
@@ -104,13 +104,13 @@ def test_a_callout_landing_leaves_an_approved_item_approved(srv):
     it = item(srv, "a", srv.APPROVED, phase="create", landed=["create"],
               sessions={"create": "cs", "refine": None}, callout_wait="create",
               reports={"create": "the report"})
-    write_solver(srv, "a", "// a\n// concept: tiles\n")
+    write_solver(srv, "a", "// a\n// keywords: tiles\n")
     w = worker(srv, it, phase="create")
     srv.start_turn(it, w, "create", trigger="callout")
     srv.finish_turn(it, {"result": tagged("- [P2] a doc gap", "callouts")},
                     "callout", time.time(), "create", False)
     assert it["state"] == srv.APPROVED
-    assert srv.solver_text("a") == "// a\n// concept: tiles\n"
+    assert srv.solver_text("a") == "// a\n// keywords: tiles\n"
     assert "## Callouts" in it["reports"]["create"]
 
 

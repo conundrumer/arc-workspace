@@ -267,7 +267,7 @@ REPORT = """The model hypothesis stands.
 """
 
 
-def backlog_solver(srv, item_id, text="// draft\n// concept: a shape\n"):
+def backlog_solver(srv, item_id, text="// draft\n// keywords: a shape\n"):
     """A solver on disk the user has not approved: the draft line is the
     console's own tag."""
     write_solver(srv, item_id, text)

@@ -1,5 +1,9 @@
 """The actions the console takes on an item, and the commit that ends a
-round."""
+round.
+
+The commit stages the solvers and the proposals entries itself. What is left
+goes to a committer session, whose scope is the files the items recorded as
+worker writes and git still shows as changed."""
 
 import json
 import os
@@ -260,18 +264,26 @@ def act_revert(it: dict) -> None:
 
 
 SOLVER_REL = re.compile(r"programs/solvers/([0-9a-f]{8})\.dl$")
-# How many unapproved solvers a commit subject names before it counts them.
+# How many solvers a commit subject names before it counts them.
 CARRIED_NAMED = 4
 
 
 def commit_subject(added: list[str], changed: list[str],
-                   carried: list[str] = ()) -> str:
+                   carried: list[str] = (), drafts: bool = False) -> str:
+    """The subject for a commit that adds `added` and updates `changed`, with
+    `carried` named beside them.
+
+    With `drafts` set, `added` and `changed` hold draft solvers: a long list
+    counts instead of naming, and the subject marks them as drafts."""
     parts = []
     if added:
-        parts.append("Add " + ", ".join(added))
+        parts.append("Add " + _subject_names(added, drafts))
     if changed:
-        parts.append(("update " if parts else "Update ") + ", ".join(changed))
-    msg = "; ".join(parts)
+        parts.append(("update " if parts else "Update ")
+                     + _subject_names(changed, drafts))
+    msg = "; ".join(parts) or "Update the proposals"
+    if drafts and parts:
+        msg += " (drafts)"
     if carried:
         named = (", ".join(carried) if len(carried) <= CARRIED_NAMED
                  else f"{len(carried)} unapproved solvers")
@@ -279,8 +291,15 @@ def commit_subject(added: list[str], changed: list[str],
     return msg
 
 
+def _subject_names(ids: list[str], counted: bool) -> str:
+    """The ids, or their count past what a subject names."""
+    if counted and len(ids) > CARRIED_NAMED:
+        return f"{len(ids)} solvers"
+    return ", ".join(ids)
+
+
 def changed_paths() -> list[str]:
-    """Every changed or untracked file under the commit's scope, as git
+    """Every changed or untracked file the console stages itself, as git
     status names it."""
     out = subprocess.run(["git", "status", "--porcelain", "--", *config.COMMIT_STAGE],
                          cwd=config.ROOT, capture_output=True, text=True)
@@ -292,11 +311,53 @@ def changed_paths() -> list[str]:
     return sorted(paths)
 
 
+def tracked_changes(paths: list[str]) -> list[str]:
+    """The paths git status shows as changed, out of the ones given. An
+    untracked path stays out: git status marks it `??`."""
+    if not paths:
+        return []
+    out = subprocess.run(["git", "status", "--porcelain", "--", *paths],
+                         cwd=config.ROOT, capture_output=True, text=True)
+    hits = set()
+    for line in out.stdout.splitlines():
+        if not line.strip() or line.startswith("??"):
+            continue
+        hits.add(line[3:].strip().split(" -> ")[-1].strip('"'))
+    return sorted(hits & set(paths))
+
+
+def worker_paths() -> list[str]:
+    """The committer's scope: the shared writes the items carry, held to the
+    ones git still shows as changed. Every item counts, approved or not,
+    because a draft's turns land shared writes too."""
+    claimed = {rel for it in store.STATE["items"]
+               for rel in it.get("shared_writes", [])}
+    return tracked_changes(sorted(claimed))
+
+
+def clear_committed(paths: list[str]) -> None:
+    """Drop from the items the shared writes git now shows as clean. A path
+    the committer left changed stays on its item, so the next press names it
+    again."""
+    done = set(paths) - set(tracked_changes(paths))
+    if not done:
+        return
+    with store.LOCK:
+        for it in store.STATE["items"]:
+            keep = [rel for rel in it.get("shared_writes", []) if rel not in done]
+            if keep != it.get("shared_writes", []):
+                it["shared_writes"] = keep
+                store.touch(it)
+
+
 def act_commit() -> dict:
-    """Commit the scope as it stands: the approved solvers, and the solvers
-    and entries beside them that no one has ruled on yet. Each solver file
-    says which it is — a draft tag means unapproved — and only the items the
-    console holds as approved move to COMMITTED."""
+    """Commit the scope as it stands: every changed solver and proposals
+    entry, approved or draft. Each solver file says which it is — a draft tag
+    means unapproved — and only the items the console holds as approved move
+    to COMMITTED.
+
+    What the items recorded as shared writes and git still shows as changed
+    goes to a committer session, which takes those files and nothing else."""
     with store.LOCK:
         if store.COMMITTER["running"]:
             return {"error": "committer session still running"}
@@ -304,25 +365,27 @@ def act_commit() -> dict:
         if any(w["state"] in ("spawning", "sending", "running")
                for w in store.PROCS.values()):
             return {"error": "a solver session is running"}
-        ids = [it["id"] for it in store.STATE["items"] if it["state"] == store.APPROVED]
-        if not ids:
-            return {"error": "nothing approved"}
         paths = changed_paths()
+        if not paths:
+            return {"error": "nothing to commit"}
+        ids = [it["id"] for it in store.STATE["items"] if it["state"] == store.APPROVED]
         stems = {m.group(1) for p in paths if (m := SOLVER_REL.match(p))}
         # the file says whether the user approved it; the items the console
         # holds as approved are the ones it has just untagged
         named = sorted({s for s in stems if not solvers.is_draft(s)} | set(ids))
         carried = sorted(stems - set(named))
         rels = {i: str(solvers.solver_path(i).relative_to(config.ROOT))
-                for i in named}
+                for i in set(named) | set(carried)}
         # HEAD, not the index: a solver staged by something else is still new
         in_head = set(subprocess.run(["git", "ls-tree", "-r", "--name-only", "HEAD",
                                       "--", *rels.values()],
                                      cwd=config.ROOT, capture_output=True,
-                                     text=True).stdout.split())
-        msg = commit_subject([i for i in named if rels[i] not in in_head],
-                             [i for i in named if rels[i] in in_head],
-                             carried)
+                                     text=True).stdout.split()) if rels else set()
+        # with nothing approved, the drafts are what the subject names
+        subject_ids = named or carried
+        msg = commit_subject([i for i in subject_ids if rels[i] not in in_head],
+                             [i for i in subject_ids if rels[i] in in_head],
+                             carried if named else (), drafts=not named)
         # One pathspec git cannot match makes the whole add fail and stages
         # nothing, so an approved item whose pass wrote no solver file is
         # named in the subject and left out of the add. A solver deleted from
@@ -341,13 +404,12 @@ def act_commit() -> dict:
                 store.say(it, store.event("committed"))
                 for worker in workers.detach_workers(it["id"]):
                     drain.queue_reap(worker)
-        chk = subprocess.run(["git", "status", "--porcelain", "--", *config.COMMIT_SCOPE],
-                             cwd=config.ROOT, capture_output=True, text=True)
-        leftovers = any(not l.startswith("??") for l in chk.stdout.splitlines())
+        leftovers = worker_paths()
         if leftovers and not config.FAKE:
             store.COMMITTER.update(running=True, note=None, started=time.time(),
                                    feed=[])
-            threading.Thread(target=run_committer, daemon=True).start()
+            threading.Thread(target=run_committer, args=(leftovers,),
+                             daemon=True).start()
             msgs.append("committer running…")
     store.bump()
     return {"ok": True, "msg": " + ".join(msgs)}
@@ -370,11 +432,15 @@ def kill_session(proc: subprocess.Popen) -> None:
         proc.kill()
 
 
-def run_committer() -> None:
-    """One-shot session that commits worker fallout with judged messages.
+def run_committer(paths: list[str]) -> None:
+    """One-shot session that commits `paths` with judged messages: the files
+    the items recorded as worker writes.
 
     It reads the diffs and the log, so it takes none of the worker appendix:
     that one carries the worker's own rule of no git writes.
+
+    The run ends by clearing the paths git shows as clean from the items that
+    claimed them, so a later press names only what is still changed.
 
     The process is published while it runs, so a shutdown ends the session the
     way it ends a worker.
@@ -395,7 +461,8 @@ def run_committer() -> None:
                 raise store.Reject("the console is shutting down")
         before = subprocess.run(["git", "rev-parse", "HEAD"], cwd=config.ROOT,
                                 capture_output=True, text=True).stdout.strip()
-        cmd = [config.CLAUDE, "-p", config.COMMIT_BRIEF, *config.COMMITTER_FLAGS]
+        cmd = [config.CLAUDE, "-p", config.commit_brief(paths),
+               *config.COMMITTER_FLAGS]
         if config.COMMIT_MODEL:
             cmd += ["--model", config.COMMIT_MODEL]
         seen: set = set()
@@ -440,6 +507,7 @@ def run_committer() -> None:
         subjects = [s for s in out.splitlines() if s]
         note = ("committer: " + "; ".join(reversed(subjects)) if subjects else
                 "committer made no commits — see state/logs/committer.log")
+        clear_committed(paths)
     except Exception as exc:
         note = f"committer failed: {exc}"
     finally:

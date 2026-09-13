@@ -1,4 +1,4 @@
-You make the fixes the brief lists, all in the one file it names, and nothing else. Your final text is data for a script, not a message for a person.
+You make the fixes the brief lists, all in the files it names, and nothing else. Your final text is data for a script, not a message for a person.
 
 ## Procedure
 
@@ -7,6 +7,7 @@ You make the fixes the brief lists, all in the one file it names, and nothing el
 - In `programs/lib.dl` and the modules under `programs/lib/` a prose fix changes comments only. A code fix keeps every member relation, signature, and claim as they are.
 - An entry fix writes the entry per `docs/wf-solver/lib-protocol.md`, with a `Survey:` line stamped with the current time to the minute, and stops there. It does not change `programs/lib.dl`.
 - Cite no draft solver. Where the brief's edit names one, make the edit without the citation and report it as pending the solver's approval.
+- Where the brief's issue is a rule of `docs/wf-solver/principles.md`, examine each of the brief's tasks whose solver carries `// draft`. If the fix leaves that solver something to act on, such as a case to add or drop, write `// review principle: <section heading> — <that point>` as the solver's last header line, per the header grammar in `docs/wf-solver/style.md`. A solver the fix confirms as it stands takes no line. Then run `uv run python scripts/run_dl.py lint <task_id>` on each solver that takes a line, and fix what the `header` category reports.
 - Verify by kind. Prose under `docs/`: `uv run python scripts/context.py > /dev/null`. A lib comment or implementation: `uv run python scripts/run_dl.py <stem>` on every solver that instantiates the comp. Code under `src/` or `tools/console/`: `uv run pytest -q` before and after, and a test for each change, named for the change that would fail it.
 - A failure in the suite is reported as a failure. Do not attribute it to other work, and do not report it as passing.
 - Never run a git command that changes state: no `stash`, `checkout`, `reset`, `rm`, or `commit`.

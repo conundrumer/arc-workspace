@@ -81,6 +81,15 @@ button:disabled:hover { border-color:var(--border); }
 .badge-comp.unproposed { background:var(--st-removed); color:var(--bg); border-color:transparent; }
 /* an entry the task added with no comp behind it */
 .badge-comp.entry { background:transparent; border-style:dashed; }
+/* a review need of the solver: its kind and how many it holds; the kind
+   the priority names leads the row */
+.badge-need {
+  font-size:9px; letter-spacing:.06em; padding:0 4px; border-radius:3px; white-space:nowrap;
+  font-family:ui-monospace,Menlo,monospace; font-weight:600;
+  background:var(--st-review-bg); color:var(--st-review);
+  border:1px solid var(--st-review);
+}
+.badge-need.lead { background:var(--st-review); color:var(--bg); }
 /* callouts the stage left for the user */
 .badge-call {
   font-size:9px; letter-spacing:.06em; padding:0 4px; border-radius:3px;
@@ -274,12 +283,19 @@ body.view-final #main { grid-template-columns:330px minmax(360px,520px) 1fr; }
   border:1px solid var(--border); border-radius:5px; background:var(--bg); color:var(--ink);
   font-family:ui-monospace,Menlo,monospace; font-size:11.5px;
 }
-#rail .railhead .bktog { display:flex; gap:2px; }
-#rail .railhead .bktog button {
+/* the lens controls over both sections: the priority, then the sort. Each
+   group holds its buttons on one line; the groups wrap under one another when
+   the rail is too narrow for both. */
+#rail .railtools {
+  display:flex; flex-wrap:wrap; gap:4px 10px; padding:7px 12px 2px;
+  font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted);
+}
+#rail .bktog { display:flex; gap:2px; white-space:nowrap; }
+#rail .bktog button {
   border:none; background:none; padding:0 3px; cursor:pointer;
   font:inherit; letter-spacing:inherit; text-transform:inherit; color:var(--muted);
 }
-#rail .railhead .bktog button.on { color:var(--accent); }
+#rail .bktog button.on { color:var(--accent); font-weight:600; }
 #rail .row .bksz { font-size:11px; color:var(--muted); }
 #rail .row {
   display:flex; align-items:center; gap:9px; padding:7px 10px; cursor:pointer;
@@ -310,6 +326,18 @@ body.view-final #main { grid-template-columns:330px minmax(360px,520px) 1fr; }
 
 /* ---------- judge ---------- */
 #judge .peektext { white-space:pre-wrap; font-size:12px; line-height:1.55; padding:10px 14px; }
+/* the peeked solver's header lines and review needs */
+#judge .peekneeds {
+  font-size:12px; line-height:1.55; padding:4px 14px 10px; margin-bottom:6px;
+  border-bottom:1px solid var(--border); overflow-wrap:anywhere;
+}
+#judge .peekneeds .lbl { font-family:ui-monospace,Menlo,monospace; font-size:10px; letter-spacing:.06em; color:var(--st-muted); margin-right:6px; }
+#judge .peekneeds ul { margin:2px 0 6px; padding-left:18px; }
+/* the heading over each report the peek lists */
+#judge .railhead {
+  padding:8px 14px 4px; font-size:10px; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--muted);
+}
 #judge { border-right:1px solid var(--border); overflow-y:auto; display:flex; flex-direction:column; min-height:0; background:var(--bg); }
 #judge-head { flex:none; padding:10px 16px 8px; border-bottom:1px solid var(--border); background:var(--panel); }
 #judge-head:empty { display:none; }

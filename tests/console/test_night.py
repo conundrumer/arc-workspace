@@ -986,13 +986,13 @@ def test_the_night_source_is_queue_until_set(srv):
     assert srv.night()["finalize_target"] == 5
 
 
-def test_the_unfinalized_source_starts_finalize_passes_in_triage_order(srv, monkeypatch):
+def test_the_unfinalized_source_starts_finalize_passes_in_review_order(srv, monkeypatch):
     clock_at(srv, monkeypatch)
     set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50)
     sent = finalize_launch(srv, monkeypatch)
     for tid in ("bbb", "ccc"):
         backlog_solver(srv, tid)
-    # a chain that wrote no solver leads the triage order
+    # a chain that wrote no solver leads the review order
     srv.save_report("aaa", "refine", "no file written")
     lead = item(srv, "aaa", srv.NEEDS_REVIEW, chain=srv.default_chain())
     night_on(srv, source="unfinalized", finalize_target=2)

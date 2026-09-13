@@ -2,7 +2,7 @@
 """Review console for batch solver workers.
 
 Serves the console UI, launches `claude -p` workers in waves, resumes them
-with review comments, and commits approved solvers.
+with review comments, and commits the solvers they write.
 
     uv run python tools/console/server.py [--port 8347]
 
@@ -156,6 +156,7 @@ class Handler(BaseHTTPRequestHandler):
                         "models": list(config.MODEL_IDS),
                         "committer": dict(store.COMMITTER),
                         "retro_mark": ledger.retro_mark(),
+                        "priority": ledger.priority(),
                         "solved": len([p for p in config.SOLVERS.glob("*.dl")
                                        if not p.name.startswith(".")]),
                         "total": len(list(config.REF_DIR.glob("programs/solvers/*.ts")))}
@@ -172,8 +173,6 @@ class Handler(BaseHTTPRequestHandler):
             # the order the rows take comes from a git read, which runs here
             # rather than under LOCK: every worker reader thread waits on it
             self.reply(backlog.lens_view(backlog.solver_ages()))
-        elif url.path == "/api/retro":
-            self.reply(ledger.retro_view())
         elif url.path.startswith("/api/peek/"):
             item_id = url.path.rsplit("/", 1)[1]
             if not solvers.solver_path(item_id).exists():
@@ -182,6 +181,8 @@ class Handler(BaseHTTPRequestHandler):
                 reports = [{"stage": name, "text": text}
                            for name, text in prompts.persisted_reports(item_id)]
             self.reply({"id": item_id, "title": solvers.title_of(item_id),
+                        "header": solvers.header_of(item_id),
+                        "needs": solvers.needs_of(item_id),
                         "solver": solvers.solver_text(item_id), "reports": reports})
         elif url.path.startswith("/api/task/"):
             item_id = url.path.rsplit("/", 1)[1]
@@ -236,10 +237,8 @@ class Handler(BaseHTTPRequestHandler):
             res = actions.act_commit()
         elif route == "/api/night":
             res = overnight.act_night(body)
-        elif route == "/api/flag":
-            res = ledger.act_flag(body)
-        elif route == "/api/retro":
-            res = ledger.act_retro()
+        elif route == "/api/priority":
+            res = ledger.act_priority(body)
         elif route == "/api/finalize":
             res = backlog.act_finalize(body)
         elif route == "/api/dismiss":

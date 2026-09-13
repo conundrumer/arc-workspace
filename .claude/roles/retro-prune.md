@@ -1,4 +1,4 @@
-You prune the text the brief's diff added or changed, in the one file it names. Your final text is data for a script, not a message for a person.
+You prune the text the brief's diff added or changed, in the files it names. Your final text is data for a script, not a message for a person.
 
 ## Procedure
 

@@ -10,24 +10,32 @@ import { ItemRow, BkRow, passLabel } from "/ui/rail.js";
 import { snap as snapNow, tasks, peeks, post, ensureTask, ensureItem, ensurePeek } from "/ui/server.js";
 import { useSession } from "/ui/session.js";
 
-/* finalize lens orderings: the server's triage sort, a complexity measure, or
-   the models that made the passes. One choice orders both sections; in the
-   finalizing section it orders the cold sessions, behind the warm ones. */
-const BK_ORDERS = {flag:"triage order",
-                   passes:"grouped by the models of the passes, triage order within",
-                   ts:"reference TS solver complexity",
-                   dl:"solver rule-literal count"};
+/* The priority: the kind of review need that leads. The server holds it,
+   since the autopilot admits passes under the same order, and it also picks
+   which badge a row leads with. */
+const PRIORITY = {principle:"the rows with a review line on a rule of principles.md first, widest reach first",
+                  proposal:"the rows with a proposal comp first, most callers first",
+                  workaround:"the rows with a workaround first, most first",
+                  sweep:"the rows with a sweep first, most first"};
+const PRIORITY_KINDS = Object.keys(PRIORITY);
+/* The sort: the priority's review order as the server sent it, a grouping by
+   the models of the passes, or a complexity measure. One choice sorts both
+   sections; in the finalizing section it sorts the cold sessions, behind the
+   warm ones. */
+const SORTS = {review:"the priority's review order",
+               passes:"grouped by the models of the passes, review order within",
+               dl:"solver rule-literal count"};
 const BK_SHOWN = 40;   // unfinalized rows listed until the user asks for the rest
-/* the chosen ordering over lens rows; the triage rank is the row's place in
-   the server's list, and a task with no row goes last */
-const triage = r => r.triage ?? Infinity;
-const bkCmp = order => (a,b) => {
-  if(order==="flag") return triage(a)-triage(b) || 0;
-  if(order==="passes") return passLabel(a).localeCompare(passLabel(b)) || triage(a)-triage(b) || 0;
-  const k=order+"_size", av=a[k]??-1, bv=b[k]??-1;
+/* the chosen sort over lens rows; the review rank is the row's place in the
+   server's list, and a task with no row goes last */
+const rank = r => r.rank ?? Infinity;
+const sortCmp = sort => (a,b) => {
+  if(sort==="review") return rank(a)-rank(b) || 0;
+  if(sort==="passes") return passLabel(a).localeCompare(passLabel(b)) || rank(a)-rank(b) || 0;
+  const k=sort+"_size", av=a[k]??-1, bv=b[k]??-1;
   return bv-av || (a.id<b.id?-1:1);
 };
-const sizeOf = (row, order) => ["flag","passes"].includes(order) ? null : (row[order+"_size"] ?? "—");
+const sizeOf = (row, sort) => sort==="dl" ? (row.dl_size ?? "—") : null;
 
 export const finalize = {
   id: FINAL,
@@ -36,13 +44,19 @@ export const finalize = {
     const [backlog,setBacklog]=useState([]);
     const [finRows,setFinRows]=useState({});   // id -> lens row of a finalize pass in flight
     const [bkAll,setBkAll]=useState(false);   // every unfinalized row, on the user's ask
-    const [bkOrder,setBkOrderState]=useState(()=>{
-      const v=localStorage.getItem("bkOrder");
-      return BK_ORDERS[v] ? v : "flag";
+    /* The priority is the server's, and the page follows it. The kind the
+       user just picked stands in until a snapshot carries it, so the control
+       answers the click at once. */
+    const [picked,setPicked]=useState(null);
+    const priority=picked||snap.priority||PRIORITY_KINDS[0];
+    useEffect(()=>{ if(picked && snap.priority===picked) setPicked(null); },[snap.priority]);
+    const [sort,setSort]=useState(()=>{
+      const v=localStorage.getItem("bkSort");
+      return Object.hasOwn(SORTS, v||"") ? v : "review";
     });
-    const setBkOrder=useCallback(v=>{
-      localStorage.setItem("bkOrder", v);
-      setBkOrderState(v);
+    const chooseSort=useCallback(v=>{
+      localStorage.setItem("bkSort", v);
+      setSort(v);
     },[]);
 
     const open=useRef(true);
@@ -52,19 +66,28 @@ export const finalize = {
         const r=await fetch("/api/backlog");
         const d=await r.json();
         if(!open.current) return;
-        const ranked = rows => (rows||[]).map((row,i)=>({...row, triage:i}));
+        const ranked = rows => (rows||[]).map((row,i)=>({...row, rank:i}));
         setBacklog(ranked(d.items));
         setFinRows(Object.fromEntries(ranked(d.finalizing).map(row=>[row.id,row])));
       } catch(e){}
     },[]);
+    /* the priority orders the rows the server sends, so the click that sets
+       it takes the rows again */
+    const choosePriority=useCallback(async v=>{
+      setPicked(v);
+      await post("/api/priority",{kind:v});
+      fetchBacklog();
+    },[fetchBacklog]);
     /* the scan stats every solver, so it is polled only while the lens is
-       open, and slowly: flags and started passes refresh it on the spot */
+       open, and slowly: a priority change and started passes refresh it on
+       the spot */
     useEffect(()=>{
       fetchBacklog();
       const h=setInterval(fetchBacklog, 15000);
       return ()=>clearInterval(h);
     },[fetchBacklog]);
-    /* a landing writes the ledger line the backlog reads */
+    /* a landing writes the ledger line the backlog reads, and a priority
+       change reorders the rows */
     useEffect(()=>{ if(snap.seq) fetchBacklog(); },[snap.seq]);
 
     const railOrder=useClocked(()=>
@@ -78,13 +101,14 @@ export const finalize = {
     const itemOrder=useClocked(()=>{
       const rows=railOrder.map(id=>items.find(x=>x.id===id)).filter(it=>
         it && it.phase===FINAL && (it.id===selId || !SETTLED.includes(it.state)));
-      const cmp=bkCmp(bkOrder), rowOf=it=>finRows[it.id]||{id:it.id};
+      const cmp=sortCmp(sort), rowOf=it=>finRows[it.id]||{id:it.id};
       return rows.filter(it=>cacheInfo(it).cls!=="cold")
         .concat(rows.filter(it=>cacheInfo(it).cls==="cold").sort((a,b)=>cmp(rowOf(a), rowOf(b))))
         .map(it=>it.id);
-    }, [railOrder, items, selId, bkOrder, finRows]);
-    /* the rows arrive in triage order; the other orderings resort them here */
-    const bkSorted=useMemo(()=>[...backlog].sort(bkCmp(bkOrder)), [backlog, bkOrder]);
+    }, [railOrder, items, selId, sort, finRows]);
+    /* the rows arrive in the priority's review order; the other sorts resort
+       them here */
+    const bkSorted=useMemo(()=>[...backlog].sort(sortCmp(sort)), [backlog, sort]);
     const bkShown=useMemo(()=>filter ? bkSorted.filter(b=>b.id.includes(filter))
       : bkAll ? bkSorted : bkSorted.slice(0, BK_SHOWN), [bkSorted, bkAll, filter]);
     const finShown=useMemo(()=>filter ? itemOrder.filter(id=>id.includes(filter)) : itemOrder,
@@ -134,14 +158,25 @@ export const finalize = {
                   : null;
     }
 
-    const tools=html`<span class="bktog">${Object.keys(BK_ORDERS).map(k=>html`<button key=${k}
-      class=${bkOrder===k?"on":""} title=${BK_ORDERS[k]}
-      onClick=${()=>setBkOrder(k)}>${k==="flag"?"flag ↑":k==="passes"?"passes":k+" ↓"}</button>`)}</span>`;
+    /* the two controls over both sections: which kind of need leads, and
+       how the rows are sorted */
+    const tools=html`<div class="railtools">
+      <span class="bktog" role="group" aria-label="review priority">
+        ${PRIORITY_KINDS.map(k=>html`<button key=${k} class=${priority===k?"on":""}
+          title=${PRIORITY[k]}
+          onClick=${()=>choosePriority(k)}>${k}</button>`)}
+      </span>
+      <span class="bktog" role="group" aria-label="row sort">
+        ${Object.keys(SORTS).map(k=>html`<button key=${k} class=${sort===k?"on":""}
+          title=${SORTS[k]}
+          onClick=${()=>chooseSort(k)}>${k==="dl"?"dl ↓":k}</button>`)}
+      </span>
+    </div>`;
     const finRowsShown=finShown.map(id=>html`<${ItemRow} key=${id} it=${items.find(x=>x.id===id)}
-      task=${tasks[id]} metric=${sizeOf(finRows[id]||{}, bkOrder)}
+      task=${tasks[id]} metric=${sizeOf(finRows[id]||{}, sort)} row=${finRows[id]} priority=${priority}
       sel=${!!selItem && id===selId} onSelect=${select}/>`);
     const bkRows=bkShown.map(b=>html`<${BkRow} key=${b.id} b=${b} task=${tasks[b.id]}
-      metric=${sizeOf(b, bkOrder)}
+      metric=${sizeOf(b, sort)} priority=${priority}
       sel=${b.id===selId && !itemOrder.includes(b.id)} onSelect=${select}/>`);
     return {
       order,
@@ -150,8 +185,9 @@ export const finalize = {
       settle: id => { ensureTask(id); if(items.some(x=>x.id===id)) ensureItem(id); else ensurePeek(id); },
       select,
       detailId,
+      tools,
       sections: [
-        {key:"fin", head:"finalizing · "+itemOrder.length, tools, rows:finRowsShown, total:finShown.length},
+        {key:"fin", head:"finalizing · "+itemOrder.length, rows:finRowsShown, total:finShown.length},
         {key:"bk", head:"unfinalized · "+bkSorted.length, rows:bkRows,
          total:filter ? bkRows.length : bkSorted.length, onMore:()=>setBkAll(true)},
       ],
