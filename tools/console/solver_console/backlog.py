@@ -205,8 +205,8 @@ def _heading(text: str) -> str:
 def reach_of(rows: list[dict]) -> None:
     """Each row's reach per kind: for a principle, the rows whose review
     lines name the same heading; for a proposal, the rows declaring the same
-    comp; for a workaround or a sweep, its lines. A row without the kind
-    reaches 0."""
+    comp; for a workaround, a sweep, or a cite, its lines. A row without the
+    kind reaches 0."""
     headings: dict[str, int] = {}
     comps: dict[str, int] = {}
     for row in rows:
@@ -221,6 +221,7 @@ def reach_of(rows: list[dict]) -> None:
             "proposal": max((comps[n] for n in needs["proposal"]), default=0),
             "workaround": len(needs["workaround"]),
             "sweep": len(needs["sweep"]),
+            "cite": len(needs["cite"]),
         }
 
 

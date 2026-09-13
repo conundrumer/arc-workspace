@@ -159,13 +159,20 @@ export const finalize = {
                   : null;
     }
 
-    /* the two controls over both sections: which kind of need leads, and
-       how the rows are sorted */
+    /* how many unfinalized rows hold a need of each kind, so a kind carries
+       its count in the drop-down */
+    const needCounts=useMemo(()=>Object.fromEntries(PRIORITY_KINDS.map(k=>
+      [k, backlog.filter(b=>((b.needs||{})[k]||[]).length).length])), [backlog]);
+    /* the two controls over both sections: which kind of need leads, picked
+       from a drop-down, and how the rows are sorted */
     const tools=html`<div class="railtools">
-      <span class="bktog" role="group" aria-label="review priority">
-        ${PRIORITY_KINDS.map(k=>html`<button key=${k} class=${priority===k?"on":""}
-          title=${PRIORITY[k]}
-          onClick=${()=>choosePriority(k)}>${k}</button>`)}
+      <span class="railpick">
+        <span class="lead">lead</span>
+        <select aria-label="review priority" value=${priority}
+          onChange=${e=>choosePriority(e.target.value)}>
+          ${PRIORITY_KINDS.map(k=>html`<option key=${k} value=${k}
+            title=${PRIORITY[k]}>${k+" "+needCounts[k]}</option>`)}
+        </select>
       </span>
       <span class="bktog" role="group" aria-label="row sort">
         ${Object.keys(SORTS).map(k=>html`<button key=${k} class=${sort===k?"on":""}

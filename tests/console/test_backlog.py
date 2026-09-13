@@ -191,7 +191,7 @@ def test_the_review_order_bands(srv):
     assert by_id["bbb"]["reach"]["principle"] == 2
     assert by_id["ccc"]["reach"]["principle"] == 1
     assert by_id["eee"]["reach"] == {"principle": 0, "proposal": 0,
-                                     "workaround": 1, "sweep": 0}
+                                     "workaround": 1, "sweep": 0, "cite": 0}
     assert by_id["eee"]["dl_size"] == 3 and by_id["ddd"]["dl_size"] == 1
 
 
@@ -450,6 +450,18 @@ def test_a_cite_line_is_a_cite_need(srv):
     other review kinds do."""
     write_solver(srv, "aaa", draft(reviews=[("cite", CITE)]))
     assert srv.needs_of("aaa")["cite"] == [CITE]
+
+
+def test_a_cite_need_reaches_so_the_cite_focus_leads_with_it(srv):
+    """The lens orders the rows under a focus by their reach in that kind, so
+    a solver with a cite line leads under the cite focus."""
+    write_solver(srv, "aaa", draft(reviews=[("cite", CITE)]))
+    write_solver(srv, "bbb", draft())
+    rows = {r["id"]: r for r in srv.backlog_view()}
+    assert rows["aaa"]["reach"]["cite"] == 1
+    assert rows["bbb"]["reach"]["cite"] == 0
+    srv.act_priority({"kind": "cite"})
+    assert srv.lens_view()["items"][0]["id"] == "aaa"
 
 
 def test_approval_clears_the_review_lines_and_withdrawing_it_puts_them_back(srv):
