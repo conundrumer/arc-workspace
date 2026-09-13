@@ -1,0 +1,56 @@
+// 8fff9e47
+// draft
+// keywords: decompose rank border
+// input: blocks of params.block_size, side by side
+// output: a square of concentric rings, one per block. The blocks nest in the
+//  order params.corner and params.axis read them, the first outermost. The
+//  two midlines quarter the square, and each quarter of a ring takes the cell
+//  that sits in that place in the ring's block.
+
+.comp Params {
+    .decl block_size(k: number) block_size(2).
+
+    // The order the blocks nest in, outermost first.
+    .decl corner(d: DiagDir) corner(DIAG_BR).
+    .decl axis(a: Axis) axis(AXIS_V).
+}
+
+.init params = Params
+
+// Each input cell with its block and its place in that block.
+.decl block(p_tile: Position, p_intile: Position, col: Color)
+block(P_tile, P_intile, Col) :-
+    in(P_grid_in, Col), params.block_size(K),
+    divide_by_size_2d(P_grid_in, K, 0, P_tile, P_intile).
+
+// The blocks in nesting order: rank 0 is the outermost ring.
+.init nesting = LexOrder<Unit>
+nesting.cell($U(), P_tile) :- block(P_tile, _, _).
+nesting.corner($U(), D) :- params.corner(D).
+nesting.axis($U(), A) :- params.axis(A).
+
+// One ring per block.
+.init rings = Tally<Unit, Position>
+rings.item($U(), P_tile) :- block(P_tile, _, _).
+
+// A quarter is one cell per ring wide.
+.init quarter = Frame2D<Unit>
+quarter.extent($U(), A, N) :- axis_elem(A), rings.tally($U(), N).
+
+// The output frame: the quarters laid out as a block lays its cells out.
+.decl out_frame(p_intile: Position, p_grid_out: Position)
+out_frame(P_intile, P_grid_out) :-
+    block(_, P_intile, _),                  // a place in the block
+    quarter.cell($U(), P_inner),            // a cell of the quarter there
+    concat_2d(P_intile, P_inner, 0, P_grid_out).
+
+// The output frame peels into concentric rings.
+.init peel = Rim<Unit>
+peel.cell($U(), P) :- out_frame(_, P).
+
+.decl out(p: Position, col: Color)
+out(P_grid_out, Col) :-
+    peel.depth($U(), P_grid_out, K),         // the cell's ring
+    nesting.rank($U(), P_tile, K),           // the block that ring draws
+    out_frame(P_intile, P_grid_out),         // the quarter the cell lies in
+    block(P_tile, P_intile, Col).            // that block's cell there

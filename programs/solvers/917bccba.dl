@@ -1,0 +1,148 @@
+// 917bccba
+// draft
+// keywords: lines border move
+// input: a rectangle outline in one ink, and a cross in another. The cross
+//  is two full lines of the grid, and they meet inside the rectangle. The
+//  rectangle covers the cross where the two overlap.
+// output: the same scene, with the cross moved. The rectangle stays where it
+//  is, and it still covers the cross.
+
+// Which ink draws the rectangle.
+.type Rect =
+    // The ink whose cells draw a rectangle outline.
+    Outline {}
+    // The ink with no cell on the grid's border. The cross's lines run off
+    // all four edges, so the other ink reaches that border.
+  | Contained {}
+
+// Where the cross's lines come to meet.
+.type Landing =
+    // At the rectangle's params.corner.
+    Corner {}
+    // The cross steps toward params.corner as a heading, until the
+    // rectangle's border stops it. On every pair the cross starts on that
+    // corner's diagonal, so the steps end at the corner.
+  | Slide {}
+
+.type Choice = [rect: Rect, landing: Landing]
+
+.decl rect_choice(r: Rect)
+rect_choice($Outline()). rect_choice($Contained()).
+
+.decl landing_choice(l: Landing)
+landing_choice($Corner()). landing_choice($Slide()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([R, L]) :- rect_choice(R), landing_choice(L).
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+
+    // The rectangle corner the cross moves to.
+    .decl corner(d: DiagDir) corner(DIAG_TR).
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // @input
+    .decl bg(c: Color)                             // @input
+
+    .type InkKey = [key: Key, col: Color]
+
+    // A cell in one of the scene's two inks.
+    .decl ink_cell(k: InkKey, p: Position)
+    ink_cell([Ky, Col], P) :- cell(Ky, P, Col), !bg(Col).
+
+    // --- $Outline ---
+
+    .init outline = Outlines<InkKey>
+    outline.node(K, P) :- ink_cell(K, P).
+
+    // --- $Contained ---
+
+    .decl on_border(key: Key, col: Color)
+    on_border(Ky, Col) :- ink_cell([Ky, Col], P), !interior(P, ZERO).
+
+    .init contained = Bbox<InkKey>
+    contained.cell([Ky, Col], P) :- ink_cell([Ky, Col], P), !on_border(Ky, Col).
+
+    // --- $Outline, $Contained ---
+
+    // The rectangle: its ink, and the box it draws.
+    .decl rect(key: Key, r: Rect, col: Color, b: Box)
+    rect(Ky, $Outline(), Col, B) :- outline.box([Ky, Col], B).
+    rect(Ky, $Contained(), Col, B) :- contained.box([Ky, Col], B).
+
+    // The cross is drawn in the other ink.
+    .decl cross_col(key: Key, r: Rect, col: Color)
+    cross_col(Ky, R, Col) :- ink_cell([Ky, Col], _), rect(Ky, R, _, _), !rect(Ky, R, Col, _).
+
+    // --- $Slide ---
+
+    .init cross_rim = Rim<InkKey>
+    cross_rim.cell(K, P) :- ink_cell(K, P).
+
+    // The cell the cross's two lines meet at.
+    .decl center(key: Key, r: Rect, p: Position)
+    center(Ky, R, P) :-
+        cross_col(Ky, R, Col), ink_cell([Ky, Col], P),  // a cross cell
+        !cross_rim.rim([Ky, Col], P).                   // with the cross on all four sides
+
+    .decl box_border(key: Key, r: Rect, p: Position)
+    box_border(Ky, R, P) :- cell(Ky, P, _), rect(Ky, R, _, B), box_edge(P, B, _).
+
+    .type Cast = [key: Key, r: Rect, d: DiagDir]
+
+    .init slide = Ray<Cast>
+    slide.dir([Ky, R, D], D)     :- rect(Ky, R, _, _), diag_dir_elem(D).
+    slide.mark([Ky, R, D], P)    :- slide.dir([Ky, R, D], _), center(Ky, R, P).
+    slide.blocked([Ky, R, D], P) :- slide.dir([Ky, R, D], _), box_border(Ky, R, P).
+
+    // --- $Corner, $Slide ---
+
+    // Where the cross's lines meet after the move, if params.corner were d.
+    .decl landing(key: Key, ch: Choice, d: DiagDir, p: Position)
+    landing(Ky, [R, $Corner()], D, P) :-
+        cell(Ky, P, _), rect(Ky, R, _, B), box_corner(P, B, D).
+    landing(Ky, [R, $Slide()], D, P) :- slide.stop([Ky, R, D], P, _, _, _).
+
+    // The moved cross: the two lines through where it lands.
+    .decl crossing(key: Key, ch: Choice, d: DiagDir, p: Position)
+    crossing(Ky, Ch, D, P) :-
+        landing(Ky, Ch, D, P_c), cell(Ky, P, _), axis_elem(A), same_line(A, P, P_c).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+parse.bg(Col) :- params.bg(Col).
+
+.decl rect_cell(p: Position, r: Rect)
+rect_cell(P, R) :- in(P, Col), parse.rect($U(), R, Col, _).
+
+// The cross where it comes to rest.
+.decl cross(p: Position, ch: Choice)
+cross(P, Ch) :- params.corner(D), parse.crossing($U(), Ch, D, P).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, [R, L]) :-
+    in(P, C), impl_choice([R, L]),
+    ( rect_cell(P, R), Col = C                                             // the rectangle stays
+    ; !rect_cell(P, R), cross(P, [R, L]), parse.cross_col($U(), R, Col)    // the moved cross under it
+    ; !rect_cell(P, R), !cross(P, [R, L]), params.bg(Col)                  // the rest is blank
+    ).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+    parse.bg(Col) :- params.bg(Col).
+
+    // A corner whose cross misses a cross cell the output draws.
+    .decl mismatch(d: DiagDir)
+    mismatch(D) :-
+        ex_out(E, P, Col), parse.cross_col(E, R, Col),  // a cross cell of the output
+        impl_choice([R, L]), diag_dir_elem(D), !parse.crossing(E, [R, L], D, P).
+
+    .decl corner(d: DiagDir)
+    corner(D) :- diag_dir_elem(D), !mismatch(D).
+}

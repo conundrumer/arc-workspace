@@ -1,0 +1,68 @@
+// 91714a58
+// draft
+// keywords: noise select count
+// input: noise cells of every color on bg, with one solid one-color
+//  rectangle among them
+// output: that rectangle alone, the rest bg
+
+// Which cells form the figure.
+.type Choice =
+    // The solid one-color rectangle that holds the most cells.
+    Rect {}
+    // Every cell drawn thick: a cell of a one-color 2x2 square.
+  | Thick {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Rect()).
+impl_choice($Thick()).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+// The cells the output keeps, in their own color.
+.decl keep(p: Position, col: Color, ch: Choice)
+
+out(P, Col, Ch) :-
+    in(P, _), impl_choice(Ch),
+    ( keep(P, Col, Ch)                     // the figure, in its own color
+    ; !keep(P, _, Ch), params.bg(Col) ).   // the rest is bg
+
+// --- Rect ---
+
+// The rectangles each color draws. An outline spans at least two cells on
+// each axis, so a run one cell wide draws none.
+.init outline = Outlines<Color>
+outline.node(Col, P) :- ink(P, Col).
+
+// The one color a rectangle holds, absent where it holds more than one.
+.init rect_color = Unanimous<Box, Color>
+rect_color.item(B, C) :- outline.box(_, B), in(P, C), crop(P, B, _).
+
+// The cells of a solid rectangle, in its one color.
+.decl rect_cell(b: Box, col: Color, p: Position)
+rect_cell(B, Col, P) :- rect_color.value(B, Col), in(P, _), crop(P, B, _).
+
+// The solid rectangle holding the most cells.
+.init biggest = Mode<Unit, Box, Position>
+biggest.item($U(), B, P) :- rect_cell(B, _, P).
+
+keep(P, Col, $Rect()) :- biggest.mode($U(), B), rect_cell(B, Col, P).
+
+// --- Thick ---
+
+.decl quad(p: Position, diag: DiagDir, q1: Position, q2: Position, q3: Position) inline
+quad(P, G, Q1, Q2, Q3) :-
+    diag_dirs(G, _, D1, D2),
+    neighbor(P, D1, Q1), neighbor(P, D2, Q2), neighbor(P, G, Q3).
+
+keep(P, Col, $Thick()) :-
+    ink(P, Col), quad(P, _, Q1, Q2, Q3),           // a cell and a 2x2 square it anchors
+    ink(Q1, Col), ink(Q2, Col), ink(Q3, Col).      // the square is all its color

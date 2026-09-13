@@ -76,3 +76,34 @@ Survey: 2026-09-10 02:48 — scope: the 341 solvers `since 2026-09-09 01:42` lis
   (`:68-72`), through `block_dir`.
 - 71e489b6 — `solid` (`:45`): ground drawn thick, through a local `quad` in the entry's code form; a ground cell in no 2x2 block of ground is thin, and thin clusters are the hole candidates.
 - 142ca369 — `elbow` (`:56-59`, with `no_arm` `:52`): the elbow of an L-triomino with the corner its arms straddle, in a split form — the two cardinal members as a universal through the `no_arm` defect over `Rim.rim_dir`, the corner member through `neighbor` tested for bg. `mark` under `$Gap` (`:61-65`) reads the anchor and its cardinal members again.
+
+Survey: 2026-09-12 19:42 — the solvers since 2026-09-10 02:48.
+
+Callers:
+5ad4f10b `figure` (`:39-43`) — the color drawn thick, read as a cell with its three quad members in the same color's ink; the head keeps the color alone.
+3aa6fb7a `mark` under `$Corner` (`:48-52`) — the empty cell that completes an L-triomino, with ink on the other three cells of the square.
+2546ccf6 `gap` (`:57-63`) — the tile a 2x2 block of tiles is missing, read over tile positions; `mirror` (`:73-77`) reads the same quad through `block_dir`.
+71e489b6 `quad` (`:38-41`), read by `solid` (`:45`) — a local relation in the entry's code form; ground in no 2x2 block of ground is thin, and thin clusters are the hole candidates.
+142ca369 `elbow` (`:55-59`, with `no_arm` `:52`) — the elbow of an L-triomino with the corner its arms straddle, in the split form: the two cardinal members as a universal through the `no_arm` defect over `Rim.rim_dir`, the corner member through `neighbor`.
+91714a58 `quad` (`:63-66`), read by `keep` under `$Thick()` (`:68-70`) — a local relation in the entry's code form, declared word for word as 71e489b6 declares it; a cell of a one-color 2x2 square is what the `$Thick` case keeps.
+
+91714a58 is the site this scope adds. The four scans of the entry matched six rules in the scope with three or more step atoms sharing a source, nineteen with three or more step atoms under any source, and twenty-two binding a corner beside two or more step atoms; a listing of every corner-binding atom in the scope gave 260 rules, and a scan for the split form — a corner-bound step beside a solver relation carrying both the anchor and the corner variable — gave twelve. Outside the six callers, every one of those rules fell into the near-miss classes below.
+
+Near-misses:
+7e0986d6 `within` (`:60-63`) and 14b8e18c `mark` (`:77-80`) take a corner's two cardinal neighbors and no cell across the corner — `bend`.
+7d7772cc `thick` (`:24-25`) is the drawn-thick test through `Rim` negation: a cell whose four cardinal neighbors all hold its color. It names no corner and its cells are not a square.
+8dab14c2 `dent` (`:29-35`) steps from one cell toward an open direction, its opposite, and both perpendiculars — a cross of four cardinals, no corner.
+891232d6 `onward_cell` (`:102-107`) steps from two sources along parameter-held cardinal directions, with no corner and no diagonal member.
+3eda0437 `region` (`:91-94`) takes a cell and the cell across a corner and neither cardinal member — `corner_only`.
+762cd429 `source` (`:67-72`) and 22208ba4 `moved_cell` decompose a corner into its two cardinal dirs and jump a task-given extent along them, testing no cell at unit distance.
+4c177718 `placement` (`:142-149`) decomposes a corner to align two boxes at facing corner cells, with one step and no square.
+150deff5 `occ` detects a 2x2 piece as `Occurrences` against a stored `GRID_MASK_2x2` footprint, as 7f4411dc `square_kept` detects one against a `Frame2D` footprint.
+0c786b71, 3af2c5a8, 46442a0e, 47c1f68c, 62c24649, 67e8384a, 833dafe3, and b1fc8b8e each store `tile_d4` as a `GRID_2x2` table — a 2x2 tile arrangement of a decomposition, anchored at no cell.
+1478ab18 `right_angle`, 1e5d6875 `copy_land`, 17b866bd `mark_block`, b60334d2 `halo`, 8cb8642d `arm_end`, 6cbe9eb8 `anchor`, 79cce52d `line_rotation`, and a3df8b1e `trace` each take a single diagonal step over an enumerated or parameter-held corner.
+11e1fe23 `mini` under `$Converge` (`:81-86`) reads a `DiagPlacement` quadrant of a box and then steps one cell across that corner.
+
+Spec:
+The interface and the definition should stand as the entry states them. 91714a58 declares the five-column readout in the code form's exact words, as 71e489b6 does, and its `keep` tests all three members against one set, so no site yet reads `q1` apart from `q2`; the per-member question the 2026-09-09 survey raised gains no new site, and the two-site agreement on the five-column declaration is the strongest evidence the scope offers for the stated form. On the set-level reading, 91714a58 `keep` is a third site that tests the anchor and its three members against one set, so that reading now covers three of six callers. It still does not cover the other three, and both sites added since the readout form was written keep the anchor in the head, which a set membership test would not give; the sets also differ in their key — color at 5ad4f10b and 91714a58, and one set at 71e489b6. The readout is the form that serves every caller. 7d7772cc shows the drawn-thick concept encoded with no square at all, so the operation should stay the geometric readout and not the thickness test over it.
+
+Reimplementations:
+none.

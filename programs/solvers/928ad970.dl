@@ -1,0 +1,138 @@
+// 928ad970
+// draft
+// keywords: markers span border
+// input: four marker cells, one off each side of a box, and a small shape in another color.
+// output: the input, with a rectangle outline drawn just inside a box the input spans,
+//  in the shape's color.
+
+// What tells the markers from the shape.
+.type Mark =
+    // The markers carry params.mark_col.
+    Named {}
+    // The markers are the cells that stand alone.
+  | Lone {}
+
+// The cells the box spans.
+.type Span =
+    // The marker cells.
+    Markers {}
+    // Every foreground cell.
+  | Content {}
+
+.type Choice = [m: Mark, s: Span]
+
+.type SpanKey = [e: Example, s: Span]
+
+.comp Params {
+    // --- shared ---
+    .decl bg(c: Color) bg(0).
+
+    // --- Named ---
+    .decl mark_col(c: Color) mark_col(5).
+
+    // --- Markers ---
+    // How far the rectangle stands inside the markers' box.
+    .decl mark_inset(k: number) mark_inset(1).
+
+    // --- Content ---
+    // How far the rectangle stands inside the content's box.
+    .decl content_inset(k: number) content_inset(1).
+}
+
+.init params = Params
+
+.decl fg(p: Position, col: Color)
+fg(P, Col) :- in(P, Col), !params.bg(Col).
+
+// --- Mark cases: the marker cells, and the color the rectangle takes ---
+
+.decl mark_choice(m: Mark)
+mark_choice($Named()). mark_choice($Lone()).
+
+.decl mark(p: Position, m: Mark)
+.decl ink(col: Color, m: Mark)
+
+// --- Named ---
+
+mark(P, $Named())  :- fg(P, Col), params.mark_col(Col).
+ink(Col, $Named()) :- fg(_, Col), !params.mark_col(Col).
+
+// --- Lone ---
+
+// A foreground cell with another beside it.
+.decl touching(p: Position)
+touching(P) :- fg(P, _), dir8_elem(D), neighbor(P, D, Q), fg(Q, _).
+
+mark(P, $Lone())  :- fg(P, _), !touching(P).
+ink(Col, $Lone()) :- fg(P, Col), touching(P).
+
+// --- Span cases: the cells the box spans, and how far inside it the rectangle sits ---
+
+.decl span_choice(s: Span)
+span_choice($Markers()). span_choice($Content()).
+
+.decl spanned(p: Position, ch: Choice)
+.decl inset(k: number, s: Span)
+
+// --- Markers ---
+
+spanned(P, [M, $Markers()]) :- mark(P, M).
+inset(K, $Markers()) :- params.mark_inset(K).
+
+// --- Content ---
+
+spanned(P, [M, $Content()]) :- fg(P, _), mark_choice(M).
+inset(K, $Content()) :- params.content_inset(K).
+
+// --- shared ---
+
+.init span_box = Bbox<Choice>
+span_box.cell(Ch, P) :- spanned(P, Ch).
+
+.decl rect(b: Box, ch: Choice)
+rect(B_rect, [M, S]) :-
+    span_box.box([M, S], B),
+    inset(K, S), uniform_inset(K, V), compose(B, V, B_rect).
+
+.decl drawn(p: Position, ch: Choice)
+drawn(P, Ch) :- in(P, _), rect(B, Ch), box_edge(P, B, _).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, [M, S]) :- drawn(P, [M, S]), ink(Col, M).
+out(P, Col, [M, S]) :- in(P, Col), mark_choice(M), span_choice(S), !drawn(P, [M, S]).
+
+.comp Determine {
+    // The cells the output draws, over the color they replace.
+    .decl drawn(e: Example, p: Position, col: Color)
+    drawn(E, P, Col) :- ex_in(E, P, C_in), ex_out(E, P, Col), Col != C_in.
+
+    .decl bg(c: Color)
+    bg(C_in) :- ex_in(E, P, C_in), drawn(E, P, _).
+
+    // A train input's non-bg color that its output does not draw with.
+    .decl mark_col(c: Color)
+    mark_col(Col) :- ex_out(E, _, _), ex_in(E, _, Col), !bg(Col), !drawn(E, _, Col).
+
+    // The cells each reading spans.
+    .decl spanned(e: Example, s: Span, p: Position)
+    spanned(E, $Markers(), P) :- ex_in(E, P, Col), mark_col(Col).
+    spanned(E, $Content(), P) :- ex_in(E, P, Col), !bg(Col).
+
+    .init span_box = Bbox<SpanKey>
+    span_box.cell([E, S], P) :- spanned(E, S, P).
+
+    .init rect_box = Bbox<Example>
+    rect_box.cell(E, P) :- drawn(E, P, _).
+
+    // How far inside the spanned box the drawn rectangle sits.
+    .decl inset(s: Span, k: number)
+    inset(S, K) :-
+        span_box.box([E, S], B), rect_box.box(E, B_rect),
+        relative(B, B_rect, V), dir_elem(D), dist(V, D, K).
+
+    .decl mark_inset(k: number)
+    mark_inset(K) :- inset($Markers(), K).
+
+    .decl content_inset(k: number)
+    content_inset(K) :- inset($Content(), K).
+}

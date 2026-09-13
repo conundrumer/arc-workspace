@@ -1,0 +1,83 @@
+// 9110e3c5
+// draft
+// keywords: classify lookup count objects
+// input: cells of several colors scattered over params.bg
+// output: the 3x3 glyph that the ink color keys
+
+// What makes a color the ink.
+.type Choice =
+    // it covers the most cells
+    Count {}
+    // it forms the largest 4-component
+  | Object {}
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+
+    // The glyph each ink color keys.
+    .decl glyph(key: Color, p: Position, col: Color)
+    GRID_3x3(glyph, 1,
+        0, 0, 8,
+        8, 8, 0,
+        0, 8, 0)
+    GRID_3x3(glyph, 2,
+        0, 0, 0,
+        8, 8, 8,
+        0, 0, 0)
+    GRID_3x3(glyph, 3,
+        0, 8, 8,
+        0, 8, 0,
+        0, 8, 0)
+}
+
+.init params = Params
+
+// The ink each case reads off the scattered cells.
+.comp Parse<Key> {
+    .type KC = [k: Key, col: Color]
+    .type KI = [k: Key, id: Ident]
+
+    .decl cell(k: Key, p: Position, col: Color)
+
+    .decl ink_cell(k: Key, p: Position, col: Color)
+    ink_cell(K, P, Col) :- cell(K, P, Col), !params.bg(Col).
+
+    // --- Count ---
+
+    .init common = Mode<Key, Color, Position>
+    common.item(K, Col, P) :- ink_cell(K, P, Col).
+
+    // --- Object ---
+
+    // Touching cells of one color.
+    .init comps = Components<KC>
+    comps.node([K, Col], P) :- ink_cell(K, P, Col).
+
+    .init comp_size = Tally<KI, Position>
+    comp_size.item([K, Id], P) :- comps.label([K, _], P, Id).
+
+    // Each color scored by the largest component it forms.
+    .init biggest = ArgExtremes<Key, Color>
+    biggest.cand(K, Col, N) :- comps.label([K, Col], _, Id), comp_size.tally([K, Id], N).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+// --- Count ---
+out(P, Col, $Count()) :- parse.common.mode($U(), Key), params.glyph(Key, P, Col).
+
+// --- Object ---
+out(P, Col, $Object()) :- parse.biggest.high($U(), Key, _), params.glyph(Key, P, Col).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // An ink's glyph is its example's whole output. The two parses name one
+    // ink on every example, so either reads the key.
+    .decl glyph(key: Color, p: Position, col: Color)
+    glyph(Key, P, Col) :- parse.common.mode(E, Key), ex_out(E, P, Col).
+}

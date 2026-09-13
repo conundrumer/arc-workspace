@@ -1,0 +1,82 @@
+// 913fb3ed
+// draft
+// keywords: markers lookup stamp
+// input: lone dots on an empty grid
+// output: each dot grows a ring of eight cells in a color paired with its
+//  own. The rest of the input is kept.
+
+// What the eight cells around a dot come from.
+.type Choice =
+    // The dot's border color, painted on each neighbor.
+    Ring {}
+    // A stored picture, seated on the dot.
+  | Stamp {}
+
+.comp Params {
+    // --- Ring ---
+    // The dot colors, and what each one paints around itself.
+    .decl border(mark: Color, col: Color)
+    border(2, 1).
+    border(3, 6).
+    border(8, 4).
+
+    // --- Stamp ---
+    // The picture each dot color paints, as offsets from the dot.
+    .decl template(mark: Color, off: Offset, col: Color)
+    GRID_STAMP_SPARSE_3x3(template, 2,
+        1, 1, 1,
+        1, @_, 1,
+        1, 1, 1)
+    GRID_STAMP_SPARSE_3x3(template, 3,
+        6, 6, 6,
+        6, @_, 6,
+        6, 6, 6)
+    GRID_STAMP_SPARSE_3x3(template, 8,
+        4, 4, 4,
+        4, @_, 4,
+        4, 4, 4)
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Ring()). impl_choice($Stamp()).
+
+.decl painted(p: Position, col: Color, ch: Choice)
+.decl out(p: Position, col: Color, ch: Choice)
+
+out(P, Col, Ch) :- painted(P, Col, Ch).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, _, Ch).
+
+// --- Ring ---
+painted(P, Col, $Ring()) :-
+    in(Q, M), params.border(M, Col),               // a dot, and its border color
+    dir8_elem(D), neighbor(Q, D, P), in(P, _).     // each cell beside it, on-grid
+
+// --- Stamp ---
+painted(P, Col, $Stamp()) :-
+    in(Q, M), params.template(M, Off, Col),        // a dot, and a cell of its picture
+    compose(Q, Off, P), in(P, _).                  // seated on the dot, on-grid
+
+.type Cell = [e: Example, p: Position]
+
+.comp Determine {
+    // The grids' ground color; dots are the exception to it.
+    .init ground = Mode<Unit, Color, Cell>
+    ground.item($U(), Col, [E, P]) :- ex_in(E, P, Col).
+
+    .decl dot(e: Example, p: Position, m: Color)
+    dot(E, P, M) :- ex_in(E, P, M), !ground.mode($U(), M).
+
+    // What a dot paints beside itself, read off the output.
+    .decl neighbor_cell(e: Example, m: Color, off: Offset, col: Color)
+    neighbor_cell(E, M, Off, Col) :-
+        dot(E, Q, M), dir8_elem(D), neighbor(Q, D, P),  // a cell beside a dot
+        ex_out(E, P, Col), relative(Q, P, Off).         // its color and its offset
+
+    .decl border(mark: Color, col: Color)
+    border(M, Col) :- neighbor_cell(_, M, _, Col).
+
+    .decl template(mark: Color, off: Offset, col: Color)
+    template(M, Off, Col) :- neighbor_cell(_, M, Off, Col).
+}

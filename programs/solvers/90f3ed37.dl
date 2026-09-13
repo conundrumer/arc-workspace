@@ -1,0 +1,157 @@
+// 90f3ed37
+// draft
+// keywords: objects lines repair
+// input: shapes on a bg ground, stacked across params.grow_dir. One shape
+//  runs the whole way to the far edge; the others stop short.
+// output: the input, with the full shape placed on each shape and drawn in
+//  params.mark where it reaches past that shape's own extent.
+
+// What a shape is.
+.type Parse =
+    // a run of adjacent occupied lines across params.grow_dir
+    Lines {}
+    // a diagonally connected component of fg cells
+  | Objects {}
+
+// Which shape is the full one.
+.type Select =
+    // the shape that reaches the far edge
+    Edge {}
+    // the shape that reaches furthest along params.grow_dir
+  | Furthest {}
+
+// How the full shape lands on a shape.
+.type Place =
+    // seated by its anchor corner on the shape's anchor corner
+    Corner {}
+    // moved across the growth alone, so each cell keeps its distance along it
+  | Across {}
+
+.type Choice = [parse: Parse, select: Select, place: Place]
+
+// A shape, keyed by the parse that found it and its id under that parse.
+.type Shape = [parse: Parse, id: Ident]
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+
+    // The direction the shapes run in.
+    .decl grow_dir(d: Dir) grow_dir(DIR_R).
+
+    // The side, across the growth, that the shapes align on.
+    .decl align_sense(s: Sense) align_sense(SENSE_CC).
+
+    // The color the completion is drawn in.
+    .decl mark(c: Color) mark(1).
+
+    // The corner a shape is anchored by: back along the growth, on the
+    // aligned side.
+    .decl anchor_corner(d: DiagDir)
+    anchor_corner(Diag) :-
+        grow_dir(D), opposite(D, Back), align_sense(S), turn(S, D, D_align),
+        diag_dirs(Diag, _, Back, D_align).
+}
+
+.init params = Params
+
+.decl fg(p: Position)
+fg(P) :- in(P, Col), !params.bg(Col).
+
+// The line a cell sits on, axis-only across the growth.
+.decl line_of(p: Position, l: Position) inline
+line_of(P, L) :- params.grow_dir(D), axis_of(D, A), split(P, A, _, L).
+
+.decl parse_choice(pa: Parse)
+parse_choice($Lines()).
+parse_choice($Objects()).
+
+.decl shape(pa: Parse, id: Ident, p: Position)
+
+// --- Lines ---
+
+.init runs = Components<Unit>
+runs.node($U(), L) :- fg(P), line_of(P, L).
+
+shape($Lines(), Id, P) :- fg(P), line_of(P, L), runs.label($U(), L, Id).
+
+// --- Objects ---
+
+.init blobs = Components8<Unit>
+blobs.node($U(), P) :- fg(P).
+
+shape($Objects(), Id, P) :- blobs.label($U(), P, Id).
+
+// --- shared ---
+
+.init bb = Bbox<Shape>
+bb.cell([Pa, Id], P) :- shape(Pa, Id, P).
+
+.decl anchor(pa: Parse, id: Ident, p: Position)
+anchor(Pa, Id, P) :-
+    bb.box([Pa, Id], B), params.anchor_corner(Diag),
+    in(P, _), box_corner(P, B, Diag).
+
+// How far short of the far edge a shape stops.
+.decl shortfall(pa: Parse, id: Ident, k: number)
+shortfall(Pa, Id, K) :- bb.box([Pa, Id], B), params.grow_dir(D), dist(B, D, K).
+
+.decl select_choice(s: Select)
+select_choice($Edge()).
+select_choice($Furthest()).
+
+// The full shape, which the others are completed from.
+.decl template(pa: Parse, id: Ident, s: Select)
+
+// --- Edge ---
+
+template(Pa, Id, $Edge()) :- shortfall(Pa, Id, 0).
+
+// --- Furthest ---
+
+.init nearest = ArgExtremes<Parse, Ident>
+nearest.cand(Pa, Id, K) :- shortfall(Pa, Id, K).
+
+template(Pa, Id, $Furthest()) :- nearest.low(Pa, Id, _).
+
+// --- shared ---
+
+// The move from the full shape's anchor onto a shape's.
+.decl shift(pa: Parse, id_full: Ident, id: Ident, v: Offset, s: Select)
+shift(Pa, Id_full, Id, V, S) :-
+    template(Pa, Id_full, S), anchor(Pa, Id_full, A_full),   // the full shape
+    anchor(Pa, Id, A), relative(A_full, A, V).               // onto this shape
+
+.decl place_choice(pl: Place)
+place_choice($Corner()).
+place_choice($Across()).
+
+// Where a full-shape cell lands on a shape.
+.decl seat(pa: Parse, id: Ident, p: Position, ch: Choice)
+
+// --- Corner ---
+
+seat(Pa, Id, P_out, [Pa, S, $Corner()]) :-
+    shift(Pa, Id_full, Id, V, S), shape(Pa, Id_full, P_full),
+    compose(P_full, V, P_out).
+
+// --- Across ---
+
+seat(Pa, Id, P_out, [Pa, S, $Across()]) :-
+    shift(Pa, Id_full, Id, V, S), shape(Pa, Id_full, P_full),
+    params.grow_dir(D), axis_of(D, A), split(V, A, _, V_across),   // the move across
+    compose(P_full, V_across, P_out).
+
+// --- shared ---
+
+// A landing past what the shape itself reaches.
+.decl restored(p: Position, ch: Choice)
+restored(P, Ch) :-
+    seat(Pa, Id, P, Ch), in(P, _),   // a landing on the grid
+    bb.box([Pa, Id], B), params.grow_dir(D), nearer(D, P, B).
+
+.decl impl_choice(ch: Choice)
+impl_choice([Pa, S, Pl]) :- parse_choice(Pa), select_choice(S), place_choice(Pl).
+
+.decl out(p: Position, col: Color, ch: Choice)
+out(P, Col, Ch) :- restored(P, Ch), params.mark(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !restored(P, Ch).
