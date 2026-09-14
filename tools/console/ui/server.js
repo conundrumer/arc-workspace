@@ -68,7 +68,8 @@ export function startPoll(){
         SNAP={seq:d.seq, wave:d.wave, items:d.items, usage:d.usage||[],
               progress: d.total ? {solved:d.solved, total:d.total} : null,
               cli:d.cli||{}, night:d.night||{}, committer:d.committer||{},
-              pipeline:d.pipeline||{}, models:d.models||[], auto:d.auto||{}};
+              pipeline:d.pipeline||{}, models:d.models||[], auto:d.auto||{},
+              priority:d.priority};
         notify();
         const cm=d.committer||{};
         if(committerWas && !cm.running && cm.note) toast(cm.note);

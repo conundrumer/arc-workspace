@@ -209,21 +209,6 @@ def test_the_rows_of_one_key_run_together(srv):
     assert [r["id"] for r in srv.backlog_view()] == ["bbb", "ddd", "aaa", "ccc"]
 
 
-def test_the_autopilot_order_leads_with_the_lines_a_pass_can_act_on(srv):
-    """The autopilot orders the same rows on its own: the most review lines,
-    workaround lines, and proposal comps first, then the larger solver, then
-    the id. A comp counts as one, whatever its entry state."""
-    write_solver(srv, "aaa", draft(reviews=[("principle", NAMING)], rules=5))
-    write_solver(srv, "bbb", draft(reviews=[("principle", SCOPE), ("sweep", SWEEP)],
-                                   rules=1))
-    write_solver(srv, "ccc", draft(workarounds=["a scan, not the functor"], rules=9))
-    write_solver(srv, "ddd", draft(rules=20))
-    write_solver(srv, "eee", draft(comps=["CornerDist"], rules=2))
-    assert [r["id"] for r in srv.pass_view()] == ["bbb", "ccc", "aaa", "eee", "ddd"]
-    # the lens keeps the review order
-    assert [r["id"] for r in srv.backlog_view()] == ["aaa", "bbb", "ddd", "ccc", "eee"]
-
-
 def test_the_priority_leads_the_rows_holding_its_kind(srv):
     write_solver(srv, "aaa", draft(reviews=[("principle", NAMING)]))
     write_solver(srv, "bbb", draft(comps=["CornerDist"]))

@@ -11,8 +11,8 @@ import { snap as snapNow, tasks, peeks, post, ensureTask, ensureItem, ensurePeek
 import { useSession } from "/ui/session.js";
 
 /* The priority: the kind of review need that leads. The server holds it, and
-   it also picks which badge a row leads with. The autopilot takes its own
-   order over the same rows. */
+   it also picks which badge a row leads with. The autopilot's finalize passes
+   take the same order. */
 const PRIORITY = {principle:"the rows waiting on a rule or open question first, the widest first and one key's rows together",
                   proposal:"the rows with a proposal comp first, the most callers first and one comp's rows together",
                   workaround:"the rows with a workaround first, most first",
@@ -159,10 +159,12 @@ export const finalize = {
                   : null;
     }
 
-    /* how many unfinalized rows hold a need of each kind, so a kind carries
-       its count in the drop-down */
+    /* how many rows on the lens, in a pass or unfinalized, hold a need of
+       each kind, so a kind carries its count in the drop-down */
+    const lensRows=useMemo(()=>itemOrder.map(id=>finRows[id]).filter(Boolean).concat(backlog),
+      [itemOrder, finRows, backlog]);
     const needCounts=useMemo(()=>Object.fromEntries(PRIORITY_KINDS.map(k=>
-      [k, backlog.filter(b=>((b.needs||{})[k]||[]).length).length])), [backlog]);
+      [k, lensRows.filter(b=>((b.needs||{})[k]||[]).length).length])), [lensRows]);
     /* the two controls over both sections: which kind of need leads, picked
        from a drop-down, and how the rows are sorted */
     const tools=html`<div class="railtools">

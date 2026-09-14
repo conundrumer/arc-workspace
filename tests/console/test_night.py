@@ -986,20 +986,20 @@ def test_the_night_source_is_queue_until_set(srv):
     assert srv.night()["finalize_target"] == 5
 
 
-def test_the_unfinalized_source_starts_finalize_passes_in_the_autopilot_order(
+def test_the_unfinalized_source_starts_finalize_passes_in_the_review_order(
         srv, monkeypatch):
     clock_at(srv, monkeypatch)
     set_usage(srv, monkeypatch, wk_pct=10, wk_elapsed=50)
     sent = finalize_launch(srv, monkeypatch)
-    # ccc carries a line a pass can act on, so it goes ahead of bbb, which the
-    # lens's review order puts first
+    # under the workaround priority, ccc's workaround line puts it ahead of bbb
     backlog_solver(srv, "bbb")
     backlog_solver(srv, "ccc",
                    "// draft\n// keywords: a shape\n\n// @workaround: a scan\n")
-    # a chain that wrote no solver leads the autopilot order
+    srv.act_priority({"kind": "workaround"})
+    # a chain that wrote no solver leads the review order
     srv.save_report("aaa", "refine", "no file written")
     lead = item(srv, "aaa", srv.NEEDS_REVIEW, chain=srv.default_chain())
-    assert [r["id"] for r in srv.backlog_view()] == ["aaa", "bbb", "ccc"]
+    assert [r["id"] for r in srv.backlog_view()] == ["aaa", "ccc", "bbb"]
     night_on(srv, source="unfinalized", finalize_target=2)
     assert srv.night_tick()["admitted"] == ["aaa"]
     assert lead["phase"] == "finalize" and lead["auto_finalize"] is True

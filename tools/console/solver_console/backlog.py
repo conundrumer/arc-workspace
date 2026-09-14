@@ -181,28 +181,6 @@ def review_key(priority: str):
     return key
 
 
-# What one finalize pass can act on: the row's review lines, its workaround
-# lines, and its proposal comps.
-PASS_KINDS = ("principle", "sweep", "workaround", "proposal")
-
-
-def pass_lines(row: dict) -> int:
-    """How much a finalize pass can act on: the row's review lines of every
-    kind, its workaround lines, and its proposal comps, in any entry
-    state."""
-    return sum(len(row["needs"][kind]) for kind in PASS_KINDS)
-
-
-# The autopilot's finalize order. A missing solver leads, as it does in the
-# review order. Then the rows a pass can act on the most of. The solver's
-# rule-literal count breaks ties, the larger first, and the id the last.
-def pass_key(row: dict) -> tuple:
-    return (0 if row["no_solver"] else 1,
-            -pass_lines(row),
-            -(row["dl_size"] if row["dl_size"] is not None else -1),
-            row["id"])
-
-
 # The key of a principle need: what the line names before the dash, a rule
 # of principles.md or an open question.
 def _heading(text: str) -> str:
@@ -259,13 +237,9 @@ def lens_view(ages: dict[str, int] | None = None) -> dict:
 
 
 def backlog_view(ages: dict[str, int] | None = None) -> list[dict]:
-    """The unfinalized solvers in review order."""
+    """The unfinalized solvers in review order, which the autopilot's
+    finalize passes take too."""
     return lens_view(ages)["items"]
-
-
-def pass_view(ages: dict[str, int] | None = None) -> list[dict]:
-    """The unfinalized solvers in the autopilot's finalize order."""
-    return sorted(lens_view(ages)["items"], key=pass_key)
 
 
 def act_dismiss(body: dict) -> dict:

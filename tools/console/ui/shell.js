@@ -178,7 +178,7 @@ function App(){
       const n=live.current.night||{};
       const queueText="admits tasks from the queue: up to "+(n.target??6)
         +" items in flight, create → refine";
-      const finText="starts finalize passes over the unfinalized solvers, the most review lines, workaround lines, and proposal comps first: up to "
+      const finText="starts finalize passes over the unfinalized solvers in the lens's review order, the rows holding the lead kind first: up to "
         +(n.finalize_target??3)+" in flight";
       const ends = n.end && n.end*1000>Date.now() ? " Ends at "+hhmmDay(n.end)+"." : "";
       const ok=confirm("Autopilot "+(n.source==="unfinalized" ? finText
