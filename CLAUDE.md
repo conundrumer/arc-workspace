@@ -11,6 +11,7 @@ uv run python scripts/run_dl.py          # run all Souffle solvers; --help for p
 uv run python scripts/run_dl.py <stem>   # run one
 uv run python scripts/context.py         # the handbook: the solver docs and the lib as a session reads them
 uv run python scripts/context.py --write # generate the files used by handbook readers
+uv run python scripts/codex.py [args]    # codex with the handbook in its context; args pass through to codex
 ```
 
 Souffle binary required for `.dl` solvers (`brew install souffle`).
@@ -25,3 +26,10 @@ A running server re-execs itself when `server.py` or a module under `solver_cons
 - **Patches are the source of truth** for corrections. `data/tasks/` regenerates from them via `scripts/materialize.py`. Upstream is pinned via submodules; corrections live in patches, not in `data/upstream/`.
 - **Type aliases use the `type` keyword** (PEP 695, native to 3.12).
 - **A grid is drawn as a grid**, wherever one is written: one row per line, cells separated by spaces, background as `.`.
+
+## Codex
+
+- Always run it as `exec`.
+- `-s workspace-write` for a run that edits.
+- `-o <file>` to capture its final message.
+- The brief on stdin, with `-`.
