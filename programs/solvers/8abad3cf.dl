@@ -5,7 +5,6 @@
 // output: Each color's cells pack into a solid square, and the squares
 //  stand in a row from params.pack_dir, resting on the edge a quarter turn
 //  away, with params.gap background lines between them.
-// review principle: docs/wf-solver/open/determinable.md
 
 // what orders the squares in the row
 .type Choice =

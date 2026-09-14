@@ -1,0 +1,40 @@
+// 963f59bc
+// draft
+// keywords: markers stamp d4
+// input: a shape drawn in one color, and marker cells in other colors.
+// output: the input, with the shape copied in each marker's color. a marker
+//  lies on one line with a shape cell; the copy is the shape reflected along
+//  that line, seated so that the cell's image is the marker.
+
+.decl out(p: Position, col: Color)
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl shape(c: Color) shape(1).
+}
+
+.init params = Params
+
+.decl shape_cell(p: Position)
+shape_cell(P) :- in(P, Col), params.shape(Col).
+
+.decl mark(p: Position, col: Color)
+mark(P, Col) :- in(P, Col), !params.bg(Col), !params.shape(Col).
+
+// The marker is a shape cell's image under reflection F: the two lie on one
+// line of axis A, and F inverts A.
+.decl anchor(p_mark: Position, col: Color, f: D4, p_src: Position)
+anchor(P_mark, Col, F, P_src) :-
+    mark(P_mark, Col), shape_cell(P_src),
+    flip_of(A, F), same_line(A, P_mark, P_src).
+
+// The copy: each shape cell read off the anchor cell, reflected, and seated at
+// the marker.
+.decl copy(p: Position, col: Color)
+copy(P_out, Col) :-
+    anchor(P_mark, Col, F, P_src), shape_cell(P),
+    relative(P_src, P, V), apply(F, V, V_img), compose(P_mark, V_img, P_out),
+    in(P_out, _).                                      // the copy's cell, in frame
+
+out(P, Col) :- copy(P, Col).
+out(P, Col) :- in(P, Col), !copy(P, _).

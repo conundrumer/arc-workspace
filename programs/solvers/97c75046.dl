@@ -1,0 +1,65 @@
+// 97c75046
+// draft
+// keywords: markers move
+// input: one params.marker cell, and a shape of params.shape cells. The
+//  contact cells are the background cells that touch the shape.
+// output: the marker travels along the cardinal whose ray meets the shape, and
+//  lands one cell short of it. From there it slides over the contact cells,
+//  along a diagonal that keeps its travel direction, as far as they run. Its
+//  old cell becomes background.
+
+.decl out(p: Position, col: Color)
+
+.comp Params {
+    .decl bg(col: Color) bg(7).
+    .decl shape(col: Color) shape(0).
+    .decl marker(col: Color) marker(5).
+}
+
+.init params = Params
+
+.decl shape_cell(p: Position)
+shape_cell(P) :- in(P, Col), params.shape(Col).
+
+.decl marker_cell(p: Position)
+marker_cell(P) :- in(P, Col), params.marker(Col).
+
+.decl contact(p: Position)
+contact(P) :-
+    in(P, Col), params.bg(Col),
+    dir_elem(D), neighbor(P, D, Q), shape_cell(Q).
+
+// --- travel ---
+
+.init travel = Ray<Unit>
+travel.dir($U(), D) :- dir_elem(D).
+travel.mark($U(), P) :- marker_cell(P).
+travel.blocked($U(), P) :- shape_cell(P).
+
+// Where the travel ends, with the direction it ran in.
+.decl landing(p: Position, d: Dir)
+landing(P, D) :-
+    travel.stop($U(), Q, D, _, _), dir_elem(D),
+    opposite(D, O), neighbor(Q, O, P).    // one step short of the shape
+
+// --- slide ---
+
+.init slide = Slide<Unit>
+slide.node($U(), P) :- contact(P).
+slide.dir($U(), Dg) :- landing(_, D), dir_of(Dg, _, D).
+
+.decl dest(p: Position)
+dest(Q) :-
+    landing(P, _),
+    ( slide.halt($U(), P, _, Q)                // the contact cells carry it on
+    ; !slide.halt($U(), P, _, _), Q = P ).     // none continues: it stays
+
+// --- output ---
+
+// The grid with the marker lifted off.
+.decl cleared(p: Position, col: Color)
+cleared(P, Col) :- in(P, Col), !marker_cell(P).
+cleared(P, Col) :- marker_cell(P), params.bg(Col).
+
+out(P, Col) :- dest(P), params.marker(Col).
+out(P, Col) :- cleared(P, Col), !dest(P).

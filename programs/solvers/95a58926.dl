@@ -1,0 +1,133 @@
+// 95a58926
+// draft
+// keywords: lines wallpaper cross
+// input: the grid's rows and columns, and the one color that is neither bg
+//  nor params.mesh
+// output: a cell where two mesh lines cross takes that color; another cell on
+//  a mesh line takes params.mesh; every other cell takes bg
+
+// what marks a line as carrying mesh
+.type Locate =
+    // it holds no bg cell
+    Whole {}
+    // params.mesh is its commonest color
+  | Predominant {}
+
+// which lines the mesh holds
+.type Draw =
+    // the located lines themselves
+    AsFound {}
+    // the lattice the located lines sit on, continued across the grid
+  | Lattice {}
+
+// the two points crossed — on the pairs both locates agree, and the located
+// lines already form the lattice
+.type Choice = [l: Locate, d: Draw]
+
+// A line of the grid, by the axis it runs along and the perpendicular
+// coordinate that names it.
+.type Line = [a: Axis, p_across: Position]
+
+// The lines on one axis that one Locate case marks.
+.type LineSet = [a: Axis, l: Locate]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    // The color the mesh is drawn in.
+    .decl mesh(c: Color) mesh(5).
+
+    // --- Lattice ---
+    // The corner the lattice runs from.
+    .decl anchor(d: DiagDir) anchor(DIAG_TL).
+    // How many lines separate two tiles of the lattice.
+    .decl sep_width(n: number) sep_width(1).
+}
+
+.init params = Params
+
+.decl locate_choice(l: Locate)
+locate_choice($Whole()). locate_choice($Predominant()).
+
+.decl draw_choice(d: Draw)
+draw_choice($AsFound()). draw_choice($Lattice()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([L, D]) :- locate_choice(L), draw_choice(D).
+
+// An input cell with the line through it on axis a.
+.decl cell_split(a: Axis, p: Position, col: Color, p_across: Position)
+cell_split(A, P, Col, P_across) :- in(P, Col), axis_elem(A), split(P, A, _, P_across).
+
+// The grid's lines.
+.decl line(a: Axis, p_across: Position)
+line(A, P_across) :- cell_split(A, _, _, P_across).
+
+// The noise color: the one color that is neither bg nor the mesh.
+.decl accent(c: Color)
+accent(Col) :- in(_, Col), !params.bg(Col), !params.mesh(Col).
+
+// The lines the Locate case marks as carrying mesh.
+.decl located(a: Axis, p_across: Position, l: Locate)
+
+// The lines the mesh holds.
+.decl mesh_line(a: Axis, p_across: Position, ch: Choice)
+
+// Cell on a mesh line running along axis a.
+.decl on_mesh(p: Position, a: Axis, ch: Choice)
+on_mesh(P, A, Ch) :- cell_split(A, P, _, P_across), mesh_line(A, P_across, Ch).
+
+// Cell where two mesh lines cross.
+.decl crossing(p: Position, ch: Choice)
+crossing(P, Ch) :- on_mesh(P, A, Ch), on_mesh(P, A2, Ch), perp(A, A2).
+
+out(P, Col, Ch) :-
+    in(P, _), impl_choice(Ch),
+    ( crossing(P, Ch), accent(Col)                             // mesh lines meet
+    ; on_mesh(P, _, Ch), !crossing(P, Ch), params.mesh(Col)    // one mesh line
+    ; !on_mesh(P, _, Ch), params.bg(Col)                       // off the mesh
+    ).
+
+// --- Whole ---
+
+// A line holding a bg cell.
+.decl gapped(a: Axis, p_across: Position)
+gapped(A, P_across) :- cell_split(A, _, Col, P_across), params.bg(Col).
+
+located(A, P_across, $Whole()) :- line(A, P_across), !gapped(A, P_across).
+
+// --- Predominant ---
+
+.init line_mode = Mode<Line, Color, Position>
+line_mode.item([A, P_across], Col, P) :- cell_split(A, P, Col, P_across).
+
+located(A, P_across, $Predominant()) :-
+    line_mode.mode([A, P_across], Col), params.mesh(Col).
+
+// --- AsFound ---
+
+mesh_line(A, P_across, [L, $AsFound()]) :- located(A, P_across, L).
+
+// --- Lattice ---
+
+// A line's distance from the edge the lattice runs from.
+.decl anchor_dist(a: Axis, p_across: Position, k: number)
+anchor_dist(A, P_across, K) :-
+    line(A, P_across),
+    params.anchor(Diag), diag_dirs(Diag, A, _, D),   // the anchor's edge across the line
+    dist(P_across, D, K).
+
+// The lattice's tile size is the anchor's distance to the nearest located
+// line.
+.init lead = Extremes<LineSet>
+lead.cand([A, L], K) :- located(A, P_across, L), anchor_dist(A, P_across, K).
+
+// A line inside a tile of the lattice, rather than on a separator.
+.decl in_tile(a: Axis, p_across: Position, l: Locate)
+in_tile(A, P_across, L) :-
+    anchor_dist(A, P_across, K), lead.low([A, L], K_tile),   // the line, the tile size
+    params.sep_width(G), stride(K, K_tile, G, _, _).         // short of the separator
+
+mesh_line(A, P_across, [L, $Lattice()]) :-
+    line(A, P_across), locate_choice(L), !in_tile(A, P_across, L).

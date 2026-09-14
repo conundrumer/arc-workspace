@@ -1,14 +1,14 @@
 # `frame_shift` — the displacements toward a direction that a frame admits
 
-Every nonzero translation toward one direction that a frame's extent on that direction's axis allows, as a set of Shifts. A solver that moves content toward a direction and then tests each amount against what the grid holds reads its candidate amounts here, one Shift per amount, rather than as the cells a walk would pass over.
+Every nonzero translation toward one direction that a frame's extent on that direction's axis allows, as a set of Offsets. A solver that moves content toward a direction and then tests each amount against what the grid holds reads its candidate amounts here, one Offset per amount, rather than as the cells a walk would pass over.
 
 ```
-shift(Delta) :- in(P, _), move_dir(D), axis_of(D, A), sub_extent(P, A, K), jump_delta(D, K, Delta).
+shift(Delta) :- in(P, _), move_dir(D), axis_of(D, A), sub_extent(P, A, K), jump_offset(D, K, Delta).
 ```
 
-Not: `AxisFrame`, which yields the positions of an extent, not the shifts across it; `Slide`, which runs inside a node set the caller supplies and stops at that set's edge; `jump_delta` alone, which carries one amount that the caller already holds.
+Not: `AxisFrame`, which yields the positions of an extent, not the shifts across it; `Slide`, which runs inside a node set the caller supplies and stops at that set's edge; `jump_offset` alone, which carries one amount that the caller already holds.
 
-Match: a `sub_extent` whose amount reaches a `jump` or a `jump_delta` toward a Dir, directly or through one head column, where that Dir's axis is the `sub_extent`'s axis, tied by an `axis_of` atom or by a relation pairing an axis with a Dir on it, in the same rule or in a rule deriving one of the two; the amount reaches no `divide` atom. Grep `sub_extent`, then follow each amount's head column one hop; the parser (`tests/test_ast_match.py`) matches both hops.
+Match: a `sub_extent` whose amount reaches a `jump` or a `jump_offset` toward a Dir, directly or through one head column, where that Dir's axis is the `sub_extent`'s axis, tied by an `axis_of` atom or by a relation pairing an axis with a Dir on it, in the same rule or in a rule deriving one of the two; the amount reaches no `divide` atom. Grep `sub_extent`, then follow each amount's head column one hop; the parser (`tests/test_ast_match.py`) matches both hops.
 
 Survey: 2026-09-11 08:36 — the whole corpus.
 

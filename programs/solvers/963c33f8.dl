@@ -1,0 +1,64 @@
+// 963c33f8
+// draft
+// keywords: lines move
+// input: A scene of params.solid debris on params.bg, with a piece drawn over
+//  it in the ink that is neither. The piece parses into its lines along the
+//  axis of params.fall.
+// output: The piece leaves its place, and each line travels on its own toward
+//  params.fall. A line halts at the first displacement it cannot take: one
+//  that would carry a cell of it off the frame, or drive a params.stop cell
+//  into a debris cell. The line's other cells pass through debris. A line at
+//  rest is drawn over the scene.
+// review principle: docs/wf-solver/open/peer-priors.md
+
+.decl out(p: Position, col: Color)
+
+.comp Params {
+    .decl bg(c: Color) bg(7).
+    .decl fall(d: Dir) fall(DIR_B).
+    // the debris the piece travels through
+    .decl solid(c: Color) solid(5).
+    // the piece color that debris stops; the piece's other cells pass through
+    .decl stop(c: Color) stop(1).
+}
+
+.init params = Params
+
+// A piece cell keyed by its line: its across position on the fall axis.
+.decl piece(p_across: Position, p: Position, col: Color)
+piece(P_across, P, Col) :-
+    in(P, Col), !params.bg(Col), !params.solid(Col),
+    params.fall(D), axis_of(D, A), split(P, A, _, P_across).
+
+// The displacements toward the fall edge that the frame admits.
+.decl shift(v: Offset)
+shift(V) :-
+    in(P, _), params.fall(D),
+    axis_of(D, A), sub_extent(P, A, K), jump_offset(D, K, V).
+
+// A displacement a line cannot take.
+.decl blocked(p_across: Position, v: Offset)
+blocked(P_across, V) :-
+    piece(P_across, P, Col), shift(V), compose(P, V, P2),
+    ( !in(P2, _)                                             // off the frame
+    ; params.stop(Col), in(P2, Col2), params.solid(Col2) ).  // into the debris
+
+// Each line stands where it is, and travels through the displacements that
+// nothing blocks.
+.init slide = Slide<Position>
+slide.dir(P_across, D) :- piece(P_across, _, _), params.fall(D).
+slide.node(P_across, V) :-
+    piece(P_across, _, _),
+    ( V = ZERO                             // where it stands
+    ; shift(V), !blocked(P_across, V) ).   // or anywhere nothing blocks it
+
+// The piece at rest: each line carried by the last displacement it reaches.
+.decl landed(p: Position, col: Color)
+landed(P2, Col) :-
+    piece(P_across, P, Col), slide.rest(P_across, ZERO, _, V), compose(P, V, P2).
+
+out(P, Col) :- landed(P, Col).
+out(P, Col) :-
+    in(P, Col_in), !landed(P, _),
+    ( piece(_, P, _), params.bg(Col)     // the piece leaves its place
+    ; !piece(_, P, _), Col = Col_in ).   // the scene stands

@@ -1,0 +1,81 @@
+// 984d8a3e
+// draft
+// keywords: lines move rank
+// input: On the axis of the from edge, every line is three runs: the mover
+//  color against that edge, the far color against the opposite edge, and
+//  background between. The far color is ragged; the distances from the far
+//  edge that it reaches make up the zone.
+// output: Each line's movers slide into that line's background cells inside
+//  the zone, nearest the far edge first, until the shorter of the two runs is
+//  spent. A cell a mover leaves becomes background.
+
+.decl out(p: Position, col: Color)
+
+.comp Params {
+    // The edge the movers run against; the zone lies toward the opposite edge.
+    .decl from_dir(d: Dir) from_dir(DIR_L).
+}
+
+.init params = Params
+
+// Each color's cells as runs toward the four edges.
+.init run = Slide<Color>
+run.node(C, P) :- in(P, C).
+run.dir(C, D) :- in(_, C), dir_elem(D).
+
+// A run of col toward edge d that ends short of that edge.
+.decl broken(col: Color, d: Dir)
+broken(C, D) :- dir_elem(D), run.rest(C, _, D, P), !dist(P, D, 0).
+
+// Every run of col toward edge d reaches it: col lies against that edge.
+.decl flush(col: Color, d: Dir)
+flush(C, D) :- in(_, C), dir_elem(D), !broken(C, D).
+
+.decl far_dir(d: Dir)
+far_dir(D) :- params.from_dir(D0), opposite(D0, D).
+
+.decl mover(c: Color)
+mover(C) :- params.from_dir(D), flush(C, D).
+
+.decl far(c: Color)
+far(C) :- far_dir(D), flush(C, D).
+
+.decl bg(c: Color)
+bg(C) :- in(_, C), !mover(C), !far(C).
+
+.decl cell_split(p: Position, col: Color, l: Position, k: number)
+cell_split(P, C, L, K) :-
+    in(P, C), far_dir(D), axis_of(D, A), split(P, A, _, L),   // its line across the axis
+    dist(P, D, K).                                            // k from the far edge
+
+// The zone: the distances from the far edge that the far color reaches.
+.decl zone(k: number)
+zone(K) :- cell_split(_, C, _, K), far(C).
+
+// A zone cell the far color leaves as background.
+.decl slot(l: Position, p: Position, k: number)
+slot(L, P, K) :- cell_split(P, C, L, K), bg(C), zone(K).
+
+.decl mover_cell(l: Position, p: Position, k: number)
+mover_cell(L, P, K) :- cell_split(P, C, L, K), mover(C).
+
+// Both runs counted off from the far edge inward.
+.init slot_rank = Ordinal<Position>
+slot_rank.idx_set(L, K) :- slot(L, _, K).
+
+.init mover_rank = Ordinal<Position>
+mover_rank.idx_set(L, K) :- mover_cell(L, _, K).
+
+// Rank for rank: the innermost mover takes the slot nearest the far edge.
+// A rank the other run does not reach moves nothing.
+.decl move(p_from: Position, p_to: Position)
+move(P, Q) :-
+    mover_cell(L, P, K), mover_rank.rank(L, K, R),
+    slot(L, Q, K2), slot_rank.rank(L, K2, R).
+
+out(P, Col) :-
+    in(P, C),
+    ( move(_, P), mover(Col)                     // a mover landed here
+    ; move(P, _), bg(Col)                        // a mover left
+    ; !move(P, _), !move(_, P), Col = C          // untouched
+    ).

@@ -4,7 +4,7 @@ The candidate seats of a footprint at which some member of the footprint, compos
 
 ```
 .comp Obstruct<Key> {
-    // The candidate seats, per key. Positions or Shifts.
+    // The candidate seats, per key. Positions or Offsets.
     .decl seat(key: Key, m: Position)  // input
 
     // The footprint's members, per key, in the frame the seat composes with.

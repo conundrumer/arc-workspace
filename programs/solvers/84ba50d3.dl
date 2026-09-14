@@ -91,18 +91,18 @@ stopped(Id, R, $Sieve()) :- wide(Id, R).
 
 // --- the fall ---
 
-// Displacements toward the fall edge the frame admits.
+// The offsets toward the fall edge the frame admits.
 .decl shift(delta: Offset)
 shift(Delta) :-
     in(P, _), params.fall_dir(D), fall_axis(A),
     sub_extent(P, A, K), jump_offset(D, K, Delta).
 
-// A relative that carries a shape cell off the grid.
+// An offset that carries a shape cell off the grid.
 .decl off_grid(id: Ident, delta: Offset)
 off_grid(Id, Delta) :-
     shift(Delta), shape_row_cell(Id, _, P), compose(P, Delta, Q), !in(Q, _).
 
-// A relative that carries a stopped row onto or past the divider.
+// An offset that carries a stopped row onto or past the divider.
 .decl through(id: Ident, delta: Offset, ch: Choice)
 through(Id, Delta, Ch) :-
     stopped(Id, R, Ch), shift(Delta), compose(R, Delta, R2),    // the stopped row, displaced
@@ -113,8 +113,8 @@ through(Id, Delta, Ch) :-
 .decl mover(id: Ident, ch: Choice)
 mover(Id, Ch) :- shapes.label($U(), _, Id), impl_choice(Ch).
 
-// A shape stands where it is, and travels through the displacements that
-// keep it on the grid and its stopped rows short of the divider.
+// A shape stands where it is, and travels through the offsets that keep it
+// on the grid and its stopped rows short of the divider.
 .type Fall = [id: Ident, ch: Choice]
 
 .init fall = Slide<Fall>

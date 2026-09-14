@@ -3,9 +3,9 @@
 // keywords: crop border enclose markers objects scale select
 // input: Small shapes sit beside a frame drawn in one color. Inside the
 //  frame, a partial fill covers whole blocks of a coarse grid.
-// output: The output crops the frame and paints its inside as the one shape
-//  whose pattern the fill fits: each block is a pattern cell, filled where the
-//  pattern holds a cell.
+// output: the frame, cropped, with its inside painted as the one shape whose
+//  pattern the fill fits: a block per cell of the pattern's box, filled where
+//  the pattern holds a cell.
 
 // how the frame is found
 .type Parse =

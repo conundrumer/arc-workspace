@@ -1,0 +1,74 @@
+// 94414823
+// draft
+// keywords: markers border enclose
+// input: params.wall draws a hollow box on params.bg, and marks of other
+//  colors sit outside it.
+// output: That box's inside splits into four quadrants, and each quadrant
+//  takes the color of the mark on its diagonal.
+
+// how the inside of the wall is delimited
+.type Choice =
+    // what the drawn rectangle holds strictly within its edges
+    Rect {}
+    // the region the wall cuts off from the grid edge
+  | Enclose {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl wall(c: Color) wall(5).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Rect()). impl_choice($Enclose()).
+
+.decl wall_cell(p: Position)
+wall_cell(P) :- in(P, Col), params.wall(Col).
+
+// The cells inside the wall.
+.decl inner(p: Position, ch: Choice)
+
+// --- Rect ---
+
+.init outline = Outlines<Unit>
+outline.node($U(), P) :- wall_cell(P).
+
+inner(P, $Rect()) :- outline.box($U(), B), in(P, _), interior(P, B).
+
+// --- Enclose ---
+
+.init closed = Closed<Unit>
+closed.cell($U(), P) :- in(P, _), !wall_cell(P).
+
+inner(P, $Enclose()) :- closed.region($U(), P, _).
+
+// --- Rect, Enclose ---
+
+.init inner_box = Bbox<Choice>
+inner_box.cell(Ch, P) :- inner(P, Ch).
+
+// Every grid cell in the frame of the inner cells. A cell outside that frame
+// sits at a negative distance from the edge it lies past, so it takes a
+// quadrant of the frame the way an inner cell does.
+.decl placed(p: Position, p_rel: Position, ch: Choice)
+placed(P, P_rel, Ch) :- in(P, _), inner_box.box(Ch, B), relative(B, P, P_rel).
+
+.init quad = DiagPlacement<Choice>
+quad.cell(Ch, P_rel) :- placed(_, P_rel, Ch).
+
+// The diagonal of that frame a cell lies on. Opposite quadrants share one.
+.decl on_diag(p: Position, da: DiagAxis, ch: Choice)
+on_diag(P, DA, Ch) :-
+    placed(P, P_rel, Ch),
+    quad.quadrant(Ch, P_rel, Diag), diag_axis_of(Diag, DA).
+
+.decl mark(p: Position, col: Color)
+mark(P, Col) :- in(P, Col), !params.bg(Col), !params.wall(Col).
+
+out(P, Col, Ch) :-
+    inner(P, Ch), on_diag(P, DA, Ch),            // a cell inside, on its diagonal
+    mark(P_mark, Col), on_diag(P_mark, DA, Ch).  // the mark on that diagonal
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !inner(P, Ch).

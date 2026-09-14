@@ -1,0 +1,148 @@
+// 95990924
+// draft
+// keywords: objects lookup stamp
+// input: solid squares of one ink color, set apart on a background.
+// output: the input, with four colored cells added around each square, one
+//  diagonally out from each of its corners. The color says which corner. A
+//  cell that would fall off the grid is dropped.
+
+// where a square's four seats are found
+.type Choice =
+    // the corners of the square's bounding box, one diagonal step out
+    Corners {}
+    // a background cell that meets ink at a corner and on no side
+  | Contact {}
+    // a stored picture of a square with its marks, stamped where the square
+    // occurs
+  | Stamp {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- Corners, Contact ---
+    .decl bg(col: Color) bg(0).
+
+    // The color a seat takes, by the corner it sits at.
+    .decl corner_paint(d: DiagDir, col: Color)
+    corner_paint(DIAG_TL, 1).
+    corner_paint(DIAG_TR, 2).
+    corner_paint(DIAG_BL, 3).
+    corner_paint(DIAG_BR, 4).
+
+    // --- Stamp ---
+    // The square that is looked for.
+    .decl square(p: Position, col: Color)
+    GRID_SPARSE_4x4(square,
+        _, _, _, _,
+        _, 5, 5, _,
+        _, 5, 5, _,
+        _, _, _, _)
+
+    // What it carries, in that same frame.
+    .decl mark(p: Position, col: Color)
+    GRID_SPARSE_4x4(mark,
+        1, _, _, 2,
+        _, _, _, _,
+        _, _, _, _,
+        3, _, _, 4)
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    .type KI = [key: Key, id: Ident]
+
+    .decl cell(key: Key, p: Position, col: Color)  // @input
+
+    .decl ink(key: Key, p: Position)
+    ink(Ky, P) :- cell(Ky, P, Col), !params.bg(Col).
+
+    .init squares = Components<Key>
+    squares.node(Ky, P) :- ink(Ky, P).
+
+    .init sbox = Bbox<KI>
+    sbox.cell([Ky, Id], P) :- squares.label(Ky, P, Id).
+
+    // The seat a square's corner opens onto: one diagonal step out of that
+    // corner of its box, dropped where it leaves the grid.
+    .decl seat(key: Key, id: Ident, p: Position, d: DiagDir)
+    seat(Ky, Id, Q, D) :-
+        cell(Ky, P, _), sbox.box([Ky, Id], B), box_corner(P, B, D),
+        neighbor(P, D, Q), cell(Ky, Q, _).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// --- program ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($Corners()). impl_choice($Contact()). impl_choice($Stamp()).
+
+.decl painted(p: Position, col: Color, ch: Choice)
+
+// --- Corners ---
+
+painted(Q, Col, $Corners()) :- parse.seat($U(), _, Q, D), params.corner_paint(D, Col).
+
+// --- Contact ---
+
+// A background cell with ink one step toward D.
+.decl beside(p: Position, d: Dir8)
+beside(P, D) :-
+    in(P, _), !parse.ink($U(), P),
+    dir8_elem(D), neighbor(P, D, Q), parse.ink($U(), Q).
+
+.decl side(p: Position)
+side(P) :- dir_elem(D), beside(P, D).
+
+// Meets ink across corner D and on no side.
+.decl corner_only(p: Position, d: DiagDir)
+corner_only(P, D) :- diag_dir_elem(D), beside(P, D), !side(P).
+
+painted(Q, Col, $Contact()) :-
+    corner_only(Q, D_back), diag_opposite(D_back, D),   // the square lies back that way
+    params.corner_paint(D, Col).
+
+// --- Stamp ---
+
+.init occ = Occurrences<Unit, Color>
+occ.cell($U(), P, Col)  :- in(P, Col).
+occ.shape($U(), P, Col) :- params.square(P, Col).
+
+painted(Q, Col, $Stamp()) :-
+    occ.occurrence($U(), M),                            // a placement of the square
+    params.mark(P_pic, Col), compose(M, P_pic, Q), in(Q, _).
+
+// --- out ---
+
+out(P, Col, Ch) :- painted(P, Col, Ch).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, _, Ch).
+
+.comp Determine {
+    .type EI = [e: Example, id: Ident]
+
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    .decl added(e: Example, p: Position, col: Color)
+    added(E, P, Col) :- ex_out(E, P, Col), ex_in(E, P, Col2), Col != Col2.
+
+    .decl corner_paint(d: DiagDir, col: Color)
+    corner_paint(D, Col) :- ex.seat(E, _, P, D), added(E, P, Col).
+
+    // A square with its seats: what the stored picture frames.
+    .init pic = Bbox<EI>
+    pic.cell([E, Id], P) :- ex.squares.label(E, P, Id).
+    pic.cell([E, Id], P) :- ex.seat(E, Id, P, _).
+
+    .decl square(p: Position, col: Color)
+    square(P_pic, Col) :-
+        pic.box([E, Id], B), ex.squares.label(E, P, Id),
+        crop(P, B, P_pic), ex_in(E, P, Col).
+
+    .decl mark(p: Position, col: Color)
+    mark(P_pic, Col) :-
+        pic.box([E, Id], B), ex.seat(E, Id, P, _),
+        crop(P, B, P_pic), added(E, P, Col).
+}

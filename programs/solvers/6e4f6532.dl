@@ -69,8 +69,6 @@ object_cell(Id, P, Col) :- parts.label($U(), P, Id), has_body(Id), ink(P, Col).
 .decl target_cell(id: Ident, p: Position)
 target_cell(Id, P) :- parts.label($U(), P, Id), !has_body(Id).
 
-// --- placement ---
-
 // A pose: one object's core in one D4 image.
 .type Pose = [id: Ident, d: D4]
 

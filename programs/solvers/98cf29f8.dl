@@ -1,0 +1,110 @@
+// 98cf29f8
+// draft
+// keywords: objects markers move span
+// input: two objects, one color each. one fills its own bounding box — the
+//  anchor. the other — the lever — faces it along a cardinal direction, and
+//  splits across that direction's axis: the slabs where it fills its box are
+//  its body, and the rest hold a thin arm reaching toward the anchor.
+// output: the anchor stands, the arm goes, and the body travels toward the
+//  anchor.
+
+// how far the body travels
+.type Choice =
+    // up against the anchor
+    Abut {}
+    // as far as the arm is long
+  | Arm {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Abut()). impl_choice($Arm()).
+
+// --- the two objects ---
+
+.init bbox = Bbox<Color>
+bbox.cell(Col, P) :- in(P, Col), !params.bg(Col).
+
+// A cell of an object's box that the object leaves empty.
+.decl gap(col: Color, p: Position)
+gap(Col, P) :- bbox.box(Col, B), in(P, _), inside(P, B), !in(P, Col).
+
+.decl anchor(p: Position, col: Color)
+anchor(P, Col) :- bbox.cell(Col, P), !gap(Col, _).
+
+.decl lever(p: Position, col: Color)
+lever(P, Col) :- bbox.cell(Col, P), gap(Col, _).
+
+// --- the facing ---
+
+// The lever sees the anchor toward d.
+.decl move_dir(d: Dir)
+move_dir(D) :-
+    lever(P, _), anchor(Q, _),
+    axis_of(D, A), same_line(A, P, Q), nearer(D, Q, P).
+
+// --- the body ---
+
+// A slab across the travel axis that the lever leaves unfilled.
+.decl broken_slab(p_along: Position)
+broken_slab(Along) :-
+    gap(_, P),                                       // only the lever has gaps
+    move_dir(D), axis_of(D, A), split(P, A, Along, _).
+
+.decl body(p: Position)
+body(P) :-
+    lever(P, _), move_dir(D), axis_of(D, A),
+    split(P, A, Along, _), !broken_slab(Along).
+
+// --- the travel ---
+
+.decl travel(ch: Choice, delta: Offset)
+
+// --- Abut ---
+
+// The displacements toward the anchor the frame admits.
+.decl shift(delta: Offset)
+shift(V) :-
+    in(P, _), move_dir(D), axis_of(D, A),
+    sub_extent(P, A, K), jump_offset(D, K, V).
+
+// A displacement that would carry the body onto the anchor.
+.decl covering(delta: Offset)
+covering(V) :- shift(V), body(P), compose(P, V, P2), anchor(P2, _).
+
+// The body stands where it is, and travels through the displacements that
+// keep it clear of the anchor.
+.init slide = Slide<Unit>
+slide.dir($U(), D) :- move_dir(D).
+slide.node($U(), ZERO).
+slide.node($U(), V) :- shift(V), !covering(V).
+
+travel($Abut(), V) :- slide.rest($U(), ZERO, _, V).
+
+// --- Arm ---
+
+// The arm: the lever beyond its body.
+.init arm = Bbox<Unit>
+arm.cell($U(), P) :- lever(P, _), !body(P).
+
+travel($Arm(), V) :-
+    move_dir(D), axis_of(D, A),
+    arm.box($U(), B), arm.cell($U(), P), box_extent(B, P, A, N),  // the arm's length
+    jump_offset(D, N, V).
+
+// --- the output ---
+
+.decl placed(ch: Choice, p: Position, col: Color)
+placed(Ch, P2, Col) :- body(P), lever(P, Col), travel(Ch, V), compose(P, V, P2).
+
+out(P, Col, Ch) :- impl_choice(Ch), anchor(P, Col).
+out(P, Col, Ch) :- placed(Ch, P, Col).
+out(P, Col, Ch) :-
+    impl_choice(Ch), in(P, _),
+    !anchor(P, _), !placed(Ch, P, _), params.bg(Col).

@@ -1,0 +1,140 @@
+// 9473c6fb
+// draft
+// keywords: lines walk span rank
+// input: every non-bg cell is a mark. params.order_corner offers two
+//  directions, one per axis, and the marks are ranked by distance from each.
+// output: each mark takes the color that params.cycle_succ reaches from
+//  params.cycle_start, advanced by its rank under one of those two directions.
+//  A mark's own color says nothing, and the field keeps its color.
+
+// which of the corner's two directions ranks the marks
+.type Choice =
+    // the one no two marks tie on, so distance from its edge orders them
+    Separate {}
+    // the one whose axis the marks span, edge to edge
+  | Span {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(c: Color) bg(7).
+
+    .decl order_corner(d: DiagDir) order_corner(DIAG_TL).
+
+    // The output colors as a cycle.
+    .decl cycle_succ(c: Color, c_next: Color)
+    cycle_succ(2, 8).
+    cycle_succ(8, 5).
+    cycle_succ(5, 2).
+
+    .decl cycle_start(c: Color) cycle_start(2).
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    // Each candidate direction carries its own order.
+    .type DirKey = [k: Key, d: Dir]
+
+    .decl cell(key: Key, p: Position, col: Color)  // @input
+    .decl corner(key: Key, d: DiagDir)             // @input
+
+    .decl mark(key: Key, p: Position)
+    mark(K, P) :- cell(K, P, Col), !params.bg(Col).
+
+    // The corner's two directions, one per axis.
+    .decl cand(key: Key, d: Dir)
+    cand(K, D) :- corner(K, Diag), dir_of(Diag, _, D).
+
+    // Two marks to compare by their distance from edge d.
+    .decl pair(key: Key, d: Dir, p: Position, q: Position)
+    pair(K, D, P, Q) :- cand(K, D), mark(K, P), mark(K, Q).
+
+    // The marks by distance from edge d, nearest first.
+    .init order = Order<DirKey, Position>
+    order.elem([K, D], P) :- cand(K, D), mark(K, P).
+    order.before([K, D], P, Q) :- pair(K, D, P, Q), nearer(D, P, Q).
+
+    // Two marks at one distance from edge d: that distance cannot order them.
+    .decl tie(key: Key, d: Dir)
+    tie(K, D) :- pair(K, D, P, Q), P != Q, same_dist(D, P, Q).
+
+    // A mark on edge d and a mark on the opposite edge.
+    .decl spans(key: Key, d: Dir)
+    spans(K, D) :-
+        cand(K, D), mark(K, P), dist(P, D, 0),
+        opposite(D, D_far), mark(K, Q), dist(Q, D_far, 0).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+parse.corner($U(), Diag) :- params.order_corner(Diag).
+
+.init cycle = CycleWalk<Unit, Color>
+cycle.succ($U(), C, C2) :- params.cycle_succ(C, C2).
+cycle.step($U(), R) :- parse.order.rank([$U(), _], _, R).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Separate()).
+impl_choice($Span()).
+
+// The direction the rank counts from.
+.decl order_dir(d: Dir, ch: Choice)
+
+// --- Separate ---
+order_dir(D, $Separate()) :- parse.cand($U(), D), !parse.tie($U(), D).
+
+// --- Span ---
+order_dir(D, $Span()) :- parse.spans($U(), D).
+
+out(P, Col, Ch) :-
+    impl_choice(Ch), in(P, Col_in),
+    ( params.bg(Col_in), Col = Col_in                         // the field keeps its color
+    ; order_dir(D, Ch), parse.order.rank([$U(), D], P, R),    // the mark's rank
+      params.cycle_start(C0), cycle.walk($U(), C0, R, Col)    // the cycle advanced by it
+    ).
+
+.comp Determine {
+    .type ExDiag = [e: Example, diag: DiagDir]
+
+    // --- bg: the color the output leaves in place ---
+
+    .decl bg_defect(c: Color)
+    bg_defect(Col) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col2 != Col.
+
+    .decl bg(c: Color)
+    bg(Col) :- ex_out(E, _, _), ex_in(E, _, Col), !bg_defect(Col).   // a color of a drawn example
+
+    // --- the order and the cycle, per candidate corner ---
+
+    .init parse = Parse<ExDiag>
+    parse.cell([E, Diag], P, Col) :- diag_dir_elem(Diag), ex_in(E, P, Col).
+    parse.corner([E, Diag], Diag) :- diag_dir_elem(Diag), ex_in(E, _, _).
+
+    // The direction whose ranking is well defined: no two marks tie on it.
+    .decl rank_dir(e: Example, diag: DiagDir, d: Dir)
+    rank_dir(E, Diag, D) :- parse.cand([E, Diag], D), !parse.tie([E, Diag], D).
+
+    // The output color at each rank, under a candidate corner.
+    .decl rank_color(diag: DiagDir, e: Example, r: number, col: Color)
+    rank_color(Diag, E, R, Col) :-
+        rank_dir(E, Diag, D), parse.order.rank([[E, Diag], D], P, R), ex_out(E, P, Col).
+
+    // A corner the examples contradict: under it, color does not follow rank.
+    .decl corner_defect(diag: DiagDir)
+    corner_defect(Diag) :- rank_color(Diag, _, R, Col), rank_color(Diag, _, R, Col2), Col2 != Col.
+
+    .decl order_corner(d: DiagDir)
+    order_corner(Diag) :- diag_dir_elem(Diag), !corner_defect(Diag).
+
+    .decl cycle_start(c: Color)
+    cycle_start(Col) :-
+        order_corner(Diag), rank_dir(E, Diag, D),
+        parse.order.first([[E, Diag], D], P), ex_out(E, P, Col).
+
+    .decl cycle_succ(c: Color, c_next: Color)
+    cycle_succ(Col, Col2) :-
+        order_corner(Diag), rank_dir(E, Diag, D),
+        parse.order.next([[E, Diag], D], P, P2),
+        ex_out(E, P, Col), ex_out(E, P2, Col2).
+}

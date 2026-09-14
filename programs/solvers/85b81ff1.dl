@@ -3,9 +3,9 @@
 // keywords: decompose lines objects count rank move
 // output: Each case finds a set of units and ranks them by ink, ascending.
 //  It then permutes them along params.axis so the unit of rank R sits R
-//  places from params.least_dir, the least-inked unit closest to that edge.
+//  places from params.least_dir.
 
-// which decomposition splits the gap
+// which parameter fixes the tile decomposition
 .type DecChoice =
     // split by a fixed tile count
     Count {}
@@ -23,7 +23,7 @@
 
 .type TileKey = [t: Position, d: DecChoice]
 
-.decl out(p: Position, col: Color, c: Choice)
+.decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     .decl bg(c: Color) bg(0).
@@ -58,12 +58,10 @@ dec_choice($Size()).
 
 .decl decompose(p: Position, p_tile: Position, p_intile: Position, dc: DecChoice)
 decompose(P_grid, P_tile, P_intile, $Count()) :-
-    in(P_grid, _), params.axis(A), params.gap(G),
-    params.tile_count(N),                                     // tile count
+    in(P_grid, _), params.axis(A), params.gap(G), params.tile_count(N),
     divide_slab(P_grid, A, N, G, P_tile, P_intile).
 decompose(P_grid, P_tile, P_intile, $Size()) :-
-    in(P_grid, _), params.axis(A), params.gap(G),
-    params.tile_size(K),                                      // tile size
+    in(P_grid, _), params.axis(A), params.gap(G), params.tile_size(K),
     divide_by_size_slab(P_grid, A, K, G, P_tile, P_intile).
 
 .init tile_ink = Tally<TileKey, Position>
@@ -132,8 +130,8 @@ moved(P_out, Col) :-
     in(P, Col), obj.label($U(), P, Id_src),                                  // object cell
     obj_size.tally(Id_src, N), obj_rank.rank($U(), N, R),                    // its object's size rank
     obj_order.pos($U(), Id_dst, P_pos), params.least_dir(D), dist(P_pos, D, R),   // the object at that place from the least edge
-    obj_box.box(Id_src, B_src), obj_box.box(Id_dst, B_dst),            // box to box
-    relative(B_src, B_dst, V), compose(P, V, P_out).
+    obj_box.box(Id_src, B_src), obj_box.box(Id_dst, B_dst),
+    relative(B_src, B_dst, V), compose(P, V, P_out).                          // displaced by box to box
 
 out(P, Col, $Objects()) :- moved(P, Col).
 out(P, Col, $Objects()) :- in(P, _), !moved(P, _), params.bg(Col).

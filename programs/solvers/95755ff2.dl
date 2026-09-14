@@ -1,0 +1,91 @@
+// 95755ff2
+// draft
+// keywords: enclose cast lines span
+// input: A wall of one color draws a closed curve on a background field.
+//  A grid-border cell of any other color is a source.
+// output: Each source casts its color into the frame, along the line away
+//  from the border it sits on. The cast paints the line's cells inside the
+//  curve, from the end nearest the source, and stops at the first such cell
+//  that is not background. Every other cell keeps its input color.
+
+// which cells of a line lie inside the curve
+.type Choice =
+    // the cells no walk from the grid edge reaches
+    Enclose {}
+    // the cells the line holds between two wall cells
+  | Span {}
+
+.type CastKey = [ch: Choice, d: Dir]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+
+    .decl wall(c: Color) wall(2).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Enclose()). impl_choice($Span()).
+
+.decl source(p: Position, d: Dir, col: Color)
+source(P, D, Col) :-
+    in(P, Col), !params.bg(Col), !params.wall(Col),   // content of its own
+    opposite(D, D_border), dist(P, D_border, 0).      // on the border it faces away from
+
+// Each instance casts one way over the inside cells of its reading. An
+// inside cell that already carries content stops the cast.
+.init cast = Ray<CastKey>
+cast.dir([Ch, D], D)      :- impl_choice(Ch), dir_elem(D).
+cast.mark([Ch, D], P)     :- impl_choice(Ch), source(P, D, _).
+cast.blocked([Ch, D], P)  :- cast.cell([Ch, D], P), in(P, Col), !params.bg(Col).
+
+.decl painted(p: Position, col: Color, ch: Choice)
+painted(P, Col, Ch) :- cast.clear([Ch, D], P, _, _, P_src), source(P_src, D, Col).
+
+out(P, Col, Ch) :- painted(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, _, Ch).
+
+// --- Enclose ---
+
+.init closed = Closed<Unit>
+closed.cell($U(), P) :- in(P, Col), !params.wall(Col).
+
+cast.cell([$Enclose(), D], P) :- dir_elem(D), closed.region($U(), P, _).
+
+// --- Span ---
+
+.init span = Between<Axis>
+span.axis(A, A) :- axis_elem(A).
+span.cell(A, P) :- in(P, Col), !params.wall(Col), axis_elem(A).
+span.mark(A, P) :- in(P, Col), params.wall(Col), axis_elem(A).
+
+cast.cell([$Span(), D], P) :- axis_of(D, A), span.between(A, P).
+
+.comp Determine {
+    // Every painted cell was background.
+    .decl changed(e: Example, p: Position)
+    changed(E, P) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
+
+    .decl bg(c: Color)
+    bg(Col) :- changed(E, P), ex_in(E, P, Col).
+
+    .decl cand(c: Color)
+    cand(Col) :- ex_in(_, _, Col).
+
+    .type ExColor = [e: Example, c: Color]
+
+    // Each candidate read as the wall: what its cells close off.
+    .init closed = Closed<ExColor>
+    closed.cell([E, Col], P) :- ex_in(E, P, Col_cell), cand(Col), Col_cell != Col.
+
+    // A candidate the pairs contradict: a painted cell its cells leave open
+    // to the grid edge.
+    .decl leaks(c: Color)
+    leaks(Col) :- cand(Col), changed(E, P), !closed.region([E, Col], P, _).
+
+    .decl wall(c: Color)
+    wall(Col) :- cand(Col), !leaks(Col).
+}

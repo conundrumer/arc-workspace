@@ -1,0 +1,65 @@
+// 94be5b80
+// draft
+// keywords: markers rank stamp
+// input: A legend — a run of cells that changes color from neighbor to
+//  neighbor along one axis — and copies of one shape, each in a single color,
+//  stacked edge to edge along the perpendicular axis.
+// output: One copy of the shape per legend color, on a blank grid. The copies
+//  the input holds keep their places, and the stack runs on from them both
+//  ways: the next legend color's copy sits one shape-extent further along.
+
+.decl out(p: Position, col: Color)
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+
+    // The stack of copies runs along this axis.
+    .decl stack_axis(a: Axis) stack_axis(AXIS_V).
+
+    // A quarter turn in this sense takes a stack direction to the legend
+    // direction that steps along with it.
+    .decl legend_sense(s: Sense) legend_sense(SENSE_CC).
+}
+
+.init params = Params
+
+// Stepping toward D_legend in the legend steps toward D_stack in the stack.
+.decl carry(d_legend: Dir, d_stack: Dir)
+carry(D_legend, D_stack) :-
+    params.stack_axis(A), axis_of(D_stack, A),              // either way along the stack
+    params.legend_sense(S), turn(S, D_stack, D_legend).     // its legend direction
+
+// A legend cell meets another color one step along the legend.
+.decl legend(p: Position, col: Color)
+legend(P, Col) :-
+    in(P, Col), !params.bg(Col),
+    carry(D, _), neighbor(P, D, Q),                     // either way along the legend
+    in(Q, Col2), !params.bg(Col2), Col2 != Col.         // onto another color
+
+.decl legend_next(d: Dir, col: Color, col2: Color)
+legend_next(D, Col, Col2) :- carry(D, _), legend(P, Col), neighbor(P, D, Q), legend(Q, Col2).
+
+// A copy of the shape: the ink of one color outside the legend.
+.decl copy(col: Color, p: Position)
+copy(Col, P) :- in(P, Col), !params.bg(Col), !legend(P, _).
+
+.init copy_box = Bbox<Color>
+copy_box.cell(Col, P) :- copy(Col, P).
+
+// One slot of the stack: a copy's own extent along the stack axis.
+.decl stack_step(d_legend: Dir, v: Offset)
+stack_step(D_legend, V) :-
+    carry(D_legend, D_stack), axis_of(D_stack, A),
+    copy(Col, P), copy_box.box(Col, B), box_extent(B, P, A, N),   // the copy's extent along the stack
+    jump_offset(D_stack, N, V).
+
+// Each copy keeps the place it holds, and the next legend color's copy sits
+// one slot further along the stack.
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- copy(Col, P).
+ink(P_out, Col2) :-
+    ink(P, Col), legend_next(D, Col, Col2), stack_step(D, V),
+    compose(P, V, P_out), in(P_out, _).             // clipped to the grid
+
+out(P, Col) :- ink(P, Col).
+out(P, Col) :- in(P, _), !ink(P, _), params.bg(Col).

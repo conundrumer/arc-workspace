@@ -1,0 +1,93 @@
+// 9772c176
+// draft
+// keywords: objects cast
+// input: the non-background cells form objects.
+// output: the input, with the wedge cells recolored. A side's base cells cast
+//  the two diagonals that lead away from that side. A cell outside every object
+//  takes the cap color when both of those casts reach it.
+
+// what the wedge's base holds
+.type Choice =
+    // every cell of the object's rim on that side
+    Rim {}
+    // the object's cells at its extreme toward that side
+  | Extreme {}
+    // the cells on that side of the object's longest lines along the side's axis
+  | Widest {}
+
+.type Side = [ch: Choice, id: Ident, d: Dir]
+.type Line = [id: Ident, a: Axis, l: Position]
+.type LineSet = [id: Ident, a: Axis]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    // the wedges' color
+    .decl cap(col: Color) cap(4).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Rim()). impl_choice($Extreme()). impl_choice($Widest()).
+
+// --- the objects ---
+
+.decl shape(p: Position)
+shape(P) :- in(P, Col), !params.bg(Col).
+
+.init obj = Components<Unit>
+obj.node($U(), P) :- shape(P).
+
+.decl member(id: Ident, p: Position)
+member(Id, P) :- obj.label($U(), P, Id).
+
+// The cells a side's wedge is cast from.
+.decl base(ch: Choice, id: Ident, d: Dir, p: Position)
+
+// --- Rim ---
+
+.init edge = Rim<Ident>
+edge.cell(Id, P) :- member(Id, P).
+
+base($Rim(), Id, D, P) :- dir_elem(D), edge.rim_dir(Id, P, D).
+
+// --- Extreme ---
+
+.init hull = Bbox<Ident>
+hull.cell(Id, P) :- member(Id, P).
+
+base($Extreme(), Id, D, P) :- member(Id, P), hull.box(Id, B), box_edge(P, B, D).
+
+// --- Widest ---
+
+// The object's lines along axis a, each keyed by its coordinate on the other axis.
+.init line = Bbox<Line>
+line.cell([Id, A, L], P) :- member(Id, P), axis_elem(A), perp(A, A2), split(P, A2, L, _).
+
+.init longest = ArgExtremes<LineSet, Position>
+longest.cand([Id, A], L, N) :-
+    line.box([Id, A, L], B), line.cell([Id, A, L], P),  // a line of the object
+    box_extent(B, P, A, N).                             // its length
+
+base($Widest(), Id, D, P) :-
+    axis_of(D, A),                                         // the lines along the side's axis
+    longest.high([Id, A], L, _), line.box([Id, A, L], B),  // the longest of them
+    member(Id, P), box_edge(P, B, D).                      // its cell on the side
+
+// --- the wedges ---
+
+// A side's base cells cast the two diagonals that lead away from that side.
+.init spread = Ray<Side>
+spread.dir([Ch, Id, D], Dg) :- base(Ch, Id, D, _), dir_of(Dg, _, D).
+spread.mark([Ch, Id, D], P) :- base(Ch, Id, D, P).
+
+.decl cap_cell(ch: Choice, p: Position)
+cap_cell(Ch, P) :-
+    !shape(P),                                            // outside every object
+    spread.cast([Ch, Id, D], P, Dg1, _, _),               // both casts of one side
+    spread.cast([Ch, Id, D], P, Dg2, _, _), Dg1 != Dg2.   // reach it
+
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !cap_cell(Ch, P).
+out(P, Col, Ch) :- cap_cell(Ch, P), params.cap(Col).

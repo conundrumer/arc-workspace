@@ -1,0 +1,61 @@
+// 9720b24f
+// draft
+// keywords: objects enclose percept-shadow
+// output: A non-bg cell is erased to bg when a container it does not belong
+//  to surrounds it: container cells sit on both sides of the cell along one
+//  axis, and one sits to a side of the other axis. Every other cell passes
+//  through.
+
+// what a container is
+.type Choice =
+    // every cell of one color
+    ColorClass {}
+    // one connected shape, corners joined
+  | Shape {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($ColorClass()). impl_choice($Shape()).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+// Two cells of one container.
+.decl together(ch: Choice, p: Position, q: Position)
+
+// --- ColorClass ---
+together($ColorClass(), P, Q) :- ink(P, Col), ink(Q, Col).
+
+// --- Shape ---
+.init shapes = Components8<Color>
+shapes.node(Col, P) :- ink(P, Col).
+
+together($Shape(), P, Q) :- shapes.conn(_, P, Q).
+
+// A cell of Q's container lies toward D from inked cell P.
+.decl sees(ch: Choice, p: Position, q: Position, d: Dir)
+sees(Ch, P, Q, D) :-
+    ink(P, _), together(Ch, Q, Q2),                          // an inked cell, a container cell
+    axis_of(D, A), same_line(A, P, Q2), nearer(D, Q2, P).    // on P's line, toward D
+
+// Q's container sits on both sides of P along axis A.
+.decl between(ch: Choice, p: Position, q: Position, a: Axis)
+between(Ch, P, Q, A) :- sees(Ch, P, Q, D), sees(Ch, P, Q, D2), opposite(D, D2), axis_of(D, A).
+
+// P sits inside Q's container: between its cells on one axis, with one across.
+.decl surrounded(ch: Choice, p: Position, q: Position)
+surrounded(Ch, P, Q) :- between(Ch, P, Q, A), perp(A, A2), axis_of(D, A2), sees(Ch, P, Q, D).
+
+// An inked cell inside a container it does not belong to.
+.decl erased(ch: Choice, p: Position)
+erased(Ch, P) :- surrounded(Ch, P, Q), !together(Ch, P, Q).
+
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !erased(Ch, P).
+out(P, Col, Ch) :- erased(Ch, P), params.bg(Col).

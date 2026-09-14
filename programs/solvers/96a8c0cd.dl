@@ -1,0 +1,71 @@
+// 96a8c0cd
+// draft
+// keywords: markers walk
+// input: One marker cell on the grid border, and bars of other colors over
+//  the background.
+// output: A walker starts at the marker and takes one heading, away from the
+//  border edge the marker lies on. At each step it reads the cell ahead: an
+//  open cell, and the walker advances onto it; a bar cell, and the walker
+//  sidesteps one cell, a quarter turn from its heading in the sense that
+//  bar's color names. The heading never changes, so the walker slides along
+//  a bar it meets and steps out one cell past that bar's end. The walker
+//  halts where neither of those cells is open, and every cell it visits takes
+//  the marker's color.
+
+.decl out(p: Position, col: Color)
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl marker(c: Color) marker(2).
+    // the quarter turn a bar of this color deflects the walker into
+    .decl deflect(c_bar: Color, s: Sense)
+    deflect(3, SENSE_CW).
+    deflect(1, SENSE_CC).
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)
+
+    // The walker's start.
+    .decl marker(key: Key, p: Position)
+    marker(Ky, P) :- cell(Ky, P, Col), params.marker(Col).
+
+    // The marker lies on one border edge, and the walker heads away from it.
+    .decl heading(key: Key, d: Dir)
+    heading(Ky, D) :- marker(Ky, P), opposite(D, D_edge), dist(P, D_edge, 0).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// The cells the walker visits.
+.decl at(p: Position)
+at(P) :- parse.marker($U(), P).
+at(Q) :-
+    at(P), parse.heading($U(), D), neighbor(P, D, Q_ahead),
+    ( Q = Q_ahead                                          // ahead
+    ; in(Q_ahead, Col_bar), params.deflect(Col_bar, S),    // a bar stands ahead
+      turn(S, D, D_side), neighbor(P, D_side, Q) ),        // aside, the way it deflects
+    in(Q, Col), params.bg(Col).                            // onto an open cell
+
+out(P, Col) :- at(P), params.marker(Col).
+out(P, Col) :- in(P, Col), !at(P).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // The trail the output draws.
+    .decl trail(e: Example, p: Position)
+    trail(E, P) :- ex_out(E, P, Col), params.marker(Col).
+
+    // The trail stood before a bar and passed it on one side: that side is
+    // the turn the bar's color names.
+    .decl deflect(c_bar: Color, s: Sense)
+    deflect(Col, S) :-
+        trail(E, P), parse.heading(E, D),
+        neighbor(P, D, Q), ex_in(E, Q, Col), !params.bg(Col),     // a bar ahead of the trail
+        turn(S, D, D_side), neighbor(Q, D_side, R), trail(E, R).  // the trail beside that bar
+}

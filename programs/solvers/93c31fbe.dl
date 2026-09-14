@@ -1,0 +1,107 @@
+// 93c31fbe
+// draft
+// keywords: markers d4 select
+// input: Marks bracket rectangles: each mark bends at one corner of its box,
+//  with its two arms along the box's edges. Content cells lie inside some of
+//  those boxes and loose elsewhere.
+// output: The marks pass through. Content inside a box stays, joined by its
+//  mirror image across a midline of that box. Content outside every box goes.
+
+// Which way the content mirrors inside its box.
+.type Choice =
+    // along the box's length
+    Long {}
+    // toward each half the content keeps clear
+  | Clear {}
+
+.decl impl_choice(ch: Choice)
+impl_choice($Long()). impl_choice($Clear()).
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+
+    // the color of the content the boxes hold
+    .decl content(c: Color)
+    content(1).
+}
+
+.init params = Params
+
+// The marks, drawn in the one color that is neither background nor content.
+// That color differs from pair to pair, so the input carries it.
+.decl mark(p: Position)
+mark(P) :- in(P, Col), !params.bg(Col), !params.content(Col).
+
+// The box corner a mark brackets. The mark bends at that cell, and its two
+// arms run from there along the box's edges, so the corner they straddle is
+// the opposite one.
+.decl corner(p: Position, d: DiagDir)
+corner(P, D) :-
+    mark(P), diag_opposite(D, G), diag_dirs(G, _, D1, D2),          // the arms' dirs
+    neighbor(P, D1, Q1), mark(Q1), neighbor(P, D2, Q2), mark(Q2).   // both arms
+
+// Every box a pair of opposite corner marks spans.
+.type Corners = [p: Position, q: Position]
+
+.init span = Bbox<Corners>
+span.cell([P, Q], R) :-
+    corner(P, D), corner(Q, G), diag_opposite(D, G), ( R = P ; R = Q ).
+
+.decl corner_at(b: Box, d: DiagDir, p: Position)
+corner_at(B, D, P) :- span.box(_, B), corner(P, D), corner_anchor(D, P, B).
+
+// A corner of a spanned box that no mark brackets — the defect the box test
+// negates.
+.decl open_corner(b: Box)
+open_corner(B) :- span.box(_, B), diag_dir_elem(D), !corner_at(B, D, _).
+
+.decl box(b: Box)
+box(B) :- span.box(_, B), !open_corner(B).
+
+// The content a box holds, in the box's own frame.
+.decl content_in(b: Box, p_inner: Position)
+content_in(B, P_inner) :- in(P, Col), params.content(Col), box(B), crop(P, B, P_inner).
+
+// The axis the content mirrors along: the flip on that axis carries the
+// content across the midline perpendicular to it.
+.decl mirror_axis(b: Box, a: Axis, ch: Choice)
+
+// --- Long ---
+
+// The box is longer on axis a, so the content mirrors along the box's length.
+mirror_axis(B, A, $Long()) :-
+    box(B), corner_at(B, _, P),                                     // a cell of the box's frame
+    perp(A, A2), box_extent(B, P, A, N1), box_extent(B, P, A2, N2), N1 > N2.
+
+// --- Clear ---
+
+// A content cell no nearer edge d than its opposite — the defect the clear
+// test negates.
+.decl off_side(b: Box, d: Dir)
+off_side(B, D) :-
+    content_in(B, P_inner), dir_elem(D), dist_pair(P_inner, D, K, K2), K >= K2.
+
+// The content lies wholly on the d side of the midline across axis a, so the
+// flip on a carries it onto the side it keeps clear.
+mirror_axis(B, A, $Clear()) :-
+    content_in(B, _), dir_elem(D), !off_side(B, D), axis_of(D, A).
+
+// --- out ---
+
+// What a box's content draws: itself, and its mirror across the mirror axis.
+.decl ink(p: Position, ch: Choice)
+ink(P_grid, Ch) :-
+    content_in(B, P_inner), impl_choice(Ch),
+    ( P_img = P_inner                                               // the cell itself
+    ; mirror_axis(B, A, Ch), flip_of(A, F), apply(F, P_inner, P_img)  // its mirror
+    ),
+    compose(B, P_img, P_grid).
+
+out(P, Col_out, Ch) :-
+    impl_choice(Ch), in(P, Col),
+    ( mark(P), Col_out = Col                                        // the mark — kept
+    ; !mark(P), ink(P, Ch), params.content(Col_out)                 // content, kept or mirrored
+    ; !mark(P), !ink(P, Ch), params.bg(Col_out)                     // everything else
+    ).

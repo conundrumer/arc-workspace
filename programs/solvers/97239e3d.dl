@@ -1,0 +1,115 @@
+// 97239e3d
+// draft
+// keywords: lines markers span border enclose
+// input: the lines that hold no params.wall cell are streets; between them the
+//  wall draws a ring around a bg hole, and marks of other colors sit on the
+//  streets.
+// output: the marks of a color delimit a box whose sides run on streets; that
+//  box's outline takes the color, and so does the hole of every ring inside it.
+
+// how the marks of a color delimit their box
+.type Choice =
+    // its corners are the crossings the marks lie on or touch
+    Touch {}
+    // its corners are the crossings nearest the marks
+  | Nearest {}
+    // it is the smallest street-bounded box that holds every mark
+  | Contain {}
+
+.type CaseColor = [ch: Choice, col: Color]
+.type ColorDir = [col: Color, d: Dir]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl wall(c: Color) wall(8).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Touch()). impl_choice($Nearest()). impl_choice($Contain()).
+
+// --- shared ---
+
+.decl wall_line(a: Axis, l: Position)
+wall_line(A, L) :- in(P, Col), params.wall(Col), axis_elem(A), split(P, A, L, _).
+
+// A line the rings leave free.
+.decl street(a: Axis, l: Position)
+street(A, L) :- in(P, _), axis_elem(A), split(P, A, L, _), !wall_line(A, L).
+
+.decl mark(p: Position, col: Color)
+mark(P, Col) :- in(P, Col), !params.bg(Col), !params.wall(Col).
+
+// The box each color's marks delimit.
+.decl span_box(ch: Choice, col: Color, b: Box)
+
+// --- Touch, Nearest ---
+
+// A cell whose lines on both axes are streets.
+.decl crossing(p: Position)
+crossing(P) :-
+    in(P, _), perp(A, A2),
+    split(P, A, L, _), street(A, L),
+    split(P, A2, L2, _), street(A2, L2).
+
+// A crossing the marks put at a corner of the box.
+.decl anchor(ch: Choice, col: Color, p: Position)
+
+.init span = Bbox<CaseColor>
+span.cell([Ch, Col], P) :- anchor(Ch, Col, P).
+
+span_box(Ch, Col, B) :- span.box([Ch, Col], B).
+
+// --- Touch ---
+
+anchor($Touch(), Col, P) :-
+    mark(M, Col), crossing(P), ( P = M ; dir_elem(D), neighbor(M, D, P) ).
+
+// --- Nearest ---
+
+// Each mark casts along its four directions, reaching the crossings of its
+// street at their distances.
+.init reach = Ray<Unit>
+reach.dir($U(), D) :- dir_elem(D).
+reach.cell($U(), P) :- crossing(P).
+reach.mark($U(), P) :- mark(P, _).
+
+.init closest = ArgExtremes<Position, Position>
+closest.cand(M, P, K) :- reach.ray($U(), P, _, K, M).
+
+anchor($Nearest(), Col, P) :- mark(M, Col), closest.low(M, P, _).
+
+// --- Contain ---
+
+// A mark of the color lies beyond street l, toward d.
+.decl beyond(col: Color, d: Dir, l: Position)
+beyond(Col, D, L) :- mark(M, Col), axis_of(D, A), street(A, L), nearer(D, M, L).
+
+// The d side is the innermost street that no mark of the color lies beyond.
+.init inset = Extremes<ColorDir>
+inset.cand([Col, D], K) :-
+    mark(_, Col), axis_of(D, A), street(A, L), dist(L, D, K),
+    !beyond(Col, D, L).
+
+.init frame = DirPack<Color>
+frame.edge(Col, D, K) :- inset.high([Col, D], K).
+
+span_box($Contain(), Col, B) :- frame.box(Col, B).
+
+// --- output ---
+
+// A ring's hole is the bg it closes off from the grid edge.
+.init closed = Closed<Unit>
+closed.cell($U(), P) :- in(P, Col), !params.wall(Col).
+
+.decl painted(p: Position, col: Color, ch: Choice)
+painted(P, Col, Ch) :-
+    span_box(Ch, Col, B), in(P, _), inside(P, B),
+    ( !interior(P, B)                    // on the box's outline
+    ; closed.region($U(), P, _) ).       // a hole the box encloses
+
+out(P, Col, Ch) :- painted(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, _, Ch).

@@ -1,0 +1,118 @@
+// 9841fdad
+// draft
+// keywords: decompose objects scale rank
+// input: uniform lines cut the grid into panels of unequal size, and each
+//  panel holds solid rectangles on a ground color of its own
+// output: every rectangle is drawn again in the other panel; on each axis it
+//  is attached to the sides of its own panel, and it holds its margin to a
+//  side it alone is attached to, keeping its extent there; attached to both
+//  sides of an axis or to neither, it holds both margins there, so it
+//  stretches with the panel
+
+.type Line = [a: Axis, l: Position]
+
+// a panel with one of the colors drawn on it
+.type PanelColor = [p_tile: Position, col: Color]
+
+// a panel with one of its sides
+.type PanelDir = [p_tile: Position, d: Dir]
+
+// what attaches a rectangle to a side of its panel
+.type Choice =
+    // it lies at least as near that side as the opposite one
+    Nearer {}
+    // no rectangle of the panel lies nearer that side
+  | Extreme {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+}
+
+.init params = Params
+
+// --- the panels the uniform lines cut ---
+
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
+
+// A uniform line spans the grid, so it divides panels rather than sit in one.
+.init cut = DividerTiles<Unit>
+cut.cell($U(), P) :- in(P, _).
+cut.divider($U(), A, L) :- line_color.value([A, L], _).
+
+.init panel = Bbox<Position>
+panel.cell(P_tile, P) :- cut.tile_of($U(), P, P_tile).
+
+// a panel's cell, with its place in that panel's frame
+.decl panel_cell(p_tile: Position, p: Position, p_inner: Position)
+panel_cell(P_tile, P, P_inner) :-
+    panel.cell(P_tile, P), panel.box(P_tile, B), crop(P, B, P_inner).
+
+// the color a panel is filled with
+.init ground = Mode<Position, Color, Position>
+ground.item(P_tile, Col, P) :- panel.cell(P_tile, P), in(P, Col).
+
+// --- the rectangles drawn on the panels ---
+
+.init rect = Components<PanelColor>
+rect.node([P_tile, Col], P) :-
+    panel.cell(P_tile, P), in(P, Col), !ground.mode(P_tile, Col).
+
+.decl rect_cell(id: Ident, p_inner: Position)
+rect_cell(Id, P_inner) :- rect.label([P_tile, _], P, Id), panel_cell(P_tile, P, P_inner).
+
+.init rect_box = Bbox<Ident>
+rect_box.cell(Id, P_inner) :- rect_cell(Id, P_inner).
+
+.decl rect_of(id: Ident, p_tile: Position, col: Color)
+rect_of(Id, P_tile, Col) :- rect.label([P_tile, Col], _, Id).
+
+// --- what a rectangle is attached to ---
+
+.decl attached(id: Ident, d: Dir, ch: Choice)
+
+// d is the rectangle's only attachment on its axis, so the rectangle holds
+// that margin and keeps its extent
+.decl anchor(id: Ident, d: Dir, ch: Choice)
+anchor(Id, D, Ch) :- attached(Id, D, Ch), opposite(D, D2), !attached(Id, D2, Ch).
+
+// --- Nearer ---
+
+attached(Id, D, $Nearer()) :- rect_box.box(Id, B), dist_pair(B, D, K1, K2), K1 <= K2.
+
+// --- Extreme ---
+
+// how deep each rectangle of a panel lies from each side of that panel
+.init depth = ArgExtremes<PanelDir, Ident>
+depth.cand([P_tile, D], Id, K) :-
+    rect_of(Id, P_tile, _), rect_box.box(Id, B), dir_elem(D), dist(B, D, K).
+
+// the shallowest: no rectangle of the panel lies nearer that side
+attached(Id, D, $Extreme()) :- depth.low([_, D], Id, _).
+
+// --- the rectangle seated again in the other panel ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($Nearer()).
+impl_choice($Extreme()).
+
+// on axis a, the rectangle reaches cell p of another panel
+.decl seat_axis(id: Ident, a: Axis, p: Position, ch: Choice)
+seat_axis(Id, A, P, Ch) :-
+    panel_cell(P_tile, P, P_inner), rect_of(Id, P_src, _), P_tile != P_src,  // a cell of another panel
+    axis_of(D, A), opposite(D, D2),
+    ( anchor(Id, D, Ch), rect_cell(Id, Q), same_dist(D, Q, P_inner)          // anchored at d: a rectangle cell's distance from d
+    ; !anchor(Id, D, Ch), !anchor(Id, D2, Ch), impl_choice(Ch),              // anchored at neither side: both margins kept
+      rect_box.box(Id, B), split(B, A, B_along, _), inside(P_inner, B_along) ).
+
+// the cell a rectangle is drawn on again, in the color it is drawn in
+.decl seated(p: Position, col: Color, ch: Choice)
+seated(P, Col, Ch) :-
+    seat_axis(Id, A, P, Ch), perp(A, A2), seat_axis(Id, A2, P, Ch),  // reached on both axes
+    rect_of(Id, _, Col).
+
+out(P, Col, Ch) :-
+    in(P, Col0), impl_choice(Ch),
+    ( seated(P, Col, Ch)                  // a rectangle seated again
+    ; !seated(P, _, Ch), Col = Col0 ).    // elsewhere the input stands

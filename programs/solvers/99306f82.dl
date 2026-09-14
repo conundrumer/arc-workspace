@@ -1,0 +1,74 @@
+// 99306f82
+// draft
+// keywords: markers border enclose rank
+// input: An outline drawn in one color, and marker cells outside it, in a run
+//  that leads to one of its corners.
+// output: Concentric rings fill the outline's inside, one ring per step inward
+//  from its boundary. The markers, ordered from the corner their run leads
+//  from, color the rings outermost first, and the last marker's color fills
+//  every deeper ring.
+
+// what the outline is, and what counts as its inside
+.type Choice =
+    // the outline is a rectangle drawn by four same-color runs, and its inside
+    // is what that rectangle holds strictly within its edges
+    Rect {}
+    // the outline is a wall of one color, and its inside is the region that
+    // wall cuts off from the grid edge
+  | Enclose {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    // the color the outline is drawn in
+    .decl frame(col: Color) frame(1).
+    // the corner the markers are ordered from
+    .decl corner(d: DiagDir) corner(DIAG_TL).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Rect()). impl_choice($Enclose()).
+
+.decl frame_cell(p: Position)
+frame_cell(P) :- in(P, Col), params.frame(Col).
+
+.decl mark(p: Position, col: Color)
+mark(P, Col) :- in(P, Col), !params.bg(Col), !params.frame(Col).
+
+// The run, ordered from the marker nearest the corner.
+.init marks = Order<Unit, Position>
+marks.elem($U(), P) :- mark(P, _).
+marks.before($U(), P, Q) :-
+    mark(P, _), mark(Q, _), params.corner(D), nearer(D, P, Q).
+
+// The cells the outline holds.
+.decl held(p: Position, ch: Choice)
+
+// The rings: depth runs inward from the held cells' own boundary.
+.init rings = Rim<Choice>
+rings.cell(Ch, P) :- held(P, Ch).
+
+out(P, Col, Ch) :-
+    rings.depth(Ch, P, K),                 // the ring the cell sits on
+    mark(M, Col), marks.rank($U(), M, R),  // a marker and its place in the run
+    ( K = R                                // the ring at that place
+    ; K > R, marks.last($U(), M) ).        // every deeper ring, at the run's end
+
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !held(P, Ch).
+
+// --- Rect ---
+
+.init outline = Outlines<Unit>
+outline.node($U(), P) :- frame_cell(P).
+
+held(P, $Rect()) :- outline.box($U(), B), in(P, _), interior(P, B).
+
+// --- Enclose ---
+
+.init closed = Closed<Unit>
+closed.cell($U(), P) :- in(P, _), !frame_cell(P).
+
+held(P, $Enclose()) :- closed.region($U(), P, _).

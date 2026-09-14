@@ -1,0 +1,63 @@
+// 941d9a10
+// draft
+// keywords: decompose lookup
+// input: separator lines of one color cut the grid into blocks of unequal
+//  size.
+// output: a block takes a stored color by its place in the arrangement — each
+//  of two stored corners, and the center. Every other cell stands.
+
+.decl out(p: Position, col: Color)
+
+.comp Params {
+    .decl sep(c: Color) sep(5).
+
+    // the color of the block at a corner of the arrangement
+    .decl corner_color(d: DiagDir, c: Color)
+    corner_color(DIAG_TL, 1).
+    corner_color(DIAG_BR, 3).
+
+    // the color of the block at the center of the arrangement
+    .decl center_color(c: Color)
+    center_color(2).
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    // A line's defect: a cell off the separator color.
+    .decl off_line(key: Key, a: Axis, l: Position)
+    off_line(K, A, L) :-
+        cell(K, P, Col), !params.sep(Col), axis_elem(A), split(P, A, L, _).
+
+    .init cut = DividerTiles<Key>
+    cut.cell(K, P) :- cell(K, P, _).
+    cut.divider(K, A, L) :-
+        cell(K, P, _), axis_elem(A), split(P, A, L, _),  // a line across axis A
+        !off_line(K, A, L).                              // every cell the separator color
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// The color a block's place in the arrangement gives its cells. A separator
+// cell sits in no block, so it stands.
+.decl painted(p: Position, col: Color)
+painted(P, Col) :-
+    parse.cut.tile_of($U(), P, P_tile),
+    ( params.corner_color(D, Col), box_corner(P_tile, ZERO, D)  // a corner block
+    ; params.center_color(Col), centered(P_tile) ).             // the center block
+
+out(P, Col) :- painted(P, Col).
+out(P, Col) :- in(P, Col), !painted(P, _).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    .decl corner_color(d: DiagDir, c: Color)
+    corner_color(D, Col) :-
+        ex.cut.tile_of(E, P, P_tile), box_corner(P_tile, ZERO, D),  // a cell of a corner block
+        ex_out(E, P, Col), ex_in(E, P, Col_in), Col != Col_in.      // the color the output paints it
+}

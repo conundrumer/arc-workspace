@@ -3,13 +3,15 @@
 A per-key readout on `Bbox`: the displacement toward `d` whose size is the set's own extent along `d`'s axis. Composed with any position, it steps that position one set-length on, so a solver that places content immediately beyond a set — the set itself moved off its own footprint, a copy stacked against it, a reflection seated past its far edge — states the placement in one atom. The known sites read the extent off the box, reselect the axis from the direction, and turn the number into a jump.
 
 ```
-.decl advance(key: Key, d: Dir, delta: Shift)
-advance(K, D, Delta) :- extent(K, A, N), axis_of(D, A), jump_delta(D, N, Delta).
+.decl advance(key: Key, d: Dir, delta: Offset)
+advance(K, D, Delta) :-
+    box(K, B), cell(K, P), box_extent(B, P, A, N),
+    axis_of(D, A), jump_offset(D, N, Delta).
 ```
 
-Not: a jump of a stored or counted length (`jump`, `jump_delta`); a slide until contact (`Dock`); an extent used as a bound, a period, or a border width; `Bbox.margin` composed with another box's margin.
+Not: a jump of a stored or counted length (`jump`, `jump_offset`); a slide until contact (`Dock`); an extent used as a bound, a period, or a border width; `Bbox.box` composed with another box's margin.
 
-Match: a rule that binds `axis_of(D, A)` and a `Bbox` instance's `extent(_, A, N)` and feeds that `N` to `jump` or `jump_delta` toward the same `D`.
+Match: a rule that binds `axis_of(D, A)` and a `Bbox` instance's box read through `box_extent(B, _, A, N)`, and feeds that `N` to `jump` or `jump_offset` toward the same `D`, within a rule or across one hop.
 
 Survey: 2026-09-08 22:07
 

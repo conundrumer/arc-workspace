@@ -1,0 +1,103 @@
+// 97d7923e
+// draft
+// keywords: markers span rank
+// input: A header is a non-background cell on the params.head_dir edge. The
+//  run of its color inward from that edge is how far it reaches. A bar is a
+//  run of one color capped at each end by a cell of a second color, along
+//  the axis of that edge, and the cap nearer the header edge names the bar.
+// output: The input, with one bar filled per header. The bars whose caps
+//  carry the header's color rank against one another. The header takes the
+//  bar whose rank is how far the header reaches, and that bar's run takes
+//  the header's color.
+
+// how the bars of one cap color rank
+.type Choice =
+    // by cell count, the longest first
+    Size {}
+    // by the cap nearer the header edge, the nearest first
+  | Head {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+
+    // The edge the headers lie on. The runs go inward from it, and the bars
+    // lie along its axis.
+    .decl head_dir(d: Dir) head_dir(DIR_T).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Size()). impl_choice($Head()).
+
+// The direction the runs take: inward from the header edge.
+.decl inward(d: Dir)
+inward(D_in) :- params.head_dir(D), opposite(D, D_in).
+
+// Every run of one color, inward. Headers and bars read the same runs.
+.init run = Slide<Color>
+run.node(Col, P) :- in(P, Col), !params.bg(Col).
+run.dir(Col, D_in) :- run.node(Col, _), inward(D_in).
+
+// --- headers ---
+
+.decl header(col: Color, p: Position)
+header(Col, P) :- in(P, Col), !params.bg(Col), params.head_dir(D), dist(P, D, 0).
+
+// How far a header reaches: where its run ends, as a distance from the edge.
+.decl reach(col: Color, k: number)
+reach(Col, K) :-
+    header(Col, P), inward(D_in), run.rest(Col, P, D_in, P_end),
+    params.head_dir(D), dist(P_end, D, K).
+
+// --- bars ---
+
+.decl bar(col: Color, p_cap: Position, body: Color, p_first: Position)
+bar(Col, P_cap, Body, P_first) :-
+    in(P_cap, Col), !params.bg(Col), inward(D_in),            // the cap toward the edge
+    neighbor(P_cap, D_in, P_first),
+    in(P_first, Body), !params.bg(Body), Body != Col,         // the run it caps
+    run.rest(Body, P_first, D_in, P_last),
+    neighbor(P_last, D_in, P_tail), in(P_tail, Col).          // the cap beyond that run
+
+// The cells of the run a bar caps.
+.decl bar_cell(col: Color, p_cap: Position, p: Position)
+bar_cell(Col, P_cap, P) :-
+    bar(Col, P_cap, Body, P_first), inward(D_in),
+    ( P = P_first ; run.run(Body, P_first, D_in, P) ).
+
+// A cap color under one ranking.
+.type CaseColor = [col: Color, ch: Choice]
+
+.init bar_ord = Order<CaseColor, Position>
+bar_ord.elem([Col, Ch], P_cap) :- bar(Col, P_cap, _, _), impl_choice(Ch).
+
+// --- Size ---
+
+// A bar: its cap color with the cap nearer the header edge.
+.type Bar = [col: Color, p_cap: Position]
+
+.init bar_size = Tally<Bar, Position>
+bar_size.item([Col, P_cap], P) :- bar_cell(Col, P_cap, P).
+
+bar_ord.before([Col, $Size()], P_cap, P_cap2) :-
+    bar_size.tally([Col, P_cap], N), bar_size.tally([Col, P_cap2], N2), N > N2.
+
+// --- Head ---
+
+bar_ord.before([Col, $Head()], P_cap, P_cap2) :-
+    bar(Col, P_cap, _, _), bar(Col, P_cap2, _, _),
+    params.head_dir(D), nearer(D, P_cap, P_cap2).
+
+// --- output ---
+
+// The run a header paints.
+.decl fill(p: Position, col: Color, ch: Choice)
+fill(P, Col, Ch) :-
+    reach(Col, K), bar_ord.rank([Col, Ch], P_cap, K),   // the bar of the rank it reaches
+    bar_cell(Col, P_cap, P).                            // that bar's run
+
+out(P, Col, Ch) :- fill(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !fill(P, _, Ch).

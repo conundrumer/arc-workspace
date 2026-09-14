@@ -59,7 +59,7 @@ sym_cell(T, D, P) :-
     figure.conn($U(), T, P), dir_elem(D),                      // a cell of T's piece
     axis_of(D, A), perp(A, A2), flip_of(A2, G),                // the mirror in T's line
     relative(T, P, V), apply(G, V, V2), compose(T, V2, Q),
-    figure.conn($U(), T, Q).                                   // the image is drawn too
+    figure.conn($U(), T, Q).                                   // the image is in the piece too
 
 // A cell of the set stands level with T or past it, so T is no tip.
 .decl blunt(t: Position, d: Dir)
@@ -106,8 +106,8 @@ way(D, D2) :- perp_dir(D, D2).
 .init steps = Extremes<Stance>
 steps.cand([Pan, P, D], K) :- way(D, D2), reach(Pan, P, D2, _, K).
 
-// The two cases coincide here — no dot aside is ever nearer than the dot
-// ahead — and diverge only where one is.
+// On this task's panels the cases coincide — no dot aside is ever nearer
+// than the dot ahead — and they diverge only where one is.
 .decl impl_choice(ch: Choice)
 impl_choice($Momentum()). impl_choice($Nearest()).
 

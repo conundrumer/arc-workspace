@@ -1,0 +1,127 @@
+// 97a05b5b
+// draft
+// keywords: objects crop enclose pack match d4
+// input: A holed board lies among loose pieces on params.bg. The objects are
+//  the 8-connected non-bg components; the holes are the background cells no
+//  walk from the grid edge reaches, and the board is the object that bounds
+//  them. A piece's cells in params.board_color are its patch — the board
+//  material it carries.
+// output: The board's box. Each piece turns by a rotation and lands so that
+//  its patch falls on holes; a cell the landed piece covers takes the color of
+//  the piece cell over it, and the rest of the box keeps the input's.
+
+// what settles where a piece lands
+.type Choice =
+    // the patches tile the holes: no two overlap, and together they leave none
+    Pack {}
+    // a patch is one whole hole, cell for cell
+  | Match {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl board_color(col: Color) board_color(2).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Pack()). impl_choice($Match()).
+
+// --- the holes ---
+
+.init flood = Reach<Unit>
+flood.node($U(), P) :- in(P, Col), params.bg(Col).
+flood.seed($U(), P) :- flood.node($U(), P), dir_elem(D), dist(P, D, 0).
+
+.decl hole(p: Position)
+hole(P) :- flood.node($U(), P), !flood.reach($U(), P).
+
+// --- the board and the pieces ---
+
+.init obj = Components8<Unit>
+obj.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+.decl obj_cell(o: Ident, p: Position, col: Color)
+obj_cell(O, P, Col) :- obj.label($U(), P, O), in(P, Col).
+
+.decl board(o: Ident)
+board(O) :- obj_cell(O, P, _), dir_elem(D), neighbor(P, D, Q), hole(Q).
+
+.decl piece(o: Ident)
+piece(O) :- obj_cell(O, _, _), !board(O).
+
+// --- the turned pieces ---
+
+.init patch_box = Bbox<Ident>
+patch_box.cell(O, P) :- piece(O), obj_cell(O, P, Col), params.board_color(Col).
+
+// A piece's cells, read against its patch's box and turned by D. A cell
+// outside that box sits there at a negative margin, so the turn carries the
+// whole piece.
+.decl piece_cell(o: Ident, d: C4, p_turn: Position, col: Color)
+piece_cell(O, D, P_turn, Col) :-
+    obj_cell(O, P, Col), patch_box.box(O, B), relative(B, P, P_rel),
+    c4_elem(D), apply(D, P_rel, P_turn).
+
+.decl patch_cell(o: Ident, d: C4, p_turn: Position)
+patch_cell(O, D, P_turn) :- piece_cell(O, D, P_turn, Col), params.board_color(Col).
+
+.type Turn = [o: Ident, d: C4]
+
+// Where a piece turned by D lands: the box its patch box takes in the grid.
+.decl place(o: Ident, d: C4, b: Box, ch: Choice)
+
+// --- Pack ---
+
+// Every spot at which a turned patch falls on holes alone.
+.init occ = Occurrences<Turn, Unit>
+occ.shape([O, D], P_turn, $U()) :- patch_cell(O, D, P_turn).
+occ.cell([O, D], P, $U()) :- piece(O), c4_elem(D), hole(P).
+
+.type Placement = [o: Ident, d: C4, b: Box]
+
+.decl fills(cd: Placement, p: Position)
+fills([O, D, B], P) :-
+    occ.occurrence([O, D], B), patch_cell(O, D, P_turn), compose(B, P_turn, P).
+
+// One spot per piece, and no two pieces over one hole.
+.init pruning = PlacementPruning<Unit, Placement, Ident>
+pruning.cand($U(), [O, D, B], O) :- occ.occurrence([O, D], B).
+pruning.conflict($U(), Cd, Cd2) :- fills(Cd, P), fills(Cd2, P).
+
+place(O, D, B, $Pack()) :- pruning.alive($U(), [O, D, B], O).
+
+// --- Match ---
+
+// The holes grouped into regions. A hole joins its neighbours at a corner as
+// well as at a side, as the cells of a patch do.
+.init hole_region = Components8<Unit>
+hole_region.node($U(), P) :- hole(P).
+
+.init region_box = Bbox<Ident>
+region_box.cell(R, P) :- hole_region.label($U(), P, R).
+
+// A turned patch against a region, each read in its own box.
+.init congruent = KeyedSetCompare<Turn, Ident, Position>
+congruent.pattern_member(R, P_rel) :-
+    hole_region.label($U(), P, R), region_box.box(R, B), crop(P, B, P_rel).
+congruent.observed_member([O, D], P_turn) :- patch_cell(O, D, P_turn).
+
+place(O, D, B, $Match()) :- congruent.equals([O, D], R), region_box.box(R, B).
+
+// --- output ---
+
+.decl paints(p: Position, col: Color, ch: Choice)
+paints(P, Col, Ch) :-
+    place(O, D, B, Ch), piece_cell(O, D, P_turn, Col), compose(B, P_turn, P).
+
+.init board_box = Bbox<Unit>
+board_box.cell($U(), P) :- board(O), obj_cell(O, P, _).
+
+out(P_inner, Col, Ch) :-
+    board_box.box($U(), B), crop(P, B, P_inner), impl_choice(Ch),
+    ( paints(P, Col, Ch)             // a piece's cell landed here
+    ; !paints(P, _, Ch), in(P, Col)  // the board shows through
+    ).

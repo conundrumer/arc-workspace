@@ -1,0 +1,108 @@
+// 985ae207
+// draft
+// keywords: markers match stamp cast
+// input: marks — a cell ringed by a second color — and blocks, the non-bg
+//  cells no mark holds
+// output: Each mark marches copies of itself along every cardinal whose
+//  march reaches the block of the mark's own color, halting at the first
+//  copy that lands on that block.
+
+// what fixes the march's pitch
+.type Choice =
+    // the copies abut: the pitch is the mark's own extent
+    Abut {}
+    // a stored pitch
+  | Stride {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(col: Color) bg(8).
+
+    // --- Stride ---
+    .decl pitch(k: number) pitch(3).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Abut()). impl_choice($Stride()).
+
+// --- marks and blocks ---
+
+// A surrounding cell of p holds non-bg col.
+.decl ring(p: Position, col: Color)
+ring(P, Col) :- in(P, _), dir8_elem(D), neighbor(P, D, Q), in(Q, Col), !params.bg(Col).
+
+// Some surrounding cell of p lacks col — off the grid counts as lacking.
+.decl gap(p: Position, col: Color)
+gap(P, Col) :- ring(P, Col), dir8_elem(D), neighbor(P, D, Q), !in(Q, Col).
+
+// A mark: a non-bg cell whose whole surround holds one other color.
+.decl mark(p: Position, c_center: Color)
+mark(P, Cc) :-
+    in(P, Cc), !params.bg(Cc),          // the mark's own color
+    ring(P, Cr), !gap(P, Cr), Cr != Cc. // one other color all around it
+
+// The mark's footprint: its cell and the ring around it.
+.decl mark_cell(p_mark: Position, p: Position)
+mark_cell(Pm, Pm) :- mark(Pm, _).
+mark_cell(Pm, P) :- mark(Pm, _), dir8_elem(D), neighbor(Pm, D, P).
+
+// The blocks: the non-bg cells no mark holds.
+.decl block(col: Color, p: Position)
+block(Col, P) :- in(P, Col), !params.bg(Col), !mark_cell(_, P).
+
+// --- the march ---
+
+// The mark's footprint carried to a copy centered at q.
+.decl copy_cell(p_mark: Position, q: Position, p: Position, col: Color)
+copy_cell(Pm, Q, P, Col) :-
+    mark_cell(Pm, X), in(X, Col), relative(Pm, X, V),   // the mark's cell, as an offset
+    in(Q, _), compose(Q, V, P).                         // carried to q
+
+// A copy centered at q lands on the block its mark names.
+.decl at_block(p_mark: Position, q: Position)
+at_block(Pm, Q) :-
+    mark(Pm, Cc),                          // the color names the block
+    copy_cell(Pm, Q, P, _), block(Cc, P).  // a cell of the copy on it
+
+// The step from one copy to the next.
+.decl march(p_mark: Position, d: Dir, v: Offset, ch: Choice)
+
+// --- Abut ---
+
+.init mbox = Bbox<Position>
+mbox.cell(Pm, P) :- mark_cell(Pm, P).
+
+march(Pm, D, V, $Abut()) :-
+    dir_elem(D), axis_of(D, A),
+    mbox.box(Pm, B), box_extent(B, Pm, A, N),   // the mark's extent along the march
+    jump_offset(D, N, V).
+
+// --- Stride ---
+
+march(Pm, D, V, $Stride()) :-
+    mark(Pm, _), dir_elem(D),
+    params.pitch(K), jump_offset(D, K, V).
+
+// --- output ---
+
+// The copies of a march: from the mark on, the last one landing on the block.
+.decl copy(p_mark: Position, d: Dir, q: Position, ch: Choice)
+copy(Pm, D, Pm, Ch) :- mark(Pm, _), dir_elem(D), impl_choice(Ch).
+copy(Pm, D, Q2, Ch) :-
+    copy(Pm, D, Q, Ch), !at_block(Pm, Q),
+    march(Pm, D, V, Ch), compose(Q, V, Q2), in(Q2, _).
+
+// The march that arrives at the block.
+.decl arrives(p_mark: Position, d: Dir, ch: Choice)
+arrives(Pm, D, Ch) :- copy(Pm, D, Q, Ch), at_block(Pm, Q).
+
+.decl paint(p: Position, col: Color, ch: Choice)
+paint(P, Col, Ch) :-
+    copy(Pm, D, Q, Ch), arrives(Pm, D, Ch),    // a copy of an arriving march
+    copy_cell(Pm, Q, P, Col), in(P, _).        // drawn, clipped to the grid
+
+out(P, Col, Ch) :- paint(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).

@@ -1,0 +1,64 @@
+// 992798f6
+// draft
+// keywords: markers cast span
+// input: a mark in params.diag_mark and a mark in params.straight_mark.
+// output: a path in params.path joins the marks. It runs diagonally from
+//  params.diag_mark, clear of params.straight_mark's row and column, then
+//  turns and runs straight to the cell diagonally beside that mark.
+
+.decl out(p: Position, col: Color)
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+    .decl path(col: Color) path(3).
+
+    // The mark the diagonal leg leaves.
+    .decl diag_mark(col: Color) diag_mark(1).
+    // The mark the straight leg runs up to.
+    .decl straight_mark(col: Color) straight_mark(2).
+}
+
+.init params = Params
+
+// The corner direction from the straight mark toward the diag mark.
+.decl toward(diag: DiagDir)
+toward(Diag) :-
+    params.straight_mark(C_s), in(P_s, C_s),     // the straight mark
+    params.diag_mark(C_d), in(P_d, C_d),         // the diag mark
+    diag_dirs(Diag, _, D1, D2),                  // the corner whose two dirs
+    nearer(D1, P_d, P_s), nearer(D2, P_d, P_s).  // both lead to the diag mark
+
+// The diagonal leg, cast from the diag mark and halted by the straight mark's
+// own lines, so it ends on the line beside that mark.
+.init leg = Ray<Unit>
+leg.dir($U(), D) :- toward(Diag), diag_opposite(Diag, D).
+leg.mark($U(), P) :- params.diag_mark(Col), in(P, Col).
+leg.blocked($U(), P) :-
+    in(P, _), params.straight_mark(Col), in(P_s, Col),  // the straight mark's
+    axis_elem(A), same_line(A, P, P_s).                 // row and column
+
+// Where the path turns: the last cell of the diagonal leg.
+.decl elbow(p: Position)
+elbow(P) :-
+    leg.stop($U(), P_stop, D, _, _),                        // the cell that halted it
+    dir8_opposite(D, D_back), neighbor(P_stop, D_back, P).  // one step back
+
+// Where the path ends: the cell diagonally beside the straight mark.
+.decl tip(p: Position)
+tip(P) :-
+    params.straight_mark(Col), in(P_s, Col),  // the straight mark
+    toward(Diag), neighbor(P_s, Diag, P).     // one step toward the diag mark
+
+// The path spans its three points: the diag mark to the elbow down the
+// diagonal, the elbow to the tip along the line they share. The domain is
+// background only, so the marks keep their own color.
+.init span = Between<Unit>
+span.axis($U(), A) :- axis4_elem(A).
+span.cell($U(), P) :- in(P, Col), params.bg(Col).
+span.mark($U(), P) :-
+    ( params.diag_mark(Col), in(P, Col)  // the diag mark
+    ; elbow(P)                           // the turn
+    ; tip(P) ).                          // beside the straight mark
+
+out(P, Col) :- span.between(_, P), params.path(Col).
+out(P, Col) :- in(P, Col), !span.between(_, P).

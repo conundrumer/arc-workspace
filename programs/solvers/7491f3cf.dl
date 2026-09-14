@@ -27,7 +27,7 @@
 
     .decl cell(key: Key, p: Position, col: Color)  // input
 
-    // A uniform line spans the grid, so it divides panels rather than sit in one.
+    // A separator is a grid line of one color.
     .init line_color = Unanimous<Line, Color>
     line_color.item([K, A, L], Col) :- cell(K, P, Col), axis_elem(A), split(P, A, L, _).
 
@@ -74,11 +74,7 @@ parse.cell($U(), P, Col) :- in(P, Col).
 parse.mask($U(), T) :- params.mask_tile(T).
 
 // The blank panel's color is the ground.
-.decl bg(col: Color)
-bg(Col) :- params.out_tile(T), parse.panel_cell($U(), T, _, Col).
-parse.ground($U(), Col) :- bg(Col).
-
-// --- the layers ---
+parse.ground($U(), Col) :- params.out_tile(T), parse.panel_cell($U(), T, _, Col).
 
 // The under layer lies off the marker's side: the far side and the line.
 .decl under(p_intile: Position, col: Color)
@@ -88,7 +84,7 @@ under(P, Col) :-
 // The top layer's ink lies on the marker's side and the line.
 .decl top_ink(p_intile: Position, col: Color)
 top_ink(P, Col) :-
-    params.top_tile(T), parse.panel_cell($U(), T, P, Col), !bg(Col),
+    params.top_tile(T), parse.panel_cell($U(), T, P, Col), !parse.ground($U(), Col),
     ( parse.side.reach($U(), P)                              // the marker's side
     ; params.mask_tile(T_mask), parse.line($U(), T_mask, P)  // the line
     ).
@@ -103,7 +99,7 @@ render(P, Col) :-
     out_cell(_, P),
     ( top_ink(P, Col)
     ; !top_ink(P, _), under(P, Col)
-    ; !top_ink(P, _), !under(P, _), bg(Col)
+    ; !top_ink(P, _), !under(P, _), parse.ground($U(), Col)
     ).
 
 out(P, Col) :-

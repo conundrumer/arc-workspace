@@ -1,0 +1,66 @@
+// 93b581b8
+// draft
+// keywords: objects d4 stamp
+// input: one solid block of non-background cells on params.bg
+// output: The input, plus one copy of the block's box toward each diagonal
+//  corner, each copy filled with the color of the block corner that
+//  params.transform carries onto that corner. A copy clips at the grid edge.
+
+// what fixes how far a copy clears the block
+.type Choice =
+    // the block's own extent, so the copy touches it at the corner
+    Abut {}
+    // a stored distance
+  | Stride {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    // Carries a block corner onto the corner its color fills.
+    .decl transform(d: D4) transform(D4_HT).
+
+    // --- Stride ---
+    .decl stride(k: number) stride(2).
+}
+
+.init params = Params
+
+.init block = Bbox<Unit>
+block.cell($U(), P) :- in(P, Col), !params.bg(Col).
+
+.decl corner_color(d: DiagDir, col: Color)
+corner_color(D, Col) :- in(P, Col), block.box($U(), B), box_corner(P, B, D).
+
+// How far a copy clears the block toward d.
+.decl reach(d: Dir, k: number, ch: Choice)
+
+// The copy toward corner e: the block's box, carried that far toward each of
+// the corner's two directions.
+.decl copy(e: DiagDir, b: Box, ch: Choice)
+copy(E, B2, Ch) :-
+    block.box($U(), B), diag_dirs(E, _, D1, D2),   // the corner's two directions
+    reach(D1, K1, Ch), jump(B, D1, K1, B1),
+    reach(D2, K2, Ch), jump(B1, D2, K2, B2).
+
+.decl painted(p: Position, col: Color, ch: Choice)
+painted(P, Col, Ch) :-
+    in(P, _), copy(E, B2, Ch), inside(P, B2),      // a cell of the copy toward corner E
+    params.transform(D), apply_diag_dir(D, C, E),  // the block corner carried onto E
+    corner_color(C, Col).
+
+.decl impl_choice(ch: Choice)
+impl_choice($Abut()). impl_choice($Stride()).
+
+out(P, Col, Ch) :- painted(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, _, Ch).
+
+// --- Abut ---
+
+// The copy clears the block's own extent, so it touches the block at the corner.
+reach(D, N, $Abut()) :-
+    block.box($U(), B), in(P, _), axis_of(D, A), box_extent(B, P, A, N).
+
+// --- Stride ---
+reach(D, K, $Stride()) :- dir_elem(D), params.stride(K).

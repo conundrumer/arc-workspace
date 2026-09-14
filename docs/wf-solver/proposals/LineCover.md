@@ -128,3 +128,73 @@ Spec:
 Reimplementations: none.
 
 The parser pass listed, per solver in the scope, every negated relation with the body atoms of its defining rules, flagging the bodies that bind a line or an edge (`split`, `same_line`, `dist` and its kin, `on_edge`, `edge_cell`), every `Unanimous`, `Tally`, `Mode`, `Between`, `Ray`, `Slide`, `DividerFrame`, `BoxCells`, and `Bbox` instance with its input rules, and every source line matching the grep signature: 298 negated relations, 30 with a line-binding body, 207 instance input rules, and 23 solvers hit by `split(P, A` or `same_line(`. The `Tally` and `Ray` instances were read for a cover written as a count or a walk; none is one.
+
+Survey: 2026-09-14 02:35 — the solvers since 2026-09-11 04:13.
+
+Callers:
+
+7837ac64 `gapped_line` — a row or column holding a bg cell is the defect; its negation gives `on_line(P, A)`, the cover read per cell on both axes, and `node` crosses the two axes with `perp` to find the lattice crossings.
+7c8af763 `bg_line` — a line with no bg cell is a full line of the lattice, and the negation feeds `tiles.divider` on the along convention.
+7e576d6e `broken` — a line with no bg cell is a divider, bg coming from a `Mode` rather than from a parameter, and the negation feeds `cut.divider`.
+941d9a10 `Parse.off_line` — a line whose every cell carries the separator color cuts the blocks; written inside a keyed `Parse` comp, the negation feeding `cut.divider`.
+
+Seventeen recorded callers sit in the scope and each still writes the operation: 0b148d64 `ink_slice`, 137f0df0 `block_line`, 13713586 `wall_defect`, 18286ef8 `line_broken`, 18447a8d `line_ink`, 1be83260 `inked_line`, 2e65ae53 `broken`, 42918530 `inked_line`, 465b7d93 `edge_hole`, 469497ad `broken`, 4f537728 `inked_line`, 5daaa586 `gapped`, 5dbc8537 `inked_line`, 6350f1f4 `content_line`, 6e4f6532 `line_bg`, 77fdfe62 `off_line`, 8a371977 `off_line`. Three of the four new callers write the code form's `line` rule verbatim, so their migration is one rule: `<inst>.divider(K, A, L) :- cover.line(K, A, L)`.
+
+No further caller: across the 483 solvers the parser pass listed 1666 negated relations, 155 of them with a defining rule that binds a line or an edge, and each of those beyond the twenty-one above is a near-miss below. The pass over per-line relations that no rule negates found three sites reading a per-line defect positively, all near-misses.
+
+Near-misses:
+
+- A per-line defect read positively and never as the cover: 234bbc79 `inked_line`, the lines holding ink, which packs them through `OrderFrame` so the blank lines close up; 85b81ff1 `line_ink` with `line_hole`, conjoined into `sortable`; ca8f78db `pattern_row`.
+- A line that merely holds a member: 20981f0e `lattice.divider`, a dot marking its line on each axis; 363442ee `panels.divider`, 8597cfd7 `panels.divider`, 9356391f `panel.divider`, and 6e453dd6 `cut.divider`, each a line carrying one cell of a named color; 65b59efc `lattice.divider`, two adjacent separator cells marking the line they run along; 247ef758 `header`, a mark on a border cell naming its line; 9344f635 `Parse.line_col`, a line holding a segment; 21f83797 `on_line`; 412b6263 `copy_line`; 4290ef0e `line_cell`; 8731374e `flaw_line`; 8ba14f53 `block_line`; 6a980be1 `line_cell` and `on_pattern_line`.
+- A line drawn from a member on it: 689c358e `mark`; 54d82841 `mark_cell`; 917bccba `Parse.crossing`; c1990cce `arm`, a diagonal line from the seed; 2281f1f4 `marked` and `selected`; 8403a5d5 `dotted`; 56dc2b01 `back_line`, the grid line one step behind a resting mover's face.
+- Co-occurrence on a line, with no cover: 1efba499 `crossing`; 16b78196 `catch`; 8a371977 `screened`; 84ba50d3 `pierced`; 50aad11f `shared_line`; 3345333e `damaged`; 38007db0 `band_peer`.
+- The converse containment, a set lying inside one line rather than a line inside a set: 12997ef3 `off_axis`; 88bcf3b4 `bent`, an object with cells on two lines, negated into `pole`; and against an edge line, 0a938d79 `on_axis_edge` with `off_axis_edge`, 3979b1a8 `Determine.growth_mismatch`, 3ac3eb23 `Determine.off_edge`, 3bd67248 `off_edge`, 6ad5bdfd `off_wall_edge`, f45f5ca7 `Parse.off_edge`.
+- A box outline covered whole, not a line: 14b8e18c `border_gap`, a cell of the box's border the object does not hold; 810b9b61 `edge_gap`; 446ef5d2 `spills`, a placement showing on the rectangle's edge, negated into `fit`; 1c786137 `misdrawn`. Each binds the `box_edge` direction as a wildcard, so the covered thing is the four sides together. The recorded 465b7d93 `edge_hole` binds that direction and is one line per side.
+- An outline or edge line with no class tested: 58c02a16 `sep_cell`; 5c2c9af4 `drawn`; 2d0172a1 `ink`; 928ad970 `drawn`; 6cbe9eb8 `on_edge`; 890034e9 `on_edge`; 291dc1e1 `Parse.border`; 17829a00 `border_cell`; 4c3d4a41 `Determine.comb_edge_cell`; 8cb8642d `frame_color`.
+- An edge line that merely holds a member: 825aa9e9 `floor_color` and `standing`; 305b1341 `legend`; 5adee1b2 `legend_entry`; 271d71e2 `Determine.edge_color`; 4be741c5 `touch`; 846bdb03 `touches`; 3a301edc `rect_color`; 57edb29d `field`.
+- A cell keyed by its line, with no universal over the line: 963c33f8 `piece`, a piece cell under its across position on the fall axis; 017c7c7b `cell_line`; 66ac4c3b `line_ink`; 90c28cc7 `line_cell`; 484b58aa `si_line.cell`; 673ef223 `line`; 2bee17df `line_of`; 95a58926 `cell_split`; 52364a65 `obj_line`; 67636eac `box_line`.
+- A slab rather than a line: 42f83767 `legend_cell`, the ink inside the stencil strip's band of lines.
+- The `LineColor` `Unanimous` class, which reads a color that no member set yields: the value discarded, 135a2760, 38007db0, 458e3a53, 5a719d11, 7491f3cf, 81c0276b, 88a62173 and 60d73be6, each `line_color`; the value tested `!params.bg`, 0bb8deee, 20fb2937, 2546ccf6, 39e1d7f9, 7c008303, 8d510a79, 92e50de0, each `line_color`, 4e7e0eb9 `line_col`, and 83302e8f `line_color` over a `Mode`; the value read for itself, 855e0971 `line_color` and 8e1813be `stripe`, both reading `clash` as well, 1a2e2828 `line_color`, 50a16a69 `line`, 7d7772cc `line_color`, 7ed72f31 `mirror_line`, 5b692c0f `line_pick`, and 66ac4c3b `line_color` over a line's ink alone.
+
+Spec:
+
+- The per-cell readout gains a site. 7837ac64 `on_line` derives the cover per cell on both axes and crosses the two with `perp`, the shape recorded for 67a423a3 `crossing`; with 137f0df0 and 178fcbfb that is four sites that consume the cover as a cell predicate and not as a line position. A `covered(key, a, p)` readout beside `line` would serve all four, and 7837ac64 wants the axis in the along sense the code form already gives.
+- The interface stands for the other three new callers. 7c8af763, 7e576d6e and 941d9a10 are the blank-line and named-color classes on the along convention feeding `DividerTiles`, and 941d9a10 writes them inside a keyed `Parse` comp, which the `Key` type param already admits.
+- Two sites write the blank-line cover through the agreement fold: 780d0b14 `line_color` and 7d419a02 `line_color` each test `params.bg(Col)` positively on the agreed color, so the member set is the bg cells and this operation states them exactly, with no color column spent. Three more test the value against a class the program already names — 78332cb0 against `params.sep`, and 538b439f and 5545f144 against a derived modal field color, as 5dbc8537's derived bg does — so the single-color boundary the entry records now covers nine sites in all.
+- Three sites read the per-line defect positively. 234bbc79 `inked_line` joins ca8f78db `pattern_row` and 85b81ff1 `line_hole`. Each can still be stated from `line` alone, at the cost of a frame atom under a second negation, and 85b81ff1 needs two instances for its `sortable`. The entry's judgment that `gap` stays comp-internal now costs three sites rather than two.
+- The `Not:` line's exclusion of a covered region that is not a full line is exercised: 14b8e18c `border_gap`, 810b9b61 `edge_gap`, 446ef5d2 `spills` and 1c786137 `misdrawn` all cover a box outline whole, keyed by the object or the placement. They are one shape among themselves and none of them wants a line, so they argue for a separate operation and not for widening this one.
+
+Reimplementations: none.
+
+The search ran three parser passes and one grep pass over the scope. The first listed every negated relation with the body atoms of the rules defining it, 1666 in all, and flagged the 155 whose definition binds a line or an edge through `split`, `same_line`, `box_edge`, `same_dist`, `divide_slab`, `crop`, or a `dist` against 0. The second listed the input rules of every `Unanimous`, `Tally`, `Mode`, `Between`, `Ray`, `Slide`, `DividerTiles`, `OrderFrame`, `Excess`, `Extremes`, `ArgExtremes` and `KeyedSetCompare` instance whose body binds a line, 101 rules, read for a cover written as a count or an agreement; none is one. The third listed every per-line relation that no rule negates and whose body tests a class, for a defect read positively. The grep signature hit 134 solvers, and the 36 of them that neither parser pass reached key cells by their line or pair cells on one line.
+
+Survey: 2026-09-14 02:44 — the solvers since 2026-09-14 02:35.
+
+Callers:
+
+4e7e0eb9 `mid_bg` — the middle line of a section's field holds a bg cell; its negation gives `divider(P_sec, A, $Whole())`, so the member set is the non-bg cells and the divider is the line they cover whole. The line is named by the key (section, axis) and never by a line position.
+95a58926 `gapped` — a grid line holding a bg cell; its negation gives `located(A, P_across, $Whole())`, the lines the non-bg cells cover. Written on the across convention, and consumed per cell through `on_mesh`, which `crossing` crosses on both axes with `perp`.
+
+Two recorded callers sit in the scope and each still writes the operation: 6e4f6532 `line_bg`, negated in `wall`, and 941d9a10 `Parse.off_line`, negated into `cut.divider` on the along convention.
+
+No other caller. Across the 23 solvers the parser pass listed 122 negated relations with the body atoms of the rules defining them; 17 of those bodies bind a line or an edge directly, and the rest were read one level up through the relations they bind, which is how both new callers surfaced. A second pass listed 32 per-line relations that no rule negates, for a defect read positively; beyond 85b81ff1 it found none.
+
+Near-misses:
+
+- A per-line defect read positively and never as the cover: 85b81ff1 `line_ink` with `line_hole`, conjoined into `sortable`, as recorded.
+- A line that merely holds a member: 4e7e0eb9 `divider` under `$Any()`, an inked cell on the line away from the crossing; 963c33f8 `piece`, a piece cell keyed by its across position on the fall axis; 84ba50d3 `line_of`, a cell under its line with no class tested.
+- Co-occurrence on a line, with no cover: 9473c6fb `tie`, two marks at one distance from edge d; 963f59bc `anchor`, a mark and a shape cell on one line of the mirrored axis; 84ba50d3 `through`, a shape cell past a divider line, and `pierced`, a divider cell a landed shape shares a line with.
+- The converse containment, a set lying inside a region rather than a line inside a set: 93c31fbe `off_side`, the content wholly on one side of a box's midline, negated into `mirror_axis($Clear())`.
+- A universal that is not over a line's cells: 93c31fbe `open_corner`, over a spanned box's four corners; 8a6d367c `pattern_cell`, negated into `contradicted`, over the blocks of a shape's tiling; 94414823 `inner`, an outline's interior; 95990924 `side`, over a cell's four cardinal neighbors.
+- An edge line that merely holds a member: 8abad3cf `Determine.reaches`, a color at edge d, negated into `short_of`; 9473c6fb `spans`, a mark on edge d and a mark on the opposite edge; 95755ff2 `source`, a non-bg non-wall cell on the border it faces away from.
+- An outline or edge line with no class tested: 4c3d4a41 `Determine.comb_edge_cell`, a comb cell on the comb box's d-side edge, negated into `refuted_dir`; 8a6d367c `wall_cell`, the drawn rectangle's outline.
+- The `LineColor` `Unanimous` class, which reads a color that no member set yields: 7491f3cf `Parse.line_color`, the value discarded into `frame.divider`; 84ba50d3 `line_color`, the value tested against `params.divider`; 4e7e0eb9 `Determine.line_col`, the value tested `!params.bg`; 5545f144 `line_color`, the value tested against the derived modal field color. All four are recorded.
+
+Spec:
+
+- The line named by the key alone gains a site. 4e7e0eb9 feeds one line per (section, axis) key, so it reads no line position and its `divider` carries the axis as a column. It joins 13713586, 508bd3b6 and 465b7d93, whose lines are named by a `Dir` key. Under the code form it costs two input rules and a `line(K, A, _)` read in place of the one negation the site writes. This is the fourth site of the shape, and the first that keys a line by a region of the grid rather than by an edge direction, so the cost the entry records for the edge-line class is not confined to edges.
+- The per-cell readout gains a site. 95a58926 `on_mesh` derives the cover per cell and `crossing` crosses the two axes with `perp`, the shape recorded for 67a423a3 and 7837ac64; with 137f0df0 and 178fcbfb that is five sites consuming the cover as a cell predicate. A `covered(key, a, p)` readout beside `line` would serve it, and 95a58926 reads across, so it takes the transposed tag the entry records as friction.
+- The per-key inputs stand, and two sites sharpen why. 95a58926 holds the cover as `$Whole()` beside a `Mode` fold as `$Predominant()`, and 4e7e0eb9 holds the cover as `$Whole()` beside a merely-holds-a-member rule as `$Any()`. Each case writes into a shared `located` or `divider` relation, so the operation must instantiate for one case while a peer case feeds the same consumer. The `Key` type param and the per-key `cell` and `axis` inputs already admit that.
+- The single-color boundary is unchanged. The four `LineColor` sites in the scope are all recorded, and none of them tests a class that `member` could state and that the entry does not already count.
+
+Reimplementations: none.

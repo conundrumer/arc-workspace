@@ -151,4 +151,16 @@ out(P, Bg, Ch) :-
 
     .decl rise(d: Dir)
     rise(D) :- dir_elem(D), !refuted_dir(D).
+
+    // After the move the scene's ink is the container with its contents, so
+    // the ink's box is the container's outline.
+    .init ink_box = Bbox<Example>
+    ink_box.cell(E, P) :- ex_out(E, P, Col), !params.bg(Col).
+
+    // The interior: the box of the cells strictly inside the outline.
+    .init interior_box = Bbox<Example>
+    interior_box.cell(E, P) :- ex_in(E, P, _), ink_box.box(E, B), interior(P, B).
+
+    .decl box(b: Box)
+    box(B) :- interior_box.box(_, B).
 }

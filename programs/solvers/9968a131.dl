@@ -1,0 +1,96 @@
+// 9968a131
+// draft
+// keywords: lines move match rank parity
+// input: lines across the shift axis, the ink on them, and the anchor line —
+//  the inked line nearest the anchor edge
+// output: the anchor line stays, and some of the other lines shift
+//  params.shift_dist cells toward params.shift_dir. The cases differ in which
+//  lines shift. On every pair here the inked lines run without a break and
+//  alternate between two orders, so the three cases agree.
+
+// which lines shift
+.type Choice =
+    // the lines whose cells differ from the anchor line's
+    Match {}
+    // every other inked line, counting from the anchor line
+  | Sequence {}
+    // every other grid line, counting from the anchor line
+  | Stripes {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(c: Color) bg(7).
+    .decl shift_dir(d: Dir) shift_dir(DIR_R).
+    .decl shift_dist(k: number) shift_dist(1).
+    // a quarter turn from shift_dir: the edge the anchor line lies nearest
+    .decl anchor_sense(s: Sense) anchor_sense(SENSE_CC).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Match()). impl_choice($Sequence()). impl_choice($Stripes()).
+
+// The edge the anchor line lies nearest. The lines run across the shift axis.
+.decl anchor_dir(d: Dir)
+anchor_dir(D_anchor) :- params.shift_dir(D), params.anchor_sense(S), turn(S, D, D_anchor).
+
+// An input cell with its line and its place across that line.
+.decl cell_split(p: Position, col: Color, p_line: Position, p_across: Position)
+cell_split(P, Col, Line, Across) :-
+    in(P, Col), anchor_dir(D), axis_of(D, A), split(P, A, Line, Across).
+
+.decl line(p_line: Position)
+line(Line) :- cell_split(_, _, Line, _).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+.decl inked_line(p_line: Position)
+inked_line(Line) :- ink(P, _), cell_split(P, _, Line, _).
+
+.init lines = Order<Unit, Position>
+lines.elem($U(), Line) :- inked_line(Line).
+lines.before($U(), L1, L2) :- inked_line(L1), inked_line(L2), anchor_dir(D), nearer(D, L1, L2).
+
+// The line the others are read against.
+.decl anchor_line(p_line: Position)
+anchor_line(Line) :- lines.first($U(), Line).
+
+// The lines that shift.
+.decl shifts(ch: Choice, p_line: Position)
+
+// --- Match ---
+shifts($Match(), Line) :-
+    cell_split(_, Col, Line, Across),                         // a cell of the line
+    anchor_line(L_anc), cell_split(_, Col2, L_anc, Across),   // the anchor's cell across from it
+    Col != Col2.
+
+// --- Sequence, Stripes ---
+
+// L2 is one place further from the anchor edge than L, over the case's own
+// line set.
+.decl alt_next(ch: Choice, p_line: Position, p_line2: Position)
+alt_next($Sequence(), L, L2) :- lines.next($U(), L, L2).
+alt_next($Stripes(), L, L2) :-
+    line(L), anchor_dir(D), opposite(D, D_far), neighbor(L, D_far, L2), line(L2).
+
+// The alternation: the anchor line stays, and each step swaps side.
+.decl alt_stay(ch: Choice, p_line: Position)
+alt_stay(Ch, Line) :- anchor_line(Line), alt_next(Ch, _, _).   // the cases that alternate
+shifts(Ch, L2)     :- alt_stay(Ch, L), alt_next(Ch, L, L2).
+alt_stay(Ch, L2)   :- shifts(Ch, L), alt_next(Ch, L, L2).
+
+// --- the shift ---
+
+.decl placed(ch: Choice, p: Position, col: Color)
+placed(Ch, P_out, Col) :-
+    ink(P, Col), cell_split(P, _, Line, _), impl_choice(Ch),
+    ( shifts(Ch, Line), params.shift_dir(D), params.shift_dist(K),
+      jump(P, D, K, P_out)                                     // the line shifts
+    ; !shifts(Ch, Line), P_out = P                             // the line stays
+    ).
+
+out(P, Col, Ch) :- placed(Ch, P, Col).
+out(P, Col, Ch) :- in(P, _), impl_choice(Ch), params.bg(Col), !placed(Ch, P, _).

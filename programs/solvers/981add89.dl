@@ -1,0 +1,74 @@
+// 981add89
+// draft
+// keywords: markers lines cast
+// input: Ink on a field of the commonest color.
+// output: Each mark paints its whole grid line in its own color. Where that
+//  line meets a cell already holding the mark's color, the paint is cut to the
+//  field color instead. The mark itself, and every cell off a mark's line,
+//  keeps its color.
+
+// which ink cells are marks, and which way their lines run
+.type Choice =
+    // the ink on one edge line; the lines run across that edge
+    Header {}
+    // the ink no cell of its own color joins; the lines run along a stored axis
+  | Isolated {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- Header ---
+    // The edge the marks sit on.
+    .decl mark_dir(d: Dir)
+    mark_dir(DIR_T).
+
+    // --- Isolated ---
+    // The axis the marks' lines run along.
+    .decl axis(a: Axis)
+    axis(AXIS_V).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Header()). impl_choice($Isolated()).
+
+// The field is the commonest color, and the ink is what it does not fill.
+.init field = Mode<Unit, Color, Position>
+field.item($U(), Col, P) :- in(P, Col).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !field.mode($U(), Col).
+
+.decl mark(ch: Choice, p: Position, col: Color)
+
+.decl line_axis(ch: Choice, a: Axis)
+
+// --- Header ---
+mark($Header(), P, Col) :- ink(P, Col), params.mark_dir(D), dist(P, D, 0).
+
+line_axis($Header(), A) :- params.mark_dir(D), axis_of(D, A).
+
+// --- Isolated ---
+
+// An ink cell beside one of its own color belongs to a block.
+.decl block_cell(p: Position)
+block_cell(P) :- ink(P, Col), dir_elem(D), neighbor(P, D, Q), ink(Q, Col).
+
+mark($Isolated(), P, Col) :- ink(P, Col), !block_cell(P).
+
+line_axis($Isolated(), A) :- params.axis(A).
+
+// --- output ---
+
+// A cell a mark paints, with the mark's color. No mark is painted over.
+.decl painted(ch: Choice, p: Position, col_mark: Color)
+painted(Ch, P, Col_mark) :-
+    mark(Ch, Q, Col_mark), line_axis(Ch, A), same_line(A, P, Q),  // on the mark's line
+    in(P, _), !mark(Ch, P, _).
+
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(Ch, P, _).
+out(P, Col, Ch) :-
+    painted(Ch, P, Col_mark),
+    ( in(P, Col_mark), field.mode($U(), Col)  // the cell holds it already: cut
+    ; !in(P, Col_mark), Col = Col_mark ).     // elsewhere: drawn

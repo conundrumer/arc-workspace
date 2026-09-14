@@ -94,3 +94,33 @@ Near-misses:
 Spec. Nothing in scope bears on the interface or the definition. Both in-scope callers fit the comp as written: `Key` covers 42a50994's color key and 88a10436's `Unit`, and both derive touching positively and state lone as its negation. On adjacency, 42a50994 is the only in-scope site under `dir8_elem`, already counted in the entry's spec question; 409aa875 and 13e47133 use `Rim8` but keep the direction, so they add nothing to the 8-adjacency count. No in-scope site states lone through `Tally` or `multi_cell`, so the id-free form gains no new caller here.
 
 Reimplementations: none.
+
+Survey: 2026-09-14 03:34 — the solvers since 2026-09-10 20:18.
+
+Callers:
+928ad970 `touching` — a foreground cell with another foreground cell one of its eight steps away; `mark($Lone())` is the foreground that stands alone, and `ink($Lone())` takes the color of the foreground that touches. Under `dir8_elem`, the set keyed by `Unit`, both heads consumed.
+981add89 `block_cell` — an ink cell beside an ink cell of its own color belongs to a block; `mark($Isolated())` is the ink no cell of its own color joins. Under `dir_elem`, the set keyed by color through the shared color variable, the lone head consumed alone.
+
+The six callers the entry already lists that fall in this scope stand unchanged: 3e980e27 `Parse.joined`/`Parse.lone`, 7491f3cf `Parse.line`/`Parse.marker`, 88a10436 `touching`/`marker`, 7e0986d6 `touching`/`sprinkle_color`, 39e1d7f9 `obj_cell`, 2c737e39 `drawing`.
+
+Negative evidence. The `neighbor` self-join over one cell relation matched at 68 rules across the scope. Of those, the ones under a direction enumerator that keep the first cell alone are the two new callers above and the three listed callers 3e980e27, 7491f3cf, 88a10436; every other hit keeps the direction, keeps the second cell, or joins two relations, and each is named below. Negated `rim_dir` matched at three sites: the listed caller 7e0986d6 `touching`, and 264363fd `item` and 71e489b6 `figure_nbr`, both keeping the direction. A second pass over adjacency stated through an intermediate relation matched at 8b7bacbf `contact`, 91714a58 `keep`, 71e489b6 `solid`, 21897d95 `Parse.arrow`, 351d6448 `change`, 2ccd9fef `item`, 2546ccf6 `mirror`, and 6f473927 `Parse.place`, none of which states the predicate. No `Tally` in scope reads a member count against 1. `Unanimous<Ident, Position>` over a component labeling appears at 1b59e163, 2f0c5170, 39e1d7f9, 581f7754, and 84ba50d3; a hand-written `multi_cell` appears at 14b8e18c, 54dc2872, 5af49b42, 8b7bacbf, and 2c737e39 `drawing`.
+
+Near-misses:
+Direction kept in the head, `Rim.rim_dir`'s reading: 264363fd `attached.item`, 71e489b6 `figure_nbr`, 0962bcdd `Parse.arm`, 642d658d `arm`, 142ca369 `elbow`, 54d82841 `walled`, e1baa8a4 `boundary` (the distance kept as well), 88e364bc `arrow` (two legend cells a step apart, the heading kept).
+`!Rim.rim` over the set, the interior reading the `Not:` line excludes: 135a2760 `inner_cell`, 1818057f `flanked`, 2c0b0aff `cross`, 3bdb4ada `dash_cover`, 3befdf3e `Parse.core`, 4347f46a `inner_cell`, 50cb2852 `inner_cell`, 522fdd07 `shrunk`, 58f5dbd5 `cell`, 5b37cb25 `diamond`, 689c358e `center`, 694f12f3 `inner_cell`, 759f3fd3 `Parse.rings.seed`, 7d7772cc `thick`, 7e02026e `flanked`, 800d221b `hub_center`, 917bccba `Parse.center`, bb43febb `inner_cell`.
+Contact with a second set: 4ff4c9da `touched`, 7c8af763 `touch`, 800d221b `touch`, 1efba499 `touch`, 8886d717 `around`, 21897d95 `Parse.marked`, 2b9ef948 `beside_trail`, 7b3084d4 `by_color.equiv`.
+Contact between two objects, the `Abut` reading: 3dc255db `holds`, 7b0280bc `touch`, 4364c1c4 `Parse.side`, 8b7bacbf `contact`.
+A cell with the ring around it, the neighbor kept as the head's cell: 14754a24 `footprint`, 5adee1b2 `grown_box`, 913fb3ed `painted`, 39e1d7f9 `footprint`.
+A 2x2 thickness test over a corner's three neighbors, not a single adjacency: 5ad4f10b `figure` and `speck`, 91714a58 `keep`, 71e489b6 `solid`.
+Single-member test over `Components` whose ids the program needs elsewhere, the `multi_cell` entry's callers: 1b59e163 `obj_pos`, 2f0c5170 `alone`, 581f7754 `lone` and `sole`, 54dc2872 `multi_cell`, 5af49b42 `multi_cell`, 14b8e18c `multi_cell`, 64efde09 `bar`.
+Single occurrence of a color over the whole grid, with no adjacency: 8b7bacbf `multi_cell` (the one cell of its color is the marker), 78e78cff `lone` (`Unanimous<Color, Position>` over every cell).
+`Unanimous` over a domain that is not cells: 54d82841 `lone_free`, the bg cell whose free sides agree, over `Dir`.
+72322fa7 `untouched` — a figure cell that some other cell of its figure does not touch: adjacency to every other member, not the existence of one.
+16de56c4 `crowded` — marks counted per line against 1, not per cell.
+3eda0437 `region` — some two box cells a diagonal step apart, the head keeping the box key.
+
+Spec:
+Nothing in scope calls for a change to the interface or the definition. Both new callers fit the comp as written: 981add89 keys the set by color and 928ad970 by `Unit`, which `Key` covers; both derive touching positively and state lone as its negation, so no site derives lone directly. 928ad970 adds a seventh site under 8-adjacency, which is caller evidence for the `Lone8` subclass the adjacency question already raises, not a new signal. Two more sites, 7d7772cc `thick` and 759f3fd3 `Parse.rings.seed`, state the `Not:` line's `Rim.interior` as `!Rim.rim` over the set, and this scope adds sixteen more of that form, so the `Not:` line should name that lib readout rather than the proposal.
+
+Reimplementations: none.
+The search ran over the parsed corpus with two matchers, one for the `neighbor` self-join and the `rim_dir` statements, one for adjacency reached through an intermediate relation and for the other `Rim` readouts, backed by name searches for `multi_cell`, `Unanimous<Ident, Position>`, and every `tally` compared against a small number. The first matcher reported 1134 lines over the 493 solvers, the second 88.

@@ -1,6 +1,6 @@
 // 668eec9a
 // draft
-// keywords: rank
+// keywords: objects rank
 // input: lines of distinct colors on the background
 // output: solid rows in a stored frame: each line takes the row whose distance
 //  from params.stack_dir is the count of lines farther from params.order_dir
@@ -19,7 +19,6 @@
     // The output edge the lines stack against.
     .decl stack_dir(d: Dir) stack_dir(DIR_B).
 
-    // The output frame.
     .decl out_extent(a: Axis, n: number)
     out_extent(AXIS_V, 5). out_extent(AXIS_H, 3).
 }

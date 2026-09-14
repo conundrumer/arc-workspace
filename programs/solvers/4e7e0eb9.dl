@@ -1,12 +1,11 @@
 // 4e7e0eb9
 // draft
-// keywords: decompose d4 select count
+// keywords: decompose markers d4 count
 // input: The grid lays square sections out in a lattice, a separator between
 //  them. Inside its border, a section's field is quartered by its two halving
 //  lines: four blocks, one solid color each. Ink may sit on a halving line.
 // output: The blocks mirror across each halving line that is a divider. A
 //  section with no divider takes one color over all four blocks.
-// review principle: docs/wf-solver/open/peer-priors.md
 
 // which halving lines are dividers
 .type Ink =
