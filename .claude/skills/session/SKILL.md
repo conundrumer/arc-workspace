@@ -33,11 +33,10 @@ Rule on what the console's sessions called out beyond their own tasks. The workf
 - **Run.**
     - Run the `retro` workflow (`.claude/workflows/retro.js`) with `roles` in `args`: the text of each role file the run needs, keyed by role name, as the workflow's `args` note names them.
     - The main session reads the role files to pass them, and no window, report, solver, or doc. It runs no edit, revert, or check itself: those go to agents.
-    - The run's agents read the window, check each issue, take a default on each open one, make the fixes the defaults call for, level 4 excepted, act on each review line those fixes and the sweep wrote into a solver, run the cleanup pass over each solver the run wrote, and verify what the run changed. Each stage's rules live in its role, under `.claude/roles/`. The `solver` role carries a solver fix and the resolve stage.
+    - The run's agents read the window, check each issue, take a default on each open one, make the fixes the defaults call for, act on each review line those fixes and the sweep wrote into a solver, run the cleanup pass over each solver the run wrote, and verify what the run changed. Each stage's rules live in its role, under `.claude/roles/`. The `solver` role carries a solver fix and the resolve stage.
     - A `resolve` run, `resolve` in `args` holding a list of task ids, runs the resolve stage over those solvers.
-- **Present.** The workflow returns every call with its default, its level, and what argues for and against it.
-    - Open with the tally, the closed issues, the files the fixes changed, and the entries written.
-    - Then the calls, as one numbered list, ordered by dependency and then by level ascending. Issue ids stay out, and so do quotes.
+- **Report.** The workflow returns every call with its default, its level, and what argues for and against it.
+    - Present the calls, as one numbered list, ordered by dependency and then by level ascending. Issue ids stay out, and so do quotes.
     - A call is a decision in the settle form:
 
         ```
@@ -58,7 +57,7 @@ Rule on what the console's sessions called out beyond their own tasks. The workf
             2. **<label>.** <the option's action>
         ```
 
-        - The level is the call's discretion level, as the check and review roles define it. A level-4 fix is presented and not made.
+        - The level is the call's discretion level, as the check and review roles define it. A level-4 fix, and a fix to `principles.md` at any level, is presented and not made in the first run.
         - The default states what holds, the fix or the drop, not whether the run made it.
         - The default is option 1, and the other options come strongest first, each labeled in one word. Reasons come strongest first.
         - The first ground under the default is the call's `basis`. A call the check dropped takes it from the check result, and every other call from the review result. A call with no `basis` states no ground for it.
@@ -68,13 +67,13 @@ Rule on what the console's sessions called out beyond their own tasks. The workf
     - Some calls carry more.
         - A resolve-stage item takes the call form. A review line the stage left unfinished is a call: what is wrong, why the stage left it, and what it needs. A judgment call a resolve report raises takes its level from its basis, and its default is the ruling it needs. A line the stage finished is not presented; the solver's report in the console carries it.
         - An unprincipled divergence the consistency stage reports is a call: the point the solvers share, the rule they read differently, the reading the docs should force, and the form they should agree on.
-        - A call whose fix edits `docs/wf-solver/principles.md` is a standalone discussion. Context quotes the text before and after, and shows the concrete cases with small grid fragments. The options are the readings the workflow returned, each with its wording and its consequence over the approved solvers, then a recommendation.
+        - A call whose fix edits `docs/wf-solver/principles.md`: Context quotes the text before and after, and shows the concrete cases with small grid fragments. The options are the readings the workflow returned, each with its wording and its consequence over the approved solvers.
         - A call whose fix carries an illustration shows it under the call: for each cited task, the case sets under each reading and a witness input where the readings differ.
         - A keyword addition or a gloss change is level 4, presented as a proposal for a separate session.
         - A citation of a draft solver is not presented. It waits in the doc in the pending form, with a `// review cite:` line in the solver, and approval places it.
-    - The workflow's Verify results end the presentation: a failing check, a finding no round acted on, and an edit outside the run's targets, such as an approved solver. A failing check blocks the close.
+    - The workflow's Verify issues end the presentation: a failing check, a finding no round acted on, and an edit outside the run's targets, such as an approved solver. Do not report non-issues. A failing check blocks the close.
 - **Rulings.**
-    - The user rules per call, by index: accept the default, pick another option, or reject a reason. A question is answered from the call's record before any action.
+    - The user rules per call, by index: accept the default, pick another option, or reject a reason. A call the user does not rule on takes its default. A question is answered from the call's record before any action.
     - A ruling against a made fix reverses it, and a ruling for an unmade fix makes it.
     - Follow-up work batches into one agent run after the rulings settle. Each follow-up item carries one of two labels. **Queued**: it goes into the batch with nothing more from the user. **Needs ruling**: it waits on the user.
     - A reversal takes every fix in the file out and puts the kept ones back. An agent does it.
