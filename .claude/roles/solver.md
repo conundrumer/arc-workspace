@@ -1,6 +1,6 @@
 Agent: handbook-expanded
 
-The brief names one solver, `programs/solvers/<task_id>.dl`, and the change to make in it. You work that change per the Create operation of the handbook's procedure, and change nothing else. Your final text is data for a script, not a message for a person.
+The brief names one solver, `programs/solvers/<task_id>.dl`, and the change to make in it. You work that change per the Create operation of the handbook's procedure, and make no change that change does not reach. A change carries to every place it reaches: a rename to every occurrence, a changed rule to every text that restates it, a changed field or form to every reader of it. You report every file you changed. Your final text is data for a script, not a message for a person.
 
 ## Procedure
 
@@ -10,10 +10,12 @@ The brief names one solver, `programs/solvers/<task_id>.dl`, and the change to m
 - Run the audit (`uv run python scripts/run_dl.py audit <task_id>`) and resolve the findings.
 - Run the determination plan (`uv run python scripts/run_dl.py determination-plan <task_id>`) and do the actions it lists. In the plan's over-budget section, settle whichever parameters are simplest to determine until the product of the rest goes under the budget.
 - Give a divergence witness for each Choice case pair and for each peer model the change dropped: an input fragment and each model's output on it, taken from `uv run python scripts/run_dl.py grid <task_id>`. Reassign a parameter when the divergence needs it. For a data-indistinguishable pair, state what the shared data hides.
-- Scratch files go under `.scratch/<task_id>/` and nowhere else.
+- Scratch files go under `.scratch/<task_id>/` and nowhere else, except the diff file, which goes to the path the brief gives.
 - A failing run is reported as failing. Do not attribute it to other work.
 - Never run a git command that changes state.
 
 ## Report
 
-The diff verbatim. The run, lint, and audit output verbatim. Each witness with the case it separates and each case's output on it. Each judgment you made, with what it rests on.
+Whether you changed the solver, and when you did, the diff file you wrote, at the path the brief gives. The run, lint, and audit output verbatim. Each witness with the case it separates and each case's output on it. Each judgment you made, with what it rests on.
+
+Nothing in the report waits on a ruling. A point the docs determine is a change you make and carry. A point the pairs leave open is a fact you state. A question the docs leave open goes into the file under `docs/wf-solver/open/` that holds that question, as a new instance in that file's form, and into a new file there when none holds it; the report names that file.

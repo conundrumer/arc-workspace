@@ -27,6 +27,7 @@ A Position is named for its coordinate frame.
 - **tile** — tile-arrangement frame produced by `divide`. `P_tile`.
 - **intile** — within a single tile. `P_intile`.
 - **inner** — a region's own frame: `P_inner`.
+- A Position takes the bare letter where no other frame shares the rule: `P`, then `Q` for a second position. A digit suffix tells apart two rows of one relation (`placed(D, P1, Q1), placed(D, P2, Q2)`), and the atom that binds each variable carries the frame in its column names.
 
 `divide` and `tile_pos` name their formal parameters `p_outer` / `p_inner`. A solver binds them to `P_tile` / `P_intile` at the call site. An axis-only intermediate takes decomposition language: `P_outer_v`, `P_inner_h`.
 
@@ -139,6 +140,8 @@ Any other type is banned.
 ## Program
 
 Program style and the linter apply to the program rules, the Determine comp, and the Parse comp.
+
+- **`@allow` directive.** A relation kept against the lint's single-consumer hint carries `// @allow: single-consumer — <why>` on the line above its declaration, beside the gloss, and the hint does not fire on it.
 
 ### Bans
 

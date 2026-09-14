@@ -8,16 +8,16 @@ A keyword names a hypothesis. The mechanism its gloss names is one instance of t
 
 The structure a hypothesis depends on: what the input is and how it decomposes.
 
-- `tile-arrangement` — output arranges transformed copies of the input
-- `overlay` — panels stack on one frame
+- `tile-arrangement` — output arranges transformed copies of the input, or of a piece of it
+- `overlay` — content stacks on one frame; panels of a decomposition are one kind of content
 - `scale` — content corresponds across a size change
 - `decompose` — a separator or division cuts the grid into tiles
-- `crop` — output is a subregion of the input
-- `wallpaper` — a periodic pattern covers a region
-- `symmetry` — the model depends on a symmetry of the grid
+- `crop` — a region of the input gives the output its frame or its content
+- `wallpaper` — a periodic pattern covers a region, along one axis or both
+- `symmetry` — the model depends on a symmetry of the grid or of a piece of it
 - `lines` — the model depends on per-line or per-slice structure
-- `objects` — the model depends on connected components
-- `markers` — designated cells point: they fix a place, direction, extent, or choice for content other than themselves; a mark may be consumed, and its color may extend along what it designates
+- `objects` — the model depends on discrete pieces of the grid; connected components are one way they are found
+- `markers` — designated cells point: they fix a place, direction, extent, or choice, for other content or for the mark itself; a mark may be consumed, and its color may extend along what it designates
 - `grow` — the output frame extends the input frame
 - `permutation` — elements reorder by a fixed permutation
 
@@ -32,17 +32,17 @@ The transformation hypothesis: which prior the task teaches.
 - `span` — the model depends on an extent delimited by marks
 - `enclose` — cells or objects act by whether they are closed off from the grid edge
 - `mapping` — a color-to-color relation recolors cells
-- `count` — a count determines output content or extent
-- `rank` — an order or rank determines placement or color
-- `repair` — damaged cells restore from symmetric counterparts
-- `classify` — the input maps to a class; the output renders the class
+- `count` — a count determines output content or extent, or which item acts
+- `rank` — an order or rank determines placement, color, or which item acts
+- `repair` — damaged cells restore from their counterparts elsewhere in the grid; a symmetry gives one set of counterparts
+- `classify` — the input, or a part of it, maps to a class; the output renders the class
 - `induce` — the input pairs content with the content a rule carries it onto, and that rule varies per input; the program reads the rule from those pairs, validates it against them, and applies it beyond them
 - `move` — content translates, stacks, or shears within the frame
-- `pack` — pieces jointly fill a region exactly
+- `pack` — items jointly fill a region exactly
 - `stamp` — a footprint stamps at qualifying positions
 - `border` — cells act by which side of a border or outline they lie on, or are the drawn outline
 - `select` — output keeps a distinguished part of the input
-- `parity` — the model depends on even/odd position alternation
+- `parity` — the model depends on even/odd alternation, along a position or along an order
 - `cross` — cells where designated lines cross act
 - `merge` — like-valued items fuse under a task-given nearness into one unit; the output treats the unit as one thing
 - `match` — items found in the input pair off by a shared property, and the output acts on the pairs; matching against stored data is `lookup`

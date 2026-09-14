@@ -17,8 +17,7 @@ from dl.domains import (
     _number_domain,
     _position_domain,
 )
-from dl.paths import SOLVERS_DIR
-from dl.solve import _profile, _profile_cases, task_id_of
+from dl.solve import _profile, _profile_cases, solver_file
 from dl.souffle import _pool_workers
 from dl.source import (
     RIGID_CHART_PREFIX,
@@ -120,8 +119,9 @@ def sweep_report(
     # a RIGID chart as an ordinary generated-name parameter; re-expansion at
     # build time is a no-op. Chart parameters report under their public names, and
     # their derived placed forms are elided rather than reported.
-    source = expand_macros((SOLVERS_DIR / f"{stem}.dl").read_text())
-    task = load_task(task_id_of(stem))
+    path, task_id = solver_file(stem)
+    source = expand_macros(path.read_text())
+    task = load_task(task_id)
     defines = _lib_defines()
     s, e = _comp_span(source, "Params")
     params_text = "\n".join(source.splitlines()[s:e])

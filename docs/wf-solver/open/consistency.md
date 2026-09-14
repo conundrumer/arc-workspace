@@ -20,7 +20,7 @@ Once the stored frame goes, the parameter that remains holds one tile's extent. 
 
 ## A stored value the pairs leave open
 
-Four solvers record it in a comment above the parameter's `.decl`, two in the header, nineteen nowhere. The form to agree on: a comment above the `.decl` that says what fixes the stored value. Files with no note: 7ec998c9, 2697da3f, 30f42897, 36fdfd69, 3ac3eb23, 11852cab, 44d8ac46, 5961cc34, 23b5c85d, 2ba387bc, 845d6e51, 981571dc, 72ca375d, 67e490f4, 18419cfa, 1b60fb0c, e729b7be, 5289ad53, 80a900e0, 27a28665, 3631a71a, 1f85a75f; in 2697da3f and 11852cab the note sits in the header.
+Solvers record it in a comment above the parameter's `.decl`, in the header, or nowhere. The form to agree on: a comment above the `.decl` that says what fixes the stored value, as 985ae207 (`bg`), 97d7923e (`bg`), and 8abad3cf (`corner`, `order_axis`) write it. Files with no note: 7ec998c9, 2697da3f, 30f42897, 36fdfd69, 3ac3eb23, 11852cab, 44d8ac46, 5961cc34, 23b5c85d, 2ba387bc, 845d6e51, 981571dc, 72ca375d, 67e490f4, 18419cfa, 1b60fb0c, e729b7be, 5289ad53, 80a900e0, 27a28665, 3631a71a, 1f85a75f; in 2697da3f and 11852cab the note sits in the header.
 
 ## The header and a property of the pairs
 
@@ -29,3 +29,15 @@ A property that collapses a dropped peer onto the current model, such as every l
 ## Keying the stages downstream of a case split
 
 50f325b5 keys the shared comp instance and the shared relations by `Choice`, with the case's own relation supplying the value the cases disagree over; 3a25b0d8 keys them by that value (`Axis`). The form to agree on is 50f325b5's. Files keyed by the value: 3a25b0d8, 13f06aa5 (the `ray` instance), 6d1d5c90 (the `rot` instance).
+
+## The case column's name
+
+`.decl out(p: Position, col: Color, ch: Choice)` against `c: Choice`, and the same split on the relations that carry the case along. `style.md`'s skeleton shows `ch`, and `impl_choice`'s column is `ch` corpus-wide. The form to agree on: `ch`. Files on the other side: the 117 that `grep -l ', c: Choice)' programs/solvers/*.dl` lists, against 393 with `ch`; seven files carry both names.
+
+## The axis that tags a line
+
+A line is tagged by the axis it runs along, paired with the across component of `split` (`same_line`; 017c7c7b `cell_line`, 95a58926 `cell_split`), or by the perpendicular axis, paired with the along component (`DividerTiles.divider`, `LineCover`'s `line`, and the rest of the corpus). The form to agree on: the perpendicular axis with the along component, which the keyed lib units take. `same_line` takes the running axis, so agreeing on one form reaches lib.
+
+## A comp instance's key unpacked into a relation
+
+`box(K, Id, B) :- bbox.box([K, Id], B).` (17b866bd:80), a relation whose one body atom is the instance's own output and whose head splits the key record into columns, against reading the instance path at each consumer, `parse.order.rank([$U(), D], P, R)` (9473c6fb). The form to agree on: the instance-path read, except where the head names a concept of the task, as `glyph_count` over a `Tally` does in 136b0064. Files on the other side: 17b866bd.

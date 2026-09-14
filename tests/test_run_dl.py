@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from dl import cli
+from dl import cli, solve
 from dl.facts import Candidate, parse_grid, parse_output
 from dl.render import render_stem_failures
 from dl.solve import PairResult, TaskResult, VariantResult
@@ -20,7 +20,7 @@ STEM = "abcd1234"
 def solvers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A solvers directory holding one stem, with Souffle stubbed out."""
     (tmp_path / f"{STEM}.dl").write_text("// stub\n")
-    monkeypatch.setattr(cli, "SOLVERS_DIR", tmp_path)
+    monkeypatch.setattr(solve, "SOLVERS_DIR", tmp_path)
     monkeypatch.setattr(cli, "build_functors", lambda: None)
     monkeypatch.setattr(cli, "compile_error", lambda stem: None)
     return tmp_path
@@ -438,25 +438,46 @@ def test_grid_counts_an_empty_case_in_the_footer(solvers, monkeypatch, capsys):
     assert "2 cases, 1 distinct grid(s)" in capsys.readouterr().out
 
 
+def _git_run(repo: Path, *args: str, date: str | None = None) -> None:
+    """One git call on `repo`, which no ambient git setting reaches: the user's
+    config stays out, and so does every inherited `GIT_` variable, a commit
+    date among them. `date` is the date the call takes instead."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env |= {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull}
+    if date is not None:
+        env |= {"GIT_AUTHOR_DATE": date, "GIT_COMMITTER_DATE": date}
+    subprocess.run(["git", *args], cwd=repo, check=True, env=env)
+
+
 @pytest.fixture
 def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A git repo whose solvers directory the `since` command reads."""
     solvers = tmp_path / "programs" / "solvers"
     solvers.mkdir(parents=True)
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "config", "user.email", "t@t"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path, check=True)
+    _git_run(tmp_path, "init", "-q")
+    _git_run(tmp_path, "config", "user.email", "t@t")
+    _git_run(tmp_path, "config", "user.name", "t")
     monkeypatch.setattr(cli, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(cli, "all_stems",
                         lambda: sorted(p.stem for p in solvers.glob("*.dl")))
     return tmp_path
 
 
-def _commit(repo: Path, stems: list[str], message: str) -> None:
+def _commit(repo: Path, stems: list[str], message: str,
+            date: str | None = None) -> None:
     for stem in stems:
         (repo / "programs" / "solvers" / f"{stem}.dl").write_text(f"// {message}\n")
-    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
-    subprocess.run(["git", "commit", "-q", "-m", message], cwd=repo, check=True)
+    _git_run(repo, "add", "-A")
+    _git_run(repo, "commit", "-q", "-m", message, date=date)
+
+
+def _rewriting_window(repo: Path) -> None:
+    """A base commit before the window, then a window whose commits each
+    stay under the share and together reach most of the corpus."""
+    _commit(repo, ["aaaa1111", "bbbb2222", "cccc3333", "dddd4444"], "base",
+            date="2000-01-01T00:00:00")
+    _commit(repo, ["aaaa1111", "bbbb2222"], "a pair")
+    _commit(repo, ["cccc3333", "eeee5555"], "another pair")
 
 
 def test_since_lists_the_solvers_its_commits_touch(repo, capsys):
@@ -475,6 +496,38 @@ def test_since_skips_a_corpus_wide_rewrite(repo, capsys):
     out = capsys.readouterr()
     assert out.out == ""
     assert "3 solvers" in out.err
+
+
+def test_since_narrows_a_rewriting_window_to_the_solvers_it_adds(repo, capsys):
+    _rewriting_window(repo)
+
+    assert cli.cmd_since("2001-01-01") == 0
+    out = capsys.readouterr()
+    assert out.out == "eeee5555\n"
+    assert "the window holds a corpus-wide rewrite" in out.err
+    assert "4 solvers of 5" in out.err
+
+
+def test_since_keeps_the_worktree_half_of_a_rewriting_window(repo, capsys):
+    _rewriting_window(repo)
+    (repo / "programs" / "solvers" / "dddd4444.dl").write_text("// edited\n")
+
+    assert cli.cmd_since("2001-01-01") == 0
+    assert capsys.readouterr().out == "dddd4444\neeee5555\n"
+
+
+def test_a_git_date_in_the_environment_leaves_the_window_as_it_is(
+        repo, capsys, monkeypatch):
+    """The environment can carry a commit date, from a rebase or a hook. That
+    setting reaches none of the window's commits: the base keeps the date the
+    helper gives it, the rest keep the time they are made, and the window
+    stands."""
+    monkeypatch.setenv("GIT_AUTHOR_DATE", "2000-01-01T00:00:00")
+    monkeypatch.setenv("GIT_COMMITTER_DATE", "2000-01-01T00:00:00")
+    _rewriting_window(repo)
+
+    assert cli.cmd_since("2001-01-01") == 0
+    assert capsys.readouterr().out == "eeee5555\n"
 
 
 def test_since_lists_an_uncommitted_solver(repo, capsys):

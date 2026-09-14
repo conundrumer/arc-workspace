@@ -38,13 +38,24 @@ Drafts, with the case at stake:
 - 20818e16 — rectangles rank by cell count; rank by perimeter and by extent along a stored axis were dropped as one prior. Rules 1 and 2 give `Count | Perimeter | Extent`; rule 3 keeps one case.
 - 28e73c20 — `Passthrough | Repaint` kept on the shared data; nested rings, dropped as "where the spiral stops". Rules 1 and 2 add a drawing field; rule 3 keeps `Repaint` alone.
 - 39e1d7f9 — six variants of `[sp: Span, st: Seat]`; dropped as one prior: the paint order of a copy over the ink it lands on, the seat cell's survival, the cardinal join against the corner join, which object is the motif. Rule 1 adds every field; rule 2 adds the paint order and the seat survival and leaves the join to precedent; rule 3 adds none.
-- 4e7e0eb9 — `Ink = Whole | Any`: a halving line divides its section when it is drawn end to end, or when it carries one mark. Rule 1 keeps both; rule 2 keeps one, since the divider is a structure found two ways over the same cells; rule 3 keeps one.
+- 4e7e0eb9 — `Ink = Whole | Any`: a halving line divides its section when it is drawn end to end, or when it carries one mark. The solver ships both branches, kept under Refused input. Rule 1 keeps both; rule 2 keeps one, since the divider is a structure found two ways over the same cells; rule 3 keeps one.
 - 67e490f4 — the exact congruence test kept; the into-reading (each square holds the plus, and the squares outvote the plus) dropped. Rules 1 and 2 add `Onto | Into`; rule 3 adds nothing.
 - 54dc2872 — `Slide` kept beside `Translate` on the Exercised finding alone. Rules 1 and 2 keep it, as an output rule that reads the L's own heading; rule 3 decides by whether travel and placement are two keywords.
 - 8ba14f53 — `Shape | Hue | Region`, three groupings of the same cells. Rule 1 keeps all three; rules 2 and 3 keep one. The draft citation under Exercised in `principles.md` follows this ruling.
 - 239be575, 62ab2642 — `Orth | Diag` over one node set. Rule 1 keeps both; rules 2 and 3 keep one.
 - 9385bd28 — which pieces of a key color are marks: `Open` (a piece leaves a cell of its own box open) and `Paired` (its key color draws more than one piece) kept; `Triomino` (a three-cell piece, with a stored cell count) and `Corner` (a 2×2 box less one cell, with a stored extent) fit every pair and were dropped as one prior. Rules 1 and 2 give `Open | Paired | Triomino | Corner`, since each adds a parameter and an output-side test; rule 3 decides by whether a piece's cell count and a test on its form are two keywords.
 - 60a26a3e (a color-blind ring test), 8a371977 (the ring as the tiles beside a missing tile), 90f3ed37 (the full shape as the largest), 8b9c3697 (what stops the mover), 67a423a3 (a line as one color's cells in a row, with no bg guard), 689c358e (the side reading) — each dropped one branch under the gate. Rules 1 and 2 add it; rule 3 does not.
+- 4c3d4a41 — `$Rigid | $Stack` shipped; push-only and flush-anchor dropped, since every run is flush, so no pair exercises the clamp. Rules 1 and 2 add the clamp field; rule 3 does not.
+- 941d9a10 — one case; the background-only fill peer dropped as "same parse, same place-keyed lookup prior, different guard", since every block cell is background in every pair. Rules 1 and 2 add it; rule 3 does not.
+- 95a58926 — `Locate × Draw` shipped; the largest-consistent tile size dropped as a second statement of the periodicity prior. Rules 1 and 2 add it to `Draw`; rule 3 does not.
+- 963c33f8 — `$Cell` shipped; `$Nose` and `$Whole` withheld under the gate, all three claiming `move`. Rules 1 and 2 give three cases; rule 3 gives one.
+- 963f59bc — one case; three anchor selections dropped — nearest, farthest, and unique on the marker's line. Rule 1 adds each; rule 3 adds none.
+- 9772c176 — `$Rim | $Extreme | $Widest` shipped; `$All` and `$Sil` withheld. Rule 1 gives five; rule 3 gives one, since all five branches read `objects cast`. The shipped three rest on neither rule: the ground was that a branch earns a case when it names a structure of the object as its base.
+- 97c75046 — one case; the slide keeps the travel heading, against any diagonal. This is the `Orth | Diag` shape that 239be575 and 62ab2642 already carry. Rule 1 gives two.
+- 981add89 — `$Header | $Isolated` shipped; a third case that reads each mark's axis off the grid edge the mark sits on dropped beside `$Isolated`'s stored `axis`. Rule 1 adds it.
+- 985ae207 — `$Abut | $Stride` shipped; two direction rules dropped — the block's thin axis with the side it lies on, and the larger of the two centre differences. Rule 1 adds a direction field.
+- 99306f82 — `$Rect | $Enclose` shipped; the re-anchored ring-index measures dropped under Indirection. Rules 1 and 2 add them as a difference in a measure; the grid-corner version stays out under Invariance either way.
+- 9968a131 — `$Match | $Sequence | $Stripes` shipped; `Lock` left out. The creation pass dropped it under this rule as `Match`'s prior, and the next pass read the two as separate priors. Rule 1 stands it as a fourth case.
 
 Approved solvers a rule would change: listed under each rule.
 
@@ -96,4 +107,16 @@ input          $Open          $Paired, $Triomino, $Corner
 . 1 1 . . .    . 1 1 . . .    . 2 2 . . .
 . . . . . .    . . . . . .    . . . . . .
 1 2 . . . .    1 2 . . . .    1 2 . . . .
+```
+
+9772c176, one input that separates five branches of one choice point:
+
+```
+input              $All               $Rim               $Sil               $Extreme           $Widest
+. . . . . . . .    . . 4 4 4 . . .    . . . . . . . .    . . . . . . . .    . . . . . . . .    . . . . . . . .
+. 8 . . . 8 . .    . 8 4 4 4 8 . .    . 8 . . . 8 . .    . 8 . . . 8 . .    . 8 . . . 8 . .    . 8 . . . 8 . .
+. 8 . . . 8 . .    4 8 4 4 4 8 4 .    4 8 4 . 4 8 4 .    4 8 . . . 8 4 .    4 8 . . . 8 4 .    4 8 . . . 8 4 .
+. 8 . . . 8 . .    4 8 4 4 4 8 4 .    4 8 . 4 . 8 4 .    4 8 . 4 . 8 4 .    4 8 . . . 8 4 .    4 8 . . . 8 4 .
+. 8 8 8 8 8 . .    . 8 8 8 8 8 . .    . 8 8 8 8 8 . .    . 8 8 8 8 8 . .    . 8 8 8 8 8 . .    . 8 8 8 8 8 . .
+. . . . . . . .    . . 4 4 4 . . .    . . 4 4 4 . . .    . . 4 4 4 . . .    . . 4 4 4 . . .    . . . . . . . .
 ```

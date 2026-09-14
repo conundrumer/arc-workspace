@@ -9,9 +9,8 @@ from dl.determine import determine_check
 from dl.dlparse import TOP, Decl, Index, ParseError, TypeDecl, parse
 from dl.facts import grid_to_facts, parse_output
 from dl.lint import _lib_source
-from dl.paths import SOLVERS_DIR
-from dl.rewrite_lint import _elem_tables
-from dl.solve import _profile, res_out, task_id_of
+from dl.rewrite_lint import _elem_tables, _lib_scopes
+from dl.solve import _profile, res_out, solver_file
 from dl.souffle import _pool_workers, _run_source
 from dl.source import _comp_span, build_source
 
@@ -29,6 +28,10 @@ ATOM_LEAD = ",;("
 # under, apart from the plain 'column' every other relation column uses.
 CASE_COLUMN = "case column"
 UNPROBED_CASE = "unprobed case column"
+
+# The kind a deletion reports under when the modified file ungrounds a
+# variable: Souffle rejects it, so the run measured nothing.
+UNGROUNDED_DELETION = "ungrounded deletion"
 
 # The kind a positive `*_elem` atom reports under when another positive
 # atom of its rule carries its variable: the readable form of a
@@ -188,14 +191,15 @@ def deletions(source: str, determine: bool = False) -> Iterator[Deletion]:
     BOUND_ENUMERATOR instead of 'atom'. The other atom binds the
     variable, so the enumerator is the readable form of a per-member
     test, and its deletion changing nothing says nothing about the
-    pairs.
+    pairs. Where the binding column is wider than the elem relation's
+    type, the atom narrows the binding and deletes under 'atom'.
 
     A deletion with no syntactic form — a negation that is the whole of
     a disjunct, say — is skipped rather than yielded malformed.
 
-    An atom deletion can leave a variable with nothing to bind it. The
-    run then fails, so the deletion reads as a change; nothing is done to
-    detect the case ahead of time.
+    An atom deletion can leave a variable with nothing to bind it.
+    Nothing detects that ahead of time; the run fails, and the report
+    reads the failure off Souffle's error.
     """
     strict = _parses(source)
     for item in _variants(source, determine):
@@ -203,17 +207,44 @@ def deletions(source: str, determine: bool = False) -> Iterator[Deletion]:
             yield item
 
 
+def _column_type(atom: str, var: re.Pattern, lib: dict[str, Decl]) -> str | None:
+    """The declared type of the column where `atom` carries `var`, read
+    off the lib declaration of the atom's relation. None where the lib
+    declares no such relation, and where the column runs past the
+    declaration's fields."""
+    m = ATOM_RE.match(atom)
+    decl = lib.get(atom[:m.end() - 1].strip()) if m else None
+    if decl is None or not atom.endswith(")"):
+        return None
+    for i, arg in enumerate(_split_top_args(atom[m.end():-1])):
+        if var.search(arg):
+            return decl.fields[i].type if i < len(decl.fields) else None
+    return None
+
+
 def _bound_enumerator(
     rule: str, span: tuple[int, int], spans: list[tuple[int, int]],
-    elems: frozenset[str],
+    wider: dict[str, set[str]], lib: dict[str, Decl],
 ) -> bool:
     """True when the atom at `span` is `x_elem(V)` over a lib elem
-    relation and another of the rule's positive atoms carries `V`."""
+    relation and another of the rule's positive atoms carries `V`.
+
+    A binding column of a type wider than the elem relation's own — a
+    `dir_elem(D)` over `neighbor`'s Dir8 column — is not that: there the
+    atom narrows the binding, which is a claim about the pairs.
+    """
     m = ENUM_RE.fullmatch(rule[span[0]:span[1]])
-    if m is None or m.group(1) not in elems:
+    if m is None or m.group(1) not in wider:
         return False
     var = re.compile(rf"(?<![\w.$]){re.escape(m.group(2))}(?!\w)")
-    return any(var.search(rule[s:e]) for s, e in spans if (s, e) != span)
+    bound = False
+    for s, e in spans:
+        if (s, e) == span or not var.search(rule[s:e]):
+            continue
+        if _column_type(rule[s:e], var, lib) in wider[m.group(1)]:
+            return False
+        bound = True
+    return bound
 
 
 def _in_head(atom: str, head: str) -> str:
@@ -225,7 +256,10 @@ def _in_head(atom: str, head: str) -> str:
 
 def _variants(source: str, determine: bool) -> Iterator[Deletion]:
     lines = source.splitlines()
-    elems = frozenset(_elem_tables(_lib_source())[0])
+    elem_type, wider_of = _elem_tables(_lib_source())
+    # Per elem relation, the types a binding column may not carry.
+    wider = {name: wider_of.get(t, set()) for name, t in elem_type.items()}
+    lib = _lib_scopes(_lib_source())[0]
     for a, b in _rule_spans(source, determine):
         rule = " ".join(ln.split("//")[0].strip() for ln in lines[a:b + 1])
         head = rule.split(":-")[0].strip()
@@ -240,7 +274,7 @@ def _variants(source: str, determine: bool) -> Iterator[Deletion]:
         spans = list(_positive_atoms(rule))
         for s, e in spans:
             kind = "atom"
-            if _bound_enumerator(rule, (s, e), spans, elems):
+            if _bound_enumerator(rule, (s, e), spans, wider, lib):
                 kind = BOUND_ENUMERATOR
             modified = lines[:a] + [_drop_atom(rule, s, e)] + lines[b + 1:]
             yield (a + 1, kind, _in_head(rule[s:e], head),
@@ -345,7 +379,7 @@ def column_deletions(source: str) -> Iterator[Deletion]:
 def _ungrounds(source: str, example) -> bool:
     """True when Souffle rejects this source for an ungrounded variable.
 
-    Dropping a case column can leave the case variable with nothing to
+    Dropping a column or an atom can leave a variable with nothing to
     bind it. The run then fails for every solver alike, so the probe
     reports a change it did not measure.
     """
@@ -428,10 +462,13 @@ def deletion_report(stem: str) -> tuple[int, list[Finding]] | None:
     violation. A case column reports under its own kinds, since the
     pairs decide what its deletion can show, and a solver whose pairs
     never part its cases reports that once, whether or not a case column
-    stood for it. None when the stored source itself fails.
+    stood for it. A deletion whose run fails for an ungrounded variable
+    reports under a kind of its own, since that run measured nothing.
+    None when the stored source itself fails.
     """
-    source = (SOLVERS_DIR / f"{stem}.dl").read_text()
-    task = load_task(task_id_of(stem))
+    path, task_id = solver_file(stem)
+    source = path.read_text()
+    task = load_task(task_id)
     examples = list(task.train) + list(task.test)
     reference = _profile(source, examples)
     if reference is None:
@@ -452,9 +489,15 @@ def deletion_report(stem: str) -> tuple[int, list[Finding]] | None:
         if mode == "solve":
             # The determination check is the expensive one, so it waits on the
             # profile, which most deletions already fail.
-            if _profile(mod, examples) != reference:
-                if kind == CASE_COLUMN and _ungrounds(mod, examples[0]):
-                    return (lineno, UNPROBED_CASE, text)
+            profile = _profile(mod, examples)
+            if profile != reference:
+                # A None profile is a failing pair, and a file Souffle
+                # rejects fails every pair; a profile that differs measured
+                # the pairs.
+                if profile is None and _ungrounds(mod, examples[0]):
+                    return (lineno,
+                            UNPROBED_CASE if kind == CASE_COLUMN
+                            else UNGROUNDED_DELETION, text)
                 return None
             return ((lineno, kind, text)
                     if not determines or determine_ok(mod) else None)
@@ -498,6 +541,11 @@ UNPROBED_NOTE = [
     "        either way.",
 ]
 
+UNGROUNDED_NOTE = [
+    "  note: the removal ungrounds a variable, so Souffle rejects the file.",
+    "        The run says nothing about the pairs.",
+]
+
 UNEXERCISED_NOTE = [
     "  note: every case emits an accepted grid on every pair, which holds of",
     "        every passing multi-case solver, so the pairs settle nothing",
@@ -514,27 +562,31 @@ def render_deletions(stem: str, report: tuple[int, list[Finding]] | None) -> lis
     def entries(group: list[Finding]) -> list[str]:
         return [f"  {stem}.dl:{n}: {kind} `{text}`" for n, kind, text in group]
 
-    apart = (UNPROBED_CASE, UNEXERCISED_CASES)
+    apart = (UNPROBED_CASE, UNGROUNDED_DELETION, UNEXERCISED_CASES)
     enumerators = [f for f in findings if f[1].endswith(BOUND_ENUMERATOR)]
     noop = [
         f for f in findings if f[1] not in apart and f not in enumerators
     ]
     unprobed = [f for f in findings if f[1] == UNPROBED_CASE]
+    ungrounded = [f for f in findings if f[1] == UNGROUNDED_DELETION]
     unexercised = [f for f in findings if f[1] == UNEXERCISED_CASES]
+    # The deletions the probe judged: an ungrounding one is not among them, so
+    # every ratio below counts against this and not against the raw total.
+    judged = total - len(ungrounded)
     lines = []
     if noop:
-        lines.append(f"{len(noop)}/{total} deletions change nothing:")
+        lines.append(f"{len(noop)}/{judged} deletions change nothing:")
         lines += NOOP_NOTE
         lines += entries(noop)
         if any(kind == CASE_COLUMN for _, kind, _ in noop):
             lines += CASE_NOTE
     elif not enumerators:
-        lines.append(f"every deletion changes the result ({total} tested)")
+        lines.append(f"every deletion changes the result ({judged} tested)")
     if enumerators:
         if lines:
             lines.append("")
         lines.append(
-            f"{len(enumerators)}/{total} deletions remove an enumerator over a"
+            f"{len(enumerators)}/{judged} deletions remove an enumerator over a"
             " bound variable:"
         )
         lines += entries(enumerators)
@@ -545,6 +597,12 @@ def render_deletions(stem: str, report: tuple[int, list[Finding]] | None) -> lis
         lines.append(f"{len(unprobed)} {noun} the probe cannot judge:")
         lines += entries(unprobed)
         lines += UNPROBED_NOTE
+    if ungrounded:
+        noun = "deletion" if len(ungrounded) == 1 else "deletions"
+        lines.append("")
+        lines.append(f"{len(ungrounded)} {noun} the run cannot judge:")
+        lines += entries(ungrounded)
+        lines += UNGROUNDED_NOTE
     if unexercised:
         lines.append("")
         lines.append("the pairs do not exercise the coverage hypothesis:")

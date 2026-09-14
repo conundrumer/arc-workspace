@@ -9,6 +9,7 @@ import pytest
 
 from dl import cli
 from dl import derived_constant
+from dl import solve
 from dl.derived_constant import (
     Constant,
     _candidates,
@@ -36,7 +37,7 @@ out(P, C) :- mid(P), stored(C).
 
 def _stub(tmp_path: Path, monkeypatch, source: str, task) -> None:
     (tmp_path / f"{STEM}.dl").write_text(source)
-    monkeypatch.setattr(derived_constant, "SOLVERS_DIR", tmp_path)
+    monkeypatch.setattr(solve, "SOLVERS_DIR", tmp_path)
     monkeypatch.setattr(derived_constant, "load_task", lambda task_id: task)
     # `_sets` answers in call order, so the pool takes one grid at a time.
     monkeypatch.setattr(derived_constant, "_pool_workers", lambda: 1)

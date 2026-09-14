@@ -34,11 +34,13 @@ from . import config, prompts
 SURVEY_LINE = re.compile(r"^Survey:[ \t]*(\d{4}-\d{2}-\d{2} \d{2}:\d{2})", re.M)
 CLOSED_LINE = re.compile(r"^Closed:", re.M)
 # An entry's search signature, and a row of a former-names.md table. A Former
-# cell holding nothing but backticked names names code; a cell that carries
-# prose as well names a term, and a name in it stands for that term.
+# cell holding nothing but backticked names names code; a cell holding one
+# backticked header field names that field; a cell that carries prose as well
+# names a term, and a name in it stands for that term.
 MATCH_LINE = re.compile(r"^Match:.*$", re.M)
 FORMER_ROW = re.compile(r"^\|(.+?)\|(.+?)\|\s*$", re.M)
 FORMER_CELL = re.compile(r"^`[A-Za-z_][\w.]*`(?:,\s*`[A-Za-z_][\w.]*`)*$")
+FORMER_FIELD = re.compile(r"^`// [a-z_]+:`$")
 SURVEY_STAMP = "%Y-%m-%d %H:%M"
 RUN_STAMP = "%Y-%m-%d-%H%M%S"
 
@@ -156,17 +158,23 @@ def survey_plan(text: str) -> dict | None:
 
 
 def renamed_in_match(text: str) -> list[tuple[str, str]]:
-    """The identifiers an entry's `Match:` lines carry that the corpus has
-    renamed, each with what docs/wf-solver/former-names.md gives as its
-    current form. Only the `Match:` line is read: a recorded survey result
-    stays as written, so a former name inside one is not an error. A row whose
-    Former cell names a term, not code, is left out: a name in such a cell can
-    stand in current code."""
+    """The names an entry's `Match:` lines carry that the corpus has renamed,
+    each with what docs/wf-solver/former-names.md gives as its current form. A
+    name is an identifier or a solver header field. Only the `Match:` line is
+    read: a recorded survey result stays as written, so a former name inside
+    one is not an error. A row whose Former cell names a term, not code, is
+    left out: a name in such a cell can stand in current code."""
     table = (config.DOCS / "former-names.md").read_text()
     signature = "\n".join(MATCH_LINE.findall(text))
     found: list[tuple[str, str]] = []
     for former, current in FORMER_ROW.findall(table):
-        if not FORMER_CELL.match(former.strip()):
+        cell = former.strip()
+        if FORMER_FIELD.match(cell):
+            field = cell.strip("`")
+            if field in signature:
+                found.append((field, current.strip()))
+            continue
+        if not FORMER_CELL.match(cell):
             continue
         for name in re.findall(r"`([A-Za-z_][\w.]*)`", former):
             if re.search(rf"\b{re.escape(name)}\b", signature):
@@ -185,14 +193,14 @@ def survey_header(plan: dict, at: float) -> str:
     return f"Survey: {stamp} — the solvers since {plan['since']}."
 
 
-SOUND_LINE = re.compile(r"\n\*[a-z]+\*\s*$")
+SOUND_LINE = re.compile(r"\n\s*`?\*[a-z]+\*`?\s*$")
 
 
 def append_survey(path: Path, header: str, result: str) -> None:
     """Add the `Survey:` line and the run's report at the end of the entry.
     The report is filed as the session returned it, stripped of surrounding
-    whitespace and of a closing sound-name line, `*tink*`, that the session's
-    reply style adds.
+    whitespace and of a closing sound-name line, `*tink*`, backticked or not,
+    that the session's reply style adds.
 
     The caller holds the entry's lock, which orders this module's own writers
     of the entry against each other. A session that edits the entry with its
@@ -234,18 +242,18 @@ def survey_kill(proc: subprocess.Popen) -> None:
         proc.kill()
 
 
-def run_survey(path: Path, plan: dict, run_dir: Path) -> str:
-    """One survey: a `claude -p` session that runs the `survey` role as the
-    handbook agent. It hands back the report the session returned, and an
-    empty string when the session returned none.
+def survey_cmd(path: Path, plan: dict, run_dir: Path) -> list[str]:
+    """The command one run launches: the CLI, the brief, and the flags that
+    run the session as the handbook agent. The brief is the `survey` role's
+    text, then the entry, the scope, and the run's own scratch path.
 
-    An entry whose `Match:` line carries a renamed identifier gets that
-    translation in its brief, so the session searches the current name as
-    well.
+    An entry whose `Match:` line carries a renamed name gets that translation
+    in its brief, so the session searches the current name as well.
 
-    The session runs in a session group of its own, so the timeout takes the
-    tools it left running with it. A process the session leaves behind holds
-    the pipe this call reads open, and the read would go on past the run.
+    The role's text, the docs the appendix carries, and the entry are read
+    here, before the launch. A file among them that the run cannot read is a
+    failure of its own, and the caller tells it apart from a session that
+    could not start.
     """
     scope = ("every solver" if plan["scope"] is None
              else "the solvers " + ", ".join(plan["scope"]))
@@ -254,11 +262,22 @@ def run_survey(path: Path, plan: dict, run_dir: Path) -> str:
         scratch=run_dir.relative_to(config.ROOT))
     renamed = renamed_in_match(path.read_text())
     if renamed:
-        brief += ("\n\nThe entry's `Match:` line names identifiers the corpus has "
+        brief += ("\n\nThe entry's `Match:` line names what the corpus has "
                   "renamed. Search the current name as well: "
                   + "; ".join(f"`{former}` is now {current}"
                               for former, current in renamed))
-    cmd = [config.CLAUDE, "-p", brief, *config.SURVEY_FLAGS, *survey_session()]
+    return [config.CLAUDE, "-p", brief, *config.SURVEY_FLAGS, *survey_session()]
+
+
+def run_survey(cmd: list[str], run_dir: Path) -> str:
+    """One survey: the `claude -p` session the command names. It hands back
+    the report the session returned, and an empty string when the session
+    returned none.
+
+    The session runs in a session group of its own, so the timeout takes the
+    tools it left running with it. A process the session leaves behind holds
+    the pipe this call reads open, and the read would go on past the run.
+    """
     result = ""
     with open(run_log(run_dir), "ab") as log:
         proc = subprocess.Popen(cmd, cwd=config.ROOT, env=config.WORKER_ENV,
@@ -332,7 +351,13 @@ def survey_entry(path: Path, force: bool = False) -> int:
                               for former, current in renamed)
                   + ". Restate the line.", flush=True)
         try:
-            result = run_survey(path, plan, run_dir)
+            cmd = survey_cmd(path, plan, run_dir)
+        except OSError as exc:
+            print(f"{path.name}: the session's brief could not be read: {exc}",
+                  file=sys.stderr)
+            return 1
+        try:
+            result = run_survey(cmd, run_dir)
         except OSError as exc:
             print(f"{path.name}: the survey session could not start: {exc}",
                   file=sys.stderr)

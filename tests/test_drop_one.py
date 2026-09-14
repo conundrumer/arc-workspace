@@ -9,6 +9,7 @@ import pytest
 
 from dl import cli
 from dl import drop_one
+from dl import solve
 from dl.drop_one import (
     GROUND_NOTE,
     SWEEP_NOTE,
@@ -39,7 +40,7 @@ PICTURE = """\
 
 def _stub(tmp_path: Path, monkeypatch, source: str, task) -> None:
     (tmp_path / f"{STEM}.dl").write_text(source)
-    monkeypatch.setattr(drop_one, "SOLVERS_DIR", tmp_path)
+    monkeypatch.setattr(solve, "SOLVERS_DIR", tmp_path)
     monkeypatch.setattr(drop_one, "load_task", lambda task_id: task)
 
 

@@ -27,6 +27,12 @@ Match: a rule with a Dir column.
 
 RESULT_EVENT = '{"type":"result","is_error":false,"result":"Callers: none."}'
 
+# A stand-in for .claude/roles/survey.md, which names no agent.
+ROLE = """Survey the operation the entry names, over the scope the brief gives.
+
+The report holds its four parts.
+"""
+
 
 @pytest.fixture
 def sv(srv):
@@ -62,7 +68,14 @@ def fake_claude(tmp_path, body, name="claude.sh"):
 
 
 def local(srv, sv, tmp_path, monkeypatch, body=f"echo '{RESULT_EVENT}'\n"):
-    """Point the run at the test's own tree and at a fake CLI."""
+    """Point the run at the test's own tree and at a fake CLI. The role the
+    brief opens with sits in that tree as well: the run reads the file before
+    it launches, and a writer replacing the one under .claude/roles/ would
+    fail the read."""
+    roles = tmp_path / "roles"
+    roles.mkdir(exist_ok=True)
+    (roles / "survey.md").write_text(ROLE)
+    monkeypatch.setattr(srv, "ROLE_DIR", roles)
     monkeypatch.setattr(srv, "ROOT", tmp_path)
     monkeypatch.setattr(srv, "CLAUDE", fake_claude(tmp_path, body))
     monkeypatch.setattr(srv, "SURVEY_FLAGS", [])
@@ -159,6 +172,7 @@ FORMER_NAMES = """# Former names
 | `Shift` | `Offset` |
 | `ORIGIN` | `ZERO` |
 | `Position`, the record | `Box`; `Position` is its cell reading |
+| `// family:` | `// representative:` |
 """
 
 
@@ -180,6 +194,15 @@ def test_a_former_cell_that_names_a_term_carries_no_renamed_name(sv, srv):
     assert sv.renamed_in_match(path.read_text()) == []
 
 
+def test_a_former_cell_that_names_a_header_field_is_read(sv, srv):
+    """A header field carries a `/` and a `:`, which no word boundary sits
+    beside, so the field is searched as literal text."""
+    (srv.DOCS / "former-names.md").write_text(FORMER_NAMES)
+    path = entry(srv, "Thing", "Match: a solver whose header holds `// family:`.\n")
+    assert sv.renamed_in_match(path.read_text()) == [
+        ("// family:", "`// representative:`")]
+
+
 # ---------- the header and the append ----------
 
 def test_a_result_lands_at_the_end_of_the_entry(sv, srv):
@@ -198,6 +221,15 @@ def test_append_survey_drops_the_reply_styles_closing_sound_line(sv, srv):
     path = entry(srv, "Thing", ENTRY)
     sv.append_survey(path, sv.survey_header({"since": None, "scope": None}, 0),
                      "Callers: none.\n\n*tink*\n")
+    assert path.read_text().endswith("— every solver.\n\nCallers: none.\n")
+
+
+def test_append_survey_drops_a_backticked_closing_sound_line(sv, srv):
+    """The reply style writes the sound name between literal backticks, and
+    the strip takes that form too."""
+    path = entry(srv, "Thing", ENTRY)
+    sv.append_survey(path, sv.survey_header({"since": None, "scope": None}, 0),
+                     "Callers: none.\n\n`*tink*`\n")
     assert path.read_text().endswith("— every solver.\n\nCallers: none.\n")
 
 
@@ -310,6 +342,28 @@ def test_a_session_that_cannot_start_is_reported(sv, srv, tmp_path, monkeypatch,
     monkeypatch.setattr(srv, "CLAUDE", str(tmp_path / "no-such-claude"))
     assert sv.survey_entry(path) == 1
     assert "could not start" in capsys.readouterr().err
+    assert "Survey:" not in path.read_text()
+
+
+def test_a_brief_the_run_cannot_read_is_not_a_session_that_could_not_start(
+        sv, srv, tmp_path, monkeypatch, capsys):
+    """The role's text and the entry are read before the launch. A file among
+    them that another writer is replacing reads as a failure of its own, and
+    no session opens."""
+    path = entry(srv, "Thing")
+    opened = tmp_path / "opened"
+    local(srv, sv, tmp_path, monkeypatch,
+          body=f"touch {opened}\necho '{RESULT_EVENT}'\n")
+
+    def gone(*a, **kw):
+        raise FileNotFoundError(2, "No such file or directory",
+                                ".claude/roles/survey.md")
+
+    monkeypatch.setattr(sv.prompts, "role_text", gone)
+    assert sv.survey_entry(path) == 1
+    err = capsys.readouterr().err
+    assert "brief could not be read" in err and "could not start" not in err
+    assert not opened.exists()
     assert "Survey:" not in path.read_text()
 
 

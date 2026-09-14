@@ -6,20 +6,42 @@ export const meta = {
     { title: 'Sweep', detail: 'one agent sweeps the parameter values of every solver the window names, beside the check and review stages; then one agent writes a review line into each solver a parameter stays open in', model: 'sonnet' },
     { title: 'Check', detail: 'one agent per group of issues: closed, dropped, or open with candidate fixes' },
     { title: 'Review', detail: 'one agent asks the two questions over every open issue and takes a default', model: 'fable' },
-    { title: 'Fix', detail: 'code targets one at a time, every prose target in one agent that fixes then prunes, every other target in parallel' },
+    { title: 'Fix', detail: 'each code target in a worktree of its own, merged into the repo one merge at a time, the prose targets in units of at most five that a Codex session fixes then prunes, every other target in parallel' },
     { title: 'Resolve', detail: 'one agent per solver that took a review line in this run, which acts on the line and writes its report' },
-    { title: 'Consistency', detail: 'one agent groups the acted-on review lines by the rule that decides each; then one agent per group reads its solvers side by side and reports where they read that rule differently' },
+    { title: 'Consistency', detail: 'one agent groups the acted-on review lines by the rule that decides each; then one agent per group reads its solvers side by side and reports where they read that rule differently; then, for a divergence no rule of the docs explains, one agent per solver brings that solver to the group\'s form, beside one agent that records the reading as an open question' },
     { title: 'Cleanup', detail: 'one agent per solver the run wrote, which runs Simplify then Prune over it' },
-    { title: 'Verify', detail: 'one agent per changed target, one agent for the prose targets together, one agent for the checks, then one round over the other files those findings name', model: 'sonnet' },
+    { title: 'Verify', detail: 'one agent per unit, which starts as soon as that unit\'s own fix lands, one agent on sonnet for the checks over the whole tree, then one round over the other files those findings name' },
   ],
 }
 
 // Each stage runs a handbook agent under a role from .claude/roles/: the
 // agent the role's first line names, `handbook` with no such line. Each role
 // carries its stage's procedure, and a task opens with the role text, then
-// the brief. The checks step runs a general-purpose
-// agent, and its task text carries the commands. This script carries the
-// order, the fan-out, the return schemas, and each instance's task.
+// the brief. The sweep, the sweep lines, the checks, and each prose unit of
+// the fix stage take no role: each runs one command and returns what that
+// command printed. This script carries the order, the fan-out, the return
+// schemas, and each instance's task.
+//
+// An agent writes the diff of each file it changed to a file under
+// `.scratch/retro/diffs/`, and reports the path. A diff never travels through
+// a return value, so a later brief names the path and the agent that takes
+// that brief reads it.
+//
+// The prose units of the fix stage run on Codex: the agent of such a unit runs
+// `scripts/retro_codex.py`, which hands the unit's brief to one `codex exec`
+// session and prints that session's final message. Codex makes the edits.
+//
+// Each unit of the fix stage is a chain of its own: the verify pass of a unit
+// starts as soon as that unit's fix lands, beside the fix of another unit. The
+// checks are a barrier after every unit, since they test the combined tree.
+//
+// A code unit takes a git worktree of the repo at HEAD, so the code units run
+// beside each other rather than one at a time. Its fix and its verify pass both
+// work in that worktree. `scripts/retro_merge.py` then takes the worktree's
+// whole change into the repo and removes the worktree. Two applies on one tree
+// can race, so the merges run one at a time, in the order the units reach them.
+// A unit whose change the repo refuses runs again on the repo itself, after
+// every other merge, one such unit at a time.
 //
 // args:
 //   { roles: {...} }   required in every run: the text of each role the run reaches, by role
@@ -28,18 +50,28 @@ export const meta = {
 //                      FIX_ROLES name what each run needs; a missing one returns an error.
 //   {}                 full run; returns every call with its default, for, and against.
 //   { dry: true }      full run that stops before Fix and returns the fixes it would make.
-//   { fixes: [...] }   second run after the user's rulings: Fix, Resolve, Consistency, Cleanup, and
-//                      Verify, over the given fixes.
+//   { fixes: [...] }   second run after the user's rulings: Fix, Resolve, Consistency, Apply, Cleanup,
+//                      and Verify, over the given fixes.
 //                      Each fix: { id, kind, target, edit, tasks }: a call's id with one entry
-//                      per target, as the first run returned them under calls[].fixes, and the
-//                      issue's task ids, which a fix over a principle writes a review line into.
+//                      per target, as the dry run returned them under `dry`, and the issue's
+//                      task ids, which a fix over a principle writes a review line into.
 //                      The fixes are ruled: the prune step keeps their substance.
 //   { resolve: [...] } Resolve over the given task ids, whatever review lines their headers hold.
-//                      It reaches Consistency and Cleanup after it, and no other stage.
-//   { sweep: [...] }   in a resolve run alone: the solver stems the run sweeps first. The sweep
-//                      writes its review lines, then Resolve takes those solvers beside the ones
-//                      args.resolve names, which may be an empty list. The returned object carries
-//                      the sweep and the sweep lines.
+//                      It reaches Consistency, the Apply step of that stage, and Cleanup after it, then
+//                      the checks under Verify, and no other stage. The returned object carries the
+//                      Apply results under `applied`.
+//   { sweep: [...] }   in a resolve run alone: the solver stems the run sweeps first. A name that
+//                      is not a task id is dropped. The sweep writes its review lines, then Resolve
+//                      takes those solvers beside the ones args.resolve names, which may be an
+//                      empty list. The returned object carries the sweep and the sweep lines.
+//   { worktrees: false }
+//                      runs the code units of the fix stage one at a time on the repo itself, for a
+//                      tree where a worktree cannot work. Absent or `true`, each code unit takes a
+//                      worktree of its own and its change is merged back.
+//   { codex: ... }     how the prose units of the fix stage run. The default is a Codex session
+//                      under Codex's own model and effort. `false` runs them on a handbook agent
+//                      instead; `{ model, effort }` passes those two to Codex. A unit whose Codex
+//                      session returns nothing falls back to the handbook agent on its own.
 
 // The call's discretion level: how much room the default took beyond what the
 // grounds determine. A level-4 fix is not made in the first run.
@@ -141,7 +173,7 @@ const REVIEW_SCHEMA = {
           against: { type: 'string', description: 'what argues against the default, each reason its own sentence; empty when nothing does' },
           options: {
             type: 'array',
-            description: 'a fix to docs/wf-solver/principles.md: the readings the call chose between, the chosen one first',
+            description: 'a fix to docs/wf-solver/principles.md: each reading of the rule as an option, the default first',
             items: {
               type: 'object',
               properties: {
@@ -166,7 +198,19 @@ const REVIEW_SCHEMA = {
 const EDIT_SCHEMA = {
   type: 'object',
   properties: {
-    diff: { type: 'string', description: 'the unified diff, verbatim' },
+    diffs: {
+      type: 'array',
+      description: 'one entry per file this fix changed, the files the brief names and the others alike; empty when it changed nothing',
+      items: {
+        type: 'object',
+        properties: {
+          file: { type: 'string', description: 'the repo-relative path of the changed file' },
+          path: { type: 'string', description: 'the repo-relative path of the diff file written for it, under .scratch/retro/diffs/' },
+        },
+        required: ['file', 'path'],
+      },
+    },
+    worktree: { type: 'string', description: 'the absolute path of the worktree this fix worked in; empty for a fix that worked in the repo' },
     net_words: { type: 'integer', description: 'prose: words added minus words removed' },
     verification: { type: 'string', description: 'what was run and its result' },
     review_lines: {
@@ -183,7 +227,17 @@ const EDIT_SCHEMA = {
     },
     notes: { type: 'string' },
   },
-  required: ['diff', 'verification', 'review_lines'],
+  required: ['diffs', 'verification', 'review_lines', 'worktree'],
+}
+
+const MERGE_SCHEMA = {
+  type: 'object',
+  properties: {
+    applied: { type: 'boolean', description: 'whether the worktree\'s change went into the repo' },
+    files: { type: 'array', items: { type: 'string' }, description: 'the repo-relative paths the change covers' },
+    conflict: { type: 'string', description: 'what git reported when it refused the change; empty when it applied' },
+  },
+  required: ['applied', 'files', 'conflict'],
 }
 
 const VERIFY_SCHEMA = {
@@ -202,9 +256,10 @@ const VERIFY_SCHEMA = {
         required: ['kind', 'finding', 'fixed', 'other_file'],
       },
     },
-    diff: { type: 'string', description: 'the unified diff of what this pass changed, verbatim; empty when it changed nothing' },
+    diff_path: { type: 'string', description: 'the repo-relative path of the diff file written for this pass\'s own changes; empty when it changed nothing' },
+    changed: { type: 'boolean', description: 'whether this pass changed a file' },
   },
-  required: ['findings', 'diff'],
+  required: ['findings', 'diff_path', 'changed'],
 }
 
 const CHECKS_SCHEMA = {
@@ -238,14 +293,15 @@ const SWEEP_SCHEMA = {
           stem: { type: 'string' },
           params: {
             type: 'array',
-            description: 'the parameters the sweep leaves open: the line carries one of the clauses the brief lists',
+            description: 'the parameters the sweep leaves open',
             items: {
               type: 'object',
               properties: {
                 param: { type: 'string' },
                 reported: { type: 'string', description: 'what the sweep reported for it, verbatim' },
+                line: { type: 'string', description: 'the review line to write for it, verbatim' },
               },
-              required: ['param', 'reported'],
+              required: ['param', 'reported', 'line'],
             },
           },
         },
@@ -281,10 +337,11 @@ const RESOLVE_SCHEMA = {
     acted: { type: 'array', items: { type: 'string' }, description: 'the review lines acted on, verbatim' },
     left: { type: 'array', items: { type: 'string' }, description: 'the review lines left in the header, verbatim, each with what is left to do' },
     report: { type: 'string', description: 'the repo-relative path of the report written' },
-    diff: { type: 'string', description: 'the unified diff of the change to the solver, verbatim; empty when it changed nothing' },
+    diff_path: { type: 'string', description: 'the repo-relative path of the diff file written for the change to the solver; empty when it changed nothing' },
+    changed: { type: 'boolean', description: 'whether the solver changed' },
     verification: { type: 'string', description: 'what was run and its result: the solver, the lint, and the audit' },
   },
-  required: ['acted', 'left', 'report', 'diff', 'verification'],
+  required: ['acted', 'left', 'report', 'diff_path', 'changed', 'verification'],
 }
 
 const CLEANUP_SCHEMA = {
@@ -292,9 +349,9 @@ const CLEANUP_SCHEMA = {
   properties: {
     changed: { type: 'string', description: 'what changed, or `no change` with the reason' },
     run: { type: 'string', description: 'the run result after the pass, and any failure or finding the first run already had' },
-    concerns: { type: 'array', items: { type: 'string' }, description: 'what looks wrong in the hypothesis and needs the caller\'s ruling' },
+    carried: { type: 'array', items: { type: 'string' }, description: 'a file the brief did not name that a carry reached, and what changed in it' },
   },
-  required: ['changed', 'run', 'concerns'],
+  required: ['changed', 'run', 'carried'],
 }
 
 const GROUP_SCHEMA = {
@@ -362,22 +419,64 @@ const checkTask = (group, issues) => `Check these issues, all about ${group}.\n\
 
 const reviewTask = (open) => `Review these open issues and their candidate fixes.\n\n${JSON.stringify(open, null, 2)}`
 
+// A path under the diff directory, taken from the text it belongs to, so the
+// name holds no separator of its own.
+const DIFF_DIR = '.scratch/retro/diffs'
+const slug = (text) => text.split('/').join('__').replace(/[^A-Za-z0-9._-]+/g, '-')
+
 // Each fix agent writes its diff to a path taken from the target path, so a
 // later brief names that path.
-const diffPath = (target) => `.scratch/retro/diffs/${target.split('/').join('__')}.diff`
+const diffPath = (target) => `${DIFF_DIR}/${slug(target)}.diff`
+// A prose target takes a second pass, and its prune step leaves its own diff.
+const prunePath = (target) => `${DIFF_DIR}/${slug(target)}__prune.diff`
+// A verify pass fixes what it finds, so it leaves a diff of its own.
+const verifyPath = (label) => `${DIFF_DIR}/${slug(label)}__verify.diff`
+// A resolve pass writes the solver, so it leaves a diff of its own.
+const resolvePath = (taskId) => `${DIFF_DIR}/${slug(taskId)}__resolve.diff`
+// An apply pass writes the solver beside the resolve pass, so its diff takes a
+// path of its own.
+const applyPath = (taskId) => `${DIFF_DIR}/${slug(taskId)}__apply.diff`
 
 // One entry per file: the file, the fixes it takes, and where its diff goes.
-const fixEntries = (groups) => JSON.stringify(
-  groups.map(g => ({ target: g.target, diff_path: diffPath(g.target), fixes: g.fixes })), null, 2)
+// A prose file takes a second path, for the diff of the prune step over it.
+const fixEntries = (groups, pruned) => JSON.stringify(
+  groups.map(g => ({
+    target: g.target,
+    diff_path: diffPath(g.target),
+    ...(pruned ? { prune_path: prunePath(g.target) } : {}),
+    fixes: g.fixes,
+  })), null, 2)
 
-const fixTask = (groups) => [
+const fixTask = (groups, pruned = false) => [
   groups.length > 1
     ? `Make these fixes. Each entry names one file, the fixes that file takes, and the path its diff goes to.`
     : `Make these fixes in ${groups[0].target}.`,
   '',
-  fixEntries(groups),
+  fixEntries(groups, pruned),
   '',
-  'Write the diff of your changes to each file, verbatim, to that file\'s `diff_path`. Create the directory first.',
+  'Write the diff of your changes to each file named above, verbatim, to that file\'s `diff_path`. Create the directory first.',
+  `A file you changed that is not named above takes a diff of its own under \`${DIFF_DIR}/\`, at a path you pick.`,
+  'Report one `diffs` entry per file you changed, the files named above and the others alike: the file, and the path its diff went to.',
+].join('\n')
+
+// A code unit works in a worktree of its own, so its brief says where it is,
+// how a command runs there, and how its change gets back.
+const worktreeNote = () => [
+  '',
+  'You are in a git worktree of the repo, checked out at HEAD. It is a full tree of its own, and every path above is relative to its root.',
+  'Work inside that tree and nowhere else: every read, every edit, and every command.',
+  'Run each `uv run` command from the root of that tree. The first one builds that tree\'s own environment.',
+  'A file you create is new to git, and a diff of the tracked files leaves it out. For each file you create, append the output of `git diff --no-index -- /dev/null <file>` to that file\'s diff.',
+  'Report the absolute path of the worktree in `worktree`.',
+].join('\n')
+
+// The verify pass of a code unit works in the worktree its fix worked in, so
+// the change it reads and the change it makes stay in one tree.
+const worktreeVerifyNote = (worktree) => [
+  '',
+  `The fix worked in a git worktree of the repo, at ${worktree}. Every path above is relative to that tree's root.`,
+  'Work inside that tree and nowhere else: every read, every edit, and every command.',
+  `Run each \`uv run\` command from ${worktree}.`,
 ].join('\n')
 
 // The reader the pruned text serves, by where the text lives.
@@ -387,7 +486,7 @@ const readerFor = (target) =>
       : 'a future solver session that reads the file through `uv run python scripts/context.py` to write a Souffle solver'
 
 const fixAndPruneTask = (groups, ruled) => [
-  fixTask(groups),
+  fixTask(groups, true),
   '',
   'Work in two steps: the fix, under the fix role, then the prune, under the prune role, over the diff your fix made.',
   'The reader of each file, for the prune step:',
@@ -396,15 +495,15 @@ const fixAndPruneTask = (groups, ruled) => [
   '',
   ...(ruled ? ['The user ruled for these fixes. The prune keeps the rule each edit states.', ''] : []),
   'The prune step takes the edits above as the edits the diff was meant to make.',
-  'Leave each `diff_path` holding the diff as the prune step left it.',
-  'Report both steps. The `diff` field carries the fix diff, then the pruned diff. The `notes` field carries one line per cut, and the meaning before and after of each rule the diff touches.',
+  'Each file named above takes two diffs: the fix step writes its own diff to that file\'s `diff_path`, and the prune step writes the diff of its own pass to that file\'s `prune_path`.',
+  'Run the verification command once over all the fix edits together, and once over all the prune edits together. It does not run per file.',
+  'Report both steps. The `diffs` field carries one entry per file the run changed, each `path` that file\'s `prune_path`, since the prune step left the final state. The `notes` field carries one line per cut, and the meaning before and after of each rule the diff touches.',
 ].join('\n')
 
-// The files a fix diff changed beside the brief's targets: a code fix writes a
-// test with its change, so that test file is in scope too.
-const diffFiles = (made) => [...new Set(
-  [...(made.edit.diff || '').matchAll(/^\+\+\+ b\/(\S+)/gm)].map(m => m[1])
-)].filter(p => !made.targets.includes(p))
+// The diff of each file a fix changed beside the brief's targets: a code fix
+// writes a test with its change, so that test file is in scope too.
+const otherDiffs = (made) => (made.edit.diffs || []).filter(d => d.file && !made.targets.includes(d.file))
+const diffFiles = (made) => [...new Set(otherDiffs(made).map(d => d.file))]
 
 const verifyTask = (made) => [
   `Verify the changes to ${made.target}.`,
@@ -412,51 +511,51 @@ const verifyTask = (made) => [
   ...made.groups.map(g => [
     `${g.target} — the edits its changes were meant to make:`,
     JSON.stringify(g.fixes.map(f => f.edit), null, 2),
-    `Its diff is under ${diffPath(g.target)}.`,
+    made.kind === 'prose'
+      ? `Its fix diff is under ${diffPath(g.target)}, and the diff of the prune over that fix is under ${prunePath(g.target)}.`
+      : `Its diff is under ${diffPath(g.target)}.`,
     '',
   ].join('\n')),
-  `The fix diff:\n${made.edit.diff}`,
-  ...(diffFiles(made).length
-    ? ['', 'The fix diff also changed these files. They are in scope beside the target: fix what you find in them.', ...diffFiles(made).map(p => `    ${p}`)]
+  ...(otherDiffs(made).length
+    ? ['The fix also changed these files. They are in scope beside the target: fix what you find in them. Each entry names the file, then the diff of its change.',
+      ...otherDiffs(made).map(d => `    ${d.file} — ${d.path}`), '']
     : []),
   ...(made.chain && made.chain.length
-    ? ['', 'The other code targets of this run changed the same tree. Their diffs are under these paths:', ...made.chain.map(p => `    ${p}`)]
+    ? ['The other code targets of this run changed the same tree. Their diffs are under these paths:', ...made.chain.map(p => `    ${p}`), '']
     : []),
+  `Write the diff of your own changes, verbatim, to ${verifyPath(made.label)}, and report that path. A pass that changed nothing writes no file and reports an empty path.`,
+  ...(made.worktree ? [worktreeVerifyNote(made.worktree)] : []),
+].join('\n')
+
+const mergeTask = (worktree) => [
+  `Take the change in the worktree at ${worktree} into the repo.`,
+  '',
+  `    uv run python scripts/retro_merge.py ${shq(worktree)}`,
+  '',
+  'Run it as one Bash call, in the foreground, with the Bash tool\'s `timeout` set to 600000.',
+  'It prints `{"applied": ..., "files": [...], "conflict": ...}`. Return that object as your structured output, field for field, changing nothing in it.',
+  'When the command fails, or prints nothing, return `applied` false, an empty `files`, and what went wrong in `conflict`.',
+  'Run no other command. Change no file yourself, and never run a git command of your own.',
 ].join('\n')
 
 const checksTask = () => [
-  'Run these checks over the current tree, in this order:',
+  'Run the checks over the current tree: the suite, the handbook build, and every solver of the corpus.',
   '',
-  '    1. `uv run pytest -q`',
-  '    2. `uv run python scripts/context.py > /dev/null; echo exit=$?`',
-  '    3. the whole corpus, in chunks',
+  '    uv run python scripts/retro_checks.py',
   '',
-  'Run each one to completion. A failure in an earlier check does not stop a later one.',
-  'For the corpus check, list the stems with `ls programs/solvers/*.dl | xargs -n1 basename | sed \'s/\\.dl$//\'`, then split that list into chunks of 100 stems. Run each chunk as `uv run python scripts/run_dl.py run <the chunk\'s stems>`, one Bash call per chunk, in the foreground, with the Bash tool\'s `timeout` set to 600000. Run the chunks one after another. Sum the chunks\' summary lines into one `N/M` count, and collect every failing solver with its failure text.',
-  'Report each command: whether it passed, its summary line verbatim, and every failure in full.',
-  'For the whole-corpus run, report its summary line and the solvers that failed.',
+  'Run it as one Bash call, in the foreground, with the Bash tool\'s `timeout` set to 600000.',
+  'It prints `{"checks": [...]}`. Return that `checks` array, each entry as it stands.',
   'Report a failure as a failure. Do not attribute it to other work, and do not report it as passing.',
   'Change no file. Never run a git command that changes state.',
 ].join('\n')
 
 const sweepTask = (stems) => [
-  'Sweep the parameter values of these solvers:',
+  'Sweep the parameter values of these solvers.',
   '',
-  ...stems.map(s => `    ${s}`),
+  `    mkdir -p .scratch/retro/sweep && uv run python scripts/run_dl.py sweep --open ${stems.join(' ')}`,
   '',
-  'Run `mkdir -p .scratch/retro/sweep` first. Then take one stem at a time.',
-  'A stem whose `.scratch/retro/sweep/<stem>.txt` exists is already swept: read that file for its sweep output.',
-  'A stem whose file is missing is swept now: run `uv run python scripts/run_dl.py sweep <stem> > .scratch/retro/sweep/<stem>.txt 2>&1`, then read that file. A sweep takes minutes, so run it as its own Bash call, in the foreground, with the Bash tool\'s `timeout` set to 600000.',
-  'A sweep line leaves its parameter open when it carries one of these clauses:',
-  '',
-  '    `test refutes [...] — a determination from train alone could pick it`',
-  '    `differ from stored in kind, so the pairs do not fix this parameter`',
-  '    `fit and are smaller than stored`',
-  '    `the cases admit different values`',
-  '',
-  'A line whose extra values only `reproduce the stored outputs on test too` leaves nothing open.',
-  'A line cut by the time budget, and a line that names a partial scope, leave nothing open on that ground alone.',
-  'Report per stem the parameters whose line carries one of those clauses, each with that line verbatim. A stem with no such parameter reports an empty list.',
+  'Run it as one Bash call, in the foreground, with the Bash tool\'s `timeout` set to 600000. A stem whose cached sweep is missing, or was made from other solver code, sweeps again, and that takes minutes.',
+  'It prints `{"sweeps": [...], "skipped": [...]}`. Return that `sweeps` array, each entry as it stands.',
   'Change no file outside `.scratch/retro/sweep/`. Never run a git command that changes state.',
 ].join('\n')
 
@@ -472,6 +571,7 @@ const resolveTask = (taskId) => [
   'Every review line in the solver\'s header names a point to act on, except a line whose kind marks it as waiting on the user; `cite` is such a kind today. Work each line per the procedure\'s operations, as they apply to it.',
   'Remove each line you finished. Leave a line you did not finish; when the solver carries no `// draft` line, return it to draft first: `uv run python -c "import sys; sys.path.insert(0, \'tools/console\'); from solver_console import solvers; solvers.mark_draft(\'<task_id>\'); solvers.withdraw_citations(\'<task_id>\')"`. A review line whose kind waits on the user is not yours: leave it as it is.',
   'Run the solver, the lint, and the audit.',
+  `Write the diff of your change to the solver, verbatim, to ${resolvePath(taskId)}, and report that path. A run that changed nothing writes no file and reports an empty path.`,
   `Write your report, in the form the Review operation gives, to ${REPORT_DIR}/${taskId}/retro.md. Create the directory first. The run, lint, and audit output go in your returned verification, not in the report.`,
   'Never run a git command that changes state.',
 ].join('\n')
@@ -482,10 +582,11 @@ const cleanupTask = (taskId, source) => [
   'Scratch goes under `.scratch/<task_id>/`.',
 ].join('\n')
 
-// The seed key of a review line: its kind, its head, and the start of its point.
+// The seed key of a review line: its kind, its head, and the start of its
+// point. A line of another form is no review line, and takes no key.
 const seedKey = (line) => {
   const m = /^\/\/\s*review\s+(\w+):\s*(.*?)\s+—\s+(.*)$/.exec(line)
-  return m ? `${m[1]}|${m[2]}|${m[3].slice(0, 40)}` : line.slice(0, 60)
+  return m ? `${m[1]}|${m[2]}|${m[3].slice(0, 40)}` : null
 }
 
 const groupTask = (lines) => [
@@ -506,10 +607,42 @@ const consistencyTask = (group, rule, members) => [
   })), null, 2),
 ].join('\n')
 
-const sweepLinesTask = (sweeps) => [
-  'Mark these solvers. Each entry names one solver and the parameters its sweep leaves open, each with the sweep\'s line for it.',
+// One solver of a divergence the docs' rules do not explain. The solver goes to
+// the form its group agreed on, under the reading that decides it.
+const applyTask = (taskId, d) => [
+  `Bring programs/solvers/${taskId}.dl to the form below, under the reading below.`,
   '',
-  JSON.stringify(sweeps.map(s => ({ task_id: s.stem, params: s.params })), null, 2),
+  JSON.stringify({ point: d.point, reading: d.reading, form: d.form }, null, 2),
+  '',
+  'The solvers this entry holds between read that point differently. The form above is the form they agree on.',
+  'Change nothing the form does not reach. The model, the parameterization, and the Choice cases stay as they are.',
+  'Run the solver, the lint, and the audit.',
+  `Write the diff of your change to the solver, verbatim, to ${applyPath(taskId)}, and report that path. A run that changed nothing writes no file and reports an empty path.`,
+  `Write your report, in the form the Review operation gives, to ${REPORT_DIR}/${taskId}/retro-consistency.md. Create the directory first. The run, lint, and audit output go in your returned verification, not in the report.`,
+  'Report the point you brought the solver to in `acted`, as one entry, and what the form leaves unfinished in `left`.',
+  'Never run a git command that changes state.',
+].join('\n')
+
+// The reading and the form of one such divergence, as a question the docs
+// leave open. It goes to the open docs and never to principles.md.
+const recordTask = (d) => [
+  'Record this divergence as an open question.',
+  '',
+  JSON.stringify({ point: d.point, rule: d.rule, reading: d.reading, wording: d.wording, form: d.form, ground: d.ground, solvers: d.solvers }, null, 2),
+  '',
+  'It goes into the file under `docs/wf-solver/open/` that holds this question, as a new instance in that file\'s form. When no file there holds it, write a new file there, in the form the files there take.',
+  'It never goes into `docs/wf-solver/principles.md`.',
+  `Write the diff of each file you changed, verbatim, under \`${DIFF_DIR}/\`, at a path you pick, and report one \`diffs\` entry per file: the file, and the path its diff went to.`,
+].join('\n')
+
+const sweepLinesTask = (sweeps) => [
+  'Write the sweep review lines into these solvers.',
+  '',
+  `    uv run python scripts/run_dl.py sweep --mark ${sweeps.map(s => s.stem).join(' ')}`,
+  '',
+  'Run it as one Bash call, in the foreground, with the Bash tool\'s `timeout` set to 600000.',
+  'It prints `{"solvers": [...], "skipped": [...]}`. Return that `solvers` array, each entry as it stands.',
+  'Change no other file. Never run a git command that changes state.',
 ].join('\n')
 
 // ---------------------------------------------------------------- stages
@@ -550,83 +683,195 @@ const agentOf = (name) => {
   return { agentType: m ? m[1] : 'handbook' }
 }
 const asRole = (name, task) => `${roleOf(name)}\n\n---\n\nYour brief:\n\n${task}`
-// A prose target takes the fix role, then the prune role over its own diff.
+// A prose unit takes the fix role, then the prune role over the diff the fix
+// step made.
 const asFixAndPrune = (task) =>
   `${roleOf('retro-fix')}\n\n---\n\nThe second step, over the diff your fix made:\n\n${roleOf('retro-prune')}\n\n---\n\nYour brief:\n\n${task}`
+
+// ---------------------------------------------------------------- codex
+
+// How the prose units run: an object of Codex settings, or `false` for the
+// handbook agent.
+const CODEX = args && 'codex' in args ? args.codex : {}
+
+// A value as one single-quoted shell word.
+const shq = (value) => `'${String(value).split('\'').join('\'\\\'\'')}'`
+
+const codexFlags = () => [
+  CODEX && CODEX.model ? ` --model ${shq(CODEX.model)}` : '',
+  CODEX && CODEX.effort ? ` --effort ${shq(CODEX.effort)}` : '',
+].join('')
+
+// What one Codex session reads: what it is running under, then the fix role,
+// the prune role, and the unit's brief.
+const codexBrief = (u, ruled) => [
+  'You are running under a workflow, not a conversation. Your final message is the JSON the output schema gives and nothing else. Never run a git command that changes state.',
+  '',
+  asFixAndPrune(fixAndPruneTask(u.groups, ruled)),
+].join('\n')
+
+// The agent of a prose unit runs one command. The script it runs writes the
+// brief and the schema, makes AGENTS.md current, and hands the brief to one
+// Codex session. Codex makes the edits, writes the diffs, and runs the
+// verification.
+const codexTask = (u, ruled) => [
+  `Run the brief below through Codex. It covers ${u.targets.length} file${u.targets.length === 1 ? '' : 's'}: ${u.targets.join(', ')}.`,
+  '',
+  'Run this as one Bash call, in the foreground, with the Bash tool\'s `timeout` set to 600000. Copy the whole command, the brief between the two `RETRO_BRIEF` markers included, verbatim.',
+  '',
+  `uv run python scripts/retro_codex.py --label ${shq(u.label)} --schema ${shq(JSON.stringify(EDIT_SCHEMA))}${codexFlags()} <<'RETRO_BRIEF'`,
+  codexBrief(u, ruled),
+  'RETRO_BRIEF',
+  '',
+  'It prints the JSON of the Codex session\'s final message. Return that JSON as your structured output, field for field, changing nothing in it.',
+  'When the command fails, or prints nothing, return an empty `diffs`, an empty `verification`, an empty `review_lines`, and what went wrong in `notes`.',
+  'Run no other command. Make none of the edits yourself, and change no file. Never run a git command that changes state.',
+].join('\n')
+
+// A Codex session that left no final message comes back with nothing to
+// verify, and its unit falls back to the handbook agent.
+const codexReturned = (edit) => !!edit && !!(edit.verification || '').trim()
 
 // The roles a run reaches, by the run it is.
 const READ_ROLES = ['retro-read', 'retro-check', 'retro-review']
 const FIX_ROLES = ['retro-fix', 'solver', 'retro-prune', 'retro-verify', 'retro-group', 'retro-consistency', 'cleanup']
-// The sweep lines stage runs in a full run, and in a resolve run given stems to sweep.
-const SWEEP_ROLES = ['retro-sweep']
-const RESOLVE_ROLES = ['solver', 'retro-group', 'retro-consistency', 'cleanup']
-const rolesNeeded = () => args && args.resolve ? [...RESOLVE_ROLES, ...(args.sweep ? SWEEP_ROLES : [])]
+const RESOLVE_ROLES = ['solver', 'retro-fix', 'retro-group', 'retro-consistency', 'cleanup']
+const rolesNeeded = () => args && args.resolve ? RESOLVE_ROLES
   : args && args.fixes ? FIX_ROLES
     : args && args.dry ? READ_ROLES
-      : [...READ_ROLES, ...FIX_ROLES, ...SWEEP_ROLES]
+      : [...READ_ROLES, ...FIX_ROLES]
 
-// A unit of fix work: the files one agent takes, with the fixes of each.
-const unit = (groups, kind) => ({
-  groups,
-  kind,
-  target: groups.map(g => g.target).join(', '),
-  targets: groups.map(g => g.target),
-  fixes: groups.flatMap(g => g.fixes),
-})
+// A unit of fix work: the files one agent takes, with the fixes of each. The
+// label names the unit wherever a file is written for it.
+const unit = (groups, kind, label) => {
+  const target = groups.map(g => g.target).join(', ')
+  return {
+    groups,
+    kind,
+    target,
+    label: label || `fix:${target}`,
+    targets: groups.map(g => g.target),
+    fixes: groups.flatMap(g => g.fixes),
+  }
+}
 
+// A prose unit runs under one Bash timeout, which bounds how many files it
+// can fix and prune.
+const PROSE_UNIT = 5
+
+// Whether a code unit takes a worktree of its own.
+const WORKTREES = !(args && args.worktrees === false)
+
+// Each unit is a chain: the fix, then the verify pass over what that fix left,
+// then, for a unit in a worktree, the merge of that worktree into the repo. A
+// unit's chain runs beside the chains of the other units. The return carries
+// the units that landed and the findings of their verify passes. The phase of
+// every agent here is set per call, since the chains overlap.
 async function fixStage(fixes, ruled = false) {
   const targets = [...byKey(fixes, f => f.target)].map(([target, fs]) => ({ target, fixes: fs, kind: kindOf(fs) }))
   const code = targets.filter(t => t.kind === 'code').map(t => unit([t], 'code'))
-  const prose = targets.filter(t => t.kind === 'prose')
-  // Every prose target of a round goes to one agent, so the round pays the
-  // per-agent cost once.
+  const proseUnits = chunks(targets.filter(t => t.kind === 'prose'), PROSE_UNIT)
   const rest = [
-    ...(prose.length ? [unit(prose, 'prose')] : []),
+    ...proseUnits.map((part, i) => unit(part, 'prose', chunkLabel('fix:prose', i, proseUnits.length))),
     ...targets.filter(t => t.kind !== 'code' && t.kind !== 'prose').map(t => unit([t], t.kind)),
   ]
 
-  const makeFix = async (u) => {
+  // What one unit leaves behind: the unit itself, and the report of the agent
+  // that fixed it.
+  const fixed = (u, edit) => ({ target: u.target, targets: u.targets, groups: u.groups, kind: u.kind, label: u.label, ids: u.fixes.map(f => f.id), fixes: u.fixes, edit, worktree: (edit.worktree || '').trim(), chain: null })
+
+  // `isolate` gives the agent a worktree of the repo to work in, and tells it
+  // that it is in one.
+  const makeFix = async (u, isolate = false) => {
+    if (u.kind === 'prose' && CODEX) {
+      const edit = await agent(codexTask(u, ruled), { label: u.label, phase: 'Fix', schema: EDIT_SCHEMA, model: 'sonnet', effort: 'low' })
+      if (codexReturned(edit)) return fixed(u, edit)
+      log(`${u.label}: the codex session returned nothing; the unit runs on a handbook agent instead`)
+    }
     const prompt = u.kind === 'prose'
       ? asFixAndPrune(fixAndPruneTask(u.groups, ruled))
-      : asRole(fixRole(u.kind), fixTask(u.groups))
-    const edit = await agent(prompt, { label: `fix:${u.target}`, phase: 'Fix', schema: EDIT_SCHEMA, ...agentOf(u.kind === 'prose' ? 'retro-fix' : fixRole(u.kind)) })
-    if (!edit) return null
-    return { target: u.target, targets: u.targets, groups: u.groups, kind: u.kind, ids: u.fixes.map(f => f.id), fixes: u.fixes, edit, chain: null }
+      : asRole(fixRole(u.kind), fixTask(u.groups) + (isolate ? worktreeNote() : ''))
+    const edit = await agent(prompt, { label: u.label, phase: 'Fix', schema: EDIT_SCHEMA, ...(isolate ? { isolation: 'worktree' } : {}), ...agentOf(u.kind === 'prose' ? 'retro-fix' : fixRole(u.kind)) })
+    return edit ? fixed(u, edit) : null
   }
 
-  // Every code target edits the same tree and the same suite, so they go one at
-  // a time, each starting from the tree the previous one left. Each verify pass
-  // judges the tests of the whole chain, so it takes the paths of the other
-  // code diffs.
-  const codeChain = async () => {
+  // The verify pass of one unit, over the diffs that unit's own fix left. A fix
+  // that changed nothing leaves nothing to read.
+  const verifyUnit = async (m) => {
+    if (!(m.edit.diffs || []).length) return null
+    const v = await agent(asRole('retro-verify', verifyTask(m)), { label: `verify:${m.label.replace(/^fix:/, '')}`, phase: 'Verify', schema: VERIFY_SCHEMA, ...agentOf('retro-verify') })
+    return v && { target: m.target, targets: [...m.targets, ...diffFiles(m)], ...v }
+  }
+
+  // Two applies on one tree can race, so each merge waits for the one before
+  // it. The units reach this gate in the order they finish.
+  let gate = Promise.resolve()
+  const merged = (run) => {
+    const next = gate.then(run, run)
+    gate = next.then(() => {}, () => {})
+    return next
+  }
+
+  // A unit whose change the repo refuses runs again on the repo itself.
+  const back = []
+
+  const mergeUnit = async (s, u) => {
+    if (!s.made.worktree) {
+      log(`${u.label}: the fix named no worktree; it runs again on the repo`)
+      back.push(u)
+      return { made: null, finding: null }
+    }
+    const label = `merge:${u.label.replace(/^fix:/, '')}`
+    const merge = await merged(() => agent(mergeTask(s.made.worktree), { label, phase: 'Fix', schema: MERGE_SCHEMA, model: 'sonnet', effort: 'low' }))
+    if (merge && merge.applied) return { ...s, merge }
+    log(`${u.label}: the repo refused the worktree's change; its fix runs again on the repo. ${(merge && merge.conflict) || 'the merge returned nothing'}`)
+    back.push(u)
+    return { made: null, finding: null }
+  }
+
+  // The stages of one chain. A stage of a unit whose fix returned nothing
+  // passes that on.
+  const fixStep = (isolate) => async (u) => ({ made: await makeFix(u, isolate) })
+  const verifyStep = async (s) => (s.made ? { ...s, finding: await verifyUnit(s.made) } : s)
+  const mergeStep = async (s, u) => (s.made ? mergeUnit(s, u) : s)
+
+  // Units of one serial run edit the same tree and the same suite, so they go
+  // one at a time, each starting from the tree the previous one left. Each
+  // verify pass judges the tests of the whole run, so it takes the paths of the
+  // other diffs of that run.
+  const serial = async (units) => {
     const made = []
-    for (const u of code) {
+    for (const u of units) {
       const m = await makeFix(u)
       if (m) made.push(m)
     }
     if (made.length > 1) {
       for (const m of made) m.chain = made.filter(o => o !== m).map(o => diffPath(o.target))
     }
-    return made
+    return parallel(made.map(m => async () => ({ made: m, finding: await verifyUnit(m) })))
   }
 
-  const otherTargets = async () => parallel(rest.map(u => () => makeFix(u)))
+  const codeRun = async () => (code.length
+    ? (WORKTREES ? pipeline(code, fixStep(true), verifyStep, mergeStep) : serial(code))
+    : [])
+  const restRun = async () => (rest.length ? pipeline(rest, fixStep(false), verifyStep) : [])
 
-  const [others, coded] = await parallel([otherTargets, codeChain])
-  return [...(others || []), ...(coded || [])].filter(Boolean)
+  const [others, coded] = await parallel([restRun, codeRun])
+  // The fallbacks start once every merge is done, and go one at a time.
+  if (back.length) log(`${back.length} of ${code.length} code units fall back to the repo`)
+  const fellBack = back.length ? await serial(back) : []
+  const done = [...(others || []), ...(coded || []), ...fellBack].filter(s => s && s.made)
+  const findings = done.map(s => s.finding).filter(Boolean)
+  log(`${findings.reduce((n, f) => n + f.findings.length, 0)} verify findings over ${findings.length} units`)
+  return { made: done.map(s => s.made), findings }
 }
 
-async function verifyStage(made, runChecks = true) {
-  const findings = (await parallel(made.map(m => async () => {
-    const v = await agent(asRole('retro-verify', verifyTask(m)), { label: `verify:${m.target}`, phase: 'Verify', schema: VERIFY_SCHEMA, ...agentOf('retro-verify') })
-    return v && { target: m.target, targets: [...m.targets, ...diffFiles(m)], ...v }
-  }))).filter(Boolean)
-  const checks = runChecks
-    ? await agent(checksTask(), { label: 'checks', phase: 'Verify', schema: CHECKS_SCHEMA, model: 'sonnet', effort: 'low' })
-    : null
-  const failed = checks ? checks.checks.filter(c => !c.passed) : []
-  log(`${findings.reduce((n, f) => n + f.findings.length, 0)} verify findings; ${runChecks ? `${failed.length} failing checks` : 'checks skipped'}`)
-  return { findings, checks: checks ? checks.checks : [] }
+// The checks test the combined tree, so they are a barrier after every unit.
+async function checksStage() {
+  const done = await agent(checksTask(), { label: 'checks', phase: 'Verify', schema: CHECKS_SCHEMA, model: 'sonnet', effort: 'low' })
+  const checks = done ? done.checks : []
+  log(`${checks.filter(c => !c.passed).length} failing checks`)
+  return checks
 }
 
 // The items one agent takes, in order.
@@ -639,12 +884,14 @@ const chunks = (items, size) => {
 // The label one agent of a chunked stage carries.
 const chunkLabel = (name, i, n) => (n > 1 ? `${name}:${i + 1}/${n}` : name)
 
-// The window names the solvers the sessions wrote. The stems go in chunks of
-// at most 25, one agent per chunk, so a parameter value the pairs leave open is
-// reported beside the calls.
+// The window names the solvers the sessions wrote. A name that is not a task
+// id names no solver, and is dropped. The stems go in chunks of at most 25, one
+// agent per chunk, so a parameter value the pairs leave open is reported beside
+// the calls.
 async function sweepStage(stems) {
-  if (!stems.length) return null
-  const parts = chunks(stems, 25)
+  const ids = [...new Set((stems || []).map(s => (s || '').trim()).filter(s => /^[0-9a-f]{8}$/.test(s)))]
+  if (!ids.length) return null
+  const parts = chunks(ids, 25)
   const done = (await parallel(parts.map((part, i) => () =>
     agent(sweepTask(part), { label: chunkLabel('sweep', i, parts.length), phase: 'Sweep', schema: SWEEP_SCHEMA, model: 'sonnet', effort: 'low' })
   ))).filter(Boolean)
@@ -654,15 +901,15 @@ async function sweepStage(stems) {
   return sweeps
 }
 
-// A solver the sweep leaves a parameter open in returns to draft and takes one
-// review line per open parameter. The solvers go in chunks of at most 20, one
-// agent per chunk.
+// A solver the sweep leaves a parameter open in takes one review line per open
+// parameter, and keeps the draft state it has. The solvers go in chunks of at
+// most 20, one agent per chunk.
 async function sweepLinesStage(sweeps) {
   const open = (sweeps || []).filter(s => s.params && s.params.length)
   if (!open.length) return null
   const parts = chunks(open, 20)
   const done = (await parallel(parts.map((part, i) => () =>
-    agent(asRole('retro-sweep', sweepLinesTask(part)), { label: chunkLabel('sweep-lines', i, parts.length), phase: 'Sweep', schema: SWEEP_LINES_SCHEMA, ...agentOf('retro-sweep') })
+    agent(sweepLinesTask(part), { label: chunkLabel('sweep-lines', i, parts.length), phase: 'Sweep', schema: SWEEP_LINES_SCHEMA, model: 'sonnet', effort: 'low' })
   ))).filter(Boolean)
   if (!done.length) return null
   const solvers = done.flatMap(d => d.solvers)
@@ -692,7 +939,10 @@ async function resolveStage(taskIds) {
 async function consistencyStage(resolved) {
   const acted = (resolved || []).filter(r => r && (r.acted || []).length)
   if (acted.length < 2) return null
-  const lines = acted.flatMap(r => r.acted.map(line => ({ task_id: r.task_id, line, seed: seedKey(line) })))
+  // A line of another form is a continuation of the line above it, and carries
+  // no point of its own, so the group agent never sees it.
+  const lines = acted.flatMap(r => r.acted.map(line => ({ task_id: r.task_id, line, seed: seedKey(line) })).filter(l => l.seed))
+  if (!lines.length) return null
   const g = await agent(asRole('retro-group', groupTask(lines)), { label: 'group', phase: 'Consistency', schema: GROUP_SCHEMA, ...agentOf('retro-group') })
   if (!g) return null
   const groups = [...byKey(g.assignments, a => a.group)].map(([id, as]) => ({ id, rule: as[0].rule, lines: as }))
@@ -711,17 +961,52 @@ async function consistencyStage(resolved) {
   return { groups, divergences, misgrouped }
 }
 
-// The solvers a run wrote: a solver fix that changed the file, and a resolve
-// that changed the file. Each owes the cleanup pass of the procedure.
-const cleanupItems = (made, resolved) => {
+// A divergence no rule of the docs explains is settled here, not by the user.
+// Each solver the entry holds between goes to the one form under the one
+// reading, one agent per solver, and one agent beside them records that reading
+// in the open docs. The solvers of one entry run together, and the entries run
+// beside each other.
+async function applyStage(consistency) {
+  const entries = ((consistency && consistency.divergences) || []).filter(d => d && d.principled === false)
+  if (!entries.length) return null
+  const byGroup = byKey(entries, d => d.group || '')
+  const done = (await parallel(entries.map(d => async () => {
+    const peers = byGroup.get(d.group || '')
+    const label = chunkLabel(`record:${d.group}`, peers.indexOf(d), peers.length)
+    const stems = [...new Set((d.solvers || []).map(s => (s || '').trim()).filter(Boolean))]
+    const [solvers, record] = await parallel([
+      () => parallel(stems.map(id => async () => {
+        const r = await agent(asRole('solver', applyTask(id, d)), { label: `apply:${id}`, phase: 'Consistency', schema: RESOLVE_SCHEMA, ...agentOf('solver') })
+        return r && { task_id: id, target: solverTarget(id), ...r }
+      })),
+      () => agent(asRole('retro-fix', recordTask(d)), { label, phase: 'Consistency', schema: EDIT_SCHEMA, ...agentOf('retro-fix') }),
+    ])
+    return { group: d.group, point: d.point, reading: d.reading, form: d.form,
+             solvers: (solvers || []).filter(Boolean), record: record || null }
+  }))).filter(Boolean)
+  log(`${done.reduce((n, e) => n + e.solvers.filter(s => s.changed).length, 0)} solvers brought to form over ${done.length} unprincipled divergences`)
+  return done
+}
+
+// The solvers the Apply step wrote, flat.
+const appliedSolvers = (applied) => (applied || []).flatMap(e => e.solvers || [])
+
+// The solvers a run wrote: a solver fix that changed the file, a resolve that
+// changed the file, and an apply that changed the file. Each owes the cleanup
+// pass of the procedure.
+const cleanupItems = (made, resolved, applied) => {
   const items = new Map()
   for (const m of made || []) {
-    if (m.kind !== 'solver' || !(m.edit.diff || '').trim()) continue
+    if (m.kind !== 'solver' || !(m.edit.diffs || []).length) continue
     for (const t of m.targets) items.set(t.replace(/^programs\/solvers\/|\.dl$/g, ''), `A solver fix of this run wrote it; its diff is under ${diffPath(t)}.`)
   }
   for (const r of resolved || []) {
-    if (!(r.diff || '').trim()) continue
+    if (!r.changed) continue
     items.set(r.task_id, `The Resolve stage of this run wrote it; its report is at ${r.report}.`)
+  }
+  for (const r of appliedSolvers(applied)) {
+    if (!r.changed) continue
+    items.set(r.task_id, `The Apply step of this run brought it to the form its group agreed on; its report is at ${r.report}.`)
   }
   return [...items].map(([task_id, source]) => ({ task_id, source }))
 }
@@ -733,7 +1018,7 @@ async function cleanupStage(items) {
     const r = await agent(asRole('cleanup', cleanupTask(task_id, source)), { label: `cleanup:${task_id}`, phase: 'Cleanup', schema: CLEANUP_SCHEMA, ...agentOf('cleanup') })
     return r && { task_id, target: solverTarget(task_id), ...r }
   }))).filter(Boolean)
-  log(`${done.filter(r => !/^no change/i.test(r.changed)).length} of ${done.length} solvers changed in cleanup; ${done.reduce((n, r) => n + r.concerns.length, 0)} concerns`)
+  log(`${done.filter(r => !/^no change/i.test(r.changed)).length} of ${done.length} solvers changed in cleanup; ${done.reduce((n, r) => n + (r.carried || []).length, 0)} files a carry reached`)
   return done
 }
 
@@ -753,8 +1038,8 @@ const kindForTarget = (target) =>
 
 // A verify pass fixes what it finds in its own target and leaves a finding
 // that needs another file, naming that file. Each such finding becomes a fix on
-// that file, and the fixes that changed something are verified like the first
-// round. It starts no round of its own.
+// that file, and each such fix is verified in its own chain, as the first round
+// runs. This round starts no round of its own.
 async function followupStage(verify) {
   const fixes = (verify ? verify.findings : []).flatMap(v =>
     v.findings.map(f => ({ f, target: (f.other_file || '').trim() }))
@@ -768,14 +1053,14 @@ async function followupStage(verify) {
   if (!fixes.length) return null
   log(`${fixes.length} follow-up fixes from the verify findings`)
   phase('Fix')
-  const made = await fixStage(fixes, true)
+  const { made, findings } = await fixStage(fixes, true)
   phase('Verify')
-  // A fix that returned an empty diff changed nothing, so it takes no verify
-  // pass. The checks run only over a code change.
-  const changed = made.filter(m => (m.edit.diff || '').trim())
+  // A fix that reported no diff changed nothing. The checks run only over a
+  // code change.
+  const changed = made.filter(m => (m.edit.diffs || []).length)
   const codeChanged = changed.some(m => m.kind === 'code')
   log(`${changed.length} of ${made.length} follow-up fixes changed a file`)
-  return { fixes: made, verify: changed.length ? await verifyStage(changed, codeChanged) : null }
+  return { fixes: made, verify: changed.length ? { findings, checks: codeChanged ? await checksStage() : [] } : null }
 }
 
 const missing = rolesNeeded().filter(name => typeof ROLES[name] !== 'string' || !ROLES[name].trim())
@@ -797,25 +1082,33 @@ if (args && args.resolve) {
   const resolved = await resolveStage([...args.resolve, ...resolveStems(null, sweepLines)])
   phase('Consistency')
   const consistency = await consistencyStage(resolved)
+  const applied = await applyStage(consistency)
   phase('Cleanup')
-  const cleanup = await cleanupStage(cleanupItems(null, resolved))
+  const cleanup = await cleanupStage(cleanupItems(null, resolved, applied))
+  // Resolve and Cleanup both edit solvers, so the checks run over the tree
+  // they leave.
+  phase('Verify')
+  const checks = await checksStage()
   return { tally: null, closed: null, calls: null, fixes: null, entries: null, resolve: resolved,
-           consistency, cleanup, verify: null, followups: null, sweep, sweep_lines: sweepLines, borderline_drops: null }
+           consistency, applied, cleanup, verify: { findings: [], checks }, followups: null, sweep, sweep_lines: sweepLines, borderline_drops: null }
 }
 
 if (args && args.fixes) {
   phase('Fix')
-  const made = await fixStage(args.fixes, true)
+  // Each unit is verified in its own chain; the checks wait for every unit, and
+  // for the stages that write the solvers beside them.
+  const { made, findings } = await fixStage(args.fixes, true)
   phase('Resolve')
   const resolved = await resolveStage(resolveStems(made, null))
   phase('Consistency')
   const consistency = await consistencyStage(resolved)
+  const applied = await applyStage(consistency)
   phase('Cleanup')
-  const cleanup = await cleanupStage(cleanupItems(made, resolved))
+  const cleanup = await cleanupStage(cleanupItems(made, resolved, applied))
   phase('Verify')
-  const verify = await verifyStage(made)
+  const verify = { findings, checks: await checksStage() }
   const followups = await followupStage(verify)
-  return { fixes: made.filter(m => m.kind !== 'entry'), entries: made.filter(m => m.kind === 'entry'), resolve: resolved, consistency, cleanup, verify, followups }
+  return { fixes: made.filter(m => m.kind !== 'entry'), entries: made.filter(m => m.kind === 'entry'), resolve: resolved, consistency, applied, cleanup, verify, followups }
 }
 
 phase('Read')
@@ -825,7 +1118,7 @@ const issues = read.issues
 // The sweep runs beside the check and review stages, and is awaited before any fix.
 const sweeping = (args && args.dry) ? null : sweepStage([...new Set(issues.flatMap(i => i.tasks || []))])
 log(`${issues.length} issues from the window; ${read.borderline_drops.length} borderline drops`)
-if (!issues.length) return { tally: { issues: 0 }, consistency: null, borderline_drops: read.borderline_drops }
+if (!issues.length) return { tally: { issues: 0 }, consistency: null, applied: null, borderline_drops: read.borderline_drops }
 
 phase('Check')
 const groups = byKey(issues, i => i.group)
@@ -859,36 +1152,40 @@ if (open.length) {
                  covers: r.covers, fixes, changed_work: o?.changed_work, changed_how: o?.changed_how })
   }
 }
+const dry = args && args.dry
 // The doc whose fixes wait on the user's ruling, at any level.
 const PRINCIPLES = 'docs/wf-solver/principles.md'
-// a level-4 call is presented and not made, and so is a fix to PRINCIPLES
-const stands = calls.filter(c => (c.default === 'fix' || c.default === 'replace') && c.fixes.length && c.tier !== 4)
+// A level-4 call is presented and not made, and so is a fix to PRINCIPLES. A dry run makes
+// nothing, so it lists them with the rest: the rulings filter them like any other fix.
+const stands = calls.filter(c => (c.default === 'fix' || c.default === 'replace') && c.fixes.length && (dry || c.tier !== 4))
 // one agent per general fix: fixes that several replaced issues point at collapse to one
 // A fix carries its issue's tasks: a fix over a principle writes a review line into each of their draft solvers.
-const fixes = [...byKey(stands.flatMap(c => c.fixes.filter(f => f.target !== PRINCIPLES).map(f => ({ ...f, id: c.id, tasks: issueById.get(c.id)?.tasks || [] }))), f => `${f.target}\n${f.edit}`)]
+const fixes = [...byKey(stands.flatMap(c => c.fixes.filter(f => dry || f.target !== PRINCIPLES).map(f => ({ ...f, id: c.id, tasks: issueById.get(c.id)?.tasks || [] }))), f => `${f.target}\n${f.edit}`)]
   .map(([, fs]) => ({ ...fs[0], id: fs.map(f => f.id).join(','), tasks: [...new Set(fs.flatMap(f => f.tasks))] }))
 const tally = { issues: issues.length, closed: closed.length }
 for (const c of calls) tally[c.default] = (tally[c.default] || 0) + 1
 log(`${fixes.length} fixes to make`)
 
 phase('Fix')
-const dry = args && args.dry
 // The sweep overlaps the reading stages only: the fix and verify stages run solvers under a CPU limit.
 const sweep = sweeping ? await sweeping : null
 const sweepLines = sweep ? await sweepLinesStage(sweep) : null
-const made = fixes.length && !dry ? await fixStage(fixes) : []
+// Each unit is verified in its own chain; the checks wait for every unit, and
+// for the stages that write the solvers beside them.
+const { made, findings } = fixes.length && !dry ? await fixStage(fixes) : { made: [], findings: [] }
 
 phase('Resolve')
 const resolved = dry ? null : await resolveStage(resolveStems(made, sweepLines))
 
 phase('Consistency')
 const consistency = dry ? null : await consistencyStage(resolved)
+const applied = dry ? null : await applyStage(consistency)
 
 phase('Cleanup')
-const cleanup = dry ? null : await cleanupStage(cleanupItems(made, resolved))
+const cleanup = dry ? null : await cleanupStage(cleanupItems(made, resolved, applied))
 
 phase('Verify')
-const verify = made.length ? await verifyStage(made) : null
+const verify = made.length ? { findings, checks: await checksStage() } : null
 const followups = verify ? await followupStage(verify) : null
 
 
@@ -901,6 +1198,7 @@ return {
   entries: made.filter(m => m.kind === 'entry'),
   resolve: resolved,
   consistency,
+  applied,
   cleanup,
   verify,
   followups,

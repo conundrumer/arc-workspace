@@ -56,7 +56,7 @@ NB: reparameterization has been dropped; Same model decides whether an encoding 
 | Data vs ops | Table or rule |
 | Concept vs setup | Prior or setup |
 
-## Box (2026-09-11)
+## Box
 
 On 2026-09-11, the spatial record took its algebra's names, in lib.dl, the tooling, the docs, and every solver at once.
 
@@ -83,3 +83,11 @@ On 2026-09-11, the spatial record took its algebra's names, in lib.dl, the tooli
 | `cadence.md` | `procedure.md` |
 | `concepts.md` | `keywords.md` |
 | `shapes.md` | the Shape section of `keywords.md` |
+
+## Solver header
+
+On 2026-09-13, the solver header took the field grammar style.md states.
+
+| Former | Current |
+| --- | --- |
+| `// family:` | `// representative:` |

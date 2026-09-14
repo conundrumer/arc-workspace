@@ -2,11 +2,13 @@
 what the report calls each one."""
 
 from dl import deletions as deletions_mod
+from dl import solve as solve_mod
 from dl.deletions import (
     BOUND_ENUMERATOR,
     CASE_COLUMN,
     NOOP_NOTE,
     UNEXERCISED_CASES,
+    UNGROUNDED_DELETION,
     UNPROBED_CASE,
     _case_findings,
     _cases_agree,
@@ -69,10 +71,10 @@ def atoms(source: str, determine: bool = False) -> list[str]:
 def test_disjunct_with_binding():
     assert kinds(DISJ_BINDING, determine=True) == [
         # `run(...)` is the whole of the second branch, so its deletion
-        # has no syntactic form and is skipped. `dir_elem(D)` enumerates a
-        # variable `step_offset(D, S)` carries.
-        "rule", "atom", "atom", BOUND_ENUMERATOR, *["atom"] * 3,
-        "disjunct", "disjunct",
+        # has no syntactic form and is skipped. `step_offset` carries the
+        # variable of `dir_elem(D)` at a Dir8 column, so that atom narrows
+        # the binding and stands as an atom.
+        "rule", *["atom"] * 6, "disjunct", "disjunct",
     ]
 
 
@@ -172,6 +174,19 @@ def test_an_enumerator_over_a_bound_variable_stands_apart_from_the_atoms():
     assert "not a claim" in body
     assert "the pairs never instantiate" not in body
     assert "every deletion changes the result" not in body
+
+
+NARROWING = """\
+.decl near(p: Position, d: Dir)
+near(P, D) :- in(P, _), dir_elem(D), neighbor(P, D, Q), in(Q, _).
+"""
+
+
+def test_an_enumerator_over_a_wider_column_is_a_plain_atom():
+    """`neighbor` carries the variable at a Dir8 column, so `dir_elem(D)`
+    narrows the binding rather than reading it out: a claim, and its
+    deletion is an atom deletion."""
+    assert kinds(NARROWING) == ["rule", *["atom"] * 4]
 
 
 CHOICE_SOLVER = """\
@@ -280,6 +295,40 @@ def test_ungrounds_is_false_on_other_failures(monkeypatch):
     assert not deletions_mod._ungrounds(CHOICE_SOLVER, _Ex())
 
 
+class _Task:
+    train = [_Ex()]
+    test: list = []
+
+
+def test_an_ungrounding_deletion_reports_apart_from_the_measured_ones(
+    monkeypatch, tmp_path
+):
+    """A deletion whose run fails for an ungrounded variable measured
+    nothing: it reports under its own kind, and the tested count leaves it
+    out."""
+    (tmp_path / "s.dl").write_text(PLAIN_SOLVER)
+    reference = [frozenset({""})]
+    monkeypatch.setattr(solve_mod, "SOLVERS_DIR", tmp_path)
+    monkeypatch.setattr(deletions_mod, "load_task", lambda _id: _Task())
+    monkeypatch.setattr(deletions_mod, "determine_check", lambda *_: None)
+    monkeypatch.setattr(
+        deletions_mod, "_profile",
+        lambda src, _examples: reference if src == PLAIN_SOLVER else None,
+    )
+    # The ungrounding deletions: the two that leave a single rule standing.
+    monkeypatch.setattr(
+        deletions_mod, "_ungrounds", lambda mod, _ex: mod.count(":-") == 1
+    )
+    total, findings = deletions_mod.deletion_report("s")
+    assert [kind for _, kind, _ in findings] == [UNGROUNDED_DELETION] * 2
+    lines = render_deletions("s", (total, findings))
+    assert lines[0] == f"every deletion changes the result ({total - 2} tested)"
+    assert "2 deletions the run cannot judge:" in lines
+    body = " ".join(" ".join(lines).split())
+    assert "ungrounds a variable, so Souffle rejects the file" in body
+    assert "says nothing about the pairs" in body
+
+
 def test_render_case_column_is_not_dead_code():
     lines = render_deletions("s", (23, [(53, CASE_COLUMN, "trail_cell.ch")]))
     assert lines[0] == "1/23 deletions change nothing:"
@@ -296,6 +345,21 @@ def test_render_plain_column_carries_only_the_legend():
         *NOOP_NOTE,
         "  s.dl:53: column `trail_cell.p`",
     ]
+
+
+def test_every_ratio_counts_against_the_judged_deletions():
+    """A deletion the run could not judge is out of every denominator, so
+    the ratios read against the tested count and not against the raw
+    total."""
+    findings = [
+        (53, "column", "trail_cell.p"),
+        (2, BOUND_ENUMERATOR, "dir_elem(D)"),
+        (7, UNGROUNDED_DELETION, "in(P, _)"),
+    ]
+    lines = render_deletions("s", (23, findings))
+    assert lines[0] == "1/22 deletions change nothing:"
+    assert "1/22 deletions remove an enumerator over a bound variable:" in lines
+    assert "1 deletion the run cannot judge:" in lines
 
 
 def test_render_legend_states_the_measurement_and_leaves_the_reading_open():

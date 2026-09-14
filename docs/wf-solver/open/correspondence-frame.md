@@ -1,13 +1,14 @@
-# Correspondence frame: a derived extent, and a stored frame beside a decomposition
+# Correspondence frame: which derivations owe a stored case
 
 Open question in `principles.md`, Invariance — Stored or derived: the Unwitnessed derivation and Correspondence frame bullets.
 
 ## The question
 
-Unwitnessed derivation says a derivation the pairs never separate from a constant stands only beside the stored case. Correspondence frame exempts "a frame built as a correspondence over input cells", by the form of the encoding. Two gaps:
+Unwitnessed derivation says a derivation the pairs never separate from a constant stands only beside the stored case. Correspondence frame exempts "a frame built as a correspondence over input cells", by the form of the encoding. The gaps:
 
 - A derived extent that is constant on every example owes the stored case or not by how it is written: as a correspondence (`concat_2d` over reads of `in`) it is exempt; as a number passed to a decomposition comp it is not. 363442ee cuts its canvas by the key box's extent (3 on every example); 19bb5feb's output frame is the product of its two rank sets (2 on every example); 79cce52d's is an axis frame from a line count (6).
 - The panel-combine fold takes its output cell from the intile position of `decompose`, a correspondence over tile cells, and fifteen approved files store the frame's extent beside it as `frame_dim` and range the fold over `params.frame`. Under the count branch, `divisor` and the input extent fix the tile extent, and the stored frame states it a second time; the two disagree on any input whose tile extent is not the stored one.
+- A derivation that yields a cell set and no number. A lattice of lines found from the input's own cells is unwitnessed as soon as every example shares one layout, and whether Setup derivation or Correspondence frame governs it is unstated.
 
 ## The text
 
@@ -36,6 +37,9 @@ The contradiction clause is Invariance's "No two parameters admit values that co
 
 - 363442ee (draft) — `cvt.dim` reads the key box's extent and is 3 on every example. The number cuts a given canvas, so under both texts the stored case is owed: a third case with a stored `tile_dim`. Its report's grounds against it were the pin inside the program (which the candidate text sets aside), the untransformed output (`unchanged-output.md`), and 103eff5b (above).
 - 48f8583b (draft) — its frame is `concat_2d` over two reads of `in`, exempt under both texts; nothing changes.
+- 97239e3d (draft) — `street` and `wall_line` are the lines the wall cells leave free and occupy, and `run_dl.py derived-constant 97239e3d` reports `street`, `wall_line`, `crossing` and `closed.region` holding the same tuples on every example, since all four grids share one wall layout. The set is setup. Read as a per-line correspondence over input cells it yields no number and stands with nothing stored; under Setup derivation as written setup may not hold it. A stored street set holds frame-relative Positions, which fit the 17×17 frame alone.
+- 98c475bf (draft) — `$Across` paints each figure's line per input cell of the marker's row and stores no extent; `$Drawn` reads the same line from `params.line`, which holds 86 of the file's 171 literals. Under Correspondence frame `$Across` is a correspondence and `$Drawn` goes; under Unwitnessed derivation as written `$Drawn` is the stored case that `$Across` stands beside.
+- 85b81ff1 (draft) — `$Tile` splits the panels by a stored tile count or a stored tile size; the all-bg columns cut the same panels on every pair and on the test input, so a divider-derived split (`DividerTiles`) is unwitnessed. Unwitnessed derivation admits it as a case beside the two stored branches. The approved slab solvers 662c240a, 0520fde7 and f25ffba3 carry `Count`, `Size` and `Table` branches and no divider branch, and 85b81ff1 follows them.
 
 ## Witnesses
 

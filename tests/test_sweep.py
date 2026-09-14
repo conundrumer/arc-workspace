@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from dl import sweep
+from dl import solve, sweep
 
 STEM = "abcd1234"
 
@@ -17,7 +17,7 @@ def _stub(tmp_path: Path, monkeypatch, facts: str, domain: list[int],
     the lib defines stubbed out."""
     (tmp_path / f"{STEM}.dl").write_text(
         f".comp Params {{\n    .decl {decl} {facts}\n}}\n")
-    monkeypatch.setattr(sweep, "SOLVERS_DIR", tmp_path)
+    monkeypatch.setattr(solve, "SOLVERS_DIR", tmp_path)
     monkeypatch.setattr(sweep, "load_task",
                         lambda task_id: SimpleNamespace(train=[], test=[]))
     monkeypatch.setattr(sweep, "_lib_defines", lambda: {})
@@ -229,7 +229,7 @@ def _shared_stub(tmp_path: Path, monkeypatch, domain: list[int]):
         "    .decl m(k: number) m(1).\n"
         "}\n"
     )
-    monkeypatch.setattr(sweep, "SOLVERS_DIR", tmp_path)
+    monkeypatch.setattr(solve, "SOLVERS_DIR", tmp_path)
     monkeypatch.setattr(sweep, "load_task",
                         lambda task_id: SimpleNamespace(train=[], test=[]))
     monkeypatch.setattr(sweep, "_lib_defines", lambda: {})
@@ -292,7 +292,7 @@ def _two_param_stub(tmp_path: Path, monkeypatch, domain: list[int]):
         "    .decl m(k: number) m(1).\n"
         "}\n"
     )
-    monkeypatch.setattr(sweep, "SOLVERS_DIR", tmp_path)
+    monkeypatch.setattr(solve, "SOLVERS_DIR", tmp_path)
     monkeypatch.setattr(sweep, "load_task",
                         lambda task_id: SimpleNamespace(train=[], test=[]))
     monkeypatch.setattr(sweep, "_lib_defines", lambda: {})

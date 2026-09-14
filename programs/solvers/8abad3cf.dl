@@ -29,7 +29,11 @@
     .decl gap(n: number) gap(1).
 
     // --- ByPlace ---
+    // The train pairs admit DIAG_TR as well; enumerating the four corners
+    // fixes this value.
     .decl corner(d: DiagDir) corner(DIAG_TL).
+    // The train pairs admit AXIS_H as well; enumerating the two axes fixes
+    // this value.
     .decl order_axis(a: Axis) order_axis(AXIS_V).
 }
 

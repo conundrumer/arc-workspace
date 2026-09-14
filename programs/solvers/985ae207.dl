@@ -3,9 +3,9 @@
 // keywords: markers match stamp cast
 // input: marks — a cell ringed by a second color — and blocks, the non-bg
 //  cells no mark holds
-// output: Each mark marches copies of itself along every cardinal whose
-//  march reaches the block of the mark's own color, halting at the first
-//  copy that lands on that block.
+// output: Each mark marches copies of itself along every cardinal. A march
+//  that reaches the block of the mark's own color draws its copies, up to the
+//  first one that lands on that block.
 
 // what fixes the march's pitch
 .type Choice =
@@ -17,6 +17,8 @@
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
+    // The train pairs admit a second color; the DominantColor proposer, exact
+    // here, fixes this value.
     .decl bg(col: Color) bg(8).
 
     // --- Stride ---
@@ -88,14 +90,16 @@ march(Pm, D, V, $Stride()) :-
 
 // --- output ---
 
-// The copies of a march: from the mark on, the last one landing on the block.
+// The copies of a march: the mark, then one per step, halting at the block or
+// the grid edge.
 .decl copy(p_mark: Position, d: Dir, q: Position, ch: Choice)
-copy(Pm, D, Pm, Ch) :- mark(Pm, _), dir_elem(D), impl_choice(Ch).
+copy(Pm, D, Pm, Ch) :- march(Pm, D, _, Ch).
 copy(Pm, D, Q2, Ch) :-
     copy(Pm, D, Q, Ch), !at_block(Pm, Q),
     march(Pm, D, V, Ch), compose(Q, V, Q2), in(Q2, _).
 
 // The march that arrives at the block.
+// @allow: single-consumer — naming the concept the model turns on
 .decl arrives(p_mark: Position, d: Dir, ch: Choice)
 arrives(Pm, D, Ch) :- copy(Pm, D, Q, Ch), at_block(Pm, Q).
 

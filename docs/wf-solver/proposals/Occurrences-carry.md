@@ -1,6 +1,6 @@
 # `Occurrences.carry` — the cells a figure lands on, seated at an occurrence of its matched part
 
-A per-cell readout on `Occurrences` for a figure larger than the shape it was sought by: the search matches a part of the figure — its marks, its anchor cells, its outline — and the whole figure is composed at each occurrence, so a caller reads where every figure cell lands, matched part and carried part alike. `covers` is this with the figure equal to the shape; a figure that reaches past the shape lands cells the search never tested, on the grid or off it, and the caller decides what an off-grid landing means.
+A per-cell readout on `Occurrences` for a figure larger than the shape it was sought by: the search matches a part of the figure — its marks, its anchor cells, its outline — and the whole figure is composed at each occurrence, so a caller reads where every figure cell lands, matched part and carried part alike. `covers` is this with the figure landing no cell outside the shape; a figure that reaches past the shape lands cells the search never tested, on the grid or off it, and the caller decides what an off-grid landing means.
 
 ```
     // The figure the shape is part of, per key, in the shape's frame.
@@ -11,9 +11,9 @@ A per-cell readout on `Occurrences` for a figure larger than the shape it was so
     carry(Ky, M, F, P) :- occurrence(Ky, M), figure(Ky, F), compose(M, F, P).
 ```
 
-Not: `covers` (the figure is exactly the shape); `placement` composed before the mismatch test; a stored footprint or satellite composed at a mark or a seat that no occurrence test found; a figure composed at a searched Shift that `Occurrences` did not produce; `apply_about` and `apply_between`, whose landing is a frame Position and not a searched placement.
+Not: `covers` (the figure lands no cell outside the shape); `placement` composed before the mismatch test; a stored footprint or satellite composed at a mark or a seat that no occurrence test found; a figure composed at a searched Offset that `Occurrences` did not produce; `apply_about` and `apply_between`, whose landing is a frame Position and not a searched placement.
 
-Match: a rule joining an `Occurrences` instance's `occurrence` with `compose` over a relation that, together with what feeds the instance's `shape`, is the figure — the shape's unfiltered source, the whole object whose subset the shape is, the source's complementary part alone, or a satellite cell alone — deriving the landed cell. Grep: `occurrence(`, `compose(`; then check that the composed relation is not the shape's exact feed. Match with the parser (`tests/test_ast_match.py`).
+Match: a rule that composes, with `compose`, a relation that together with the instance's `shape` feed is the figure — the shape's unfiltered source, the whole object whose subset the shape is, the source's complementary part alone, or a satellite cell alone — at a placement an `Occurrences` instance's `occurrence` produced. The placement reaches that rule directly, or through derived relations, any number of them, and through a lib comp that selects among candidate placements, as `PlacementPruning.alive` does; a placement some other rule computes is the `Not:` line's unsearched seat. Take the forward closure of the instance's `occurrence` over the solver's rules, counting a lib instance's relations as joined to one another, then read each rule in that closure that holds `compose` and check that the composed relation lands cells the shape does not. A relation over the shape's cells with substituted values, as 6c434453's `params.dst` is, and a subset of the shape's feed, as 825aa9e9's `mover_cell` is, land no such cell: both are `covers`. Grep `occurrence(` for the instances; run the closure and the check with the parser (`tests/test_ast_match.py`).
 
 Survey: 2026-09-10 06:15
 

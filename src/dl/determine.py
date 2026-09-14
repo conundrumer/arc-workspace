@@ -7,8 +7,7 @@ from pathlib import Path
 from arc.task import load as load_task
 from dl.determine_deps import Step, determine_cycles, render_cycles
 from dl.facts import _parse_relations, _parse_value, example_facts
-from dl.paths import SOLVERS_DIR
-from dl.solve import task_id_of
+from dl.solve import solver_file
 from dl.souffle import CPU_LIMIT_SECONDS, _run_source
 from dl.source import build_determine_source, determined_params, rigid_decls
 
@@ -25,9 +24,9 @@ class DetermineResult:
 def run_determine(stem: str) -> DetermineResult | None:
     """Determination check for one solver; None when the file has no
     Determine comp."""
-    source = (SOLVERS_DIR / f"{stem}.dl").read_text()
-    task = load_task(task_id_of(stem))
-    return determine_check(source, task)
+    path, task_id = solver_file(stem)
+    task = load_task(task_id)
+    return determine_check(path.read_text(), task)
 
 
 def determine_check(source: str, task) -> DetermineResult | None:

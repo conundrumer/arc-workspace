@@ -21,8 +21,9 @@
     // a walk along the trail: each step skips the gap line and flips the
     // dot's end
     Walk {f: First}
-    // a stored periodic banner: params.slot the period, params.bar_slot
-    // the bar slots, params.dot_slot each dot slot with its side
+    // a stored periodic banner: params.slot the period's slots,
+    // params.bar_slot the bar slots, and params.dot_slot each dot slot
+    // with its side
   | Banner {}
     // params.template_bar and params.template_dot, the whole trail as one
     // stored shape, anchored on the marker
@@ -57,7 +58,7 @@
 
     // --- $Stamp ---
     // Trail cells as offsets from the marker, `@` on the marker cell.
-    .decl template_bar(delta: Offset)   // member cells echo the marker
+    .decl template_bar(delta: Offset)   // member cells take the marker's color
     GRID_STAMP_10x9(template_bar,
          1, _, 1, _, 1, _, 1, _, 1,
          1, _, 1, _, 1, _, 1, _, 1,
@@ -162,8 +163,8 @@ out(P, Col, Ch) :- dotted(P, Ch), params.dot(Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, Ch), !dotted(P, Ch), params.bg(Col).
 
 .comp Determine {
-    .decl fmark(e: Example, p: Position, col: Color)
-    fmark(E, P, Col) :- ex_in(E, P, Col), !params.bg(Col).
+    .decl mark(e: Example, p: Position, col: Color)
+    mark(E, P, Col) :- ex_in(E, P, Col), !params.bg(Col).
 
     // The axis the trail runs along.
     .decl trail_axis(a: Axis)
@@ -171,9 +172,9 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, Ch), !dotted(P, Ch), param
 
     // The cast from the marker toward the trail direction.
     .init trail = Ray<Example>
-    trail.dir(E, D) :- fmark(E, _, _), params.dir(D).
+    trail.dir(E, D) :- mark(E, _, _), params.dir(D).
     trail.cell(E, P) :- ex_in(E, P, _).
-    trail.mark(E, P) :- fmark(E, P, _).
+    trail.mark(E, P) :- mark(E, P, _).
 
     // Step I of the trail: each output cell of the bar line I steps from the
     // marker, with its color.
@@ -185,7 +186,7 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, Ch), !dotted(P, Ch), param
 
     // A bar step: some cell of its line takes the marker's color.
     .decl bar_step(e: Example, i: number)
-    bar_step(E, I) :- step_cell(E, I, _, Col), fmark(E, _, Col).
+    bar_step(E, I) :- step_cell(E, I, _, Col), mark(E, _, Col).
 
     // A dot step: the dot at the S end of its line.
     .decl dot_step(e: Example, i: number, s: Sense)
@@ -224,9 +225,9 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, Ch), !dotted(P, Ch), param
     // Each bar cell and dot cell as an offset from the marker.
     .decl template_bar(delta: Offset)
     template_bar(Delta) :-
-        fmark(E, P, Col), ex_out(E, Q, Col), relative(P, Q, Delta).
+        mark(E, P, Col), ex_out(E, Q, Col), relative(P, Q, Delta).
 
     .decl template_dot(delta: Offset)
     template_dot(Delta) :-
-        fmark(E, P, _), ex_out(E, Q, Dot), params.dot(Dot), relative(P, Q, Delta).
+        mark(E, P, _), ex_out(E, Q, Dot), params.dot(Dot), relative(P, Q, Delta).
 }

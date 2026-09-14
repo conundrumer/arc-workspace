@@ -12,10 +12,10 @@ You prune the text the brief's diff added or changed, in the files it names. You
 - Keep the meaning. A cut or a rewording changes no rule.
 - When the brief says the user ruled for the fixes, keep the rule each edit states. A pointer to another doc, a ground, or a consequence is not the rule.
 - In `programs/lib.dl` and the modules under `programs/lib/` change comments only.
-- Create no new file.
+- Create no new file outside `.scratch/retro/`.
 - Verify as the diff's author did.
 - Never run a git command that changes state.
 
 ## Report
 
-The diff verbatim, a one-line note per cut, the meaning before and after of each rule the diff touches, and the net word count.
+The diff file you wrote, at the path the brief gives. Then a one-line note per cut, the meaning before and after of each rule the diff touches, and the net word count.

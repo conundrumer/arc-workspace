@@ -31,11 +31,12 @@ Then dispatch on `$ARGUMENTS`:
 Rule on what the console's sessions called out beyond their own tasks. The workflow reads, checks, fixes, and verifies. The main session passes the roles, presents the result, and takes the rulings.
 
 - **Run.**
-    - Run the `retro` workflow (`.claude/workflows/retro.js`) with `roles` in `args`: the text of each role file the run needs, keyed by role name, as the workflow's `args` note names them.
-    - The main session reads the role files to pass them, and no window, report, solver, or doc. It runs no edit, revert, or check itself: those go to agents.
-    - The run's agents read the window, check each issue, take a default on each open one, make the fixes the defaults call for, act on each review line those fixes and the sweep wrote into a solver, run the cleanup pass over each solver the run wrote, and verify what the run changed. Each stage's rules live in its role, under `.claude/roles/`. The `solver` role carries a solver fix and the resolve stage.
-    - A `resolve` run, `resolve` in `args` holding a list of task ids, runs the resolve stage over those solvers.
-- **Report.** The workflow returns every call with its default, its level, and what argues for and against it.
+    - Run the `retro` workflow (`.claude/workflows/retro.js`) with `roles` in `args`: the text of each role file the run needs, keyed by role name, as the workflow's `args` note names them. A retro takes three runs, each with its own `args`.
+    - The first run is `dry: true`. It reads, checks, and reviews, and returns every call with its default and the fixes it would make, under `dry`. It makes no fix, and the sweep does not run in it.
+    - The main session reads the role files to pass them, and no window, report, solver, or doc. It runs no edit or check itself: those go to agents.
+    - The runs' agents read the window, check each issue, take a default on each open one, make the fixes the rulings keep, sweep the window's solvers, act on each review line those fixes and the sweep wrote into a solver, run the cleanup pass over each solver the runs wrote, and verify what they changed. Each stage's rules live in its role, under `.claude/roles/`. The `solver` role carries a solver fix and the resolve stage.
+- **Report.** The dry run returns every call with its default, its level, and what argues for and against it.
+    - What reaches the user is a call whose fix changes a rule the user reads, in `principles.md`, `keywords.md`, or a gloss, and the Verify issues. A solver particular stays with the agents and the console's reports.
     - Present the calls, as one numbered list, ordered by dependency and then by level ascending. Issue ids stay out, and so do quotes.
     - A call is a decision in the settle form:
 
@@ -57,16 +58,14 @@ Rule on what the console's sessions called out beyond their own tasks. The workf
             2. **<label>.** <the option's action>
         ```
 
-        - The level is the call's discretion level, as the check and review roles define it. A level-4 fix, and a fix to `principles.md` at any level, is presented and not made in the first run.
-        - The default states what holds, the fix or the drop, not whether the run made it.
+        - The level is the call's discretion level, as the check and review roles define it. A level-4 fix, and a fix to `principles.md` at any level, is presented for ruling like every other call.
+        - The default states what holds, the fix or the drop.
         - The default is option 1, and the other options come strongest first, each labeled in one word. Reasons come strongest first.
         - The first ground under the default is the call's `basis`. A call the check dropped takes it from the check result, and every other call from the review result. A call with no `basis` states no ground for it.
         - A concern is an Against reason with its evidence, or with the likelihood and what it takes for it to be real. Churn, reversals of earlier commits, and file growth are not concerns.
         - For a doc rule, the default's action states the meaning before and the meaning after.
         - A follow-up fix from the workflow's `followups` is a further line under the default's action, naming the file and the change.
     - Some calls carry more.
-        - A resolve-stage item takes the call form. A review line the stage left unfinished is a call: what is wrong, why the stage left it, and what it needs. A judgment call a resolve report raises takes its level from its basis, and its default is the ruling it needs. A line the stage finished is not presented; the solver's report in the console carries it.
-        - An unprincipled divergence the consistency stage reports is a call: the point the solvers share, the rule they read differently, the reading the docs should force, and the form they should agree on.
         - A call whose fix edits `docs/wf-solver/principles.md`: Context quotes the text before and after, and shows the concrete cases with small grid fragments. The options are the readings the workflow returned, each with its wording and its consequence over the approved solvers.
         - A call whose fix carries an illustration shows it under the call: for each cited task, the case sets under each reading and a witness input where the readings differ.
         - A keyword addition or a gloss change is level 4, presented as a proposal for a separate session.
@@ -74,10 +73,9 @@ Rule on what the console's sessions called out beyond their own tasks. The workf
     - The workflow's Verify issues end the presentation: a failing check, a finding no round acted on, and an edit outside the run's targets, such as an approved solver. Do not report non-issues. A failing check blocks the close.
 - **Rulings.**
     - The user rules per call, by index: accept the default, pick another option, or reject a reason. A call the user does not rule on takes its default. A question is answered from the call's record before any action.
-    - A ruling against a made fix reverses it, and a ruling for an unmade fix makes it.
     - Follow-up work batches into one agent run after the rulings settle. Each follow-up item carries one of two labels. **Queued**: it goes into the batch with nothing more from the user. **Needs ruling**: it waits on the user.
-    - A reversal takes every fix in the file out and puts the kept ones back. An agent does it.
-    - The rulings for fixes go into a second run with `roles` again and the fixes as `fixes` in `args`: one entry per file a fix edits, each with its kind, target, and edit, under the call's id, as the first run returned them under each call's `fixes`. The second run's prune pass keeps their substance, revises the wording to the file's style, and reports that the meaning held.
+    - The rulings for fixes go into a second run with `roles` again and the fixes as `fixes` in `args`: the fixes as the dry run returned them under `dry`, each with its call id, kind, target, edit, and task ids, filtered to those the rulings keep, plus any fix a ruling for another option calls for. The second run's prune pass keeps their substance, revises the wording to the file's style, and reports that the meaning held.
+    - The sweep goes into a third run after the fixes run, with `roles` again, `resolve` in `args` as an empty list, and `sweep` holding the window's task ids. That run sweeps those solvers, marks the drafts a parameter stays open in, and resolves, compares, and cleans up those drafts. It reports its Verify issues.
     - A lib change that keeps interface and meaning is a mechanical fix and goes to an agent directly.
 - **Close.**
     - Run `uv run python tools/console/retro.py mark` to move the mark.

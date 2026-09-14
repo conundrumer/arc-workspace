@@ -5,13 +5,14 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from dl.dlparse import Bool, Comp, Index, Program, Rigid, Rule, body_literals, parse
-from dl.paths import SOLVERS_DIR, all_stems
+from dl.paths import all_stems
+from dl.solve import solver_file
 
 
 def each_solver() -> Iterator[tuple[Path, Program, Index]]:
     """Every solver, parsed and indexed, in stem order."""
     for stem in all_stems():
-        path = SOLVERS_DIR / f"{stem}.dl"
+        path = solver_file(stem)[0]
         program = parse(path.read_text())
         yield path, program, Index(program)
 

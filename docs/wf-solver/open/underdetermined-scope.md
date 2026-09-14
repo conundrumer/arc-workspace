@@ -1,4 +1,4 @@
-# Underdetermined choice: over the task, or over the family
+# Underdetermined choice: which choices it ranges over, and over the task or the family
 
 Open question in `principles.md`, Invariance — Underdetermined choice.
 
@@ -58,3 +58,24 @@ Under it a choice every value of which fits this task's pairs is enumerated, wha
 ## Tool gap
 
 `run_dl.py sweep` varies the color a one-fact parameter holds and does not add members to a set-valued parameter, so 72ca375d's finding (`bg(0). bg(1).` passes every pair) is not reproducible from the sweep output.
+
+## Which choices the rule ranges over
+
+The rule tests "a program choice" against the assignments, so a choice with no parameter behind it has no stated test. Three drafts read it three ways.
+
+- 97a05b5b leaves `out` multi-valued where two turns of a symmetric patch both fit, a choice its rules answer per input.
+- 97d7923e gives the one-cap reading of a bar no case, because that reading's near-cap and far-cap branches, enumerated together, disagree wherever it diverges.
+- 9968a131 rules that enumeration removes no model, since an enumerated peer whose members agree still diverges, and drops `Lead` under Peer priors instead.
+
+The three agree under one reading: enumeration is the peer's encoding, and Subsumption decides its case.
+
+Witnesses:
+
+- 97a05b5b, a 1x3 hole under a piece whose 1x2 patch repeats under a half turn: `$Pack` paints both turns and reports conflicts.
+- 97d7923e, `.scratch/97d7923e/caps.txt`: the shipped model fills the bar at column 2, the near-cap variant the bar at column 4, the far-cap variant the bar at column 6, each total and single-valued.
+- 9968a131, the input below: every shipped case shifts row 1, and both members of `Lead` leave it.
+
+```
+3 8 5 7 7 7
+3 2 5 7 7 7
+```

@@ -30,6 +30,14 @@ The bullet binds the parameters of a table hypothesis and states a consequence o
 
 The Determination sub-bullet rests on ARC types and Color: a minimum over surviving DiagDir or Color values invents an order. A minimum over surviving numbers stands where the extreme is the concept's own, as the shortest period is (97999447, 3ac3eb23, 332efdb3).
 
+## The reading applied
+
+The Determinable bullet binds the parameters of a table hypothesis, as it is written, and reaches no other parameter. A proposer that the determination plan reports as exact, and a value domain that the plan reports as covering the value, are the parameter's determination. A parameter the plan covers that way carries no determination relation: the value stays stored, and a note above its `.decl` says what fixes it.
+
+- 985ae207 — `bg`. A `Determine` comp derived it from a color mode over `ex_in`, while the plan reported it covered by the `DominantColor` proposer, exact. That comp is gone and the note stands in its place.
+- 97d7923e — `bg`, the same plan verdict. The solver had no `Determine` comp and no note; it now carries the note.
+- 8abad3cf — `corner` and `order_axis`, each stored, read by the `$ByPlace` rule case, and covered by its value domain. Both were left bare; each now carries the note.
+
 ## Where the approved corpus stands
 
 No approved solver changes under the candidate text. Over the 354 approved solvers, a train-fitting rival that the test pair rejects occurs in 2de01db2 (`ink`, derived by `Determine.ink`) and 681b3aeb (`bg`, `DominantColor`), both determined. 1da012fc stores a `corner` every value of which reproduces the test output, so One output carries it.

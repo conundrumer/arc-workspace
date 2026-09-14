@@ -1,5 +1,6 @@
 """Run a solver in solve mode and compare its output to the stored pairs."""
 
+import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -12,17 +13,35 @@ from dl.paths import SOLVERS_DIR
 from dl.souffle import _pool_workers, _run_source, compile_check
 from dl.source import build_source
 
+TASK_ID_RE = re.compile(r"[0-9a-f]{8}")
 
-def task_id_of(stem: str) -> str:
-    """The stem's file name up to the first underscore, so a stem that names a
-    path resolves too."""
-    return Path(stem).name.split("_", 1)[0]
+
+def task_id_of(arg: str) -> str:
+    """The task a solver argument names: the leading eight hex characters of
+    its file name, so a variant such as `abcd1234_alt.dl` carries the id of
+    the task it belongs to. A `.dl` suffix is dropped first, and a file name
+    that leads with no id is itself the id."""
+    name = Path(arg).name.removesuffix(".dl")
+    found = TASK_ID_RE.match(name)
+    return found.group() if found else name
+
+
+def solver_file(arg: str) -> tuple[Path, str]:
+    """The solver file a caller's argument names, with its task id. The
+    argument is a stem (`8403a5d5`), a file name (`8403a5d5.dl`), or a path
+    to a `.dl` file, relative to the working directory or absolute. A path
+    that exists as given is that file; every other argument resolves under
+    programs/solvers/, where a bare stem names a corpus solver."""
+    path = Path(arg if arg.endswith(".dl") else f"{arg}.dl")
+    if not path.exists():
+        path = SOLVERS_DIR / path
+    return path, task_id_of(path.name)
 
 
 def run_dl(
     task_id: str, input_rows: list[list[int]], stem: str | None = None
 ) -> list[Candidate]:
-    dl_path = SOLVERS_DIR / f"{stem or task_id}.dl"
+    dl_path = solver_file(stem or task_id)[0]
     if not dl_path.exists():
         raise FileNotFoundError(f"no .dl solver at {dl_path}")
 
@@ -36,7 +55,7 @@ def compile_error(stem: str) -> str | None:
     """Souffle's complaint about `stem`'s solve-mode program, or None when it
     compiles. A source-level error fails every pair the same way, so the
     callers check it once instead of reporting one copy per pair."""
-    return compile_check(build_source((SOLVERS_DIR / f"{stem}.dl").read_text()))
+    return compile_check(build_source(solver_file(stem)[0].read_text()))
 
 
 def res_out(source: str) -> bool:
@@ -54,7 +73,7 @@ def res_out(source: str) -> bool:
 
 @lru_cache
 def res_out_stem(stem: str) -> bool:
-    return res_out((SOLVERS_DIR / f"{stem}.dl").read_text())
+    return res_out(solver_file(stem)[0].read_text())
 
 
 def _grid_key(grid: list[list[int]]) -> tuple:
@@ -317,7 +336,7 @@ def run_pair(stem: str, task_id: str, kind: str, idx: int, ex) -> PairResult:
 
 def _pair_work(stem: str) -> list[tuple]:
     """Build (stem, task_id, kind, idx, ex) tuples for every pair of `stem`."""
-    task_id = task_id_of(stem)
+    task_id = solver_file(stem)[1]
     task = load_task(task_id)
     work = []
     for kind, examples in (("train", task.train), ("test", task.test)):

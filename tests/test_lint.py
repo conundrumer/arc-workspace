@@ -1,6 +1,7 @@
 """Body-lint checks: each fires on the shape it names and stays quiet next
 to the legal form."""
 
+from dl import solve
 from dl.lint import LONE_PARSE_CAT, lint_program
 
 
@@ -408,10 +409,9 @@ def test_plan_join_order_passes_through():
 
 
 def test_family_case_the_representative_lacks_fires(tmp_path, monkeypatch):
-    import dl.lint as lint
     (tmp_path / "67a3c6ac.dl").write_text(".type Choice = Mirror {} | Turn {}\n")
     (tmp_path / "0d3d703e.dl").write_text(".decl out(p: Position, col: Color)\n")
-    monkeypatch.setattr(lint, "SOLVERS_DIR", tmp_path)
+    monkeypatch.setattr(solve, "SOLVERS_DIR", tmp_path)
     src = """\
 // 74dd1130
 // representative: 67a3c6ac Shear
@@ -430,9 +430,8 @@ def test_family_case_the_representative_lacks_fires(tmp_path, monkeypatch):
 
 
 def test_family_case_the_representative_is_a_record_fires(tmp_path, monkeypatch):
-    import dl.lint as lint
     (tmp_path / "87ab05b8.dl").write_text(".type Choice = [d: DecChoice, b: Body]\n")
-    monkeypatch.setattr(lint, "SOLVERS_DIR", tmp_path)
+    monkeypatch.setattr(solve, "SOLVERS_DIR", tmp_path)
     src = """\
 // 74dd1130
 // representative: 87ab05b8 Shear
@@ -445,9 +444,8 @@ def test_family_case_the_representative_is_a_record_fires(tmp_path, monkeypatch)
 
 
 def test_family_case_the_representative_holds_stays_quiet(tmp_path, monkeypatch):
-    import dl.lint as lint
     (tmp_path / "67a3c6ac.dl").write_text(".type Choice = Mirror {} | Turn {}\n")
-    monkeypatch.setattr(lint, "SOLVERS_DIR", tmp_path)
+    monkeypatch.setattr(solve, "SOLVERS_DIR", tmp_path)
     src = """\
 // 74dd1130
 // representative: 67a3c6ac Turn
@@ -456,9 +454,8 @@ def test_family_case_the_representative_holds_stays_quiet(tmp_path, monkeypatch)
 
 
 def test_family_case_the_grammar_rejects_fires(tmp_path, monkeypatch):
-    import dl.lint as lint
     (tmp_path / "67a3c6ac.dl").write_text(".type Choice = Mirror {} | Turn {}\n")
-    monkeypatch.setattr(lint, "SOLVERS_DIR", tmp_path)
+    monkeypatch.setattr(solve, "SOLVERS_DIR", tmp_path)
     src = """\
 // 74dd1130
 // representative: 67a3c6ac Mirror Turn
@@ -471,9 +468,8 @@ def test_family_case_the_grammar_rejects_fires(tmp_path, monkeypatch):
 
 
 def test_family_case_the_line_with_no_case_stays_quiet(tmp_path, monkeypatch):
-    import dl.lint as lint
     (tmp_path / "67a3c6ac.dl").write_text(".type Choice = Mirror {} | Turn {}\n")
-    monkeypatch.setattr(lint, "SOLVERS_DIR", tmp_path)
+    monkeypatch.setattr(solve, "SOLVERS_DIR", tmp_path)
     src = """\
 // 74dd1130
 // representative: 67a3c6ac

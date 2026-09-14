@@ -227,6 +227,30 @@ def clear_draft(item_id: str) -> bool:
     return _retag(item_id, False)
 
 
+def append_review(item_id: str, line: str) -> bool:
+    """Put a review line at the end of the header block, where the header
+    grammar takes it: `review` is the last field, and the draft line stays
+    where it stands. True when the file changed; False when the solver has
+    no header, or when the same line already stands in it."""
+    p = solver_path(item_id)
+    try:
+        lines = p.read_text().splitlines(True)
+    except OSError:
+        return False
+    end = header_end(lines)
+    if not end:
+        return False
+    text = line.rstrip("\n")
+    if any(held.strip() == text for held in lines[:end]):
+        return False
+    # a last line carries no newline of its own
+    if not lines[end - 1].endswith("\n"):
+        lines[end - 1] += "\n"
+    lines.insert(end, text + "\n")
+    write_solver(item_id, "".join(lines))
+    return True
+
+
 # A citation a doc holds for a solver the user has not approved yet: the line
 # names the task and carries the text the doc takes once approval comes.
 PENDING_CITE = "^([ \\t]*)<!-- draft: {task} \u2014 (.*) -->$"

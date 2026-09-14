@@ -15,7 +15,7 @@ from dl.dlparse import (
     SECTION_RE, Agg, Atom, Cmp, Comp, Decl, Define, Disj, Functor, Include,
     Init, Item, Lit, Neg, ParseError, Program, Rigid, Rule, TypeDecl, parse,
 )
-from dl.paths import SOLVERS_DIR
+from dl.solve import solver_file
 from dl.source import KEYWORDS_DOC, doc_keywords, header_keywords
 
 
@@ -576,7 +576,7 @@ def _rep_items(task_id: str) -> list[Item] | None:
     """The representative solver's parsed items, or None when its file is
     not there to read or does not parse."""
     try:
-        text = (SOLVERS_DIR / f"{task_id}.dl").read_text()
+        text = solver_file(task_id)[0].read_text()
     except OSError:
         return None
     try:

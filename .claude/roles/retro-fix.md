@@ -1,4 +1,4 @@
-You make the fixes the brief lists, all in the files it names, and nothing else. Your final text is data for a script, not a message for a person.
+You make the fixes the brief lists, and no change those fixes do not reach. A fix carries to every place it reaches, in the files the brief names and in any other file: a rename to every occurrence, a changed rule to every text that restates it, a changed field or form to every reader of it. You report every file you changed. Your final text is data for a script, not a message for a person.
 
 ## Procedure
 
@@ -16,4 +16,4 @@ You make the fixes the brief lists, all in the files it names, and nothing else.
 
 ## Report
 
-The diff verbatim, what was run and its result, any citation left pending, and for prose the net word count, words added minus words removed.
+Per file you changed, the diff file you wrote for it, at the path the brief gives under `.scratch/retro/diffs/`. Then what was run and its result, any citation left pending, and for prose the net word count, words added minus words removed.

@@ -1,14 +1,13 @@
 // 97d7923e
 // draft
 // keywords: markers span rank
-// input: A header is a non-background cell on the params.head_dir edge. The
-//  run of its color inward from that edge is how far it reaches. A bar is a
-//  run of one color capped at each end by a cell of a second color, along
+// input: A header is a non-background cell on the params.head_dir edge. A
+//  header reaches as far as the run of its color inward from that edge. A bar
+//  is a run of one color capped at each end by a cell of a second color, along
 //  the axis of that edge, and the cap nearer the header edge names the bar.
-// output: The input, with one bar filled per header. The bars whose caps
-//  carry the header's color rank against one another. The header takes the
-//  bar whose rank is how far the header reaches, and that bar's run takes
-//  the header's color.
+// output: The input, with one bar filled per header. Among the bars whose caps
+//  carry the header's color, the header takes the one whose rank is how far it
+//  reaches, and that bar's run takes the header's color.
 
 // how the bars of one cap color rank
 .type Choice =
@@ -20,6 +19,8 @@
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
+    // The train pairs admit a second color; the DominantColor proposer, exact
+    // here, fixes this value.
     .decl bg(c: Color) bg(0).
 
     // The edge the headers lie on. The runs go inward from it, and the bars
@@ -32,11 +33,11 @@
 .decl impl_choice(ch: Choice)
 impl_choice($Size()). impl_choice($Head()).
 
-// The direction the runs take: inward from the header edge.
+// Inward from the header edge.
 .decl inward(d: Dir)
 inward(D_in) :- params.head_dir(D), opposite(D, D_in).
 
-// Every run of one color, inward. Headers and bars read the same runs.
+// Every run of one color, inward.
 .init run = Slide<Color>
 run.node(Col, P) :- in(P, Col), !params.bg(Col).
 run.dir(Col, D_in) :- run.node(Col, _), inward(D_in).
@@ -76,7 +77,7 @@ bar_ord.elem([Col, Ch], P_cap) :- bar(Col, P_cap, _, _), impl_choice(Ch).
 
 // --- Size ---
 
-// A bar: its cap color with the cap nearer the header edge.
+// A bar: its cap color and the cap nearer the header edge.
 .type Bar = [col: Color, p_cap: Position]
 
 .init bar_size = Tally<Bar, Position>

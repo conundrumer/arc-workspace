@@ -1,6 +1,8 @@
 """Commands the runner exposes, and the argv dispatch over them."""
 
 import argparse
+import hashlib
+import io
 import json
 import re
 import subprocess
@@ -8,7 +10,9 @@ import sys
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from types import ModuleType
 
 from arc.task import Alt, Example
 from dl.corpus import literal_count
@@ -24,8 +28,15 @@ from dl.determine import (
 from dl.dlparse import ParseError, TypeDecl, parse
 from dl.drop_one import drop_one_report, render_drop_one
 from dl.facts import parse_grid
-from dl.lint import KEYWORD_CAT, LIB_NAME_CAT, RESERVED_CAT, SHADOWED_TYPE_CAT, lint_program
-from dl.paths import REPO_ROOT, SOLVERS_DIR, all_stems
+from dl.lint import (
+    HEADER_CAT,
+    KEYWORD_CAT,
+    LIB_NAME_CAT,
+    RESERVED_CAT,
+    SHADOWED_TYPE_CAT,
+    lint_program,
+)
+from dl.paths import REPO_ROOT, all_stems
 from dl.render import _grid_lines, render_pair_failure, render_stem_failures
 from dl.rewrite_lint import HINTS, lint_rewrites
 from dl.solve import (
@@ -38,7 +49,7 @@ from dl.solve import (
     run_dl,
     run_pair,
     run_task,
-    task_id_of,
+    solver_file,
 )
 from dl.souffle import (
     CPU_LIMIT_SECONDS,
@@ -48,7 +59,11 @@ from dl.souffle import (
     sweep_temp_sources,
 )
 from dl.source import (
-    KEYWORDS_DOC, build_source, doc_keywords, expand_macros, header_keywords,
+    KEYWORDS_DOC,
+    build_source,
+    doc_keywords,
+    expand_macros,
+    header_keywords,
 )
 from dl.sweep import (
     BUDGET_SECONDS,
@@ -56,6 +71,7 @@ from dl.sweep import (
     render_sweep,
     sweep_report,
 )
+from dl.sweep_open import SWEEP_CACHE, marked_params, open_params
 
 type Findings = list[tuple[str, int, str, str]]
 
@@ -99,7 +115,7 @@ def _print_findings(stems: list[str], hints: bool) -> str | None:
     """Print the tier sections for `stems`; return the verdict line."""
     by_tier: list[dict[str, Findings]] = [{}, {}, {}]
     for stem in stems:
-        source = (SOLVERS_DIR / f"{stem}.dl").read_text()
+        source = solver_file(stem)[0].read_text()
         for held, tier in zip(by_tier, _lint_tiers(source, hints),
                               strict=True):
             if tier:
@@ -131,9 +147,10 @@ def cmd_lint(
 
 
 def _missing(stem: str) -> bool:
-    if (SOLVERS_DIR / f"{stem}.dl").exists():
+    path = solver_file(stem)[0]
+    if path.exists():
         return False
-    print(f"no solver at {SOLVERS_DIR / f'{stem}.dl'}", file=sys.stderr)
+    print(f"no solver at {path}", file=sys.stderr)
     return True
 
 
@@ -149,7 +166,7 @@ def _compile_failed(stem: str) -> bool:
     if err is None:
         return False
     print(f"{stem}.dl: {err}")
-    source = (SOLVERS_DIR / f"{stem}.dl").read_text()
+    source = solver_file(stem)[0].read_text()
     collisions = [f for f in lint_program(source)
                   if f[0] in (RESERVED_CAT, SHADOWED_TYPE_CAT, LIB_NAME_CAT)]
     if collisions:
@@ -162,7 +179,7 @@ def _compile_failed(stem: str) -> bool:
 def _print_lint_tiers(stem: str, hints: bool) -> str | None:
     """Print one solver's tier sections; return the verdict line. Lint
     needs no Souffle, so it stands whether or not the solver compiles."""
-    source = (SOLVERS_DIR / f"{stem}.dl").read_text()
+    source = solver_file(stem)[0].read_text()
     tiers = _lint_tiers(source, hints)
     for label, findings in zip(LINT_TIERS, tiers, strict=True):
         if not findings:
@@ -197,7 +214,7 @@ def cmd_one(stem: str, hints: bool = False, timed: bool = False) -> int:
                 print(line)
 
     if result.all_pass:
-        source_text = (SOLVERS_DIR / f"{stem}.dl").read_text()
+        source_text = solver_file(stem)[0].read_text()
         report = expression_report(build_source(source_text))
         if report is not None:
             print(report)
@@ -248,7 +265,7 @@ def cmd_pairs(stem: str, path: str) -> int:
     build_functors()
     if _compile_failed(stem):
         return 1
-    task_id = task_id_of(stem)
+    task_id = solver_file(stem)[1]
     failed = False
     for kind, examples in sections:
         for idx, e in enumerate(examples):
@@ -332,7 +349,7 @@ def _case_branches(stem: str) -> list[str]:
     """The branch names of the solver's Choice ADT, in source order. A solver
     with one case has no Choice, and gets no branches."""
     try:
-        program = parse((SOLVERS_DIR / f"{stem}.dl").read_text())
+        program = parse(solver_file(stem)[0].read_text())
     except (OSError, ParseError):
         return []
     return [
@@ -366,7 +383,7 @@ def cmd_grid(stem: str, path: str | None = None) -> int:
     if _compile_failed(stem):
         return 1
     try:
-        actuals = run_dl(task_id_of(stem), grid, stem=stem)
+        actuals = run_dl(solver_file(stem)[1], grid, stem=stem)
     except Exception as e:
         print(f"{type(e).__name__}: {e}", file=sys.stderr)
         return 1
@@ -424,6 +441,17 @@ def _commit_stems(log: str) -> list[tuple[str, set[str]]]:
     return commits
 
 
+REWRITE_SHARE = 0.5
+"""The share of the corpus above which commits count as a mechanical
+rewrite rather than solver work."""
+
+
+def _is_mechanical_rewrite(touched: set[str], corpus: set[str]) -> bool:
+    """Whether the commits that touch `touched` rewrite the corpus
+    mechanically: a reach past REWRITE_SHARE of `corpus` is one."""
+    return len(touched) > REWRITE_SHARE * len(corpus)
+
+
 def _worktree_stems(status: str) -> set[str]:
     """The solver stems with an uncommitted or untracked change, from
     `git status --porcelain` output."""
@@ -440,8 +468,10 @@ def cmd_since(when: str) -> int:
     commits since then touch, plus the ones whose working-tree content differs
     from HEAD. An uncommitted change is newer than any commit, so the
     working-tree half takes every such solver and applies no time test.
-    A commit touching more than half the corpus is a corpus-wide mechanical
-    rewrite, and the solvers it touches are out of scope."""
+    Commits reaching past REWRITE_SHARE of the corpus are a mechanical
+    rewrite, tested one commit at a time and again over the window: a
+    rewriting commit drops out, and a rewriting window keeps of its commits
+    only the solvers they add. The working-tree half stands either way."""
     log = _git("log", f"--since={when}", "--name-only", "--pretty=format:commit %H",
                "--", "programs/solvers")
     status = _git("status", "--porcelain", "--", "programs/solvers")
@@ -449,14 +479,27 @@ def cmd_since(when: str) -> int:
         print(f"git found no history for {when!r}", file=sys.stderr)
         return 1
     corpus = set(all_stems())
-    stems: set[str] = _worktree_stems(status)
+    committed: set[str] = set()
     for sha, touched in _commit_stems(log):
-        if len(touched) * 2 <= len(corpus):
-            stems |= touched
+        if _is_mechanical_rewrite(touched, corpus):
+            print(f"skipped {sha}: a mechanical rewrite, touching "
+                  f"{len(touched)} solvers of {len(corpus)}, more than the "
+                  f"{REWRITE_SHARE:.0%} share", file=sys.stderr)
         else:
-            print(f"skipped {sha}: a mechanical rewrite over {len(touched)} solvers",
-                  file=sys.stderr)
-    in_scope = sorted(stems & corpus)
+            committed |= touched
+    if _is_mechanical_rewrite(committed, corpus):
+        added = _git("log", f"--since={when}", "--diff-filter=A", "--name-only",
+                     "--pretty=format:commit %H", "--", "programs/solvers")
+        if added is None:
+            print(f"git found no history for {when!r}", file=sys.stderr)
+            return 1
+        kept = committed & {s for _, t in _commit_stems(added) for s in t}
+        print(f"the window holds a corpus-wide rewrite: its commits touch "
+              f"{len(committed)} solvers of {len(corpus)}, more than the "
+              f"{REWRITE_SHARE:.0%} share. The scope is the {len(kept)} "
+              f"solvers added since then.", file=sys.stderr)
+        committed = kept
+    in_scope = sorted((committed | _worktree_stems(status)) & corpus)
     for stem in in_scope:
         print(stem)
     print(f"{len(in_scope)} solvers in scope. A survey reads its whole scope "
@@ -577,6 +620,123 @@ def cmd_sweep(stem: str, max_candidates: int = MAX_CANDIDATES,
     return 0
 
 
+def _sweep_output(stem: str) -> str:
+    """Everything one sweep prints, its stderr progress lines included."""
+    buf = io.StringIO()
+    with redirect_stdout(buf), redirect_stderr(buf):
+        build_functors()
+        _print_sweep(stem, MAX_CANDIDATES, BUDGET_SECONDS)
+    return buf.getvalue()
+
+
+def _code_hash(stem: str) -> str:
+    """A hash of the solver's code, its comment lines left out. A line whose
+    first non-blank characters are `//` does not count, so a review line
+    written into the header leaves the hash as it was."""
+    source = solver_file(stem)[0].read_text()
+    code = [line for line in source.splitlines()
+            if not line.lstrip().startswith("//")]
+    return hashlib.sha256("\n".join(code).encode()).hexdigest()
+
+
+def _sweep_text(stem: str, cached: bool) -> tuple[str | None, str | None]:
+    """The stem's sweep output, and the reason there is none.
+
+    A sweep is valid only for the solver code it was made from, so the cache
+    keeps that code's hash beside the text, in a sidecar file `<stem>.sha`.
+    A cache with the solver's current hash is read. A cache with no hash or a
+    different hash is stale, and so is a stem the cache does not hold: without
+    `cached` the sweep runs and both files are rewritten; with `cached` the
+    stem gives None and a reason instead of running for minutes."""
+    path = SWEEP_CACHE / f"{stem}.txt"
+    sha_path = SWEEP_CACHE / f"{stem}.sha"
+    digest = _code_hash(stem)
+    held = path.exists()
+    fresh = (held and sha_path.exists()
+             and sha_path.read_text().strip() == digest)
+    if fresh:
+        return path.read_text(), None
+    if cached:
+        where = f".scratch/retro/sweep/{stem}.txt"
+        if held:
+            return None, (f"the cached sweep at {where} is stale: the solver's "
+                          "code changed after it was made")
+        return None, f"no cached sweep at {where}"
+    text = _sweep_output(stem)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    sha_path.write_text(digest)
+    return text, None
+
+
+def _open_sweeps(
+    stems: list[str], cached: bool,
+) -> tuple[list[tuple[str, list[tuple[str, str, str]]]], list[dict[str, str]]]:
+    """Per stem, the parameters its sweep leaves open; and the stems left
+    out, each with its reason."""
+    sweeps: list[tuple[str, list[tuple[str, str, str]]]] = []
+    skipped: list[dict[str, str]] = []
+    for stem in stems:
+        path = solver_file(stem)[0]
+        if not path.exists():
+            skipped.append({"stem": stem, "reason": f"no solver at {path}"})
+            continue
+        text, reason = _sweep_text(stem, cached)
+        if text is None:
+            skipped.append({"stem": stem, "reason": reason})
+            continue
+        sweeps.append((stem, open_params(text)))
+    return sweeps, skipped
+
+
+def _emit(payload: dict[str, object]) -> int:
+    print(json.dumps(payload, ensure_ascii=False, indent=1))
+    return 0
+
+
+def cmd_sweep_open(stems: list[str], cached: bool = False) -> int:
+    """Report, as JSON, the parameters each stem's sweep leaves open, and the
+    review line each of them takes."""
+    sweeps, skipped = _open_sweeps(stems, cached)
+    return _emit({
+        "sweeps": [
+            {"stem": stem,
+             "params": [{"param": param, "reported": reported, "line": line}
+                        for param, reported, line in params]}
+            for stem, params in sweeps
+        ],
+        "skipped": skipped,
+    })
+
+
+def _console_solvers() -> ModuleType:
+    """The console's reads and writes of the solver files. They sit outside
+    the package, so the import puts their directory on the path."""
+    path = str(REPO_ROOT / "tools" / "console")
+    if path not in sys.path:
+        sys.path.insert(0, path)
+    from solver_console import solvers
+    return solvers
+
+
+def cmd_sweep_mark(stems: list[str], cached: bool = False) -> int:
+    """Write the review line of each open parameter into its solver's header,
+    then report what was written and what the lint's header category says."""
+    sweeps, skipped = _open_sweeps(stems, cached)
+    console = _console_solvers()
+    marked: list[dict[str, object]] = []
+    for stem, params in sweeps:
+        standing = marked_params(console.needs_of(stem)["sweep"])
+        written = [line for param, _, line in params
+                   if param not in standing and console.append_review(stem, line)]
+        lint_ok = True
+        if written:
+            source = solver_file(stem)[0].read_text()
+            lint_ok = not any(f[0] == HEADER_CAT for f in lint_program(source))
+        marked.append({"task_id": stem, "lines": written, "lint_ok": lint_ok})
+    return _emit({"solvers": marked, "skipped": skipped})
+
+
 def _print_deletions(stem: str) -> int:
     report = deletion_report(stem)
     for line in render_deletions(stem, report):
@@ -648,7 +808,7 @@ def cmd_size(stem: str | None = None) -> int:
     bad = False
     for s in stems:
         try:
-            print(f"{literal_count(parse((SOLVERS_DIR / f'{s}.dl').read_text()))}\t{s}")
+            print(f"{literal_count(parse(solver_file(s)[0].read_text()))}\t{s}")
         except ParseError as e:
             print(f"{s}: {e}", file=sys.stderr)
             bad = True
@@ -670,7 +830,7 @@ def cmd_keywords(stems: list[str] | None = None) -> int:
     carriers: dict[str, set[str]] = defaultdict(set)
     unknown: list[str] = []
     for stem in stems:
-        source = (SOLVERS_DIR / f"{stem}.dl").read_text()
+        source = solver_file(stem)[0].read_text()
         for word in header_keywords(source):
             if word in known:
                 carriers[word].add(stem)
@@ -693,7 +853,7 @@ def cmd_expand(stem: str) -> int:
     which is the text Souffle compiles."""
     if _missing(stem):
         return 2
-    sys.stdout.write(expand_macros((SOLVERS_DIR / f"{stem}.dl").read_text()))
+    sys.stdout.write(expand_macros(solver_file(stem)[0].read_text()))
     return 0
 
 
@@ -721,11 +881,10 @@ def _parser() -> argparse.ArgumentParser:
                      help="the solvers to run; one runs its pairs, lint and "
                           "determination check, several run as a corpus over "
                           "those solvers alone, and none runs the whole "
-                          "corpus. A stem may name a path relative to "
-                          "programs/solvers/, whose file name keeps the task "
-                          "id as its prefix, so a variant kept under "
-                          ".scratch/ runs without entering the corpus "
-                          "directory")
+                          "corpus. Each one is a stem or a path to a solver "
+                          "file, whose file name keeps the task id as its "
+                          "prefix, so a variant kept under .scratch/ runs by "
+                          "its path")
     lint.add_argument("stem", nargs="?",
                       help="one solver; all of them when omitted")
     for p in (run, lint):
@@ -749,22 +908,43 @@ def _parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     grid.add_argument("stem",
-                      help="the solver to run; it may name a path relative to "
-                           "programs/solvers/, whose file name keeps the task "
-                           "id as its prefix, so a variant kept under "
-                           ".scratch/ runs without entering the corpus "
-                           "directory")
+                      help="the solver to run: a stem or a path to a solver "
+                           "file, whose file name keeps the task id as its "
+                           "prefix, so a variant kept under .scratch/ runs by "
+                           "its path")
     grid.add_argument("file", nargs="?",
                       help="grid file; stdin when omitted or `-`")
 
     sweep = sub.add_parser("sweep", help="parameter value sweep only")
-    sweep.add_argument("stem")
+    sweep.add_argument("stem", nargs="?")
     sweep.add_argument("cap", nargs="?", type=int, default=MAX_CANDIDATES,
                        help="candidate count the sweep holds to: above it "
                             "the sweep narrows to one-column and one-row "
                             "changes, and it bounds those too")
     sweep.add_argument("--budget", type=float, default=BUDGET_SECONDS,
                        help=BUDGET_HELP)
+    over = sweep.add_mutually_exclusive_group()
+    over.add_argument("--open", nargs="+", metavar="STEM", dest="open_stems",
+                      help="report as JSON, over these stems, the parameters "
+                           "each sweep leaves open and the `// review sweep:` "
+                           "line each one takes. A stem sweeps once per "
+                           "version of its code: its output is kept under "
+                           ".scratch/retro/sweep/ beside a hash of that code, "
+                           "and read from there while the hash still matches. "
+                           "A comment line does not count toward the hash, so "
+                           "a review line written into a header keeps the "
+                           "cache valid")
+    over.add_argument("--mark", nargs="+", metavar="STEM", dest="mark_stems",
+                      help="the same reading, written into the solvers: each "
+                           "open parameter without a `review sweep:` line yet "
+                           "gets one as the last header line. The report names "
+                           "the lines written and what the lint's header "
+                           "category says")
+    sweep.add_argument("--cached", action="store_true",
+                       help="with `--open` or `--mark`, take only the stems "
+                            "whose cached sweep matches their current code, "
+                            "and skip the rest with a reason, so the reading "
+                            "costs no sweep")
 
     sub.add_parser("deletions", help="deletion report only").add_argument("stem")
     audit = sub.add_parser(
@@ -831,11 +1011,14 @@ def _parser() -> argparse.ArgumentParser:
                     "plus the ones whose working-tree content differs from "
                     "HEAD. An uncommitted change is newer than any commit, so "
                     "every such solver is in scope and no time test applies to "
-                    "it. A commit touching more than half of the solvers "
-                    "is a corpus-wide mechanical rewrite, and the solvers "
-                    "it touches are out of scope. A survey reads its whole "
-                    "scope in one pass, so its cost does not follow the count "
-                    "of solvers in scope.",
+                    "it. Commits reaching past a set share of the corpus are "
+                    "a corpus-wide mechanical rewrite. That test runs one "
+                    "commit at a time, and again over the whole window: the "
+                    "solvers a rewriting commit touches are out of scope, and "
+                    "of a rewriting window only the solvers its commits add "
+                    "stay in scope. The working-tree half stands either way. "
+                    "A survey reads its whole scope in one pass, so its cost "
+                    "does not follow the count of solvers in scope.",
     )
     since.add_argument("when", help="a date-time git reads, e.g. "
                                     '"2026-09-08 14:30"')
@@ -868,6 +1051,23 @@ def main(argv: list[str]) -> int:
         case "grid":
             return cmd_grid(args.stem, args.file)
         case "sweep":
+            stems = args.open_stems or args.mark_stems
+            if stems:
+                if args.stem is not None:
+                    print("`--open` and `--mark` carry their own stems",
+                          file=sys.stderr)
+                    return 2
+                if args.open_stems:
+                    return cmd_sweep_open(stems, args.cached)
+                return cmd_sweep_mark(stems, args.cached)
+            if args.stem is None:
+                print("sweep takes one stem, or `--open`/`--mark` with stems",
+                      file=sys.stderr)
+                return 2
+            if args.cached:
+                print("`--cached` goes with `--open` or `--mark`",
+                      file=sys.stderr)
+                return 2
             return cmd_sweep(args.stem, args.cap, args.budget)
         case "deletions":
             return cmd_deletions(args.stem)

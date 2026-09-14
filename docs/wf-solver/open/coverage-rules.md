@@ -33,7 +33,13 @@ Three gaps in one section:
 > - **Exercised.** […]
 >     - A part is a rule, a parameter, or a comp the peer adds, taken whole. A test inside a rule both models hold is no part of its own.
 
-The whole-unit reading is the one the clause "even where the part's result matches the current model's on every pair" already states. The narrowing asked for in 7c9b52a0, a part exercised only where its result can differ, reverses that clause.
+The whole-unit reading is the one the clause "even where the part's result matches the current model's on every pair" already states. The narrow reading, asked for in 7c9b52a0, reverses that clause: "A part is the finest test the peer adds, and a pair exercises it only where that pair's output turns on the test's result."
+
+The precedence gap has three readings:
+
+1. **Precedence.** The candidate text above: a removed peer takes no part in a later rule. 9473c6fb keeps `Separate | Span`, with `Count` out.
+2. **Scoped.** Refused input decides subsumption alone, and a peer that Prior or setup removed can still subsume the shipped model at rule 3.
+3. **Merged.** The strict-and-tolerant sentence moves from Refused input to Peer priors, so 9473c6fb and 97239e3d keep both readings as cases.
 
 ## Where the approved corpus stands
 
@@ -45,8 +51,12 @@ Drafts, with what is at stake:
 
 - 54dc2872 — `Slide` kept beside `Translate` because the pairs exercise it, with no rule of Prior or setup applied. Under the candidate text the case rests on `peer-priors.md`.
 - 67e490f4 — the into-reading peer passed Exercised and was refused under Peer priors. The candidate text states that reading.
-- 668eec9a — the lex-order peer was removed at Prior or setup and again at Evidence, as adding a secondary key no pair exercises. Under the whole-unit reading its `LexOrder` is exercised, and the peer reaches Subsumption unless Prior or setup removes it. Its tie witness below makes the nearest-row rank conflict where the lex peer is total.
+- 668eec9a — the lex-order peer was removed at Prior or setup and again at Evidence, as adding a secondary key no pair exercises. Under the whole-unit reading its `LexOrder` is exercised, and the peer reaches Subsumption unless Prior or setup removes it. Its tie witness below makes the nearest-row rank conflict where the lex peer is total. The clash was raised again in the refine and finalize passes, each of which shipped one case.
 - 7c9b52a0 — the precedence fold runs on every pair with singleton candidate sets; the peer was dropped under Underdetermined choice (`underdetermined-scope.md`). Under the whole-unit reading Exercised does not remove it, and on the overlap witness below the union fold conflicts where the precedence peer is total.
+- 9720b24f — 2 cases; the whole-unit reading gives 4, since the parity peer's walk runs on every pair.
+- 8a6d367c — six combinations; the whole-unit reading gives twelve, the strict peer refusing the ragged witness that every shipped case renders.
+- 9473c6fb — `Count` dropped under Peer priors; without precedence `Count` subsumes `Separate`.
+- 97239e3d — `$Touch()` kept beside `$Nearest()` under Refused input.
 
 ## Witnesses
 
@@ -75,5 +85,31 @@ lex order with a secondary key: 3 3 3 above 1 1 1, total
 1 1 1 1 1 1 1 1
 
 union fold: cell (0, 0) holds 3 and 2 at once
-precedence, first panel foremost: 2 . / . .
+precedence, first panel foremost:
+2 .
+. .
+```
+
+9720b24f, a comb of 3 with one 2 in its third tooth; the shipped two cases erase the 2, and the parity peer keeps it:
+
+```
+input          shipped        parity peer
+3 3 3 . .      3 3 3 . .      3 3 3 . .
+3 . . . .      3 . . . .      3 . . . .
+3 3 3 . .      3 3 3 . .      3 3 3 . .
+3 . 2 . .      3 . . . .      3 . 2 . .
+3 3 3 . .      3 3 3 . .      3 3 3 . .
+```
+
+9473c6fb, four marks on background 7, two sharing a row and three sharing a column, so both axes hold a tie; `Separate` and `Span` name no axis and leave every mark uncolored, while `Count` names the axis with more lines and is total:
+
+```
+input              Separate, Span     Count
+7 7 7 7 7          7 7 7 7 7          7 7 7 7 7
+7 9 7 9 7          7 . 7 . 7          7 2 7 2 7
+7 7 7 7 7          7 7 7 7 7          7 7 7 7 7
+7 9 7 7 7          7 . 7 7 7          7 5 7 7 7
+7 7 7 7 7          7 7 7 7 7          7 7 7 7 7
+7 9 7 7 7          7 . 7 7 7          7 2 7 7 7
+7 7 7 7 7          7 7 7 7 7          7 7 7 7 7
 ```

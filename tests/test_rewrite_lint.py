@@ -580,6 +580,18 @@ out(X) :- impl_choice(X).
     assert "single-consumer" not in cats(src, hints=True)
 
 
+def test_allow_directive_silences_single_consumer():
+    rest = """\
+.decl stage(x: number)
+stage(X) :- g(X), !h(X).
+.decl out(x: number)
+out(X) :- stage(X).
+"""
+    allowed = f"// @allow: single-consumer — the name states the stage\n{rest}"
+    assert "single-consumer" not in cats(allowed, hints=True)
+    assert "single-consumer" in cats(rest, hints=True)
+
+
 def test_hints_gated():
     src = """\
 .decl stage(x: number)

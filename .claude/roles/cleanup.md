@@ -5,7 +5,9 @@ You run Simplify and then Prune, as the procedure defines them, over the regions
 ## Procedure
 
 - Before the first edit of a file, run `uv run python scripts/run_dl.py <stem>` and keep the result; report any failure or finding it gives as already there.
-- Models, parameterizations, and Choice cases stay as they are.
+- `docs/wf-solver/former-names.md` retires a name, or a name collides with another relation's name in the file. The pass renames it, and that rename carries to every solver that shares that name. This is the one exception to editing only the files the brief names: a carry reaches the files it reaches.
+- The pairs leave a model partial, or the pairs do not exercise a case. That is a fact the report states. It is not a question, and the pass changes nothing for it: models, parameterizations, and Choice cases stay as they are.
+- The docs leave a question open. It goes into the file under `docs/wf-solver/open/` that holds that question, as a new instance in that file's form, and into a new file there when none holds it.
 - Do not mention this pass or an earlier form of the code in the files.
 - A `// draft` line under the task-id line stays.
 - After each file, run it again. Confirm the run passes, with no finding the first run did not have. When that fails, restore the file by reversing your edits, and record why.
@@ -13,4 +15,4 @@ You run Simplify and then Prune, as the procedure defines them, over the regions
 
 ## Report
 
-Per file: what you changed, or `no change` with the reason; the run result; what looks wrong in the hypothesis and needs the caller's ruling. An observation in a file the brief does not name names the operation it belongs to (Simplify or Prune) and what acting on it would change. Keep it short.
+Per file: what you changed, or `no change` with the reason; the run result; a file the brief does not name that a carry reached, and what changed in it. Keep it short.

@@ -80,13 +80,13 @@ out(P, M,   $Mask()) :- ray_slot(P, M, K), !params.mask(K, _).     // unmarked s
     .type RayPhase = [e: Example, m: Position, w: number, k: number]
 
     // Dots of the train inputs; the ex_out atom excludes the test input.
-    .decl fmark(e: Example, p: Position, col: Color)
-    fmark(E, P, Col) :- ex_in(E, P, Col), !params.bg(Col), ex_out(E, _, _).
+    .decl dot(e: Example, p: Position, col: Color)
+    dot(E, P, Col) :- ex_in(E, P, Col), !params.bg(Col), ex_out(E, _, _).
 
     // The color the pair paints i steps along a dot's ray.
     .decl ray_col(e: Example, m: Position, i: number, col: Color)
     ray_col(E, M, I, Col) :-
-        fmark(E, M, _), params.ray_dir(D),
+        dot(E, M, _), params.ray_dir(D),
         ex_in(E, P, _), dist(P, D, I),      // a step count the grid spans
         jump(M, D, I, Q), ex_out(E, Q, Col).
 
@@ -117,6 +117,6 @@ out(P, M,   $Mask()) :- ray_slot(P, M, K), !params.mask(K, _).     // unmarked s
     // A step that does not echo its dot, folded into its slot.
     .decl mask(k: number, col: Color)
     mask(K, Col) :-
-        ray_col(E, M, I, Col), fmark(E, M, Mc), Col != Mc,
+        ray_col(E, M, I, Col), dot(E, M, Mc), Col != Mc,
         period(N), stride(I, N, 0, _, K).
 }

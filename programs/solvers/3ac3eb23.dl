@@ -139,17 +139,17 @@ out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !lit(P, _, Ch), params.bg(Col).
 
 .comp Determine {
     // Markers of the train inputs; the ex_out atom holds the test input out.
-    .decl fmark(e: Example, p: Position, col: Color)
-    fmark(E, P, Col) :- ex_in(E, P, Col), !params.bg(Col), ex_out(E, _, _).
+    .decl mark(e: Example, p: Position, col: Color)
+    mark(E, P, Col) :- ex_in(E, P, Col), !params.bg(Col), ex_out(E, _, _).
 
     // Each cell the pair paints in a marker's color, as an offset from it.
     .decl offset(e: Example, p: Position, delta: Offset)
     offset(E, P, Delta) :-
-        fmark(E, P, Col), ex_out(E, Q, Col), relative(P, Q, Delta).
+        mark(E, P, Col), ex_out(E, Q, Col), relative(P, Q, Delta).
 
     // An edge some marker sits off.
     .decl off_edge(d: Dir)
-    off_edge(D) :- fmark(_, P, _), dir_elem(D), !dist(P, D, 0).
+    off_edge(D) :- mark(_, P, _), dir_elem(D), !dist(P, D, 0).
 
     .decl dir(d: Dir)
     dir(D) :- dir_elem(D), !off_edge(D).

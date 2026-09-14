@@ -9,8 +9,7 @@ from arc.task import load as load_task
 from dl.dlparse import TOP, Index, ParseError, Program, parse
 from dl.facts import _parse_relations, grid_to_facts
 from dl.lint import _lib_items, _lib_source
-from dl.paths import SOLVERS_DIR
-from dl.solve import task_id_of
+from dl.solve import solver_file
 from dl.souffle import _pool_workers, _run_source
 from dl.source import SOLVE_DIRECTIVES, expand_macros
 
@@ -198,7 +197,8 @@ def derived_constant_report(
     Returns (constants, relations tested, relations the controls dropped),
     or a message naming what stopped the probe.
     """
-    source = (SOLVERS_DIR / f"{stem}.dl").read_text()
+    path, task_id = solver_file(stem)
+    source = path.read_text()
     try:
         ix = _index(expand_macros(source))
     except ParseError as e:
@@ -207,7 +207,7 @@ def derived_constant_report(
     if not names:
         return "no relation both reads `in` and feeds `out`"
     built = _build(source, names)
-    task = load_task(task_id_of(stem))
+    task = load_task(task_id)
     grids = [ex.input for ex in task.train] + [ex.input for ex in task.test]
 
     with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:

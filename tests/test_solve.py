@@ -133,3 +133,29 @@ def test_pair_work_takes_the_task_id_from_a_path_stem(monkeypatch):
 
 def test_task_id_of_takes_the_file_name_from_a_path_stem():
     assert solve_mod.task_id_of("../../.scratch/abcd1234/abcd1234_alt") == "abcd1234"
+
+
+def test_a_stem_and_a_file_name_reach_the_same_corpus_solver(tmp_path, monkeypatch):
+    monkeypatch.setattr(solve_mod, "SOLVERS_DIR", tmp_path)
+    path = tmp_path / "8403a5d5.dl"
+    path.write_text("// solver\n")
+    assert solve_mod.solver_file("8403a5d5") == (path, "8403a5d5")
+    assert solve_mod.solver_file("8403a5d5.dl") == (path, "8403a5d5")
+
+
+def test_a_path_that_exists_resolves_to_itself(tmp_path, monkeypatch):
+    """A variant kept outside the solvers directory runs by its path, with no
+    prefix reaching out of that directory."""
+    monkeypatch.setattr(solve_mod, "SOLVERS_DIR", tmp_path / "solvers")
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    path = scratch / "8403a5d5_alt.dl"
+    path.write_text("// solver\n")
+    monkeypatch.chdir(tmp_path)
+    assert solve_mod.solver_file(str(path)) == (path, "8403a5d5")
+    assert solve_mod.solver_file("scratch/8403a5d5_alt.dl")[0].read_text() == "// solver\n"
+
+
+def test_a_variant_file_name_keeps_the_task_id_it_leads_with():
+    assert solve_mod.task_id_of("8403a5d5v2.dl") == "8403a5d5"
+    assert solve_mod.task_id_of("draft.dl") == "draft"

@@ -1,12 +1,12 @@
 // 98c475bf
 // draft
 // keywords: markers lookup cast enclose
-// input: The two side columns are a border. On the canvas between them stand
-//  one drawn figure and one or more marker pairs: a figure is a shape standing
-//  on a line that crosses the canvas, and a marker pair is one color's two
-//  cells, one on each side edge of the canvas.
+// input: A border stands on two opposite edges, and the canvas lies between
+//  them. On the canvas stand one drawn figure and one or more marker pairs: a
+//  figure is a shape standing on a line that crosses the canvas, and a marker
+//  pair is one color's two cells, one on each side edge of the canvas.
 // output: The border stays and the canvas is cleared. Each marker pair draws
-//  the stored figure of its own color, with the line on the pair's row.
+//  the figure of its own color, with the line on the pair's row.
 
 // what a figure's line misses
 .type Gap =
@@ -29,12 +29,17 @@
 .comp Params {
     .decl bg(c: Color) bg(0).
 
-    // The drawing area: the frame less its border.
-    .decl canvas(b: Box) canvas([0, 0, 1, 1]).
-
     // The axis the border stands across; a figure's line runs along it.
-    .decl line_axis(a: Axis)
-    line_axis(A) :- canvas(B), dir_elem(D), !dist(B, D, 0), axis_of(D, A).
+    .decl line_axis(a: Axis) line_axis(AXIS_H).
+
+    // How wide the border is on each of the two edges it stands on.
+    .decl border_width(k: number) border_width(1).
+
+    // The drawing area: the frame less its border.
+    .decl canvas(b: Box)
+    canvas(B) :-
+        line_axis(A), axis_of(D, A),            // the edges the border stands on
+        border_width(K), axis_inset(D, K, K, B).
 
     // Each figure's shape, drawn in a frame of the figure's rows across the
     // canvas, and the row of that frame the marker pair's row meets.
@@ -150,18 +155,18 @@
 parse.cell($U(), P, Col) :- in(P, Col).
 
 // The marker pair's row, as a row of the canvas.
-.decl mark_row(col: Color, b: Box)
-mark_row(Col, R) :- parse.mark($U(), Col, M), parse.cell_split($U(), M, _, R).
+.decl pair_row(col: Color, b: Box)
+pair_row(Col, R) :- parse.mark($U(), Col, M), parse.cell_split($U(), M, _, R).
 
 // The figure's shape, seated with its own row on the marker pair's.
 .decl shape_cell(col: Color, p: Position)
 shape_cell(Col, P) :-
-    mark_row(Col, R), params.shape_at(Col, G), compose(R, G, Q),  // seated on that row
+    pair_row(Col, R), params.shape_at(Col, G), compose(R, G, Q),  // seated on that row
     params.canvas(B), compose(B, Q, P), in(P, _).                 // as a cell of the grid
 
 // A canvas cell on the marker pair's row, with its place across the canvas.
 .decl row_cell(col: Color, p: Position, p_col: Position)
-row_cell(Col, P, P_col) :- mark_row(Col, R), parse.cell_split($U(), P, P_col, R).
+row_cell(Col, P, P_col) :- pair_row(Col, R), parse.cell_split($U(), P, P_col, R).
 
 .decl impl_choice(ch: Choice)
 impl_choice($Drawn()).
@@ -191,7 +196,7 @@ lit(Col, P, $Stored()) :- row_cell(Col, P, P_col), !params.gap(Col, P_col).
 
 // What the shape closes off from the frame edge.
 .init seal = Closed<Color>
-seal.cell(Col, P) :- mark_row(Col, _), in(P, _), !shape_cell(Col, P).
+seal.cell(Col, P) :- pair_row(Col, _), in(P, _), !shape_cell(Col, P).
 
 lit(Col, P, $Sealed()) :- row_cell(Col, P, _), !seal.region(Col, P, _).
 
@@ -199,7 +204,7 @@ lit(Col, P, $Sealed()) :- row_cell(Col, P, _), !seal.region(Col, P, _).
 
 // The line's run inward from each marker, stopped by the shape.
 .init inward = Ray<Color>
-inward.dir(Col, D) :- mark_row(Col, _), params.line_axis(A), axis_of(D, A).
+inward.dir(Col, D) :- pair_row(Col, _), params.line_axis(A), axis_of(D, A).
 inward.cell(Col, P) :- row_cell(Col, P, _).
 inward.mark(Col, M) :- parse.mark($U(), Col, M).
 inward.blocked(Col, P) :- shape_cell(Col, P).
@@ -225,17 +230,24 @@ out(P, Col, Ch) :-
     .init edge = Unanimous<ED, Color>
     edge.item([E, D], Col) :- ex_in(E, P, Col), dir_elem(D), dist(P, D, 0).
 
+    // The edges the border stands on.
+    .decl border_dir(e: Example, d: Dir)
+    border_dir(E, D) :- edge.value([E, D], Col), !params.bg(Col).
+
     .decl border_cell(e: Example, p: Position)
-    border_cell(E, P) :-
-        ex_in(E, P, _), dir_elem(D), dist(P, D, 0),
-        edge.value([E, D], Col), !params.bg(Col).
+    border_cell(E, P) :- ex_in(E, P, _), border_dir(E, D), dist(P, D, 0).
+
+    // Those edges give the axis the border stands across.
+    .decl line_axis(a: Axis)
+    line_axis(A) :- border_dir(_, D), axis_of(D, A).
 
     // The canvas is what the border leaves.
     .init cbox = Bbox<Example>
     cbox.cell(E, P) :- ex_in(E, P, _), !border_cell(E, P).
 
-    .decl canvas(b: Box)
-    canvas(B) :- cbox.box(E, B).
+    // The canvas's margin on a border edge is the border's width.
+    .decl border_width(k: number)
+    border_width(K) :- cbox.box(E, B), border_dir(E, D), dist(B, D, K).
 
     // A drawn figure's ink: its place across the canvas, and its row.
     .decl fig(e: Example, col: Color, p_col: Position, p_row: Box)
@@ -245,8 +257,7 @@ out(P, Col, Ch) :-
     // The row its line runs on: where the figure meets the border.
     .decl line_row(e: Example, col: Color, b: Box)
     line_row(E, Col, R) :-
-        fig(E, Col, P_col, R), params.line_axis(A), axis_of(D, A),
-        box_edge(P_col, ZERO, D).
+        fig(E, Col, P_col, R), border_dir(E, D), box_edge(P_col, ZERO, D).
 
     // A cell of that row the figure misses.
     .decl miss(e: Example, col: Color, p_col: Position)
@@ -259,9 +270,9 @@ out(P, Col, Ch) :-
     shape_of(E, Col, P_col, P_row) :-
         fig(E, Col, P_col, P_row), line_row(E, Col, R), P_row != R.
     shape_of(E, Col, P_col, R) :-
-        miss(E, Col, Q_col), line_row(E, Col, R),                   // a gap
-        params.line_axis(A), axis_of(D, A), neighbor(Q_col, D, P_col),
-        fig(E, Col, P_col, R).                                      // the ink beside it
+        miss(E, Col, Q_col), line_row(E, Col, R),           // a gap
+        border_dir(E, D), neighbor(Q_col, D, P_col),
+        fig(E, Col, P_col, R).                              // the ink beside it
 
     // The figure's own frame: its rows, across the canvas.
     .init fbox = Bbox<EC>

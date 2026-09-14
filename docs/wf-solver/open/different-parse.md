@@ -4,7 +4,11 @@ Open question in `principles.md`, Coverage — Prior or setup, the Different par
 
 ## The question
 
-The Different parse test names both the input cells a rule reads and the structure the other encoding omits, and it does not say which of the two it ranges over. A model that finds the same structures as its peer, and leaves one cell of a shared structure unread, reads either as the same parse or as a second parse.
+The Different parse test names both the input cells a rule reads and the structure the other encoding omits, and it does not say which of the two it ranges over. A peer that leaves a cell of a shared structure unread is a second parse under Cells and the same parse under Structures.
+
+A peer that finds a further structure over cells a shared structure already holds, and reads only that structure's extents, is a second parse under Structures and the same parse under Cells.
+
+A third shape is the rule that builds a structure: when two encodings agree on the structure and differ in which cells qualify for it, the rule that reads the extra input cells is the definition itself.
 
 ## The text
 
@@ -26,6 +30,8 @@ The Different parse test names both the input cells a rule reads and the structu
 ## Solvers
 
 - 9356391f (draft) — `$Paint` paints every ring; `$Survive` paints every ring and keeps the marker cell its input color. Both find the same rings. The create pass read the Different parse test as admitting `$Survive`, and recorded it in its review; the refine pass read that test as ranging over the structures found, and gave it no case. Under reading 1 `$Survive` gets no case on parse grounds; under reading 2 it is a third case beside `$Paint` and `$Skip`.
+- 6e4f6532 (draft) — `$Backed` tests the object cell behind a wall-colored cell; `$Edge` tests the same cell against the edge of the object's bounding box that the transform turns toward the wall. `$Edge` finds a structure `$Backed` does not, and its rule binds positions only to the object's own cells, so it reads no cell outside the shared structure. Under reading 1 `$Edge` is a second parse and keeps its case; under reading 2 the two parse alike and Peer priors decides.
+- 97c75046 (draft) — `contact` holds the background cells that touch the shape by a cardinal step. The 8-adjacency peer holds the cells that touch it at a corner as well. Both find the contact set, and the only rule that reads the extra input cells is `contact` itself. Under reading 1 the two parse alike and the solver keeps one case; under reading 2 the peer is a second parse and gets one.
 
 ## Witnesses
 
@@ -42,3 +48,34 @@ input              $Paint, $Skip      $Survive
 . . . . . . . .    . . . . . . . .    . . . . . . . .
 . . . . . . . .    . . . . . . . .    . . . . . . . .
 ```
+
+6e4f6532, wall `4` on row 0, the marker `4` at (2,2) on the top edge of the object's box and backed only from the right, the target `9` at (6,7):
+
+```
+input                  $Backed                $Edge
+4 4 4 4 4 4 4 4 4 4    4 4 4 4 4 4 4 4 4 4    4 4 4 4 4 4 4 4 4 4
+. . . . . . . . . .    . . . . . . . . . .    . . . . . . . . . .
+. . 4 8 8 8 . . . .    . . . . . . . . . .    . . . . . . . . . .
+. 8 . . . 8 . . . .    . . . . . . . . . .    . . . . . . . . . .
+. 8 8 9 . 8 . . . .    . . . . . . . 8 8 .    . . . . . . 4 8 8 8
+. . . . . . . . . .    . . . . . . . 8 . 4    . . . . . 8 . . . 8
+. . . . . . . 9 . .    . . . . . . . 9 . 8    . . . . . 8 8 9 . 8
+. . . . . . . . . .    . . . . . . . . . 8    . . . . . . . . . .
+. . . . . . . . . .    . . . . . . . 8 8 8    . . . . . . . . . .
+. . . . . . . . . .    . . . . . . . . . .    . . . . . . . . . .
+```
+
+`$Backed` turns the object a quarter turn clockwise; `$Edge` keeps the identity.
+
+97c75046, background `7`, the marker `5` at (0,3), shape cells at (2,3), (2,4), and (4,0). The 8-adjacency peer is the shipped solver with `dir_elem` in `contact` replaced by `dir8_elem`:
+
+```
+input            4-adjacency      8-adjacency
+7 7 7 5 7        7 7 7 7 7        7 7 7 7 7
+7 7 7 7 7        7 7 7 7 7        7 7 7 7 7
+7 7 7 . .        7 7 5 . .        7 7 7 . .
+7 7 7 7 7        7 7 7 7 7        7 5 7 7 7
+. 7 7 7 7        . 7 7 7 7        . 7 7 7 7
+```
+
+The marker rests at (2,2) under the cardinal join and at (3,1) under the corner join, which carries it on past (2,2) to the cell that touches (4,0) at a corner.
