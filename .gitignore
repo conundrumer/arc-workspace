@@ -20,6 +20,7 @@ tools/console/state/
 .scratch
 # generated
 .codex/
+/AGENTS.md
 .claude/agents/handbook.md
 .claude/agents/handbook-expanded.md
 programs/lib.md
@@ -30,5 +31,4 @@ programs/lib/*.md
 *.swap
 programs/solvers/.tmp*.dl
 
-# the user's own codex style
 docs/codex-style.md

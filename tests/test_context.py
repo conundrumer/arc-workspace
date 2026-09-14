@@ -330,6 +330,32 @@ def test_the_handbook_agent_is_the_handbook_under_its_frontmatter(tmp_path):
     assert "- **out** — The output." in path.read_text()
 
 
+def test_write_codex_writes_the_agents_doc_and_the_project_config(tmp_path: Path):
+    from dl.context import CODEX_CONFIG, CODEX_STYLE, codex_config, uncommented, write_codex
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    for name in DOCS:
+        (docs / name).write_text(f"# {name}\n")
+    lib = tmp_path / "lib.dl"
+    lib.write_text(".decl out(p: Position)\n")
+    (tmp_path / "CLAUDE.md").write_text("# repo\n")
+
+    agents, config = write_codex(tmp_path, docs, lib)
+    assert agents == tmp_path / "AGENTS.md"
+    assert agents.read_text() == render(docs, lib) + "\n---\n\n# CLAUDE.md\n\n# repo\n"
+    assert config == tmp_path / CODEX_CONFIG
+    assert config.read_text() == codex_config(None)
+    assert "developer_instructions" not in config.read_text()   # no style file yet
+
+    (tmp_path / CODEX_STYLE).write_text('# Style\n<!-- off -->\n- on "quoted" <!-- aside -->\n')
+    write_codex(tmp_path, docs, lib)
+    import tomllib
+    loaded = tomllib.loads(config.read_text())
+    assert loaded["developer_instructions"] == '# Style\n- on "quoted"\n'
+    assert loaded["project_doc_max_bytes"] > 0 and loaded["sandbox_mode"] == "workspace-write"
+    assert uncommented("a\n<!-- multi\nline -->\nb\n") == "a\nb\n"
+
+
 def test_a_sweep_takes_the_digest_files_no_caller_has_taken_lately(tmp_path):
     import os
     import time

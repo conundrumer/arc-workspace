@@ -16,6 +16,7 @@ of each file, under a note that points at the interface file for the rest.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import threading
@@ -444,6 +445,47 @@ def write_agent(path: Path = AGENT_PATH, docs: Path = DOCS_DIR, lib: Path = LIB_
     _write_whole(expanded_agent_path(path),
                  agent_definition(render(docs, lib), EXPANDED_AGENT_META))
     return _write_whole(path, agent_definition(render(docs, lib, lib_index=True)))
+
+
+# The files every codex session on the repo reads, in the desktop app or the
+# CLI: the handbook and the project CLAUDE.md as the project's AGENTS.md, and
+# the user's own style, `docs/codex-style.md`, as the developer instructions
+# in the project config. Neither is tracked, and the style file is the
+# user's to keep.
+CODEX_STYLE = Path("docs") / "codex-style.md"
+CODEX_CONFIG = Path(".codex") / "config.toml"
+# The project-doc budget; the default truncates the handbook silently.
+CODEX_DOC_BYTES = 1 << 20
+
+
+def uncommented(text: str) -> str:
+    """The text without its HTML comments. A comment that fills whole lines
+    takes those lines with it; an inline one takes the space before it."""
+    text = re.sub(r"^[ \t]*<!--.*?-->[ \t]*\n", "", text, flags=re.S | re.M)
+    return re.sub(r" ?<!--.*?-->", "", text, flags=re.S)
+
+
+def codex_config(style: str | None) -> str:
+    """The project config: the style as the developer instructions when
+    there is one, the doc budget, and the sandbox that lets a run edit."""
+    keys: dict[str, object] = {}
+    if style is not None:
+        keys["developer_instructions"] = uncommented(style)
+    keys["project_doc_max_bytes"] = CODEX_DOC_BYTES
+    keys["sandbox_mode"] = "workspace-write"
+    # json.dumps gives a TOML basic string: the escapes agree on these
+    # values.
+    return "".join(f"{k} = {json.dumps(v)}\n" for k, v in keys.items())
+
+
+def write_codex(root: Path = REPO_ROOT, docs: Path = DOCS_DIR, lib: Path = LIB_SRC) -> list[Path]:
+    """Write the codex files under `root` and return their paths."""
+    claude_md = (root / "CLAUDE.md").read_text()
+    style_path = root / CODEX_STYLE
+    style = style_path.read_text() if style_path.exists() else None
+    return [_write_whole(root / "AGENTS.md",
+                         render(docs, lib) + "\n---\n\n# CLAUDE.md\n\n" + claude_md),
+            _write_whole(root / CODEX_CONFIG, codex_config(style))]
 
 
 # A digest file no longer current, and untouched for this long, has no session
