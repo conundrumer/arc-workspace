@@ -25,6 +25,7 @@ from dl.domains import (
 from dl.facts import _parse_relations, _parse_value, example_facts
 from dl.lint import NUMERIC_LITERAL_RE, UNIT_MARKER, exempt_literal
 from dl.paths import PROPOSERS_SRC, SOLVERS_DIR
+from dl.solve import task_id_of
 from dl.souffle import _run_source
 from dl.source import (
     COMP_HEADER_RE,
@@ -118,7 +119,7 @@ def probe_report(
     `exempt_literal` does not exempt.
     """
     source = expand_macros((SOLVERS_DIR / f"{stem}.dl").read_text())
-    task = load_task(stem.split("_", 1)[0])
+    task = load_task(task_id_of(stem))
     defines = _lib_defines()
     s, e = _comp_span(source, "Params")
     params_text = "\n".join(source.splitlines()[s:e])

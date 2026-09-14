@@ -28,7 +28,8 @@ export const meta = {
 //                      FIX_ROLES name what each run needs; a missing one returns an error.
 //   {}                 full run; returns every call with its default, for, and against.
 //   { dry: true }      full run that stops before Fix and returns the fixes it would make.
-//   { fixes: [...] }   second run after the user's rulings: Fix and Verify, over the given fixes.
+//   { fixes: [...] }   second run after the user's rulings: Fix, Resolve, Consistency, Cleanup, and
+//                      Verify, over the given fixes.
 //                      Each fix: { id, kind, target, edit, tasks }: a call's id with one entry
 //                      per target, as the first run returned them under calls[].fixes, and the
 //                      issue's task ids, which a fix over a principle writes a review line into.
@@ -399,6 +400,12 @@ const fixAndPruneTask = (groups, ruled) => [
   'Report both steps. The `diff` field carries the fix diff, then the pruned diff. The `notes` field carries one line per cut, and the meaning before and after of each rule the diff touches.',
 ].join('\n')
 
+// The files a fix diff changed beside the brief's targets: a code fix writes a
+// test with its change, so that test file is in scope too.
+const diffFiles = (made) => [...new Set(
+  [...(made.edit.diff || '').matchAll(/^\+\+\+ b\/(\S+)/gm)].map(m => m[1])
+)].filter(p => !made.targets.includes(p))
+
 const verifyTask = (made) => [
   `Verify the changes to ${made.target}.`,
   '',
@@ -409,6 +416,9 @@ const verifyTask = (made) => [
     '',
   ].join('\n')),
   `The fix diff:\n${made.edit.diff}`,
+  ...(diffFiles(made).length
+    ? ['', 'The fix diff also changed these files. They are in scope beside the target: fix what you find in them.', ...diffFiles(made).map(p => `    ${p}`)]
+    : []),
   ...(made.chain && made.chain.length
     ? ['', 'The other code targets of this run changed the same tree. Their diffs are under these paths:', ...made.chain.map(p => `    ${p}`)]
     : []),
@@ -609,7 +619,7 @@ async function fixStage(fixes, ruled = false) {
 async function verifyStage(made, runChecks = true) {
   const findings = (await parallel(made.map(m => async () => {
     const v = await agent(asRole('retro-verify', verifyTask(m)), { label: `verify:${m.target}`, phase: 'Verify', schema: VERIFY_SCHEMA, ...agentOf('retro-verify') })
-    return v && { target: m.target, targets: m.targets, ...v }
+    return v && { target: m.target, targets: [...m.targets, ...diffFiles(m)], ...v }
   }))).filter(Boolean)
   const checks = runChecks
     ? await agent(checksTask(), { label: 'checks', phase: 'Verify', schema: CHECKS_SCHEMA, model: 'sonnet', effort: 'low' })
@@ -849,11 +859,13 @@ if (open.length) {
                  covers: r.covers, fixes, changed_work: o?.changed_work, changed_how: o?.changed_how })
   }
 }
-// a level-4 call is presented and not made
+// The doc whose fixes wait on the user's ruling, at any level.
+const PRINCIPLES = 'docs/wf-solver/principles.md'
+// a level-4 call is presented and not made, and so is a fix to PRINCIPLES
 const stands = calls.filter(c => (c.default === 'fix' || c.default === 'replace') && c.fixes.length && c.tier !== 4)
 // one agent per general fix: fixes that several replaced issues point at collapse to one
 // A fix carries its issue's tasks: a fix over a principle writes a review line into each of their draft solvers.
-const fixes = [...byKey(stands.flatMap(c => c.fixes.map(f => ({ ...f, id: c.id, tasks: issueById.get(c.id)?.tasks || [] }))), f => `${f.target}\n${f.edit}`)]
+const fixes = [...byKey(stands.flatMap(c => c.fixes.filter(f => f.target !== PRINCIPLES).map(f => ({ ...f, id: c.id, tasks: issueById.get(c.id)?.tasks || [] }))), f => `${f.target}\n${f.edit}`)]
   .map(([, fs]) => ({ ...fs[0], id: fs.map(f => f.id).join(','), tasks: [...new Set(fs.flatMap(f => f.tasks))] }))
 const tally = { issues: issues.length, closed: closed.length }
 for (const c of calls) tally[c.default] = (tally[c.default] || 0) + 1

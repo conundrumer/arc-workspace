@@ -13,7 +13,7 @@ from functools import lru_cache
 from dl.context import DOCS_DIR, lib_sources
 from dl.dlparse import (
     SECTION_RE, Agg, Atom, Cmp, Comp, Decl, Define, Disj, Functor, Include,
-    Init, Item, Lit, Neg, ParseError, Rigid, Rule, TypeDecl, parse,
+    Init, Item, Lit, Neg, ParseError, Program, Rigid, Rule, TypeDecl, parse,
 )
 from dl.paths import SOLVERS_DIR
 from dl.source import KEYWORDS_DOC, doc_keywords, header_keywords
@@ -124,9 +124,9 @@ STOCK_COMPS = ("Params", "Determine", "Parse")
 PROPOSALS_DIR = DOCS_DIR / "proposals"
 # The category a proposal comp with no entry is reported under.
 NO_ENTRY_CAT = "comp without entry"
-# The category a Parse comp standing without a Determine comp is reported
+# The category a Parse comp that no Determine comp reads is reported
 # under.
-LONE_PARSE_CAT = "parse without determine"
+LONE_PARSE_CAT = "parse unshared with determine"
 # The header line naming the family representative, with the case name it
 # may carry: `// representative: <task_id>` or
 # `// representative: <task_id> <Case>`.
@@ -531,22 +531,45 @@ def _comps_without_entry(
 
 
 def _lone_parse(
-    comps: dict[str, Comp], raw_lines: list[str],
+    program: Program, raw_lines: list[str],
 ) -> list[tuple[str, int, str, str]]:
-    """A Parse comp in a solver that has no Determine comp.
+    """A Parse comp that no Determine comp reads.
 
     Parse holds a derivation that the program and the Determine comp share.
-    With no Determine comp, nothing shares it.
+    A solver with no Determine comp, or with one that does not read the
+    Parse comp, shares nothing with it.
     """
+    comps = program.comps()
     comp = comps.get("Parse")
-    if comp is None or "Determine" in comps:
+    if comp is None:
+        return []
+    determine = comps.get("Determine")
+    if determine is not None and _reads_parse(program, determine, raw_lines):
         return []
     return [(
         LONE_PARSE_CAT, comp.line,
-        "a parse with no Determine comp belongs in program rules; fold it "
-        "into the program",
+        "the Determine comp does not read this parse, or the solver has "
+        "no Determine comp, so the parse is shared with nothing; "
+        "read it in Determine, or fold it into the program",
         raw_lines[comp.line - 1].rstrip(),
     )]
+
+
+def _reads_parse(
+    program: Program, determine: Comp, raw_lines: list[str],
+) -> bool:
+    """The Determine comp reads the Parse comp: it holds its own Parse
+    instance, or its lines name a top-level one."""
+    if any(isinstance(it, Init) and it.comp == "Parse"
+           for it in determine.items):
+        return True
+    span = raw_lines[determine.line - 1:determine.end_line]
+    for it in program.items:
+        if not isinstance(it, Init) or it.comp != "Parse":
+            continue
+        if any(f"{it.inst}." in line for line in span):
+            return True
+    return False
 
 
 def _rep_items(task_id: str) -> list[Item] | None:
@@ -869,7 +892,7 @@ def lint_program(source: str) -> list[tuple[str, int, str, str]]:
     findings.extend(_lib_named(program.items, raw_lines))
     findings.extend(_lib_internal(program.items, raw_lines))
     findings.extend(_comps_without_entry(program.items, raw_lines))
-    findings.extend(_lone_parse(program.comps(), raw_lines))
+    findings.extend(_lone_parse(program, raw_lines))
     findings.extend(_banned_types(program.items, raw_lines))
     findings.extend(_glosses(program.items, raw_lines))
     findings.extend(_includes(program.items, raw_lines))

@@ -6,6 +6,7 @@
 // output: The legend entry K cells from the params.read_dir edge gives the
 //  color of the square ring K cells out from the marker. The canvas holds
 //  those rings; the legend panel and the divider stay.
+// review principle: docs/wf-solver/open/different-parse.md
 
 // what a bg legend entry means
 .type Choice =
@@ -33,7 +34,10 @@
 
 .init params = Params
 
-// The panels the divider cuts, stacked along params.legend_dir's axis.
+.decl impl_choice(ch: Choice)
+impl_choice($Paint()). impl_choice($Skip()).
+
+// The panels the divider cuts.
 .init panel = DividerTiles<Unit>
 panel.cell($U(), P) :- in(P, _).
 panel.divider($U(), A, L) :-
@@ -54,17 +58,12 @@ canvas(P) :-
 .decl marker(p: Position)
 marker(P) :- canvas(P), in(P, Col), !params.bg(Col).
 
-.decl impl_choice(ch: Choice)
-impl_choice($Paint()).
-impl_choice($Skip()).
-
 .decl ring_color(p: Position, col: Color)
 ring_color(P, Col) :-
-    marker(P_mark), legend(K, Col),               // marker, legend entry
+    marker(P_mark), legend(K, Col),
     uniform_outset(K, W), compose(P_mark, W, B),  // the box K cells out
     canvas(P), box_edge(P, B, _).                 // on that box's edge
 
-// The legend panel and the divider stay.
 out(P, Col, Ch) :- in(P, Col), !canvas(P), impl_choice(Ch).
 
 // --- Paint ---

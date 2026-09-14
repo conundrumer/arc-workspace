@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from arc.task import load as load_task
 from dl.domains import ENUM_TYPES, POSITION_TYPES
 from dl.paths import SOLVERS_DIR
-from dl.solve import _profile
+from dl.solve import _profile, task_id_of
 from dl.souffle import _pool_workers
 from dl.source import (
     RIGID_CHART_PREFIX,
@@ -153,7 +153,7 @@ def drop_one_report(stem: str) -> tuple[list[Hit], int, int] | None:
     source fails the train pairs.
     """
     source = expand_macros((SOLVERS_DIR / f"{stem}.dl").read_text())
-    task = load_task(stem.split("_", 1)[0])
+    task = load_task(task_id_of(stem))
     params = _multi_fact_params(source)
     if not params:
         return ([], 0, 0)

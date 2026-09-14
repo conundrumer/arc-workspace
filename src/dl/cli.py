@@ -15,7 +15,12 @@ from dl.corpus import literal_count
 from dl.deletions import deletion_report, render_deletions
 from dl.derived_constant import derived_constant_report, render_derived_constant
 from dl.determination_plan import probe_report, render_determination_plan
-from dl.determine import DetermineResult, render_determine, run_determine
+from dl.determine import (
+    DetermineResult,
+    render_determine,
+    reproduced,
+    run_determine,
+)
 from dl.dlparse import ParseError, TypeDecl, parse
 from dl.drop_one import drop_one_report, render_drop_one
 from dl.facts import parse_grid
@@ -33,6 +38,7 @@ from dl.solve import (
     run_dl,
     run_pair,
     run_task,
+    task_id_of,
 )
 from dl.souffle import (
     CPU_LIMIT_SECONDS,
@@ -242,7 +248,7 @@ def cmd_pairs(stem: str, path: str) -> int:
     build_functors()
     if _compile_failed(stem):
         return 1
-    task_id = stem.split("_", 1)[0]
+    task_id = task_id_of(stem)
     failed = False
     for kind, examples in sections:
         for idx, e in enumerate(examples):
@@ -360,7 +366,7 @@ def cmd_grid(stem: str, path: str | None = None) -> int:
     if _compile_failed(stem):
         return 1
     try:
-        actuals = run_dl(stem.split("_", 1)[0], grid, stem=stem)
+        actuals = run_dl(task_id_of(stem), grid, stem=stem)
     except Exception as e:
         print(f"{type(e).__name__}: {e}", file=sys.stderr)
         return 1
@@ -450,8 +456,12 @@ def cmd_since(when: str) -> int:
         else:
             print(f"skipped {sha}: a mechanical rewrite over {len(touched)} solvers",
                   file=sys.stderr)
-    for stem in sorted(stems & corpus):
+    in_scope = sorted(stems & corpus)
+    for stem in in_scope:
         print(stem)
+    print(f"{len(in_scope)} solvers in scope. A survey reads its whole scope "
+          "in one pass, so its cost does not follow that count.",
+          file=sys.stderr)
     return 0
 
 
@@ -549,8 +559,9 @@ def cmd_all(hints: bool = False, timed: bool = False,
 
 def _print_sweep(stem: str, max_candidates: int, budget: float) -> None:
     """The sweep report, with the budget and the elapsed time as a footer."""
+    determined = reproduced(run_determine(stem))
     start = time.monotonic()
-    lines = render_sweep(sweep_report(stem, max_candidates, budget))
+    lines = render_sweep(sweep_report(stem, max_candidates, budget), determined)
     elapsed = time.monotonic() - start
     for line in lines:
         print(line)
@@ -709,7 +720,12 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("stems", nargs="*",
                      help="the solvers to run; one runs its pairs, lint and "
                           "determination check, several run as a corpus over "
-                          "those solvers alone, and none runs the whole corpus")
+                          "those solvers alone, and none runs the whole "
+                          "corpus. A stem may name a path relative to "
+                          "programs/solvers/, whose file name keeps the task "
+                          "id as its prefix, so a variant kept under "
+                          ".scratch/ runs without entering the corpus "
+                          "directory")
     lint.add_argument("stem", nargs="?",
                       help="one solver; all of them when omitted")
     for p in (run, lint):
@@ -732,7 +748,12 @@ def _parser() -> argparse.ArgumentParser:
         epilog=GRID_HELP,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    grid.add_argument("stem")
+    grid.add_argument("stem",
+                      help="the solver to run; it may name a path relative to "
+                           "programs/solvers/, whose file name keeps the task "
+                           "id as its prefix, so a variant kept under "
+                           ".scratch/ runs without entering the corpus "
+                           "directory")
     grid.add_argument("file", nargs="?",
                       help="grid file; stdin when omitted or `-`")
 
@@ -812,7 +833,9 @@ def _parser() -> argparse.ArgumentParser:
                     "every such solver is in scope and no time test applies to "
                     "it. A commit touching more than half of the solvers "
                     "is a corpus-wide mechanical rewrite, and the solvers "
-                    "it touches are out of scope.",
+                    "it touches are out of scope. A survey reads its whole "
+                    "scope in one pass, so its cost does not follow the count "
+                    "of solvers in scope.",
     )
     since.add_argument("when", help="a date-time git reads, e.g. "
                                     '"2026-09-08 14:30"')

@@ -43,6 +43,7 @@ Drafts, with the case at stake:
 - 54dc2872 — `Slide` kept beside `Translate` on the Exercised finding alone. Rules 1 and 2 keep it, as an output rule that reads the L's own heading; rule 3 decides by whether travel and placement are two keywords.
 - 8ba14f53 — `Shape | Hue | Region`, three groupings of the same cells. Rule 1 keeps all three; rules 2 and 3 keep one. The draft citation under Exercised in `principles.md` follows this ruling.
 - 239be575, 62ab2642 — `Orth | Diag` over one node set. Rule 1 keeps both; rules 2 and 3 keep one.
+- 9385bd28 — which pieces of a key color are marks: `Open` (a piece leaves a cell of its own box open) and `Paired` (its key color draws more than one piece) kept; `Triomino` (a three-cell piece, with a stored cell count) and `Corner` (a 2×2 box less one cell, with a stored extent) fit every pair and were dropped as one prior. Rules 1 and 2 give `Open | Paired | Triomino | Corner`, since each adds a parameter and an output-side test; rule 3 decides by whether a piece's cell count and a test on its form are two keywords.
 - 60a26a3e (a color-blind ring test), 8a371977 (the ring as the tiles beside a missing tile), 90f3ed37 (the full shape as the largest), 8b9c3697 (what stops the mover), 67a423a3 (a line as one color's cells in a row, with no bg guard), 689c358e (the side reading) — each dropped one branch under the gate. Rules 1 and 2 add it; rule 3 does not.
 
 Approved solvers a rule would change: listed under each rule.
@@ -72,4 +73,27 @@ by cell count          by perimeter, or by H extent
 2 2 2 . . .      2 2 2 2 2 .
 . . . 1 . .      . . 2 1 2 .
                  . . 2 2 2 .
+```
+
+9385bd28, a legend `1 2` in the bottom-left row, key 1 to value 2; a mark keeps its own color, and a non-mark takes the value color. A solid 1×3 bar fills its own box:
+
+```
+input          $Open, $Paired, $Corner    $Triomino
+. . . . . .    . . . . . .                . . . . . .
+. 1 1 1 . .    . 2 2 2 . .                . 1 1 1 . .
+. . . . . .    . . . . . .                . . . . . .
+. . . . . .    . . . . . .                . . . . . .
+1 2 . . . .    1 2 . . . .                1 2 . . . .
+```
+
+A four-cell L leaves two cells of its 3×2 box open:
+
+```
+input          $Open          $Paired, $Triomino, $Corner
+. . . . . .    . . . . . .    . . . . . .
+. 1 . . . .    . 1 2 . . .    . 2 2 . . .
+. 1 . . . .    . 1 2 . . .    . 2 2 . . .
+. 1 1 . . .    . 1 1 . . .    . 2 2 . . .
+. . . . . .    . . . . . .    . . . . . .
+1 2 . . . .    1 2 . . . .    1 2 . . . .
 ```

@@ -85,7 +85,9 @@ out(D) :- cand(D), !broken(D).
     assert "negated-use" not in cats(src)
 
 
-def test_comp_idiom_clash_fires():
+def test_comp_idiom_multi_cell_kept():
+    # Two reads differing in one column alone state a multi-cell test.
+    # No lib relation holds it, so the pair draws no hint.
     src = """\
 .decl interior(id: number, p: number, col: number)
 interior(1, 2, 3).
@@ -94,9 +96,49 @@ mixed(Id) :- interior(Id, _, C1), interior(Id, _, C2), C1 != C2.
 .decl out(id: number)
 out(Id) :- mixed(Id).
 """
+    assert "comp-idiom" not in cats(src, hints=True)
+
+
+def test_comp_idiom_axis_fires():
+    # `A != A2` over Axis states the other axis, which `perp` states.
+    src = """\
+.decl line_col(p: Position, a: Axis, col: Color)
+line_col(1, 2, 3).
+.decl crossed(p: Position)
+crossed(P) :- line_col(P, A, _), line_col(P, A2, _), A != A2.
+.decl out(p: Position)
+out(P) :- crossed(P).
+"""
     fs = [f for f in lint_rewrites(src, hints=True) if f[0] == "comp-idiom"]
     assert len(fs) == 1
-    assert "docs/wf-solver/proposals/multi_cell.md" in fs[0][2]
+    assert "perp(A, A2)" in fs[0][2]
+
+
+def test_comp_idiom_diag_axis_fires():
+    src = """\
+.decl line_col(p: Position, da: DiagAxis, col: Color)
+line_col(1, 2, 3).
+.decl crossed(p: Position)
+crossed(P) :- line_col(P, D, _), line_col(P, D2, _), D != D2.
+.decl out(p: Position)
+out(P) :- crossed(P).
+"""
+    fs = [f for f in lint_rewrites(src, hints=True) if f[0] == "comp-idiom"]
+    assert len(fs) == 1
+    assert "diag_perp(D, D2)" in fs[0][2]
+
+
+def test_comp_idiom_sense_kept():
+    # Sense has two members, and lib holds no other-member relation.
+    src = """\
+.decl turn_col(p: Position, s: Sense, col: Color)
+turn_col(1, 2, 3).
+.decl both(p: Position)
+both(P) :- turn_col(P, S, _), turn_col(P, S2, _), S != S2.
+.decl out(p: Position)
+out(P) :- both(P).
+"""
+    assert "comp-idiom" not in cats(src, hints=True)
 
 
 def test_comp_idiom_pair_relation_kept():
@@ -201,13 +243,14 @@ out(Delta) :- cand(Delta), !broken(Delta).
 
 
 def test_comp_idiom_is_a_hint():
+    # The source of `test_comp_idiom_axis_fires`, read without hints.
     src = """\
-.decl interior(id: number, p: number, col: number)
-interior(1, 2, 3).
-.decl mixed(id: number)
-mixed(Id) :- interior(Id, _, C1), interior(Id, _, C2), C1 != C2.
-.decl out(id: number)
-out(Id) :- mixed(Id).
+.decl line_col(p: Position, a: Axis, col: Color)
+line_col(1, 2, 3).
+.decl crossed(p: Position)
+crossed(P) :- line_col(P, A, _), line_col(P, A2, _), A != A2.
+.decl out(p: Position)
+out(P) :- crossed(P).
 """
     assert "comp-idiom" not in cats(src)
 

@@ -20,6 +20,12 @@ class _Ex:
     alt: _Alt | None = None
 
 
+@dataclass
+class _Task:
+    train: list[_Ex]
+    test: list[_Ex]
+
+
 A = [[1]]
 B = [[2]]
 RULE_EX = _Ex(input=[[0]], output=A, alt=_Alt(kind="rule", grid=B))
@@ -115,3 +121,15 @@ def test_a_profile_alone_stops_at_the_failing_pair(monkeypatch):
     profile, ran = _cases(monkeypatch, [MISS, BOTH], cases=False)
     assert profile is None
     assert ran == 1
+
+
+def test_pair_work_takes_the_task_id_from_a_path_stem(monkeypatch):
+    """A stem may name a path relative to the solvers directory."""
+    task = _Task(train=[_Ex(input=[[0]], output=A)], test=[])
+    monkeypatch.setattr(solve_mod, "load_task", lambda _id: task)
+    stem = "../../.scratch/abcd1234/abcd1234_alt"
+    assert solve_mod._pair_work(stem) == [(stem, "abcd1234", "train", 0, task.train[0])]
+
+
+def test_task_id_of_takes_the_file_name_from_a_path_stem():
+    assert solve_mod.task_id_of("../../.scratch/abcd1234/abcd1234_alt") == "abcd1234"

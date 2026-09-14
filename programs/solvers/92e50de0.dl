@@ -6,8 +6,8 @@
 
 // where the copies stand
 .type Choice =
-    // drawn lines cut the grid into a lattice, and the ink repeats every
-    // tile_period cells of that lattice, on both axes
+    // drawn lines cut the grid into tiles, and the ink repeats every
+    // tile_period tiles, on both axes
     Alternate {}
     // the whole scene repeats at a period of grid cells, on both axes
   | Wallpaper {}
@@ -19,10 +19,10 @@
 
     // --- Alternate ---
 
-    // Lattice cells from one copy to the next.
+    // Tiles from one copy to the next.
     .decl tile_period(k: number) tile_period(2).
 
-    // The corner of its cell a copy aligns to.
+    // The corner of its tile a copy aligns to.
     .decl anchor(dg: DiagDir) anchor(DIAG_TL).
 
     // --- Wallpaper ---
@@ -53,24 +53,24 @@ line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
 
 .init lattice = DividerTiles<Unit>
 lattice.cell($U(), P) :- in(P, _).
-// A line of one non-bg color cuts the grid rather than sits in a cell.
+// A line of one non-bg color cuts the grid.
 lattice.divider($U(), A, L) :- line_color.value([A, L], Col), !params.bg(Col).
 
 .init tile_box = Bbox<Position>
 tile_box.cell(P_tile, P) :- lattice.tile_of($U(), P, P_tile).
 
-// A grid cell with its lattice cell and its place in that cell's frame.
+// A tile's cell, in the tile's own frame.
 .decl tile_cell(p_tile: Position, p: Position, p_intile: Position)
 tile_cell(P_tile, P, P_intile) :-
     lattice.tile_of($U(), P, P_tile),
     tile_box.box(P_tile, B), crop(P, B, P_intile).
 
 .decl copy_tile(p_tile: Position)
-copy_tile(P_tile) :- lattice.tile_of($U(), P, P_tile), ink(P, _).   // the cell the ink sits in
+copy_tile(P_tile) :- lattice.tile_of($U(), P, P_tile), ink(P, _).   // the tile the ink sits in
 copy_tile(P_tile2) :-
     copy_tile(P_tile), params.tile_period(K), dir_elem(D),
     jump(P_tile, D, K, P_tile2),                // one period on
-    lattice.tile_of($U(), _, P_tile2).          // a cell of the lattice
+    lattice.tile_of($U(), _, P_tile2).          // a tile of the lattice
 
 paint(Q, Col, $Alternate()) :-
     tile_cell(_, P, P_intile), ink(P, Col),                    // an ink cell in its tile

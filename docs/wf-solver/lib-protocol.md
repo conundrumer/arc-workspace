@@ -23,6 +23,7 @@ Give a candidate an entry, `docs/wf-solver/proposals/<name>.md`, named for the o
 - a `Not:` line naming what is not this operation
 - a `Match:` line with a search signature that covers every statement of the operation, including statements whose atoms sit in different lines or rules, and statements that reach the operation through another primitive. State the shape in prose and match it with the parser (`tests/test_ast_match.py`)
     - restate a `Match:` line that does not meet this spec, so the next survey reads it
+        - a signature that names an identifier `former-names.md` retires does not meet this spec, and its restatement uses the current name
 - a `Survey:` line per survey, its time to the minute, each followed by its own result. The line names the scope the survey covered, in one of two forms: `Survey: <date time> — every solver.` or `Survey: <date time> — the solvers since <the entry's previous survey time>.` A survey's scope includes draft solvers.
     - the result that is relevant to the operation: the near-misses, the spec question, and a `Callers` list of the solvers that would call it
         - a citation is the stem and the relation name
@@ -64,6 +65,7 @@ Remove the entry's file at these points:
     - Run it when the pass needs the result of an entry in either state. The state sets the scope:
         - the entry carries no result: the scope is every solver
         - some solvers are newer than the entry's newest `Survey:` time: the scope is those solvers, as `uv run python scripts/run_dl.py since <time>` lists them for that time
+        - the scope's size is no reason to skip the survey
     - If the command fails, spawn the `survey` role with the entry's path, the scope the command would take, and a scratch path (`.scratch/surveys/<entry name>/`). Append at the end of the entry a blank line, the `Survey:` line in the form the entry's fields give, a blank line, then the role's report.
         - say in the review that the command failed and the role ran
     - If the pass ends with the entry still unsurveyed, say so in the review.

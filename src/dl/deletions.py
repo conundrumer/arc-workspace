@@ -11,7 +11,7 @@ from dl.facts import grid_to_facts, parse_output
 from dl.lint import _lib_source
 from dl.paths import SOLVERS_DIR
 from dl.rewrite_lint import _elem_tables
-from dl.solve import _profile, res_out
+from dl.solve import _profile, res_out, task_id_of
 from dl.souffle import _pool_workers, _run_source
 from dl.source import _comp_span, build_source
 
@@ -431,7 +431,7 @@ def deletion_report(stem: str) -> tuple[int, list[Finding]] | None:
     stood for it. None when the stored source itself fails.
     """
     source = (SOLVERS_DIR / f"{stem}.dl").read_text()
-    task = load_task(stem.split("_", 1)[0])
+    task = load_task(task_id_of(stem))
     examples = list(task.train) + list(task.test)
     reference = _profile(source, examples)
     if reference is None:

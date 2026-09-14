@@ -8,6 +8,7 @@ from arc.task import load as load_task
 from dl.determine_deps import Step, determine_cycles, render_cycles
 from dl.facts import _parse_relations, _parse_value, example_facts
 from dl.paths import SOLVERS_DIR
+from dl.solve import task_id_of
 from dl.souffle import CPU_LIMIT_SECONDS, _run_source
 from dl.source import build_determine_source, determined_params, rigid_decls
 
@@ -25,7 +26,7 @@ def run_determine(stem: str) -> DetermineResult | None:
     """Determination check for one solver; None when the file has no
     Determine comp."""
     source = (SOLVERS_DIR / f"{stem}.dl").read_text()
-    task = load_task(stem.split("_", 1)[0])
+    task = load_task(task_id_of(stem))
     return determine_check(source, task)
 
 
@@ -128,6 +129,21 @@ def _rigid_match(coupled: dict[str, str], rels: dict[str, list[str]]) -> list[st
         if orbit("determine") != orbit("params"):
             diffs.append("+".join(names) + " (pose)")
     return diffs
+
+
+def reproduced(determination: DetermineResult | None) -> set[str]:
+    """The determined parameters whose determination reproduces the stored
+    value: the check's params, less every name a diff entry reports. A diff
+    entry names one parameter, or a joint block as `a+b (ids)` or
+    `a+b (pose)`. An errored or absent check reproduces nothing."""
+    if determination is None or determination.error:
+        return set()
+    disagreeing = {
+        name
+        for entry in determination.diff
+        for name in entry.split(" (")[0].split("+")
+    }
+    return set(determination.params) - disagreeing
 
 
 def render_determine(determination: DetermineResult) -> list[str]:

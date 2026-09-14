@@ -33,6 +33,12 @@ from . import config, prompts
 # The line the protocol reads, and the line that says the entry is closed.
 SURVEY_LINE = re.compile(r"^Survey:[ \t]*(\d{4}-\d{2}-\d{2} \d{2}:\d{2})", re.M)
 CLOSED_LINE = re.compile(r"^Closed:", re.M)
+# An entry's search signature, and a row of a former-names.md table. A Former
+# cell holding nothing but backticked names names code; a cell that carries
+# prose as well names a term, and a name in it stands for that term.
+MATCH_LINE = re.compile(r"^Match:.*$", re.M)
+FORMER_ROW = re.compile(r"^\|(.+?)\|(.+?)\|\s*$", re.M)
+FORMER_CELL = re.compile(r"^`[A-Za-z_][\w.]*`(?:,\s*`[A-Za-z_][\w.]*`)*$")
 SURVEY_STAMP = "%Y-%m-%d %H:%M"
 RUN_STAMP = "%Y-%m-%d-%H%M%S"
 
@@ -149,6 +155,25 @@ def survey_plan(text: str) -> dict | None:
     return {"since": when, "scope": scope} if scope else None
 
 
+def renamed_in_match(text: str) -> list[tuple[str, str]]:
+    """The identifiers an entry's `Match:` lines carry that the corpus has
+    renamed, each with what docs/wf-solver/former-names.md gives as its
+    current form. Only the `Match:` line is read: a recorded survey result
+    stays as written, so a former name inside one is not an error. A row whose
+    Former cell names a term, not code, is left out: a name in such a cell can
+    stand in current code."""
+    table = (config.DOCS / "former-names.md").read_text()
+    signature = "\n".join(MATCH_LINE.findall(text))
+    found: list[tuple[str, str]] = []
+    for former, current in FORMER_ROW.findall(table):
+        if not FORMER_CELL.match(former.strip()):
+            continue
+        for name in re.findall(r"`([A-Za-z_][\w.]*)`", former):
+            if re.search(rf"\b{re.escape(name)}\b", signature):
+                found.append((name, current.strip()))
+    return found
+
+
 def survey_header(plan: dict, at: float) -> str:
     """The `Survey:` line the run's result goes under: its time, and the time
     its scope runs from. `run_dl.py since` lists that scope again from git:
@@ -214,6 +239,10 @@ def run_survey(path: Path, plan: dict, run_dir: Path) -> str:
     handbook agent. It hands back the report the session returned, and an
     empty string when the session returned none.
 
+    An entry whose `Match:` line carries a renamed identifier gets that
+    translation in its brief, so the session searches the current name as
+    well.
+
     The session runs in a session group of its own, so the timeout takes the
     tools it left running with it. A process the session leaves behind holds
     the pipe this call reads open, and the read would go on past the run.
@@ -223,6 +252,12 @@ def run_survey(path: Path, plan: dict, run_dir: Path) -> str:
     brief = prompts.role_text("survey") + "\n\n" + config.SURVEY_BRIEF.format(
         entry=path.relative_to(config.ROOT), scope=scope,
         scratch=run_dir.relative_to(config.ROOT))
+    renamed = renamed_in_match(path.read_text())
+    if renamed:
+        brief += ("\n\nThe entry's `Match:` line names identifiers the corpus has "
+                  "renamed. Search the current name as well: "
+                  + "; ".join(f"`{former}` is now {current}"
+                              for former, current in renamed))
     cmd = [config.CLAUDE, "-p", brief, *config.SURVEY_FLAGS, *survey_session()]
     result = ""
     with open(run_log(run_dir), "ab") as log:
@@ -290,6 +325,12 @@ def survey_entry(path: Path, force: bool = False) -> int:
         run_dir.mkdir(parents=True, exist_ok=True)
         print(f"{path.name}: the run writes under {run_dir}. "
               f"Its session's stream goes to {run_log(run_dir)}.", flush=True)
+        renamed = renamed_in_match(text)
+        if renamed:
+            print(f"{path.name}: its `Match:` line carries renamed names: "
+                  + "; ".join(f"{former} is now {current}"
+                              for former, current in renamed)
+                  + ". Restate the line.", flush=True)
         try:
             result = run_survey(path, plan, run_dir)
         except OSError as exc:

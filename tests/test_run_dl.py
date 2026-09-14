@@ -147,6 +147,39 @@ def test_grid_on_a_missing_solver(solvers, capsys):
     assert "no solver at" in capsys.readouterr().err
 
 
+def test_grid_takes_the_task_id_from_the_stems_last_segment(solvers, monkeypatch):
+    (solvers / "scratch").mkdir()
+    (solvers / "scratch" / f"{STEM}_alt.dl").write_text("// stub\n")
+    seen: list[str] = []
+
+    def record(task_id, grid, stem=None):
+        seen.append(task_id)
+        return [Candidate("", [[1]], [], [])]
+
+    monkeypatch.setattr(cli, "run_dl", record)
+    monkeypatch.setattr("sys.stdin", io.StringIO("1\n"))
+
+    assert cli.cmd_grid(f"scratch/{STEM}_alt") == 0
+    assert seen == [STEM]
+
+
+def test_pairs_takes_the_task_id_from_the_stems_last_segment(solvers, monkeypatch):
+    (solvers / "scratch").mkdir()
+    (solvers / "scratch" / f"{STEM}_alt.dl").write_text("// stub\n")
+    pairs = solvers / "pairs.json"
+    pairs.write_text('[{"input": [[1]]}]')
+    seen: list[str] = []
+
+    def record(task_id, grid, stem=None):
+        seen.append(task_id)
+        return [Candidate("", [[1]], [], [])]
+
+    monkeypatch.setattr(cli, "run_dl", record)
+
+    assert cli.cmd_pairs(f"scratch/{STEM}_alt", str(pairs)) == 0
+    assert seen == [STEM]
+
+
 MACROS = (".decl shape(p: Position)\n"
           "GRID_MASK_2x2(shape,\n"
           "    1, _,\n"
@@ -463,6 +496,16 @@ def test_since_lists_a_worktree_solver_older_than_the_date(repo, capsys):
 
     assert cli.cmd_since("1 minute ago") == 0
     assert capsys.readouterr().out == "eeee5555\n"
+
+
+def test_since_reports_the_count_of_solvers_in_scope(repo, capsys):
+    _commit(repo, ["aaaa1111", "bbbb2222", "cccc3333", "dddd4444"], "four")
+    _commit(repo, ["aaaa1111"], "one")
+
+    assert cli.cmd_since("1 minute ago") == 0
+    err = capsys.readouterr().err
+    assert "1 solvers in scope." in err
+    assert "cost does not follow that count" in err
 
 
 DOC = """# Keywords

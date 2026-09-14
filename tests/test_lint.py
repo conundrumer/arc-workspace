@@ -1,7 +1,7 @@
 """Body-lint checks: each fires on the shape it names and stays quiet next
 to the legal form."""
 
-from dl.lint import lint_program
+from dl.lint import LONE_PARSE_CAT, lint_program
 
 
 def cats(src: str) -> list[str]:
@@ -166,21 +166,51 @@ def test_parse_comp_without_determine_fires():
 }
 .init parse = Parse<Unit>
 """
-    fs = [f for f in lint_program(src) if f[0] == "parse without determine"]
+    fs = [f for f in lint_program(src) if f[0] == LONE_PARSE_CAT]
     assert [f[1] for f in fs] == [1]
-    assert "belongs in program rules" in fs[0][2]
+    assert "no Determine comp" in fs[0][2]
 
 
-def test_parse_comp_beside_determine_stays_quiet():
+def test_parse_comp_unread_by_determine_fires():
+    src = """\
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position)
+}
+.init parse = Parse<Unit>
+.comp Determine {
+    .decl v(x: number)
+}
+"""
+    fs = [f for f in lint_program(src) if f[0] == LONE_PARSE_CAT]
+    assert [f[1] for f in fs] == [1]
+    assert "the Determine comp does not read this parse" in fs[0][2]
+
+
+def test_parse_comp_instanced_in_determine_stays_quiet():
     src = """\
 .comp Parse<Key> {
     .decl cell(key: Key, p: Position)
 }
 .comp Determine {
+    .init parse = Parse<Unit>
     .decl v(x: number)
 }
 """
-    assert "parse without determine" not in cats(src)
+    assert LONE_PARSE_CAT not in cats(src)
+
+
+def test_parse_comp_read_in_determine_stays_quiet():
+    src = """\
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position)
+}
+.init parse = Parse<Unit>
+.comp Determine {
+    .decl v(p: Position)
+    v(P) :- parse.cell(_, P).
+}
+"""
+    assert LONE_PARSE_CAT not in cats(src)
 
 
 def test_reserved_name_in_unparsable_source_fires():

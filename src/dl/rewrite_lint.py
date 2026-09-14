@@ -135,6 +135,24 @@ def _elem_tables(text: str) -> tuple[dict[str, str], dict[str, set[str]]]:
     return elem_type, wider
 
 
+@lru_cache(maxsize=2)
+def _enum_sizes(text: str) -> dict[str, int]:
+    """Member count per lib type whose `*_elem` relation is stated as
+    facts, counted off those facts. A type whose elem relation derives
+    through a rule gets no count."""
+    elem_type, _ = _elem_tables(text)
+    try:
+        items = parse(text).items
+    except ParseError:
+        return {}
+    sizes: dict[str, int] = {}
+    for it in items:
+        if isinstance(it, Rule) and it.body is None and it.head.name in elem_type:
+            t = elem_type[it.head.name]
+            sizes[t] = sizes.get(t, 0) + 1
+    return sizes
+
+
 # The ARC value types, with `Ident`: types with identity and no order.
 # Each is declared a `number` subtype, so `Col1 < Col2` typechecks; the
 # order it states is not in the type.
@@ -335,6 +353,9 @@ _DELTA_OUT = {"edge_inset": 2, "edge_outset": 2, "jump_offset": 2, "step_offset"
 # The comp whose defining rule reads one valued cell set at a cell and at
 # its image, by the primitive that takes the cell onto the image.
 _IMAGE_COMPS = {"apply": "D4Map.conflict", "compose": "OffsetInvariance.mismatch"}
+
+# The lib relation stating the other member of a two-member type.
+_OTHER_MEMBER = {"Axis": "perp", "DiagAxis": "diag_perp"}
 
 
 def _delta_vars(ext: list[tuple[Atom, str]]) -> set[str]:
@@ -1288,11 +1309,11 @@ class _Lint:
                     yield a, b, link, fix
 
     def comp_idiom(self, info: RuleInfo) -> None:
-        """Hint: a lib comp's defining rule written out by hand — one
-        relation read twice with a `!=` between the two reads. Which comp
-        that is depends on how the two reads differ, and a pair of reads
-        that stands for something else is not flagged; `_comp_idiom_fix`
-        decides both."""
+        """Hint: a lib comp's defining rule, or a lib relation, written
+        out by hand — one relation read twice with a `!=` between the two
+        reads. Which lib unit that is depends on how the two reads
+        differ, and a pair of reads that stands for something else is not
+        flagged; `_comp_idiom_fix` decides both."""
         rule = info.rule
         if rule.body is None or rule.grid:
             return
@@ -1322,14 +1343,15 @@ class _Lint:
                 for b in sets[i + 1:]:
                     if (id(a), id(b)) in seen:
                         continue
-                    fix = self._comp_idiom_fix(a, b, atoms, local, neq, head_vars)
+                    fix = self._comp_idiom_fix(
+                        info.scope, a, b, atoms, local, neq, head_vars)
                     if fix is not None:
                         seen.add((id(a), id(b)))
                         self.add("comp-idiom", a.line, fix)
 
     def _comp_idiom_fix(
-        self, a: Atom, b: Atom, atoms: list[Atom], local: list[Atom],
-        neq: set[frozenset[str]], head_vars: set[str],
+        self, scope: str, a: Atom, b: Atom, atoms: list[Atom],
+        local: list[Atom], neq: set[frozenset[str]], head_vars: set[str],
     ) -> str | None:
         if (a.qual, a.name) != (b.qual, b.name) or len(a.args) != len(b.args):
             return None
@@ -1362,9 +1384,18 @@ class _Lint:
             return None
         pair = f"`{_atom_str(a)}, {_atom_str(b)}, {x} != {y}`"
         if len(diff) == 1:
-            return (f"{pair} is a multi-cell test over the shared columns; "
-                    f"docs/wf-solver/proposals/multi_cell.md holds that "
-                    f"operation")
+            # A hint names a lib relation. A disequality over a
+            # two-member type states the other member, so the hint is
+            # the lib relation over that type, where lib holds one.
+            cols, _ = self._atom_cols(scope, a)
+            t = cols[v] if v < len(cols) else ""
+            if _enum_sizes(_lib_source()).get(t) != 2:
+                return None
+            rel = _OTHER_MEMBER.get(t)
+            if rel is None:
+                return None
+            return (f"{pair} states the other member of a two-member "
+                    f"type; write `{rel}({x}, {y})`")
         if len(diff) != 2:
             return None
         [p] = [i for i in diff if i != v]

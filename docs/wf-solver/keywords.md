@@ -45,6 +45,7 @@ The transformation hypothesis: which prior the task teaches.
 - `parity` — the model depends on even/odd position alternation
 - `cross` — cells where designated lines cross act
 - `merge` — like-valued items fuse under a task-given nearness into one unit; the output treats the unit as one thing
+- `match` — items found in the input pair off by a shared property, and the output acts on the pairs; matching against stored data is `lookup`
 
 ## Shape
 

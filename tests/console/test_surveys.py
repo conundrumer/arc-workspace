@@ -150,6 +150,36 @@ def test_a_file_outside_the_proposals_directory_is_not_an_entry(sv, srv, tmp_pat
     assert sv.in_proposals(sv.entry_path("/etc/passwd")) is False
 
 
+# ---------- the search signature ----------
+
+FORMER_NAMES = """# Former names
+
+| Former | Current |
+| --- | --- |
+| `Shift` | `Offset` |
+| `ORIGIN` | `ZERO` |
+| `Position`, the record | `Box`; `Position` is its cell reading |
+"""
+
+
+def test_only_the_match_line_is_read_for_renamed_names(sv, srv):
+    """A recorded result stays as written, so a former name inside one is not
+    an error."""
+    (srv.DOCS / "former-names.md").write_text(FORMER_NAMES)
+    path = entry(srv, "Thing", "Match: a rule with a Shift column.\n"
+                 "\nSurvey: 2026-02-02 03:04 — every solver.\n"
+                 "\nCallers: the ORIGIN sites.\n")
+    assert sv.renamed_in_match(path.read_text()) == [("Shift", "`Offset`")]
+
+
+def test_a_former_cell_that_names_a_term_carries_no_renamed_name(sv, srv):
+    """`Position` stands in the Former column of the row about the record, and
+    names the cell reading of Box in current code."""
+    (srv.DOCS / "former-names.md").write_text(FORMER_NAMES)
+    path = entry(srv, "Thing", "Match: a rule with a Position column.\n")
+    assert sv.renamed_in_match(path.read_text()) == []
+
+
 # ---------- the header and the append ----------
 
 def test_a_result_lands_at_the_end_of_the_entry(sv, srv):

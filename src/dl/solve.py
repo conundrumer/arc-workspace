@@ -3,6 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from functools import lru_cache
+from pathlib import Path
 
 from arc.task import load as load_task
 from dl.dlparse import Decl, ParseError, parse
@@ -10,6 +11,12 @@ from dl.facts import Candidate, grid_to_facts, parse_output
 from dl.paths import SOLVERS_DIR
 from dl.souffle import _pool_workers, _run_source, compile_check
 from dl.source import build_source
+
+
+def task_id_of(stem: str) -> str:
+    """The stem's file name up to the first underscore, so a stem that names a
+    path resolves too."""
+    return Path(stem).name.split("_", 1)[0]
 
 
 def run_dl(
@@ -310,7 +317,7 @@ def run_pair(stem: str, task_id: str, kind: str, idx: int, ex) -> PairResult:
 
 def _pair_work(stem: str) -> list[tuple]:
     """Build (stem, task_id, kind, idx, ex) tuples for every pair of `stem`."""
-    task_id = stem.split("_", 1)[0]
+    task_id = task_id_of(stem)
     task = load_task(task_id)
     work = []
     for kind, examples in (("train", task.train), ("test", task.test)):

@@ -42,7 +42,7 @@ Under it a choice every value of which fits this task's pairs is enumerated, wha
 
 - Family scoping. Approved: no change; 1da012fc gains the citation. Drafts: 7c9b52a0's panel precedence and 668eec9a's tie-break key are data, since a sibling with an overlap or a tie fixes them. Those peers then pass Exercised (`coverage-rules.md`) and reach Subsumption, where each is total exactly where the current model conflicts, so each draft's model changes: the precedence fold with a stored order in 7c9b52a0, the lex order with a stored secondary key in 668eec9a.
 - Task scoping. Approved: 1da012fc's `corner` leaves Params and the program enumerates `diag_dir_elem`. Drafts: 7c9b52a0 and 668eec9a stand; their orders enumerate into the models they hold.
-- Either scoping. The seven drafts whose sweep admits a second value keep their parameters: 23b5c85d, 36fdfd69, 1f85a75f, 72ca375d (`bg`), 1caeab9d (`align_dir`), 5961cc34 (`source`), 3befdf3e (`fig_core_box`). The literal bullet is unavailable for a color, which `style.md` bans in the program.
+- Either scoping. The drafts whose sweep admits a second value keep their parameters: 23b5c85d, 36fdfd69, 1f85a75f, 72ca375d (`bg`), 1caeab9d (`align_dir`), 5961cc34 (`source`), 3befdf3e (`fig_core_box`), 92e50de0 (`anchor`). The literal bullet is unavailable for a color, which `style.md` bans in the program.
 
 ## Witness
 

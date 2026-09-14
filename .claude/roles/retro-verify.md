@@ -10,6 +10,7 @@ You verify the changes to the files the brief names. The brief carries the edits
     - A ruled substance the prune dropped: the edit named something the prune step removed.
 - For code under `src/` or `tools/console/`, judge each test the diff added or changed: is it redundant with another? Does it fail under the code change it guards? Revert that code in a scratch copy under `.scratch/retro/` when reasoning is not enough. Does its name state that change? Cut a test that fails any of these, and do not weaken a test that earns its place.
 - Fix what you find, in the files the brief names. When a finding needs a change in another file, leave it and name that file as the finding's other file. A finding that needs no change names none.
+    - A file the fix diff changed is in scope beside the target, a test the fix added among them.
 - A solver the fix wrote a review line into is in scope beside the brief's files where the line still stands after the resolve stage: read it beside the edit, and run `uv run python scripts/run_dl.py lint <task_id>` on it.
 - Verify by kind, as the fix agent did. Prose under `docs/`: `uv run python scripts/context.py > /dev/null`. A lib comment or implementation: `uv run python scripts/run_dl.py <stem>` on every solver that instantiates the comp. Code under `src/` or `tools/console/`: `uv run pytest -q`.
 - A failure in the suite is reported as a failure. Do not attribute it to other work, and do not report it as passing.

@@ -18,7 +18,7 @@ from dl.domains import (
     _position_domain,
 )
 from dl.paths import SOLVERS_DIR
-from dl.solve import _profile, _profile_cases
+from dl.solve import _profile, _profile_cases, task_id_of
 from dl.souffle import _pool_workers
 from dl.source import (
     RIGID_CHART_PREFIX,
@@ -121,7 +121,7 @@ def sweep_report(
     # build time is a no-op. Chart parameters report under their public names, and
     # their derived placed forms are elided rather than reported.
     source = expand_macros((SOLVERS_DIR / f"{stem}.dl").read_text())
-    task = load_task(stem.split("_", 1)[0])
+    task = load_task(task_id_of(stem))
     defines = _lib_defines()
     s, e = _comp_span(source, "Params")
     params_text = "\n".join(source.splitlines()[s:e])
@@ -467,8 +467,23 @@ def _num_below(e: tuple, s: tuple, types: list[str]) -> bool:
             and any(a < b for a, b in zip(em, sm)))
 
 
-def render_sweep(results: list[tuple[str, str, object]]) -> list[str]:
+def _refuted_note(param: str, determined: set[str]) -> str:
+    """What a refuted extra means for this parameter: a determination that
+    reproduces the stored value already picks it from train; without one,
+    such a determination is open."""
+    return ("the determination picks the stored value" if param in determined
+            else "a determination from train alone could pick it")
+
+
+def render_sweep(
+    results: list[tuple[str, str, object]],
+    determined: set[str] = frozenset(),
+) -> list[str]:
     """One line per result; ` ✓` marks a parameter the sweep settles.
+
+    `determined` holds the parameters whose determination reproduces the
+    stored value, so an extra the test refutes is already picked from train
+    for them, and the line says so.
 
     The mark goes on every line whose fitting values are the stored
     ones, in each of its forms — `unique`, `set of N`, `unique as a
@@ -528,8 +543,7 @@ def render_sweep(results: list[tuple[str, str, object]]) -> list[str]:
             ]
             if refuted:
                 parts.append(
-                    f"test refutes {show_values(refuted)} — a determination "
-                    f"from train alone could pick it"
+                    f"test refutes {show_values(refuted)} — {_refuted_note(param, determined)}"
                 )
             if passing:
                 parts.append(
@@ -569,8 +583,7 @@ def render_sweep(results: list[tuple[str, str, object]]) -> list[str]:
         parts = [f"stored {shown_s}", f"train also admits [{shown(extras)}]"]
         if refuted:
             parts.append(
-                f"test refutes [{shown(refuted)}] — a determination from "
-                f"train alone could pick it"
+                f"test refutes [{shown(refuted)}] — {_refuted_note(param, determined)}"
             )
         if passing:
             parts.append(
