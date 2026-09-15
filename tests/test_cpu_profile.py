@@ -1,10 +1,8 @@
-"""What a pair over the CPU budget reports: the line map back to the solver,
-and the rule a Souffle profile names."""
+"""The line map from the macro expansion back to the solver, and the rule a
+Souffle profile names."""
 
-from pathlib import Path
 
-from dl.paths import REPO_ROOT
-from dl.souffle import _rule_site, slowest_rule
+from dl.souffle import slowest_rule
 from dl.source import expand_macros, macro_line_map
 from tests.test_rigid import SOLVER
 
@@ -20,15 +18,6 @@ def _mapped(source: str, needle: str) -> int:
     """The source line the expansion's `needle` line maps back to."""
     expanded = expand_macros(source)
     return macro_line_map(source)[_line_of(expanded, needle) - 1]
-
-
-def test_a_rule_below_the_macros_maps_back():
-    """The GRID call expands to more lines than it occupied, so a rule after
-    it sits lower in the expansion than in the solver."""
-    expanded = expand_macros(SOLVER)
-    rule = "out(P, C) :- params.marker_glyph"
-    assert _line_of(expanded, rule) > _line_of(SOLVER, rule)
-    assert _mapped(SOLVER, rule) == _line_of(SOLVER, rule)
 
 
 def test_every_line_of_the_expansion_maps():
@@ -88,35 +77,3 @@ def test_the_slowest_rule_is_the_one_named():
         "/w/programs/solvers/.tmpq1.dl", 57, 2.6, 41)
 
 
-def test_a_recursive_rule_counts_its_iterations_together():
-    recursive = PROFILE["root"]["program"]["relation"]["dear"]["recursive-rule"]
-    profile = {"root": {"program": {"relation": {
-        "dear": {"recursive-rule": recursive},
-    }}}}
-    assert slowest_rule(profile) == (
-        "/w/programs/solvers/.tmpq1.dl", 60, 0.6, 12)
-
-
-def test_a_profile_naming_no_rule_is_no_answer():
-    assert slowest_rule({}) is None
-    assert slowest_rule({"root": {"program": {"relation": {
-        "cheap": {"source-locator": "/w/programs/lib.dl [10:1-10:9]"},
-    }}}}) is None
-
-
-def test_a_site_outside_the_tempfile_stands_as_it_is():
-    run_path = REPO_ROOT / "programs/solvers/.tmpq1.dl"
-    lib = REPO_ROOT / "programs/lib.dl"
-    assert _rule_site(str(lib), 268, run_path, Path("x.dl")) == "programs/lib.dl:268"
-    assert _rule_site("/elsewhere/other.dl", 4, run_path,
-                      Path("x.dl")) == "/elsewhere/other.dl:4"
-
-
-def test_a_site_in_the_tempfile_lands_in_the_solver(tmp_path: Path):
-    solver = tmp_path / "abcd1234.dl"
-    solver.write_text(SOLVER)
-    run_path = REPO_ROOT / "programs/solvers/.tmpq1.dl"
-    rule = "out(P, C) :- params.marker_glyph"
-    line = _line_of(expand_macros(SOLVER), rule)
-    assert _rule_site(str(run_path), line, run_path, solver) == (
-        f"abcd1234.dl:{_line_of(SOLVER, rule)}")

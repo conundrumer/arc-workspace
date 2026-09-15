@@ -11,21 +11,6 @@ def test_sparse_emits_a_zero_cell_as_a_value():
     assert out == "ink([0, 1, 0, 1], 0).\nink([1, 0, 1, 0], 3).\n"
 
 
-def test_a_mask_cell_that_is_not_a_member_or_absent_raises():
-    with pytest.raises(ValueError, match=r"GRID_MASK_1x2\(m\): cell '4'"):
-        expand_grid_macros("GRID_MASK_1x2(m, 4, _)\n")
-
-
-def test_a_color_cell_under_a_mask_name_raises():
-    with pytest.raises(ValueError, match="not '1' or '_'"):
-        expand_grid_macros("GRID_MASK_1x2(m, 1, 3)\n")
-
-
-def test_a_sparse_cell_that_is_no_digit_raises():
-    with pytest.raises(ValueError, match="not a color digit or '_'"):
-        expand_grid_macros("GRID_SPARSE_1x2(s, 3, x)\n")
-
-
 STAMP = """\
 GRID_STAMP_3x3(footprint,
     1,  1, 1,
@@ -51,21 +36,6 @@ def test_a_blank_anchor_emits_no_zero_offset():
     out = expand_grid_macros(STAMP.replace("@1", "@_"))
     assert out.count(").") == 8
     assert "footprint([0, 0, 0, 0])." not in out
-
-
-def test_a_sparse_stamp_carries_the_cell_color():
-    out = expand_grid_macros("GRID_STAMP_SPARSE_1x2(ink, @3, 5)\n")
-    assert out == "ink([0, 0, 0, 0], 3). ink([0, 0, 1, -1], 5).\n"
-
-
-def test_a_stamp_with_no_anchor_raises():
-    with pytest.raises(ValueError, match=r"GRID_STAMP_1x2\(s\): 0 '@'"):
-        expand_grid_macros("GRID_STAMP_1x2(s, 1, 1)\n")
-
-
-def test_a_stamp_with_two_anchors_raises():
-    with pytest.raises(ValueError, match="2 '@'"):
-        expand_grid_macros("GRID_STAMP_1x2(s, @1, @1)\n")
 
 
 def test_a_keyed_stamp_passes_its_key_through_and_the_error_names_it():

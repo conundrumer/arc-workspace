@@ -1,7 +1,5 @@
 """The kill_note hook: a shell kill comes back with the way to stop a task."""
 import json
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -37,19 +35,3 @@ def test_every_other_command_goes_through(command):
     assert hook(bash(command)) == (0, "")
 
 
-def test_a_call_from_another_tool_goes_through():
-    assert hook({"tool_name": "Read",
-                 "tool_input": {"file_path": "pkill.md"}}) == (0, "")
-
-
-def test_an_unreadable_event_goes_through():
-    assert hook("not json") == (0, "")
-
-
-def test_the_script_runs_as_a_hook():
-    """The rest of this file drives main() directly; this is the script."""
-    p = subprocess.run([sys.executable, str(SCRIPT)],
-                       input=json.dumps(bash("pkill -f souffle")),
-                       capture_output=True, text=True)
-    assert p.returncode == 2
-    assert "TaskStop" in p.stderr

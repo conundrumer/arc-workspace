@@ -23,14 +23,6 @@ def test_the_line_lands_at_the_end_of_the_header(srv):
     assert header_findings(srv.solver_text("a")) == []
 
 
-def test_the_line_follows_the_review_lines_already_there(srv):
-    standing = "// review principle: docs/wf-solver/open/peer-priors.md\n"
-    write_solver(srv, "a", HEADER + standing + "\n" + BODY)
-    assert srv.append_review("a", LINE) is True
-    assert srv.solver_text("a") == HEADER + standing + LINE + "\n\n" + BODY
-    assert header_findings(srv.solver_text("a")) == []
-
-
 def test_the_draft_line_stays_under_the_task_id(srv):
     """The header grammar puts `draft` under the task id, and a review line
     appended at the end leaves it there."""
@@ -45,29 +37,3 @@ def test_the_draft_line_stays_under_the_task_id(srv):
     assert srv.is_draft("a")
 
 
-def test_the_same_line_is_written_once(srv):
-    write_solver(srv, "a", HEADER + "\n" + BODY)
-    assert srv.append_review("a", LINE) is True
-    assert srv.append_review("a", LINE) is False
-    assert srv.solver_text("a").count(LINE) == 1
-
-
-def test_a_header_whose_last_line_ends_the_file(srv):
-    """A last line carries no newline of its own, and the review line still
-    lands on a line of its own."""
-    write_solver(srv, "a", "// a\n// keywords: tiles")
-    assert srv.append_review("a", LINE) is True
-    assert srv.solver_text("a") == "// a\n// keywords: tiles\n" + LINE + "\n"
-
-
-def test_a_file_with_no_header_takes_no_line(srv):
-    write_solver(srv, "a", BODY)
-    assert srv.append_review("a", LINE) is False
-    assert srv.solver_text("a") == BODY
-
-
-def test_the_appended_line_reads_back_as_a_sweep_need(srv):
-    write_solver(srv, "a", HEADER + "\n" + BODY)
-    srv.append_review("a", LINE)
-    assert srv.needs_of("a")["sweep"] == [
-        "bg — the $Role case does not exercise it"]

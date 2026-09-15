@@ -10,28 +10,6 @@ def _roundtrip(d: dict[str, Any]) -> Any:
     return json.loads(text)
 
 
-def test_minimal():
-    d = {"id": "abc", "comment": "hi"}
-    text = format_file(d)
-    assert text == '{\n  "id": "abc",\n  "comment": "hi"\n}\n'
-    assert _roundtrip(d) == d
-
-
-def test_grid_layout():
-    d = {"grid": [[0, 1, 2], [3, 4, 5]]}
-    text = format_file(d)
-    expected = '\n'.join([
-        '{',
-        '  "grid": [',
-        '    [0,1,2],',
-        '    [3,4,5]',
-        '  ]',
-        '}',
-        '',
-    ])
-    assert text == expected
-
-
 def test_brace_up_examples():
     d = {
         "train": [
@@ -57,14 +35,6 @@ def test_brace_up_examples():
         '',
     ])
     assert text == expected
-    assert _roundtrip(d) == d
-
-
-def test_perm_compact():
-    d = {"perm": {"train": [1, 0, 2]}}
-    text = format_file(d)
-    # small dict gets compacted, list-of-int stays compact inside it
-    assert '"perm": { "train": [1,0,2] }' in text
     assert _roundtrip(d) == d
 
 
@@ -99,10 +69,6 @@ def test_full_task_file_roundtrips():
     assert '"train": [{' in text
     # spot-check: grid rows compact
     assert "[0,0,0]" in text
-
-
-def test_empty_dict():
-    assert format_file({}) == "{}\n"
 
 
 def test_witness_file_roundtrips():

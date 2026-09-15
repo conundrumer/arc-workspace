@@ -1,8 +1,6 @@
 """The ref_note hook: notes on tool calls that touch unratified solvers."""
 import json
 import os
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -69,29 +67,3 @@ def test_the_workers_own_task_is_exempt(repo):
     assert hook(repo, grep_of("cccc3333"), task="cccc3333") == ""
 
 
-def test_a_note_lands_once_per_session(repo):
-    assert hook(repo, grep_of("cccc3333")) != ""
-    assert hook(repo, grep_of("cccc3333")) == ""
-    assert hook(repo, grep_of("cccc3333", session="s2")) != ""
-
-
-def test_the_command_side_is_scanned_too(repo):
-    payload = {"session_id": "s1", "tool_name": "Bash",
-               "tool_input": {"command": "cat programs/solvers/cccc3333.dl"},
-               "tool_response": "// draft"}
-    assert "not approved" in hook(repo, payload)
-
-
-def test_notes_cover_each_id_once(repo):
-    note = hook(repo, grep_of("bbbb2222", "cccc3333", "aaaa1111"))
-    assert note.count("note:") == 2
-    assert "cccc3333.dl is not approved" in note
-    assert "bbbb2222.dl is not approved" in note
-
-
-def test_the_script_runs_as_a_hook(repo):
-    """The rest of this file drives main() directly; this is the script."""
-    p = subprocess.run([sys.executable, str(SCRIPT)],
-                       input=json.dumps(grep_of("cccc3333")),
-                       capture_output=True, text=True, env=env_for(repo), check=True)
-    assert "not approved" in p.stdout

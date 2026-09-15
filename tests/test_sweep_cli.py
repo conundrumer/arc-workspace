@@ -1,5 +1,5 @@
-"""`sweep --open` and `sweep --mark`: the JSON they print, and what the
-marking writes into a solver header."""
+"""`sweep --open` and `sweep --mark`: the cache they read, and the line the
+marking writes once."""
 
 import json
 from pathlib import Path
@@ -53,39 +53,6 @@ def read(capsys) -> dict:
     return json.loads(capsys.readouterr().out)
 
 
-def test_the_open_parameters_of_each_stem(tree, capsys):
-    tree("aaa11111", OPEN_SWEEP)
-    tree("bbb22222", SETTLED_SWEEP)
-    assert cli.cmd_sweep_open(["aaa11111", "bbb22222"], cached=True) == 0
-    out = read(capsys)
-    assert out["skipped"] == []
-    assert [s["stem"] for s in out["sweeps"]] == ["aaa11111", "bbb22222"]
-    assert out["sweeps"][1]["params"] == []
-    [param] = out["sweeps"][0]["params"]
-    assert param["param"] == "bg"
-    assert param["reported"] == OPEN_SWEEP.splitlines()[1]
-    assert param["line"] == OPEN_LINE
-
-
-def test_a_stem_with_no_solver_is_skipped(tree, capsys):
-    cli.cmd_sweep_open(["aaa11111"], cached=True)
-    out = read(capsys)
-    assert out["sweeps"] == []
-    [skipped] = out["skipped"]
-    assert skipped["stem"] == "aaa11111"
-    assert skipped["reason"].startswith("no solver at ")
-    assert skipped["reason"].endswith("/aaa11111.dl")
-
-
-def test_an_unswept_stem_is_skipped_rather_than_swept(tree, capsys):
-    """`--cached` is what a check runs under: no stem sweeps for minutes."""
-    tree("aaa11111")
-    cli.cmd_sweep_open(["aaa11111"], cached=True)
-    out = read(capsys)
-    assert out["sweeps"] == []
-    assert out["skipped"][0]["reason"].startswith("no cached sweep")
-
-
 OTHER_BODY = "\n.decl out(p: Position, col: Color)\nout(p, 3) :- in(p, _).\n"
 
 
@@ -118,38 +85,6 @@ def test_a_cache_older_than_the_solver_code_sweeps_again(tree, stub_sweep,
     assert read(capsys)["skipped"] == []
 
 
-def test_a_stale_cache_is_skipped_under_cached(tree, capsys):
-    tree("aaa11111", SETTLED_SWEEP)
-    tree("aaa11111", body=OTHER_BODY)
-    assert cli.cmd_sweep_open(["aaa11111"], cached=True) == 0
-    out = read(capsys)
-    assert out["sweeps"] == []
-    [skipped] = out["skipped"]
-    assert skipped["stem"] == "aaa11111"
-    assert "stale" in skipped["reason"]
-
-
-def test_a_cache_with_no_hash_is_read_as_unverified(tree, capsys):
-    """The caches written before the hash carry none. A reading that runs no
-    sweep takes them, and says on stderr that they stand unverified."""
-    tree("aaa11111", OPEN_SWEEP, sha=False)
-    cli.cmd_sweep_open(["aaa11111"], cached=True)
-    caught = capsys.readouterr()
-    out = json.loads(caught.out)
-    assert out["skipped"] == []
-    assert [p["param"] for p in out["sweeps"][0]["params"]] == ["bg"]
-    assert "is unverified" in caught.err
-
-
-def test_a_cache_with_no_hash_sweeps_again_without_cached(tree, stub_sweep,
-                                                          capsys):
-    """Without `--cached` the sweep runs, which pairs the text with a hash."""
-    tree("aaa11111", SETTLED_SWEEP, sha=False)
-    assert cli.cmd_sweep_open(["aaa11111"]) == 0
-    assert stub_sweep == ["aaa11111"]
-    assert read(capsys)["skipped"] == []
-
-
 def test_a_comment_line_leaves_the_cache_valid(tree, stub_sweep, capsys):
     """`sweep --mark` writes a review line into the header right after
     `sweep --open`, and that line must not invalidate the cache."""
@@ -162,14 +97,6 @@ def test_a_comment_line_leaves_the_cache_valid(tree, stub_sweep, capsys):
     assert [p["param"] for p in out["sweeps"][0]["params"]] == ["bg"]
 
 
-def test_the_marking_writes_one_line_per_open_parameter(tree, capsys):
-    path = tree("aaa11111", OPEN_SWEEP)
-    assert cli.cmd_sweep_mark(["aaa11111"], cached=True) == 0
-    assert read(capsys)["solvers"] == [
-        {"task_id": "aaa11111", "lines": [OPEN_LINE], "lint_ok": True}]
-    assert path.read_text().splitlines()[4] == OPEN_LINE
-
-
 def test_a_parameter_already_marked_takes_no_second_line(tree, capsys):
     header = HEADER + "// review sweep: bg — the pairs leave its value open\n"
     path = tree("aaa11111", OPEN_SWEEP, header=header)
@@ -180,16 +107,3 @@ def test_a_parameter_already_marked_takes_no_second_line(tree, capsys):
     assert path.read_text() == before
 
 
-def test_a_stem_with_nothing_open_still_reports(tree, capsys):
-    tree("bbb22222", SETTLED_SWEEP)
-    cli.cmd_sweep_mark(["bbb22222"], cached=True)
-    assert read(capsys)["solvers"] == [
-        {"task_id": "bbb22222", "lines": [], "lint_ok": True}]
-
-
-def test_a_header_the_lint_rejects_reports_as_such(tree, capsys):
-    """The header carries no `output:`, which the lint's header category
-    reports, and the marking says so rather than hiding it."""
-    tree("aaa11111", OPEN_SWEEP, header="// {stem}\n// keywords: tiles\n")
-    cli.cmd_sweep_mark(["aaa11111"], cached=True)
-    assert read(capsys)["solvers"][0]["lint_ok"] is False

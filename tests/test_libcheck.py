@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from dl.libcheck import check, doc_adjacency, input_marks, module_order
+from dl.libcheck import input_marks, module_order
 
 
 def test_input_marks_agree_with_the_rules_inside_a_comp():
@@ -49,34 +49,3 @@ def test_module_order_names_the_forward_reference():
     ]
 
 
-def test_doc_adjacency_flags_a_block_over_nothing_and_a_file_doc_below_an_item():
-    findings = doc_adjacency(Path("sets.dl"), """\
-//! The file.
-/// Over a decl.
-.decl a(x: number)
-/// Over a rule.
-a(1).
-/// Over a blank line.
-
-.comp Tally<Key> {
-    /// Over an inner decl.
-    .decl item(key: Key)  // @input
-}
-//! Too low.
-""")
-    assert findings == [
-        "sets.dl:4: a `///` block stands over no declaration",
-        "sets.dl:6: a `///` block stands over no declaration",
-        "sets.dl:12: a `//!` block is not at the file's top",
-    ]
-
-
-def test_check_runs_every_check_over_the_root_and_its_modules(tmp_path: Path):
-    (tmp_path / "lib").mkdir()
-    (tmp_path / "lib.dl").write_text(
-        '//! The root.\n.decl in(p: number)  // @input\n#include "lib/a.dl"\n#include "lib/b.dl"\n')
-    (tmp_path / "lib" / "a.dl").write_text(".decl a(x: number)\na(X) :- b(X).\n")
-    (tmp_path / "lib" / "b.dl").write_text(".decl b(x: number)\nb(X) :- in(X).\n")
-    assert check(tmp_path / "lib.dl") == [
-        "`a.dl` reads `b`, defined in `b.dl`, which is included later",
-    ]

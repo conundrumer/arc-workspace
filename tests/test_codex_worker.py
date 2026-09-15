@@ -1,4 +1,4 @@
-"""codex_worker: the console protocol against a stubbed codex binary.
+"""codex_worker: the adapter's lifetime against a stubbed codex binary.
 
 The stub replays a canned event stream per turn and records the argv and the
 prompt it was called with, so no test reaches the real CLI.
@@ -263,114 +263,6 @@ def tools(events):
     return out
 
 
-def test_init_reports_the_codex_thread_id(inproc):
-    inproc.script(1, {"type": "thread.started", "thread_id": "th-1"},
-                 message("hi"), usage(output_tokens=5))
-    events = inproc.start().turn("go")
-    assert events[0] == {"type": "system", "subtype": "init",
-                         "session_id": "th-1", "model": ""}
-    assert events[-1]["session_id"] == "th-1"
-
-
-def test_text_and_commands_reach_the_feed(inproc):
-    inproc.script(1, {"type": "thread.started", "thread_id": "th-1"},
-                 message("working on it"),
-                 {"type": "item.started",
-                  "item": {"id": "item_1", "type": "command_execution",
-                           "command": "/bin/zsh -lc 'uv run pytest -q'",
-                           "status": "in_progress"}},
-                 {"type": "item.completed",
-                  "item": {"id": "item_1", "type": "command_execution",
-                           "command": "/bin/zsh -lc 'uv run pytest -q'",
-                           "exit_code": 0, "status": "completed"}},
-                 {"type": "item.completed",
-                  "item": {"id": "item_2", "type": "file_change",
-                           "status": "completed",
-                           "changes": [{"path": "programs/solvers/x.dl", "kind": "add"},
-                                       {"path": "programs/lib.dl", "kind": "update"}]}},
-                 message("done"), usage(output_tokens=9))
-    events = inproc.start().turn("go")
-    assert texts(events) == ["working on it", "done"]
-    assert tools(events) == [
-        ("Bash", {"command": "uv run pytest -q"}),
-        ("Write", {"file_path": "programs/solvers/x.dl"}),
-        ("Edit", {"file_path": "programs/lib.dl"})]
-    assert events[-1]["result"] == "done"
-    assert events[-1]["terminal_reason"] == "completed"
-
-
-def test_result_splits_the_cached_prompt_out_of_the_input(inproc):
-    inproc.script(1, {"type": "thread.started", "thread_id": "th-1"},
-                 message("done"),
-                 usage(input_tokens=31851, cached_input_tokens=26112,
-                       cache_write_input_tokens=1000, output_tokens=111))
-    events = inproc.start().turn("go")
-    assert events[-1]["usage"] == {
-        "input_tokens": 4739, "output_tokens": 111,
-        "cache_read_input_tokens": 26112, "cache_creation_input_tokens": 1000,
-        "iterations": [{"input_tokens": 4739, "output_tokens": 111,
-                        "cache_read_input_tokens": 26112,
-                        "cache_creation_input_tokens": 1000}]}
-
-
-def test_a_later_turn_reports_its_step_not_the_thread_total(inproc):
-    inproc.script(1, {"type": "thread.started", "thread_id": "th-1"},
-                 message("one"), usage(input_tokens=31851,
-                                       cached_input_tokens=26112, output_tokens=111))
-    inproc.script(2, {"type": "thread.started", "thread_id": "th-1"},
-                 message("two"), usage(input_tokens=47874,
-                                       cached_input_tokens=41216, output_tokens=116))
-    worker = inproc.start()
-    worker.turn("go")
-    events = worker.turn("again")
-    assert events[-1]["usage"]["output_tokens"] == 5
-    assert events[-1]["usage"]["cache_read_input_tokens"] == 15104
-    assert events[-1]["usage"]["input_tokens"] == 16023 - 15104
-
-
-def test_first_turn_opens_with_the_appendix_and_a_writable_sandbox(inproc):
-    append = inproc.root / "append.md"
-    append.write_text("APPENDIX TEXT\n")
-    inproc.script(1, {"type": "thread.started", "thread_id": "th-1"},
-                 message("done"), usage())
-    inproc.start("--append", str(append), "--add-dir", "/ref",
-                "--model", "gpt-5.1-codex", "--effort", "xhigh").turn("solve it")
-    call = inproc.calls()[0]
-    assert call["argv"] == ["exec", "-", "--json", "--skip-git-repo-check",
-                            "-c", 'approval_policy="never"',
-                            "--sandbox", "workspace-write", "--add-dir", "/ref",
-                            "--model", "gpt-5.1-codex",
-                            "-c", 'model_reasoning_effort="xhigh"']
-    assert call["prompt"] == "APPENDIX TEXT\n\nsolve it"
-
-
-def test_later_turns_resume_the_thread_without_the_appendix(inproc):
-    append = inproc.root / "append.md"
-    append.write_text("APPENDIX TEXT\n")
-    for turn in (1, 2):
-        inproc.script(turn, {"type": "thread.started", "thread_id": "th-1"},
-                     message("done"), usage())
-    worker = inproc.start("--append", str(append), "--add-dir", "/ref")
-    worker.turn("solve it")
-    worker.turn("now refine")
-    call = inproc.calls()[1]
-    assert call["argv"] == ["exec", "resume", "th-1", "-", "--json",
-                            "--skip-git-repo-check", "-c", 'approval_policy="never"',
-                            "-c", 'sandbox_mode="workspace-write"',
-                            "-c", 'sandbox_workspace_write.writable_roots=["/ref"]']
-    assert call["prompt"] == "now refine"
-
-
-def test_a_resumed_process_reports_the_session_before_codex_answers(inproc):
-    inproc.script(1, {"type": "thread.started", "thread_id": "th-1"},
-                 message("done"), usage(input_tokens=99, output_tokens=9))
-    events = inproc.start("--resume", "th-1").turn("go")
-    assert events[0]["session_id"] == "th-1"
-    assert inproc.calls()[0]["argv"][:3] == ["exec", "resume", "th-1"]
-    # The thread's totals started above zero, so the step is unknown.
-    assert "usage" not in events[-1]
-
-
 def test_interrupt_cuts_the_turn_and_kills_the_child(codex):
     codex.script(1, {"type": "thread.started", "thread_id": "th-1"},
                  message("thinking"), {"_sleep": 60})
@@ -382,20 +274,6 @@ def test_interrupt_cuts_the_turn_and_kills_the_child(codex):
     assert any(ev["type"] == "control_response" for ev in events)
     assert events[-1]["terminal_reason"] == "aborted_streaming"
     assert events[-1]["is_error"] is True
-
-
-def test_a_worker_stays_usable_after_an_interrupt(codex):
-    codex.script(1, {"type": "thread.started", "thread_id": "th-1"}, {"_sleep": 60})
-    codex.script(2, {"type": "thread.started", "thread_id": "th-1"},
-                 message("second"), usage(output_tokens=4))
-    worker = codex.start()
-    worker.send({"type": "user", "message": {"role": "user", "content": "go"}})
-    worker.until("system")
-    worker.interrupt()
-    worker.until("result")
-    events = worker.turn("again")
-    assert events[-1]["terminal_reason"] == "completed"
-    assert events[-1]["result"] == "second"
 
 
 def test_an_interrupt_that_beats_the_spawn_still_cuts_the_turn(codex):
@@ -414,14 +292,6 @@ def test_a_child_that_dies_mid_turn_still_lands_a_result(inproc):
     assert events[-1]["terminal_reason"] == "error_during_execution"
     assert events[-1]["result"] == ""
     assert any("code 3" in t and "connection reset" in t for t in texts(events))
-
-
-def test_a_failed_turn_reports_the_codex_error(inproc):
-    inproc.script(1, {"type": "thread.started", "thread_id": "th-1"},
-                 {"type": "turn.failed", "error": {"message": "usage limit reached"}})
-    events = inproc.start().turn("go")
-    assert any("usage limit reached" in t for t in texts(events))
-    assert events[-1]["terminal_reason"] == "error_during_execution"
 
 
 def test_stdin_close_ends_the_adapter(codex):

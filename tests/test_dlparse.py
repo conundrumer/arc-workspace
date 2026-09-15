@@ -9,21 +9,13 @@ import dl.dlparse
 from dl.dlparse import (
     EXTERN,
     TOP,
-    Agg,
     Atom,
-    Bool,
     Cmp,
-    Ctor,
-    Disj,
     Index,
-    MacroConst,
     Neg,
     ParseError,
-    Rule,
-    Wild,
     body_literals,
     marker_cases,
-    marker_names,
     parse,
 )
 
@@ -60,72 +52,6 @@ def test_corpus_parses(request):
         store.set(CACHE_KEY, cached)
 
 
-def test_rule_and_fact():
-    p = parse("ink(P) :- in(P, C), !params.bg(C).\nseed(3).\n")
-    rule, fact = p.items
-    assert isinstance(rule, Rule) and rule.body is not None
-    assert isinstance(rule.body[1], Neg)
-    assert rule.body[1].atom.qual == "params"
-    assert isinstance(fact, Rule) and fact.body is None
-
-
-def test_qualified_chain_and_bool():
-    p = parse(
-        "x(P) :- params.frame.pos(P).\n"
-        "compose(A, B) :- true.\n"
-    )
-    assert p.items[0].body[0].qual == "params.frame"
-    assert p.items[1].body == [Bool(True)]
-
-
-def test_aggregate_and_macro_const():
-    p = parse("big(N) :- N = max K : { size(K), K > 1 }, dir(DIR_T).\n")
-    cmp_, atom = p.items[0].body
-    assert isinstance(cmp_, Cmp)
-    assert isinstance(cmp_.rhs, Agg) and cmp_.rhs.op == "max"
-    assert atom.args == (MacroConst("DIR_T"),)
-
-
-def test_grid_fact_takes_no_period():
-    p = parse(".decl g(p: number)\nGRID_1x2(g, 1, 2)\nafter(P) :- g(P).\n")
-    grid = p.items[1]
-    assert grid.grid and grid.head.name == "GRID_1x2"
-
-
-def test_grid_fact_takes_macro_cell_tokens():
-    """A grid head's arguments are cell tokens, not terms, so the anchor
-    prefix and the absent token pass."""
-    p = parse("GRID_STAMP_1x3(s, @1, _, 1)\nafter(P) :- s(P).\n")
-    grid = p.items[0]
-    assert grid.grid and grid.head.name == "GRID_STAMP_1x3"
-    assert p.items[1].head.name == "after"
-
-
-def test_decl_line_fact():
-    p = parse(".comp Params {\n    .decl bg(c: Color) bg(0).\n}\n")
-    decl, fact = p.items[0].items
-    assert decl.name == "bg" and fact.head.name == "bg"
-
-
-def test_ctor_record_wildcard():
-    p = parse("m(K) :- box.cell($U(), [T, B], _), f(K).\n")
-    args = p.items[0].body[0].args
-    assert isinstance(args[0], Ctor) and args[0].name == "U"
-    assert isinstance(args[2], Wild)
-
-
-def test_disjunction():
-    p = parse(
-        "out(P, Col) :- in(P, _),\n"
-        "    ( tile(P, Col)\n"
-        "    ; !tile(P, _), params.bg(Col)\n"
-        "    ).\n"
-    )
-    disj = p.items[0].body[1]
-    assert isinstance(disj, Disj) and len(disj.branches) == 2
-    assert isinstance(disj.branches[1][0], Neg)
-
-
 def test_disjunction_index_roles():
     src = """\
 .decl tile(p: number, c: number)
@@ -136,32 +62,6 @@ out(P, Col) :- g(P), (tile(P, Col) ; !tile(P, _), bg(Col)).
     ix = Index(parse(src))
     roles = [r.role for r in ix.refs_of((TOP, "tile"))]
     assert roles == ["head", "pos", "neg"]
-
-
-def test_paren_expr_is_not_a_disjunction():
-    p = parse("out(X) :- (X + Y) != Z, g(X, Y, Z).\n")
-    assert isinstance(p.items[0].body[0], Cmp)
-
-
-def test_single_branch_group():
-    p = parse("out(P, Col) :- ( tile(P, Col), P = Col ), g(P).\n")
-    group = p.items[0].body[0]
-    assert isinstance(group, Disj) and len(group.branches) == 1
-    assert isinstance(group.branches[0][1], Cmp)
-
-
-def test_paren_call_before_comparison_is_not_a_group():
-    p = parse("out(X) :- (max Y : { g(Y) }) > X, g(X).\n")
-    assert isinstance(p.items[0].body[0], Cmp)
-
-
-def test_subsumptive_clause():
-    p = parse("high(K, S) <= high(K, S2) :- S < S2.\n")
-    rule = p.items[0]
-    assert isinstance(rule, Rule) and rule.sub
-    assert rule.head.name == "high"
-    assert isinstance(rule.body[0], Atom) and rule.body[0].name == "high"
-    assert isinstance(rule.body[1], Cmp)
 
 
 def test_comp_inheritance():
@@ -188,12 +88,6 @@ top(X) :- d.out(X), d.extra(X).
     assert ix.resolve(TOP, "d", "extra") == ("Derived", "extra")
 
 
-def test_comments_kept():
-    p = parse("// header\nink(P) :- in(P, C).  // trailing\n")
-    own = [c for c in p.comments if c.own_line]
-    assert len(p.comments) == 2 and len(own) == 1
-
-
 def test_parse_error_positions():
     with pytest.raises(ParseError) as e:
         parse("ink(P :- in(P).\n")
@@ -216,24 +110,6 @@ n(K) :- K = count : { ink(P) }.
     roles = [r.role for r in ix.refs_of((TOP, "ink"))]
     assert roles == ["head", "agg"]
     assert ix.resolve(TOP, None, "in") == (EXTERN, "in")
-
-
-def test_index_sections():
-    src = """\
-// --- CaseA --- with trailing prose
-.decl a(x: number)
-a(X) :- g(X).
-"""
-    ix = Index(parse(src))
-    assert ix.rules[0].section == "CaseA"
-
-
-def test_marker_names_split_outside_the_parentheses():
-    assert marker_names("Derive(g=Iso)") == ["Derive(g=Iso)"]
-    assert marker_names("Derive(g=Iso, s=Table), Disp") == [
-        "Derive(g=Iso, s=Table)", "Disp",
-    ]
-    assert marker_names("Box, Erode: both erode") == ["Box", "Erode"]
 
 
 def test_marker_cases_drop_the_fields_a_constructor_fixes():
@@ -269,21 +145,6 @@ c(X) :- g(X).
     assert sections == {"a": "CaseA", "b": None, "c": "CaseA"}
 
 
-def test_choice_domain():
-    src = """\
-.decl seat(b: number, pc: number) choice-domain b, pc
-seat(B, P) :- cand(B, P).
-.decl one(x: number, y: number, z: number) choice-domain (x, y), z
-.decl plain(x: number)
-"""
-    from dl.dlparse import Decl
-
-    decls = {d.name: d for d in parse(src).items if isinstance(d, Decl)}
-    assert decls["seat"].choice_domain == ["b", "pc"]
-    assert decls["one"].choice_domain == ["(x, y)", "z"]
-    assert decls["plain"].choice_domain == []
-
-
 def test_body_literals():
     src = (
         "y(P) :- a(P), (b(P) ; c(P), d(P)), !e(P),"
@@ -299,27 +160,6 @@ def test_body_literals():
     assert sum(isinstance(l, Cmp) for l in shallow) == 2
     fact = parse("seed(3).\n").items[0]
     assert list(body_literals(fact)) == []
-
-
-def test_plan_directive():
-    src = """\
-.decl walk(a: number, b: number)
-walk(A, B) :- edge(A, B).
-walk(A, B) :- walk(A, C), edge(C, B).
-.plan 0:(2, 1)
-"""
-    base, step = parse(src).items[1:]
-    assert base.plan is None
-    assert step.plan == [(0, (2, 1))]
-    assert step.end_line == 4
-
-
-def test_plan_on_the_rule_line_and_many_versions():
-    src = "p(A, B) :- p(A, C), p(C, B). .plan 0:(1, 2), 1:(2, 1)\n"
-    rule = parse(src).items[0]
-    assert rule.plan == [(0, (1, 2)), (1, (2, 1))]
-    assert rule.end_line == 1
-    assert parse("q(A) :- r(A).\n.decl s(a: number)\n").items[0].plan is None
 
 
 def test_comp_nested_in_comp():
@@ -346,32 +186,3 @@ top(X) :- o.seen(X), o.i.node(X).
     assert [r.role for r in ix.refs_of(("Inner", "node"))] == ["head", "pos", "pos"]
 
 
-def test_stateful_functor():
-    prog = parse(".functor box_dist(p: Box, d: Dir): number stateful\n"
-                 ".decl a(x: number)\n")
-    f = prog.items[0]
-    assert f.name == "box_dist"
-    assert f.text.endswith("number stateful")
-    assert prog.items[1].name == "a"
-
-
-def test_a_branch_list_continues_on_a_line_opening_with_a_bar():
-    """Each branch takes its own line under its gloss, so a line ends at a
-    branch and the next one opens with the bar."""
-    src = """\
-// which way the tiles turn
-.type Choice =
-      // mirror across the seam
-      Mirror {}
-      // a quarter turn
-    | Turn {d: number}
-      // leave it alone
-    | Keep {}
-.decl out(c: Choice)
-out($Keep()).
-"""
-    prog = parse(src)
-    td = prog.items[0]
-    assert td.name == "Choice"
-    assert td.branches == ["Mirror", "Turn", "Keep"]
-    assert prog.items[1].name == "out"

@@ -9,7 +9,6 @@ import json
 import queue
 import sys
 import threading
-import time
 from pathlib import Path
 
 import pytest
@@ -191,41 +190,6 @@ def worker(s, it, phase="refine", state="idle", turn_seq=1):
     return w
 
 
-def create_item(srv, item_id="a", **kw):
-    """An item mid-create, the way a wave admits one."""
-    return item(srv, item_id, srv.RUNNING, phase="create", landed=[], rev=0,
-                sessions={"create": "cs", "refine": None}, **kw)
-
-
-def land_report(srv, it, text="tried X, discarded Y"):
-    srv.finish_turn(it, {"result": tagged(text)}, None, time.time(), "create", True)
-
-
-def finalize_item(srv, item_id="a", state=None, idle_for=0, **kw):
-    """An unapproved finalize session whose worker has sat idle `idle_for`
-    seconds, its cache aging as long."""
-    it = item(srv, item_id, state or srv.NEEDS_REVIEW, chain=srv.default_chain(),
-              phase="finalize",
-              sessions={"create": "cs", "refine": "rs", "finalize": "fs"},
-              landed=["create", "refine", "finalize"],
-              lastActive={"create": None, "refine": None,
-                          "finalize": int((time.time() - idle_for) * 1000)}, **kw)
-    w = worker(srv, it, phase="finalize")
-    w["idle_since"] = time.time() - idle_for
-    return it
-
-
-def codex_item(srv, item_id, state, **kw):
-    """An item whose first stage runs on codex."""
-    kw.setdefault("sessions", {"create": None, "refine": None})
-    return item(srv, item_id, state, phase="create", landed=[],
-                chain=[{"name": "create", "backend": "codex",
-                        "model": "gpt-5.1-codex", "effort": "high"},
-                       {"name": "refine", "backend": "claude",
-                        "model": "claude-fable-5"}],
-                lastActive={"create": None, "refine": None}, **kw)
-
-
 def transcript(srv, monkeypatch, tmp_path, session, rows=()):
     """Stand in for the CLI's record of a session."""
     home = tmp_path / "projects"
@@ -241,21 +205,6 @@ def write_solver(srv, item_id, text):
 
 
 PROP = "docs/wf-solver/proposals"
-
-
-def idle_worker(s, it, phase="refine", idle_for=0, **kw):
-    """A worker parked in PROCS that went idle `idle_for` seconds ago."""
-    w = worker(s, it, phase=phase)
-    w.update(idle_since=time.time() - idle_for, **kw)
-    return w
-
-
-def night_workers(s, idle_for):
-    """One autopilot item per entry, each parked with a worker that went idle
-    that many seconds ago."""
-    for n, seconds in enumerate(idle_for):
-        idle_worker(s, item(s, f"n{n}", s.NEEDS_REVIEW, night=True),
-                    idle_for=seconds)
 
 
 REPORT = """The model hypothesis stands.

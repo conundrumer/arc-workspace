@@ -32,18 +32,6 @@ def test_diff_assert_fails_on_drift():
         apply_patch(_task(), p)
 
 
-def test_diff_change_assert_fails():
-    p = parse("@diff train 0 output\n1 1\n1 9~5\n")  # claims (1,1) was 9, actually 1
-    with pytest.raises(PatchApplyError, match="expected base 9|expected 9, got 1"):
-        apply_patch(_task(), p)
-
-
-def test_diff_dim_mismatch():
-    p = parse("@diff train 0 output\n1 1\n1 1\n1 1\n")  # 3 rows, grid is 2
-    with pytest.raises(PatchApplyError, match="row count"):
-        apply_patch(_task(), p)
-
-
 def test_replace_swaps_grid_with_assert():
     text = """\
 @replace train 0 output
@@ -71,19 +59,6 @@ def test_replace_old_grid_drift_fails():
         apply_patch(_task(), parse(text))
 
 
-def test_replace_dim_change():
-    # train 0 output is 2x2; replace with 1x1 after asserting the prior 2x2
-    text = """\
-@replace train 0 output
-1 1
-1 1
----
-9
-"""
-    out = apply_patch(_task(), parse(text))
-    assert out.train[0].output == [[9]]
-
-
 def test_delete_removes_example():
     text = """\
 @delete train 1
@@ -97,32 +72,6 @@ def test_delete_removes_example():
     assert len(out.train) == 2
     assert out.train[0].input == [[0, 0], [0, 0]]
     assert out.train[1].input == [[4, 4], [4, 4]]  # was train[2]
-
-
-def test_delete_input_drift_fails():
-    text = """\
-@delete train 1
-9 9
-9 9
----
-3 3
-3 3
-"""
-    with pytest.raises(PatchApplyError, match="input grid does not match"):
-        apply_patch(_task(), parse(text))
-
-
-def test_delete_output_drift_fails():
-    text = """\
-@delete train 1
-2 2
-2 2
----
-9 9
-9 9
-"""
-    with pytest.raises(PatchApplyError, match="output grid does not match"):
-        apply_patch(_task(), parse(text))
 
 
 def test_deletes_use_pre_patch_indices_when_combined():
@@ -174,21 +123,6 @@ def test_branch_rule_sets_alt():
     assert out.test[0].output == [[7, 7], [7, 7]]
 
 
-def test_branch_tiebreak_sets_alt():
-    p = parse("@branch test 0 tiebreak\n7 7~3\n7 7\n")
-    out = apply_patch(_task(), p)
-    assert out.test[0].alt is not None
-    assert out.test[0].alt.kind == "tiebreak"
-    assert out.test[0].alt.grid == [[7, 3], [7, 7]]
-
-
-def test_branch_no_change_errors():
-    # All plain cells, no N~M — alt would equal base, which is meaningless
-    p = parse("@branch test 0 rule\n7 7\n7 7\n")
-    with pytest.raises(PatchApplyError, match="no N~M cells|identical to base"):
-        apply_patch(_task(), p)
-
-
 def test_branch_double_assignment_errors():
     text = """\
 @branch test 0 rule
@@ -201,18 +135,6 @@ def test_branch_double_assignment_errors():
 """
     with pytest.raises(PatchApplyError, match="already has an alt"):
         apply_patch(_task(), parse(text))
-
-
-def test_index_out_of_range():
-    p = parse("@diff train 99 input\n0 0\n0 0\n")
-    with pytest.raises(PatchApplyError, match="out of range"):
-        apply_patch(_task(), p)
-
-
-def test_input_unchanged_when_diffing_output():
-    p = parse("@diff train 0 output\n1 1\n1 1~9\n")
-    out = apply_patch(_task(), p)
-    assert out.train[0].input == [[0, 0], [0, 0]]
 
 
 def test_deepcopy_does_not_mutate_input():

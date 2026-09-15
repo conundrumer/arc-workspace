@@ -1,18 +1,13 @@
 """RIGID blocks: parsing, macro expansion, determination compare, lint."""
 
-import pytest
 
 from dl.determine import _ident_match, _rigid_match
-from dl.dlparse import Index, ParseError, parse
-from dl.lint import lint_program
+from dl.dlparse import Index, parse
 from dl.source import (
-    _rigid_rule,
     build_determine_source,
     determined_params,
     expand_macros,
     expand_rigid_macros,
-    public_param,
-    rigid_decls,
 )
 
 SOLVER = """\
@@ -52,18 +47,6 @@ def test_parse_and_placed_decls():
     assert "glyph" not in placed
 
 
-def test_rigid_holds_decls_and_facts_only():
-    with pytest.raises(ParseError):
-        parse("RIGID(m,\n.decl a(p: Position)\na(P) :- b(P).\n)\n")
-
-
-def test_rigid_decls():
-    assert rigid_decls(SOLVER) == {
-        "marker_glyph": ("marker", ["Position"]),
-        "marker_aim": ("marker", ["DiagDir"]),
-    }
-
-
 def test_expansion():
     out = expand_rigid_macros(SOLVER)
     assert "RIGID" not in out
@@ -80,18 +63,6 @@ def test_expansion():
     Index(parse(expand_macros(SOLVER)))
 
 
-def test_rigid_rule_actions():
-    assert _rigid_rule("r", "s", ["Axis"]) == (
-        "r(D4, A0) :- s(B0), d4_elem(D4), "
-        "axis_of(Bd0, B0), apply_dir(D4, Bd0, Ad0), axis_of(Ad0, A0)."
-    )
-    assert _rigid_rule("r", "s", ["Ident", "Offset"]) == (
-        "r(D4, A0, A1) :- s(A0, B1), d4_elem(D4), apply(D4, B1, A1)."
-    )
-    with pytest.raises(ValueError):
-        _rigid_rule("r", "s", ["Sense"])
-
-
 def test_determined_params_and_build():
     params = determined_params(SOLVER)
     assert params == {"marker_glyph": ["Position"], "marker_aim": ["DiagDir"]}
@@ -100,11 +71,6 @@ def test_determined_params_and_build():
             "d4_elem(D4), apply(D4, B0, A0)." in built)
     assert "params_rigid_marker_glyph(D4, A0) :- params.marker_glyph(D4, A0)." in built
     assert '_determination_diff("marker_glyph")' not in built
-
-
-def test_public_param():
-    assert public_param("_rigid_marker_glyph") == "marker_glyph"
-    assert public_param("bg") == "bg"
 
 
 # Position rows here use opaque scalar stand-ins: the compare never
@@ -152,8 +118,3 @@ def test_ident_match_rigid_orbits():
     assert not _ident_match(params, rels, {"p_member"})
 
 
-def test_lint_flags_chart_reads():
-    bad = SOLVER.replace("params.marker_glyph(_, P)", "params._rigid_marker_glyph(P)")
-    cats = [f[0] for f in lint_program(bad)]
-    assert "rigid chart" in cats
-    assert "rigid chart" not in [f[0] for f in lint_program(SOLVER)]

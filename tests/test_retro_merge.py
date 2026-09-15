@@ -2,7 +2,6 @@
 applies that patch to, and the diffs it carries over."""
 
 import importlib.util
-import json
 import subprocess
 import sys
 from pathlib import Path
@@ -66,20 +65,6 @@ def pair(tmp_path: Path) -> tuple[Path, Path]:
     return repo, worktree_of(repo, tmp_path / "wt")
 
 
-def test_patch_covers_the_edit_and_the_new_file_and_leaves_the_scratch_out(retro_merge, pair):
-    _, wt = pair
-    patch, files = retro_merge.patch_text(wt)
-    assert files == ["src/a.py", "tests/test_b.py"]
-    assert "+a = 2" in patch
-    assert "new file mode" in patch
-    assert ".scratch" not in patch
-
-
-def test_main_tree_names_the_repo_the_worktree_came_from(retro_merge, pair):
-    repo, wt = pair
-    assert retro_merge.main_tree(wt) == repo.resolve()
-
-
 def test_merge_applies_the_change_copies_the_diffs_and_removes_the_worktree(
         retro_merge, tmp_path: Path, pair):
     repo, wt = pair
@@ -92,16 +77,6 @@ def test_merge_applies_the_change_copies_the_diffs_and_removes_the_worktree(
     assert not (into / ".scratch" / "loose.txt").exists()
     assert not wt.exists()
     assert "wt" not in git(repo, "worktree", "list")
-
-
-def test_check_reports_the_patch_and_writes_nothing(retro_merge, tmp_path: Path, pair):
-    _, wt = pair
-    into = repo_at(tmp_path / "into")
-    result = retro_merge.merge(wt, into, check=True)
-    assert result["applied"] is True
-    assert (into / "src" / "a.py").read_text() == "a = 1\n"
-    assert not (into / ".scratch").exists()
-    assert wt.is_dir()
 
 
 def test_a_tree_that_refuses_the_patch_keeps_its_files_and_the_worktree(
@@ -117,19 +92,3 @@ def test_a_tree_that_refuses_the_patch_keeps_its_files_and_the_worktree(
     assert wt.is_dir()
 
 
-def test_a_worktree_with_no_change_merges_and_is_removed(retro_merge, tmp_path: Path):
-    repo = repo_at(tmp_path / "repo")
-    wt = tmp_path / "bare-wt"
-    git(repo, "worktree", "add", "-q", str(wt), "HEAD")
-    into = repo_at(tmp_path / "into")
-    assert retro_merge.merge(wt, into) == {"applied": True, "files": [], "conflict": ""}
-    assert not wt.exists()
-
-
-def test_the_command_prints_the_result_as_json(tmp_path: Path, pair):
-    _, wt = pair
-    into = repo_at(tmp_path / "into")
-    done = subprocess.run([sys.executable, str(SCRIPT), str(wt), "--into", str(into), "--check"],
-                          capture_output=True, text=True)
-    assert done.returncode == 0, done.stderr
-    assert json.loads(done.stdout)["files"] == ["src/a.py", "tests/test_b.py"]

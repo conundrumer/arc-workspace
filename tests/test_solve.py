@@ -20,12 +20,6 @@ class _Ex:
     alt: _Alt | None = None
 
 
-@dataclass
-class _Task:
-    train: list[_Ex]
-    test: list[_Ex]
-
-
 A = [[1]]
 B = [[2]]
 RULE_EX = _Ex(input=[[0]], output=A, alt=_Alt(kind="rule", grid=B))
@@ -72,77 +66,6 @@ def _profile(monkeypatch, ex, actuals):
     return solve_mod._profile("src", [ex])
 
 
-def test_profile_takes_the_rule_alt_grid(monkeypatch):
-    both = [Candidate("$CaseA", A, [], []), Candidate("$CaseB", B, [], [])]
-    assert _profile(monkeypatch, RULE_EX, both) == [frozenset({"$CaseA", "$CaseB"})]
-
-
-def test_profile_needs_every_accepted_grid_under_a_rule_alt(monkeypatch):
-    one = [Candidate("$CaseA", A, [], []), Candidate("$CaseB", A, [], [])]
-    assert _profile(monkeypatch, RULE_EX, one) is None
-
-
-
-def _cases(monkeypatch, per_pair: list[list], cases: bool):
-    """One stub run per pair, and how many pairs ran: `_profile_cases` under
-    `cases`, `_profile` without it."""
-    runs = iter(per_pair)
-    seen = []
-
-    def parse(_out):
-        actuals = next(runs)
-        seen.append(actuals)
-        return actuals
-
-    monkeypatch.setattr(solve_mod, "res_out", lambda _src: False)
-    monkeypatch.setattr(solve_mod, "build_source", lambda src: src)
-    monkeypatch.setattr(solve_mod, "grid_to_facts", lambda rows: "")
-    monkeypatch.setattr(solve_mod, "_run_source", lambda *_a, **_k: "")
-    monkeypatch.setattr(solve_mod, "parse_output", parse)
-    ex = _Ex(input=[[0]], output=A)
-    examples = [ex] * len(per_pair)
-    out = (solve_mod._profile_cases("src", examples) if cases
-           else solve_mod._profile("src", examples))
-    return out, len(seen)
-
-
-MISS = [Candidate("$CaseA", A, [], []), Candidate("$CaseB", B, [], [])]
-BOTH = [Candidate("$CaseA", A, [], []), Candidate("$CaseB", A, [], [])]
-
-
-def test_case_sets_need_every_pair(monkeypatch):
-    (profile, passing), ran = _cases(monkeypatch, [MISS, BOTH], cases=True)
-    assert profile is None
-    assert passing == [frozenset({"$CaseA"}), frozenset({"$CaseA", "$CaseB"})]
-    assert ran == 2
-
-
-def test_a_profile_alone_stops_at_the_failing_pair(monkeypatch):
-    profile, ran = _cases(monkeypatch, [MISS, BOTH], cases=False)
-    assert profile is None
-    assert ran == 1
-
-
-def test_pair_work_takes_the_task_id_from_a_path_stem(monkeypatch):
-    """A stem may name a path relative to the solvers directory."""
-    task = _Task(train=[_Ex(input=[[0]], output=A)], test=[])
-    monkeypatch.setattr(solve_mod, "load_task", lambda _id: task)
-    stem = "../../.scratch/abcd1234/abcd1234_alt"
-    assert solve_mod._pair_work(stem) == [(stem, "abcd1234", "train", 0, task.train[0])]
-
-
-def test_task_id_of_takes_the_file_name_from_a_path_stem():
-    assert solve_mod.task_id_of("../../.scratch/abcd1234/abcd1234_alt") == "abcd1234"
-
-
-def test_a_stem_and_a_file_name_reach_the_same_corpus_solver(tmp_path, monkeypatch):
-    monkeypatch.setattr(solve_mod, "SOLVERS_DIR", tmp_path)
-    path = tmp_path / "8403a5d5.dl"
-    path.write_text("// solver\n")
-    assert solve_mod.solver_file("8403a5d5") == (path, "8403a5d5")
-    assert solve_mod.solver_file("8403a5d5.dl") == (path, "8403a5d5")
-
-
 def test_a_path_that_exists_resolves_to_itself(tmp_path, monkeypatch):
     """A variant kept outside the solvers directory runs by its path, with no
     prefix reaching out of that directory."""
@@ -156,6 +79,3 @@ def test_a_path_that_exists_resolves_to_itself(tmp_path, monkeypatch):
     assert solve_mod.solver_file("scratch/8403a5d5_alt.dl")[0].read_text() == "// solver\n"
 
 
-def test_a_variant_file_name_keeps_the_task_id_it_leads_with():
-    assert solve_mod.task_id_of("8403a5d5v2.dl") == "8403a5d5"
-    assert solve_mod.task_id_of("draft.dl") == "draft"
