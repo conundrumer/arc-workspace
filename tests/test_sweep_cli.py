@@ -129,13 +129,25 @@ def test_a_stale_cache_is_skipped_under_cached(tree, capsys):
     assert "stale" in skipped["reason"]
 
 
-def test_a_cache_with_no_hash_is_stale(tree, capsys):
-    """The caches written before the hash carry none, so they are stale."""
+def test_a_cache_with_no_hash_is_read_as_unverified(tree, capsys):
+    """The caches written before the hash carry none. A reading that runs no
+    sweep takes them, and says on stderr that they stand unverified."""
     tree("aaa11111", OPEN_SWEEP, sha=False)
     cli.cmd_sweep_open(["aaa11111"], cached=True)
-    out = read(capsys)
-    assert out["sweeps"] == []
-    assert "stale" in out["skipped"][0]["reason"]
+    caught = capsys.readouterr()
+    out = json.loads(caught.out)
+    assert out["skipped"] == []
+    assert [p["param"] for p in out["sweeps"][0]["params"]] == ["bg"]
+    assert "is unverified" in caught.err
+
+
+def test_a_cache_with_no_hash_sweeps_again_without_cached(tree, stub_sweep,
+                                                          capsys):
+    """Without `--cached` the sweep runs, which pairs the text with a hash."""
+    tree("aaa11111", SETTLED_SWEEP, sha=False)
+    assert cli.cmd_sweep_open(["aaa11111"]) == 0
+    assert stub_sweep == ["aaa11111"]
+    assert read(capsys)["skipped"] == []
 
 
 def test_a_comment_line_leaves_the_cache_valid(tree, stub_sweep, capsys):

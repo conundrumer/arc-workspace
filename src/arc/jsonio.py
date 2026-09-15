@@ -5,7 +5,9 @@ Layout rules:
   - Lists of dicts use brace-up: '[{' on the open line, '}, {' between items,
     '}]' on the close. Saves one indent level per example body.
   - Grid rows (list[list[int]]) render one row per line, no inter-cell spaces.
-  - Lists of plain ints render one-line: [1,0,2].
+  - Lists of plain ints render one-line: [1,0,2]. So does any list whose
+    elements are scalars and lists of plain ints: [[0,2,0,2],"D4_LR"].
+  - Any other list of lists renders one element per line.
   - Dicts with ≤2 primitive-valued keys render one-line if they fit in 80 cols.
 """
 
@@ -68,11 +70,39 @@ def _fmt_list(lst: list[Any], depth: int) -> str:
         return "[]"
     if _is_int_grid(lst):
         return _fmt_grid(lst, depth)
-    if all(isinstance(v, int) for v in lst):
-        return "[" + ",".join(str(v) for v in lst) + "]"
+    one_line = _try_compact_list(lst)
+    if one_line is not None:
+        return one_line
     if _is_list_of_dicts(lst):
         return _fmt_brace_up(lst, depth)
+    if all(_is_list(v) for v in lst):
+        return _fmt_rows(lst, depth)
     raise NotImplementedError(f"unsupported list element types in {lst!r}")
+
+
+def _try_compact_list(lst: list[Any]) -> str | None:
+    """One-line rendering of a list whose every element is a scalar or a
+    list of plain ints; None when some element needs more room."""
+    items = [_compact_item(v) for v in lst]
+    if any(i is None for i in items):
+        return None
+    return "[" + ",".join(items) + "]"
+
+
+def _compact_item(v: Any) -> str | None:
+    if _is_scalar(v):
+        return json.dumps(v)
+    if _is_int_list(v):
+        return "[" + ",".join(str(x) for x in v) + "]"
+    return None
+
+
+def _fmt_rows(rows: list[Any], depth: int) -> str:
+    """One element per line, for a list of lists no other rule covers."""
+    inner = "  " * (depth + 1)
+    outer = "  " * depth
+    body = ",\n".join(f"{inner}{_fmt_value(r, depth + 1)}" for r in rows)
+    return f"[\n{body}\n{outer}]"
 
 
 def _fmt_grid(grid: list[list[int]], depth: int) -> str:
@@ -99,6 +129,10 @@ def _fmt_brace_up(items: list[dict[str, Any]], depth: int) -> str:
             parts.append(f"{inner}{json.dumps(k)}: {_fmt_value(v, depth + 1)}{sep}")
     parts.append(f"{outer}}}]")
     return "\n".join(parts)
+
+
+def _is_scalar(v: Any) -> bool:
+    return v is None or isinstance(v, (bool, int, float, str))
 
 
 def _is_dict(v: Any) -> TypeGuard[dict[str, Any]]:

@@ -558,7 +558,6 @@ def test_since_reports_the_count_of_solvers_in_scope(repo, capsys):
     assert cli.cmd_since("1 minute ago") == 0
     err = capsys.readouterr().err
     assert "1 solvers in scope." in err
-    assert "cost does not follow that count" in err
 
 
 DOC = """# Keywords
@@ -568,7 +567,7 @@ DOC = """# Keywords
 - `lines` — per-line structure
 - `crop` — a subregion
 
-## Prior
+## Transformation
 
 - `cast` — content extends
 

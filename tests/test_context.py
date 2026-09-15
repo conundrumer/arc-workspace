@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from dl.context import (DOCS, NOTES_DROPPED, OPEN_NOTE, entry_index, lib_doc,
+from dl.context import (DOCS, NOTES_DROPPED, entry_index, lib_doc,
                         lib_entries, lib_sources, render, role_agent)
 
 
@@ -262,23 +262,6 @@ def _docs(tmp_path: Path) -> tuple[Path, Path]:
     lib.write_text(".decl out(p: Position)\n")
     return docs, lib
 
-
-def test_render_indexes_the_open_questions_and_omits_the_section_without_them(
-        tmp_path: Path):
-    docs, lib = _docs(tmp_path)
-    assert "docs/wf-solver/open" not in render(docs, lib)
-
-    (docs / "open").mkdir()
-    (docs / "open" / "second.md").write_text("# Second\n\nIts question.\n")
-    (docs / "open" / "first.md").write_text(
-        "# First\n\nIts question,\nover two lines.\n\n## A heading\n\nMore.\n")
-
-    out = render(docs, lib)
-    assert (f"\n---\n\n# docs/wf-solver/open — index\n\n{OPEN_NOTE}\n\n"
-            "- **First** (`docs/wf-solver/open/first.md`) — Its question, over two lines.\n"
-            "- **Second** (`docs/wf-solver/open/second.md`) — Its question.\n"
-            "\n---\n\n# programs/lib.dl") in out
-    assert "More." not in out
 
 
 def test_every_render_keeps_the_plus_lines_and_strips_the_glosses(tmp_path: Path):

@@ -25,7 +25,7 @@ TS sources before sizing them.
 
 ## Editor setup
 
-The VSCode extension at `tools/vscode/arc-grids/` highlights grid digits in materialized task JSON with the ARC palette (bold) and adds syntax highlighting for the patch DSL.
+The VSCode extension at `tools/vscode/arc-grids/` highlights grid digits in materialized task files and in witness files with the ARC palette and adds syntax highlighting for the patch DSL.
 
 Activate by symlinking the extension into VSCode's extensions directory:
 

@@ -3,7 +3,7 @@
 // input: Walls of every other color hold a body of water.
 // output: The water settles under gravity, one cell at a time.
 
-// One grid per pour order; a cell the orders settle differently gets both.
+// One grid per open pour sense; a cell the senses settle differently gets both.
 .decl out(p: Position, col: Color)
 
 .comp Params {
@@ -12,6 +12,11 @@
     .decl water(col: Color) water(1).
 
     .decl gravity(d: Dir) gravity(DIR_B).
+
+    // The sense a line pours in. The pairs fix neither, so both stay open.
+    .decl pour_sense(s: Sense)
+    pour_sense(SENSE_CW).
+    pour_sense(SENSE_CC).
 }
 
 .init params = Params
@@ -32,14 +37,13 @@ adj(P, D, Q) :- in(P, _), dir_elem(D), neighbor(P, D, Q), in(Q, _).
 
 // Whose turn it is: lexicographic order from gravity's far edge, so a parcel
 // never takes a source still to come — it rests on its own source cell or
-// below it. Along a line either end may pour first, and the two orders can
-// settle differently; the task privileges neither, so both run, keyed by
-// sense.
+// below it. Along a line either end may pour first, and the two senses can
+// settle differently, so the order is keyed by the pour sense.
 .init lex = LexOrder<Sense>
-lex.axis(S, A) :- sense_elem(S), params.gravity(D), axis_of(D, A).
+lex.axis(S, A) :- params.pour_sense(S), params.gravity(D), axis_of(D, A).
 lex.corner(S, Diag) :-
     params.gravity(D), turn(S, D, L), diag_dirs(Diag, _, D, L).
-lex.cell(S, P) :- sense_elem(S), parcel(P).
+lex.cell(S, P) :- params.pour_sense(S), parcel(P).
 
 // The state a turn opens on: the cells its parcel may still enter (untaken)
 // and the cells that stop it (taken).
@@ -47,8 +51,8 @@ lex.cell(S, P) :- sense_elem(S), parcel(P).
 state.start(S, T) :- lex.first(S, T).
 state.step(S, T, T2) :- lex.next(S, T, T2).
 state.take(S, T, P) :- rest(S, T, P).
-state.init_taken(S, P) :- sense_elem(S), wall(P).
-state.init_untaken(S, P) :- sense_elem(S), in(P, _), !wall(P).
+state.init_taken(S, P) :- params.pour_sense(S), wall(P).
+state.init_untaken(S, P) :- params.pour_sense(S), in(P, _), !wall(P).
 
 // What an untaken cell has under it: open space to fall through, or footing.
 .decl hangs(s: Sense, t: Position, p: Position)
@@ -82,7 +86,7 @@ held(S, T, P, L) :-
 
 // The turn's parcel, cell by cell along its path.
 .decl path(s: Sense, t: Position, p: Position)
-path(S, T, T) :- sense_elem(S), parcel(T).
+path(S, T, T) :- params.pour_sense(S), parcel(T).
 path(S, T, Q) :-
     path(S, T, P), adj(P, D, Q),
     ( hangs(S, T, P), params.gravity(D)   // falls into the open cell below
@@ -96,7 +100,7 @@ rest(S, T, P) :-
     held(S, T, P, L1), opposite(L1, L2), held(S, T, P, L2).
 
 out(P, Col) :-
-    in(P, C), sense_elem(S),
+    in(P, C), params.pour_sense(S),
     ( wall(P), Col = C                            // a wall keeps its color
     ; rest(S, _, P), params.water(Col)            // settled water
     ; !wall(P), !rest(S, _, P), params.bg(Col)    // everywhere else

@@ -18,4 +18,4 @@ The brief names one solver, `programs/solvers/<task_id>.dl`, and the change to m
 
 Whether you changed the solver, and when you did, the diff file you wrote, at the path the brief gives. The run, lint, and audit output verbatim. Each witness with the case it separates and each case's output on it. Each judgment you made, with what it rests on.
 
-Nothing in the report waits on a ruling. A point the docs determine is a change you make and carry. A point the pairs leave open is a fact you state. A question the docs leave open goes into the file under `docs/wf-solver/open/` that holds that question, as a new instance in that file's form, and into a new file there when none holds it; the report names that file.
+Nothing in the report waits on a ruling. A point the docs determine is a change you make and carry. A point the pairs leave open is a fact you state. A question the docs leave open goes in the review as a gap in the docs.

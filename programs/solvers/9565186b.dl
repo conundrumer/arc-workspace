@@ -29,7 +29,7 @@ commonest.item($U(), Col, P) :- in(P, Col).
 
 keep(P, $Count()) :- in(P, Col), commonest.mode($U(), Col).
 
-// --- $BlobColor / $Blob ---
+// --- $BlobColor, $Blob ---
 
 .type Comp = [col: Color, id: Ident]
 

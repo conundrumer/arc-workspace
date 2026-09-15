@@ -5,10 +5,9 @@ The lib renders as documentation: each file's `//!` and `///` comments as
 prose, and the declarations they document in code blocks, without the rule
 bodies. That is the lib's interface, and each file's interface is also
 written beside it, as the `.md` of the same stem. The catalog docs render as
-one line per entry, and the open questions beside them as one line per
-file. The other docs pass through without their editor notes and their
-deferred sections. Each rendering names the file that holds the rest, and
-derives from the live file, so no copy can go stale.
+one line per entry. The other docs pass through without their editor notes
+and their deferred sections. Each rendering names the file that holds the
+rest, and derives from the live file, so no copy can go stale.
 
 The handbook renders two ways, and an agent carries each. The lib is its
 interface, for a task that edits `.dl`, or an index: one line per public unit
@@ -73,11 +72,6 @@ DOCS = ("procedure.md", "principles.md", "style.md", "patterns.md", "keywords.md
 # Catalog docs: entries are independent and a session uses few, so the context
 # carries the index and the session reads the entry it needs.
 INDEX = {"patterns.md"}
-# The open questions, one file per question, beside the docs they question.
-OPEN = "open"
-OPEN_NOTE = ("Each file holds a question under a rule, not a rule. Nothing in a "
-             "file is to be applied to a solver. A review line about one of "
-             "these rules names the question's file.")
 
 
 def lib_sources(root: Path = LIB_SRC) -> list[tuple[Path, str]]:
@@ -332,25 +326,6 @@ def entry_index(text: str, source: str) -> str:
     return "\n\n".join(p for p in (preamble.strip(), note, "\n".join(out)) if p) + "\n"
 
 
-def open_index(path: Path, rel: str) -> str:
-    """The open questions as one line per `.md` file of `path`, by name: the
-    file's `# ` title, its path under `rel`, and its first paragraph. A
-    directory with no such file gives no line."""
-    out: list[str] = []
-    for src in sorted(path.glob("*.md")):
-        text = src.read_text()
-        m = re.search(r"^# (.*)", text, flags=re.M)
-        title = m.group(1).strip() if m else src.stem
-        opening = ""
-        for para in text[m.end() if m else 0:].split("\n\n"):
-            para = " ".join(para.split())
-            if para and not para.startswith(("#", "-", "|", "*")):
-                opening = para
-                break
-        out.append(f"- **{title}** (`{rel}/{src.name}`) — {opening}")
-    return "\n".join(out) + "\n" if out else ""
-
-
 NOTES_DROPPED = ("Cited tasks carry worked applications of the principle "
                  "they sit under. Grep the task id in {rel} to read one.")
 SECTION_DEFERRED = ("The {title} section is in the source: read it in {rel} "
@@ -391,9 +366,9 @@ def interface_path(src: Path) -> Path:
 
 def render(docs: Path = DOCS_DIR, lib: Path = LIB_SRC,
            lib_index: bool = False) -> str:
-    """The handbook: the docs and the lib's files, each under a heading
-    naming its file. The lib renders as its interface, or under `lib_index`
-    as an index pointing at the interface file beside each source."""
+    """The handbook: the docs and the lib's files, each under a heading naming
+    its file. The lib renders as its interface, or under `lib_index` as an
+    index pointing at the interface file beside each source."""
     parts: list[str] = []
     for name in DOCS:
         rel = f"docs/wf-solver/{name}"
@@ -408,10 +383,6 @@ def render(docs: Path = DOCS_DIR, lib: Path = LIB_SRC,
             parts.append(f"\n---\n\n# {rel} — index{note}\n\n{entry_index(text, rel)}")
         else:
             parts.append(f"\n---\n\n# {rel}{note}\n\n{text}")
-    rel = f"docs/wf-solver/{OPEN}"
-    entries = open_index(docs / OPEN, rel)
-    if entries:
-        parts.append(f"\n---\n\n# {rel} — index\n\n{OPEN_NOTE}\n\n{entries}")
     for i, (path, text) in enumerate(lib_sources(lib)):
         rel = Path("programs") / path.relative_to(lib.parent)
         if lib_index:

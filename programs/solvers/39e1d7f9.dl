@@ -6,7 +6,11 @@
 //  that small grid, one object spans several cells, the motif, and every
 //  other object is a single cell.
 // output: The output copies the motif onto every single cell.
-// review principle: docs/wf-solver/open/peer-priors.md
+// review principle: Cases — the branches dropped beside Span and Seat — the
+//  paint order where a copy lands on ink, the seat cell's survival, the
+//  cardinal join against the corner join, and which object is the motif — now
+//  stand unless Fit, Fidelity, or Equivalence removes them, so re-judge each
+//  as a field of Choice.
 
 // what a copy carries
 .type Span =

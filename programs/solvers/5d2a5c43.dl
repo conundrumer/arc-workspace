@@ -37,10 +37,12 @@
     .decl frame(p: Position)
     frame(P) :- frame_dim(AXIS_V, Fv), frame_dim(AXIS_H, Fh), helpers.frame_pos([Fv, Fh], P).
 
+    // width of the separator between the two tiles
+    .decl gap(g: number) gap(1).
+
     // --- Table decompose data ---
     .decl arr_dim(a: Axis, n: number)
     arr_dim(AXIS_V, 1). arr_dim(AXIS_H, 2).
-    .decl gap(g: number) gap(1).
     .decl tile_decompose(p: Position, p_outer: Position, p_inner: Position)
     tile_decompose(P_grid, P_tile, P_intile) :-
         arr_dim(AXIS_V, Av), arr_dim(AXIS_H, Ah),
@@ -50,9 +52,6 @@
     // --- Count, Size decompose data ---
     .decl divide_axis(a: Axis)
     divide_axis(AXIS_H).
-
-    .decl divide_gap(g: number)
-    divide_gap(1).
 
     // --- Count decompose data ---
     .decl divisor(n: number)
@@ -90,11 +89,11 @@ dec_choice($Size()).
 decompose(P_grid, P_tile, P_intile, $Table()) :- params.tile_decompose(P_grid, P_tile, P_intile).
 decompose(P_grid, P_tile, P_intile, $Count()) :-
     in(P_grid, _),                                                      // input position
-    params.divide_axis(A), params.divisor(N), params.divide_gap(G),     // params
+    params.divide_axis(A), params.divisor(N), params.gap(G),            // params
     divide_slab(P_grid, A, N, G, P_tile, P_intile).
 decompose(P_grid, P_tile, P_intile, $Size()) :-
     in(P_grid, _),                                                      // input position
-    params.divide_axis(A), params.divide_gap(G),                        // params
+    params.divide_axis(A), params.gap(G),                               // params
     params.frame_dim(A, K),                                             // tile size = output frame extent
     divide_by_size_slab(P_grid, A, K, G, P_tile, P_intile).
 

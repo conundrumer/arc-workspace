@@ -8,7 +8,7 @@ export const meta = {
     { title: 'Review', detail: 'one agent asks the two questions over every open issue and takes a default', model: 'fable' },
     { title: 'Fix', detail: 'each code target in a worktree of its own, merged into the repo one merge at a time, the prose targets in units of at most five that a Codex session fixes then prunes, every other target in parallel' },
     { title: 'Resolve', detail: 'one agent per solver that took a review line in this run, which acts on the line and writes its report' },
-    { title: 'Consistency', detail: 'one agent groups the acted-on review lines by the rule that decides each; then one agent per group reads its solvers side by side and reports where they read that rule differently; then, for a divergence no rule of the docs explains, one agent per solver brings that solver to the group\'s form, beside one agent that records the reading as an open question' },
+    { title: 'Consistency', detail: 'one agent groups the acted-on review lines by the rule that decides each; then one agent per group reads its solvers side by side and reports where they read that rule differently; then, for a divergence no rule of the docs explains, one agent per solver brings that solver to the group\'s form, and the divergence goes into the run\'s result' },
     { title: 'Cleanup', detail: 'one agent per solver the run wrote, which runs Simplify then Prune over it' },
     { title: 'Verify', detail: 'one agent per unit, which starts as soon as that unit\'s own fix lands, one agent on sonnet for the checks over the whole tree, then one round over the other files those findings name' },
   ],
@@ -623,18 +623,6 @@ const applyTask = (taskId, d) => [
   'Never run a git command that changes state.',
 ].join('\n')
 
-// The reading and the form of one such divergence, as a question the docs
-// leave open. It goes to the open docs and never to principles.md.
-const recordTask = (d) => [
-  'Record this divergence as an open question.',
-  '',
-  JSON.stringify({ point: d.point, rule: d.rule, reading: d.reading, wording: d.wording, form: d.form, ground: d.ground, solvers: d.solvers }, null, 2),
-  '',
-  'It goes into the file under `docs/wf-solver/open/` that holds this question, as a new instance in that file\'s form. When no file there holds it, write a new file there, in the form the files there take.',
-  'It never goes into `docs/wf-solver/principles.md`.',
-  `Write the diff of each file you changed, verbatim, under \`${DIFF_DIR}/\`, at a path you pick, and report one \`diffs\` entry per file: the file, and the path its diff went to.`,
-].join('\n')
-
 const sweepLinesTask = (sweeps) => [
   'Write the sweep review lines into these solvers.',
   '',
@@ -963,26 +951,22 @@ async function consistencyStage(resolved) {
 
 // A divergence no rule of the docs explains is settled here, not by the user.
 // Each solver the entry holds between goes to the one form under the one
-// reading, one agent per solver, and one agent beside them records that reading
-// in the open docs. The solvers of one entry run together, and the entries run
-// beside each other.
+// reading, one agent per solver. The divergence itself is recorded under
+// `record` in the run's result, for the user to read. The solvers of one entry
+// run together, and the entries run beside each other.
 async function applyStage(consistency) {
   const entries = ((consistency && consistency.divergences) || []).filter(d => d && d.principled === false)
   if (!entries.length) return null
-  const byGroup = byKey(entries, d => d.group || '')
   const done = (await parallel(entries.map(d => async () => {
-    const peers = byGroup.get(d.group || '')
-    const label = chunkLabel(`record:${d.group}`, peers.indexOf(d), peers.length)
     const stems = [...new Set((d.solvers || []).map(s => (s || '').trim()).filter(Boolean))]
-    const [solvers, record] = await parallel([
-      () => parallel(stems.map(id => async () => {
-        const r = await agent(asRole('solver', applyTask(id, d)), { label: `apply:${id}`, phase: 'Consistency', schema: RESOLVE_SCHEMA, ...agentOf('solver') })
-        return r && { task_id: id, target: solverTarget(id), ...r }
-      })),
-      () => agent(asRole('retro-fix', recordTask(d)), { label, phase: 'Consistency', schema: EDIT_SCHEMA, ...agentOf('retro-fix') }),
-    ])
+    const solvers = await parallel(stems.map(id => async () => {
+      const r = await agent(asRole('solver', applyTask(id, d)), { label: `apply:${id}`, phase: 'Consistency', schema: RESOLVE_SCHEMA, ...agentOf('solver') })
+      return r && { task_id: id, target: solverTarget(id), ...r }
+    }))
     return { group: d.group, point: d.point, reading: d.reading, form: d.form,
-             solvers: (solvers || []).filter(Boolean), record: record || null }
+             record: { point: d.point, rule: d.rule, reading: d.reading, wording: d.wording,
+                       form: d.form, ground: d.ground, solvers: d.solvers },
+             solvers: (solvers || []).filter(Boolean) }
   }))).filter(Boolean)
   log(`${done.reduce((n, e) => n + e.solvers.filter(s => s.changed).length, 0)} solvers brought to form over ${done.length} unprincipled divergences`)
   return done

@@ -53,15 +53,17 @@ A solver is one file, `<task_id>.dl`.
 // <task_id>
 // draft
 // keywords: <keywords from keywords.md>
+// concept: <the concept statement>
 // input: <the structures the parse finds, shared by every case, omitted when trivial>
 // output: <the rule from input to output that every case shares>
 //  <continuation of that rule>
 
 // <what the choice is>
 .type Choice =
-    // <gloss>
+    // <gloss of the intended case>
     CaseA {}
     // <gloss>
+    // @deviation: -1 +0 ~0
   | CaseB {}
 
 .decl out(p: Position, col: Color, ch: Choice)
@@ -96,7 +98,7 @@ out(..., $CaseB()) :- ...
 .comp Determine { ... }
 ```
 
-A family sibling's header:
+A family sibling's header, omitting other fields:
 
 ```
 // <task_id>
@@ -106,26 +108,27 @@ A family sibling's header:
 
 The representative is the family's first-solved member. A case name follows the id when the sibling holds one case of the representative's `Choice`, and no case name follows it otherwise.
 
-
 ### Cases
 
 A solver with one case has no `Choice`: no type, no case markers, no column on `out`.
 
-- **Case markers.** Cases do not interleave: each case's Params and rules sit under its marker. Cases that share facts or rules sit under one marker naming them, `// --- Box, Erode ---`.
+- **Case markers.** Cases do not interleave: each case's Params and rules sit under its marker. Cases that share facts or rules sit under one marker naming them, `// --- Box, Erode ---`. A marker may also fix a constructor's fields, `// --- Derive(g=Iso) ---`, for the part of that case where the field holds that branch; the comma still separates cases.
+- **Intended case.** The intended case is declared first in `Choice`, and in each field's type of a record-typed `Choice`. It carries no `@deviation` line.
+- **`@deviation`.** Every other branch carries `// @deviation: -<relaxed> +<added> ~<contradicted>` under its gloss: its three deviation estimates, as principles.md defines them, with `-` for relaxed, `+` for added, and `~` for contradicted.
 - **`impl_choice`.** The relation that enumerates the cases is `impl_choice`, its column `ch`, corpus-wide. A record-typed `Choice` gets one enumerator per field, named for the field's type (`.decl locate_choice(l: Locate)`). `impl_choice` holds whole `Choice` values, and appears when a rule reads one.
 
 ## Params
 
-Params holds the parameterization and what derives from it. Each parameter is a relation, and its facts are its value. The program reads a parameter as `params.<rel>`.
+Params holds the parameterization and what derives from it. The program reads a parameter as `params.<rel>`.
 
 - `.init helpers = ParamsHelpers` inside Params gives data declarations the shared helpers as `helpers.<rel>`. The program has no access.
 - A task with an empty parameterization keeps the comp empty and the `.init` unchanged.
     - Write it as `.comp Params {}`.
 - **Shared parameters.** The parameters that every case reads sit above the case markers. A parameter that some case never reads goes under the marker of the cases that read it.
-- **Derived data.** A rule inside Params derives a relation from parameters, and writes no value as a literal. The derived relation is not a parameter, and carries no determination relation.
+- **Derived data.** A rule inside Params derives a relation from parameters, and writes no value as a literal. The derived relation carries no determination relation.
     - **`@unit` literal.** A literal 1 stating a unit stays in the rule, under an `// @unit: <what the 1 states>` comment on the rule's line. A 1 is a unit when a larger value states no model. The linter flags a program literal regardless of `@unit`.
 - Facts are not column-aligned across a block.
-- **Redundant values.** If another parameter fixes a value, a Params rule derives that value from the parameter instead of storing it. If the family fixes an orientation value from another value, the stored form is relative (`Sense` via `turn`, `Axis` via `perp`).
+- **Redundant values.** A Params rule derives a redundant value from the parameter that fixes it, instead of storing it. If the family fixes an orientation value from another value, the stored form is relative (`Sense` via `turn`, `Axis` via `perp`).
 
 ## Types
 
@@ -142,6 +145,7 @@ Any other type is banned.
 Program style and the linter apply to the program rules, the Determine comp, and the Parse comp.
 
 - **`@allow` directive.** A relation kept against the lint's single-consumer hint carries `// @allow: single-consumer — <why>` on the line above its declaration, beside the gloss, and the hint does not fire on it.
+- **`@workaround` directive.** A temporary workaround sits under a `// @workaround: <the principled form it stands in for>` line.
 
 ### Bans
 
@@ -215,7 +219,31 @@ A `.comp Parse<Key>` contains a derivation that the program and the Determine co
 Alts in the task JSON are encoded by kind:
 
 - A `rule` alt is a peer model: a case of `Choice`, one case per alt output.
-- A `tiebreak` alt marks interchangeable content that the task leaves free.
+- A `tiebreak` alt marks a tiebreak.
     - The solver enumerates the resolutions: `out` takes a trailing column typed `TiebreakResolution`, one value per valid resolution.
-    - No data or rules name or steer the resolution values, and case coverage does not apply to the resolution column.
+    - No data or rules name or steer the resolution values.
 - A pair has at most two accepted outputs.
+
+## Witness file
+
+`programs/witnesses/<task_id>.wit.json` holds the solver's divergence witnesses.
+
+```
+{ "id": <task_id>,
+  "witnesses": [{
+    "id": slug,                       // one or two words, unique in the file
+    "hypothesis": string,             // which cases the input distinguishes
+    "input": Grid,
+    "output": {<case>: Grid | null}   // per case; null is an ill-formed outcome
+            | Grid,                   // a rejected output, which no case may produce
+    "assign": {<parameter>: Fact[]},  // optional; replaces the parameter's stored facts
+    "violates": string[],             // optional; the invariants of the inputs that the input violates
+    "rejected": string[]              // optional; the cases whose outcome the concept statement rejects
+  }] }
+
+Grid: number[][]                      // rows of colors
+Fact: Arg[]                           // the arguments of one fact
+Arg: number | string | Arg[]          // a string names a lib constant; a list is a record
+```
+
+A `<case>` is the constructor's name, `Alt`. Under a record-typed `Choice` it is the record of the fields' constructor names, `[Table, Lookup]`. Under no `Choice` it is `(out)`.

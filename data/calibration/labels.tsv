@@ -1,0 +1,18 @@
+task_id	path	case	label	note
+9356391f	.scratch/9356391f/9356391f-survive.dl	Survive	drop	In Survive the first ring color is covered by the marker, so it is discarded. The top row is an ordered palette, and I expect every color rendered in the output. Survive creates an exception that complicates the task and feels inconsistent: not only contrived, but inconsistent.
+9385bd28	.scratch/9385bd28/9385bd28-four-case.dl	Triomino	drop	I identify the markers as corner things, not as three-cell things. A varying cell count would be fine. A three-long line looks random, inconsistent, and confusing.
+9385bd28	.scratch/9385bd28/9385bd28-four-case.dl	Corner	drop	It doesn't make sense to remove or cover a corner marker because it has a different size. A task where that is the rule would be a task with an additional rule tacked on top, which is possible but feels invented here.
+9385bd28	programs/solvers/9385bd28.dl	Open	keep	Agree with keeping Open and Paired.
+9385bd28	programs/solvers/9385bd28.dl	Paired	keep	Agree with keeping Open and Paired.
+9841fdad	.scratch/cards/9841fdad-peer-rows.dl	RowsH	drop	Per-row runs is a valid reading in a task designed for it (the rows-task card), but on 9841fdad it adds a rule to the task.
+9356391f	programs/solvers/9356391f.dl	Paint	keep	Keep both Paint and Skip.
+9356391f	programs/solvers/9356391f.dl	Skip	keep	Keep both Paint and Skip.
+05f2a901	programs/solvers/05f2a901.dl	Block	keep	The task is teaching that objects are solid, i.e. it demonstrates collision, so Block is the intended reading.
+05f2a901	programs/solvers/05f2a901.dl	Touch	drop	The witness shows Block is the clear correct answer; secondarily, Touch is never demonstrated.
+05f2a901	programs/solvers/05f2a901.dl	Extent	drop	Unrelated to objects being solid.
+20818e16	programs/solvers/20818e16.dl	Area	keep	The shipped rank; the witnesses argue against the peers, not against it.
+20818e16	.scratch/20818e16/20818e16-ranks.dl	Perimeter	drop	The witnesses introduce substantial ambiguity that requires new rules to handle. In this task the rectangles were expected to enclose each other and not poke out like this. If the witness requires substantially breaking away from what is expected in the scene, the case should be dropped.
+20818e16	.scratch/20818e16/20818e16-ranks.dl	Extent	drop	Same as Perimeter: the witness needed to separate it breaks away from what is expected in the scene.
+8ba14f53	programs/solvers/8ba14f53.dl	Shape	keep	Shape is the intended reading; that is what the task is about.
+8ba14f53	programs/solvers/8ba14f53.dl	Hue	drop	The first witness is in distribution, but Hue feels contradictory: the task is about the shape, not the color, being shared.
+8ba14f53	programs/solvers/8ba14f53.dl	Region	drop	The second witness feels out of distribution and introduces noise; even then it should not permit Region. That is not what the task is about.

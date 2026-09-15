@@ -1,16 +1,19 @@
 <!-- When editing this doc: cite a task by bare id to give a precedent, or by id
 with a gloss to state the task's facts; write the gloss without the task's
-internal vocabulary. -->
+internal vocabulary.
+
+Include an entry only when the pattern took substantial derivation or user
+direction to reach. If a session can rederive a pattern cheaply, omit it even
+when it looks reusable.
+
+An entry's first sentence is its index line, read under the entry's title: it
+stands alone, and criteria and guards start after it. -->
 
 # Patterns
 
-This document records patterns observed across `.dl` solvers. These patterns are distinct from the rules in `style.md`, which every solver follows.
+This document records patterns observed across `.dl` solvers.
 
 These patterns are not rules. The `.dl` files are the source of truth. The list exists so future sessions can scan what has been used.
-
-Include an entry only when the pattern took substantial derivation or user direction to reach. If a session can rederive a pattern cheaply, omit it even when it looks reusable.
-
-An entry's first sentence is its index line, read under the entry's title: it stands alone, and criteria and guards start after it.
 
 ## Multiple modeling forms via ADT `Choice`
 

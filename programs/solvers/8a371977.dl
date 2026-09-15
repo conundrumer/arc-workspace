@@ -4,7 +4,10 @@
 // input: Ink tiles sit on a background.
 // output: The tiles on the outer ring take one color and the tiles inside
 //  another; the background stays.
-// review principle: docs/wf-solver/open/peer-priors.md
+// review principle: Cases — the dropped reading of the ring as the tiles that
+//  lie beside a missing tile now stands unless Fit, Fidelity, or Equivalence
+//  removes it, so re-judge it as a fourth case beside Lattice, Blobs, and
+//  Sight.
 
 // what a tile is, and how the ring tiles are found
 .type Choice =

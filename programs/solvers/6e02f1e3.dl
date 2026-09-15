@@ -44,7 +44,7 @@
     .decl mark(c: Color) mark(5).
     .decl bg(c: Color) bg(0).
 
-    // --- Figure/$Fixed canvas ---
+    // --- Figure, $Fixed canvas ---
     .decl out_dim(n: number) out_dim(3).
     .decl out_pos(p: Position)
     out_pos(P) :- out_dim(N), helpers.frame_pos([N, N], P).

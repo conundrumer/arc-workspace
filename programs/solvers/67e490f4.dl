@@ -6,8 +6,10 @@
 // output: The stencil's box, each cutout filled with the commonest color among
 //  the pieces of that cutout's shape. A piece has a cutout's shape when some
 //  element of params.shape_sym carries the cutout onto it.
-// review principle: docs/wf-solver/open/peer-priors.md
-// review principle: docs/wf-solver/open/coverage-rules.md
+// review principle: Cases — the Into reading, on which a piece counts when an
+//  element of params.shape_sym carries the cutout into it rather than exactly
+//  onto it, was refused for parsing the task like the shipped congruence
+//  reading, so re-judge it as a case under Fit, Fidelity, and Equivalence.
 
 // what marks the stencil out among the objects
 .type Stencil =

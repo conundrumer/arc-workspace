@@ -8,7 +8,7 @@
   ],
   "repository": {
     "arc-row": {
-      "begin": "^\\s+\\[",
+      "begin": "^\\s+\\[(?=[0-9,]+\\])",
       "end": "\\]",
       "patterns": [
         { "match": "0", "name": "constant.numeric.arc.0" },

@@ -6,8 +6,10 @@
 //  the key.
 // output: Every params.mark cell on the canvas prints a copy of the key,
 //  which covers the mark; the rest of the input stands.
-// review principle: docs/wf-solver/open/unchanged-output.md
-// review principle: docs/wf-solver/open/correspondence-frame.md
+// review principle: Stored or derived — a peer that stores the tile extent
+//  instead of reading it from the key box is a second parameterization, and
+//  its return of the input at a key of another extent is a valid divergence,
+//  so re-judge it as a third case beside Center and Tile.
 
 // where a copy of the key lands over a mark
 .type Choice =

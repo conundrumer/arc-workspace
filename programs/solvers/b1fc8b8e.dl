@@ -37,7 +37,7 @@
 
     .decl ink(c: Color) ink(8).
 
-    // --- $Shape / $Partition ---
+    // --- $Shape, $Partition ---
     .decl unit(p: Position)
     GRID_MASK_2x2(unit,
         1, 1,
@@ -65,7 +65,7 @@
         8, 8, 0, 8, 8,
         8, 8, 0, 8, 8)
 
-    // --- $Arrange / $Corner ---
+    // --- $Arrange, $Corner ---
     .decl class_tile(id: Ident, p_intile: Position, col: Color)
     GRID_2x2(class_tile, 0,
         0, 8,

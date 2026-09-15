@@ -7,9 +7,11 @@ searches: an exact parameter is point-identified by its proposer, a narrowed
 parameter set-identified, and settling enumerates the rest under the budget.
 """
 
+import itertools
 import math
 import re
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from arc.task import load as load_task
@@ -25,18 +27,21 @@ from dl.domains import (
 from dl.facts import _parse_relations, _parse_value, example_facts
 from dl.lint import NUMERIC_LITERAL_RE, UNIT_MARKER, exempt_literal
 from dl.paths import PROPOSERS_SRC
-from dl.solve import solver_file
-from dl.souffle import _run_source
+from dl.solve import _profile, solver_file
+from dl.souffle import _pool_workers, _run_source
 from dl.source import (
     COMP_HEADER_RE,
     _comp_span,
     _param_facts,
+    _render_arg,
     _split_args,
     comp_decls,
     determined_params,
     expand_macros,
     public_param,
+    swap_fact,
 )
+from dl.sweep import param_domains, stored_rows
 
 
 def proposer_decls() -> dict[str, list[str]]:
@@ -255,6 +260,114 @@ def _combine_triples(source: str) -> set[tuple] | None:
     return triples
 
 
+type Survivors = tuple[int, int, dict[str, list[str]]]
+
+# A covering verdict and the size of the candidate set it leaves.
+COUNT_RE = re.compile(r"(?:narrowed|enumerable)\((\d+)\)")
+
+
+def covering_verdict(verdicts: dict[str, str]) -> tuple[str, str] | None:
+    """The verdict that covers the parameter's value, as (key, verdict): the
+    proposer that reads it exactly, or the smallest candidate set. None when
+    no verdict covers the value."""
+    best: tuple[int, str, str] | None = None
+    for key, verdict in verdicts.items():
+        if verdict == "exact":
+            rank = 0
+        elif m := COUNT_RE.fullmatch(verdict):
+            rank = int(m.group(1))
+        else:
+            continue
+        if best is None or rank < best[0]:
+            best = (rank, key, verdict)
+    return None if best is None else best[1:]
+
+
+def survivor_verdict(values: list[str]) -> str:
+    """The verdict a settling parameter's surviving values carry:
+    'pairs-exact' when the train pairs leave one value, 'pairs-ambiguous(n)'
+    when they leave n."""
+    return ("pairs-exact" if len(values) == 1
+            else f"pairs-ambiguous({len(values)})")
+
+
+def settle_survivors(
+    stem: str,
+    report: tuple[list[tuple[str, dict[str, str]]], list[str], set[str]],
+) -> Survivors | None:
+    """Enumerate the settling parameters jointly and keep the assignments
+    that reproduce every train pair, as a produce run does.
+
+    A parameter whose covering verdict is its own value domain carries a
+    candidate set the plan knows, so the enumeration ranges over those
+    parameters; a parameter a proposer narrows holds its stored value,
+    since the plan keeps the narrowed set's size rather than the set.
+
+    Returns (assignments, surviving, values): the assignments run, how many
+    of them reproduce every train pair, and each enumerated parameter's
+    surviving values, rendered. None when no parameter settles, when the
+    joint product is over JOINT_BUDGET, or when the stored values fail the
+    train pairs.
+    """
+    results, _embedded, determined = report
+    _determine, settle, _done, _exact = determination_plan(results, determined)
+    if not settle or math.prod(n for _, n in settle) > JOINT_BUDGET:
+        return None
+    verdicts_by_param = dict(results)
+    path, task_id = solver_file(stem)
+    source = expand_macros(path.read_text())
+    task = load_task(task_id)
+    defines = _lib_defines()
+    names = {v: k for k, v in defines.items()}
+    settling = {param for param, _ in settle}
+
+    enumerated: list[tuple[str, list[str], list[tuple]]] = []
+    for param, types in comp_decls(source, "Params").items():
+        public = public_param(param)
+        if public not in settling:
+            continue
+        covering = covering_verdict(verdicts_by_param.get(public, {}))
+        if covering is None or covering[0] not in ("domain", "position-domain"):
+            continue
+        stored = stored_rows(_param_facts(source, param), types, defines)
+        domains = param_domains(types, stored, task, defines)
+        candidates = sorted(set(itertools.product(*domains)) | set(stored))
+        enumerated.append((param, types, candidates))
+    if not enumerated:
+        return None
+
+    assignments = list(itertools.product(*(c for _, _, c in enumerated)))
+    if len(assignments) > JOINT_BUDGET:
+        return None
+    reference = _profile(source, task.train)
+    if reference is None:
+        return None
+
+    def test(assignment: tuple) -> bool:
+        mod = source
+        for (param, _types, _cands), vals in zip(enumerated, assignment):
+            mod = swap_fact(mod, param, vals)
+        return _profile(mod, task.train) == reference
+
+    with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
+        fits = list(executor.map(test, assignments))
+    surviving = [a for a, ok in zip(assignments, fits) if ok]
+
+    def show(vals: tuple, types: list[str]) -> str:
+        return "(" + ", ".join(
+            names.get(v, str(v)) if t in ENUM_TYPES else _render_arg(v)
+            for v, t in zip(vals, types)
+        ) + ")"
+
+    values = {
+        public_param(param): [
+            show(v, types) for v in sorted({a[i] for a in surviving})
+        ]
+        for i, (param, types, _cands) in enumerate(enumerated)
+    }
+    return len(assignments), len(surviving), values
+
+
 def determination_plan(
     results: list[tuple[str, dict[str, str]]],
     determined: set[str] = frozenset(),
@@ -285,7 +398,7 @@ def determination_plan(
         ns = [
             int(m.group(1))
             for v in vals
-            if (m := re.fullmatch(r"(?:narrowed|enumerable)\((\d+)\)", v))
+            if (m := COUNT_RE.fullmatch(v))
         ]
         if ns:
             settle.append((param, min(ns)))
@@ -304,8 +417,14 @@ def determination_plan(
 
 def render_determination_plan(
     report: tuple[list[tuple[str, dict[str, str]]], list[str], set[str]],
+    survivors: Survivors | None = None,
 ) -> list[str]:
+    """The plan's sections. `survivors` is the joint enumeration of the
+    settling parameters (see settle_survivors); it puts each enumerated
+    parameter's verdict on its covered line, under a line stating how many
+    assignments the train pairs admit."""
     results, embedded, determined = report
+    tried, survived, surviving = survivors or (0, 0, {})
     determine, settle, done, exact = determination_plan(results, determined)
     joint = math.prod(n for _, n in settle)
     over = joint > JOINT_BUDGET
@@ -324,28 +443,32 @@ def render_determination_plan(
     def covered_line(param: str) -> str:
         """The parameter with the verdict that covers its value: the
         proposer that reads it exactly, or the smallest candidate set."""
-        best: tuple[int, str] | None = None
-        for name, verdict in verdicts_by_param.get(param, {}).items():
-            if verdict == "exact":
-                rank = 0
-            elif m := re.fullmatch(r"(?:narrowed|enumerable)\((\d+)\)", verdict):
-                rank = int(m.group(1))
-            else:
-                continue
-            if best is None or rank < best[0]:
-                best = (rank, f"{name} {verdict}")
+        best = covering_verdict(verdicts_by_param.get(param, {}))
         if best is None:
             # A paired-table row carries the verdict of each of its parts.
             for row, verdicts in results:
                 if "+" in row and param in row.split("+"):
                     for name, verdict in verdicts.items():
                         if verdict == "exact":
-                            best = (0, f"{name} {verdict}")
-        return f"{param} ({best[1]})" if best else param
+                            best = (name, verdict)
+        if best is None:
+            return param
+        note = f"{best[0]} {best[1]}"
+        if param in surviving:
+            values = surviving[param]
+            note += f", {survivor_verdict(values)}: {', '.join(values)}"
+        return f"{param} ({note})"
 
-    if not determine and not over and not embedded:
+    open_valued = [param for param in sorted(surviving)
+                   if len(surviving[param]) > 1]
+    if not determine and not over and not embedded and not open_valued:
         lines.append("no actions")
     section("write a determination relation", determine)
+    section(
+        "the train pairs leave several values — record the surviving values "
+        "as the parameter's open values",
+        [f"{param} ({', '.join(surviving[param])})" for param in open_valued],
+    )
     if over:
         section(
             f"over the settle budget ({joint} > {JOINT_BUDGET}) — "
@@ -363,6 +486,11 @@ def render_determination_plan(
         "this task's examples — no determination relation needed",
         [covered_line(param) for param in covered],
     )
+    if surviving:
+        lines.append(
+            f"{survived} of {tried} joint assignments of the enumerated "
+            f"parameters reproduce every train pair"
+        )
     section("move data from rules to fact parameters", embedded)
 
     detail = [

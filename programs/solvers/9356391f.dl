@@ -6,7 +6,10 @@
 // output: The legend entry K cells from the params.read_dir edge gives the
 //  color of the square ring K cells out from the marker. The canvas holds
 //  those rings; the legend panel and the divider stay.
-// review principle: docs/wf-solver/open/different-parse.md
+// review principle: Cases — $Survive, which paints every ring and keeps the
+//  marker cell its input color, was refused for finding the same rings as
+//  $Paint, so re-judge it as a third case beside $Paint and $Skip under Fit,
+//  Fidelity, and Equivalence.
 
 // what a bg legend entry means
 .type Choice =

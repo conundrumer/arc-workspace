@@ -7,7 +7,9 @@
 //  params.axis primary, each shape starts on a new line, and the shapes come
 //  in order of their nearest cell to params.order_dir. Unfilled cells are
 //  params.bg.
-// review principle: docs/wf-solver/open/peer-priors.md
+// review principle: Cases — Shape, Hue, and Region ship as three groupings of
+//  the same cells, so re-judge whether all three stand now that Fit,
+//  Fidelity, and Equivalence are the only grounds for removing a case.
 
 // what a shape is
 .type Choice =

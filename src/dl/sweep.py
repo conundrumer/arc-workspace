@@ -69,6 +69,45 @@ def _run_candidates(test, candidates: list, budget: _Budget) -> tuple[list, int]
     return rows, len(rows)
 
 
+def stored_rows(
+    facts: list[list[str]], types: list[str], defines: dict[str, int]
+) -> list[tuple]:
+    """The parameter's stored facts as value tuples: a Position column as
+    its component tuple, an enum column as its define's value."""
+    rows = []
+    for args in facts:
+        vals = []
+        for a, t in zip(args, types):
+            if t in POSITION_TYPES:
+                vals.append(tuple(int(x) for x in _split_args(a[1:-1])))
+            elif a.lstrip("-").isdigit():
+                vals.append(int(a))
+            else:
+                vals.append(defines[a])
+        rows.append(tuple(vals))
+    return rows
+
+
+def param_domains(
+    types: list[str], stored: list[tuple], task, defines: dict[str, int]
+) -> list[list]:
+    """Each column's candidate domain, in column order. A Position column's
+    domain follows the frame its stored values imply."""
+    domains = []
+    for i, t in enumerate(types):
+        if t in ENUM_TYPES:
+            domains.append(_enum_domain(t, defines))
+        elif t == "Color":
+            domains.append(_color_domain(task))
+        elif t == "number":
+            domains.append(_number_domain(task))
+        else:
+            domains.append(
+                _position_domain(t, [s[i] for s in stored], _number_domain(task))
+            )
+    return domains
+
+
 def sweep_report(
     stem: str,
     max_candidates: int = MAX_CANDIDATES,
@@ -152,30 +191,8 @@ def sweep_report(
                 f"non-enumerable ({', '.join(types)})")))
             continue
 
-        stored = []
-        for args in facts:
-            vals = []
-            for a, t in zip(args, types):
-                if t in POSITION_TYPES:
-                    vals.append(tuple(int(x) for x in _split_args(a[1:-1])))
-                elif a.lstrip("-").isdigit():
-                    vals.append(int(a))
-                else:
-                    vals.append(defines[a])
-            stored.append(tuple(vals))
-
-        domains = []
-        for i, t in enumerate(types):
-            if t in ENUM_TYPES:
-                domains.append(_enum_domain(t, defines))
-            elif t == "Color":
-                domains.append(_color_domain(task))
-            elif t == "number":
-                domains.append(_number_domain(task))
-            else:
-                domains.append(
-                    _position_domain(t, [s[i] for s in stored], _number_domain(task))
-                )
+        stored = stored_rows(facts, types, defines)
+        domains = param_domains(types, stored, task, defines)
 
         # Stored values join the candidate set, so a stored value outside
         # the domain (a count above the dims, say) still reads as stored

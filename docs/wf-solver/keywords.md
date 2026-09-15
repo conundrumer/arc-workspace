@@ -21,9 +21,9 @@ The structure a hypothesis depends on: what the input is and how it decomposes.
 - `grow` — the output frame extends the input frame
 - `permutation` — elements reorder by a fixed permutation
 
-## Prior
+## Transformation
 
-The transformation hypothesis: which prior the task teaches.
+The transformation hypothesis: the concept the task teaches.
 
 - `lookup` — stored data supplies the output: its content, or where content is read or placed
 - `d4` — a D4 transform applies to content
@@ -49,7 +49,7 @@ The transformation hypothesis: which prior the task teaches.
 
 ## Shape
 
-A composition property of the task. It holds across the file's cases and is recorded for corpus-level analysis.
+A composition property of the task. It holds across the file's cases.
 
 - `latent-canvas` — the program constructs a canvas neither grid fully shows, and the output is determined by that canvas. A canvas is a frame of cells that holds the whole scene in one state.
 - `percept-shadow` — the pairs match content by a resemblance. No exact map realizes that resemblance, and the encoded hypothesis is a strictly weaker consequence of it. The tag applies if and only if all of these hold:

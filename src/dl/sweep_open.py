@@ -102,6 +102,18 @@ def open_params(text: str) -> list[OpenParam]:
             if (written := review_line(param, line)) is not None]
 
 
+# A sweep line states a settled value as `unique = ...` or, for a parameter
+# holding several facts, `unique as a set = ...`. A line that states no
+# value settles nothing: `not swept` is one.
+SETTLED = re.compile(r"^\w+: unique (?:as a set )?= ")
+
+
+def settled_params(text: str) -> list[ReportLine]:
+    """The parameters a sweep settles on one value."""
+    return [(param, line) for param, line in report_lines(text)
+            if SETTLED.match(line)]
+
+
 def marked_params(reviews: list[str]) -> set[str]:
     """The parameters a header's `review sweep:` values already name. A
     value opens with the parameter, then the em dash and the point."""

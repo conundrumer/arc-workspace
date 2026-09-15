@@ -3,18 +3,11 @@
 // keywords: count rank
 // input: Each non-background color's cells number a perfect square.
 // output: Each color's cells pack into a solid square, and the squares
-//  stand in a row from params.pack_dir, resting on the edge a quarter turn
-//  away, with params.gap background lines between them.
+//  stand in a row from params.pack_dir in ascending order of side, resting
+//  on the edge a quarter turn away, with params.gap background lines
+//  between them.
 
-// what orders the squares in the row
-.type Choice =
-    // ascending in side
-    BySide {}
-    // the reverse of the order the colors first appear in, read from
-    // params.corner along params.order_axis
-  | ByPlace {}
-
-.decl out(p: Position, col: Color, ch: Choice)
+.decl out(p: Position, col: Color)
 
 .comp Params {
     .decl bg(col: Color) bg(7).
@@ -27,20 +20,9 @@
 
     // The background lines between neighboring squares.
     .decl gap(n: number) gap(1).
-
-    // --- ByPlace ---
-    // The train pairs admit DIAG_TR as well; enumerating the four corners
-    // fixes this value.
-    .decl corner(d: DiagDir) corner(DIAG_TL).
-    // The train pairs admit AXIS_H as well; enumerating the two axes fixes
-    // this value.
-    .decl order_axis(a: Axis) order_axis(AXIS_V).
 }
 
 .init params = Params
-
-.decl impl_choice(ch: Choice)
-impl_choice($BySide()). impl_choice($ByPlace()).
 
 // --- the squares ---
 
@@ -68,47 +50,33 @@ square_cell(Col, P_inner) :- side(Col, K), square.cell(K, P_inner).
 
 // --- the row ---
 
-.init row = Order<Choice, Color>
-row.elem(Ch, Col) :- impl_choice(Ch), side(Col, _).
-
-// --- BySide ---
-row.before($BySide(), Col, Col2) :- side(Col, K), side(Col2, K2), K < K2.
-
-// --- ByPlace ---
-.init reading = LexOrder<Unit>
-reading.cell($U(), P_grid) :- ink.item(_, P_grid).
-reading.corner($U(), D) :- params.corner(D).
-reading.axis($U(), A) :- params.order_axis(A).
-
-// Where a color first appears.
-.init debut = Extremes<Color>
-debut.cand(Col, R) :- ink.item(Col, P_grid), reading.rank($U(), P_grid, R).
-
-row.before($ByPlace(), Col, Col2) :- debut.low(Col, R), debut.low(Col2, R2), R2 < R.
+.init row = Order<Unit, Color>
+row.elem($U(), Col) :- side(Col, _).
+row.before($U(), Col, Col2) :- side(Col, K), side(Col2, K2), K < K2.
 
 // --- the places ---
 
 // The row read from either edge of its axis: the square one place inward
 // of another.
-.decl inward(ch: Choice, d: Dir, col: Color, col2: Color)
-inward(Ch, D, Col, Col2) :- params.pack_dir(D), row.next(Ch, Col, Col2).
-inward(Ch, D2, Col2, Col) :- params.pack_dir(D), opposite(D, D2), row.next(Ch, Col, Col2).
+.decl inward(d: Dir, col: Color, col2: Color)
+inward(D, Col, Col2) :- params.pack_dir(D), row.next($U(), Col, Col2).
+inward(D2, Col2, Col) :- params.pack_dir(D), opposite(D, D2), row.next($U(), Col, Col2).
 
 // A square's box measured from an edge of the row's axis. The square at
 // that edge takes the whole frame; each square further in insets the box of
 // the square outward of it by that square's side and one gap.
-.decl edge_box(ch: Choice, d: Dir, col: Color, b: Box)
-edge_box(Ch, D, Col, ZERO) :- params.pack_dir(D), row.first(Ch, Col).
-edge_box(Ch, D2, Col, ZERO) :- params.pack_dir(D), opposite(D, D2), row.last(Ch, Col).
-edge_box(Ch, D, Col2, B2) :-
-    edge_box(Ch, D, Col, B), inward(Ch, D, Col, Col2),                 // the box so far
+.decl edge_box(d: Dir, col: Color, b: Box)
+edge_box(D, Col, ZERO) :- params.pack_dir(D), row.first($U(), Col).
+edge_box(D2, Col, ZERO) :- params.pack_dir(D), opposite(D, D2), row.last($U(), Col).
+edge_box(D, Col2, B2) :-
+    edge_box(D, Col, B), inward(D, Col, Col2),                         // the box so far
     side(Col, K), edge_inset(D, K, B_side), compose(B, B_side, B1),    // past the outward square
     params.gap(G), edge_inset(D, G, B_gap), compose(B1, B_gap, B2).    // and the gap
 
 // The square's place in the row: its box at both edges of the row's axis.
-.decl row_box(ch: Choice, col: Color, b: Box)
-row_box(Ch, Col, B) :-
-    opposite(D, D2), edge_box(Ch, D, Col, B1), edge_box(Ch, D2, Col, B2),
+.decl row_box(col: Color, b: Box)
+row_box(Col, B) :-
+    opposite(D, D2), edge_box(D, Col, B1), edge_box(D2, Col, B2),
     compose(B1, B2, B).
 
 // The output's lines across the row: those of the tallest square, counted
@@ -117,21 +85,21 @@ row_box(Ch, Col, B) :-
 rows.dir(D) :- params.rest_dir(D).
 rows.dist_set($U(), J) :- square_cell(_, P_inner), params.rest_dir(D), dist(P_inner, D, J).
 
-.decl paint(ch: Choice, p: Position, col: Color)
-paint(Ch, P_grid, Col) :-
+.decl paint(p: Position, col: Color)
+paint(P_grid, Col) :-
     square_cell(Col, P_inner),
     params.rest_dir(D_rest), dist(P_inner, D_rest, J), rows.pos($U(), J, P_line),  // its line across the row
     params.pack_dir(D), axis_of(D, A), split(P_inner, A, P_along, _),              // its place along the square
-    row_box(Ch, Col, B), compose(B, P_along, P_place),                             // that place in the row
+    row_box(Col, B), compose(B, P_along, P_place),                                 // that place in the row
     compose(P_line, P_place, P_grid).
 
-.init canvas = Frame2D<Choice>
-canvas.extent(Ch, A, N) :- paint(Ch, P_grid, _), axis_elem(A), axis_dim(P_grid, A, N).
+.init canvas = Frame2D<Unit>
+canvas.extent($U(), A, N) :- paint(P_grid, _), axis_elem(A), axis_dim(P_grid, A, N).
 
-out(P_grid, Col, Ch) :-
-    canvas.cell(Ch, P_grid),
-    ( paint(Ch, P_grid, Col)                    // a square's cell
-    ; !paint(Ch, P_grid, _), params.bg(Col)     // the rest
+out(P_grid, Col) :-
+    canvas.cell($U(), P_grid),
+    ( paint(P_grid, Col)                    // a square's cell
+    ; !paint(P_grid, _), params.bg(Col)     // the rest
     ).
 
 .comp Determine {

@@ -7,8 +7,8 @@
 
 Qualify a new primitive for the lib, `programs/lib.dl` and the modules under `programs/lib/`, by real use in the corpus and by generality.
 
-- **Trigger.** When an encoding in the solver needs a form banned in the program, or when a grep for its shape over `programs/solvers/` finds it in four or more other solvers, apply this protocol to that encoding. The grep counts every file under `programs/solvers/`, draft solvers included; the count is no claim about the corpus. A repeated form that needs no banned form, and that the grep finds in fewer than four other solvers, goes in the review as a primitive to promote, naming the sites, and gets no entry.
-- **Generality.** An operation is general when it names one prior-level operation and takes its domain as an input, fixing no configuration beyond the frame.
+- **Trigger.** When an encoding in the solver needs a form banned in the program, or when a grep for its shape over `programs/solvers/` finds it in four or more other solvers, apply this protocol to that encoding. The grep counts every file under `programs/solvers/`, drafts included. A repeated form that needs no banned form, and that the grep finds in fewer than four other solvers, goes in the review as a primitive to promote, naming the sites, and gets no entry.
+- **Generality.** An operation is general when it names one operation at the level of a concept, and takes its domain as an input, fixing no configuration beyond the frame.
     - An operation should be as abstract as possible. It only involves geometric types if there is no way to abstract away the geometry. It never involves the Color type.
 
 ## The entry
@@ -24,7 +24,7 @@ Give a candidate an entry, `docs/wf-solver/proposals/<name>.md`, named for the o
 - a `Match:` line with a search signature that covers every statement of the operation, including statements whose atoms sit in different lines or rules, and statements that reach the operation through another primitive. State the shape in prose and match it with the parser (`tests/test_ast_match.py`)
     - restate a `Match:` line that does not meet this spec, so the next survey reads it
         - a signature that names an identifier or a solver header field that `former-names.md` retires does not meet this spec, and its restatement uses the current name
-- a `Survey:` line per survey, its time to the minute, each followed by its own result. The line names the scope the survey covered, in one of two forms: `Survey: <date time> — every solver.` or `Survey: <date time> — the solvers since <the entry's previous survey time>.` A survey's scope includes draft solvers.
+- a `Survey:` line per survey, its time to the minute, each followed by its own result. The line names the scope the survey covered, in one of two forms: `Survey: <date time> — every solver.` or `Survey: <date time> — the solvers since <the entry's previous survey time>.` A survey's scope includes drafts.
     - the result that is relevant to the operation: the near-misses, the spec question, and a `Callers` list of the solvers that would call it
         - a citation is the stem and the relation name
     - a result stands under a `Survey:` line, and the survey command writes the line and the result together. Text with no `Survey:` line above it counts as no result

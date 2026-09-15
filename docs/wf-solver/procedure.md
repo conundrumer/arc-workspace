@@ -19,7 +19,7 @@ The operations and passes of a solver session.
 - **Outside the pass.** Fix a problem in a file the pass does not edit when the docs say how and the fix raises no new issue. Otherwise put it in the review with the file, the line, and the fix it needs.
 - **Roles.** Spawn a role as the agent the first line of `.claude/roles/<role>.md` names, `handbook` by default. The prompt is that file's text, followed by the brief.
 - **Source reading.** Do not read `src/dl/` during a pass. If you do, report to the user why, as a gap in the docs or the runner.
-- **Corpus.** The corpus is the approved solvers. Take a draft as no evidence for a claim about the corpus, and cite one in a doc under `docs/` only in a survey result.
+- **Corpus.** Take a draft as no evidence for a claim about the corpus, and cite one in a doc under `docs/` only in a survey result.
 - **Keywords.**
     - If no keyword in `keywords.md` fits, propose one in the review, and add it to the solver's `keywords:` line.
     - If an existing keyword's gloss should change, propose it in the review.
@@ -37,7 +37,7 @@ The operations and passes of a solver session.
 3. Run it (`uv run python scripts/run_dl.py <task_id>`).
 4. Iterate until it works and passes lint.
     - When a hint appears, judge it, and put that judgment in the review.
-    - Flag performance issues in the review. If they prevent the principled form, make a temporary workaround under a `// @workaround:` line.
+    - Flag performance issues in the review. If they prevent the principled form, make a temporary workaround, marked with the `@workaround` directive.
 5. Run the audit (`uv run python scripts/run_dl.py audit <task_id>`) and resolve the findings.
 
 ### Determine
@@ -87,12 +87,15 @@ Ask these questions:
     - **Implementations.** Do not propose another implementation of a model, and do not list one in the review.
 - When the plan listed actions, could changing the parameterization produce a simpler or more principled model?
 
+**Concept and deviation.** Write the concept statement on the header's `concept:` line, and each non-intended branch's three estimates on its `@deviation` line, as style.md states them.
+
 **Divergence witness.** For each Choice case pair, and for each peer model considered and dropped, show where the models diverge, as a concrete witness: an input fragment and each model's output on it.
 
 - Take that witness from `uv run python scripts/run_dl.py grid <task_id>`, which runs the solver on a grid the session writes, of any size and any content.
 - Choose a witness that shows a valid divergence.
 - When the divergence requires a parameter to be reassigned, reassign that parameter.
 - For data-indistinguishable pairs, state what the shared data hides.
+- Write each witness to `programs/witnesses/<task_id>.wit.json`, whose shape style.md states. `uv run python scripts/run_dl.py witness <task_id>` checks the file, and the audit runs that check.
 
 **Ruled-out models.** Do not include a model that the data rules out, not even as a note on why it is absent.
 

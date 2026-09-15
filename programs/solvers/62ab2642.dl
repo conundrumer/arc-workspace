@@ -5,7 +5,9 @@
 // output: The region holding the most cells and the region holding the
 //  fewest each take their own color, and the rest of the grid passes
 //  through.
-// review principle: docs/wf-solver/open/peer-priors.md
+// review principle: Cases — Orth and Diag ship as two joins of the blank
+//  cells, so re-judge whether both stand now that Fit, Fidelity, and
+//  Equivalence are the only grounds for removing a case.
 
 // what joins two blank cells into one region
 .type Choice =

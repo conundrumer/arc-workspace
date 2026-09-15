@@ -5,8 +5,11 @@
 // output: solid rows in a stored frame: each line takes the row whose distance
 //  from params.stack_dir is the count of lines farther from params.order_dir
 //  than it, and the rows no line takes are background.
-// review principle: docs/wf-solver/open/coverage-rules.md
-// review principle: docs/wf-solver/open/underdetermined-scope.md
+// review principle: Cases — the lex-order peer, which breaks a tie in the
+//  lines' distance to params.order_dir with a stored secondary key where the
+//  shipped rank conflicts, was dropped as unexercised and as an unwitnessed
+//  choice, so re-judge it as a second case under Fit, Fidelity, and
+//  Equivalence.
 
 .decl out(p: Position, col: Color)
 

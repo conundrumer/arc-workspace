@@ -829,6 +829,38 @@ class RuleInfo:
 SECTION_RE = re.compile(r"//\s*---\s*(.+?)\s*---")
 
 
+def marker_names(name: str) -> list[str]:
+    """The names a section marker holds, one per case it marks.
+
+    A marker names its cases between commas. A comma inside parentheses
+    belongs to a constructor application, so the split leaves it alone.
+    Trailing prose after a colon is not a name and drops out.
+    """
+    head = name.split(":", 1)[0]
+    out: list[str] = []
+    depth = 0
+    cur = ""
+    for ch in head:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth = max(0, depth - 1)
+        if ch == "," and depth == 0:
+            out.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    out.append(cur)
+    return [s.strip() for s in out if s.strip()]
+
+
+def marker_cases(name: str) -> list[str]:
+    """The cases a section marker marks: each name it holds, with the
+    fields a constructor application fixes dropped. `Derive(g=Iso)` marks
+    the `Derive` case."""
+    return [s.split("(", 1)[0].strip() for s in marker_names(name)]
+
+
 class Index:
     """Symbols and references of one parsed program.
 
@@ -931,6 +963,26 @@ class Index:
             if name in self.decls.get(s, {}):
                 return (s, name)
         return (EXTERN, f"{qual}.{name}")
+
+    def instance_of(self, scope: str, qual: str | None) -> tuple[str, str] | None:
+        """The lib instance an atom's qualifier lands on, as (instance,
+        comp). A hop naming a comp the file declares is followed into that
+        comp; the first hop naming a comp it does not declare is a lib
+        instance, and the relations of such an instance are opaque. None
+        when the qualifier is absent or names no instance at all.
+        """
+        for hop in (qual or "").split("."):
+            init = next(
+                (i for s in (*self.chain(scope), TOP)
+                 if (i := self.inits.get(s, {}).get(hop))),
+                None,
+            )
+            if init is None:
+                return None
+            if init.comp not in self.decls:
+                return (hop, init.comp)
+            scope = init.comp
+        return None
 
     def _index_rule(self, idx: int, info: RuleInfo) -> None:
         def add(atom: Atom, role: str) -> None:

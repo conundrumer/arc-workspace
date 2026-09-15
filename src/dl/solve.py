@@ -38,6 +38,17 @@ def solver_file(arg: str) -> tuple[Path, str]:
     return path, task_id_of(path.name)
 
 
+def run_dl_source(
+    source: str, input_rows: list[list[int]], solver_path: Path | None = None
+) -> list[Candidate]:
+    """Run one grid through a solver source. `solver_path` is the file that
+    source came from, which a CPU-limit failure reports against."""
+    return parse_output(
+        _run_source(build_source(source), grid_to_facts(input_rows),
+                    solver_path=solver_path)
+    )
+
+
 def run_dl(
     task_id: str, input_rows: list[list[int]], stem: str | None = None
 ) -> list[Candidate]:
@@ -45,10 +56,7 @@ def run_dl(
     if not dl_path.exists():
         raise FileNotFoundError(f"no .dl solver at {dl_path}")
 
-    return parse_output(
-        _run_source(build_source(dl_path.read_text()), grid_to_facts(input_rows),
-                    solver_path=dl_path)
-    )
+    return run_dl_source(dl_path.read_text(), input_rows, solver_path=dl_path)
 
 
 def compile_error(stem: str) -> str | None:

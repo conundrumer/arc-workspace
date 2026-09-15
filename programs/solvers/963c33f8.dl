@@ -9,7 +9,10 @@
 //  that would carry a cell of it off the frame, or drive a params.stop cell
 //  into a debris cell. The line's other cells pass through debris. A line at
 //  rest is drawn over the scene.
-// review principle: docs/wf-solver/open/peer-priors.md
+// review principle: Cases — $Nose and $Whole, two further readings of a
+//  line's travel withheld beside the shipped $Cell reading for claiming the
+//  same move concept, now stand unless Fit, Fidelity, or Equivalence removes
+//  them, so re-judge each as a case.
 
 .decl out(p: Position, col: Color)
 

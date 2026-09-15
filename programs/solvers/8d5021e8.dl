@@ -19,7 +19,7 @@
 .comp Params {
     .init helpers = ParamsHelpers
 
-    // --- Mirror / Unfold ---
+    // --- Mirror, Unfold ---
     .decl arr_dim(a: Axis, n: number)
     arr_dim(AXIS_V, 3). arr_dim(AXIS_H, 2).
     .decl arr_pos(p: Position)
@@ -44,7 +44,7 @@ out(P_grid, Col, $Lookup()) :-
     params.tile_d4(P_tile, D), apply(D, P_in, P_intile),      // d4 image at tile
     concat_2d(P_tile, P_intile, 0, P_grid).                   // recompose
 
-// --- Mirror / Unfold ---
+// --- Mirror, Unfold ---
 .decl anchor_tile(p: Position)
 anchor_tile(T) :-
     params.arr_pos(T), params.anchor(D), dist(T, D, 0),  // on the anchor edge

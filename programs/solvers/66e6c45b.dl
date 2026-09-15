@@ -54,7 +54,7 @@ target(P_corner, Col, $Quad()) :-
     shape(P, Col), gdp.quadrant($U(), P, Diag),
     gdp.diag_cell($U(), P_corner, Diag, 0).    // grid corner at that diagonal
 
-// --- Stretch / Explode: the shape's own corner cells ---
+// --- Stretch, Explode: the shape's own corner cells ---
 
 .init bb = Bbox<Unit>
 bb.cell($U(), P) :- shape(P, _).

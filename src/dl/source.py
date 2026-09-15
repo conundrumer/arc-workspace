@@ -4,7 +4,7 @@ runs."""
 import bisect
 import re
 
-from dl.dlparse import SECTION_RE, Comp, Decl, ParseError, Rigid, parse
+from dl.dlparse import SECTION_RE, Comp, Decl, Index, ParseError, Rigid, parse
 from dl.paths import REPO_ROOT
 
 # Per-mode IO directives, appended to the built source.
@@ -384,6 +384,26 @@ def rigid_param_decls(source: str, params: dict[str, list[str]]) -> dict[str, li
     return declared
 
 
+def _derived_params(source: str) -> set[str]:
+    """Params relations a rule inside Params derives.
+
+    A rule's head names derived data, which carries no determination
+    relation. A RIGID placed relation is derived by the generated closure
+    rule, so it is left out here: it mirrors as a parameter.
+    """
+    try:
+        program = parse(source)
+    except ParseError:
+        return set()
+    index = Index(program)
+    placed = set(rigid_param_decls(source, comp_decls(source, "Params")))
+    return {
+        info.rule.head.name
+        for info in index.rules
+        if info.scope == "Params" and info.rule.body is not None
+    } - placed
+
+
 def determined_params(source: str) -> dict[str, list[str]] | None:
     """Determined parameters (name -> Params arg types): Determine decls
     that mirror a Params decl. None when no Determine comp. A RIGID chart
@@ -394,13 +414,21 @@ def determined_params(source: str) -> dict[str, list[str]] | None:
 
     Mirroring is by name, so a Determine helper must not take a parameter's
     name: a name match with a different schema raises rather than
-    misclassify."""
+    misclassify. A name match on data a Params rule derives raises too —
+    derived data carries no determination relation."""
     determine = comp_decls(source, "Determine")
     if not determine:
         return None
     params = comp_decls(source, "Params")
     params |= rigid_param_decls(source, params)
+    derived = _derived_params(source)
     for name in determine:
+        if name in derived:
+            raise ValueError(
+                f"determination relation '{name}' matches derived Params "
+                f"data, which carries no determination relation; rename the "
+                f"helper or store {name} as a parameter"
+            )
         if name in params and determine[name] != params[name]:
             raise ValueError(
                 f"determination relation '{name}' matches a Params parameter "

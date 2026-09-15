@@ -28,7 +28,7 @@
         D4_LR, D4_LR, D4_LR,
         D4_ID, D4_ID, D4_ID)
 
-    // --- Alt / Mid ---
+    // --- Alt, Mid ---
     .decl arr_dim(k: number) arr_dim(3).
     .decl arr_pos(p: Position)
     arr_pos(P) :- arr_dim(K), helpers.frame_pos([K, K], P).

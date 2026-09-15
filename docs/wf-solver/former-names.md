@@ -1,68 +1,29 @@
 # Former names
 
-On 2026-09-08, the solver vocabulary moved to conventional terms, in the docs, the tooling, lib.dl, and every solver at once. The Definitions section of principles.md defines the current terms.
+The solver vocabulary changed. A report, a proposal entry, or a review line written earlier can still carry an old name, and each row here gives the current name for one that a reader would otherwise take for something else or fail to find.
 
 ## Terms
 
+Every former term below is also a word of the current vocabulary, with another referent.
+
 | Former | Current |
 | --- | --- |
-| body | program (of a solver) |
-| body code, body style, body form | program style |
-| Consts | parameters |
-| slot | parameter |
-| Consts shape | parameterization |
-| fill (of a slot) | value (of a parameter) |
-| fill (of a Consts shape) | assignment |
-| refill | reassign |
-| refillable | determinable |
-| Fit | determination |
-| Fit relation | determination relation |
-| fitted slot | determined parameter |
-| fit pass | determination pass |
-| rival model | peer model |
-| setup variant | reparameterization (of a setup) |
-| settled form | precedent |
-| decision point | choice point |
-| answer (of a choice point) | branch |
-| claim | hypothesis |
+| body | program |
+| fill (of a parameter) | value |
+| fill (of the parameterization) | assignment |
+| Fit, fit pass, fit-plan | determination, determination pass, `determination-plan` |
 | reading | parse |
-| data-leaning, ops-leaning | table, rule |
-| data case, data peer | stored case, table peer |
-
-NB: reparameterization has been dropped; Same model decides whether an encoding is a peer
-
-## Code and commands
-
-| Former | Current |
-| --- | --- |
-| `.comp Consts` | `.comp Params` |
-| `.init c = Consts`, `c.<rel>` | `.init params = Params`, `params.<rel>` |
-| `ConstsHelpers` | `ParamsHelpers` |
-| `.comp Fit` | `.comp Determine` |
-| `// --- fit ---` | `// --- determination ---` |
-| `fit_diff` | `_determination_diff` |
-| `fit`, the pass keyword | `determine` |
-| `fit-plan` | `determination-plan` |
-| fit mode, the runner's | determination mode |
-| fill sweep, in `sweep` and `audit` | parameter value sweep |
-| `pinned`, the determination plan's verdict | `exact` |
-
-## Headings in principles.md
-
-| Former | Current |
-| --- | --- |
-| ARC values | ARC types |
-| Derived vs stored | Stored or derived |
-| Data vs ops | Table or rule |
-| Concept vs setup | Prior or setup |
-
-## Box
-
-On 2026-09-11, the spatial record took its algebra's names, in lib.dl, the tooling, the docs, and every solver at once.
-
-| Former | Current |
-| --- | --- |
+| prior | concept |
 | `Position`, the record | `Box`; `Position` is its cell reading |
+
+Fit now names the case test that principles.md states under Cases. A reading now names how a Box column is read.
+
+## Identifiers
+
+These names stand in proposal entries and in reports.
+
+| Former | Current |
+| --- | --- |
 | `Shift` | `Offset` |
 | `Inset` | `Box` |
 | `ORIGIN` | `ZERO` |
@@ -75,19 +36,9 @@ On 2026-09-11, the spatial record took its algebra's names, in lib.dl, the tooli
 | `ShiftInvariance` | `OffsetInvariance` |
 | `DividerFrame` | `DividerTiles` |
 | `BoxCells`, `BoxFrame`, `MarginFrame`, `Reframe` | retired into `crop`, `box_edge`, `interior`, `relative`, and the constructors |
-
-## Docs
-
-| Former | Current |
-| --- | --- |
-| `cadence.md` | `procedure.md` |
 | `concepts.md` | `keywords.md` |
-| `shapes.md` | the Shape section of `keywords.md` |
-
-## Solver header
-
-On 2026-09-13, the solver header took the field grammar style.md states.
-
-| Former | Current |
-| --- | --- |
 | `// family:` | `// representative:` |
+
+## Principles headings
+
+A citation of a heading of principles.md, written before that doc was rewritten, can name a heading the doc no longer has. Such a heading was renamed or removed.

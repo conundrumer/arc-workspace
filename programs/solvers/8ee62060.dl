@@ -1,37 +1,36 @@
 // 8ee62060
 // keywords: decompose d4
-// input: The grid divides into params.block_size blocks.
-// output: Each block keeps its contents; the d4 transform applies to the
-//  block-grid coordinates. The blocks sit on a diagonal of the block-grid, so
-//  every d4 element that moves that diagonal produces the same output; the
-//  task fixes none. One $Blocks candidate per element in params.block_d4.
+// input: the grid divides into params.block_size blocks, and the blocks that
+//  hold content sit on one diagonal of the block-grid.
+// output: each block keeps its contents, and a D4 element moves it in the
+//  block-grid. That element carries either diagonal of the block-grid onto the
+//  other. The pairs fix none of the four elements that do so, so Params holds
+//  every one, the program runs them all, and the output is defined where they
+//  agree.
 
-// which d4 element the blocks sit on
-.type Choice =
-    // the d4 transform applied to the block-grid coordinates
-    Blocks {d: D4}
-
-.decl out(p: Position, col: Color, c: Choice)
+.decl out(p: Position, col: Color)
 
 .comp Params {
-    .decl block_d4(d: D4)
-    block_d4(D4_TB).
-    block_d4(D4_LR).
-    block_d4(D4_CW).
-    block_d4(D4_CC).
-
     .decl block_size(k: number)
     block_size(2).
+
+    // the elements that swap the two diagonals of the block-grid; the pairs
+    // fix none
+    .decl block_d4(d: D4)
+    block_d4(D4_LR).
+    block_d4(D4_TB).
+    block_d4(D4_CW).
+    block_d4(D4_CC).
 }
 
 .init params = Params
 
-out(P_out, Col, $Blocks(D)) :-
-    in(P_in, Col),                                                // input cell
-    params.block_d4(D), params.block_size(K),                     // params
-    divide_by_size_2d(P_in, K, 0, P_block_in, P_local),           // forward decompose
-    apply(D, P_block_in, P_block_out),                            // d4 on block-grid
-    concat_2d(P_block_out, P_local, 0, P_out).                    // recompose
+out(P_out, Col) :-
+    in(P_in, Col),                                          // input cell
+    params.block_size(K),
+    divide_by_size_2d(P_in, K, 0, P_block_in, P_local),     // its block, and its cell in that block
+    params.block_d4(D), apply(D, P_block_in, P_block_out),  // the block moves
+    concat_2d(P_block_out, P_local, 0, P_out).              // back to grid coordinates
 
 .comp Determine {
     .type BlockK = [e: Example, p_local: Position]

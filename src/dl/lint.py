@@ -13,7 +13,8 @@ from functools import lru_cache
 from dl.context import DOCS_DIR, lib_sources
 from dl.dlparse import (
     SECTION_RE, Agg, Atom, Cmp, Comp, Decl, Define, Disj, Functor, Include,
-    Init, Item, Lit, Neg, ParseError, Program, Rigid, Rule, TypeDecl, parse,
+    Init, Item, Lit, Neg, ParseError, Program, Rigid, Rule, TypeDecl,
+    marker_names, parse,
 )
 from dl.solve import solver_file
 from dl.source import KEYWORDS_DOC, doc_keywords, header_keywords
@@ -144,17 +145,28 @@ HEADER_CAT = "header"
 # A header keyword the doc does not list. A session adds the keyword it needs
 # and proposes it in its review, so this is a hint, not a finding.
 KEYWORD_CAT = "keyword"
-HEADER_FIELDS = ("representative", "keywords", "input", "output", "review")
-HEADER_RANK = {"representative": 1, "keywords": 1, "input": 2, "output": 3,
-               "review": 4}
+HEADER_FIELDS = ("representative", "keywords", "concept", "input", "output",
+                 "review")
+HEADER_RANK = {"representative": 1, "keywords": 1, "concept": 2, "input": 3,
+               "output": 4, "review": 5}
 FIELD_RE = re.compile(r"^//\s*(\w+)(?:\s+(\w+))?:(?:\s|$)")
 CONTINUATION_RE = re.compile(r"^//  \S")
 DRAFT_LINE = "// draft"
+# Cases that share facts or rules stand under one marker, and that marker
+# joins their names with a comma. The names run to the first colon, after
+# which the marker may carry a gloss.
+CASE_MARKER_CAT = "case marker"
+
 # A gloss stands above every ADT that `Choice` is or holds as a field type,
 # and above each of its constructors, one constructor per line.
 GLOSS_CAT = "gloss"
 FIELD_TYPE_RE = re.compile(r":\s*(\w+)")
 BRANCH_LINE_RE = r"^\s*(?:\|\s*)?{name}\s*\{{"
+# The intended branch stands first in its type and carries no deviation
+# line; every other branch carries one under its gloss.
+DEVIATION_CAT = "deviation"
+DEVIATION_RE = re.compile(r"^//\s*@deviation:\s*-\d+\s+\+\d+\s+~\d+\s*$")
+DEVIATION_FORM = "`// @deviation: -<relaxed> +<added> ~<contradicted>`"
 # The build adds the lib include; a solver holds none.
 INCLUDE_CAT = "include"
 # RIGID chart names exist only in the macro expansion; any appearance in
@@ -623,6 +635,27 @@ def _family_case(raw_lines: list[str]) -> list[tuple[str, int, str, str]]:
     return findings
 
 
+def _case_marker(raw_lines: list[str]) -> list[tuple[str, int, str, str]]:
+    """A section marker whose case names are joined by `/`.
+
+    A name may apply a constructor to the fields it fixes, so the names
+    are read outside the parentheses.
+    """
+    findings: list[tuple[str, int, str, str]] = []
+    for lineno, raw in enumerate(raw_lines, 1):
+        m = SECTION_RE.match(raw.strip())
+        if m is None:
+            continue
+        if any("/" in name for name in marker_names(m.group(1))):
+            findings.append((
+                CASE_MARKER_CAT, lineno,
+                "a marker over several cases joins their names with a comma: "
+                "`// --- Box, Erode ---`",
+                raw.rstrip(),
+            ))
+    return findings
+
+
 @lru_cache(maxsize=1)
 def _known_keywords() -> frozenset[str]:
     """Every keyword keywords.md lists, read once per process. Empty when
@@ -677,7 +710,7 @@ def _header(raw_lines: list[str]) -> list[tuple[str, int, str, str]]:
                 flag(lineno, f"`{word}:` stands once")
             elif "representative" in seen or (word == "representative" and seen):
                 flag(lineno, "a sibling carries `representative:` in place of "
-                     "`keywords:`, `input:`, and `output:`")
+                     "`keywords:`, `concept:`, `input:`, and `output:`")
             if rank < last:
                 flag(lineno, "header fields go in the order "
                      + ", ".join(HEADER_FIELDS))
@@ -702,6 +735,20 @@ def _header(raw_lines: list[str]) -> list[tuple[str, int, str, str]]:
     return findings
 
 
+def _comments_above(raw_lines: list[str], lineno: int) -> list[str]:
+    """The consecutive comment lines directly above `lineno`, nearest first,
+    stopping at a section marker."""
+    out: list[str] = []
+    n = lineno - 1
+    while n >= 1:
+        line = raw_lines[n - 1].strip()
+        if not line.startswith("//") or SECTION_RE.match(line):
+            break
+        out.append(line)
+        n -= 1
+    return out
+
+
 def _gloss_above(raw_lines: list[str], lineno: int) -> bool:
     """A gloss comment stands on the line above `lineno`."""
     if lineno < 2:
@@ -713,17 +760,18 @@ def _gloss_above(raw_lines: list[str], lineno: int) -> bool:
 def _glosses(
     items: list[Item], raw_lines: list[str],
 ) -> list[tuple[str, int, str, str]]:
-    """The ADTs of `Choice` — the type itself, or the field types of a
-    record — that lack a gloss above the type or above a constructor."""
+    """The ADTs of `Choice` — the type itself when it has branches, and the
+    ADTs named as field types in its records — that lack a gloss above the
+    type or above a constructor."""
     types = {it.name: it for it in items if isinstance(it, TypeDecl)}
     choice = types.get("Choice")
     if choice is None:
         return []
-    if choice.branches:
-        targets = [choice]
-    else:
-        targets = [types[n] for n in FIELD_TYPE_RE.findall(choice.rhs)
-                   if n in types and types[n].branches]
+    targets = [choice] if choice.branches else []
+    for n in FIELD_TYPE_RE.findall(choice.rhs):
+        td = types.get(n)
+        if td is not None and td.branches and td not in targets:
+            targets.append(td)
     findings: list[tuple[str, int, str, str]] = []
     for td in targets:
         if not _gloss_above(raw_lines, td.line):
@@ -743,6 +791,16 @@ def _glosses(
             used.add(at)
             if not _gloss_above(raw_lines, at):
                 findings.append((GLOSS_CAT, at, f"a gloss stands above `{name}`",
+                                 raw_lines[at - 1].rstrip()))
+            deviation = any(DEVIATION_RE.match(c) for c in _comments_above(raw_lines, at))
+            if name == td.branches[0] and deviation:
+                findings.append((DEVIATION_CAT, at,
+                                 f"`{name}` stands first, so it is the intended branch "
+                                 "and carries no `@deviation` line",
+                                 raw_lines[at - 1].rstrip()))
+            elif name != td.branches[0] and not deviation:
+                findings.append((DEVIATION_CAT, at,
+                                 f"`{name}` carries {DEVIATION_FORM} under its gloss",
                                  raw_lines[at - 1].rstrip()))
     return findings
 
@@ -845,6 +903,7 @@ def lint_program(source: str) -> list[tuple[str, int, str, str]]:
     raw_lines = src.splitlines()
     findings: list[tuple[str, int, str, str]] = _reserved_names(raw_lines)
     findings.extend(_family_case(raw_lines))
+    findings.extend(_case_marker(raw_lines))
     findings.extend(_header(raw_lines))
 
     try:

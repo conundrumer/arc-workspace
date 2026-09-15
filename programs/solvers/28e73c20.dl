@@ -6,7 +6,9 @@
 //  there, then turns in the spiral's sense. The box starts on the frame edge
 //  and insets by the pitch once per cycle. The walk halts where the box has
 //  closed past it.
-// review principle: docs/wf-solver/open/peer-priors.md
+// review principle: Cases — the nested-rings reading of the figure, dropped
+//  for claiming the same stopping rule as the shipped spiral walk, now stands
+//  unless Fit, Fidelity, or Equivalence removes it, so re-judge it as a case.
 
 // how an off-spiral cell is filled — every input is blank, so this is
 // underdetermined

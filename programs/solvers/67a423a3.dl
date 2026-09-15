@@ -4,7 +4,10 @@
 // input: Two lines cross, one per axis.
 // output: The eight cells around the crossing take params.ring; every other
 //  cell keeps its color.
-// review principle: docs/wf-solver/open/peer-priors.md
+// review principle: Cases — the dropped reading of a line as one color's
+//  cells in a row or column with no background guard now stands beside Span
+//  and Color unless Fit, Fidelity, or Equivalence removes it, so re-judge it
+//  as a third case.
 
 // what a line is
 .type Choice =

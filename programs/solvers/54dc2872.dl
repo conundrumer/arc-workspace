@@ -5,8 +5,9 @@
 //  one cell of another color, sitting in its concave corner.
 // output: The tag's color names a mark, and the L moves so that its bend
 //  lands on that mark. An L whose tag names no mark stays.
-// review principle: docs/wf-solver/open/peer-priors.md
-// review principle: docs/wf-solver/open/coverage-rules.md
+// review principle: Cases — Slide stands beside Translate only because the
+//  pairs exercise its diagonal restriction, a ground the rules no longer
+//  hold, so re-judge Slide under Fit, Fidelity, and Equivalence.
 
 // how far a tagged L can travel to reach its mark
 .type Choice =

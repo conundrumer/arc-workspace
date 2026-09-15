@@ -2,16 +2,14 @@
 
     uv run python scripts/survey.py <entry>
 
-The entry is a path under docs/wf-solver/proposals/, or an entry's name. A run
-that starts prints its run directory and the `session.log` under it, so the
-operator can follow the session. A run may take up to an hour, the timeout
-`solver_console.config.SURVEY_TIMEOUT` sets; when it ends, the entry carries
-the report under a `Survey:` line of its own.
+A run that starts prints its run directory and the `session.log` under it. A
+run may take up to an hour; when it ends, the entry carries the report under
+a `Survey:` line of its own.
 
 The scope is every solver when the entry carries no result, and otherwise
 the solvers written since the entry's newest `Survey:` time. An entry with no
 such solver is current, and the command runs nothing. A closed entry is
-refused; `--force` surveys it anyway.
+refused.
 """
 
 import argparse

@@ -31,7 +31,7 @@
     // --- Complete ---
     .decl sym(s: Sym) sym(SYM_BOX).
 
-    // --- Lookup / Mirror / Unfold ---
+    // --- Lookup, Mirror, Unfold ---
     .decl anchor(d: DiagDir) anchor(DIAG_TL).
 
     // --- Lookup ---
@@ -68,7 +68,7 @@ paint(P_img, $Complete()) :-
     ink(P_grid), cell(P_grid, _, _, P_grid_out),                    // ink, in the output frame
     params.sym(S), sym_member(S, D), apply(D, P_grid_out, P_img).   // its images
 
-// --- Lookup / Mirror / Unfold ---
+// --- Lookup, Mirror, Unfold ---
 
 .decl anchor_tile(p_tile: Position)
 anchor_tile(P_tile) :-

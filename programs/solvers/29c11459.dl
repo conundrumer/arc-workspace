@@ -36,7 +36,7 @@ pair(D, M1, C1, M2, C2) :-
     mark(M1, C1), mark(M2, C2), params.axis(A), same_line(A, M1, M2),  // two marks on one row
     axis_of(D, A), nearer(D, M1, M2).                                  // m1 nearer d
 
-// --- $Meet / $Near: lockstep fronts ---
+// --- $Meet, $Near: lockstep fronts ---
 
 // Both fronts advance one step toward each other while they stay ordered;
 // landing on one cell is the clash.

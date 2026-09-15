@@ -6,7 +6,9 @@
 //  long one off its middle.
 // output: On the long bar's line, the grid edge cell on one side takes the
 //  cross's color, and the one on the other side takes the far color.
-// review principle: docs/wf-solver/open/peer-priors.md
+// review principle: Cases — a third reading of the side the cross's color
+//  goes to was dropped for claiming the same cast concept as Nearer and
+//  Pointer, so re-judge it as a case under Fit, Fidelity, and Equivalence.
 
 // the side that takes the cross's color
 .type Choice =

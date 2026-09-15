@@ -5,8 +5,10 @@
 //  some ink. No canvas cell takes ink from two panels.
 // output: the panels stack on one canvas: each cell takes the ink of the panel
 //  that inks it, and stays params.bg where no panel inks it.
-// review principle: docs/wf-solver/open/coverage-rules.md
-// review principle: docs/wf-solver/open/underdetermined-scope.md
+// review principle: Cases — the precedence peer, which stores an order over
+//  the panels and inks a shared canvas cell from the foremost, was dropped
+//  because no pair inks one cell from two panels, so re-judge it as a second
+//  case beside the shipped union under Fit, Fidelity, and Equivalence.
 
 .decl out(p: Position, col: Color)
 

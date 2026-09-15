@@ -25,11 +25,16 @@ def _rules(items: list) -> Iterator[Rule]:
             yield from _rules(it.items)
 
 
+def rule_literals(rule: Rule) -> int:
+    """One rule's share of the size measure: one for the head and one per
+    body atom, negation, or comparison, disjunction branches expanded and
+    aggregate bodies included. A fact counts its head alone."""
+    return 1 + sum(1 for lit in body_literals(rule)
+                   if not isinstance(lit, Bool))
+
+
 def literal_count(program: Program) -> int:
-    """Program complexity: one per rule head and one per body atom,
-    negation, or comparison, disjunction branches expanded and aggregate
-    bodies included. Facts count their head. Declarations, types, inits,
-    and the terms inside a literal add nothing: the measure follows the
-    program, not the code around it."""
-    return sum(1 + sum(1 for lit in body_literals(r) if not isinstance(lit, Bool))
-               for r in _rules(program.items))
+    """Program complexity: the sum of `rule_literals` over every rule.
+    Declarations, types, inits, and the terms inside a literal add nothing:
+    the measure follows the program, not the code around it."""
+    return sum(rule_literals(r) for r in _rules(program.items))

@@ -5,7 +5,9 @@
 //  the mark and link cells form one graph.
 // output: The 1×1 output reports whether every mark cell lies in a single
 //  connected component of that graph. Nothing reads the 2×2 block shape.
-// review principle: docs/wf-solver/open/peer-priors.md
+// review principle: Cases — Orth and Diag ship as two joins of the one graph
+//  of mark and link cells, so re-judge whether both stand now that Fit,
+//  Fidelity, and Equivalence are the only grounds for removing a case.
 
 // what an edge is
 .type Adj =

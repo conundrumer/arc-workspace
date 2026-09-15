@@ -23,7 +23,7 @@
     .decl floor_color(c: Color) floor_color(4).
     .decl diag_color(c: Color) diag_color(2).
 
-    // --- Anchored / Foot ---
+    // --- Anchored, Foot ---
     .decl floor_dir(d: Dir) floor_dir(DIR_B).
 
     // --- Anchored ---
@@ -52,7 +52,7 @@ impl_choice($Anchored()). impl_choice($Foot()). impl_choice($WallEnd()).
 .init diag = Diagonal<Choice>
 diag.cell(Ch, P) :- impl_choice(Ch), bg_cell(P).
 
-// --- Anchored / Foot ---
+// --- Anchored, Foot ---
 
 .decl floor_paint(p: Position)
 floor_paint(P) :- bg_cell(P), params.floor_dir(D), dist(P, D, 0).

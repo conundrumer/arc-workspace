@@ -32,17 +32,17 @@
     .decl axis(a: Axis) axis(AXIS_V).      // stack axis
     .decl filler(c: Color) filler(9).
 
-    // --- Derive / Iso ---
+    // --- Derive(g=Iso) ---
     .decl sep(g: number) sep(1).
 
-    // --- Derive / Aniso ---
+    // --- Derive(g=Aniso) ---
     .decl sep_dim(a: Axis, n: number)
     sep_dim(AXIS_V, 1). sep_dim(AXIS_H, 1).
 
-    // --- Derive / Derived ---
+    // --- Derive(s=Derived) ---
     .decl diag(da: DiagAxis) diag(DAXIS_DG).      // seating diagonal
 
-    // --- Derive / Table ---
+    // --- Derive(s=Table) ---
     .decl seat_of(d: Dir, diag: DiagDir)
     seat_of(DIR_T, DIAG_TL). seat_of(DIR_B, DIAG_BR).
 
@@ -64,22 +64,22 @@ side(P, D) :- params.axis(A), axis_of(D, A), dp.nearer($U(), P, D).
 
 .decl seat(p: Position, diag: DiagDir, s: Seats)
 
-// --- Derive / Derived ---
+// --- Derive(s=Derived) ---
 seat(P, Diag, $Derived()) :-
     side(P, D),                                       // cell's side of the stack
     params.diag(DA), diag_axis_of(Diag, DA),          // corner on the seating diag
     dir_of(Diag, _, D).                               // matching that side
 
-// --- Derive / Table ---
+// --- Derive(s=Table) ---
 seat(P, Diag, $Table()) :- side(P, D), params.seat_of(D, Diag).
 
 // Growth extents, the wide axis-tagged pair: n1 along a, n2 across.
 .decl growth(a: Axis, n1: number, n2: number, gr: Growth)
 
-// --- Derive / Iso ---
+// --- Derive(g=Iso) ---
 growth(A, G, G, $Iso()) :- axis_elem(A), params.sep(G).
 
-// --- Derive / Aniso ---
+// --- Derive(g=Aniso) ---
 growth(A, N1, N2, $Aniso()) :- params.sep_dim(A, N1), perp(A, A2), params.sep_dim(A2, N2).
 
 // Grow delta toward a corner: the growth extents at its two edges.

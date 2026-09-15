@@ -8,7 +8,10 @@
 //  entry's value color, and a mark among those pieces keeps its own color.
 //  Where two boxes cover one cell, the entry nearer the legend's head
 //  decides it.
-// review principle: docs/wf-solver/open/peer-priors.md
+// review principle: Cases — Triomino, a mark read as a three-cell piece, and
+//  Corner, a mark read as a 2×2 box less one cell, fit every pair and were
+//  dropped, so re-judge each as a case beside Open and Paired under Fit,
+//  Fidelity, and Equivalence.
 
 // which pieces of a key color are marks
 .type Choice =

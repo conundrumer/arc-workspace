@@ -11,7 +11,10 @@
 //  wholly in that anchor's cavity, the mover stays at rest, and the cells it
 //  passed over, its start included, take params.trail. Every other mover is
 //  erased.
-// review principle: docs/wf-solver/open/peer-priors.md
+// review principle: Cases — the dropped reading of what stops a mover,
+//  refused beside the shipped cavity seating for claiming the same move
+//  concept, now stands unless Fit, Fidelity, or Equivalence removes it, so
+//  re-judge it as a second case.
 
 .decl out(p: Position, col: Color)
 

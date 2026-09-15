@@ -5,7 +5,9 @@
 //  color's bounding box recovers its whole rectangle, hidden part included.
 // output: The output frame is the biggest rectangle, and every rectangle
 //  stacks into it aligned at one corner, smallest on top.
-// review principle: docs/wf-solver/open/peer-priors.md
+// review principle: Cases — ranking the rectangles by perimeter and by extent
+//  along a stored axis were dropped beside the shipped cell-count rank, so
+//  re-judge each as a case under Fit, Fidelity, and Equivalence.
 
 .decl out(p: Position, col: Color)
 

@@ -25,7 +25,7 @@
     mapping(3, 8).
     mapping(4, 9).
 
-    // --- $Lines / $Flood ---
+    // --- $Lines, $Flood ---
     .decl separator(col: Color) separator(5).
 
     // --- $Period ---

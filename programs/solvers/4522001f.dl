@@ -59,7 +59,7 @@
     // --- $Ink ---
     .decl ink(c: Color) ink(3).
 
-    // --- $Grow / $Fit ---
+    // --- $Grow, $Fit ---
     .decl box_anchor(d: DiagDir) box_anchor(DIAG_TL).
 
     // The first box, as its margin at each edge.

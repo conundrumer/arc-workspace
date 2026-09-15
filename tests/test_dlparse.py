@@ -22,6 +22,8 @@ from dl.dlparse import (
     Rule,
     Wild,
     body_literals,
+    marker_cases,
+    marker_names,
     parse,
 )
 
@@ -224,6 +226,29 @@ a(X) :- g(X).
 """
     ix = Index(parse(src))
     assert ix.rules[0].section == "CaseA"
+
+
+def test_marker_names_split_outside_the_parentheses():
+    assert marker_names("Derive(g=Iso)") == ["Derive(g=Iso)"]
+    assert marker_names("Derive(g=Iso, s=Table), Disp") == [
+        "Derive(g=Iso, s=Table)", "Disp",
+    ]
+    assert marker_names("Box, Erode: both erode") == ["Box", "Erode"]
+
+
+def test_marker_cases_drop_the_fields_a_constructor_fixes():
+    src = """\
+.type Growth = Iso {} | Aniso {}
+.type Seats = Derived {} | Table {}
+.type Choice = Derive { g: Growth, s: Seats } | Disp {}
+// --- Derive(g=Iso) ---
+.decl a(x: number)
+a(X) :- g(X).
+"""
+    ix = Index(parse(src))
+    assert ix.rules[0].section == "Derive(g=Iso)"
+    assert marker_cases(ix.rules[0].section) == ["Derive"]
+    assert marker_cases("Derive(g=Iso, s=Table), Disp") == ["Derive", "Disp"]
 
 
 def test_index_section_marker_in_comp_stays_in_the_comp():

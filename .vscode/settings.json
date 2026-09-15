@@ -1,6 +1,7 @@
 {
   "files.associations": {
     "**/data/tasks/*.json": "arc-task-json",
+    "**/programs/witnesses/*.wit.json": "arc-task-json",
     "*.arcpatch": "arc-patch"
   },
   "editor.tokenColorCustomizations": {

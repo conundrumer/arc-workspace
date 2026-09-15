@@ -5,7 +5,10 @@
 //  runs the whole way to the far edge; the others stop short.
 // output: the input, with the full shape placed on each shape and drawn in
 //  params.mark where it reaches past that shape's own extent.
-// review principle: docs/wf-solver/open/peer-priors.md
+// review principle: Cases — the dropped Select branch that reads the full
+//  shape as the one with the most cells now stands beside Edge and Furthest
+//  unless it fails Fit, Fidelity, or Equivalence, so re-judge whether to
+//  restore it.
 
 // What a shape is.
 .type Parse =

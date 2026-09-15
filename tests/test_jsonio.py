@@ -103,3 +103,26 @@ def test_full_task_file_roundtrips():
 
 def test_empty_dict():
     assert format_file({}) == "{}\n"
+
+
+def test_witness_file_roundtrips():
+    d = {
+        "id": "abc12345",
+        "witnesses": [
+            {"index": 0, "name": "two colors",
+             "hypothesis": "the seam moves", "input": [[1, 2]],
+             "output": {"Copy": [[1, 2]], "Flip": None}},
+            {"index": 1, "name": "five bands", "hypothesis": "arr_dim is 5",
+             "assign": {"arr_dim": [[5]],
+                        "tile_d4": [[[0, 2, 0, 2], "D4_LR"]]},
+             "input": [[1, 2]], "output": {"Alt": [[2, 1]]}},
+            {"index": 2, "name": "blank", "hypothesis": "nothing to move",
+             "input": [[0]], "output": [[9, 9]]},
+        ],
+    }
+    text = format_file(d)
+    assert _roundtrip(d) == d
+    assert '"witnesses": [{' in text
+    assert "[1,2]" in text
+    assert '[[0,2,0,2],"D4_LR"]' in text
+    assert '"Flip": null' in text

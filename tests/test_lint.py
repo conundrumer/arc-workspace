@@ -571,14 +571,14 @@ def test_a_continuation_line_with_a_colon_passes():
 def test_the_old_header_labels_fire():
     src = """\
 // 74dd1130
-// concept: tiling
+// theme: tiling
 // shape: latent-canvas
 // family: 67a3c6ac
 // output: a grid of tiles
 """
     fs = of(src, "header")
     assert [f[0] for f in fs] == [1, 2, 3, 4]
-    assert "`concept:` is no header field" in fs[1][1]
+    assert "`theme:` is no header field" in fs[1][1]
     assert "`shape:` is no header field" in fs[2][1]
     assert "`family:` is no header field" in fs[3][1]
     assert fs[0][1] == "the header carries `keywords:` or `representative:`"
@@ -646,7 +646,86 @@ def test_keywords_the_doc_lists_pass():
     assert of(src, "keyword") == []
 
 
+def test_the_concept_field_stands_between_keywords_and_input():
+    src = """\
+// 74dd1130
+// keywords: decompose
+// concept: the grid is a tiling, and the output is one tile
+// input: a tiled grid
+// output: a grid of tiles
+"""
+    assert of(src, "header") == []
+    src = """\
+// 74dd1130
+// keywords: decompose
+// input: a tiled grid
+// concept: the grid is a tiling, and the output is one tile
+// output: a grid of tiles
+"""
+    assert [f[0] for f in of(src, "header")] == [4]
+
+
 # ---------- the glosses over the choice ----------
+
+
+CHOICE = """\
+// 74dd1130
+// keywords: decompose
+// concept: the tiles turn
+// output: a grid of tiles
+
+// which way the tiles turn
+.type Choice =
+      // mirror across the seam
+      Mirror {{}}
+      // a quarter turn
+{turn_line}    | Turn {{}}
+"""
+
+
+def test_a_branch_after_the_first_carries_a_deviation_line():
+    src = CHOICE.format(turn_line="      // @deviation: -1 +0 ~0\n")
+    assert of(src, "deviation") == []
+    fs = of(CHOICE.format(turn_line=""), "deviation")
+    assert fs == [(11, "`Turn` carries `// @deviation: -<relaxed> +<added> "
+                       "~<contradicted>` under its gloss")]
+
+
+def test_the_first_branch_carries_no_deviation_line():
+    src = CHOICE.format(turn_line="      // @deviation: -1 +0 ~0\n").replace(
+        "      // mirror across the seam\n",
+        "      // mirror across the seam\n      // @deviation: -0 +0 ~0\n")
+    fs = of(src, "deviation")
+    assert fs == [(10, "`Mirror` stands first, so it is the intended branch and "
+                      "carries no `@deviation` line")]
+
+
+def test_the_field_type_of_a_constructor_record_is_checked():
+    src = """\
+// 74dd1130
+// keywords: decompose
+// concept: the tiles turn
+// output: a grid of tiles
+
+// how far the tiles turn
+.type Amount =
+      // a quarter turn
+      Quarter {}
+      // a half turn
+    | Half {}
+
+// which way the tiles turn
+.type Choice =
+      // a turn by an amount
+      Turn { a: Amount }
+      // mirror across the seam
+      // @deviation: -1 +0 ~0
+    | Mirror {}
+"""
+    fs = of(src, "deviation")
+    assert fs == [(11, "`Half` carries `// @deviation: -<relaxed> +<added> "
+                       "~<contradicted>` under its gloss")]
+
 
 def test_a_choice_on_one_line_fires():
     src = """\
@@ -684,6 +763,72 @@ def test_a_record_choice_is_read_through_its_field_types():
       Whole {}
 """
     assert of(src, "gloss") == [(17, "a gloss stands above `Whole`")]
+
+
+# ---------- the case markers ----------
+
+
+MARKED = """\
+// 74dd1130
+// keywords: decompose
+// output: a grid of tiles
+
+// which way the tiles turn
+.type Choice =
+      // mirror across the seam
+      Mirror {{}}
+      // @deviation: -0 +0 ~0
+      // a quarter turn
+    | Turn {{}}
+
+.comp Params {{
+    // --- {marker} ---
+    .decl seam(d: Dir) seam(DIR_T).
+}}
+"""
+
+
+def test_a_marker_joining_case_names_with_a_slash_fires():
+    fs = of(MARKED.format(marker="Mirror / Turn"), "case marker")
+    assert fs == [(14, "a marker over several cases joins their names with a "
+                       "comma: `// --- Box, Erode ---`")]
+
+
+def test_a_marker_joining_case_names_with_a_comma_stays_quiet():
+    assert of(MARKED.format(marker="Mirror, Turn"), "case marker") == []
+
+
+RECORD_MARKED = """\
+// 8618d23e
+// keywords: decompose
+// output: a grid of tiles
+
+// how wide the growth is
+.type Growth =
+      // one width
+      Iso {{}}
+      // @deviation: -0 +0 ~0
+      // per-axis widths
+    | Aniso {{}}
+
+// how the offset is computed
+.type Choice =
+      // derived from a growth
+      Derive {{ g: Growth }}
+      // @deviation: -0 +0 ~0
+      // a stored table
+    | Disp {{}}
+
+.comp Params {{
+    // --- {marker} ---
+    .decl sep(g: number) sep(1).
+}}
+"""
+
+
+def test_a_marker_fixing_a_field_of_a_constructor_stays_quiet():
+    assert of(RECORD_MARKED.format(marker="Derive(g=Iso)"), "case marker") == []
+
 
 
 # ---------- the lib include ----------

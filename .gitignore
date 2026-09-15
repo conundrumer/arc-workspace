@@ -32,3 +32,6 @@ programs/lib/*.md
 programs/solvers/.tmp*.dl
 
 docs/codex-style.md
+
+# Lean build outputs
+theory/.lake/

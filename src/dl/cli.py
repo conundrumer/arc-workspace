@@ -18,16 +18,28 @@ from arc.task import Alt, Example
 from dl.corpus import literal_count
 from dl.deletions import deletion_report, render_deletions
 from dl.derived_constant import derived_constant_report, render_derived_constant
-from dl.determination_plan import probe_report, render_determination_plan
+from dl.determination_plan import (
+    probe_report,
+    render_determination_plan,
+    settle_survivors,
+)
 from dl.determine import (
     DetermineResult,
     render_determine,
     reproduced,
     run_determine,
 )
-from dl.dlparse import ParseError, TypeDecl, parse
+from dl.dlparse import ParseError, parse
 from dl.drop_one import drop_one_report, render_drop_one
 from dl.facts import parse_grid
+from dl.features import (
+    FileFeatures,
+    case_branches,
+    features_json,
+    features_report,
+    render_features,
+)
+from dl.features_run import case_label, run_features
 from dl.lint import (
     HEADER_CAT,
     KEYWORD_CAT,
@@ -71,7 +83,18 @@ from dl.sweep import (
     render_sweep,
     sweep_report,
 )
-from dl.sweep_open import SWEEP_CACHE, marked_params, open_params
+from dl.sweep_open import (
+    SWEEP_CACHE,
+    marked_params,
+    open_params,
+    settled_params,
+)
+from dl.witness import (
+    DRIFT,
+    load_witnesses,
+    render_witness,
+    witness_report,
+)
 
 type Findings = list[tuple[str, int, str, str]]
 
@@ -305,26 +328,17 @@ Grid format: one line per row, one character per cell — a digit 0-9, or `.`
 for 0. Spaces and commas between cells are optional; blank lines and lines
 starting with `#` are skipped. Text starting with `[` is read as JSON, so a
 grid pasted out of a task file works unchanged.
-
-    uv run python scripts/run_dl.py grid 1b60fb0c <<'EOF'
-    . 1 .
-    1 1 .
-    . . .
-    EOF
-
-Each case of the solver's Choice prints its own grid, which is what a
-divergence witness needs: one input, one output per case.
 """
 
 RUN_HELP = f"""\
-Each grid a command runs gets a {CPU_LIMIT_SECONDS}s Souffle CPU limit; determination
-feeds every example to one process, so its limit scales by example count.
-A run that exceeds its limit fails, and the failure names the rule that
-burned the most CPU.
+Each grid a command runs gets a {CPU_LIMIT_SECONDS}s Souffle CPU limit. The determination
+check feeds every example to one process, so its limit scales by example
+count. A run that exceeds its limit fails, and the failure names the rule
+that burned the most CPU.
 
-Without the runner, the same per-grid run by hand. `-L programs` is what
-loads libfunctors.dylib, which lib.dl's primitives call, and the built file
-has to sit in programs/solvers/ for `#include "../lib.dl"` to resolve:
+To run one grid by hand, build the file in programs/solvers/, so that
+`#include "../lib.dl"` resolves, and link the functor library that lib.dl's
+primitives call:
 
     {{ echo '#include "../lib.dl"'
       cat programs/solvers/<stem>.dl
@@ -333,31 +347,15 @@ has to sit in programs/solvers/ for `#include "../lib.dl"` to resolve:
     }} > programs/solvers/.tmp.dl
     souffle -D- -w -L programs -lfunctors programs/solvers/.tmp.dl
 
-Souffle reads one fact line per cell on stdin — `[top, bottom, left,
-right]` edge distances, a tab, then the color — so in a 3x3 grid the
-top-left cell, in color 7, is
+Souffle reads one fact line per cell on stdin: `[top, bottom, left, right]`
+edge distances, a tab, then the color. In a 3x3 grid the top-left cell, in
+color 7, is
 
     [0, 2, 0, 2]<TAB>7
 
-Add `-p <file>` for a profile that souffleprof reads. A solver with GRID
-or RIGID call sites runs on the `expand` command's output, not on the
-source; the runner expands for you.
+Add `-p <file>` for a profile that souffleprof reads. A solver with GRID or
+RIGID call sites runs on the `expand` command's output.
 """
-
-
-def _case_branches(stem: str) -> list[str]:
-    """The branch names of the solver's Choice ADT, in source order. A solver
-    with one case has no Choice, and gets no branches."""
-    try:
-        program = parse(solver_file(stem)[0].read_text())
-    except (OSError, ParseError):
-        return []
-    return [
-        b
-        for it in program.items
-        if isinstance(it, TypeDecl) and it.name == "Choice"
-        for b in it.branches
-    ]
 
 
 def cmd_grid(stem: str, path: str | None = None) -> int:
@@ -404,12 +402,13 @@ def cmd_grid(stem: str, path: str | None = None) -> int:
         if c.missing:
             print(f"  missing cells at: {c.missing}")
 
-    emitted = {c.variant.split("(", 1)[0].removeprefix("$") for c in actuals}
-    silent = [b for b in _case_branches(stem) if b not in emitted]
+    emitted = {case_label(c.variant) for c in actuals}
+    silent = [b for b in case_branches(stem) if b not in emitted]
     if silent:
         print()
         for name in silent:
-            print(f"${name}: emits nothing")
+            print(f"{name if name.startswith('[') else '$' + name}"
+                  ": emits nothing")
     cases = len(actuals) + len(silent)
     if cases > 1:
         distinct = {tuple(tuple(row) for row in c.grid)
@@ -502,9 +501,7 @@ def cmd_since(when: str) -> int:
     in_scope = sorted((committed | _worktree_stems(status)) & corpus)
     for stem in in_scope:
         print(stem)
-    print(f"{len(in_scope)} solvers in scope. A survey reads its whole scope "
-          "in one pass, so its cost does not follow that count.",
-          file=sys.stderr)
+    print(f"{len(in_scope)} solvers in scope.", file=sys.stderr)
     return 0
 
 
@@ -644,20 +641,28 @@ def _sweep_text(stem: str, cached: bool) -> tuple[str | None, str | None]:
 
     A sweep is valid only for the solver code it was made from, so the cache
     keeps that code's hash beside the text, in a sidecar file `<stem>.sha`.
-    A cache with the solver's current hash is read. A cache with no hash or a
-    different hash is stale, and so is a stem the cache does not hold: without
-    `cached` the sweep runs and both files are rewritten; with `cached` the
-    stem gives None and a reason instead of running for minutes."""
+    A cache with the solver's current hash is read. A cache with a different
+    hash is stale, and so is a stem the cache does not hold: without `cached`
+    the sweep runs and both files are rewritten; with `cached` the stem gives
+    None and a reason instead of running for minutes.
+
+    A cache with no sidecar predates the sidecar, so the code behind it is
+    unknown. With `cached` nothing runs, and the text is read with a note on
+    stderr that it is unverified. Without `cached` the sweep runs, which gives
+    the stem a text and a hash that go together."""
     path = SWEEP_CACHE / f"{stem}.txt"
     sha_path = SWEEP_CACHE / f"{stem}.sha"
-    digest = _code_hash(stem)
+    where = f".scratch/retro/sweep/{stem}.txt"
     held = path.exists()
-    fresh = (held and sha_path.exists()
-             and sha_path.read_text().strip() == digest)
-    if fresh:
+    if held and sha_path.exists():
+        if sha_path.read_text().strip() == _code_hash(stem):
+            return path.read_text(), None
+    elif held and cached:
+        print(f"{stem}: the cached sweep at {where} is unverified: it was "
+              "made before the cache kept the solver's code hash",
+              file=sys.stderr)
         return path.read_text(), None
     if cached:
-        where = f".scratch/retro/sweep/{stem}.txt"
         if held:
             return None, (f"the cached sweep at {where} is stale: the solver's "
                           "code changed after it was made")
@@ -665,7 +670,7 @@ def _sweep_text(stem: str, cached: bool) -> tuple[str | None, str | None]:
     text = _sweep_output(stem)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)
-    sha_path.write_text(digest)
+    sha_path.write_text(_code_hash(stem))
     return text, None
 
 
@@ -751,10 +756,31 @@ def cmd_deletions(stem: str) -> int:
     return _print_deletions(stem)
 
 
+def _print_witness(stem: str) -> int:
+    """The witness report of `stem`, or a note that the task has no witness
+    file. Non-zero when a case drifted."""
+    if load_witnesses(solver_file(stem)[1]) is None:
+        print("no witness file")
+        return 0
+    findings = witness_report(stem)
+    for line in render_witness(findings):
+        print(line)
+    return 1 if any(d.kind == DRIFT for d in findings) else 0
+
+
+def cmd_witness(stem: str) -> int:
+    """Run the task's witness grids through the solver and report where a
+    case gives an outcome the witness file does not expect."""
+    if _missing(stem):
+        return 2
+    build_functors()
+    return _print_witness(stem)
+
+
 def cmd_audit(stem: str, budget: float = BUDGET_SECONDS) -> int:
-    """Both evidence audits of a finished solver: parameter value sweep +
-    deletions. The sweep runs under the time budget, and the deletion report
-    runs after it."""
+    """The evidence audits of a finished solver: parameter value sweep,
+    deletions, witness. The sweep runs under the time budget, and the other
+    two run after it."""
     if _missing(stem):
         return 2
     build_functors()
@@ -762,7 +788,10 @@ def cmd_audit(stem: str, budget: float = BUDGET_SECONDS) -> int:
     _print_sweep(stem, MAX_CANDIDATES, budget)
     print()
     print("--- deletions ---")
-    return _print_deletions(stem)
+    deletions = _print_deletions(stem)
+    print()
+    print("--- witness ---")
+    return deletions or _print_witness(stem)
 
 
 def cmd_drop_one(stem: str) -> int:
@@ -793,7 +822,8 @@ def cmd_determination_plan(stem: str) -> int:
     if _missing(stem):
         return 2
     build_functors()
-    for line in render_determination_plan(probe_report(stem)):
+    report = probe_report(stem)
+    for line in render_determination_plan(report, settle_survivors(stem, report)):
         print(line)
     return 0
 
@@ -812,6 +842,50 @@ def cmd_size(stem: str | None = None) -> int:
         except ParseError as e:
             print(f"{s}: {e}", file=sys.stderr)
             bad = True
+    return 1 if bad else 0
+
+
+def _sweep_counts(
+    stem: str, skipped: list[dict[str, str]],
+) -> tuple[int, int] | None:
+    """How many parameters the stem's cached sweep leaves open, and how many
+    it settles on one value. A stem whose cached sweep does not stand for its
+    current code gets no counts: the reason goes to stderr and to `skipped`,
+    and no sweep runs."""
+    text, reason = _sweep_text(stem, cached=True)
+    if text is None:
+        print(f"{stem}: {reason}", file=sys.stderr)
+        skipped.append({"stem": stem, "reason": reason})
+        return None
+    return len(open_params(text)), len(settled_params(text))
+
+
+def cmd_features(stem: str | None = None, run: bool = False,
+                 as_json: bool = False) -> int:
+    """Per-case features of each named solver, one row per case. The static
+    columns read the source; the dynamic ones need `--run`, which runs every
+    pair of every named solver, train and test alike."""
+    if stem and _missing(stem):
+        return 2
+    stems = [stem] if stem else all_stems()
+    if run:
+        build_functors()
+    files: list[FileFeatures] = []
+    skipped: list[dict[str, str]] = []
+    bad = False
+    for s in stems:
+        try:
+            dynamic = run_features(s, case_branches(s)) if run else None
+            files.append(features_report(s, _sweep_counts(s, skipped), dynamic))
+        except ParseError as e:
+            print(f"{s}: {e}", file=sys.stderr)
+            skipped.append({"stem": s, "reason": str(e)})
+            bad = True
+    if as_json:
+        _emit(features_json(files, skipped))
+    else:
+        for line in render_features(files):
+            print(line)
     return 1 if bad else 0
 
 
@@ -858,14 +932,13 @@ def cmd_expand(stem: str) -> int:
 
 
 COMMANDS = ("run", "lint", "grid", "sweep", "deletions", "audit", "determination-plan", "size",
-            "keywords", "expand", "since", "drop-one", "derived-constant")
+            "keywords", "expand", "since", "drop-one", "derived-constant", "features",
+            "witness")
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run Souffle solvers and their checks.",
-        epilog="`run --help` holds the runner's CPU budget and the by-hand "
-               "Souffle invocation.",
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
@@ -882,9 +955,7 @@ def _parser() -> argparse.ArgumentParser:
                           "determination check, several run as a corpus over "
                           "those solvers alone, and none runs the whole "
                           "corpus. Each one is a stem or a path to a solver "
-                          "file, whose file name keeps the task id as its "
-                          "prefix, so a variant kept under .scratch/ runs by "
-                          "its path")
+                          "file whose name keeps the task id as its prefix")
     lint.add_argument("stem", nargs="?",
                       help="one solver; all of them when omitted")
     for p in (run, lint):
@@ -895,23 +966,18 @@ def _parser() -> argparse.ArgumentParser:
                           "slowest 15 for a full run")
     run.add_argument("--pairs", metavar="FILE",
                      help="run the named solver against ad-hoc pairs from "
-                          "this JSON file (e.g. .scratch/<task>/pairs.json) "
-                          "instead of the stored task; an example without "
-                          '"output" prints the emitted grids')
+                          "this JSON file instead of the stored task; an "
+                          'example without "output" prints the emitted grids')
 
     grid = sub.add_parser(
         "grid",
         help="run one solver on a grid you write, printing each case's output",
-        description="Run one solver on a grid the caller writes, in place of "
-                    "a stored pair, and print what each case emits.",
         epilog=GRID_HELP,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     grid.add_argument("stem",
                       help="the solver to run: a stem or a path to a solver "
-                           "file, whose file name keeps the task id as its "
-                           "prefix, so a variant kept under .scratch/ runs by "
-                           "its path")
+                           "file whose name keeps the task id as its prefix")
     grid.add_argument("file", nargs="?",
                       help="grid file; stdin when omitted or `-`")
 
@@ -927,13 +993,7 @@ def _parser() -> argparse.ArgumentParser:
     over.add_argument("--open", nargs="+", metavar="STEM", dest="open_stems",
                       help="report as JSON, over these stems, the parameters "
                            "each sweep leaves open and the `// review sweep:` "
-                           "line each one takes. A stem sweeps once per "
-                           "version of its code: its output is kept under "
-                           ".scratch/retro/sweep/ beside a hash of that code, "
-                           "and read from there while the hash still matches. "
-                           "A comment line does not count toward the hash, so "
-                           "a review line written into a header keeps the "
-                           "cache valid")
+                           "line each one takes")
     over.add_argument("--mark", nargs="+", metavar="STEM", dest="mark_stems",
                       help="the same reading, written into the solvers: each "
                            "open parameter without a `review sweep:` line yet "
@@ -943,12 +1003,16 @@ def _parser() -> argparse.ArgumentParser:
     sweep.add_argument("--cached", action="store_true",
                        help="with `--open` or `--mark`, take only the stems "
                             "whose cached sweep matches their current code, "
-                            "and skip the rest with a reason, so the reading "
-                            "costs no sweep")
+                            "or carries no hash to match, and skip the rest "
+                            "with a reason. A stem sweeps once per version of "
+                            "its code, and a comment line does not count "
+                            "toward that version, so a review line written "
+                            "into a header keeps the cached sweep")
 
     sub.add_parser("deletions", help="deletion report only").add_argument("stem")
     audit = sub.add_parser(
-        "audit", help="parameter value sweep + deletion report",
+        "audit",
+        help="parameter value sweep + deletion report + witness report",
     )
     audit.add_argument("stem")
     audit.add_argument("--budget", type=float, default=BUDGET_SECONDS,
@@ -961,24 +1025,28 @@ def _parser() -> argparse.ArgumentParser:
                     "facts whose removal reproduces the stored variant "
                     "profile on the train pairs. Each such fact runs again "
                     "over the test pairs, so a fact the test pairs need "
-                    "reports apart from one dead on both. The cut is "
-                    "textual, so a parameter with an Ident, a Grid, or any "
-                    "other column no domain enumerates is covered as well. "
-                    "Opt-in: the audit does not run it.",
+                    "reports apart from one dead on both. Opt-in: the audit "
+                    "does not run it.",
     ).add_argument("stem")
     sub.add_parser(
         "derived-constant",
         help="program relations that hold the same tuples on every example",
         description="Report each program relation that reads `in` by "
                     "dataflow, feeds `out` by dataflow, and holds the same "
-                    "tuples on every train and test example. Such a relation "
-                    "derives from the input yet takes one value over the "
-                    "task, so what it holds is stored in the program rather "
-                    "than read off the grid. A relation empty everywhere is "
-                    "out, and so is one that keeps its tuples on control "
-                    "grids drawn from each example's palette, since it does "
-                    "not really read the input. Opt-in: the audit does not "
-                    "run it.",
+                    "tuples on every train and test example. A relation empty "
+                    "everywhere is out, and so is one that keeps its tuples "
+                    "on control grids drawn from each example's palette. "
+                    "Opt-in: the audit does not run it.",
+    ).add_argument("stem")
+    sub.add_parser(
+        "witness",
+        help="run the task's hand-written witness grids and report drift",
+        description="Run each grid of programs/witnesses/<task>.wit.json "
+                    "through the solver and compare what each case gives "
+                    "with the outcome the file names. A case the run emits "
+                    "and the entry does not name is reported as unlisted, "
+                    "which is not drift. A task with no witness file "
+                    "passes.",
     ).add_argument("stem")
     sub.add_parser(
         "determination-plan",
@@ -986,12 +1054,36 @@ def _parser() -> argparse.ArgumentParser:
     ).add_argument("stem")
 
     size = sub.add_parser(
-        "size", help="literal count per solver, for ordering by complexity",
-        description="Print each named solver's literal count, count first, "
-                    "so the listing sorts numerically.",
+        "size", help="literal count per solver",
+        description="Print each named solver's literal count, count first.",
     )
     size.add_argument("stem", nargs="?",
                       help="one solver; all of them when omitted")
+
+    features = sub.add_parser(
+        "features", help="per-case features, one TSV row per Choice case",
+        description="Print one row per case of each named solver. A rule "
+                    "belongs to the cases whose constructors its head holds, "
+                    "and so do the rules it reads, transitively. `atoms`, "
+                    "`rules` and `facts` weigh what one case reaches and no "
+                    "other; `shared_*` weigh what two cases reach, `reach_*` "
+                    "weigh a case's whole reach, and `unreached_atoms` weighs "
+                    "what no case reaches. The ratios stand against the "
+                    "smallest case of the file. With `--run`, "
+                    "`pairs_separating` and `pairs_illformed` count over "
+                    "every pair of the task, train and test alike, keyed by "
+                    "the grid a case emits.",
+    )
+    features.add_argument("stem", nargs="?",
+                          help="one solver, as a stem or a path to a solver "
+                               "file; all of them when omitted")
+    features.add_argument("--run", action="store_true",
+                          help="run every pair of the task, train and test, "
+                               "and fill the separation columns from what "
+                               "each case emits")
+    features.add_argument("--json", action="store_true", dest="as_json",
+                          help="print JSON instead of TSV, with the pairwise "
+                               "matrix of separating pairs per solver")
 
     keywords = sub.add_parser(
         "keywords", help="how many solvers carry each keyword of keywords.md",
@@ -1009,16 +1101,11 @@ def _parser() -> argparse.ArgumentParser:
         description="Print the stem of each solver a survey since the given "
                     "date-time covers: the ones the commits since then touch, "
                     "plus the ones whose working-tree content differs from "
-                    "HEAD. An uncommitted change is newer than any commit, so "
-                    "every such solver is in scope and no time test applies to "
-                    "it. Commits reaching past a set share of the corpus are "
-                    "a corpus-wide mechanical rewrite. That test runs one "
-                    "commit at a time, and again over the whole window: the "
-                    "solvers a rewriting commit touches are out of scope, and "
-                    "of a rewriting window only the solvers its commits add "
-                    "stay in scope. The working-tree half stands either way. "
-                    "A survey reads its whole scope in one pass, so its cost "
-                    "does not follow the count of solvers in scope.",
+                    "HEAD. Commits reaching past a set share of the corpus "
+                    "count as a mechanical rewrite: the solvers a rewriting "
+                    "commit touches are out of scope, and of a rewriting "
+                    "window only the solvers its commits add stay in scope. "
+                    "The working-tree half stands either way.",
     )
     since.add_argument("when", help="a date-time git reads, e.g. "
                                     '"2026-09-08 14:30"')
@@ -1027,13 +1114,7 @@ def _parser() -> argparse.ArgumentParser:
         "expand",
         help="the source after GRID and RIGID expansion, as Souffle sees it",
         description="Print the solver source with each GRID and RIGID call "
-                    "replaced by what it emits and nothing else changed. "
-                    "A GRID_HxW cell fact carries the cell's Position as its "
-                    "four edge distances [top, bottom, left, right] in the "
-                    "HxW frame; a RIGID block keeps its body as the chart, "
-                    "each declared relation renamed _rigid_<block>_<rel>, "
-                    "and adds per relation a <block>_<rel>(d4: D4, ...) "
-                    "derived as every D4 placement of that chart.",
+                    "replaced by what it emits and nothing else changed.",
     ).add_argument("stem")
     return parser
 
@@ -1079,8 +1160,12 @@ def main(argv: list[str]) -> int:
             return cmd_derived_constant(args.stem)
         case "determination-plan":
             return cmd_determination_plan(args.stem)
+        case "witness":
+            return cmd_witness(args.stem)
         case "size":
             return cmd_size(args.stem)
+        case "features":
+            return cmd_features(args.stem, args.run, args.as_json)
         case "keywords":
             return cmd_keywords(args.stem)
         case "expand":
