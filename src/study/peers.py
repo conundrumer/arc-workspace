@@ -7,7 +7,7 @@ module collects both sides: the programs on disk, the drop grounds the
 reports state, and, for each program that is not a copy of the shipped
 solver, what it does on the task's own pairs.
 
-A peer's key on a pair is the set of grids it emits there, `ILL` when a
+A peer's key on a pair is the set of grids it emits there, `UNDEF` when a
 grid is not readable. The shipped solver's cases carry keys of the same
 shape, so a pair either puts the peer on some shipped case or tells it
 apart from every one of them.
@@ -23,7 +23,7 @@ from pathlib import Path
 from arc.task import load as load_task
 from dl.context import strip_comments
 from dl.dlparse import Comp, Decl, ParseError, TypeDecl, parse
-from dl.features_run import ABSENT, ILL, Key, _pair_keys, report_of
+from dl.features_run import ABSENT, UNDEF, Key, _pair_keys, report_of
 from dl.paths import REPO_ROOT, SOLVERS_DIR
 from dl.solve import PairResult, res_out_stem, run_pair
 from dl.souffle import _pool_workers
@@ -67,7 +67,7 @@ IDENT_RE = re.compile(r"[A-Za-z_$][\w.$<>]*\Z")
 
 TSV_COLUMNS = [
     "task_id", "source", "path", "peer_name", "report_name", "stratum",
-    "is_copy", "runs", "pairs_passed", "pairs_total", "pairs_illformed",
+    "is_copy", "runs", "pairs_passed", "pairs_total", "pairs_undefined",
     "pairs_diverging", "nearest_case", "pairs_matching_case", "matched_by",
     "shared_names",
 ]
@@ -104,7 +104,7 @@ class Row:
     runs: bool | None = None
     pairs_passed: int | None = None
     pairs_total: int | None = None
-    pairs_illformed: int | None = None
+    pairs_undefined: int | None = None
     pairs_diverging: int | None = None
     nearest_case: str = ""
     pairs_matching_case: int | None = None
@@ -117,7 +117,7 @@ class Row:
             self.task_id, self.source, path, self.peer_name, self.report_name,
             self.stratum, _flag(self.is_copy), _flag(self.runs),
             _num(self.pairs_passed), _num(self.pairs_total),
-            _num(self.pairs_illformed), _num(self.pairs_diverging),
+            _num(self.pairs_undefined), _num(self.pairs_diverging),
             self.nearest_case, _num(self.pairs_matching_case),
             self.matched_by, self.shared_names,
         ]
@@ -440,10 +440,10 @@ def _pairs_of(task_id: str) -> list[tuple[str, int, object]]:
 
 
 def peer_key(pair: PairResult, keys: dict[str, Key]) -> Key:
-    """A program's key on one pair: the grids it emits there, `ILL` when the
+    """A program's key on one pair: the grids it emits there, `UNDEF` when the
     run failed, `ABSENT` when it emitted nothing."""
     if pair.error or not pair.variants:
-        return ILL if pair.error else ABSENT
+        return UNDEF if pair.error else ABSENT
     grids: set = set()
     for key in keys.values():
         grids |= set(key)
@@ -452,7 +452,7 @@ def peer_key(pair: PairResult, keys: dict[str, Key]) -> Key:
 
 @dataclass
 class Divergence:
-    pairs_illformed: int = 0
+    pairs_undefined: int = 0
     pairs_diverging: int = 0
     nearest_case: str = ""
     pairs_matching_case: int = 0
@@ -461,7 +461,7 @@ class Divergence:
 def divergence(peer_pairs: list[PairResult], shipped_pairs: list[PairResult],
                peer_res: bool, shipped_res: bool) -> Divergence:
     """How a program's keys stand against the shipped solver's cases: the
-    pairs where it is ill-formed, the pairs where it matches no case, and
+    pairs where it is undefined, the pairs where it matches no case, and
     the case it matches on the most pairs."""
     _, peer_keys = _pair_keys(peer_pairs, None, peer_res)
     cases = report_of(shipped_pairs, None, shipped_res).cases
@@ -471,8 +471,8 @@ def divergence(peer_pairs: list[PairResult], shipped_pairs: list[PairResult],
     matches = {case: 0 for case in cases}
     for idx, pair in enumerate(peer_pairs):
         key = peer_key(pair, peer_keys[idx])
-        if key == ILL or (not isinstance(key, str) and ILL in key):
-            found.pairs_illformed += 1
+        if key == UNDEF or (not isinstance(key, str) and UNDEF in key):
+            found.pairs_undefined += 1
         here = shipped_keys[idx] if idx < len(shipped_keys) else {}
         hit = False
         for case in cases:
@@ -541,7 +541,7 @@ def run_rows(rows: list[Row], progress=None) -> None:
             row.runs = any(not p.error and p.variants for p in job.results)
             found = divergence(job.results, shipped_job.results,
                                res_out_stem(job.stem), shipped_res)
-            row.pairs_illformed = found.pairs_illformed
+            row.pairs_undefined = found.pairs_undefined
             row.pairs_diverging = found.pairs_diverging
             row.nearest_case = found.nearest_case
             row.pairs_matching_case = found.pairs_matching_case

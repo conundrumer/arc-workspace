@@ -17,12 +17,12 @@ These patterns are not rules. The `.dl` files are the source of truth. The list 
 
 ## Multiple modeling forms via ADT `Choice`
 
-Multiple models are encoded in one solver file as cases of an ADT `Choice` column on `out`. Cases can be more than two, may carry their own per-case data, and may nest (a case's data can itself be an ADT). Each case fires its own rules, and the runner emits each case as a candidate.
+Multiple models are encoded in one solver file as cases of an ADT `Choice` column on `out`. Cases can be more than two, may carry their own per-case data, and may nest (a case's data can itself be an ADT). Each case fires its own rules, and the runner emits each case as a variant.
 
 ```
 .type Choice = CaseA {} | CaseB {}
 
-.decl out(p: Position, col: Color, c: Choice)
+.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, $CaseA()) :- ...
 out(P, Col, $CaseB()) :- ...
 ```
@@ -34,7 +34,7 @@ A record-typed `Choice` represents cases that compose from independent parts:
 .type Stage  = PerCell {} | SliceMap {}
 .type Choice = [detect: Detect, stage: Stage]
 
-.decl out(p: Position, col: Color, c: Choice)
+.decl out(p: Position, col: Color, ch: Choice)
 out(P, Col, [$PairExist(), $PerCell()]) :- ...
 out(P, Col, [$Count(),     $SliceMap()]) :- ...
 ```
@@ -168,7 +168,7 @@ decompose(P_grid, P_tile, P_intile) :-
 
 ## Per-tile data keyed by tile position
 
-Parameter data about one tile of a decomposition is keyed by the tile position that the decomposition produces. The program then joins its `p_outer` against the data directly. A second vocabulary for the same tiles (an edge Dir, a corner name) requires a conversion rule, which the Indirection test flags.
+Parameter data about one tile of a decomposition is keyed by the tile position that the decomposition produces. The program then joins its `p_outer` against the data directly. A second vocabulary for the same tiles (an edge Dir, a corner name) requires a conversion rule, which Indirection flags.
 
 ```
 .decl combine_member(id: Ident, p_outer: Position, c: Color)
@@ -257,7 +257,7 @@ compose(P_inner_v, P_inner_h, P_intile).
 
 ## Wide and long layouts
 
-A relation can lay co-occurring values out wide (columns of one atom) or long (one row per member). Multiplicity that the concept fixes goes wide: the two axes, a corner's two dirs, the four edge distances (Position is the wide form of per-Dir distance data). Multiplicity that the task varies stays long: markers, tiles, ink cells. Wide is a single atom. A rule that repeats an atom once per member is not a wide layout. When those members are a closed domain in one shared role, that rule states a universal by hand (see Universals via defect negation).
+A relation can lay co-occurring values out wide (columns of one atom) or long (one row per member). Multiplicity that the concept fixes goes wide: the two axes, a corner's two dirs, the four edge distances (Box is the wide form of per-Dir distance data). Multiplicity that the task varies stays long: markers, tiles, ink cells. Wide is a single atom. A rule that repeats an atom once per member is not a wide layout. When those members are a closed domain in one shared role, that rule states a universal by hand (see Universals via defect negation).
 
 A solver reads wide data by unification and long data by joins. A long encoding of a fixed co-occurrence makes every consumer reassemble it, as a self-join with a distinctness guard that derives each symmetric result twice:
 

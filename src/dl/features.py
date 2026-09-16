@@ -75,7 +75,7 @@ class CaseFeatures:
     open_params: int | None
     pinned_params: int | None
     pairs_separating: int | None
-    pairs_illformed: int | None
+    pairs_undefined: int | None
     separation_classes: int | None
 
 
@@ -414,7 +414,7 @@ def features_report(
             open_params=open_n,
             pinned_params=pinned_n,
             pairs_separating=dynamic.separating.get(case) if dynamic else None,
-            pairs_illformed=dynamic.illformed.get(case) if dynamic else None,
+            pairs_undefined=dynamic.undefined.get(case) if dynamic else None,
             separation_classes=dynamic.classes if dynamic else None,
         ))
     return FileFeatures(stem=name, cases=rows,

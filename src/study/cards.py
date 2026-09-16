@@ -266,10 +266,10 @@ def _candidate_html(cand: Candidate, card: Card) -> str:
         )
     parts = [render_grid(cand.grid, label)]
     if cand.missing:
-        parts.append(f'<div class="cap">ill-formed: {len(cand.missing)} missing</div>')
+        parts.append(f'<div class="cap">undefined: {len(cand.missing)} missing</div>')
     if cand.conflicts:
         parts.append(
-            f'<div class="cap">ill-formed: {len(cand.conflicts)} conflicting</div>'
+            f'<div class="cap">undefined: {len(cand.conflicts)} conflicting</div>'
         )
     return '<div class="gwrap">' + "".join(parts) + "</div>"
 

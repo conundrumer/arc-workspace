@@ -7,7 +7,7 @@
     - An example or an instance of a rule is a sub-item under it.
 - A citation points a reader at a worked application of the rule it sits under. A task is cited when its solver's file shows the application without the session that built it, its gloss says what the rule's text does not, and no citation under that rule shows the same application. A task the rule is still open on, or whose solver owes a case under the rule, is not cited; its review line carries the point.
 - A cited task is a bare id. A gloss that states the task's facts in the rule's terms, without the task's internal vocabulary, goes in a comment beside the id.
-- A citation of a draft solver waits at the citation's place in a comment, and the solver's approval turns it into the citation.
+- A citation of a draft solver waits at the citation's place as `<!-- draft: <id> — <gloss> -->`, and the solver's approval turns it into the citation.
 - A rule's formal statement goes on a `+` line under the rule. The first `+` line under a definition starts with the term's symbol, and a symbol is declared on a `+` line under the definition or rule that first uses it. -->
 
 # Principles

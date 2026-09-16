@@ -1,8 +1,8 @@
 """What a solver's cases do on its own pairs: which pairs tell two cases
-apart, and which pairs a case is ill-formed on.
+apart, and which pairs a case is undefined on.
 
 Every pair of the task counts, train and test alike. A case's key on a pair
-is the set of grids it emits there, each grid or `ILL` when the grid is not
+is the set of grids it emits there, each grid or `UNDEF` when the grid is not
 readable, and the stored output never enters the key. Two cases are separated by a pair when their keys there
 differ, and the key tuples over all pairs partition the cases into
 separation classes.
@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 
 from dl.solve import PairResult, res_out_stem, run_task
 
-ILL = "ILL"
+UNDEF = "UNDEF"
 """The key of a case that emits no readable grid on a pair."""
 
 ABSENT = "ABSENT"
@@ -32,7 +32,7 @@ type Matrix = dict[str, dict[str, int]]
 class RunReport:
     cases: list[str] = field(default_factory=list)
     separating: dict[str, int] = field(default_factory=dict)
-    illformed: dict[str, int] = field(default_factory=dict)
+    undefined: dict[str, int] = field(default_factory=dict)
     separates: Matrix = field(default_factory=dict)
     classes: int = 0
 
@@ -95,7 +95,7 @@ def case_label(name: str, resolution: bool = False) -> str:
 
 def _grid(variant) -> Grid:
     if variant.error or variant.conflicts or variant.missing:
-        return ILL
+        return UNDEF
     return tuple(tuple(row) for row in variant.actual)
 
 
@@ -134,10 +134,10 @@ def report_of(pairs: list[PairResult], cases: list[str] | None = None,
                       for b in cases if b != a))
         for a in cases
     }
-    illformed = {a: sum(1 for keys in per_pair if ILL in keys.get(a, ()))
+    undefined = {a: sum(1 for keys in per_pair if UNDEF in keys.get(a, ()))
                  for a in cases}
     tuples = {tuple(keys.get(a, ABSENT) for keys in per_pair) for a in cases}
-    return RunReport(cases=cases, separating=separating, illformed=illformed,
+    return RunReport(cases=cases, separating=separating, undefined=undefined,
                      separates=separates, classes=len(tuples))
 
 

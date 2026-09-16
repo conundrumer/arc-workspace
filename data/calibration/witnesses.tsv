@@ -1,0 +1,13 @@
+task_id	witness	grid	breaks	separates	ruling	strength	verdict	note
+00dbd492	bump	.scratch/deviation/grids/00dbd492-bump.txt	square	Enclose	2	strong	Enclose	
+00dbd492	no-dot	.scratch/deviation/grids/00dbd492-nodot.txt	dot	Count, Replace	2	weak	Count; Size second	
+00dbd492	off-dot	.scratch/deviation/grids/00dbd492-offdot.txt	dot	Replace	2	medium		
+00dbd492	other-ink	.scratch/deviation/grids/00dbd492-otherink.txt	ink	Replace	1	weak	intended (Recolor); generally prioritize keeping cells as they are	
+0934a4d8	canvas	.scratch/deviation/grids/0934a4d8-canvas.txt		in-frame mirror (dropped peer)	1	weak		The occluded region is abnormally small.
+0934a4d8	corner	.scratch/deviation/grids/0934a4d8-corner.txt	restorable		1 as an input; 2 as a pair			It looks like something that would come out of the task's generator. Not thinking about deriving the output, it looks like a sibling; thinking about the output, it is invalid. An intended sibling that did not get culled for being invalid.
+1cf80156	blank	.scratch/deviation/grids/1cf80156-blank.txt	ink		2	strong		
+1cf80156	two-pieces	.scratch/deviation/grids/1cf80156-two-pieces.txt	ink, one_piece	crop to one piece (dropped peer)	2	medium		
+1da012fc	band	.scratch/deviation/grids/1da012fc-band.txt	bands	Anchor	1	strong	intended	Separated feels like the correct one, Anchor not.
+1da012fc	interleave	.scratch/deviation/grids/1da012fc-interleave.txt	bands, map	Anchor	1	medium	Anchor	Anchor looks correct here: the left/right division is the only reading that gives something consistent. Closer to ambiguous and unconstrained: the generator produced something borderline, but it still parses as a sibling. A guessing task is a valid task.
+3b4c2228	fused	.scratch/deviation/grids/3b4c2228-fused.txt	blocks	Placement	1	medium	intended (Object); a count of 2 second	It looks like something that would come out of the task's generator. My guess would be Object first and strongly, and a count of 2 secondarily, on the basis that we count green objects larger than 1x1, which is not a case.
+3b4c2228	no-block	.scratch/deviation/grids/3b4c2228-noblock.txt	present	Lookup	1		intended; it makes sense there is nothing	

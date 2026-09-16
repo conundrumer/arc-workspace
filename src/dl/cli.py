@@ -90,6 +90,7 @@ from dl.sweep_open import (
     settled_params,
 )
 from dl.witness import (
+    DEVIATION,
     DRIFT,
     load_witnesses,
     render_witness,
@@ -758,14 +759,14 @@ def cmd_deletions(stem: str) -> int:
 
 def _print_witness(stem: str) -> int:
     """The witness report of `stem`, or a note that the task has no witness
-    file. Non-zero when a case drifted."""
+    file. Non-zero on a drift or a deviation finding."""
     if load_witnesses(solver_file(stem)[1]) is None:
         print("no witness file")
         return 0
     findings = witness_report(stem)
     for line in render_witness(findings):
         print(line)
-    return 1 if any(d.kind == DRIFT for d in findings) else 0
+    return 1 if any(d.kind in (DRIFT, DEVIATION) for d in findings) else 0
 
 
 def cmd_witness(stem: str) -> int:
@@ -1045,8 +1046,10 @@ def _parser() -> argparse.ArgumentParser:
                     "through the solver and compare what each case gives "
                     "with the outcome the file names. A case the run emits "
                     "and the entry does not name is reported as unlisted, "
-                    "which is not drift. A task with no witness file "
-                    "passes.",
+                    "which is not drift. Each non-intended branch's "
+                    "`@deviation` estimates are then read against its "
+                    "divergence witness with the fewest violated "
+                    "invariants. A task with no witness file passes.",
     ).add_argument("stem")
     sub.add_parser(
         "determination-plan",
@@ -1070,7 +1073,7 @@ def _parser() -> argparse.ArgumentParser:
                     "weigh a case's whole reach, and `unreached_atoms` weighs "
                     "what no case reaches. The ratios stand against the "
                     "smallest case of the file. With `--run`, "
-                    "`pairs_separating` and `pairs_illformed` count over "
+                    "`pairs_separating` and `pairs_undefined` count over "
                     "every pair of the task, train and test alike, keyed by "
                     "the grid a case emits.",
     )

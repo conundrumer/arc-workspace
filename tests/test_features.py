@@ -138,10 +138,10 @@ def _pair(named_grids) -> PairResult:
                       variants=variants)
 
 
-def test_an_ill_formed_case_is_separated_from_a_well_formed_one():
+def test_an_undefined_case_is_separated_from_a_defined_one():
     report = report_of([_pair([("$A", [[1]]), ("$B", None)])], ["A", "B"])
     assert report.separating == {"A": 1, "B": 1}
-    assert report.illformed == {"A": 0, "B": 1}
+    assert report.undefined == {"A": 0, "B": 1}
     assert report.classes == 2
     assert report.separates["A"]["B"] == 1
 

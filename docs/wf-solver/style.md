@@ -218,7 +218,7 @@ A `.comp Parse<Key>` contains a derivation that the program and the Determine co
 
 Alts in the task JSON are encoded by kind:
 
-- A `rule` alt is a peer model: a case of `Choice`, one case per alt output.
+- A `rule` alt is a peer model, and it takes a case of `Choice` when it passes the case tests.
 - A `tiebreak` alt marks a tiebreak.
     - The solver enumerates the resolutions: `out` takes a trailing column typed `TiebreakResolution`, one value per valid resolution.
     - No data or rules name or steer the resolution values.
@@ -234,16 +234,18 @@ Alts in the task JSON are encoded by kind:
     "id": slug,                       // one or two words, unique in the file
     "hypothesis": string,             // which cases the input distinguishes
     "input": Grid,
-    "output": {<case>: Grid | null}   // per case; null is an ill-formed outcome
+    "output": {<case>: Grid | null}   // per case; null is an undefined outcome
             | Grid,                   // a rejected output, which no case may produce
     "assign": {<parameter>: Fact[]},  // optional; replaces the parameter's stored facts
-    "violates": string[],             // optional; the invariants of the inputs that the input violates
-    "rejected": string[]              // optional; the cases whose outcome the concept statement rejects
+    "violates": string[],             // optional; the invariants of the inputs that the input violates, the `-` estimate's count
+    "rejected": string[]              // optional; the rules of the branch this entry witnesses whose outcome the concept statement rejects, the `~` estimate's count
   }] }
 
 Grid: number[][]                      // rows of colors
 Fact: Arg[]                           // the arguments of one fact
 Arg: number | string | Arg[]          // a string names a lib constant; a list is a record
 ```
+
+A branch's `-` and `~` estimates are read off its witness with the fewest violated invariants of the inputs. The `+` estimate has no witness field; it comes from the branch's rules against the concept statement.
 
 A `<case>` is the constructor's name, `Alt`. Under a record-typed `Choice` it is the record of the fields' constructor names, `[Table, Lookup]`. Under no `Choice` it is `(out)`.

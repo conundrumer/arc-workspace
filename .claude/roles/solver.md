@@ -8,8 +8,9 @@ The brief names one solver, `programs/solvers/<task_id>.dl`, and the change to m
 - Read the solver in full, then make the change the brief names. Keep the file's conventions.
 - Run it (`uv run python scripts/run_dl.py <task_id>`) and iterate until it passes and lint is clean. Judge each hint and report that judgment.
 - Run the audit (`uv run python scripts/run_dl.py audit <task_id>`) and resolve the findings.
-- Run the determination plan (`uv run python scripts/run_dl.py determination-plan <task_id>`) and do the actions it lists. In the plan's over-budget section, settle whichever parameters are simplest to determine until the product of the rest goes under the budget.
-- Give a divergence witness for each Choice case pair and for each peer model the change dropped: an input fragment and each model's output on it, taken from `uv run python scripts/run_dl.py grid <task_id>`. Reassign a parameter when the divergence needs it. For a data-indistinguishable pair, state what the shared data hides.
+- Run the determination plan (`uv run python scripts/run_dl.py determination-plan <task_id>`) and do the actions it lists. In the plan's over-budget section, pick whichever settling parameters are simplest to determine until the product of the rest goes under the budget.
+- Write the concept statement on the header's `concept:` line, and each non-intended branch's three estimates on its `@deviation` line, as style.md states them.
+- Give a divergence witness for each Choice case pair and for each peer model the change dropped: an input grid and each model's output on it, taken from `uv run python scripts/run_dl.py grid <task_id>`. Reassign a parameter when the divergence needs it. Write each witness to `programs/witnesses/<task_id>.wit.json`, in the shape style.md states. `uv run python scripts/run_dl.py witness <task_id>` checks that file, and the audit runs that check.
 - Scratch files go under `.scratch/<task_id>/` and nowhere else, except the diff file, which goes to the path the brief gives.
 - A failing run is reported as failing. Do not attribute it to other work.
 - Never run a git command that changes state.

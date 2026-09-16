@@ -94,13 +94,13 @@ def stratum_frame(rows: list[Row]) -> pd.DataFrame:
         name = row.get("stratum", "").strip() or NONE_STRATUM
         cell = counts.setdefault(name, {
             "count": 0, "with_file": 0, "runs": 0,
-            "passes_all": 0, "illformed": 0, "diverging": 0,
+            "passes_all": 0, "undefined": 0, "diverging": 0,
         })
         cell["count"] += 1
         cell["with_file"] += row.get("source", "") == "scratch"
         cell["runs"] += row.get("runs", "") == "yes"
         cell["passes_all"] += _passes_all(row)
-        cell["illformed"] += _number(row, "pairs_illformed") > 0
+        cell["undefined"] += _number(row, "pairs_undefined") > 0
         cell["diverging"] += _number(row, "pairs_diverging") > 0
     frame = pd.DataFrame(
         [{"stratum": name, **cell} for name, cell in counts.items()])

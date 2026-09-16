@@ -16,6 +16,7 @@ from pathlib import Path
 
 from dl.facts import Candidate
 from dl.features_run import NO_CHOICE, case_label
+from dl.lint import choice_points
 from dl.paths import PROGRAMS_DIR
 from dl.render import _grid_lines, render_diff
 from dl.solve import res_out_stem, run_dl_source, solver_file
@@ -23,13 +24,14 @@ from dl.source import swap_facts
 
 WITNESS_DIR = PROGRAMS_DIR / "witnesses"
 
-ILL_FORMED = "ill-formed"
+UNDEFINED = "undefined"
 """How a report names the outcome of a case whose cells describe no grid,
 and of a case that emits nothing at all. The file writes it as `null` and
 the code carries it as None."""
 
 DRIFT = "drift"
 UNLISTED = "unlisted"
+DEVIATION = "deviation"
 
 type Outcome = list[list[int]] | None
 type Assign = dict[str, list[list[object]]]
@@ -39,7 +41,7 @@ type Assign = dict[str, list[list[object]]]
 class Entry:
     """One witness grid and what the solver is expected to give on it.
 
-    `output` is a grid per case, where None is an ill-formed outcome, or one
+    `output` is a grid per case, where None is an undefined outcome, or one
     bare grid, a rejected output that every case must differ from.
 
     `assign` holds replacement `Params` facts per parameter, each row the
@@ -48,8 +50,8 @@ class Entry:
     Position as a list of its arguments.
 
     `violates` names the invariants of the inputs the grid breaks, one
-    phrase each, and `rejected` names the cases whose outcome on the grid
-    the concept statement rejects.
+    phrase each, and `rejected` names the rules of the branch the grid
+    witnesses whose outcome the concept statement rejects, one phrase each.
     """
 
     id: str
@@ -74,10 +76,12 @@ class Witness:
 @dataclass
 class Drift:
     """One finding on one entry. `kind` is DRIFT when a case gives an
-    outcome the entry does not name, and UNLISTED when the solver has a
-    case the entry's `output` does not name. `entry` is the entry's id,
-    followed by the parameters it reassigns. `expected` stands for nothing
-    on an UNLISTED finding."""
+    outcome the entry does not name, UNLISTED when the solver has a case
+    the entry's `output` does not name, and DEVIATION when a branch's
+    `@deviation` line and its witness disagree. `entry` is the entry's id,
+    followed by the parameters it reassigns, and it is empty on a branch
+    with no witness. `expected` stands for nothing on an UNLISTED finding.
+    A DEVIATION finding names its branch in `case` and reads as `note`."""
 
     entry: str
     case: str
@@ -85,6 +89,7 @@ class Drift:
     actual: Outcome
     kind: str = DRIFT
     rejected_output: bool = False
+    note: str = ""
 
 
 def witness_path(task_id: str) -> Path:
@@ -250,11 +255,81 @@ def _entry_findings(entry: Entry, actuals: dict[str, Outcome]) -> list[Drift]:
     return findings
 
 
+def _case_labels(source: str) -> tuple[str, dict[tuple[int, str], str]] | None:
+    """The label of the intended case, and the label of the case that takes
+    each non-intended branch with every other choice point left intended.
+    None when the source declares no `Choice`, or when a field of a
+    record-typed `Choice` names no ADT."""
+    points = choice_points(source)
+    if not points or any(not p.branches for p in points):
+        return None
+    record = points[0].field >= 0
+    intended = [p.branches[0].name for p in points]
+
+    def label(names: list[str]) -> str:
+        return "[" + ", ".join(names) + "]" if record else names[0]
+
+    cases: dict[tuple[int, str], str] = {}
+    for p in points:
+        for b in p.branches[1:]:
+            names = list(intended)
+            names[p.field if record else 0] = b.name
+            cases[(p.field, b.name)] = label(names)
+    return label(intended), cases
+
+
+def _divergences(entries: list[Entry], case: str, base: str) -> list[Entry]:
+    """The divergence witnesses of `case` against `base`: the entries that
+    name both and give them different outcomes."""
+    return [e for e in entries
+            if isinstance(e.output, dict) and case in e.output
+            and base in e.output and e.output[case] != e.output[base]]
+
+
+def _deviation_findings(source: str, entries: list[Entry]) -> list[Drift]:
+    """Each non-intended branch's `-` and `~` estimates against the
+    `violates` and `rejected` of its divergence witness with the fewest
+    violated invariants."""
+    labels = _case_labels(source)
+    if labels is None:
+        return []
+    base, cases = labels
+    findings: list[Drift] = []
+    for p in choice_points(source):
+        for b in p.branches[1:]:
+            if b.deviation is None:
+                continue
+            case = cases[(p.field, b.name)]
+            found = _divergences(entries, case, base)
+            if not found:
+                findings.append(Drift(
+                    entry="", case=b.name, expected=None, actual=None,
+                    kind=DEVIATION,
+                    note=f"branch {b.name} carries an `@deviation` line and "
+                         "has no divergence witness"))
+                continue
+            witness = min(found, key=lambda e: len(e.violates))
+            relaxed, _added, contradicted = b.deviation
+            for mark, stated, got, what in (
+                    ("-", relaxed, len(witness.violates),
+                     "violates {} invariants of the inputs"),
+                    ("~", contradicted, len(witness.rejected),
+                     "rejects {} rules")):
+                if stated != got:
+                    findings.append(Drift(
+                        entry=_label(witness), case=b.name, expected=None,
+                        actual=None, kind=DEVIATION,
+                        note=f"branch {b.name} states `{mark}{stated}`, and "
+                             f"its witness {what.format(got)}"))
+    return findings
+
+
 def witness_report(stem: str) -> list[Drift]:
     """Run every witness grid of `stem`'s task through the solver and
-    report where the outcomes and the file disagree. An entry carrying
-    `assign` runs the reassigned source. A task with no witness file reports
-    nothing."""
+    report where the outcomes and the file disagree, then read each
+    non-intended branch's `@deviation` estimates against its divergence
+    witnesses. An entry carrying `assign` runs the reassigned source. A task
+    with no witness file reports nothing."""
     path, task_id = solver_file(stem)
     witness = load_witnesses(task_id)
     if witness is None:
@@ -266,17 +341,19 @@ def witness_report(stem: str) -> list[Drift]:
         candidates = run_dl_source(
             _assigned(source, entry), entry.input, solver_path=path)
         findings += _entry_findings(entry, _actuals(candidates, resolution))
-    return findings
+    return findings + _deviation_findings(source, witness.entries)
 
 
 def _side(label: str, value: Outcome) -> list[str]:
     if value is None:
-        return [f"  {label}: {ILL_FORMED}"]
+        return [f"  {label}: {UNDEFINED}"]
     return [f"  {label}:", *(f"    {ln}" for ln in _grid_lines(value))]
 
 
 def _lines_of(d: Drift) -> list[str]:
     case = d.case
+    if d.kind == DEVIATION:
+        return [f"{d.entry}: {d.note}" if d.entry else d.note]
     if d.kind == UNLISTED:
         return [f"{d.entry}: case {case} is not listed",
                 *_side("actual", d.actual)]
@@ -290,10 +367,11 @@ def _lines_of(d: Drift) -> list[str]:
 
 
 def render_witness(findings: list[Drift]) -> list[str]:
-    """One block per finding, and `no drift` when none of them is a drift."""
+    """One block per finding, and `no drift` when none of them is a drift or
+    a deviation."""
     lines: list[str] = []
     for d in findings:
         lines += _lines_of(d)
-    if not any(d.kind == DRIFT for d in findings):
+    if not any(d.kind in (DRIFT, DEVIATION) for d in findings):
         lines.append("no drift")
     return lines

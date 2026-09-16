@@ -8,6 +8,7 @@ model hypotheses, which lint as program. The public entry point is
 """
 
 import re
+from dataclasses import dataclass
 from functools import lru_cache
 
 from dl.context import DOCS_DIR, lib_sources
@@ -165,7 +166,7 @@ BRANCH_LINE_RE = r"^\s*(?:\|\s*)?{name}\s*\{{"
 # The intended branch stands first in its type and carries no deviation
 # line; every other branch carries one under its gloss.
 DEVIATION_CAT = "deviation"
-DEVIATION_RE = re.compile(r"^//\s*@deviation:\s*-\d+\s+\+\d+\s+~\d+\s*$")
+DEVIATION_RE = re.compile(r"^//\s*@deviation:\s*-(\d+)\s+\+(\d+)\s+~(\d+)\s*$")
 DEVIATION_FORM = "`// @deviation: -<relaxed> +<added> ~<contradicted>`"
 # The build adds the lib include; a solver holds none.
 INCLUDE_CAT = "include"
@@ -757,20 +758,109 @@ def _gloss_above(raw_lines: list[str], lineno: int) -> bool:
     return above.startswith("//") and not SECTION_RE.match(above)
 
 
+SELF = -1
+"""The index `_choice_adts` gives `Choice` itself."""
+
+NESTED = -2
+"""The index `_choice_adts` gives an ADT a constructor's field names. A case
+label drops such a field, so the case column does not carry its branch."""
+
+
+def _choice_adts(items: list[Item]) -> list[tuple[int, TypeDecl | None]]:
+    """The ADTs a solver's `Choice` ranges over, each with the index of the
+    field that carries it. A field whose type is no ADT takes None."""
+    types = {it.name: it for it in items if isinstance(it, TypeDecl)}
+    choice = types.get("Choice")
+    if choice is None:
+        return []
+    fields = [types.get(n) for n in FIELD_TYPE_RE.findall(choice.rhs)]
+    if choice.branches:
+        return [(SELF, choice)] + [(NESTED, td) for td in fields
+                                   if td is not None and td.branches]
+    return [(i, td if td is not None and td.branches else None)
+            for i, td in enumerate(fields)]
+
+
+def _branch_sites(td: TypeDecl, raw_lines: list[str]) -> list[tuple[str, int | None]]:
+    """Each branch of `td` with the line it opens, in declaration order. The
+    line is None when the branch opens no line of its own."""
+    sites: list[tuple[str, int | None]] = []
+    used: set[int] = set()
+    for name in td.branches:
+        pat = re.compile(BRANCH_LINE_RE.format(name=re.escape(name)))
+        at = next((n for n in range(td.line, len(raw_lines) + 1)
+                   if n not in used and pat.match(raw_lines[n - 1])), None)
+        if at is not None:
+            used.add(at)
+        sites.append((name, at))
+    return sites
+
+
+def _deviation_of(raw_lines: list[str], at: int) -> tuple[int, int, int] | None:
+    """The three estimates of the `@deviation` line above `at`, or None when
+    no such line stands there."""
+    for c in _comments_above(raw_lines, at):
+        m = DEVIATION_RE.match(c)
+        if m:
+            return (int(m[1]), int(m[2]), int(m[3]))
+    return None
+
+
+@dataclass(frozen=True)
+class Branch:
+    """One branch of a choice point, `intended` on the one declared first.
+    `deviation` holds the three estimates of the branch's `@deviation`
+    line, and stands absent when it carries none."""
+
+    name: str
+    intended: bool
+    line: int | None
+    deviation: tuple[int, int, int] | None
+
+
+@dataclass(frozen=True)
+class ChoicePoint:
+    """One choice point of a solver: `Choice` itself, at SELF, or one field
+    of a record-typed `Choice`, at that field's index. The branches stand
+    in declaration order, and stand empty when the field's type is no
+    ADT."""
+
+    field: int
+    type: str
+    branches: tuple[Branch, ...]
+
+
+def choice_points(source: str) -> list[ChoicePoint]:
+    """The choice points a solver's case column carries, in field order. A
+    source that declares no `Choice`, or that does not parse, has none."""
+    try:
+        items = parse(source).items
+    except ParseError:
+        return []
+    raw_lines = _strip_block_comments(source).splitlines()
+    points: list[ChoicePoint] = []
+    for field, td in _choice_adts(items):
+        if field == NESTED:
+            continue
+        if td is None:
+            points.append(ChoicePoint(field=field, type="", branches=()))
+            continue
+        points.append(ChoicePoint(field=field, type=td.name, branches=tuple(
+            Branch(name=name, intended=i == 0, line=at,
+                   deviation=None if at is None else _deviation_of(raw_lines, at))
+            for i, (name, at) in enumerate(_branch_sites(td, raw_lines)))))
+    return points
+
+
 def _glosses(
     items: list[Item], raw_lines: list[str],
 ) -> list[tuple[str, int, str, str]]:
     """The ADTs of `Choice` — the type itself when it has branches, and the
     ADTs named as field types in its records — that lack a gloss above the
     type or above a constructor."""
-    types = {it.name: it for it in items if isinstance(it, TypeDecl)}
-    choice = types.get("Choice")
-    if choice is None:
-        return []
-    targets = [choice] if choice.branches else []
-    for n in FIELD_TYPE_RE.findall(choice.rhs):
-        td = types.get(n)
-        if td is not None and td.branches and td not in targets:
+    targets: list[TypeDecl] = []
+    for _, td in _choice_adts(items):
+        if td is not None and td not in targets:
             targets.append(td)
     findings: list[tuple[str, int, str, str]] = []
     for td in targets:
@@ -778,21 +868,16 @@ def _glosses(
             findings.append((GLOSS_CAT, td.line,
                              f"a gloss stands above `{td.name}`: what the choice is",
                              raw_lines[td.line - 1].rstrip()))
-        used: set[int] = set()
-        for name in td.branches:
-            pat = re.compile(BRANCH_LINE_RE.format(name=re.escape(name)))
-            at = next((n for n in range(td.line, len(raw_lines) + 1)
-                       if n not in used and pat.match(raw_lines[n - 1])), None)
+        for name, at in _branch_sites(td, raw_lines):
             if at is None:
                 findings.append((GLOSS_CAT, td.line,
                                  f"`{name}` opens its own line, under its gloss",
                                  raw_lines[td.line - 1].rstrip()))
                 continue
-            used.add(at)
             if not _gloss_above(raw_lines, at):
                 findings.append((GLOSS_CAT, at, f"a gloss stands above `{name}`",
                                  raw_lines[at - 1].rstrip()))
-            deviation = any(DEVIATION_RE.match(c) for c in _comments_above(raw_lines, at))
+            deviation = _deviation_of(raw_lines, at) is not None
             if name == td.branches[0] and deviation:
                 findings.append((DEVIATION_CAT, at,
                                  f"`{name}` stands first, so it is the intended branch "

@@ -84,19 +84,22 @@ Ask these questions:
 - Does the solver follow principles? Judge this independently of lint and passing pairs.
 - Does any awkward code, as Simplify defines it, remain? Raise what its fix needs.
 - Are there potential peer models?
-    - **Implementations.** Do not propose another implementation of a model, and do not list one in the review.
+    - **Equivalence.** Do not propose, and do not list in the review, a model equivalent to the model of a case the solver already has.
 - When the plan listed actions, could changing the parameterization produce a simpler or more principled model?
 
-**Concept and deviation.** Write the concept statement on the header's `concept:` line, and each non-intended branch's three estimates on its `@deviation` line, as style.md states them.
+**Concept and deviation.** Write the concept statement on the header's `concept:` line, and each non-intended branch's three estimates on its `@deviation` line, as style.md states them. A branch's `-` and `~` estimates are read off the witness file, from the branch's witness with the fewest violated invariants of the inputs.
 
-**Divergence witness.** For each Choice case pair, and for each peer model considered and dropped, show where the models diverge, as a concrete witness: an input fragment and each model's output on it.
+**Divergence witness.** For each Choice case pair, and for each peer model considered and dropped, show where the models diverge, as a concrete witness: an input grid and each model's output on it.
 
+- The test a dropped peer fails decides what that peer owes.
+    - A peer dropped under Fidelity owes a witness.
+    - A peer dropped under Equivalence owes the statement that no witness exists.
+    - A peer that fails Fit stays out of the review.
 - Take that witness from `uv run python scripts/run_dl.py grid <task_id>`, which runs the solver on a grid the session writes, of any size and any content.
-- Choose a witness that shows a valid divergence.
+- Choose a witness on which each model's output is defined, or record an undefined outcome as such.
 - When the divergence requires a parameter to be reassigned, reassign that parameter.
-- For data-indistinguishable pairs, state what the shared data hides.
-- Write each witness to `programs/witnesses/<task_id>.wit.json`, whose shape style.md states. `uv run python scripts/run_dl.py witness <task_id>` checks the file, and the audit runs that check.
+- Write each witness to `programs/witnesses/<task_id>.wit.json`, whose shape style.md states. `uv run python scripts/run_dl.py witness <task_id>` checks the file and each `@deviation` line against it, and the audit runs that check.
 
-**Ruled-out models.** Do not include a model that the data rules out, not even as a note on why it is absent.
+**Ruled-out models.** Do not include a model that fails Fit, not even as a note on why it is absent.
 
 **Delivery.** Write the review as a reply to the user. Finish all task updates first, and end the turn with the review.
