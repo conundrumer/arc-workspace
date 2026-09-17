@@ -38,7 +38,10 @@ testpaths = ["tests"]
 # Eight workers is where this suite stops gaining: the run is short enough
 # that another worker's startup costs more than the tests it takes. Pass
 # `-n 0` for one process, which a debugger or `-s` needs.
-addopts = "-ra -n 8"
+# A worker takes one test at a time. The default batch hands a worker
+# several at once, and one worker then still holds tests the idle ones
+# could have taken.
+addopts = "-ra -n 8 --maxschedchunk=1"
 
 [tool.pyright]
 include = ["src", "scripts", "tests"]
