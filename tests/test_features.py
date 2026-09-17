@@ -117,9 +117,15 @@ def test_a_case_does_not_reach_another_case_s_constructor(solvers):
     assert by_case["[Object, Mid]"].reach_rules == 2
 
 
+# The corpus check is the longest test in the suite, so it runs as parts that
+# the workers take one by one instead of as one test that holds up the run.
+CORPUS_PARTS = 8
+
+
 @pytest.mark.skipif(not all_stems(), reason="no solvers in the corpus")
-def test_every_solver_s_cases_and_shared_and_unreached_are_its_size():
-    for stem in all_stems():
+@pytest.mark.parametrize("part", range(CORPUS_PARTS))
+def test_every_solver_s_cases_and_shared_and_unreached_are_its_size(part):
+    for stem in all_stems()[part::CORPUS_PARTS]:
         report = features_report(stem)
         first = report.cases[0]
         total = (sum(r.atoms for r in report.cases)

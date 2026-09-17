@@ -35,10 +35,10 @@ ignore = ["E741"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# Four workers is where this suite stops gaining: the run is short enough
+# Eight workers is where this suite stops gaining: the run is short enough
 # that another worker's startup costs more than the tests it takes. Pass
 # `-n 0` for one process, which a debugger or `-s` needs.
-addopts = "-ra -n 4"
+addopts = "-ra -n 8"
 
 [tool.pyright]
 include = ["src", "scripts", "tests"]

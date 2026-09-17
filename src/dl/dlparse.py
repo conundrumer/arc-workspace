@@ -53,10 +53,10 @@ class Comment:
     own_line: bool  # nothing but whitespace before it on its line
 
 
-PUNCT2 = (":-", "<=", ">=", "!=", "<:", "<", ">", "=", "!", "(", ")", "[", "]",
-          "{", "}", ",", ".", ":", ";", "$", "@", "|", "+", "-", "*", "/", "%", "^")
-IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-NUM_RE = re.compile(r"\d+")
+PUNCT_PAIRS = frozenset({":-", "<=", ">=", "!=", "<:"})  # tried before the one below
+PUNCT_ONE = frozenset("<>=!()[]{},.:;$@|+-*/%^")
+SPACE_RE = re.compile(r"[ \t\n\r]+")
+WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*|\d+")
 
 
 def _lex(source: str) -> tuple[list[Token], list[Comment]]:
@@ -77,10 +77,12 @@ def _lex(source: str) -> tuple[list[Token], list[Comment]]:
     while i < n:
         c = source[i]
         if c in " \t\n\r":
-            bump(c)
-            i += 1
+            m = SPACE_RE.match(source, i)
+            assert m
+            bump(m.group(0))
+            i = m.end()
             continue
-        if source.startswith("//", i):
+        if c == "/" and source.startswith("//", i):
             j = source.find("\n", i)
             j = n if j < 0 else j
             text = source[i:j]
@@ -88,7 +90,7 @@ def _lex(source: str) -> tuple[list[Token], list[Comment]]:
             bump(text)
             i = j
             continue
-        if source.startswith("/*", i):
+        if c == "/" and source.startswith("/*", i):
             j = source.find("*/", i)
             if j < 0:
                 raise ParseError(line, "unterminated block comment")
@@ -115,24 +117,22 @@ def _lex(source: str) -> tuple[list[Token], list[Comment]]:
             bump(text)
             i = j + 1
             continue
-        if m := NUM_RE.match(source, i):
-            tokens.append(Token("num", m.group(0), line, col))
-            bump(m.group(0))
+        if m := WORD_RE.match(source, i):
+            text = m.group(0)
+            tokens.append(Token("num" if c.isdigit() else "ident", text, line, col))
+            col += len(text)
             i = m.end()
             continue
-        if m := IDENT_RE.match(source, i):
-            tokens.append(Token("ident", m.group(0), line, col))
-            bump(m.group(0))
-            i = m.end()
-            continue
-        for p in PUNCT2:
-            if source.startswith(p, i):
-                tokens.append(Token("punct", p, line, col))
-                bump(p)
-                i += len(p)
-                break
+        pair = source[i:i + 2]
+        if pair in PUNCT_PAIRS:
+            p = pair
+        elif c in PUNCT_ONE:
+            p = c
         else:
             raise ParseError(line, f"unexpected character {c!r}")
+        tokens.append(Token("punct", p, line, col))
+        col += len(p)
+        i += len(p)
     tokens.append(Token("eof", "", line, col))
     return tokens, comments
 
@@ -347,10 +347,12 @@ type Item = Include | Define | Functor | TypeDecl | Decl | Init | Rule | Comp | 
 class _Parser:
     def __init__(self, tokens: list[Token]):
         self.toks = tokens
+        self.last = len(tokens) - 1
         self.pos = 0
 
     def peek(self, k: int = 0) -> Token:
-        return self.toks[min(self.pos + k, len(self.toks) - 1)]
+        p = self.pos + k
+        return self.toks[p if p < self.last else self.last]
 
     def next(self) -> Token:
         t = self.toks[self.pos]
