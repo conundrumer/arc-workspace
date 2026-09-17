@@ -168,6 +168,7 @@ class Handler(BaseHTTPRequestHandler):
                 if it is None:
                     return self.reply({"error": "unknown item"}, 404)
                 self.reply({"feed": it["feed"], "files": item_files(it),
+                            "witness": solvers.witness_view(item_id),
                             "ver": it.get("ver", 0)})
         elif url.path == "/api/backlog":
             # the order the rows take comes from a git read, which runs here

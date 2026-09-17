@@ -1,15 +1,15 @@
-//! Shared types and primitives for ARC solvers in Souffle.
+//! Shared types and relations for ARC solvers in Souffle.
 //!
-//! Reading a unit:
+//! Reading a component:
 //!
 //! - A relation marked `// @input` is one the caller populates, and the facts
 //!   under it are its default. Every other relation derives.
-//! - In a keyed unit, the first column of a relation is its key, and each key
-//!   is one independent instance of the unit.
-//! - A `Requires:` sentence states a precondition the unit does not check,
+//! - In a keyed component, the first column of a relation is its key, and each
+//!   key is one independent instance of the component.
+//! - A `Requires:` sentence states a precondition the component does not check,
 //!   and what happens when it does not hold.
 //!
-//! Using a unit:
+//! Using a component:
 //!
 //! - `ord`, `count`, and `match` are Souffle reserved words, so an instance
 //!   cannot take them as its name.
@@ -17,8 +17,8 @@
 //! - An `inline` relation sits under negation only when its clauses
 //!   introduce no variable and the use binds every column. No inline
 //!   relation can appear inside an aggregate; a non-inline relation wraps it.
-//! - The anchors (`same_dist`, `corner_anchor`, `slab_anchor`, and the other
-//!   composites of box.dl) work only on grounded positions.
+//! - The anchor relations (`same_dist`, `corner_anchor`, `slab_anchor`, and
+//!   relations built from them) require every position argument to be bound.
 //!
 //! The runner contract: the solver declares `out`, and no other IO relation,
 //! total over the expected output grid.
@@ -50,7 +50,7 @@
 /// The edge-margin record; box.dl holds its algebra.
 .type Box = [t: number, b: number, l: number, r: number]
 
-/// (V-length, H-length) of a frame, for ParamsHelpers only.
+/// The (V, H) extents of a frame, for ParamsHelpers only.
 .type Dim = [v: number, h: number]
 
 /// A cell.
@@ -70,7 +70,7 @@
 .decl ex_out(e: Example, p: Position, col: Color)  // @input
 
 // Per-parameter diff between determine.<parameter> and params.<parameter>;
-// the runner synthesizes the rules, and a nonempty diff is a violation.
+// the runner synthesizes the clauses, and a nonempty diff is a violation.
 .decl _determination_diff(param: symbol)
 
 #include "lib/sets.dl"

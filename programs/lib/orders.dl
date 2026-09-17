@@ -1,4 +1,4 @@
-//! Units over abstract members whose input carries an order or a step: a
+//! Components over abstract members whose input carries an order or a step: a
 //! `before` relation, a `succ` relation, or a step count. The members are
 //! opaque, and nothing here reads a position.
 

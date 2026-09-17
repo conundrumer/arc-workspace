@@ -1,0 +1,70 @@
+{
+  "id": "996ec1f3",
+  "witnesses": [{
+    "id": "border-mode",
+    "hypothesis": "The panel's color is the one color inside its border, not the panel's commonest color. Each panel here holds a one-cell interior and a border painted in a single color, so the peer model that reads the commonest color gives 7, 8, 9, 6 where this model gives 3, 4, 1, 2.",
+    "violates": ["the border of a panel spreads over seven or more colors, none of them as common as the interior fill", "a panel's interior is at least four cells on each axis"],
+    "input": [
+      [7,7,7,5,8,8,8],
+      [7,3,7,5,8,4,8],
+      [7,7,7,5,8,8,8],
+      [5,5,5,5,5,5,5],
+      [9,9,9,5,6,6,6],
+      [9,1,9,5,6,2,6],
+      [9,9,9,5,6,6,6]
+    ],
+    "output": { "(out)": [[3,5,4],[5,5,5],[1,5,2]] }
+  }, {
+    "id": "two-cuts",
+    "hypothesis": "The schematic holds one cell per panel of the cut, however many panels the cut makes. Two cut rows and one cut column make six panels, and the output grows to five rows by three columns. The peer model that takes the first uniform row as the only cut keeps a three by three output.",
+    "violates": ["the cut is one row and one column"],
+    "input": [
+      [7,7,7,5,8,8,8],
+      [7,3,7,5,8,4,8],
+      [7,7,7,5,8,8,8],
+      [5,5,5,5,5,5,5],
+      [9,9,9,5,6,6,6],
+      [9,1,9,5,6,2,6],
+      [9,9,9,5,6,6,6],
+      [5,5,5,5,5,5,5],
+      [2,2,2,5,1,1,1],
+      [2,6,2,5,1,7,1],
+      [2,2,2,5,1,1,1]
+    ],
+    "output": { "(out)": [[3,5,4],[5,5,5],[1,5,2],[5,5,5],[6,5,7]] }
+  }, {
+    "id": "cut-clash",
+    "hypothesis": "The cut carries one color. Two cut rows drawn in different colors leave the cells between the panels with no color, so the output is ill-formed.",
+    "violates": ["the cut is one row and one column", "every uniform line carries one color"],
+    "input": [
+      [7,7,7,7,7,7,8],
+      [7,3,3,3,3,3,7],
+      [8,7,7,7,7,7,7],
+      [5,5,5,5,5,5,5],
+      [9,9,9,9,9,9,6],
+      [9,1,1,1,1,1,9],
+      [6,9,9,9,9,9,9],
+      [4,4,4,4,4,4,4],
+      [2,2,2,2,2,2,1],
+      [2,6,6,6,6,6,2],
+      [1,2,2,2,2,2,2]
+    ],
+    "output": { "(out)": null }
+  }, {
+    "id": "mixed-interior",
+    "hypothesis": "A panel carries one color inside its border. The top left panel here holds two, so that panel's cell has no color and the output is ill-formed.",
+    "violates": ["a panel holds a single color inside its border"],
+    "input": [
+      [7,7,7,7,5,8,8,8],
+      [7,3,3,7,5,8,4,8],
+      [7,3,9,7,5,8,4,8],
+      [7,7,7,7,5,8,8,8],
+      [5,5,5,5,5,5,5,5],
+      [9,9,9,9,5,6,6,6],
+      [9,1,1,9,5,6,2,6],
+      [9,1,1,9,5,6,2,6],
+      [9,9,9,9,5,6,6,6]
+    ],
+    "output": { "(out)": null }
+  }]
+}

@@ -2,7 +2,7 @@
 
 from collections import defaultdict
 
-from dl.solve import PairResult
+from dl.solve import PairResult, _grid_key
 from dl.souffle import TEMP_NAME_RE
 
 
@@ -40,6 +40,32 @@ def render_diff(expected: list[list[int]], actual: list[list[int]]) -> list[str]
 def _short(name: str) -> str:
     """Variant label for listings; a resolution enumeration term gets elided."""
     return name if len(name) <= 40 else name[:37] + "..."
+
+
+def _count(n: int, noun: str) -> str:
+    return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
+
+
+def pass_suffix(p: PairResult, res: bool) -> str:
+    """What a passing pair emitted, by the name of each trailing `out` column.
+
+    A variant name is those columns tab-joined, so a resolution solver's
+    last field is the resolution and anything before it is the case. Several
+    resolutions can draw one grid, so a pair with two or more of them reports
+    how many grids they came to.
+    """
+    if not any(v.name for v in p.variants):
+        return ""
+    fields = [v.name.split("\t") for v in p.variants]
+    cases = {tuple(f[:-1]) for f in fields} if res else {tuple(f) for f in fields}
+    parts = []
+    if len(cases) > 1:
+        parts.append(_count(len(cases), "case"))
+    n_res = len({f[-1] for f in fields}) if res else 1
+    if n_res > 1:
+        parts.append(_count(n_res, "resolution"))
+        parts.append(_count(len({_grid_key(v.actual) for v in p.variants}), "grid"))
+    return f" ({', '.join(parts)})" if parts else ""
 
 
 def _error_lines(error: str) -> list[str]:

@@ -1,6 +1,6 @@
 // 9720b24f
 // draft
-// keywords: objects enclose percept-shadow
+// keywords: objects enclose approximation
 // output: A non-bg cell is erased to bg when a container it does not belong
 //  to surrounds it: container cells sit on both sides of the cell along one
 //  axis, and one sits to a side of the other axis. Every other cell passes

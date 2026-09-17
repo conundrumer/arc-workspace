@@ -1,4 +1,4 @@
-//! Units over pieces and candidates the caller supplies as opaque labels,
+//! Components over pieces and candidates the caller supplies as opaque labels,
 //! together with a `conflict` relation over them, and the enumeration of a
 //! tiebreak's resolutions.
 
@@ -85,7 +85,7 @@
 
     // Each kill rule's universal ("every candidate of the piece is
     // blocked") would negate alive inside the recursion, so it walks the
-    // piece's candidates in an arbitrary stable ord order — the pair rule
+    // piece's candidates in an arbitrary stable ord order — the pair clause
     // as an inner walk nested in an outer one.
     //
     // The room kill's own fixpoint lies below the joint one, so it runs
@@ -136,7 +136,7 @@
         //
         // A walk step whose next candidate must be dead reaches the walk
         // by lookup rather than rescanning it every iteration. The last
-        // step rule states that as a `.plan`: version 1, the one driven by
+        // step clause states that as a `.plan`: version 1, the one driven by
         // new dead tuples, joins the dead atom first, then the chain, then
         // the walk. Souffle numbers the versions by the recursive atoms in
         // the body, so an added atom renumbers them.
@@ -244,12 +244,12 @@
 
 /// The resolutions of a tiebreak: every injective assignment of candidate
 /// items to slots, one term per assignment, backing a TiebreakResolution out
-/// column. Branch names are program-global, so the solver declares the ADT
+/// column. Constructor names are program-global, so the solver declares the ADT
 /// the comp constructs:
 ///
 ///   .type TiebreakResolution =
 ///       End {} | Sit {slot: Slot, item: Item, rest: TiebreakResolution}
-.comp TiebreakResolutions<Key, Slot, Item> {
+.comp TiebreakResolutions<Key, Slot, Item> {  // @construction
     /// The candidate items of each slot.
     .decl cand(key: Key, slot: Slot, item: Item)  // @input
 

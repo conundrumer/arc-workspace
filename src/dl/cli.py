@@ -49,7 +49,12 @@ from dl.lint import (
     lint_program,
 )
 from dl.paths import REPO_ROOT, all_stems
-from dl.render import _grid_lines, render_pair_failure, render_stem_failures
+from dl.render import (
+    _grid_lines,
+    pass_suffix,
+    render_pair_failure,
+    render_stem_failures,
+)
 from dl.rewrite_lint import HINTS, lint_rewrites
 from dl.solve import (
     PairResult,
@@ -230,9 +235,7 @@ def cmd_one(stem: str, hints: bool = False, timed: bool = False) -> int:
     pair_secs = time.perf_counter() - t0
     for p in result.pairs:
         if p.ok:
-            n = len(p.variants)
-            suffix = f" ({n} variants)" if n > 1 else ""
-            print(f"{p.kind}[{p.idx}]: PASS{suffix}")
+            print(f"{p.kind}[{p.idx}]: PASS{pass_suffix(p, res_out_stem(stem))}")
         else:
             for line in render_pair_failure(p, stem):
                 print(line)
@@ -310,9 +313,7 @@ def cmd_pairs(stem: str, path: str) -> int:
             ex = Example(input=e["input"], output=e["output"], alt=alt)
             r = run_pair(stem, task_id, kind, idx, ex)
             if r.ok:
-                n = len(r.variants)
-                suffix = f" ({n} variants)" if n > 1 else ""
-                print(f"{kind}[{idx}]: PASS{suffix}")
+                print(f"{kind}[{idx}]: PASS{pass_suffix(r, res_out_stem(stem))}")
             else:
                 failed = True
                 for line in render_pair_failure(r, stem):
@@ -339,7 +340,7 @@ that burned the most CPU.
 
 To run one grid by hand, build the file in programs/solvers/, so that
 `#include "../lib.dl"` resolves, and link the functor library that lib.dl's
-primitives call:
+relations call:
 
     {{ echo '#include "../lib.dl"'
       cat programs/solvers/<stem>.dl
@@ -1046,7 +1047,7 @@ def _parser() -> argparse.ArgumentParser:
                     "through the solver and compare what each case gives "
                     "with the outcome the file names. A case the run emits "
                     "and the entry does not name is reported as unlisted, "
-                    "which is not drift. Each non-intended branch's "
+                    "which is not drift. Each other branch's "
                     "`@deviation` estimates are then read against its "
                     "divergence witness with the fewest violated "
                     "invariants. A task with no witness file passes.",

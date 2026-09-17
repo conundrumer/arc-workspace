@@ -2,7 +2,8 @@
 - Write in the indicative mood.
 - Avoid justifications, unless there is necessary reason.
 - Avoid contrastive structures, unless the alternative needs to be addressed.
-- Write File structure rules by editing the template, and only describe what the template can't explain. -->
+- Use a nested list when each parallel item states a rule a reader can follow or break on its own.
+- Write File structure rules by editing the template, and describe only what the template cannot explain. -->
 
 # Style
 
@@ -14,7 +15,7 @@ Solvers target the latest Souffle.
 
 ### Identifiers
 
-- Variables: a single letter with an optional digit suffix, or leading-capital snake_case.
+- Variables use a single letter with an optional digit suffix, or leading-capital snake_case.
 - Macros: SCREAMING.
 - Types: PascalCase.
 - Relations: snake_case.
@@ -23,27 +24,27 @@ Solvers target the latest Souffle.
 
 A Position is named for its coordinate frame.
 
-- **grid** — task input/output frame: `P_grid`. If input and output both appear in one rule, `P_grid_in` and `P_grid_out`.
+- **grid** — task input/output frame: `P_grid`. If input and output both appear in one clause, they are `P_grid_in` and `P_grid_out`.
 - **tile** — tile-arrangement frame produced by `divide`. `P_tile`.
 - **intile** — within a single tile. `P_intile`.
 - **inner** — a region's own frame: `P_inner`.
-- A Position takes the bare letter where no other frame shares the rule: `P`, then `Q` for a second position. A digit suffix tells apart two rows of one relation (`placed(D, P1, Q1), placed(D, P2, Q2)`), and the atom that binds each variable carries the frame in its column names.
+- A Position takes the bare letter where no other frame shares the clause: `P`, then `Q` for a second position. A digit suffix tells apart two rows of one relation, as in `placed(D, P1, Q1), placed(D, P2, Q2)`, and the atom that binds each variable states the frame in its column names.
 
-`divide` and `tile_pos` name their formal parameters `p_outer` / `p_inner`. A solver binds them to `P_tile` / `P_intile` at the call site. An axis-only intermediate takes decomposition language: `P_outer_v`, `P_inner_h`.
+`divide` and `tile_pos` name their formal parameters `p_outer` and `p_inner`. A solver binds them to `P_tile` and `P_intile` at the call site. An axis-only intermediate takes decomposition names such as `P_outer_v` and `P_inner_h`.
 
 When a decomposition's inner coordinate is also the output cell, the setup decides its name.
 
-- **Decompose-fold.** A decompose-fold names the output cell `P_grid_out` in the consuming rules, and keeps `P_intile` in the production rules that decompose the input.
+- **Fold.** A fold combines the tiles into one output tile. It names the output cell `P_grid_out` in consuming clauses and keeps `P_intile` in production clauses that decompose the input.
 - **Select.** A select of one tile names it `P_intile`.
-- **Crop.** A crop to a region's box, the `crop` read, names it `P_inner`.
-- **Overlay.** An overlay names the frame cell that it stacks onto: bare `P`, or `P_frame` when another frame shares the rule.
+- **Crop.** A crop to a region's box, using `crop`, names it `P_inner`.
+- **Overlay.** An overlay names the frame cell that it stacks onto: `P`, or `P_frame` when another frame shares the clause.
 
 ### Box readings
 
-A Box column is read as a cell (`Position`), a translation (`Offset`), or a rectangle, margin, or frame change (bare `Box`). The type alias states the reading where one applies; a comment states a bare Box's reading where the name does not.
+A Box column is read as a cell with the `Position` alias, a translation with the `Offset` alias, or a rectangle, margin, or frame change with bare `Box`. A comment states a bare Box's reading where the name does not.
 
-- A variable is named for its reading: `B` for a box, `V` for an offset, `P_rel` for a cell read relative to a box. `M` does not name a box.
-- "Frame" in a unit's name means a frame of cells realized or induced from data (`DirFrame`, `AxisFrame`, `Frame2D`, `OrderFrame`). The coordinate-frame sense lives in prose and in Position variable names.
+- A variable is named for its reading: `B` for a box, `V` for an offset, and `P_rel` for a cell read relative to a box. `M` does not name a box.
+- "Frame" in a component's name means a frame of cells derived from data, as in `Frame2D`. The coordinate-frame sense is stated in prose and Position variable names.
 
 ## File structure
 
@@ -53,17 +54,22 @@ A solver is one file, `<task_id>.dl`.
 // <task_id>
 // draft
 // keywords: <keywords from keywords.md>
-// concept: <the concept statement>
-// input: <the structures the parse finds, shared by every case, omitted when trivial>
-// output: <the rule from input to output that every case shares>
-//  <continuation of that rule>
+// @invariant <unique slug>: <a regularity of every input in the evidence>
+// @rule <unique slug>: <one rule of the concept statement>
 
 // <what the choice is>
 .type Choice =
-    // <gloss of the intended case>
+    // @rule <concept rule slug for a reference>
+    // @approximated <concept rule slug>: <the weaker rule the program runs>
     CaseA {}
-    // <gloss>
-    // @deviation: -1 +0 ~0
+    // @rule <concept rule slug for an override>: <the branch's replacement rule>
+    // @addition <unique addition slug>: <the branch's new rule>
+    // @approximated <concept rule slug>: <the weaker rule the program runs>
+    // @witness <id>: <plausibility> <verdict>
+        // @relaxed <slug of an input invariant that this witness breaks>
+        // @reassigned <parameter changed for this witness>
+    // @witness <id>: <plausibility> <verdict>
+        // @relaxed <slug of an input invariant that this witness breaks>
   | CaseB {}
 
 .decl out(p: Position, col: Color, ch: Choice)
@@ -87,7 +93,11 @@ A solver is one file, `<task_id>.dl`.
 .comp Parse<Key> { ... }
 .init parse = Parse<Unit>
 
-// shared program rules
+// shared program clauses
+
+// <gloss>
+// @rule <concept rule slug> <concept rule slug>
+.init shape = Components<Unit>
 
 // --- CaseA ---
 out(..., $CaseA()) :- ...
@@ -98,70 +108,75 @@ out(..., $CaseB()) :- ...
 .comp Determine { ... }
 ```
 
+### Header
+
+A header with no `@invariant` lines states that every grid is a possible input.
+
 A family sibling's header, omitting other fields:
 
 ```
 // <task_id>
 // draft
-// representative: <task_id> <Case>
+// representative: <family's first-solved task id> <Case when the sibling has one case of its Choice>
 ```
-
-The representative is the family's first-solved member. A case name follows the id when the sibling holds one case of the representative's `Choice`, and no case name follows it otherwise.
 
 ### Cases
 
-A solver with one case has no `Choice`: no type, no case markers, no column on `out`.
+A solver with one case has no `Choice`, case markers, or case column on `out`.
 
-- **Case markers.** Cases do not interleave: each case's Params and rules sit under its marker. Cases that share facts or rules sit under one marker naming them, `// --- Box, Erode ---`. A marker may also fix a constructor's fields, `// --- Derive(g=Iso) ---`, for the part of that case where the field holds that branch; the comma still separates cases.
-- **Intended case.** The intended case is declared first in `Choice`, and in each field's type of a record-typed `Choice`. It carries no `@deviation` line.
-- **`@deviation`.** Every other branch carries `// @deviation: -<relaxed> +<added> ~<contradicted>` under its gloss: its three deviation estimates, as principles.md defines them, with `-` for relaxed, `+` for added, and `~` for contradicted.
-- **`impl_choice`.** The relation that enumerates the cases is `impl_choice`, its column `ch`, corpus-wide. A record-typed `Choice` gets one enumerator per field, named for the field's type (`.decl locate_choice(l: Locate)`). `impl_choice` holds whole `Choice` values, and appears when a rule reads one.
+- **Case markers.** Cases do not interleave: each case's Params and clauses are under its marker. Cases that share facts or clauses are under one marker naming them, `// --- Box, Erode ---`. A marker may fix a constructor's fields, `// --- Derive(g=Iso) ---`, for the part of that case where the field is that branch; the comma still separates cases.
+- **Concept branch.** The concept branch is declared first in `Choice`, and in each field's type of a record-typed `Choice`.
+- **Other branches.** Every other branch has at least one `@witness` line. A witness's fields are under the first branch that has it, and a later branch has the `@witness` line alone.
+    - A branch nested under a constructor's field states only what differs from the branch it is under.
+- **`impl_choice`.** The relation that enumerates the cases is `impl_choice`, and its column is `ch`. A record-typed `Choice` gets one enumerator per field, named for the field's type, as in `.decl locate_choice(l: Locate)`. `impl_choice` contains whole `Choice` values and appears when a clause reads one.
 
 ## Params
 
-Params holds the parameterization and what derives from it. The program reads a parameter as `params.<rel>`.
+Params contains the parameterization and what derives from it. The program reads a parameter as `params.<rel>`.
 
-- `.init helpers = ParamsHelpers` inside Params gives data declarations the shared helpers as `helpers.<rel>`. The program has no access.
-- A task with an empty parameterization keeps the comp empty and the `.init` unchanged.
-    - Write it as `.comp Params {}`.
-- **Shared parameters.** The parameters that every case reads sit above the case markers. A parameter that some case never reads goes under the marker of the cases that read it.
-- **Derived data.** A rule inside Params derives a relation from parameters, and writes no value as a literal. The derived relation carries no determination relation.
-    - **`@unit` literal.** A literal 1 stating a unit stays in the rule, under an `// @unit: <what the 1 states>` comment on the rule's line. A 1 is a unit when a larger value states no model. The linter flags a program literal regardless of `@unit`.
+- `.init helpers = ParamsHelpers` gives the declarations inside Params the shared helpers as `helpers.<rel>`. The program has no access.
+- **Empty parameterization.** A task with an empty parameterization keeps the comp empty and the `.init` unchanged: `.comp Params {}`.
+- **Shared parameters.**
+    - A parameter that every case reads is above the case markers.
+    - A parameter that some case never reads goes under the marker of the cases that read it.
+- **Derived data.** A clause inside Params writes no value as a literal. A derived relation has no determination relation.
+    - **`@singleton-axis` literal.** A structure that extends along one axis is written in a two-axis type, and the other axis takes a literal `1`. The clause containing that literal ends with `// @singleton-axis: <what the structure is>`. The linter flags a program literal regardless of the comment.
 - Facts are not column-aligned across a block.
-- **Redundant values.** A Params rule derives a redundant value from the parameter that fixes it, instead of storing it. If the family fixes an orientation value from another value, the stored form is relative (`Sense` via `turn`, `Axis` via `perp`).
+- **Relative orientation.** If the family fixes an orientation value from another value, the stored form is relative: `Sense` via `turn` and `Axis` via `perp`.
 
 ## Types
 
-A solver defines only these types:
+A solver may define:
 
-- ADTs inside `Choice`: the type itself, a field of its record, or a field of one of its constructors.
-- `TiebreakResolution` for alt outputs.
-- Records that fill a generic comp's type params.
+- an ADT in `Choice`, in one of these places:
+    - as `Choice` itself
+    - as the type of a field in the `Choice` record
+    - as the type of a field in a `Choice` constructor
+- `TiebreakResolution` for alt outputs
+- a record used as a type argument of a generic comp
 
 Any other type is banned.
 
 ## Program
 
-Program style and the linter apply to the program rules, the Determine comp, and the Parse comp.
+Program style applies to the program clauses and the Determine comp. The single-consumer hint also applies to relations in Params.
 
-- **`@allow` directive.** A relation kept against the lint's single-consumer hint carries `// @allow: single-consumer — <why>` on the line above its declaration, beside the gloss, and the hint does not fire on it.
-- **`@workaround` directive.** A temporary workaround sits under a `// @workaround: <the principled form it stands in for>` line.
+- **`@allow` directive.** A relation kept despite the lint's single-consumer hint has `// @allow: single-consumer — <reason>` on the line immediately above its declaration. Put the relation's gloss in a separate comment immediately above the directive. The hint does not fire on the relation.
+- **`@workaround` directive.** A temporary workaround is under a `// @workaround: <the principled form it stands in for>` line.
+- **`@rule` directive.** At program scope or inside `Parse`, an instance of a component without an `@construction` mark has the directive. Each slug names an `@rule` line in the solver's header. In a family sibling, that line belongs to the representative's header.
 
 ### Bans
 
-- **Literals.** Literals outside proposal comps are banned. The program reads these from Params:
-    - orientation: every lib constant macro but `ZERO`
-    - colors
-    - non-zero task-shape numbers: lengths, offsets, gaps
-- **Position destructure.** Position destructure is banned. Lib primitives read Position.
+- **Literals.** Literals are banned. The program may read `0` and `ZERO` directly; it reads every other lib constant macro, all colors, and non-zero task-shape lengths, offsets, and gaps from Params.
+- **Position destructure.** Destructuring a Position is banned. Lib relations read a Position.
 - **Arithmetic.** Arithmetic, raw aggregates, and `range` are banned.
-    - **Bound comparisons.** A comparison of a distance against a bound is program style, not arithmetic, and needs no primitive.
+    - **Bound comparisons.** A comparison of a distance against a bound is program style, is not arithmetic, and needs no lib relation.
 
 ### Idioms
 
-- **Complement tests.** Complement tests negate the named case: `!params.bg(Col)` for non-bg.
-- **Off-edge tests.** An off-edge test is `!dist(P, D, 0)`.
-- **Narrowing.** When a rule binds an argument of a lib primitive to a head column of a narrower type, it takes that type's `*_elem` atom.
+- **Complement tests.** The test negates the named case: `!params.bg(Col)` for non-bg.
+- **Off-edge tests.** The test is `!dist(P, D, 0)`.
+- **Narrowing.** When a clause binds an argument of a lib relation to a head column of a narrower type, it takes that type's `*_elem` atom.
 - **Aggregators.** Inline relations cannot appear inside aggregators. A non-inline relation wraps one when needed.
 
 ### Layout
@@ -175,7 +190,7 @@ header_color(Idx, Col) :-
     params.across_dir(A_dir), dist(P, A_dir, Idx).    // index = across distance
 ```
 
-**Single-line form.** The single-line form is fine for short rules (≤ ~80 chars).
+**Single-line form.** The single-line form is fine for short clauses (≤ ~80 chars).
 
 ### Disjunction
 
@@ -184,22 +199,27 @@ A disjunction is conditional branching inside one derivation: the shared frame s
 ```
 render(P, Col) :-
     in(P, _), params.side(K), divide_by_size_2d(P, K, 0, P_tile, _),
-    ( tile_ink(P_tile, Col)                 // inked tile: one atom tests and grounds Col
+    ( tile_ink(P_tile, Col)                 // inked tile: one atom tests, grounding Col
     ; !tile_ink(P_tile, _), params.bg(Col)  // blank tile: the test, then Col
     ).
 ```
 
 - Each branch must ground the head's variables on its own.
 - A branch that takes a value that the frame already derives binds it with `=`.
-- Rules that share a head and a frame belong in one rule.
-- A rule does not range over choice tags through a disjunction.
+- Clauses that share a head and a frame belong in one clause.
+- A clause does not range over choice tags through a disjunction.
 
 ## Components
 
-- **Proposal comps.** A comp outside `Params`, `Determine`, and `Parse` is lib code. A solver writes one only as a proposal comp, which has an entry under `docs/wf-solver/proposals/` per the lib addition protocol. The linter skips every comp but `Determine` and `Parse`, and flags a proposal comp with no entry.
-- **Keys.** A comp other than `Params` and `Determine` takes a `Key` type param, and keyed relations share it across cases. Single-set sites key on `Unit`.
-    - **Shared stages.** A stage is shared when, and only when, its case-specific versions differ in nothing but the case name. If cases differ in substance (one derives a value, one reads it from Params), that stage stays per-case, even when one derivation could feed every case.
-- **Instance-level inputs.** An input that is the same across cases is part of the instance's identity, and takes no key. An input that varies per case is per-key data, and the comp is keyed by `Choice`.
+- **Proposal comps.** A comp outside `Params`, `Determine`, and `Parse` is lib code, and a solver writes one only as a proposal comp, per lib-protocol.md. Program-style checks skip proposal comps, and a proposal comp with no entry is flagged.
+- **Keys.** Every comp but `Params` and `Determine` takes a `Key` type param.
+    - Keyed relations share the key across cases.
+    - Single-set sites key on `Unit`.
+    - **Shared comp instances.** A comp instance is shared exactly when its case-specific versions differ only in the case name.
+        - A comp instance stays per-case when one case derives a value and another reads it from Params, even when one derivation could feed every case.
+- **Instance-level inputs.**
+    - An input that is the same across cases is part of the instance's identity and takes no key.
+    - An input that varies per case is per-key data and keys the comp by `Choice`.
 - **Nested comps.** A nested comp's outputs are read through the instance path.
 
 ## Parse
@@ -208,44 +228,16 @@ A `.comp Parse<Key>` contains a derivation that the program and the Determine co
 
 ## Determination
 
-`Determine` holds the determination: one relation per determined parameter, with the parameter's name and schema, derived from `ex_in` / `ex_out`.
+`Determine` contains the determination as one relation per determined parameter, with the parameter's name and schema, derived from `ex_in` and `ex_out`.
 
-- Determination relations that mirror no parameter are helpers. The runner pairs determination relations to parameters by name, so a helper must not take a parameter's name.
-- Derived ids need only be stable across the solver's Ident parameters, not equal to the stored ones.
-- **Test inputs.** A rule that keeps the candidates that no example contradicts ranges over examples with `ex_out` rows.
+- A determination relation that mirrors no parameter is a helper and takes no parameter's name.
+- When several determined parameters use an Ident for the same entity, their determination relations derive the same id for that entity. The derived id need not equal the stored id.
+- **Test inputs.** A clause that keeps the parameter values that no example contradicts ranges over examples with `ex_out` rows.
 
 ## Alt outputs
 
-Alts in the task JSON are encoded by kind:
+A task JSON may give a pair alternate outputs in an alt, whose `kind` names how the outputs differ.
 
-- A `rule` alt is a peer model, and it takes a case of `Choice` when it passes the case tests.
-- A `tiebreak` alt marks a tiebreak.
-    - The solver enumerates the resolutions: `out` takes a trailing column typed `TiebreakResolution`, one value per valid resolution.
-    - No data or rules name or steer the resolution values.
-- A pair has at most two accepted outputs.
+An alt with kind `rule` gives the pair a second candidate.
 
-## Witness file
-
-`programs/witnesses/<task_id>.wit.json` holds the solver's divergence witnesses.
-
-```
-{ "id": <task_id>,
-  "witnesses": [{
-    "id": slug,                       // one or two words, unique in the file
-    "hypothesis": string,             // which cases the input distinguishes
-    "input": Grid,
-    "output": {<case>: Grid | null}   // per case; null is an undefined outcome
-            | Grid,                   // a rejected output, which no case may produce
-    "assign": {<parameter>: Fact[]},  // optional; replaces the parameter's stored facts
-    "violates": string[],             // optional; the invariants of the inputs that the input violates, the `-` estimate's count
-    "rejected": string[]              // optional; the rules of the branch this entry witnesses whose outcome the concept statement rejects, the `~` estimate's count
-  }] }
-
-Grid: number[][]                      // rows of colors
-Fact: Arg[]                           // the arguments of one fact
-Arg: number | string | Arg[]          // a string names a lib constant; a list is a record
-```
-
-A branch's `-` and `~` estimates are read off its witness with the fewest violated invariants of the inputs. The `+` estimate has no witness field; it comes from the branch's rules against the concept statement.
-
-A `<case>` is the constructor's name, `Alt`. Under a record-typed `Choice` it is the record of the fields' constructor names, `[Table, Lookup]`. Under no `Choice` it is `(out)`.
+An alt with kind `tiebreak` gives resolutions within one candidate. The solver enumerates them through a trailing `out` column of type `TiebreakResolution`.

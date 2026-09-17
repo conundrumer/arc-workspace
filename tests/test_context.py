@@ -120,7 +120,7 @@ def test_render_reads_the_listed_docs_in_order(tmp_path: Path):
     assert index[:index.index(cut)] == out[:out.index(cut)]      # the docs render the same
     assert index.endswith(
         "\n---\n\n# programs/lib.dl — index\n\n"
-        "A module's interface file, its path with `.md` for `.dl`, holds each unit's"
+        "A module's interface file, its path with `.md` for `.dl`, holds each component's"
         " signature and the rest of its doc.\n\n"
         "The root.\n\n"
         "- **out** — The output.\n"

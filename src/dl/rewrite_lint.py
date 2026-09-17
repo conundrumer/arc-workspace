@@ -316,14 +316,14 @@ def _lib_scopes(text: str) -> tuple[dict[str, Decl], dict[str, Comp]]:
     return top, _comp_table(items)
 
 
-# Lib-idiom chains: a lib primitive's defining body, as the two atoms a
+# Lib-idiom chains: a lib relation's defining body, as the two atoms a
 # hand-written site carries. `a` and `b` are (relation, arity, linking
 # slot) — b's slot is a tuple of the slots the link may sit in, more than
 # one where the relation is commutative there. `out` assembles the
 # replacement's arguments: ('a', i) / ('b', i) take that atom's argument;
 # _PARTNER takes b's other commutative slot. Optional guards hold slot
 # refs: `equal` / `distinct` — pairs that must / must not render alike;
-# `wild` — slots that must be wildcards. To cover a new primitive, add an
+# `wild` — slots that must be wildcards. To cover a new lib relation, add an
 # entry.
 _PARTNER = "partner"
 
@@ -355,7 +355,7 @@ _CHAINS: tuple[dict, ...] = (
 _DELTA_OUT = {"edge_inset": 2, "edge_outset": 2, "jump_offset": 2, "step_offset": 1}
 
 # The comp whose defining rule reads one valued cell set at a cell and at
-# its image, by the primitive that takes the cell onto the image.
+# its image, by the lib relation that takes the cell onto the image.
 _IMAGE_COMPS = {"apply": "D4Map.conflict", "compose": "OffsetInvariance.mismatch"}
 
 # The lib relation stating the other member of a two-member type.
@@ -363,7 +363,7 @@ _OTHER_MEMBER = {"Axis": "perp", "DiagAxis": "diag_perp"}
 
 
 def _delta_vars(ext: list[tuple[Atom, str]]) -> set[str]:
-    """Variables holding an Offset: outputs of the delta primitives, plus
+    """Variables holding an Offset: outputs of the delta relations, plus
     compose outputs whose operands both hold one."""
     out: set[str] = set()
     for atom, name in ext:
@@ -599,7 +599,7 @@ class _Lint:
                 and atom.qual is None and atom.name in inline \
                 and atom.name not in negatable \
                 and any(u.role == "neg" for u in self.uses(key)):
-            return  # the rename is what lets Souffle negate the primitive
+            return  # the rename is what lets Souffle negate the relation
         self.claim("alias-inline", key, self.decl_of(key).line,
                    f"`{_atom_str(defs[0].head)}` is `{_atom_str(atom)}` renamed")
 
@@ -1238,8 +1238,8 @@ class _Lint:
                         )
 
     def lib_idiom(self, info: RuleInfo) -> None:
-        """A lib primitive's defining chain written out by hand, with the
-        linking value confined to the chain: name it with the primitive.
+        """A lib relation's defining chain written out by hand, with the
+        linking value confined to the chain: name it with the relation.
         The chains are the `_CHAINS` table."""
         rule = info.rule
         if rule.body is None or rule.grid:
@@ -1318,7 +1318,7 @@ class _Lint:
                         continue
                     # A compose over delta algebra steps no cell: when the
                     # would-be position operand holds an Offset, the chain is
-                    # not the primitive.
+                    # not the relation.
                     if _PARTNER in spec["out"] and \
                             term_vars(slot(_PARTNER)) & deltas:
                         continue
@@ -1331,9 +1331,9 @@ class _Lint:
                     yield a, b, link, fix
 
     def comp_idiom(self, info: RuleInfo) -> None:
-        """Hint: a lib comp's defining rule, or a lib relation, written
-        out by hand — one relation read twice with a `!=` between the two
-        reads. Which lib unit that is depends on how the two reads
+        """Hint: a lib comp's defining rule, or a top-level lib relation,
+        written out by hand — one relation read twice with a `!=` between
+        the two reads. Which lib component that is depends on how the reads
         differ, and a pair of reads that stands for something else is not
         flagged; `_comp_idiom_fix` decides both."""
         rule = info.rule

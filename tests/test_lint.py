@@ -237,7 +237,7 @@ also(K) :- parse._own(_), K = 0.
 """
     fs = [f for f in lint_program(src) if f[0] == "lib internal"]
     assert [(f[1], f[2]) for f in fs] == [
-        (2, "`_Room` is internal to the lib; instantiate a public unit"),
+        (2, "`_Room` is internal to the lib; instantiate a public component"),
         (4, "`_cand` is internal to OffsetInvariance; read a public readout"),
         (5, "`_breaks` is internal to OffsetInvariance; read a public readout"),
         (6, "`_cand` is internal to OffsetInvariance; read a public readout"),

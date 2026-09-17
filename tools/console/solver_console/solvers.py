@@ -8,6 +8,7 @@ from pathlib import Path
 
 from dl.corpus import literal_count
 from dl.dlparse import ParseError, parse
+from dl.witness import load_witnesses, witness_path
 
 from . import config
 
@@ -287,6 +288,20 @@ def withdraw_citations(item_id: str) -> list[Path]:
             path.write_text(out)
             changed.append(path)
     return changed
+
+
+def witness_view(item_id: str) -> dict | None:
+    """The task's witness file as the task strip shows it: its entries as
+    the file writes them, or the error a file off its shape raises. None
+    when the task has no witness file."""
+    path = witness_path(item_id)
+    if not path.exists():
+        return None
+    try:
+        load_witnesses(item_id)
+        return {"entries": json.loads(path.read_text())["witnesses"]}
+    except (ValueError, KeyError, TypeError) as exc:
+        return {"error": str(exc)}
 
 
 def prop_path(rel: str) -> Path:

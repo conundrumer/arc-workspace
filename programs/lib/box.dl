@@ -1,10 +1,10 @@
-//! The box algebra: every unit whose signature holds a Box, a Position, or an
-//! Offset, and that takes no keyed set of cells as input.
+//! The box algebra: every component whose signature holds a Box, a Position,
+//! or an Offset, and that takes no keyed set of cells as input.
 //!
 //! Box is the edge-margin record (t, b, l, r), ordered V-first then H — a
 //! rectangle placed in a frame by its margins from the four edges. A frame of
-//! extent (H, W) reads the record as the rows t..H-1-b and the columns
-//! l..W-1-r; a negative margin reaches past the frame.
+//! extent (V, H) reads the record as the rows t..V-1-b and the columns
+//! l..H-1-r; a negative margin reaches past the frame.
 //!
 //! The per-axis sum (t+b, l+r) measures the frame's extent minus the
 //! rectangle's, so boxes with one sum are translates of one another. A
@@ -189,9 +189,9 @@ divide_gap(P, A, N, K, G) :-
     (Ext - N*K) % (N-1) = 0,
     G = (Ext - N*K) / (N-1).
 
-/// Distance t along a period of w (with gap g between periods) decomposes
-/// into period index n and within-period offset k. No divisibility condition
-/// applies.
+/// Distance t along width-w periods separated by gaps of g decomposes into
+/// period index n and within-period offset k when it lies within a period.
+/// No divisibility condition applies.
 .decl stride(t: number, w: number, g: number, n: number, k: number) inline
 stride(T, W, G, N, K) :-
     T >= 0,
@@ -257,8 +257,8 @@ divide_slab(P, A, N, G, P_outer, P_inner) :-
     split(P, A, _, Across),
     compose(P_i_axis, Across, P_inner).
 
-/// Parameterized by tile size k instead of tile count n. No cell decomposes
-/// unless the gap-adjusted extent is a multiple of k plus the gap.
+/// Parameterized by tile size k instead of tile count n. It uses the
+/// decomposition condition of divide_by_size.
 .decl divide_by_size_slab(p: Position, a: Axis, k: number, gap: number,
                           p_outer: Position, p_inner: Position) inline
 divide_by_size_slab(P, A, K, G, P_outer, P_inner) :-
@@ -305,7 +305,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         @box_concat(@box_across(P_outer, AXIS_V), @box_across(P_inner, AXIS_V), AXIS_H, G)).
 
 /// 1D frame defined by an index set and an edge.
-.comp DirFrame<Key> {
+.comp DirFrame<Key> {  // @construction
     /// The edge the distances are measured from.
     .decl dir(d: Dir)  // @input
 
@@ -337,7 +337,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 
 /// 1D frame from an axis-tagged extent — the n axis-only positions of a
 /// 1-wide frame.
-.comp AxisFrame<Key> {
+.comp AxisFrame<Key> {  // @construction
     .decl extent(key: Key, a: Axis, n: number)  // @input
 
     .decl cell(key: Key, a: Axis, p: Position)
@@ -349,7 +349,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 
 /// 2D frame from per-axis extents: the 1D cells of the two axes combined
 /// into full 2D positions.
-.comp Frame2D<Key> {
+.comp Frame2D<Key> {  // @construction
     .decl extent(key: Key, a: Axis, n: number)  // @input
 
     .decl cell(key: Key, p: Position)
@@ -364,7 +364,7 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
 
 /// A Box packed from per-Dir scalars: the inverse read of dist. A caller with
 /// an edge of no width writes that edge's zero row.
-.comp DirPack<Key> {
+.comp DirPack<Key> {  // @construction
     .decl edge(key: Key, d: Dir, k: number)  // @input
 
     .decl axis_pos(key: Key, a: Axis, p: Box)

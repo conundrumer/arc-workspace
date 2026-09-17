@@ -72,12 +72,12 @@ COMMENT_RE = re.compile(r"//.*$")
 PLAN_RE = re.compile(r"(?<![\w.])\.plan\b.*$")
 BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", flags=re.DOTALL)
 NUMERIC_LITERAL_RE = re.compile(r"(?<![A-Za-z_0-9.])\d+(?![A-Za-z_0-9.])")
-UNIT_MARKER = "@unit"
+SINGLETON_AXIS_MARKER = "@singleton-axis"
 
 
-def exempt_literal(lit: str, unit: bool) -> bool:
-    """A 0 anywhere; a 1 in a unit-marked rule."""
-    return lit == "0" or (unit and lit == "1")
+def exempt_literal(lit: str, singleton_axis: bool) -> bool:
+    """A 0 anywhere; a 1 in a rule marked `@singleton-axis`."""
+    return lit == "0" or (singleton_axis and lit == "1")
 RANGE_RE = re.compile(r"\brange\s*\(")
 
 # Souffle keywords: the complete bare-word keyword set of the souffle 2.5
@@ -163,7 +163,7 @@ CASE_MARKER_CAT = "case marker"
 GLOSS_CAT = "gloss"
 FIELD_TYPE_RE = re.compile(r":\s*(\w+)")
 BRANCH_LINE_RE = r"^\s*(?:\|\s*)?{name}\s*\{{"
-# The intended branch stands first in its type and carries no deviation
+# The concept branch stands first in its type and carries no deviation
 # line; every other branch carries one under its gloss.
 DEVIATION_CAT = "deviation"
 DEVIATION_RE = re.compile(r"^//\s*@deviation:\s*-(\d+)\s+\+(\d+)\s+~(\d+)\s*$")
@@ -483,7 +483,7 @@ def _lib_internal(
 ) -> list[tuple[str, int, str, str]]:
     """Reads of a `_`-prefixed lib name: a relation or instance inside a
     lib comp, or a lib comp itself. Such a name is private to the lib, and
-    a unit's public readouts are its interface."""
+    a component's public readouts are its interface."""
     lib_comps = _comp_table(_lib_items(_lib_source()))
     # Each instance's comp: the solver's own, and the ones inside lib comps.
     inst_comp = {init.inst: init.comp for init in _inits(items)}
@@ -511,7 +511,7 @@ def _lib_internal(
                 if it.comp.startswith("_") and it.comp in lib_comps:
                     findings.append((
                         LIB_INTERNAL_CAT, it.line,
-                        f"`{it.comp}` is internal to the lib; instantiate a public unit",
+                        f"`{it.comp}` is internal to the lib; instantiate a public component",
                         raw_lines[it.line - 1].rstrip(),
                     ))
             elif isinstance(it, Rule):
@@ -808,12 +808,12 @@ def _deviation_of(raw_lines: list[str], at: int) -> tuple[int, int, int] | None:
 
 @dataclass(frozen=True)
 class Branch:
-    """One branch of a choice point, `intended` on the one declared first.
+    """One branch of a choice point, `is_concept` on the one declared first.
     `deviation` holds the three estimates of the branch's `@deviation`
     line, and stands absent when it carries none."""
 
     name: str
-    intended: bool
+    is_concept: bool
     line: int | None
     deviation: tuple[int, int, int] | None
 
@@ -846,7 +846,7 @@ def choice_points(source: str) -> list[ChoicePoint]:
             points.append(ChoicePoint(field=field, type="", branches=()))
             continue
         points.append(ChoicePoint(field=field, type=td.name, branches=tuple(
-            Branch(name=name, intended=i == 0, line=at,
+            Branch(name=name, is_concept=i == 0, line=at,
                    deviation=None if at is None else _deviation_of(raw_lines, at))
             for i, (name, at) in enumerate(_branch_sites(td, raw_lines)))))
     return points
@@ -880,7 +880,7 @@ def _glosses(
             deviation = _deviation_of(raw_lines, at) is not None
             if name == td.branches[0] and deviation:
                 findings.append((DEVIATION_CAT, at,
-                                 f"`{name}` stands first, so it is the intended branch "
+                                 f"`{name}` stands first, so it is the concept branch "
                                  "and carries no `@deviation` line",
                                  raw_lines[at - 1].rstrip()))
             elif name != td.branches[0] and not deviation:
@@ -1056,10 +1056,12 @@ def _params_data(
         if not isinstance(it, Rule) or it.body is None:
             continue
         span = range(it.line, it.end_line + 1)
-        unit = any(UNIT_MARKER in raw_lines[ln - 1] for ln in span)
+        singleton_axis = any(
+            SINGLETON_AXIS_MARKER in raw_lines[ln - 1] for ln in span
+        )
         for ln in span:
             for m in NUMERIC_LITERAL_RE.finditer(code(ln)):
-                if exempt_literal(m.group(0), unit):
+                if exempt_literal(m.group(0), singleton_axis):
                     continue
                 findings.append(
                     ("params data", ln, m.group(0), raw_lines[ln - 1].rstrip())

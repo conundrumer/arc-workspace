@@ -1,5 +1,5 @@
 // 2d0172a1
-// keywords: objects enclose rank percept-shadow
+// keywords: objects enclose rank approximation
 // input: wandering curves of one ink nest inside one another
 // output: The output redraws them as rectangles: each boundary line of
 //  the input becomes one output line, and neighbouring lines sit one blank

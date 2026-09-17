@@ -25,7 +25,7 @@ from dl.domains import (
     _position_domain,
 )
 from dl.facts import _parse_relations, _parse_value, example_facts
-from dl.lint import NUMERIC_LITERAL_RE, UNIT_MARKER, exempt_literal
+from dl.lint import NUMERIC_LITERAL_RE, SINGLETON_AXIS_MARKER, exempt_literal
 from dl.paths import PROPOSERS_SRC
 from dl.solve import _profile, solver_file
 from dl.souffle import _pool_workers, _run_source
@@ -152,8 +152,8 @@ def probe_report(
         rules = _rules(params_text, param)
         if rules:
             if any(
-                not exempt_literal(m.group(0), unit)
-                for text, unit in rules
+                not exempt_literal(m.group(0), singleton_axis)
+                for text, singleton_axis in rules
                 for m in NUMERIC_LITERAL_RE.finditer(text)
             ):
                 embedded.append(param)
@@ -209,10 +209,10 @@ def probe_report(
 
 def _rules(params_text: str, param: str) -> list[tuple[str, bool]]:
     """The parameter's rules, each as (comment-stripped text, carries
-    `UNIT_MARKER`); empty for fact parameters."""
+    `SINGLETON_AXIS_MARKER`); empty for fact parameters."""
     rules = []
     cur: list[str] = []
-    unit = False
+    singleton_axis = False
     in_rule = False
     for line in params_text.splitlines():
         code, _, comment = line.partition("//")
@@ -220,10 +220,10 @@ def _rules(params_text: str, param: str) -> list[tuple[str, bool]]:
             in_rule = True
         if in_rule:
             cur.append(code)
-            unit = unit or UNIT_MARKER in comment
+            singleton_axis = singleton_axis or SINGLETON_AXIS_MARKER in comment
             if code.rstrip().endswith("."):
-                rules.append(("\n".join(cur), unit))
-                cur, unit, in_rule = [], False, False
+                rules.append(("\n".join(cur), singleton_axis))
+                cur, singleton_axis, in_rule = [], False, False
     return rules
 
 

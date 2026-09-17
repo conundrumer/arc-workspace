@@ -256,15 +256,16 @@ def _entry_findings(entry: Entry, actuals: dict[str, Outcome]) -> list[Drift]:
 
 
 def _case_labels(source: str) -> tuple[str, dict[tuple[int, str], str]] | None:
-    """The label of the intended case, and the label of the case that takes
-    each non-intended branch with every other choice point left intended.
+    """The label of the concept case, and the label of the case that takes
+    each other branch with every other choice point left at its concept
+    branch.
     None when the source declares no `Choice`, or when a field of a
     record-typed `Choice` names no ADT."""
     points = choice_points(source)
     if not points or any(not p.branches for p in points):
         return None
     record = points[0].field >= 0
-    intended = [p.branches[0].name for p in points]
+    concept = [p.branches[0].name for p in points]
 
     def label(names: list[str]) -> str:
         return "[" + ", ".join(names) + "]" if record else names[0]
@@ -272,10 +273,10 @@ def _case_labels(source: str) -> tuple[str, dict[tuple[int, str], str]] | None:
     cases: dict[tuple[int, str], str] = {}
     for p in points:
         for b in p.branches[1:]:
-            names = list(intended)
+            names = list(concept)
             names[p.field if record else 0] = b.name
             cases[(p.field, b.name)] = label(names)
-    return label(intended), cases
+    return label(concept), cases
 
 
 def _divergences(entries: list[Entry], case: str, base: str) -> list[Entry]:
@@ -287,7 +288,7 @@ def _divergences(entries: list[Entry], case: str, base: str) -> list[Entry]:
 
 
 def _deviation_findings(source: str, entries: list[Entry]) -> list[Drift]:
-    """Each non-intended branch's `-` and `~` estimates against the
+    """Each other branch's `-` and `~` estimates against the
     `violates` and `rejected` of its divergence witness with the fewest
     violated invariants."""
     labels = _case_labels(source)
@@ -327,7 +328,7 @@ def _deviation_findings(source: str, entries: list[Entry]) -> list[Drift]:
 def witness_report(stem: str) -> list[Drift]:
     """Run every witness grid of `stem`'s task through the solver and
     report where the outcomes and the file disagree, then read each
-    non-intended branch's `@deviation` estimates against its divergence
+    other branch's `@deviation` estimates against its divergence
     witnesses. An entry carrying `assign` runs the reassigned source. A task
     with no witness file reports nothing."""
     path, task_id = solver_file(stem)

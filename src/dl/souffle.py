@@ -33,7 +33,7 @@ FIRST_ERROR_RE = re.compile(r"^Error:", re.M)
 # returned: it names the pattern's variable and asserts instead of erroring.
 _PATTERN_ON_FUNCTOR_RE = re.compile(r"variable not grounded: (\w+) at \S+ \[(\d+):")
 
-# Functor calls a rule's body holds after Souffle inlines the lib primitives,
+# Functor calls a rule's body holds after Souffle inlines the lib relations,
 # from which the run reports the rule.
 EXPRESSION_REPORT_MIN = 100
 
@@ -85,7 +85,7 @@ def build_functors() -> None:
 
     Skips when the artifact is newer than the source. Called once before the
     pool spins up — never per-pair, which would race. Solvers can't run without
-    it (lib.dl's primitives call its functors), so a failure here is fatal.
+    it (lib.dl's relations call its functors), so a failure here is fatal.
     """
     if FUNCTORS_LIB.exists() and FUNCTORS_LIB.stat().st_mtime >= FUNCTORS_SRC.stat().st_mtime:
         return
@@ -144,20 +144,20 @@ def _run_source(
 def _explained(stderr: str) -> str:
     """Souffle's stderr, led by a plain statement of the one failure it
     reports as an assertion: a record pattern over a Box a functor returned.
-    A Box a primitive returns is read by a primitive; a rule that has to
+    A Box a lib relation returns is read by a lib relation; a rule that has to
     take it apart binds it through a relation first."""
     m = _PATTERN_ON_FUNCTOR_RE.search(stderr)
     if m and "Assertion failed" in stderr:
         return (f"a record pattern binds `{m.group(1)}` (line {m.group(2)}) from a "
                 "Box a functor returned, which Souffle cannot ground; read the Box "
-                "through a primitive, or derive it in a relation and take it apart "
+                "through a lib relation, or derive it in a relation and take it apart "
                 f"there\n{stderr}")
     return stderr
 
 
 def expression_report(built: str) -> str | None:
     """One line naming the rule whose body holds the most functor calls
-    after Souffle inlines the lib primitives, when that count reaches
+    after Souffle inlines the lib relations, when that count reaches
     EXPRESSION_REPORT_MIN. The count measures what one candidate tuple costs
     to evaluate; the line goes in the review, and says nothing about how the
     solver should read. None when the count is under the threshold or the
@@ -215,7 +215,7 @@ def _souffle(
     cpu_limit: int = CPU_LIMIT_SECONDS,
 ) -> str:
     # -L/-lfunctors load the functor shared library build_functors compiled —
-    # lib.dl's primitives call into it.
+    # lib.dl's relations call into it.
     #
     # Two bounds on runaway souffle (some rule shapes can hang the evaluator
     # and exhaust system memory). The kernel CPU-time limit (`ulimit -t`, via

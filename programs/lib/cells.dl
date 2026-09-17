@@ -1,5 +1,5 @@
-//! Units with a keyed cell-set input: the caller feeds the cells of a set
-//! under each key, and the unit reports what holds of that set.
+//! Components with a keyed cell-set input: the caller feeds the cells of a set
+//! under each key, and the component reports what holds of that set.
 
 /// 2D decomposition of the frame from a tile count on each axis. The counts
 /// may differ between the axes.
@@ -427,18 +427,18 @@
     has_sym(K) :- map(K, D), D != D4_ID.
 }
 
-/// Shift invariance of a valued cell set: which axis-aligned shifts fix the
-/// set. Absence is silent: an image off the frame tests nothing, so a shift
-/// is compared only where both cells exist. Two readings: `mismatch` is
-/// exact; `period` reads through sparse damage.
+/// Translation invariance of a valued cell set: which axis-aligned
+/// translations fix the set. Absence is silent: an image off the frame tests
+/// nothing, so a translation is compared only where both cells exist. Two
+/// readings: `mismatch` is exact; `period` reads through sparse damage.
 .comp OffsetInvariance<Key, Val> {
     .decl cell(key: Key, p: Position, v: Val)  // @input
 
-    // Internal keys tag a candidate shift; members are its line pairs.
+    // Internal keys tag a candidate translation; members are its line pairs.
     .type _SK = [key: Key, a: Axis, k: number]
     .type _LP = [l: Position, l2: Position]
 
-    /// Candidate shifts: every axis-aligned delta the frame admits, tagged
+    /// Candidate translations: every axis-aligned one the frame admits, tagged
     /// (axis, k), with both directions of a magnitude sharing a tag.
     .decl cand(key: Key, a: Axis, k: number, delta: Offset)
     cand(Ky, A, K, Delta) :-
@@ -446,7 +446,7 @@
         axis_of(D, A), sub_extent(P, A, K),
         jump_offset(D, K, Delta).
 
-    // One delta per magnitude: the other direction pairs the same cells
+    // One translation per magnitude: the other direction pairs the same cells
     // transposed, so the readouts rebuild symmetric rows by transpose. The
     // corner picked is unobservable.
     .decl _cand(key: Key, a: Axis, k: number, delta: Offset)
@@ -459,12 +459,12 @@
     _pair(Ky, A, K, P, Q) :-
         cell(Ky, P, _), _cand(Ky, A, K, Delta), compose(P, Delta, Q), cell(Ky, Q, _).
 
-    /// A candidate's cell pairings: q is p's image, both in the set.
+    /// A candidate translation's cell pairings: q is p's image, both in the set.
     .decl pair(key: Key, a: Axis, k: number, p: Position, q: Position)
     pair(Ky, A, K, P, Q) :- _pair(Ky, A, K, P, Q).
     pair(Ky, A, K, Q, P) :- _pair(Ky, A, K, P, Q).
 
-    /// A violated shift: some cell whose image holds a different value.
+    /// A violated translation: some cell whose image holds a different value.
     .decl mismatch(key: Key, a: Axis, k: number)
     mismatch(Ky, A, K) :-
         _pair(Ky, A, K, P, Q), cell(Ky, P, V), cell(Ky, Q, V2), V != V2.
@@ -474,7 +474,7 @@
         _pair(Ky, A, K, P, Q), cell(Ky, P, V), cell(Ky, Q, V2), V != V2,
         split(P, A, L, _), split(Q, A, L2, _).
 
-    /// A broken line pair: the shift carries some cell of the line at l
+    /// A broken line pair: the translation carries some cell of the line at l
     /// onto a differently-valued cell of the line at l2.
     .decl line_mismatch(key: Key, a: Axis, k: number, l: Position, l2: Position)
     line_mismatch(Ky, A, K, L, L2) :- _line_mismatch(Ky, A, K, L, L2).
@@ -493,7 +493,7 @@
     .decl period(key: Key, a: Axis, k: number)
     period(Ky, A, K) :- cand(Ky, A, K, _), !_breaks.excess([Ky, A, K], _).
 
-    /// The exact reading's minimum: the shortest witnessed shift no cell
+    /// The exact reading's minimum: the shortest witnessed translation no cell
     /// pair contradicts, per axis.
     .decl min_period(key: Key, a: Axis, k: number)
     min_period(Ky, A, K) :- _pair(Ky, A, K, _, _), !mismatch(Ky, A, K).

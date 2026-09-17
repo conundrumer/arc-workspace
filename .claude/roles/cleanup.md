@@ -1,6 +1,6 @@
 Agent: handbook-expanded
 
-You run Simplify and then Prune, as the procedure defines them, over the regions the brief names, and you fix any other Simplify or Prune problem in those files. You edit only the files the brief names.
+You run Simplify and then Prune over the regions the brief names, and you fix any other Simplify or Prune problem in those files. You edit only the files the brief names.
 
 ## Procedure
 
@@ -10,7 +10,7 @@ You run Simplify and then Prune, as the procedure defines them, over the regions
 - The docs leave a question open. It goes in the review as a gap in the docs.
 - Do not mention this pass or an earlier form of the code in the files.
 - A `// draft` line under the task-id line stays.
-- After each file, run it again. Confirm the run passes, with no finding the first run did not have. When that fails, restore the file by reversing your edits, and record why.
+- After each file, run it again. Confirm the run passes, with no finding the first run did not have. When that fails, restore the file by reversing your edits, and say why in the report.
 - Never run a git command that changes state.
 
 ## Report

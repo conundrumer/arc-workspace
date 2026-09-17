@@ -1,0 +1,58 @@
+// 996ec1f3
+// draft
+// keywords: decompose scale
+// concept: a cut of uniform lines in one color divides a noise grid into
+//  panels, and a solid rectangle of one color covers each panel but its
+//  outermost ring. The output redraws that arrangement, one cell per panel
+//  in that panel's color and one cell of the cut's color between neighbors.
+// input: uniform lines, all of one color, cut the grid into panels, and each
+//  panel holds a single color inside a border of noise one cell thick.
+// output: a schematic of the panels: one cell per panel in that panel's
+//  color, with the cut's color in the cells between them.
+
+.type Line = [a: Axis, l: Position]
+
+.decl out(p: Position, col: Color)
+
+.comp Params {
+    .decl gap(g: number) gap(1).   // cells the schematic leaves between panels
+}
+
+.init params = Params
+
+// --- the cut ---
+
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
+
+// A uniform line spans the grid, so it divides panels rather than sit in one.
+.init panels = DividerTiles<Unit>
+panels.cell($U(), P) :- in(P, _).
+panels.divider($U(), A, L) :- line_color.value([A, L], _).
+
+.init cut = Unanimous<Unit, Color>
+cut.item($U(), Col) :- line_color.value(_, Col).
+
+// --- each panel's interior ---
+
+.init border = Rim<Position>
+border.cell(T, P) :- panels.tile_of($U(), P, T).
+
+.init fill = Unanimous<Position, Color>
+fill.item(T, Col) :- panels.tile_of($U(), P, T), !border.rim(T, P), in(P, Col).
+
+// --- the schematic ---
+
+// The cell each panel shrinks to.
+.decl panel_pos(p_tile: Position, p_grid_out: Position)
+panel_pos(T, P_grid_out) :-
+    panels.tile_of($U(), _, T), params.gap(G), concat_2d(T, ZERO, G, P_grid_out).
+
+.init schematic = Frame2D<Unit>
+schematic.extent($U(), A, N) :- panel_pos(_, P), axis_elem(A), axis_dim(P, A, N).
+
+out(P_grid_out, Col) :-
+    schematic.cell($U(), P_grid_out),
+    ( panel_pos(T, P_grid_out), fill.value(T, Col)
+    ; !panel_pos(_, P_grid_out), cut.value($U(), Col)
+    ).

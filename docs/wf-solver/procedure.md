@@ -33,6 +33,7 @@ The operations and passes of a solver session.
     - Do not pipe the task into anything.
     - The reference TS solver solves the task. It might not encode the best model.
 2. Draft the solver (`programs/solvers/<task_id>.dl`).
+    - Draft the header's `@invariant` and `@rule` lines with it.
     - Do not write the `Determine` comp yet.
 3. Run it (`uv run python scripts/run_dl.py <task_id>`).
 4. Iterate until it works and passes lint.
@@ -52,7 +53,7 @@ Express what the code claims with less code. The model, its parameterization, an
 
 **Awkward code.** The targets are code that:
 
-- Reimplements what lib holds.
+- Reimplements what the lib provides.
 - Reads as implementation detail with no conceptual meaning.
 - Has repetition where a principled form exists.
 - Has unusual or needless indirection.
@@ -73,7 +74,7 @@ Write the review for the user to act on.
 Include only items that the user can act on:
 
 - A case to keep or add.
-- A primitive to promote.
+- An operation to promote.
 - A judgment call the session made.
 - A gap in a doc or a tool.
 - A fix or a problem in a file the pass does not edit.
@@ -82,24 +83,48 @@ Include only items that the user can act on:
 Ask these questions:
 
 - Does the solver follow principles? Judge this independently of lint and passing pairs.
-- Does any awkward code, as Simplify defines it, remain? Raise what its fix needs.
+- Does any awkward code remain? Raise what its fix needs.
 - Are there potential peer models?
     - **Equivalence.** Do not propose, and do not list in the review, a model equivalent to the model of a case the solver already has.
 - When the plan listed actions, could changing the parameterization produce a simpler or more principled model?
 
-**Concept and deviation.** Write the concept statement on the header's `concept:` line, and each non-intended branch's three estimates on its `@deviation` line, as style.md states them. A branch's `-` and `~` estimates are read off the witness file, from the branch's witness with the fewest violated invariants of the inputs.
+**Concept and branch rules.** Write the header and branch lines. Judge each plausibility and verdict from the witness and each case's output on it. List each plausibility and verdict in the review. A `neither` verdict identifies a problem with the concept case.
 
-**Divergence witness.** For each Choice case pair, and for each peer model considered and dropped, show where the models diverge, as a concrete witness: an input grid and each model's output on it.
+**Divergence witness.** Give each non-concept branch at least one concrete witness where its model diverges from the concept branch, and write every case's output on it.
 
-- The test a dropped peer fails decides what that peer owes.
-    - A peer dropped under Fidelity owes a witness.
-    - A peer dropped under Equivalence owes the statement that no witness exists.
-    - A peer that fails Fit stays out of the review.
+- The test a dropped peer fails decides what the review gives for it.
+    - A peer dropped under Fidelity requires a witness in the review.
+    - A peer dropped under Equivalence requires the statement that no witness exists.
+    - A model that fails Fit stays out of the review, including any note that it was considered.
 - Take that witness from `uv run python scripts/run_dl.py grid <task_id>`, which runs the solver on a grid the session writes, of any size and any content.
-- Choose a witness on which each model's output is defined, or record an undefined outcome as such.
+- Choose a witness on which each model's output is defined, or write an undefined outcome as such.
 - When the divergence requires a parameter to be reassigned, reassign that parameter.
-- Write each witness to `programs/witnesses/<task_id>.wit.json`, whose shape style.md states. `uv run python scripts/run_dl.py witness <task_id>` checks the file and each `@deviation` line against it, and the audit runs that check.
+- Write each branch's witness to `programs/witnesses/<task_id>.wit.json` with the shape below. `uv run python scripts/run_dl.py witness <task_id>` pairs each `@witness` line to an entry and prints the features, and the audit runs that check.
 
-**Ruled-out models.** Do not include a model that fails Fit, not even as a note on why it is absent.
+```
+{ "id": <task_id>,
+  "witnesses": [{
+    "id": slug,                              // unique within this file
+    "hypothesis": string,                    // models separated by this input
+    "input": Grid,
+    "assign": {<parameter>: Fact[] | Grid},  // GRID_HxW form from patterns.md for stored parameters
+    "output": {<case>: Grid | null}          // when the verdict is not neither: each case's output, with null for undefined
+            | Grid                           // when the verdict is neither: the annotator's judged output
+  }] }
+
+Grid: number[][]                      // rows of colors
+Fact: Arg[]                           // the arguments of one fact
+Arg: number | string | Arg[]
+```
+
+Use a string for a lib constant and a list for a record.
+
+A `<case>` takes one of these forms:
+
+- the constructor's name, such as `Alt`
+- under a record-typed `Choice`, the record of the fields' constructor names, such as `[Table, Lookup]`
+- under a constructor with fields, the constructor applied to its fields' constructor names, such as `Recolor(Box, Size)`
+
+For each entry named by `@witness`, put exactly the block's `@reassigned` parameters in `assign`.
 
 **Delivery.** Write the review as a reply to the user. Finish all task updates first, and end the turn with the review.

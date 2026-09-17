@@ -10,7 +10,7 @@ and their deferred sections. Each rendering names the file that holds the
 rest, and derives from the live file, so no copy can go stale.
 
 The handbook renders two ways, and an agent carries each. The lib is its
-interface, for a task that edits `.dl`, or an index: one line per public unit
+interface, for a task that edits `.dl`, or an index: one line per public component
 of each file, under a note that points at the interface file for the rest.
 """
 
@@ -211,12 +211,12 @@ def _runs(items: list[Item], docs: dict[int, tuple[int, int]]) -> list[list[Item
 
 
 INTERFACE_NOTE = ("A module's interface file, its path with `.md` for `.dl`, holds "
-                  "each unit's signature and the rest of its doc.")
+                  "each component's signature and the rest of its doc.")
 
 
 def lib_entries(text: str) -> str:
     """One lib file as an index: its `//!` lines as prose, then one line per
-    top-level public unit, its name and the first sentence of its doc. A
+    top-level public component, its name and the first sentence of its doc. A
     unit with no doc gives its name alone, and a relation with no doc its
     declaration. A run that folds in `lib_doc` gives its names on one line."""
     program = parse(text)
@@ -355,7 +355,7 @@ def strip_comments(text: str) -> tuple[str, bool]:
     """A doc without its opening editing note, and whether any comment past
     that note was dropped. The comments hold notes to the doc's editor."""
     text = re.sub(r"\A<!--.*?-->\s*", "", text, flags=re.S)
-    stripped = re.sub(r" ?<!--.*?-->", "", text, flags=re.S)
+    stripped = uncommented(text)
     return stripped, stripped != text
 
 
@@ -456,6 +456,13 @@ CODEX_STYLE = Path("docs") / "codex-style.md"
 CODEX_CONFIG = Path(".codex") / "config.toml"
 # The project-doc budget; the default truncates the handbook silently.
 CODEX_DOC_BYTES = 1 << 20
+# The permission profile the session runs under. The built-in `:workspace`
+# profile keeps the workspace root's own `.codex` and `.git` read-only, and
+# the profile below lifts that for `.codex`, so a session can regenerate
+# this file. A profile does not compose with `sandbox_mode`, so the config
+# carries one or the other. The project layer applies only to a project the
+# user's own config trusts.
+CODEX_PROFILE = "project"
 
 
 def uncommented(text: str) -> str:
@@ -467,15 +474,23 @@ def uncommented(text: str) -> str:
 
 def codex_config(style: str | None) -> str:
     """The project config: the style as the developer instructions when
-    there is one, the doc budget, and the sandbox that lets a run edit."""
+    there is one, the doc budget, and the permissions that let a session
+    edit the workspace, this file included."""
     keys: dict[str, object] = {}
     if style is not None:
         keys["developer_instructions"] = uncommented(style)
     keys["project_doc_max_bytes"] = CODEX_DOC_BYTES
-    keys["sandbox_mode"] = "workspace-write"
+    keys["default_permissions"] = CODEX_PROFILE
     # json.dumps gives a TOML basic string: the escapes agree on these
     # values.
-    return "".join(f"{k} = {json.dumps(v)}\n" for k, v in keys.items())
+    head = "".join(f"{k} = {json.dumps(v)}\n" for k, v in keys.items())
+    return head + f"""
+[permissions.{CODEX_PROFILE}]
+extends = ":workspace"
+
+[permissions.{CODEX_PROFILE}.filesystem.":workspace_roots"]
+".codex" = "write"
+"""
 
 
 def write_codex(root: Path = REPO_ROOT, docs: Path = DOCS_DIR, lib: Path = LIB_SRC) -> list[Path]:

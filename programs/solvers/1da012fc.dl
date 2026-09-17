@@ -1,5 +1,5 @@
 // 1da012fc
-// keywords: objects markers rank percept-shadow
+// keywords: objects markers rank approximation
 // input: a solid legend box holds one marker per shape. The markers and the
 //  shapes outside the box are two constellations of the same size.
 // output: each shape takes the color of the marker at its own place in the

@@ -31,7 +31,7 @@ import { NightPanel } from "/ui/panels/night.js";
 import { TaskStrip } from "/ui/panels/taskstrip.js";
 import { Topbar } from "/ui/panels/topbar.js";
 import { Rail } from "/ui/rail.js";
-import { snap as snapNow, tasks, notify, useServer, post, ensureTask, startPoll } from "/ui/server.js";
+import { snap as snapNow, tasks, itemData, notify, useServer, post, ensureTask, startPoll } from "/ui/server.js";
 import { hhmmDay } from "/ui/prose.js";
 import { bindToast, toast } from "/ui/toast.js";
 
@@ -107,6 +107,7 @@ function LensHost({lens, snap, selId, setSelId, pins, cli, view, setView, taskOp
       </div>
       <div id="codecol">
         <${TaskStrip} id=${L.detailId} mentions=${L.mentions}
+          witness=${(itemData[L.detailId]||{}).witness}
           open=${L.detailId ? taskOpen[L.detailId]!==false : true} onToggle=${toggleTask}/>
         <${CodePane} ...${L.code||NO_CODE}/>
       </div>

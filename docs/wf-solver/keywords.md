@@ -2,11 +2,11 @@
 
 Keywords index the solvers by concepts that a grep over the code cannot find.
 
-A keyword names a hypothesis. The mechanism its gloss names is one instance of that hypothesis, not the keyword's boundary.
+A keyword names a task concept or a composition property of the program. The mechanism its gloss names is one instance of that concept, not the keyword's boundary.
 
 ## Setup
 
-The structure a hypothesis depends on: what the input is and how it decomposes.
+The structure a concept depends on: what the input is and how it decomposes.
 
 - `tile-arrangement` — output arranges transformed copies of the input, or of a piece of it
 - `overlay` — content stacks on one frame; panels of a decomposition are one kind of content
@@ -23,7 +23,7 @@ The structure a hypothesis depends on: what the input is and how it decomposes.
 
 ## Transformation
 
-The transformation hypothesis: the concept the task teaches.
+The concept the task teaches.
 
 - `lookup` — stored data supplies the output: its content, or where content is read or placed
 - `d4` — a D4 transform applies to content
@@ -34,9 +34,9 @@ The transformation hypothesis: the concept the task teaches.
 - `mapping` — a color-to-color relation recolors cells
 - `count` — a count determines output content or extent, or which item acts
 - `rank` — an order or rank determines placement, color, or which item acts
-- `repair` — damaged cells restore from their counterparts elsewhere in the grid; a symmetry gives one set of counterparts
+- `repair` — damaged cells are restored from their counterparts elsewhere in the grid; a symmetry gives one set of counterparts
 - `classify` — the input, or a part of it, maps to a class; the output renders the class
-- `induce` — the input pairs content with the content a rule carries it onto, and that rule varies per input; the program reads the rule from those pairs, validates it against them, and applies it beyond them
+- `induce` — the input pairs content with the content a rule maps it to, and that rule varies per input; the program reads the rule from those pairs, validates it against them, and applies it beyond them
 - `move` — content translates, stacks, or shears within the frame
 - `pack` — items jointly fill a region exactly
 - `stamp` — a footprint stamps at qualifying positions
@@ -44,16 +44,10 @@ The transformation hypothesis: the concept the task teaches.
 - `select` — output keeps a distinguished part of the input
 - `parity` — the model depends on even/odd alternation, along a position or along an order
 - `cross` — cells where designated lines cross act
-- `merge` — like-valued items fuse under a task-given nearness into one unit; the output treats the unit as one thing
+- `merge` — like-valued items within a task-given proximity fuse into one unit; the output treats the unit as one thing
 - `match` — items found in the input pair off by a shared property, and the output acts on the pairs; matching against stored data is `lookup`
 
 ## Shape
 
-A composition property of the task. It holds across the file's cases.
-
-- `latent-canvas` — the program constructs a canvas neither grid fully shows, and the output is determined by that canvas. A canvas is a frame of cells that holds the whole scene in one state.
-- `percept-shadow` — the pairs match content by a resemblance. No exact map realizes that resemblance, and the encoded hypothesis is a strictly weaker consequence of it. The tag applies if and only if all of these hold:
-    - A relational form of the resemblance is a hypothesis that agrees with it on each configuration the resemblance accepts; where it rejects, disagreement does not count.
-    - The resemblance has no relational form.
-    - A pair breaks the resemblance's exact form while its match still holds.
-    - The encoded hypothesis accepts some configuration, and the resemblance rejects that configuration. The resemblance is read at the weakest form the pairs exhibit, so this condition holds only when that weakest form rejects the configuration. When no exhibited form rejects it, the resemblance is the rule the pairs endorse, and the tag does not apply.
+- `latent-canvas` — the program constructs a canvas neither grid fully shows, and the output is determined by that canvas. A canvas is a frame of cells that contains the whole scene in one state.
+- `approximation` — the program runs a weaker rule in place of a concept rule it cannot state. principles.md gives the conditions under which the tag applies.

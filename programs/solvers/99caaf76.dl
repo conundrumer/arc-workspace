@@ -1,0 +1,66 @@
+// 99caaf76
+// draft
+// keywords: objects markers move d4
+// concept: each arrow points away from its fletching. It flies that way
+//  until its point strikes the grid edge, and the strike turns its head half
+//  about, so every arm takes the color of the arm opposite it. The fletching
+//  rides along as it is.
+// input: arrows over params.bg, each an 8-connected object: a head — a
+//  center cell with an arm on each of its four sides — and a fletching
+//  behind that head.
+// output: each arrow redrawn where its flight leaves it, its head turned
+//  half about.
+
+.decl out(p: Position, col: Color)
+
+.comp Params {
+    .decl bg(col: Color) bg(8).
+}
+
+.init params = Params
+
+.init comps = Components8<Unit>
+comps.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+.decl arrow(id: Ident, p: Position)
+arrow(Id, P) :- comps.label($U(), P, Id).
+
+.init edge = Rim<Ident>
+edge.cell(Id, P) :- arrow(Id, P).
+
+// the head's center: the arrow's one interior cell
+.decl center(id: Ident, p: Position)
+center(Id, P) :- arrow(Id, P), !edge.rim(Id, P).
+
+.decl arm(id: Ident, d: Dir, p: Position)
+arm(Id, D, P) :- center(Id, C), dir_elem(D), neighbor(C, D, P).
+
+// the arrow's cells outside its head
+.decl fletching(id: Ident, p: Position)
+fletching(Id, P) :- arrow(Id, P), !center(Id, P), !arm(Id, _, P).
+
+// a fletching cell the center does not lead toward D. Where no such cell
+// exists, the whole fletching trails the center that way.
+.decl stray(id: Ident, d: Dir)
+stray(Id, D) :- fletching(Id, P), center(Id, C), dir_elem(D), !nearer(D, C, P).
+
+// the flight: the arrow travels away from its fletching, and its leading arm
+// comes to rest on the grid edge
+.decl flight(id: Ident, d: Dir, k: number)
+flight(Id, D, K) :-
+    fletching(Id, _), !stray(Id, D),   // the whole fletching trails a flight toward D
+    arm(Id, D, P), dist(P, D, K).      // that arm reaches the edge
+
+// the cell whose color P takes after the head's half turn
+.decl source(id: Ident, p: Position, p_src: Position)
+source(Id, P, P_src) :- arm(Id, D, P), opposite(D, D2), arm(Id, D2, P_src).  // arms swap
+source(Id, P, P) :- arrow(Id, P), !arm(Id, _, P).                            // the rest stands
+
+// where an arrow cell rests, and the color it carries there
+.decl landing(p: Position, col: Color)
+landing(Q, Col) :-
+    source(Id, P, P_src), in(P_src, Col),   // the color after the turn
+    flight(Id, D, K), jump(P, D, K, Q).     // carried by the flight
+
+out(P, Col) :- landing(P, Col).
+out(P, Col) :- in(P, _), !landing(P, _), params.bg(Col).

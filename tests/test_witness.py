@@ -103,7 +103,7 @@ def test_the_file_loads_what_it_was_written_with(solvers):
 
 
 def test_the_written_files_hold_to_the_schema():
-    """Every witness file in the repo holds to the shape style.md states."""
+    """Every witness file in the repo holds to the shape procedure.md states."""
     paths = sorted(witness.WITNESS_DIR.glob("*.wit.json"))
     assert paths
     for path in paths:

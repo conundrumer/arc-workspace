@@ -1,4 +1,4 @@
-You survey the solver corpus for one operation and report. You change no repo file. Then read the spec: the entry the brief names, or the brief itself.
+You survey the solvers for one operation and report. You change no repo file. Then read the spec: the entry the brief names, or the brief itself.
 
 ## Procedure
 
@@ -17,4 +17,4 @@ Cite a solver by its stem and the relation name. Write no path under `.scratch/`
 1. Callers — each with the solver and the relation name, and one sentence on what it computes there. Give each caller a line of its own, opening with `<stem> <relation>`; with none, write `Callers: none.` No second caller is an answer: give the negative evidence, what the signature matched across the scope.
 2. Near-misses — each with the solver, the relation name, and the exclusion that rules it out. A class of near-misses names the relation at each solver it cites.
 3. Spec — whether the operation's interface or definition should change, argued from the sites in parts 1 and 2. A signal that rests on the surfacing solver alone is reported as caller-only, not as a change.
-4. Reimplementations — sites met on the way that hand-write what lib already holds, each with the stem, the relation name, and the lib primitive. Give each site a line of its own; with none, write `Reimplementations: none.` A matcher's hit counts and the search method go at the end of this part, or nowhere.
+4. Reimplementations — sites met on the way that hand-write what lib already holds, each with the stem, the relation name, and the matching lib relation. Give each site a line of its own; with none, write `Reimplementations: none.` A matcher's hit counts and the search method go at the end of this part, or nowhere.

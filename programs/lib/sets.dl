@@ -1,6 +1,6 @@
-//! Units over keyed sets: a unit belongs here if its signature holds no Box,
-//! Position, Offset, or orientation type, and its inputs are keyed sets with
-//! no order, no step, and no conflict among them.
+//! Components over keyed sets: a component belongs here if its signature holds
+//! no Box, Position, Offset, or orientation type, and its inputs are keyed sets
+//! with no order, no step, and no conflict among them.
 
 /// The size of each key's member set.
 .comp Tally<Key, Member> {
@@ -110,7 +110,7 @@
 
 /// One id per class of an equivalence relation. The representative is
 /// arbitrary but deterministic.
-.comp Canon<T> {
+.comp Canon<T> {  // @construction
     /// The equivalence. Requires: `equiv` is transitive, symmetric, and
     /// holds a self pair for every element of the domain; an element outside
     /// `equiv` gets no id, and a gap in transitivity gives two elements of

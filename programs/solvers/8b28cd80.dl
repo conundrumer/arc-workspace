@@ -27,9 +27,12 @@
     .decl seam(diag: DiagDir)
     seam(Dg) :- arm(D), wind(S), turn(S, D2, D), diag_dirs(Dg, _, D, D2).
 
-    // The next ring is one cell out at every edge.
+    // The spacing between one ring and the next.
+    .decl ring_gap(k: number) ring_gap(1).
+
+    // The step out from one ring to the next, at every edge.
     .decl ring_step(w: Box)
-    ring_step(W) :- uniform_outset(1, W).  // @unit: rings are one cell apart
+    ring_step(W) :- ring_gap(K), uniform_outset(K, W).
 }
 
 .init params = Params

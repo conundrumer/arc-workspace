@@ -17,7 +17,7 @@ These patterns are not rules. The `.dl` files are the source of truth. The list 
 
 ## Multiple modeling forms via ADT `Choice`
 
-Multiple models are encoded in one solver file as cases of an ADT `Choice` column on `out`. Cases can be more than two, may carry their own per-case data, and may nest (a case's data can itself be an ADT). Each case fires its own rules, and the runner emits each case as a variant.
+Multiple models are encoded in one solver file as cases of an ADT `Choice` column on `out`. Cases can be more than two, may carry their own per-case data, and may nest (a case's data can itself be an ADT). Each case fires its own clauses, and the runner emits that case's output grids.
 
 ```
 .type Choice = CaseA {} | CaseB {}
@@ -39,11 +39,11 @@ out(P, Col, [$PairExist(), $PerCell()]) :- ...
 out(P, Col, [$Count(),     $SliceMap()]) :- ...
 ```
 
-When only some combinations are hypotheses, the record remains, and `impl_choice` lists only those combinations. A flat sum duplicates the shared bodies and causes the linter's `choice-tag` finding.
+When only some combinations are cases, the record remains, and `impl_choice` lists only those combinations. A flat sum duplicates the shared clauses and causes the linter's `choice-tag` finding.
 
 ## Choice grounding via `impl_choice`
 
-If the case column otherwise appears only under negation, a rule shared by all cases needs a positive atom to bind its case variable. An enumeration relation provides it, one fact per case.
+If the case column otherwise appears only under negation, a clause shared by all cases needs a positive atom to bind its case variable. An enumeration relation provides it, one fact per case.
 
 ```
 .decl impl_choice(ch: Choice)
@@ -67,7 +67,7 @@ GRID_3x3(template,
 
 Arguments between the relation name and the cell values pass through as leading columns, so one relation can hold several grids keyed by id (995c5fa3 `mapping_member`).
 
-An empty cell states a modeling hypothesis: the grid holds nothing there. A sparse form reads each other digit as a value, `0` included.
+An empty cell states a modeling claim: the grid holds nothing there. A sparse form reads each other digit as a value, `0` included.
 
 - `GRID_MASK_HxW(rel, ...)` takes `1` for a member cell and emits `rel(p)` for it — membership grids (1818057f `shape`).
 - `GRID_SPARSE_HxW(rel, ...)` takes a digit for a cell's value and emits `rel(p, v)` for it — ink templates (21897d95 `bracket_glyph`).
@@ -98,11 +98,11 @@ GRID_MASK_3x3(pattern_member, 1,
 pattern_out(1, 8).
 ```
 
-Per-entry relations with derive rules hold the same data, but a new entry is then new program text rather than new facts.
+Per-entry relations with derive clauses hold the same data, but a new entry is then new program text rather than new facts.
 
 ## `RIGID` — parameter relations coupled as a rigid assembly
 
-A `RIGID` block groups parameter relations stated in one shared intrinsic frame and exposes them only as D4 placements that transform them together, so the stored pose is unobservable. Each relation reappears as `<block>_<rel>` with a leading D4 column and every column transformed by that element; consumers join relations on the element, which is what "the same oriented instance" means. The runner expands the block before Souffle sees the file, like GRID; the chart's generated names are unreadable outside the expansion (lint category 'rigid chart').
+A `RIGID` block groups parameter relations stated in one shared intrinsic frame and exposes them only as D4 placements that transform them together, so the stored pose is unobservable. Each relation reappears as `<block>_<rel>` with a leading D4 column and every column transformed by that element; consumers join relations on the element, which is what "the same oriented instance" means. The runner expands the block before Souffle sees the file, like GRID; the block's generated names are unreadable outside the expansion (lint category 'rigid chart').
 
 ```
 RIGID(marker,
@@ -148,7 +148,7 @@ map(P_in, P_out) :- src(P_in, Id), dst(P_out, Id).
 
 ## Tabulated decomposition
 
-A constant layout is stored as parameter data. The layout's dims are stored in fact parameters, and one relation maps each grid position to its decomposition, built with `helpers.tile_pos` and embedded behind a border with `compose`. The program joins `in` against it and works in decomposed coordinates. The program-derived peer is `divide` / `divide_by_size`. When the layout is the same in every pair, tabulation fits.
+A constant layout is stored as parameter data. The layout's dims are stored in fact parameters, and one relation maps each grid position to its decomposition, built with `helpers.tile_pos` and embedded behind a border with `compose`. The program joins `in` against it and works in decomposed coordinates. A model that derives the decomposition instead uses `divide` or `divide_by_size`. When the layout is the same in every pair, tabulation fits.
 
 ```
 .decl arr_dim(a: Axis, n: number)
@@ -168,7 +168,7 @@ decompose(P_grid, P_tile, P_intile) :-
 
 ## Per-tile data keyed by tile position
 
-Parameter data about one tile of a decomposition is keyed by the tile position that the decomposition produces. The program then joins its `p_outer` against the data directly. A second vocabulary for the same tiles (an edge Dir, a corner name) requires a conversion rule, which Indirection flags.
+Parameter data about one tile of a decomposition is keyed by the tile position that the decomposition produces. The program then joins its `p_outer` against the data directly. A second vocabulary for the same tiles (an edge Dir, a corner name) requires a conversion clause, which Indirection flags.
 
 ```
 .decl combine_member(id: Ident, p_outer: Position, c: Color)
@@ -179,7 +179,7 @@ combine_member(0, [0,0,0,1], 0). combine_member(0, [0,0,1,0], 0).
 
 ## Stored total orders as dense ranks
 
-A total order is stored in the parameters as dense rank data and is consumed only by comparison. Ranks state each element's place in the sequence directly; successor edges state it only through closure. Because ranks are used only for comparison, the solver does not use their numeric structure for anything except ordering. Dense values keep the encoding canonical, since a gapped value encodes one order many ways. A store bases its ranks at 0, unless the rule that reads them compares a rank against a value that fixes another base.
+A total order is stored in the parameters as dense rank data and is consumed only by comparison. Ranks state each element's place in the sequence directly; successor edges state it only through closure. Dense values keep the encoding canonical, since a gapped value encodes one order many ways. A store bases its ranks at 0, unless the clause that reads them compares a rank against a value that fixes another base.
 
 ```
 .decl ink_rank(c: Color, r: number)
@@ -242,7 +242,7 @@ Concrete: period-2 pattern over H=7.
 
 K=2 G=0 (the visual period) fails for odd H. K=1 G=1 treats bg as tile and dot as gap. K=3 G=-1 uses shared-boundary overlap.
 
-Existing divide/divide_by_size encodings are checked for a different (K, G) split before a new primitive is added for a periodic pattern.
+Existing divide/divide_by_size encodings are checked for a different (K, G) split before a new lib relation is added for a periodic pattern.
 
 ## 1D `divide` composed to 2D
 
@@ -257,7 +257,7 @@ compose(P_inner_v, P_inner_h, P_intile).
 
 ## Wide and long layouts
 
-A relation can lay co-occurring values out wide (columns of one atom) or long (one row per member). Multiplicity that the concept fixes goes wide: the two axes, a corner's two dirs, the four edge distances (Box is the wide form of per-Dir distance data). Multiplicity that the task varies stays long: markers, tiles, ink cells. Wide is a single atom. A rule that repeats an atom once per member is not a wide layout. When those members are a closed domain in one shared role, that rule states a universal by hand (see Universals via defect negation).
+A relation can lay co-occurring values out wide (columns of one atom) or long (one row per member). Multiplicity that the concept fixes goes wide: the two axes, a corner's two dirs, the four edge distances (Box is the wide form of per-Dir distance data). Multiplicity that the task varies stays long: markers, tiles, ink cells. Wide is a single atom. A clause that repeats an atom once per member is not a wide layout. When those members are a closed domain in one shared role, that clause states a universal by hand (see Universals via defect negation).
 
 A solver reads wide data by unification and long data by joins. A long encoding of a fixed co-occurrence makes every consumer reassemble it, as a self-join with a distinctness guard that derives each symmetric result twice:
 
@@ -265,17 +265,17 @@ A solver reads wide data by unification and long data by joins. A long encoding 
 edge(D1), edge(D2), D1 != D2, marked(P, D1), marked(P, D2).
 ```
 
-The reassembly occurs in one place: the domain's pairing relation (`opposite` is the Dir form; each closed domain gets its own), or the defining rule of a wide relation. On a domain with identity only (colors), the distinctness join is the concept itself.
+The reassembly occurs in one place: the domain's pairing relation (`opposite` is the Dir form; each closed domain gets its own), or the defining clause of a wide relation. On a domain with identity only (colors), the distinctness join is the concept itself.
 
 Order inside a wide atom is a tag column or a repeated value, never slot position. A pairing relation holds all orders as rows (`opposite`, `turn`), so which member fills which slot is data. A record that orders members by positional convention lacks that property: the convention is unstated data at the interface.
 
 A repeated variable in a wide atom states the diagonal case directly: equal extents (a square), equal distances (centered; on a corner's diagonal). The long encoding needs an agreement join for the same statement.
 
-A derivation has a long layout because a rule that quantifies over an index emits one row per index value, and aggregation computes per index (`Bbox` aggregates `edge_min` per Dir, then packs the four into `box`). Widening derived data requires one pairing join at its defining rule. A value that already holds the co-occurrence can be widened without another join.
+A derivation has a long layout because a clause that quantifies over an index emits one row per index value, and aggregation computes per index (`Bbox` aggregates `edge_min` per Dir, then packs the four into `box`). Widening derived data requires one pairing join at its defining clause. A value that already holds the co-occurrence can be widened without another join.
 
 ## Universals via defect negation
 
-"Every member of a closed domain satisfies R" is stated through a defect witness, since Datalog has no forall: one rule derives the keys where some member fails; the universal is its negation. A member missing from the tested relation is a defect, so existence and agreement are one test.
+"Every member of a closed domain satisfies R" is stated through a defect witness, since Datalog has no forall: one clause derives the keys where some member fails; the universal is its negation. A member missing from the tested relation is a defect, so existence and agreement are one test.
 
 ```
 broken(P, Col) :- arm(P, _, Col), dir_elem(D), !arm(P, D, Col).
@@ -290,5 +290,5 @@ The enum relation (`dir_elem`, `d4_elem`, `axis_elem`) supplies the domain. Repe
 
 ```
 .decl cell_split(p: Position, col: Color, p_inner: Position, p_across: Position)
-cell_split(P, Col, P_inner, P_across) :- in(P, Col), c.axis(A), split(P, A, P_inner, P_across).
+cell_split(P, Col, P_inner, P_across) :- in(P, Col), params.axis(A), split(P, A, P_inner, P_across).
 ```

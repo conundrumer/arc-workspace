@@ -1,7 +1,9 @@
 /* The task strip over the code column: the train and test pairs of the
    item's task, and of each task the session's feed mentions, one tab per
    task. A pair's alt output, where the task has one, stands beside the
-   output under its kind. */
+   output under its kind. A task with a witness file gets one more tab: each
+   entry's input beside the outcome it pins on every case, with its
+   hypothesis and the invariants it breaks. */
 import { html, useState, useEffect, useMemo } from "/vendor/htm-preact-standalone.module.js";
 import { Grid } from "/ui/panels/grid.js";
 import { tasks, ensureTask } from "/ui/server.js";
@@ -27,17 +29,53 @@ function Pairs({task}){
   </div></div>`;
 }
 
+const WIT = "witnesses";
+
+/* A witness entry's outcomes as a per-case map: a bare grid is a rejected
+   output, keyed by that word; null is an undefined outcome. */
+function outcomes(w){
+  return Array.isArray(w.output) ? [["rejected", w.output]] : Object.entries(w.output);
+}
+
+function Witness({w}){
+  const label = w.id + (w.assign ? " [" + Object.keys(w.assign).join(", ") + "]" : "");
+  return html`<div class="wit">
+    <div class="pair">
+      <${Grid} g=${w.input} label=${label}/>
+      ${outcomes(w).map(([c,g])=>[
+        html`<span class="arr" key=${c+"a"}>${c==="rejected" ? "≠" : "→"}</span>`,
+        g ? html`<${Grid} key=${c} g=${g} label=${c}/>`
+          : html`<div class="gwrap" key=${c}><div class="glabel">${c}</div>
+                   <div class="undef">undefined</div></div>`])}
+    </div>
+    <div class="witprose">
+      <div>${w.hypothesis}</div>
+      ${(w.violates||[]).map((v,i)=>html`<div class="violates" key=${"v"+i}>violates: ${v}</div>`)}
+      ${(w.rejected||[]).map((v,i)=>html`<div class="violates" key=${"r"+i}>rejects: ${v}</div>`)}
+    </div>
+  </div>`;
+}
+
+function Witnesses({witness}){
+  if(witness.error) return html`<div class="gridwell witerr">${witness.error}</div>`;
+  return html`<div class="gridwell witlist">
+    ${witness.entries.map(w=>html`<${Witness} key=${w.id} w=${w}/>`)}
+  </div>`;
+}
+
 /* id: the item's own task, the first tab. mentions: the other ids the feed
    names; a mention is a tab once its task has loaded, so a hex word that is
    no task gets none. */
-export function TaskStrip({id, mentions, open, onToggle}){
-  const [tab,setTab]=useState(null);   // the id in view, null for the item's own
+export function TaskStrip({id, mentions, witness, open, onToggle}){
+  const [tab,setTab]=useState(null);   // the tab in view, null for the item's own task
   useEffect(()=>{ setTab(null); },[id]);
   useEffect(()=>{ for(const m of mentions||[]) ensureTask(m); },[mentions]);
-  const tabs = [id, ...(mentions||[]).filter(m=>m!==id && loaded(tasks[m]))].filter(Boolean);
+  const tabs = [id, ...(mentions||[]).filter(m=>m!==id && loaded(tasks[m])),
+                ...(witness ? [WIT] : [])].filter(Boolean);
   const cur = tab && tabs.includes(tab) ? tab : id;
-  const task = cur ? tasks[cur] : null;
-  const body = useMemo(()=>loaded(task) ? html`<${Pairs} task=${task}/>` : null, [task, cur]);
+  const task = cur===WIT ? null : cur ? tasks[cur] : null;
+  const body = useMemo(()=>cur===WIT ? html`<${Witnesses} witness=${witness}/>`
+    : loaded(task) ? html`<${Pairs} task=${task}/>` : null, [task, cur, witness]);
   return html`<div id="taskstrip" class=${open?"open":""}>
     <div class="taskhead" onClick=${onToggle}>
       <span class="caret">▸</span><span>task</span>

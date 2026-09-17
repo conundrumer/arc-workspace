@@ -38,6 +38,8 @@ Assertions you need while you work go under `tests/scratch/`. It is collected an
 
 ## Codex
 
-- Always run it as `exec`.
-- `-o <file>` to capture its final message.
-- The brief on stdin, with `-`.
+Codex already has the handbook in context.
+
+When using Codex for prose editing tasks, the purpose is to avoid the prose being in your register, so ensure Codex uses its own words and does not copy yours.
+
+When specifying an issue in prose to fix, also specify the span the fix may change.
