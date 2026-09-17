@@ -1,6 +1,6 @@
 // 8698868d
-// draft
-// keywords: objects count rank crop
+// @draft
+// @keywords: objects count rank crop
 // input: One-color squares sit on a background, in two sizes. The large
 //  squares tile a region and are the blocks; the small squares are the
 //  pieces. Each square encloses background regions: a block's dots, a

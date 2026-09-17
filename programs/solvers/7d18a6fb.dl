@@ -1,6 +1,6 @@
 // 7d18a6fb
-// draft
-// keywords: decompose crop markers move stamp
+// @draft
+// @keywords: decompose crop markers move stamp
 // input: A one-color legend block holds marker cells. A marker's color names a
 //  shape elsewhere in the grid.
 // output: Shapes no marker names are left out. The output holds each named

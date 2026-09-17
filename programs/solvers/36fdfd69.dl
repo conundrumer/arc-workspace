@@ -1,6 +1,6 @@
 // 36fdfd69
-// draft
-// keywords: objects markers span
+// @draft
+// @keywords: objects markers span
 // input: The grid is a noise field in two colors, one of them params.bg,
 //  with cells of params.mark scattered on it. Marks with at most one cell
 //  between them cluster.

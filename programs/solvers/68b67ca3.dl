@@ -1,5 +1,5 @@
 // 68b67ca3
-// keywords: decompose lookup select
+// @keywords: decompose lookup select
 // output: 6×6 input collapsed to 3×3 by per-axis division; the cell at corner
 //  params.anchor of each subgrid is kept, and the others drop.
 

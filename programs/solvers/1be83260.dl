@@ -1,5 +1,5 @@
 // 1be83260
-// keywords: decompose markers scale rank stamp
+// @keywords: decompose markers scale rank stamp
 // output: Copies of one template block, drawn in a border color, sit in a
 //  lattice of bg separator lines. One copy is the key: it fills the template's
 //  holes with colors. The hole rows and hole columns cross in a palette grid,

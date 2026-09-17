@@ -1,5 +1,5 @@
 // a416b8f3
-// keywords: tile-arrangement
+// @keywords: tile-arrangement
 // output: The output places params.copies copies of the input side by side
 //  along params.tile_axis.
 

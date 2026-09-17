@@ -1,6 +1,6 @@
 // 45bbe264
-// draft
-// representative: 23581191
+// @draft
+// @representative: 23581191
 
 // what counts as a meeting
 .type Choice =

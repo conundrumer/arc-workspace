@@ -1,5 +1,5 @@
 // 712bf12e
-// keywords: markers walk
+// @keywords: markers walk
 // output: Each marker-colored cell draws a line of its color away from the
 //  marker edge: it steps through bg; where ink blocks the step, it slides one
 //  cell toward params.sense and retries; ink at the slide cell or the grid edge

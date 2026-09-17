@@ -1,6 +1,6 @@
 // 7ec998c9
-// draft
-// keywords: markers cast parity
+// @draft
+// @keywords: markers cast parity
 // input: A single mark sits on a plain field.
 // output: The mark's line along the axis is drawn in the line color, and
 //  where it meets each edge it turns and runs along that edge to the corner:

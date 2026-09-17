@@ -1,6 +1,6 @@
 // 758abdf0
-// draft
-// keywords: lines markers count move
+// @draft
+// @keywords: lines markers count move
 // input: A solid line of the wall color runs along one grid edge, and marks
 //  stand in short runs along the axis that leads away from it.
 // output: A run shorter than full grows one cell away from the wall. A

@@ -1,5 +1,5 @@
 // 91413438
-// keywords: tile-arrangement count rank
+// @keywords: tile-arrangement count rank
 // output: The input's bg-cell count sets the side of a square tile arrangement;
 //  its ink-cell count sets how many tiles carry a copy of the input, filled in
 //  reading order. The remaining tiles are bg.

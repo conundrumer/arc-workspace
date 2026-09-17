@@ -1,6 +1,6 @@
 // 891232d6
-// draft
-// keywords: markers walk
+// @draft
+// @keywords: markers walk
 // input: Horizontal wall segments lie on a blank grid, and markers sit on
 //  the bottom edge.
 // output: Each marker starts a walker that climbs until a wall cell lies

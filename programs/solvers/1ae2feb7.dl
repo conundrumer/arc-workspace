@@ -1,6 +1,6 @@
 // 1ae2feb7
-// draft
-// keywords: lines wallpaper rank
+// @draft
+// @keywords: lines wallpaper rank
 // input: A separator line splits the grid into an inked side and a blank
 //  canvas. Each line of the inked side holds runs of solid color.
 // output: Every run divides the canvas into blocks of its own length,

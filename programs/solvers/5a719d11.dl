@@ -1,6 +1,6 @@
 // 5a719d11
-// draft
-// keywords: decompose move
+// @draft
+// @keywords: decompose move
 // input: Uniform lines cut the grid into panels, which pair off across one
 //  axis. A panel holds a mark drawn on a ground color.
 // output: Each mark leaves its panel and lands at the same place inside the

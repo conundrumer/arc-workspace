@@ -1,6 +1,6 @@
 // 8719f442
-// draft
-// keywords: grow scale tile-arrangement stamp
+// @draft
+// @keywords: grow scale tile-arrangement stamp
 // input: the tile grid is the input frame grown by one ring, one
 //  input-sized tile per grown cell
 // output: The block inside the ring scales the input up, a tile per cell;

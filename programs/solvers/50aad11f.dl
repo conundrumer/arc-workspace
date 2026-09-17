@@ -1,6 +1,6 @@
 // 50aad11f
-// draft
-// keywords: objects markers crop tile-arrangement rank
+// @draft
+// @keywords: objects markers crop tile-arrangement rank
 // input: shapes in one color on a blank grid, separated along one axis,
 //  each with a marker cell of its own color beside it
 // output: The output lays the shapes' bounding-box crops out along that

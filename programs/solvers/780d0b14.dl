@@ -1,6 +1,6 @@
 // 780d0b14
-// draft
-// keywords: decompose scale
+// @draft
+// @keywords: decompose scale
 // input: Bg lines cut the grid into an arrangement of tiles, each a single
 //  color with bg holes.
 // output: The arrangement: one cell per tile, in the tile's color.

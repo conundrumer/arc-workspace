@@ -1,5 +1,5 @@
 // 681b3aeb
-// keywords: objects pack
+// @keywords: objects pack
 // input: Colored shapes lie on the bg, one shape per color.
 // output: The shapes translate into a square that they pack exactly one way,
 //  and every cell takes the color of the shape covering it.

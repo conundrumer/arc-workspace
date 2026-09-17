@@ -1,5 +1,5 @@
 // 3b4c2228
-// keywords: objects lookup count stamp
+// @keywords: objects lookup count stamp
 // input: squares of params.block_color, params.block_dim on a side, beside a
 //  second color's squares.
 // output: Count those squares, then render the count in a fixed out_dim grid.

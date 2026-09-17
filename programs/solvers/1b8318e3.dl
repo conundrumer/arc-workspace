@@ -1,5 +1,5 @@
 // 1b8318e3
-// keywords: objects move
+// @keywords: objects move
 // output: Blocks of one color sit among single-cell dots of other colors. The
 //  blocks stay. Each dot slides along a row, a column, or a diagonal until it
 //  touches a block, taking the slide with the fewest steps; a cardinal slide

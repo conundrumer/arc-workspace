@@ -1,6 +1,6 @@
 // 20fb2937
-// draft
-// keywords: decompose crop markers mapping stamp lookup
+// @draft
+// @keywords: decompose crop markers mapping stamp lookup
 // input: A line of a single color cuts the grid into a header and a field. The
 //  header splits into bands; each band holds a color swatch and a tile whose
 //  single mark names the key color that swatch answers to.

@@ -1,5 +1,5 @@
 // 705a3229
-// keywords: markers cast
+// @keywords: markers cast
 // input: scattered single-cell marks on bg
 // output: Each mark casts a ray in its own color to the nearer edge on each
 //  axis.

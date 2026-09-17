@@ -1,6 +1,6 @@
 // 4290ef0e
-// draft
-// keywords: objects overlay repair span rank
+// @draft
+// @keywords: objects overlay repair span rank
 // input: Each non-bg color draws one square ring: an arm of K cells runs
 //  from every corner along both edges it meets, and a side the arms do not
 //  fill is hollow in the middle. The rings differ in size, and the grid edge

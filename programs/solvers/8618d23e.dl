@@ -1,5 +1,5 @@
 // 8618d23e
-// keywords: decompose grow lookup move
+// @keywords: decompose grow lookup move
 // output: The input's two halves along the stack axis pull apart diagonally:
 //  each half reseats in a grown frame, and the vacated band fills with
 //  params.filler.

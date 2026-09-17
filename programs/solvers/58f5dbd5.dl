@@ -1,6 +1,6 @@
 // 58f5dbd5
-// draft
-// keywords: objects crop stamp rank
+// @draft
+// @keywords: objects crop stamp rank
 // input: The grid holds solid one-color blocks, laid out with a background
 //  border between and around them, beside small keys of scattered cells. A
 //  key names the block of its own color, and a key in a color no block

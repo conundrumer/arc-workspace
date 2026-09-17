@@ -1,5 +1,5 @@
 // 34b99a2b
-// representative: 3428a4f5
+// @representative: 3428a4f5
 
 // how the grid decomposes into two subgrids
 .type DecChoice =

@@ -1,6 +1,6 @@
 // 5ecac7f7
-// draft
-// keywords: decompose objects rank lookup select
+// @draft
+// @keywords: decompose objects rank lookup select
 // output: Cuts of one color split the grid into panels that stand side by side.
 //  Every panel holds as many shapes as there are panels, also side by side; a
 //  shape is connected cells of one color. The output is one panel: each panel

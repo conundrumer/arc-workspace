@@ -1,5 +1,5 @@
 // 79cce52d
-// keywords: lines markers walk count border
+// @keywords: lines markers walk count border
 // input: A one-cell border sits on the two edges of params.corner; the rest
 //  is the payload. Each border band holds one marker cell.
 // output: Per axis, the payload's lines rotate as a cycle so the line

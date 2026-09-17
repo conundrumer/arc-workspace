@@ -1,6 +1,6 @@
 // 7b0280bc
-// draft
-// keywords: objects markers route
+// @draft
+// @keywords: objects markers route
 // input: squares of two colors sit on a background, joined by wires of a
 //  third color; the color with the fewest squares marks the two ends
 // output: the input, with the route between the ends through the fewest

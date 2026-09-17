@@ -1,6 +1,6 @@
 // 3e6067c3
-// draft
-// keywords: objects markers walk
+// @draft
+// @keywords: objects markers walk
 // input: boxes holding a colored label, and single cells spelling a color
 //  sequence
 // output: Consecutive entries of the sequence name boxes that a clear

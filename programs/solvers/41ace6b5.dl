@@ -1,6 +1,6 @@
 // 41ace6b5
-// draft
-// keywords: lines count cast
+// @draft
+// @keywords: lines count cast
 // input: A ruler of two colored lines runs across the grid. A bar stands on
 //  each ruler cell the line colors skip, holding cap ink and stem ink.
 // output: The output redraws every bar from the ruler: the cap stands off

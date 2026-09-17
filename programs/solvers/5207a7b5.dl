@@ -1,6 +1,6 @@
 // 5207a7b5
-// draft
-// keywords: markers walk
+// @draft
+// @keywords: markers walk
 // input: a bar of one color hangs from an edge of the grid
 // output: A filled region grows out of the bar one column at a time. The
 //  bar's own column is filled as deep as the bar reaches. Each next column

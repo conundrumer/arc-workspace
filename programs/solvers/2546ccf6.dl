@@ -1,6 +1,6 @@
 // 2546ccf6
-// draft
-// keywords: decompose d4
+// @draft
+// @keywords: decompose d4
 // input: Lines of a single color cut the grid into a lattice of tiles.
 // output: A shape fills three tiles of a 2x2 block, mirrored in each of
 //  the two cuts between them; the fourth tile takes the image that

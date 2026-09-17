@@ -1,6 +1,6 @@
 // 4e45f183
-// draft
-// keywords: decompose markers move span count
+// @draft
+// @keywords: decompose markers move span count
 // input: The grid is an arrangement of square tiles, ruled off by lines, with
 //  a line on every side. Each tile carries marks in one color on a field of
 //  another.

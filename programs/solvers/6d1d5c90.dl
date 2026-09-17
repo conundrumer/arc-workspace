@@ -1,5 +1,5 @@
 // 6d1d5c90
-// keywords: markers walk count
+// @keywords: markers walk count
 // input: A band params.band_width wide at params.marker_edge holds one
 //  off-color cell.
 // output: Drop that cell, then shift the rest toward params.shift_dir by its

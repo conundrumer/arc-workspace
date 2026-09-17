@@ -1,6 +1,6 @@
 // 7e0986d6
-// draft
-// keywords: repair count objects
+// @draft
+// @keywords: repair count objects
 // input: Solid rectangles of one color sit on the bg, and a second color
 //  sprinkles single cells over the grid: some inside the rectangles, some on
 //  the bg.

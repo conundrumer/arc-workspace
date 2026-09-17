@@ -1,5 +1,5 @@
 // a740d043
-// keywords: crop mapping
+// @keywords: crop mapping
 // output: Output is the grid cropped to the ink's bounding box; bg cells inside
 //  repaint to params.hole.
 

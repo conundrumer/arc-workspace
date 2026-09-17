@@ -1,6 +1,6 @@
 // 98c475bf
-// draft
-// keywords: markers lookup cast enclose
+// @draft
+// @keywords: markers lookup cast enclose
 // input: A border stands on two opposite edges, and the canvas lies between
 //  them. On the canvas stand one drawn figure and one or more marker pairs: a
 //  figure is a shape standing on a line that crosses the canvas, and a marker

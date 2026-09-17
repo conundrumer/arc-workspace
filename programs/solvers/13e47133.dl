@@ -1,5 +1,5 @@
 // 13e47133
-// keywords: objects markers walk cast
+// @keywords: objects markers walk cast
 // input: Wall lines cut the grid into regions.
 // output: Depth runs inward from a region's boundary: each marker cell
 //  colors its own depth, an unmarked depth takes the background, and that

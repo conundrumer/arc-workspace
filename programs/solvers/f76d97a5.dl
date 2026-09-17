@@ -1,5 +1,5 @@
 // f76d97a5
-// keywords: mapping
+// @keywords: mapping
 // output: Recolor a binary input: marker positions take the input's main color
 //  (the unique non-marker color in the grid); the main color elsewhere becomes
 //  background.

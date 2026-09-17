@@ -1,6 +1,6 @@
 // 39a8645d
-// draft
-// keywords: objects crop count
+// @draft
+// @keywords: objects crop count
 // output: Pieces on params.bg, each of one color and 8-connected. Two pieces
 //  are copies when they hold the same color and the same cells up to
 //  translation. The output is a piece with the most copies, cropped to its

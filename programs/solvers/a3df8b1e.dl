@@ -1,5 +1,5 @@
 // a3df8b1e
-// keywords: markers walk
+// @keywords: markers walk
 // input: A lone marker sits in a corner.
 // output: A diagonal ray leaves it, reflecting off the side walls, and stops
 //  at the far edge. The output draws the ray's trace on the background.

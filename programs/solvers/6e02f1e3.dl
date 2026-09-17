@@ -1,5 +1,5 @@
 // 6e02f1e3
-// keywords: lookup count classify
+// @keywords: lookup count classify
 // output: Classify the input by its distinct color count and emit the
 //  class's symbol: one color — the top edge row; two — the TL diagonal;
 //  three — the TR diagonal.

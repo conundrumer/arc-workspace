@@ -1,5 +1,5 @@
 // d037b0a7
-// keywords: markers cast
+// @keywords: markers cast
 // output: Each mark casts its color through bg toward the params.dir edge in
 //  its line; a mark in the way stops the cast.
 

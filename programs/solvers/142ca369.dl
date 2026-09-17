@@ -1,5 +1,5 @@
 // 142ca369
-// keywords: markers walk lookup
+// @keywords: markers walk lookup
 // input: Markers launch diagonal rays that paint the empty cells they cross.
 // output: Every other colored cell is a wall: where one lies beside the
 //  ray's cell on an axis the ray advances along, that component of the

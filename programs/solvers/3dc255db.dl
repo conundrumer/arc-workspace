@@ -1,6 +1,6 @@
 // 3dc255db
-// draft
-// keywords: objects markers enclose cast count
+// @draft
+// @keywords: objects markers enclose cast count
 // output: Two objects in contact pair up: the bigger one holds the smaller one.
 //  The holder stands open on one side; on the opposite side its walls close to
 //  a lone cell — the spout. The output removes the held cells and runs a line

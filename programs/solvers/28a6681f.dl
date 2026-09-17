@@ -1,5 +1,5 @@
 // 28a6681f
-// keywords: walk
+// @keywords: walk
 // input: Walls of every other color hold a body of water.
 // output: The water settles under gravity, one cell at a time.
 

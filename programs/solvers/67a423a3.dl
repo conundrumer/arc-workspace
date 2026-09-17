@@ -1,6 +1,6 @@
 // 67a423a3
-// draft
-// keywords: lines cross stamp
+// @draft
+// @keywords: lines cross stamp
 // input: Two lines cross, one per axis.
 // output: The eight cells around the crossing take params.ring; every other
 //  cell keeps its color.

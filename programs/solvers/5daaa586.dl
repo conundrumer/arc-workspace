@@ -1,6 +1,6 @@
 // 5daaa586
-// draft
-// keywords: crop lines cast
+// @draft
+// @keywords: crop lines cast
 // output: Two full rows and two full columns cross the grid, and the output is
 //  the box those four lines bound. A cell inside that box runs out to a border
 //  line that matches its color, filling the run.

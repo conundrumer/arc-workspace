@@ -1,5 +1,5 @@
 // 423a55dc
-// keywords: move
+// @keywords: move
 // input: One shape sits on params.bg.
 // output: The shape is sheared: each ink cell slides by its distance from
 //  the shape box's params.anchor edge, toward params.anchor turned

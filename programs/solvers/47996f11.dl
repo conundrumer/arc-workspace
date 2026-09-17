@@ -1,6 +1,6 @@
 // 47996f11
-// draft
-// keywords: symmetry repair
+// @draft
+// @keywords: symmetry repair
 // input: A pattern symmetric about a center offset from the grid center,
 //  corrupted by patches of one color.
 // output: Each corrupted cell restores from a symmetric counterpart.

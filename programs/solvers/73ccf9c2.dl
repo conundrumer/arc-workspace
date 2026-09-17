@@ -1,6 +1,6 @@
 // 73ccf9c2
-// draft
-// keywords: objects symmetry select crop
+// @draft
+// @keywords: objects symmetry select crop
 // input: Several objects sit on params.bg.
 // output: All but one are fixed by the symmetry params.sym; the output
 //  crops the box of the one that is not.

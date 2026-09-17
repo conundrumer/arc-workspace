@@ -1,6 +1,6 @@
 // 97239e3d
-// draft
-// keywords: lines markers span border enclose
+// @draft
+// @keywords: lines markers span border enclose
 // input: the lines that hold no params.wall cell are streets; between them the
 //  wall draws a ring around a bg hole, and marks of other colors sit on the
 //  streets.

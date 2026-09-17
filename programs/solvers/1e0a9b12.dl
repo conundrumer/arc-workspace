@@ -1,5 +1,5 @@
 // 1e0a9b12
-// keywords: lines move
+// @keywords: lines move
 // output: Gravity: each line's ink packs against the params.grav edge, order
 //  kept; elsewhere background.
 

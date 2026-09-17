@@ -1,6 +1,6 @@
 // 97c75046
-// draft
-// keywords: markers move
+// @draft
+// @keywords: markers move
 // input: one params.marker cell, and a shape of params.shape cells. The
 //  contact cells are the background cells that touch the shape.
 // output: the marker travels along the cardinal whose ray meets the shape, and

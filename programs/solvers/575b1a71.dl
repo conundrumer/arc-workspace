@@ -1,5 +1,5 @@
 // 575b1a71
-// keywords: rank
+// @keywords: rank
 // input: cells of the params.mark color
 // output: They recolor by rank: the lines holding a mark are ranked from
 //  the params.rank_dir edge, and params.rank_color gives each rank its

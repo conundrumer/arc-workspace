@@ -1,6 +1,6 @@
 // 22425bda
-// draft
-// keywords: lines rank
+// @draft
+// @keywords: lines rank
 // output: Full-grid lines lie stacked on the background, one color each,
 //  running along a row, a column, or a diagonal. At a crossing only the upper
 //  line shows, which orders that pair; the closure of those pairs stacks every

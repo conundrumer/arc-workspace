@@ -1,6 +1,6 @@
 // 1d61978c
-// draft
-// keywords: lines count
+// @draft
+// @keywords: lines count
 // input: marks of one color lie in diagonal streaks; each streak runs on one
 //  of the two diagonal axes.
 // output: marks of the axis carrying more of them turn major_paint, the rest

@@ -1,6 +1,6 @@
 // 18447a8d
-// draft
-// keywords: decompose move pack
+// @draft
+// @keywords: decompose move pack
 // input: Blank lines cut the grid into bands. Each band holds a staircase in
 //  the base color at one edge and a loose piece in the band's own color at
 //  the opposite edge.

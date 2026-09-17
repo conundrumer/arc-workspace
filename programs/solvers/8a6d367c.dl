@@ -1,6 +1,6 @@
 // 8a6d367c
-// draft
-// keywords: crop border enclose markers objects scale select
+// @draft
+// @keywords: crop border enclose markers objects scale select
 // input: Small shapes sit beside a frame drawn in one color. Inside the
 //  frame, a partial fill covers whole blocks of a coarse grid.
 // output: the frame, cropped, with its inside painted as the one shape whose

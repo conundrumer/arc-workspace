@@ -1,6 +1,6 @@
 // 60b61512
-// draft
-// keywords: objects mapping stamp
+// @draft
+// @keywords: objects mapping stamp
 // input: ink shapes lie on params.bg, each spanning three cells on both
 //  axes.
 // output: each shape's region is painted params.fill, over its background

@@ -1,6 +1,6 @@
 // 7d419a02
-// draft
-// keywords: decompose markers walk
+// @draft
+// @keywords: decompose markers walk
 // input: Bg lines cut the grid into equal bands stacked along one axis. A
 //  params.mark block sits in one band.
 // output: The other bands lose their ink to params.fill, except inside a cone

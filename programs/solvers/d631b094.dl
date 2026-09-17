@@ -1,5 +1,5 @@
 // d631b094
-// keywords: count
+// @keywords: count
 // output: Cells of one color on bg. Output is a 1-cell-wide bar of that color
 //  along params.bar_axis, extent = the cell count.
 

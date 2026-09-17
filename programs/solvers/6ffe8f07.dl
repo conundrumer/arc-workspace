@@ -1,6 +1,6 @@
 // 6ffe8f07
-// draft
-// keywords: cast
+// @draft
+// @keywords: cast
 // output: Every params.source cell casts a beam in each cardinal direction. The
 //  beam paints the cells it crosses params.beam and stops before the first
 //  params.wall cell; every other color is painted over. Source cells keep their

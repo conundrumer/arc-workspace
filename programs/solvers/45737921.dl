@@ -1,6 +1,6 @@
 // 45737921
-// draft
-// keywords: objects mapping
+// @draft
+// @keywords: objects mapping
 // input: Objects of two colors sit on the background.
 // output: Each object cell takes its object's other color; the background
 //  stands.

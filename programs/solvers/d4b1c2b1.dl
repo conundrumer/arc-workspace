@@ -1,5 +1,5 @@
 // d4b1c2b1
-// keywords: scale count
+// @keywords: scale count
 // output: Layout: N× scale. Each input cell expands to an N×N block of its
 //  color. N is the count of distinct colors in the input. The model takes
 //  no task data, so the family is fully structural.

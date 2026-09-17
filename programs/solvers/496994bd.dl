@@ -1,5 +1,5 @@
 // 496994bd
-// keywords: d4 move
+// @keywords: d4 move
 // input: an ink block sits against one edge, bg elsewhere.
 // output: the output adds the block's reflected copy at the opposite edge.
 

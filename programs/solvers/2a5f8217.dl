@@ -1,6 +1,6 @@
 // 2a5f8217
-// draft
-// keywords: objects classify
+// @draft
+// @keywords: objects classify
 // input: Same-color connected shapes lie on params.bg.
 // output: Each shape of params.blank has a twin, a shape of another color
 //  with the same footprint, and takes that twin's color.

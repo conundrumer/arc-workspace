@@ -1,6 +1,6 @@
 // 5ad4f10b
-// draft
-// keywords: crop scale select
+// @draft
+// @keywords: crop scale select
 // input: Two colors sit on bg. One is drawn thick, in blocks at least two
 //  cells across: it is the figure, and it draws a picture at a fat-pixel
 //  scale. The other is never drawn thick: it is the speck color, scattered

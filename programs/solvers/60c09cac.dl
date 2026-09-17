@@ -1,5 +1,5 @@
 // 60c09cac
-// keywords: scale
+// @keywords: scale
 // output: Layout: 2× scale. Each input cell expands to a 2×2 block of the same
 //  color in the output frame.
 

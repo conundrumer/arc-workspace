@@ -1,6 +1,6 @@
 // 2685904e
-// draft
-// keywords: lines count cast
+// @draft
+// @keywords: lines count cast
 // input: A bar on one edge states a length N. Beyond a separator, a pattern
 //  line holds one color per column.
 // output: The separator casts a band N deep back toward the bar's edge; a

@@ -1,6 +1,6 @@
 // 72a961c9
-// draft
-// keywords: markers cast lookup
+// @draft
+// @keywords: markers cast lookup
 // input: a line of one color crosses the grid, and a few of its cells are
 //  marks of other colors
 // output: Each mark projects its color params.reach cells away toward

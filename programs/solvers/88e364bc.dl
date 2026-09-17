@@ -1,6 +1,6 @@
 // 88e364bc
-// draft
-// keywords: enclose markers move count
+// @draft
+// @keywords: enclose markers move count
 // input: Walls of several colors close off regions on params.bg, with
 //  params.marker cells inside. Each wall color has a legend: a solid block
 //  of that color holding arrows, each a line of enclosed cells whose head

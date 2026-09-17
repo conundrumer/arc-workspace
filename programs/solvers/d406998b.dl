@@ -1,5 +1,5 @@
 // d406998b
-// keywords: rank parity
+// @keywords: rank parity
 // output: One params.dot cell per grid column. Alternate dots recolor to
 //  params.mark, starting at params.anchor. Coincide while every column
 //  holds a dot; diverge when a column is empty (ranks compress past it,

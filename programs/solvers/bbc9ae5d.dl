@@ -1,5 +1,5 @@
 // bbc9ae5d
-// keywords: grow cast move
+// @keywords: grow cast move
 // input: A single line: an ink run anchored at one end, bg beyond.
 // output: The output stacks line-length / params.divisor rows: the input row,
 //  then each following row continuing the previous one toward params.diag.

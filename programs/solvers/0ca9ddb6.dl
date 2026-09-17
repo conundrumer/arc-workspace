@@ -1,5 +1,5 @@
 // 0ca9ddb6
-// keywords: markers lookup stamp
+// @keywords: markers lookup stamp
 // output: Lone dots sit on an empty grid. A marked dot grows a one-step star
 //  in its paired color — cardinal arms for 1, diagonal arms for 2; dots of any
 //  other color are inert, and the rest of the input is kept. Stars clip at the

@@ -1,5 +1,5 @@
 // 0b148d64
-// keywords: decompose crop select
+// @keywords: decompose crop select
 // output: An ink-free band of rows and one of columns cut the grid into four
 //  panels. Each panel is drawn in a single ink color; three panels share one
 //  color and the fourth has its own. The output is that fourth panel.

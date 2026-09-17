@@ -1,6 +1,6 @@
 // 6455b5f5
-// draft
-// keywords: objects count rank
+// @draft
+// @keywords: objects count rank
 // input: lines of non-background color cut the grid into regions of
 //  background cells
 // output: The region with the most cells takes params.most, and every region

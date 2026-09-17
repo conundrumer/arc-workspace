@@ -1,6 +1,6 @@
 // 8e301a54
-// draft
-// keywords: objects count move
+// @draft
+// @keywords: objects count move
 // output: Shapes of several colors lie on params.bg. Each shape moves toward
 //  params.move_dir by as many cells as it has, and the cells that leave the
 //  frame are lost. Cases differ in what a shape is:

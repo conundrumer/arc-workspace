@@ -1,6 +1,6 @@
 // 981add89
-// draft
-// keywords: markers lines cast
+// @draft
+// @keywords: markers lines cast
 // input: Ink on a field of the commonest color.
 // output: Each mark paints its whole grid line in its own color. Where that
 //  line meets a cell already holding the mark's color, the paint is cut to the

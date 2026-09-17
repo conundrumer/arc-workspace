@@ -1,5 +1,5 @@
 // 409aa875
-// keywords: markers cast count lookup
+// @keywords: markers cast count lookup
 // input: marks read as three-cell arrowheads: an apex, with an arm one
 //  eighth-turn to each side of one direction
 // output: The arrowhead aims the opposite way, shoots a fixed distance along

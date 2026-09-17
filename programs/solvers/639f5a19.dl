@@ -1,6 +1,6 @@
 // 639f5a19
-// draft
-// keywords: objects border lookup
+// @draft
+// @keywords: objects border lookup
 // input: Solid ink rectangles sit on the background.
 // output: Each one is repainted: a band runs inside its edges, and each band
 //  cell takes the color of the quadrant of the object's bounding box it sits

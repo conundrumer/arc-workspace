@@ -1,6 +1,6 @@
 // 363442ee
-// draft
-// keywords: markers decompose stamp
+// @draft
+// @keywords: markers decompose stamp
 // input: A params.divider line cuts the grid into the key panel, on
 //  params.key_side, and the canvas beyond it. The panel's non-bg cells are
 //  the key.

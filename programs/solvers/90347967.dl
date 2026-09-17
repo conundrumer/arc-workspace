@@ -1,5 +1,5 @@
 // 90347967
-// keywords: markers d4
+// @keywords: markers d4
 // output: The grid re-seats transformed by params.transform about its
 //  params.marker cell; uncovered cells are bg. Seating the grid equals seating
 //  the ink object: transforms are injective, so bg images land clear of the

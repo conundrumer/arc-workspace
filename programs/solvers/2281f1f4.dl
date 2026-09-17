@@ -1,5 +1,5 @@
 // 2281f1f4
-// keywords: lines markers stamp cross
+// @keywords: lines markers stamp cross
 // output: Markers (params.marker) sit on the two header edges of corner
 //  params.header; each marks its line. Cells where marked lines cross paint
 //  params.fill.

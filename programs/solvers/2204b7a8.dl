@@ -1,6 +1,6 @@
 // 2204b7a8
-// draft
-// keywords: lines rank
+// @draft
+// @keywords: lines rank
 // input: Two opposite edges carry a solid line, each in its own color, and
 //  markers are scattered over the interior.
 // output: Each marker takes the color of the nearer line; everything else

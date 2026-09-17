@@ -1,6 +1,6 @@
 // 5545f144
-// draft
-// keywords: decompose objects markers symmetry walk d4
+// @draft
+// @keywords: decompose objects markers symmetry walk d4
 // input: Drawn lines cut the grid into panels, and each panel is one snapshot
 //  of one scene: an arrow, and loose dots. The arrow is the widest set of
 //  drawn cells that a mirror through one of them carries onto itself, that

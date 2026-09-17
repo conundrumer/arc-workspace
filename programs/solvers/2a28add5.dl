@@ -1,5 +1,5 @@
 // 2a28add5
-// keywords: lines markers move
+// @keywords: lines markers move
 // input: Each line holds a marker cell.
 // output: The line packs its ink against the marker: the marker stays put,
 //  each side's ink slides inward, order kept, and packed cells draw in

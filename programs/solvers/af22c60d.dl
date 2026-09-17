@@ -1,5 +1,5 @@
 // af22c60d
-// keywords: symmetry repair
+// @keywords: symmetry repair
 // output: A grid whose pattern is mirror-symmetric on each axis, occluded by
 //  cells of a mask color; the output restores them. Each axis mirror reflects a
 //  band of the grid onto itself and carries the perpendicular coordinate

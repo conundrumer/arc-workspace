@@ -1,6 +1,6 @@
 // 39e1d7f9
-// draft
-// keywords: decompose objects stamp
+// @draft
+// @keywords: decompose objects stamp
 // input: Drawn lines cut the grid into a lattice of tiles, each tile holding a
 //  single color, so the lattice reads as a small grid of colored cells. In
 //  that small grid, one object spans several cells, the motif, and every

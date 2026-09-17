@@ -1,6 +1,6 @@
 // 85b81ff1
-// draft
-// keywords: decompose lines objects count rank move
+// @draft
+// @keywords: decompose lines objects count rank move
 // output: Each case finds a set of units and ranks them by ink, ascending.
 //  It then permutes them along params.axis so the unit of rank R sits R
 //  places from params.least_dir.

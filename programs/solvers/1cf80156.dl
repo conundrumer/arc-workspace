@@ -1,5 +1,5 @@
 // 1cf80156
-// keywords: crop
+// @keywords: crop
 // output: Output is the grid cropped to the ink's bounding box.
 
 .decl out(p: Position, col: Color)

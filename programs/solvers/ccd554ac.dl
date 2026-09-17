@@ -1,5 +1,5 @@
 // ccd554ac
-// keywords: tile-arrangement
+// @keywords: tile-arrangement
 // output: Self-tensor: output = input ⊗ input — one tile per input cell, each a
 //  full copy of the input.
 

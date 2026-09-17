@@ -1,6 +1,6 @@
 // 256b0a75
-// draft
-// keywords: markers cast border
+// @draft
+// @keywords: markers cast border
 // input: Four corner brackets mark a box: three drawn in params.frame,
 //  the fourth in another color, which becomes the box's fill. Single
 //  cells of other colors litter the grid.

@@ -1,6 +1,6 @@
 // 4a1cacc2
-// draft
-// keywords: markers cast
+// @draft
+// @keywords: markers cast
 // input: a single mark sits on a plain field. That mark is nearer one corner
 //  of the frame on both axes.
 // output: the box the mark spans with that corner's cell fills with the

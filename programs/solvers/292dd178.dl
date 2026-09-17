@@ -1,6 +1,6 @@
 // 292dd178
-// draft
-// keywords: objects border walk cast
+// @draft
+// @keywords: objects border walk cast
 // input: Rectangular outlines in params.wall each miss one cell of their
 //  perimeter.
 // output: The cells strictly inside an outline's bounding box take

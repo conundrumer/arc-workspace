@@ -1,6 +1,6 @@
 // 6ad5bdfd
-// draft
-// keywords: objects markers move
+// @draft
+// @keywords: objects markers move
 // input: a wall of params.wall filling one full edge line of the grid;
 //  the other non-bg cells forming objects, the 4-connected blocks of one
 //  color

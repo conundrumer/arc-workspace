@@ -1,6 +1,6 @@
 // 305b1341
-// draft
-// keywords: overlay select parity rank
+// @draft
+// @keywords: overlay select parity rank
 // input: a legend sits on the params.legend_side edge: each entry is a dot
 //  color beside the fill color it takes. Away from the legend, each dot
 //  color's cells make a panel of evenly spaced dots.

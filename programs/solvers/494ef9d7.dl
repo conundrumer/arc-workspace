@@ -1,6 +1,6 @@
 // 494ef9d7
-// draft
-// keywords: lines move
+// @draft
+// @keywords: lines move
 // input: colored cells scatter on a background, two to a line at most.
 // output: some color pairs attract: on a line holding exactly such a pair,
 //  the far cell moves to rest against the near one. Every other line stands.

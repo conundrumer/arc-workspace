@@ -1,6 +1,6 @@
 // 6e82a1ae
-// draft
-// keywords: objects count lookup rank
+// @draft
+// @keywords: objects count lookup rank
 // output: Each ink object is repainted with a color that its cell count
 //  selects.
 

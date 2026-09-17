@@ -1,5 +1,5 @@
 // 27a28665
-// keywords: lookup count classify
+// @keywords: lookup count classify
 // input: the non-background cells of a 3x3 grid form a shape, the silhouette.
 // output: one cell, in the color the silhouette gives.
 

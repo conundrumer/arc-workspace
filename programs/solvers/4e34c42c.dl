@@ -1,6 +1,6 @@
 // 4e34c42c
-// draft
-// keywords: objects move
+// @draft
+// @keywords: objects move
 // input: the grid holds fragments of one scene, scattered over a field. A
 //  fragment is a connected run of ink, and it carries its whole box, field
 //  cells included.

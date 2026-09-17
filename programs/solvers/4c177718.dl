@@ -1,6 +1,6 @@
 // 4c177718
-// draft
-// keywords: decompose markers crop stamp lookup
+// @draft
+// @keywords: decompose markers crop stamp lookup
 // input: A line of one color cuts the grid into two panels. The scene panel
 //  holds one shape, in the anchor color. The legend panel holds a copy of
 //  that shape, an arrow, and a payload shape.

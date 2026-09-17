@@ -1,5 +1,5 @@
 // 67a3c6ac
-// keywords: d4
+// @keywords: d4
 // output: Apply a D4 transform to every cell.
 
 .decl out(p: Position, col: Color)

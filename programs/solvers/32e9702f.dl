@@ -1,5 +1,5 @@
 // 32e9702f
-// keywords: move
+// @keywords: move
 // output: Every mark shifts one step toward params.dir; a mark pushed off the
 //  grid vanishes. All other cells become params.fill.
 

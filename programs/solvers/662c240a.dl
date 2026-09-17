@@ -1,5 +1,5 @@
 // 662c240a
-// keywords: decompose symmetry select
+// @keywords: decompose symmetry select
 // input: square tiles stacked along params.tile_axis
 // output: The output is the one tile that lacks the symmetry the others
 //  share.

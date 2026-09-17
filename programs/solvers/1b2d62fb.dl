@@ -1,5 +1,5 @@
 // 1b2d62fb
-// representative: f2829549
+// @representative: f2829549
 
 // how the grid splits into its two tiles
 .type DecChoice =

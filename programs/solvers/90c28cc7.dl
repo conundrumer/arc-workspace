@@ -1,6 +1,6 @@
 // 90c28cc7
-// draft
-// keywords: decompose merge rank
+// @draft
+// @keywords: decompose merge rank
 // input: a background field carrying a rectangle of solid one-color blocks,
 //  laid out in a grid whose rows and columns differ in width
 // output: the block layout — one cell per block, holding its color, at its

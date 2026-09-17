@@ -1,6 +1,6 @@
 // 3e980e27
-// draft
-// keywords: objects markers stamp d4
+// @draft
+// @keywords: objects markers stamp d4
 // input: non-bg cells forming 8-connected shapes; a shape of one cell with no
 //  neighbor is a bare marker
 // output: A bare marker's color also marks a cell inside a shape; that shape

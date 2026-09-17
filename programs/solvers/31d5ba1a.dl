@@ -1,5 +1,5 @@
 // 31d5ba1a
-// keywords: decompose lookup count
+// @keywords: decompose lookup count
 // input: The input decomposes into two 3×5 tiles, stacked vertically.
 // output: Each output cell takes a color derived from the colors of the two
 //  tiles at that same cell.

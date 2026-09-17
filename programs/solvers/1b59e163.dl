@@ -1,6 +1,6 @@
 // 1b59e163
-// draft
-// keywords: objects markers move count
+// @draft
+// @keywords: objects markers move count
 // output: The grid holds multi-cell shapes and lone dots on bg. Each shape
 //  moves onto every dot colored like its anchor cell, landing that cell on the
 //  dot; the shape leaves nothing behind, and a dot no shape answers stays bg.

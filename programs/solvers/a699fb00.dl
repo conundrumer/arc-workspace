@@ -1,5 +1,5 @@
 // a699fb00
-// keywords: lines span
+// @keywords: lines span
 // output: Dashed lines: params.dot cells alternating with bg along params.axis.
 //  The gaps fill with params.fill. The two cases model differently which bg
 //  cells count as gaps.

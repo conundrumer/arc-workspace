@@ -1,6 +1,6 @@
 // 4c5c2cf0
-// draft
-// keywords: markers symmetry d4 lookup
+// @draft
+// @keywords: markers symmetry d4 lookup
 // input: Two shapes, one color each, sit on an empty grid: a pivot and a
 //  mover.
 // output: Every shape cell is copied to its image under each element of

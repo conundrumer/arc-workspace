@@ -1,6 +1,6 @@
 // 5b526a93
-// draft
-// keywords: objects cross stamp lookup border
+// @draft
+// @keywords: objects cross stamp lookup border
 // input: Hollow squares stand on background. Each square's placement lies on
 //  one line per axis, and a square sits at some of the crossings of those
 //  lines.

@@ -1,6 +1,6 @@
 // 3bd292e8
-// draft
-// keywords: objects border count rank
+// @draft
+// @keywords: objects border count rank
 // input: Cells of params.wall cut the rest of the grid into regions. A wall
 //  cell between two region cells on one axis puts their regions on opposite
 //  sides, so the regions two-color.

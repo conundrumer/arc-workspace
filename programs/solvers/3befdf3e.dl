@@ -1,6 +1,6 @@
 // 3befdf3e
-// draft
-// keywords: objects cast lookup
+// @draft
+// @keywords: objects cast lookup
 // input: Objects — the connected components of the non-bg cells — are filled
 //  rectangles: a one-cell wall of one color around a square core of another.
 // output: The output swaps the two colors where the object stands, and adds

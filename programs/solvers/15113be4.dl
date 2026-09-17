@@ -1,5 +1,5 @@
 // 15113be4
-// keywords: decompose scale stamp
+// @keywords: decompose scale stamp
 // input: separator lines cut the grid into cells of ink on background. A
 //  separator-bordered block holds the key: its interior is a cell-sized
 //  footprint scaled up, in a color found nowhere else.

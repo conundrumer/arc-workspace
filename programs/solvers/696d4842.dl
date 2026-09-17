@@ -1,6 +1,6 @@
 // 696d4842
-// draft
-// keywords: objects markers cast walk move
+// @draft
+// @keywords: objects markers cast walk move
 // output: Each shape is a path of one color with two ends. A dot lies on the
 //  line that one end continues along. The shape crawls toward that dot until it
 //  touches it: the near end grows along the line, and for each cell it gains,

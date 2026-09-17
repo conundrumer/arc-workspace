@@ -1,5 +1,5 @@
 // 62b74c02
-// keywords: lines span stamp select
+// @keywords: lines span stamp select
 // output: An ink block sits anchored at one edge of the grid, the rest bg.
 //  The output stamps a copy of the block flush at the empty edge, and fills
 //  the span between the block and the copy: each line in the span takes the

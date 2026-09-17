@@ -1,6 +1,6 @@
 // 1efba499
-// draft
-// keywords: lines move
+// @draft
+// @keywords: lines move
 // input: The grid's dominant color forms a wall, thin along one axis. Cells
 //  of the other colors are loose, sitting on either side of the wall.
 // output: Along a line that crosses the wall, a loose cell on one side and a

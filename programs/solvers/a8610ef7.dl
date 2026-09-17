@@ -1,5 +1,5 @@
 // a8610ef7
-// keywords: symmetry lookup classify
+// @keywords: symmetry lookup classify
 // output: Recolor each cell by its own color and the color of its image under
 //  params.mirror.
 

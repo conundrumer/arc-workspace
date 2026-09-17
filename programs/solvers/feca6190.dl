@@ -1,5 +1,5 @@
 // feca6190
-// keywords: lines cast count
+// @keywords: lines cast count
 // output: A single line of cells with scattered ink. The output is a square of
 //  side (ink count) × (line length); the line seats flush at the corner
 //  opposite params.sweep, and every seated cell casts a diagonal ray toward

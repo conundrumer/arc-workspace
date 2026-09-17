@@ -1,6 +1,6 @@
 // 54d9e175
-// draft
-// keywords: decompose objects markers mapping
+// @draft
+// @keywords: decompose objects markers mapping
 // output: One cell of each region of the grid carries a color that
 //  params.mapping keys, and every cell of that region takes that color's image.
 //  A cell in no region keeps its own color.

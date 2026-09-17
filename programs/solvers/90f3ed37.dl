@@ -1,6 +1,6 @@
 // 90f3ed37
-// draft
-// keywords: objects lines repair
+// @draft
+// @keywords: objects lines repair
 // input: shapes on a bg ground, stacked across params.grow_dir. One shape
 //  runs the whole way to the far edge; the others stop short.
 // output: the input, with the full shape placed on each shape and drawn in

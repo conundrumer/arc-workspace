@@ -1,6 +1,6 @@
 // 4f537728
-// draft
-// keywords: markers decompose cast
+// @draft
+// @keywords: markers decompose cast
 // input: Bg lines cut the grid into blocks of one base color, and one block
 //  carries a mark color.
 // output: That color spreads from the mark along rows and columns.

@@ -1,6 +1,6 @@
 // 8a371977
-// draft
-// keywords: decompose objects border enclose
+// @draft
+// @keywords: decompose objects border enclose
 // input: Ink tiles sit on a background.
 // output: The tiles on the outer ring take one color and the tiles inside
 //  another; the background stays.

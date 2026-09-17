@@ -1,6 +1,6 @@
 // 2e65ae53
-// draft
-// keywords: objects decompose induce
+// @draft
+// @keywords: objects decompose induce
 // input: frames drawn in one ink color are cut by their own lines into the
 //  same tile arrangement
 // output: the filled tiles of all the frames together show one color per

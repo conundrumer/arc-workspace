@@ -1,5 +1,5 @@
 // d23f8c26
-// keywords: decompose select
+// @keywords: decompose select
 // output: One column is kept. Every other cell becomes bg.
 
 // data-equivalent on this task — odd widths, single middle gap

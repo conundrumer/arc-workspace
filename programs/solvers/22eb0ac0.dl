@@ -1,5 +1,5 @@
 // 22eb0ac0
-// keywords: lines markers span
+// @keywords: lines markers span
 // output: A line along params.axis that holds two cells of one color takes
 //  that color; every other cell passes through.
 

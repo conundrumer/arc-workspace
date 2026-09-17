@@ -1,5 +1,5 @@
 // 332f06d7
-// keywords: objects markers move walk
+// @keywords: objects markers move walk
 // input: A corridor of open cells winds across a background. A piece sits at
 //  one end of it, and a marker block sits elsewhere.
 // output: The piece slides along the corridor in straight runs, each run

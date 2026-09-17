@@ -1,6 +1,6 @@
 // 6df30ad6
-// draft
-// keywords: markers select rank count
+// @draft
+// @keywords: markers select rank count
 // input: a gray shape sits among single-cell dots of several colors
 // output: The output keeps the shape alone, recolored with the color of the
 //  dot nearest it. Nearness is read by growing the shape outward in rings

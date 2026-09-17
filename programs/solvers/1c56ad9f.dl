@@ -1,6 +1,6 @@
 // 1c56ad9f
-// draft
-// keywords: lines move
+// @draft
+// @keywords: lines move
 // output: One figure sits on the background, and a wave displaces its lines. A
 //  line's phase is its distance from the figure's params.anchor edge folded
 //  into a params.period cycle; params.wave gives the phase's step as a quarter

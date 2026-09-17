@@ -1,6 +1,6 @@
 // 234bbc79
-// draft
-// keywords: objects markers move
+// @draft
+// @keywords: objects markers move
 // output: Colored pieces lie along one axis. Each piece carries joint cells on
 //  the ends it links from, and a joint takes the color of the piece it touches.
 //  The blank lines close up, and every piece but the first slides across the

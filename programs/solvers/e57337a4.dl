@@ -1,5 +1,5 @@
 // e57337a4
-// keywords: decompose markers
+// @keywords: decompose markers
 // output: Downscale fold: the input decomposes into a 3×3 arrangement of 5×5
 //  tiles; each tile maps to one output cell — the mark color if the tile holds
 //  a mark cell, else the canvas color (most-frequent in the input).

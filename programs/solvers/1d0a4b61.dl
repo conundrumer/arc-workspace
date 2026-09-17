@@ -1,6 +1,6 @@
 // 1d0a4b61
-// draft
-// keywords: wallpaper repair
+// @draft
+// @keywords: wallpaper repair
 // input: a wallpaper pattern damaged by holes of one color. The survivors
 //  identify the translation lattice: per axis, the shortest witnessed shift
 //  no surviving pair contradicts.

@@ -1,5 +1,5 @@
 // 271d71e2
-// keywords: objects markers move count
+// @keywords: objects markers move count
 // input: A marker line abuts a framed block on one side, its handle, and
 //  another marker line lies ahead in that direction.
 // output: The block slides toward that line and stops on it, or earlier when

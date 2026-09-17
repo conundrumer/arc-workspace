@@ -1,6 +1,6 @@
 // 1d398264
-// draft
-// keywords: markers cast
+// @draft
+// @keywords: markers cast
 // input: a 3x3 block of colored cells on an empty grid. The block's one
 //  interior cell is its center.
 // output: each of the eight cells around the center casts a ray of its own

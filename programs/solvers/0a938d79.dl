@@ -1,5 +1,5 @@
 // 0a938d79
-// keywords: markers lines walk
+// @keywords: markers lines walk
 // output: Two marks sit on edges of one axis, and each casts a line across
 //  the grid. The lines then repeat by the step from one mark to the other,
 //  colors alternating, until the walk leaves the grid; the strip before the

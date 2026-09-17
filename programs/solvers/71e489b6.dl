@@ -1,6 +1,6 @@
 // 71e489b6
-// draft
-// keywords: objects stamp denoise
+// @draft
+// @keywords: objects stamp denoise
 // input: solid figure and ground regions, with stray cells on each
 // output: A figure cell that the figure does not continue through is noise,
 //  and joins the ground. An input ground cell in no 2x2 block of ground is a

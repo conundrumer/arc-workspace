@@ -1,5 +1,5 @@
 // 16b78196
-// keywords: objects pack
+// @keywords: objects pack
 // output: A bar spans the grid and its edge is notched. The loose pieces
 //  translate to the bar and to each other, each resting flush on the face it
 //  meets in a fit that pins it: one step along the contact, and the piece hangs

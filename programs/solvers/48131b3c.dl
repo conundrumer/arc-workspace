@@ -1,5 +1,5 @@
 // 48131b3c
-// keywords: tile-arrangement mapping
+// @keywords: tile-arrangement mapping
 // output: Output arranges 2×2 copies of the input with its two colors swapped.
 
 .decl out(p: Position, col: Color)

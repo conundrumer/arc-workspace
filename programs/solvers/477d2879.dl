@@ -1,6 +1,6 @@
 // 477d2879
-// draft
-// keywords: objects markers border pack
+// @draft
+// @keywords: objects markers border pack
 // input: Lines of one color cut the grid into open parts. Single cells of
 //  other colors are marks.
 // output: A mark names either the lines it touches or the open parts it

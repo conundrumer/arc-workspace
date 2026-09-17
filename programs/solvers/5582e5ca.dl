@@ -1,5 +1,5 @@
 // 5582e5ca
-// keywords: count rank
+// @keywords: count rank
 // output: The input frame filled with one uniform color.
 
 // the fill color: two models, data-equivalent on this task since the

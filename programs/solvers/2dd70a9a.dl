@@ -1,5 +1,5 @@
 // 2dd70a9a
-// keywords: markers walk cast
+// @keywords: markers walk cast
 // input: wall cells are scattered over the grid, and two two-cell stubs sit
 //  among them: a source stub and a target stub
 // output: the output draws a path in the source color. The walker leaves

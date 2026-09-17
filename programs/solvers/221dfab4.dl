@@ -1,6 +1,6 @@
 // 221dfab4
-// draft
-// keywords: markers wallpaper cast
+// @draft
+// @keywords: markers wallpaper cast
 // input: A straight marker segment lies among blobs of one other color.
 // output: The strip the segment spans — its corridor — fills with a pattern
 //  that repeats as it advances off the segment's line: some offsets carry a

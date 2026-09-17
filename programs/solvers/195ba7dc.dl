@@ -1,5 +1,5 @@
 // 195ba7dc
-// representative: 5d2a5c43
+// @representative: 5d2a5c43
 
 // how the input decomposes into tiles
 .type DecChoice =

@@ -1,5 +1,5 @@
 // 6773b310
-// keywords: decompose markers count
+// @keywords: decompose markers count
 // output: Separator lines cut the grid into an arrangement of equal tiles.
 //  Output is one cell per tile: params.mark where the tile holds a marker pair,
 //  params.bg elsewhere.

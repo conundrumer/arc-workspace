@@ -1,6 +1,6 @@
 // 4364c1c4
-// draft
-// keywords: objects move lookup
+// @draft
+// @keywords: objects move lookup
 // output: A bg field holds figures, each two touching parts of different
 //  colors. The parts meet along a seam, and each slides one step parallel to
 //  that seam: the part on the seam's top side goes left, the one on its bottom

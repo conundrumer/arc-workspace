@@ -1,6 +1,6 @@
 // 8abad3cf
-// draft
-// keywords: count rank
+// @draft
+// @keywords: count rank
 // input: Each non-background color's cells number a perfect square.
 // output: Each color's cells pack into a solid square, and the squares
 //  stand in a row from params.pack_dir in ascending order of side, resting

@@ -1,5 +1,5 @@
 // 37ce87bb
-// keywords: lines count border
+// @keywords: lines count border
 // input: Bars stand on the base edge: add-colored bars contribute their
 //  height, sub-colored bars cancel it.
 // output: A result bar of the summed height is appended in its own line.

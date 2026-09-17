@@ -1,6 +1,6 @@
 // 93b581b8
-// draft
-// keywords: objects d4 stamp
+// @draft
+// @keywords: objects d4 stamp
 // input: one solid block of non-background cells on params.bg
 // output: The input, plus one copy of the block's box toward each diagonal
 //  corner, each copy filled with the color of the block corner that

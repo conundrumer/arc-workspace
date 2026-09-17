@@ -1,6 +1,6 @@
 // 67c52801
-// draft
-// keywords: objects markers pack move d4 lookup
+// @draft
+// @keywords: objects markers pack move d4 lookup
 // output: A ground row lies along one edge, and the row beside it is a marker
 //  row: ground-colored, with bg gaps that are the slots. Colored rectangles
 //  float above. Each rectangle drops into the one slot its extent fits, the

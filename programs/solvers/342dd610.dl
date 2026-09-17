@@ -1,5 +1,5 @@
 // 342dd610
-// keywords: move
+// @keywords: move
 // output: Each ink color carries a fixed relative; every ink cell translates by
 //  its color's jump. The rest of the grid is bg.
 

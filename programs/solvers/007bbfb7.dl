@@ -1,5 +1,5 @@
 // 007bbfb7
-// keywords: tile-arrangement scale stamp
+// @keywords: tile-arrangement scale stamp
 // output: The input tiled by itself: the output decomposes into an
 //  input-shaped arrangement of input-shaped tiles, and a cell is filled
 //  iff its tile index and its intile position are both active (non-bg)

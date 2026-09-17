@@ -1,6 +1,6 @@
 // 760b3cac
-// draft
-// keywords: decompose markers d4
+// @draft
+// @keywords: decompose markers d4
 // input: The grid divides into square tiles: one holds a pattern, and the
 //  marker tile sits beside it.
 // output: The pattern reflects across a tile edge into the neighbor tile on

@@ -1,5 +1,5 @@
 // c1d99e64
-// keywords: lines
+// @keywords: lines
 // input: one ink color over bg
 // output: rows and columns free of ink repaint params.line; the rest
 //  passes through

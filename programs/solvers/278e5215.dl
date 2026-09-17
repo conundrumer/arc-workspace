@@ -1,6 +1,6 @@
 // 278e5215
-// draft
-// keywords: crop lines mapping
+// @draft
+// @keywords: crop lines mapping
 // input: The grid holds a stencil in one color and a legend: a band of
 //  colored columns over a line row, as wide as the stencil's box.
 // output: The output is the stencil's box — a stencil cell takes its

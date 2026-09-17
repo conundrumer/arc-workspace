@@ -1,6 +1,6 @@
 // 7df24a62
-// draft
-// keywords: markers stamp d4
+// @draft
+// @keywords: markers stamp d4
 // input: One box holds a motif of marks; marks of the same color are scattered
 //  over the grid.
 // output: Wherever the motif recurs, in any D4 pose, the box is drawn around it

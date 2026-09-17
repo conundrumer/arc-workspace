@@ -1,5 +1,5 @@
 // 8ee62060
-// keywords: decompose d4
+// @keywords: decompose d4
 // input: the grid divides into params.block_size blocks, and the blocks that
 //  hold content sit on one diagonal of the block-grid.
 // output: each block keeps its contents, and a D4 element moves it in the

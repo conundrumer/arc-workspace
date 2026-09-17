@@ -1,6 +1,6 @@
 // 9344f635
-// draft
-// keywords: markers lines cast cross
+// @draft
+// @keywords: markers lines cast cross
 // input: Segments of one color lie on a params.bg field.
 // output: Each segment fills the whole line it runs along with its color.
 //  Where two filled lines cross, the line on params.over shows. The rest of

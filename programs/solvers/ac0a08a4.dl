@@ -1,5 +1,5 @@
 // ac0a08a4
-// keywords: scale count
+// @keywords: scale count
 // output: Layout: N× scale. Each input cell expands to an N×N block of the same
 //  color in the output frame. N is counted from the input's non-bg cells.
 

@@ -1,5 +1,5 @@
 // b8825c91
-// keywords: symmetry repair
+// @keywords: symmetry repair
 // output: A grid symmetric about its center, corrupted by a noise color; each
 //  noise cell is restored from a symmetric counterpart.
 

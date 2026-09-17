@@ -1,5 +1,5 @@
 // 3618c87e
-// keywords: lines lookup move
+// @keywords: lines lookup move
 // input: Slices run along axis_of(params.fall_to).
 // output: Each cell of color params.marker falls to the params.fall_to edge
 //  of its slice; the original marker position clears to params.bg.

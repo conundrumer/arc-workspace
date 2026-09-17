@@ -1,5 +1,5 @@
 // 928ad970
-// keywords: markers span border
+// @keywords: markers span border
 // input: four marker cells, one off each side of a box, and a small shape in another color.
 // output: the input, with a rectangle outline drawn just inside a box the input spans,
 //  in the shape's color.

@@ -1,6 +1,6 @@
 // 84ba50d3
-// draft
-// keywords: objects lines move rank
+// @draft
+// @keywords: objects lines move rank
 // input: A full line of params.divider crosses the grid, and shapes of
 //  params.shape sit on one side of it.
 // output: Each shape falls toward params.fall_dir. A shape's rows are its

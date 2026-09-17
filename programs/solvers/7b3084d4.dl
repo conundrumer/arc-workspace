@@ -1,6 +1,6 @@
 // 7b3084d4
-// draft
-// keywords: objects markers count pack d4
+// @draft
+// @keywords: objects markers count pack d4
 // output: Scattered pieces pack exactly into a square whose area is their cell
 //  count. A marker cell rides on one piece; the packing lands that marker on a
 //  corner of the square. Each piece may rotate before it packs, and every cell

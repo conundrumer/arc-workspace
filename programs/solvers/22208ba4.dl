@@ -1,6 +1,6 @@
 // 22208ba4
-// draft
-// keywords: objects move
+// @draft
+// @keywords: objects move
 // output: A block sits at each corner of the grid. A block whose color another
 //  corner block also carries steps inward — one block-length toward each edge
 //  of the opposite corner — and leaves background behind. A block with a color

@@ -1,5 +1,5 @@
 // bc4146bd
-// representative: 4c4377d9
+// @representative: 4c4377d9
 
 // how each tile's D4 pose is found
 .type Choice =

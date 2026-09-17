@@ -1,5 +1,5 @@
 // 08ed6ac7
-// keywords: lines objects rank
+// @keywords: lines objects rank
 // output: Ink bars recolor by size order: the r-th bar takes the r-th color of
 //  a stored sequence; all other cells pass through.
 

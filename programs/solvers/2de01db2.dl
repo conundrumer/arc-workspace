@@ -1,5 +1,5 @@
 // 2de01db2
-// keywords: lines lookup count
+// @keywords: lines lookup count
 // input: the grid splits into lines along params.axis, one main color per line
 // output: a cell on its line's main color takes params.bg, and every other cell
 //  takes that main color.

@@ -1,6 +1,6 @@
 // 2601afb7
-// draft
-// keywords: lines permutation move count
+// @draft
+// @keywords: lines permutation move count
 // input: Bars stand in a row, each filling part of one line.
 // output: Every bar takes the color of the bar behind it and the reach of the
 //  bar ahead of it, both steps wrapping around the row. Two hypotheses on

@@ -1,5 +1,5 @@
 // 3cd86f4f
-// keywords: lines grow move
+// @keywords: lines grow move
 // output: Shear: the grid's params.slide-lines slide against each other, one
 //  cell per line — the across-lines rotate by params.sense onto a diagonal,
 //  widening the frame by (lines - 1). Vacated cells are bg. Either cross dir

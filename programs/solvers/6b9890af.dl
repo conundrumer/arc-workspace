@@ -1,6 +1,6 @@
 // 6b9890af
-// draft
-// keywords: crop scale border
+// @draft
+// @keywords: crop scale border
 // input: a rectangle outline in the frame color, and a small object of
 //  another color, sitting apart on bg
 // output: The output is the outline's box, cropped: its edge lines keep the

@@ -1,6 +1,6 @@
 // 247ef758
-// draft
-// keywords: decompose objects markers cross stamp
+// @draft
+// @keywords: decompose objects markers cross stamp
 // input: A separator line cuts the grid into a legend and a bordered
 //  frame. The legend holds one shape per color; the frame's border carries
 //  marks off its own ground color, each marking the line it sits on.

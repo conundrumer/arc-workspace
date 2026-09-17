@@ -1,5 +1,5 @@
 // 12422b43
-// keywords: lines markers stamp
+// @keywords: lines markers stamp
 // input: a params.marker bar anchored at the edge opposite params.flow spans
 //  the unit lines; ink (non-bg, non-marker) fills the leading lines.
 // output: the unit lines' ink repeats along params.flow over the bg

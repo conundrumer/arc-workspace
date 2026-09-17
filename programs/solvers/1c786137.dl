@@ -1,6 +1,6 @@
 // 1c786137
-// draft
-// keywords: crop border objects select enclose
+// @draft
+// @keywords: crop border objects select enclose
 // output: Colored noise fills the grid, and one rectangle outline sits in it,
 //  drawn in a color that appears nowhere else. The output is what the outline
 //  holds: the cells of its box strictly inside its edges.

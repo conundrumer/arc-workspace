@@ -1,6 +1,6 @@
 // 72ca375d
-// draft
-// keywords: objects crop symmetry select
+// @draft
+// @keywords: objects crop symmetry select
 // input: pieces on params.bg, each 8-connected
 // output: the crop of the one piece whose box content is symmetric
 

@@ -1,5 +1,5 @@
 // 29ec7d0e
-// keywords: wallpaper repair count
+// @keywords: wallpaper repair count
 // input: A wallpaper — one square tile repeating on both axes — corrupted
 //  by noise patches.
 // output: The output restores the wallpaper: propagation composes across

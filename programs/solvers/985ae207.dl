@@ -1,6 +1,6 @@
 // 985ae207
-// draft
-// keywords: markers match stamp cast
+// @draft
+// @keywords: markers match stamp cast
 // input: marks — a cell ringed by a second color — and blocks, the non-bg
 //  cells no mark holds
 // output: Each mark marches copies of itself along every cardinal. A march

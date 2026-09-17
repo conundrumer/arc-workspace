@@ -1,6 +1,6 @@
 // 65b59efc
-// draft
-// keywords: decompose overlay scale markers stamp mapping
+// @draft
+// @keywords: decompose overlay scale markers stamp mapping
 // input: dashed separator lines cut the scene into a lattice of N×N tiles: a
 //  band of templates, one per strip, each drawn in its own color; a band of
 //  markers; and a legend band with one color under each template

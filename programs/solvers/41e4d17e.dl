@@ -1,5 +1,5 @@
 // 41e4d17e
-// keywords: objects cast enclose
+// @keywords: objects cast enclose
 // input: Hollow squares of ink sit on a background.
 // output: A center cell casts a horizontal and a vertical line, each running
 //  the whole grid. A line paints the background it crosses and leaves ink as

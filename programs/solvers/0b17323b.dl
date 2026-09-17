@@ -1,5 +1,5 @@
 // 0b17323b
-// keywords: markers cast
+// @keywords: markers cast
 // output: Marks of params.mark_color sit on one diagonal, evenly spaced. The
 //  output keeps the input and continues the sequence in params.new_color,
 //  stepping by the mark spacing until it leaves the grid.

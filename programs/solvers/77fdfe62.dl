@@ -1,5 +1,5 @@
 // 77fdfe62
-// keywords: decompose crop markers classify select
+// @keywords: decompose crop markers classify select
 // input: Corner colors sit in the grid's corner cells; separator lines fence
 //  an ink-mask interior.
 // output: The interior alone, each ink cell taking the corner color of its

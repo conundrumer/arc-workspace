@@ -1,5 +1,5 @@
 // 46442a0e
-// keywords: tile-arrangement lookup d4
+// @keywords: tile-arrangement lookup d4
 // output: A 2×2 arrangement of input copies: the anchor-corner tile holds
 //  the input, and the other tiles hold its quarter-turn images.
 

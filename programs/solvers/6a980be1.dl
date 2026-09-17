@@ -1,6 +1,6 @@
 // 6a980be1
-// draft
-// keywords: lines wallpaper span cast
+// @draft
+// @keywords: lines wallpaper span cast
 // input: a frame of some color bordering the grid; inside it, two
 //  params.line lines running across the scene, with a strip between them
 //  that holds a pattern repeating along the lines, in params.pattern on

@@ -1,6 +1,6 @@
 // 5521c0d9
-// draft
-// keywords: objects move
+// @draft
+// @keywords: objects move
 // input: Blocks — the connected components of the non-bg cells — sit on a
 //  params.bg grid.
 // output: Each block translates toward params.move_dir by its own extent

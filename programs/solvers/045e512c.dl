@@ -1,5 +1,5 @@
 // 045e512c
-// keywords: objects markers cast
+// @keywords: objects markers cast
 // input: a template shape on params.bg, with fragments of it elsewhere,
 //  each fragment lying inside a copy of the template one step away
 // output: The output marches copies along that step, in the fragment's

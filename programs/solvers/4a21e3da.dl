@@ -1,6 +1,6 @@
 // 4a21e3da
-// draft
-// keywords: markers move span
+// @draft
+// @keywords: markers move span
 // input: the marker, one params.mark cell, sits on the frame border. The line
 //  running across the grid from the marker's edge cuts the params.ink object
 //  in three.

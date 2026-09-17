@@ -1,6 +1,6 @@
 // 80214e03
-// draft
-// keywords: lines decompose merge d4
+// @draft
+// @keywords: lines decompose merge d4
 // input: One-color blocks with bg holes fill a box on a bg field. The
 //  blocks lie on a grid: on each axis, the lines fuse into block-lines,
 //  and the block-lines induce a tile frame.

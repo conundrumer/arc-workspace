@@ -1,6 +1,6 @@
 // 3eda0437
-// draft
-// keywords: count rank
+// @draft
+// @keywords: count rank
 // input: ink scattered on background, with hole boxes: rectangles of pure
 //  background
 // output: The hole box with the highest score is painted params.paint, and

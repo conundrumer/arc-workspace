@@ -1,6 +1,6 @@
 // 28e73c20
-// draft
-// keywords: walk
+// @draft
+// @keywords: walk
 // output: A spiral is drawn on the grid. The walk starts at a corner cell and
 //  travels until its distance to the edge ahead reaches the turn box's margin
 //  there, then turns in the spiral's sense. The box starts on the frame edge

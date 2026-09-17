@@ -1,5 +1,5 @@
 // 1190e5a7
-// keywords: decompose rank
+// @keywords: decompose rank
 // input: full lines of one color divide the rest of the grid into
 //  rectangular regions.
 // output: the output is the region layout: one cell per region, holding its

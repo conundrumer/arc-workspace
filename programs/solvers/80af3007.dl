@@ -1,6 +1,6 @@
 // 80af3007
-// draft
-// keywords: tile-arrangement crop scale stamp
+// @draft
+// @keywords: tile-arrangement crop scale stamp
 // input: The ink draws a picture at a fat-pixel scale: each pixel is a block
 //  of params.scale cells across.
 // output: The output is the picture tiled by itself: a cell is ink iff the

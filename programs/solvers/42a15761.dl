@@ -1,6 +1,6 @@
 // 42a15761
-// draft
-// keywords: decompose rank
+// @draft
+// @keywords: decompose rank
 // input: The grid divides into equal panels along the params.order_dir axis,
 //  with separator lines between them. Each panel carries some cells of
 //  params.mark.

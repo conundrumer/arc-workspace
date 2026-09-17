@@ -1,6 +1,6 @@
 // 1f876c06
-// draft
-// keywords: markers span
+// @draft
+// @keywords: markers span
 // input: Each color marks two cells on one diagonal.
 // output: The run between the two marks fills with that color.
 

@@ -1,6 +1,6 @@
 // 1f85a75f
-// draft
-// keywords: objects crop count select
+// @draft
+// @keywords: objects crop count select
 // input: Noise cells of several colors lie scattered on bg, and one shape in a
 //  color of its own sits among them. Ink connects into groups within its color.
 // output: The box the shape spans.

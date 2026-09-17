@@ -1,6 +1,6 @@
 // 543a7ed5
-// draft
-// keywords: objects enclose border
+// @draft
+// @keywords: objects enclose border
 // input: Shapes of a non-bg color sit on a bg field, and each shape keeps
 //  its own cells.
 // output: Two classes of bg are repainted: the bg a shape holds inside

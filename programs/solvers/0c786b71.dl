@@ -1,5 +1,5 @@
 // 0c786b71
-// representative: 67e8384a
+// @representative: 67e8384a
 
 // how each tile's content derives from the input
 .type Choice =

@@ -1,6 +1,6 @@
 // 694f12f3
-// draft
-// keywords: objects rank border lookup
+// @draft
+// @keywords: objects rank border lookup
 // input: solid rectangles on a background
 // output: Each rectangle keeps its outline, and its interior fills with a
 //  color that its place in the size order picks.

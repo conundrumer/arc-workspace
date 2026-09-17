@@ -1,5 +1,5 @@
 // 20981f0e
-// keywords: decompose move lookup
+// @keywords: decompose move lookup
 // input: A lattice of dots marks the lines that cut the grid into tiles, one
 //  piece to a tile.
 // output: Each piece translates within its own tile, keeping its shape and

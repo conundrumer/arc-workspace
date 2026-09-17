@@ -1,6 +1,6 @@
 // 99306f82
-// draft
-// keywords: markers border enclose rank
+// @draft
+// @keywords: markers border enclose rank
 // input: An outline drawn in one color, and marker cells outside it, in a run
 //  that leads to one of its corners.
 // output: Concentric rings fill the outline's inside, one ring per step inward

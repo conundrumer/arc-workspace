@@ -1,6 +1,6 @@
 // 83eb0a57
-// draft
-// keywords: objects crop markers move count rank
+// @draft
+// @keywords: objects crop markers move count rank
 // input: Solid rectangles lie on a bg field, each a body color with marks
 //  drawn on it. The largest is the canvas, and its body color is the one it
 //  has most of.

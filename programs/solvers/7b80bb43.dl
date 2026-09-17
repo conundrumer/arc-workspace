@@ -1,6 +1,6 @@
 // 7b80bb43
-// draft
-// keywords: lines cast
+// @draft
+// @keywords: lines cast
 // input: straight lines of one ink color on a background; both colors vary
 //  per pair, so the background is the pair's dominant color. Loose ink cells
 //  (not interior to a straight run) that touch corner to corner form a

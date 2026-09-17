@@ -1,5 +1,5 @@
 // bd4472b8
-// keywords: tile-arrangement decompose d4
+// @keywords: tile-arrangement decompose d4
 // input: A header row (W colors) and a separator row sit above an empty body
 //  of height N·W.
 // output: Each of the N blocks restacks the header as stripes — header color

@@ -1,5 +1,5 @@
 // 50cb2852
-// keywords: objects border
+// @keywords: objects border
 // input: solid one-color rectangles on params.bg
 // output: Each rectangle keeps its outline and repaints its interior to
 //  params.fill.

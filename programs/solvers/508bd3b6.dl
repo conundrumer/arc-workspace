@@ -1,6 +1,6 @@
 // 508bd3b6
-// draft
-// keywords: markers walk
+// @draft
+// @keywords: markers walk
 // input: a diagonal run of marks, which aims a beam along it
 // output: The beam runs along that diagonal in both directions and paints
 //  the empty cells it crosses. It ends at the grid edge or on a colored

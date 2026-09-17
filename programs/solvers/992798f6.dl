@@ -1,6 +1,6 @@
 // 992798f6
-// draft
-// keywords: markers cast span
+// @draft
+// @keywords: markers cast span
 // input: a mark in params.diag_mark and a mark in params.straight_mark.
 // output: a path in params.path joins the marks. It runs diagonally from
 //  params.diag_mark, clear of params.straight_mark's row and column, then

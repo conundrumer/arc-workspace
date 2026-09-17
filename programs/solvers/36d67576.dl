@@ -1,6 +1,6 @@
 // 36d67576
-// draft
-// keywords: objects markers d4
+// @draft
+// @keywords: objects markers d4
 // input: Every connected group of non-background cells is a part: a shape
 //  plus one anchor cell. Exactly one part also carries marks — that part is
 //  the model.

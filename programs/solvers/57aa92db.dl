@@ -1,6 +1,6 @@
 // 57aa92db
-// draft
-// keywords: objects markers scale stamp
+// @draft
+// @keywords: objects markers scale stamp
 // input: Objects carry a mark in the one color they all share, and their own
 //  color elsewhere. Each object is a copy of one shape drawn in tiles the
 //  size of its mark: the template is the copy showing the most tiles, the

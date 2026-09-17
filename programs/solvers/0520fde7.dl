@@ -1,5 +1,5 @@
 // 0520fde7
-// keywords: decompose lookup
+// @keywords: decompose lookup
 // input: two 3×3 subgrids side by side, separated by a column
 // output: one tile of the decomposition, each cell colored from the colors
 //  its tiles hold at that cell

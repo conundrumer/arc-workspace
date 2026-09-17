@@ -1,6 +1,6 @@
 // 8d510a79
-// draft
-// keywords: decompose markers cast lookup
+// @draft
+// @keywords: decompose markers cast lookup
 // output: A uniform line divides the grid in two. Each mark casts its color
 //  through bg along the line's perpendicular, stopped by the divider or the
 //  grid edge. Two models of a mark's cast direction:

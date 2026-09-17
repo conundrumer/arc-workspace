@@ -1,6 +1,6 @@
 // 6c434453
-// draft
-// keywords: stamp enclose
+// @draft
+// @keywords: stamp enclose
 // output: Ink shapes on bg. Every hollow 3×3 ring (eight ink cells around one
 //  bg cell) is replaced in place: its hole and the four cells beside it become
 //  a plus of params.fill, and its corners clear to bg. Other shapes pass

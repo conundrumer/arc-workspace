@@ -1,6 +1,6 @@
 // 97d7923e
-// draft
-// keywords: markers span rank
+// @draft
+// @keywords: markers span rank
 // input: A header is a non-background cell on the params.head_dir edge. A
 //  header reaches as far as the run of its color inward from that edge. A bar
 //  is a run of one color capped at each end by a cell of a second color, along

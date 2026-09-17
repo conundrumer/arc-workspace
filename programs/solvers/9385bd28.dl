@@ -1,6 +1,6 @@
 // 9385bd28
-// draft
-// keywords: objects markers span mapping rank
+// @draft
+// @keywords: objects markers span mapping rank
 // input: a legend, the one region that holds more than one color, pairing a
 //  key color on one edge of its box with a value color across from it; and
 //  elsewhere pieces drawn in the key colors

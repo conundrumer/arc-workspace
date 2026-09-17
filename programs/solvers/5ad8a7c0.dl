@@ -1,6 +1,6 @@
 // 5ad8a7c0
-// draft
-// keywords: lines markers span rank cross
+// @draft
+// @keywords: lines markers span rank cross
 // input: Marks lie in pairs, one pair to a line of the task's axis, and the
 //  cells a pair holds between its two marks are its span.
 // output: Some spans take the mark color, and the rest of the input passes

@@ -1,5 +1,5 @@
 // 903d1b4a
-// representative: b8825c91
+// @representative: b8825c91
 
 // which D4 elements can repair a corrupted cell
 .type Choice =

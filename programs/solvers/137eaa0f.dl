@@ -1,5 +1,5 @@
 // 137eaa0f
-// keywords: overlay objects markers move
+// @keywords: overlay objects markers move
 // input: Fragments scattered over bg, each holding one params.key cell.
 // output: Fragments overlay, aligned on their key cells.
 

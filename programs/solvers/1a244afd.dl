@@ -1,5 +1,5 @@
 // 1a244afd
-// keywords: markers lookup
+// @keywords: markers lookup
 // input: Pivot cells and pointer cells scatter over a bg field. Each pivot
 //  takes one pointer sharing its row or column, and the pairing that uses
 //  every cell exactly once is unique.

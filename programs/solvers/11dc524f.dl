@@ -1,5 +1,5 @@
 // 11dc524f
-// keywords: objects move d4
+// @keywords: objects move d4
 // input: a shape of params.shape_color faces a block of params.mirror_color.
 // output: the block's facing edge is a mirror: the shape slides up against
 //  that edge, and its reflection appears on the far side in

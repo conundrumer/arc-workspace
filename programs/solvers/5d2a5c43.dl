@@ -1,5 +1,5 @@
 // 5d2a5c43
-// keywords: decompose lookup
+// @keywords: decompose lookup
 // input: The input decomposes into two 6×4 tiles side by side, with a
 //  1-column gap between them.
 // output: The output is one 6×4 grid. Each output cell takes its color from

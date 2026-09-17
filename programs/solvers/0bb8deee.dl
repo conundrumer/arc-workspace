@@ -1,5 +1,5 @@
 // 0bb8deee
-// keywords: decompose crop move lookup
+// @keywords: decompose crop move lookup
 // output: A cross of one full row and one full column, each a single non-bg
 //  color, cuts the grid into four unequal quadrants, one shape per quadrant.
 //  The output crops each shape to its bounding box and reassembles the crops.

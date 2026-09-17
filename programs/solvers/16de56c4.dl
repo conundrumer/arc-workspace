@@ -1,6 +1,6 @@
 // 16de56c4
-// draft
-// keywords: lines wallpaper cast span
+// @draft
+// @keywords: lines wallpaper cast span
 // input: each row and each column is read on its own. A line whose ink is two
 //  cells of one color, plus at most one cell of another, carries a rhythm: the
 //  pair's spacing, repeated across the line.

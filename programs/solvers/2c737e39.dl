@@ -1,6 +1,6 @@
 // 2c737e39
-// draft
-// keywords: objects markers stamp
+// @draft
+// @keywords: objects markers stamp
 // input: A drawing sits on bg with one of its cells in params.mark — its
 //  anchor — and one more params.mark cell elsewhere is the target.
 // output: The input stands, and a copy of the drawing stamps with its

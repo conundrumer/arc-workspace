@@ -1,5 +1,5 @@
 // 49d1d64f
-// keywords: grow border
+// @keywords: grow border
 // output: Grow the grid by one ring: the input seats one cell in from every
 //  output edge, each input edge cell replicates one step past its edge, and the
 //  ring's corners get params.bg.

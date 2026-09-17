@@ -1,6 +1,6 @@
 // 4df5b0ae
-// draft
-// keywords: objects rank move
+// @draft
+// @keywords: objects rank move
 // input: A shape is a connected group of same-colored non-background cells.
 // output: The output sweeps the shapes into one corner: a shape keeps its
 //  form and rests on the edge the corner lies on, and the shapes stand side

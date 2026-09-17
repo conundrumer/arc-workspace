@@ -1,6 +1,6 @@
 // 195c6913
-// draft
-// keywords: markers objects walk rank
+// @draft
+// @keywords: markers objects walk rank
 // input: Two color fields split the grid, a wall and a corridor. Swatches sit
 //  on the wall as a legend: those lined up with one another spell a repeating
 //  color pattern, and the one standing off that line gives the stop color.

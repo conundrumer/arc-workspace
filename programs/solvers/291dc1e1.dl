@@ -1,5 +1,5 @@
 // 291dc1e1
-// keywords: objects markers rank d4
+// @keywords: objects markers rank d4
 // input: Solid rectangular blocks lie on the background. A marked cell sits
 //  at one grid corner, and a colored line runs along each of the two edges
 //  that corner joins.

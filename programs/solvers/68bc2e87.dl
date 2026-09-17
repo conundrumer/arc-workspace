@@ -1,6 +1,6 @@
 // 68bc2e87
-// draft
-// keywords: border occlude rank
+// @draft
+// @keywords: border occlude rank
 // output: Rectangle outlines, one color each, are drawn over one another on a
 //  plain ground. A later outline overwrites the cells of the earlier ones it
 //  crosses. The output lists the colors in drawing order, one cell per color,

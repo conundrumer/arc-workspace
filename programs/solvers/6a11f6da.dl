@@ -1,5 +1,5 @@
 // 6a11f6da
-// keywords: overlay decompose rank
+// @keywords: overlay decompose rank
 // input: vertically-stacked 5×5 ink slabs
 // output: The per-cell overlay: the highest-priority candidate wins; no ink
 //  is bg.

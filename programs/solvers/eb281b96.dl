@@ -1,5 +1,5 @@
 // eb281b96
-// keywords: tile-arrangement lookup d4
+// @keywords: tile-arrangement lookup d4
 // output: 4×1 vertical fold: alternating D4_ID / D4_TB tiles overlap by one
 //  row (gap -1), so each boundary row is shared.
 

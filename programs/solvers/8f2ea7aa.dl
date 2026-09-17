@@ -1,6 +1,6 @@
 // 8f2ea7aa
-// draft
-// keywords: tile-arrangement crop decompose select scale stamp
+// @draft
+// @keywords: tile-arrangement crop decompose select scale stamp
 // input: A 3×3 shape sits in one 3×3 block of a blank 9×9 grid.
 // output: The output is the shape tiled by itself: a block holds the shape
 //  iff its index is an ink cell of the shape.

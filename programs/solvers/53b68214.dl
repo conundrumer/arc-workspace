@@ -1,5 +1,5 @@
 // 53b68214
-// keywords: grow wallpaper
+// @keywords: grow wallpaper
 // input: the input is periodic along params.growth: the period is the
 //  shortest shift it agrees with itself under
 // output: The output frame extends the input toward params.growth, and the

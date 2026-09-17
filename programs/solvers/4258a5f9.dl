@@ -1,6 +1,6 @@
 // 4258a5f9
-// draft
-// representative: dc1df850
+// @draft
+// @representative: dc1df850
 
 // every marker sits away from the grid edge, on an otherwise empty field, so
 // the program's edge clipping and its passthrough over ink go unwitnessed

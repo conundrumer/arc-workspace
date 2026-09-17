@@ -1,6 +1,6 @@
 // 878187ab
-// draft
-// keywords: count rank cast
+// @draft
+// @keywords: count rank cast
 // input: scattered cells of two colors sit on a bg grid
 // output: Each color's cell count becomes an extent: the larger count runs
 //  along params.long_axis, the smaller across it. A box of those extents,

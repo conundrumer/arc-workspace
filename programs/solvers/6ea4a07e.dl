@@ -1,5 +1,5 @@
 // 6ea4a07e
-// keywords: mapping
+// @keywords: mapping
 // output: Recolor a binary input: bg cells take a fill color derived from the
 //  input's fg via a fixed mapping; fg cells become bg.
 

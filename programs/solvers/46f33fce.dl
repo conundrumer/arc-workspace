@@ -1,5 +1,5 @@
 // 46f33fce
-// keywords: scale decompose markers stamp
+// @keywords: scale decompose markers stamp
 // input: Sparse dots over bg. A lattice cuts the grid into equal tiles.
 // output: A dot's whole tile renders in its color, bg elsewhere. Output is
 //  the result scaled ×params.scale.

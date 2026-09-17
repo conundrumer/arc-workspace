@@ -1,6 +1,6 @@
 // 6165ea8f
-// draft
-// keywords: markers d4 rank pairwise
+// @draft
+// @keywords: markers d4 rank pairwise
 // input: a line at one edge of the grid lists colors, one cell each. Away
 //  from that line, each listed color draws one shape.
 // output: the output is a comparison matrix over the listed colors, taken in

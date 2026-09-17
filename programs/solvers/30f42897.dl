@@ -1,5 +1,5 @@
 // 30f42897
-// keywords: wallpaper parity count
+// @keywords: wallpaper parity count
 // input: the grid's border is a cycle of cells, and the input's non-bg cells
 //  are one block on that cycle
 // output: the input, with the block repeated around the cycle. The sense the

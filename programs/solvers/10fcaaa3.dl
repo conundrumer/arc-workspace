@@ -1,5 +1,5 @@
 // 10fcaaa3
-// keywords: tile-arrangement stamp lookup
+// @keywords: tile-arrangement stamp lookup
 // input: a few marks on a bg ground, tiled into a params.copies×params.copies
 //  arrangement.
 // output: a halo is stamped around every mark of the arrangement, filling bg

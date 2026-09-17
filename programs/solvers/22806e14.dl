@@ -1,6 +1,6 @@
 // 22806e14
-// draft
-// keywords: objects markers count
+// @draft
+// @keywords: objects markers count
 // output: Same-color objects sit on a background: solid rectangles, and one
 //  marker that leaves a hole in its own bbox. Each rectangle with a center cell
 //  takes the marker's color there. The marker itself survives when it places

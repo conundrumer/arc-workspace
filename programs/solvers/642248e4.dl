@@ -1,6 +1,6 @@
 // 642248e4
-// draft
-// keywords: lines markers rank
+// @draft
+// @keywords: lines markers rank
 // input: Two opposite edges of the grid each carry a solid line in its own
 //  color, and marks are scattered over the interior.
 // output: Each mark grows one cell toward the nearer of the two lines, in

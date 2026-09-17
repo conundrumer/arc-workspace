@@ -1,5 +1,5 @@
 // f2829549
-// keywords: decompose lookup
+// @keywords: decompose lookup
 // input: a 1×2 arrangement of 4×3 tiles, gap 1
 // output: Each output cell's color is a function of its two tiles'
 //  corresponding cells.

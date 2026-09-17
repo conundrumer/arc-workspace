@@ -1,5 +1,5 @@
 // 746b3537
-// keywords: lines
+// @keywords: lines
 // input: Striped input: lines along one axis are uniform.
 // output: The output is the sequence of stripe colors across them, one
 //  cell per run, 1 wide.

@@ -1,6 +1,6 @@
 // 447fd412
-// draft
-// keywords: objects markers scale stamp
+// @draft
+// @keywords: objects markers scale stamp
 // input: a template object sits in the grid: a drawing in the ink color with
 //  mark cells attached to it. Elsewhere, blocks of the mark color stand
 //  alone, each a square.

@@ -1,5 +1,5 @@
 // 31adaf00
-// keywords: stamp
+// @keywords: stamp
 // output: Two colors speckle the grid. Where the background holds a solid
 //  square of side two or more, that square is repainted in the mark color; a
 //  square that meets a strictly larger one is displaced. Every other cell keeps

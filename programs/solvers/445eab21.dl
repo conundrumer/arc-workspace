@@ -1,6 +1,6 @@
 // 445eab21
-// draft
-// keywords: objects enclose count rank
+// @draft
+// @keywords: objects enclose count rank
 // input: two hollow rectangles, one color each, sit on params.bg
 // output: a params.out_dim block of the bigger rectangle's color
 

@@ -1,6 +1,6 @@
 // 52fd389e
-// draft
-// keywords: objects markers count border
+// @draft
+// @keywords: objects markers count border
 // input: rectangles of params.body sit on the grid, each holding marker
 //  cells of one other color
 // output: A band of that marker color surrounds its rectangle, as many

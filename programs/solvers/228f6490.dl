@@ -1,5 +1,5 @@
 // 228f6490
-// keywords: objects enclose move count
+// @keywords: objects enclose move count
 // output: Walls of one color close off holes, and loose shapes of other colors
 //  lie around the grid. A shape whose footprint is a hole's moves into it: the
 //  hole takes the shape's color, and the shape's cells go back to the

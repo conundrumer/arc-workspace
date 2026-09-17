@@ -1,5 +1,5 @@
 // ce039d91
-// keywords: symmetry
+// @keywords: symmetry
 // output: Symmetric-cell highlight: a params.mark cell whose whole-grid image
 //  under params.sym is also marked recolors to params.fill; every other cell
 //  passes through.

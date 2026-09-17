@@ -1,5 +1,5 @@
 // dc433765
-// keywords: markers move
+// @keywords: markers move
 // output: The mover cell steps one cell toward the target cell: per axis, one
 //  cell toward the edge the target is strictly nearer. The target stays.
 

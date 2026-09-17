@@ -1,5 +1,5 @@
 // dae9d2b5
-// keywords: decompose lookup
+// @keywords: decompose lookup
 // input: two 3×3 subgrids side by side
 // output: each output cell combines the colors the two subgrids hold at
 //  that cell

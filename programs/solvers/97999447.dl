@@ -1,5 +1,5 @@
 // 97999447
-// keywords: markers lookup walk cast
+// @keywords: markers lookup walk cast
 // output: each non-bg dot emits a ray toward params.ray_dir, to the grid edge;
 //  cells off every ray pass through.
 

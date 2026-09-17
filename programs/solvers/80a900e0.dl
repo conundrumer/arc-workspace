@@ -1,6 +1,6 @@
 // 80a900e0
-// draft
-// keywords: objects markers cast
+// @draft
+// @keywords: objects markers cast
 // input: Objects, each an 8-connected set of one color, on a two-color
 //  checkerboard.
 // output: A diagonal segment casts a ray from each end, perpendicular to

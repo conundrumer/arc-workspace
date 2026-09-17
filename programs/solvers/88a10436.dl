@@ -1,6 +1,6 @@
 // 88a10436
-// draft
-// keywords: markers objects stamp
+// @draft
+// @keywords: markers objects stamp
 // input: A multicolor shape and one marker cell sit on bg.
 // output: A copy of the shape lands with the center of its box on the
 //  marker; the rest of the input stands.

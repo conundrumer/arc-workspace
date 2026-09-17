@@ -1,6 +1,6 @@
 // 15663ba9
-// draft
-// keywords: objects enclose
+// @draft
+// @keywords: objects enclose
 // output: The ink draws closed curves one cell wide. A cell where the curve
 //  turns is repainted by the side the turn opens onto: params.open_paint when
 //  the open quadrant lies in the space that reaches the grid edge,

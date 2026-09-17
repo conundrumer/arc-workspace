@@ -1,5 +1,5 @@
 // 1c0d0a4b
-// keywords: decompose wallpaper lines mapping
+// @keywords: decompose wallpaper lines mapping
 // output: 3×3 tiles on a 1-wide bg separator lattice, borders included. Tile
 //  content complements: non-bg → bg, bg → params.paint. Separator cells stay
 //  bg.

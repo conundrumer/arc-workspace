@@ -1,5 +1,5 @@
 // 833966f4
-// keywords: permutation lookup d4
+// @keywords: permutation lookup d4
 // output: 5×1 cell permutation: two pairs of adjacent rows swap around a
 //  fixed center row.
 

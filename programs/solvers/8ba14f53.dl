@@ -1,6 +1,6 @@
 // 8ba14f53
-// draft
-// keywords: objects enclose count rank
+// @draft
+// @keywords: objects enclose count rank
 // input: Hollow shapes lie on params.bg.
 // output: Each shape fills as many cells of a params.out_dim frame as it
 //  encloses. The cells run in reading order from params.corner with

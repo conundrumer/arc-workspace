@@ -1,6 +1,6 @@
 // 5dbc8537
-// draft
-// keywords: decompose crop objects select pack
+// @draft
+// @keywords: decompose crop objects select pack
 // output: Lines of background cut the grid into panels. One panel is a
 //  template: one ink color on the background, its background cells the holes.
 //  The others hold loose pieces. The pieces translate into the holes and fill

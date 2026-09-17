@@ -1,6 +1,6 @@
 // 7d1f7ee8
-// draft
-// keywords: objects border enclose
+// @draft
+// @keywords: objects border enclose
 // input: Outlines of one color each sit in a bg field, some nested inside
 //  others.
 // output: Every ink cell inside an outermost outline takes that outline's

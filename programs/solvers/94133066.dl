@@ -1,6 +1,6 @@
 // 94133066
-// draft
-// keywords: markers crop d4 match
+// @draft
+// @keywords: markers crop d4 match
 // input: a rectangular panel of the field color on a wider grid. A mark is a
 //  panel cell whose color repeats outside the panel.
 // output: the panel, cropped from the grid and turned by the D4 element that

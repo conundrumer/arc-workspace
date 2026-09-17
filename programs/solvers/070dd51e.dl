@@ -1,5 +1,5 @@
 // 070dd51e
-// keywords: markers span
+// @keywords: markers span
 // output: Non-bg marks come in same-colored pairs sharing a row or column; a
 //  span of the pair's color connects them. Where spans cross, the span along
 //  the over axis wins.

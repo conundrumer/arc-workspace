@@ -1,5 +1,5 @@
 // bbb1b8b6
-// keywords: overlay decompose
+// @keywords: overlay decompose
 // input: A separator splits the grid into a base tile and a piece tile, each a
 //  shape over bg.
 // output: If the piece fits the base's bg holes, the output is the base with

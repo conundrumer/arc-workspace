@@ -1,6 +1,6 @@
 // 868de0fa
-// draft
-// keywords: objects border enclose parity
+// @draft
+// @keywords: objects border enclose parity
 // input: square outlines drawn in one ink color
 // output: each outline's hole fills by the parity of the outline's side: an
 //  odd side gives a hole with a center cell, which takes odd_fill; an even

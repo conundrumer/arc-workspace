@@ -1,5 +1,5 @@
 // 22168020
-// keywords: lines span
+// @keywords: lines span
 // output: Per line along params.fill_axis, each color's span (between its
 //  extreme marks) fills with that color.
 

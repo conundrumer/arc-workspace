@@ -1,6 +1,6 @@
 // 44d8ac46
-// draft
-// keywords: objects enclose symmetry classify
+// @draft
+// @keywords: objects enclose symmetry classify
 // input: hollow ink shapes on params.bg, each holding one or more empty regions
 // output: some of those regions take params.fill, and every other cell passes
 //  through

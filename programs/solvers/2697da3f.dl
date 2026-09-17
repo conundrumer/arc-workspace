@@ -1,6 +1,6 @@
 // 2697da3f
-// draft
-// keywords: tile-arrangement d4
+// @draft
+// @keywords: tile-arrangement d4
 // input: One figure on a blank field.
 // output: A canvas carrying four copies of that figure, each flush against
 //  one edge and centered across it, leaving a blank square in the middle: on

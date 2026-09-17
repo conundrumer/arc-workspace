@@ -1,5 +1,5 @@
 // 4347f46a
-// keywords: objects border
+// @keywords: objects border
 // output: Solid one-color rectangles on params.bg; each keeps its outline and
 //  its interior repaints to params.bg.
 

@@ -1,5 +1,5 @@
 // d364b489
-// keywords: markers lookup stamp
+// @keywords: markers lookup stamp
 // output: Each marker cell paints a one-cell halo on its four sides; the rest
 //  of the grid passes through. Halos clip at the grid edge.
 

@@ -1,6 +1,6 @@
 // 7c66cb00
-// draft
-// keywords: lines objects markers move mapping
+// @draft
+// @keywords: lines objects markers move mapping
 // input: full-width bands crossing the grid, each a run of lines with a
 //  uniform interior color and one other color at both ends; shapes sit on a
 //  background elsewhere

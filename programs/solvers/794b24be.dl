@@ -1,6 +1,6 @@
 // 794b24be
-// draft
-// keywords: count rank lookup
+// @draft
+// @keywords: count rank lookup
 // input: Count the non-bg cells of the input.
 // output: The output, on the input's frame, renders that count in
 //  params.mark on params.bg.

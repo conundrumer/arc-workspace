@@ -1,6 +1,6 @@
 // 8cb8642d
-// draft
-// keywords: objects border markers span depth
+// @draft
+// @keywords: objects border markers span depth
 // output: Solid rectangles sit on a bg field. Each is a one-cell frame of one
 //  color around a filled inside, and one inside cell, the marker, holds another
 //  color. The output empties the inside to bg and draws the inside's X in the

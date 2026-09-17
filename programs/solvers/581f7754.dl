@@ -1,6 +1,6 @@
 // 581f7754
-// draft
-// keywords: objects markers move
+// @draft
+// @keywords: objects markers move
 // input: The commonest color is the background, and the objects are the
 //  connected runs of the rest. A one-cell object on the grid's edge is an
 //  anchor: it fixes the line that runs from it across the grid, perpendicular

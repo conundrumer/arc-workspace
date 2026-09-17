@@ -1,6 +1,6 @@
 // 1e97544e
-// draft
-// keywords: wallpaper repair walk
+// @draft
+// @keywords: wallpaper repair walk
 // input: the background is a striped pattern: one-cell-wide stripes run down
 //  the grid, and every stripe jogs one cell sideways where it crosses the
 //  main diagonal, so a diagonal step always moves one place along the color

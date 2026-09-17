@@ -1,6 +1,6 @@
 // 770cc55f
-// draft
-// keywords: lines markers cast rank
+// @draft
+// @keywords: lines markers cast rank
 // input: A params.sep line crosses the grid, and a bar of ink sits on each
 //  edge of params.axis.
 // output: The longer bar's cells that face a cell of the other bar cast

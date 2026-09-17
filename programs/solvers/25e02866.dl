@@ -1,6 +1,6 @@
 // 25e02866
-// draft
-// keywords: objects overlay border
+// @draft
+// @keywords: objects overlay border
 // input: Solid rectangles of one color sit on the background, all of the same
 //  size, each carrying a few cells painted in other colors.
 // output: The output is one such rectangle with every painted cell stacked

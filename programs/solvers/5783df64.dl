@@ -1,5 +1,5 @@
 // 5783df64
-// keywords: decompose select
+// @keywords: decompose select
 // input: a params.divisor × params.divisor tile arrangement, each tile
 //  holding one ink cell
 // output: The output is that arrangement of the ink colors.

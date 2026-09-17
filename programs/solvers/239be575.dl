@@ -1,6 +1,6 @@
 // 239be575
-// draft
-// keywords: objects classify lookup
+// @draft
+// @keywords: objects classify lookup
 // input: Two blocks of params.mark sit among scattered params.link cells;
 //  the mark and link cells form one graph.
 // output: The 1×1 output reports whether every mark cell lies in a single

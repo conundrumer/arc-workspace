@@ -1,5 +1,5 @@
 // 9caf5b84
-// keywords: count rank select
+// @keywords: count rank select
 // output: Colors rank by cell count; the frequent colors keep their cells, and
 //  every other cell becomes params.mark.
 

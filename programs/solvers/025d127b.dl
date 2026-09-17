@@ -1,5 +1,5 @@
 // 025d127b
-// keywords: objects move
+// @keywords: objects move
 // input: 8-connected shapes
 // output: Each shape advances one cell toward params.dir. A cell steps
 //  unless it sits on the shape's leading edge, or its landing site is

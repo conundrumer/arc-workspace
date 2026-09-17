@@ -1,5 +1,5 @@
 // 8eb1be9a
-// keywords: wallpaper count
+// @keywords: wallpaper count
 // input: A band of patterned rows sits in an otherwise empty grid.
 // output: Output tiles the whole grid with the band along the axis, phase
 //  preserved: colors propagate from the band by jumps of the band's extent

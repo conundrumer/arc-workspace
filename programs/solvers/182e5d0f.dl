@@ -1,6 +1,6 @@
 // 182e5d0f
-// draft
-// keywords: objects markers move
+// @draft
+// @keywords: objects markers move
 // input: Wire runs across the grid, ending in a plug — a wire cell flanked
 //  along an axis by two caps. The rest of the wire is cord.
 // output: A bead beside a cord slides its whole length and comes to rest on

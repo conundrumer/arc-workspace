@@ -1,6 +1,6 @@
 // 58490d8a
-// draft
-// keywords: markers objects count
+// @draft
+// @keywords: markers objects count
 // input: A panel of params.panel sits on the grid and holds marker cells.
 //  Elsewhere the grid holds shapes in the marker colors.
 // output: The output is the panel, with each marker's row carrying one copy

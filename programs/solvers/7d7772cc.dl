@@ -1,6 +1,6 @@
 // 7d7772cc
-// draft
-// keywords: border markers move
+// @draft
+// @keywords: border markers move
 // input: A thin fence of one color runs across the grid and, with two arms
 //  along the grid edges, pens in one side. On the free side, marks sit in one
 //  line parallel to the fence; inside the pen, a gate cell faces each mark

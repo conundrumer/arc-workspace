@@ -1,6 +1,6 @@
 // 58c02a16
-// draft
-// keywords: wallpaper scale stamp
+// @draft
+// @keywords: wallpaper scale stamp
 // input: A pattern block sits in a corner of the input, closed off by two
 //  separator lines; the rest of the input is blank.
 // output: The output repeats the pattern against itself at two scales. A cell

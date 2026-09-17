@@ -1,6 +1,6 @@
 // 2bcee788
-// draft
-// keywords: markers d4 rank
+// @draft
+// @keywords: markers d4 rank
 // input: a one-color shape on bg, with a marker line laid against one of
 //  its sides
 // output: The output fills the grid with params.ground, keeps the shape,

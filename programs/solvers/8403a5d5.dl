@@ -1,6 +1,6 @@
 // 8403a5d5
-// draft
-// keywords: markers cast parity walk lookup stamp
+// @draft
+// @keywords: markers cast parity walk lookup stamp
 // output: One marker casts a trail toward params.dir: the lines across the
 //  trail alternate between a bar line of the marker's color and a gap line
 //  that holds one params.dot cell at one end, and that end flips at each gap;

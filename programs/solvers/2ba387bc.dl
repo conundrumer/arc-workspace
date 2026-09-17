@@ -1,6 +1,6 @@
 // 2ba387bc
-// draft
-// keywords: objects classify rank
+// @draft
+// @keywords: objects classify rank
 // input: equal squares, each a hollow ring or a solid block, scattered
 //  over the grid
 // output: the squares arrange in two columns: hollow squares at

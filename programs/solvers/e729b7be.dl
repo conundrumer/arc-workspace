@@ -1,5 +1,5 @@
 // e729b7be
-// keywords: symmetry markers repair d4
+// @keywords: symmetry markers repair d4
 // input: a full-height line of params.line; a params.marker sits on it, and
 //  another at each end of that marker's row; a shape sits beside the line
 // output: each background cell takes the color of its half-turn counterpart,

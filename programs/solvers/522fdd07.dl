@@ -1,6 +1,6 @@
 // 522fdd07
-// draft
-// keywords: objects border lookup
+// @draft
+// @keywords: objects border lookup
 // input: solid one-color squares sit apart on params.bg
 // output: Each is redrawn concentric with itself and one ring smaller; a
 //  square with no ring to spare comes back at params.bloom, the largest

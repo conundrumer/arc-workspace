@@ -1,6 +1,6 @@
 // 5ffb2104
-// draft
-// keywords: objects move
+// @draft
+// @keywords: objects move
 // input: each 4-connected block of one color is an object.
 // output: every object slides toward params.grav and comes to rest where it
 //  first meets the grid edge or an object at rest ahead of it. The cells an

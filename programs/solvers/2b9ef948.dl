@@ -1,5 +1,5 @@
 // 2b9ef948
-// keywords: markers move cast
+// @keywords: markers move cast
 // input: A box of frame color encloses a cell of the grid's one free color,
 //  and a trail of path color lies elsewhere, with a free-colored cell beside
 //  one end and a frame-colored cell beside the other.

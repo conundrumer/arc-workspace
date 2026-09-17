@@ -1,6 +1,6 @@
 // 692cd3b6
-// draft
-// keywords: objects span cast
+// @draft
+// @keywords: objects span cast
 // output: Two boxes, each with one gap in its wall: its door. The cell one step
 //  out of a door is the box's exit. Paint covers the rectangle the two exits
 //  span, except in a box's shadow: the cells behind the box, away from its

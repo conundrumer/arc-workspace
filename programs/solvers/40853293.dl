@@ -1,6 +1,6 @@
 // 40853293
-// draft
-// keywords: markers span cross
+// @draft
+// @keywords: markers span cross
 // input: pairs of same-colored marks that share a row or a column
 // output: The cells between a pair fill with its color. Where two spans
 //  cross, the span on params.over_axis takes the cell.

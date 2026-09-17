@@ -1,5 +1,5 @@
 // 31f7f899
-// keywords: objects lines rank move
+// @keywords: objects lines rank move
 // input: A spine of one color runs across the grid; bars of other colors cross
 //  it, each covering a run of lines.
 // output: Every bar keeps its color and its footprint on the spine, and the

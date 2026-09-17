@@ -1,5 +1,5 @@
 // 9565186b
-// keywords: objects count select
+// @keywords: objects count select
 // output: the dominant part of the grid keeps its cells; every other cell
 //  becomes params.mark.
 

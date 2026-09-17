@@ -1,6 +1,6 @@
 // 4ff4c9da
-// draft
-// keywords: objects stamp
+// @draft
+// @keywords: objects stamp
 // input: Mark-colored cells cover whole blobs of one other color, so no mark
 //  cell touches that covered color.
 // output: Every blob of that covered color whose footprint equals a mark

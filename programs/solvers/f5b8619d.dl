@@ -1,5 +1,5 @@
 // f5b8619d
-// keywords: tile-arrangement lines markers
+// @keywords: tile-arrangement lines markers
 // output: One marker color over bg. Bg cells on a marker's params.axis line
 //  repaint params.shade; markers pass through. Output is the repainted grid
 //  arranged per params.tile.

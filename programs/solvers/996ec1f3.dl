@@ -1,6 +1,6 @@
 // 996ec1f3
-// draft
-// keywords: decompose scale
+// @draft
+// @keywords: decompose scale
 // concept: a cut of uniform lines in one color divides a noise grid into
 //  panels, and a solid rectangle of one color covers each panel but its
 //  outermost ring. The output redraws that arrangement, one cell per panel

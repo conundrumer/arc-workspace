@@ -1,6 +1,6 @@
 // 320afe60
-// draft
-// keywords: objects enclose move
+// @draft
+// @keywords: objects enclose move
 // output: A shape that leaves a cell of its box empty and closes no region off
 //  from the grid edge is open; every other shape — one that closes a region
 //  off, or that fills its box — is closed. Each shape slides flush to an edge

@@ -1,5 +1,5 @@
 // 29c11459
-// keywords: lines markers cast
+// @keywords: lines markers cast
 // input: A mark sits at each end of a row.
 // output: The row fills with the marks' colors, half each, and the middle
 //  cell gets the clash color.

@@ -1,6 +1,6 @@
 // 845d6e51
-// draft
-// keywords: objects border induce d4
+// @draft
+// @keywords: objects border induce d4
 // input: A wall of params.frame cuts off a corner of the grid; the other ink
 //  cells form same-colored objects, which split into a legend and the objects
 //  to recolor.

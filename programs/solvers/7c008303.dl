@@ -1,6 +1,6 @@
 // 7c008303
-// draft
-// keywords: decompose crop scale select
+// @draft
+// @keywords: decompose crop scale select
 // input: a cross of one full row and one full column, cutting the grid into
 //  four quadrants: a small key, a large pattern, and two blank quadrants
 // output: The output is the pattern, divided into one block per key cell,

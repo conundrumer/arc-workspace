@@ -1,6 +1,6 @@
 // 50a16a69
-// draft
-// keywords: wallpaper move
+// @draft
+// @keywords: wallpaper move
 // input: a periodic pattern covering part of the grid, with a filler color
 //  over whole grid lines, and its translation lattice — the shortest
 //  unbroken shift on each axis

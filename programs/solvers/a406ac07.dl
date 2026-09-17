@@ -1,5 +1,5 @@
 // a406ac07
-// keywords: lines markers border select cross
+// @keywords: lines markers border select cross
 // output: A cell is painted the color shared between its row and its
 //  column: read from the two edges of a header corner, or, with no header,
 //  from any ink already on the lines.

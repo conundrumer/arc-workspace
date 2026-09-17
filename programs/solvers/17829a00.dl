@@ -1,6 +1,6 @@
 // 17829a00
-// draft
-// keywords: objects move
+// @draft
+// @keywords: objects move
 // output: A border line caps each end of params.axis, one color per border. The
 //  objects between them wear those two colors. Each object slides along the
 //  axis to the border matching its color and stops against it, leaving

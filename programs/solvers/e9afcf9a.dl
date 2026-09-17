@@ -1,5 +1,5 @@
 // e9afcf9a
-// keywords: permutation lookup d4
+// @keywords: permutation lookup d4
 // output: The output permutes the input's cells: at odd column indices the two
 //  rows swap, and even columns stay put.
 

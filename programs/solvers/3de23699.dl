@@ -1,5 +1,5 @@
 // 3de23699
-// keywords: markers crop span
+// @keywords: markers crop span
 // output: Marks of one color sit at the corners of a rectangle, and a pattern
 //  in another color lies strictly inside it. The output is the rectangle's open
 //  interior, with the pattern redrawn in the mark color.

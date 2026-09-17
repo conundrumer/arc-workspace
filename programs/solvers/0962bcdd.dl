@@ -1,5 +1,5 @@
 // 0962bcdd
-// keywords: markers lookup stamp
+// @keywords: markers lookup stamp
 // output: Plus-shaped marks — a center cell whose four cardinal neighbors
 //  share one arm color — grow: cardinal rays extend in the arm color,
 //  diagonal rays in the center color, the rest passes through.

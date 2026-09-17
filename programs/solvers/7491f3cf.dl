@@ -1,6 +1,6 @@
 // 7491f3cf
-// draft
-// keywords: decompose overlay markers border lookup
+// @draft
+// @keywords: decompose overlay markers border lookup
 // input: Uniform lines cut the grid into a strip of panels. The mask panel
 //  draws a line across itself and a lone marker on one side of it. Two
 //  pattern panels are layers, top and under, and the blank panel's color

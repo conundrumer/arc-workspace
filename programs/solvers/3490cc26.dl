@@ -1,5 +1,5 @@
 // 3490cc26
-// keywords: objects markers walk
+// @keywords: objects markers walk
 // input: The grid holds equal-sized blocks, one of them colored params.seed.
 //  Two blocks reach each other when they lie on one line with no third block
 //  between them.

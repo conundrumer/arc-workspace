@@ -1,6 +1,6 @@
 // 36a08778
-// draft
-// keywords: markers cast walk span
+// @draft
+// @keywords: markers cast walk span
 // input: Water sits as a two-cell stub on an edge.
 // output: The stub pours into the grid. The pour runs on until a block bars
 //  the way; there it passes the block's end and pours on. Every cell the

@@ -1,5 +1,5 @@
 // 73251a56
-// keywords: symmetry cast count repair classify
+// @keywords: symmetry cast count repair classify
 // input: A pattern symmetric under a D4 reflection, damaged by hole blobs.
 // output: Intact cells keep their color. Each hole repaints from a source
 //  the case picks.

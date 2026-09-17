@@ -1,6 +1,6 @@
 // 963c33f8
-// draft
-// keywords: lines move
+// @draft
+// @keywords: lines move
 // input: A scene of params.solid debris on params.bg, with a piece drawn over
 //  it in the ink that is neither. The piece parses into its lines along the
 //  axis of params.fall.

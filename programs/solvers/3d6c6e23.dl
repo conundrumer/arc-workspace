@@ -1,6 +1,6 @@
 // 3d6c6e23
-// draft
-// keywords: lines count rank
+// @draft
+// @keywords: lines count rank
 // output: Each line of pixels collapses into a pile on the floor: a triangle
 //  centered on the line, one cell wider to each side per row, holding exactly
 //  as many cells as the line has pixels. The pixels fill it in rank order from

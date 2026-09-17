@@ -1,5 +1,5 @@
 // 8e2edd66
-// keywords: tile-arrangement stamp
+// @keywords: tile-arrangement stamp
 // output: Fractal of the input's complement. The output is an input-shaped
 //  arrangement of input-sized tiles: at each bg cell of the input the tile is
 //  the input's complement, drawn in the input's ink color; at each ink cell the

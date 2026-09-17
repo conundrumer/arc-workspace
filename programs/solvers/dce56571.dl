@@ -1,5 +1,5 @@
 // dce56571
-// keywords: count
+// @keywords: count
 // output: Ink of one color on bg. The output is bg except a line of the ink
 //  color whose length is the ink-cell count, centered on both axes, running
 //  along params.axis.

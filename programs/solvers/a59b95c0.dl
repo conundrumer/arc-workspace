@@ -1,5 +1,5 @@
 // a59b95c0
-// keywords: tile-arrangement count
+// @keywords: tile-arrangement count
 // output: The output arranges N×N copies of the input, where N is the count
 //  of distinct colors in the input. The family is fully structural, with no
 //  task data to store.

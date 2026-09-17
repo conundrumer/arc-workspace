@@ -1,5 +1,5 @@
 // 67385a82
-// keywords: objects
+// @keywords: objects
 // output: params.ink cells with an ink 4-neighbor become params.mark; lone ink
 //  and bg pass through.
 

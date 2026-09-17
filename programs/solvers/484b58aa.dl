@@ -1,5 +1,5 @@
 // 484b58aa
-// keywords: wallpaper repair lines
+// @keywords: wallpaper repair lines
 // input: A periodic pattern covers the grid, damaged by holes of one
 //  color.
 // output: Each damaged cell takes the color of an intact cell in its

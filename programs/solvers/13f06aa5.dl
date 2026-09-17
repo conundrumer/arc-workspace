@@ -1,5 +1,5 @@
 // 13f06aa5
-// keywords: markers objects cast parity border
+// @keywords: markers objects cast parity border
 // input: Each shape is drawn in one ink color and carries a single
 //  odd-colored marker cell on one of its sides.
 // output: The marker fires in the direction that side faces: a trail of

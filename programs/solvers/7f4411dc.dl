@@ -1,5 +1,5 @@
 // 7f4411dc
-// keywords: stamp select
+// @keywords: stamp select
 // output: Denoise: solid ink rectangles survive; scattered single cells clear
 //  to bg. Ink color varies per pair.
 

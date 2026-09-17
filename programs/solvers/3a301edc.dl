@@ -1,6 +1,6 @@
 // 3a301edc
-// draft
-// keywords: objects border
+// @draft
+// @keywords: objects border
 // input: a rectangle of one color holds a solid block of another color
 // output: a ring is added around the rectangle, in the block's color, as
 //  thick as the block is long on each axis

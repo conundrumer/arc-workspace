@@ -1,6 +1,6 @@
 // 4aab4007
-// draft
-// keywords: lines border repair lookup
+// @draft
+// @keywords: lines border repair lookup
 // input: a grid damaged by holes of one color. Bands run along the two edges
 //  of one corner, each band one color. Stripes cover the rest: each line of
 //  one diagonal axis holds a single color, except a legend at the corner.

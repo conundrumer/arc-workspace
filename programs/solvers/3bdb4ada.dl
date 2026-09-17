@@ -1,6 +1,6 @@
 // 3bdb4ada
-// draft
-// keywords: objects parity border
+// @draft
+// @keywords: objects parity border
 // output: Solid rectangles on the bg. A dash covers part of each rectangle:
 //  along params.dash_axis that dash runs params.dash cells of ink, then
 //  params.gap cells of bg, and the covered cells in a gap run go to bg. Every

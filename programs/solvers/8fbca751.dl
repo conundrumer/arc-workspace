@@ -1,6 +1,6 @@
 // 8fbca751
-// draft
-// keywords: merge bbox
+// @draft
+// @keywords: merge bbox
 // input: Ink cells over bg.
 // output: Two ink cells that share a row or a column belong to one group,
 //  transitively. Each group's bounding box has its bg cells recolored

@@ -1,5 +1,5 @@
 // e7dd8335
-// keywords: objects
+// @keywords: objects
 // output: A shape of one color over bg; the half of it toward params.dir
 //  recolors params.fill.
 

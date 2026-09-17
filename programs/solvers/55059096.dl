@@ -1,6 +1,6 @@
 // 55059096
-// draft
-// keywords: markers span
+// @draft
+// @keywords: markers span
 // input: Plus-shaped marks sit on a bg field.
 // output: Two marks whose centers share a diagonal are joined: the bg cells
 //  between those centers turn params.trail, and the rest passes through. A

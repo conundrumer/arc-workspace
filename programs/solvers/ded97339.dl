@@ -1,5 +1,5 @@
 // ded97339
-// keywords: markers span
+// @keywords: markers span
 // output: Cells between two marks on their row or column fill with the mark
 //  color.
 

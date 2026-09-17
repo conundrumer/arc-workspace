@@ -1,6 +1,6 @@
 // 414297c0
-// draft
-// keywords: crop markers objects stamp lookup
+// @draft
+// @keywords: crop markers objects stamp lookup
 // input: A solid canvas rectangle holds scattered dots — single cells in
 //  other colors. Off the canvas sit glyphs: a key cell in a dot's color,
 //  with ink cells around it.

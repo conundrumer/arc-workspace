@@ -1,5 +1,5 @@
 // d47aa2ff
-// keywords: decompose select
+// @keywords: decompose select
 // output: Side-by-side panels split by a separator. Output is one panel
 //  frame. Ink that every panel carries is kept, in the color the panels
 //  agree on. Ink that one panel alone carries becomes that panel's mark

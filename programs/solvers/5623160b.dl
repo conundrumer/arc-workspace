@@ -1,6 +1,6 @@
 // 5623160b
-// draft
-// keywords: objects markers move
+// @draft
+// @keywords: objects markers move
 // input: structures of the anchor color, with pieces of other colors
 //  against them
 // output: The anchors hold their place. Every piece detaches and travels

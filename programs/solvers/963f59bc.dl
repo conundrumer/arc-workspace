@@ -1,6 +1,6 @@
 // 963f59bc
-// draft
-// keywords: markers stamp d4
+// @draft
+// @keywords: markers stamp d4
 // input: a shape drawn in one color, and marker cells in other colors.
 // output: the input, with the shape copied in each marker's color. a marker
 //  lies on one line with a shape cell; the copy is the shape reflected along

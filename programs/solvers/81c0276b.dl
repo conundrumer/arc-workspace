@@ -1,6 +1,6 @@
 // 81c0276b
-// draft
-// keywords: decompose objects count rank
+// @draft
+// @keywords: decompose objects count rank
 // input: a lattice of slots cut by uniform lines in one color; each slot
 //  holds a block in a slot color, or in the lattice color, which marks it
 //  empty

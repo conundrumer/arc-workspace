@@ -1,6 +1,6 @@
 // 66ac4c3b
-// draft
-// keywords: lines markers d4 mapping
+// @draft
+// @keywords: lines markers d4 mapping
 // input: two parallel marker lines of distinct colors, carrying ink at the
 //  same positions along them, with shapes in one marker's color hanging off
 //  the other marker's line

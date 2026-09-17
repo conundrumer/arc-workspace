@@ -1,6 +1,6 @@
 // 817e6c09
-// draft
-// keywords: objects rank parity
+// @draft
+// @keywords: objects rank parity
 // input: connected components of params.ink
 // output: Blocks rank by distance from the params.anchor edge, nearest
 //  first. Every other block in that order, the nearest included, recolors

@@ -1,6 +1,6 @@
 // 7039b2d7
-// draft
-// representative: 1190e5a7
+// @draft
+// @representative: 1190e5a7
 
 .type Line = [a: Axis, p_line: Position]
 

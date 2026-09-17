@@ -1,5 +1,5 @@
 // dbc1a6ce
-// keywords: markers span
+// @keywords: markers span
 // output: Bg cells between two marks on their row or column fill with
 //  params.fill; marks stay.
 

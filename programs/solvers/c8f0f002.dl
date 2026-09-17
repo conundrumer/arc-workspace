@@ -1,5 +1,5 @@
 // c8f0f002
-// representative: 0d3d703e
+// @representative: 0d3d703e
 
 .decl out(p: Position, col: Color)
 

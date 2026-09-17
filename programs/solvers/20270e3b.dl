@@ -1,5 +1,5 @@
 // 20270e3b
-// keywords: objects markers move
+// @keywords: objects markers move
 // input: Two pieces sit on a bg field. Each is a wall of ordinary colors plus
 //  a socket of marker cells, and the two socket footprints are congruent.
 // output: The join seats one piece on the other with the footprints

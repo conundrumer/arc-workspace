@@ -1,6 +1,6 @@
 // 92e50de0
-// draft
-// keywords: decompose wallpaper stamp parity
+// @draft
+// @keywords: decompose wallpaper stamp parity
 // output: Copies of the input's ink stand elsewhere in the grid; a cell no
 //  copy reaches keeps its input color.
 

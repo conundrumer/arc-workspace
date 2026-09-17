@@ -1,6 +1,6 @@
 // ba26e723
-// draft
-// keywords: lines mapping
+// @draft
+// @keywords: lines mapping
 // output: Cells whose color is a params.mapping key are recolored to the mapped
 //  color, but only at positions where (dist from params.anchor) mod
 //  params.period equals params.phase. Other cells pass through.

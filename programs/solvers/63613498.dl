@@ -1,6 +1,6 @@
 // 63613498
-// draft
-// keywords: objects match
+// @draft
+// @keywords: objects match
 // input: Shapes of several colors sit on params.bg, and cells in params.mark
 //  are no shape content. One shape lies in a cut-off corner of the grid:
 //  the key.

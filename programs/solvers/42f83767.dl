@@ -1,6 +1,6 @@
 // 42f83767
-// draft
-// keywords: decompose scale rank stamp
+// @draft
+// @keywords: decompose scale rank stamp
 // output: A legend of color blocks and a strip of stencils sit side by side,
 //  and a composition grid sits across from them. Legend block i names stencil
 //  i. The output replaces each composition cell with the stencil its color

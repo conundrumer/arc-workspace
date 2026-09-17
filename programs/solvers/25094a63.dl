@@ -1,6 +1,6 @@
 // 25094a63
-// draft
-// keywords: stamp
+// @draft
+// @keywords: stamp
 // input: solid monochrome rectangles in a noise field.
 // output: Wherever a footprint lands on cells that all share one color,
 //  those cells turn params.paint; the rest passes through. Overlapping

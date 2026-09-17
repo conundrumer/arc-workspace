@@ -1,6 +1,6 @@
 // 941d9a10
-// draft
-// keywords: decompose lookup
+// @draft
+// @keywords: decompose lookup
 // input: separator lines of one color cut the grid into blocks of unequal
 //  size.
 // output: a block takes a stored color by its place in the arrangement — each

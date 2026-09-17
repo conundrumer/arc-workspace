@@ -1,5 +1,5 @@
 // 412b6263
-// keywords: tile-arrangement d4 border count
+// @keywords: tile-arrangement d4 border count
 // output: The output is a lattice: copies of the input under params.xform fill
 //  the tiles, and lines of params.line_width run between the copies and around
 //  them. The separators and the ring are the same lines, so one width serves

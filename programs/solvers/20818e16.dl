@@ -1,6 +1,6 @@
 // 20818e16
-// draft
-// keywords: objects rank
+// @draft
+// @keywords: objects rank
 // input: Solid rectangles, one per color, overlap on a background field. A
 //  color's bounding box recovers its whole rectangle, hidden part included.
 // output: The output frame is the biggest rectangle, and every rectangle

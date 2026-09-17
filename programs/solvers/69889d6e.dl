@@ -1,6 +1,6 @@
 // 69889d6e
-// draft
-// keywords: markers walk
+// @draft
+// @keywords: markers walk
 // input: the walker cell, and the cells that block it
 // output: the walker climbs a staircase toward params.corner: it alternates one
 //  step along each of the corner's two directions, starting on

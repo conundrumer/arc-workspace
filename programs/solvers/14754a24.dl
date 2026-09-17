@@ -1,5 +1,5 @@
 // 14754a24
-// keywords: objects markers stamp lookup
+// @keywords: objects markers stamp lookup
 // input: Plus pentominoes drawn partly in params.mark over params.fill.
 // output: Each plus is completed: its footprint cells still holding
 //  params.fill become params.paint. A footprint is clipped at the frame

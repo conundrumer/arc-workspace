@@ -1,6 +1,6 @@
 // 3d588dc9
-// draft
-// keywords: objects markers border
+// @draft
+// @keywords: objects markers border
 // output: A wedge is an object packed into one corner of its box, so its far
 //  side is a diagonal slant. A key is an object shaped like the stored
 //  footprint: a block with a stem out of one end. A wedge claims the keys

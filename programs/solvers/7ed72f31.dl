@@ -1,6 +1,6 @@
 // 7ed72f31
-// draft
-// keywords: objects markers symmetry d4
+// @draft
+// @keywords: objects markers symmetry d4
 // input: Shapes lie on a field, each touching a run of params.mirror cells: a
 //  single cell, or a straight line.
 // output: The shape reappears reflected in its mirror: through the cell, or

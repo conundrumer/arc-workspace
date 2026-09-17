@@ -1,5 +1,5 @@
 // 00d62c1b
-// keywords: objects enclose
+// @keywords: objects enclose
 // output: A bg cell that cannot reach the grid edge through bg cells is
 //  repainted params.fill; every other cell passes through.
 

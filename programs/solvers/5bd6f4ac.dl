@@ -1,5 +1,5 @@
 // 5bd6f4ac
-// keywords: decompose crop select
+// @keywords: decompose crop select
 // output: Output is the 3×3 block at corner params.diag of a noise grid. The
 //  9×9 inputs leave the locate rule underdetermined.
 

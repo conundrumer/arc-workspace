@@ -1,5 +1,5 @@
 // ea9794b1
-// keywords: overlay decompose lookup rank
+// @keywords: overlay decompose lookup rank
 // input: the grid divides into a tile arrangement, each tile drawn in its own
 //  ink
 // output: The output overlays the tiles: the highest-precedence ink present

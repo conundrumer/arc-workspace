@@ -1,5 +1,5 @@
 // 7468f01a
-// keywords: crop d4
+// @keywords: crop d4
 // input: A rectangle on bg, carrying a second color.
 // output: The output is the rectangle cut out, with params.transform
 //  applied.

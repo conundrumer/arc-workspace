@@ -1,5 +1,5 @@
 // ae4f1146
-// keywords: objects crop count rank select
+// @keywords: objects crop count rank select
 // output: Solid blocks sit on bg. The block with the most mark-colored cells is
 //  kept, cropped to its bounding box. The two models coincide when no blocks
 //  touch, and diverge when blocks touch.

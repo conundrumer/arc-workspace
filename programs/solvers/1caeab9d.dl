@@ -1,6 +1,6 @@
 // 1caeab9d
-// draft
-// keywords: objects move
+// @draft
+// @keywords: objects move
 // output: Every block slides along the axis of params.align_dir. It stops
 //  where its line on that edge meets the anchor block's line, and its place
 //  across the axis does not change.

@@ -1,6 +1,6 @@
 // 8886d717
-// draft
-// keywords: markers objects cast
+// @draft
+// @keywords: markers objects cast
 // input: A line of one color runs along one grid edge. The rest of the grid
 //  is two regions, with marks scattered in both.
 // output: A mark in the absorbing region takes that region's color. A mark

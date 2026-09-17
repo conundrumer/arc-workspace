@@ -1,6 +1,6 @@
 // 83b6b474
-// draft
-// keywords: objects count pack
+// @draft
+// @keywords: objects count pack
 // input: colored shapes scattered on a background
 // output: The output is the square whose border holds as many cells as the
 //  shapes. The shapes translate onto that border and pack it exactly; the

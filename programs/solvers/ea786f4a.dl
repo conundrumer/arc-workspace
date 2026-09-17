@@ -1,5 +1,5 @@
 // ea786f4a
-// keywords: markers cast
+// @keywords: markers cast
 // input: a solid-color field with one ink-colored dot
 // output: The output draws an X in ink through the dot.
 

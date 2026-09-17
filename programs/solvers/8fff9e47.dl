@@ -1,6 +1,6 @@
 // 8fff9e47
-// draft
-// keywords: decompose rank border
+// @draft
+// @keywords: decompose rank border
 // input: blocks of params.block_size, side by side
 // output: a square of concentric rings, one per block. The blocks nest in the
 //  order params.corner and params.axis read them, the first outermost. The

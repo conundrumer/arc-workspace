@@ -1,6 +1,6 @@
 // 6a1e5592
-// draft
-// keywords: objects move pack
+// @draft
+// @keywords: objects move pack
 // input: a wall along one grid edge, with notches cut into it, and sprites
 //  lying on the bg beyond it
 // output: The sprites translate to cover the notch cells exactly, each

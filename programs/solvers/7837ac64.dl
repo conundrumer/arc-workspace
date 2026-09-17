@@ -1,6 +1,6 @@
 // 7837ac64
-// draft
-// keywords: decompose markers crop scale span
+// @draft
+// @keywords: decompose markers crop scale span
 // input: Lines of one color cut the grid into a lattice of tiles. Some
 //  crossings of those lines carry a mark in another color.
 // output: the tile arrangement in miniature, one cell per tile: a tile whose

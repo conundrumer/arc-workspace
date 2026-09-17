@@ -1,5 +1,5 @@
 // 08573cc6
-// keywords: markers walk
+// @keywords: markers walk
 // output: A lone dot and a two-cell legend at the top-left corner. The output
 //  is a rectangular spiral walked outward from the dot: arms turn with a fixed
 //  sense, each arm one cell longer than the last, and the walk ends with the

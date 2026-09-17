@@ -1,5 +1,5 @@
 // 21897d95
-// keywords: objects markers mapping d4 lookup
+// @keywords: objects markers mapping d4 lookup
 // input: The grid is a partition into flat color regions with two kinds of
 //  marker drawn over it.
 // output: An arrow points across a border: the region past its tip takes the

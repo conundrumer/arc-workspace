@@ -1,5 +1,5 @@
 // ce9e57f2
-// keywords: lines rank
+// @keywords: lines rank
 // input: bars of bar color on the base edge, one per line
 // output: In each bar, the cells strictly nearer the base end than the far
 //  end recolor to mark.

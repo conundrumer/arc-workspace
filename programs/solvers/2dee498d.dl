@@ -1,5 +1,5 @@
 // 2dee498d
-// keywords: decompose crop
+// @keywords: decompose crop
 // input: input is N identical tiles along the tile axis
 // output: output is one tile. Set semantics dedupes the redundant copies.
 

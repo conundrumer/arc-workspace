@@ -1,6 +1,6 @@
 // 396d80d7
-// draft
-// keywords: stamp
+// @draft
+// @keywords: stamp
 // input: A figure of two colors sits on params.bg.
 // output: Every bg cell that touches the figure at a corner alone takes the
 //  core color: the figure color that no such cell touches. The rest of the

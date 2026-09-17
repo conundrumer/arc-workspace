@@ -1,5 +1,5 @@
 // 103eff5b
-// keywords: scale d4 stamp
+// @keywords: scale d4 stamp
 // input: A key of loose colored cells, apart from a monochrome shape.
 // output: The shape is the key blown up: each key cell becomes a block, after
 //  a fixed turn. The output paints the blocks in their key cells' colors; the

@@ -1,6 +1,6 @@
 // 58e15b12
-// draft
-// keywords: objects walk
+// @draft
+// @keywords: objects walk
 // output: Each non-bg color draws a pair of one-cell-wide bars along
 //  params.bar_axis, of equal extent and aligned with each other. The pair
 //  repeats along that axis, both ways: each repeat sits one bar length

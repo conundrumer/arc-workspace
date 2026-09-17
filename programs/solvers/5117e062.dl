@@ -1,6 +1,6 @@
 // 5117e062
-// draft
-// keywords: markers objects crop select
+// @draft
+// @keywords: markers objects crop select
 // input: several one-color figures on bg, one cell of one figure carrying
 //  params.mark
 // output: The output is the box of the region the mark designates, with

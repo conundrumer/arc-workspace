@@ -1,5 +1,5 @@
 // ce22a75a
-// keywords: scale decompose markers stamp
+// @keywords: scale decompose markers stamp
 // input: marks on a 9×9 grid
 // output: Each mark fills its 3×3 region; the rest is bg.
 

@@ -1,5 +1,5 @@
 // cbded52d
-// keywords: decompose markers span cast
+// @keywords: decompose markers span cast
 // input: a separator lattice cuts the grid into a tile arrangement over a
 //  base color
 // output: Two same-color marks (non-base cells) at one intile position,

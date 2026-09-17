@@ -1,5 +1,5 @@
 // 33067df9
-// keywords: decompose scale merge
+// @keywords: decompose scale merge
 // input: The input is a lattice: single-cell tiles ruled off by single-cell
 //  lines, with a line on every side.
 // output: The output redraws that lattice on a fixed square canvas, with

@@ -1,5 +1,5 @@
 // 3f7978a0
-// keywords: crop markers select
+// @keywords: crop markers select
 // input: two parallel params.bar lines over bg and noise, each end capped one
 //  step beyond by a params.cap cell
 // output: The spanned region crops out, with its content passing through

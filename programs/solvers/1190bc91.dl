@@ -1,5 +1,5 @@
 // 1190bc91
-// keywords: objects markers cast
+// @keywords: objects markers cast
 // input: the input holds one color sequence — a line running from a free end
 //  (the anchor) to the grid edge — and short marker runs.
 // output: every sequence cell casts its four diagonals in its own color; a

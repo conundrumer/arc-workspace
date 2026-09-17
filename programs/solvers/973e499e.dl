@@ -1,5 +1,5 @@
 // 973e499e
-// keywords: tile-arrangement stamp
+// @keywords: tile-arrangement stamp
 // output: Self-tile. Output decomposes into tiles laid out like the input; the
 //  tile at P_tile is a copy of the input keeping cells of color in(P_tile),
 //  others bg.

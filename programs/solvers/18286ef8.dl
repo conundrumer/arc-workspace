@@ -1,6 +1,6 @@
 // 18286ef8
-// draft
-// keywords: decompose markers move cast scale
+// @draft
+// @keywords: decompose markers move cast scale
 // input: Divider lines cut the grid into an arrangement of tiles. One tile
 //  holds a solid block with a gaze cell at its center; the other tiles hold
 //  scattered markers, one of them the target color.

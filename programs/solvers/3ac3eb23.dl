@@ -1,5 +1,5 @@
 // 3ac3eb23
-// keywords: markers parity walk lookup stamp
+// @keywords: markers parity walk lookup stamp
 // output: Each marker casts a period-2 trail away from its edge: the marker's
 //  own cell at every second step, its two side neighbors at the steps between;
 //  all other cells bg.

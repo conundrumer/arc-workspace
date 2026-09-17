@@ -1,5 +1,5 @@
 // a9f96cdd
-// keywords: markers lookup stamp
+// @keywords: markers lookup stamp
 // output: One marker cell on an empty grid; its four diagonal neighbors take
 //  per-corner colors, clipped at the grid edge; the rest of the output is bg,
 //  marker included. The two cases are data-equivalent on this task.

@@ -1,6 +1,6 @@
 // 91714a58
-// draft
-// keywords: noise select count
+// @draft
+// @keywords: noise select count
 // input: noise cells of every color on bg, with one solid one-color
 //  rectangle among them
 // output: that rectangle alone, the rest bg

@@ -1,5 +1,5 @@
 // 230f2e48
-// keywords: objects markers move count
+// @keywords: objects markers move count
 // output: Every object is a straight arm: an anchor cell (params.anchor) at one
 //  end, a joint cell (params.joint) partway along, body cells (params.body)
 //  filling the rest. The stretch beyond the joint makes a quarter turn about

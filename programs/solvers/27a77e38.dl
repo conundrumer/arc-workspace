@@ -1,6 +1,6 @@
 // 27a77e38
-// draft
-// keywords: decompose count
+// @draft
+// @keywords: decompose count
 // input: A field of colors fills one half of the grid; a gray line and blank
 //  cells fill the rest.
 // output: The input, with a commonest color stamped on the far edge, centered.

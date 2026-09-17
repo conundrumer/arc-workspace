@@ -1,5 +1,5 @@
 // a6953f00
-// keywords: crop
+// @keywords: crop
 // output: the 2×2 crop at a corner of params.crop_side. Either corner of that
 //  side is a valid output, so out carries one grid per corner.
 

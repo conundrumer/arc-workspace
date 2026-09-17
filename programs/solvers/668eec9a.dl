@@ -1,6 +1,6 @@
 // 668eec9a
-// draft
-// keywords: objects rank
+// @draft
+// @keywords: objects rank
 // input: lines of distinct colors on the background
 // output: solid rows in a stored frame: each line takes the row whose distance
 //  from params.stack_dir is the count of lines farther from params.order_dir

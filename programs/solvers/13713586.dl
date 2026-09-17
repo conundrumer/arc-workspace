@@ -1,5 +1,5 @@
 // 13713586
-// keywords: objects cast rank
+// @keywords: objects cast rank
 // input: A wall of one color lines a whole edge of the grid, and colored bars
 //  sit in the field.
 // output: Each bar casts its cells toward the wall, painting the background

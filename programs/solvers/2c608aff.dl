@@ -1,6 +1,6 @@
 // 2c608aff
-// draft
-// keywords: objects markers span
+// @draft
+// @keywords: objects markers span
 // input: a solid block sits on the background, and lone marker cells lie
 //  around it
 // output: A marker whose row or column crosses the block fills the cells

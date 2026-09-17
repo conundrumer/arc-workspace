@@ -1,6 +1,6 @@
 // 5af49b42
-// draft
-// keywords: objects markers stamp border
+// @draft
+// @keywords: objects markers stamp border
 // input: The non-bg cells make connected pieces, split into bars and marks.
 // output: A mark's color names one cell of one bar, and a copy of that bar
 //  lands with that cell on the mark, clipped at the grid edge. Every other

@@ -1,6 +1,6 @@
 // 2bee17df
-// draft
-// keywords: lines span rank
+// @draft
+// @keywords: lines span rank
 // input: an open region of params.open, walled off by other colors
 // output: Rows and columns of that region are painted params.fill when
 //  they qualify.

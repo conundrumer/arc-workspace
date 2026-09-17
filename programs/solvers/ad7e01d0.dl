@@ -1,5 +1,5 @@
 // ad7e01d0
-// keywords: tile-arrangement stamp lookup
+// @keywords: tile-arrangement stamp lookup
 // output: The input tiled by itself: the output decomposes into an input-shaped
 //  arrangement of input-shaped tiles. A tile holds a copy of the input where
 //  its tile index is a params.stamp cell, and bg elsewhere.

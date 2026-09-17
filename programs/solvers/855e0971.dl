@@ -1,6 +1,6 @@
 // 855e0971
-// draft
-// keywords: lines markers cast
+// @draft
+// @keywords: lines markers cast
 // input: The grid is a stack of bands: stripes of one color each, stacked
 //  along one axis, which varies per input. Each band holds marker cells.
 // output: A marker casts its color both ways along the stacking axis and

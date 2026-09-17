@@ -1,5 +1,5 @@
 // 17b866bd
-// keywords: decompose markers stamp
+// @keywords: decompose markers stamp
 // input: A lattice of params.line-wide lines cuts the grid into
 //  params.block-square blocks; line crossings are params.node-colored
 //  junctions.

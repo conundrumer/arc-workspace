@@ -1,5 +1,5 @@
 // 9c56f360
-// keywords: lines move
+// @keywords: lines move
 // output: The mover-colored cells in each line pack toward the dir edge against
 //  the nearest barrier, order kept; vacated cells become background.
 

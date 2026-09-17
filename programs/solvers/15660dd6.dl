@@ -1,5 +1,5 @@
 // 15660dd6
-// keywords: decompose markers select mapping
+// @keywords: decompose markers select mapping
 // input: bordered panels sit in a lattice, and a label outside the lattice
 //  names each panel band. Every panel column holds one distinguished panel
 //  (the donor) and copies of one stencil.

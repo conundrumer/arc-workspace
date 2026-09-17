@@ -1,6 +1,6 @@
 // 2dc579da
-// draft
-// keywords: decompose crop select
+// @draft
+// @keywords: decompose crop select
 // input: a cross cuts the grid into equal quadrants
 // output: three quadrants are blank and the fourth holds one off-color cell.
 //  The output is that quadrant.

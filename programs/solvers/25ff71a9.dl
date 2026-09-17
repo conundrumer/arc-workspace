@@ -1,5 +1,5 @@
 // 25ff71a9
-// keywords: walk move
+// @keywords: walk move
 // output: Grid content moves by params.shift_k toward params.shift_dir. The
 //  edge behavior is underdetermined — the departing rows are bg in every pair:
 

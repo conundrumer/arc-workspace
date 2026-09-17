@@ -1,5 +1,5 @@
 // 963e52fc
-// keywords: wallpaper grow
+// @keywords: wallpaper grow
 // output: The input continues periodically: the output is the grid extended to
 //  params.scale times its extent along params.dir, each new cell repeating the
 //  color one period back. The period is the shortest shift along params.dir

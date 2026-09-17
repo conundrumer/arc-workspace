@@ -1,6 +1,6 @@
 // 7b6016b9
-// draft
-// keywords: objects enclose
+// @draft
+// @keywords: objects enclose
 // output: Bg cells are repainted by whether they reach the grid edge through bg
 //  cells: outside cells take params.outside_fill, enclosed cells take
 //  params.fill. Every other cell passes through.

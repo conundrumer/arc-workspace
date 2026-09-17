@@ -1,5 +1,5 @@
 // 19bb5feb
-// keywords: rank
+// @keywords: rank
 // input: A panel sits on the background, carrying solid marker blocks of
 //  other colors.
 // output: The output holds the marker colors in their relative arrangement,

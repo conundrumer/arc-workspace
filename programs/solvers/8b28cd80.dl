@@ -1,6 +1,6 @@
 // 8b28cd80
-// draft
-// keywords: markers scale cast walk
+// @draft
+// @keywords: markers scale cast walk
 // input: One marked cell in a 3x3 input.
 // output: The output spreads the input's cells apart by a gap and draws a
 //  square spiral in the mark's color around the mark's cell. Square rings

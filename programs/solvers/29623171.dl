@@ -1,6 +1,6 @@
 // 29623171
-// draft
-// keywords: decompose count
+// @draft
+// @keywords: decompose count
 // input: A separator lattice cuts the grid into an arrangement of equal
 //  square tiles, which hold marks on bg.
 // output: The tiles with the most marks fill solid in their mark color; the

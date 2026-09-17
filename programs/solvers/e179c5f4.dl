@@ -1,5 +1,5 @@
 // e179c5f4
-// keywords: markers walk
+// @keywords: markers walk
 // output: A lone mark in a corner launches a ball diagonally away from the
 //  corner; it reflects off the walls beside the travel axis and exits at the
 //  far edge. Path cells take the ball color, all others params.fill.

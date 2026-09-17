@@ -1,6 +1,6 @@
 // 2f0c5170
-// draft
-// keywords: objects markers crop stamp lookup
+// @draft
+// @keywords: objects markers crop stamp lookup
 // input: two canvas panels sit on the bg. One holds a glyph of several
 //  marks; the other holds one mark alone.
 // output: the glyph moves so that one of its marks, its handle, covers the

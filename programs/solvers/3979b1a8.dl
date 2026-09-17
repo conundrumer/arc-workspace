@@ -1,5 +1,5 @@
 // 3979b1a8
-// keywords: grow lookup wallpaper cast
+// @keywords: grow lookup wallpaper cast
 // output: The input becomes one corner of a larger output. Outside it, the
 //  diagonal through the growth corner continues periodically, and each diagonal
 //  cell paints two arms one shell out: a step toward the corner, then a ray

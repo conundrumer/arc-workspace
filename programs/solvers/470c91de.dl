@@ -1,5 +1,5 @@
 // 470c91de
-// keywords: objects markers move
+// @keywords: objects markers move
 // input: Each non-background color fills a rectangle with one corner cell
 //  taken away.
 // output: The rectangle slides one step toward that corner and is painted

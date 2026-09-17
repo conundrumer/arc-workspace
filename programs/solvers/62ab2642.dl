@@ -1,6 +1,6 @@
 // 62ab2642
-// draft
-// keywords: objects count rank
+// @draft
+// @keywords: objects count rank
 // input: Ink lines cut the grid into blank regions.
 // output: The region holding the most cells and the region holding the
 //  fewest each take their own color, and the rest of the grid passes

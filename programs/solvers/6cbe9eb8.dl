@@ -1,6 +1,6 @@
 // 6cbe9eb8
-// draft
-// keywords: rank move border
+// @draft
+// @keywords: rank move border
 // input: A striped background holds rectangles, one color each: a block,
 //  whose box it covers, or else an outline, whose cells all lie on its box's
 //  edge lines.

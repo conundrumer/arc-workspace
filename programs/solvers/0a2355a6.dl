@@ -1,5 +1,5 @@
 // 0a2355a6
-// keywords: objects enclose count lookup
+// @keywords: objects enclose count lookup
 // output: Each ink object is repainted with the color its hole count selects.
 //  The count tables are per-case: a task where an object plugs another's cavity
 //  fits both hypotheses at different counts, so the fills can differ.

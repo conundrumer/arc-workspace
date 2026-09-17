@@ -1,6 +1,6 @@
 // 54dc2872
-// draft
-// keywords: objects markers move
+// @draft
+// @keywords: objects markers move
 // input: The grid holds L-shaped pieces and lone marks. Each L carries a tag:
 //  one cell of another color, sitting in its concave corner.
 // output: The tag's color names a mark, and the L moves so that its bend

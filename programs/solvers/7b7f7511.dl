@@ -1,5 +1,5 @@
 // 7b7f7511
-// keywords: decompose crop count
+// @keywords: decompose crop count
 // output: The input is one pattern repeated along an axis; the output is the
 //  pattern once. The repeat axis varies per pair; it is found as the axis whose
 //  equal-size tiles all agree.

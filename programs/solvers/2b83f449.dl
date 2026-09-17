@@ -1,6 +1,6 @@
 // 2b83f449
-// draft
-// keywords: lines walk
+// @draft
+// @keywords: lines walk
 // input: Corridors of params.bg lie between floors of params.wall, with
 //  params.dot at corridor ends and 3-cell bars of params.bar in the floors.
 //  Each bar stands up into a params.post, and its two side cells open as a

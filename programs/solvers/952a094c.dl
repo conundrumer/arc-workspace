@@ -1,6 +1,6 @@
 // 952a094c
-// draft
-// keywords: permutation border move
+// @draft
+// @keywords: permutation border move
 // input: a drawn rectangle, taken as the bounding box of the drawn cells,
 //  with the cells one diagonal step inside and outside each of its corners
 // output: a colored mark inside the rectangle leaves its cell, which goes back

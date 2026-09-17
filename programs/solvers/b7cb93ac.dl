@@ -1,5 +1,5 @@
 // b7cb93ac
-// keywords: objects pack
+// @keywords: objects pack
 // output: Scattered colored pieces assemble into a rectangle. A piece is a
 //  connected same-colored region; it turns but never reflects, and the largest
 //  piece — the anchor — keeps the pose the input shows. A placement stands

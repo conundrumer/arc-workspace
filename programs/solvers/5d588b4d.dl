@@ -1,6 +1,6 @@
 // 5d588b4d
-// draft
-// keywords: markers count span rank
+// @draft
+// @keywords: markers count span rank
 // input: The input holds marks of one color on a bg ground. The marks give
 //  one number.
 // output: The output writes runs of that color: their lengths climb 1, 2,

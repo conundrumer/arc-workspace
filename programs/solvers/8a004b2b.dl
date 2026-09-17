@@ -1,6 +1,6 @@
 // 8a004b2b
-// draft
-// keywords: crop markers objects scale stamp
+// @draft
+// @keywords: crop markers objects scale stamp
 // input: Marker cells bound a frame. Outside it, a small blueprint is drawn.
 //  Inside it stand square blocks, each one blueprint cell drawn at scale.
 // output: The output is the frame with the whole blueprint drawn at that

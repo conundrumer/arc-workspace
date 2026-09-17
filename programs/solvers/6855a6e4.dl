@@ -1,6 +1,6 @@
 // 6855a6e4
-// draft
-// keywords: markers d4
+// @draft
+// @keywords: markers d4
 // output: A params.mover shape sits outside each bracket of params.mirror,
 //  beyond its back bar. Every mover cell casts every way and reflects across
 //  the first mirror cell it meets, so each shape lands inside its bracket,

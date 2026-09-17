@@ -1,6 +1,6 @@
 // 4c7dc4dd
-// draft
-// keywords: objects induce parity span d4
+// @draft
+// @keywords: objects induce parity span d4
 // input: Four square frames sit in a noisy field, each holding a panel of
 //  drawn cells over unfilled ones. One panel is empty: it is the slot the
 //  answer fills.

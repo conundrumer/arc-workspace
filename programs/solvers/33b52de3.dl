@@ -1,6 +1,6 @@
 // 33b52de3
-// draft
-// keywords: decompose scale
+// @draft
+// @keywords: decompose scale
 // input: The grid holds a field of tiles in a uniform arrangement, and a
 //  block of colored cells. That block is the arrangement in miniature: one
 //  cell per tile, in the same frame.

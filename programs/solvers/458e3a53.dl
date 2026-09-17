@@ -1,6 +1,6 @@
 // 458e3a53
-// draft
-// keywords: decompose select rank
+// @draft
+// @keywords: decompose select rank
 // input: Uniform lines cut the grid into tiles. Most tiles hold a pattern; a
 //  few hold one color each.
 // output: One cell per one-color tile, holding its color, at its rank on each

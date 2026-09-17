@@ -1,6 +1,6 @@
 // 759f3fd3
-// draft
-// keywords: cross walk parity
+// @draft
+// @keywords: cross walk parity
 // input: A cross of two full lines, and the concentric square rings that
 //  dilate outward from the crossing.
 // output: The rings alternate bg and a fill color outward from the

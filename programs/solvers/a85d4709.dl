@@ -1,5 +1,5 @@
 // a85d4709
-// keywords: lines markers lookup
+// @keywords: lines markers lookup
 // output: Each slice along params.axis is recolored by its content. Two models
 //  of the recolor exist.
 

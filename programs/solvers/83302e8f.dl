@@ -1,6 +1,6 @@
 // 83302e8f
-// draft
-// keywords: decompose objects enclose classify
+// @draft
+// @keywords: decompose objects enclose classify
 // output: The output paints every bg cell the sealed color or the leaky
 //  color, and the walls stay.
 

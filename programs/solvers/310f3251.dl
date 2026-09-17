@@ -1,5 +1,5 @@
 // 310f3251
-// keywords: tile-arrangement stamp
+// @keywords: tile-arrangement stamp
 // output: Output tiles the input scale×scale. Each ink cell casts a mark one
 //  diagonal step toward params.mark_diag, wrapping at the frame edges (torus);
 //  ink occludes marks.

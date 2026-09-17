@@ -1,5 +1,5 @@
 // ca8de6ea
-// keywords: lookup walk
+// @keywords: lookup walk
 // input: a 5×5 X-pattern, with three rings about the center: outer
 //  corners, inner X cells, center
 // output: the pattern collapses to a dense 3×3 grid

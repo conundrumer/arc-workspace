@@ -1,6 +1,6 @@
 // 64a7c07e
-// draft
-// keywords: objects move
+// @draft
+// @keywords: objects move
 // input: blobs of ink on the background
 // output: Each blob slides one blob-length toward params.move_dir, so it
 //  lands flush beside where it stood, and the cells it leaves go back to

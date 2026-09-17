@@ -1,6 +1,6 @@
 // 342ae2ed
-// draft
-// keywords: objects cast span
+// @draft
+// @keywords: objects cast span
 // input: Solid rectangles sit on a background field, two of each color. The
 //  two rectangles of a color face each other across a diagonal: a corner of
 //  one lies on the diagonal from the other's facing corner.

@@ -1,5 +1,5 @@
 // 0f63c0b9
-// keywords: markers lines cast border
+// @keywords: markers lines cast border
 // input: Marks, each on its own line.
 // output: Every cell belongs to the nearest mark's line and takes that mark's
 //  color; at an equal distance the reach travelling toward params.tie_dir

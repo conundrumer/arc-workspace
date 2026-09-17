@@ -1,5 +1,5 @@
 // a87f7484
-// keywords: decompose count select
+// @keywords: decompose count select
 // output: Input stacks square tiles along one axis; the axis varies per pair.
 //  Each tile is one color's ink mask on bg. Output one tile. The two cases
 //  are data-equivalent on this task.

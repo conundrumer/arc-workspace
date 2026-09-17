@@ -1,5 +1,5 @@
 // 99fa7670
-// keywords: markers cast
+// @keywords: markers cast
 // output: Each ink dot fills its line from itself to the params.dir edge; there
 //  the fill bends with params.sense and runs along the edge through bg,
 //  occluded by the next dot's fill.

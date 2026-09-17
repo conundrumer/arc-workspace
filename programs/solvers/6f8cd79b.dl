@@ -1,5 +1,5 @@
 // 6f8cd79b
-// keywords: border
+// @keywords: border
 // output: Draw a border: cells on any edge become params.border. The all-bg
 //  input leaves the interior underdetermined.
 

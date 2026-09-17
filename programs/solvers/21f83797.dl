@@ -1,6 +1,6 @@
 // 21f83797
-// draft
-// keywords: markers cast span
+// @draft
+// @keywords: markers cast span
 // input: Marks sit on a blank canvas.
 // output: Each mark's row and column are drawn across the whole grid, and
 //  the box the marks span is filled with params.fill inside those lines.

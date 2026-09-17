@@ -1,6 +1,6 @@
 // 1b60fb0c
-// draft
-// keywords: symmetry repair d4
+// @draft
+// @keywords: symmetry repair d4
 // input: A one-color figure sits in the grid.
 // output: The output adds, in a second color, the cells that a placed turn of
 //  the figure reaches and the input leaves empty.

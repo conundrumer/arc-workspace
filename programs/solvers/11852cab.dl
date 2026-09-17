@@ -1,5 +1,5 @@
 // 11852cab
-// keywords: symmetry d4 repair
+// @keywords: symmetry d4 repair
 // input: a partial symmetric figure on a bg field, in its bounding box.
 // output: the figure gains each of its cells' images under the transforms the
 //  case admits.

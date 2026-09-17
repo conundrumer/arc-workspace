@@ -1,6 +1,6 @@
 // 46c35fc7
-// draft
-// keywords: objects permutation d4 walk lookup
+// @draft
+// @keywords: objects permutation d4 walk lookup
 // input: Ink cells ring holes in the params.bg field, eight around one.
 // output: Each ring's colors move around it; the rest of the grid passes
 //  through.

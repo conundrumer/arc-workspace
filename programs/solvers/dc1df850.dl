@@ -1,5 +1,5 @@
 // dc1df850
-// keywords: markers lookup stamp
+// @keywords: markers lookup stamp
 // output: Each marker cell paints a one-cell halo on its eight neighbors; the
 //  rest of the grid passes through. Halos clip at the grid edge and overwrite
 //  what they cover; the data never shows a halo covering other ink.

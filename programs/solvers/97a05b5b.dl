@@ -1,6 +1,6 @@
 // 97a05b5b
-// draft
-// keywords: objects crop enclose pack match d4
+// @draft
+// @keywords: objects crop enclose pack match d4
 // input: A holed board lies among loose pieces on params.bg. The objects are
 //  the 8-connected non-bg components; the holes are the background cells no
 //  walk from the grid edge reaches, and the board is the object that bounds

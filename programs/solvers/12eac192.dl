@@ -1,5 +1,5 @@
 // 12eac192
-// keywords: objects count lookup
+// @keywords: objects count lookup
 // input: ink of several colors sits on a background as same-color
 //  4-components.
 // output: small components are repainted and the rest pass through. two

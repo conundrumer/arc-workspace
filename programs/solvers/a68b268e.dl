@@ -1,5 +1,5 @@
 // a68b268e
-// keywords: overlay decompose lookup rank
+// @keywords: overlay decompose lookup rank
 // input: A divider cross splits the grid into a tile arrangement, each tile
 //  drawn in its own ink.
 // output: The output overlays the tiles: the highest-precedence ink present

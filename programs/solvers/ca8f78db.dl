@@ -1,5 +1,5 @@
 // ca8f78db
-// keywords: wallpaper repair lines
+// @keywords: wallpaper repair lines
 // input: a wallpaper: all-bg separator rows alternating with one repeating
 //  pattern row
 // output: Noise patches corrupt cells of the wallpaper. Each case restores

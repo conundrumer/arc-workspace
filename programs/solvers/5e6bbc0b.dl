@@ -1,6 +1,6 @@
 // 5e6bbc0b
-// draft
-// keywords: markers lines parity move cast count
+// @draft
+// @keywords: markers lines parity move cast count
 // output: The input is a checkerboard of two colors, with one cell replaced by
 //  a mark. That mark sits on a grid edge, and the cells of the class it covers
 //  fall toward that edge. Each line along the fall direction packs its cells of

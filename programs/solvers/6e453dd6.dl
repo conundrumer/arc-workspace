@@ -1,6 +1,6 @@
 // 6e453dd6
-// draft
-// keywords: objects lines move span enclose
+// @draft
+// @keywords: objects lines move span enclose
 // input: a separator line, with shapes on one side
 // output: Each shape slides toward the separator until it touches it. A gap
 //  that reaches the separator across shape cells marks its row: beyond the

@@ -1,6 +1,6 @@
 // 673ef223
-// draft
-// keywords: lines markers cast
+// @draft
+// @keywords: lines markers cast
 // output: Two bars of params.bar color lie along params.axis. A mark beside a
 //  bar flags the bar cell on its line, as that cell's place in the bar, and the
 //  flag carries to the cell at that place in every bar. Each flagged bar cell

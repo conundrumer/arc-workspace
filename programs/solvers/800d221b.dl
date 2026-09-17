@@ -1,6 +1,6 @@
 // 800d221b
-// draft
-// keywords: objects count
+// @draft
+// @keywords: objects count
 // input: A network of wires in one color runs over the background. Each
 //  region of the other colors is framed by wire, and its wire runs to a
 //  solid 3×3 hub of wire. No task data: the background is the commonest

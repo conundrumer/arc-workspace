@@ -1,6 +1,6 @@
 // 85fa5666
-// draft
-// keywords: objects markers permutation d4 lookup cast
+// @draft
+// @keywords: objects markers permutation d4 lookup cast
 // input: each square of params.square carries four marks, one diagonally off
 //  each corner
 // output: each mark moves to another corner of its square and casts a ray

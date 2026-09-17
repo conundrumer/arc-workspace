@@ -1,6 +1,6 @@
 // 272f95fa
-// draft
-// keywords: decompose stamp cast lookup
+// @draft
+// @keywords: decompose stamp cast lookup
 // input: Lines of one color cut the grid into a tile arrangement. Every
 //  pair's arrangement is 3x3.
 // output: The center tile and its four cardinal neighbors each take a color;

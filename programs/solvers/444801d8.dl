@@ -1,6 +1,6 @@
 // 444801d8
-// draft
-// keywords: objects markers border
+// @draft
+// @keywords: objects markers border
 // output: A box of params.wall cells holds a seed cell of another color, and
 //  one side of its wall is broken. The seed's color paints the box's non-wall
 //  cells and the line one step beyond the broken side.

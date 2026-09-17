@@ -1,5 +1,5 @@
 // 0e206a2e
-// keywords: objects markers d4 move
+// @keywords: objects markers d4 move
 // input: The grid's objects (its multi-cell parts) and markers (its loose
 //  single cells).
 // output: Every object carries anchor cells that some set of markers repeats

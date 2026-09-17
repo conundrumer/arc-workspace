@@ -1,5 +1,5 @@
 // 66e6c45b
-// keywords: lookup move
+// @keywords: lookup move
 // input: a 2×2 color block on bg
 // output: The block explodes to the grid corners.
 

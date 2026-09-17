@@ -1,6 +1,6 @@
 // 6d0160f0
-// draft
-// keywords: decompose markers select move
+// @draft
+// @keywords: decompose markers select move
 // input: A separator lattice cuts the grid into a 3×3 arrangement of 3×3
 //  tiles. One cell of one tile holds params.marker.
 // output: That tile moves to the arrangement position that the marker's

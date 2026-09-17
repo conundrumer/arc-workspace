@@ -1,6 +1,6 @@
 // 60a26a3e
-// draft
-// keywords: markers span enclose
+// @draft
+// @keywords: markers span enclose
 // input: a bg field carries hollow diamonds, each sealing one bg cell at its
 //  center.
 // output: two centers in one row or column are joined by a line of

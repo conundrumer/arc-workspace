@@ -1,6 +1,6 @@
 // 1990f7a8
-// draft
-// keywords: objects move rank
+// @draft
+// @keywords: objects move rank
 // input: Four shapes lie scattered over bg.
 // output: The output is a 2×2 arrangement of blocks with a bg gutter, each
 //  shape drawn in the block at the corner it claims, positioned as it sits

@@ -1,6 +1,6 @@
 // 52364a65
-// draft
-// keywords: objects select rank
+// @draft
+// @keywords: objects select rank
 // input: each non-bg color is one object
 // output: Every object loses the params.depth layers nearest the
 //  params.peel_dir edge of its own bounding box. The rest stays put, and the

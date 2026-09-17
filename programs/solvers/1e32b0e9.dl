@@ -1,6 +1,6 @@
 // 1e32b0e9
-// draft
-// keywords: decompose overlay stamp rank select
+// @draft
+// @keywords: decompose overlay stamp rank select
 // input: a separator lattice cuts the grid into an arrangement of equal
 //  square tiles, some holding a shape.
 // output: one footprint stamps into every tile, painting the separator's

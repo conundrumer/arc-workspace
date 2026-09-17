@@ -1,5 +1,5 @@
 // 0dfd9992
-// keywords: wallpaper symmetry repair
+// @keywords: wallpaper symmetry repair
 // input: A wallpaper pattern, damaged by holes of one color.
 // output: The surviving cells identify the pattern's symmetries: the
 //  per-axis translation periods, and the isometries that some surviving pair

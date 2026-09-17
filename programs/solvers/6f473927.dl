@@ -1,6 +1,6 @@
 // 6f473927
-// draft
-// keywords: tile-arrangement d4 mapping
+// @draft
+// @keywords: tile-arrangement d4 mapping
 // input: ink leaning against one edge of the grid, on params.axis: the edge
 //  its bounding box lies nearer to
 // output: The output is a 2-tile arrangement along that axis: the input at

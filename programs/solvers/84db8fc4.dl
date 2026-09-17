@@ -1,6 +1,6 @@
 // 84db8fc4
-// draft
-// keywords: enclose
+// @draft
+// @keywords: enclose
 // output: Every bg cell is repainted by whether it can reach the grid edge
 //  through bg cells: params.outside_fill when it can, params.enclosed_fill
 //  when it cannot. Every other cell passes through.

@@ -1,5 +1,5 @@
 // c7d4e6ad
-// keywords: lines mapping
+// @keywords: lines mapping
 // input: slices run along params.axis
 // output: a cell whose color is in params.targets takes its slice's
 //  replacement color, and every other cell is kept

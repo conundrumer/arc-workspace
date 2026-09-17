@@ -1,6 +1,6 @@
 // 42918530
-// draft
-// keywords: decompose stamp classify
+// @draft
+// @keywords: decompose stamp classify
 // input: Background lines cut the grid into boxes. A box is a solid outline
 //  of one color around an interior, and that interior is blank or carries a
 //  design. The boxes of one color form a group, and at most one box of a

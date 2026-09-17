@@ -1,6 +1,6 @@
 // 25d487eb
-// draft
-// keywords: markers cast
+// @draft
+// @keywords: markers cast
 // input: A solid arrowhead of one color carries a mark cell of a second color
 //  on its base.
 // output: The mark casts a ray of its own color out to the grid edge, so the

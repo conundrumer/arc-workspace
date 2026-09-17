@@ -1,6 +1,6 @@
 // 984d8a3e
-// draft
-// keywords: lines move rank
+// @draft
+// @keywords: lines move rank
 // input: On the axis of the from edge, every line is three runs: the mover
 //  color against that edge, the far color against the opposite edge, and
 //  background between. The far color is ragged; the distances from the far

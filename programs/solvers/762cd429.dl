@@ -1,6 +1,6 @@
 // 762cd429
-// draft
-// keywords: scale walk
+// @draft
+// @keywords: scale walk
 // input: A 2-by-2 seed sits against one edge of the grid.
 // output: Copies of the seed extend away from that edge, each copy twice the
 //  size of the previous one and adjacent to it. The line where the seed's two

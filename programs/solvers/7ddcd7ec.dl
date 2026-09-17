@@ -1,6 +1,6 @@
 // 7ddcd7ec
-// draft
-// keywords: markers cast
+// @draft
+// @keywords: markers cast
 // input: One color inks a 2×2 block and a few lone cells, each one diagonal
 //  step out from a corner of the block.
 // output: Each lone cell extends into a diagonal line, running from the block

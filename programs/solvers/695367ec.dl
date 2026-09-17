@@ -1,5 +1,5 @@
 // 695367ec
-// keywords: wallpaper count
+// @keywords: wallpaper count
 // input: a solid n×n block of color C
 // output: A fixed 15×15 frame ruled into n×n background cells by 1-wide
 //  lines of color C, grown from the top-left corner — a line wherever the

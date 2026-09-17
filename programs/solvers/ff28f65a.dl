@@ -1,5 +1,5 @@
 // ff28f65a
-// keywords: objects lookup count rank stamp
+// @keywords: objects lookup count rank stamp
 // input: the blocks — params.block_shape drawn in params.block_color
 // output: renders how many blocks the input holds
 

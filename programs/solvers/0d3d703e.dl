@@ -1,5 +1,5 @@
 // 0d3d703e
-// keywords: mapping
+// @keywords: mapping
 // output: Color swap via a symmetric mapping relation. The mapping is declared
 //  one-direction per pair and closed under symmetry by a rule.
 

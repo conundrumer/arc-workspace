@@ -1,5 +1,5 @@
 // 17b80ad2
-// keywords: lines markers cast
+// @keywords: lines markers cast
 // output: Lines flagged by a params.mark cell on the mark edge fill: each ink
 //  cell casts its color through bg away from the edge, stopped by the next
 //  ink; unflagged lines pass through.

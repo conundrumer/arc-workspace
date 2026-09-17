@@ -1,5 +1,5 @@
 // 6cf79266
-// keywords: stamp
+// @keywords: stamp
 // input: a noise grid of one ink color on params.bg
 // output: Every all-bg square window of side params.dim repaints to
 //  params.fill.

@@ -1,5 +1,5 @@
 // 20a9e565
-// keywords: objects markers crop induce walk latent-canvas
+// @keywords: objects markers crop induce walk latent-canvas
 // input: The input shows one figure at successive growth stages, packed along
 //  an axis with a fixed gap, each stage nesting the previous when stages align
 //  at their trailing edges. Marker cells frame a window over a slot the scene

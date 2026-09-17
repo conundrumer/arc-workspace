@@ -1,5 +1,5 @@
 // 62c24649
-// representative: 67e8384a
+// @representative: 67e8384a
 
 // how each tile of the 2x2 arrangement is filled from the input
 .type Choice =

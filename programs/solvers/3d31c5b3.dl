@@ -1,5 +1,5 @@
 // 3d31c5b3
-// keywords: overlay decompose lookup rank
+// @keywords: overlay decompose lookup rank
 // output: The grid divides along params.axis into a stack of tiles, each drawn
 //  in its own ink. The output overlays the tiles: the highest-precedence ink
 //  present fills each cell, bg where every tile is empty. Each tile keeps one

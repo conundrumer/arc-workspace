@@ -1,5 +1,5 @@
 // e1baa8a4
-// keywords: decompose
+// @keywords: decompose
 // output: Unequal rectilinear color blocks in a product arrangement (row bands
 //  × col bands). Output is one cell per block: consecutive identical grid lines
 //  collapse, per axis. No task data — the family is fully structural.

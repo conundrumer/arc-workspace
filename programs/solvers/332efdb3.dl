@@ -1,5 +1,5 @@
 // 332efdb3
-// keywords: wallpaper lookup border
+// @keywords: wallpaper lookup border
 // output: the input's frame, filled with the wallpaper: a bg ground with a dot
 //  every other cell on both axes, one cell in from the border
 

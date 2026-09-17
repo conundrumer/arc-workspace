@@ -1,6 +1,6 @@
 // 5961cc34
-// draft
-// keywords: objects markers cast walk
+// @draft
+// @keywords: objects markers cast walk
 // input: Ink objects sit on a field. Each object is a body with port cells
 //  stuck to it, in a port color. Every port casts a beam away from the body;
 //  that beam crosses the field and lands on the next object.

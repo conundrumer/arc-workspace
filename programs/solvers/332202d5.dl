@@ -1,6 +1,6 @@
 // 332202d5
-// draft
-// keywords: lines cast
+// @draft
+// @keywords: lines cast
 // input: The input draws a divider line in `divider_color`, and several
 //  marked lines across it, each in its own color. Every crossing shows
 //  `cross_color`, and the rest of the grid is `bg`.

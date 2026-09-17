@@ -1,6 +1,6 @@
 // 50c07299
-// draft
-// keywords: move count d4
+// @draft
+// @keywords: move count d4
 // input: a single segment of params.ink running along params.dir on a
 //  params.bg field
 // output: The output erases the segment and draws a new one further along

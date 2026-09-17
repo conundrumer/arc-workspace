@@ -1,6 +1,6 @@
 // 9110e3c5
-// draft
-// keywords: classify lookup count objects
+// @draft
+// @keywords: classify lookup count objects
 // input: cells of several colors scattered over params.bg
 // output: the 3x3 glyph that the ink color keys
 

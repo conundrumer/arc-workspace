@@ -1,6 +1,6 @@
 // 9968a131
-// draft
-// keywords: lines move match rank parity
+// @draft
+// @keywords: lines move match rank parity
 // input: lines across the shift axis, the ink on them, and the anchor line —
 //  the inked line nearest the anchor edge
 // output: the anchor line stays, and some of the other lines shift

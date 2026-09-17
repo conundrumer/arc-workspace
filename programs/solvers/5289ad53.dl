@@ -1,6 +1,6 @@
 // 5289ad53
-// draft
-// keywords: objects lines count rank
+// @draft
+// @keywords: objects lines count rank
 // input: marks lie scattered on a background, in the params.color_rank colors
 // output: a params.dim frame holds one cell per mark, in reading order, the
 //  colors in params.color_rank order; params.fill takes the cells left over.

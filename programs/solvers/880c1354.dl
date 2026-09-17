@@ -1,6 +1,6 @@
 // 880c1354
-// draft
-// keywords: perimeter objects permutation
+// @draft
+// @keywords: perimeter objects permutation
 // input: Regions sit around the grid's border, separated by a band of fixed
 //  colors.
 // output: Each region's color moves to the next region in the task's sense

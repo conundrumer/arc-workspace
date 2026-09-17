@@ -1,6 +1,6 @@
 // 99caaf76
-// draft
-// keywords: objects markers move d4
+// @draft
+// @keywords: objects markers move d4
 // concept: each arrow points away from its fletching. It flies that way
 //  until its point strikes the grid edge, and the strike turns its head half
 //  about, so every arm takes the color of the arm opposite it. The fletching

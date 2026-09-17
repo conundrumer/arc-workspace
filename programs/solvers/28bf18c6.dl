@@ -1,5 +1,5 @@
 // 28bf18c6
-// keywords: crop tile-arrangement
+// @keywords: crop tile-arrangement
 // input: One shape lies on bg.
 // output: The output arranges params.copies copies of the shape's
 //  bounding-box crop along params.axis.

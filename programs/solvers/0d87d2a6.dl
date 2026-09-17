@@ -1,5 +1,5 @@
 // 0d87d2a6
-// keywords: markers objects cast span
+// @keywords: markers objects cast span
 // output: Objects of params.body sit in the grid, and params.mark cells sit on
 //  its edges. A marker sends a line across the grid along its edge's axis; the
 //  line and the objects it catches turn params.paint. The rest of the input

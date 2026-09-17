@@ -1,6 +1,6 @@
 // 8e1813be
-// draft
-// keywords: lines markers rank
+// @draft
+// @keywords: lines markers rank
 // output: One-color stripes run across the grid, all along one axis, and a
 //  square sits among them, cutting some of them short. The output stacks the
 //  stripes in their spatial order, each as the segment it would draw across the

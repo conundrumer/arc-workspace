@@ -1,5 +1,5 @@
 // 44f52bb0
-// keywords: symmetry lookup classify
+// @keywords: symmetry lookup classify
 // output: Classify the input by its D4-symmetry, and emit the fixed output
 //  stored for that class.
 

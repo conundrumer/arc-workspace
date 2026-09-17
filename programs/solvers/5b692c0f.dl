@@ -1,6 +1,6 @@
 // 5b692c0f
-// draft
-// keywords: objects symmetry markers repair d4 count
+// @draft
+// @keywords: objects symmetry markers repair d4 count
 // input: Each object carries a line of params.mark cells — its mirror axis —
 //  and one further mark cell off that line.
 // output: One side of the axis holds the object's true half; the other side

@@ -1,6 +1,6 @@
 // 95755ff2
-// draft
-// keywords: enclose cast lines span
+// @draft
+// @keywords: enclose cast lines span
 // input: A wall of one color draws a closed curve on a background field.
 //  A grid-border cell of any other color is a source.
 // output: Each source casts its color into the frame, along the line away

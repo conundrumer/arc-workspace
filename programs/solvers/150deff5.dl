@@ -1,5 +1,5 @@
 // 150deff5
-// keywords: pack
+// @keywords: pack
 // output: The marked region packs exactly one way with two pieces — a 2x2 block
 //  and a 3-cell line — and every cell takes the color of the piece covering it.
 

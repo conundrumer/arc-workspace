@@ -1,6 +1,6 @@
 // 1f642eb9
-// draft
-// keywords: markers cast
+// @draft
+// @keywords: markers cast
 // input: A block of params.block sits in the grid, with single cells of other
 //  colors around it, each in line with it.
 // output: Every such cell sends its color along its line to the block's near

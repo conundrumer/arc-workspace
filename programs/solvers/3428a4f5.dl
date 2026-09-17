@@ -1,5 +1,5 @@
 // 3428a4f5
-// keywords: decompose lookup count
+// @keywords: decompose lookup count
 // input: The grid is a layout of two 6×5 subgrids stacked, with a 1-row gap.
 // output: A decompose model tiles the grid, and a combine model reads each
 //  cell's tiles into the output color.

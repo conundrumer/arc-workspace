@@ -1,6 +1,6 @@
 // 7447852a
-// draft
-// keywords: objects rank wallpaper lookup
+// @draft
+// @keywords: objects rank wallpaper lookup
 // input: A zigzag line runs across a strip and cuts the bg into pockets.
 // output: The pocket at the anchor edge fills with the mark color, and every
 //  third pocket after it.

@@ -1,5 +1,5 @@
 // 3906de3d
-// keywords: lines move
+// @keywords: lines move
 // output: Gravity toward params.grav: each line's params.mover cells pack
 //  against the structure (non-bg, non-mover cells; the edge when the line has
 //  none), order kept. Structure passes through; vacated cells bg.

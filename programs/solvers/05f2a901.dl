@@ -1,5 +1,5 @@
 // 05f2a901
-// keywords: objects move
+// @keywords: objects move
 // output: Two objects lie along one axis: the params.mover one and the
 //  params.anchor one. The mover slides toward the anchor and stops on contact;
 //  the anchor stays.

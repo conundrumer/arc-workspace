@@ -1,5 +1,5 @@
 // 1e81d6f9
-// keywords: objects markers select
+// @keywords: objects markers select
 // input: a marker cell sits at params.target_offset from params.target_corner.
 // output: the marker's color is erased to params.bg outside what is kept.
 

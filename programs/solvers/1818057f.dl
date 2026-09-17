@@ -1,5 +1,5 @@
 // 1818057f
-// keywords: stamp
+// @keywords: stamp
 // output: Wherever the 5-cell plus footprint lands fully on the field color,
 //  those cells turn params.mark; the rest passes through. A plus may sit
 //  inside a larger blob — only footprint cells recolor.

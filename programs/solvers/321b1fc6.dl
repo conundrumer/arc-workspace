@@ -1,6 +1,6 @@
 // 321b1fc6
-// draft
-// keywords: objects stamp
+// @draft
+// @keywords: objects stamp
 // input: A multicolored template and several params.blank blocks sit over bg,
 //  and each block has the template's footprint.
 // output: The template stamps at each block: aligning the two bounding boxes

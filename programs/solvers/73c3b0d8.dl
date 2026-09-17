@@ -1,6 +1,6 @@
 // 73c3b0d8
-// draft
-// keywords: move cast
+// @draft
+// @keywords: move cast
 // output: Each mark steps one cell in a fixed direction, leaving bg behind.
 //  A mark whose next step would enter the wall splashes instead: it casts
 //  rays back from the wall along both diagonals that lead away from it, to

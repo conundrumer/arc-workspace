@@ -1,6 +1,6 @@
 // 67636eac
-// draft
-// keywords: objects color-class crop rank
+// @draft
+// @keywords: objects color-class crop rank
 // output: One-color shapes lie on a blank grid, strung out along one axis. The
 //  output sets their bounding-box crops side by side along that axis in their
 //  order: the blank lines between the boxes are removed.

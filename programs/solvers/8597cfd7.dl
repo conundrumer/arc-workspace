@@ -1,5 +1,5 @@
 // 8597cfd7
-// keywords: decompose count span rank
+// @keywords: decompose count span rank
 // input: A separator line splits the grid into a before and an after panel;
 //  each panel holds one bar per ink color.
 // output: The output is a block of the color whose bar grew more across the

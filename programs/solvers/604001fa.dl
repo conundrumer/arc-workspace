@@ -1,6 +1,6 @@
 // 604001fa
-// draft
-// keywords: objects markers lookup
+// @draft
+// @keywords: objects markers lookup
 // input: an object is an 8-connected component of non-background cells: a
 //  shape with a mark attached. A mark is three cells in a 2x2 box, so one
 //  corner of that box stays empty, and that corner names a color.

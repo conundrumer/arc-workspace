@@ -1,6 +1,6 @@
 // 4c3d4a41
-// draft
-// keywords: lines move
+// @draft
+// @keywords: lines move
 // input: A container stands beside a staging area. That area holds a comb: a
 //  bar with teeth of varying height.
 // output: That comb moves into the container's interior, and each line of the

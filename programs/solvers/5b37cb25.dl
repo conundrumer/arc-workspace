@@ -1,6 +1,6 @@
 // 5b37cb25
-// draft
-// keywords: markers border
+// @draft
+// @keywords: markers border
 // input: A frame of four colored edges surrounds a canvas. Blobs of one color
 //  sit on the canvas background, and bites are taken out of them: a bite is a
 //  five-cell background diamond that the blob closes on every side but one.

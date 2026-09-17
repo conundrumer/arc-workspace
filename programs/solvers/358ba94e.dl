@@ -1,6 +1,6 @@
 // 358ba94e
-// draft
-// keywords: objects crop count enclose
+// @draft
+// @keywords: objects crop count enclose
 // input: Several solid squares sit apart on a bg field, each with a few cells
 //  punched out of its inside.
 // output: Each square carries a count; one square's count is matched by no

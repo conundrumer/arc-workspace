@@ -1,5 +1,5 @@
 // d13f3404
-// keywords: grow cast
+// @keywords: grow cast
 // output: A 3×3 pattern sits on a larger square canvas. The pattern seats
 //  flush at the corner opposite params.sweep. Every seated ink cell casts a
 //  diagonal ray toward params.sweep, sliding the pattern one diagonal step

@@ -1,6 +1,6 @@
 // 4be741c5
-// draft
-// keywords: lines rank count
+// @draft
+// @keywords: lines rank count
 // input: The grid is a stack of ragged color bands. Each band runs across
 //  the grid on one axis, so on that axis every color reaches both edges;
 //  along the other axis the bands follow one another.

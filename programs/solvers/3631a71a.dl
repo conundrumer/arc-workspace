@@ -1,6 +1,6 @@
 // 3631a71a
-// draft
-// representative: af22c60d
+// @draft
+// @representative: af22c60d
 
 .decl out(p: Position, col: Color)
 

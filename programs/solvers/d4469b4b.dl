@@ -1,5 +1,5 @@
 // d4469b4b
-// keywords: lookup classify cross
+// @keywords: lookup classify cross
 // output: Noise in a single ink color keys a fixed 3x3 glyph. The pattern
 //  carries nothing; only its color selects.
 

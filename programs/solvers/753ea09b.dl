@@ -1,6 +1,6 @@
 // 753ea09b
-// draft
-// keywords: objects border enclose
+// @draft
+// @keywords: objects border enclose
 // input: Two rails run edge to edge across the grid, with rungs of a second
 //  ink color between them. The bg is the commonest color and the rail color
 //  the commonest ink. A rail is an 8-connected rail-colored component that

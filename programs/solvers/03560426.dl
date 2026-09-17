@@ -1,5 +1,5 @@
 // 03560426
-// keywords: objects walk
+// @keywords: objects walk
 // input: separate solid rectangles
 // output: The output chains them from the grid corner opposite
 //  params.corner, ordered by distance from params.order: each block's near

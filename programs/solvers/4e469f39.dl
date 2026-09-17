@@ -1,6 +1,6 @@
 // 4e469f39
-// draft
-// keywords: objects border cast
+// @draft
+// @keywords: objects border cast
 // input: Each object is a rectangular outline with a gap: one cell missing
 //  from a wall.
 // output: The outline's inside fills with params.fill, and that fill escapes

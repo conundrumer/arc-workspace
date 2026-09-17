@@ -1,5 +1,5 @@
 // 05269061
-// keywords: wallpaper count
+// @keywords: wallpaper count
 // output: Wallpaper of diagonal stripes: color is constant along
 //  params.stripe_axis and repeats every `period` stripes. The input shows a
 //  patch; the output is the full grid. Colors propagate from input cells

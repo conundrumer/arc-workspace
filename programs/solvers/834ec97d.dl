@@ -1,5 +1,5 @@
 // 834ec97d
-// keywords: markers cast parity
+// @keywords: markers cast parity
 // input: a single marker cell on bg
 // output: The marker steps one cell toward params.dir; alternating columns
 //  anchored at the marker's column fill with params.fill from the marker's

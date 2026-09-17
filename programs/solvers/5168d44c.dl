@@ -1,6 +1,6 @@
 // 5168d44c
-// draft
-// keywords: markers move walk lookup
+// @draft
+// @keywords: markers move walk lookup
 // input: a ring of params.ring cells with one hole, surrounding a dot of a
 //  line of evenly spaced params.dot cells
 // output: The ring moves along that line toward params.corner; every dot

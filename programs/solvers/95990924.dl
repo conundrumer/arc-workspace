@@ -1,6 +1,6 @@
 // 95990924
-// draft
-// keywords: objects lookup stamp
+// @draft
+// @keywords: objects lookup stamp
 // input: solid squares of one ink color, set apart on a background.
 // output: the input, with four colored cells added around each square, one
 //  diagonally out from each of its corners. The color says which corner. A

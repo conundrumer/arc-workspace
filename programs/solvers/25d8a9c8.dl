@@ -1,5 +1,5 @@
 // 25d8a9c8
-// keywords: lines lookup count classify
+// @keywords: lines lookup count classify
 // input: The grid decomposes into slices along params.axis.
 // output: Each slice's cells are recolored uniformly: params.uniform_color if
 //  the slice has a single color, else params.non_uniform_color. Whole-slice

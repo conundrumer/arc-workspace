@@ -1,6 +1,6 @@
 // 5adee1b2
-// draft
-// keywords: objects markers enclose border mapping
+// @draft
+// @keywords: objects markers enclose border mapping
 // input: A legend at one edge lists, per shape color, the border color that
 //  goes with it.
 // output: Each shape of a listed color takes a border: its bounding box,

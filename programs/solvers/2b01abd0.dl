@@ -1,6 +1,6 @@
 // 2b01abd0
-// draft
-// keywords: lines d4 mapping
+// @draft
+// @keywords: lines d4 mapping
 // input: A line of params.line cuts the grid, and a two-color figure sits
 //  on one side.
 // output: The figure stays in place with its two colors exchanged, and its

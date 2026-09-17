@@ -1,6 +1,6 @@
 // 5751f35e
-// draft
-// keywords: symmetry repair border
+// @draft
+// @keywords: symmetry repair border
 // input: a nest of concentric rings, each ring drawn in one color, with
 //  damage that has erased cells to the background
 // output: The output redraws the nest whole.

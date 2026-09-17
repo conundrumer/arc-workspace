@@ -1,5 +1,5 @@
 // 14b8e18c
-// keywords: objects stamp
+// @keywords: objects stamp
 // output: Square objects get corner marks: at each marked corner of an
 //  object's bounding box, the two cells one step outside the box along its
 //  edges take the mark color. The rest of the grid passes through. A lone

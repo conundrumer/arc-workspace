@@ -1,5 +1,5 @@
 // 57edb29d
-// keywords: objects crop scale induce
+// @keywords: objects crop scale induce
 // input: Solid colored rectangles sit on the background. Each carries the same
 //  design of marks, inset from its own edges, and the rectangles differ in
 //  size. One rectangle carries no mark.

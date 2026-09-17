@@ -1,5 +1,5 @@
 // 135a2760
-// keywords: decompose wallpaper repair
+// @keywords: decompose wallpaper repair
 // input: uniform lines cut the grid into framed panels, and each panel's
 //  interior is a wallpaper damaged in a few cells.
 // output: each axis takes the interior's shortest period; each interior cell

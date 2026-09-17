@@ -1,6 +1,6 @@
 // 94be5b80
-// draft
-// keywords: markers rank stamp
+// @draft
+// @keywords: markers rank stamp
 // input: A legend — a run of cells that changes color from neighbor to
 //  neighbor along one axis — and copies of one shape, each in a single color,
 //  stacked edge to edge along the perpendicular axis.

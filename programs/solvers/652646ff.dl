@@ -1,6 +1,6 @@
 // 652646ff
-// draft
-// keywords: lookup occlude rank
+// @draft
+// @keywords: lookup occlude rank
 // input: figures of one shape, each in its own color, drawn over one
 //  another on a plain ground, with stray cells of further colors littering
 //  the grid

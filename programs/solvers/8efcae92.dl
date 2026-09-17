@@ -1,6 +1,6 @@
 // 8efcae92
-// draft
-// keywords: objects crop count select
+// @draft
+// @keywords: objects crop count select
 // input: Solid ink rectangles sit on bg, dotted with mark cells.
 // output: The rectangle with the most marks is kept, cropped to its bounding
 //  box.

@@ -1,6 +1,6 @@
 // 469497ad
-// draft
-// keywords: scale lines count cast
+// @draft
+// @keywords: scale lines count cast
 // input: A block of ink sits in a bg field, beside a legend: the grid
 //  lines that hold no bg.
 // output: The output is the input scaled by the count of distinct non-bg

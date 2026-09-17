@@ -1,6 +1,6 @@
 // 9356391f
-// draft
-// keywords: decompose markers rank
+// @draft
+// @keywords: decompose markers rank
 // input: A divider line cuts the grid into a legend panel of one line and a
 //  canvas panel holding one marker cell.
 // output: The legend entry K cells from the params.read_dir edge gives the

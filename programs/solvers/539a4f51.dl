@@ -1,6 +1,6 @@
 // 539a4f51
-// draft
-// keywords: grow wallpaper
+// @draft
+// @keywords: grow wallpaper
 // input: both grids are built from nested L-shells at params.corner: every
 //  cell at a given Chebyshev distance from that corner carries one color.
 //  The input shows the leading shells of a periodic sequence and leaves the

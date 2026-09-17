@@ -1,6 +1,6 @@
 // 3ad05f52
-// draft
-// keywords: decompose walk span
+// @draft
+// @keywords: decompose walk span
 // input: Walls cut the grid into rooms, and a doorway is a gap in a wall.
 // output: Paint — the one color that is neither params.bg nor params.wall —
 //  sits in one room and spreads through the doorways into every room

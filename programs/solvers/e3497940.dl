@@ -1,5 +1,5 @@
 // e3497940
-// keywords: decompose d4
+// @keywords: decompose d4
 // output: Layout: two 10×4 subgrids side by side, separated by a column. The
 //  far subgrid folds across the separator onto the base subgrid; ink keeps its
 //  color.

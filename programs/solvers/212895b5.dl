@@ -1,5 +1,5 @@
 // 212895b5
-// keywords: markers cast walk
+// @keywords: markers cast walk
 // input: A solid block of one color sits on a field of scattered lone cells.
 // output: The block emits eight arms, one per compass direction. A corner arm
 //  casts straight out along its diagonal. A side arm is a turtle: it starts

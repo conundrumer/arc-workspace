@@ -1,5 +1,5 @@
 // 15696249
-// keywords: tile-arrangement lines markers stamp
+// @keywords: tile-arrangement lines markers stamp
 // output: an input-shaped arrangement of input-sized tiles: tiles at gate
 //  cells hold copies of the input; the rest are bg.
 

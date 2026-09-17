@@ -1,6 +1,6 @@
 // 6ca952ad
-// draft
-// keywords: objects move count
+// @draft
+// @keywords: objects move count
 // output: Gravity on the heavy objects: an object of at least params.heavy
 //  cells translates flush against the params.grav edge; a lighter object stays.
 //  Elsewhere background.

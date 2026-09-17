@@ -1,6 +1,6 @@
 // 846bdb03
-// draft
-// keywords: crop markers d4
+// @draft
+// @keywords: crop markers d4
 // input: Four corner marks and two bars between them frame an empty box; a
 //  two-color shape floats elsewhere.
 // output: The output is the box, with the shape filling its interior,

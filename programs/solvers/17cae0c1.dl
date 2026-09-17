@@ -1,5 +1,5 @@
 // 17cae0c1
-// keywords: decompose lookup
+// @keywords: decompose lookup
 // input: A strip of panels, each carrying a glyph in its non-bg cells.
 // output: Each panel is painted with the color its glyph names in a stored
 //  glyph → color table.

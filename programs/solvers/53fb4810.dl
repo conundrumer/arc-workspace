@@ -1,6 +1,6 @@
 // 53fb4810
-// draft
-// keywords: objects markers wallpaper cast
+// @draft
+// @keywords: objects markers wallpaper cast
 // input: each band of cells that are neither background nor anchor color
 //  rests against an anchor
 // output: The band's pattern continues away from that anchor to the frame

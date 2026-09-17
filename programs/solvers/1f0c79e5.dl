@@ -1,6 +1,6 @@
 // 1f0c79e5
-// draft
-// keywords: markers cast
+// @draft
+// @keywords: markers cast
 // input: A block of colored cells sits on a blank grid, with cells of the
 //  mark color inside it.
 // output: Each mark cell names a diagonal heading by where it sits in the

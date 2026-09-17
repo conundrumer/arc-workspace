@@ -1,5 +1,5 @@
 // 995c5fa3
-// keywords: decompose lookup classify
+// @keywords: decompose lookup classify
 // output: Layout: gap-separated tiles along params.tile_axis; each tile shows a
 //  catalog pattern. Output is a tile_count-sided square: the row at each tile's
 //  index (params.tile_dir → params.row_dir) fills with the tile's class color.

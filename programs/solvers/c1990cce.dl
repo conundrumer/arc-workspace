@@ -1,5 +1,5 @@
 // c1990cce
-// keywords: grow markers cast wallpaper
+// @keywords: grow markers cast wallpaper
 // input: a 1×W row, bg except one ink cell
 // output: the output grows the row into a W×W square: the ink casts two
 //  diagonal rays toward the far edge (a V), and echo diagonals of

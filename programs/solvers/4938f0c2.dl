@@ -1,6 +1,6 @@
 // 4938f0c2
-// draft
-// keywords: markers objects d4 move
+// @draft
+// @keywords: markers objects d4 move
 // input: a solid block of the marker color sits diagonally off a corner of an
 //  ink shape
 // output: the input, with the images of that shape under params.sym added,

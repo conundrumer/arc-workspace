@@ -1,6 +1,6 @@
 // 7b5033c1
-// draft
-// keywords: walk rank
+// @draft
+// @keywords: walk rank
 // input: a simple 4-connected path of non-bg cells, in colored segments
 // output: The path straightens into a line along params.line_axis: the k-th
 //  path cell from the end nearer an edge lands k from that edge. Either end

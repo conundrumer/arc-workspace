@@ -1,6 +1,6 @@
 // 7666fa5d
-// draft
-// keywords: markers span
+// @draft
+// @keywords: markers span
 // input: Non-bg marks form 8-connected diagonal lines.
 // output: Between two lines, along the fill axis across them, bg cells take
 //  the fill color; the marks stay. A line steps past bg cells, and those

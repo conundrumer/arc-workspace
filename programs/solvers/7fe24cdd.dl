@@ -1,5 +1,5 @@
 // 7fe24cdd
-// keywords: tile-arrangement lookup d4
+// @keywords: tile-arrangement lookup d4
 // output: 2×2 tile arrangement of input rotations, spun clockwise around the
 //  arrangement.
 

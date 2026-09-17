@@ -1,6 +1,6 @@
 // 9473c6fb
-// draft
-// keywords: lines walk span rank
+// @draft
+// @keywords: lines walk span rank
 // input: every non-bg cell is a mark. params.order_corner offers two
 //  directions, one per axis, and the marks are ranked by distance from each.
 // output: each mark takes the color that params.cycle_succ reaches from

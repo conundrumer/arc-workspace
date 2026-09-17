@@ -1,6 +1,6 @@
 // 9772c176
-// draft
-// keywords: objects cast
+// @draft
+// @keywords: objects cast
 // input: the non-background cells form objects.
 // output: the input, with the wedge cells recolored. A side's base cells cast
 //  the two diagonals that lead away from that side. A cell outside every object

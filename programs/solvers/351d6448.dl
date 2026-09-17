@@ -1,6 +1,6 @@
 // 351d6448
-// draft
-// keywords: decompose induce move
+// @draft
+// @keywords: decompose induce move
 // input: Panels stacked along one axis hold the successive frames of an
 //  animation.
 // output: Each frame differs from the one before by a fixed set of

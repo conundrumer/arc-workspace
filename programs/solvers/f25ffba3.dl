@@ -1,5 +1,5 @@
 // f25ffba3
-// keywords: tile-arrangement d4
+// @keywords: tile-arrangement d4
 // input: a data slab anchored at one edge, the rest empty
 // output: the data slab plus its images under a D4 set, filling the grid
 

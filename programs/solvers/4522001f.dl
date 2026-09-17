@@ -1,5 +1,5 @@
 // 4522001f
-// keywords: markers stamp lookup d4
+// @keywords: markers stamp lookup d4
 // input: a 2x2 block sits against a grid corner, its cell at the grid center
 //  colored params.mark
 // output: A D4 rotation, found from the input, carries a stored picture onto

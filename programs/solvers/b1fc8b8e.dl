@@ -1,5 +1,5 @@
 // b1fc8b8e
-// keywords: classify lookup count pack
+// @keywords: classify lookup count pack
 // output: Classify the ink: made of whole copies of the unit or not. Emit a
 //  fixed 5x5 pattern per class — four copies of the class's 2x2 tile behind a
 //  bg cross.

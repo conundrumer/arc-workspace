@@ -1,6 +1,6 @@
 // 5a5a2103
-// draft
-// keywords: decompose markers stamp lookup count
+// @draft
+// @keywords: decompose markers stamp lookup count
 // input: A separator lattice cuts the grid into equal square tiles.
 // output: Some of those tiles are a legend: a legend tile holds a solid
 //  square, and gives its color to every tile on one line through it. One

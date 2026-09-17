@@ -1,6 +1,6 @@
 // 6bcdb01e
-// draft
-// keywords: markers walk
+// @draft
+// @keywords: markers walk
 // input: wall cells scattered over a bg field, with a two-cell seed stub
 //  among them
 // output: A walker leaves each end of the stub heading away from the other

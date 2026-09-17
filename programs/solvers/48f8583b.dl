@@ -1,6 +1,6 @@
 // 48f8583b
-// draft
-// keywords: tile-arrangement stamp count
+// @draft
+// @keywords: tile-arrangement stamp count
 // output: The output is an input-shaped arrangement of input-shaped tiles. A
 //  tile whose index cell carries the input's rarest color holds a copy of the
 //  input; every other tile is bg.

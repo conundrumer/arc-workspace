@@ -1,5 +1,5 @@
 // 017c7c7b
-// keywords: wallpaper grow lines
+// @keywords: wallpaper grow lines
 // output: The input continues periodically: the output is the grid
 //  extended to params.extent along params.dir with the ink recolored,
 //  each new cell repeating the color one period back. The period is the

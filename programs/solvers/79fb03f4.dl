@@ -1,6 +1,6 @@
 // 79fb03f4
-// draft
-// keywords: markers cast walk
+// @draft
+// @keywords: markers cast walk
 // input: A params.flow cell sits in the grid; a marker is any other non-bg
 //  cell.
 // output: The flow cell sends a stream along its row in params.flow_dir.

@@ -1,6 +1,6 @@
 // 22233c11
-// draft
-// keywords: decompose move
+// @draft
+// @keywords: decompose move
 // output: Two green squares touch corner to corner, so they fill one diagonal
 //  of the 2x2 quadrant split of the box they share. Each of the other two
 //  quadrants moves one quadrant-length outward along its own corner diagonal

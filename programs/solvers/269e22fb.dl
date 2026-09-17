@@ -1,6 +1,6 @@
 // 269e22fb
-// draft
-// keywords: grow lookup d4
+// @draft
+// @keywords: grow lookup d4
 // input: One chart of ink and blank cells underlies every pair. The input is
 //  a window cut from the chart in some pose, its ink and blank rendered in
 //  the pair's two colors.

@@ -1,6 +1,6 @@
 // 7ee1c6ea
-// draft
-// keywords: border enclose mapping
+// @draft
+// @keywords: border enclose mapping
 // input: A rectangle outline in params.frame sits in a field of params.bg and
 //  two ink colors.
 // output: Inside the outline, the two ink colors trade places; the outline

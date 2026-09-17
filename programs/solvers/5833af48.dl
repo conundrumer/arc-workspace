@@ -1,6 +1,6 @@
 // 5833af48
-// draft
-// keywords: objects scale tile-arrangement stamp
+// @draft
+// @keywords: objects scale tile-arrangement stamp
 // input: Three solid blocks sit on bg. One block is monochrome: it is the
 //  canvas, and its one color is the fill. One block holds params.blank: it is
 //  the stamp, whose params.ink cells are the footprint. The third is the

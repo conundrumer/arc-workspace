@@ -1,6 +1,6 @@
 // 5034a0b5
-// draft
-// keywords: markers objects move
+// @draft
+// @keywords: markers objects move
 // input: A one-cell frame borders the grid. Each side of that frame carries
 //  one color, and the four corners carry the interior's background color.
 //  Marks sit inside that frame.

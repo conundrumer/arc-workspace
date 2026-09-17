@@ -1,5 +1,5 @@
 // a79310a0
-// keywords: move
+// @keywords: move
 // output: The ink shape translates params.shift_k toward params.shift_dir and
 //  recolors to params.mark; the rest of the grid is params.bg.
 

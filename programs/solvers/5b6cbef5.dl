@@ -1,5 +1,5 @@
 // 5b6cbef5
-// keywords: tile-arrangement stamp
+// @keywords: tile-arrangement stamp
 // output: Fractal self-tensor: output = input ⊗ input. The grid is an N×N
 //  arrangement of N×N tiles (N = input extent); the input plays both roles —
 //  P_tile gates each tile, P_intile addresses within it. A non-bg gate fills

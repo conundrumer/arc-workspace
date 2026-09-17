@@ -1,5 +1,5 @@
 // 00dbd492
-// keywords: objects enclose lookup count
+// @keywords: objects enclose lookup count
 // input: hollow squares on params.bg, each holding a lone cell inside
 // output: Each square selects fill data from a table; the output writes
 //  it over the square's empty region or its whole window.

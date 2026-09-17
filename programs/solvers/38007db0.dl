@@ -1,6 +1,6 @@
 // 38007db0
-// draft
-// keywords: decompose select
+// @draft
+// @keywords: decompose select
 // input: One-color lines cut the grid into a rectangular arrangement of
 //  tiles. A band is the tiles at one place along params.stack_axis.
 // output: A tile stands out in its band. The output shows that tile with

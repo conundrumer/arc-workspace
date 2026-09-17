@@ -1,6 +1,6 @@
 // 29700607
-// draft
-// keywords: markers span cast
+// @draft
+// @keywords: markers span cast
 // input: The non-bg cells on the header edge are headers; the rest of the
 //  ink is markers.
 // output: Each header and the marker of its color are joined by a wire with

@@ -1,6 +1,6 @@
 // 48d8fb45
-// draft
-// keywords: objects markers crop select
+// @draft
+// @keywords: objects markers crop select
 // input: several one-color shapes sit on a bg grid, and a mark cell sits just
 //  above one of them.
 // output: the output is a 3x3 crop holding the marked shape.

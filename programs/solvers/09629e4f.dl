@@ -1,5 +1,5 @@
 // 09629e4f
-// keywords: decompose select scale rank
+// @keywords: decompose select scale rank
 // output: A separator lattice cuts the grid into a 3×3 arrangement of 3×3
 //  tiles. One tile is a template: its cell at position q gives the uniform
 //  fill color for the tile at arrangement position q — the template scaled

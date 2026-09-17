@@ -1,5 +1,5 @@
 // e633a9e5
-// keywords: scale lookup border
+// @keywords: scale lookup border
 // output: Nonuniform scale-up: each input cell becomes a tile, and the tiles
 //  keep the input's arrangement.
 

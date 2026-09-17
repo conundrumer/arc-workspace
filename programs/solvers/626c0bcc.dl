@@ -1,6 +1,6 @@
 // 626c0bcc
-// draft
-// keywords: pack lookup
+// @draft
+// @keywords: pack lookup
 // input: The input holds a region of ink.
 // output: That region admits one partition into the stored pieces, and each
 //  piece paints its cells the color it is stored under.

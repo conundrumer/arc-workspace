@@ -1,6 +1,6 @@
 // 60d73be6
-// draft
-// keywords: lines d4
+// @draft
+// @keywords: lines d4
 // input: a cross of two full lines of one color stands on a plain field, and
 //  marks lie in one of the four quarters the cross cuts.
 // output: each mark is reflected in both lines of the cross, so it reaches

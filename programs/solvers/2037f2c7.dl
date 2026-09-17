@@ -1,6 +1,6 @@
 // 2037f2c7
-// draft
-// keywords: objects crop count
+// @draft
+// @keywords: objects crop count
 // input: Two copies of one shape sit apart on the background, and one copy
 //  has cells erased to the background. Each copy is read in its own bounding
 //  box, so the two footprints share a frame.

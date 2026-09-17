@@ -1,5 +1,5 @@
 // bc1d5164
-// keywords: overlay
+// @keywords: overlay
 // input: Four 3×3 blocks seated at the input's corners. The blocks share the
 //  input's middle row and skip its middle column; both fall out of seating
 //  3×3 blocks on a 5×7 grid.

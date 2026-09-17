@@ -1,6 +1,6 @@
 // 7bb29440
-// draft
-// keywords: objects crop count rank select
+// @draft
+// @keywords: objects crop count rank select
 // input: solid blocks of params.body that sit apart on params.bg, each with a
 //  few cells of other colors
 // output: The block with the fewest such cells is kept, cropped to its

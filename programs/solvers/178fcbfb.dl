@@ -1,6 +1,6 @@
 // 178fcbfb
-// draft
-// keywords: markers cast
+// @draft
+// @keywords: markers cast
 // output: Isolated dots on a blank grid. Each dot paints the whole line through
 //  it, in its own color; the color says which line family — row or column.
 //  Where two lines cross, one family shows over the other.

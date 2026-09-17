@@ -1,6 +1,6 @@
 // 689c358e
-// draft
-// keywords: objects markers cast
+// @draft
+// @keywords: objects markers cast
 // input: A border ring encloses a bg canvas holding crosses, one per color.
 //  Each cross has a long bar and a short bar, and the short bar crosses the
 //  long one off its middle.

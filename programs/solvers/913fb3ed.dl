@@ -1,6 +1,6 @@
 // 913fb3ed
-// draft
-// keywords: markers lookup stamp
+// @draft
+// @keywords: markers lookup stamp
 // input: lone dots on an empty grid
 // output: each dot grows a ring of eight cells in a color paired with its
 //  own. The rest of the input is kept.

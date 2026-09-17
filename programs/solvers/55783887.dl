@@ -1,6 +1,6 @@
 // 55783887
-// draft
-// keywords: markers span cast
+// @draft
+// @keywords: markers span cast
 // input: Two line marks sharing a diagonal delimit a span.
 // output: The span fills with the line color. A cast mark on a span emits
 //  the whole perpendicular diagonal line through itself, in the cast color.

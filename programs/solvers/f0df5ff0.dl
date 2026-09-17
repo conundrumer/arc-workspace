@@ -1,5 +1,5 @@
 // f0df5ff0
-// keywords: markers stamp
+// @keywords: markers stamp
 // output: Noise grid; every params.ink cell paints its surrounding bg cells
 //  params.ink. Painting does not cascade from painted cells.
 

@@ -1,6 +1,6 @@
 // 6d58a25d
-// draft
-// keywords: objects markers cast
+// @draft
+// @keywords: objects markers cast
 // input: a shape of one color among scattered markers of another color
 // output: Where a marker lies past the shape toward params.dir in the
 //  shape's line, the marker's color fills that line from the shape to the

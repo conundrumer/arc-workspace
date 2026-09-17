@@ -1,5 +1,5 @@
 // 8e5a5113
-// keywords: tile-arrangement decompose lookup d4 walk
+// @keywords: tile-arrangement decompose lookup d4 walk
 // output: Three full-height tiles split by separator columns; the pattern
 //  tile's successive quarter-turn images fill the empty tiles. Flip parses are
 //  defeated (train 1: the second tile matches no reflection of its pattern).

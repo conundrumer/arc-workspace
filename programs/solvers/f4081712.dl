@@ -1,5 +1,5 @@
 // f4081712
-// representative: 67b4a34d
+// @representative: 67b4a34d
 
 // which D4 elements the grid is symmetric under
 .type Choice =

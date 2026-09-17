@@ -1,6 +1,6 @@
 // 88207623
-// draft
-// keywords: lines objects markers d4
+// @draft
+// @keywords: lines objects markers d4
 // input: Line segments of params.line stand on params.bg. A shape of
 //  params.shape leans on each line, and a lone dot of another color lies
 //  beside it.

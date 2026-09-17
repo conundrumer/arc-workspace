@@ -1,5 +1,5 @@
 // 22a4bbc2
-// keywords: lines objects rank
+// @keywords: lines objects rank
 // output: A stack of one-color bars fills the grid; every third bar down the
 //  stack, the first included, recolors to the mark color.
 

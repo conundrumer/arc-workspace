@@ -1,5 +1,5 @@
 // 05a7bcf2
-// keywords: lines cast move
+// @keywords: lines cast move
 // input: two full lines cross the grid: a bare wall line of params.wall, and
 //  a line of params.push carrying a ragged profile on its wall-facing side.
 //  Shapes of params.shape sit on the wall's other side.

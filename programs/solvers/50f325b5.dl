@@ -1,6 +1,6 @@
 // 50f325b5
-// draft
-// keywords: markers stamp d4 rank
+// @draft
+// @keywords: markers stamp d4 rank
 // input: a shape drawn in the mark color
 // output: Every D4 image of that shape that lands entirely on field-color
 //  cells takes the mark color; every other cell keeps its input color.

@@ -1,5 +1,5 @@
 // bb43febb
-// keywords: objects border
+// @keywords: objects border
 // output: Solid params.ink rectangles; each keeps its outline and repaints its
 //  interior to params.fill.
 

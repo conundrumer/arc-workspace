@@ -1,6 +1,6 @@
 // 25c199f5
-// draft
-// keywords: decompose move
+// @draft
+// @keywords: decompose move
 // input: Dividers cut the input into panels, each holding one shape on
 //  background.
 // output: The shapes pile up line by line in one panel-sized frame,

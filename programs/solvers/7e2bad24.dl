@@ -1,6 +1,6 @@
 // 7e2bad24
-// draft
-// keywords: markers walk
+// @draft
+// @keywords: markers walk
 // input: A diagonal segment of ray color seeds a beam that extends from both
 //  of its ends.
 // output: The beam paints the cells it crosses: empty cells and transparent

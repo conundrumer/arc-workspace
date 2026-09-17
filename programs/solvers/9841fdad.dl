@@ -1,6 +1,6 @@
 // 9841fdad
-// draft
-// keywords: decompose objects scale rank
+// @draft
+// @keywords: decompose objects scale rank
 // input: uniform lines cut the grid into panels of unequal size, and each
 //  panel holds solid rectangles on a ground color of its own
 // output: every rectangle is drawn again in the other panel; on each axis it

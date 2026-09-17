@@ -1,5 +1,5 @@
 // cf98881b
-// keywords: overlay decompose lookup rank
+// @keywords: overlay decompose lookup rank
 // input: 1×3 horizontally-side-by-side 4×4 ink panes with 1-col dividers
 // output: The per-cell overlay: the highest-priority inked pane wins; no
 //  ink is bg. The divider color is never read.

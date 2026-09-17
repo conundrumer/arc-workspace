@@ -1,6 +1,6 @@
 // 8dab14c2
-// draft
-// keywords: markers cast
+// @draft
+// @keywords: markers cast
 // output: A shape of one color sits on a background, and its edges carry
 //  anomalies. A dent is a one-cell gap in a straight edge. A bump is a shape
 //  cell that touches the dent-filled shape on one side only, its root. The

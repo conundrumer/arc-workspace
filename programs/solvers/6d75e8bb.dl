@@ -1,5 +1,5 @@
 // 6d75e8bb
-// keywords: objects
+// @keywords: objects
 // input: a shape over bg
 // output: bg cells inside its bounding box recolor params.fill.
 

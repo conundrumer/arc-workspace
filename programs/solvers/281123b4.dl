@@ -1,6 +1,6 @@
 // 281123b4
-// draft
-// keywords: overlay decompose lookup rank
+// @draft
+// @keywords: overlay decompose lookup rank
 // input: Separator columns split the grid into panels, each drawn in its own
 //  ink.
 // output: The output overlays the panels on one frame, each cell taking its

@@ -1,6 +1,6 @@
 // 37d3e8b2
-// draft
-// keywords: objects enclose count lookup
+// @draft
+// @keywords: objects enclose count lookup
 // input: Ink objects lie on the background.
 // output: Each object is repainted with the color its hole count selects.
 

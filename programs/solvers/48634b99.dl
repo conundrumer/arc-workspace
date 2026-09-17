@@ -1,6 +1,6 @@
 // 48634b99
-// draft
-// keywords: objects markers count rank scale
+// @draft
+// @keywords: objects markers count rank scale
 // input: bars of params.bar on params.bg, one cell wide, lying along
 //  params.axis. One bar is a gauge: a run of params.mark fills it from one
 //  end.

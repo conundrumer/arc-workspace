@@ -1,6 +1,6 @@
 // 1acc24af
-// draft
-// keywords: objects enclose cast d4 classify
+// @draft
+// @keywords: objects enclose cast d4 classify
 // input: A wall of params.wall spans the grid, with notches cut into the
 //  side the params.piece components lie on.
 // output: A piece turns params.mark when some placement of it covers a

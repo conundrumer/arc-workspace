@@ -1,6 +1,6 @@
 // 58743b76
-// draft
-// keywords: scale
+// @draft
+// @keywords: scale
 // input: A canvas of marks on a plain ground fills a rectangle of the grid,
 //  and a key block of colored cells sits apart from it; filler covers the
 //  rest.

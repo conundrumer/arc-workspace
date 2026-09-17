@@ -1,5 +1,5 @@
 // fafffa47
-// keywords: decompose lookup
+// @keywords: decompose lookup
 // input: The input decomposes into two 3×3 tiles, one stacked above the other.
 // output: The output is one 3×3 grid. Each output cell takes its color from
 //  the pair of corresponding tile cells, one from each tile.

@@ -1,6 +1,6 @@
 // 84f2aca1
-// draft
-// keywords: objects border enclose lookup count
+// @draft
+// @keywords: objects border enclose lookup count
 // output: Hollow outlines on params.bg; the empty cells an outline holds
 //  take on a color that the hole's size selects.
 

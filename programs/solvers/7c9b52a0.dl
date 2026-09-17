@@ -1,6 +1,6 @@
 // 7c9b52a0
-// draft
-// keywords: overlay objects
+// @draft
+// @keywords: overlay objects
 // input: panels of one size on a frame color, each a params.bg canvas holding
 //  some ink. No canvas cell takes ink from two panels.
 // output: the panels stack on one canvas: each cell takes the ink of the panel

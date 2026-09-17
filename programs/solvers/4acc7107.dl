@@ -1,6 +1,6 @@
 // 4acc7107
-// draft
-// keywords: objects rank move
+// @draft
+// @keywords: objects rank move
 // input: Monochrome shapes of several colors lie scattered on the grid.
 // output: The output files them into a corner: each color takes a lane, and
 //  each shape takes a slot in its color's lane. A shape ranks by its

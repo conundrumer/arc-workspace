@@ -1,5 +1,5 @@
 // 1478ab18
-// keywords: markers span rank
+// @keywords: markers span rank
 // input: Marks sit on a plain field, two of them spanning a diagonal.
 // output: The output draws the right isosceles triangle on that diagonal in
 //  params.ink: the diagonal is the hypotenuse and the legs meet at one

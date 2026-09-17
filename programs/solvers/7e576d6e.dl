@@ -1,6 +1,6 @@
 // 7e576d6e
-// draft
-// keywords: lines markers span
+// @draft
+// @keywords: lines markers span
 // input: Parallel divider lines, each broken by a gap, cut the grid. Two
 //  marker cells sit off the dividers, one before the first divider and one
 //  past the last.

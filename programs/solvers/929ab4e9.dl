@@ -1,6 +1,6 @@
 // 929ab4e9
-// draft
-// representative: b8825c91
+// @draft
+// @representative: b8825c91
 
 // Which D4 elements the repair reads from
 .type Choice =

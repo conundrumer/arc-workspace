@@ -1,6 +1,6 @@
 // 6e4f6532
-// draft
-// keywords: lines objects markers d4 move
+// @draft
+// @keywords: lines objects markers d4 move
 // input: walls of solid color lining the grid, with panels between them
 //  holding objects and targets. An object is a component with core cells
 //  and other cells; a target is a component of core cells alone. Some

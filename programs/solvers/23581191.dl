@@ -1,5 +1,5 @@
 // 23581191
-// keywords: markers cross
+// @keywords: markers cross
 // output: Each mark paints its full row and column in its color; a cell
 //  where crosses meet gets params.cross_color.
 

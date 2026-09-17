@@ -1,5 +1,5 @@
 // 136b0064
-// keywords: decompose markers walk lookup count
+// @keywords: decompose markers walk lookup count
 // input: A divider splits the grid into a legend panel of glyphs and a blank
 //  canvas panel holding one marker cell.
 // output: Each glyph names a move: a direction with a distance. The output

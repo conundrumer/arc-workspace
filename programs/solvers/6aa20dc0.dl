@@ -1,6 +1,6 @@
 // 6aa20dc0
-// draft
-// keywords: objects markers scale d4 stamp
+// @draft
+// @keywords: objects markers scale d4 stamp
 // input: a template — the one multicolored object — carrying mark colors at
 //  its corners; elsewhere, single-color squares sitting in pairs at
 //  opposite corners of a box that the template divides into tiles, one per

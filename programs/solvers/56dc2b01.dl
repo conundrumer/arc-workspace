@@ -1,6 +1,6 @@
 // 56dc2b01
-// draft
-// keywords: objects lines move
+// @draft
+// @keywords: objects lines move
 // input: a shape of params.mover lying to one side of a line of
 //  params.anchor that spans the grid
 // output: The shape slides toward that line and stops against it, and a

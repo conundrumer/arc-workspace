@@ -1,5 +1,5 @@
 // 140c817e
-// keywords: markers cast stamp
+// @keywords: markers cast stamp
 // input: Marks sit on a plain field.
 // output: Each mark draws its whole row and column in the line color and
 //  carries a decoration: the center color on the mark cell, the corner

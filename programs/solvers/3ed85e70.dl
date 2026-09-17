@@ -1,6 +1,6 @@
 // 3ed85e70
-// draft
-// keywords: markers objects stamp
+// @draft
+// @keywords: markers objects stamp
 // input: a legend panel holding decorated shapes, and a field panel holding
 //  clues
 // output: Each clue names one shape and where it goes; the shape stamps over

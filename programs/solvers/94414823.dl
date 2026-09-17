@@ -1,6 +1,6 @@
 // 94414823
-// draft
-// keywords: markers border enclose
+// @draft
+// @keywords: markers border enclose
 // input: params.wall draws a hollow box on params.bg, and marks of other
 //  colors sit outside it.
 // output: That box's inside splits into four quadrants, and each quadrant

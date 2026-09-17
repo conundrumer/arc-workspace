@@ -1,6 +1,6 @@
 // 95a58926
-// draft
-// keywords: lines wallpaper cross
+// @draft
+// @keywords: lines wallpaper cross
 // input: the grid's rows and columns, and the one color that is neither bg
 //  nor params.mesh
 // output: a cell where two mesh lines cross takes that color; another cell on

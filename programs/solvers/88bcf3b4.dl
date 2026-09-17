@@ -1,6 +1,6 @@
 // 88bcf3b4
-// draft
-// keywords: objects markers walk count
+// @draft
+// @keywords: objects markers walk count
 // input: Poles rise from the grid edge, and a worm hangs off the tip of
 //  each one.
 // output: The worm is redrawn with its cell count as a walk from its root

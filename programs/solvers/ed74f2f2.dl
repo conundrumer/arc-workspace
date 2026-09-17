@@ -1,5 +1,5 @@
 // ed74f2f2
-// keywords: decompose crop lookup
+// @keywords: decompose crop lookup
 // input: a 1×2 arrangement of 3×3 tiles, gap 1, behind a 1-cell bg border
 // output: The params.key_tile selects a color from a stored tile table. The
 //  output is the params.target_tile with its ink repainted that color, bg
