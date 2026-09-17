@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Swap the two Claude accounts between your own Claude home and the console's.
+# Swap the two Claude accounts between the console's Claude home and your own.
 #
 # Each home is logged into one account, kept in a keychain entry keyed by the
 # home's path. The swap logs each home into the account the other one had.
@@ -7,8 +7,8 @@
 # you to make the right browser active. `just swap` runs this.
 set -euo pipefail
 
-MAIN="$HOME/.claude"
 CONSOLE="${CONSOLE_CLAUDE_HOME:-$HOME/.claude-console}"
+MAIN="$HOME/.claude"
 PORT="${CONSOLE_PORT:-8347}"
 
 # `claude` under the given home. The main home is the CLI's default and must
@@ -31,8 +31,8 @@ except Exception: print("")' || true
 }
 
 show() {
-    printf '  yours    %-32s %s\n' "$MAIN" "${1:-not logged in}"
-    printf '  console  %-32s %s\n' "$CONSOLE" "${2:-not logged in}"
+    printf '  console  %-32s %s\n' "$CONSOLE" "${1:-not logged in}"
+    printf '  yours    %-32s %s\n' "$MAIN" "${2:-not logged in}"
 }
 
 if curl -fs -o /dev/null --max-time 2 "http://127.0.0.1:$PORT/api/state"; then
@@ -46,10 +46,10 @@ if [ "$sessions" != 0 ]; then
     echo "token after the swap writes the old account back. Quit them first." >&2
 fi
 
-main_was=$(email "$MAIN")
 console_was=$(email "$CONSOLE")
+main_was=$(email "$MAIN")
 echo "Now:"
-show "$main_was" "$console_was"
+show "$console_was" "$main_was"
 echo
 
 login() {
@@ -60,10 +60,10 @@ login() {
     echo
 }
 
-login "$MAIN" yours "$console_was"
 login "$CONSOLE" console "$main_was"
+login "$MAIN" yours "$console_was"
 
 echo "After:"
-show "$(email "$MAIN")" "$(email "$CONSOLE")"
+show "$(email "$CONSOLE")" "$(email "$MAIN")"
 echo
 echo "Start the console again with \`just console\`."

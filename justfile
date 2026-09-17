@@ -9,6 +9,6 @@ session *args:
 console *args:
     uv run python tools/console/server.py {{args}}
 
-# Swap the two accounts between your Claude home and the console's. Stop the console first.
+# Swap the two accounts between the console's Claude home and yours. Stop the console first.
 swap:
     scripts/swap-accounts.sh
