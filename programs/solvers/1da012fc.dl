@@ -13,6 +13,7 @@
 //  marker constellation matches the shape's place in the shape constellation
 //     @approximated: a shape and a marker have the same place when
 //      they have the same rank in the reading order
+//     @witness spanning-shape: variant other
 // @rule keep: every cell outside the shapes keeps its color
 
 // a shape's place in the reading order — a marker is one cell, but a shape
@@ -22,7 +23,7 @@
     Separated {}
     // @scene read: an object stands at its bounding box's reading corner, and
     //  the objects run in the reading order of those corners
-    // @witness side-by-side: sibling concept
+    // @witness side-by-side: variant concept
     //     @relaxed bands
   | Anchor {}
 

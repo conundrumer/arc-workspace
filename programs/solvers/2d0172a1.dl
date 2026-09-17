@@ -16,6 +16,7 @@
 //  others
 //     @approximated: marks that overlap along an axis take one
 //      output line, and a run of marks linked by overlap is one line
+//     @witness overlap-chain: ordinary other
 // @rule spacing: neighbouring output lines sit one blank line apart, and a
 //  blank line holds a collapsed curve off the frame edge
 
@@ -25,7 +26,7 @@
     Hollow {}
     // @rule outline: a curve that closes another curve off from the grid edge
     //  redraws as a rectangle outline
-    // @witness lone-ring: sibling concept
+    // @witness lone-ring: variant concept
     //     @relaxed nesting
   | Nest {}
 

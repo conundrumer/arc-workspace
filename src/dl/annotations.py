@@ -11,6 +11,12 @@ references with the line they stand above, the branch claims, and the
 witness blocks with their nested lines. A line that opens an annotation
 and then breaks its form lands in `malformed`, with the form it takes.
 
+A nested line carries its indent after `//`, as two spaces or more. The
+nested words always stand nested. `@witness` takes both forms: one space
+after `//` stands it on its own, under a branch, and two spaces or more
+stands it under the `@approximated:` line of the claim above it, which
+holds it in that claim's `witnesses` as well as in the source's.
+
 The lint, the witness check, the console, and the keyword count all read
 this module, so a form is stated here once.
 """
@@ -55,6 +61,7 @@ FORMS = {
     "rule": "`// @rule <slug>: <text>`",
     "claim": "`// @claim <slug> [<slug> ...]`",
     "witness": "`// @witness <id>: <plausibility> <verdict>`",
+    "witness-nested": "`//     @witness <id>: <plausibility> <verdict>`",
     "approximated": "`//     @approximated: <text>`",
     "relaxed": "`//     @relaxed <slug>`",
     "reassigned": "`//     @reassigned <parameter>`",
@@ -91,15 +98,33 @@ class Field:
 
 
 @dataclass
+class Witness:
+    """One `@witness` line, with the slugs its nested `@relaxed` lines name
+    and the parameters its `@reassigned` lines name. `approximates` carries
+    the slug of the claim the line stands under, and is empty on a line that
+    stands on its own."""
+
+    id: str
+    plausibility: str
+    verdict: str
+    line: int = 0
+    relaxed: list[str] = field(default_factory=list)
+    reassigned: list[str] = field(default_factory=list)
+    approximates: str = ""
+
+
+@dataclass
 class Claim:
     """One claim: a `@scene` line or a `@rule` line, with the text of the
-    `@approximated:` line nested under it, if any."""
+    `@approximated:` line nested under it, if any, and the `@witness` lines
+    nested under that `@approximated:` line."""
 
     kind: str
     slug: str
     text: str
     line: int
     approximated: str | None = None
+    witnesses: list[Witness] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -110,19 +135,6 @@ class Ref:
     slugs: tuple[str, ...]
     line: int
     above: int
-
-
-@dataclass
-class Witness:
-    """One `@witness` line, with the slugs its nested `@relaxed` lines name
-    and the parameters its `@reassigned` lines name."""
-
-    id: str
-    plausibility: str
-    verdict: str
-    line: int = 0
-    relaxed: list[str] = field(default_factory=list)
-    reassigned: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -173,7 +185,8 @@ class Annotations:
 
 def nested_form(line: str) -> str:
     """The nested form of a directive line of a nested word that is not
-    nested after `//`, and empty for any other line."""
+    nested after `//`, and empty for any other line. `@witness` is no
+    nested word: it takes both forms, so neither form of it is off form."""
     m = COMMENT_RE.match(line)
     if m is None or len(m[2]) >= 2:
         return ""
@@ -306,13 +319,28 @@ def read(source: str) -> Annotations:
             open_claim = open_witness = None
             continue
         if word == "witness":
+            nested = len(spaces) >= 2
             w = WITNESS_TAIL_RE.match(tail)
             if w is None:
+                form = FORMS["witness-nested" if nested else "witness"]
                 bad(lineno, f"`{shown}` is off the `@witness` form, which "
-                            f"is {FORMS['witness']}, the id {SLUG_FORM}", "witness")
+                            f"is {form}, the id {SLUG_FORM}", "witness")
                 open_claim = open_witness = None
                 continue
             block = Witness(w[1], w[2], w[3], lineno)
+            if nested:
+                if open_claim is None or open_claim.approximated is None:
+                    bad(lineno, f"`{shown}` is nested; a nested `@witness` "
+                                "stands under the `@approximated:` line of "
+                                "the claim above it, and none stands above "
+                                "this one", "witness")
+                    open_witness = None
+                    continue
+                block.approximates = open_claim.slug
+                open_claim.witnesses.append(block)
+                out.witnesses.append(block)
+                open_witness = block
+                continue
             out.witnesses.append(block)
             open_claim, open_witness = None, block
             continue
@@ -368,7 +396,8 @@ def merged_blocks(blocks: list[Witness]) -> list[Witness]:
         held = out.get(b.id)
         if held is None:
             out[b.id] = Witness(b.id, b.plausibility, b.verdict, b.line,
-                                list(b.relaxed), list(b.reassigned))
+                                list(b.relaxed), list(b.reassigned),
+                                b.approximates)
             continue
         held.relaxed += [s for s in b.relaxed if s not in held.relaxed]
         held.reassigned += [s for s in b.reassigned
@@ -398,6 +427,5 @@ def resolved_claims(source: str) -> list[Claim]:
 
 
 def relaxable(claims: list[Claim]) -> set[str]:
-    """The slugs a `@relaxed` line may name: every `@scene` slug, and the
-    slug of any claim the header approximates."""
-    return {c.slug for c in claims if c.kind == "scene" or c.approximated}
+    """The slugs a `@relaxed` line may name: every `@scene` slug."""
+    return {c.slug for c in claims if c.kind == "scene"}

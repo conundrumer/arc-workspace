@@ -65,6 +65,7 @@ from dl.solve import (
     compile_error,
     res_out_stem,
     run_dl,
+    run_dl_source,
     run_pair,
     run_task,
     solver_file,
@@ -96,9 +97,15 @@ from dl.sweep_open import (
 from dl.witness import (
     WITNESS_OK,
     annotation_lines,
+    assigned_source,
+    case_outcomes,
     load_witnesses,
+    put_entry,
+    read_witness_data,
     render_witness,
+    witness_path,
     witness_report,
+    write_witness_data,
 )
 
 type Findings = list[tuple[str, int, str, str]]
@@ -318,7 +325,7 @@ def cmd_pairs(stem: str, path: str) -> int:
         for idx, e in enumerate(examples):
             if e.get("output") is None:
                 for c in run_dl(task_id, e["input"], stem=stem):
-                    print(f"{kind}[{idx}] {c.variant or '(out)'}:")
+                    print(f"{kind}[{idx}] {c.case or '(out)'}:")
                     if c.error:
                         print(f"  {c.error}")
                         continue
@@ -348,9 +355,10 @@ TIME_LIMIT_HELP = ("wall-clock limit in seconds for the sweep runs; the "
 GRID_HELP = """\
 Grid format: one line per row, one character per cell — a digit 0-9, or `.`
 for 0. Spaces and commas between cells are optional; blank lines and lines
-starting with `#` are skipped. Text starting with `[` is read as JSON, so a
-grid pasted out of a task file works unchanged.
+starting with `#` are skipped. Text starting with `[` is read as JSON.
 """
+
+STEM_HELP = "a stem, or a path to a solver file named for the task id"
 
 RUN_HELP = """\
 To profile one grid by hand, build the file in programs/solvers/, so that
@@ -375,40 +383,53 @@ RIGID call sites runs on the `expand` command's output.
 """
 
 
-def cmd_grid(stem: str, path: str | None = None) -> int:
-    """Run one solver on a grid the caller wrote, in place of a stored pair,
-    and print what each case emits."""
-    if _missing(stem):
-        return 2
+SEPARATOR = "---"
+"""The line that splits a witness input from the judged output behind it."""
+
+
+def _grid_text(path: str | None) -> str | None:
+    """The grid text a caller names, from stdin when the path is omitted or
+    `-`. None when the file is missing, which is reported."""
     if path in (None, "-"):
-        text = sys.stdin.read()
-    else:
-        p = Path(str(path))
-        if not p.exists():
-            print(f"no grid file at {p}", file=sys.stderr)
-            return 2
-        text = p.read_text()
+        return sys.stdin.read()
+    p = Path(str(path))
+    if not p.exists():
+        print(f"no grid file at {p}", file=sys.stderr)
+        return None
+    return p.read_text()
+
+
+def _parse_grid(text: str) -> list[list[int]] | None:
+    """The grid the text writes. None when it writes none, which is
+    reported."""
     try:
-        grid = parse_grid(text)
+        return parse_grid(text)
     except (ValueError, json.JSONDecodeError, TypeError) as e:
         print(f"bad grid: {e}", file=sys.stderr)
-        return 2
+        return None
 
-    build_functors()
-    if _compile_failed(stem):
-        return 1
-    try:
-        actuals = run_dl(solver_file(stem)[1], grid, stem=stem)
-    except Exception as e:
-        print(f"{type(e).__name__}: {e}", file=sys.stderr)
-        return 1
 
+def _sections(text: str) -> list[str]:
+    """The grid texts the caller wrote, split at each separator line."""
+    sections: list[str] = [""]
+    for line in text.splitlines():
+        if line.strip() == SEPARATOR:
+            sections.append("")
+        else:
+            sections[-1] += line + "\n"
+    return sections
+
+
+def _print_run(stem: str, grid: list[list[int]],
+               actuals: list) -> list[str]:
+    """Print the input, what each case emits, and the cases that emit
+    nothing; return those silent cases."""
     print("input:")
     for line in _grid_lines(grid):
         print(f"  {line}")
     for c in actuals:
         print()
-        print(f"{c.variant or '(out)'}:")
+        print(f"{c.case or '(out)'}:")
         if c.error:
             print(f"  {c.error}")
             continue
@@ -419,7 +440,7 @@ def cmd_grid(stem: str, path: str | None = None) -> int:
         if c.missing:
             print(f"  missing cells at: {c.missing}")
 
-    emitted = {case_label(c.variant) for c in actuals}
+    emitted = {case_label(c.case) for c in actuals}
     silent = [b for b in case_branches(stem) if b not in emitted]
     if silent:
         print()
@@ -432,6 +453,133 @@ def cmd_grid(stem: str, path: str | None = None) -> int:
                     for c in actuals if not c.error}
         print()
         print(f"{cases} cases, {len(distinct)} distinct grid(s)")
+    return silent
+
+
+def cmd_grid(stem: str, path: str | None = None) -> int:
+    """Run one solver on a grid the caller wrote, in place of a stored pair,
+    and print what each case emits."""
+    if _missing(stem):
+        return 2
+    text = _grid_text(path)
+    if text is None:
+        return 2
+    if len(_sections(text)) > 1:
+        print(f"`{SEPARATOR}` belongs to `record`; `grid` takes one grid",
+              file=sys.stderr)
+        return 2
+    grid = _parse_grid(text)
+    if grid is None:
+        return 2
+
+    build_functors()
+    if _compile_failed(stem):
+        return 1
+    try:
+        actuals = run_dl(solver_file(stem)[1], grid, stem=stem)
+    except Exception as e:
+        print(f"{type(e).__name__}: {e}", file=sys.stderr)
+        return 1
+
+    _print_run(stem, grid, actuals)
+    return 0
+
+
+def _assign_arg(text: str | None) -> dict | None:
+    """The `--assign` object, or an empty one when the flag is omitted. None
+    when the text is no JSON object, which is reported."""
+    if text is None:
+        return {}
+    try:
+        assign = json.loads(text)
+    except json.JSONDecodeError as e:
+        print(f"bad --assign JSON: {e}", file=sys.stderr)
+        return None
+    if not isinstance(assign, dict):
+        print("--assign takes an object of replacement facts per parameter",
+              file=sys.stderr)
+        return None
+    return assign
+
+
+def cmd_format(stem: str) -> int:
+    """Rewrite the task's witness file through the serializer."""
+    if _missing(stem):
+        return 2
+    task_id = solver_file(stem)[1]
+    path = witness_path(task_id)
+    if not path.exists():
+        print(f"no witness file at {path}", file=sys.stderr)
+        return 2
+    write_witness_data(task_id, read_witness_data(task_id))
+    print(f"formatted {path}")
+    return 0
+
+
+def cmd_record(stem: str, entry_id: str, separates: str,
+               path: str | None = None, assign_text: str | None = None) -> int:
+    """Run one solver on a grid the caller wrote and write the run into the
+    task's witness file, as the entry `entry_id`."""
+    if _missing(stem):
+        return 2
+    assign = _assign_arg(assign_text)
+    if assign is None:
+        return 2
+    text = _grid_text(path)
+    if text is None:
+        return 2
+    sections = _sections(text)
+    if len(sections) > 2:
+        print(f"record takes one `{SEPARATOR}` separator at most",
+              file=sys.stderr)
+        return 2
+    grid = _parse_grid(sections[0])
+    if grid is None:
+        return 2
+    judged = None
+    if len(sections) == 2:
+        judged = _parse_grid(sections[1])
+        if judged is None:
+            return 2
+
+    solver, task_id = solver_file(stem)
+    build_functors()
+    if _compile_failed(stem):
+        return 1
+    try:
+        actuals = run_dl_source(
+            assigned_source(solver.read_text(), assign), grid,
+            solver_path=solver)
+    except Exception as e:
+        print(f"{type(e).__name__}: {e}", file=sys.stderr)
+        return 1
+
+    silent = _print_run(stem, grid, actuals)
+    if judged is not None:
+        print()
+        print("judged output:")
+        for line in _grid_lines(judged):
+            print(f"  {line}")
+        output: object = judged
+    else:
+        outcomes = case_outcomes(actuals, res_out_stem(stem))
+        for name in silent:
+            outcomes.setdefault(name, None)
+        output = outcomes
+    entry: dict = {"id": entry_id, "separates": separates, "input": grid}
+    if assign:
+        entry["assign"] = assign
+    entry["output"] = output
+    data = read_witness_data(task_id)
+    put_entry(data, entry)
+    try:
+        path = write_witness_data(task_id, data)
+    except ValueError as e:
+        print(e, file=sys.stderr)
+        return 2
+    print()
+    print(f"wrote entry `{entry_id}` to {path}")
+    print(f"add: // @witness {entry_id}: <plausibility> <verdict>")
     return 0
 
 
@@ -777,21 +925,19 @@ def cmd_deletions(stem: str) -> int:
 
 def _print_witness(stem: str) -> int:
     """The features each `@witness` line of `stem` states, then its witness
-    report, under headings that name what each part covers. Non-zero on a
-    differing output or an annotation finding."""
+    report. Non-zero on a differing output or an annotation finding."""
     path, task_id = solver_file(stem)
     witness = load_witnesses(task_id)
-    if witness is None:
-        print(f"no witness file at programs/witnesses/{task_id}.wit.json")
-        return 0
-    print(f"`@witness` lines of {stem}.dl:")
+    print("`@witness` lines:")
     for line in annotation_lines(path.read_text()):
         print(f"  {line}")
     print()
-    grids = len(witness.entries)
-    print(f"{grids} witness grid{'s' if grids != 1 else ''} run:")
-    findings = witness_report(stem)
-    lines = render_witness(findings)
+    if witness is None:
+        print(f"no witness file at {witness_path(task_id)}")
+    else:
+        grids = len(witness.entries)
+        print(f"{grids} witness grid{'s' if grids != 1 else ''} run")
+    lines = render_witness(witness_report(stem))
     passed = lines[-1] == WITNESS_OK
     for line in (lines[:-1] if passed else lines):
         print(f"  {line}")
@@ -965,7 +1111,8 @@ def cmd_expand(stem: str) -> int:
     return 0
 
 
-COMMANDS = ("run", "lint", "grid", "sweep", "deletions", "audit", "determination-plan", "size",
+COMMANDS = ("run", "lint", "grid", "record", "sweep", "deletions", "audit",
+            "determination-plan", "size",
             "keywords", "expand", "since", "drop-one", "derived-constant", "features",
             "witness")
 
@@ -1014,11 +1161,37 @@ def _parser() -> argparse.ArgumentParser:
         epilog=GRID_HELP,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    grid.add_argument("stem",
-                      help="the solver to run: a stem or a path to a solver "
-                           "file whose name keeps the task id as its prefix")
+    grid.add_argument("stem", help=STEM_HELP)
     grid.add_argument("file", nargs="?",
                       help="grid file; stdin when omitted or `-`")
+
+    record = sub.add_parser(
+        "record",
+        help="run one solver on a grid you write and write the run into the "
+             "task's witness file",
+        description="The entry goes into programs/witnesses/<task>.wit.json "
+                    "under <id>, replacing an entry of that id already "
+                    "there. A `---` line in the grid text puts the judged "
+                    "output an `other` verdict takes behind it, and that "
+                    "grid is stored in place of the per-case outputs.",
+        epilog=GRID_HELP,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    record.add_argument("stem", help=STEM_HELP)
+    record.add_argument("id", nargs="?",
+                        help="the entry's id, unique within the witness "
+                             "file; required unless `--format`")
+    record.add_argument("file", nargs="?",
+                        help="grid file; stdin when omitted or `-`")
+    record.add_argument("--separates", help="what the entry separates; "
+                                            "required unless `--format`")
+    record.add_argument("--assign", metavar="JSON", dest="assign",
+                        help="replacement facts per parameter, as the "
+                             "entry's `assign` object; the run takes the "
+                             "reassigned source")
+    record.add_argument("--format", action="store_true", dest="as_format",
+                        help="rewrite the task's witness file through the "
+                             "serializer and add no entry")
 
     sweep = sub.add_parser(
         "sweep", help="parameter value sweep only",
@@ -1091,8 +1264,9 @@ def _parser() -> argparse.ArgumentParser:
         description="Where the solver and "
                     "programs/witnesses/<task>.wit.json disagree: a case "
                     "whose output differs from the one its entry names, and "
-                    "a `@witness` line the file does not bear out. A task "
-                    "with no witness file passes.",
+                    "a `@witness` line the file does not bear out. Without "
+                    "a witness file, every `@witness` line of the solver "
+                    "names no entry.",
     ).add_argument("stem", help="one solver")
     plan = sub.add_parser(
         "determination-plan",
@@ -1186,6 +1360,19 @@ def main(argv: list[str]) -> int:
             return cmd_lint(args.stem, args.hints)
         case "grid":
             return cmd_grid(args.stem, args.file)
+        case "record":
+            if args.as_format:
+                if args.id or args.file or args.separates or args.assign:
+                    print("`--format` rewrites the file and takes no entry",
+                          file=sys.stderr)
+                    return 2
+                return cmd_format(args.stem)
+            if args.id is None or args.separates is None:
+                print("record takes an entry id and `--separates`",
+                      file=sys.stderr)
+                return 2
+            return cmd_record(args.stem, args.id, args.separates, args.file,
+                              args.assign)
         case "sweep":
             stems = args.open_stems or args.mark_stems
             if stems:

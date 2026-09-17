@@ -39,11 +39,12 @@ function outcomes(w){
 }
 
 /* The lines a `@witness` block adds under the model: the plausibility and
-   the verdict on one line, then a line per field that holds slugs. A field
-   the block leaves empty draws nothing. */
+   the verdict on one line, then a line per field that holds a slug or
+   slugs. A field the block leaves empty draws nothing. */
 function blockLines(w){
   const head = [w.plausibility, w.verdict].filter(Boolean).join(" · ");
   return [head,
+          w.approximates ? "approximates: " + w.approximates : "",
           w.relaxed?.length ? "relaxed: " + w.relaxed.join(", ") : "",
           w.reassigned?.length ? "reassigned: " + w.reassigned.join(", ") : ""
          ].filter(Boolean);

@@ -181,7 +181,7 @@ def _pair_entry(actuals: list, ex, res: bool) -> frozenset | None:
             return None
         if slot is None and not res:
             return None
-        names.add(c.variant)
+        names.add(c.case)
         grids.add(_grid_key(c.grid))
         slots.append(slot)
     if res:
@@ -199,7 +199,7 @@ def _passing(actuals: list, ex) -> frozenset[str]:
     missing cell, and a grid the pair accepts."""
     accepted = _accepted(ex)
     return frozenset(
-        c.variant for c in actuals
+        c.case for c in actuals
         if not c.error and not c.conflicts and not c.missing
         and _slot_of(c.grid, accepted) is not None
     )
@@ -357,7 +357,7 @@ def run_pair(stem: str, task_id: str, kind: str, idx: int, ex) -> PairResult:
         slots = [_slot_of(c.grid, accepted) for c in actuals]
         variants = [
             VariantResult(
-                name=c.variant,
+                name=c.case,
                 # A resolution solver emits the whole candidate, which may
                 # hold grids the task file does not store, so a grid outside
                 # the stored ones is judged by the pair-level check below.

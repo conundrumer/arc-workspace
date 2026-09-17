@@ -248,13 +248,13 @@ def render_table(table: Table) -> str:
 
 
 def case_of(cand: Candidate) -> str:
-    """The case name a candidate's variant column carries, without its `$`."""
-    return cand.variant.strip("$").split("(")[0]
+    """The case a candidate carries, without its `$`."""
+    return cand.case.strip("$").split("(")[0]
 
 
 def _candidate_html(cand: Candidate, card: Card) -> str:
     case = case_of(cand)
-    label = cand.variant or "out"
+    label = cand.case or "out"
     if card.dropped:
         label += " · dropped" if case in card.dropped else " · kept"
     if cand.error:

@@ -58,5 +58,24 @@
         [0,0,2,2,0]
       ]
     }
+  }, {
+    "id": "open-chevron",
+    "separates": "A chevron of color 3, one 8-connected chain wide open to the right, with a lone 2 in its mouth. The 2's column holds a chevron cell above it and another below it, and its row holds the chevron's apex to its left, so the crossing test reports the 2 as inside and both cases erase it. Nothing closes the 2 off toward the right, so it lies outside the container and the generator keeps it.",
+    "input": [
+      [0,0,0,3,0],
+      [0,0,3,0,0],
+      [0,3,0,0,0],
+      [3,0,2,0,0],
+      [0,3,0,0,0],
+      [0,0,3,0,0]
+    ],
+    "output": [
+      [0,0,0,3,0],
+      [0,0,3,0,0],
+      [0,3,0,0,0],
+      [3,0,2,0,0],
+      [0,3,0,0,0],
+      [0,0,3,0,0]
+    ]
   }]
 }

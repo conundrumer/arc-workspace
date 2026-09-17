@@ -9,11 +9,17 @@ uv run pytest -q
 uv run python scripts/materialize.py
 uv run python scripts/run_dl.py          # run all Souffle solvers; --help for per-solver tooling
 uv run python scripts/run_dl.py <stem>   # run one
-uv run python scripts/context.py         # the handbook: the solver docs and the lib as a session reads them
+uv run python scripts/context.py         # the handbook
 uv run python scripts/context.py --write # generate the files used by handbook readers
 ```
 
 Souffle binary required for `.dl` solvers (`brew install souffle`).
+
+## Handbook
+
+The handbook is the solver docs and the lib as a solver session reads them.
+
+If in a solver session where the handbook is already in context, handbook agents will always have that version of the handbook in context, even if the handbook gets updated.
 
 ## Solver console
 

@@ -14,7 +14,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from arc.jsonio import format_file
 from dl.annotations import (
+    Claim,
     merged_blocks,
     read,
     relaxable,
@@ -22,7 +24,8 @@ from dl.annotations import (
     witness_blocks,
 )
 from dl.facts import Candidate
-from dl.features_run import NO_CHOICE, case_label
+from dl.features_run import NO_CHOICE, case_label, case_members
+from dl.lint import branch_above, concept_case
 from dl.paths import PROGRAMS_DIR
 from dl.render import _grid_lines
 from dl.solve import res_out_stem, run_dl_source, solver_file
@@ -190,16 +193,49 @@ def load_witnesses(task_id: str) -> Witness | None:
     )
 
 
+def read_witness_data(task_id: str) -> dict:
+    """The task's witness file as JSON, checked against the shape. A task
+    with no file yet gets the data an empty file holds."""
+    path = witness_path(task_id)
+    if not path.exists():
+        return {"id": task_id, "witnesses": []}
+    data = json.loads(path.read_text())
+    _validate(data, path)
+    return data
+
+
+def write_witness_data(task_id: str, data: dict) -> Path:
+    """Write a witness file, after the shape check. Every write of a witness
+    file goes through here, so one layout stands over the directory: the
+    file's own conventions, and every grid one row per line."""
+    path = witness_path(task_id)
+    _validate(data, path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(format_file(data))
+    return path
+
+
+def put_entry(data: dict, entry: dict) -> None:
+    """Put `entry` into a witness file's data: it replaces the entry of its
+    id where one stands, and follows the last entry otherwise."""
+    for i, held in enumerate(data["witnesses"]):
+        if held.get("id") == entry["id"]:
+            data["witnesses"][i] = entry
+            return
+    data["witnesses"].append(entry)
+
+
 def _outcome(c: Candidate) -> Outcome:
     return None if (c.error or c.conflicts or c.missing) else c.grid
 
 
-def _actuals(candidates: list[Candidate], resolution: bool) -> dict[str, Outcome]:
+def case_outcomes(candidates: list[Candidate],
+                  resolution: bool) -> dict[str, Outcome]:
     """What each case gives on one grid, in the order the run emits them. A
     case emitting more than one grid keeps the first."""
     out: dict[str, Outcome] = {}
     for c in candidates:
-        name = case_label(c.variant, resolution)
+        name = case_label(c.case, resolution)
         got = _outcome(c)
         if name not in out or got is None:
             out[name] = got
@@ -215,9 +251,9 @@ def _rows(rows: list[list[object]]) -> list[tuple]:
     ]
 
 
-def _assigned(source: str, entry: Entry) -> str:
-    """The solver source with the entry's reassignments applied."""
-    for param, rows in entry.assign.items():
+def assigned_source(source: str, assign: Assign) -> str:
+    """The solver source with the reassignments applied."""
+    for param, rows in assign.items():
         source = swap_facts(source, param, _rows(rows))
     return source
 
@@ -257,20 +293,55 @@ def _entry_findings(entry: Entry, actuals: dict[str, Outcome]) -> list[Drift]:
 # line off another form of the grammar is the lint's finding.
 WITNESS_WORDS = frozenset({"witness", "relaxed", "reassigned"})
 
+FOREIGN = "foreign"
+"""The plausibility of a witness the generator never produces."""
+
+ANY = "any"
+"""The verdict the generator pairs with any case's output, so no case
+departs on it."""
+
+CONCEPT = "concept"
+"""The verdict that names the concept case."""
+
 
 def _params(names: list[str]) -> str:
     """A parameter list as a finding names it."""
     return ", ".join(f"`{n}`" for n in sorted(names)) or "no parameter"
 
 
-def _annotation_findings(source: str, entries: list[Entry]) -> list[Drift]:
+def _departs(verdict: str, case: str, concept: str) -> bool:
+    """A witness line of this verdict shows `case` departing: the verdict is
+    not `any`, and it names some other case. A verdict of `concept` names
+    the concept case."""
+    if verdict == ANY:
+        return False
+    named = concept if verdict == CONCEPT else verdict
+    return named != case and named not in case_members(case)
+
+
+def _no_witness_note(c: Claim) -> str:
+    return (f"`@{c.kind} {c.slug}` is approximated and has no `@witness` "
+            "line under its `@approximated:`")
+
+
+def _annotation_findings(source: str, entries: list[Entry],
+                         cases: list[str]) -> list[Drift]:
     """Where a solver's `@witness` lines and the witness file disagree: a
     line off the form of the witness grammar, a line that names no entry of
     the file, a `@relaxed` slug the header's claims do not carry, a block
     whose `@reassigned` parameters are not the entry's `assign` keys, an
-    entry whose `assign` is empty, and an entry no line names."""
+    entry whose `assign` is empty, and an entry no line names.
+
+    An approximated claim is read against the cases as well. A header
+    `@approximated:` runs on every case, and a branch one on the cases its
+    branch holds, so each of those cases stands under a witness that shows
+    it departing. A case whose branch carries a `@rule` line of the claim's
+    slug restates the claim, so the header's approximation does not run on
+    that case and no witness is asked of it."""
     by_id = {e.id: e for e in entries}
-    slugs = relaxable(resolved_claims(source))
+    claims = resolved_claims(source)
+    slugs = relaxable(claims)
+    kinds = {c.slug: c.kind for c in claims}
     findings: list[Drift] = []
 
     def note(entry: str, case: str, text: str) -> None:
@@ -293,10 +364,55 @@ def _annotation_findings(source: str, entries: list[Entry]) -> list[Drift]:
                  f"`@reassigned` names {_params(a.reassigned)}; the entry's "
                  f"`assign` names {_params(list(entry.assign))}")
         for slug in a.relaxed:
-            if slug not in slugs:
-                note(a.id, a.id,
-                     f"`@relaxed {slug}` names no `@scene` line of the header "
-                     "and no claim the header approximates")
+            if slug in slugs:
+                continue
+            held = kinds.get(slug)
+            note(a.id, a.id,
+                 f"`@relaxed {slug}` names the `@{held} {slug}` line; "
+                 "`@relaxed` names a `@scene` line"
+                 if held else
+                 f"`@relaxed {slug}` names no line of the header")
+    concept = concept_case(source)
+
+    def approximated(c: Claim, want: list[str]) -> None:
+        if not c.witnesses:
+            note(f"line {c.line}", "", _no_witness_note(c))
+            return
+        for w in c.witnesses:
+            if w.plausibility == FOREIGN:
+                note(f"line {w.line}", "",
+                     f"`@witness {w.id}` under `@approximated:` of "
+                     f"`@{c.kind} {c.slug}` is `{FOREIGN}`")
+        for case in want:
+            if not any(_departs(w.verdict, case, concept) for w in c.witnesses):
+                note(f"line {c.line}", "",
+                     f"`@{c.kind} {c.slug}` is approximated and no witness "
+                     f"under its `@approximated:` shows case `{case}` "
+                     "departing")
+
+    restated: dict[str, set[str]] = {}
+    for c in ann.branch_claims:
+        if c.kind != "rule":
+            continue
+        name = branch_above(source, c.line)
+        if name:
+            restated.setdefault(c.slug, set()).add(name)
+
+    def not_restated(slug: str) -> list[str]:
+        """The cases the header's approximation still runs on: the ones no
+        branch of theirs restates under that slug."""
+        names = restated.get(slug, set())
+        return [k for k in cases if not names & set(case_members(k))]
+
+    for c in ann.claims:
+        if c.approximated:
+            approximated(c, not_restated(c.slug))
+    for c in ann.branch_claims:
+        if not c.approximated:
+            continue
+        name = branch_above(source, c.line)
+        approximated(c, [k for k in cases if name in case_members(k)]
+                     if name else [])
     for e in entries:
         if e.empty_assign:
             note(e.id, e.id, "`assign` is empty; omit the key")
@@ -314,6 +430,8 @@ def annotation_lines(source: str) -> list[str]:
         lines.append(f"{a.id}: {a.plausibility} {a.verdict}")
         lines += [f"  relaxed: {slug}" for slug in a.relaxed]
         lines += [f"  reassigned: {param}" for param in a.reassigned]
+        if a.approximates:
+            lines.append(f"  under @approximated: of {a.approximates}")
     return lines or ["no witness lines"]
 
 
@@ -322,19 +440,22 @@ def witness_report(stem: str) -> list[Drift]:
     report where the outcomes and the file disagree, then pair each
     `@witness` line of the solver to an entry of the file. An entry
     carrying `assign` runs the reassigned source. A task with no witness
-    file reports nothing."""
+    file runs no grid, and every `@witness` line of the solver names no
+    entry."""
     path, task_id = solver_file(stem)
-    witness = load_witnesses(task_id)
-    if witness is None:
-        return []
     source = path.read_text()
+    witness = load_witnesses(task_id) or Witness(id=task_id)
     resolution = res_out_stem(stem)
     findings: list[Drift] = []
+    cases: list[str] = []
     for entry in witness.entries:
         candidates = run_dl_source(
-            _assigned(source, entry), entry.input, solver_path=path)
-        findings += _entry_findings(entry, _actuals(candidates, resolution))
-    return findings + _annotation_findings(source, witness.entries)
+            assigned_source(source, entry.assign), entry.input,
+            solver_path=path)
+        actuals = case_outcomes(candidates, resolution)
+        cases += [c for c in actuals if c not in cases]
+        findings += _entry_findings(entry, actuals)
+    return findings + _annotation_findings(source, witness.entries, cases)
 
 
 def _side(label: str, value: Outcome) -> list[str]:

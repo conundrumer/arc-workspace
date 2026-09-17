@@ -29,5 +29,34 @@
         [0,0,0,0,2,2,0,0,0,0,0,0,0]
       ]
     }
+  }, {
+    "id": "spanning-shape",
+    "separates": "The legend shows one marker on the left at mid height and two markers on the right, one high and one low. Outside it a tall shape on the left spans the height of two shapes stacked on the right, so the left shape and each right shape meet along the reading axis without covering the same extent of it. Both cases read the constellations as one sequence: the left shape leads, so it takes the high right marker's colour and the high right shape takes the left marker's colour. The two constellations have the same arrangement, so the generator pairs the left shape with the left marker and each right shape with the right marker at its own height.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,2,2,0,0,0,2,2,2,0,0,0,5,5,5,5,5,5,5,0],
+      [0,2,2,0,0,0,2,2,2,0,0,0,5,5,5,5,5,3,5,0],
+      [0,2,2,0,0,0,2,2,2,0,0,0,5,5,5,5,5,5,5,0],
+      [0,2,2,0,0,0,0,0,0,0,0,0,5,5,5,5,5,5,5,0],
+      [0,2,2,0,0,0,0,0,0,0,0,0,5,4,5,5,5,5,5,0],
+      [0,2,2,0,0,0,2,2,2,0,0,0,5,5,5,5,5,5,5,0],
+      [0,2,2,0,0,0,2,2,2,0,0,0,5,5,5,5,5,5,5,0],
+      [0,2,2,0,0,0,2,2,2,0,0,0,5,5,5,5,5,6,5,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,5,5,5,5,5,5,5,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,4,4,0,0,0,3,3,3,0,0,0,5,5,5,5,5,5,5,0],
+      [0,4,4,0,0,0,3,3,3,0,0,0,5,5,5,5,5,3,5,0],
+      [0,4,4,0,0,0,3,3,3,0,0,0,5,5,5,5,5,5,5,0],
+      [0,4,4,0,0,0,0,0,0,0,0,0,5,5,5,5,5,5,5,0],
+      [0,4,4,0,0,0,0,0,0,0,0,0,5,4,5,5,5,5,5,0],
+      [0,4,4,0,0,0,6,6,6,0,0,0,5,5,5,5,5,5,5,0],
+      [0,4,4,0,0,0,6,6,6,0,0,0,5,5,5,5,5,5,5,0],
+      [0,4,4,0,0,0,6,6,6,0,0,0,5,5,5,5,5,6,5,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,5,5,5,5,5,5,5,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ]
   }]
 }

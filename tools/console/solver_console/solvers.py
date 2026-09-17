@@ -310,6 +310,7 @@ def _block_fields(block) -> dict:
     return {
         "plausibility": block.plausibility,
         "verdict": block.verdict,
+        "approximates": block.approximates or None,
         "relaxed": list(block.relaxed),
         "reassigned": list(block.reassigned),
     }

@@ -20,6 +20,7 @@
 //      rank is its place along the midline among the holes of its class.
 //      Two holes are at the same place when their class and their rank
 //      agree.
+//     @witness tied-holes: variant other
 // @rule crop: the output is the grid inside the plain figure's box, with that
 //  figure's holes painted
 
@@ -29,9 +30,9 @@
     Stored {}
     // @scene midline: the midline's axis is the one a figure folds onto itself
     //  across
-    // @witness turned-scene: sibling Mirror
+    // @witness turned-scene: variant Mirror
     //     @relaxed upright
-    // @witness no-mirror: sibling concept
+    // @witness no-mirror: variant concept
     //     @relaxed mirrored
   | Mirror {}
 

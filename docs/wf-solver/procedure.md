@@ -88,18 +88,20 @@ Ask these questions:
     - **Equivalence.** Do not propose, and do not list in the review, a model equivalent to the model of a case the solver already has.
 - When the plan listed actions, could changing the parameterization produce a simpler or more principled model?
 
-**Concept and branch claims.** Write the header and branch lines. Judge each plausibility and verdict from the witness and each case's output on it. List each plausibility and verdict in the review. A `neither` verdict, or a non-concept verdict at `ordinary` plausibility, identifies a problem with the concept case.
+**Concept and branch claims.** Write the header and branch lines. Judge each plausibility and verdict from the witness and each case's output on it. List each plausibility and verdict in the review. On a branch's witness, an `other` verdict, or a non-concept verdict at `ordinary` plausibility, identifies a problem with the concept case.
 
-**Divergence witness.** Give each non-concept branch at least one concrete witness where its model diverges from the concept branch, and write every case's output on it.
+**Divergence witness.** Build each witness the header requires, and write every case's output on it.
 
-- The test a dropped peer fails decides what the review gives for it.
+- The condition a dropped peer fails decides what the review gives for it.
     - A peer dropped under Fidelity requires a witness in the review.
     - A peer dropped under Equivalence requires the statement that no witness exists.
     - A model that fails Fit stays out of the review, including any note that it was considered.
-- Take that witness from `uv run python scripts/run_dl.py grid <task_id>`, which runs the solver on a grid the session writes, of any size and any content.
+- For each approximated rule, state in the review why no set of clauses states it. When no witness can be built, replace the rule's text with the approximation's and remove the `@approximated:` line.
+- Record each witness with `uv run python scripts/run_dl.py record <task_id> <witness id> --separates "<what it separates>"`, with the grid on stdin.
+    - For an `other` verdict, take the judged output from `uv run python scripts/run_dl.py grid <task_id>` on a control grid: the witness changed so that the program's output is the concept's reading.
 - Choose a witness on which each model's output is defined, or write an undefined outcome as such.
 - When the divergence requires a parameter to be reassigned, reassign that parameter.
-- Write each branch's witness to `programs/witnesses/<task_id>.wit.json` with the shape below. `uv run python scripts/run_dl.py witness <task_id>` pairs each `@witness` line to an entry and prints the features, and the audit runs that check.
+- `uv run python scripts/run_dl.py witness <task_id>` checks the solver against `programs/witnesses/<task_id>.wit.json`, whose shape is below. The audit runs the same check.
 
 ```
 { "id": <task_id>,
@@ -107,9 +109,9 @@ Ask these questions:
     "id": slug,                              // unique within this file
     "separates": string,                     // models separated by this input
     "input": Grid,
-    "assign": {<parameter>: Fact[] | Grid},  // absent when the block has no `@reassigned` line; GRID_HxW form from patterns.md for stored parameters
-    "output": {<case>: Grid | null}          // when the verdict is not neither: each case's output, with null for undefined
-            | Grid                           // when the verdict is neither: the annotator's judged output
+    "assign": {<parameter>: Fact[] | Grid},  // GRID_HxW form from patterns.md for stored parameters
+    "output": {<case>: Grid | null}          // when the verdict is not other: each case's output, with null for undefined
+            | Grid                           // when the verdict is other: the annotator's judged output
   }] }
 
 Grid: number[][]                      // rows of colors

@@ -36,6 +36,7 @@ from dl.dlparse import (
     marker_names,
     parse,
 )
+from dl.features_run import NO_CHOICE, case_label
 from dl.solve import solver_file
 from dl.source import KEYWORDS_DOC, doc_keywords
 
@@ -879,6 +880,35 @@ def choice_points(source: str) -> list[ChoicePoint]:
                    else _witnesses_of(ann, raw_lines, at))
             for i, (name, at) in enumerate(_branch_sites(td, raw_lines)))))
     return points
+
+
+def concept_case(source: str) -> str:
+    """The case the concept branches make, spelled as the runner spells a
+    case name. A solver that declares no `Choice` has the one case the
+    runner names. A choice point that ranges over no ADT leaves the case
+    unspelled, and the answer is empty."""
+    points = choice_points(source)
+    if not points:
+        return NO_CHOICE
+    if any(not p.branches for p in points):
+        return ""
+    names = [p.branches[0].name for p in points]
+    if len(points) == 1 and points[0].field == SELF:
+        return case_label(f"${names[0]}()")
+    return case_label("[" + ", ".join(f"${n}()" for n in names) + "]")
+
+
+def branch_above(source: str, line: int) -> str:
+    """The name of the choice branch whose comment block holds `line`, and
+    empty when no branch's block does."""
+    raw_lines = _strip_block_comments(source).splitlines()
+    for point in choice_points(source):
+        for b in point.branches:
+            if b.line is None:
+                continue
+            if line in _comment_lines_above(raw_lines, b.line):
+                return b.name
+    return ""
 
 
 def _glosses(

@@ -34,13 +34,13 @@ def test_ragged_rows_raise():
         parse_grid("03\n333")
 
 
-def test_a_malformed_variant_leaves_the_other_variants_grids():
+def test_a_malformed_case_leaves_the_other_cases_grids():
     stdout = ("---------------\n===============\n"
               "[0, -1, 1, 0]\t3\t$Bad\n"
               "[0, 0, 0, 0]\t3\t$Good\n"
               "===============\n")
     bad, good = parse_output(stdout)
-    assert bad.variant == "$Bad" and bad.grid == [] and bad.error
+    assert bad.case == "$Bad" and bad.grid == [] and bad.error
     assert good == Candidate("$Good", [[3]], [], [])
 
 

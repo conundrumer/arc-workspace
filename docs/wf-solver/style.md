@@ -57,7 +57,8 @@ A solver is one file, `<task_id>.dl`.
 // @scene <slug>: <what every input contains, as the concept reads it>
 //  <continuation>
 // @rule <slug>: <what the output takes from the input>
-//     @approximated: <the weaker rule the program runs>
+//     @approximated: <the rule the program runs>
+//     @witness <id>: <plausibility> <verdict>
 
 // <what the choice is>
 .type Choice =
@@ -66,12 +67,13 @@ A solver is one file, `<task_id>.dl`.
     // @scene <slug>: <replacement claim>
     // @rule <slug>: <replacement claim>
     // @rule <new slug>: <added claim>
-    //     @approximated: <the weaker rule>
+    //     @approximated: <the rule the program runs>
+    //     @witness <id>: <plausibility> <verdict>
     // @witness <id>: <plausibility> <verdict>
-    //     @relaxed <slug of the claim this witness breaks>
+    //     @relaxed <slug of the scene claim this witness breaks>
     //     @reassigned <parameter changed for this witness>
     // @witness <id>: <plausibility> <verdict>
-    //     @relaxed <slug of the claim this witness breaks>
+    //     @relaxed <slug of the scene claim this witness breaks>
   | CaseB {}
 
 .decl out(p: Position, col: Color, ch: Choice)
@@ -112,8 +114,10 @@ out(..., $CaseB()) :- ...
 
 ### Header
 
-- `@scene` is only included when used in `@claim`, `@relaxed`, `@approximated`, or a branch.
+- `@scene` is only included when `@claim` or `@relaxed` names it, the text of an `@approximated:` line depends on it, or a branch replaces it.
 - `@scene` and `@rule` are in dependency order.
+- A witness under an `@approximated:` line is not `foreign`, and each case that runs the approximation has one on which its output is not the verdict's.
+<!-- Precise reading: a case's output is not the verdict's when its output on the grid differs from the output the verdict names: the concept case's for `concept`, the output of the case that takes the named branch and the concept branch elsewhere for a branch's name, every case's for `other`, no case's for `any`. -->
 
 A family sibling's header, omitting other fields:
 

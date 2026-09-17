@@ -8,13 +8,13 @@ from dl.source import _split_args
 
 
 class Candidate(NamedTuple):
-    """One variant's output grid, with the defects found in it.
+    """One case's output grid, with the defects found in it.
 
-    `error` carries a malformed variant's message; its grid is empty, and
-    the readers fail that variant alone.
+    `error` carries a malformed case's message; its grid is empty, and
+    the readers fail that case alone.
     """
 
-    variant: str  # '' when out has no trailing column
+    case: str  # '' when out has no trailing column
     grid: list[list[int]]
     conflicts: list[tuple[int, int]]
     missing: list[tuple[int, int]]
@@ -52,18 +52,18 @@ def example_facts(task) -> dict[str, str]:
     }
 
 
-def _candidate(variant: str, cells: list[tuple[int, ...]]) -> Candidate:
-    """One variant's grid, or a ValueError naming what is malformed in it."""
+def _candidate(case: str, cells: list[tuple[int, ...]]) -> Candidate:
+    """One case's grid, or a ValueError naming what is malformed in it."""
     for cell in cells:
         for edge, k in zip(("t", "b", "l", "r"), cell[:4], strict=True):
             if k < 0:
                 row = f"[{cell[0]}, {cell[1]}, {cell[2]}, {cell[3]}] {cell[4]}"
                 raise ValueError(
-                    f"negative edge distance {edge}={k} in {variant!r}: {row}"
+                    f"negative edge distance {edge}={k} in {case!r}: {row}"
                 )
     bounds = {(t + b + 1, l + r + 1) for (t, b, l, r, _) in cells}
     if len(bounds) != 1:
-        raise ValueError(f"inconsistent grid bounds in {variant!r}: {bounds}")
+        raise ValueError(f"inconsistent grid bounds in {case!r}: {bounds}")
     h, w = next(iter(bounds))
     grid = [[-1] * w for _ in range(h)]
     seen: dict[tuple[int, int], int] = {}
@@ -76,23 +76,23 @@ def _candidate(variant: str, cells: list[tuple[int, ...]]) -> Candidate:
         seen[(t, l)] = color
         grid[t][l] = color
     missing = sorted((t, l) for t in range(h) for l in range(w) if grid[t][l] == -1)
-    return Candidate(variant, grid, sorted(conflicts), missing)
+    return Candidate(case, grid, sorted(conflicts), missing)
 
 
 def parse_output(stdout: str) -> list[Candidate]:
     """Parse Souffle's default text output for the `out` relation.
 
-    Returns one Candidate per variant. Variant is the trailing column value
+    Returns one Candidate per case. The case is the trailing column value
     (e.g. '$FlipTB') from a Choice ADT, or '' when `out` has no trailing
-    column. Cells are grouped by variant; each group is one grid.
+    column. Cells are grouped by case; each group is one grid.
     `conflicts` is a sorted list of (t, l) cells that received multiple
-    distinct colors within the same variant — an ambiguous output.
+    distinct colors within the same case — an ambiguous output.
     `missing` is a sorted list of (t, l) cells no fact wrote — a partial
-    output. An output grid is total, so either list fails the variant.
+    output. An output grid is total, so either list fails the case.
 
-    A variant whose cells describe no grid — a negative edge distance, or
+    A case whose cells describe no grid — a negative edge distance, or
     bounds that disagree — carries that message in `error` and an empty
-    grid, so the other variants still report their grids.
+    grid, so the other cases still report their grids.
     """
     parts = re.split(r"^={3,}$", stdout, flags=re.MULTILINE)
     if len(parts) < 3:
@@ -108,16 +108,16 @@ def parse_output(stdout: str) -> list[Candidate]:
         if not m:
             raise ValueError(f"unexpected fact line: {line!r}")
         groups = m.groups()
-        variant = groups[5] if groups[5] is not None else ""
-        cells = grouped.setdefault(variant, [])
+        case = groups[5] if groups[5] is not None else ""
+        cells = grouped.setdefault(case, [])
         cells.append(tuple(int(x) for x in groups[:5]))
 
     candidates: list[Candidate] = []
-    for variant in sorted(grouped):
+    for case in sorted(grouped):
         try:
-            candidates.append(_candidate(variant, grouped[variant]))
+            candidates.append(_candidate(case, grouped[case]))
         except ValueError as e:
-            candidates.append(Candidate(variant, [], [], [], error=str(e)))
+            candidates.append(Candidate(case, [], [], [], error=str(e)))
     return candidates
 
 

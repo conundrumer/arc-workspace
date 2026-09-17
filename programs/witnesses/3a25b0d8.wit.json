@@ -1,4 +1,5 @@
-{ "id": "3a25b0d8",
+{
+  "id": "3a25b0d8",
   "witnesses": [{
     "id": "turned-scene",
     "separates": "Stored against Mirror: the scene stands a quarter turn from the evidence, so each figure folds top to bottom and its holes follow one another left to right. Mirror reads that axis off the figures and pairs the holes; Stored keeps the stored axis, finds the plain figure's holes across the midline and the painted figure's holes to one side of it, pairs none of them, and leaves every hole cell empty.",
@@ -49,4 +50,40 @@
       ],
       "Mirror": null
     }
-  }] }
+  }, {
+    "id": "tied-holes",
+    "separates": "Each figure carries two holes on the left of the midline side by side on the same rows, their mirrors on the right, and one hole across the midline. The two left holes lie at one place along the midline, so neither reaches nearer an end of the rank axis than the other and both take rank 0; the same holds on the right. Under both cases each of the plain figure's four side holes then pairs with both painted holes of its class, and out carries two colours at every one of those eight cells, so neither case gives a grid. The two figures have the same shape, so the generator pairs each hole with the hole at its own place: outer with outer and inner with inner.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,4,4,4,4,4,4,4,0,0,0,0,0,0,0,0,0,0],
+      [0,0,4,4,4,4,4,4,4,4,4,0,0,0,0,0,0,0,0,0],
+      [0,4,0,4,0,4,4,4,0,4,0,4,0,0,0,0,0,0,0,0],
+      [0,4,0,4,0,4,4,4,0,4,0,4,0,0,0,0,0,0,0,0],
+      [0,4,4,4,4,4,4,4,4,4,4,4,0,0,0,0,0,0,0,0],
+      [0,4,4,4,4,0,0,0,4,4,4,4,0,0,0,0,0,0,0,0],
+      [0,4,4,4,4,0,0,0,4,4,4,4,0,0,0,0,0,0,0,0],
+      [0,4,4,4,4,4,4,4,4,4,4,4,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,4,4,4,4,4,4,4,0,0,0,0,0,0,0,0,0,0],
+      [0,0,4,4,4,4,4,4,4,4,4,0,0,0,0,0,0,0,0,0],
+      [0,4,2,4,3,4,4,4,6,4,7,4,0,0,0,0,0,0,0,0],
+      [0,4,2,4,3,4,4,4,6,4,7,4,0,0,0,0,0,0,0,0],
+      [0,4,4,4,4,4,4,4,4,4,4,4,0,0,0,0,0,0,0,0],
+      [0,4,4,4,4,8,8,8,4,4,4,4,0,0,0,0,0,0,0,0],
+      [0,4,4,4,4,8,8,8,4,4,4,4,0,0,0,0,0,0,0,0],
+      [0,4,4,4,4,4,4,4,4,4,4,4,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [
+      [0,0,4,4,4,4,4,4,4,0,0],
+      [0,4,4,4,4,4,4,4,4,4,0],
+      [4,2,4,3,4,4,4,6,4,7,4],
+      [4,2,4,3,4,4,4,6,4,7,4],
+      [4,4,4,4,4,4,4,4,4,4,4],
+      [4,4,4,4,8,8,8,4,4,4,4],
+      [4,4,4,4,8,8,8,4,4,4,4],
+      [4,4,4,4,4,4,4,4,4,4,4]
+    ]
+  }]
+}

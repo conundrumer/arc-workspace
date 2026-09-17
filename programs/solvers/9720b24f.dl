@@ -9,6 +9,8 @@
 //     @approximated: a cell lies inside a container when the
 //      container's cells are on both sides of it along one axis, and one
 //      is to a side of the other axis
+//     @witness far-marks: variant Shape
+//     @witness open-chevron: variant other
 // @rule pass: every other cell passes through unchanged
 
 // what a container is
@@ -16,9 +18,7 @@
     // @claim container
     ColorClass {}
     // @scene container: a container is one 8-connected shape of non-bg cells
-    // @witness far-marks: sibling Shape
-    //     @relaxed inside
-    // @witness broken-ring: sibling concept
+    // @witness broken-ring: variant concept
     //     @relaxed outline-shape
   | Shape {}
 

@@ -1,0 +1,130 @@
+// 9aaea919
+// @draft
+// @keywords: objects markers count move
+// @scene field: the commonest color is the background
+// @scene stacks: same-shaped diamonds pile in stacks that stand on the base
+//  edge, one blank row between stacked diamonds
+// @scene bars: a bar lies on the base edge under a stack, spanning its width
+// @rule spend: the diamonds of a stack under a spend bar turn the spent color
+// @rule transfer: a stack under a gain bar grows by one diamond per spent
+//  diamond, each new diamond stacked on the one below it with the same
+//  blank gap, in the stack's own color
+// @rule erase: the bars are erased
+
+.decl out(p: Position, col: Color)
+
+.comp Params {
+    // The edge the bars lie on; stacks grow away from it.
+    .decl base(d: Dir) base(DIR_B).
+
+    // Blank rows between stacked diamonds.
+    .decl gap(k: number) gap(1).
+
+    // The bar color that spends the stack above it.
+    .decl spend(col: Color) spend(2).
+
+    // The bar color that gains the spent diamonds.
+    .decl gain(col: Color) gain(3).
+
+    // The color a spent diamond takes.
+    .decl spent_color(col: Color) spent_color(5).
+}
+
+.init params = Params
+
+// @claim field
+.init palette = Mode<Unit, Color, Position>
+palette.item($U(), Col, P) :- in(P, Col).
+
+.decl bg(col: Color)
+bg(Col) :- palette.mode($U(), Col).
+
+// The direction the stacks grow toward.
+.decl grow(d: Dir)
+grow(D) :- params.base(B), opposite(B, D).
+
+// The axis the stacks stand along.
+.decl stack_axis(a: Axis)
+stack_axis(A) :- params.base(B), axis_of(B, A).
+
+// @claim stacks bars
+.init shapes = Components<Color>
+shapes.node(Col, P) :- in(P, Col), !bg(Col).
+
+.decl shape(id: Ident, p: Position)
+shape(Id, P) :- shapes.label(_, P, Id).
+
+.decl shape_color(id: Ident, col: Color)
+shape_color(Id, Col) :- shapes.label(Col, _, Id).
+
+// @claim stacks bars
+.init bbox = Bbox<Ident>
+bbox.cell(Id, P) :- shape(Id, P).
+
+// A bar lies on the base edge.
+.decl bar(id: Ident)
+bar(Id) :- shape(Id, P), params.base(B), dist(P, B, 0).
+
+.decl diamond(id: Ident)
+diamond(Id) :- shape(Id, _), !bar(Id).
+
+// The span a shape covers across the stack axis.
+.decl span(id: Ident, s: Box)
+span(Id, S) :- bbox.box(Id, B), stack_axis(A), split(B, A, _, S).
+
+// The diamond stands in the stack the bar marks.
+.decl under(id: Ident, m: Ident)
+under(Id, M) :- diamond(Id), bar(M), span(Id, S), span(M, S).
+
+.decl spent(id: Ident)
+spent(Id) :- under(Id, M), shape_color(M, Col), params.spend(Col).
+
+.decl gaining(id: Ident, m: Ident)
+gaining(Id, M) :- under(Id, M), shape_color(M, Col), params.gain(Col).
+
+// The diamonds of a gaining stack, from the base edge up.
+// @claim stacks
+.init stack_order = Order<Ident, Ident>
+stack_order.elem(M, Id) :- gaining(Id, M).
+stack_order.before(M, Id, Id2) :-
+    gaining(Id, M), gaining(Id2, M), bbox.box(Id, B), bbox.box(Id2, B2),
+    grow(D), nearer(D, B2, B).
+
+// The top diamond of a gaining stack.
+.decl top(id: Ident)
+top(Id) :- stack_order.last(_, Id).
+
+// The diamond height along the stack axis.
+.decl height(t: Ident, n: number)
+height(T, N) :- top(T), bbox.box(T, B), shape(T, P), stack_axis(A), box_extent(B, P, A, N).
+
+// A cell lifted one diamond height and one gap toward the grow edge.
+.decl lift(t: Ident, p: Position, q: Position)
+lift(T, P, Q) :-
+    height(T, N), grow(D), in(P, _),
+    jump(P, D, N, Q1), params.gap(G), jump(Q1, D, G, Q).
+
+// @claim transfer
+.init spent_count = Tally<Unit, Ident>
+spent_count.item($U(), Id) :- spent(Id).
+
+// @claim transfer
+// The top diamond lifted once per spent diamond.
+.init grown = CycleWalk<Ident, Position>
+grown.succ(T, P, Q) :- lift(T, P, Q).
+grown.step(T, N) :- top(T), spent_count.tally($U(), N).
+
+.decl added(t: Ident, p: Position)
+added(T, Q) :- top(T), shape(T, P), grown.walk(T, P, K, Q), K != 0.
+
+// Every cell that is not background in the output.
+.decl render(p: Position, col: Color)
+render(P, Col) :- added(T, P), shape_color(T, Col).
+render(P, Col) :-
+    shape(Id, P), diamond(Id),
+    ( spent(Id), params.spent_color(Col)   // a spent diamond takes the spent color
+    ; !spent(Id), in(P, Col)               // any other diamond keeps its own
+    ).
+
+out(P, Col) :- in(P, _), render(P, Col).
+out(P, Col) :- in(P, _), !render(P, _), bg(Col).

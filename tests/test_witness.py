@@ -6,7 +6,7 @@ import pytest
 
 from arc.jsonio import format_file
 from dl import cli, solve, witness
-from dl.annotations import FORMS, SLUG_FORM
+from dl.annotations import FORMS, SLUG_FORM, read
 from dl.facts import Candidate
 
 STEM = "abcd1234"
@@ -103,6 +103,43 @@ def test_the_annotation_checks_report_what_they_accept_silently(solvers,
         "`assign` is empty; omit the key",
         "entry `orphan` of the witness file is named by no `@witness` line",
     ]
+
+
+def test_a_nested_witness_joins_the_claim_it_stands_under():
+    """A `@witness` line indented after `//` under an `@approximated:` line
+    joins that claim, and the source's blocks as well. One under a claim with
+    no `@approximated:` line is malformed."""
+    ann = read("// @rule inside: a non-bg cell is erased to bg\n"
+               "//     @approximated: a cell lies inside a container\n"
+               "//     @witness far-marks: variant Shape\n"
+               "//         @reassigned some_param\n"
+               "// @rule pass: every other cell passes through\n"
+               "//     @witness stray: variant concept\n")
+
+    inside, passes = ann.claims
+    (block,) = inside.witnesses
+    assert (block.id, block.approximates, block.reassigned) == (
+        "far-marks", "inside", ["some_param"])
+    assert [w.id for w in ann.witnesses] == ["far-marks"]
+    assert passes.witnesses == []
+    (bad,) = ann.malformed
+    assert bad.line == 6 and "`@approximated:`" in bad.why
+
+
+def test_an_approximated_claim_with_no_witness_reports(solvers, monkeypatch):
+    """A `@rule` line the header approximates states a witness under its
+    `@approximated:` line. The run passes every grid, so nothing else
+    reports the claim."""
+    (solvers / f"{STEM}.dl").write_text(
+        "// @rule inside: a non-bg cell is erased to bg\n"
+        "//     @approximated: a cell lies inside a container\n"
+        + WITNESS_LINE)
+    _write(solvers, [_entry({"Copy": [[1, 2]]})])
+    monkeypatch.setattr(witness, "run_dl_source", _emit([("$Copy", [[1, 2]])]))
+
+    notes = [d.note for d in witness.witness_report(STEM)]
+    assert notes == ["`@rule inside` is approximated and has no `@witness` "
+                     "line under its `@approximated:`"]
 
 
 PARAMS = (WITNESS_LINE

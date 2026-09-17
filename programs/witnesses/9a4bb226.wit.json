@@ -1,0 +1,81 @@
+{
+  "id": "9a4bb226",
+  "witnesses": [{
+    "id": "four-colors",
+    "separates": "One block has four colors and the others two. Most and Odd pick the four-color block; Fixed finds no block with three colors.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,1,2,3,0,0,5,5,6,0],
+      [0,4,1,2,0,0,6,5,5,0],
+      [0,3,4,1,0,0,5,6,6,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,7,8,8,0,0,9,4,4,0],
+      [0,7,7,8,0,0,4,4,9,0],
+      [0,8,7,8,0,0,9,9,4,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": {
+      "Most": [
+        [1,2,3],
+        [4,1,2],
+        [3,4,1]
+      ],
+      "Fixed": null,
+      "Odd": [
+        [1,2,3],
+        [4,1,2],
+        [3,4,1]
+      ]
+    }
+  }, {
+    "id": "two-odd",
+    "separates": "The blocks have two, two, three, and four colors. Most picks the four-color block; Fixed picks the three-color block; Odd finds two blocks with an unshared count.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,1,2,3,0,0,5,5,6,0],
+      [0,4,1,2,0,0,6,5,5,0],
+      [0,3,4,1,0,0,5,6,6,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,7,8,8,0,0,9,4,4,0],
+      [0,7,3,8,0,0,4,4,9,0],
+      [0,8,7,8,0,0,9,9,4,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": {
+      "Most": [
+        [1,2,3],
+        [4,1,2],
+        [3,4,1]
+      ],
+      "Fixed": [
+        [7,8,8],
+        [7,3,8],
+        [8,7,8]
+      ],
+      "Odd": null
+    }
+  }, {
+    "id": "lone-count",
+    "separates": "One block has one color and the others two. Odd picks the one-color block; Most finds three blocks tied at the top; Fixed finds no block with three colors.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,1,1,1,0,0,5,5,6,0],
+      [0,1,1,1,0,0,6,5,5,0],
+      [0,1,1,1,0,0,5,6,6,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,7,8,8,0,0,9,4,4,0],
+      [0,7,7,8,0,0,4,4,9,0],
+      [0,8,7,8,0,0,9,9,4,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": {
+      "Most": null,
+      "Fixed": null,
+      "Odd": [
+        [1,1,1],
+        [1,1,1],
+        [1,1,1]
+      ]
+    }
+  }]
+}

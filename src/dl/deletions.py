@@ -415,7 +415,7 @@ def _cases_agree(source: str, examples: list, reference: list) -> bool:
             )
         except Exception:
             return False
-        if len({c.variant for c in actuals}) < 2:
+        if len({c.case for c in actuals}) < 2:
             return False
         if len({tuple(map(tuple, c.grid)) for c in actuals}) != 1:
             return False

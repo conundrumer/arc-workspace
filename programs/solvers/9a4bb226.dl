@@ -1,0 +1,72 @@
+// 9a4bb226
+// @draft
+// @keywords: objects crop select count
+// @scene blocks: the ink forms separate blocks, each a filled rectangle
+// @scene counts: one block has three colors and every other block has two
+// @rule most: the output is the block with the most colors
+
+// which block is picked
+.type Choice =
+    // @claim most
+    Most {}
+    // @rule most: the output is the block with the stored color count
+    // @witness four-colors: variant concept
+    //     @relaxed counts
+    // @witness two-odd: variant concept
+    //     @relaxed counts
+  | Fixed {}
+    // @rule most: the output is the block whose color count no other block has
+    // @witness two-odd: variant concept
+    // @witness lone-count: variant Odd
+    //     @relaxed counts
+  | Odd {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+
+    // --- Fixed ---
+    // How many colors the picked block has.
+    .decl palette(n: number) palette(3).
+}
+
+.init params = Params
+
+// @claim blocks
+.init blocks = Components<Unit>
+blocks.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+// @claim blocks
+.init bbox = Bbox<Ident>
+bbox.cell(Id, P) :- blocks.label($U(), P, Id).
+
+// @claim most
+.init colors = Tally<Ident, Color>
+colors.item(Id, Col) :- blocks.label($U(), P, Id), in(P, Col).
+
+.decl picked(id: Ident, ch: Choice)
+
+out(P_inner, Col, Ch) :-
+    picked(Id, Ch), bbox.box(Id, B),
+    in(P, Col), crop(P, B, P_inner).
+
+// --- Most ---
+
+// @claim most
+.init most = ArgExtremes<Unit, Ident>
+most.cand($U(), Id, N) :- colors.tally(Id, N).
+
+picked(Id, $Most()) :- most.high($U(), Id, _).
+
+// --- Fixed ---
+
+picked(Id, $Fixed()) :- colors.tally(Id, N), params.palette(N).
+
+// --- Odd ---
+
+// Some other block has the same color count.
+.decl shared(id: Ident)
+shared(Id) :- colors.tally(Id, N), colors.tally(Id2, N), Id != Id2.
+
+picked(Id, $Odd()) :- colors.tally(Id, _), !shared(Id).

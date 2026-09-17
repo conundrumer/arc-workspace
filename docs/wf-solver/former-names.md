@@ -18,7 +18,7 @@ Each row gives the current name for a former one that a reader would otherwise t
 | lib primitive | lib relation |
 | `Position`, the record | `Box`; `Position` is its cell reading |
 
-Fit names the case test that principles.md states under Cases.
+Fit names the case condition that principles.md states under Cases.
 
 ## Identifiers
 
@@ -43,3 +43,5 @@ Fit names the case test that principles.md states under Cases.
 | `@invariant` | `@scene` |
 | `@addition` | a branch's `@scene` or `@rule` line under a new slug |
 | `@rule` above an instance | `@claim` |
+| `neither` (verdict) | `other` |
+| `open` (verdict) | `any` |
