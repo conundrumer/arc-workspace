@@ -4,7 +4,8 @@ relations, from the proposer probe.
 In conventional terms, the values consistent with the examples are a
 parameter's version space. A proposer restricts the space that settling
 searches: an exact parameter is point-identified by its proposer, a narrowed
-parameter set-identified, and settling enumerates the rest under the budget.
+parameter set-identified, and settling enumerates the rest under the
+enumeration limit.
 """
 
 import itertools
@@ -91,15 +92,16 @@ def run_probe(task) -> dict[str, set[tuple]]:
 
 
 # Joint candidate product a produce run may enumerate to settle narrowed
-# parameters by verification; over it, settling parameters must move under
+# parameters by verification; over it, parameters must move under
 # determination — the session's choice which — until the rest go under.
-JOINT_BUDGET = 100
+ENUMERATION_LIMIT = 100
 
-# Printed once under the over-budget section when some listed count is a
+# Printed once under the over-the-limit section when some listed count is a
 # Position parameter's enumerable domain.
 POSITION_DOMAIN_NOTE = (
-    "A Position parameter's candidates are the cells of the frame its stored "
-    "value implies, so its count follows the frame the parse produces."
+    "  A Position parameter's candidates are the cells of the frame its "
+    "stored value implies, so its count follows the frame the parse "
+    "produces."
 )
 
 
@@ -306,12 +308,13 @@ def settle_survivors(
     Returns (assignments, surviving, values): the assignments run, how many
     of them reproduce every train pair, and each enumerated parameter's
     surviving values, rendered. None when no parameter settles, when the
-    joint product is over JOINT_BUDGET, or when the stored values fail the
+    joint product is over ENUMERATION_LIMIT, or when the stored values fail
+    the
     train pairs.
     """
     results, _embedded, determined = report
     _determine, settle, _done, _exact = determination_plan(results, determined)
-    if not settle or math.prod(n for _, n in settle) > JOINT_BUDGET:
+    if not settle or math.prod(n for _, n in settle) > ENUMERATION_LIMIT:
         return None
     verdicts_by_param = dict(results)
     path, task_id = solver_file(stem)
@@ -337,7 +340,7 @@ def settle_survivors(
         return None
 
     assignments = list(itertools.product(*(c for _, _, c in enumerated)))
-    if len(assignments) > JOINT_BUDGET:
+    if len(assignments) > ENUMERATION_LIMIT:
         return None
     reference = _profile(source, task.train)
     if reference is None:
@@ -378,9 +381,9 @@ def determination_plan(
     when a candidate set — a proposer's narrowed set or the parameter's own
     value domain — gives a produce run something to enumerate; it needs a
     determination relation when it has neither. Settling is bounded: when the
-    settling parameters' joint product is over JOINT_BUDGET, some must move
-    under determination — which ones is the session's choice — until the rest
-    go under. Parameters in `determined` already carry a determination
+    joint product of the candidate counts is over ENUMERATION_LIMIT, some
+    parameters must move under determination — which ones is the session's
+    choice — until the rest go under. Parameters in `determined` already carry a determination
     relation; they are done and leave the product. A paired-table row ('a+b')
     makes both parameters exact.
     """
@@ -418,26 +421,30 @@ def determination_plan(
 def render_determination_plan(
     report: tuple[list[tuple[str, dict[str, str]]], list[str], set[str]],
     survivors: Survivors | None = None,
+    verdicts: bool = False,
 ) -> list[str]:
     """The plan's sections. `survivors` is the joint enumeration of the
     settling parameters (see settle_survivors); it puts each enumerated
     parameter's verdict on its covered line, under a line stating how many
-    assignments the train pairs admit."""
+    assignments the train pairs admit. `verdicts` appends each proposer's
+    verdict on each parameter."""
     results, embedded, determined = report
     tried, survived, surviving = survivors or (0, 0, {})
     determine, settle, done, exact = determination_plan(results, determined)
     joint = math.prod(n for _, n in settle)
-    over = joint > JOINT_BUDGET
+    over = joint > ENUMERATION_LIMIT
     covered = sorted(exact + ([] if over else [param for param, _ in settle]))
     verdicts_by_param = dict(results)
     lines: list[str] = []
 
-    def section(header: str, params: list[str]) -> None:
+    def section(header: str, params: list[str], note: str = "") -> None:
         if not params:
             return
         if lines:
             lines.append("")
         lines.append(f"{header}:")
+        if note:
+            lines.append(note)
         lines.extend(f"  {param}" for param in params)
 
     def covered_line(param: str) -> str:
@@ -446,9 +453,9 @@ def render_determination_plan(
         best = covering_verdict(verdicts_by_param.get(param, {}))
         if best is None:
             # A paired-table row carries the verdict of each of its parts.
-            for row, verdicts in results:
+            for row, vs in results:
                 if "+" in row and param in row.split("+"):
-                    for name, verdict in verdicts.items():
+                    for name, verdict in vs.items():
                         if verdict == "exact":
                             best = (name, verdict)
         if best is None:
@@ -471,19 +478,21 @@ def render_determination_plan(
     )
     if over:
         section(
-            f"over the settle budget ({joint} > {JOINT_BUDGET}) — "
-            "choose determination relations until the rest go under",
+            f"over the enumeration limit ({joint} > {ENUMERATION_LIMIT}) — "
+            "write determination relations for parameters here until the "
+            "product of the remaining candidate counts is under "
+            f"{ENUMERATION_LIMIT}",
             [f"{param}({n})" for param, n in settle],
         )
         position_domain = {
-            param: verdicts.get("position-domain") for param, verdicts in results
+            param: vs.get("position-domain") for param, vs in results
         }
         if any(position_domain.get(p) == f"enumerable({n})" for p, n in settle):
             lines.append(POSITION_DOMAIN_NOTE)
     section("determined", done)
     section(
-        "a proposer or the parameter's value domain covers the value on "
-        "this task's examples — no determination relation needed",
+        "the value is covered on this task's examples — no determination "
+        "relation needed",
         [covered_line(param) for param in covered],
     )
     if surviving:
@@ -491,13 +500,15 @@ def render_determination_plan(
             f"{survived} of {tried} joint assignments of the enumerated "
             f"parameters reproduce every train pair"
         )
-    section("move data from rules to fact parameters", embedded)
+    section("move data from clauses to fact parameters", embedded)
 
-    detail = [
-        f"{param}: " + ", ".join(f"{n} {v}" for n, v in verdicts.items())
-        for param, verdicts in results
-        if verdicts
-    ]
-    if detail:
-        lines += [""] + detail
+    if verdicts:
+        detail = [
+            f"{param}: " + ", ".join(f"{n} {v}" for n, v in vs.items())
+            for param, vs in results
+            if vs
+        ]
+        if detail:
+            lines += ["", "each proposer's verdict on each parameter:"]
+            lines += [f"  {line}" for line in detail]
     return lines

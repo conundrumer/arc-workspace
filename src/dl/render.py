@@ -38,7 +38,7 @@ def render_diff(expected: list[list[int]], actual: list[list[int]]) -> list[str]
 
 
 def _short(name: str) -> str:
-    """Variant label for listings; a resolution enumeration term gets elided."""
+    """Case label for listings; a long one is cut short."""
     return name if len(name) <= 40 else name[:37] + "..."
 
 
@@ -100,7 +100,7 @@ def render_pair_failure(p: PairResult, stem: str | None = None) -> list[str]:
         lines.extend(_error_lines(error))
         return lines
     if not p.variants:
-        lines.append("  (no variants emitted)")
+        lines.append("  no case emitted a grid")
         return lines
 
     if all(v.ok for v in p.variants):
@@ -122,7 +122,7 @@ def render_pair_failure(p: PairResult, stem: str | None = None) -> list[str]:
     if has_named or multi:
         pass_v = [_short(v.name) or "(out)" for v in p.variants if v.ok]
         fail_v = [_short(v.name) or "(out)" for v in p.variants if not v.ok]
-        lines.append(f"  variants: {len(pass_v)} pass / {len(fail_v)} fail")
+        lines.append(f"  cases: {len(pass_v)} pass / {len(fail_v)} fail")
         if pass_v:
             lines.append(f"    pass: {', '.join(pass_v)}")
         if fail_v:

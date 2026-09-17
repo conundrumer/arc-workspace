@@ -1,19 +1,32 @@
 // 2d0172a1
-// keywords: objects enclose rank approximation
-// input: wandering curves of one ink nest inside one another
-// output: The output redraws them as rectangles: each boundary line of
-//  the input becomes one output line, and neighbouring lines sit one blank
-//  line apart. A container curve draws an outline, and marks the two lines
-//  it draws on each axis. Any other curve collapses to a single cell, and
-//  its one mark per axis spans its whole footprint. Marks that overlap
-//  along an axis take the same output line, which is what carries relative
-//  position across the redraw.
+// @keywords: objects enclose rank
+// @scene ink: the commoner colour is the background and the other is the ink
+//  the curves are drawn in
+// @scene curve: each connected run of ink is one curve
+// @scene nesting: every curve that closes a cell off from the grid edge
+//  also closes another curve off from the grid edge
+// @rule colours: the redraw uses the same two colours
+// @rule outline: a curve that closes some cell off from the grid edge redraws
+//  as a rectangle outline
+// @rule collapse: any other curve redraws as a single cell
+// @rule mark: each curve marks, on each axis, the lines its redraw takes: the
+//  two sides of its box for an outline, and its whole footprint for a
+//  collapsed curve
+// @rule position: the redraw keeps each curve's position relative to the
+//  others
+//     @approximated: marks that overlap along an axis take one
+//      output line, and a run of marks linked by overlap is one line
+// @rule spacing: neighbouring output lines sit one blank line apart, and a
+//  blank line holds a collapsed curve off the frame edge
 
 // what makes a curve a container
 .type Choice =
-    // it closes some cell off from the grid edge
+    // @claim outline
     Hollow {}
-    // it closes another curve off from the grid edge
+    // @rule outline: a curve that closes another curve off from the grid edge
+    //  redraws as a rectangle outline
+    // @witness lone-ring: sibling concept
+    //     @relaxed nesting
   | Nest {}
 
 // The mark curve x contributes on the d side of its bbox.
@@ -26,8 +39,6 @@
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // The blank line between neighbouring figures, which also holds a
-    // collapsed curve off the frame edge.
     .decl gap(k: number) gap(1).
 }
 
@@ -36,6 +47,7 @@
 .decl impl_choice(ch: Choice)
 impl_choice($Hollow()). impl_choice($Nest()).
 
+// @claim ink colours
 .init palette = Mode<Unit, Color, Position>
 palette.item($U(), Col, P) :- in(P, Col).
 
@@ -45,6 +57,7 @@ bg(Col) :- palette.mode($U(), Col).
 .decl fg(col: Color)
 fg(Col) :- in(_, Col), !bg(Col).
 
+// @claim curve
 .init curves = Components<Unit>
 curves.node($U(), P) :- in(P, Col), fg(Col).
 
@@ -55,6 +68,7 @@ curve(X, P) :- curves.label($U(), P, X).
 .decl off_curve(x: Ident, p: Position)
 off_curve(X, P) :- curve(X, _), in(P, _), !curve(X, P).
 
+// @claim outline
 .init escape = Reach<Ident>
 escape.node(X, P) :- off_curve(X, P).
 escape.seed(X, P) :- off_curve(X, P), dir_elem(D), dist(P, D, 0).
@@ -68,6 +82,7 @@ encloses(X, P) :- off_curve(X, P), !escape.reach(X, P).
 ring(X, $Hollow()) :- encloses(X, _).
 ring(X, $Nest()) :- encloses(X, P), curve(_, P).
 
+// @claim mark
 .init bbox = Bbox<Ident>
 bbox.cell(X, P) :- curve(X, P).
 
@@ -99,8 +114,6 @@ mark_apart([Ch, X1, D1], [Ch, X2, D2]) :-
     mark_end([Ch, X2, D2], D, L2),                    // the second's near end
     nearer(D, L1, L2).
 
-// Marks that overlap take the same line, and sharing a line is transitive:
-// a run of marks linked by overlap is one line.
 .decl mark_same(m1: Mark, m2: Mark)
 mark_same([Ch, X1, D1], [Ch, X2, D2]) :-
     mark_axis([Ch, X1, D1], A), mark_axis([Ch, X2, D2], A),
@@ -112,7 +125,7 @@ grp.equiv(M1, M2) :- mark_same(M1, M2).
 
 // --- layout ---
 
-// Groups stand along the axis in the order their marks do.
+// @claim position
 .init place = OrderFrame<CaseAxis, Ident>
 place.axis([Ch, A], A) :- impl_choice(Ch), axis_elem(A).
 place.member([Ch, A], G, L) :-

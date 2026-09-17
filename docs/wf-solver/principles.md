@@ -6,11 +6,11 @@
 - Avoid contrastive structures, unless the alternative needs to be addressed.
 - Prefer nested lists:
     - When a sentence states two or more parallel parts, write them as a nested list, one item each.
-    - An example or an instance of a rule is a sub-item under it.
-- A citation points a reader at a worked application of the rule it is under. A task is cited when its solver's file shows the application without the session that built it, its gloss says what the rule's text does not, and no citation under that rule shows the same application. A task the rule is still open on, or whose solver requires a case under the rule, is not cited; its review line states it.
-- A cited task is a bare id. A gloss that states the task's facts in the rule's terms, without the task's internal vocabulary, goes in a comment beside the id.
-- A draft solver is listed beside the rule as `draft: <id> — <gloss>` in a comment, and approval replaces that comment with the citation.
-- A rule's formal statement goes on a `+` line under the rule. The first `+` line under a definition starts with the term's symbol, and a symbol is declared on a `+` line under the definition or rule that first uses it. -->
+    - An example or an instance of a principle is a sub-item under it.
+- A citation points a reader at a worked application of the principle it is under. A task is cited when its solver's file shows the application without the session that built it, its gloss says what the principle's text does not, and no citation under that principle shows the same application. A task the principle is still open on, or whose solver requires a case under the principle, is not cited; its review line states it.
+- A cited task is a bare id. A gloss that states the task's facts in the principle's terms, without the task's internal vocabulary, goes in a comment beside the id.
+- A draft solver is listed beside the principle as `draft: <id> — <gloss>` in a comment, and approval replaces that comment with the citation.
+- A principle's formal statement goes on a `+` line under the principle. The first `+` line under a definition starts with the term's symbol, and a symbol is declared on a `+` line under the definition or principle that first uses it. -->
 
 # Principles
 
@@ -85,14 +85,17 @@ The relevant part of a person's understanding is how they think the task could v
     - An invariant of the inputs is an estimate of a generator constraint.
 - **concept**: the understanding of the task that a person forms.
     - **concept statement**: the concept as expressed by the solver.
-    - **concept rule**: one rule in the concept statement.
+    - **claim**: one statement in the concept statement.
+        - **scene claim**: a claim about what every input contains.
+            - A scene claim is an invariant of the inputs.
+        - **rule**: a claim about what the output takes from the input.
 - **concept case**: the case whose model the concept statement describes.
 
 ### Structures and the lib
 
 - **parse**: the structures that a model finds in the input.
 - **setup**: the parse shared by every case, together with the clauses that encode it.
-- **draft**: a solver that is not yet approved. Its header says `draft`.
+- **draft**: a solver that is not yet approved. Its header says `@draft`.
 - **corpus**: the approved solvers.
 - **precedent**: the encoding that the corpus already uses for a structure in the setup.
     - The solver that introduces or improves that encoding establishes the precedent.
@@ -129,10 +132,10 @@ The program states the task's concept without depending on how the task file or 
 
 An ARC concept relates cells, regions, and their properties. The program states those relations directly.
 
-- An **approximation** is a weaker relational rule that the program uses when it cannot express a concept rule as relations.
-    - The approximation accepts every input the concept rule accepts, and some inputs the concept rule rejects.
-    - At least one pair breaks the concept rule and still has the output that rule specifies.
-    - If the weakest form of the concept rule fixed by the pairs accepts the extra inputs that the weaker rule accepts, the weaker rule is the concept rule and there is no approximation.
+- An **approximation** is a weaker relational rule that the program uses when it cannot express a rule as relations.
+    - The approximation accepts every input the rule accepts, and some inputs the rule rejects.
+    - At least one pair breaks the rule and still has the output the concept statement gives it.
+    - If the weakest form of the rule fixed by the pairs accepts the extra inputs that the weaker rule accepts, the weaker rule states the concept and there is no approximation.
 
 ### ARC types
 
@@ -152,8 +155,8 @@ The program works in the task's own types: colors and orientation types.
 
 ### Component instances
 
-- In the program, an instance of a component that is not a construction realizes a concept rule and asserts that the task has that rule.
-    - When the task has no such rule, the program expresses the needed step with lib relations or a local clause.
+- In the program, an instance of a component that is not a construction realizes a claim and asserts that the task has that claim.
+    - When the task has no such claim, the program expresses the needed step with lib relations or a local clause.
     - That instance may leave any other outputs unused.
 - An instance of a construction asserts nothing about the task.
 
@@ -275,12 +278,12 @@ A case is included exactly when it passes all of these tests:
         - 1fad071e <!-- the test count is 3, and the train counts are 2 and 4. The table is therefore ruled out. -->
         - 3b4c2228 <!-- every test count occurs among the train counts, so the table has no unseen key and passes this test. -->
     - Fit considers only the pairs. Being undefined on another input does not prevent a model from fitting.
-- **Fidelity.** The model has an encoding allowed by the Fidelity rules.
+- **Fidelity.** The model has an encoding allowed by Fidelity.
 - **Equivalence.** The model is not equivalent to the model of another case.
 
-### Branch rules
+### Branches
 
-A branch can keep, replace, or add a rule.
+A branch can keep, replace, or add a claim.
 
 An **annotator** is the user or agent who supplies the plausibility and the verdict.
 

@@ -3,7 +3,7 @@ task's solver file, add a note on where that solver stands. Approved solvers
 are reference; anything else gets a note, once per session.
 
 Approval stands in the solver file: the console tags an unapproved solver
-with a `// draft` line, and takes that line out when the user approves. The
+with a `// @draft` line, and takes that line out when the user approves. The
 worker's own task, from CONSOLE_TASK, is exempt.
 """
 import json
@@ -15,7 +15,8 @@ from pathlib import Path
 ROOT = Path(os.environ.get("CONSOLE_ROOT") or Path(__file__).resolve().parents[2])
 STATE = Path(os.environ.get("CONSOLE_STATE_DIR") or Path(__file__).parent / "state")
 SOLVER_ID = re.compile(r"\b([0-9a-f]{8})\.dl\b")
-DRAFT = "// draft"
+# The tag, and the plain line solvers carried before it took the prefix.
+DRAFT = ("// @draft", "// draft")
 
 
 def standing(item_id: str) -> str | None:
@@ -24,7 +25,7 @@ def standing(item_id: str) -> str | None:
         text = (ROOT / "programs" / "solvers" / f"{item_id}.dl").read_text(errors="replace")
     except OSError:
         return None
-    if not any(line.strip() == DRAFT for line in text.splitlines()):
+    if not any(line.strip() in DRAFT for line in text.splitlines()):
         return None
     return (f"note: {item_id}.dl is not approved — don't use it as reference; "
             "it still counts as a survey caller.")

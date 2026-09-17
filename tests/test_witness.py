@@ -6,16 +6,22 @@ import pytest
 
 from arc.jsonio import format_file
 from dl import cli, solve, witness
+from dl.annotations import FORMS, SLUG_FORM
 from dl.facts import Candidate
 
 STEM = "abcd1234"
+
+# A `@witness` line per entry the tests write, so the pairing of lines to
+# entries reports nothing and each test reads its own finding alone.
+WITNESS_LINE = "// @witness two-colors: plausible concept\n"
+STUB = WITNESS_LINE
 
 
 @pytest.fixture
 def solvers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A solvers directory holding one stem, with a witness directory beside
     it and Souffle stubbed out."""
-    (tmp_path / f"{STEM}.dl").write_text("// stub\n")
+    (tmp_path / f"{STEM}.dl").write_text(STUB)
     wit = tmp_path / "witnesses"
     wit.mkdir()
     monkeypatch.setattr(solve, "SOLVERS_DIR", tmp_path)
@@ -32,7 +38,7 @@ def _write(solvers: Path, entries: list[dict]) -> None:
 
 
 def _entry(output, **rest) -> dict:
-    return {"id": "two-colors", "hypothesis": "the seam moves",
+    return {"id": "two-colors", "separates": "the seam moves",
             "input": [[1, 2]], "output": output} | rest
 
 
@@ -49,10 +55,10 @@ def test_expected_outcomes_hold(solvers, monkeypatch):
                         _emit([("$Copy", [[1, 2]]), ("$Flip", [[2, 1]])]))
 
     assert witness.witness_report(STEM) == []
-    assert witness.render_witness([]) == ["no drift"]
+    assert witness.render_witness([]) == ["witness: ok"]
 
 
-def test_a_changed_grid_drifts(solvers, monkeypatch):
+def test_a_changed_grid_reports_both_grids(solvers, monkeypatch):
     _write(solvers, [_entry({"Copy": [[1, 2]], "Flip": [[2, 1]]})])
     monkeypatch.setattr(witness, "run_dl_source",
                         _emit([("$Copy", [[1, 2]]), ("$Flip", [[3, 3]])]))
@@ -61,11 +67,48 @@ def test_a_changed_grid_drifts(solvers, monkeypatch):
     assert (drift.kind, drift.case) == (witness.DRIFT, "Flip")
     assert drift.expected == [[2, 1]] and drift.actual == [[3, 3]]
     lines = witness.render_witness([drift])
-    assert lines[0] == "two-colors: case Flip drifted"
-    assert "  expected:" in lines
+    assert lines[0] == ("two-colors: case Flip gives an output the entry "
+                        "does not name")
+    assert "  the entry's output:" in lines
+    assert "  the solver's output:" in lines
 
 
-PARAMS = (".comp Params {\n"
+def test_the_annotation_checks_report_what_they_accept_silently(solvers,
+                                                                monkeypatch):
+    """A `@witness` line off the form, a nested line carrying its indent
+    before the comment marker, an entry no line names, a block whose
+    `@reassigned` parameters are not the entry's `assign` keys, and an entry
+    whose `assign` is empty. The reader takes both nesting forms, so the
+    `@reassigned` line in the accepted form reaches its block. The run passes
+    every grid, so nothing else reports these."""
+    (solvers / f"{STEM}.dl").write_text(
+        "// @scene bands: the input carries bands\n"
+        "// @witness Two Colors: plausible concept\n"
+        + WITNESS_LINE
+        + "//     @reassigned arr_dim\n"
+        + "    // @relaxed bands\n")
+    _write(solvers, [_entry({"Copy": [[1, 2]]}),
+                     _entry({"Copy": [[1, 2]]}, assign={})
+                     | {"id": "orphan"}])
+    monkeypatch.setattr(witness, "run_dl_source", _emit([("$Copy", [[1, 2]])]))
+
+    notes = [d.note for d in witness.witness_report(STEM)]
+    assert notes == [
+        "`// @witness Two Colors: plausible concept` is off the `@witness` "
+        f"form, which is {FORMS['witness']}, the id {SLUG_FORM}",
+        "`// @relaxed bands` carries its indent before `//`; a nested line "
+        "carries it after, as `//     @relaxed bands`",
+        "`@reassigned` names `arr_dim`; the entry's `assign` names "
+        "no parameter",
+        "`assign` is empty; omit the key",
+        "entry `orphan` of the witness file is named by no `@witness` line",
+    ]
+
+
+PARAMS = (WITNESS_LINE
+          + "//     @reassigned arr_dim\n"
+          + "//     @reassigned band_axis\n"
+          + ".comp Params {\n"
           "    .decl arr_dim(k: number) arr_dim(3).\n"
           "    .decl band_axis(a: Axis) band_axis(AXIS_V).\n"
           "}\n")

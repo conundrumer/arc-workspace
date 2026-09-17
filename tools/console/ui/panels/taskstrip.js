@@ -2,8 +2,9 @@
    item's task, and of each task the session's feed mentions, one tab per
    task. A pair's alt output, where the task has one, stands beside the
    output under its kind. A task with a witness file gets one more tab: each
-   entry's input beside the outcome it pins on every case, with its
-   hypothesis and the invariants it breaks. */
+   entry's input beside the outcome it pins on every case, with the models
+   that input separates and the fields of the solver's `@witness` block for
+   that entry. */
 import { html, useState, useEffect, useMemo } from "/vendor/htm-preact-standalone.module.js";
 import { Grid } from "/ui/panels/grid.js";
 import { tasks, ensureTask } from "/ui/server.js";
@@ -37,21 +38,34 @@ function outcomes(w){
   return Array.isArray(w.output) ? [["rejected", w.output]] : Object.entries(w.output);
 }
 
+/* The lines a `@witness` block adds under the model: the plausibility and
+   the verdict on one line, then a line per field that holds slugs. A field
+   the block leaves empty draws nothing. */
+function blockLines(w){
+  const head = [w.plausibility, w.verdict].filter(Boolean).join(" · ");
+  return [head,
+          w.relaxed?.length ? "relaxed: " + w.relaxed.join(", ") : "",
+          w.reassigned?.length ? "reassigned: " + w.reassigned.join(", ") : ""
+         ].filter(Boolean);
+}
+
 function Witness({w}){
   const label = w.id + (w.assign ? " [" + Object.keys(w.assign).join(", ") + "]" : "");
   return html`<div class="wit">
-    <div class="pair">
-      <${Grid} g=${w.input} label=${label}/>
-      ${outcomes(w).map(([c,g])=>[
-        html`<span class="arr" key=${c+"a"}>${c==="rejected" ? "≠" : "→"}</span>`,
-        g ? html`<${Grid} key=${c} g=${g} label=${c}/>`
-          : html`<div class="gwrap" key=${c}><div class="glabel">${c}</div>
-                   <div class="undef">undefined</div></div>`])}
-    </div>
+    ${w.input
+      ? html`<div class="pair">
+          <${Grid} g=${w.input} label=${label}/>
+          ${outcomes(w).map(([c,g])=>[
+            html`<span class="arr" key=${c+"a"}>${c==="rejected" ? "≠" : "→"}</span>`,
+            g ? html`<${Grid} key=${c} g=${g} label=${c}/>`
+              : html`<div class="gwrap" key=${c}><div class="glabel">${c}</div>
+                       <div class="undef">undefined</div></div>`])}
+        </div>`
+      : html`<div class="gwrap"><div class="glabel">${w.id}</div>
+               <div class="undef">no entry</div></div>`}
     <div class="witprose">
-      <div>${w.hypothesis}</div>
-      ${(w.violates||[]).map((v,i)=>html`<div class="violates" key=${"v"+i}>violates: ${v}</div>`)}
-      ${(w.rejected||[]).map((v,i)=>html`<div class="violates" key=${"r"+i}>rejects: ${v}</div>`)}
+      ${w.separates && html`<div>${w.separates}</div>`}
+      ${blockLines(w).map(line=>html`<div class="witblock" key=${line}>${line}</div>`)}
     </div>
   </div>`;
 }

@@ -1,21 +1,38 @@
 // 3a25b0d8
-// draft
-// keywords: objects crop symmetry enclose rank approximation
-// input: Two figures of walls, each closing off a set of holes. One figure is
-//  drawn in the wall color alone; the other has its holes painted. The two
-//  figures are drawn differently, so their holes answer to each other by
-//  place, not by shape.
-// output: The plain figure, cropped to its box, each hole painted the color of
-//  the hole that answers to it. A hole lies to one side of a midline or across
-//  it, which is its class; within a class the holes follow one another along
-//  the axis the midline runs. Class and rank pair the two figures' holes one
-//  to one.
+// @draft
+// @keywords: objects crop symmetry enclose rank
+// @scene ink: the background is the color that covers the grid, and the rest
+//  of the grid is ink
+// @scene figures: the ink forms two figures, each one body of ink; the plain
+//  figure is the one drawn in a single color, and the other is the painted
+//  figure
+// @scene holes: a figure's walls are its cells in the plain figure's color,
+//  and its holes are what those walls close off from the grid edge
+// @scene mirrored: each figure folds onto itself across one axis of its
+//  box, and across no other axis
+// @scene upright: that axis is the same in every input, and the figures
+//  fold left to right
+// @scene midline: the midline's axis is the one the parameters name
+// @rule answer: each hole of the plain figure takes the color of the hole
+//  at the same place in the painted figure
+//     @approximated: a hole's class is the side of the midline it lies
+//      on, and a hole that crosses the midline is a class of its own; its
+//      rank is its place along the midline among the holes of its class.
+//      Two holes are at the same place when their class and their rank
+//      agree.
+// @rule crop: the output is the grid inside the plain figure's box, with that
+//  figure's holes painted
 
 // where the midline's axis comes from
 .type Choice =
-    // reads the axis from the parameters
+    // @claim midline
     Stored {}
-    // takes the axis a figure folds onto itself across
+    // @scene midline: the midline's axis is the one a figure folds onto itself
+    //  across
+    // @witness turned-scene: sibling Mirror
+    //     @relaxed upright
+    // @witness no-mirror: sibling concept
+    //     @relaxed mirrored
   | Mirror {}
 
 .decl out(p: Position, col: Color, ch: Choice)
@@ -28,39 +45,39 @@
 
 .init params = Params
 
-// The background is the color that covers the grid.
+// @claim ink
 .init ground = Mode<Unit, Color, Position>
 ground.item($U(), Col, P) :- in(P, Col).
 
 .decl bg(col: Color)
 bg(Col) :- ground.mode($U(), Col).
 
-// Each figure is one body of ink; its walls meet at the corners.
+// A figure's walls meet at the corners.
+// @claim figures
 .init figures = Components8<Unit>
 figures.node($U(), P) :- in(P, Col), !bg(Col).
 
 .decl fig(f: Ident, p: Position)
 fig(F, P) :- figures.label($U(), P, F).
 
-// The plain figure carries one color, the painted figure several.
+// @claim figures
 .init fig_col = Unanimous<Ident, Color>
 fig_col.item(F, Col) :- fig(F, P), in(P, Col).
 
 .decl plain(f: Ident, col: Color)
 plain(F, Col) :- fig_col.value(F, Col).
 
-// Both figures are walled in the plain figure's color.
 .decl wall_cell(f: Ident, p: Position)
 wall_cell(F, P) :- fig(F, P), in(P, Col), plain(_, Col).
 
-// A figure's box, and the grid cells it holds, in that box's own frame.
+// @claim crop answer
 .init bbox = Bbox<Ident>
 bbox.cell(F, P) :- fig(F, P).
 
 .decl fig_inner(f: Ident, p: Position, p_inner: Position)
 fig_inner(F, P, P_inner) :- in(P, _), bbox.box(F, B), crop(P, B, P_inner).
 
-// The holes: what a figure's walls close off from the grid edge.
+// @claim holes
 .init closed = Closed<Ident>
 closed.cell(F, P) :- fig(F, _), in(P, _), !wall_cell(F, P).
 
@@ -70,17 +87,16 @@ hole(F, R) :- closed.region(F, _, R).
 .decl hole_inner(r: Ident, p_inner: Position)
 hole_inner(R, P_inner) :- closed.region(F, P, R), fig_inner(F, P, P_inner).
 
-// The axis the midline inverts. A hole's class is its side on that axis, and
-// its rank runs along the perpendicular.
+// The axis the midline inverts.
 .decl class_axis(ch: Choice, a: Axis)
 
 // --- Stored ---
 class_axis($Stored(), A) :- params.class_axis(A).
 
 // --- Mirror ---
-// A figure folds onto itself across the midline. Nothing privileges either
-// figure, so either one gives the axis, and a disagreement leaves it
-// multivalued.
+// Nothing privileges either figure, so either one gives the axis, and a
+// disagreement leaves it multivalued.
+// @claim midline
 .init fig_sym = D4Map<Ident, Unit>
 fig_sym.src(F, P_inner, $U()) :- fig(F, P), fig_inner(F, P, P_inner).
 fig_sym.dst(F, P_inner, V) :- fig_sym.src(F, P_inner, V).
@@ -104,8 +120,6 @@ off_side(A, R, D) :-
 .decl side(a: Axis, r: Ident, d: Dir)
 side(A, R, D) :- hole(_, R), class_dir(A, D), !off_side(A, R, D).
 
-// Holes of one class hold the same side. A hole across the midline holds
-// neither, and those are one class too.
 .decl same_class(a: Axis, r: Ident, r2: Ident)
 same_class(A, R, R2) :-
     class_axis(_, A), hole(_, R), hole(_, R2),
@@ -114,13 +128,13 @@ same_class(A, R, R2) :-
     ).
 
 // How far toward an edge of the box a hole reaches.
+// @claim answer
 .init hole_box = Bbox<Ident>
 hole_box.cell(R, P_inner) :- hole_inner(R, P_inner).
 
 .type Ranking = [a: Axis, f: Ident, d: Dir]
 
-// Within a figure, the holes of one class follow one another along the rank
-// axis.
+// @claim answer
 .init hole_rank = Order<Ranking, Ident>
 hole_rank.elem([A, F, D], R) :- hole(F, R), rank_dir(A, D).
 hole_rank.before([A, F, D], R, R2) :-
@@ -128,8 +142,8 @@ hole_rank.before([A, F, D], R, R2) :-
     rank_dir(A, D), hole_box.box(R, B), hole_box.box(R2, B2),
     nearer(D, B, B2).                                       // R reaches nearer edge D
 
-// Class and rank pair the two figures' holes. Both ends of the rank axis
-// rank them, and a disagreement leaves the pairing multivalued.
+// Both ends of the rank axis rank the holes, and a disagreement leaves the
+// pairing multivalued.
 .decl partner(a: Axis, r: Ident, r_src: Ident)
 partner(A, R, R_src) :-
     plain(F, _), hole_rank.rank([A, F, D], R, N),           // the plain figure's hole
@@ -137,6 +151,7 @@ partner(A, R, R_src) :-
     same_class(A, R, R_src).                                // and of that class
 
 // A painted hole holds one color.
+// @claim answer
 .init hole_col = Unanimous<Ident, Color>
 hole_col.item(R, Col) :- closed.region(_, P, R), in(P, Col).
 

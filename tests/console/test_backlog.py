@@ -52,7 +52,7 @@ CITE = "principles.md Coverage cites this solver on approval."
 def draft(*, reviews=(), comps=(), workarounds=(), rules=0) -> str:
     """A draft solver: the header, the review lines a retro left in it, and a
     body of `rules` facts, which is its dl size."""
-    lines = ["// tid", "// draft", "// keywords: tiling", "// output: a grid"]
+    lines = ["// tid", "// @draft", "// @keywords: tiling", "// output: a grid"]
     lines += [f"// review {kind}: {text}" for kind, text in reviews]
     lines.append("")
     for name in comps:
@@ -98,8 +98,8 @@ def test_concurrent_saves_publish_one_whole_state(srv):
 
 REVIEWED = """\
 // aaa
-// draft
-// keywords: tiling
+// @draft
+// @keywords: tiling
 // input: a grid of tiles
 // output: the grid with every tile recolored
 // review principle: Naming — the comp name says the mechanism
@@ -133,7 +133,7 @@ def test_approval_clears_the_review_lines_and_withdrawing_it_puts_them_back(srv)
     write_solver(srv, "aaa", REVIEWED)
     assert srv.clear_draft("aaa")
     text = srv.solver_text("aaa")
-    assert "// draft" not in text and "review principle" not in text
+    assert "// @draft" not in text and "review principle" not in text
     assert json.loads(srv.REVIEWS_FILE.read_text()) == {"aaa": [
         "// review principle: Naming — the comp name says the mechanism",
         "//  and not the shape it reads"]}

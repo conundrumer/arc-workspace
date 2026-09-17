@@ -1,16 +1,25 @@
 // 9720b24f
-// draft
-// keywords: objects enclose approximation
-// output: A non-bg cell is erased to bg when a container it does not belong
-//  to surrounds it: container cells sit on both sides of the cell along one
-//  axis, and one sits to a side of the other axis. Every other cell passes
-//  through.
+// @draft
+// @keywords: objects enclose
+// @scene container: a container is every cell of one color
+// @scene outline-shape: each container is drawn as one 8-connected
+//  shape.
+// @rule inside: a non-bg cell is erased to bg when it lies inside a
+//  container it does not belong to
+//     @approximated: a cell lies inside a container when the
+//      container's cells are on both sides of it along one axis, and one
+//      is to a side of the other axis
+// @rule pass: every other cell passes through unchanged
 
 // what a container is
 .type Choice =
-    // every cell of one color
+    // @claim container
     ColorClass {}
-    // one connected shape, corners joined
+    // @scene container: a container is one 8-connected shape of non-bg cells
+    // @witness far-marks: sibling Shape
+    //     @relaxed inside
+    // @witness broken-ring: sibling concept
+    //     @relaxed outline-shape
   | Shape {}
 
 .decl out(p: Position, col: Color, ch: Choice)
@@ -34,6 +43,7 @@ ink(P, Col) :- in(P, Col), !params.bg(Col).
 together($ColorClass(), P, Q) :- ink(P, Col), ink(Q, Col).
 
 // --- Shape ---
+// @claim container
 .init shapes = Components8<Color>
 shapes.node(Col, P) :- ink(P, Col).
 
@@ -49,11 +59,10 @@ sees(Ch, P, Q, D) :-
 .decl between(ch: Choice, p: Position, q: Position, a: Axis)
 between(Ch, P, Q, A) :- sees(Ch, P, Q, D), sees(Ch, P, Q, D2), opposite(D, D2), axis_of(D, A).
 
-// P sits inside Q's container: between its cells on one axis, with one across.
+// P sits inside Q's container.
 .decl surrounded(ch: Choice, p: Position, q: Position)
 surrounded(Ch, P, Q) :- between(Ch, P, Q, A), perp(A, A2), axis_of(D, A2), sees(Ch, P, Q, D).
 
-// An inked cell inside a container it does not belong to.
 .decl erased(ch: Choice, p: Position)
 erased(Ch, P) :- surrounded(Ch, P, Q), !together(Ch, P, Q).
 

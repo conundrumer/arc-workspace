@@ -75,7 +75,7 @@ LINE_LIMIT = 100   # code only; a trailing comment does not count
 PROGRAM_SCOPES = (TOP, "Determine", "Parse", "Params")
 COMMON_SUBEXPR_MIN = 2   # literals a shared window must span
 
-# Categories of the hint tier, for callers that render the tiers apart.
+# The hint categories, for callers that render hints apart from findings.
 HINTS = frozenset({
     "pass-through", "chain-join", "single-consumer", "domain-enumerator",
     "argmax", "common-subexpr", "const-join", "comp-idiom",
@@ -90,6 +90,17 @@ type Finding = tuple[str, int, str, str]
 # The directive that keeps a relation against a hint, on the line above
 # the relation's declaration: `// @allow: <category> — <why>`.
 _ALLOW_RE = re.compile(r"//\s*@allow:\s*([\w-]+)")
+
+# The hint categories `@allow` can silence: the ones whose finding sits on
+# the relation's declaration line, which is where the directive is read.
+ALLOWABLE_HINTS = frozenset({"pass-through", "single-consumer", "chain-join"})
+
+
+def keep_line(cat: str) -> str:
+    """The line an author pastes above the declaration to keep the code
+    against this hint, tacked onto the hint's message."""
+    return (f"; to keep it, paste above the declaration: "
+            f"`// @allow: {cat} — <reason>`")
 
 # Souffle's primitive types. A column typed by one states no domain, so
 # it never counts as wider than an element type.
@@ -693,12 +704,13 @@ class _Lint:
                     - set(head_vars):
                 return  # drops a column: a named projection, not a forward
         self.claim("pass-through", key, self.decl_of(key).line,
-                   f"`{key[1]}` only feeds `{consumer[1]}`")
+                   f"`{key[1]}` only feeds `{consumer[1]}`"
+                   + keep_line("pass-through"))
 
     def single_consumer(self, key: RelKey) -> None:
         """Hint: one rule, one positive use, a two-literal body. The
         corpus both inlines and keeps this shape — the name's value is the
-        call. `// @allow: single-consumer — <why>` above the declaration
+        call. `// @allow: single-consumer — <reason>` above the declaration
         states that call, and silences the hint for that relation."""
         if key[1] == "impl_choice":
             return  # the corpus-wide case enumerator keeps its name
@@ -717,7 +729,8 @@ class _Lint:
                 and _drops_columns(defs[0]):
             return  # a projection deduplicates; inlining changes the count
         self.claim("single-consumer", key, self.decl_of(key).line,
-                   f"`{key[1]}` has one rule and one use (line {uses[0].line})")
+                   f"`{key[1]}` has one clause and one use "
+                   f"(line {uses[0].line})" + keep_line("single-consumer"))
 
     def _agg_op(self, use: Ref) -> str | None:
         """The aggregate operator whose body holds this use, if any."""
@@ -768,7 +781,8 @@ class _Lint:
                 continue
             self.claim(
                 "chain-join", key, decl.line,
-                f"`{key[1]}.{decl.fields[col].name}` only joins `{q[1]}`",
+                f"`{key[1]}.{decl.fields[col].name}` only joins `{q[1]}`"
+                + keep_line("chain-join"),
             )
             return
 
@@ -853,8 +867,8 @@ class _Lint:
                     "shared-read", decl.line,
                     f"`{name}` is shared, and "
                     f"{', '.join(f'`${c}()`' for c in missing)} "
-                    f"never reads it; a parameter one case never reads "
-                    f"belongs under that case's marker",
+                    f"never reads it; move it under the marker of the cases "
+                    f"that read it",
                 )
 
     def _case_universes(self) -> list[frozenset[str]]:
@@ -986,8 +1000,8 @@ class _Lint:
                 seen.add((line, v))
                 self.add(
                     "typed-order", line,
-                    f"{how} `{v}`, a `{t}`; `{t}` has identity and no order, "
-                    f"so the order is task data and stores as a parameter",
+                    f"{how} `{v}`, a `{t}`, which has no order; store "
+                    f"the order as a parameter",
                 )
 
         for lit in body_literals(info.rule):
@@ -1158,7 +1172,7 @@ class _Lint:
                 self.add(
                     "choice-tag", rule.line,
                     f"same body under `{_term_str(tags[1])}` and "
-                    f"`{_term_str(tags[0])}`; one rule ranges over the tags",
+                    f"`{_term_str(tags[0])}`; one clause ranges over the tags",
                 )
                 return
 
@@ -1194,7 +1208,7 @@ class _Lint:
                     "cross-choice", disj.line,
                     f"branches bind "
                     f"{', '.join(f'`${t}()`' for t in sorted(tags))}; "
-                    f"choices stay separate rules",
+                    f"keep each choice in its own clause",
                 )
 
     def raw_aggregate(self, info: RuleInfo) -> None:
@@ -1208,7 +1222,7 @@ class _Lint:
                         self.add(
                             "raw-aggregate", lit.line,
                             f"`{side.op}` in the program; read it through "
-                            f"a lib comp",
+                            f"a lib component",
                         )
 
     def subsumed_atoms(self, info: RuleInfo) -> None:
@@ -1616,7 +1630,8 @@ class _Lint:
             return
         if len(code) > LINE_LIMIT:
             self.add("long-rule", rule.line,
-                     f"{len(code)} > {LINE_LIMIT} chars of code; wrap the body")
+                     f"{len(code)} > {LINE_LIMIT} chars of code on one line; "
+                     f"wrap the body")
 
     # --- hint rules ---
 
@@ -1712,7 +1727,7 @@ class _Lint:
         if uses and all(u.role == "neg" for u in uses):
             self.add("argmax", rule.line,
                      f"`{rule.head.name}` is max/min via self-join; "
-                     f"read it through a lib comp")
+                     f"read it through a lib component")
 
     def const_join(self, info: RuleInfo) -> None:
         """Hint: a variable internal to a rule's Params reads. The join

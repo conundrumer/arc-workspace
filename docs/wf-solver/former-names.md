@@ -1,26 +1,26 @@
+<!-- When editing this doc:
+- No tool reads this doc.
+- A row stays only while both conditions hold:
+    - The former name is a current name with another referent, or a grep for it over the current docs and lib finds no line that gives its meaning. A name whose current form a grep finds, such as a prefixed one, earns no row.
+    - The former name stands in text that a later session reads. That text is `docs/`, `.claude/roles/`, and `programs/`, together with reports and briefs. Grep verifies the repo part alone. -->
+
 # Former names
 
-The solver vocabulary changed. Text written earlier can still carry an old name, and each row here gives the current name for one that a reader would otherwise take for something else or fail to find.
+Each row gives the current name for a former one that a reader would otherwise take for something else or fail to find.
 
 ## Terms
 
 | Former | Current |
 | --- | --- |
-| body | program |
-| fill (of a parameter) | value |
-| fill (of the parameterization) | assignment |
 | Fit, fit pass, fit-plan | determination, determination pass, `determination-plan` |
-| prior | concept |
 | rule (the Datalog sense) | clause |
-| lib unit | component |
+| concept rule | claim |
 | lib primitive | lib relation |
 | `Position`, the record | `Box`; `Position` is its cell reading |
 
 Fit names the case test that principles.md states under Cases.
 
 ## Identifiers
-
-These names stand in proposal entries and in reports.
 
 | Former | Current |
 | --- | --- |
@@ -31,13 +31,15 @@ These names stand in proposal entries and in reports.
 | `geq`, `gt` | `inside`, `interior` |
 | `edge_delta`, `axis_delta`, `uniform_delta` | `edge_inset`, `axis_inset`, `uniform_inset` |
 | `jump_delta`, `step_delta` | `jump_offset`, `step_offset` |
-| `Bbox.margin`, `DirPack.pos`, `DrawnRect.rect` | `box` |
+| `Bbox.margin`, `DrawnRect.rect` | `box` |
 | `DrawnRect` | `Outlines` |
 | `ShiftInvariance` | `OffsetInvariance` |
 | `DividerFrame` | `DividerTiles` |
 | `BoxCells`, `BoxFrame`, `MarginFrame`, `Reframe` | the box algebra in `programs/lib/box.dl` |
-| `concepts.md` | `keywords.md` |
-| `// family:` | `// representative:` |
+| `// family:` | `// @representative:` |
 | `percept-shadow` | `approximation` |
 | `@unit` | `@singleton-axis` |
-| `@deviation` | the branch directives in the `Choice` template in `style.md` |
+| `@deviation` | `@witness` |
+| `@invariant` | `@scene` |
+| `@addition` | a branch's `@scene` or `@rule` line under a new slug |
+| `@rule` above an instance | `@claim` |

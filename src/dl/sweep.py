@@ -35,11 +35,11 @@ from dl.source import (
 
 
 MAX_CANDIDATES = 256
-BUDGET_SECONDS = 180.0
+TIME_LIMIT_SECONDS = 180.0
 
 
-class _Budget:
-    """A wall-clock budget for the solver runs of one sweep."""
+class _Clock:
+    """A wall-clock limit for the solver runs of one sweep."""
 
     def __init__(self, seconds: float):
         self.seconds = seconds
@@ -52,18 +52,18 @@ class _Budget:
         return self.elapsed() >= self.seconds
 
 
-def _run_candidates(test, candidates: list, budget: _Budget) -> tuple[list, int]:
-    """Run `test` over the candidates in chunks until the budget is spent.
+def _run_candidates(test, candidates: list, clock: _Clock) -> tuple[list, int]:
+    """Run `test` over the candidates in chunks until the limit is spent.
 
     The clock is read between chunks, so a chunk in flight finishes. The
-    first chunk always runs, so a spent budget still leaves a reading of
+    first chunk always runs, so a spent limit still leaves a reading of
     the parameter. Returns the rows and the number of candidates run.
     """
     chunk = _pool_workers() or 8
     rows: list = []
     with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
         for i in range(0, len(candidates), chunk):
-            if rows and budget.spent():
+            if rows and clock.spent():
                 break
             rows.extend(executor.map(test, candidates[i:i + chunk]))
     return rows, len(rows)
@@ -111,7 +111,7 @@ def param_domains(
 def sweep_report(
     stem: str,
     max_candidates: int = MAX_CANDIDATES,
-    budget: float = BUDGET_SECONDS,
+    time_limit: float = TIME_LIMIT_SECONDS,
 ) -> list[tuple[str, str, object]]:
     """Conditional sweep of each enumerable parameter.
 
@@ -135,11 +135,12 @@ def sweep_report(
     turn. A slice smaller than that product is a partial sweep, and the
     status says so.
 
-    `budget` is the wall-clock budget in seconds for the solver runs. The
-    parameters run in order of candidate count, the cheapest first, and the
-    clock is read between runs. Once the budget is spent, the parameter in
-    flight reports as cut and the parameters behind it report as not swept
-    for the reason "time budget". The report keeps the declaration order.
+    `time_limit` is the wall-clock limit in seconds for the solver runs.
+    The parameters run in order of candidate count, the cheapest first, and
+    the clock is read between runs. Once the limit is spent, the parameter
+    in flight reports as cut and the parameters behind it report as not
+    swept for the reason "time limit". The report keeps the declaration
+    order.
 
     A shared parameter is one every case reads, so the cases must admit
     the same values. Each such parameter reports its per-case value sets
@@ -208,18 +209,18 @@ def sweep_report(
                 status, scope = "swept-near", (len(candidates), whole)
         prepared.append((rank, param, types, stored, candidates, status, scope))
 
-    clock = _Budget(budget)
+    clock = _Clock(time_limit)
     reference: list[frozenset[str]] | None = None
     test_reference: list[frozenset[str]] | None = None
     base_cases: frozenset[str] = frozenset()
     ran = False
-    # A spent budget costs the report the parameters that ask for the most
+    # A spent limit costs the report the parameters that ask for the most
     # runs.
     for rank, param, types, stored, candidates, status, scope in sorted(
             prepared, key=lambda p: (len(p[4]), p[0])):
         if ran and clock.spent():
             results.append(
-                (rank, 0, (public_param(param), "skip", "time budget")))
+                (rank, 0, (public_param(param), "skip", "time limit")))
             continue
 
         if reference is None:
@@ -249,7 +250,8 @@ def sweep_report(
             admits = frozenset.intersection(*passing) if passing else None
             return vals, profile == reference, admits
 
-        print(f"{public_param(param)}: {len(candidates)} values", file=sys.stderr)
+        print(f"sweeping {public_param(param)}: {len(candidates)} candidate values",
+              file=sys.stderr)
         rows, run = _run_candidates(test, candidates, clock)
         ran = True
         fitting = [v for v, ok, _ in rows if ok]
@@ -308,9 +310,9 @@ def _case_result(
 
     A case admits a value when it reproduces every train pair under it. A
     case that admits the whole domain never reads the parameter, so the
-    parameter belongs under that case's marker; a case that admits more
-    than the narrowest case is one the pairs do not exercise the parameter
-    under.
+    parameter goes under the marker of the cases that read it; a case that
+    admits more than the narrowest case is one the pairs do not exercise
+    the parameter under.
     """
     per_case = {
         case: frozenset(v for v, _, admits in rows if admits and case in admits)
@@ -391,7 +393,7 @@ def _set_sweep(
     task,
     reference: list[frozenset[str]],
     max_candidates: int,
-    clock: _Budget,
+    clock: _Clock,
 ) -> tuple[str, str, object]:
     """Sweep a parameter whose facts fit only together, as one unit.
 
@@ -400,7 +402,7 @@ def _set_sweep(
     the one-change neighborhood of the stored facts (see _neighborhood),
     which the cap bounds in turn, and the status names the part it swept.
     Fitting and test-refutation read as in the singleton sweep, over sets. A
-    sweep the budget cuts reports the sets it ran of the sets it holds.
+    sweep the limit cuts reports the sets it ran of the sets it holds.
 
     Zero is absence, so a 0 in a number column stands as a candidate only
     where the stored facts already carry one in that column.
@@ -427,7 +429,7 @@ def _set_sweep(
         profile = _profile(swap_facts(source, param, sorted(value)), task.train)
         return value if profile == reference else None
 
-    print(f"{name}: {len(subsets)} values", file=sys.stderr)
+    print(f"sweeping {name}: {len(subsets)} candidate values", file=sys.stderr)
     rows, run = _run_candidates(test, subsets, clock)
     fitting = [f for f in rows if f]
     if run < len(subsets):
@@ -535,7 +537,7 @@ def render_sweep(
                 scope = f"swept single-row changes; {swept} of {whole} sets"
             elif status == "swept-set-cut":
                 run, whole = detail[4]
-                scope = f"cut by the time budget; {run} of {whole} sets"
+                scope = f"cut by the time limit; {run} of {whole} sets"
 
             def show_value(value, types=types):
                 return "{" + ", ".join(show(v, types) for v in sorted(value)) + "}"
@@ -577,7 +579,7 @@ def render_sweep(
                      "values)")
         elif status == "swept-cut":
             run, whole = detail[4]
-            scope = f" (cut by the time budget; {run} of {whole} values)"
+            scope = f" (cut by the time limit; {run} of {whole} values)"
         vset, sset = set(fitting), set(stored)
         def shown(vals, types=types):
             return ", ".join(show(v, types) for v in vals)
@@ -640,7 +642,8 @@ def _render_cases(param: str, detail: tuple, show) -> str:
         if values == domain:
             parts.append(
                 f"{label} admit{s} the whole domain [{shown}], so {label} "
-                f"never read{s} {param} — it belongs under that case's marker"
+                f"never read{s} {param} — move {param} under the marker of "
+                f"the cases that read it"
             )
         elif values != least:
             parts.append(

@@ -6,6 +6,9 @@ import json
 import re
 from pathlib import Path
 
+from dl.annotations import merged_blocks
+from dl.annotations import read as read_annotations
+from dl.annotations import witness_blocks
 from dl.corpus import literal_count
 from dl.dlparse import ParseError, parse
 from dl.witness import load_witnesses, witness_path
@@ -57,7 +60,7 @@ PROP_DIR = "docs/wf-solver/proposals"
 # approved carries this line in its header block, and approval takes it out.
 # The session writes it with the solver; a landing adds it where the session
 # left it out.
-DRAFT = "// draft"
+DRAFT = "// @draft"
 
 
 # The draft answer per solver path, keyed on the file state it was read from:
@@ -78,8 +81,7 @@ def is_draft(item_id: str) -> bool:
     hit = DRAFT_CACHE.get(path)
     if hit is not None and hit[0] == key:
         return hit[1]
-    answer = any(line.strip() == DRAFT
-                 for line in solver_text(item_id).splitlines())
+    answer = read_annotations(solver_text(item_id)).is_draft()
     DRAFT_CACHE[path] = (key, answer)
     return answer
 
@@ -100,10 +102,6 @@ def write_solver(item_id: str, text: str) -> None:
         tmp.unlink(missing_ok=True)
 
 
-# A header field: `// <word>: <value>`, or `// review <kind>: <value>`. A
-# value continues on lines of `//` and two spaces.
-HEADER_FIELD = re.compile(r"^//\s*(\w+)(?:\s+(\w+))?:\s*(.*)$")
-CONTINUATION = re.compile(r"^//  \s*(.*)$")
 # The body annotation a session writes above a form that stands in for the
 # principled one.
 WORKAROUND = re.compile(r"^\s*//\s*@workaround:\s*(.*)$", re.M)
@@ -124,16 +122,8 @@ def header_end(lines: list[str]) -> int:
 def header_fields(text: str) -> list[tuple[str, str | None, str]]:
     """The header's fields as (word, kind, value), continuation lines joined
     into the value."""
-    out: list[tuple[str, str | None, str]] = []
-    lines = text.splitlines()
-    for line in lines[:header_end(lines)]:
-        line = line.strip()
-        if m := HEADER_FIELD.match(line):
-            out.append((m.group(1), m.group(2), m.group(3).strip()))
-        elif out and (m := CONTINUATION.match(line)):
-            word, kind, value = out[-1]
-            out[-1] = (word, kind, f"{value} {m.group(1).strip()}".strip())
-    return out
+    return [(f.word, f.kind, f.value)
+            for f in read_annotations(text).fields]
 
 
 def header_of(item_id: str) -> dict:
@@ -156,14 +146,9 @@ def needs_of(item_id: str) -> dict[str, list[str]]:
 
 def _review_span(lines: list[str]) -> list[int]:
     """The indices of the header's review lines, continuations included."""
-    at: list[int] = []
-    for n in range(header_end(lines)):
-        line = lines[n].strip()
-        if (m := HEADER_FIELD.match(line)) and m.group(1) == "review":
-            at.append(n)
-        elif at and at[-1] == n - 1 and CONTINUATION.match(line):
-            at.append(n)
-    return at
+    fields = read_annotations("".join(lines)).fields
+    return [n for f in fields if f.word == "review"
+            for n in range(f.line - 1, f.end)]
 
 
 def _cleared() -> dict[str, list[str]]:
@@ -190,7 +175,8 @@ def _retag(item_id: str, mark: bool) -> bool:
         lines = p.read_text().splitlines(True)
     except OSError:
         return False
-    at = [n for n, line in enumerate(lines) if line.strip() == DRAFT]
+    at = [f.line - 1 for f in read_annotations("".join(lines)).fields
+          if f.word == "draft"]
     if mark == bool(at):
         return False
     held = _cleared()
@@ -292,16 +278,41 @@ def withdraw_citations(item_id: str) -> list[Path]:
 
 def witness_view(item_id: str) -> dict | None:
     """The task's witness file as the task strip shows it: its entries as
-    the file writes them, or the error a file off its shape raises. None
-    when the task has no witness file."""
+    the file writes them, each carrying the fields of the solver's
+    `@witness` block of the same id. None when the task has no witness
+    file, and the error a file off its shape raises in place of the
+    entries.
+
+    An entry the solver names in no block keeps the file's fields alone. A
+    block that names no entry follows the entries, as an entry that holds
+    the block's fields and no grid."""
     path = witness_path(item_id)
     if not path.exists():
         return None
     try:
         load_witnesses(item_id)
-        return {"entries": json.loads(path.read_text())["witnesses"]}
+        entries = json.loads(path.read_text())["witnesses"]
     except (ValueError, KeyError, TypeError) as exc:
         return {"error": str(exc)}
+    blocks = {a.id: a
+              for a in merged_blocks(witness_blocks(solver_text(item_id)))}
+    for entry in entries:
+        block = blocks.pop(entry.get("id"), None)
+        if block is not None:
+            entry.update(_block_fields(block))
+    entries += [{"id": a.id, **_block_fields(a)} for a in blocks.values()]
+    return {"entries": entries}
+
+
+def _block_fields(block) -> dict:
+    """The fields of one `@witness` block, as an entry's view carries
+    them."""
+    return {
+        "plausibility": block.plausibility,
+        "verdict": block.verdict,
+        "relaxed": list(block.relaxed),
+        "reassigned": list(block.reassigned),
+    }
 
 
 def prop_path(rel: str) -> Path:
@@ -513,10 +524,9 @@ def title_of(item_id: str) -> str:
     p = solver_path(item_id)
     if not p.exists():
         return ""
-    for line in p.read_text().splitlines()[:4]:
-        m = re.match(r"//\s*((keywords|representative):.*)", line)
-        if m:
-            return m.group(1)
+    for f in read_annotations(p.read_text()).fields:
+        if f.word in ("keywords", "representative"):
+            return f"{f.word}: {f.value}"
     return ""
 
 

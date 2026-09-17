@@ -24,7 +24,7 @@ ONE_CASE = ("bg: the cases admit different values; $Edge, $Shape admit "
 
 def test_the_open_parameters_of_one_sweep():
     text = "\n".join(["bg: 6 values", SETTLED, PASSING, REFUTED, ONE_CASE,
-                      "budget 180s; elapsed 3s"])
+                      "time limit 180s; elapsed 3s"])
     assert open_params(text) == [
         ("bg", REFUTED,
          "// review sweep: bg — only the test pairs refute the other values "

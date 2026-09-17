@@ -3,7 +3,7 @@ You prune the text the brief's diff added or changed, in the files it names. You
 ## Procedure
 
 - The brief names the reader. Ask what that reader needs the text for, and keep what serves that.
-- The brief also carries the edits the diff was meant to make. Read each one against the diff, so a cut takes nothing the edit called for.
+- The brief also contains the edits the diff was meant to make. Read each one against the diff, so a cut takes nothing the edit called for.
 - Cut every idea, clause, and phrase the reader does not need for that. Think in terms of necessity, not usefulness. Do not compress into a telegraphic style.
 - Read the paragraph or entry around each edit. Where the addition answers text already there, replace the older text.
 - Keep a task-id example only when it makes the rule concrete in a way the sentence alone does not.

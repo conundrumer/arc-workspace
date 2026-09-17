@@ -52,24 +52,26 @@ A solver is one file, `<task_id>.dl`.
 
 ```
 // <task_id>
-// draft
-// keywords: <keywords from keywords.md>
-// @invariant <unique slug>: <a regularity of every input in the evidence>
-// @rule <unique slug>: <one rule of the concept statement>
+// @draft
+// @keywords: <keywords from keywords.md>
+// @scene <slug>: <what every input contains, as the concept reads it>
+//  <continuation>
+// @rule <slug>: <what the output takes from the input>
+//     @approximated: <the weaker rule the program runs>
 
 // <what the choice is>
 .type Choice =
-    // @rule <concept rule slug for a reference>
-    // @approximated <concept rule slug>: <the weaker rule the program runs>
+    // @claim <rule or scene slug>
     CaseA {}
-    // @rule <concept rule slug for an override>: <the branch's replacement rule>
-    // @addition <unique addition slug>: <the branch's new rule>
-    // @approximated <concept rule slug>: <the weaker rule the program runs>
+    // @scene <slug>: <replacement claim>
+    // @rule <slug>: <replacement claim>
+    // @rule <new slug>: <added claim>
+    //     @approximated: <the weaker rule>
     // @witness <id>: <plausibility> <verdict>
-        // @relaxed <slug of an input invariant that this witness breaks>
-        // @reassigned <parameter changed for this witness>
+    //     @relaxed <slug of the claim this witness breaks>
+    //     @reassigned <parameter changed for this witness>
     // @witness <id>: <plausibility> <verdict>
-        // @relaxed <slug of an input invariant that this witness breaks>
+    //     @relaxed <slug of the claim this witness breaks>
   | CaseB {}
 
 .decl out(p: Position, col: Color, ch: Choice)
@@ -96,7 +98,7 @@ A solver is one file, `<task_id>.dl`.
 // shared program clauses
 
 // <gloss>
-// @rule <concept rule slug> <concept rule slug>
+// @claim <slug> <slug>
 .init shape = Components<Unit>
 
 // --- CaseA ---
@@ -110,14 +112,15 @@ out(..., $CaseB()) :- ...
 
 ### Header
 
-A header with no `@invariant` lines states that every grid is a possible input.
+- `@scene` is only included when used in `@claim`, `@relaxed`, `@approximated`, or a branch.
+- `@scene` and `@rule` are in dependency order.
 
 A family sibling's header, omitting other fields:
 
 ```
 // <task_id>
-// draft
-// representative: <family's first-solved task id> <Case when the sibling has one case of its Choice>
+// @draft
+// @representative: <family's first-solved task id> <Case when the sibling has one case of its Choice>
 ```
 
 ### Cases
@@ -126,7 +129,8 @@ A solver with one case has no `Choice`, case markers, or case column on `out`.
 
 - **Case markers.** Cases do not interleave: each case's Params and clauses are under its marker. Cases that share facts or clauses are under one marker naming them, `// --- Box, Erode ---`. A marker may fix a constructor's fields, `// --- Derive(g=Iso) ---`, for the part of that case where the field is that branch; the comma still separates cases.
 - **Concept branch.** The concept branch is declared first in `Choice`, and in each field's type of a record-typed `Choice`.
-- **Other branches.** Every other branch has at least one `@witness` line. A witness's fields are under the first branch that has it, and a later branch has the `@witness` line alone.
+- **Choice gloss.** The gloss of the choice is above `.type Choice` and nowhere else.
+- **Other branches.** Every other branch has at least one `@witness` line. A witness's nested lines are under the first branch that has it, and a later branch has the `@witness` line alone.
     - A branch nested under a constructor's field states only what differs from the branch it is under.
 - **`impl_choice`.** The relation that enumerates the cases is `impl_choice`, and its column is `ch`. A record-typed `Choice` gets one enumerator per field, named for the field's type, as in `.decl locate_choice(l: Locate)`. `impl_choice` contains whole `Choice` values and appears when a clause reads one.
 
@@ -163,7 +167,7 @@ Program style applies to the program clauses and the Determine comp. The single-
 
 - **`@allow` directive.** A relation kept despite the lint's single-consumer hint has `// @allow: single-consumer — <reason>` on the line immediately above its declaration. Put the relation's gloss in a separate comment immediately above the directive. The hint does not fire on the relation.
 - **`@workaround` directive.** A temporary workaround is under a `// @workaround: <the principled form it stands in for>` line.
-- **`@rule` directive.** At program scope or inside `Parse`, an instance of a component without an `@construction` mark has the directive. Each slug names an `@rule` line in the solver's header. In a family sibling, that line belongs to the representative's header.
+- **`@claim` directive.** At program scope or inside `Parse`, an instance of a component without an `@construction` mark has the directive, one line per instance, naming the claims the instance serves. Each slug names a claim in the solver's header. In a family sibling, that claim belongs to the representative's header.
 
 ### Bans
 

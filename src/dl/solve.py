@@ -68,7 +68,7 @@ def compile_error(stem: str) -> str | None:
 
 def res_out(source: str) -> bool:
     """True when `out`'s trailing column is typed `TiebreakResolution` —
-    resolution semantics: the emitted grid set must equal the accepted set."""
+    resolution semantics: the emitted grid set is the pair's candidate."""
     try:
         program = parse(source)
     except ParseError:
@@ -106,6 +106,63 @@ def _slot_of(grid: list[list[int]], accepted: list[list[list[int]]]) -> int | No
     return None
 
 
+def _sample(ex) -> list[list[list[int]]]:
+    """The grids the task file gives for a pair as a sample of its candidate:
+    the stored output, and a tiebreak alt when the pair has one."""
+    sample = [ex.output]
+    if ex.alt is not None and ex.alt.kind == "tiebreak":
+        sample.append(ex.alt.grid)
+    return sample
+
+
+def _same_shape(a: list[list[int]], b: list[list[int]]) -> bool:
+    return len(a) == len(b) and all(len(x) == len(y) for x, y in zip(a, b))
+
+
+def _free_cells(sample: list[list[list[int]]]) -> set[tuple[int, int]] | None:
+    """The cells where the pair's stored grids differ: the tiebreak the task
+    leaves free. None when the stored grids have different shapes."""
+    first = sample[0]
+    cells = set()
+    for grid in sample[1:]:
+        if not _same_shape(grid, first):
+            return None
+        for r, (row, frow) in enumerate(zip(grid, first)):
+            for c, (v, fv) in enumerate(zip(row, frow)):
+                if v != fv:
+                    cells.add((r, c))
+    return cells
+
+
+def _resolution_error(grids: list[list[list[int]]], ex) -> str | None:
+    """Why the emitted grids are not the pair's candidate, or None when they
+    are. A candidate is the set of a pair's accepted outputs that differ only
+    in a tiebreak, and every resolution is an accepted output, so the grids
+    the task file stores are a sample of the emitted set. The emitted set must
+    hold every stored grid, and its grids must agree wherever the stored grids
+    agree."""
+    sample = _sample(ex)
+    free = _free_cells(sample)
+    if free is None:
+        return "the pair's stored grids have different shapes"
+    emitted = {_grid_key(g) for g in grids}
+    for i, grid in enumerate(sample):
+        if _grid_key(grid) not in emitted:
+            name = "the stored output" if i == 0 else "the tiebreak alt"
+            return f"{name} is not among the emitted grids"
+    first = sample[0]
+    for grid in grids:
+        if not _same_shape(grid, first):
+            return ("an emitted grid has a different shape from the stored "
+                    "grids")
+        for r, (row, frow) in enumerate(zip(grid, first)):
+            for c, (v, fv) in enumerate(zip(row, frow)):
+                if v != fv and (r, c) not in free:
+                    return (f"emitted grids differ at cell ({r}, {c}), where "
+                            "the stored grids agree")
+    return None
+
+
 def _every_slot_landed(slots: list[int | None], n: int) -> bool:
     """A rule alt is a peer model: each accepted grid is one case's output,
     so some variant must land on every slot."""
@@ -120,13 +177,15 @@ def _pair_entry(actuals: list, ex, res: bool) -> frozenset | None:
     slots: list[int | None] = []
     for c in actuals:
         slot = _slot_of(c.grid, accepted)
-        if c.error or slot is None or c.conflicts or c.missing:
+        if c.error or c.conflicts or c.missing:
+            return None
+        if slot is None and not res:
             return None
         names.add(c.variant)
         grids.add(_grid_key(c.grid))
         slots.append(slot)
     if res:
-        if grids != {_grid_key(g) for g in accepted}:
+        if not actuals or _resolution_error([c.grid for c in actuals], ex):
             return None
         return frozenset(grids)
     if ex.alt is not None and ex.alt.kind == "rule":
@@ -294,11 +353,15 @@ def run_pair(stem: str, task_id: str, kind: str, idx: int, ex) -> PairResult:
         actuals = run_dl(task_id, ex.input, stem=stem)
         accepted = _accepted(ex)
         rule_alt = ex.alt is not None and ex.alt.kind == "rule"
+        res = res_out_stem(stem)
         slots = [_slot_of(c.grid, accepted) for c in actuals]
         variants = [
             VariantResult(
                 name=c.variant,
-                ok=(not c.error) and slot is not None
+                # A resolution solver emits the whole candidate, which may
+                # hold grids the task file does not store, so a grid outside
+                # the stored ones is judged by the pair-level check below.
+                ok=(not c.error) and (res or slot is not None)
                    and not c.conflicts and not c.missing,
                 actual=c.grid,
                 conflicts=c.conflicts,
@@ -309,24 +372,20 @@ def run_pair(stem: str, task_id: str, kind: str, idx: int, ex) -> PairResult:
             for c, slot in zip(actuals, slots, strict=True)
         ]
         ok = bool(variants) and all(v.ok for v in variants)
-        distinct = {_grid_key(v.actual) for v in variants}
         if rule_alt:
             ok = ok and _every_slot_landed(slots, len(accepted))
-        if res_out_stem(stem):
-            # Resolution semantics: a tiebreak is two-way, and every
-            # accepted grid must also be emitted.
-            if len(distinct) > 2:
+        if res and ok:
+            error = _resolution_error([v.actual for v in variants], ex)
+            if error is not None:
                 return PairResult(
                     kind=kind,
                     idx=idx,
                     ok=False,
-                    error=f"tiebreak is two-way: {len(distinct)} distinct "
-                          "grids emitted",
+                    error=error,
                     expected=ex.output,
                     accepted=accepted,
                     variants=variants,
                 )
-            ok = ok and distinct == {_grid_key(g) for g in accepted}
         return PairResult(
             kind=kind,
             idx=idx,

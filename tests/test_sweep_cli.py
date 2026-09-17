@@ -9,7 +9,7 @@ import pytest
 from dl import cli, solve
 
 HEADER = ("// {stem}\n"
-          "// keywords: tiles\n"
+          "// @keywords: tiles\n"
           "// input: One grid.\n"
           "// output: The same grid.\n")
 BODY = "\n.decl out(p: Position, col: Color)\nout(p, c) :- in(p, c).\n"
@@ -17,8 +17,9 @@ BODY = "\n.decl out(p: Position, col: Color)\nout(p, c) :- in(p, c).\n"
 OPEN_SWEEP = ("bg: 6 values\n"
               "bg: stored (0); train also admits [(8)]; test refutes [(8)] — "
               "a determination from train alone could pick it\n"
-              "budget 180s; elapsed 3s\n")
-SETTLED_SWEEP = "bg: 6 values\nbg: unique = (0) ✓\nbudget 180s; elapsed 3s\n"
+              "time limit 180s; elapsed 3s\n")
+SETTLED_SWEEP = ("bg: 6 values\nbg: unique = (0) ✓\n"
+                 "time limit 180s; elapsed 3s\n")
 OPEN_LINE = ("// review sweep: bg — only the test pairs refute the other "
              "values train admits, so a determination from train alone could "
              "pick it")

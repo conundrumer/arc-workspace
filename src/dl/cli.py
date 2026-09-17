@@ -15,6 +15,7 @@ from pathlib import Path
 from types import ModuleType
 
 from arc.task import Alt, Example
+from dl.annotations import header_keywords
 from dl.corpus import literal_count
 from dl.deletions import deletion_report, render_deletions
 from dl.derived_constant import derived_constant_report, render_derived_constant
@@ -69,7 +70,6 @@ from dl.solve import (
     solver_file,
 )
 from dl.souffle import (
-    CPU_LIMIT_SECONDS,
     _pool_workers,
     build_functors,
     expression_report,
@@ -80,11 +80,10 @@ from dl.source import (
     build_source,
     doc_keywords,
     expand_macros,
-    header_keywords,
 )
 from dl.sweep import (
-    BUDGET_SECONDS,
     MAX_CANDIDATES,
+    TIME_LIMIT_SECONDS,
     render_sweep,
     sweep_report,
 )
@@ -95,8 +94,8 @@ from dl.sweep_open import (
     settled_params,
 )
 from dl.witness import (
-    DEVIATION,
-    DRIFT,
+    WITNESS_OK,
+    annotation_lines,
     load_witnesses,
     render_witness,
     witness_report,
@@ -104,11 +103,13 @@ from dl.witness import (
 
 type Findings = list[tuple[str, int, str, str]]
 
-LINT_TIERS = ("lint", "rewrite", "hint")
+# The three kinds a source's findings fall into, in report order. The
+# first two print under `findings`, the third under `hints`.
+LINT_KINDS = ("lint", "rewrite", "hint")
 
 
-def _lint_tiers(source: str, hints: bool) -> list[Findings]:
-    """Findings per tier, in LINT_TIERS order; the hint tier is empty
+def _lint_kinds(source: str, hints: bool) -> list[Findings]:
+    """Findings per kind, in LINT_KINDS order; the hint kind is empty
     unless enabled."""
     style: Findings = []
     dec: Findings = []
@@ -120,18 +121,21 @@ def _lint_tiers(source: str, hints: bool) -> list[Findings]:
     return [style, dec, adv]
 
 
-def _finding_line(stem: str, tier: str, cat: str, lineno: int, match: str) -> str:
-    if tier == "lint" and " " not in match:
+def _finding_line(stem: str, kind: str, cat: str, lineno: int, match: str) -> str:
+    """One finding as a line. A hint carries no category: the categories
+    `@allow` takes name themselves in the line the hint prints to paste."""
+    if kind == "hint":
+        return f"{stem}.dl:{lineno}: {match}"
+    if kind == "lint" and " " not in match:
         match = f"`{match}`"  # a bare code fragment; a sentence quotes itself
     return f"{stem}.dl:{lineno}: {cat}: {match}"
 
 
 def _lint_verdict(counts: list[int]) -> str | None:
-    """The verdict line for per-tier finding counts in LINT_TIERS order;
-    None when a lint or rewrite finding stands. The hint tier is
-    advisory: the corpus both inlines and keeps its shapes, so a hint
-    is a call the session makes, and it counts toward neither the
-    verdict nor the exit code."""
+    """The verdict line for per-kind finding counts in LINT_KINDS order;
+    None when a finding stands. A hint is advisory: the corpus both
+    inlines and keeps its shapes, so a hint is a call the session makes,
+    and it counts toward neither the verdict nor the exit code."""
     style, dec, adv = counts
     if style or dec:
         return None
@@ -140,25 +144,38 @@ def _lint_verdict(counts: list[int]) -> str | None:
     return "lint: ok"
 
 
+# Each printed section: its name, the word for one of its entries, and
+# the kinds of LINT_KINDS it gathers.
+SECTIONS = (
+    ("findings", "finding", ("lint", "rewrite")),
+    ("hints", "hint", ("hint",)),
+)
+
+
 def _print_findings(stems: list[str], hints: bool) -> str | None:
-    """Print the tier sections for `stems`; return the verdict line."""
-    by_tier: list[dict[str, Findings]] = [{}, {}, {}]
+    """Print the sections for `stems`; return the verdict line."""
+    by_kind: list[dict[str, Findings]] = [{}, {}, {}]
     for stem in stems:
         source = solver_file(stem)[0].read_text()
-        for held, tier in zip(by_tier, _lint_tiers(source, hints),
-                              strict=True):
-            if tier:
-                held[stem] = tier
+        for held, found in zip(by_kind, _lint_kinds(source, hints),
+                               strict=True):
+            if found:
+                held[stem] = found
 
-    counts = [sum(len(v) for v in held.values()) for held in by_tier]
-    for label, held, count in zip(LINT_TIERS, by_tier, counts, strict=True):
-        if not held:
+    counts = [sum(len(v) for v in held.values()) for held in by_kind]
+    held_by_kind = dict(zip(LINT_KINDS, by_kind, strict=True))
+    count_by_kind = dict(zip(LINT_KINDS, counts, strict=True))
+    for label, _one, kinds in SECTIONS:
+        count = sum(count_by_kind[k] for k in kinds)
+        solvers = sorted({s for k in kinds for s in held_by_kind[k]})
+        if not solvers:
             continue
         print()
-        print(f"--- {label} findings: {count} across {len(held)} solver(s) ---")
-        for stem in sorted(held):
-            for cat, lineno, match, _ in held[stem]:
-                print(f"  {_finding_line(stem, label, cat, lineno, match)}")
+        print(f"--- {label}: {count} across {len(solvers)} solver(s) ---")
+        for stem in solvers:
+            for kind in kinds:
+                for cat, lineno, match, _ in held_by_kind[kind].get(stem, []):
+                    print(f"  {_finding_line(stem, kind, cat, lineno, match)}")
     return _lint_verdict(counts)
 
 
@@ -205,19 +222,20 @@ def _compile_failed(stem: str) -> bool:
     return True
 
 
-def _print_lint_tiers(stem: str, hints: bool) -> str | None:
-    """Print one solver's tier sections; return the verdict line. Lint
+def _print_lint_sections(stem: str, hints: bool) -> str | None:
+    """Print one solver's findings and hints; return the verdict line. Lint
     needs no Souffle, so it stands whether or not the solver compiles."""
     source = solver_file(stem)[0].read_text()
-    tiers = _lint_tiers(source, hints)
-    for label, findings in zip(LINT_TIERS, tiers, strict=True):
-        if not findings:
+    found = dict(zip(LINT_KINDS, _lint_kinds(source, hints), strict=True))
+    for _label, one, kinds in SECTIONS:
+        gathered = [(kind, f) for kind in kinds for f in found[kind]]
+        if not gathered:
             continue
         print()
-        print(f"--- {len(findings)} {label} finding(s) ---")
-        for cat, lineno, match, _ in findings:
-            print(f"  {_finding_line(stem, label, cat, lineno, match)}")
-    return _lint_verdict([len(t) for t in tiers])
+        print(f"--- {len(gathered)} {one}(s) ---")
+        for kind, (cat, lineno, match, _) in gathered:
+            print(f"  {_finding_line(stem, kind, cat, lineno, match)}")
+    return _lint_verdict([len(v) for v in found.values()])
 
 
 def cmd_one(stem: str, hints: bool = False, timed: bool = False) -> int:
@@ -225,7 +243,7 @@ def cmd_one(stem: str, hints: bool = False, timed: bool = False) -> int:
         return 2
     build_functors()
     if _compile_failed(stem):
-        verdict = _print_lint_tiers(stem, hints)
+        verdict = _print_lint_sections(stem, hints)
         print()
         if verdict is not None:
             print(verdict)
@@ -253,7 +271,7 @@ def cmd_one(stem: str, hints: bool = False, timed: bool = False) -> int:
         for line in coverage:
             print(f"  {line}")
 
-    verdict = _print_lint_tiers(stem, hints)
+    verdict = _print_lint_sections(stem, hints)
 
     t0 = time.perf_counter()
     determination = run_determine(stem)
@@ -264,6 +282,8 @@ def cmd_one(stem: str, hints: bool = False, timed: bool = False) -> int:
     if determination is not None:
         for line in render_determine(determination):
             print(line)
+    else:
+        print("determination: no Determine comp")
 
     if timed:
         parts = [f"pairs {pair_secs:.1f}s"]
@@ -321,7 +341,7 @@ def cmd_pairs(stem: str, path: str) -> int:
     return 1 if failed else 0
 
 
-BUDGET_HELP = ("wall-clock budget in seconds for the sweep runs; the "
+TIME_LIMIT_HELP = ("wall-clock limit in seconds for the sweep runs; the "
                "parameter in flight reports as cut and the ones behind it "
                "report as not swept")
 
@@ -332,21 +352,16 @@ starting with `#` are skipped. Text starting with `[` is read as JSON, so a
 grid pasted out of a task file works unchanged.
 """
 
-RUN_HELP = f"""\
-Each grid a command runs gets a {CPU_LIMIT_SECONDS}s Souffle CPU limit. The determination
-check feeds every example to one process, so its limit scales by example
-count. A run that exceeds its limit fails, and the failure names the rule
-that burned the most CPU.
-
-To run one grid by hand, build the file in programs/solvers/, so that
+RUN_HELP = """\
+To profile one grid by hand, build the file in programs/solvers/, so that
 `#include "../lib.dl"` resolves, and link the functor library that lib.dl's
 relations call:
 
-    {{ echo '#include "../lib.dl"'
+    { echo '#include "../lib.dl"'
       cat programs/solvers/<stem>.dl
       echo '.input in(IO=stdin)'
       echo '.output out(IO=stdout)'
-    }} > programs/solvers/.tmp.dl
+    } > programs/solvers/.tmp.dl
     souffle -D- -w -L programs -lfunctors programs/solvers/.tmp.dl
 
 Souffle reads one fact line per cell on stdin: `[top, bottom, left, right]`
@@ -599,23 +614,25 @@ def cmd_all(hints: bool = False, timed: bool = False,
     return 0 if not failed else 1
 
 
-def _print_sweep(stem: str, max_candidates: int, budget: float) -> None:
-    """The sweep report, with the budget and the elapsed time as a footer."""
+def _print_sweep(stem: str, max_candidates: int, time_limit: float) -> None:
+    """The sweep report, with the time limit and the elapsed time as a
+    footer."""
     determined = reproduced(run_determine(stem))
     start = time.monotonic()
-    lines = render_sweep(sweep_report(stem, max_candidates, budget), determined)
+    lines = render_sweep(
+        sweep_report(stem, max_candidates, time_limit), determined)
     elapsed = time.monotonic() - start
     for line in lines:
         print(line)
-    print(f"budget {budget:.0f}s; elapsed {elapsed:.0f}s")
+    print(f"time limit {time_limit:.0f}s; elapsed {elapsed:.0f}s")
 
 
 def cmd_sweep(stem: str, max_candidates: int = MAX_CANDIDATES,
-              budget: float = BUDGET_SECONDS) -> int:
+              time_limit: float = TIME_LIMIT_SECONDS) -> int:
     if _missing(stem):
         return 2
     build_functors()
-    _print_sweep(stem, max_candidates, budget)
+    _print_sweep(stem, max_candidates, time_limit)
     return 0
 
 
@@ -624,7 +641,7 @@ def _sweep_output(stem: str) -> str:
     buf = io.StringIO()
     with redirect_stdout(buf), redirect_stderr(buf):
         build_functors()
-        _print_sweep(stem, MAX_CANDIDATES, BUDGET_SECONDS)
+        _print_sweep(stem, MAX_CANDIDATES, TIME_LIMIT_SECONDS)
     return buf.getvalue()
 
 
@@ -759,35 +776,48 @@ def cmd_deletions(stem: str) -> int:
 
 
 def _print_witness(stem: str) -> int:
-    """The witness report of `stem`, or a note that the task has no witness
-    file. Non-zero on a drift or a deviation finding."""
-    if load_witnesses(solver_file(stem)[1]) is None:
-        print("no witness file")
+    """The features each `@witness` line of `stem` states, then its witness
+    report, under headings that name what each part covers. Non-zero on a
+    differing output or an annotation finding."""
+    path, task_id = solver_file(stem)
+    witness = load_witnesses(task_id)
+    if witness is None:
+        print(f"no witness file at programs/witnesses/{task_id}.wit.json")
         return 0
+    print(f"`@witness` lines of {stem}.dl:")
+    for line in annotation_lines(path.read_text()):
+        print(f"  {line}")
+    print()
+    grids = len(witness.entries)
+    print(f"{grids} witness grid{'s' if grids != 1 else ''} run:")
     findings = witness_report(stem)
-    for line in render_witness(findings):
-        print(line)
-    return 1 if any(d.kind in (DRIFT, DEVIATION) for d in findings) else 0
+    lines = render_witness(findings)
+    passed = lines[-1] == WITNESS_OK
+    for line in (lines[:-1] if passed else lines):
+        print(f"  {line}")
+    if passed:
+        print(WITNESS_OK)
+    return 0 if passed else 1
 
 
 def cmd_witness(stem: str) -> int:
-    """Run the task's witness grids through the solver and report where a
-    case gives an outcome the witness file does not expect."""
+    """Run the task's witness grids through the solver and report each case
+    whose output differs from the one its entry names."""
     if _missing(stem):
         return 2
     build_functors()
     return _print_witness(stem)
 
 
-def cmd_audit(stem: str, budget: float = BUDGET_SECONDS) -> int:
+def cmd_audit(stem: str, time_limit: float = TIME_LIMIT_SECONDS) -> int:
     """The evidence audits of a finished solver: parameter value sweep,
-    deletions, witness. The sweep runs under the time budget, and the other
+    deletions, witness. The sweep runs under the time limit, and the other
     two run after it."""
     if _missing(stem):
         return 2
     build_functors()
     print("--- sweep ---")
-    _print_sweep(stem, MAX_CANDIDATES, budget)
+    _print_sweep(stem, MAX_CANDIDATES, time_limit)
     print()
     print("--- deletions ---")
     deletions = _print_deletions(stem)
@@ -818,14 +848,16 @@ def cmd_derived_constant(stem: str) -> int:
     return 0
 
 
-def cmd_determination_plan(stem: str) -> int:
+def cmd_determination_plan(stem: str, verdicts: bool = False) -> int:
     """Which Params parameters need determination relations, from the
     proposer probe."""
     if _missing(stem):
         return 2
     build_functors()
     report = probe_report(stem)
-    for line in render_determination_plan(report, settle_survivors(stem, report)):
+    lines = render_determination_plan(
+        report, settle_survivors(stem, report), verdicts)
+    for line in lines:
         print(line)
     return 0
 
@@ -951,7 +983,12 @@ def _parser() -> argparse.ArgumentParser:
         epilog=RUN_HELP,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    lint = sub.add_parser("lint", help="lint only, no solver runs")
+    lint = sub.add_parser(
+        "lint", help="lint only, no solver runs",
+        description="The output has two sections. A finding has to be "
+                    "fixed. A hint is the session's call, and changes "
+                    "neither the verdict nor the exit code.",
+    )
     run.add_argument("stems", nargs="*",
                      help="the solvers to run; one runs its pairs, lint and "
                           "determination check, several run as a corpus over "
@@ -962,7 +999,7 @@ def _parser() -> argparse.ArgumentParser:
                       help="one solver; all of them when omitted")
     for p in (run, lint):
         p.add_argument("--hints", action=argparse.BooleanOptionalAction,
-                       default=True, help="include the hint tier")
+                       default=True, help="include the hints section")
     run.add_argument("--time", action="store_true", dest="timed",
                      help="print wall times: per phase for one solver, "
                           "slowest 15 for a full run")
@@ -983,14 +1020,20 @@ def _parser() -> argparse.ArgumentParser:
     grid.add_argument("file", nargs="?",
                       help="grid file; stdin when omitted or `-`")
 
-    sweep = sub.add_parser("sweep", help="parameter value sweep only")
-    sweep.add_argument("stem", nargs="?")
+    sweep = sub.add_parser(
+        "sweep", help="parameter value sweep only",
+        description="Which values of each Params parameter's domain "
+                    "reproduce every train pair. A ✓ marks a parameter the "
+                    "pairs settle to its stored value; every other line names "
+                    "what it leaves open.",
+    )
+    sweep.add_argument("stem", nargs="?", help="one solver")
     sweep.add_argument("cap", nargs="?", type=int, default=MAX_CANDIDATES,
                        help="candidate count the sweep holds to: above it "
                             "the sweep narrows to one-column and one-row "
                             "changes, and it bounds those too")
-    sweep.add_argument("--budget", type=float, default=BUDGET_SECONDS,
-                       help=BUDGET_HELP)
+    sweep.add_argument("--time-limit", type=float, dest="time_limit",
+                       default=TIME_LIMIT_SECONDS, help=TIME_LIMIT_HELP)
     over = sweep.add_mutually_exclusive_group()
     over.add_argument("--open", nargs="+", metavar="STEM", dest="open_stems",
                       help="report as JSON, over these stems, the parameters "
@@ -1000,62 +1043,70 @@ def _parser() -> argparse.ArgumentParser:
                       help="the same reading, written into the solvers: each "
                            "open parameter without a `review sweep:` line yet "
                            "gets one as the last header line. The report names "
-                           "the lines written and what the lint's header "
-                           "category says")
+                           "each line written, and each lint finding the "
+                           "header carries after the write")
     sweep.add_argument("--cached", action="store_true",
                        help="with `--open` or `--mark`, take only the stems "
                             "whose cached sweep matches their current code, "
                             "or carries no hash to match, and skip the rest "
-                            "with a reason. A stem sweeps once per version of "
-                            "its code, and a comment line does not count "
-                            "toward that version, so a review line written "
-                            "into a header keeps the cached sweep")
+                            "with a reason. A stem whose only change since "
+                            "the sweep is a comment line still matches")
 
-    sub.add_parser("deletions", help="deletion report only").add_argument("stem")
+    sub.add_parser(
+        "deletions", help="deletion report only",
+        description="The rules and facts of the solver that no train pair "
+                    "needs.",
+    ).add_argument("stem", help="one solver")
     audit = sub.add_parser(
         "audit",
         help="parameter value sweep + deletion report + witness report",
+        description="The sweep, the deletion report and the witness report "
+                    "over one solver. Only the sweep runs under the time "
+                    "limit.",
     )
-    audit.add_argument("stem")
-    audit.add_argument("--budget", type=float, default=BUDGET_SECONDS,
-                       help=BUDGET_HELP)
+    audit.add_argument("stem", help="one solver")
+    audit.add_argument("--time-limit", type=float, dest="time_limit",
+                       default=TIME_LIMIT_SECONDS, help=TIME_LIMIT_HELP)
     sub.add_parser(
         "drop-one",
         help="which stored facts of a multi-fact parameter no pair needs",
-        description="Drop each stored fact of each Params parameter holding "
-                    "more than one fact, one fact at a time, and report the "
-                    "facts whose removal reproduces the stored variant "
-                    "profile on the train pairs. Each such fact runs again "
-                    "over the test pairs, so a fact the test pairs need "
-                    "reports apart from one dead on both. Opt-in: the audit "
-                    "does not run it.",
-    ).add_argument("stem")
+        description="The stored facts of a multi-fact Params parameter "
+                    "that no train pair needs. A fact the test pairs still "
+                    "need reports apart from one dead on both. The audit does "
+                    "not run it.",
+    ).add_argument("stem", help="one solver")
     sub.add_parser(
         "derived-constant",
         help="program relations that hold the same tuples on every example",
-        description="Report each program relation that reads `in` by "
-                    "dataflow, feeds `out` by dataflow, and holds the same "
-                    "tuples on every train and test example. A relation empty "
-                    "everywhere is out, and so is one that keeps its tuples "
-                    "on control grids drawn from each example's palette. "
-                    "Opt-in: the audit does not run it.",
-    ).add_argument("stem")
+        description="Each program relation between `in` and `out` that "
+                    "holds the same tuples on every train and test example. A "
+                    "relation empty everywhere, and one that keeps its tuples "
+                    "on control grids from each example's palette, are left "
+                    "out. The audit does not run it.",
+    ).add_argument("stem", help="one solver")
     sub.add_parser(
         "witness",
-        help="run the task's hand-written witness grids and report drift",
-        description="Run each grid of programs/witnesses/<task>.wit.json "
-                    "through the solver and compare what each case gives "
-                    "with the outcome the file names. A case the run emits "
-                    "and the entry does not name is reported as unlisted, "
-                    "which is not drift. Each other branch's "
-                    "`@deviation` estimates are then read against its "
-                    "divergence witness with the fewest violated "
-                    "invariants. A task with no witness file passes.",
-    ).add_argument("stem")
-    sub.add_parser(
+        help="run the task's hand-written witness grids and report where "
+             "the solver and the file disagree",
+        description="Where the solver and "
+                    "programs/witnesses/<task>.wit.json disagree: a case "
+                    "whose output differs from the one its entry names, and "
+                    "a `@witness` line the file does not bear out. A task "
+                    "with no witness file passes.",
+    ).add_argument("stem", help="one solver")
+    plan = sub.add_parser(
         "determination-plan",
         help="which Params parameters need determination relations",
-    ).add_argument("stem")
+        description="Each Params parameter under the action it needs: "
+                    "write a determination relation, record its open "
+                    "values, write determination relations until the product "
+                    "of the remaining candidate counts is under the "
+                    "enumeration limit, move data from clauses into fact "
+                    "parameters, or none.",
+    )
+    plan.add_argument("stem", help="one solver")
+    plan.add_argument("--verdicts", action="store_true",
+                      help="append each proposer's verdict on each parameter")
 
     size = sub.add_parser(
         "size", help="literal count per solver",
@@ -1091,7 +1142,7 @@ def _parser() -> argparse.ArgumentParser:
 
     keywords = sub.add_parser(
         "keywords", help="how many solvers carry each keyword of keywords.md",
-        description="Read the `// keywords:` header line of each named "
+        description="Read the `// @keywords:` header line of each named "
                     "solver, count the solvers carrying each keyword of "
                     "keywords.md, and name every header keyword the doc "
                     "does not list.",
@@ -1105,7 +1156,7 @@ def _parser() -> argparse.ArgumentParser:
         description="Print the stem of each solver a survey since the given "
                     "date-time covers: the ones the commits since then touch, "
                     "plus the ones whose working-tree content differs from "
-                    "HEAD. Commits reaching past a set share of the corpus "
+                    "HEAD. Commits touching more than half the corpus "
                     "count as a mechanical rewrite: the solvers a rewriting "
                     "commit touches are out of scope, and of a rewriting "
                     "window only the solvers its commits add stay in scope. "
@@ -1119,7 +1170,7 @@ def _parser() -> argparse.ArgumentParser:
         help="the source after GRID and RIGID expansion, as Souffle sees it",
         description="Print the solver source with each GRID and RIGID call "
                     "replaced by what it emits and nothing else changed.",
-    ).add_argument("stem")
+    ).add_argument("stem", help="one solver")
     return parser
 
 
@@ -1153,17 +1204,17 @@ def main(argv: list[str]) -> int:
                 print("`--cached` goes with `--open` or `--mark`",
                       file=sys.stderr)
                 return 2
-            return cmd_sweep(args.stem, args.cap, args.budget)
+            return cmd_sweep(args.stem, args.cap, args.time_limit)
         case "deletions":
             return cmd_deletions(args.stem)
         case "audit":
-            return cmd_audit(args.stem, args.budget)
+            return cmd_audit(args.stem, args.time_limit)
         case "drop-one":
             return cmd_drop_one(args.stem)
         case "derived-constant":
             return cmd_derived_constant(args.stem)
         case "determination-plan":
-            return cmd_determination_plan(args.stem)
+            return cmd_determination_plan(args.stem, args.verdicts)
         case "witness":
             return cmd_witness(args.stem)
         case "size":

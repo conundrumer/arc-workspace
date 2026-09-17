@@ -26,12 +26,14 @@ def run_determine(stem: str) -> DetermineResult | None:
     Determine comp."""
     path, task_id = solver_file(stem)
     task = load_task(task_id)
-    return determine_check(path.read_text(), task)
+    return determine_check(path.read_text(), task, solver_path=path)
 
 
-def determine_check(source: str, task) -> DetermineResult | None:
+def determine_check(source: str, task, solver_path=None) -> DetermineResult | None:
     """Determination check on solver source text; None when it has no
-    Determine comp."""
+    Determine comp. `solver_path` is the file the source came from: a
+    CPU-limit failure names the rule that burned the most CPU only for a
+    caller that passes it."""
     try:
         params = determined_params(source)
     except ValueError as e:
@@ -48,6 +50,7 @@ def determine_check(source: str, task) -> DetermineResult | None:
             stdout = _run_source(
                 build_determine_source(source, params), "", ["-F", facts_dir],
                 cpu_limit=CPU_LIMIT_SECONDS * (len(task.train) + len(task.test)),
+                solver_path=solver_path,
             )
         rels = _parse_relations(stdout)
         diff = sorted({row.strip() for row in rels.get("_determination_diff", [])})

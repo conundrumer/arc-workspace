@@ -572,8 +572,6 @@ def build_determine_source(source: str, params: dict[str, list[str]]) -> str:
 
 
 KEYWORDS_DOC = REPO_ROOT / "docs" / "wf-solver" / "keywords.md"
-
-KEYWORD_FIELD_RE = re.compile(r"^// (keywords): (.*)$")
 KEYWORD_BULLET_RE = re.compile(r"^- `([^`]+)`")
 
 
@@ -588,16 +586,3 @@ def doc_keywords(text: str) -> dict[str, list[str]]:
         elif m := KEYWORD_BULLET_RE.match(line):
             held.append(m.group(1))
     return sections
-
-
-def header_keywords(source: str) -> list[str]:
-    """The keywords of a solver's `// keywords:` line. A field's second
-    line is not read. The header is the leading comment block, so the first
-    line that is not a comment ends it."""
-    fields: dict[str, list[str]] = {}
-    for line in source.splitlines():
-        if not line.strip().startswith("//"):
-            break
-        if (m := KEYWORD_FIELD_RE.match(line)) and m.group(1) not in fields:
-            fields[m.group(1)] = m.group(2).split()
-    return [word for words in fields.values() for word in words]

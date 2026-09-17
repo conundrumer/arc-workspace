@@ -2,7 +2,7 @@
   "id": "00576224",
   "witnesses": [{
     "id": "three-bands",
-    "hypothesis": "Under the stored assignment the three models give the same 3x3 arrangement of the input, with the middle band flipped left-right.",
+    "separates": "Under the stored assignment the three models give the same 3x3 arrangement of the input, with the middle band flipped left-right.",
     "input": [
       [1,2],
       [3,4]
@@ -35,7 +35,7 @@
     }
   }, {
     "id": "five-bands",
-    "hypothesis": "With arr_dim reassigned to 5 the three models part: Lookup keeps the 3x3 arrangement its table holds, Alt flips the second and fourth bands of five, and Mid flips the middle band alone.",
+    "separates": "With arr_dim reassigned to 5 the three models part: Lookup keeps the 3x3 arrangement its table holds, Alt flips the second and fourth bands of five, and Mid flips the middle band alone.",
     "assign": {
       "arr_dim": [
         [5]

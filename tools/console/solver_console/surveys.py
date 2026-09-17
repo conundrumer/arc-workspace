@@ -33,14 +33,6 @@ from . import config, prompts
 # The line the protocol reads, and the line that says the entry is closed.
 SURVEY_LINE = re.compile(r"^Survey:[ \t]*(\d{4}-\d{2}-\d{2} \d{2}:\d{2})", re.M)
 CLOSED_LINE = re.compile(r"^Closed:", re.M)
-# An entry's search signature, and a row of a former-names.md table. A Former
-# cell holding nothing but backticked names names code; a cell holding one
-# backticked header field names that field; a cell that carries prose as well
-# names a term, and a name in it stands for that term.
-MATCH_LINE = re.compile(r"^Match:.*$", re.M)
-FORMER_ROW = re.compile(r"^\|(.+?)\|(.+?)\|\s*$", re.M)
-FORMER_CELL = re.compile(r"^`[A-Za-z_][\w.]*`(?:,\s*`[A-Za-z_][\w.]*`)*$")
-FORMER_FIELD = re.compile(r"^`// [a-z_]+:`$")
 SURVEY_STAMP = "%Y-%m-%d %H:%M"
 RUN_STAMP = "%Y-%m-%d-%H%M%S"
 
@@ -157,30 +149,6 @@ def survey_plan(text: str) -> dict | None:
     return {"since": when, "scope": scope} if scope else None
 
 
-def renamed_in_match(text: str) -> list[tuple[str, str]]:
-    """The names an entry's `Match:` lines carry that the corpus has renamed,
-    each with what docs/wf-solver/former-names.md gives as its current form. A
-    name is an identifier or a solver header field. Only the `Match:` line is
-    read: a recorded survey result stays as written, so a former name inside
-    one is not an error. A row whose Former cell names a term, not code, is
-    left out: a name in such a cell can stand in current code."""
-    table = (config.DOCS / "former-names.md").read_text()
-    signature = "\n".join(MATCH_LINE.findall(text))
-    found: list[tuple[str, str]] = []
-    for former, current in FORMER_ROW.findall(table):
-        cell = former.strip()
-        if FORMER_FIELD.match(cell):
-            field = cell.strip("`")
-            if field in signature:
-                found.append((field, current.strip()))
-            continue
-        if not FORMER_CELL.match(cell):
-            continue
-        for name in re.findall(r"`([A-Za-z_][\w.]*)`", former):
-            if re.search(rf"\b{re.escape(name)}\b", signature):
-                found.append((name, current.strip()))
-    return found
-
 
 def survey_header(plan: dict, at: float) -> str:
     """The `Survey:` line the run's result goes under: its time, and the time
@@ -247,9 +215,6 @@ def survey_cmd(path: Path, plan: dict, run_dir: Path) -> list[str]:
     run the session as the handbook agent. The brief is the `survey` role's
     text, then the entry, the scope, and the run's own scratch path.
 
-    An entry whose `Match:` line carries a renamed name gets that translation
-    in its brief, so the session searches the current name as well.
-
     The role's text, the docs the appendix carries, and the entry are read
     here, before the launch. A file among them that the run cannot read is a
     failure of its own, and the caller tells it apart from a session that
@@ -260,12 +225,6 @@ def survey_cmd(path: Path, plan: dict, run_dir: Path) -> list[str]:
     brief = prompts.role_text("survey") + "\n\n" + config.SURVEY_BRIEF.format(
         entry=path.relative_to(config.ROOT), scope=scope,
         scratch=run_dir.relative_to(config.ROOT))
-    renamed = renamed_in_match(path.read_text())
-    if renamed:
-        brief += ("\n\nThe entry's `Match:` line names what the corpus has "
-                  "renamed. Search the current name as well: "
-                  + "; ".join(f"`{former}` is now {current}"
-                              for former, current in renamed))
     return [config.CLAUDE, "-p", brief, *config.SURVEY_FLAGS, *survey_session()]
 
 
@@ -344,12 +303,6 @@ def survey_entry(path: Path, force: bool = False) -> int:
         run_dir.mkdir(parents=True, exist_ok=True)
         print(f"{path.name}: the run writes under {run_dir}. "
               f"Its session's stream goes to {run_log(run_dir)}.", flush=True)
-        renamed = renamed_in_match(text)
-        if renamed:
-            print(f"{path.name}: its `Match:` line carries renamed names: "
-                  + "; ".join(f"{former} is now {current}"
-                              for former, current in renamed)
-                  + ". Restate the line.", flush=True)
         try:
             cmd = survey_cmd(path, plan, run_dir)
         except OSError as exc:

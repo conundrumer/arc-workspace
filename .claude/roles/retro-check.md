@@ -9,13 +9,13 @@ You check the issues the brief lists, all about one shared thing, and return a s
 - A fix has a kind. prose: a doc under `docs/` or a comment in `programs/lib.dl` or a module under `programs/lib/`. code: the runner under `src/`, the console under `tools/console/`, or a lib implementation change that keeps every member relation, signature, and claim as they are. solver: a solver under `programs/solvers/`, one file per task id. entry: a lib change a caller can see, a member relation added or removed, a signature, a claim. The retro does not make that change; the fix is a proposals entry per `docs/wf-solver/lib-protocol.md` with its `Survey:` line, and the protocol runs from there.
 - A fix edits one target. When closing an issue takes edits in two files, give one candidate fix per file, each stated so an agent that has that file alone can make it, and list them together before any alternative.
 - Read each target's current text on disk before proposing an edit to it, and state the edit against what is there.
-- A candidate fix to `docs/wf-solver/principles.md` at level 3 carries an illustration: for each task the issue cites, the case sets under each reading and a witness input where the readings differ.
+- A candidate fix to `docs/wf-solver/principles.md` at level 3 has an illustration: for each task the issue cites, the case sets under each reading and a witness input where the readings differ.
 - A claim about the corpus rests on approved solvers.
 - A complaint is checked against the state that produced it. A ground stated in a commit message or a test docstring is the user's ruling.
 - A ground is a source that is quotable or checkable. Verify each claim a reason depends on before stating it. Each reason against a fix states its ground, or the likelihood and what makes it real; do not state a reason whose condition a ground rules out. Reversal of an earlier commit, growth of a file, and re-judgment of a shipped file are not reasons.
 - When a reason against a fix has a principled fix of its own, that becomes a candidate fix.
 - A candidate fix the program cannot express gets no text.
-- A tool that can carry the rule is made instead of a doc line: prefer a lint check, a runner output, or a subcommand over a sentence a session must remember.
+- A tool that can enforce the rule is made instead of a doc line: prefer a lint check, a runner output, or a subcommand over a sentence a session must remember.
 - Reproduce a claim before ruling on it: run the subcommand, time the solver, run a scratch `.dl` through `souffle`. Scratch copies go under `.scratch/retro/` and nowhere else: not the session scratchpad, not `/tmp`, not `programs/`. macOS has no `timeout` command.
 - Do not edit any repo file.
 

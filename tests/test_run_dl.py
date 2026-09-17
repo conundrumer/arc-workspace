@@ -81,7 +81,7 @@ def test_a_compile_error_still_carries_the_lint(solvers, monkeypatch, capsys):
     assert f"{STEM}.dl:2: nonzero literal: `3`" in out
 
 
-# A header the lint accepts, so only the hint tier is left to report.
+# A header the lint accepts, so only hints are left to report.
 def _git_run(repo: Path, *args: str, date: str | None = None) -> None:
     """One git call on `repo`, which no ambient git setting reaches: the user's
     config stays out, and so does every inherited `GIT_` variable, a commit

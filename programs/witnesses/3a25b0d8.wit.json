@@ -1,0 +1,52 @@
+{ "id": "3a25b0d8",
+  "witnesses": [{
+    "id": "turned-scene",
+    "separates": "Stored against Mirror: the scene stands a quarter turn from the evidence, so each figure folds top to bottom and its holes follow one another left to right. Mirror reads that axis off the figures and pairs the holes; Stored keeps the stored axis, finds the plain figure's holes across the midline and the painted figure's holes to one side of it, pairs none of them, and leaves every hole cell empty.",
+    "input": [
+      [8,8,8,8,8,8,8,8,8,8,8,8,8,8,8],
+      [8,1,1,1,1,1,1,8,8,8,8,8,8,8,8],
+      [8,1,8,8,8,1,1,8,8,8,1,1,1,8,8],
+      [8,1,8,8,8,1,1,8,8,1,1,3,1,8,8],
+      [8,1,1,1,1,1,1,8,8,1,1,1,1,8,8],
+      [8,1,8,8,8,1,1,8,8,1,1,4,1,8,8],
+      [8,1,8,8,8,1,1,8,8,8,1,1,1,8,8],
+      [8,1,1,1,1,1,1,8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8,8,8,8,8,8]
+    ],
+    "output": {
+      "Stored": null,
+      "Mirror": [
+        [1,1,1,1,1,1],
+        [1,3,3,3,1,1],
+        [1,3,3,3,1,1],
+        [1,1,1,1,1,1],
+        [1,4,4,4,1,1],
+        [1,4,4,4,1,1],
+        [1,1,1,1,1,1]
+      ]
+    }
+  }, {
+    "id": "no-mirror",
+    "separates": "Stored against Mirror: neither figure folds onto itself across either axis, though the holes still answer to each other left to right. Stored keeps the stored axis and paints both holes; Mirror finds no axis and emits no grid.",
+    "input": [
+      [8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8],
+      [8,1,1,1,1,1,1,1,1,8,8,1,1,1,1,1,1,8],
+      [8,1,8,8,1,8,8,8,1,8,8,1,3,1,4,4,1,8],
+      [8,1,8,8,1,8,8,8,1,8,8,1,1,1,1,1,1,8],
+      [8,1,1,1,1,1,1,1,1,8,8,1,1,1,1,8,8,8],
+      [8,1,1,1,1,8,8,8,8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8]
+    ],
+    "output": {
+      "Stored": [
+        [1,1,1,1,1,1,1,1],
+        [1,3,3,1,4,4,4,1],
+        [1,3,3,1,4,4,4,1],
+        [1,1,1,1,1,1,1,1],
+        [1,1,1,1,8,8,8,8]
+      ],
+      "Mirror": null
+    }
+  }] }

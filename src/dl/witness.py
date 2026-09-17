@@ -5,7 +5,7 @@ apart, each with the outcome every case is expected to give. style.md
 states the file's shape.
 
 An entry's `assign` field reassigns a `Params` parameter before the run,
-so the entry stands at the assignment its `hypothesis` names rather than
+so the entry stands at the assignment its `separates` names rather than
 at the stored one.
 """
 
@@ -14,11 +14,17 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from dl.annotations import (
+    merged_blocks,
+    read,
+    relaxable,
+    resolved_claims,
+    witness_blocks,
+)
 from dl.facts import Candidate
 from dl.features_run import NO_CHOICE, case_label
-from dl.lint import choice_points
 from dl.paths import PROGRAMS_DIR
-from dl.render import _grid_lines, render_diff
+from dl.render import _grid_lines
 from dl.solve import res_out_stem, run_dl_source, solver_file
 from dl.source import swap_facts
 
@@ -29,9 +35,12 @@ UNDEFINED = "undefined"
 and of a case that emits nothing at all. The file writes it as `null` and
 the code carries it as None."""
 
+WITNESS_OK = "witness: ok"
+"""The pass line, printed when no finding stands."""
+
 DRIFT = "drift"
 UNLISTED = "unlisted"
-DEVIATION = "deviation"
+ANNOTATION = "annotation"
 
 type Outcome = list[list[int]] | None
 type Assign = dict[str, list[list[object]]]
@@ -42,25 +51,21 @@ class Entry:
     """One witness grid and what the solver is expected to give on it.
 
     `output` is a grid per case, where None is an undefined outcome, or one
-    bare grid, a rejected output that every case must differ from.
+    bare grid, the judged output that every case must differ from.
 
     `assign` holds replacement `Params` facts per parameter, each row the
     arguments of one fact as the `.dl` writes them: a number as a number, a
     lib constant such as `AXIS_H` as a string, and a record such as a
     Position as a list of its arguments.
-
-    `violates` names the invariants of the inputs the grid breaks, one
-    phrase each, and `rejected` names the rules of the branch the grid
-    witnesses whose outcome the concept statement rejects, one phrase each.
     """
 
     id: str
-    hypothesis: str
+    separates: str
     input: list[list[int]]
     output: dict[str, Outcome] | list[list[int]] = field(default_factory=dict)
     assign: Assign = field(default_factory=dict)
-    violates: list[str] = field(default_factory=list)
-    rejected: list[str] = field(default_factory=list)
+    empty_assign: bool = False
+    """The file writes an `assign` key that holds nothing."""
 
     @property
     def rejected_output(self) -> bool:
@@ -77,11 +82,13 @@ class Witness:
 class Drift:
     """One finding on one entry. `kind` is DRIFT when a case gives an
     outcome the entry does not name, UNLISTED when the solver has a case
-    the entry's `output` does not name, and DEVIATION when a branch's
-    `@deviation` line and its witness disagree. `entry` is the entry's id,
-    followed by the parameters it reassigns, and it is empty on a branch
-    with no witness. `expected` stands for nothing on an UNLISTED finding.
-    A DEVIATION finding names its branch in `case` and reads as `note`."""
+    the entry's `output` does not name, and ANNOTATION when a `@witness`
+    line of the solver and the witness file disagree — over the line's
+    form, the entry it names, a `@relaxed` slug, the `@reassigned`
+    parameters, or an entry no line names. `entry` is the entry's id,
+    followed by the parameters it reassigns, and it is empty when no entry
+    answers the line. `expected` stands for nothing on an UNLISTED finding.
+    An ANNOTATION finding reads as `note`."""
 
     entry: str
     case: str
@@ -105,9 +112,8 @@ def _output(value: object) -> dict[str, Outcome] | list[list[int]]:
     return value
 
 
-ENTRY_KEYS = {"id", "hypothesis", "input", "output",
-              "assign", "violates", "rejected"}
-REQUIRED_KEYS = {"id", "hypothesis", "input", "output"}
+ENTRY_KEYS = {"id", "separates", "input", "output", "assign"}
+REQUIRED_KEYS = {"id", "separates", "input", "output"}
 
 
 def _is_grid(v: object) -> bool:
@@ -115,10 +121,6 @@ def _is_grid(v: object) -> bool:
             and all(isinstance(r, list) and r
                     and all(isinstance(c, int) and 0 <= c <= 9 for c in r)
                     for r in v))
-
-
-def _is_strings(v: object) -> bool:
-    return isinstance(v, list) and all(isinstance(s, str) for s in v)
 
 
 def _check_entry(e: object, fail: Callable[[str, str], None]) -> None:
@@ -129,7 +131,7 @@ def _check_entry(e: object, fail: Callable[[str, str], None]) -> None:
         fail("", f"unknown key {sorted(extra)}")
     if missing := REQUIRED_KEYS - set(e):
         fail("", f"missing key {sorted(missing)}")
-    for k in ("id", "hypothesis"):
+    for k in ("id", "separates"):
         if not isinstance(e[k], str):
             fail(k, "a string")
     if not _is_grid(e["input"]):
@@ -146,9 +148,6 @@ def _check_entry(e: object, fail: Callable[[str, str], None]) -> None:
             isinstance(v, list) and all(isinstance(f, list) for f in v)
             for v in assign.values()):
         fail("assign", "a list of facts per parameter")
-    for k in ("violates", "rejected"):
-        if not _is_strings(e.get(k, [])):
-            fail(k, "a list of strings")
 
 
 def _validate(data: object, path: Path) -> None:
@@ -180,12 +179,11 @@ def load_witnesses(task_id: str) -> Witness | None:
         entries=[
             Entry(
                 id=e["id"],
-                hypothesis=e["hypothesis"],
+                separates=e["separates"],
                 input=e["input"],
                 output=_output(e["output"]),
                 assign={k: list(v) for k, v in e.get("assign", {}).items()},
-                violates=list(e.get("violates", [])),
-                rejected=list(e.get("rejected", [])),
+                empty_assign="assign" in e and not e["assign"],
             )
             for e in data["witnesses"]
         ],
@@ -255,82 +253,76 @@ def _entry_findings(entry: Entry, actuals: dict[str, Outcome]) -> list[Drift]:
     return findings
 
 
-def _case_labels(source: str) -> tuple[str, dict[tuple[int, str], str]] | None:
-    """The label of the concept case, and the label of the case that takes
-    each other branch with every other choice point left at its concept
-    branch.
-    None when the source declares no `Choice`, or when a field of a
-    record-typed `Choice` names no ADT."""
-    points = choice_points(source)
-    if not points or any(not p.branches for p in points):
-        return None
-    record = points[0].field >= 0
-    concept = [p.branches[0].name for p in points]
-
-    def label(names: list[str]) -> str:
-        return "[" + ", ".join(names) + "]" if record else names[0]
-
-    cases: dict[tuple[int, str], str] = {}
-    for p in points:
-        for b in p.branches[1:]:
-            names = list(concept)
-            names[p.field if record else 0] = b.name
-            cases[(p.field, b.name)] = label(names)
-    return label(concept), cases
+# The words of the witness grammar, which is what this check reports on. A
+# line off another form of the grammar is the lint's finding.
+WITNESS_WORDS = frozenset({"witness", "relaxed", "reassigned"})
 
 
-def _divergences(entries: list[Entry], case: str, base: str) -> list[Entry]:
-    """The divergence witnesses of `case` against `base`: the entries that
-    name both and give them different outcomes."""
-    return [e for e in entries
-            if isinstance(e.output, dict) and case in e.output
-            and base in e.output and e.output[case] != e.output[base]]
+def _params(names: list[str]) -> str:
+    """A parameter list as a finding names it."""
+    return ", ".join(f"`{n}`" for n in sorted(names)) or "no parameter"
 
 
-def _deviation_findings(source: str, entries: list[Entry]) -> list[Drift]:
-    """Each other branch's `-` and `~` estimates against the
-    `violates` and `rejected` of its divergence witness with the fewest
-    violated invariants."""
-    labels = _case_labels(source)
-    if labels is None:
-        return []
-    base, cases = labels
+def _annotation_findings(source: str, entries: list[Entry]) -> list[Drift]:
+    """Where a solver's `@witness` lines and the witness file disagree: a
+    line off the form of the witness grammar, a line that names no entry of
+    the file, a `@relaxed` slug the header's claims do not carry, a block
+    whose `@reassigned` parameters are not the entry's `assign` keys, an
+    entry whose `assign` is empty, and an entry no line names."""
+    by_id = {e.id: e for e in entries}
+    slugs = relaxable(resolved_claims(source))
     findings: list[Drift] = []
-    for p in choice_points(source):
-        for b in p.branches[1:]:
-            if b.deviation is None:
-                continue
-            case = cases[(p.field, b.name)]
-            found = _divergences(entries, case, base)
-            if not found:
-                findings.append(Drift(
-                    entry="", case=b.name, expected=None, actual=None,
-                    kind=DEVIATION,
-                    note=f"branch {b.name} carries an `@deviation` line and "
-                         "has no divergence witness"))
-                continue
-            witness = min(found, key=lambda e: len(e.violates))
-            relaxed, _added, contradicted = b.deviation
-            for mark, stated, got, what in (
-                    ("-", relaxed, len(witness.violates),
-                     "violates {} invariants of the inputs"),
-                    ("~", contradicted, len(witness.rejected),
-                     "rejects {} rules")):
-                if stated != got:
-                    findings.append(Drift(
-                        entry=_label(witness), case=b.name, expected=None,
-                        actual=None, kind=DEVIATION,
-                        note=f"branch {b.name} states `{mark}{stated}`, and "
-                             f"its witness {what.format(got)}"))
+
+    def note(entry: str, case: str, text: str) -> None:
+        findings.append(Drift(entry=entry, case=case, expected=None,
+                              actual=None, kind=ANNOTATION, note=text))
+
+    ann = read(source)
+    for bad in ann.malformed:
+        if bad.word in WITNESS_WORDS:
+            note(f"line {bad.line}", "", bad.why)
+    named = set()
+    for a in merged_blocks(ann.witnesses):
+        named.add(a.id)
+        entry = by_id.get(a.id)
+        if entry is None:
+            note(f"line {a.line}", a.id,
+                 f"`@witness {a.id}` names no entry of the witness file")
+        elif sorted(a.reassigned) != sorted(entry.assign):
+            note(a.id, a.id,
+                 f"`@reassigned` names {_params(a.reassigned)}; the entry's "
+                 f"`assign` names {_params(list(entry.assign))}")
+        for slug in a.relaxed:
+            if slug not in slugs:
+                note(a.id, a.id,
+                     f"`@relaxed {slug}` names no `@scene` line of the header "
+                     "and no claim the header approximates")
+    for e in entries:
+        if e.empty_assign:
+            note(e.id, e.id, "`assign` is empty; omit the key")
+        if e.id not in named:
+            note("", e.id, f"entry `{e.id}` of the witness file is named by "
+                           "no `@witness` line")
     return findings
+
+
+def annotation_lines(source: str) -> list[str]:
+    """The features of each `@witness` line, one block per line, and
+    `no witness lines` when the solver carries none."""
+    lines: list[str] = []
+    for a in witness_blocks(source):
+        lines.append(f"{a.id}: {a.plausibility} {a.verdict}")
+        lines += [f"  relaxed: {slug}" for slug in a.relaxed]
+        lines += [f"  reassigned: {param}" for param in a.reassigned]
+    return lines or ["no witness lines"]
 
 
 def witness_report(stem: str) -> list[Drift]:
     """Run every witness grid of `stem`'s task through the solver and
-    report where the outcomes and the file disagree, then read each
-    other branch's `@deviation` estimates against its divergence
-    witnesses. An entry carrying `assign` runs the reassigned source. A task
-    with no witness file reports nothing."""
+    report where the outcomes and the file disagree, then pair each
+    `@witness` line of the solver to an entry of the file. An entry
+    carrying `assign` runs the reassigned source. A task with no witness
+    file reports nothing."""
     path, task_id = solver_file(stem)
     witness = load_witnesses(task_id)
     if witness is None:
@@ -342,7 +334,7 @@ def witness_report(stem: str) -> list[Drift]:
         candidates = run_dl_source(
             _assigned(source, entry), entry.input, solver_path=path)
         findings += _entry_findings(entry, _actuals(candidates, resolution))
-    return findings + _deviation_findings(source, witness.entries)
+    return findings + _annotation_findings(source, witness.entries)
 
 
 def _side(label: str, value: Outcome) -> list[str]:
@@ -353,26 +345,25 @@ def _side(label: str, value: Outcome) -> list[str]:
 
 def _lines_of(d: Drift) -> list[str]:
     case = d.case
-    if d.kind == DEVIATION:
+    if d.kind == ANNOTATION:
         return [f"{d.entry}: {d.note}" if d.entry else d.note]
     if d.kind == UNLISTED:
         return [f"{d.entry}: case {case} is not listed",
-                *_side("actual", d.actual)]
+                *_side("the solver's output", d.actual)]
     if d.rejected_output:
-        return [f"{d.entry}: case {case} produces the rejected output",
-                *_side("rejected", d.actual)]
-    head = f"{d.entry}: case {case} drifted"
-    if isinstance(d.expected, list) and isinstance(d.actual, list):
-        return [head, *(f"  {ln}" for ln in render_diff(d.expected, d.actual))]
-    return [head, *_side("expected", d.expected), *_side("actual", d.actual)]
+        return [f"{d.entry}: case {case} gives the entry's judged output",
+                *_side("the judged output", d.actual)]
+    return [f"{d.entry}: case {case} gives an output the entry does not name",
+            *_side("the entry's output", d.expected),
+            *_side("the solver's output", d.actual)]
 
 
 def render_witness(findings: list[Drift]) -> list[str]:
-    """One block per finding, and `no drift` when none of them is a drift or
-    a deviation."""
+    """One block per finding, and `witness: ok` when no finding states a
+    differing output or an annotation."""
     lines: list[str] = []
     for d in findings:
         lines += _lines_of(d)
-    if not any(d.kind in (DRIFT, DEVIATION) for d in findings):
-        lines.append("no drift")
+    if not any(d.kind in (DRIFT, ANNOTATION) for d in findings):
+        lines.append(WITNESS_OK)
     return lines

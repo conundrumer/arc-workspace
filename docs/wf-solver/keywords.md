@@ -50,4 +50,3 @@ The concept the task teaches.
 ## Shape
 
 - `latent-canvas` — the program constructs a canvas neither grid fully shows, and the output is determined by that canvas. A canvas is a frame of cells that contains the whole scene in one state.
-- `approximation` — the program runs a weaker rule in place of a concept rule it cannot state. principles.md gives the conditions under which the tag applies.

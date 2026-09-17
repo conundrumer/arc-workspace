@@ -1,0 +1,28 @@
+{
+  "id": "2d0172a1",
+  "witnesses": [{
+    "id": "lone-ring",
+    "separates": "One curve closes cells off from the grid edge and closes off no other curve. Hollow draws it as a rectangle outline; Nest collapses it to a single cell, held off the frame edge by the blank line.",
+    "input": [
+      [0,0,0,0,0,0,0],
+      [0,4,4,4,4,4,0],
+      [0,4,0,0,0,4,0],
+      [0,4,0,0,0,4,0],
+      [0,4,0,0,0,4,0],
+      [0,4,4,4,4,4,0],
+      [0,0,0,0,0,0,0]
+    ],
+    "output": {
+      "Hollow": [
+        [4,4,4],
+        [4,0,4],
+        [4,4,4]
+      ],
+      "Nest": [
+        [0,0,0],
+        [0,4,0],
+        [0,0,0]
+      ]
+    }
+  }]
+}

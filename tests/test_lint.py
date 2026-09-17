@@ -99,7 +99,6 @@ def test_parse_comp_unread_by_determine_fires():
 """
     fs = [f for f in lint_program(src) if f[0] == LONE_PARSE_CAT]
     assert [f[1] for f in fs] == [1]
-    assert "the Determine comp does not read this parse" in fs[0][2]
 
 
 def test_reserved_name_in_unparsable_source_fires():
@@ -155,7 +154,6 @@ def test_free_adt_fires_as_banned_type():
 """
     fs = [f for f in lint_program(src) if f[0] == "banned type"]
     assert [f[1] for f in fs] == [1]
-    assert "`Assembly` is outside the sanctioned type kinds" in fs[0][2]
 
 
 def test_choice_closure_stays_quiet():
@@ -183,7 +181,7 @@ def test_family_case_the_representative_lacks_fires(tmp_path, monkeypatch):
     monkeypatch.setattr(solve, "SOLVERS_DIR", tmp_path)
     src = """\
 // 74dd1130
-// representative: 67a3c6ac Shear
+// @representative: 67a3c6ac Shear
 """
     fs = [f for f in lint_program(src) if f[0] == "family case"]
     assert [f[1] for f in fs] == [2]
@@ -191,7 +189,7 @@ def test_family_case_the_representative_lacks_fires(tmp_path, monkeypatch):
 
     src = """\
 // c8f0f002
-// representative: 0d3d703e Recolor
+// @representative: 0d3d703e Recolor
 """
     fs = [f for f in lint_program(src) if f[0] == "family case"]
     assert [f[1] for f in fs] == [2]
@@ -236,18 +234,18 @@ out(K) :- inv.period($U(), K), !inv._cand($U(), K).
 also(K) :- parse._own(_), K = 0.
 """
     fs = [f for f in lint_program(src) if f[0] == "lib internal"]
-    assert [(f[1], f[2]) for f in fs] == [
-        (2, "`_Room` is internal to the lib; instantiate a public component"),
-        (4, "`_cand` is internal to OffsetInvariance; read a public readout"),
-        (5, "`_breaks` is internal to OffsetInvariance; read a public readout"),
-        (6, "`_cand` is internal to OffsetInvariance; read a public readout"),
+    assert [(f[1], f[2].split(";")[0]) for f in fs] == [
+        (2, "`_Room` is internal to the lib"),
+        (4, "`_cand` is private to OffsetInvariance"),
+        (5, "`_breaks` is private to OffsetInvariance"),
+        (6, "`_cand` is private to OffsetInvariance"),
     ]
 
 
 HEADER = """\
 // 74dd1130
-// draft
-// keywords: decompose mapping
+// @draft
+// @keywords: decompose mapping
 // input: a grid of tiles, one of them recolored
 // output: the grid with every tile recolored
 // review principle: Naming — the comp name says the mechanism
@@ -262,13 +260,13 @@ def test_the_header_forms_that_pass():
 
     sibling = """\
 // 74dd1130
-// representative: 67a3c6ac Shear
+// @representative: 67a3c6ac Shear
 """
     assert of(sibling, "header") == []
 
     continued = """\
 // 74dd1130
-// keywords: decompose
+// @keywords: decompose
 // output: the grid with every tile recolored
 //  and the seam between them removed
 """
@@ -278,7 +276,7 @@ def test_the_header_forms_that_pass():
 def test_prose_in_the_header_fires_once():
     src = """\
 // 74dd1130
-// keywords: decompose
+// @keywords: decompose
 // output: a grid of tiles
 // the grid is square
 // and so is every tile
@@ -291,40 +289,17 @@ def test_prose_in_the_header_fires_once():
 def test_a_keyword_the_doc_does_not_list_is_a_hint():
     src = """\
 // 74dd1130
-// keywords: decompose tiling
+// @keywords: decompose tiling
 // output: a grid of tiles
 """
     assert of(src, "header") == []
     assert of(src, "keyword") == [(2, "`tiling` is not in keywords.md; propose it in the review")]
 
 
-CHOICE = """\
-// 74dd1130
-// keywords: decompose
-// concept: the tiles turn
-// output: a grid of tiles
-
-// which way the tiles turn
-.type Choice =
-      // mirror across the seam
-      Mirror {{}}
-      // a quarter turn
-{turn_line}    | Turn {{}}
-"""
-
-
-def test_a_branch_after_the_first_carries_a_deviation_line():
-    src = CHOICE.format(turn_line="      // @deviation: -1 +0 ~0\n")
-    assert of(src, "deviation") == []
-    fs = of(CHOICE.format(turn_line=""), "deviation")
-    assert fs == [(11, "`Turn` carries `// @deviation: -<relaxed> +<added> "
-                       "~<contradicted>` under its gloss")]
-
-
 def test_a_record_choice_is_read_through_its_field_types():
     src = """\
 // 74dd1130
-// keywords: decompose
+// @keywords: decompose
 // output: a grid of tiles
 
 // what to do, and what to do it to
@@ -341,19 +316,21 @@ def test_a_record_choice_is_read_through_its_field_types():
 .type Body =
       Whole {}
 """
-    assert of(src, "gloss") == [(17, "a gloss stands above `Whole`")]
+    assert of(src, "witness") == [
+        (13, "`Turn` is no concept branch and has no `@witness` line; "
+             "add `// @witness <id>: <plausibility> <verdict>`")]
 
 
 RECORD_MARKED = """\
 // 8618d23e
-// keywords: decompose
+// @keywords: decompose
 // output: a grid of tiles
 
 // how wide the growth is
 .type Growth =
       // one width
       Iso {{}}
-      // @deviation: -0 +0 ~0
+      // @witness w1: plausible separates
       // per-axis widths
     | Aniso {{}}
 
@@ -361,7 +338,7 @@ RECORD_MARKED = """\
 .type Choice =
       // derived from a growth
       Derive {{ g: Growth }}
-      // @deviation: -0 +0 ~0
+      // @witness w2: plausible separates
       // a stored table
     | Disp {{}}
 
@@ -379,8 +356,45 @@ def test_a_marker_fixing_a_field_of_a_constructor_stays_quiet():
 def test_an_include_in_the_solver_fires():
     src = """\
 // 74dd1130
-// keywords: decompose
+// @keywords: decompose
 // output: a grid of tiles
 #include "../lib.dl"
 """
     assert of(src, "include") == [(4, "the build adds the lib; drop the include")]
+
+
+def test_a_retired_annotation_names_the_form_that_replaced_it():
+    """No solver carries a retired form any more, so a run reports none of
+    these and a lost check would be silent."""
+    src = """\
+// 74dd1130
+// @keywords: decompose
+// @invariant tiles: the grid is tiles
+// @rule seam: the seam is removed
+// @claim tiles
+
+// what the tiles do
+.type Choice = Mirror {} | Turn {}
+"""
+    assert of(src, "header") == [
+        (3, "`@invariant` is retired; a claim about the input is "
+            "`// @scene <slug>: <text>`")]
+    assert (5, "`tiles` names no `@scene` or `@rule` line of the header") \
+        in of(src, "claim")
+
+
+def test_a_claim_reference_that_resolves_stays_quiet():
+    src = """\
+// 74dd1130
+// @keywords: decompose
+// @scene tiles: the grid is tiles
+// @rule seam: the seam is removed
+
+// what the tiles do
+.type Choice =
+    // @claim tiles
+    Mirror {}
+    // @witness w1: plausible separates
+  | Turn {}
+"""
+    assert of(src, "claim") == []

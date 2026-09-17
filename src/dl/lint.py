@@ -11,14 +11,33 @@ import re
 from dataclasses import dataclass
 from functools import lru_cache
 
+from dl.annotations import FORMS, Annotations, read, resolved_claims
 from dl.context import DOCS_DIR, lib_sources
 from dl.dlparse import (
-    SECTION_RE, Agg, Atom, Cmp, Comp, Decl, Define, Disj, Functor, Include,
-    Init, Item, Lit, Neg, ParseError, Program, Rigid, Rule, TypeDecl,
-    marker_names, parse,
+    SECTION_RE,
+    Agg,
+    Atom,
+    Cmp,
+    Comp,
+    Decl,
+    Define,
+    Disj,
+    Functor,
+    Include,
+    Init,
+    Item,
+    Lit,
+    Neg,
+    ParseError,
+    Program,
+    Rigid,
+    Rule,
+    TypeDecl,
+    marker_names,
+    parse,
 )
 from dl.solve import solver_file
-from dl.source import KEYWORDS_DOC, doc_keywords, header_keywords
+from dl.source import KEYWORDS_DOC, doc_keywords
 
 
 def _lib_source() -> str:
@@ -129,45 +148,47 @@ NO_ENTRY_CAT = "comp without entry"
 # The category a Parse comp that no Determine comp reads is reported
 # under.
 LONE_PARSE_CAT = "parse unshared with determine"
-# The header line naming the family representative, with the case name it
-# may carry: `// representative: <task_id>` or
-# `// representative: <task_id> <Case>`.
-FAMILY_RE = re.compile(r"^//\s*representative:\s*(\S+)(?:\s+(\S+))?\s*$")
-# The same line, matched before its form is read.
-REP_LINE_RE = re.compile(r"^//\s*representative:")
 # The category a sibling header line the grammar or the representative
 # rejects is reported under.
 FAMILY_CASE_CAT = "family case"
-# The header: the leading comment block, the task id, then `draft`, then
-# the fields in this order. A value continues on a line of `//` and two
-# spaces. `review` repeats; the others stand once.
+# The header: the leading comment block, the task id, then `@draft`, then
+# the fields and the claims in this order. A value continues on a line of
+# `//` and two spaces. `review` repeats; the others stand once.
 HEADER_CAT = "header"
+# A `@claim` line: what it names, and where it stands.
+CLAIM_CAT = "claim"
 
 # A header keyword the doc does not list. A session adds the keyword it needs
 # and proposes it in its review, so this is a hint, not a finding.
 KEYWORD_CAT = "keyword"
-HEADER_FIELDS = ("representative", "keywords", "concept", "input", "output",
-                 "review")
-HEADER_RANK = {"representative": 1, "keywords": 1, "concept": 2, "input": 3,
-               "output": 4, "review": 5}
-FIELD_RE = re.compile(r"^//\s*(\w+)(?:\s+(\w+))?:(?:\s|$)")
-CONTINUATION_RE = re.compile(r"^//  \S")
-DRAFT_LINE = "// draft"
+# Every header line in the order they stand, with the rank the order check
+# reads.
+HEADER_ORDER = ("@draft", "@representative", "@keywords", "@scene", "@rule",
+                "concept", "input", "output", "review")
+HEADER_RANK = {"draft": 0, "representative": 1, "keywords": 1, "scene": 2,
+               "rule": 3, "concept": 4, "input": 5, "output": 6, "review": 7}
+# The fields a sibling drops in favour of `@representative:`.
+SIBLING_DROPS = ("@keywords:", "concept:", "input:", "output:")
+# The words of the witness grammar, whose findings stand under the witness
+# category.
+WITNESS_WORDS = frozenset({"witness", "relaxed", "reassigned", "deviation"})
 # Cases that share facts or rules stand under one marker, and that marker
 # joins their names with a comma. The names run to the first colon, after
 # which the marker may carry a gloss.
 CASE_MARKER_CAT = "case marker"
 
-# A gloss stands above every ADT that `Choice` is or holds as a field type,
-# and above each of its constructors, one constructor per line.
+# A gloss stands above `Choice`. Each constructor of a choice ADT opens a
+# line of its own, and its directive lines are its description.
 GLOSS_CAT = "gloss"
 FIELD_TYPE_RE = re.compile(r":\s*(\w+)")
 BRANCH_LINE_RE = r"^\s*(?:\|\s*)?{name}\s*\{{"
-# The concept branch stands first in its type and carries no deviation
-# line; every other branch carries one under its gloss.
-DEVIATION_CAT = "deviation"
-DEVIATION_RE = re.compile(r"^//\s*@deviation:\s*-(\d+)\s+\+(\d+)\s+~(\d+)\s*$")
-DEVIATION_FORM = "`// @deviation: -<relaxed> +<added> ~<contradicted>`"
+# The concept branch stands first in its type and carries no witness line;
+# every other branch carries at least one.
+WITNESS_CAT = "witness"
+WITNESS_FORM = FORMS["witness"]
+# A lib component marked as a construction: an instance of it serves no
+# claim of its own, so it carries no `@claim` line.
+CONSTRUCTION_RE = re.compile(r"^\.comp\s+(\w+).*//\s*@construction", re.M)
 # The build adds the lib include; a solver holds none.
 INCLUDE_CAT = "include"
 # RIGID chart names exist only in the macro expansion; any appearance in
@@ -483,7 +504,7 @@ def _lib_internal(
 ) -> list[tuple[str, int, str, str]]:
     """Reads of a `_`-prefixed lib name: a relation or instance inside a
     lib comp, or a lib comp itself. Such a name is private to the lib, and
-    a component's public readouts are its interface."""
+    a component's public relations are its interface."""
     lib_comps = _comp_table(_lib_items(_lib_source()))
     # Each instance's comp: the solver's own, and the ones inside lib comps.
     inst_comp = {init.inst: init.comp for init in _inits(items)}
@@ -498,7 +519,8 @@ def _lib_internal(
             if seg.startswith("_") and comp in lib_comps:
                 findings.append((
                     LIB_INTERNAL_CAT, atom.line,
-                    f"`{seg}` is internal to {comp}; read a public readout",
+                    f"`{seg}` is private to {comp}; read one of its "
+                    f"public relations",
                     raw_lines[atom.line - 1].rstrip(),
                 ))
                 return
@@ -561,9 +583,8 @@ def _lone_parse(
         return []
     return [(
         LONE_PARSE_CAT, comp.line,
-        "the Determine comp does not read this parse, or the solver has "
-        "no Determine comp, so the parse is shared with nothing; "
-        "read it in Determine, or fold it into the program",
+        "no Determine comp reads this Parse comp; read it in Determine, "
+        "or fold it into the program",
         raw_lines[comp.line - 1].rstrip(),
     )]
 
@@ -598,9 +619,11 @@ def _rep_items(task_id: str) -> list[Item] | None:
         return None
 
 
-def _family_case(raw_lines: list[str]) -> list[tuple[str, int, str, str]]:
-    """A `// representative:` line the sibling header grammar rejects, or
-    whose case name the representative does not hold.
+def _family_case(
+    ann: Annotations, raw_lines: list[str],
+) -> list[tuple[str, int, str, str]]:
+    """A `@representative:` line whose case name the representative does not
+    hold.
 
     The case names one case of the representative's `Choice`, so the name
     stands among that type's constructors. A record-typed `Choice` has no
@@ -608,17 +631,11 @@ def _family_case(raw_lines: list[str]) -> list[tuple[str, int, str, str]]:
     says nothing about the name, and the line passes.
     """
     findings: list[tuple[str, int, str, str]] = []
-    for lineno, raw in enumerate(raw_lines, 1):
-        m = FAMILY_RE.match(raw.strip())
-        if m is None:
-            if REP_LINE_RE.match(raw.strip()):
-                why = ("a sibling header is `// representative: <task_id>`, "
-                       "with at most one case name after the id")
-                findings.append((FAMILY_CASE_CAT, lineno, why, raw.rstrip()))
+    for f in ann.field_lines("representative"):
+        parts = f.value.split()
+        if len(parts) < 2:
             continue
-        if m.group(2) is None:
-            continue
-        task_id, case = m.group(1), m.group(2)
+        task_id, case = parts[0], parts[1]
         items = _rep_items(task_id)
         if items is None:
             continue
@@ -632,7 +649,8 @@ def _family_case(raw_lines: list[str]) -> list[tuple[str, int, str, str]]:
             named = (f"`{case}` is no case of `{task_id}`'s `Choice`" if choices
                      else f"`{task_id}` declares no `Choice`")
             why = f"{named}; name a case the representative holds"
-        findings.append((FAMILY_CASE_CAT, lineno, why, raw.rstrip()))
+        findings.append((FAMILY_CASE_CAT, f.line, why,
+                         raw_lines[f.line - 1].rstrip()))
     return findings
 
 
@@ -668,7 +686,26 @@ def _known_keywords() -> frozenset[str]:
     return frozenset(w for words in doc_keywords(text).values() for w in words)
 
 
-def _header(raw_lines: list[str]) -> list[tuple[str, int, str, str]]:
+def _malformed(
+    ann: Annotations, raw_lines: list[str],
+) -> list[tuple[str, int, str, str]]:
+    """Every line that opens an annotation and breaks its form, under the
+    category of the grammar it belongs to."""
+    out: list[tuple[str, int, str, str]] = []
+    for bad in ann.malformed:
+        if bad.word in WITNESS_WORDS:
+            cat = WITNESS_CAT
+        elif bad.line <= ann.header_end:
+            cat = HEADER_CAT
+        else:
+            cat = CLAIM_CAT
+        out.append((cat, bad.line, bad.why, raw_lines[bad.line - 1].rstrip()))
+    return out
+
+
+def _header(
+    ann: Annotations, raw_lines: list[str],
+) -> list[tuple[str, int, str, str]]:
     """The header lines that break the grammar, and the fields it lacks."""
     findings: list[tuple[str, int, str, str]] = []
 
@@ -678,74 +715,66 @@ def _header(raw_lines: list[str]) -> list[tuple[str, int, str, str]]:
     if not raw_lines or not raw_lines[0].strip().startswith("//"):
         return [(HEADER_CAT, 1, "the file opens with `// <task_id>`",
                  raw_lines[0].rstrip() if raw_lines else "")]
-    last = 0          # rank of the last header line placed
-    keywords_line = 0  # where the `keywords:` value stands, for its words
-    draft = prose = False
+    # Every header line the order check reads, as (line, rank, word).
+    placed = [(f.line, HEADER_RANK[f.word], f.word) for f in ann.fields]
+    placed += [(c.line, HEADER_RANK[c.kind], c.kind) for c in ann.claims]
+    placed.sort()
+    last = -1
+    for lineno, rank, _ in placed:
+        if rank < last:
+            flag(lineno, "header lines go in the order "
+                 + ", ".join(HEADER_ORDER))
+        last = max(last, rank)
     seen: set[str] = set()
-    for lineno, raw in enumerate(raw_lines[1:], 2):
-        line = raw.strip()
-        if not line.startswith("//"):
-            break
-        if line == DRAFT_LINE:
-            if last:
-                flag(lineno, "`draft` goes under the task id")
-            draft = True
+    for f in ann.fields:
+        if f.word == "draft":
+            if f.line > 2:
+                flag(f.line, "`@draft` goes under the task id")
             continue
-        if CONTINUATION_RE.match(line):
-            if not last:
-                flag(lineno, "a continuation line follows a field")
-            continue
-        if m := FIELD_RE.match(line):
-            word, kind = m.group(1), m.group(2)
-            if word not in HEADER_FIELDS or (kind and word != "review"):
-                flag(lineno, f"`{word}:` is no header field; the fields are "
-                     + ", ".join(HEADER_FIELDS))
-                continue
-            rank = HEADER_RANK[word]
-            if word == "keywords" and not keywords_line:
-                keywords_line = lineno
-            if word == "review":
-                if not kind:
-                    flag(lineno, "`review` takes a kind: `review <kind>:`")
-            elif word in seen:
-                flag(lineno, f"`{word}:` stands once")
-            elif "representative" in seen or (word == "representative" and seen):
-                flag(lineno, "a sibling carries `representative:` in place of "
-                     "`keywords:`, `concept:`, `input:`, and `output:`")
-            if rank < last:
-                flag(lineno, "header fields go in the order "
-                     + ", ".join(HEADER_FIELDS))
-            seen.add(word)
-            last = max(last, rank)
-            continue
-        if not prose:
-            flag(lineno, "no prose in the header; a remark about a case goes "
-                 "at its constructor, and a remark about a rule at the rule")
-        prose = True
+        if f.word == "review":
+            if not f.kind:
+                flag(f.line, "`review` takes a kind: `// review <kind>: <text>`")
+        elif f.word in seen:
+            flag(f.line, f"`{f.word}` stands once in the header")
+        elif "representative" in seen or (f.word == "representative" and seen):
+            flag(f.line, "a sibling carries `@representative:` in place of "
+                 + ", ".join(f"`{w}`" for w in SIBLING_DROPS))
+        seen.add(f.word)
+    slugs: set[str] = set()
+    for c in ann.claims:
+        if c.slug in slugs:
+            flag(c.line, f"`{c.slug}` names an earlier header line; a slug "
+                 "stands once across `@scene` and `@rule`")
+        slugs.add(c.slug)
+    for lineno in ann.prose[:1]:
+        flag(lineno, "no prose in the header; a remark about a case goes "
+             "at its constructor, and a remark about a clause at the clause")
     known = _known_keywords()
-    if keywords_line and known:
-        for word in header_keywords("\n".join(raw_lines)):
+    keywords = ann.field_lines("keywords")
+    if keywords and known:
+        for word in ann.keywords():
             if word not in known:
-                findings.append((KEYWORD_CAT, keywords_line,
+                findings.append((KEYWORD_CAT, keywords[0].line,
                                  f"`{word}` is not in keywords.md; propose it in the review",
-                                 raw_lines[keywords_line - 1].rstrip()))
+                                 raw_lines[keywords[0].line - 1].rstrip()))
     if not seen & {"keywords", "representative"}:
-        flag(1, "the header carries `keywords:` or `representative:`")
-    elif "keywords" in seen and "output" not in seen:
-        flag(1, "the header carries `output:`")
+        flag(1, "the header carries `@keywords:` or `@representative:`")
+    elif ("keywords" in seen and "output" not in seen
+            and not any(c.kind == "rule" for c in ann.claims)):
+        flag(1, "the header has no `@rule` line; a rule is " + FORMS["rule"])
     return findings
 
 
-def _comments_above(raw_lines: list[str], lineno: int) -> list[str]:
-    """The consecutive comment lines directly above `lineno`, nearest first,
-    stopping at a section marker."""
-    out: list[str] = []
+def _comment_lines_above(raw_lines: list[str], lineno: int) -> list[int]:
+    """The numbers of the consecutive comment lines directly above `lineno`,
+    nearest first, stopping at a section marker."""
+    out: list[int] = []
     n = lineno - 1
     while n >= 1:
         line = raw_lines[n - 1].strip()
         if not line.startswith("//") or SECTION_RE.match(line):
             break
-        out.append(line)
+        out.append(n)
         n -= 1
     return out
 
@@ -796,26 +825,23 @@ def _branch_sites(td: TypeDecl, raw_lines: list[str]) -> list[tuple[str, int | N
     return sites
 
 
-def _deviation_of(raw_lines: list[str], at: int) -> tuple[int, int, int] | None:
-    """The three estimates of the `@deviation` line above `at`, or None when
-    no such line stands there."""
-    for c in _comments_above(raw_lines, at):
-        m = DEVIATION_RE.match(c)
-        if m:
-            return (int(m[1]), int(m[2]), int(m[3]))
-    return None
+def _witnesses_of(ann: Annotations, raw_lines: list[str], at: int) -> tuple[str, ...]:
+    """The ids of the `@witness` lines above `at`, nearest first."""
+    by_line = {w.line: w.id for w in ann.witnesses}
+    return tuple(by_line[n] for n in _comment_lines_above(raw_lines, at)
+                 if n in by_line)
 
 
 @dataclass(frozen=True)
 class Branch:
     """One branch of a choice point, `is_concept` on the one declared first.
-    `deviation` holds the three estimates of the branch's `@deviation`
-    line, and stands absent when it carries none."""
+    `witnesses` holds the ids of the branch's `@witness` lines, and stands
+    empty when it carries none."""
 
     name: str
     is_concept: bool
     line: int | None
-    deviation: tuple[int, int, int] | None
+    witnesses: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -837,7 +863,9 @@ def choice_points(source: str) -> list[ChoicePoint]:
         items = parse(source).items
     except ParseError:
         return []
-    raw_lines = _strip_block_comments(source).splitlines()
+    src = _strip_block_comments(source)
+    raw_lines = src.splitlines()
+    ann = read(src)
     points: list[ChoicePoint] = []
     for field, td in _choice_adts(items):
         if field == NESTED:
@@ -847,46 +875,108 @@ def choice_points(source: str) -> list[ChoicePoint]:
             continue
         points.append(ChoicePoint(field=field, type=td.name, branches=tuple(
             Branch(name=name, is_concept=i == 0, line=at,
-                   deviation=None if at is None else _deviation_of(raw_lines, at))
+                   witnesses=() if at is None
+                   else _witnesses_of(ann, raw_lines, at))
             for i, (name, at) in enumerate(_branch_sites(td, raw_lines)))))
     return points
 
 
 def _glosses(
-    items: list[Item], raw_lines: list[str],
+    ann: Annotations, items: list[Item], raw_lines: list[str],
 ) -> list[tuple[str, int, str, str]]:
-    """The ADTs of `Choice` — the type itself when it has branches, and the
-    ADTs named as field types in its records — that lack a gloss above the
-    type or above a constructor."""
-    targets: list[TypeDecl] = []
-    for _, td in _choice_adts(items):
-        if td is not None and td not in targets:
-            targets.append(td)
+    """`Choice` lacking the gloss above the type, and the constructors of a
+    choice ADT — of `Choice` itself, and of the ADTs named as field types —
+    that open no line of their own."""
+    targets: list[tuple[bool, TypeDecl]] = []
+    seen: set[str] = set()
+    for field, td in _choice_adts(items):
+        if td is not None and td.name not in seen:
+            seen.add(td.name)
+            targets.append((field == SELF, td))
     findings: list[tuple[str, int, str, str]] = []
-    for td in targets:
-        if not _gloss_above(raw_lines, td.line):
+    for is_choice, td in targets:
+        if is_choice and not _gloss_above(raw_lines, td.line):
             findings.append((GLOSS_CAT, td.line,
                              f"a gloss stands above `{td.name}`: what the choice is",
                              raw_lines[td.line - 1].rstrip()))
         for name, at in _branch_sites(td, raw_lines):
             if at is None:
                 findings.append((GLOSS_CAT, td.line,
-                                 f"`{name}` opens its own line, under its gloss",
+                                 f"`{name}` opens its own line",
                                  raw_lines[td.line - 1].rstrip()))
                 continue
-            if not _gloss_above(raw_lines, at):
-                findings.append((GLOSS_CAT, at, f"a gloss stands above `{name}`",
+            witnessed = bool(_witnesses_of(ann, raw_lines, at))
+            if name == td.branches[0] and witnessed:
+                findings.append((WITNESS_CAT, at,
+                                 f"`{name}` is the concept branch; drop its "
+                                 "`@witness` line",
                                  raw_lines[at - 1].rstrip()))
-            deviation = _deviation_of(raw_lines, at) is not None
-            if name == td.branches[0] and deviation:
-                findings.append((DEVIATION_CAT, at,
-                                 f"`{name}` stands first, so it is the concept branch "
-                                 "and carries no `@deviation` line",
+            elif name != td.branches[0] and not witnessed:
+                findings.append((WITNESS_CAT, at,
+                                 f"`{name}` is no concept branch and has no "
+                                 f"`@witness` line; add {WITNESS_FORM}",
                                  raw_lines[at - 1].rstrip()))
-            elif name != td.branches[0] and not deviation:
-                findings.append((DEVIATION_CAT, at,
-                                 f"`{name}` carries {DEVIATION_FORM} under its gloss",
-                                 raw_lines[at - 1].rstrip()))
+    return findings
+
+
+@lru_cache(maxsize=2)
+def _constructions(text: str) -> frozenset[str]:
+    """The lib components marked `// @construction`. An instance of one of
+    them builds a term the model reads through, and serves no claim of its
+    own."""
+    return frozenset(CONSTRUCTION_RE.findall(text))
+
+
+def _claimed_instances(items: list[Item]) -> list[Init]:
+    """Every instance a `@claim` line stands above: the ones at program
+    scope and the ones inside `Parse`, of a component the lib does not mark
+    `@construction`. An instance of a comp the solver holds itself — Params,
+    Determine, Parse — states no claim of the model."""
+    built = _constructions(_lib_source()) | frozenset(STOCK_COMPS)
+    inner = [i for it in items if isinstance(it, Comp) and it.name == "Parse"
+             for i in it.items]
+    return [it for it in (*items, *inner)
+            if isinstance(it, Init) and it.comp not in built]
+
+
+def _claims(
+    ann: Annotations, source: str, program: Program, raw_lines: list[str],
+) -> list[tuple[str, int, str, str]]:
+    """A `@claim` line that names a slug no header states, and, in a solver
+    whose header states claims, an instance or a concept branch that carries
+    no `@claim` line.
+
+    A solver whose header states no claim is not written under the claim
+    grammar, so nothing references anything and the check stays quiet.
+    """
+    findings: list[tuple[str, int, str, str]] = []
+
+    def flag(lineno: int, why: str) -> None:
+        findings.append((CLAIM_CAT, lineno, why, raw_lines[lineno - 1].rstrip()))
+
+    stated = {c.slug for c in resolved_claims(source)}
+    stated |= {c.slug for c in ann.branch_claims}
+    for ref in ann.refs:
+        for slug in ref.slugs:
+            if slug not in stated:
+                flag(ref.line, f"`{slug}` names no `@scene` or `@rule` line "
+                     "of the header")
+    if not ann.claims:
+        return findings
+    at = {ref.above for ref in ann.refs}
+    for init in _claimed_instances(program.items):
+        if init.line not in at:
+            flag(init.line, f"`{init.inst}` carries no `@claim` line; the "
+                 "claims the instance serves stand above it as "
+                 f"{FORMS['claim']}")
+    for point in _choice_adts(program.items):
+        td = point[1]
+        if td is None or not td.branches:
+            continue
+        name, line = _branch_sites(td, raw_lines)[0]
+        if line is not None and line not in at:
+            flag(line, f"`{name}` is the concept branch; the claim the choice "
+                 f"answers stands above it as {FORMS['claim']}")
     return findings
 
 
@@ -965,9 +1055,9 @@ def _banned_types(
             continue
         findings.append((
             BANNED_TYPE_CAT, td.line,
-            f"`{td.name}` is outside the sanctioned type kinds — `Choice`'s "
-            f"closure, or a record filling a comp type param; re-encode it "
-            f"or propose",
+            f"`{td.name}` is none of the types a solver may define — "
+            f"`Choice` and the types it reaches, `TiebreakResolution`, or a "
+            f"record filling a comp type param; re-encode it or propose",
             raw_lines[td.line - 1].rstrip(),
         ))
     return findings
@@ -987,9 +1077,13 @@ def lint_program(source: str) -> list[tuple[str, int, str, str]]:
     src = _strip_block_comments(source)
     raw_lines = src.splitlines()
     findings: list[tuple[str, int, str, str]] = _reserved_names(raw_lines)
-    findings.extend(_family_case(raw_lines))
+    # A `//` line inside a block comment is no annotation, so the grammar
+    # reads the source the block comments are blanked out of.
+    ann = read(src)
+    findings.extend(_family_case(ann, raw_lines))
     findings.extend(_case_marker(raw_lines))
-    findings.extend(_header(raw_lines))
+    findings.extend(_malformed(ann, raw_lines))
+    findings.extend(_header(ann, raw_lines))
 
     try:
         program = parse(source)
@@ -1038,7 +1132,8 @@ def lint_program(source: str) -> list[tuple[str, int, str, str]]:
     findings.extend(_comps_without_entry(program.items, raw_lines))
     findings.extend(_lone_parse(program, raw_lines))
     findings.extend(_banned_types(program.items, raw_lines))
-    findings.extend(_glosses(program.items, raw_lines))
+    findings.extend(_glosses(ann, program.items, raw_lines))
+    findings.extend(_claims(ann, src, program, raw_lines))
     findings.extend(_includes(program.items, raw_lines))
     findings.extend(_params_data(program.comps().get("Params"), raw_lines, code))
     findings.sort(key=lambda f: (f[1], f[0]))

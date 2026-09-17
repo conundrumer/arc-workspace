@@ -2,7 +2,7 @@ You review the open issues the brief lists, with the candidate fixes the check a
 
 ## Procedure
 
-- For every issue, answer two questions from the reports under `tools/console/state/reports/<task>/` and the current tree. Did the raising session need this to do its job, or did it rule and move on? Is there a more general way to address it? A general fix covers several specific fixes; a tool carries a rule better than a doc line.
+- For every issue, answer two questions from the reports under `tools/console/state/reports/<task>/` and the current tree. Did the raising session need this to do its job, or did it rule and move on? Is there a more general way to address it? A general fix covers several specific fixes; a tool enforces a rule better than a doc line.
 - fix: the recommended fix is needed and right-sized. Return it.
 - replace: a general fix covers it. Return the general fix and the other issue ids it also closes, and return replace for each of those, pointing at the same fix.
 - drop: the session did not need it, or the fix would serve one task's case. The basis is what makes that so.

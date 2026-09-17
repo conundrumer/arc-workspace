@@ -23,9 +23,11 @@ BELOW = "fit and are smaller than stored"
 CASES = "the cases admit different values"
 
 # The sweep prints its progress to stderr, one line per parameter, and the
-# elapsed time under the report.
-PROGRESS = re.compile(r"^(\S+): \d+ values$")
-FOOTER = re.compile(r"^budget \S+ elapsed \S+$")
+# elapsed time under the report. A cached sweep from before the progress line
+# named itself, or from before the footer said `time limit`, carries the
+# earlier form, so both forms match.
+PROGRESS = re.compile(r"^(?:sweeping )?(\S+): \d+ (?:candidate )?values$")
+FOOTER = re.compile(r"^(?:budget|time limit) \S+ elapsed \S+$")
 REPORT = re.compile(r"^(\w+): (.+)$")
 
 # A case group of a `the cases admit different values` line: the cases that

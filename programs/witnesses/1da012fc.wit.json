@@ -1,0 +1,33 @@
+{
+  "id": "1da012fc",
+  "witnesses": [{
+    "id": "side-by-side",
+    "separates": "Two shapes stand side by side and meet along the reading axis without covering the same extent of it. Separated reads them across, so the left one comes first; Anchor reads them by the top of each bounding box, so the taller one, which starts higher, comes first.",
+    "input": [
+      [0,0,0,0,8,8,0,0,5,5,5,5,5],
+      [0,0,0,0,8,8,0,0,5,2,5,5,5],
+      [8,8,0,0,8,8,0,0,5,5,5,5,5],
+      [8,8,0,0,8,8,0,0,5,5,5,3,5],
+      [0,0,0,0,8,8,0,0,5,5,5,5,5],
+      [0,0,0,0,8,8,0,0,0,0,0,0,0]
+    ],
+    "output": {
+      "Separated": [
+        [0,0,0,0,3,3,0,0,5,5,5,5,5],
+        [0,0,0,0,3,3,0,0,5,2,5,5,5],
+        [2,2,0,0,3,3,0,0,5,5,5,5,5],
+        [2,2,0,0,3,3,0,0,5,5,5,3,5],
+        [0,0,0,0,3,3,0,0,5,5,5,5,5],
+        [0,0,0,0,3,3,0,0,0,0,0,0,0]
+      ],
+      "Anchor": [
+        [0,0,0,0,2,2,0,0,5,5,5,5,5],
+        [0,0,0,0,2,2,0,0,5,2,5,5,5],
+        [3,3,0,0,2,2,0,0,5,5,5,5,5],
+        [3,3,0,0,2,2,0,0,5,5,5,3,5],
+        [0,0,0,0,2,2,0,0,5,5,5,5,5],
+        [0,0,0,0,2,2,0,0,0,0,0,0,0]
+      ]
+    }
+  }]
+}

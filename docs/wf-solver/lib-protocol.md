@@ -24,7 +24,7 @@ Give a proposed operation an entry, `docs/wf-solver/proposals/<name>.md`, named 
 - a `Not:` line naming what is not this operation
 - a `Match:` line with a search signature that covers every statement of the operation, including statements whose atoms are in different lines or clauses, and statements where a solver accesses one lib call only through another. State the shape in prose and match it with the parser (`tests/test_ast_match.py`)
     - restate a `Match:` line that does not meet this spec, so the next survey reads it
-        - a signature that names an identifier or a solver header field that `former-names.md` retires does not meet this spec, and its restatement uses the current name
+        - a signature that names an identifier the lib no longer declares, or a header field style.md no longer has, does not meet this spec, and its restatement uses the current name
 - a `Survey:` line per survey, its time to the minute, each followed by its own result. The line names the scope the survey covered, in one of two forms: `Survey: <date time> — every solver.` or `Survey: <date time> — the solvers since <the entry's previous survey time>.` A survey's scope includes drafts.
     - the result that is relevant to the operation: the near-misses (sites that resemble the operation without stating it), the spec question, and a `Callers` list of the solvers that would call it
         - a citation is the stem and the relation name
@@ -60,7 +60,7 @@ Remove the entry's file at these points:
     - If an entry is closed, keep its judgment. Encode the solver without the operation, in the way the entry states.
         - For a closed entry with no survey result: if the closing judgment requires evidence from the solvers, strike its `Closed:` line and survey the entry. If the judgment can be made without evidence from the solvers, leave the entry closed.
     - If an entry has a survey result, a survey lists this solver. Run the survey again when the pass uses that result for a judgment, including a close. Name an unlisted caller in the review, and the next survey lists it.
-    - Count a family (`// representative:` siblings with their representative) as one caller.
+    - Count a family (`// @representative:` siblings with their representative) as one caller.
 
     **The survey.** `uv run python scripts/survey.py <entry>` surveys an entry and writes the result into it.
 

@@ -39,8 +39,8 @@ LIB_SRC = PROGRAMS_DIR / "lib.dl"
 AGENT_PATH = REPO_ROOT / ".claude" / "agents" / "handbook.md"
 AGENT_META = {
     "name": "handbook",
-    "description": "For a task under the solver docs that edits no .dl. Its "
-                   "system prompt is the handbook, with the lib as an index.",
+    "description": "The handbook, with the lib as an index: one line per "
+                   "component.",
     "model": "opus",
     "effort": "high",
     "tools": "Read, Grep, Glob, Bash, Edit, Write",
@@ -48,8 +48,8 @@ AGENT_META = {
 EXPANDED_AGENT_META = {
     **AGENT_META,
     "name": "handbook-expanded",
-    "description": "For a task that edits .dl. Its system prompt is "
-                   "the handbook, with the lib's full interface.",
+    "description": "The handbook, with the lib's full interface: every "
+                   "component's relations and their docs.",
 }
 AGENT_LINE_RE = re.compile(r"\AAgent: (\S+)\n+")
 

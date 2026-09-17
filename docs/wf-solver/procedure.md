@@ -21,7 +21,7 @@ The operations and passes of a solver session.
 - **Source reading.** Do not read `src/dl/` during a pass. If you do, report to the user why, as a gap in the docs or the runner.
 - **Corpus.** Take a draft as no evidence for a claim about the corpus, and cite one in a doc under `docs/` only in a survey result.
 - **Keywords.**
-    - If no keyword in `keywords.md` fits, propose one in the review, and add it to the solver's `keywords:` line.
+    - If no keyword in `keywords.md` fits, propose one in the review, and add it to the solver's `@keywords:` line.
     - If an existing keyword's gloss should change, propose it in the review.
 
 ## Operations
@@ -33,7 +33,7 @@ The operations and passes of a solver session.
     - Do not pipe the task into anything.
     - The reference TS solver solves the task. It might not encode the best model.
 2. Draft the solver (`programs/solvers/<task_id>.dl`).
-    - Draft the header's `@invariant` and `@rule` lines with it.
+    - Draft the header's `@scene` and `@rule` lines with it.
     - Do not write the `Determine` comp yet.
 3. Run it (`uv run python scripts/run_dl.py <task_id>`).
 4. Iterate until it works and passes lint.
@@ -45,7 +45,7 @@ The operations and passes of a solver session.
 
 Run the plan (`uv run python scripts/run_dl.py determination-plan <task_id>`) and do the actions it lists.
 
-- In the plan's over-budget section, pick whichever settling parameters are simplest to determine until the product of the rest goes under the budget.
+- In the plan's over-the-limit section, pick whichever parameters are simplest to determine until the product of the remaining candidate counts goes under the enumeration limit.
 
 ### Simplify
 
@@ -88,7 +88,7 @@ Ask these questions:
     - **Equivalence.** Do not propose, and do not list in the review, a model equivalent to the model of a case the solver already has.
 - When the plan listed actions, could changing the parameterization produce a simpler or more principled model?
 
-**Concept and branch rules.** Write the header and branch lines. Judge each plausibility and verdict from the witness and each case's output on it. List each plausibility and verdict in the review. A `neither` verdict identifies a problem with the concept case.
+**Concept and branch claims.** Write the header and branch lines. Judge each plausibility and verdict from the witness and each case's output on it. List each plausibility and verdict in the review. A `neither` verdict, or a non-concept verdict at `ordinary` plausibility, identifies a problem with the concept case.
 
 **Divergence witness.** Give each non-concept branch at least one concrete witness where its model diverges from the concept branch, and write every case's output on it.
 
@@ -105,9 +105,9 @@ Ask these questions:
 { "id": <task_id>,
   "witnesses": [{
     "id": slug,                              // unique within this file
-    "hypothesis": string,                    // models separated by this input
+    "separates": string,                     // models separated by this input
     "input": Grid,
-    "assign": {<parameter>: Fact[] | Grid},  // GRID_HxW form from patterns.md for stored parameters
+    "assign": {<parameter>: Fact[] | Grid},  // absent when the block has no `@reassigned` line; GRID_HxW form from patterns.md for stored parameters
     "output": {<case>: Grid | null}          // when the verdict is not neither: each case's output, with null for undefined
             | Grid                           // when the verdict is neither: the annotator's judged output
   }] }

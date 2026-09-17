@@ -90,20 +90,20 @@ def _two_param_stub(tmp_path: Path, monkeypatch, domain: list[int]):
     monkeypatch.setattr(sweep, "_profile", profile)
 
 
-def test_a_spent_budget_cuts_one_param_and_leaves_the_rest_unswept(
+def test_a_spent_time_limit_cuts_one_param_and_leaves_the_rest_unswept(
         tmp_path: Path, monkeypatch):
     """The parameter in flight reports the runs it made; the parameter
-    behind it reports the budget as its reason."""
+    behind it reports the time limit as its reason."""
     _two_param_stub(tmp_path, monkeypatch, [0, 1, 2, 3])
 
-    results = sweep.sweep_report(STEM, budget=0)
+    results = sweep.sweep_report(STEM, time_limit=0)
     assert [(p, s) for p, s, _ in results] == [
         ("n", "swept-cut"), ("m", "skip"),
     ]
     assert results[0][2][4] == (2, 4)
     assert sweep.render_sweep(results) == [
-        "n: unique = (1) (cut by the time budget; 2 of 4 values)",
-        "m: not swept — time budget",
+        "n: unique = (1) (cut by the time limit; 2 of 4 values)",
+        "m: not swept — time limit",
     ]
 
 
