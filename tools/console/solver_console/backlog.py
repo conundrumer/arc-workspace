@@ -35,9 +35,9 @@ def backlog_row(item_id: str, proposals: str, ts_size: int | None,
 
 
 def file_state(item_id: str) -> tuple:
-    """The solver and report files as they stand: what a cached row is keyed
-    on."""
-    out = []
+    """The solver and report files as they stand, and the docs, which carry
+    the row's pending citations: what a cached row is keyed on."""
+    out = [solvers.docs_state()]
     try:
         st = solvers.solver_path(item_id).stat()
         out.append((st.st_mtime_ns, st.st_size))

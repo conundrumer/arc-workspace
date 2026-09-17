@@ -69,7 +69,7 @@ Rule on what the console's sessions called out beyond their own tasks. The workf
         - A call whose fix edits `docs/wf-solver/principles.md`: Context quotes the text before and after, and shows the concrete cases with small grid fragments. The options are the readings the workflow returned, each with its wording and its consequence over the approved solvers.
         - A call whose fix carries an illustration shows it under the call: for each cited task, the case sets under each reading and a witness input where the readings differ.
         - A keyword addition or a gloss change is level 4, presented as a proposal for a separate session.
-        - A citation of a draft solver is not presented. It waits in the doc in the pending form, with a `// review cite:` line in the solver, and approval places it.
+        - A citation of a draft solver is not presented. It waits in the doc in the pending form, and approval places it.
     - The workflow's Verify issues end the presentation: a failing check, a finding no round acted on, and an edit outside the run's targets, such as an approved solver. Do not report non-issues. A failing check blocks the close.
 - **Rulings.**
     - The user rules per call, by index: accept the default, pick another option, or reject a reason. A call the user does not rule on takes its default. A question is answered from the call's record before any action.

@@ -10,7 +10,6 @@
 //  placement holds when each template mark's box is a block. A holding
 //  placement stamps the template into its boxes, clipped where a box runs off
 //  the grid.
-// review cite: principles.md Definitions cites this solver on approval.
 
 // What a template cell carries into its box.
 .type Carry =

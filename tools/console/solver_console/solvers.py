@@ -105,9 +105,9 @@ def write_solver(item_id: str, text: str) -> None:
 # The body annotation a session writes above a form that stands in for the
 # principled one.
 WORKAROUND = re.compile(r"^\s*//\s*@workaround:\s*(.*)$", re.M)
-# The kinds of review need, in the order the lens offers them: `principle`,
-# `workaround`, `sweep`, and `cite` are read from the file's lines, `proposal`
-# from its comps.
+# The kinds of review need, in the order the lens offers them: `principle`
+# and `sweep` are read from the file's lines, `workaround` from its body,
+# `proposal` from its comps, and `cite` from the docs.
 NEED_KINDS = ("principle", "proposal", "workaround", "sweep", "cite")
 
 
@@ -141,6 +141,7 @@ def needs_of(item_id: str) -> dict[str, list[str]]:
             out.setdefault(kind, []).append(value)
     out["proposal"] = comps_of(item_id)
     out["workaround"] = [m.strip() for m in WORKAROUND.findall(text)]
+    out["cite"] = pending_cites().get(item_id, [])
     return out
 
 
@@ -244,6 +245,48 @@ PENDING_CITE = "^([ \\t]*)<!-- draft: {task} \u2014 (.*) -->$"
 
 # The citation as placed.
 PLACED_CITE = "^([ \\t]*)- {task} <!-- (.*) -->$"
+
+# A pending citation read rather than placed: the task it names and its gloss.
+ANY_PENDING = re.compile(r"^[ \t]*<!-- draft: (\w+) \u2014 (.*) -->$")
+# The heading a marker stands under.
+DOC_HEADING = re.compile(r"^#+\s+(.*?)\s*$")
+
+# The pending citations as last read, keyed on the docs' state.
+CITE_CACHE: tuple[tuple, dict[str, list[str]]] | None = None
+
+
+def docs_state() -> tuple:
+    """The docs under docs/wf-solver/ as they stand."""
+    out = []
+    for p in sorted(config.DOCS.glob("*.md")):
+        try:
+            st = p.stat()
+            out.append((p.name, st.st_mtime_ns, st.st_size))
+        except OSError:
+            pass
+    return tuple(out)
+
+
+def pending_cites() -> dict[str, list[str]]:
+    """Every pending citation, by task: the doc it waits in, the heading it
+    stands under, and the gloss it carries. The marker in the doc is the whole
+    record of a citation, so a solver's cite need is read from here and the
+    scan is cached on the docs' state."""
+    global CITE_CACHE
+    state = docs_state()
+    if CITE_CACHE is not None and CITE_CACHE[0] == state:
+        return CITE_CACHE[1]
+    out: dict[str, list[str]] = {}
+    for path in sorted(config.DOCS.glob("*.md")):
+        head = ""
+        for line in path.read_text().splitlines():
+            if m := DOC_HEADING.match(line):
+                head = m.group(1)
+            elif m := ANY_PENDING.match(line):
+                out.setdefault(m.group(1), []).append(
+                    f"{path.name} {head} \u2014 {m.group(2)}")
+    CITE_CACHE = (state, out)
+    return out
 
 
 def place_citations(item_id: str) -> list[Path]:
