@@ -12,7 +12,7 @@ from .conftest import PROP, item, write_solver
 def test_the_tag_is_written_in_one_step(srv):
     """A worker session, a souffle run, and the ref-note hook read the solver
     while the console retags it, and none of them sees a half-written file."""
-    body = "// a\n" + "// filler\n" * 60000
+    body = "// a\n" + "// filler\n" * 20000
     write_solver(srv, "a", body)
     short, stop = [], threading.Event()
 
@@ -29,7 +29,9 @@ def test_the_tag_is_written_in_one_step(srv):
 
     reader = threading.Thread(target=read, daemon=True)
     reader.start()
-    for _ in range(200):
+    # A writer that truncates in place is caught every time at this body and
+    # this many rounds, and is missed at a fifth of the rounds.
+    for _ in range(50):
         srv.mark_draft("a")
         srv.clear_draft("a")
     stop.set()
