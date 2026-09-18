@@ -212,7 +212,7 @@ LIB_NOTE = """When your pass needs a survey result that the entry does not carry
 PROMOTE_NOTE = """The user's `promote` arrives in the finalize pass, as a comment to that session, with programs/lib.dl open to it then."""
 
 # Which files a stage may edit, and where what falls short elsewhere goes.
-SCOPE_NOTE = """Your edits stay in programs/solvers/{tid}.dl, .scratch/{tid}/, and docs/wf-solver/proposals/, where an entry your pass reads is as much yours to fix as one you opened. The other shared files — programs/lib.dl, the rest of docs/wf-solver/, data/tasks/ — are the user's to change, even when the fix is designed and tested: what falls short there goes in your callouts."""
+SCOPE_NOTE = """Your edits stay in programs/solvers/{tid}.dl, programs/witnesses/{tid}.wit.json, .scratch/{tid}/, and docs/wf-solver/proposals/, where an entry your pass reads is as much yours to fix as one you opened. The other shared files — programs/lib.dl, the rest of docs/wf-solver/, data/tasks/ — are the user's to change, even when the fix is designed and tested: what falls short there goes in your callouts."""
 
 FINISHED_NOTE = """A solver that already holds up under your judgment is a finished pass: say so and stop."""
 

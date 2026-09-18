@@ -159,7 +159,7 @@ BG_TTL = 1200
 NIGHT_WORKER_CAP = 30
 # What the console's own commit stages: every changed or untracked file
 # under these paths goes in, approved or not.
-COMMIT_STAGE = ["programs/solvers", "docs/wf-solver/proposals"]
+COMMIT_STAGE = ["programs/solvers", "programs/witnesses", "docs/wf-solver/proposals"]
 
 
 def commit_brief(paths: list[str]) -> str:
