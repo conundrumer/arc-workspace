@@ -1,30 +1,56 @@
 {
   "id": "3a25b0d8",
   "witnesses": [{
-    "id": "turned-scene",
-    "separates": "Stored against Mirror: the scene stands a quarter turn from the evidence, so each figure folds top to bottom and its holes follow one another left to right. Mirror reads that axis off the figures and pairs the holes; Stored keeps the stored axis, finds the plain figure's holes across the midline and the painted figure's holes to one side of it, pairs none of them, and leaves every hole cell empty.",
+    "id": "top-bottom-fold",
+    "separates": "Stored against Mirror: each figure folds top to bottom and holds four rooms in its left half, the painted figure's rooms at the plain figure's rows with the columns exchanged. Mirror reads the fold axis off the figures, so it classes the rooms above and below the midline and ranks them across it. Stored keeps the stored axis, classes all four rooms on the left, and ranks them down the figure. Both pairings are complete, and they pair different rooms.",
     "input": [
-      [8,8,8,8,8,8,8,8,8,8,8,8,8,8,8],
-      [8,1,1,1,1,1,1,8,8,8,8,8,8,8,8],
-      [8,1,8,8,8,1,1,8,8,8,1,1,1,8,8],
-      [8,1,8,8,8,1,1,8,8,1,1,3,1,8,8],
-      [8,1,1,1,1,1,1,8,8,1,1,1,1,8,8],
-      [8,1,8,8,8,1,1,8,8,1,1,4,1,8,8],
-      [8,1,8,8,8,1,1,8,8,8,1,1,1,8,8],
-      [8,1,1,1,1,1,1,8,8,8,8,8,8,8,8],
-      [8,8,8,8,8,8,8,8,8,8,8,8,8,8,8],
-      [8,8,8,8,8,8,8,8,8,8,8,8,8,8,8]
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,5,5,5,5,5,5,5,5,5,0,0,0,0,5,5,5,5,5,5,5,5,5,0,0,0,0,0,0],
+      [0,0,5,0,5,5,5,5,5,5,5,0,0,0,0,5,5,3,3,5,5,5,5,5,0,0,0,0,0,0],
+      [0,0,5,0,5,5,5,5,5,5,5,0,0,0,0,5,5,3,3,5,5,5,5,5,0,0,0,0,0,0],
+      [0,0,5,5,0,0,5,5,5,5,5,0,0,0,0,5,4,5,5,5,5,5,5,5,0,0,0,0,0,0],
+      [0,0,5,5,0,0,5,5,5,5,5,0,0,0,0,5,4,5,5,5,5,5,5,5,0,0,0,0,0,0],
+      [0,0,5,5,5,5,5,5,5,5,5,0,0,0,0,5,5,5,5,5,5,5,5,0,0,0,0,0,0,0],
+      [0,0,5,5,0,0,5,5,5,5,5,0,0,0,0,5,4,5,5,5,5,5,5,5,0,0,0,0,0,0],
+      [0,0,5,5,0,0,5,5,5,5,5,0,0,0,0,5,4,5,5,5,5,5,5,5,0,0,0,0,0,0],
+      [0,0,5,0,5,5,5,5,5,5,5,0,0,0,0,5,5,3,3,5,5,5,5,5,0,0,0,0,0,0],
+      [0,0,5,0,5,5,5,5,5,5,5,0,0,0,0,5,5,3,3,5,5,5,5,5,0,0,0,0,0,0],
+      [0,0,5,5,5,5,5,5,5,5,5,0,0,0,0,5,5,5,5,5,5,5,5,5,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": {
-      "Stored": null,
       "Mirror": [
-        [1,1,1,1,1,1],
-        [1,3,3,3,1,1],
-        [1,3,3,3,1,1],
-        [1,1,1,1,1,1],
-        [1,4,4,4,1,1],
-        [1,4,4,4,1,1],
-        [1,1,1,1,1,1]
+        [5,5,5,5,5,5,5,5,5],
+        [5,4,5,5,5,5,5,5,5],
+        [5,4,5,5,5,5,5,5,5],
+        [5,5,3,3,5,5,5,5,5],
+        [5,5,3,3,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5],
+        [5,5,3,3,5,5,5,5,5],
+        [5,5,3,3,5,5,5,5,5],
+        [5,4,5,5,5,5,5,5,5],
+        [5,4,5,5,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5]
+      ],
+      "Stored": [
+        [5,5,5,5,5,5,5,5,5],
+        [5,3,5,5,5,5,5,5,5],
+        [5,3,5,5,5,5,5,5,5],
+        [5,5,4,4,5,5,5,5,5],
+        [5,5,4,4,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5],
+        [5,5,4,4,5,5,5,5,5],
+        [5,5,4,4,5,5,5,5,5],
+        [5,3,5,5,5,5,5,5,5],
+        [5,3,5,5,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5]
       ]
     }
   }, {
@@ -51,15 +77,15 @@
       "Mirror": null
     }
   }, {
-    "id": "tied-holes",
-    "separates": "Each figure carries two holes on the left of the midline side by side on the same rows, their mirrors on the right, and one hole across the midline. The two left holes lie at one place along the midline, so neither reaches nearer an end of the rank axis than the other and both take rank 0; the same holds on the right. Under both cases each of the plain figure's four side holes then pairs with both painted holes of its class, and out carries two colors at every one of those eight cells, so neither case gives a grid. The two figures have the same shape, so the generator pairs each hole with the hole at its own place: outer with outer and inner with inner.",
+    "id": "staggered-holes",
+    "separates": "The two figures share one outline. Each holds four holes above its center hole, two on each side of the midline, and the two holes of one side sit at staggered rows. The painted figure staggers them the other way, so the two holes of a class rank in one order in the plain figure and in the other order in the painted figure. Both cases then give each plain hole the color of the other hole of its class, and each emits a complete grid. The holes stand in the same columns in both figures, so the generator gives each hole the color of the hole in its own columns.",
     "input": [
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
       [0,0,0,4,4,4,4,4,4,4,0,0,0,0,0,0,0,0,0,0],
       [0,0,4,4,4,4,4,4,4,4,4,0,0,0,0,0,0,0,0,0],
+      [0,4,4,4,0,4,4,4,0,4,4,4,0,0,0,0,0,0,0,0],
       [0,4,0,4,0,4,4,4,0,4,0,4,0,0,0,0,0,0,0,0],
-      [0,4,0,4,0,4,4,4,0,4,0,4,0,0,0,0,0,0,0,0],
-      [0,4,4,4,4,4,4,4,4,4,4,4,0,0,0,0,0,0,0,0],
+      [0,4,0,4,4,4,4,4,4,4,0,4,0,0,0,0,0,0,0,0],
       [0,4,4,4,4,0,0,0,4,4,4,4,0,0,0,0,0,0,0,0],
       [0,4,4,4,4,0,0,0,4,4,4,4,0,0,0,0,0,0,0,0],
       [0,4,4,4,4,4,4,4,4,4,4,4,0,0,0,0,0,0,0,0],
@@ -67,9 +93,9 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
       [0,0,0,4,4,4,4,4,4,4,0,0,0,0,0,0,0,0,0,0],
       [0,0,4,4,4,4,4,4,4,4,4,0,0,0,0,0,0,0,0,0],
+      [0,4,2,4,4,4,4,4,4,4,7,4,0,0,0,0,0,0,0,0],
       [0,4,2,4,3,4,4,4,6,4,7,4,0,0,0,0,0,0,0,0],
-      [0,4,2,4,3,4,4,4,6,4,7,4,0,0,0,0,0,0,0,0],
-      [0,4,4,4,4,4,4,4,4,4,4,4,0,0,0,0,0,0,0,0],
+      [0,4,4,4,3,4,4,4,6,4,4,4,0,0,0,0,0,0,0,0],
       [0,4,4,4,4,8,8,8,4,4,4,4,0,0,0,0,0,0,0,0],
       [0,4,4,4,4,8,8,8,4,4,4,4,0,0,0,0,0,0,0,0],
       [0,4,4,4,4,4,4,4,4,4,4,4,0,0,0,0,0,0,0,0],
@@ -78,9 +104,9 @@
     "output": [
       [0,0,4,4,4,4,4,4,4,0,0],
       [0,4,4,4,4,4,4,4,4,4,0],
+      [4,4,4,3,4,4,4,6,4,4,4],
       [4,2,4,3,4,4,4,6,4,7,4],
-      [4,2,4,3,4,4,4,6,4,7,4],
-      [4,4,4,4,4,4,4,4,4,4,4],
+      [4,2,4,4,4,4,4,4,4,7,4],
       [4,4,4,4,8,8,8,4,4,4,4],
       [4,4,4,4,8,8,8,4,4,4,4],
       [4,4,4,4,4,4,4,4,4,4,4]

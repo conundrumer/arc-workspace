@@ -17,8 +17,6 @@
   | Fixed {}
     // @rule most: the output is the block whose color count no other block has
     // @witness two-odd: variant concept
-    // @witness lone-count: variant Odd
-    //     @relaxed counts
   | Odd {}
 
 .decl out(p: Position, col: Color, ch: Choice)

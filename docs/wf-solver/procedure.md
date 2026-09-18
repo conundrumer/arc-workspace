@@ -1,7 +1,8 @@
 <!-- When editing this doc:
 - Write in the imperative mood.
 - Avoid justifications, unless there is necessary reason.
-- Avoid contrastive structures, unless the alternative needs to be addressed. -->
+- Avoid contrastive structures, unless the alternative needs to be addressed.
+- Do not add notices about tooling when it would not change the reader's action or when the tooling already explains itself -->
 
 # Procedure
 

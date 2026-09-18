@@ -143,8 +143,9 @@ def sweep_report(
     order.
 
     A shared parameter is one every case reads, so the cases must admit
-    the same values. Each such parameter reports its per-case value sets
-    too, from the same runs (see _case_result).
+    a common value; the stored value is one, since every case passes under
+    it. Each such parameter reports its per-case value sets too, from the
+    same runs (see _case_result).
 
     Returns (param, status, detail): status 'swept' carries
     (fitting, stored, types, verdicts) — verdicts maps each extra fitting

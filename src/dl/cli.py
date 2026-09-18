@@ -47,6 +47,7 @@ from dl.lint import (
     LIB_NAME_CAT,
     RESERVED_CAT,
     SHADOWED_TYPE_CAT,
+    concept_case,
     lint_program,
 )
 from dl.paths import REPO_ROOT, all_stems
@@ -99,10 +100,12 @@ from dl.witness import (
     annotation_lines,
     assigned_source,
     case_outcomes,
+    finding_lines,
     load_witnesses,
     put_entry,
     read_witness_data,
     render_witness,
+    undefined_concept,
     witness_path,
     witness_report,
     write_witness_data,
@@ -519,7 +522,9 @@ def cmd_format(stem: str) -> int:
 def cmd_record(stem: str, entry_id: str, separates: str,
                path: str | None = None, assign_text: str | None = None) -> int:
     """Run one solver on a grid the caller wrote and write the run into the
-    task's witness file, as the entry `entry_id`."""
+    task's witness file, as the entry `entry_id`. A run that leaves the
+    concept case undefined prints the witness check's finding on it, and the
+    entry is written all the same."""
     if _missing(stem):
         return 2
     assign = _assign_arg(assign_text)
@@ -543,18 +548,26 @@ def cmd_record(stem: str, entry_id: str, separates: str,
             return 2
 
     solver, task_id = solver_file(stem)
+    source = solver.read_text()
     build_functors()
     if _compile_failed(stem):
         return 1
     try:
         actuals = run_dl_source(
-            assigned_source(solver.read_text(), assign), grid,
-            solver_path=solver)
+            assigned_source(source, assign), grid, solver_path=solver)
     except Exception as e:
         print(f"{type(e).__name__}: {e}", file=sys.stderr)
         return 1
 
     silent = _print_run(stem, grid, actuals)
+    outcomes = case_outcomes(actuals, res_out_stem(stem))
+    for name in silent:
+        outcomes.setdefault(name, None)
+    findings = undefined_concept(entry_id, concept_case(source), outcomes)
+    if findings:
+        print()
+        for line in finding_lines(findings):
+            print(line)
     if judged is not None:
         print()
         print("judged output:")
@@ -562,9 +575,6 @@ def cmd_record(stem: str, entry_id: str, separates: str,
             print(f"  {line}")
         output: object = judged
     else:
-        outcomes = case_outcomes(actuals, res_out_stem(stem))
-        for name in silent:
-            outcomes.setdefault(name, None)
         output = outcomes
     entry: dict = {"id": entry_id, "separates": separates, "input": grid}
     if assign:

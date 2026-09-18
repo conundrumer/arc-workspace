@@ -103,12 +103,13 @@ The goal is for a solver to express a task in a way that matches a person's unde
 
 ### Witnesses
 
-- **divergence witness**: an input on which either of these holds:
+- **divergence witness**: an input on which the concept case is defined and either of these holds:
     - two models produce different outputs at some assignment.
     - a model's output at some assignment differs from the output the generator pairs with the input.
     - A branch's witnesses are divergence witnesses between its model and the concept branch's model.
     - An output identical to the input is still defined, so a divergence at such an output is valid.
         - 41e4d17e <!-- on a solid block, the model based on enclosed regions finds none and returns the input. The model based on objects finds the block and casts from it. -->
+    <!-- A model that agrees with the concept case on every input on which the concept case is defined has no witness against it, whatever it gives elsewhere. -->
 - **annotator**: the user or agent who judges a witness.
 - **plausibility**: the annotator's ordinal estimate of how readily the generator could produce the witness. Its value is the first applicable level:
     - `ordinary`: readily, without breaking any invariant of the inputs.
@@ -126,17 +127,18 @@ The goal is for a solver to express a task in a way that matches a person's unde
 
 ### Equivalence
 
-- Two models over the same parameterization are equivalent when they give the same output for every assignment and every input.
-    + Equivalent(A, B) ⇔ ∀θ ∈ Θ. ∀x ∈ G. A(θ, x) = B(θ, x)
+- Two models over the same parameterization are equivalent when they give the same output for every assignment and every input on which the concept case is defined.
+    + Equivalent(A, B) ⇔ ∀θ ∈ Θ. ∀x ∈ G_C(θ). A(θ, x) = B(θ, x)
+        + G_C(θ): the inputs on which the concept case is defined at θ
 - An **isomorphism** between two parameterizations pairs their assignments bijectively.
     + Iso(e, Θ, Θ′) ⇔ (∀θ ∈ Θ. e⁻¹(e(θ)) = θ) ∧ (∀φ ∈ Θ′. e(e⁻¹(φ)) = φ)
         + e : Θ → Θ′; e⁻¹ : Θ′ → Θ
-    - Models over those parameterizations are equivalent when every pair of matched assignments gives the same output for every input.
-        + EquivalentAcross(A, B) ⇔ ∃e. Iso(e, Θ, Θ′) ∧ ∀θ ∈ Θ. ∀x ∈ G. A(θ, x) = B(e(θ), x)
+    - Models over those parameterizations are equivalent when every pair of matched assignments gives the same output for every input on which the concept case is defined.
+        + EquivalentAcross(A, B) ⇔ ∃e. Iso(e, Θ, Θ′) ∧ ∀θ ∈ Θ. ∀x ∈ G_C(θ). A(θ, x) = B(e(θ), x)
 - Agreement on every input in the current task does not establish equivalence between models.
     - 44f52bb0 <!-- one model stores one symmetry group and two output grids. The other stores two group-to-output entries. Both models agree on every input of this task. -->
 - For models over different parameterizations, equivalence is refuted by a witness under every possible isomorphism.
-    + (∀e. Iso(e, Θ, Θ′) ⇒ ∃θ ∈ Θ. ∃x ∈ G. A(θ, x) ≠ B(e(θ), x)) ⇒ ¬EquivalentAcross(A, B)
+    + (∀e. Iso(e, Θ, Θ′) ⇒ ∃θ ∈ Θ. ∃x ∈ G_C(θ). A(θ, x) ≠ B(e(θ), x)) ⇒ ¬EquivalentAcross(A, B)
 
 ### Structures and the lib
 
@@ -163,6 +165,7 @@ The program states the task's concept without depending on how the task file or 
 An ARC concept relates cells, regions, and their properties. The program states those relations directly.
 
 - A rule has a **relational form** when some set of clauses agrees with the rule on every input the generator produces on which the rule applies.
+- **Terms.** When two sets of clauses each have the relational form of a rule, the program takes the one stated in the rule's own terms.
 - An **approximation** is a set of clauses that the program runs in place of a rule that has no relational form.
     - The approximation disagrees with the rule on some such input, and that input is a divergence witness.
 
@@ -320,10 +323,11 @@ For a pair with two candidates, the concept case produces one of them. A peer mo
 
 ### Parameters across cases
 
-- **One parameter.** In a task, a parameter admits each value that some assignment gives it while its case fits the task. A collection of case-specific parameters forms one parameter when every task that all of their cases fit gives each member the same admitted values. Using one parameter across those cases asserts this condition.
+- **One parameter.** In a task, a parameter admits each value that some assignment gives it while its case fits the task. A collection of case-specific parameters forms one parameter when every task that all of their cases fit admits a value common to every member. Using one parameter across those cases asserts this condition.
+    <!-- The condition is on the whole collection. Parameters that meet in pairs need not all admit one value. -->
     - d23f8c26 <!-- one column of an odd-width grid is kept. It is the center line on a stored axis in one case and the gap of a two-way divide on that axis in another. Any task that fits both uses one axis value. -->
     - 5d2a5c43 <!-- every decomposition case reads the space between the two parts from one shared parameter, so a change to that width applies to them all. -->
-- **Distinct parameters.** Parameters are distinct when some task that their cases fit gives them different sets of admitted values.
+- **Distinct parameters.** Parameters are distinct when some task that their cases fit admits no value common to them.
     - 87ab05b8 <!-- three cases locate the region by a part count or a size. All values are 2 in this task, while a 6×6 sibling sets the part count to 3 and keeps the sizes at 2. -->
 - **Shared form.** A shared parameter has one form.
     - When the consumers require different forms, each case has its own parameter in the form read by its consumer.

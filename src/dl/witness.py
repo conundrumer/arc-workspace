@@ -10,7 +10,7 @@ at the stored one.
 """
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -44,6 +44,10 @@ WITNESS_OK = "witness: ok"
 DRIFT = "drift"
 UNLISTED = "unlisted"
 ANNOTATION = "annotation"
+UNDEFINED_CONCEPT = "undefined-concept"
+
+FAILING = (DRIFT, ANNOTATION, UNDEFINED_CONCEPT)
+"""The kinds that fail the check."""
 
 type Outcome = list[list[int]] | None
 type Assign = dict[str, list[list[object]]]
@@ -85,13 +89,15 @@ class Witness:
 class Drift:
     """One finding on one entry. `kind` is DRIFT when a case gives an
     outcome the entry does not name, UNLISTED when the solver has a case
-    the entry's `output` does not name, and ANNOTATION when a `@witness`
-    line of the solver and the witness file disagree — over the line's
-    form, the entry it names, a `@relaxed` slug, the `@reassigned`
+    the entry's `output` does not name, UNDEFINED_CONCEPT when the run
+    leaves the concept case's outcome undefined, and ANNOTATION when a
+    `@witness` line of the solver and the witness file disagree — over the
+    line's form, the entry it names, a `@relaxed` slug, the `@reassigned`
     parameters, or an entry no line names. `entry` is the entry's id,
     followed by the parameters it reassigns, and it is empty when no entry
-    answers the line. `expected` stands for nothing on an UNLISTED finding.
-    An ANNOTATION finding reads as `note`."""
+    answers the line. `expected` stands for nothing on an UNLISTED finding,
+    and neither `expected` nor `actual` stands for anything on an
+    UNDEFINED_CONCEPT one. An ANNOTATION finding reads as `note`."""
 
     entry: str
     case: str
@@ -265,16 +271,36 @@ def _label(entry: Entry) -> str:
     return f"{entry.id} [{', '.join(entry.assign)}]"
 
 
-def _entry_findings(entry: Entry, actuals: dict[str, Outcome]) -> list[Drift]:
+def undefined_concept(label: str, concept: str,
+                      outcomes: dict[str, Outcome],
+                      named: Collection[str] = ()) -> list[Drift]:
+    """The finding on an entry whose concept case the run leaves undefined.
+    `outcomes` carries an undefined case as None, and a case that emitted
+    nothing has no row there. `named` supplies the case names the entry
+    lists. The finding stands on a concept case that `outcomes` or `named`
+    holds; a concept case the solver leaves unspelled gets none."""
+    if not concept or concept not in set(outcomes) | set(named):
+        return []
+    if outcomes.get(concept) is not None:
+        return []
+    return [Drift(entry=label, case=concept, expected=None, actual=None,
+                  kind=UNDEFINED_CONCEPT)]
+
+
+def _entry_findings(entry: Entry, actuals: dict[str, Outcome],
+                    concept: str) -> list[Drift]:
     """The findings on one entry, given what its input produced."""
+    findings = undefined_concept(
+        _label(entry), concept, actuals,
+        () if entry.rejected_output else entry.output)
     if entry.rejected_output:
-        return [
+        return findings + [
             Drift(entry=_label(entry), case=case, expected=entry.output,
                   actual=got, rejected_output=True)
             for case, got in actuals.items()
             if got == entry.output
         ]
-    findings = [
+    findings += [
         Drift(entry=_label(entry), case=case, expected=want,
               actual=actuals.get(case))
         for case, want in entry.output.items()
@@ -446,6 +472,7 @@ def witness_report(stem: str) -> list[Drift]:
     source = path.read_text()
     witness = load_witnesses(task_id) or Witness(id=task_id)
     resolution = res_out_stem(stem)
+    concept = concept_case(source)
     findings: list[Drift] = []
     cases: list[str] = []
     for entry in witness.entries:
@@ -454,7 +481,7 @@ def witness_report(stem: str) -> list[Drift]:
             solver_path=path)
         actuals = case_outcomes(candidates, resolution)
         cases += [c for c in actuals if c not in cases]
-        findings += _entry_findings(entry, actuals)
+        findings += _entry_findings(entry, actuals, concept)
     return findings + _annotation_findings(source, witness.entries, cases)
 
 
@@ -468,6 +495,10 @@ def _lines_of(d: Drift) -> list[str]:
     case = d.case
     if d.kind == ANNOTATION:
         return [f"{d.entry}: {d.note}" if d.entry else d.note]
+    if d.kind == UNDEFINED_CONCEPT:
+        return [f"{d.entry}: the concept case {case} is {UNDEFINED}; take "
+                "another input, or drop the peer with the statement that no "
+                "witness exists"]
     if d.kind == UNLISTED:
         return [f"{d.entry}: case {case} is not listed",
                 *_side("the solver's output", d.actual)]
@@ -479,12 +510,15 @@ def _lines_of(d: Drift) -> list[str]:
             *_side("the solver's output", d.actual)]
 
 
+def finding_lines(findings: list[Drift]) -> list[str]:
+    """One block per finding, with no pass line."""
+    return [line for d in findings for line in _lines_of(d)]
+
+
 def render_witness(findings: list[Drift]) -> list[str]:
-    """One block per finding, and `witness: ok` when no finding states a
-    differing output or an annotation."""
-    lines: list[str] = []
-    for d in findings:
-        lines += _lines_of(d)
-    if not any(d.kind in (DRIFT, ANNOTATION) for d in findings):
+    """One block per finding, and `witness: ok` when no finding fails the
+    check."""
+    lines = finding_lines(findings)
+    if not any(d.kind in FAILING for d in findings):
         lines.append(WITNESS_OK)
     return lines

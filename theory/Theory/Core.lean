@@ -21,10 +21,14 @@ singleton, and every other pair carries one. A split task selects one candidate
 at every pair, and `Alts` relates a task to its split tasks. `Fits` is stated on
 a split task, and `Fam` and `Case.Fit` quantify over the split tasks.
 
-A parameter of a case admits the values a fitting assignment gives it. Two
-tests compare the parameters of two cases over the tasks both fit: `Meets` asks
-for one value both admit, and `Same` asks for the same values. `Same` collapses
-a class of parameters and `Meets` does not.
+Two models are equivalent over a domain: the assignment–input pairs on which
+the concept case is defined. A divergence off that domain refutes nothing.
+
+A parameter of a case admits the values a fitting assignment gives it.
+`Common` is the One parameter test on a collection: every task all of their
+cases fit admits a value common to every member. `Meets` is that test on two
+parameters, and `Same` is a stronger test that implies it. Pairwise `Meets`
+does not give `Common` on a class of three.
 
 The file takes no dependency, so the set operations it needs are defined here.
 -/
@@ -94,16 +98,26 @@ def Alts (T T' : Task G) : Prop :=
 /-- `fam(M) = { T : ∃T′ ∈ alts(T). ∃θ. M(θ) ⊨ T′ }`, as a predicate on tasks. -/
 def Fam (M : Model Θ G) (T : Task G) : Prop := ∃ T', Alts T T' ∧ ∃ θ, Fits M θ T'
 
-/-- Equivalent models, within one parameterization: the same outputs for every
-input under every assignment. -/
-def Equivalent (A B : Model Θ G) : Prop := ∀ θ x, A θ x = B θ x
+/-- The domain of comparison: the assignment–input pairs the comparison ranges
+over. For a solver it is `Defined C` for the concept case `C`. -/
+abbrev Domain (Θ G : Type) := Θ → G → Prop
 
-/-- A divergence witness at one assignment refutes equivalence. -/
-theorem not_equivalent_of_witness {A B : Model Θ G}
-    (h : ∃ θ x, A θ x ≠ B θ x) : ¬ Equivalent A B := by
+/-- Equivalent models, within one parameterization: the same outputs at every
+assignment–input pair of the domain. -/
+def Equivalent (D : Domain Θ G) (A B : Model Θ G) : Prop :=
+  ∀ θ x, D θ x → A θ x = B θ x
+
+/-- A divergence witness in the domain refutes equivalence. -/
+theorem not_equivalent_of_witness {D : Domain Θ G} {A B : Model Θ G}
+    (h : ∃ θ x, D θ x ∧ A θ x ≠ B θ x) : ¬ Equivalent D A B := by
   intro hs
-  obtain ⟨θ, x, hne⟩ := h
-  exact hne (hs θ x)
+  obtain ⟨θ, x, hD, hne⟩ := h
+  exact hne (hs θ x hD)
+
+/-- A model that agrees with the concept case wherever the concept case is
+defined is equivalent to it, whatever it gives elsewhere. -/
+theorem equivalent_of_agree {C B : Model Θ G}
+    (h : ∀ θ x, Defined C θ x → C θ x = B θ x) : Equivalent (Defined C) C B := h
 
 /-- An isomorphism of parameterizations: a bijection between their
 assignments. -/
@@ -115,23 +129,25 @@ structure Iso (Θ₁ Θ₂ : Type) where
 
 /-- Equivalent models across two parameterizations: some isomorphism of the
 parameterizations carries every assignment of one to an assignment of the
-other on which the outputs agree for every input. -/
-def EquivalentAcross (A : Model Θ₁ G) (B : Model Θ₂ G) : Prop :=
-  ∃ e : Iso Θ₁ Θ₂, ∀ θ x, A θ x = B (e.to θ) x
+other on which the outputs agree at every input of the domain. The domain is
+stated on the first parameterization. -/
+def EquivalentAcross (D : Domain Θ₁ G) (A : Model Θ₁ G) (B : Model Θ₂ G) : Prop :=
+  ∃ e : Iso Θ₁ Θ₂, ∀ θ x, D θ x → A θ x = B (e.to θ) x
 
 /-- Within one parameterization, the identity isomorphism makes the two
 readings agree. -/
-theorem equivalentAcross_of_equivalent {A B : Model Θ G} (h : Equivalent A B) :
-    EquivalentAcross A B :=
+theorem equivalentAcross_of_equivalent {D : Domain Θ G} {A B : Model Θ G}
+    (h : Equivalent D A B) : EquivalentAcross D A B :=
   ⟨⟨id, id, fun _ => rfl, fun _ => rfl⟩, h⟩
 
-/-- A divergence witness under every isomorphism of the parameterizations
-refutes equivalence across them. -/
-theorem not_equivalentAcross_of_witness {A : Model Θ₁ G} {B : Model Θ₂ G}
-    (h : ∀ e : Iso Θ₁ Θ₂, ∃ θ x, A θ x ≠ B (e.to θ) x) : ¬ EquivalentAcross A B := by
+/-- A divergence witness in the domain under every isomorphism of the
+parameterizations refutes equivalence across them. -/
+theorem not_equivalentAcross_of_witness {D : Domain Θ₁ G} {A : Model Θ₁ G}
+    {B : Model Θ₂ G} (h : ∀ e : Iso Θ₁ Θ₂, ∃ θ x, D θ x ∧ A θ x ≠ B (e.to θ) x) :
+    ¬ EquivalentAcross D A B := by
   intro ⟨e, hs⟩
-  obtain ⟨θ, x, hne⟩ := h e
-  exact hne (hs θ x)
+  obtain ⟨θ, x, hD, hne⟩ := h e
+  exact hne (hs θ x hD)
 
 /-! ## Equivariance
 
@@ -248,9 +264,10 @@ abbrev Product {I : Type} (Θi : I → Type) := (i : I) → Θi i
 /-! ## Parameters
 
 A parameter of a case is one component of its parameterization, read off an
-assignment. Two parameters of different cases are compared by the values each
-admits in a task: the values a fitting assignment gives it. `Meets` is the
-current test and `Same` is the proposed one. -/
+assignment. Parameters of different cases are compared by the values each
+admits in a task: the values a fitting assignment gives it. `Common` is the One
+parameter test, `Meets` is its two-parameter form, and `Same` is a stronger
+test. -/
 
 variable {V : Type}
 
@@ -289,19 +306,36 @@ theorem Param.admits_nonempty {p : Param G V} {T : Task G} (h : p.Fitted T) :
   obtain ⟨θ, hθ⟩ := h
   exact ⟨p.read θ, p.admits_read hθ⟩
 
-/-- The current test: in every task both models fit, some one value is admitted
-by both parameters. -/
+/-- The One parameter test on a collection: in every task all of their models
+fit, some one value is admitted by every member. Using one parameter across
+the collection's cases asserts this. -/
+def Common {K : Type} (P : K → Param G V) : Prop :=
+  ∀ T, (∀ k, (P k).Fitted T) → ∃ v, ∀ k, (P k).Admits T v
+
+/-- The two-parameter form of `Common`: in every task both models fit, some
+one value is admitted by both parameters. -/
 def Meets (a b : Param G V) : Prop :=
   ∀ T, a.Fitted T → b.Fitted T → ∃ v, a.Admits T v ∧ b.Admits T v
 
-/-- The proposed test: in every task both models fit, the two parameters admit
+/-- `Meets` is `Common` on the two-member collection. -/
+theorem common_pair_iff_meets {a b : Param G V} :
+    Common (fun i : Bool => bif i then a else b) ↔ Meets a b := by
+  constructor
+  · intro h T ha hb
+    obtain ⟨v, hv⟩ := h T (fun i => by cases i <;> assumption)
+    exact ⟨v, hv true, hv false⟩
+  · intro h T hk
+    obtain ⟨v, hva, hvb⟩ := h T (hk true) (hk false)
+    exact ⟨v, fun i => by cases i <;> assumption⟩
+
+/-- A stronger test: in every task both models fit, the two parameters admit
 the same values. -/
 def Same (a b : Param G V) : Prop :=
   ∀ T, a.Fitted T → b.Fitted T → ∀ v, (a.Admits T v ↔ b.Admits T v)
 
-/-- The proposed test implies the current one. The quantifier already gives a
-fitting assignment of the first model, and that assignment gives the parameter
-a value it admits, so the value both admit needs no further hypothesis. -/
+/-- `Same` implies `Meets`. The quantifier already gives a fitting assignment
+of the first model, and that assignment gives the parameter a value it admits,
+so the value both admit needs no further hypothesis. -/
 theorem meets_of_same {a b : Param G V} (h : Same a b) : Meets a b := by
   intro T ha hb
   obtain ⟨v, hv⟩ := Param.admits_nonempty ha
@@ -331,6 +365,14 @@ theorem same_common {K : Type} (base : Param G V) (P : K → Param G V)
     (hk : ∀ k, (P k).Fitted T) : ∃ v, base.Admits T v ∧ ∀ k, (P k).Admits T v := by
   obtain ⟨v, hv⟩ := Param.admits_nonempty hb
   exact ⟨v, hv, fun k => (h k T hb (hk k) v).1 hv⟩
+
+/-- A collection whose members are pairwise `Same` is `Common`, given a member
+to draw the value from. -/
+theorem common_of_same {K : Type} (P : K → Param G V) (k₀ : K)
+    (h : ∀ k k', Same (P k) (P k')) : Common P := by
+  intro T hk
+  obtain ⟨v, hv⟩ := Param.admits_nonempty (hk k₀)
+  exact ⟨v, fun k => (h k₀ k T (hk k₀) (hk k) v).1 hv⟩
 
 /-- The same for three parameters, stated on the pairwise relation. -/
 theorem same_common₃ {a b c : Param G V} (hab : Same a b) (hbc : Same b c)
@@ -520,9 +562,9 @@ def hueS₃ : Hue → Bool
   | .blue => false
   | _ => true
 
-/-- The key result: pairwise `Meets` does not collapse a class. Three
-parameters meet pairwise, each of their models fits `topTask`, and no value is
-admitted by all three there. The set-level step is `three_pairwise_no_common`:
+/-- The key result: pairwise `Meets` does not give `Common`. Three parameters
+meet pairwise, each of their models fits `topTask`, and no value is admitted by
+all three there. The set-level step is `three_pairwise_no_common`:
 the values admitted in `topTask` are the three sets `{red, blue}`,
 `{blue, green}` and `{red, green}`, which meet pairwise and share nothing. -/
 theorem meets_not_common :
