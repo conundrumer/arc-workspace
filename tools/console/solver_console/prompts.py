@@ -196,7 +196,7 @@ HANDOFF_WRAP = """Put the report between `<handoff>` and `</handoff>` tags: the 
 # What a handoff report holds, and how a stage that hands on closes its turn.
 # Every stage writes the same report, so the contents are stated once here and
 # each brief adds only what its own stage owes.
-HANDOFF_ITEMS = """the model hypothesis as it now stands, what you changed and why, each choice point with the alternatives you tested and what ruled them out, and the open items. Those alternatives include the ones the data rules out: a review omits them, so the report carries them and the next session does not derive them again. A witness the report relies on goes in the report itself, as the input fragment and each model's output on it; a `.scratch/<task_id>/` path supplements that text and is never the record of it"""
+HANDOFF_ITEMS = """the model hypothesis as it now stands, what you changed and why, each choice point with the alternatives you tested and what ruled them out, and the open items. Those alternatives include the ones the data rules out: a review omits them, so the report carries them and the next session does not derive them again. A witness the report relies on and did not record goes in the report itself, as the input fragment and each model's output on it"""
 
 HANDOFF_END = ("In place of the review, end your turn with a handoff report "
                "for the session that takes over from you: " + HANDOFF_ITEMS)
@@ -214,7 +214,7 @@ PROMOTE_NOTE = """The user's `promote` arrives in the finalize pass, as a commen
 # Which files a stage may edit, and where what falls short elsewhere goes.
 SCOPE_NOTE = """Your edits stay in programs/solvers/{tid}.dl, programs/witnesses/{tid}.wit.json, .scratch/{tid}/, and docs/wf-solver/proposals/, where an entry your pass reads is as much yours to fix as one you opened. The other shared files — programs/lib.dl, the rest of docs/wf-solver/, data/tasks/ — are the user's to change, even when the fix is designed and tested: what falls short there goes in your callouts."""
 
-FINISHED_NOTE = """A solver that already holds up under your judgment is a finished pass: say so and stop."""
+FINISHED_NOTE = """A solver that already holds up under your judgment needs no edit from you: say so."""
 
 # The console's approval mark, which the worker writes with the solver.
 DRAFT_NOTE = """Put `// @draft` on its own line under the task-id line when you write the solver, and leave it there; only the user's approval takes it off."""
@@ -229,7 +229,7 @@ Do the creation pass with the data above. """
                 + REVIEW_ITEMS_NOTE + " "
                 + DRAFT_NOTE + " " + LIB_NOTE + " " + REIMPL_NOTE
                 + """ When a question about the data comes up, run something that answers it rather than working it out by hand. """
-                + HANDOFF_END + """. The audit findings go among those open items. Make it complete enough that the next session reruns nothing. """
+                + HANDOFF_END + """. Make it complete enough that the next session reruns nothing. """
                 + HANDOFF_WRAP)
 
 HANDOFF_BRIEF = ("Write the handoff report for the session that takes over from you: "
@@ -262,8 +262,8 @@ ADVANCE_HEAD = """You are a later session of a chained flow: the creation pass i
 
 # What the brief says of the solver file: the usual read, or, when no
 # session before wrote one, the write this pass owes.
-ADVANCE_READ = """Read programs/solvers/{tid}.dl first — the reports describe it, but you edit the file itself. Then refine the solver: judge the model and the code yourself, and edit what falls short. Trust the reports for what was already tried; do not rederive discarded alternatives."""
-ADVANCE_WRITE = """The sessions before you wrote no solver: programs/solvers/{tid}.dl does not exist. Write it from the reports above, then refine it: judge the model and the code yourself, and edit what falls short. Trust the reports for what was already tried; do not rederive discarded alternatives."""
+ADVANCE_READ = """Read programs/solvers/{tid}.dl first — the reports describe it, but you edit the file itself. Then refine the solver: judge the model and the code yourself, and edit what falls short. Do not redo work the reports already did. What a report leaves unsettled is yours to settle."""
+ADVANCE_WRITE = """The sessions before you wrote no solver: programs/solvers/{tid}.dl does not exist. Write it from the reports above, then refine it: judge the model and the code yourself, and edit what falls short. Do not redo work the reports already did. What a report leaves unsettled is yours to settle."""
 
 # The rules a later stage works under. The reports above it are the part a
 # bare pass does not get, so BARE_BRIEF below leaves them out and shares the
