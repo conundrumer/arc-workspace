@@ -798,17 +798,36 @@ label drops such a field, so the case column does not carry its branch."""
 
 def _choice_adts(items: list[Item]) -> list[tuple[int, TypeDecl | None]]:
     """The ADTs a solver's `Choice` ranges over, each with the index of the
-    field that carries it. A field whose type is no ADT takes None."""
+    field that carries it. A field whose type is no ADT takes None. An ADT
+    a branch names as a field type is carried at any depth, and a type that
+    leads back to one already collected is passed over."""
     types = {it.name: it for it in items if isinstance(it, TypeDecl)}
     choice = types.get("Choice")
     if choice is None:
         return []
-    fields = [types.get(n) for n in FIELD_TYPE_RE.findall(choice.rhs)]
+
+    def named_by(td: TypeDecl) -> list[TypeDecl]:
+        """The branch-bearing ADTs `td` names as field types."""
+        found = (types.get(n) for n in FIELD_TYPE_RE.findall(td.rhs))
+        return [t for t in found if t is not None and t.branches]
+
     if choice.branches:
-        return [(SELF, choice)] + [(NESTED, td) for td in fields
-                                   if td is not None and td.branches]
-    return [(i, td if td is not None and td.branches else None)
-            for i, td in enumerate(fields)]
+        out: list[tuple[int, TypeDecl | None]] = [(SELF, choice)]
+        seen = {choice.name}
+    else:
+        fields = [types.get(n) for n in FIELD_TYPE_RE.findall(choice.rhs)]
+        out = [(i, td if td is not None and td.branches else None)
+               for i, td in enumerate(fields)]
+        seen = {td.name for _, td in out if td is not None}
+    queue = [t for _, td in out if td is not None for t in named_by(td)]
+    while queue:
+        td = queue.pop(0)
+        if td.name in seen:
+            continue
+        seen.add(td.name)
+        out.append((NESTED, td))
+        queue.extend(named_by(td))
+    return out
 
 
 def _branch_sites(td: TypeDecl, raw_lines: list[str]) -> list[tuple[str, int | None]]:
@@ -900,14 +919,19 @@ def concept_case(source: str) -> str:
 
 def branch_above(source: str, line: int) -> str:
     """The name of the choice branch whose comment block holds `line`, and
-    empty when no branch's block does."""
+    empty when no branch's block does. A branch of a nested choice type
+    counts, though the case column does not carry it."""
+    try:
+        items = parse(source).items
+    except ParseError:
+        return ""
     raw_lines = _strip_block_comments(source).splitlines()
-    for point in choice_points(source):
-        for b in point.branches:
-            if b.line is None:
-                continue
-            if line in _comment_lines_above(raw_lines, b.line):
-                return b.name
+    for _, td in _choice_adts(items):
+        if td is None:
+            continue
+        for name, at in _branch_sites(td, raw_lines):
+            if at is not None and line in _comment_lines_above(raw_lines, at):
+                return name
     return ""
 
 
@@ -916,7 +940,8 @@ def _glosses(
 ) -> list[tuple[str, int, str, str]]:
     """`Choice` lacking the gloss above the type, and the constructors of a
     choice ADT — of `Choice` itself, and of the ADTs named as field types —
-    that open no line of their own."""
+    that open no line of their own, and each `@witness` line that stands
+    under neither a branch nor an `@approximated:` line."""
     targets: list[tuple[bool, TypeDecl]] = []
     seen: set[str] = set()
     for field, td in _choice_adts(items):
@@ -924,6 +949,7 @@ def _glosses(
             seen.add(td.name)
             targets.append((field == SELF, td))
     findings: list[tuple[str, int, str, str]] = []
+    held: set[int] = set()
     for is_choice, td in targets:
         if is_choice and not _gloss_above(raw_lines, td.line):
             findings.append((GLOSS_CAT, td.line,
@@ -935,6 +961,7 @@ def _glosses(
                                  f"`{name}` opens its own line",
                                  raw_lines[td.line - 1].rstrip()))
                 continue
+            held.update(_comment_lines_above(raw_lines, at))
             witnessed = bool(_witnesses_of(ann, raw_lines, at))
             if name == td.branches[0] and witnessed:
                 findings.append((WITNESS_CAT, at,
@@ -946,6 +973,13 @@ def _glosses(
                                  f"`{name}` is no concept branch and has no "
                                  f"`@witness` line; add {WITNESS_FORM}",
                                  raw_lines[at - 1].rstrip()))
+    for w in ann.witnesses:
+        if w.approximates or w.line in held:
+            continue
+        findings.append((WITNESS_CAT, w.line,
+                         "a witness line stands in a branch's comment block "
+                         "or under `@approximated:`",
+                         raw_lines[w.line - 1].rstrip()))
     return findings
 
 
