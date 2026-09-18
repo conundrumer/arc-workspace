@@ -122,7 +122,7 @@ CALLOUT_RATES = [
     ("lib candidates and proposal comps", 42, 60, 83, 108,
      "a solver-local form proposed for programs/lib.dl or docs/wf-solver/proposals/, with its entry and survey result"),
     ("doc gaps", 48, 65, 202, 289,
-     "a docs/wf-solver rule that is missing, wrong, or misleading, with the edit it needs"),
+     "an issue with something in docs/wf-solver that resulted in friction"),
     ("naming and vocabulary", 18, 32, 38, 72,
      "a name with shared scope — a lib comp, a type, doc wording, a proposals entry; a name local to one solver is not this kind"),
     ("lint and tooling", 11, 22, 29, 55,
