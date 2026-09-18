@@ -29,8 +29,13 @@ export function DetailHead({it, cli, tab, badges, canAdvance, canResume, nxt, on
     ${/* The turn buttons lead, on a fixed-width command. The readouts and the
           two conveniences trail, since a growing context figure and a worker
           the console reaped mid-session both move whatever follows them. */
-      sid && html`<div class="sessline">
-      <span class="cmd">${resume+" "+sid.slice(0,8)+"…"}</span>
+      (sid || it.active) && html`<div class="sessline">
+      ${/* A turn the console has just sent has no session id yet: the id
+            arrives with the turn's first event. The line is up from the
+            send, so the stop button is there for the whole stretch. */
+        sid
+          ? html`<span class="cmd">${resume+" "+sid.slice(0,8)+"…"}</span>`
+          : html`<span class="cmd">starting…</span>`}
       ${canResume && html`
         <button class="copybtn" title="continue the turn a usage limit cut off"
           onClick=${()=>post("/api/resume",{id:it.id})}>resume</button>`}
