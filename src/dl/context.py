@@ -11,7 +11,10 @@ rest, and derives from the live file, so no copy can go stale.
 
 The handbook renders two ways, and an agent carries each. The lib is its
 interface, for a task that edits `.dl`, or an index: one line per public component
-of each file, under a note that points at the interface file for the rest.
+of each file, under a note that points at the interface file for the rest. In
+the index rendering, some docs are an index too: the doc's preamble and one
+line per heading under it, under a note that points at the file for the
+sections.
 """
 
 from __future__ import annotations
@@ -72,6 +75,9 @@ DOCS = ("procedure.md", "principles.md", "style.md", "patterns.md", "keywords.md
 # Catalog docs: entries are independent and a session uses few, so the context
 # carries the index and the session reads the entry it needs.
 INDEX = {"patterns.md"}
+# The docs the index edition carries as a heading index: the preamble and the
+# headings under it, with the sections left in the file.
+HEADING_INDEX = {"procedure.md", "lib-protocol.md", "keywords.md"}
 
 
 def lib_sources(root: Path = LIB_SRC) -> list[tuple[Path, str]]:
@@ -326,6 +332,23 @@ def entry_index(text: str, source: str) -> str:
     return "\n\n".join(p for p in (preamble.strip(), note, "\n".join(out)) if p) + "\n"
 
 
+HEADING_NOTE = ("The sections are in the source: read a section in {rel} when "
+                "the rule you need is under it.")
+
+
+def heading_index(text: str, source: str) -> str:
+    """A doc as its preamble and one line per heading under its title, in
+    document order, indented by heading level. The preamble says what the doc
+    is, which every section stands on."""
+    body = re.sub(r"^```.*?^```", "", text, flags=re.S | re.M)
+    head = re.split(r"^## ", body, maxsplit=1, flags=re.M)[0]
+    preamble = "\n\n".join(p for p in head.split("\n\n")[1:] if p.strip())
+    out = [" " * 4 * (len(m.group(1)) - 2) + f"- **{m.group(2).strip()}**"
+           for m in re.finditer(r"^(##+) (.*)$", body, flags=re.M)]
+    note = HEADING_NOTE.format(rel=source)
+    return "\n\n".join(p for p in (preamble.strip(), note, "\n".join(out)) if p) + "\n"
+
+
 HEADER = ("# Handbook\n\nThe solver docs and the lib as a session reads "
           "them. Before editing one of these files, open and read it, "
           "because it may contain editing rules not visible here.\n")
@@ -372,7 +395,8 @@ def render(docs: Path = DOCS_DIR, lib: Path = LIB_SRC,
            lib_index: bool = False) -> str:
     """The handbook: the docs and the lib's files, each under a heading naming
     its file. The lib renders as its interface, or under `lib_index` as an
-    index pointing at the interface file beside each source."""
+    index pointing at the interface file beside each source. Under `lib_index`
+    the docs in `HEADING_INDEX` render as a heading index."""
     parts: list[str] = []
     for name in DOCS:
         rel = f"docs/wf-solver/{name}"
@@ -384,9 +408,15 @@ def render(docs: Path = DOCS_DIR, lib: Path = LIB_SRC,
         notes += [SECTION_DEFERRED.format(title=t, rel=rel) for t in titles]
         note = "".join(f"\n\n{n}" for n in notes)
         if name in INDEX:
-            parts.append(f"\n---\n\n# {rel} — index{note}\n\n{entry_index(text, rel)}")
+            index = entry_index(text, rel)
+        elif lib_index and name in HEADING_INDEX:
+            index = heading_index(text, rel)
         else:
+            index = None
+        if index is None:
             parts.append(f"\n---\n\n# {rel}{note}\n\n{text}")
+        else:
+            parts.append(f"\n---\n\n# {rel} — index{note}\n\n{index}")
     for i, (path, text) in enumerate(lib_sources(lib)):
         rel = Path("programs") / path.relative_to(lib.parent)
         if lib_index:

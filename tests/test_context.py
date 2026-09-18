@@ -116,8 +116,6 @@ def test_render_reads_the_listed_docs_in_order(tmp_path: Path):
     assert "out(P) :- in(P, _)." not in out and "#include" not in out
 
     index = render(docs, lib, lib_index=True)
-    cut = "\n---\n\n# programs/lib.dl"
-    assert index[:index.index(cut)] == out[:out.index(cut)]      # the docs render the same
     assert index.endswith(
         "\n---\n\n# programs/lib.dl — index\n\n"
         "A module's interface file, its path with `.md` for `.dl`, holds each component's"

@@ -8,12 +8,13 @@ Both forms write the lib's interface files, the `.md` beside each of its
 sources, which the handbook's lib index points at. `--write` also writes the
 agents that run a role under `.claude/roles/` with the handbook as their
 system prompt: `.claude/agents/handbook.md`, over the handbook with the lib
-as an index, and `.claude/agents/handbook-expanded.md`, over the handbook
-with the lib's full interface. It also writes the files a codex session on
-the repo reads: `AGENTS.md`, the handbook with the project CLAUDE.md, and
-`.codex/config.toml`, with `docs/codex-style.md` as the developer
-instructions. The files are not tracked; write them before a session that
-spawns an agent starts, and before a codex session starts.
+and some docs as an index, and `.claude/agents/handbook-expanded.md`, over
+the handbook with the lib's full interface and every doc in full. It also
+writes the files a codex session on the repo reads: `AGENTS.md`, the handbook
+with the project CLAUDE.md, and `.codex/config.toml`, with
+`docs/codex-style.md` as the developer instructions. The files are not
+tracked; write them before a session that spawns an agent starts, and before a
+codex session starts.
 """
 
 import sys
