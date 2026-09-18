@@ -1,6 +1,7 @@
 """The unfinalized solvers: every solver on disk the user has not ruled
 on. The finalize lens lists them, and sorts the finalize passes in flight
-by the same rows."""
+by the same rows. It lists the ruled solvers too, so a ruling can be read
+again."""
 
 import subprocess
 import time
@@ -234,6 +235,48 @@ def lens_view(ages: dict[str, int] | None = None) -> dict:
     rows = sorted((row for row in scan if row["id"] not in held), key=key)
     passes = sorted((row for row in scan if row["id"] in finalizing), key=key)
     return {"items": rows, "finalizing": passes, "priority": priority}
+
+
+def ruled_view(ages: dict[str, int] | None = None) -> list[dict]:
+    """A row per solver the user has ruled on, the newest solver first. A
+    ruling is either an approval, which the solver file carries as the draft
+    tag it no longer has, or a dismissal, which is a ledger line. The rows
+    are the lens rows, so a ruled solver reads as an unfinalized one does.
+
+    The order comes from when each solver was added, which is a git read; a
+    caller that must not hold LOCK through a subprocess takes that read
+    itself and passes it in."""
+    with store.LOCK:
+        lines = ledger.ledger_rows()
+        dismissed = ledger.ruled(lines)
+        passes = ledger.passes_of(lines)
+        entries = entries_by_task(lines)
+        proposals = solvers.prop_text()
+        prop_key = hash(proposals)
+        ts = solvers.ts_sizes()
+        rows = []
+        for path in sorted(config.SOLVERS.glob("*.dl")):
+            if path.name.startswith("."):
+                continue
+            item_id = path.stem
+            if item_id in dismissed:
+                ruling = "dismissed"
+            elif solvers.is_draft(item_id):
+                continue
+            else:
+                ruling = "approved"
+            row = dict(cached_row(item_id, proposals, prop_key, ts.get(item_id)))
+            row["ruling"] = ruling
+            rows.append(row)
+    ages = solver_ages() if ages is None else ages
+    for row in rows:
+        row["entries"] = solvers.entry_names(sorted(entries.get(row["id"], ())))
+        row["passes"] = passes.get(row["id"], [])
+        row["added"] = ages.get(row["id"])
+    reach_of(rows)
+    # a solver not committed yet is the newest there is, so it leads
+    rows.sort(key=lambda row: (row["added"] is not None, -(row["added"] or 0), row["id"]))
+    return rows
 
 
 def backlog_view(ages: dict[str, int] | None = None) -> list[dict]:

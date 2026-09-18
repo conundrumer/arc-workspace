@@ -66,13 +66,22 @@ export function DetailHead({it, cli, tab, badges, canAdvance, canResume, nxt, on
   </div>`;
 }
 
-export function PeekHead({d, onDismiss, onApprove}){
+/* `ruling` is what the user already said of the solver, where they have:
+   the rulings are made once, so a solver carrying one offers another pass
+   instead of a second ruling. */
+export function PeekHead({d, ruling, onDismiss, onApprove, onFinalize}){
   return html`<div class="dhead">
     <span class="tid">${d.id}</span>
-    <button class="copybtn" title="approve — record the ruling"
-      onClick=${()=>onApprove(d.id)}>✓ approve</button>
-    <button class="copybtn" title="dismiss — record that no finalize pass is needed"
-      onClick=${()=>onDismiss(d.id)}>✕ dismiss</button>
+    ${ruling
+      ? html`<${StateChip} state=${ruling==="approved"?"approved":"committed"}
+          label=${ruling}/>`
+      : [html`<button key="a" class="copybtn" title="approve — record the ruling"
+           onClick=${()=>onApprove(d.id)}>✓ approve</button>`,
+         html`<button key="d" class="copybtn"
+           title="dismiss — record that no finalize pass is needed"
+           onClick=${()=>onDismiss(d.id)}>✕ dismiss</button>`]}
+    <button class="copybtn" title="start a finalize pass over this solver"
+      onClick=${()=>onFinalize(d.id)}>finalize</button>
   </div>`;
 }
 /* the solver's header lines and its review needs, above the reports */

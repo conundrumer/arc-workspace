@@ -42,6 +42,11 @@ const ttlLeft = it => {
   return la ? TTL_MIN - (Date.now()-la)/60000 : 0;
 };
 
+/* When a turn of the item last landed, over all its stages; an item with no
+   landing yet has none. */
+export const lastTurn = it =>
+  Math.max(0, ...Object.values(it.lastActive||{}).map(v=>v||0));
+
 /* cache freshness of the phase-owning session: minutes until its 1h
    prompt-cache TTL expires. The sort key carries the rail order: a phase with
    no session yet leads, then the live turns, then the warm ones by

@@ -40,6 +40,8 @@ export function ItemRow({it, sel, task, metric, row, priority, onSelect}){
   </div>`;
 }
 
+/* a solver's row: the needs it holds, the models of its passes, and the
+   ruling where the user has made one */
 export function BkRow({b, sel, task, metric, priority, onSelect}){
   return html`<div class=${"row bk"+(sel?" sel":"")} tabIndex="0"
       onClick=${()=>onSelect(b.id)}
@@ -54,14 +56,20 @@ export function BkRow({b, sel, task, metric, priority, onSelect}){
       </div>
       <div class="sub mono" title=${(b.passes||[]).map(p=>p.stage+": "+p.model).join("\n")}>${passLabel(b)}</div>
     </div>
-    ${metric!=null && html`<div class="side"><span class="bksz mono">${metric}</span></div>`}
+    ${(b.ruling || metric!=null) && html`<div class="side">
+      ${b.ruling && html`<${StateChip} state=${b.ruling==="approved"?"approved":"committed"}
+        label=${b.ruling}/>`}
+      ${metric!=null && html`<span class="bksz mono">${metric}</span>`}
+    </div>`}
   </div>`;
 }
 
-/* a section: {key, head, rows, total, onMore}; rows are rendered already,
-   total is how many there are when the rows on show are a cut. The search
-   box narrows every section to the ids holding its text, and lifts their
-   cuts. `tools` are the lens controls, which stand over every section. */
+/* a section: {key, head, rows, total, more, onMore}; rows are rendered
+   already, total is how many there are when the rows on show are a cut, and
+   `more` names the button that lifts the cut where "show all" does not read.
+   The search box narrows every section to the ids holding its text, and
+   lifts their cuts. `tools` are the lens controls, which stand over every
+   section. */
 export function Rail({sections, tools, filter, setFilter}){
   return html`<nav id="rail" aria-label="wave items">
     <input class="railsearch" type="search" placeholder="search ids" aria-label="search ids"
@@ -71,7 +79,7 @@ export function Rail({sections, tools, filter, setFilter}){
       html`<div class="railhead" key=${s.key+":head"}><span>${s.head}</span></div>`,
       ...s.rows,
       s.total>s.rows.length && html`<button class="bkmore" key=${s.key+":more"} onClick=${s.onMore}>
-        ${"show all "+s.total}</button>`,
+        ${s.more || "show all "+s.total}</button>`,
     ])}
   </nav>`;
 }

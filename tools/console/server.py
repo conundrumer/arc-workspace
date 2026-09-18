@@ -174,6 +174,9 @@ class Handler(BaseHTTPRequestHandler):
             # the order the rows take comes from a git read, which runs here
             # rather than under LOCK: every worker reader thread waits on it
             self.reply(backlog.lens_view(backlog.solver_ages()))
+        elif url.path == "/api/ruled":
+            # the git read runs here for the same reason as the backlog's
+            self.reply(backlog.ruled_view(backlog.solver_ages()))
         elif url.path.startswith("/api/peek/"):
             item_id = url.path.rsplit("/", 1)[1]
             if not solvers.solver_path(item_id).exists():

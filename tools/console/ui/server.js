@@ -48,7 +48,11 @@ export function ensureItem(id, force){
     itemData[id]=d; notify();
   }).catch(()=>{});
 }
-export function ensurePeek(id){
+/* a peek is the solver and its reports as they stand on disk; a selection
+   the page restored takes what it has, and the user's own click takes it
+   again, since a pass may have rewritten the file */
+export function ensurePeek(id, force){
+  if(!id || (peeks[id] && !force)) return;
   fetch("/api/peek/"+id).then(r=>r.ok?r.json():null).then(d=>{
     if(d){ peeks[id]=d; notify(); }
   }).catch(()=>{});

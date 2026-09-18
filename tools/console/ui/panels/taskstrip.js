@@ -32,11 +32,15 @@ function Pairs({task}){
 
 const WIT = "witnesses";
 
-/* A witness entry's outcomes as a per-case map: a bare grid is a rejected
-   output, keyed by that word; null is an undefined outcome. */
+/* A witness entry's outcomes as a per-case map: a bare grid is the judged
+   output every case must differ from, keyed by the word for that; null is
+   an undefined outcome. */
 function outcomes(w){
   return Array.isArray(w.output) ? [["rejected", w.output]] : Object.entries(w.output);
 }
+/* the mark between the input and the outcomes: the cases give theirs on it,
+   or, for a judged output, no case may give it */
+const markOf = w => Array.isArray(w.output) ? "≠" : "→";
 
 /* The lines a `@witness` block adds under the model: the plausibility and
    the verdict on one line, then a line per field that holds a slug or
@@ -50,17 +54,22 @@ function blockLines(w){
          ].filter(Boolean);
 }
 
+/* Every outcome is what one case gives on the one input, so the mark stands
+   between the input and the outcomes, once: the outcomes are siblings, and
+   an arrow between them would read as a chain. */
 function Witness({w}){
   const label = w.id + (w.assign ? " [" + Object.keys(w.assign).join(", ") + "]" : "");
   return html`<div class="wit">
     ${w.input
       ? html`<div class="pair">
           <${Grid} g=${w.input} label=${label}/>
-          ${outcomes(w).map(([c,g])=>[
-            html`<span class="arr" key=${c+"a"}>${c==="rejected" ? "≠" : "→"}</span>`,
-            g ? html`<${Grid} key=${c} g=${g} label=${c}/>`
-              : html`<div class="gwrap" key=${c}><div class="glabel">${c}</div>
-                       <div class="undef">undefined</div></div>`])}
+          <span class="arr">${markOf(w)}</span>
+          <div class="outs">
+            ${outcomes(w).map(([c,g])=>
+              g ? html`<${Grid} key=${c} g=${g} label=${c}/>`
+                : html`<div class="gwrap" key=${c}><div class="glabel">${c}</div>
+                         <div class="undef">undefined</div></div>`)}
+          </div>
         </div>`
       : html`<div class="gwrap"><div class="glabel">${w.id}</div>
                <div class="undef">no entry</div></div>`}
@@ -92,9 +101,13 @@ export function TaskStrip({id, mentions, witness, open, onToggle}){
   const body = useMemo(()=>cur===WIT ? html`<${Witnesses} witness=${witness}/>`
     : loaded(task) ? html`<${Pairs} task=${task}/>` : null, [task, cur, witness]);
   return html`<div id="taskstrip" class=${open?"open":""}>
-    <div class="taskhead" onClick=${onToggle}>
-      <span class="caret">▸</span><span>task</span>
-      ${tabs.length>1 && html`<span class="ttabs" onClick=${e=>e.stopPropagation()}>
+    <div class="taskhead">
+      ${/* the pane opens and closes from this button alone; the rest of the
+            head carries the tabs, and a click beside one is no toggle */
+        html`<button class="tasktog" onClick=${onToggle}
+          title="open or close the task pane · t">
+          <span class="caret">▸</span><span>task</span></button>`}
+      ${tabs.length>1 && html`<span class="ttabs">
         ${tabs.map(t=>html`<span key=${t} class=${"ttab"+(t===cur?" on":"")}
           onClick=${()=>setTab(t===id ? null : t)}>${t}</span>`)}
       </span>`}

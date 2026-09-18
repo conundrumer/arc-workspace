@@ -2,6 +2,10 @@
    selection, the top bar and its panels, the toast, and the keys; a lens
    fills the rail, the middle column, and the code pane through its hook.
 
+   The lens and the selection are the page's place, and they live in the
+   URL through nav.js, so the back button returns the user to where they
+   were.
+
    A lens is an object {id, use(ctx)}. use() is a hook the host calls with
    {snap, selId, setSelId, pins, cli} and returns:
      order      the ids j/k step through, in rail order
@@ -23,6 +27,7 @@ import { onTick } from "/ui/clock.js";
 import { FINAL, ttlWatch } from "/ui/item.js";
 import { finalize } from "/ui/lens/finalize.js";
 import { wave } from "/ui/lens/wave.js";
+import { readNav, writeNav, onPop } from "/ui/nav.js";
 import { CitePop, useCitations } from "/ui/panels/cite.js";
 import { CodePane } from "/ui/panels/codepane.js";
 import { CommitPanel } from "/ui/panels/commit.js";
@@ -53,7 +58,7 @@ const KEYS_TAIL = [
   {key:"Escape", show:"esc", label:"blur"},
 ];
 
-function LensHost({lens, snap, selId, setSelId, pins, cli, view, setView, taskOpen, setTaskOpen}){
+function LensHost({lens, snap, selId, setSelId, settleSelId, pins, cli, view, setView, taskOpen, setTaskOpen}){
   const [filter,setFilter]=useState("");
   const L=lens.use({snap, selId, setSelId, pins, cli, filter});
   const live=useRef({});
@@ -67,11 +72,12 @@ function LensHost({lens, snap, selId, setSelId, pins, cli, view, setView, taskOp
   /* ---- selection stays on something that exists ---- */
   useEffect(()=>{
     const id=L.pick(selId);
-    if(id!==selId){
-      setSelId(id);
-      if(id) L.settle(id);
-    }
+    if(id!==selId) settleSelId(id);
   });
+  /* The selection loads what it shows. A click loads it through the lens's
+     own select; this covers the rest — a fallback, and a selection the back
+     button restored. What select() already fetched is not fetched again. */
+  useEffect(()=>{ if(selId) live.current.L.settle(selId); },[selId]);
   useEffect(()=>{ if(L.detailId) ensureTask(L.detailId); },[L.detailId]);
 
   /* ---- keys ---- */
@@ -118,10 +124,20 @@ function LensHost({lens, snap, selId, setSelId, pins, cli, view, setView, taskOp
     </div>`;
 }
 
+/* the place the page opens at: the URL, and the lens the user last had
+   when it names none */
+function firstNav(){
+  const at=readNav();
+  const view=["wave", FINAL].includes(at.view) ? at.view
+    : localStorage.getItem("view")===FINAL ? FINAL : "wave";
+  return {view, sel:at.sel};
+}
+
 function App(){
   const snap=useServer();
-  const [selId,setSelId]=useState(null);
-  const [view,setViewState]=useState(()=>localStorage.getItem("view")===FINAL?FINAL:"wave");
+  const [nav,setNav]=useState(firstNav);
+  const {view, sel:selId}=nav;
+  const navAt=useRef(nav);
   const [toastState,setToastState]=useState({msg:"", show:false});
   const [sessPin,setSessPin]=useState({});    // id -> {phase, tab} the user pinned
   const [tabSel,setTabSel]=useState({});      // id -> path of the active code tab
@@ -139,12 +155,22 @@ function App(){
   const {items, cli, night, committer, auto, usage, progress, wave:waveN} = snap;
   const pins={sessPin, setSessPin, tabSel, setTabSel};
 
-  const setView=useCallback(v=>{
-    setViewState(cur=>{
-      if(cur===v) return cur;
-      localStorage.setItem("view", v);
-      return v;
-    });
+  /* every move of the place goes through here: it writes the history entry
+     and the state together, so the two never part */
+  const go=useCallback((patch, replace)=>{
+    const cur=navAt.current, next={...cur, ...patch};
+    if(next.view===cur.view && next.sel===cur.sel) return;
+    if(next.view!==cur.view) localStorage.setItem("view", next.view);
+    navAt.current=next;
+    writeNav(next, replace);
+    setNav(next);
+  },[]);
+  const setView=useCallback(v=>go({view:v}),[go]);
+  const setSelId=useCallback(id=>go({sel:id}),[go]);
+  const settleSelId=useCallback(id=>go({sel:id}, true),[go]);
+  useEffect(()=>{
+    writeNav(navAt.current, true);    // the entry the page opened on carries the place
+    return onPop(at=>{ navAt.current=at; setNav(at); });
   },[]);
 
   /* ---- actions ---- */
@@ -222,7 +248,7 @@ function App(){
     <${CommitPanel} committer=${committer} open=${commitOpen}/>
     ${lens.Panels && html`<${lens.Panels} snap=${snap}/>`}
     <${LensHost} key=${view} lens=${lens} snap=${snap}
-      selId=${selId} setSelId=${setSelId} pins=${pins} cli=${cli}
+      selId=${selId} setSelId=${setSelId} settleSelId=${settleSelId} pins=${pins} cli=${cli}
       view=${view} setView=${setView} taskOpen=${taskOpen} setTaskOpen=${setTaskOpen}/>
     ${cite && html`<${CitePop} cite=${cite} task=${tasks[cite.tid]}
       onClose=${closeCite}/>`}
