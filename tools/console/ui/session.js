@@ -9,12 +9,13 @@ import { Feed } from "/ui/panels/feed.js";
 import { itemData, post, ensureItem, useServer } from "/ui/server.js";
 import { toast, copy } from "/ui/toast.js";
 
-/* pins: the per-item choices the page keeps across lenses — the session
-   tab pinned on an item, and the code tab in view.
+/* pins: the choices the page keeps across lenses — the session tab pinned
+   on an item, the code tab in view, and whether the code pane shows
+   the turn's diff.
    reviewOrder: the ids `n` steps through. afterRule: runs after a dismiss. */
 export function useSession(selItem, {cli, reviewOrder, select, pins, afterRule}){
   const snap=useServer();
-  const {sessPin, setSessPin, tabSel, setTabSel} = pins;
+  const {sessPin, setSessPin, tabSel, setTabSel, diffOn, toggleDiff} = pins;
   const [draft,setDraft]=useState("");
   const seenN=useRef({});       // id|sess -> feed length when that tab was last shown
   const draftFor=useRef(null);  // id whose draft the composer holds
@@ -137,6 +138,7 @@ export function useSession(selItem, {cli, reviewOrder, select, pins, afterRule})
     {key:"n", label:"next review", run:nextReview},
     {key:"a", label:"approve", run:approve},
     {key:"u", label:"unapprove", run:unapprove},
+    {key:"d", label:"diff", run:toggleDiff},
     {key:"c", label:"comment", run:e=>{
       if(cbox.current && !cbox.current.disabled){ e.preventDefault(); cbox.current.focus(); } }},
     {key:"Enter", label:"send", show:"⏎", inBox:true, run:e=>{
@@ -156,11 +158,14 @@ export function useSession(selItem, {cli, reviewOrder, select, pins, afterRule})
   const files = cache.files || [];
   const f = files.find(x=>x.path===(selItem?tabSel[selItem.id]:null)) || files[0]
     || {path:"", snap:"", code:""};
+  /* The turn's counts hold whether or not the diff shows, so the head still
+     says what the turn did while the pane reads as the file on disk. */
   const codeBuilt = useMemo(()=>{
     if(!f.code) return {html:"", added:0, removed:0};
-    if(f.snap && f.snap!==f.code && window.Diff) return diffHtml(f.snap, f.code);
-    return {html:cmify(f.code), added:0, removed:0};
-  },[f.path, f.snap, f.code]);
+    const d = f.snap && f.snap!==f.code && window.Diff ? diffHtml(f.snap, f.code) : null;
+    if(!d) return {html:cmify(f.code), added:0, removed:0};
+    return diffOn ? d : {html:cmify(f.code), added:d.added, removed:d.removed};
+  },[f.path, f.snap, f.code, diffOn]);
 
   let code=null, head=null, body=null, hint="";
   if(selItem){
@@ -176,8 +181,13 @@ export function useSession(selItem, {cli, reviewOrder, select, pins, afterRule})
     const solver=files[0]||{};
     const canRevert = f.path===solver.path && solver.code && solver.snap
       && solver.snap!==solver.code && !selItem.active;
-    const buttons = canRevert ? html`<button class="copybtn"
-      onClick=${()=>post("/api/revert",{id:selItem.id})}>revert edits</button>` : null;
+    const hasDiff = !!(codeBuilt.added || codeBuilt.removed);
+    const buttons = [
+      hasDiff && html`<button key="d" class="copybtn"
+        onClick=${toggleDiff}>${diffOn?"diff on":"diff off"}</button>`,
+      canRevert && html`<button key="r" class="copybtn"
+        onClick=${()=>post("/api/revert",{id:selItem.id})}>revert edits</button>`,
+    ].filter(Boolean);
     code = {jumpKey:selItem.id+"|"+f.path, fname, lines, buttons, pane};
 
     head=html`<${DetailHead} it=${selItem} cli=${cli} tab=${tab} badges=${tabBadges}

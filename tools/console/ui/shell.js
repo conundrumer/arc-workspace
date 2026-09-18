@@ -141,6 +141,7 @@ function App(){
   const [toastState,setToastState]=useState({msg:"", show:false});
   const [sessPin,setSessPin]=useState({});    // id -> {phase, tab} the user pinned
   const [tabSel,setTabSel]=useState({});      // id -> path of the active code tab
+  const [diffOn,setDiffOn]=useState(()=>localStorage.getItem("diffOff")!=="1");
   const [taskOpen,setTaskOpen]=useState({});  // id -> bool (default open)
   const [nightOpen,setNightOpen]=useState(()=>!!localStorage.getItem("nightOpen"));
   const [waveK,setWaveK]=useState("10");
@@ -153,7 +154,11 @@ function App(){
   const live=useRef({});        // what the async handlers read
   const lens=LENSES[view];
   const {items, cli, night, committer, auto, usage, progress, wave:waveN} = snap;
-  const pins={sessPin, setSessPin, tabSel, setTabSel};
+  /* the code pane shows the turn's diff by default; the off state is what
+     the page remembers */
+  const toggleDiff=useCallback(()=>setDiffOn(on=>{
+    localStorage.setItem("diffOff", on?"1":""); return !on; }),[]);
+  const pins={sessPin, setSessPin, tabSel, setTabSel, diffOn, toggleDiff};
 
   /* every move of the place goes through here: it writes the history entry
      and the state together, so the two never part */

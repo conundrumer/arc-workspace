@@ -431,7 +431,7 @@ body.view-final #main { grid-template-columns:330px minmax(360px,520px) 1fr; }
   flex:0 1 auto; min-width:0;
 }
 #codecol .codehead #flines { white-space:nowrap; flex:none; }
-#codecol .codehead #codebtns { flex:none; }
+#codecol .codehead #codebtns { flex:none; display:flex; gap:6px; }
 #codecol .ftab { cursor:pointer; color:var(--muted); flex:none; }
 #codecol .ftab:hover { color:var(--ink); }
 #codecol .ftab.on { color:var(--ink); text-decoration:underline; text-underline-offset:4px; }
