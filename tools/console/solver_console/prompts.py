@@ -34,7 +34,7 @@ A color: the marks are `3` on a field of `5`. A row: `3 5 5 5 3`. A grid:
 3 5 5 5 3
 ```
 
-A grid place is cited as pair, side, places — `train0 input (11,2), (13,2); test1 output rows 2–4, cols 1–3`, or a single `row N` / `col N` — all 0-based cell coordinates."""
+A grid location is cited as pair, side, places — `train0 input (11,2), (13,2); test1 output rows 2–4, cols 1–3`, or a single `row N` / `col N` — all 0-based cell coordinates."""
 
 
 def append_path(index: bool = False) -> Path:
@@ -121,7 +121,7 @@ CALLOUT_P2_MIN = 45  # same for P2; below it bands P3
 CALLOUT_RATES = [
     ("lib candidates and proposal comps", 42, 60, 83, 108,
      "a solver-local form proposed for programs/lib.dl or docs/wf-solver/proposals/, with its entry and survey result"),
-    ("doc gaps", 48, 65, 202, 289,
+    ("doc issues", 48, 65, 202, 289,
      "an issue with something in docs/wf-solver that resulted in friction"),
     ("naming and vocabulary", 18, 32, 38, 72,
      "a name with shared scope — a lib comp, a type, doc wording, a proposals entry; a name local to one solver is not this kind"),
@@ -129,12 +129,12 @@ CALLOUT_RATES = [
      "an improvement or a defense of the linter, run budgets, timing, or index tooling; a broken tool is P0, not this kind"),
     ("simplification", 22, 37, 24, 62,
      "redundancy or awkward reading in the shipped solver, such as a relation with one consumer or a line that misleads"),
-    ("unwitnessed edges", 12, 35, 10, 32,
+    ("unwitnessed divergences", 12, 35, 10, 32,
      "a divergence between models that no pair in the task exhibits, stated with the constructed witness that would separate them"),
     ("correctness risk", 13, 31, 18, 60,
      "a defect, or an implicit assumption the solver leans on, such as a property every input happens to satisfy"),
-    ("alt models", 17, 70, 20, 73,
-     "a peer model dispatched: killed by data, an alt impl with the same outputs, or dropped as not worth building"),
+    # ("peer models", 17, 70, 20, 73,
+    #  "a peer model ruled out: by the data, or as having no divergence witness against a case the solver has"),
     ("hedges", 3, 26, 8, 80,
      "a trailing qualification on a settled call, not a discrete open item"),
 ]
@@ -258,12 +258,12 @@ Write a short state of play from what is already in front of you, without workin
 Keep it brief and factual. What the reader needs is your dead ends and your open question, not a full account. Put it between `<handoff>` and `</handoff>` tags."""
 
 
-ADVANCE_HEAD = """You are a later session of a chained flow: the creation pass is already done, and the sessions before you left the reports above."""
+ADVANCE_HEAD = """You are a later session of a chained flow: the sessions before you left the reports above."""
 
 # What the brief says of the solver file: the usual read, or, when no
 # session before wrote one, the write this pass owes.
-ADVANCE_READ = """Read programs/solvers/{tid}.dl first — the reports describe it, but you edit the file itself. Then refine the solver: judge the model and the code yourself, and edit what falls short. Do not redo work the reports already did. What a report leaves unsettled is yours to settle."""
-ADVANCE_WRITE = """The sessions before you wrote no solver: programs/solvers/{tid}.dl does not exist. Write it from the reports above, then refine it: judge the model and the code yourself, and edit what falls short. Do not redo work the reports already did. What a report leaves unsettled is yours to settle."""
+ADVANCE_READ = """Read programs/solvers/{tid}.dl first — the reports describe it, but you edit the file itself. Then do the creation pass over it: in place of a new draft, judge the model and the code yourself, and edit what falls short. Do not redo work the reports already did. What a report leaves unsettled is yours to settle."""
+ADVANCE_WRITE = """The sessions before you wrote no solver: programs/solvers/{tid}.dl does not exist. Write it from the reports above, then do the creation pass over it: judge the model and the code yourself, and edit what falls short. Do not redo work the reports already did. What a report leaves unsettled is yours to settle."""
 
 # The rules a later stage works under. The reports above it are the part a
 # bare pass does not get, so BARE_BRIEF below leaves them out and shares the
@@ -279,7 +279,7 @@ NO_SOLVER_BRIEF = ADVANCE_HEAD + "\n\n" + ADVANCE_WRITE + "\n\n" + ADVANCE_BODY
 # report was ever written for it.
 BARE_BRIEF = ("""You are the final session of a chained flow. No earlier session left a report, so the solver file is the whole account.
 
-Read programs/solvers/{tid}.dl first. Then refine the solver: judge the model and the code yourself, and edit what falls short.
+Read programs/solvers/{tid}.dl first. Then do the creation pass over it: in place of a new draft, judge the model and the code yourself, and edit what falls short.
 
 """
               + SCOPE_NOTE + " " + DRAFT_NOTE + " " + REIMPL_NOTE + " " + LIB_NOTE + " " + PROMOTE_NOTE
@@ -289,15 +289,14 @@ Read programs/solvers/{tid}.dl first. Then refine the solver: judge the model an
 # next one takes over from; only the last stage of the chain writes the review.
 # The final stage reads every earlier report, so each one covers its own pass
 # alone and none of them restates the one before it.
-HANDOFF_TAIL = ("\n\nThen Determine, Simplify, and Prune. "
-                + REVIEW_ITEMS_NOTE + " "
+HANDOFF_TAIL = ("\n\n" + REVIEW_ITEMS_NOTE + " "
                 + HANDOFF_END
                 + """. The report covers your own pass — your rulings, your edits, your changes; what the reports above already establish stays with them. """
                 + HANDOFF_WRAP)
 
 REVIEW_TAIL = """
 
-Then Determine, Simplify, Prune, and Review. You are the last session of the chain, so you write the Review and not a handoff report."""
+You are the last session of the chain, so you write the review and not a handoff report."""
 
 
 def task_block(tid: str) -> str:

@@ -21,13 +21,13 @@ Look at the preceding assistant message. Find every **discrete item** it raised:
 
 Classify each such item into exactly one kind, using the descriptions below. **Match an item on the description, not on the label.** An item that fits no description goes in `other`.
 
-- `lib_candidates` — a solver-local form proposed for programs/lib.dl or docs/wf-solver/proposals/, with the protocol's recommendation
-- `doc_gaps` — a docs/wf-solver rule that is missing, wrong, or misleading, with the edit it needs
+- `lib_candidates` — a solver-local form proposed for programs/lib.dl or docs/wf-solver/proposals/, with its entry and survey result
+- `doc_issues` — a docs/wf-solver rule that is missing, wrong, or misleading
 - `simplification` — redundancy or awkward reading in the shipped solver, such as a relation with one consumer or a line that misleads
 - `naming_vocab` — a name with shared scope — a lib comp, a type, doc wording, a proposals entry; a name local to one solver is not this kind
 - `correctness_risk` — a defect, or an implicit assumption the solver leans on, such as a property every input happens to satisfy
 - `lint_tooling` — an improvement or a defense of the linter, run budgets, timing, or index tooling; a broken tool is P0, not this kind
-- `alt_models` — a peer model dispatched: killed by data, an alt impl with the same outputs, or dropped as not worth building
+- `alt_models` — a peer model ruled out: by the data, or as having no divergence witness against a case the solver has
 - `unwitnessed_edges` — a divergence between models that no pair in the task exhibits, stated with the constructed witness that would separate them
 - `hedges` — a trailing qualification on a settled call, not a discrete open item
 - `other` — a discrete item that matches none of the descriptions above
@@ -35,7 +35,7 @@ Classify each such item into exactly one kind, using the descriptions below. **M
 Two rules that follow from the descriptions and are easy to get wrong:
 
 1. `naming_vocab` requires shared scope. A quibble about a name that lives only inside one solver file is **not** `naming_vocab` — it is `other` (or `simplification`, when the point is that the name misleads the reader of that solver).
-2. `alt_models` requires the rival to have been **dispatched** in the message — killed by the data, shown to give the same outputs, or dropped as not worth building. A rival merely mentioned as still open, or floated without a disposition, is `other`.
+<!-- 2. `alt_models` requires the rival to have been **dispatched** in the message — killed by the data, shown to give the same outputs, or dropped as not worth building. A rival merely mentioned as still open, or floated without a disposition, is `other`. -->
 
 Emit:
 - `raised_kinds` — list of kinds the message raised, one entry per discrete item (repeat a kind if the message raised two items of that kind); empty list if it raised no discrete items
