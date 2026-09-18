@@ -219,9 +219,14 @@ FINISHED_NOTE = """A solver that already holds up under your judgment is a finis
 # The console's approval mark, which the worker writes with the solver.
 DRAFT_NOTE = """Put `// @draft` on its own line under the task-id line when you write the solver, and leave it there; only the user's approval takes it off."""
 
+# The docs route a pass's items to the review, and this stage writes none, so
+# the brief names where they go instead.
+REVIEW_ITEMS_NOTE = """The items the docs route to the review go in your report."""
+
 CREATE_BRIEF = ("""You are the first session of a chained flow: you create the solver, then a separate session takes over from your report.
 
-Do the creation pass with the data above. Skip Review. """
+Do the creation pass with the data above. """
+                + REVIEW_ITEMS_NOTE + " "
                 + DRAFT_NOTE + " " + LIB_NOTE + " " + REIMPL_NOTE
                 + """ When a question about the data comes up, run something that answers it rather than working it out by hand. """
                 + HANDOFF_END + """. The audit findings go among those open items. Make it complete enough that the next session reruns nothing. """
@@ -285,6 +290,7 @@ Read programs/solvers/{tid}.dl first. Then refine the solver: judge the model an
 # The final stage reads every earlier report, so each one covers its own pass
 # alone and none of them restates the one before it.
 HANDOFF_TAIL = ("\n\nThen Determine, Simplify, and Prune. "
+                + REVIEW_ITEMS_NOTE + " "
                 + HANDOFF_END
                 + """. The report covers your own pass — your rulings, your edits, your changes; what the reports above already establish stays with them. """
                 + HANDOFF_WRAP)
