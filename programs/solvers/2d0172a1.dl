@@ -1,11 +1,11 @@
 // 2d0172a1
 // @keywords: objects enclose rank
-// @scene ink: the commoner colour is the background and the other is the ink
+// @scene ink: the commoner color is the background and the other is the ink
 //  the curves are drawn in
 // @scene curve: each connected run of ink is one curve
 // @scene nesting: every curve that closes a cell off from the grid edge
 //  also closes another curve off from the grid edge
-// @rule colours: the redraw uses the same two colours
+// @rule colors: the redraw uses the same two colors
 // @rule outline: a curve that closes some cell off from the grid edge redraws
 //  as a rectangle outline
 // @rule collapse: any other curve redraws as a single cell
@@ -17,7 +17,7 @@
 //     @approximated: marks that overlap along an axis take one
 //      output line, and a run of marks linked by overlap is one line
 //     @witness overlap-chain: ordinary other
-// @rule spacing: neighbouring output lines sit one blank line apart, and a
+// @rule spacing: neighboring output lines sit one blank line apart, and a
 //  blank line holds a collapsed curve off the frame edge
 
 // what makes a curve a container
@@ -48,7 +48,7 @@
 .decl impl_choice(ch: Choice)
 impl_choice($Hollow()). impl_choice($Nest()).
 
-// @claim ink colours
+// @claim ink colors
 .init palette = Mode<Unit, Color, Position>
 palette.item($U(), Col, P) :- in(P, Col).
 

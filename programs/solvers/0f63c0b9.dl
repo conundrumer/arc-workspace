@@ -2,7 +2,7 @@
 // @keywords: markers lines cast border
 // input: Marks, each on its own line.
 // output: Every cell belongs to the nearest mark's line and takes that mark's
-//  color; at an equal distance the reach travelling toward params.tie_dir
+//  color; at an equal distance the reach traveling toward params.tie_dir
 //  wins. A cell shows its color where it lies on the grid border or on a
 //  mark's line, and is background elsewhere.
 
@@ -38,7 +38,7 @@ beaten(P, M) :-
     reach.ray(M, P, _, K, _),              // this line's reach
     reach.ray(M2, P, D2, K2, _), M2 != M,  // a rival line's
     ( K2 < K                               // nearer
-    ; K2 = K, params.tie_dir(D2)           // as near, and travelling toward tie_dir
+    ; K2 = K, params.tie_dir(D2)           // as near, and traveling toward tie_dir
     ).
 
 .decl territory(p: Position, col: Color)

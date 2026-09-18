@@ -69,7 +69,7 @@ Spec question: does `dir` stay cardinal? The `shift` derivation reads `axis_of`,
 
 Survey: 2026-09-08 22:35, over the solvers at or after the first survey's time
 
-That pass read the fifty solvers whose file time is at or after 17:10. It found no caller: `!halted` matched nothing, and no recursion over a Shift domain tests a footprint against a stopper set. Every near-miss falls in a class the `Not:` line or the list above already names, except `54dc2872` `$Slide`, whose L-shaped footprint moves onto a mark along a diagonal. That one bears on the spec question: it is the corpus's first footprint travelling toward a stopper on a diagonal, and `displacement` onto the mark gives it the translation directly, so it asks for no Dir8 form. A Dir8 `shift` would need the sub-extents of both of a corner's axes, which no solver writes.
+That pass read the fifty solvers whose file time is at or after 17:10. It found no caller: `!halted` matched nothing, and no recursion over a Shift domain tests a footprint against a stopper set. Every near-miss falls in a class the `Not:` line or the list above already names, except `54dc2872` `$Slide`, whose L-shaped footprint moves onto a mark along a diagonal. That one bears on the spec question: it is the corpus's first footprint traveling toward a stopper on a diagonal, and `displacement` onto the mark gives it the translation directly, so it asks for no Dir8 form. A Dir8 `shift` would need the sub-extents of both of a corner's axes, which no solver writes.
 
 Closed: 2026-09-09 23:05
 

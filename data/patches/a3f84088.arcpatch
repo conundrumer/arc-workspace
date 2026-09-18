@@ -1,4 +1,4 @@
-comment: Inconsistent grey dot placement between examples
+comment: Inconsistent gray dot placement between examples
 issue: https://github.com/fchollet/ARC-AGI/issues/132
 
 @diff train 0 output

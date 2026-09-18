@@ -6,7 +6,7 @@
 // output: Every such cell sends its color along its line to the block's near
 //  side; the rest of the grid passes through, the sending cell included.
 
-// what stops a travelling color; the block is a solid rectangle in every
+// what stops a traveling color; the block is a solid rectangle in every
 // pair, so the data does not say which
 .type Choice =
     // the block's own cells stop it

@@ -33,7 +33,7 @@
 .decl free_color(col: Color)
 free_color(Col) :- in(_, Col), !params.bg(Col), !params.frame(Col), !params.path(Col).
 
-// Has a neighbour on the trail: the trail's own cells and what touches them.
+// Has a neighbor on the trail: the trail's own cells and what touches them.
 .decl beside_trail(p: Position)
 beside_trail(P) :- in(P, _), dir_elem(D), neighbor(P, D, Q), in(Q, Col), params.path(Col).
 

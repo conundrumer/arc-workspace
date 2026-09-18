@@ -27,7 +27,7 @@ center_line(P, K) :-
     perp(A, A2), axis_of(D2, A2), dist_pair(P, D2, Kc, Kc),   // centered across
     axis_of(D, A), dist_pair(P, D, K, K2), K <= K2.           // nearer axis edge
 
-// Centrality order over the line's cells, from the centre outward.
+// Centrality order over the line's cells, from the center outward.
 .init centrality = Order<Unit, Position>
 centrality.elem($U(), P) :- center_line(P, _).
 centrality.before($U(), Q, P) :- center_line(Q, Kq), center_line(P, K), Kq > K.

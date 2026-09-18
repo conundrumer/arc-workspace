@@ -142,7 +142,7 @@ button:disabled:hover { border-color:var(--border); }
 .cw.cw9 { background:#870C25; color:#fff; }
 /* The paint reaches into the gap between cells; the negative margin gives
    back what the padding takes, so a run keeps its column alignment. Under
-   .22em a one-space gap still separates two neighbours. */
+   .22em a one-space gap still separates two neighbors. */
 span.cw { border-radius:2px; padding:0 .22em; margin:0 -.22em; }
 .cite { border-bottom:1px dotted var(--accent); cursor:pointer; }
 .cite:hover { background:var(--panel2); }

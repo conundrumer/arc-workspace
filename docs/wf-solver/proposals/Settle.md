@@ -65,7 +65,7 @@ Spec question: should a fixed stopper input, in the manner of `Ray.blocked`, joi
 
 Survey: 2026-09-09 04:39, over the solvers at or after the first survey's time
 
-That pass read the four solvers whose file time is at or after 04:18. It found no caller: no `<=` clause head occurs outside this comp, and the delta's four self-recursive travel relations are the one `Dock` step walk written three times, each advancing a single mover's own displacement against a stopper set fixed before the travel. The pass adds one detail to the spec question. `17829a00` travels several bodies under one heading, so it is the corpus's nearest multi-body traveller; it keys each body by its own `Ident`, and its stoppers are the cells abutting the colored border, so no body there reads another's rest and the recursion would still sit inert.
+That pass read the four solvers whose file time is at or after 04:18. It found no caller: no `<=` clause head occurs outside this comp, and the delta's four self-recursive travel relations are the one `Dock` step walk written three times, each advancing a single mover's own displacement against a stopper set fixed before the travel. The pass adds one detail to the spec question. `17829a00` travels several bodies under one heading, so it is the corpus's nearest multi-body traveler; it keys each body by its own `Ident`, and its stoppers are the cells abutting the colored border, so no body there reads another's rest and the recursion would still sit inert.
 
 The 6ad5bdfd site answers the spec question: it is a multi-body pile whose floor is static content, so `blocked` joins the interface there, and the recursion is live at the only site that feeds it.
 

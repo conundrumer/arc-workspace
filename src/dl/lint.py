@@ -168,7 +168,7 @@ HEADER_ORDER = ("@draft", "@representative", "@keywords", "@scene", "@rule",
                 "concept", "input", "output", "review")
 HEADER_RANK = {"draft": 0, "representative": 1, "keywords": 1, "scene": 2,
                "rule": 3, "concept": 4, "input": 5, "output": 6, "review": 7}
-# The fields a sibling drops in favour of `@representative:`.
+# The fields a sibling drops in favor of `@representative:`.
 SIBLING_DROPS = ("@keywords:", "concept:", "input:", "output:")
 # The words of the witness grammar, whose findings stand under the witness
 # category.

@@ -4,7 +4,7 @@
 // input: Wire runs across the grid, ending in a plug — a wire cell flanked
 //  along an axis by two caps. The rest of the wire is cord.
 // output: A bead beside a cord slides its whole length and comes to rest on
-//  the cord cell against the plug; the cord it travelled and the seat it left
+//  the cord cell against the plug; the cord it traveled and the seat it left
 //  go to background. A cord no bead touches, and a bead beside no cord, stay
 //  as they are.
 

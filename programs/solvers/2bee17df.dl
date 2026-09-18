@@ -27,7 +27,7 @@ impl_choice($Clear()). impl_choice($Widest()).
 .decl open_cell(p: Position)
 open_cell(P) :- in(P, Col), params.open(Col).
 
-// p's line on axis a, labelled by p's component along a.
+// p's line on axis a, labeled by p's component along a.
 .decl line_of(p: Position, a: Axis, l: Position)
 line_of(P, A, L) :- in(P, _), axis_elem(A), split(P, A, L, _).
 

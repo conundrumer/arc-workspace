@@ -140,7 +140,7 @@ edge(B, [Id, B_occ], P, D, Q, Col) :-
     compose(B_occ, P_inner, P), neighbor(P, D, Q),      // placed, and stepped over
     rect_cell(B, Q).                                    // the cell beyond, still inside
 
-// The cells a placement leaves to its neighbours.
+// The cells a placement leaves to its neighbors.
 .decl demand(b: Box, cd: Cand, q: Position)
 demand(B, Cd, Q) :- edge(B, Cd, _, _, Q, _).
 

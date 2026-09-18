@@ -95,7 +95,7 @@ place(O, D, B, $Pack()) :- pruning.alive($U(), [O, D, B], O).
 
 // --- Match ---
 
-// The holes grouped into regions. A hole joins its neighbours at a corner as
+// The holes grouped into regions. A hole joins its neighbors at a corner as
 // well as at a side, as the cells of a patch do.
 .init hole_region = Components8<Unit>
 hole_region.node($U(), P) :- hole(P).
