@@ -87,15 +87,15 @@ function Witnesses({witness}){
   </div>`;
 }
 
-/* id: the item's own task, the first tab. mentions: the other ids the feed
-   names; a mention is a tab once its task has loaded, so a hex word that is
-   no task gets none. */
+/* id: the item's own task, the first tab, with its witnesses next — both
+   are that task. mentions: the other ids the feed names; a mention is a tab
+   once its task has loaded, so a hex word that is no task gets none. */
 export function TaskStrip({id, mentions, witness, open, onToggle}){
   const [tab,setTab]=useState(null);   // the tab in view, null for the item's own task
   useEffect(()=>{ setTab(null); },[id]);
   useEffect(()=>{ for(const m of mentions||[]) ensureTask(m); },[mentions]);
-  const tabs = [id, ...(mentions||[]).filter(m=>m!==id && loaded(tasks[m])),
-                ...(witness ? [WIT] : [])].filter(Boolean);
+  const tabs = [id, ...(witness ? [WIT] : []),
+                ...(mentions||[]).filter(m=>m!==id && loaded(tasks[m]))].filter(Boolean);
   const cur = tab && tabs.includes(tab) ? tab : id;
   const task = cur===WIT ? null : cur ? tasks[cur] : null;
   const body = useMemo(()=>cur===WIT ? html`<${Witnesses} witness=${witness}/>`
