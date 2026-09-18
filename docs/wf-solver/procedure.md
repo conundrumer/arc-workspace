@@ -40,55 +40,20 @@ The operations and passes of a solver session.
 4. Iterate until it works and passes lint.
     - When a hint appears, judge it, and put that judgment in the review.
     - Flag performance issues in the review. If they prevent the principled form, make a temporary workaround, marked with the `@workaround` directive.
-5. Run the audit (`uv run python scripts/run_dl.py audit <task_id>`) and resolve the findings.
+5. Look for peer models, and make the cases exactly the models that meet the case conditions.
+    - If you find a model that meets the case conditions, add it.
+    - For each parameter, try the model that derives its value from the input.
+    - For each input-derived value constant across pairs, try the model that stores it in a parameter.
+    - Do not propose, and do not list in the review, a model equivalent to the model of a case the solver already has.
+6. Run the audit (`uv run python scripts/run_dl.py audit <task_id>`) and resolve the findings.
 
 ### Determine
 
-Run the plan (`uv run python scripts/run_dl.py determination-plan <task_id>`) and do the actions it lists.
+Run the plan (`uv run python scripts/run_dl.py determination-plan <task_id>`). When it lists actions and a different parameterization would give a simpler or more principled model, change the parameterization and do Create again over the changed solver. Otherwise, do the actions the plan lists.
 
 - In the plan's over-the-limit section, pick whichever parameters are simplest to determine until the product of the remaining candidate counts goes under the enumeration limit.
 
-### Simplify
-
-Express what the code claims with less code. The model, its parameterization, and its cases stay as they are.
-
-**Awkward code.** The targets are code that:
-
-- Reimplements what the lib provides.
-- Reads as implementation detail with no conceptual meaning.
-- Has repetition where a principled form exists.
-- Has unusual or needless indirection.
-
-### Prune
-
-The reader is a future session that needs to understand the solver and its model hypothesis.
-
-- Cut everything that does not serve that reader, exhaustively, from unnecessary words to irrelevant ideas.
-- Judge necessity from the artifact alone, not from the session.
-- Prune text copied from prior solvers like new text.
-- Keep the prose plain. Do not compress it into a telegraphic style.
-
-### Review
-
-Write the review for the user to act on.
-
-Include only items that the user can act on:
-
-- A case to keep or add.
-- An operation to promote.
-- A judgment call the session made.
-- A gap in a doc or a tool.
-- A fix or a problem in a file the pass does not edit.
-- An item carried over from an earlier pass's report or the handoff brief, marked with the pass it came from. Do not recheck it against the current runner, lib, or docs.
-
-Ask these questions:
-
-- Does the solver follow principles? Judge this independently of lint and passing pairs.
-- Does any awkward code remain? Raise what its fix needs.
-- Are there potential peer models?
-    - **Equivalence.** Do not propose, and do not list in the review, a model equivalent to the model of a case the solver already has.
-    - **Drops.** Do not drop a peer that meets the case conditions, for any reason.
-- When the plan listed actions, could changing the parameterization produce a simpler or more principled model?
+### Witness
 
 **Concept and branch claims.** Write the header and branch lines. Judge each plausibility and verdict from the witness and each case's output on it. List each plausibility and verdict in the review. On a branch's witness, an `other` verdict, or a non-concept verdict at `ordinary` plausibility, identifies a problem with the concept case.
 
@@ -96,7 +61,6 @@ Ask these questions:
 
 - The condition a dropped peer fails decides what the review gives for it.
     - A peer dropped under Fidelity requires a witness in the review.
-    - A peer dropped under Equivalence requires the statement that no witness exists.
     - A model that fails Fit stays out of the review, including any note that it was considered.
 - For each approximated rule, state in the review why no set of clauses states it. When no witness can be built, replace the rule's text with the approximation's and remove the `@approximated:` line.
 - Record each witness with `uv run python scripts/run_dl.py record <task_id> <witness id> --separates "<what it separates>"`, with the grid on stdin.
@@ -130,5 +94,38 @@ A `<case>` takes one of these forms:
 - under a constructor with fields, the constructor applied to its fields' constructor names, such as `Recolor(Box, Size)`
 
 For each entry named by `@witness`, put exactly the block's `@reassigned` parameters in `assign`.
+
+### Simplify
+
+Express what the code claims with less code. The model, its parameterization, and its cases stay as they are.
+
+**Awkward code.** The targets are code that:
+
+- Reimplements what the lib provides.
+- Reads as implementation detail with no conceptual meaning.
+- Has repetition where a principled form exists.
+- Has unusual or needless indirection.
+
+### Prune
+
+The reader is a future session that needs to understand the solver and its model hypothesis.
+
+- Cut everything that does not serve that reader, exhaustively, from unnecessary words to irrelevant ideas.
+- Judge necessity from the artifact alone, not from the session.
+- Prune text copied from prior solvers like new text.
+- Keep the prose plain. Do not compress it into a telegraphic style.
+
+### Review
+
+Write the review for the user to act on.
+
+Include only items that the user can act on:
+
+- A case to keep or add.
+- An operation to promote.
+- A judgment call the session made.
+- An issue with something in a doc or tool that resulted in friction.
+- A fix or a problem in a file the pass does not edit.
+- An item carried over from an earlier pass's report or the handoff brief, marked with the pass it came from. Do not recheck it against the current runner, lib, or docs.
 
 **Delivery.** Write the review as a reply to the user. Finish all task updates first, and end the turn with the review.

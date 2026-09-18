@@ -4,7 +4,7 @@ The brief names one solver, `programs/solvers/<task_id>.dl`, and one change. Mak
 
 ## Procedure
 
-- Apply Create, Determine, and two parts of Review: "Concept and branch claims" and "Divergence witness". No other part of Review applies.
+- Apply Create, Determine, and Witness. No other operation applies.
 - Put everything that the procedure routes to the review in the report.
 - Read the module under `programs/lib/` for the body of every comp the solver instantiates.
 - Read the solver in full before editing. Keep the file's conventions.
