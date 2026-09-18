@@ -28,7 +28,7 @@ A running server re-execs itself when `server.py` or a module under `solver_cons
 
 ## Cards
 
-When the user requests a card to help make a decision regarding a solver, send an agent and tell it to make one based on `src/study/card_spec.py`.
+When the user requests a card to help make a decision regarding a solver, send a handbook agent and tell it to make one based on `src/study/card_spec.py`.
 
 ## Conventions
 
