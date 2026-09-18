@@ -326,6 +326,10 @@ def entry_index(text: str, source: str) -> str:
     return "\n\n".join(p for p in (preamble.strip(), note, "\n".join(out)) if p) + "\n"
 
 
+HEADER = ("# Handbook\n\nThe solver docs and the lib as a session reads "
+          "them. Before editing one of these files, open and read it, "
+          "because it may contain editing rules not visible here.\n")
+
 NOTES_DROPPED = ("Cited tasks carry worked applications of the principle "
                  "they sit under. Grep the task id in {rel} to read one.")
 SECTION_DEFERRED = ("The {title} section is in the source: read it in {rel} "
@@ -390,7 +394,7 @@ def render(docs: Path = DOCS_DIR, lib: Path = LIB_SRC,
             parts.append(f"\n---\n\n# {rel} — index{note}\n\n{lib_entries(text)}")
         else:
             parts.append(f"\n---\n\n# {rel}\n\n{lib_doc(text)}")
-    return "# Handbook\n\nThe solver docs and the lib as a session reads them.\n" + "".join(parts)
+    return HEADER + "".join(parts)
 
 
 def agent_prompt(handbook: str) -> str:
