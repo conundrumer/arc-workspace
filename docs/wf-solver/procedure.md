@@ -86,6 +86,7 @@ Ask these questions:
 - Does any awkward code remain? Raise what its fix needs.
 - Are there potential peer models?
     - **Equivalence.** Do not propose, and do not list in the review, a model equivalent to the model of a case the solver already has.
+    - **Drops.** Do not drop a peer that meets the case conditions, for any reason.
 - When the plan listed actions, could changing the parameterization produce a simpler or more principled model?
 
 **Concept and branch claims.** Write the header and branch lines. Judge each plausibility and verdict from the witness and each case's output on it. List each plausibility and verdict in the review. On a branch's witness, an `other` verdict, or a non-concept verdict at `ordinary` plausibility, identifies a problem with the concept case.

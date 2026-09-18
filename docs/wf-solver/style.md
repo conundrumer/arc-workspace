@@ -114,7 +114,7 @@ out(..., $CaseB()) :- ...
 
 ### Header
 
-- `@scene` is only included when `@claim` or `@relaxed` names it, the text of an `@approximated:` line depends on it, or a branch replaces it.
+- `@scene` is only included when `@claim` or `@relaxed` names it, the text of a `@rule` or `@approximated:` line depends on it, or a branch replaces it.
 - `@scene` and `@rule` are in dependency order.
 - A witness under an `@approximated:` line is not `foreign`, and each case that runs the approximation has one on which its output is not the verdict's.
 <!-- Precise reading: a case's output is not the verdict's when its output on the grid differs from the output the verdict names: the concept case's for `concept`, the output of the case that takes the named branch and the concept branch elsewhere for a branch's name, every case's for `other`, no case's for `any`. -->

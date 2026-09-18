@@ -298,7 +298,7 @@ The solver stores every open value of an open parameter.
 
 ## Cases
 
-A case is included exactly when it meets each condition:
+A case is included exactly when it meets each **case condition**:
 
 - **Fit.** The model fits some split task at its stored assignment.
     + Fit(S_M, T) ⇔ ∃T′ ∈ alts(T). M(stored_M(D(T))) ⊨ T′
