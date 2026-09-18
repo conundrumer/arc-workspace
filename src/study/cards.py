@@ -1,28 +1,29 @@
 """Standalone HTML cards the user rules on.
 
-A card states one question, shows the code slices it is about, shows the
-grids a solver produces for a witness input, and ends with a numbered list
-of options. The user answers by index.
+A card states one question, shows the task's pairs, shows the code slices
+the question is about, shows the grids a solver produces for a witness
+input, and ends with a numbered list of options. The user answers by index.
+
+`study.card_spec` holds what a card spec may state.
 
 A card is one file under .scratch/cards/ and needs no server: the ARC
 palette and the grid CSS are copied from the console's UI into the page.
 """
 
 import html
-import json
 import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from arc.task import Example
 from arc.task import load as load_task
 from dl import solve
 from dl.dlparse import TypeDecl, parse
 from dl.facts import Candidate, parse_grid
 from dl.paths import REPO_ROOT, SOLVERS_DIR
 from dl.source import _param_facts, comp_decls
-
-type LineRange = tuple[int, int]
+from study.card_spec import Card, CodeSlice, LineRange, Table
 
 CARDS_DIR = REPO_ROOT / ".scratch" / "cards"
 
@@ -31,80 +32,6 @@ ARC = [
     "#000000", "#0074D9", "#FF4136", "#2ECC40", "#FFDC00",
     "#AAAAAA", "#F012BE", "#FF851B", "#7FDBFF", "#870C25",
 ]
-
-
-@dataclass
-class CodeSlice:
-    """A run of lines from one file, with some of them highlighted.
-
-    `lines` is a 1-based inclusive [start, end] range; `highlight` holds
-    1-based line numbers inside that range.
-    """
-
-    label: str
-    path: str
-    lines: LineRange
-    highlight: list[int] = field(default_factory=list[int])
-
-
-@dataclass
-class Table:
-    """A small table of text cells shown under the code."""
-
-    title: str
-    headers: list[str]
-    rows: list[list[str]]
-
-
-@dataclass
-class Card:
-    """One question for the user.
-
-    `witnesses` are paths to grid text files (the format `parse_grid`
-    reads); with none, the task's first train input is the witness.
-    `solver` names the `.dl` file to run, defaulting to the task's own.
-    `dropped` names the cases the shipped solver lacks; a witness is kept
-    only when a dropped case's output differs from every kept case's, unless
-    `all_witnesses` is set, which keeps every witness the card lists.
-    """
-
-    name: str
-    kind: str
-    task_id: str
-    question: str = ""
-    codes: list[CodeSlice] = field(default_factory=list[CodeSlice])
-    witnesses: list[str] = field(default_factory=list[str])
-    options: list[str] = field(default_factory=list[str])
-    tables: list[Table] = field(default_factory=list[Table])
-    solver: str | None = None
-    dropped: list[str] = field(default_factory=list[str])
-    quote: str = ""
-    quote_source: str = ""
-    all_witnesses: bool = False
-
-
-def card_from_dict(data: dict) -> Card:
-    """A Card from its JSON form."""
-    fields = dict(data)
-    codes = [
-        CodeSlice(
-            label=c["label"],
-            path=c["path"],
-            lines=(c["lines"][0], c["lines"][1]),
-            highlight=list(c.get("highlight", [])),
-        )
-        for c in fields.pop("codes", [])
-    ]
-    tables = [
-        Table(title=t["title"], headers=list(t["headers"]),
-              rows=[list(r) for r in t["rows"]])
-        for t in fields.pop("tables", [])
-    ]
-    return Card(codes=codes, tables=tables, **fields)
-
-
-def load_card(path: str | Path) -> Card:
-    return card_from_dict(json.loads(Path(path).read_text()))
 
 
 # --- corpus scan ---
@@ -165,6 +92,8 @@ pre .ln.hl { background:#FFF3BF; }
 pre .num { display:inline-block; width:34px; text-align:right;
            margin-right:12px; color:#9AA3AB; }
 .grids { display:flex; flex-wrap:wrap; gap:18px; align-items:flex-start; }
+.pair { display:flex; gap:10px; align-items:flex-start; padding:7px 9px;
+        background:#fff; border:1px solid #DDE1E5; border-radius:4px; }
 .gwrap { display:flex; flex-direction:column; gap:4px; }
 .glabel { font-size:9.5px; color:#7C8791; font-family:ui-monospace,Menlo,monospace;
           letter-spacing:.05em; }
@@ -210,6 +139,25 @@ def render_grid(grid: list[list[int]], label: str) -> str:
         f'<div class="agrid" style="{style}">{"".join(cells)}</div>'
         "</div>"
     )
+
+
+def render_pair(label: str, example: Example) -> str:
+    """One example as its input beside its output. An example that states no
+    output shows its input alone."""
+    parts = [render_grid(example.input, f"{label} in")]
+    if example.output:
+        parts.append(render_grid(example.output, f"{label} out"))
+    return '<div class="pair">' + "".join(parts) + "</div>"
+
+
+def render_task(task_id: str) -> str:
+    """Every train pair of the task, then every test pair."""
+    task = load_task(task_id)
+    pairs = [(f"train[{i}]", e) for i, e in enumerate(task.train)]
+    pairs += [(f"test[{i}]", e) for i, e in enumerate(task.test)]
+    return '<div class="grids">' + "".join(
+        render_pair(label, e) for label, e in pairs
+    ) + "</div>"
 
 
 def render_code(code: CodeSlice) -> str:
@@ -354,6 +302,8 @@ def render(card: Card) -> str:
     ]
     if card.question:
         body.append(f'<p class="q">{html.escape(card.question)}</p>')
+    body.append("<h2>Task</h2>")
+    body.append(render_task(card.task_id))
     if card.codes:
         body.append("<h2>Code</h2>")
         body.extend(render_code(c) for c in card.codes)

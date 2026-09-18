@@ -8,7 +8,8 @@
 import argparse
 import sys
 
-from study.cards import calibration_cards, load_card, theta_card, write
+from study.card_spec import load_card
+from study.cards import calibration_cards, theta_card, write
 
 
 def main(argv: list[str]) -> int:
