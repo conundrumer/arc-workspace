@@ -1,0 +1,133 @@
+// 9b4c17c4
+// @draft
+// @keywords: objects lines move
+// @scene field: the grid is two rectangular fields, each one connected
+//  region of one background color
+// @scene shape: the ink shapes are rectangles, each surrounded by one field
+// @scene lane: no two shapes on one field share a line along that field's
+//  slide direction
+// @rule direction: each field color picks the direction its shapes slide
+// @rule flush: each shape slides in its field's direction until it touches
+//  the field's edge
+// @rule ground: every other cell takes its field's color
+
+// what slides: the shape as one body, or each line's ink on its own
+.type Choice =
+    // @claim flush
+    Flush {}
+    // @rule flush: in each line along a field's slide direction, the ink
+    //  packs against the field's edge
+    // @witness shared-line: borderline Pack
+    //     @relaxed lane
+  | Pack {}
+
+// A line of one field, across the field's slide direction.
+.type Lane = [f: Ident, p_across: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // The shapes' color.
+    .decl ink(c: Color) ink(2).
+    // The direction the shapes on a field of color c slide.
+    .decl slide(c: Color, d: Dir)
+    slide(1, DIR_R).
+    slide(8, DIR_L).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Flush()). impl_choice($Pack()).
+
+// @claim field
+.init field = Components<Color>
+field.node(Col, P) :- in(P, Col), !params.ink(Col).
+
+.decl field_color(f: Ident, col: Color)
+field_color(F, Col) :- field.label(Col, _, F).
+
+// @claim direction
+.decl field_dir(f: Ident, d: Dir)
+field_dir(F, D) :- field_color(F, Col), params.slide(Col, D).
+
+// @claim shape
+.init shape = Components<Unit>
+shape.node($U(), P) :- in(P, Col), params.ink(Col).
+
+// The field a shape sits on: the one its cells touch.
+.decl on_field(x: Ident, f: Ident)
+on_field(X, F) :- shape.label($U(), P, X), neighbor(P, _, Q), field.label(_, Q, F).
+
+// The field with the shapes on it.
+.decl region(f: Ident, p: Position)
+region(F, P) :- field.label(_, P, F).
+region(F, P) :- shape.label($U(), P, X), on_field(X, F).
+
+// @claim field
+.init region_box = Bbox<Ident>
+region_box.cell(F, P) :- region(F, P).
+
+.decl moved(p: Position, ch: Choice)
+
+// --- Flush ---
+
+// @claim shape
+.init shape_box = Bbox<Ident>
+shape_box.cell(X, P) :- shape.label($U(), P, X).
+
+// The shape's travel: its margin from its field's slide edge, as an offset
+// toward that edge.
+.decl travel(x: Ident, v: Offset)
+travel(X, V) :-
+    on_field(X, F), field_dir(F, D),
+    region_box.box(F, B_field), shape_box.box(X, B_shape),
+    relative(B_field, B_shape, B_rel),                  // the shape's box in the field's frame
+    dist(B_rel, D, K), jump_offset(D, K, V).
+
+moved(Q, $Flush()) :- shape.label($U(), P, X), travel(X, V), compose(P, V, Q).
+
+// --- Pack ---
+
+// A field cell in the field's own frame: its lane across the slide
+// direction, and its distance to the slide edge.
+.decl place(f: Ident, p: Position, lane: Position, k: number)
+place(F, P, Lane, K) :-
+    region(F, P), region_box.box(F, B), crop(P, B, P_inner),
+    field_dir(F, D), axis_of(D, A), split(P_inner, A, _, Lane), dist(P_inner, D, K).
+
+// @claim flush
+.init pack = Ordinal<Lane>
+pack.idx_set([F, Lane], K) :- place(F, P, Lane, K), shape.label($U(), P, _).
+
+// Ink at rank R among its lane's ink lands R from the slide edge.
+moved(Q, $Pack()) :- pack.rank([F, Lane], _, R), place(F, Q, Lane, R).
+
+out(P, Col, Ch) :- moved(P, Ch), params.ink(Col).
+out(P, Col, Ch) :- impl_choice(Ch), region(F, P), !moved(P, Ch), field_color(F, Col).
+
+.comp Determine {
+    // An ink cell the output returns to its field's color.
+    .decl vacated(e: Example, p: Position, col: Color)
+    vacated(E, P, Col) :-
+        ex_in(E, P, Col_ink), params.ink(Col_ink), ex_out(E, P, Col), !params.ink(Col).
+
+    // A field cell the output inks.
+    .decl inked(e: Example, p: Position, col: Color)
+    inked(E, P, Col) :-
+        ex_in(E, P, Col), !params.ink(Col), ex_out(E, P, Col_ink), params.ink(Col_ink).
+
+    // The ink left the vacated cell toward d: a cell of its field is inked
+    // ahead of it on its line.
+    .decl led(e: Example, p: Position, d: Dir)
+    led(E, P, D) :-
+        vacated(E, P, Col), inked(E, Q, Col),
+        axis_of(D, A), same_line(A, P, Q), nearer(D, Q, P).
+
+    // Some shape on a field of color c did not leave toward d.
+    .decl stranded(c: Color, d: Dir)
+    stranded(Col, D) :- vacated(E, P, Col), dir_elem(D), !led(E, P, D).
+
+    .decl slide(c: Color, d: Dir)
+    slide(Col, D) :- vacated(_, _, Col), dir_elem(D), !stranded(Col, D).
+}

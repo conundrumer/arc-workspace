@@ -1,0 +1,164 @@
+// 9af7a82c
+// @draft
+// @keywords: count rank
+// @scene fill: the fill color appears in no input
+// @scene blobs: each color covers one connected region
+// @scene distinct: no two colors cover the same number of cells
+// @rule counted: the chart counts the cells of every color but the fill
+// @rule chart: each color with counted cells takes one bar: the bars stand
+//  side by side from the chart corner in descending order of the colors'
+//  counts, and each bar runs from the corner's edge along the bar axis for as
+//  many cells as its color counts
+// @rule frame: the chart is as long as the longest bar and as wide as the
+//  number of bars, and the fill color takes the cells no bar covers
+
+// what joins two cells of one color into one region
+.type Adjacency =
+    // @claim chart
+    Edge {}
+    // @rule chart: a corner touch also joins two cells into one region
+    // @witness diagonal-split: variant concept
+    //     @relaxed blobs
+  | Corner {}
+
+// what each bar stands for
+.type Bars =
+    // @claim chart
+    PerColor {}
+    // @scene distinct: no two regions cover the same number of cells
+    // @rule chart: each region with counted cells takes one bar in its color:
+    //  the bars stand side by side from the chart corner in descending order
+    //  of the regions' sizes, and each bar runs from the corner's edge along
+    //  the bar axis for as many cells as its region counts
+    // @witness split-color: variant concept
+    //     @relaxed blobs
+  | PerRegion {adj: Adjacency}
+
+// whether the fill color's cells count
+.type Fill =
+    // @claim counted
+    Excluded {}
+    // @rule counted: the chart counts every cell
+    // @witness fill-in-input: variant concept
+    //     @relaxed fill
+  | Included {}
+
+// the two choice points, crossed
+.type Choice = [bars: Bars, fill: Fill]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // The color of the chart's empty cells.
+    .decl bg(c: Color) bg(0).
+
+    // The corner the bars start from, and the axis they run along.
+    .decl corner(d: DiagDir) corner(DIAG_TL).
+    .decl bar_axis(a: Axis) bar_axis(AXIS_V).
+}
+
+.init params = Params
+
+.decl fill_choice(f: Fill)
+fill_choice($Excluded()). fill_choice($Included()).
+
+// The colors the chart counts.
+.decl counted(f: Fill, col: Color)
+
+// --- Excluded ---
+counted($Excluded(), Col) :- in(_, Col), !params.bg(Col).
+
+// --- Included ---
+counted($Included(), Col) :- in(_, Col).
+
+// A bar: its rank from the rank edge, its color, and its length.
+.decl bars(ch: Choice, r: number, col: Color, n: number)
+
+// --- PerColor ---
+
+// How many cells each color covers.
+// @claim chart
+.init cover = Tally<Color, Position>
+cover.item(Col, P) :- in(P, Col).
+
+// The counted colors in descending order of their count.
+// @claim chart distinct
+.init colors = Order<Fill, Color>
+colors.elem(F, Col) :- counted(F, Col).
+colors.before(F, A, B) :- fill_choice(F), cover.tally(A, N1), cover.tally(B, N2), N1 > N2.
+
+bars([$PerColor(), F], R, Col, N) :- colors.rank(F, Col, R), cover.tally(Col, N).
+
+// --- PerRegion ---
+
+// A region's cells, under each adjacency.
+.decl region(adj: Adjacency, col: Color, p: Position, id: Ident)
+
+// --- PerRegion(adj=Edge) ---
+
+// The connected regions of each color, cells joined along edges.
+// @claim chart
+.init regions = Components<Color>
+regions.node(Col, P) :- in(P, Col).
+
+region($Edge(), Col, P, Id) :- regions.label(Col, P, Id).
+
+// --- PerRegion(adj=Corner) ---
+
+// The regions with corner touches joined as well.
+// @claim chart
+.init regions8 = Components8<Color>
+regions8.node(Col, P) :- in(P, Col).
+
+region($Corner(), Col, P, Id) :- regions8.label(Col, P, Id).
+
+// --- PerRegion ---
+
+// A region under its adjacency, as one key: ids from the two component
+// instances are independent.
+.type Piece = [adj: Adjacency, id: Ident]
+
+// How many cells each region covers.
+// @claim chart
+.init size = Tally<Piece, Position>
+size.item([A, Id], P) :- region(A, _, P, Id).
+
+// The counted regions in descending order of their size.
+// @claim chart distinct
+.init pieces = Order<Choice, Ident>
+pieces.elem([$PerRegion(A), F], Id) :- counted(F, Col), region(A, Col, _, Id).
+pieces.before([$PerRegion(A), F], Id1, Id2) :-
+    fill_choice(F), size.tally([A, Id1], N1), size.tally([A, Id2], N2), N1 > N2.
+
+bars([$PerRegion(A), F], R, Col, N) :-
+    pieces.rank([$PerRegion(A), F], Id, R), size.tally([A, Id], N), region(A, Col, _, Id).
+
+// --- PerColor, PerRegion ---
+
+// How many bars there are.
+// @claim frame
+.init width = Tally<Choice, number>
+width.item(Ch, R) :- bars(Ch, R, _, _).
+
+// The longest bar.
+// @claim frame
+.init longest = Extremes<Choice>
+longest.cand(Ch, N) :- bars(Ch, _, _, N).
+
+// @claim frame
+.init chart = Frame2D<Choice>
+chart.extent(Ch, A, N) :- params.bar_axis(A), longest.high(Ch, N).
+chart.extent(Ch, A2, N) :- params.bar_axis(A), perp(A, A2), width.tally(Ch, N).
+
+// A cell of a bar.
+.decl bar(p: Position, col: Color, ch: Choice)
+bar(P, Col, Ch) :-
+    chart.cell(Ch, P),
+    params.corner(Dg), params.bar_axis(A), diag_dirs(Dg, A, D_bar, D_rank),  // D_bar along the bars, D_rank across
+    dist(P, D_rank, R), bars(Ch, R, Col, N),                                  // the bar at the cell's rank
+    dist(P, D_bar, K), K < N.                                                 // within the bar's length
+
+out(P, Col, Ch) :-
+    chart.cell(Ch, P),
+    ( bar(P, Col, Ch)
+    ; !bar(P, _, Ch), params.bg(Col) ).

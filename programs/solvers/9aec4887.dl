@@ -1,0 +1,176 @@
+// 9aec4887
+// @draft
+// @keywords: crop overlay objects border rank
+// @scene sides: four colors each draw one straight segment, and the four
+//  segments are the four sides of a rectangle, its corners left open
+// @scene shape: the rest of the ink is one shape in a fifth color, drawn
+//  outside that rectangle
+// @scene extent: the shape's box has the extent of the rectangle's interior
+// @rule frame: the output is the rectangle's box, each side in its place
+// @rule place: the shape fills the rectangle's interior, each cell at its
+//  place in the shape's own box
+// @rule recolor: a shape cell takes the color of the side nearest it, and a
+//  cell with no single nearest side keeps the shape's color
+
+// what a tied cell takes
+.type Tie =
+    // @claim recolor
+    Own {}
+    // @rule recolor: a shape cell takes the color of the side nearest it,
+    //  and a cell with no single nearest side takes the color params.fixed
+    //  names
+    // @witness recolored-shape: variant concept
+  | Clash {}
+
+// how the shape is told from the sides
+.type ShapeFrom =
+    // @claim shape
+    // the color whose cells lie on no one line
+    Derived {t: Tie}
+    // @scene shape: the ink of the color params.fixed names is one shape,
+    //  drawn outside that rectangle
+    // @witness recolored-shape: variant concept
+  | Stored {}
+
+// what the border draws
+.type Border =
+    // @claim frame
+    Cells {}
+    // @rule frame: the output is the rectangle's box, each side drawn as a
+    //  full run along its edge, the corners left open
+    // @witness side-gap: borderline concept
+    //     @relaxed sides
+  | Runs {}
+
+// the two decisions are independent, so the cases cross them
+.type Choice = [shape: ShapeFrom, border: Border]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+
+    // --- Derived(t=Clash), Stored ---
+    // the color the task fixes: the tie's under Derived(t=Clash), the
+    // shape's under Stored
+    .decl fixed(col: Color) fixed(8).
+}
+
+.init params = Params
+
+.decl tie_choice(t: Tie)
+tie_choice($Own()). tie_choice($Clash()).
+
+.decl border_choice(b: Border)
+border_choice($Cells()). border_choice($Runs()).
+
+.decl shape_from_choice(s: ShapeFrom)
+shape_from_choice($Derived(T)) :- tie_choice(T).
+shape_from_choice($Stored()).
+
+.decl ink(col: Color, p: Position)
+ink(Col, P) :- in(P, Col), !params.bg(Col).
+
+// A cell of a color that draws a side of the rectangle.
+.decl side_cell(col: Color, p: Position, s: ShapeFrom)
+
+// --- Derived ---
+
+// same_line over a color's cells, so the universal below can negate it.
+.decl aligned(col: Color, a: Axis, p: Position, q: Position)
+aligned(Col, A, P, Q) :- ink(Col, P), ink(Col, Q), axis_elem(A), same_line(A, P, Q).
+
+// Some pair of the color's cells shares no line of axis a.
+.decl bent(col: Color, a: Axis)
+bent(Col, A) :- ink(Col, P), ink(Col, Q), axis_elem(A), !aligned(Col, A, P, Q).
+
+side_cell(Col, P, $Derived(T)) :- ink(Col, P), axis_elem(A), !bent(Col, A), tie_choice(T).
+
+// --- Stored ---
+
+side_cell(Col, P, $Stored()) :- ink(Col, P), !params.fixed(Col).
+
+// --- Derived, Stored ---
+
+// The rest of the ink is the shape.
+.decl shape_cell(col: Color, p: Position, s: ShapeFrom)
+shape_cell(Col, P, S) :- ink(Col, P), shape_from_choice(S), !side_cell(Col, P, S).
+
+// @claim sides frame
+.init frame_box = Bbox<ShapeFrom>
+frame_box.cell(S, P) :- side_cell(_, P, S).
+
+// The output frame: the rectangle's box.
+.decl box_cell(p: Position, s: ShapeFrom)
+box_cell(P_out, S) :- frame_box.box(S, B), in(P, _), crop(P, B, P_out).
+
+// A side cell, in the output frame.
+.decl placed_side(p: Position, col: Color, s: ShapeFrom)
+placed_side(P_out, Col, S) :- frame_box.box(S, B), side_cell(Col, P, S), crop(P, B, P_out).
+
+// The edge of the box a side lies on.
+.decl side(d: Dir, col: Color, s: ShapeFrom)
+side(D, Col, S) :- placed_side(P, Col, S), dir_elem(D), dist(P, D, 0).
+
+// The rectangle's interior: the box cells off its border.
+// @claim place
+.init inner = Bbox<ShapeFrom>
+inner.cell(S, P) :- box_cell(P, S), interior(P, ZERO).
+
+// @claim shape place
+.init shape_box = Bbox<ShapeFrom>
+shape_box.cell(S, P) :- shape_cell(_, P, S).
+
+// The shape, in its own frame.
+.decl shape_pos(p_inner: Position, col: Color, s: ShapeFrom)
+shape_pos(P_inner, Col, S) :-
+    shape_box.box(S, B), shape_cell(Col, P, S), crop(P, B, P_inner).
+
+// The edges a shape cell sits nearest, ties kept.
+// @claim recolor
+.init near = ArgExtremes<Position, Dir>
+near.cand(P_inner, D, K) :- shape_pos(P_inner, _, _), dir_elem(D), dist(P_inner, D, K).
+
+// The one nearest side of a shape cell, absent at a tie.
+// @claim recolor
+.init near_side = Unanimous<Position, Dir>
+near_side.item(P_inner, D) :- near.low(P_inner, D, _).
+
+// The color a tied cell takes.
+.decl tie_color(col: Color, s: ShapeFrom)
+
+// --- Derived(t=Own), Stored ---
+tie_color(C, $Derived($Own())) :- shape_cell(C, _, $Derived($Own())).
+tie_color(C, $Stored()) :- shape_cell(C, _, $Stored()).
+
+// --- Derived(t=Clash) ---
+tie_color(Col, $Derived($Clash())) :- params.fixed(Col).
+
+// What the output draws, the background aside.
+.decl draw(p: Position, col: Color, ch: Choice)
+
+// --- Cells ---
+
+draw(P, Col, [S, $Cells()]) :- placed_side(P, Col, S).
+
+// --- Runs ---
+
+// A cell at a corner of its frame.
+.decl at_corner(p: Position)
+at_corner(P) :- box_cell(P, _), diag_dir_elem(C), box_corner(P, ZERO, C).
+
+draw(P, Col, [S, $Runs()]) :-
+    side(D, Col, S), box_cell(P, S), dist(P, D, 0),  // the side's whole edge
+    !at_corner(P).                                   // corners left open
+
+// --- Cells, Runs ---
+
+draw(P, Col, [S, Bd]) :-
+    shape_pos(P_inner, _, S), border_choice(Bd),              // a shape cell
+    inner.box(S, I), compose(I, P_inner, P),                  // placed in the interior
+    ( near_side.value(P_inner, D), side(D, Col, S)            // the one nearest side's color
+    ; !near_side.value(P_inner, _), tie_color(Col, S) ).      // at a tie, the tie color
+
+out(P, Col, Ch) :- draw(P, Col, Ch).
+out(P, Col, [S, Bd]) :-
+    box_cell(P, S), border_choice(Bd), !draw(P, _, [S, Bd]), params.bg(Col).

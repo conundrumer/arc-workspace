@@ -1,0 +1,151 @@
+// 9b5080bb
+// @draft
+// @keywords: objects border count
+// @scene panels: two panels of distinct colors, each one region of one
+//  color, hold figures of a third color; a figure lies inside one panel,
+//  touching no other region
+// @scene figure: a figure is a rectangle with single-cell defects on its
+//  sides: a bump, a figure cell just outside a side, or a dent, a side cell
+//  the figure lacks; each side lies where most of the figure's lines end
+// @rule mark: each defect is marked with the other panel's color across the
+//  side: the side cell at the defect and the cell just outside it
+// @rule keep: every other cell keeps its color
+
+// how a figure's rectangle is read from its cells
+.type Choice =
+    // @claim figure
+    Majority {}
+    // @scene figure: a figure's body is its cells that lie in a 2×2 block of
+    //  the figure; the rectangle is the body's box, and the figure has
+    //  single-cell defects on its sides: a bump, a figure cell just outside
+    //  a side, or a dent, a side cell the figure lacks
+    // @witness narrow-dent: ordinary concept
+  | Body {}
+    // @scene figure: a figure is a rectangle with single-cell defects on its
+    //  sides: a bump, a figure cell just outside a side, or a dent, a side
+    //  cell the figure lacks; a bump is the one figure cell on a line of the
+    //  figure's box, and the rectangle is the box with those lines pulled in
+    // @witness two-bumps: ordinary concept
+    // @witness crowded-side: borderline Lone
+    //     @relaxed figure
+  | Lone {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Majority()). impl_choice($Body()). impl_choice($Lone()).
+
+// The regions of one color.
+// @claim panels
+.init regions = Components<Color>
+regions.node(Col, P) :- in(P, Col).
+
+// A region beside another.
+.decl touches(id: Ident, id2: Ident)
+touches(Id, Id2) :-
+    regions.label(_, P, Id), dir_elem(D), neighbor(P, D, Q),
+    regions.label(_, Q, Id2), Id != Id2.
+
+// The one region beside a figure: its panel.
+// @claim panels
+.init panel_of = Unanimous<Ident, Ident>
+panel_of.item(Id, Id2) :- touches(Id, Id2).
+
+.decl figure(id: Ident, p: Position)
+figure(Id, P) :- panel_of.value(Id, _), regions.label(_, P, Id).
+
+.decl panel(id: Ident, col: Color)
+panel(H, Col) :- panel_of.value(_, H), regions.label(Col, _, H).
+
+// The color a figure's defects are marked with: the other panel's.
+.decl mark_color(id: Ident, col: Color)
+mark_color(Id, Col2) :- panel_of.value(Id, H), panel(H, Col), panel(_, Col2), Col2 != Col.
+
+.type Side = [id: Ident, d: Dir]
+
+// The figure's rectangle.
+.decl rect(id: Ident, b: Box, ch: Choice)
+
+// --- Majority ---
+
+.type Line = [id: Ident, a: Axis, l: Position]
+
+// The figure's extent on each of its lines.
+// @claim figure
+.init line_box = Bbox<Line>
+line_box.cell([Id, A, L], P) :- figure(Id, P), axis_elem(A), split(P, A, _, L).
+
+// Where most of the figure's lines end toward each side.
+// @claim figure
+.init side_end = Mode<Side, number, Position>
+side_end.item([Id, D], K, L) :- line_box.box([Id, A, L], B), axis_of(D, A), dist(B, D, K).
+
+.init majority_rect = DirPack<Ident>
+majority_rect.edge(Id, D, K) :- side_end.mode([Id, D], K).
+
+rect(Id, B, $Majority()) :- majority_rect.box(Id, B).
+
+// --- Body ---
+
+// The three cells that complete P's 2×2 square on corner Diag's side.
+.decl quad(p: Position, diag: DiagDir, q1: Position, q2: Position, q3: Position) inline
+quad(P, Diag, Q1, Q2, Q3) :-
+    diag_dirs(Diag, _, D1, D2),
+    neighbor(P, D1, Q1), neighbor(P, D2, Q2), neighbor(P, Diag, Q3).
+
+// A figure cell in a 2×2 block of the figure.
+.decl body(id: Ident, p: Position)
+body(Id, P) :-
+    figure(Id, P), quad(P, _, Q1, Q2, Q3),
+    figure(Id, Q1), figure(Id, Q2), figure(Id, Q3).
+
+// @claim figure
+.init body_box = Bbox<Ident>
+body_box.cell(Id, P) :- body(Id, P).
+
+rect(Id, B, $Body()) :- body_box.box(Id, B).
+
+// --- Lone ---
+
+// @claim figure
+.init figure_box = Bbox<Ident>
+figure_box.cell(Id, P) :- figure(Id, P).
+
+// The figure's cells on the line of its box toward each side; a bump is the
+// one such cell.
+// @claim figure
+.init edge_cell = Unanimous<Side, Position>
+edge_cell.item([Id, D], P) :- figure_box.box(Id, B), figure(Id, P), box_edge(P, B, D).
+
+.init lone_rect = DirPack<Ident>
+lone_rect.edge(Id, D, K) :-
+    figure_box.box(Id, B), dir_elem(D),
+    ( !edge_cell.value([Id, D], _), dist(B, D, K)       // no lone cell: the box's side
+    ; edge_cell.value([Id, D], P),                      // a bump: the side is at its foot
+      opposite(D, O), neighbor(P, O, Q), dist(Q, D, K)
+    ).
+
+rect(Id, B, $Lone()) :- lone_rect.box(Id, B).
+
+// --- Majority, Body, Lone ---
+
+// A side cell where the figure crosses the side: a dent, or the foot of a
+// bump.
+.decl defect(id: Ident, d: Dir, p: Position, ch: Choice)
+defect(Id, D, P, Ch) :-
+    rect(Id, B, Ch), in(P, _), box_edge(P, B, D),
+    ( !figure(Id, P)                       // a dent
+    ; neighbor(P, D, Q), figure(Id, Q) ).  // a bump beside the side cell
+
+// The mark straddles the side at the defect.
+.decl mark(p: Position, col: Color, ch: Choice)
+mark(P_mark, Col, Ch) :-
+    defect(Id, D, P, Ch), mark_color(Id, Col),
+    ( P_mark = P ; neighbor(P, D, P_mark) ).
+
+out(P, Col, Ch) :- mark(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !mark(P, _, Ch).

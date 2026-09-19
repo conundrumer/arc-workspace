@@ -1,0 +1,78 @@
+// 9b365c51
+// @draft
+// @keywords: lines objects markers rank match
+// @scene bars: a bar is a line across the axis that holds one color
+//  throughout, neither the background nor the ink
+// @scene shapes: the ink forms solid rectangles, no two on one line across
+//  the axis, so a rectangle is a maximal run of neighboring lines that
+//  agree at every place along them
+// @scene count: there are as many bars as rectangles
+// @rule erase: the bars become background
+// @rule recolor: each rectangle takes the color of the bar at the same rank
+//  along the axis
+// @rule keep: every other cell keeps its color
+
+.decl out(p: Position, col: Color)
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    // the color the rectangles are drawn in
+    .decl ink(c: Color) ink(8).
+    // the axis the bars and the rectangles are ordered along
+    .decl axis(a: Axis) axis(AXIS_H).
+}
+
+.init params = Params
+
+// A cell by its line across the axis and its place along that line.
+.decl line_cell(l: Position, x: Position, col: Color)
+line_cell(L, X, Col) :- in(P, Col), params.axis(A), split(P, A, L, X).
+
+// @claim bars
+.init uniform = Unanimous<Position, Color>
+uniform.item(L, Col) :- line_cell(L, _, Col).
+
+.decl bar(l: Position, col: Color)
+bar(L, Col) :- uniform.value(L, Col), !params.bg(Col), !params.ink(Col).
+
+// Two lines that hold different colors at one place.
+.decl differ(l: Position, l2: Position)
+differ(L, L2) :- line_cell(L, X, Col), line_cell(L2, X, Col2), Col != Col2.
+
+// Neighboring lines that agree everywhere.
+.decl uncut(l: Position, l2: Position)
+uncut(L, L2) :-
+    line_cell(L, _, _), line_cell(L2, _, _),               // two lines of the frame
+    params.axis(A), axis_of(D, A), neighbor(L, D, L2),    // neighbors along the axis
+    !differ(L, L2).                                       // no place cuts them
+
+// A band is a maximal run of lines that agree.
+.init bands = Canon<Position>
+bands.equiv(L, L) :- line_cell(L, _, _).
+bands.equiv(L, L3) :- bands.equiv(L, L2), uncut(L2, L3).
+
+// The bands that hold ink: each is one rectangle.
+.decl shape(id: Ident)
+shape(Id) :- bands.id(L, Id), line_cell(L, _, Col), params.ink(Col).
+
+// @claim recolor
+.init bar_order = OrderFrame<Unit, Position>
+bar_order.axis($U(), A) :- params.axis(A).
+bar_order.member($U(), L, L) :- bar(L, _).
+
+// @claim recolor
+.init shape_order = OrderFrame<Unit, Ident>
+shape_order.axis($U(), A) :- params.axis(A).
+shape_order.member($U(), Id, L) :- shape(Id), bands.id(L, Id).
+
+// The color of the bar at the rectangle's rank.
+.decl shape_color(id: Ident, col: Color)
+shape_color(Id, Col) :-
+    shape_order.pos($U(), Id, P_pos), bar_order.pos($U(), L, P_pos), bar(L, Col).
+
+out(P, Col) :-
+    in(P, C), params.axis(A), split(P, A, L, _),
+    ( params.ink(C), bands.id(L, Id), shape_color(Id, Col)   // a rectangle cell takes its bar's color
+    ; bar(L, _), params.bg(Col)                              // a bar cell is erased
+    ; !params.ink(C), !bar(L, _), Col = C                    // every other cell keeps its color
+    ).

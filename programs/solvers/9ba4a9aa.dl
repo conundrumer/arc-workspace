@@ -1,0 +1,103 @@
+// 9ba4a9aa
+// @draft
+// @keywords: objects merge select crop
+// @scene ground: the commonest color is the background
+// @scene squares: the ink holds 3×3 squares; a square is framed when a
+//  uniform border surrounds a center of another color, and one square, the
+//  source, is not framed
+// @scene trails: the ink outside the squares is dots; dots of one color, one
+//  spacing apart along a row or column, chain into a trail, and a trail ends
+//  beside a square
+// @rule pick: the output is the framed square that the trail leaving the
+//  source reaches
+
+// what makes a dot part of the source's trail
+.type Choice =
+    // @claim trails
+    Chain {}
+    // @scene trails: the ink outside the squares is dots, and the dots of one
+    //  color form a trail
+    // @witness stray-dots: variant concept
+  | Hue {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- Chain ---
+
+    // Distance from a trail dot to the next.
+    .decl spacing(k: number) spacing(2).
+}
+
+.init params = Params
+
+// @claim ground
+.init ground = Mode<Unit, Color, Position>
+ground.item($U(), Col, P) :- in(P, Col).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !ground.mode($U(), Col).
+
+// @claim squares
+.init rim = Rim8<Unit>
+rim.cell($U(), P) :- ink(P, _).
+
+// A square's center: an inked cell with every neighbor inked.
+.decl center(c: Position)
+center(C) :- ink(C, _), !rim.rim($U(), C).
+
+// The border of the square at center c.
+.decl border(c: Position, p: Position)
+border(C, P) :- center(C), dir8_elem(D), neighbor(C, D, P).
+
+.decl square_cell(c: Position, p: Position)
+square_cell(C, P) :- center(C), ( border(C, P) ; P = C ).
+
+// @claim squares
+.init frame = Unanimous<Position, Color>
+frame.item(C, Col) :- border(C, P), in(P, Col).
+
+.decl framed(c: Position)
+framed(C) :- frame.value(C, Col), in(C, Col2), Col != Col2.
+
+.decl source(c: Position)
+source(C) :- center(C), !framed(C).
+
+.decl dot(p: Position, col: Color)
+dot(P, Col) :- ink(P, Col), !square_cell(_, P).
+
+// A dot beside the square at c.
+.decl beside(p: Position, c: Position)
+beside(P, C) :- dot(P, _), dir_elem(D), neighbor(P, D, Q), square_cell(C, Q).
+
+// The framed square the source's trail reaches.
+.decl target(c: Position, ch: Choice)
+
+// --- Chain ---
+
+// The trail leaving the source: dots of one color, one spacing apart, reached
+// from the dot beside the source. The lib's unit steps stay in the set; dots
+// are never adjacent, so they never fire.
+// @claim trails
+.init trail = Reach<Color>
+trail.node(Col, P) :- dot(P, Col).
+trail.step(V) :- params.spacing(K), dir_elem(D), jump_offset(D, K, V).
+trail.seed(Col, P) :- source(C), beside(P, C), dot(P, Col).
+
+target(C, $Chain()) :- framed(C), beside(P, C), trail.reach(_, P).
+
+// --- Hue ---
+
+// The color of the dots beside the source.
+.decl lead_color(col: Color)
+lead_color(Col) :- source(C), beside(P, C), dot(P, Col).
+
+target(C, $Hue()) :- framed(C), beside(P, C), dot(P, Col), lead_color(Col).
+
+// --- Chain, Hue ---
+
+// @claim squares
+.init square = Bbox<Position>
+square.cell(C, P) :- square_cell(C, P).
+
+out(P_inner, Col, Ch) :- target(C, Ch), square.box(C, B), in(P, Col), crop(P, B, P_inner).

@@ -1,0 +1,168 @@
+// 9bbf930d
+// @keywords: walk move lines
+// @scene wall: the edge on params.wall_dir is a solid line of one ink, and
+//  the line inside it is blank
+// @scene pipes: a pipe is two parallel bars of one ink with a one-cell blank
+//  channel between them; a pipe may bend, and a pipe's mouth faces the wall
+// @rule inlet: a wall cell opens — takes the blank color — when the blank
+//  run inward from it reaches a pipe's channel
+// @rule roll: the ink of an opened wall cell rolls inward: it runs straight
+//  through blank cells until blocked, follows a bend at a corner where a
+//  pipe of one ink turns, and lands where it is blocked outside a bend or
+//  meets the grid edge
+// @rule keep: every other cell keeps its color
+
+// what the rolling ink follows around a corner
+.type Follow =
+    // @claim roll
+    Pipe {}
+    // @rule roll: the ink follows the blank channel of a pipe around its
+    //  bend, whether or not the outer bar closes the far side
+    // @witness twoopen: borderline concept
+    //     @relaxed pipes
+  | Channel {}
+    // @rule roll: the ink, stopped in a channel, turns to the side the
+    //  channel opens
+    // @witness hook: borderline concept
+    //     @relaxed pipes
+  | Exit {}
+
+// what opens the wall
+.type Open =
+    // @claim inlet
+    Reach {}
+    // @rule inlet: a wall cell opens where a pipe's mouth faces it across a
+    //  clear lane, with no ink beside the lane before the channel
+    // @witness stagger: borderline concept
+    //     @relaxed pipes
+  | Mouth {}
+
+// how the wall is located
+.type Locate =
+    // @claim wall
+    Stored {}
+    // @scene wall: the wall is the edge that is a solid line of one ink, and
+    //  the line inside it is blank
+    // @witness relocated: variant Derived
+    //     @relaxed wall
+  | Derived {}
+
+.type Choice = [follow: Follow, open: Open, locate: Locate]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(c: Color) bg(7).
+
+    // --- Stored ---
+    // The edge the wall lies on.
+    .decl wall_dir(d: Dir) wall_dir(DIR_L).
+}
+
+.init params = Params
+
+.decl follow_choice(f: Follow)
+follow_choice($Pipe()). follow_choice($Channel()). follow_choice($Exit()).
+
+.decl open_choice(o: Open)
+open_choice($Reach()). open_choice($Mouth()).
+
+.decl locate_choice(l: Locate)
+locate_choice($Stored()). locate_choice($Derived()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([F, O, L]) :- follow_choice(F), open_choice(O), locate_choice(L).
+
+.decl blank(p: Position)
+blank(P) :- in(P, Col), params.bg(Col).
+
+// The one color of each edge's cells.
+// @claim wall
+.init edge_color = Unanimous<Dir, Color>
+edge_color.item(D, Col) :- dir_elem(D), in(P, Col), dist(P, D, 0).
+
+// The edge the wall lies on, under locate-mode L.
+.decl wall_side(l: Locate, d: Dir)
+wall_side($Stored(), D) :- params.wall_dir(D).
+wall_side($Derived(), D) :- edge_color.value(D, Col), !params.bg(Col).
+
+.decl wall(l: Locate, p: Position, col: Color)
+wall(L, P, Col) :- wall_side(L, D), in(P, Col), !params.bg(Col), dist(P, D, 0).
+
+// A blank cell whose neighbor toward D holds ink Col.
+.decl walled(p: Position, d: Dir, col: Color)
+walled(P, D, Col) :-
+    blank(P), dir_elem(D), neighbor(P, D, Q),
+    in(Q, Col), !params.bg(Col).
+
+// A channel cell of a pipe of ink Col running along axis A: walled by Col
+// on both sides across A.
+.decl channel(p: Position, a: Axis, col: Color)
+channel(P, A, Col) :-
+    perp(A, A_across), axis_of(D1, A_across), opposite(D1, D2),
+    walled(P, D1, Col), walled(P, D2, Col).
+
+// The blank channel of ink Col turns from heading D to D2 at corner Q.
+.decl channel_turn(q: Position, d: Dir, d2: Dir, col: Color)
+channel_turn(Q, D, D2, Col) :-
+    blank(Q), perp_dir(D, D2),
+    opposite(D, D_back), neighbor(Q, D_back, B), axis_of(D, A), channel(B, A, Col),
+    neighbor(Q, D2, N), axis_of(D2, A2), channel(N, A2, Col).
+
+// Q turns from heading D to D2, under follow-mode F.
+.decl bend(q: Position, d: Dir, d2: Dir, f: Follow)
+bend(Q, D, D2, $Pipe()) :-
+    channel_turn(Q, D, D2, Col), walled(Q, D, Col),
+    opposite(D2, D_side), walled(Q, D_side, Col).       // the outer bar beside
+bend(Q, D, D2, $Channel()) :-
+    channel_turn(Q, D, D2, Col), walled(Q, D, Col).
+bend(Q, D, D2, $Exit()) :-
+    walled(Q, D, _),                                    // blocked ahead
+    opposite(D, D_back), neighbor(Q, D_back, B),
+    axis_of(D, A), channel(B, A, _),                    // in a channel along the heading
+    perp_dir(D, D2), neighbor(Q, D2, N), blank(N),      // the turn side is open
+    opposite(D2, D_side), walled(Q, D_side, _).         // the other side is blocked
+
+// @claim inlet roll
+.init run = Slide<Unit>
+run.node($U(), P) :- blank(P).
+run.dir($U(), D) :- dir_elem(D).
+
+// The blank cell inside wall cell P0, with the heading away from the wall.
+.decl mouth(l: Locate, p_wall: Position, q: Position, d: Dir)
+mouth(L, P0, Q, D) :-
+    wall(L, P0, _), wall_side(L, D_wall), opposite(D_wall, D),
+    neighbor(P0, D, Q), blank(Q).
+
+// Some lane cell before R, on the run from the mouth, has ink beside it.
+.decl lane_blocked(l: Locate, p_wall: Position, r: Position)
+lane_blocked(L, P0, R) :-
+    mouth(L, P0, Q, D), run.run($U(), Q, D, S), run.run($U(), S, D, R), S != R,
+    perp_dir(D, D_perp), walled(S, D_perp, _).
+
+.decl inlet(l: Locate, p: Position, o: Open)
+inlet(L, P0, $Reach()) :-
+    mouth(L, P0, Q, D), axis_of(D, A),
+    ( channel(Q, A, _)                             // the mouth is a channel cell
+    ; run.run($U(), Q, D, R), channel(R, A, _) ).  // or the run from it reaches one
+// Mouth adds to Reach that no ink lies beside the lane before the channel.
+inlet(L, P0, $Mouth()) :-
+    mouth(L, P0, Q, D), axis_of(D, A),
+    ( channel(Q, A, _)
+    ; run.run($U(), Q, D, R), channel(R, A, _), !lane_blocked(L, P0, R) ).
+
+// The ink from wall cell P0 rests at P, heading D, at the end of a run.
+.decl rest(p_wall: Position, p: Position, d: Dir, ch: Choice)
+rest(P0, R, D, [F, O, L]) :-
+    inlet(L, P0, O), follow_choice(F), mouth(L, P0, Q, D), run.rest($U(), Q, D, R).
+rest(P0, R, D2, [F, O, L]) :-
+    rest(P0, Q, D, [F, O, L]), bend(Q, D, D2, F), run.rest($U(), Q, D2, R).
+
+// Where the ink from wall cell P0 lands: a rest with no bend to follow.
+.decl landing(p_wall: Position, p: Position, ch: Choice)
+landing(P0, Q, [F, O, L]) :- rest(P0, Q, D, [F, O, L]), !bend(Q, D, _, F).
+
+out(P, Col, [F, O, L]) :- inlet(L, P, O), follow_choice(F), params.bg(Col).
+out(P, Col, [F, O, L]) :- landing(P0, P, [F, O, L]), wall(L, P0, Col).
+out(P, Col, [F, O, L]) :-
+    impl_choice([F, O, L]), in(P, Col), !inlet(L, P, O), !landing(_, P, [F, O, L]).
