@@ -1,15 +1,13 @@
-<!-- When editing this doc:
-- No tool reads this doc.
-- A row stays only while both conditions hold:
-    - The former name is a current name with another referent, or a grep for it over the current docs and lib finds no line that gives its meaning. A name whose current form a grep finds, such as a prefixed one, earns no row.
-    - The former name stands in text that a later session reads. That text is `docs/`, `.claude/roles/`, and `programs/`, together with reports and briefs. Grep verifies the repo part alone. -->
+* comment: when editing this doc
+    - No tool reads this doc.
+    - A row stays only while both conditions hold:
+        - The former name is a current name with another referent, or a grep for it over the current docs and lib finds no line that gives its meaning. A name whose current form a grep finds, such as a prefixed one, earns no row.
+        - The former name stands in text that a later session reads. That text is `docs/`, `prompts/roles/`, and `programs/`, together with reports and briefs. Grep verifies the repo part alone.
 
 # Former names
-
-Each row gives the current name for a former one that a reader would otherwise take for something else or fail to find.
+- Each row gives the current name for a former one that a reader would otherwise take for something else or fail to find.
 
 ## Terms
-
 | Former | Current |
 | --- | --- |
 | Fit, fit pass, fit-plan | determination, determination pass, `determination-plan` |
@@ -17,11 +15,9 @@ Each row gives the current name for a former one that a reader would otherwise t
 | concept rule | claim |
 | lib primitive | lib relation |
 | `Position`, the record | `Box`; `Position` is its cell reading |
-
-Fit names the case condition that principles.md states under Cases.
+- Fit names the case condition that [Cases](principles.md#cases) states.
 
 ## Identifiers
-
 | Former | Current |
 | --- | --- |
 | `Shift` | `Offset` |

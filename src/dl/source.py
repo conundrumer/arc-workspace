@@ -571,7 +571,7 @@ def build_determine_source(source: str, params: dict[str, list[str]]) -> str:
     return f"{expand_macros(source)}\n{appended}\n{DETERMINE_DIRECTIVES}"
 
 
-KEYWORDS_DOC = REPO_ROOT / "docs" / "wf-solver" / "keywords.md"
+KEYWORDS_DOC = REPO_ROOT / "docs" / "handbook" / "keywords.md"
 KEYWORD_BULLET_RE = re.compile(r"^- `([^`]+)`")
 
 

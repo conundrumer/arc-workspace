@@ -1,13 +1,11 @@
++ index: headings
+
 # Keywords
-
-Keywords index the solvers by concepts that a grep over the code cannot find.
-
-A keyword names a task concept or a composition property of the program. The mechanism its gloss names is one instance of that concept, not the keyword's boundary.
+- Keywords index the solvers by concepts that a grep over the code cannot find.
+- A keyword names a task concept or a composition property of the program. The mechanism its gloss names is one instance of that concept, not the keyword's boundary.
 
 ## Setup
-
-The structure a concept depends on: what the input is and how it decomposes.
-
+- The structure a concept depends on: what the input is and how it decomposes.
 - `tile-arrangement` — output arranges transformed copies of the input, or of a piece of it
 - `overlay` — content stacks on one frame; panels of a decomposition are one kind of content
 - `scale` — content corresponds across a size change
@@ -22,9 +20,7 @@ The structure a concept depends on: what the input is and how it decomposes.
 - `permutation` — elements reorder by a fixed permutation
 
 ## Transformation
-
-The concept the task teaches.
-
+- The concept the task teaches.
 - `lookup` — stored data supplies the output: its content, or where content is read or placed
 - `d4` — a D4 transform applies to content
 - `walk` — stepwise propagation; each step depends on the path or content so far
@@ -48,5 +44,4 @@ The concept the task teaches.
 - `match` — items found in the input pair off by a shared property, and the output acts on the pairs; matching against stored data is `lookup`
 
 ## Shape
-
 - `latent-canvas` — the program constructs a canvas neither grid fully shows, and the output is determined by that canvas. A canvas is a frame of cells that contains the whole scene in one state.

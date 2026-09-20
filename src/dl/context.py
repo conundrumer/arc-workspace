@@ -3,18 +3,14 @@ procedure uses.
 
 The lib renders as documentation: each file's `//!` and `///` comments as
 prose, and the declarations they document in code blocks, without the rule
-bodies. That is the lib's interface, and each file's interface is also
-written beside it, as the `.md` of the same stem. The catalog docs render as
-one line per entry. The other docs pass through without their editor notes
-and their deferred sections. Each rendering names the file that holds the
-rest, and derives from the live file, so no copy can go stale.
+bodies. That is `lib: interface`. Under `lib: index` each file gives one line
+per top-level public component instead, under a note naming the interface file
+that holds the rest. Each file's interface is also written beside it, as the
+`.md` of the same stem.
 
-The handbook renders two ways, and an agent carries each. The lib is its
-interface, for a task that edits `.dl`, or an index: one line per public component
-of each file, under a note that points at the interface file for the rest. In
-the index rendering, some docs are an index too: the doc's preamble and one
-line per heading under it, under a note that points at the file for the
-sections.
+An agent document under `prompts/agents/` states what its agent reads, and
+`write_agent` renders one per agent into `.claude/agents/`, front matter and
+all. Read those documents for what each agent gets.
 """
 
 from __future__ import annotations
@@ -22,62 +18,37 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import threading
 import time
 from functools import lru_cache
 from pathlib import Path
 
-from dl.dlparse import (Comp, Decl, Define, Include, Init, Item, Program,
-                        Rule, TypeDecl, parse)
+import controlled_markdown as nm
+from dl.dlparse import Comp, Decl, Define, Include, Init, Item, Program, Rule, TypeDecl, parse
 from dl.paths import PROGRAMS_DIR, REPO_ROOT
 
-DOCS_DIR = REPO_ROOT / "docs" / "wf-solver"
+# The handbook's own files. Nothing here reads them as a directory: the
+# composition document names each one, and the registry reads it from there.
+DOCS_DIR = REPO_ROOT / "docs" / "handbook"
+ROLE_DIR = REPO_ROOT / "prompts" / "roles"
+# The doc that tells an editor where each section lives. It is not rendered.
+EDITING_DOC = "editing.md"
 LIB_SRC = PROGRAMS_DIR / "lib.dl"
 
-# The agent definitions, generated from the handbook: an agent runs a role
-# under .claude/roles/ with the handbook as its system prompt. The files are
-# regenerated at each entry point and not tracked. A role's file names its
-# agent in its first line, `Agent: <name>`. A role file with no such line runs
-# as the handbook agent.
+# The agent documents, one per handbook agent: front matter holding the
+# agent's definition, a `lib` attribute saying how the lib renders, and an
+# `include` of the composition document. An agent runs a role under
+# prompts/roles/ with the rendered document as its system prompt. The files
+# under `.claude/agents/` are generated at each entry point and not tracked. A
+# role's document names its agent in an `agent` attribute. A role with no such
+# attribute runs as the handbook agent.
+AGENT_DIR = REPO_ROOT / "prompts" / "agents"
 AGENT_PATH = REPO_ROOT / ".claude" / "agents" / "handbook.md"
-AGENT_META = {
-    "name": "handbook",
-    "description": "The handbook, with the lib as an index: one line per "
-                   "component.",
-    "model": "opus",
-    "effort": "high",
-    "tools": "Read, Grep, Glob, Bash, Edit, Write",
-}
-EXPANDED_AGENT_META = {
-    **AGENT_META,
-    "name": "handbook-expanded",
-    "description": "The handbook, with the lib's full interface: every "
-                   "component's relations and their docs.",
-}
-AGENT_LINE_RE = re.compile(r"\AAgent: (\S+)\n+")
-
-
-def role_agent(text: str) -> tuple[str, str]:
-    """A role's agent and its text: the agent its first line names, or the
-    handbook agent, and the text after that line."""
-    m = AGENT_LINE_RE.match(text)
-    if m is None:
-        return AGENT_META["name"], text
-    return m.group(1), text[m.end():]
+AGENT_NAMES = ("handbook", "handbook-expanded")
 
 
 ROLE_NOTE = "Your prompt opens with your role, then its brief. Follow the role.\n\n"
-
-# The docs the procedure reads, in reading order: the theory, then its form,
-# then what the corpus made of it.
-DOCS = ("procedure.md", "principles.md", "style.md", "patterns.md", "keywords.md",
-        "lib-protocol.md", "former-names.md")
-# Catalog docs: entries are independent and a session uses few, so the context
-# carries the index and the session reads the entry it needs.
-INDEX = {"patterns.md"}
-# The docs the index edition carries as a heading index: the preamble and the
-# headings under it, with the sections left in the file.
-HEADING_INDEX = {"procedure.md", "lib-protocol.md", "keywords.md"}
 
 
 def lib_sources(root: Path = LIB_SRC) -> list[tuple[Path, str]]:
@@ -243,7 +214,7 @@ def lib_entries(text: str) -> str:
             out.append(f"- {names}")
             continue
         para = " ".join(_prose(lines[block[0] - 1:block[1]], ITEM_DOC).split("\n\n")[0].split())
-        out.append(f"- {names} — {gist(para)}")
+        out.append(f"- {names} — {nm.gist(para)}")
     return "\n\n".join(p for p in (*prose, "\n".join(out)) if p) + "\n"
 
 
@@ -304,127 +275,162 @@ def lib_doc(text: str) -> str:
     return "\n\n".join(p for p in parts if p) + "\n"
 
 
-def gist(para: str) -> str:
-    """An entry's first sentence, up to the first period that whitespace
-    follows — the catalog docs' convention is that it stands alone under its
-    title."""
-    return re.split(r"(?<=\.)\s+", para, maxsplit=1)[0]
-
-
-def entry_index(text: str, source: str) -> str:
-    """A `## ` catalog doc as its preamble and one line per entry. The
-    preamble says what the doc is, which every entry stands on."""
-    blocks = re.split(r"^## ", text, flags=re.M)
-    preamble = "\n\n".join(p for p in blocks[0].split("\n\n")[1:] if p.strip())
-    out: list[str] = []
-    for block in blocks[1:]:
-        title, _, rest = block.partition("\n")
-        body = re.sub(r"```.*?```", "", rest, flags=re.S)
-        opening = ""
-        for para in body.split("\n\n"):
-            para = " ".join(para.split())
-            if para and not para.startswith(("#", "-", "|", "*")):
-                opening = gist(para)
-                break
-        out.append(f"- **{title.strip()}** — {opening}" if opening
-                   else f"- **{title.strip()}**")
-    note = f"One line per entry. Read {source} for the entries you need."
-    return "\n\n".join(p for p in (preamble.strip(), note, "\n".join(out)) if p) + "\n"
-
-
-HEADING_NOTE = ("The sections are in the source: read a section in {rel} when "
-                "the rule you need is under it.")
-
-
-def heading_index(text: str, source: str) -> str:
-    """A doc as its preamble and one line per heading under its title, in
-    document order, indented by heading level. The preamble says what the doc
-    is, which every section stands on."""
-    body = re.sub(r"^```.*?^```", "", text, flags=re.S | re.M)
-    head = re.split(r"^## ", body, maxsplit=1, flags=re.M)[0]
-    preamble = "\n\n".join(p for p in head.split("\n\n")[1:] if p.strip())
-    out = [" " * 4 * (len(m.group(1)) - 2) + f"- **{m.group(2).strip()}**"
-           for m in re.finditer(r"^(##+) (.*)$", body, flags=re.M)]
-    note = HEADING_NOTE.format(rel=source)
-    return "\n\n".join(p for p in (preamble.strip(), note, "\n".join(out)) if p) + "\n"
-
-
-HEADER = ("# Handbook\n\nThe solver docs and the lib as a session reads "
-          "them. Before editing one of these files, open and read it, "
-          "because it may contain editing rules not visible here.\n")
-
-NOTES_DROPPED = ("Cited tasks carry worked applications of the principle "
-                 "they sit under. Grep the task id in {rel} to read one.")
-SECTION_DEFERRED = ("The {title} section is in the source: read it in {rel} "
-                    "when a term is unclear.")
-
-
-def drop_deferred(text: str) -> tuple[str, list[str]]:
-    """A doc without its deferred sections, and their titles. A heading
-    marked `<!-- deferred -->` opens a section a session reads on demand; the
-    section runs to the next heading of its level or above."""
-    titles: list[str] = []
-    out: list[str] = []
-    level = 0   # the deferred section's heading level, 0 outside one
-    for line in text.splitlines(keepends=True):
-        m = re.match(r"(#+) (.*?)( <!-- deferred -->)?\n", line)
-        if m and level and len(m.group(1)) <= level:
-            level = 0
-        if m and m.group(3):
-            titles.append(m.group(2))
-            level = len(m.group(1))
-        if not level:
-            out.append(line)
-    return "".join(out), titles
-
-
-def strip_comments(text: str) -> tuple[str, bool]:
-    """A doc without its opening editing note, and whether any comment past
-    that note was dropped. The comments hold notes to the doc's editor."""
-    text = re.sub(r"\A<!--.*?-->\s*", "", text, flags=re.S)
-    stripped = uncommented(text)
-    return stripped, stripped != text
-
-
 def interface_path(src: Path) -> Path:
     """The interface file beside a lib source: the `.md` of the same stem."""
     return src.with_suffix(".md")
 
 
-def render(docs: Path = DOCS_DIR, lib: Path = LIB_SRC,
-           lib_index: bool = False) -> str:
-    """The handbook: the docs and the lib's files, each under a heading naming
-    its file. The lib renders as its interface, or under `lib_index` as an
-    index pointing at the interface file beside each source. Under `lib_index`
-    the docs in `HEADING_INDEX` render as a heading index."""
-    parts: list[str] = []
-    for name in DOCS:
-        rel = f"docs/wf-solver/{name}"
-        text, titles = drop_deferred((docs / name).read_text())
-        text, dropped = strip_comments(text)
-        notes: list[str] = []
-        if dropped:
-            notes.append(NOTES_DROPPED.format(rel=rel))
-        notes += [SECTION_DEFERRED.format(title=t, rel=rel) for t in titles]
-        note = "".join(f"\n\n{n}" for n in notes)
-        if name in INDEX:
-            index = entry_index(text, rel)
-        elif lib_index and name in HEADING_INDEX:
-            index = heading_index(text, rel)
-        else:
-            index = None
-        if index is None:
-            parts.append(f"\n---\n\n# {rel}{note}\n\n{text}")
-        else:
-            parts.append(f"\n---\n\n# {rel} — index{note}\n\n{index}")
+def lib_part(lib: Path = LIB_SRC, kind: str = "interface") -> str:
+    """The lib's files, each under a heading naming its file: as each file's
+    interface, or as an index pointing at the interface file beside each
+    source."""
+    parts = []
     for i, (path, text) in enumerate(lib_sources(lib)):
         rel = Path("programs") / path.relative_to(lib.parent)
-        if lib_index:
+        if kind == "index":
             note = f"\n\n{INTERFACE_NOTE}" if i == 0 else ""
-            parts.append(f"\n---\n\n# {rel} — index{note}\n\n{lib_entries(text)}")
+            parts.append(f"\n---\n\n## {rel} — index{note}\n\n{lib_entries(text)}")
         else:
-            parts.append(f"\n---\n\n# {rel}\n\n{lib_doc(text)}")
-    return HEADER + "".join(parts)
+            parts.append(f"\n---\n\n## {rel}\n\n{lib_doc(text)}")
+    return "".join(parts)
+
+
+def agent_document(name: str, agents: Path = AGENT_DIR) -> nm.Node:
+    """One agent document, parsed."""
+    return nm.Registry(REPO_ROOT).load(agents / f"{name}.md")
+
+
+def agent_meta(name: str, agents: Path = AGENT_DIR) -> dict[str, str]:
+    """An agent's definition, as its document's front matter gives it."""
+    out: dict[str, str] = {}
+    for line in agent_document(name, agents).front.split("\n"):
+        if ": " in line and not line.startswith("---"):
+            key, value = line.split(": ", 1)
+            out[key.strip()] = value.strip().strip('"')
+    return out
+
+
+def render(name: str = "handbook-expanded", lib: Path = LIB_SRC,
+           agents: Path = AGENT_DIR) -> str:
+    """The handbook an agent document composes: its body, with the doc each
+    include names put in place, then the lib as its `lib` attribute says."""
+    registry = nm.Registry(REPO_ROOT)
+    document = registry.load(agents / f"{name}.md")
+    return (nm.render(document, registry)
+            + lib_part(lib, (document.attr("lib") or "interface").strip()))
+
+
+def _doc_path(name: str, docs: Path = DOCS_DIR) -> Path:
+    """The handbook doc a reader names: the slug of its title, as a render
+    shows it, its file stem, or the link target a document carries,
+    `<stem>.md`."""
+    if name.endswith(".md"):
+        name = name[:-3]
+    want = nm.slug(name)
+    for path in sorted(docs.glob("*.md")):
+        if path.stem == want or path.stem == name:
+            return path
+        title = nm.parse(path.read_text(), path.name).children
+        heads = [c for c in title if c.kind == nm.HEADING]
+        if heads and nm.slug(heads[0].text) == want:
+            return path
+    raise SystemExit(f"no handbook doc named `{name}`")
+
+
+def section_text(where: str, docs: Path = DOCS_DIR) -> str:
+    """One section of a handbook doc in full, named `<doc>#<section>`. Each
+    part is the title a render shows, slugified, so a reader runs the command
+    off the lines in front of them. A render leaves no line out, so the
+    section arrives with the glosses and the drafts an edition excludes."""
+    name, _, ident = where.partition("#")
+    registry = nm.Registry(REPO_ROOT)
+    document = registry.load(_doc_path(name.strip(), docs))
+    node = registry.ids[document.source].get(nm.slug(ident.strip()))
+    if node is None:
+        raise SystemExit(
+            f"no section `{ident.strip()}` in {registry.rel(document)}")
+    body = nm.Node(nm.DOCUMENT, source=document.source)
+    body.children = [node]
+    return nm.render(body, registry)
+
+
+# The documents a workflow fills: the sections it sends as briefs, keyed by
+# the name the script asks for.
+WORKFLOW_DOCS = {
+    "retro": REPO_ROOT / "prompts" / "retro.md",
+    "cleanup-sweep": REPO_ROOT / "prompts" / "cleanup-sweep.md",
+}
+
+# The workflow scripts, and the two comment lines that mark the region of
+# each holding its return schemas. The region is read out on its own, so the
+# lines between the markers evaluate without the rest of the script.
+WORKFLOW_SCRIPTS = {
+    "retro": REPO_ROOT / ".claude" / "workflows" / "retro.js",
+    "cleanup-sweep": REPO_ROOT / ".claude" / "workflows" / "cleanup-sweep.js",
+}
+SCHEMA_OPEN = "---- schemas"
+SCHEMA_CLOSE = "---- schemas end"
+
+
+def workflow_schemas(name: str) -> dict:
+    """The return schemas a workflow script holds, by constant name. The
+    region between its two marker lines is sliced out and evaluated, so the
+    schemas stay in the script and a reader outside it still gets them."""
+    path = WORKFLOW_SCRIPTS.get(name)
+    if path is None or not path.is_file():
+        return {}
+    lines = path.read_text().split("\n")
+    opens = [i for i, ln in enumerate(lines) if ln.endswith(SCHEMA_OPEN)]
+    closes = [i for i, ln in enumerate(lines) if ln.endswith(SCHEMA_CLOSE)]
+    if not opens or not closes:
+        return {}
+    region = "\n".join(lines[opens[0] + 1:closes[0]])
+    names = re.findall(r"^const ([A-Z_]+) = ", region, re.M)
+    script = f"{region}\nconsole.log(JSON.stringify({{{', '.join(names)}}}))"
+    done = subprocess.run(["node", "--input-type=module", "-"], input=script,
+                          capture_output=True, text=True)
+    if done.returncode != 0:
+        raise SystemExit(f"{path.name}: the schema region did not evaluate\n"
+                         f"{done.stderr.strip()}")
+    return json.loads(done.stdout)
+
+
+def workflow_bundle(name: str, roles: Path = ROLE_DIR) -> dict:
+    """What a workflow run needs: the text of each role it reaches, each
+    section of its document as a template with the `{{names}}` left standing
+    for the script to fill, and the return schemas its script holds, read out
+    of the script's own marked region."""
+    registry = nm.Registry(REPO_ROOT)
+    document = registry.load(WORKFLOW_DOCS[name])
+    def rendered(node: nm.Node) -> str:
+        body = nm.Node(nm.DOCUMENT, source=document.source)
+        body.children = list(node.children)
+        return nm.render(body, registry).strip()
+
+    ids = registry.ids[document.source]
+    # A partial the script fills is a section like any other, so the bundle
+    # carries the `###` under Partials beside the `##` briefs.
+    sections = {i: rendered(n) for i, n in ids.items() if n.depth in (2, 3)
+                and i != "partials"}
+    return {
+        "roles": {r: role_text(r, roles) for r in _workflow_roles(name, roles)},
+        "sections": sections,
+        "schemas": workflow_schemas(name),
+    }
+
+
+def _workflow_roles(name: str, roles: Path) -> list[str]:
+    """Every role under `roles`, since a run picks the ones it reaches."""
+    return sorted(p.stem for p in roles.glob("*.md"))
+
+
+def role_text(name: str, roles: Path = ROLE_DIR) -> str:
+    """One role document under `roles`, as the session that spawns the role
+    reads it: `Agent: <name>` on the first line, then the text the agent's
+    prompt opens with."""
+    registry = nm.Registry(REPO_ROOT)
+    agent, text = nm.role(registry.load(roles / f"{name}.md"), registry)
+    return f"Agent: {agent}\n\n{text}"
 
 
 def agent_prompt(handbook: str) -> str:
@@ -432,11 +438,10 @@ def agent_prompt(handbook: str) -> str:
     return ROLE_NOTE + handbook
 
 
-def agent_definition(handbook: str, meta: dict[str, str] = AGENT_META) -> str:
-    """A handbook agent's definition file: `meta` as frontmatter, then the
-    prompt."""
-    front = "\n".join(f"{k}: {v}" for k, v in meta.items())
-    return f"---\n{front}\n---\n{agent_prompt(handbook)}"
+def agent_definition(document: nm.Node, handbook: str) -> str:
+    """A handbook agent's definition file: the agent document's front matter
+    as it stands, then the prompt."""
+    return f"{document.front}\n{agent_prompt(handbook)}"
 
 
 def expanded_agent_path(path: Path = AGENT_PATH) -> Path:
@@ -471,14 +476,17 @@ def write_interfaces(lib: Path = LIB_SRC) -> list[Path]:
             for path, text in lib_sources(lib)]
 
 
-def write_agent(path: Path = AGENT_PATH, docs: Path = DOCS_DIR, lib: Path = LIB_SRC) -> Path:
+def write_agent(path: Path = AGENT_PATH, lib: Path = LIB_SRC,
+                agents: Path = AGENT_DIR) -> Path:
     """Write both handbook agent definitions and the lib's interface files,
     and return the handbook agent's path. `path` holds the handbook agent;
     `expanded_agent_path(path)` holds the expanded agent."""
     write_interfaces(lib)
-    _write_whole(expanded_agent_path(path),
-                 agent_definition(render(docs, lib), EXPANDED_AGENT_META))
-    return _write_whole(path, agent_definition(render(docs, lib, lib_index=True)))
+    for name in AGENT_NAMES:
+        out = path if name == AGENT_NAMES[0] else expanded_agent_path(path)
+        _write_whole(out, agent_definition(agent_document(name, agents),
+                                           render(name, lib, agents)))
+    return path
 
 
 # The files every codex session on the repo reads, in the desktop app or the
@@ -527,13 +535,15 @@ extends = ":workspace"
 """
 
 
-def write_codex(root: Path = REPO_ROOT, docs: Path = DOCS_DIR, lib: Path = LIB_SRC) -> list[Path]:
+def write_codex(root: Path = REPO_ROOT, lib: Path = LIB_SRC,
+                agents: Path = AGENT_DIR) -> list[Path]:
     """Write the codex files under `root` and return their paths."""
     claude_md = (root / "CLAUDE.md").read_text()
     style_path = root / CODEX_STYLE
     style = style_path.read_text() if style_path.exists() else None
     return [_write_whole(root / "AGENTS.md",
-                         render(docs, lib) + "\n---\n\n# CLAUDE.md\n\n" + claude_md),
+                         render("handbook-expanded", lib, agents)
+                         + "\n---\n\n# CLAUDE.md\n\n" + claude_md),
             _write_whole(root / CODEX_CONFIG, codex_config(style))]
 
 

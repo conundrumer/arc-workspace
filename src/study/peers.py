@@ -21,7 +21,7 @@ from functools import cache
 from pathlib import Path
 
 from arc.task import load as load_task
-from dl.context import strip_comments
+from dl.context import uncommented
 from dl.dlparse import Comp, Decl, ParseError, TypeDecl, parse
 from dl.features_run import ABSENT, UNDEF, Key, _pair_keys, report_of
 from dl.paths import REPO_ROOT, SOLVERS_DIR
@@ -160,7 +160,7 @@ def normalize_source(text: str) -> str:
     """A program's text with its comments gone and its spacing flattened,
     so two files that differ only in what they say about themselves
     normalize alike."""
-    text = strip_comments(text)[0]
+    text = uncommented(text)
     text = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
     text = re.sub(r"//[^\n]*", " ", text)
     return " ".join(text.split())

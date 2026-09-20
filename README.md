@@ -66,5 +66,5 @@ uv run python scripts/materialize.py
 ## Docs
 
 - [`docs/arcpatches.md`](docs/arcpatches.md) — `.arcpatch` format: file layout, verbs, variants, alts
-- [`docs/wf-solver/`](docs/wf-solver/) — the docs a solver session reads
+- [`docs/handbook/`](docs/handbook/) — the docs a solver session reads
 - [`docs/hardware-probe.md`](docs/hardware-probe.md) — dev machine specs
