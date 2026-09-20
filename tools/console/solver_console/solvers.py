@@ -6,9 +6,9 @@ import json
 import re
 from pathlib import Path
 
-from dl.annotations import merged_blocks
+import controlled_markdown as nm
+from dl.annotations import merged_blocks, witness_blocks
 from dl.annotations import read as read_annotations
-from dl.annotations import witness_blocks
 from dl.corpus import literal_count
 from dl.dlparse import ParseError, parse
 from dl.witness import load_witnesses, witness_path
@@ -43,9 +43,9 @@ def watched_paths(item_id: str) -> dict[str, Path]:
     for p in sorted(config.LIB_DIR.glob("*.dl")):
         paths[f"programs/lib/{p.name}"] = p
     for p in sorted(config.DOCS.glob("*.md")):
-        paths[f"docs/wf-solver/{p.name}"] = p
+        paths[f"{nm.relative(config.DOCS, config.ROOT)}/{p.name}"] = p
     for p in sorted(config.ROLE_DIR.glob("*.md")):
-        paths[f".claude/roles/{p.name}"] = p
+        paths[f"{nm.relative(config.ROLE_DIR, config.ROOT)}/{p.name}"] = p
     return paths
 
 
@@ -53,7 +53,10 @@ def watched_hashes(item_id: str) -> dict[str, str]:
     return {rel: file_hash(p) for rel, p in watched_paths(item_id).items()}
 
 
+# The proposal entries, which stay under docs/wf-solver/ while the handbook
+# docs move.
 PROP_DIR = "docs/wf-solver/proposals"
+PROPS = config.ROOT / PROP_DIR
 
 
 # The console's approval tag, by its complement: a solver the user has not
@@ -239,24 +242,22 @@ def append_review(item_id: str, line: str) -> bool:
     return True
 
 
-# A citation a doc holds for a solver the user has not approved yet: the line
-# names the task and carries the text the doc takes once approval comes.
-PENDING_CITE = "^([ \\t]*)<!-- draft: {task} \u2014 (.*) -->$"
-
+# A citation is the task id as a statement, with its gloss as the statement
+# under it. A citation the user has not approved yet carries a `draft`
+# annotation, which approval takes out.
+#
+# A pending citation, whose gloss follows the `draft` line.
+PENDING_CITE = ("^([ \\t]*)- {task}$\n\\1    \\+ draft$\n"
+                "(?=\\1    - .*$\n\\1        \\+ gloss$)")
 # The citation as placed.
-PLACED_CITE = "^([ \\t]*)- {task} <!-- (.*) -->$"
-
-# A pending citation read rather than placed: the task it names and its gloss.
-ANY_PENDING = re.compile(r"^[ \t]*<!-- draft: (\w+) \u2014 (.*) -->$")
-# The heading a marker stands under.
-DOC_HEADING = re.compile(r"^#+\s+(.*?)\s*$")
+PLACED_CITE = "^([ \\t]*)- {task}$\n(?=\\1    - .*$\n\\1        \\+ gloss$)"
 
 # The pending citations as last read, keyed on the docs' state.
 CITE_CACHE: tuple[tuple, dict[str, list[str]]] | None = None
 
 
 def docs_state() -> tuple:
-    """The docs under docs/wf-solver/ as they stand."""
+    """The handbook docs as they stand."""
     out = []
     for p in sorted(config.DOCS.glob("*.md")):
         try:
@@ -278,26 +279,40 @@ def pending_cites() -> dict[str, list[str]]:
         return CITE_CACHE[1]
     out: dict[str, list[str]] = {}
     for path in sorted(config.DOCS.glob("*.md")):
-        head = ""
-        for line in path.read_text().splitlines():
-            if m := DOC_HEADING.match(line):
-                head = m.group(1)
-            elif m := ANY_PENDING.match(line):
-                out.setdefault(m.group(1), []).append(
-                    f"{path.name} {head} \u2014 {m.group(2)}")
+        try:
+            document = nm.parse(path.read_text(), path.name)
+        except nm.NestedMarkdownError:
+            continue
+        _collect_pending(document, "", path.name, out)
     CITE_CACHE = (state, out)
     return out
 
 
+def _collect_pending(node, head: str, name: str,
+                     out: dict[str, list[str]]) -> None:
+    """The pending citations under `node`, keyed by task, each with the doc,
+    the heading it stands under, and its gloss."""
+    for child in node.children:
+        if child.kind == nm.HEADING:
+            _collect_pending(child, child.text, name, out)
+            continue
+        if child.kind == nm.CONTENT and child.has("draft"):
+            gloss = next((g.text for g in child.children
+                          if g.kind == nm.CONTENT and g.has("gloss")), "")
+            out.setdefault(child.text, []).append(
+                f"{name} {head} \u2014 {gloss}")
+        _collect_pending(child, head, name, out)
+
+
 def place_citations(item_id: str) -> list[Path]:
-    """Place the solver's pending citations: in every doc under
-    docs/wf-solver/, a line left pending for this task becomes the citation it
-    carries. Returns the files changed."""
+    """Place the solver's pending citations: in every handbook doc, a
+    citation left pending for this task loses its `draft` line. Returns the
+    files changed."""
     pat = re.compile(PENDING_CITE.format(task=re.escape(item_id)), re.M)
     changed: list[Path] = []
     for path in sorted(config.DOCS.glob("*.md")):
         text = path.read_text()
-        out = pat.sub(rf"\1- {item_id} <!-- \2 -->", text)
+        out = pat.sub(rf"\g<1>- {item_id}\n", text)
         if out != text:
             path.write_text(out)
             changed.append(path)
@@ -305,14 +320,14 @@ def place_citations(item_id: str) -> list[Path]:
 
 
 def withdraw_citations(item_id: str) -> list[Path]:
-    """Return the solver's citations to pending: in every doc under
-    docs/wf-solver/, a citation of this task becomes the pending line approval
-    placed it from. Returns the files changed."""
+    """Return the solver's citations to pending: in every handbook doc, a
+    citation of this task takes back the `draft` line approval removed.
+    Returns the files changed."""
     pat = re.compile(PLACED_CITE.format(task=re.escape(item_id)), re.M)
     changed: list[Path] = []
     for path in sorted(config.DOCS.glob("*.md")):
         text = path.read_text()
-        out = pat.sub(rf"\1<!-- draft: {item_id} — \2 -->", text)
+        out = pat.sub(rf"\g<1>- {item_id}\n\g<1>    + draft\n", text)
         if out != text:
             path.write_text(out)
             changed.append(path)
@@ -361,12 +376,12 @@ def _block_fields(block) -> dict:
 
 def prop_path(rel: str) -> Path:
     """The entry file a repo-relative path names."""
-    return config.DOCS / "proposals" / Path(rel).name
+    return PROPS / Path(rel).name
 
 
 def prop_files() -> dict[str, str]:
-    """Every entry under docs/wf-solver/proposals/, by repo-relative path."""
-    d = config.DOCS / "proposals"
+    """Every proposal entry, by repo-relative path."""
+    d = PROPS
     if not d.is_dir():
         return {}
     return {f"{PROP_DIR}/{p.name}": p.read_text() for p in sorted(d.glob("*.md"))}

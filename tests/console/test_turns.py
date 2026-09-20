@@ -110,7 +110,8 @@ def test_reader_survives_a_bad_event(srv, monkeypatch):
 def test_two_callers_building_the_appendix_at_once_each_get_it_whole(srv):
     """A rename publishes the file, and two callers writing one file between
     them would publish it half written."""
-    (srv.DOCS / "style.md").write_text("# Style\n\n" + "Every word of it.\n" * 60000)
+    (srv.DOCS / "style.md").write_text(
+        "+ id: style\n\n# Style\n" + "- Every word of it.\n" * 60000)
     text = srv.append_path().read_text()
     srv.append_path().unlink()          # as the first build after a docs change
     out, ready = [], threading.Barrier(6)

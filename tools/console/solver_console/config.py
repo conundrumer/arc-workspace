@@ -18,9 +18,11 @@ RETRO_FILE = STATE_DIR / "retro.json"
 SOLVERS = ROOT / "programs" / "solvers"
 LIB = ROOT / "programs" / "lib.dl"
 LIB_DIR = ROOT / "programs" / "lib"
-DOCS = ROOT / "docs" / "wf-solver"
+DOCS = ROOT / "docs" / "handbook"
 TASKS = ROOT / "data" / "tasks"
-ROLE_DIR = ROOT / ".claude" / "roles"
+ROLE_DIR = ROOT / "prompts" / "roles"
+PROMPTS = ROOT / "prompts" / "console.md"
+AGENTS = ROOT / "prompts" / "agents"
 REF_DIR = (ROOT.parent / "arc-synth-bun").resolve()
 QUEUE_CACHE = ROOT / "scripts" / ".queue-cache"
 
@@ -190,12 +192,6 @@ COMMITTER_FLAGS = [
     "--exclude-dynamic-system-prompt-sections",
 ]
 
-# One survey of a lib proposals entry, which `scripts/survey.py` runs.
-SURVEY_BRIEF = """Survey the operation the entry `{entry}` specifies, over the scope ({scope}).
-
-Write the files you need under `{scratch}`, and change no file outside that path.
-
-Your reply is the report, its four parts and nothing besides them."""
 SURVEY_TIMEOUT = 3600  # seconds a survey session may run
 SURVEY_FLAGS = [
     # The stream goes to a log under state/, so a run in progress can be read.

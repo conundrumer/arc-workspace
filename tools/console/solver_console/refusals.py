@@ -146,7 +146,7 @@ def retry_refusal(it: dict, phase: str, kind: str, count: int) -> None:
             workers.launch(it, prompts.refused_callout_brief(), phase, trigger="callout",
                    admitted=True)
         else:
-            workers.launch(it, prompts.REFUSED_HANDOFF_BRIEF, phase, trigger="handoff",
+            workers.launch(it, prompts.refused_handoff_brief(), phase, trigger="handoff",
                    handoff=True, admitted=True)
     except (store.Reject, OSError) as exc:
         store.say(it, store.event(f"retry failed: {exc}"), sess=phase)

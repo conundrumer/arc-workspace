@@ -32,7 +32,7 @@ def submit_comment(it: dict, text: str, sess: str | None = None) -> None:
         store.say(it, {"kind": "you", "text": text}, sess=phase)
         it["state"] = store.COMMENTED
         it["updated"] = False
-        workers.launch(it, prompts.HANDOFF_BRIEF, phase, handoff=True)
+        workers.launch(it, prompts.handoff_brief(), phase, handoff=True)
         return
     # a comment goes to one session, so only that session has to be idle —
     # an earlier stage can talk while the current pass runs

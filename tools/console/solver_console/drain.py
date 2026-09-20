@@ -94,7 +94,7 @@ def resend_handoff(it: dict, phase: str) -> None:
     """Ask the stage for its handoff block once more. Caller holds LOCK."""
     it["state"] = store.RUNNING
     store.say(it, store.event("handoff ask resent"), sess=phase)
-    workers.launch(it, prompts.HANDOFF_BRIEF, phase, trigger="handoff", handoff=True,
+    workers.launch(it, prompts.handoff_brief(), phase, trigger="handoff", handoff=True,
                    admitted=True)
 
 

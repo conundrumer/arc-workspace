@@ -26,9 +26,9 @@ import threading
 import time
 from pathlib import Path
 
-from dl.context import AGENT_META
+from dl.context import AGENT_NAMES, agent_meta
 
-from . import config, prompts
+from . import config, prompts, solvers
 
 # The line the protocol reads, and the line that says the entry is closed.
 SURVEY_LINE = re.compile(r"^Survey:[ \t]*(\d{4}-\d{2}-\d{2} \d{2}:\d{2})", re.M)
@@ -46,7 +46,7 @@ def entry_path(name: str) -> Path:
     if path.suffix != ".md":
         path = path.with_name(path.name + ".md")
     if len(path.parts) == 1:
-        path = config.DOCS / "proposals" / path
+        path = solvers.PROPS / path
     elif not path.is_absolute():
         path = config.ROOT / path
     return path.resolve()
@@ -54,7 +54,7 @@ def entry_path(name: str) -> Path:
 
 def proposals_dir() -> Path:
     """The directory the entries live in."""
-    return (config.DOCS / "proposals").resolve()
+    return solvers.PROPS.resolve()
 
 
 def in_proposals(path: Path) -> bool:
@@ -188,9 +188,10 @@ def survey_session() -> list[str]:
     appendix that agent reads as its system prompt, and the agent's model and
     effort."""
     agent, _ = prompts.role("survey")
-    append = prompts.append_path(index=agent == AGENT_META["name"])
+    meta = agent_meta(AGENT_NAMES[0], config.AGENTS)
+    append = prompts.append_path(index=agent == meta["name"])
     return ["--system-prompt-file", str(append),
-            "--model", AGENT_META["model"], "--effort", AGENT_META["effort"]]
+            "--model", meta["model"], "--effort", meta["effort"]]
 
 
 def survey_kill(proc: subprocess.Popen) -> None:
@@ -222,9 +223,9 @@ def survey_cmd(path: Path, plan: dict, run_dir: Path) -> list[str]:
     """
     scope = ("every solver" if plan["scope"] is None
              else "the solvers " + ", ".join(plan["scope"]))
-    brief = prompts.role_text("survey") + "\n\n" + config.SURVEY_BRIEF.format(
-        entry=path.relative_to(config.ROOT), scope=scope,
-        scratch=run_dir.relative_to(config.ROOT))
+    brief = prompts.role_text("survey") + "\n\n" + prompts.survey_brief(
+        entry=str(path.relative_to(config.ROOT)), scope=scope,
+        scratch=str(run_dir.relative_to(config.ROOT)))
     return [config.CLAUDE, "-p", brief, *config.SURVEY_FLAGS, *survey_session()]
 
 

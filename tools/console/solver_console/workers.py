@@ -78,7 +78,7 @@ def launch(it: dict, message: str, phase: str, trigger: str | None = None,
         # A resident worker keeps the appendix its system prompt was built
         # from, so its cached prefix holds; it hears that the sources moved on.
         if worker is not None and str(prompts.append_path()) != it["append"]:
-            message = ("<system-reminder>Your system prompt's copy of docs/wf-solver and "
+            message = ("<system-reminder>Your system prompt's copy of docs/handbook and "
                        "the lib is behind the files. Before you "
                        "use a primitive, read `uv run python scripts/context.py` "
                        "or the lib files you need.</system-reminder>\n\n"
@@ -377,10 +377,10 @@ def escalate_turn(it: dict, phase: str, step: str, handoff: bool) -> None:
     either way."""
     count = it.get("runaway", {}).get(phase, 0)
     if step == "nudge":
-        launch(it, prompts.NUDGE_BRIEF, phase, trigger="nudge", handoff=handoff,
+        launch(it, prompts.nudge_brief(), phase, trigger="nudge", handoff=handoff,
                admitted=True, escalated=True)
     elif store.next_stage(it, phase) and count <= 2:
-        launch(it, prompts.BAIL_BRIEF, phase, trigger="bail", handoff=True,
+        launch(it, prompts.bail_brief(), phase, trigger="bail", handoff=True,
                admitted=True, escalated=True)
     else:
         store.turn_died(it, phase)

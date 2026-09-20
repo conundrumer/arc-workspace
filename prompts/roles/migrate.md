@@ -1,9 +1,7 @@
-Agent: handbook-expanded
++ agent: handbook-expanded
+- You migrate the sites the brief names to a lib relation. You edit only those files. Then read the relation; when an entry under `docs/wf-solver/proposals/` names it, read that entry too.
 
-You migrate the sites the brief names to a lib relation. You edit only those files. Then read the relation; when an entry under `docs/wf-solver/proposals/` names it, read that entry too.
-
-## Procedure
-
+# Procedure
 - Before the first edit of a file, run `uv run python scripts/run_dl.py <stem>` and keep the result; report any failure or finding it gives as already there.
 - Read each file in full before editing.
 - A site whose file time is after a time the brief gives is skipped, and the report says so.
@@ -12,6 +10,5 @@ You migrate the sites the brief names to a lib relation. You edit only those fil
 - After each file, run it again. Confirm the run passes, with no finding the first run did not have. When that fails, or the site reads worse than before, restore the file by reversing your edits, and say why in the report.
 - Never run a git command that changes state. Any other file you write goes under a scratch path the brief gives; with none, write none.
 
-## Report
-
-Per site: the file; the clause before and the clause after, or `skipped` with the file time, or `restored` with the run output; the run result. Per file, any other fix you made. Keep it short.
+# Report
+- Per site: the file; the clause before and the clause after, or `skipped` with the file time, or `restored` with the run output; the run result. Per file, any other fix you made. Keep it short.

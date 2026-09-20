@@ -6,6 +6,7 @@ tmp dir, so its module-level state and paths never touch the real workspace.
 
 import importlib.util
 import json
+import os
 import queue
 import sys
 import threading
@@ -13,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from dl.context import DOCS
+from dl.context import DOCS_DIR, EDITING_DOC
 
 ROOT = Path(__file__).resolve().parents[2]
 SERVER_PY = ROOT / "tools" / "console" / "server.py"
@@ -99,6 +100,11 @@ def tmp_path(workdir, request):     # noqa: A002 — replaces pytest's own
     return path
 
 
+def handbook_stems():
+    """The docs the handbook's composition document includes."""
+    return sorted(p.stem for p in DOCS_DIR.glob("*.md") if p.name != EDITING_DOC)
+
+
 def fake_queue(n, order, held=()):
     """A queue of t00, t01, ... in place of the script: the top `n` rows the
     caller does not already hold."""
@@ -121,8 +127,27 @@ def srv(tmp_path, monkeypatch):
         d = tmp_path / name.lower()
         d.mkdir()
         monkeypatch.setattr(s, name, d)
-    for name in DOCS:
-        (s.DOCS / name).write_text(f"# {name}\n")
+    # A stub per handbook doc, a composition document that includes them by
+    # relative path, and an agent document over that, so a render over this
+    # tree resolves every include without the real text.
+    for stem in handbook_stems():
+        (s.DOCS / f"{stem}.md").write_text(f"# {stem}\n- A stub.\n")
+    handbook = tmp_path / "handbook.md"
+    rel = os.path.relpath(s.DOCS, handbook.parent)
+    handbook.write_text("# Handbook\n- A stub.\n"
+                        + "".join(f"* include: {rel}/{stem}.md\n"
+                                  for stem in handbook_stems()))
+    agents = tmp_path / "prompt-agents"
+    agents.mkdir()
+    back = os.path.relpath(handbook, agents)
+    for name, lib in (("handbook", "index"), ("handbook-expanded", "interface")):
+        (agents / f"{name}.md").write_text(
+            f"---\nname: {name}\ndescription: A stub.\nmodel: opus\n"
+            f"effort: high\ntools: Read, Grep\n---\n\n"
+            f"+ lib: {lib}\n\n* include: {back}\n")
+    monkeypatch.setattr(s, "AGENTS", agents)
+    # The proposals dir is its own name, so the test tree sets it too.
+    monkeypatch.setattr(s, "PROPS", s.DOCS / "proposals")
     monkeypatch.setattr(s, "AGENT_PATH", tmp_path / "agents" / "handbook.md")
     monkeypatch.setattr(s, "queue_pick", fake_queue)
     s._test_stagger_launch = s.stagger_launch

@@ -22,10 +22,9 @@ Match: a rule with a Dir column.
 
 RESULT_EVENT = '{"type":"result","is_error":false,"result":"Callers: none."}'
 
-# A stand-in for .claude/roles/survey.md, which names no agent.
-ROLE = """Survey the operation the entry names, over the scope the brief gives.
-
-The report holds its four parts.
+# A stand-in for prompts/roles/survey.md, which names no agent.
+ROLE = """- Survey the operation the entry names, over the scope the brief gives.
+- The report holds its four parts.
 """
 
 
@@ -65,7 +64,7 @@ def fake_claude(tmp_path, body, name="claude.sh"):
 def local(srv, sv, tmp_path, monkeypatch, body=f"echo '{RESULT_EVENT}'\n"):
     """Point the run at the test's own tree and at a fake CLI. The role the
     brief opens with sits in that tree as well: the run reads the file before
-    it launches, and a writer replacing the one under .claude/roles/ would
+    it launches, and a writer replacing the one under prompts/roles/ would
     fail the read."""
     roles = tmp_path / "roles"
     roles.mkdir(exist_ok=True)
@@ -84,6 +83,7 @@ def test_a_file_outside_the_proposals_directory_is_not_an_entry(sv, srv, tmp_pat
     monkeypatch.setattr(srv, "ROOT", tmp_path)
     monkeypatch.setattr(srv, "DOCS", tmp_path / "docs" / "wf-solver")
     srv.DOCS.mkdir(parents=True)
+    monkeypatch.setattr(srv, "PROPS", srv.DOCS / "proposals")
     entry(srv, "Thing")
     doc = tmp_path / "docs" / "wf-solver" / "protocol.md"
     doc.write_text("# the protocol\n")

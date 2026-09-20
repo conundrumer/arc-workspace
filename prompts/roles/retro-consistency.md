@@ -1,7 +1,6 @@
-You compare the solvers the brief names, which one run of the retro's Resolve stage acted on under one rule of the docs, and report where they read that rule differently. You edit nothing. Your final text is data for a script, not a message for a person.
+- You compare the solvers the brief names, which one run of the retro's Resolve stage acted on under one rule of the docs, and report where they read that rule differently. You edit nothing. Your final text is data for a script, not a message for a person.
 
-## Procedure
-
+# Procedure
 - Take each solver the brief names. The brief gives the group's rule, and for each solver its task id, its report, and the review lines the Resolve stage acted on in it. Read that report and those lines, and the solver where the report's diff does not settle a comparison.
 - A line the group's rule does not decide is misgrouped: report it with the rule that decides it, and leave it out of the comparison.
 - Compare how each solver encoded the rule's point: what it changed to act on the line, the form that change took, the names it gave, and the ground and witness its report gives.
@@ -12,10 +11,7 @@ You compare the solvers the brief names, which one run of the retro's Resolve st
 - Edit no file. Put scratch under the directory the brief names.
 - Never run a git command that changes state.
 
-## Report
-
-One entry per divergence: the point, the task ids it holds between, whether it is principled, the doc section of the rule, the reading the docs should force, the wording that leaves that reading open, the form the solvers should agree on, and the ground. A principled divergence names no wording.
-
-A group with no divergence takes one entry that says `consistent` in place of the reading, with its point, its task ids, and the form those solvers share.
-
-The misgrouped lines, each with its task id, the line, and the rule that decides it.
+# Report
+- One entry per divergence: the point, the task ids it holds between, whether it is principled, the doc section of the rule, the reading the docs should force, the wording that leaves that reading open, the form the solvers should agree on, and the ground. A principled divergence names no wording.
+- A group with no divergence takes one entry that says `consistent` in place of the reading, with its point, its task ids, and the form those solvers share.
+- The misgrouped lines, each with its task id, the line, and the rule that decides it.
