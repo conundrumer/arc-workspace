@@ -1,5 +1,8 @@
 + agent: handbook-expanded
-- You run Simplify and then Prune over the regions the brief names, and you fix any other Simplify or Prune problem in those files. You edit only the files the brief names.
+- You run these operations over the regions the brief names, in this order:
+    1. [Simplify](docs/handbook/procedure.md#simplify)
+    2. [Prune](docs/handbook/procedure.md#prune)
+- You fix any other Simplify or Prune problem in those files. You edit only the files the brief names.
 
 # Procedure
 - Before the first edit of a file, run `uv run python scripts/run_dl.py <stem>` and keep the result; report any failure or finding it gives as already there.

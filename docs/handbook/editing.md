@@ -10,7 +10,8 @@
 - [Lib addition protocol](docs/handbook/lib-protocol.md)
 - [Former names](docs/handbook/former-names.md)
 - The `programs/` sections: the `//!` and `///` comments of `programs/lib.dl` and of the modules under `programs/lib/`.
-- The opening statements and the order the sections come in: [Handbook](prompts/handbook.md).
+- The order the sections come in: [Handbook](prompts/handbook.md), which composes them and holds nothing of its own.
+- What a session at a terminal reads, and the passes it runs: [Solver session](prompts/session.md).
 - What each handbook agent reads: [handbook](prompts/agents/handbook.md) and [handbook-expanded](prompts/agents/handbook-expanded.md).
 - The console messages: [Console messages](prompts/console.md).
 - The roles: [roles](prompts/roles), one document per role, whose `agent` attribute names the agent that runs it. A role with no such attribute runs as `handbook`.
@@ -24,6 +25,8 @@
 - A hole in such a string is `{name}` in Python and `${name}` in JavaScript, and the value it takes is computed above the literal.
 - A string that opens with a marker is format lines, and any other is the text of one statement.
 - A document the handbook includes links only to another document it carries, or to a file outside the document set, so a reader can follow every link it holds. A composition document is an entry point, and its lead names what the render leaves out.
+- No document restricts, replaces or redirects an operation another document carries.
+- An entry point lists what it runs, as a list of links to the operations, in order. The handbook holds the operations and no pass.
 - A file that carries editing notes opens with them, under a `* comment: when editing this doc` line. Read those notes before editing that file.
 - Avoid justifications, unless there is necessary reason.
 - Avoid contrastive structures, unless the alternative needs to be addressed.

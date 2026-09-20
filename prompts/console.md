@@ -11,8 +11,13 @@
 * code: reference
     + language: ts
 - You are the first session of a chained flow: you create the solver, then a separate session takes over from your report.
-- Do the creation pass with the data above.
-* inline: #review-items
+- Run these operations over the data above, in this order:
+    1. [Draft](docs/handbook/procedure.md#draft)
+    2. [Develop](docs/handbook/procedure.md#develop)
+    3. [Determine](docs/handbook/procedure.md#determine)
+    4. [Witness](docs/handbook/procedure.md#witness)
+    5. [Simplify](docs/handbook/procedure.md#simplify)
+    6. [Prune](docs/handbook/procedure.md#prune)
 * inline: #draft-mark
 * inline: #lib-survey
 * inline: #reimplementations
@@ -34,7 +39,15 @@
 * inline: #task
 * inline: #prior-reports
 * inline: #advance-head
-- The sessions before you wrote no solver: programs/solvers/{{tid}}.dl does not exist. Write it from the reports above, then do the creation pass over it: judge the model and the code yourself, and edit what falls short. Do not redo work the reports already did. What a report leaves unsettled is yours to settle.
+- The sessions before you wrote no solver: programs/solvers/{{tid}}.dl does not exist. The reports above are further input to the first operation.
+- Run these operations, in this order:
+    1. [Draft](docs/handbook/procedure.md#draft)
+    2. [Develop](docs/handbook/procedure.md#develop)
+    3. [Determine](docs/handbook/procedure.md#determine)
+    4. [Witness](docs/handbook/procedure.md#witness)
+    5. [Simplify](docs/handbook/procedure.md#simplify)
+    6. [Prune](docs/handbook/procedure.md#prune)
+- Judge the model and the code yourself, and edit what falls short. Do not redo work the reports already did. What a report leaves unsettled is yours to settle.
 * inline: #scope
 * inline: #draft-mark
 * inline: #reimplementations
@@ -59,7 +72,7 @@
 * inline: #review-tail
 
 ## handoff
-- Write the handoff report for the session that takes over from you:
+- Write the handoff report for the session that takes over from you, holding everything the pass routes to a reader:
     * inline: #handoff-items
 - Cover the whole session, including turns after any earlier report.
 * inline: #report-complete
@@ -104,13 +117,12 @@
 ## handoff-tail
 * comment: Sent where a stage has a successor.
 
-* inline: #review-items
 * inline: #handoff-end
 - The report covers your own pass — your rulings, your edits, your changes; what the reports above already establish stays with them.
 * inline: #handoff-wrap
 
 ## review-tail
-- You are the last session of the chain, so you write the review and not a handoff report.
+- You are the last session of the chain, so your review is your reply.
 
 ## scratch-note
 * comment: Part of a worker's system prompt only.
@@ -154,7 +166,14 @@
 
 ### advance-pass
 * inline: #advance-head
-- Read programs/solvers/{{tid}}.dl first — the reports describe it, but you edit the file itself. Then do the creation pass over it: in place of a new draft, judge the model and the code yourself, and edit what falls short. Do not redo work the reports already did. What a report leaves unsettled is yours to settle.
+- Read programs/solvers/{{tid}}.dl first — the reports describe it, but you edit the file itself.
+- Run these operations over it, in this order:
+    1. [Develop](docs/handbook/procedure.md#develop)
+    2. [Determine](docs/handbook/procedure.md#determine)
+    3. [Witness](docs/handbook/procedure.md#witness)
+    4. [Simplify](docs/handbook/procedure.md#simplify)
+    5. [Prune](docs/handbook/procedure.md#prune)
+- Judge the model and the code yourself, and edit what falls short. Do not redo work the reports already did. What a report leaves unsettled is yours to settle.
 * inline: #scope
 * inline: #draft-mark
 * inline: #reimplementations
@@ -167,7 +186,14 @@
 
 ### bare-pass
 - You are the final session of a chained flow. No earlier session left a report, so the solver file is the whole account.
-- Read programs/solvers/{{tid}}.dl first. Then do the creation pass over it: in place of a new draft, judge the model and the code yourself, and edit what falls short.
+- Read programs/solvers/{{tid}}.dl first.
+- Run these operations over it, in this order:
+    1. [Develop](docs/handbook/procedure.md#develop)
+    2. [Determine](docs/handbook/procedure.md#determine)
+    3. [Witness](docs/handbook/procedure.md#witness)
+    4. [Simplify](docs/handbook/procedure.md#simplify)
+    5. [Prune](docs/handbook/procedure.md#prune)
+- Judge the model and the code yourself, and edit what falls short.
 * inline: #scope
 * inline: #draft-mark
 * inline: #reimplementations
@@ -196,9 +222,6 @@
 ### finished
 - A solver that already holds up under your judgment needs no edit from you: say so.
 
-### review-items
-- The items the docs route to the review go in your report.
-
 ### handoff-wrap
 * comment: Keep this in every message that asks for a report: a resumed session may hold an older brief.
 
@@ -210,7 +233,7 @@
 - the model hypothesis as it now stands, what you changed and why, each choice point with the alternatives you tested and what ruled them out, and the open items. Those alternatives include the ones the data rules out: a review omits them, so the report carries them and the next session does not derive them again. A witness the report relies on and did not record goes in the report itself, as the input fragment and each model's output on it.
 
 ### handoff-end
-- In place of the review, end your turn with a handoff report for the session that takes over from you:
+- End your turn with a handoff report for the session that takes over from you, holding everything the pass routes to a reader:
     * inline: #handoff-items
 
 ### report-complete

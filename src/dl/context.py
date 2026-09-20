@@ -43,6 +43,8 @@ LIB_SRC = PROGRAMS_DIR / "lib.dl"
 # role's document names its agent in an `agent` attribute. A role with no such
 # attribute runs as the handbook agent.
 AGENT_DIR = REPO_ROOT / "prompts" / "agents"
+# The session's own entry document: the handbook, and the passes it runs.
+SESSION_DOC = REPO_ROOT / "prompts" / "session.md"
 AGENT_PATH = REPO_ROOT / ".claude" / "agents" / "handbook.md"
 AGENT_NAMES = ("handbook", "handbook-expanded")
 
@@ -317,6 +319,13 @@ def render(name: str = "handbook-expanded", lib: Path = LIB_SRC,
     document = registry.load(agents / f"{name}.md")
     return (nm.render(document, registry)
             + lib_part(lib, (document.attr("lib") or "interface").strip()))
+
+
+def session_text(doc: Path = SESSION_DOC, lib: Path = LIB_SRC) -> str:
+    """What a session at a terminal reads: the handbook with its passes, and
+    the lib as its interface."""
+    registry = nm.Registry(REPO_ROOT)
+    return nm.render(registry.load(doc), registry) + lib_part(lib, "interface")
 
 
 def _doc_path(name: str, docs: Path = DOCS_DIR) -> Path:

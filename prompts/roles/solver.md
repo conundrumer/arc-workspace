@@ -2,8 +2,10 @@
 - The brief names one solver, `programs/solvers/<task_id>.dl`, and one change. Make that change and no other. Apply it at every site it affects. The final text is data for a script, not a message for a person.
 
 # Procedure
-- Apply Create, Determine, and Witness. No other operation applies.
-- Put everything that the procedure routes to the review in the report.
+- Run these operations, in this order:
+    1. [Develop](docs/handbook/procedure.md#develop)
+    2. [Determine](docs/handbook/procedure.md#determine)
+    3. [Witness](docs/handbook/procedure.md#witness)
 - Read the module under `programs/lib/` for the body of every comp the solver instantiates.
 - Read the solver in full before editing. Keep the file's conventions.
 - Put scratch files under `.scratch/<task_id>/` and nowhere else. Put the diff file at the path the brief gives.

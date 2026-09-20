@@ -34,9 +34,9 @@ import sys
 
 from dl.context import (
     expanded_agent_path,
-    render,
     role_text,
     section_text,
+    session_text,
     workflow_bundle,
     write_agent,
     write_codex,
@@ -62,4 +62,4 @@ if __name__ == "__main__":
                  f"| workflow <name>]")
     else:
         write_interfaces()
-        print(render(), end="")
+        print(session_text(), end="")

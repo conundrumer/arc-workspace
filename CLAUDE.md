@@ -9,7 +9,7 @@
 - `uv run python scripts/run_dl.py <stem>`
     - Run one.
 - `uv run python scripts/context.py`
-    - The handbook.
+    - The solver session's entry document: the handbook, and the passes it runs.
 - `uv run python scripts/context.py --write`
     - Generate the files used by handbook readers.
 - `uv run python -m controlled_markdown check`
