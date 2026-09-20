@@ -50,3 +50,14 @@
 - A change that moves or reshapes this text ends with a diff of the handbook render and the console messages against HEAD, read for dropped lines.
 * comment:
     - A worktree of HEAD gives the old render.
+
+## Reading a chain
+- A chain is everything one reader receives, from its entry point to the last message, in the order it arrives.
+- A change to this text is reviewed by reading each chain it touches from the entry point to the end, as that reader, before it is done.
+- The check reads files, and a chain's contradictions, gaps and duplicates show only in the chain.
+- The chains, and what assembles each:
+    - The session at a terminal: `uv run python scripts/context.py`, then what each command the text names prints.
+    - A handbook agent: its generated definition under `.claude/agents/`, then `uv run python scripts/context.py role <name>`, then the brief.
+    - A console worker: the appendix and the messages that `tools/console/solver_console/prompts.py` builds, in the order a stage sends them.
+    - A workflow agent: its role from `uv run python scripts/context.py workflow <name>`, then the brief its script builds.
+    - Codex: `AGENTS.md`.
