@@ -322,10 +322,12 @@ def render(name: str = "handbook-expanded", lib: Path = LIB_SRC,
 
 
 def session_text(doc: Path = SESSION_DOC, lib: Path = LIB_SRC) -> str:
-    """What a session at a terminal reads: the handbook with its passes, and
-    the lib as its interface."""
+    """What a session at a terminal reads: the handbook with its passes, then
+    the lib as the document's `lib` attribute says."""
     registry = nm.Registry(REPO_ROOT)
-    return nm.render(registry.load(doc), registry) + lib_part(lib, "interface")
+    document = registry.load(doc)
+    return (nm.render(document, registry)
+            + lib_part(lib, (document.attr("lib") or "interface").strip()))
 
 
 def _doc_path(name: str, docs: Path = DOCS_DIR) -> Path:

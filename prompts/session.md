@@ -1,3 +1,5 @@
++ lib: index
+
 # Solver session
 - The docs and the lib as a solver session reads them, with the passes it runs.
 - Read [Editing the agent-facing documents](docs/handbook/editing.md) before editing any of it.

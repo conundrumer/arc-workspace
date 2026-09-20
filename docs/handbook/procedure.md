@@ -35,6 +35,7 @@
 2. Write the solver (`programs/solvers/<task_id>.dl`).
     - Write the header's `@scene` and `@rule` lines with it.
     - Leave the `Determine` comp for the Determine operation.
+    - For each module a comp comes from, read its interface, `programs/lib/<module>.md`, or `programs/lib.md` for the top-level lib.
 
 ### Develop
 1. Run the solver (`uv run python scripts/run_dl.py <task_id>`).
