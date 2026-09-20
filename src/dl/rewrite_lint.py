@@ -87,6 +87,39 @@ EXAMPLE_SRC = frozenset({"in", "ex_in", "ex_out"})
 
 type Finding = tuple[str, int, str, str]
 
+# Every sentence this lint prints, keyed by the category the finding carries.
+# A category whose text is built from the rule it read holds the form of that
+# text. A slot, `{name}`, is filled at the site that fires.
+MESSAGES = {
+    "keep": "; to keep it, paste above the declaration: "
+            "`// @allow: {cat} \u2014 <reason>`",
+    "choice-domain": "`{name}` keeps one arbitrary tuple per `{over}`; state "
+                     "what picks it",
+    "shared-read": "`{name}` is shared, and {cases} never reads it; move it "
+                   "under the marker of the cases that read it",
+    "typed-order": "{how} `{var}`, a `{type}`, which has no order; store the "
+                   "order as a parameter",
+    "choice-tag": "same body under `{one}` and `{other}`; one clause ranges "
+                  "over the tags",
+    "cross-choice": "branches bind {tags}; keep each choice in its own clause",
+    "raw-aggregate": "`{op}` in the program; read it through a lib component",
+    "subsumed-atom-twice": "`{atom}` appears twice in the body",
+    "subsumed-atom": "`{atom}` adds nothing next to `{other}`",
+    "negated-value": "`{atom}, {var} != {value}` \u21d2 `!{rewritten}`",
+    "named-complement": "`{atom}, {cmp}` \u21d2 `!{rewritten}`",
+    "decl-placement": "all uses of `{name}` are in {spot}",
+    "long-rule": "{width} > {limit} chars of code on one line; wrap the body",
+    "domain-enumerator": "`{atom}`; `{var}` is already bound by `{binder}`",
+    "argmax": "`{name}` is max/min via self-join; read it through a lib "
+              "component",
+    "common-subexpr": "{width} literals shared with `{name}` (line {line})",
+    "merge-tails": "; merge the tails into a disjunction",
+    "complement-rewrite": "`!{name}({args})` \u21d2 {parts}",
+    "other-member": "{pair} states the other member of a two-member type; "
+                    "write `{rel}({x}, {y})`",
+    "image-link": "{pair} through `{link}` is `{comp}`",
+}
+
 # The directive that keeps a relation against a hint, on the line above
 # the relation's declaration: `// @allow: <category> — <why>`.
 _ALLOW_RE = re.compile(r"//\s*@allow:\s*([\w-]+)")
@@ -99,8 +132,7 @@ ALLOWABLE_HINTS = frozenset({"pass-through", "single-consumer", "chain-join"})
 def keep_line(cat: str) -> str:
     """The line an author pastes above the declaration to keep the code
     against this hint, tacked onto the hint's message."""
-    return (f"; to keep it, paste above the declaration: "
-            f"`// @allow: {cat} — <reason>`")
+    return MESSAGES["keep"].format(cat=cat)
 
 # Souffle's primitive types. A column typed by one states no domain, so
 # it never counts as wider than an element type.
@@ -641,7 +673,9 @@ class _Lint:
             atom = d.body[0] if d.body else None
             assert isinstance(atom, Atom)  # _projection admitted this def
             parts.append(f"!{_atom_str(atom, names)}")
-        return f"`!{key[1]}({', '.join(canon)})` ⇒ `{', '.join(parts)}`"
+        return MESSAGES["complement-rewrite"].format(
+            name=key[1], args=", ".join(canon),
+            parts="`" + ", ".join(parts) + "`")
 
     def _projection(self, d: Rule, scope: str) -> bool:
         """The rule projects a single positive atom: negating the head is
@@ -833,8 +867,8 @@ class _Lint:
                     continue
                 self.add(
                     "choice-domain", decl.line,
-                    f"`{name}` keeps one arbitrary tuple per "
-                    f"`{', '.join(decl.choice_domain)}`; state what picks it",
+                    MESSAGES["choice-domain"].format(
+                        name=name, over=", ".join(decl.choice_domain)),
                 )
 
     def shared_read(self) -> None:
@@ -865,10 +899,9 @@ class _Lint:
                     continue
                 self.add(
                     "shared-read", decl.line,
-                    f"`{name}` is shared, and "
-                    f"{', '.join(f'`${c}()`' for c in missing)} "
-                    f"never reads it; move it under the marker of the cases "
-                    f"that read it",
+                    MESSAGES["shared-read"].format(
+                        name=name,
+                        cases=", ".join(f"`${c}()`" for c in missing)),
                 )
 
     def _case_universes(self) -> list[frozenset[str]]:
@@ -1000,8 +1033,7 @@ class _Lint:
                 seen.add((line, v))
                 self.add(
                     "typed-order", line,
-                    f"{how} `{v}`, a `{t}`, which has no order; store "
-                    f"the order as a parameter",
+                    MESSAGES["typed-order"].format(how=how, var=v, type=t),
                 )
 
         for lit in body_literals(info.rule):
@@ -1171,8 +1203,8 @@ class _Lint:
             if len(names) == len(tags) == 2 and self._tags_enumerated(names):
                 self.add(
                     "choice-tag", rule.line,
-                    f"same body under `{_term_str(tags[1])}` and "
-                    f"`{_term_str(tags[0])}`; one clause ranges over the tags",
+                    MESSAGES["choice-tag"].format(
+                        one=_term_str(tags[1]), other=_term_str(tags[0])),
                 )
                 return
 
@@ -1206,9 +1238,8 @@ class _Lint:
                     tags |= b
                 self.add(
                     "cross-choice", disj.line,
-                    f"branches bind "
-                    f"{', '.join(f'`${t}()`' for t in sorted(tags))}; "
-                    f"keep each choice in its own clause",
+                    MESSAGES["cross-choice"].format(
+                                tags=", ".join(f"`${t}()`" for t in sorted(tags))),
                 )
 
     def raw_aggregate(self, info: RuleInfo) -> None:
@@ -1221,8 +1252,7 @@ class _Lint:
                     if isinstance(side, Agg):
                         self.add(
                             "raw-aggregate", lit.line,
-                            f"`{side.op}` in the program; read it through "
-                            f"a lib component",
+                            MESSAGES["raw-aggregate"].format(op=side.op),
                         )
 
     def subsumed_atoms(self, info: RuleInfo) -> None:
@@ -1240,15 +1270,16 @@ class _Lint:
                     if all(_term_str(x) == _term_str(y) for x, y in pairs):
                         if i < j:
                             self.add("subsumed-atom", b.line,
-                                     f"`{_atom_str(b)}` appears twice in the body")
+                                     MESSAGES["subsumed-atom-twice"].format(
+                                         atom=_atom_str(b)))
                     elif all(
                         isinstance(x, Wild) or _term_str(x) == _term_str(y)
                         for x, y in pairs
                     ):
                         self.add(
                             "subsumed-atom", a.line,
-                            f"`{_atom_str(a)}` adds nothing next to "
-                            f"`{_atom_str(b)}`",
+                            MESSAGES["subsumed-atom"].format(
+                                atom=_atom_str(a), other=_atom_str(b)),
                         )
 
     def lib_idiom(self, info: RuleInfo) -> None:
@@ -1430,8 +1461,8 @@ class _Lint:
             rel = _OTHER_MEMBER.get(t)
             if rel is None:
                 return None
-            return (f"{pair} states the other member of a two-member "
-                    f"type; write `{rel}({x}, {y})`")
+            return MESSAGES["other-member"].format(
+                pair=pair, rel=rel, x=x, y=y)
         if len(diff) != 2:
             return None
         [p] = [i for i in diff if i != v]
@@ -1440,7 +1471,8 @@ class _Lint:
         link = self._image_link(a.args[p].name, b.args[p].name, atoms)
         if link is None:
             return None
-        return f"{pair} through `{link}` is `{_IMAGE_COMPS[link]}`"
+        return MESSAGES["image-link"].format(
+            pair=pair, link=link, comp=_IMAGE_COMPS[link])
 
     def _image_link(self, p: str, q: str, atoms: list[Atom]) -> str | None:
         """The lib relation carrying p onto q — `apply` for a D4 image,
@@ -1491,8 +1523,10 @@ class _Lint:
                                 tuple(const if j == i else a for j, a in enumerate(atom.args)),
                                 atom.line)
                 self.add("negated-value", atom.line,
-                         f"`{_atom_str(atom)}, {v} != {_term_str(const)}` ⇒ "
-                         f"`!{_atom_str(new_atom)}`")
+                         MESSAGES["negated-value"].format(
+                             atom=_atom_str(atom), var=v,
+                             value=_term_str(const),
+                             rewritten=_atom_str(new_atom)))
                 break
 
     def _sole_complement(
@@ -1592,8 +1626,9 @@ class _Lint:
             qual = f"{atom.qual}." if atom.qual else ""
             self.add(
                 "named-complement", atom.line,
-                f"`{_atom_str(atom)}, {_lit_str(cmp)}` ⇒ "
-                f"`!{qual}{atom.name}({_term_str(other)})`",
+                MESSAGES["named-complement"].format(
+                        atom=_atom_str(atom), cmp=_lit_str(cmp),
+                        rewritten=f"{qual}{atom.name}({_term_str(other)})"),
             )
 
     def decl_placement(self) -> None:
@@ -1614,7 +1649,7 @@ class _Lint:
             if spot is None or spot == self.ix.section_at(decl.line):
                 continue
             self.add("decl-placement", decl.line,
-                 f"all uses of `{name}` are in {spot}")
+                 MESSAGES["decl-placement"].format(name=name, spot=spot))
 
     def long_rule(self, info: RuleInfo) -> None:
         """A rule whose whole body stands on its first line and runs past
@@ -1630,8 +1665,8 @@ class _Lint:
             return
         if len(code) > LINE_LIMIT:
             self.add("long-rule", rule.line,
-                     f"{len(code)} > {LINE_LIMIT} chars of code on one line; "
-                     f"wrap the body")
+                     MESSAGES["long-rule"].format(
+                             width=len(code), limit=LINE_LIMIT))
 
     # --- hint rules ---
 
@@ -1670,8 +1705,8 @@ class _Lint:
             if binder is not None and not self._narrows(info.scope, atom, binder, v):
                 self.add(
                     "domain-enumerator", atom.line,
-                    f"`{_atom_str(atom)}`; `{v}` is already bound by "
-                    f"`{binder.name}`",
+                    MESSAGES["domain-enumerator"].format(
+                        atom=_atom_str(atom), var=v, binder=binder.name),
                 )
 
     def _narrows(self, scope: str, elem: Atom, binder: Atom, v: str) -> bool:
@@ -1726,8 +1761,7 @@ class _Lint:
         uses = self.uses(key)
         if uses and all(u.role == "neg" for u in uses):
             self.add("argmax", rule.line,
-                     f"`{rule.head.name}` is max/min via self-join; "
-                     f"read it through a lib component")
+                     MESSAGES["argmax"].format(name=rule.head.name))
 
     def const_join(self, info: RuleInfo) -> None:
         """Hint: a variable internal to a rule's Params reads. The join
@@ -1878,9 +1912,10 @@ class _Lint:
                for body in _flatten(cur.rule.body or [])
                for lit in body):
             return None
-        msg = f"{width} literals shared with `{ph.name}` (line {prev.rule.line})"
+        msg = MESSAGES["common-subexpr"].format(
+            width=width, name=ph.name, line=prev.rule.line)
         if _canon_window([ph]) == _canon_window([ch]):
-            return msg + "; merge the tails into a disjunction"
+            return msg + MESSAGES["merge-tails"]
         return msg if width >= 3 else None
 
 

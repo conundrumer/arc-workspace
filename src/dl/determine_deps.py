@@ -28,6 +28,13 @@ PARAMS_INIT_RE = re.compile(r"\.init\s+(\w+)\s*=\s*Params\b")
 
 # Pseudo-comps: the Params instance's values, and names from lib or outside
 # every comp. Both sort outside the file's comp names, which are identifiers.
+# Every sentence this module prints, keyed by the part it heads. A slot,
+# `{name}`, is filled by the render.
+MESSAGES = {
+    "cycle": "circular determination: ",
+    "step": "{param} reads params.{reads} ({comp} line {lineno})",
+}
+
 PARAMS = "\0params"
 OUTER = "\0outer"
 
@@ -185,9 +192,10 @@ def _first_reach(graph: Graph, start: Node, target: Node) -> tuple[str, int] | N
 
 def render_cycles(cycles: list[list[Step]]) -> list[str]:
     return [
-        "circular determination: " + ", ".join(
-            f"{param} reads params.{cycle[(i + 1) % len(cycle)][0]} "
-            f"({comp} line {lineno})"
+        MESSAGES["cycle"] + ", ".join(
+            MESSAGES["step"].format(
+                param=param, reads=cycle[(i + 1) % len(cycle)][0],
+                comp=comp, lineno=lineno)
             for i, (param, comp, lineno) in enumerate(cycle)
         )
         for cycle in cycles

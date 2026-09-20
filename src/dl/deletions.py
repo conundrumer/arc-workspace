@@ -4,11 +4,13 @@ import re
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 
+import controlled_markdown as nm
 from arc.task import load as load_task
 from dl.determine import determine_check
 from dl.dlparse import TOP, Decl, Index, ParseError, TypeDecl, parse
 from dl.facts import grid_to_facts, parse_output
 from dl.lint import _lib_source
+from dl.paths import REPO_ROOT
 from dl.rewrite_lint import _elem_tables, _lib_scopes
 from dl.solve import _profile, res_out, solver_file
 from dl.souffle import _pool_workers, _run_source
@@ -512,55 +514,35 @@ def deletion_report(stem: str) -> tuple[int, list[Finding]] | None:
     return (len(dels), sorted(findings))
 
 
-NOOP_NOTE = [
-    "  note: the removal changed no pair's output and no determined value.",
-    "        Either the pairs never instantiate the structure it removed, or",
-    "        another atom already implies that structure, and the session",
-    "        judges which. A column drop removes that argument at every atom",
-    "        of the relation, and leaves the variables that bound it unbound",
-    "        at the consumers.",
-]
+# The report's prose. Each group is a section of this document, holding the
+# header statement and the note under it; the code renders the section with
+# its counts and appends the finding rows.
+REPORT_DOC = REPO_ROOT / "prompts" / "run_dl.md"
 
-ENUMERATOR_NOTE = [
-    "  note: an enumerator over a variable another atom binds: the readable",
-    "        form of a per-member test, not a claim. Dropping it changes",
-    "        nothing, and that says nothing about the pairs.",
-]
 
-CASE_NOTE = [
-    "  note: the cases agree on every pair, so dropping the case column",
-    "        changes nothing. The column carries the coverage hypothesis",
-    "        and the pairs do not exercise it. This is not dead code.",
-]
+def _section(name: str, pad: str = "", **values) -> list[str]:
+    """One section of the report document as printable lines, each under
+    `pad`."""
+    registry = nm.Registry(REPO_ROOT)
+    document = registry.load(REPORT_DOC)
+    body = nm.Node(nm.DOCUMENT, source=document.source)
+    body.children = list(registry.ids[document.source][name].children)
+    text = nm.render(body, registry, values).strip()
+    return [pad + line for line in text.split("\n")]
 
-UNPROBED_NOTE = [
-    "  note: dropping the case column ungrounds a variable, so the probe",
-    "        result says nothing about the cases. Every case emits an",
-    "        accepted grid on every pair, which holds of every passing",
-    "        multi-case solver, so the pairs settle nothing about the cases",
-    "        either way.",
-]
 
-UNGROUNDED_NOTE = [
-    "  note: the removal ungrounds a variable, so Souffle rejects the file.",
-    "        The run says nothing about the pairs.",
-]
-
-UNEXERCISED_NOTE = [
-    "  note: every case emits an accepted grid on every pair, which holds of",
-    "        every passing multi-case solver, so the pairs settle nothing",
-    "        about the cases either way.",
-]
+ROW = " " * 4   # the findings and the note sit one level under the header
 
 
 def render_deletions(stem: str, report: tuple[int, list[Finding]] | None) -> list[str]:
-    """The deletion section of the audit, as printable lines."""
+    """The deletion section of the audit, as printable lines: a nested list,
+    each group's note and findings under its header statement."""
     if report is None:
-        return ["baseline fails: stored source does not pass train+test"]
+        return _section("baseline-fails")
     total, findings = report
 
     def entries(group: list[Finding]) -> list[str]:
-        return [f"  {stem}.dl:{n}: {kind} `{text}`" for n, kind, text in group]
+        return [f"{ROW}- {stem}.dl:{n}: {kind} `{text}`" for n, kind, text in group]
 
     apart = (UNPROBED_CASE, UNGROUNDED_DELETION, UNEXERCISED_CASES)
     enumerators = [f for f in findings if f[1].endswith(BOUND_ENUMERATOR)]
@@ -575,37 +557,31 @@ def render_deletions(stem: str, report: tuple[int, list[Finding]] | None) -> lis
     judged = total - len(ungrounded)
     lines = []
     if noop:
-        lines.append(f"{len(noop)}/{judged} deletions change nothing:")
-        lines += NOOP_NOTE
-        lines += entries(noop)
+        lines += _section("noop", count=len(noop), judged=judged)
         if any(kind == CASE_COLUMN for _, kind, _ in noop):
-            lines += CASE_NOTE
+            lines += _section("case", pad=ROW)
+        lines += entries(noop)
     elif not enumerators:
-        lines.append(f"every deletion changes the result ({judged} tested)")
+        lines += _section("none", judged=judged)
     if enumerators:
         if lines:
             lines.append("")
-        lines.append(
-            f"{len(enumerators)}/{judged} deletions remove an enumerator over a"
-            " bound variable:"
-        )
+        lines += _section("enumerator", count=len(enumerators), judged=judged)
         lines += entries(enumerators)
-        lines += ENUMERATOR_NOTE
     if unprobed:
-        noun = "case column" if len(unprobed) == 1 else "case columns"
         lines.append("")
-        lines.append(f"{len(unprobed)} {noun} the probe cannot judge:")
+        lines += _section(
+            "unprobed", count=len(unprobed),
+            noun="case column" if len(unprobed) == 1 else "case columns")
         lines += entries(unprobed)
-        lines += UNPROBED_NOTE
     if ungrounded:
-        noun = "deletion" if len(ungrounded) == 1 else "deletions"
         lines.append("")
-        lines.append(f"{len(ungrounded)} {noun} the run cannot judge:")
+        lines += _section(
+            "ungrounded", count=len(ungrounded),
+            noun="deletion" if len(ungrounded) == 1 else "deletions")
         lines += entries(ungrounded)
-        lines += UNGROUNDED_NOTE
     if unexercised:
         lines.append("")
-        lines.append("the pairs do not exercise the coverage hypothesis:")
+        lines += _section("unexercised")
         lines += entries(unexercised)
-        lines += UNEXERCISED_NOTE
     return lines

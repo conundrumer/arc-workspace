@@ -96,13 +96,29 @@ def run_probe(task) -> dict[str, set[tuple]]:
 # determination — the session's choice which — until the rest go under.
 ENUMERATION_LIMIT = 100
 
-# Printed once under the over-the-limit section when some listed count is a
-# Position parameter's enumerable domain.
-POSITION_DOMAIN_NOTE = (
-    "  A Position parameter's candidates are the cells of the frame its "
-    "stored value implies, so its count follows the frame the parse "
-    "produces."
-)
+# Every sentence the plan prints, keyed by the part it heads. A slot,
+# `{name}`, is filled by the render.
+MESSAGES = {
+    "none": "no actions",
+    "determine": "write a determination relation",
+    "open": "the train pairs leave several values, so record the surviving "
+            "values as the parameter's open values",
+    "over": "over the enumeration limit ({joint} > {limit}), so write "
+            "determination relations for parameters here until the product "
+            "of the remaining candidate counts is under {limit}",
+    # Printed once under the over-the-limit section when some listed count is
+    # a Position parameter's enumerable domain.
+    "position-domain": "  A Position parameter's candidates are the cells of "
+                       "the frame its stored value implies, so its count "
+                       "follows the frame the parse produces.",
+    "determined": "determined",
+    "covered": "the value is covered on this task's examples, so no "
+               "determination relation is needed",
+    "joint": "{survived} of {tried} joint assignments of the enumerated "
+             "parameters reproduce every train pair",
+    "embedded": "move data from clauses to fact parameters",
+    "verdicts": "each proposer's verdict on each parameter:",
+}
 
 
 def probe_report(
@@ -469,38 +485,28 @@ def render_determination_plan(
     open_valued = [param for param in sorted(surviving)
                    if len(surviving[param]) > 1]
     if not determine and not over and not embedded and not open_valued:
-        lines.append("no actions")
-    section("write a determination relation", determine)
+        lines.append(MESSAGES["none"])
+    section(MESSAGES["determine"], determine)
     section(
-        "the train pairs leave several values — record the surviving values "
-        "as the parameter's open values",
+        MESSAGES["open"],
         [f"{param} ({', '.join(surviving[param])})" for param in open_valued],
     )
     if over:
         section(
-            f"over the enumeration limit ({joint} > {ENUMERATION_LIMIT}) — "
-            "write determination relations for parameters here until the "
-            "product of the remaining candidate counts is under "
-            f"{ENUMERATION_LIMIT}",
+            MESSAGES["over"].format(joint=joint, limit=ENUMERATION_LIMIT),
             [f"{param}({n})" for param, n in settle],
         )
         position_domain = {
             param: vs.get("position-domain") for param, vs in results
         }
         if any(position_domain.get(p) == f"enumerable({n})" for p, n in settle):
-            lines.append(POSITION_DOMAIN_NOTE)
-    section("determined", done)
-    section(
-        "the value is covered on this task's examples — no determination "
-        "relation needed",
-        [covered_line(param) for param in covered],
-    )
+            lines.append(MESSAGES["position-domain"])
+    section(MESSAGES["determined"], done)
+    section(MESSAGES["covered"], [covered_line(param) for param in covered])
     if surviving:
         lines.append(
-            f"{survived} of {tried} joint assignments of the enumerated "
-            f"parameters reproduce every train pair"
-        )
-    section("move data from clauses to fact parameters", embedded)
+            MESSAGES["joint"].format(survived=survived, tried=tried))
+    section(MESSAGES["embedded"], embedded)
 
     if verdicts:
         detail = [
@@ -509,6 +515,6 @@ def render_determination_plan(
             if vs
         ]
         if detail:
-            lines += ["", "each proposer's verdict on each parameter:"]
+            lines += ["", MESSAGES["verdicts"]]
             lines += [f"  {line}" for line in detail]
     return lines

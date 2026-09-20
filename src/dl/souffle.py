@@ -37,6 +37,23 @@ _PATTERN_ON_FUNCTOR_RE = re.compile(r"variable not grounded: (\w+) at \S+ \[(\d+
 # from which the run reports the rule.
 EXPRESSION_REPORT_MIN = 100
 
+# Every sentence this module raises or returns, keyed by what it reports. A
+# slot, `{name}`, is filled at the site that fires.
+MESSAGES = {
+    "pattern-on-functor": "a record pattern binds `{var}` (line {line}) from "
+                          "a Box a functor returned, which Souffle leaves "
+                          "ungrounded; read the Box through a lib relation, "
+                          "or derive it in a relation and take it apart there",
+    "expression-size": "expression size: {head}, {calls} functor calls after "
+                       "inlining",
+    "exited": "souffle exited {code}:",
+    "cpu-limit": "souffle exceeded the {seconds}s CPU limit on {name}",
+    "no-profile": "no rule named: the profile holds none",
+    "no-rerun": "no rule named: the rerun under a {seconds}s CPU limit gave "
+                "no profile",
+    "slowest": "slowest rule: {site}, {secs:.1f}s CPU, {tuples} tuples",
+}
+
 # A profile's `source-locator`: the file, then the span it covers.
 LOCATOR_RE = re.compile(r"^(?P<file>.*) \[(?P<line>\d+):\d+-\d+:\d+\]$")
 
@@ -148,10 +165,9 @@ def _explained(stderr: str) -> str:
     take it apart binds it through a relation first."""
     m = _PATTERN_ON_FUNCTOR_RE.search(stderr)
     if m and "Assertion failed" in stderr:
-        return (f"a record pattern binds `{m.group(1)}` (line {m.group(2)}) from a "
-                "Box a functor returned, which Souffle cannot ground; read the Box "
-                "through a lib relation, or derive it in a relation and take it apart "
-                f"there\n{stderr}")
+        said = MESSAGES["pattern-on-functor"].format(
+            var=m.group(1), line=m.group(2))
+        return f"{said}\n{stderr}"
     return stderr
 
 
@@ -183,7 +199,8 @@ def expression_report(built: str) -> str | None:
             largest = (head, calls)
     if largest is None or largest[1] < EXPRESSION_REPORT_MIN:
         return None
-    return f"expression size: {largest[0]}, {largest[1]} functor calls after inlining"
+    return MESSAGES["expression-size"].format(
+        head=largest[0], calls=largest[1])
 
 
 def compile_check(built: str) -> str | None:
@@ -207,7 +224,7 @@ def compile_check(built: str) -> str | None:
         return None
     m = FIRST_ERROR_RE.search(result.stderr)
     detail = result.stderr[m.start():] if m else _explained(result.stderr)
-    return f"souffle exited {result.returncode}:\n{detail}"
+    return MESSAGES["exited"].format(code=result.returncode) + f"\n{detail}"
 
 
 def _souffle(
@@ -234,11 +251,12 @@ def _souffle(
         timeout=2 * cpu_limit,
     )
     if result.returncode == -signal.SIGXCPU:
-        raise _CpuLimit(
-            f"souffle exceeded the {cpu_limit}s CPU limit on {dl_path.name}")
+        raise _CpuLimit(MESSAGES["cpu-limit"].format(
+            seconds=cpu_limit, name=dl_path.name))
     if result.returncode != 0:
         raise RuntimeError(
-            f"souffle exited {result.returncode}:\n{_explained(result.stderr)}")
+            MESSAGES["exited"].format(code=result.returncode)
+            + f"\n{_explained(result.stderr)}")
     return result.stdout
 
 
@@ -319,15 +337,14 @@ def _slowest_rule_note(
                          PROFILE_CPU_FACTOR * cpu_limit)
                 slowest = slowest_rule(json.loads(profile_path.read_text()))
                 if slowest is None:
-                    return "no rule named: the profile holds none"
+                    return MESSAGES["no-profile"]
                 path, line, secs, tuples = slowest
                 site = _rule_site(path, line, run_path, solver_path)
         except (RuntimeError, OSError, ValueError, KeyError, TypeError,
                 subprocess.SubprocessError):
-            return (f"no rule named: the rerun under a "
-                    f"{PROFILE_CPU_FACTOR * cpu_limit}s CPU limit gave no "
-                    "profile")
-    return f"slowest rule: {site}, {secs:.1f}s CPU, {tuples} tuples"
+            return MESSAGES["no-rerun"].format(
+                seconds=PROFILE_CPU_FACTOR * cpu_limit)
+    return MESSAGES["slowest"].format(site=site, secs=secs, tuples=tuples)
 
 
 def _pool_workers() -> int | None:

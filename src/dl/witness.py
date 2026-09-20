@@ -49,6 +49,33 @@ UNDEFINED_CONCEPT = "undefined-concept"
 FAILING = (DRIFT, ANNOTATION, UNDEFINED_CONCEPT)
 """The kinds that fail the check."""
 
+# Every sentence this check prints, keyed by the finding it states. A slot,
+# `{name}`, is filled at the site that fires.
+MESSAGES = {
+    "no-entry": "`@witness {id}` names no entry of the witness file",
+    "reassigned": "`@reassigned` names {named}; the entry's `assign` names "
+                  "{holds}",
+    "relaxed-held": "`@relaxed {slug}` names the `@{held} {slug}` line; "
+                    "`@relaxed` names a `@scene` line",
+    "relaxed-unknown": "`@relaxed {slug}` names no line of the header",
+    "no-witness": "`@{kind} {slug}` is approximated and has no `@witness` "
+                  "line under its `@approximated:`",
+    "foreign": "`@witness {id}` under `@approximated:` of `@{kind} {slug}` "
+               "is `{plausibility}`",
+    "no-departure": "`@{kind} {slug}` is approximated and no witness under "
+                    "its `@approximated:` shows case `{case}` departing",
+    "unnamed-entry": "entry `{id}` of the witness file is named by no "
+                     "`@witness` line",
+    "empty-assign": "`assign` is empty; omit the key",
+    "undefined-concept": "{entry}: the concept case {case} is {undefined}; "
+                         "take another input, or drop the peer with the "
+                         "statement that no witness exists",
+    "unlisted": "{entry}: case {case} is not listed",
+    "judged": "{entry}: case {case} gives the entry's judged output",
+    "unnamed-output": "{entry}: case {case} gives an output the entry does "
+                      "not name",
+}
+
 type Outcome = list[list[int]] | None
 type Assign = dict[str, list[list[object]]]
 
@@ -346,8 +373,7 @@ def _departs(verdict: str, case: str, concept: str) -> bool:
 
 
 def _no_witness_note(c: Claim) -> str:
-    return (f"`@{c.kind} {c.slug}` is approximated and has no `@witness` "
-            "line under its `@approximated:`")
+    return MESSAGES["no-witness"].format(kind=c.kind, slug=c.slug)
 
 
 def _annotation_findings(source: str, entries: list[Entry],
@@ -384,20 +410,20 @@ def _annotation_findings(source: str, entries: list[Entry],
         entry = by_id.get(a.id)
         if entry is None:
             note(f"line {a.line}", a.id,
-                 f"`@witness {a.id}` names no entry of the witness file")
+                 MESSAGES["no-entry"].format(id=a.id))
         elif sorted(a.reassigned) != sorted(entry.assign):
             note(a.id, a.id,
-                 f"`@reassigned` names {_params(a.reassigned)}; the entry's "
-                 f"`assign` names {_params(list(entry.assign))}")
+                 MESSAGES["reassigned"].format(
+                     named=_params(a.reassigned),
+                     holds=_params(list(entry.assign))))
         for slug in a.relaxed:
             if slug in slugs:
                 continue
             held = kinds.get(slug)
             note(a.id, a.id,
-                 f"`@relaxed {slug}` names the `@{held} {slug}` line; "
-                 "`@relaxed` names a `@scene` line"
+                 MESSAGES["relaxed-held"].format(slug=slug, held=held)
                  if held else
-                 f"`@relaxed {slug}` names no line of the header")
+                 MESSAGES["relaxed-unknown"].format(slug=slug))
     concept = concept_case(source)
 
     def approximated(c: Claim, want: list[str]) -> None:
@@ -407,14 +433,14 @@ def _annotation_findings(source: str, entries: list[Entry],
         for w in c.witnesses:
             if w.plausibility == FOREIGN:
                 note(f"line {w.line}", "",
-                     f"`@witness {w.id}` under `@approximated:` of "
-                     f"`@{c.kind} {c.slug}` is `{FOREIGN}`")
+                     MESSAGES["foreign"].format(
+                         id=w.id, kind=c.kind, slug=c.slug,
+                         plausibility=FOREIGN))
         for case in want:
             if not any(_departs(w.verdict, case, concept) for w in c.witnesses):
                 note(f"line {c.line}", "",
-                     f"`@{c.kind} {c.slug}` is approximated and no witness "
-                     f"under its `@approximated:` shows case `{case}` "
-                     "departing")
+                     MESSAGES["no-departure"].format(
+                         kind=c.kind, slug=c.slug, case=case))
 
     restated: dict[str, set[str]] = {}
     for c in ann.branch_claims:
@@ -441,10 +467,9 @@ def _annotation_findings(source: str, entries: list[Entry],
                      if name else [])
     for e in entries:
         if e.empty_assign:
-            note(e.id, e.id, "`assign` is empty; omit the key")
+            note(e.id, e.id, MESSAGES["empty-assign"])
         if e.id not in named:
-            note("", e.id, f"entry `{e.id}` of the witness file is named by "
-                           "no `@witness` line")
+            note("", e.id, MESSAGES["unnamed-entry"].format(id=e.id))
     return findings
 
 
@@ -496,16 +521,15 @@ def _lines_of(d: Drift) -> list[str]:
     if d.kind == ANNOTATION:
         return [f"{d.entry}: {d.note}" if d.entry else d.note]
     if d.kind == UNDEFINED_CONCEPT:
-        return [f"{d.entry}: the concept case {case} is {UNDEFINED}; take "
-                "another input, or drop the peer with the statement that no "
-                "witness exists"]
+        return [MESSAGES["undefined-concept"].format(
+            entry=d.entry, case=case, undefined=UNDEFINED)]
     if d.kind == UNLISTED:
-        return [f"{d.entry}: case {case} is not listed",
+        return [MESSAGES["unlisted"].format(entry=d.entry, case=case),
                 *_side("the solver's output", d.actual)]
     if d.rejected_output:
-        return [f"{d.entry}: case {case} gives the entry's judged output",
+        return [MESSAGES["judged"].format(entry=d.entry, case=case),
                 *_side("the judged output", d.actual)]
-    return [f"{d.entry}: case {case} gives an output the entry does not name",
+    return [MESSAGES["unnamed-output"].format(entry=d.entry, case=case),
             *_side("the entry's output", d.expected),
             *_side("the solver's output", d.actual)]
 

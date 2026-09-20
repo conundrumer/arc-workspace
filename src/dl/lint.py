@@ -1,4 +1,4 @@
-"""Lint .dl solver programs against the style doc under docs/wf-solver/.
+"""Lint .dl solver programs against the style doc under docs/handbook/.
 
 `.comp` blocks are skipped wholesale — a proposal comp is lib code on its
 way out of the solver, and its proposal entry is what makes it legitimate,
@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 from dl.annotations import FORMS, Annotations, read, resolved_claims
-from dl.context import DOCS_DIR, lib_sources
+from dl.context import lib_sources
 from dl.dlparse import (
     SECTION_RE,
     Agg,
@@ -37,6 +37,7 @@ from dl.dlparse import (
     parse,
 )
 from dl.features_run import NO_CHOICE, case_label
+from dl.paths import REPO_ROOT
 from dl.solve import solver_file
 from dl.source import KEYWORDS_DOC, doc_keywords
 
@@ -143,7 +144,7 @@ LIB_INTERNAL_CAT = "lib internal"
 # The comps a solver holds as its own. Any other is a proposal comp,
 # legitimate only with its entry under docs/wf-solver/proposals/.
 STOCK_COMPS = ("Params", "Determine", "Parse")
-PROPOSALS_DIR = DOCS_DIR / "proposals"
+PROPOSALS_DIR = REPO_ROOT / "docs" / "wf-solver" / "proposals"
 # The category a proposal comp with no entry is reported under.
 NO_ENTRY_CAT = "comp without entry"
 # The category a Parse comp that no Determine comp reads is reported
@@ -195,12 +196,109 @@ INCLUDE_CAT = "include"
 # RIGID chart names exist only in the macro expansion; any appearance in
 # solver source reads a stored pose the model claims unobservable.
 RIGID_CHART_RE = re.compile(r"\b_rigid_\w+")
+# The categories whose finding text is the token that fired, not a sentence.
+RIGID_CHART_CAT = "rigid chart"
+ORIENTATION_CAT = "orientation literal"
+NONZERO_CAT = "nonzero literal"
+ARITHMETIC_CAT = "arithmetic"
+RANGE_CAT = "range"
+COMPARISON_CAT = "comparison"
+
+# The category a solver type outside the sanctioned kinds is reported
+# under. Sanctioned (style doc, Types and alt-outputs): `Choice` and the
+# types it reaches, a record filling a comp type param at an `.init`, and
+# `TiebreakResolution` with the types it reaches.
+BANNED_TYPE_CAT = "banned type"
 
 # Comparison-ops detector (<, <=, >, >=). Body comparisons are usually
 # legitimate, so this is opt-in. The comparisons that are not legitimate
 # are the ones over a type that carries no order, which the rewrite
 # lint's `typed-order` rule reads off the column types.
 LINT_COMPARISON = False
+
+# Every sentence the lint prints, keyed by the category the finding carries.
+# A category with one sentence holds it; one with several holds them by name.
+# A slot, `{name}`, is filled at the site that fires. The six token categories
+# print the token that fired in place of a sentence, so each holds its own
+# name and the table stays the whole catalog of categories.
+MESSAGES: dict[str, str | dict[str, str]] = {
+    RESERVED_CAT: "`{name}` is a Souffle reserved word; rename it",
+    SHADOWED_TYPE_CAT: "`{name}` also names a type inside `{comp}`, so the "
+                       "instance takes that name for its own type; rename it",
+    LIB_NAME_CAT: "`{name}` is a lib {kind}; rename it",
+    LIB_INTERNAL_CAT: {
+        "relation": "`{name}` is private to {comp}; read one of its public "
+                    "relations",
+        "comp": "`{name}` is internal to the lib; instantiate a public "
+                "component",
+    },
+    NO_ENTRY_CAT: "`{name}` is a proposal comp with no entry "
+                  "docs/wf-solver/proposals/{name}.md; write the entry, or "
+                  "fold the comp into the program",
+    LONE_PARSE_CAT: "no Determine comp reads this Parse comp; read it in "
+                    "Determine, or fold it into the program",
+    FAMILY_CASE_CAT: {
+        "record": "`{task_id}`'s `Choice` is a record; a sibling of it names "
+                  "no case",
+        "unknown": "`{case}` is no case of `{task_id}`'s `Choice`; name a "
+                   "case the representative holds",
+        "missing": "`{task_id}` declares no `Choice`; name a case the "
+                   "representative holds",
+    },
+    CASE_MARKER_CAT: "a marker over several cases joins their names with a "
+                     "comma: `// --- Box, Erode ---`",
+    HEADER_CAT: {
+        "open": "the file opens with `// <task_id>`",
+        "order": "header lines go in the order {order}",
+        "draft": "`@draft` goes under the task id",
+        "review": "`review` takes a kind: `// review <kind>: <text>`",
+        "once": "`{word}` stands once in the header",
+        "sibling": "a sibling carries `@representative:` in place of {drops}",
+        "slug": "`{slug}` names an earlier header line; a slug stands once "
+                "across `@scene` and `@rule`",
+        "prose": "no prose in the header; a remark about a case goes at its "
+                 "constructor, and a remark about a clause at the clause",
+        "keywords": "the header carries `@keywords:` or `@representative:`",
+        "rule": "the header has no `@rule` line; a rule is {form}",
+    },
+    KEYWORD_CAT: "`{word}` is not in keywords.md; propose it in the review",
+    GLOSS_CAT: {
+        "choice": "a gloss stands above `{name}`: what the choice is",
+        "branch": "`{name}` opens its own line",
+    },
+    WITNESS_CAT: {
+        "concept": "`{name}` is the concept branch; drop its `@witness` line",
+        "missing": "`{name}` is no concept branch and has no `@witness` "
+                   "line; add {form}",
+        "placed": "a witness line stands in a branch's comment block or "
+                  "under `@approximated:`",
+    },
+    CLAIM_CAT: {
+        "unstated": "`{slug}` names no `@scene` or `@rule` line of the header",
+        "instance": "`{name}` carries no `@claim` line; the claims the "
+                    "instance serves stand above it as {form}",
+        "concept": "`{name}` is the concept branch; the claim the choice "
+                   "answers stands above it as {form}",
+    },
+    INCLUDE_CAT: "the build adds the lib; drop the include",
+    BANNED_TYPE_CAT: "`{name}` is none of the types a solver may define, "
+                     "which are `Choice` and the types it reaches, "
+                     "`TiebreakResolution`, and a record filling a comp type "
+                     "param; re-encode it or propose it",
+    RIGID_CHART_CAT: RIGID_CHART_CAT,
+    ORIENTATION_CAT: ORIENTATION_CAT,
+    NONZERO_CAT: NONZERO_CAT,
+    ARITHMETIC_CAT: ARITHMETIC_CAT,
+    RANGE_CAT: RANGE_CAT,
+    COMPARISON_CAT: COMPARISON_CAT,
+}
+
+
+def say(category: str, variant: str = "", **slots: object) -> str:
+    """One message of the table, with its slots filled."""
+    entry = MESSAGES[category]
+    text = entry[variant] if isinstance(entry, dict) else entry
+    return text.format(**slots)
 
 
 def _strip_block_comments(source: str) -> str:
@@ -318,9 +416,7 @@ def _reserved_names(raw_lines: list[str]) -> list[tuple[str, int, str, str]]:
             if name not in RESERVED_WORDS:
                 continue
             findings.append((
-                RESERVED_CAT, lineno,
-                f"`{name}` is a Souffle reserved word and cannot name "
-                f"anything; rename it",
+                RESERVED_CAT, lineno, say(RESERVED_CAT, name=name),
                 raw.rstrip(),
             ))
     return findings
@@ -328,12 +424,6 @@ def _reserved_names(raw_lines: list[str]) -> list[tuple[str, int, str, str]]:
 
 # A record-field or attribute name in raw right-hand-side text.
 FIELD_NAME_RE = re.compile(r"([A-Za-z_]\w*)\s*:")
-
-# The category a solver type outside the sanctioned kinds is reported
-# under. Sanctioned (style doc, Types and alt-outputs): `Choice` and the
-# types it reaches, a record filling a comp type param at an `.init`, and
-# `TiebreakResolution` with the types it reaches.
-BANNED_TYPE_CAT = "banned type"
 
 TYPE_TOKEN_RE = re.compile(r"[A-Za-z_]\w*")
 
@@ -354,9 +444,7 @@ def _reserved_inner_names(
             if name not in RESERVED_WORDS:
                 continue
             findings.append((
-                RESERVED_CAT, line,
-                f"`{name}` is a Souffle reserved word and cannot name "
-                f"anything; rename it",
+                RESERVED_CAT, line, say(RESERVED_CAT, name=name),
                 raw_lines[line - 1].rstrip(),
             ))
 
@@ -438,8 +526,7 @@ def _shadowed_types(
                 continue
             findings.append((
                 SHADOWED_TYPE_CAT, init.line,
-                f"`{targ}` also names a type inside `{init.comp}`, so the "
-                f"instance takes that name for its own type; rename it",
+                say(SHADOWED_TYPE_CAT, name=targ, comp=init.comp),
                 raw_lines[init.line - 1].rstrip(),
             ))
     return findings
@@ -474,8 +561,7 @@ def _lib_named(
             ):
                 continue
             findings.append((
-                LIB_NAME_CAT, it.line,
-                f"`{name}` is a lib {kind}; rename it",
+                LIB_NAME_CAT, it.line, say(LIB_NAME_CAT, name=name, kind=kind),
                 raw_lines[it.line - 1].rstrip(),
             ))
 
@@ -520,8 +606,7 @@ def _lib_internal(
             if seg.startswith("_") and comp in lib_comps:
                 findings.append((
                     LIB_INTERNAL_CAT, atom.line,
-                    f"`{seg}` is private to {comp}; read one of its "
-                    f"public relations",
+                    say(LIB_INTERNAL_CAT, "relation", name=seg, comp=comp),
                     raw_lines[atom.line - 1].rstrip(),
                 ))
                 return
@@ -534,7 +619,7 @@ def _lib_internal(
                 if it.comp.startswith("_") and it.comp in lib_comps:
                     findings.append((
                         LIB_INTERNAL_CAT, it.line,
-                        f"`{it.comp}` is internal to the lib; instantiate a public component",
+                        say(LIB_INTERNAL_CAT, "comp", name=it.comp),
                         raw_lines[it.line - 1].rstrip(),
                     ))
             elif isinstance(it, Rule):
@@ -557,10 +642,7 @@ def _comps_without_entry(
         if (PROPOSALS_DIR / f"{it.name}.md").is_file():
             continue
         findings.append((
-            NO_ENTRY_CAT, it.line,
-            f"`{it.name}` is a proposal comp with no entry "
-            f"docs/wf-solver/proposals/{it.name}.md; write the entry, or "
-            f"fold the comp into the program",
+            NO_ENTRY_CAT, it.line, say(NO_ENTRY_CAT, name=it.name),
             raw_lines[it.line - 1].rstrip(),
         ))
     return findings
@@ -583,9 +665,7 @@ def _lone_parse(
     if determine is not None and _reads_parse(program, determine, raw_lines):
         return []
     return [(
-        LONE_PARSE_CAT, comp.line,
-        "no Determine comp reads this Parse comp; read it in Determine, "
-        "or fold it into the program",
+        LONE_PARSE_CAT, comp.line, say(LONE_PARSE_CAT),
         raw_lines[comp.line - 1].rstrip(),
     )]
 
@@ -645,11 +725,10 @@ def _family_case(
         if any(case in it.branches for it in choices):
             continue
         if choices and not any(it.branches for it in choices):
-            why = f"`{task_id}`'s `Choice` is a record; a sibling of it names no case"
+            why = say(FAMILY_CASE_CAT, "record", task_id=task_id)
         else:
-            named = (f"`{case}` is no case of `{task_id}`'s `Choice`" if choices
-                     else f"`{task_id}` declares no `Choice`")
-            why = f"{named}; name a case the representative holds"
+            variant = "unknown" if choices else "missing"
+            why = say(FAMILY_CASE_CAT, variant, task_id=task_id, case=case)
         findings.append((FAMILY_CASE_CAT, f.line, why,
                          raw_lines[f.line - 1].rstrip()))
     return findings
@@ -668,9 +747,7 @@ def _case_marker(raw_lines: list[str]) -> list[tuple[str, int, str, str]]:
             continue
         if any("/" in name for name in marker_names(m.group(1))):
             findings.append((
-                CASE_MARKER_CAT, lineno,
-                "a marker over several cases joins their names with a comma: "
-                "`// --- Box, Erode ---`",
+                CASE_MARKER_CAT, lineno, say(CASE_MARKER_CAT),
                 raw.rstrip(),
             ))
     return findings
@@ -714,7 +791,7 @@ def _header(
         findings.append((HEADER_CAT, lineno, why, raw_lines[lineno - 1].rstrip()))
 
     if not raw_lines or not raw_lines[0].strip().startswith("//"):
-        return [(HEADER_CAT, 1, "the file opens with `// <task_id>`",
+        return [(HEADER_CAT, 1, say(HEADER_CAT, "open"),
                  raw_lines[0].rstrip() if raw_lines else "")]
     # Every header line the order check reads, as (line, rank, word).
     placed = [(f.line, HEADER_RANK[f.word], f.word) for f in ann.fields]
@@ -723,46 +800,44 @@ def _header(
     last = -1
     for lineno, rank, _ in placed:
         if rank < last:
-            flag(lineno, "header lines go in the order "
-                 + ", ".join(HEADER_ORDER))
+            flag(lineno, say(HEADER_CAT, "order",
+                             order=", ".join(HEADER_ORDER)))
         last = max(last, rank)
     seen: set[str] = set()
     for f in ann.fields:
         if f.word == "draft":
             if f.line > 2:
-                flag(f.line, "`@draft` goes under the task id")
+                flag(f.line, say(HEADER_CAT, "draft"))
             continue
         if f.word == "review":
             if not f.kind:
-                flag(f.line, "`review` takes a kind: `// review <kind>: <text>`")
+                flag(f.line, say(HEADER_CAT, "review"))
         elif f.word in seen:
-            flag(f.line, f"`{f.word}` stands once in the header")
+            flag(f.line, say(HEADER_CAT, "once", word=f.word))
         elif "representative" in seen or (f.word == "representative" and seen):
-            flag(f.line, "a sibling carries `@representative:` in place of "
-                 + ", ".join(f"`{w}`" for w in SIBLING_DROPS))
+            flag(f.line, say(HEADER_CAT, "sibling",
+                             drops=", ".join(f"`{w}`" for w in SIBLING_DROPS)))
         seen.add(f.word)
     slugs: set[str] = set()
     for c in ann.claims:
         if c.slug in slugs:
-            flag(c.line, f"`{c.slug}` names an earlier header line; a slug "
-                 "stands once across `@scene` and `@rule`")
+            flag(c.line, say(HEADER_CAT, "slug", slug=c.slug))
         slugs.add(c.slug)
     for lineno in ann.prose[:1]:
-        flag(lineno, "no prose in the header; a remark about a case goes "
-             "at its constructor, and a remark about a clause at the clause")
+        flag(lineno, say(HEADER_CAT, "prose"))
     known = _known_keywords()
     keywords = ann.field_lines("keywords")
     if keywords and known:
         for word in ann.keywords():
             if word not in known:
                 findings.append((KEYWORD_CAT, keywords[0].line,
-                                 f"`{word}` is not in keywords.md; propose it in the review",
+                                 say(KEYWORD_CAT, word=word),
                                  raw_lines[keywords[0].line - 1].rstrip()))
     if not seen & {"keywords", "representative"}:
-        flag(1, "the header carries `@keywords:` or `@representative:`")
+        flag(1, say(HEADER_CAT, "keywords"))
     elif ("keywords" in seen and "output" not in seen
             and not any(c.kind == "rule" for c in ann.claims)):
-        flag(1, "the header has no `@rule` line; a rule is " + FORMS["rule"])
+        flag(1, say(HEADER_CAT, "rule", form=FORMS["rule"]))
     return findings
 
 
@@ -953,32 +1028,29 @@ def _glosses(
     for is_choice, td in targets:
         if is_choice and not _gloss_above(raw_lines, td.line):
             findings.append((GLOSS_CAT, td.line,
-                             f"a gloss stands above `{td.name}`: what the choice is",
+                             say(GLOSS_CAT, "choice", name=td.name),
                              raw_lines[td.line - 1].rstrip()))
         for name, at in _branch_sites(td, raw_lines):
             if at is None:
                 findings.append((GLOSS_CAT, td.line,
-                                 f"`{name}` opens its own line",
+                                 say(GLOSS_CAT, "branch", name=name),
                                  raw_lines[td.line - 1].rstrip()))
                 continue
             held.update(_comment_lines_above(raw_lines, at))
             witnessed = bool(_witnesses_of(ann, raw_lines, at))
             if name == td.branches[0] and witnessed:
                 findings.append((WITNESS_CAT, at,
-                                 f"`{name}` is the concept branch; drop its "
-                                 "`@witness` line",
+                                 say(WITNESS_CAT, "concept", name=name),
                                  raw_lines[at - 1].rstrip()))
             elif name != td.branches[0] and not witnessed:
                 findings.append((WITNESS_CAT, at,
-                                 f"`{name}` is no concept branch and has no "
-                                 f"`@witness` line; add {WITNESS_FORM}",
+                                 say(WITNESS_CAT, "missing", name=name,
+                                     form=WITNESS_FORM),
                                  raw_lines[at - 1].rstrip()))
     for w in ann.witnesses:
         if w.approximates or w.line in held:
             continue
-        findings.append((WITNESS_CAT, w.line,
-                         "a witness line stands in a branch's comment block "
-                         "or under `@approximated:`",
+        findings.append((WITNESS_CAT, w.line, say(WITNESS_CAT, "placed"),
                          raw_lines[w.line - 1].rstrip()))
     return findings
 
@@ -1023,31 +1095,29 @@ def _claims(
     for ref in ann.refs:
         for slug in ref.slugs:
             if slug not in stated:
-                flag(ref.line, f"`{slug}` names no `@scene` or `@rule` line "
-                     "of the header")
+                flag(ref.line, say(CLAIM_CAT, "unstated", slug=slug))
     if not ann.claims:
         return findings
     at = {ref.above for ref in ann.refs}
     for init in _claimed_instances(program.items):
         if init.line not in at:
-            flag(init.line, f"`{init.inst}` carries no `@claim` line; the "
-                 "claims the instance serves stand above it as "
-                 f"{FORMS['claim']}")
+            flag(init.line, say(CLAIM_CAT, "instance", name=init.inst,
+                                form=FORMS["claim"]))
     for point in _choice_adts(program.items):
         td = point[1]
         if td is None or not td.branches:
             continue
         name, line = _branch_sites(td, raw_lines)[0]
         if line is not None and line not in at:
-            flag(line, f"`{name}` is the concept branch; the claim the choice "
-                 f"answers stands above it as {FORMS['claim']}")
+            flag(line, say(CLAIM_CAT, "concept", name=name,
+                           form=FORMS["claim"]))
     return findings
 
 
 def _includes(
     items: list[Item], raw_lines: list[str],
 ) -> list[tuple[str, int, str, str]]:
-    return [(INCLUDE_CAT, it.line, "the build adds the lib; drop the include",
+    return [(INCLUDE_CAT, it.line, say(INCLUDE_CAT),
              raw_lines[it.line - 1].rstrip())
             for it in items if isinstance(it, Include)]
 
@@ -1118,10 +1188,7 @@ def _banned_types(
         if not linted or td.name in sanctioned:
             continue
         findings.append((
-            BANNED_TYPE_CAT, td.line,
-            f"`{td.name}` is none of the types a solver may define — "
-            f"`Choice` and the types it reaches, `TiebreakResolution`, or a "
-            f"record filling a comp type param; re-encode it or propose",
+            BANNED_TYPE_CAT, td.line, say(BANNED_TYPE_CAT, name=td.name),
             raw_lines[td.line - 1].rstrip(),
         ))
     return findings
@@ -1170,24 +1237,27 @@ def lint_program(source: str) -> list[tuple[str, int, str, str]]:
 
     for lineno in range(1, len(raw_lines) + 1):
         for m in RIGID_CHART_RE.finditer(code(lineno)):
-            findings.append(("rigid chart", lineno, m.group(0),
+            findings.append((RIGID_CHART_CAT, lineno, m.group(0),
                              raw_lines[lineno - 1].rstrip()))
         if lineno in skip:
             continue
         raw_line = raw_lines[lineno - 1]
         line = code(lineno)
         for m in ORIENTATION_LITERAL_RE.finditer(line):
-            findings.append(("orientation literal", lineno, m.group(1), raw_line.rstrip()))
+            findings.append((ORIENTATION_CAT, lineno, m.group(1),
+                                 raw_line.rstrip()))
         for m in NUMERIC_LITERAL_RE.finditer(line):
             if m.group(0) != "0":
-                findings.append(("nonzero literal", lineno, m.group(0), raw_line.rstrip()))
+                findings.append((NONZERO_CAT, lineno, m.group(0),
+                                 raw_line.rstrip()))
         for _, op in _find_arithmetic(line):
-            findings.append(("arithmetic", lineno, op, raw_line.rstrip()))
+            findings.append((ARITHMETIC_CAT, lineno, op, raw_line.rstrip()))
         for _ in RANGE_RE.finditer(line):
-            findings.append(("range", lineno, "range", raw_line.rstrip()))
+            findings.append((RANGE_CAT, lineno, RANGE_CAT, raw_line.rstrip()))
         if LINT_COMPARISON:
             for _, op in _find_comparison(line):
-                findings.append(("comparison", lineno, op, raw_line.rstrip()))
+                findings.append((COMPARISON_CAT, lineno, op,
+                                 raw_line.rstrip()))
 
     findings.extend(_reserved_inner_names(program.items, raw_lines))
     findings.extend(_shadowed_types(program.items, raw_lines))

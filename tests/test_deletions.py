@@ -6,7 +6,6 @@ from dl.deletions import (
     BOUND_ENUMERATOR,
     case_type,
     deletions,
-    render_deletions,
 )
 from dl.dlparse import parse
 
@@ -121,19 +120,12 @@ tile_line(A, P_axis) :- axis_elem(A), !split(P_axis, A, _, _), in(P_axis, _).
 
 def test_an_enumerator_over_a_bound_variable_stands_apart_from_the_atoms():
     """Only a positive atom of the same rule binds the enumerator's
-    variable, and the report keeps the finding apart from the guard note."""
+    variable."""
     assert kinds(ENUMERATORS) == [
         "rule", "atom", BOUND_ENUMERATOR, "atom",
         "rule", "atom", "atom",
         "rule", "negation", "atom", "atom",
     ]
-    lines = render_deletions("s", (23, [(2, BOUND_ENUMERATOR, "dir_elem(D)")]))
-    assert lines[0] == "1/23 deletions remove an enumerator over a bound variable:"
-    assert "  s.dl:2: bound enumerator `dir_elem(D)`" in lines
-    body = " ".join(lines)
-    assert "not a claim" in body
-    assert "the pairs never instantiate" not in body
-    assert "every deletion changes the result" not in body
 
 
 NARROWING = """\

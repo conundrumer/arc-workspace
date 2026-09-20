@@ -38,6 +38,20 @@ WHOLE_DOMAIN = re.compile(r"^(?P<label>.+?) (?P<verb>admits?) the whole domain \
 UNEXERCISED = re.compile(
     r"^(?P<label>.+?) (?P<verb>admits?) \[.*\], so the pairs do not exercise ")
 
+# Every phrase this module writes into a review line, keyed by what leaves
+# the parameter open. A slot, `{name}`, is filled at the site.
+MESSAGES = {
+    "never-read": "the {label} case{s} never read{verb} it, so its value is "
+                  "open there",
+    "unexercised": "the {label} case{s} do{verb} not exercise it",
+    "refuted": "only the test pairs refute the other values train admits, so "
+               "a determination from train alone could pick it",
+    "in-kind": "values that differ from stored in kind fit as well, so the "
+               "pairs do not fix it",
+    "below": "values smaller than stored fit as well",
+    "review": "// review sweep: {param} — {phrase}",
+}
+
 type ReportLine = tuple[str, str]
 type OpenParam = tuple[str, str, str]
 
@@ -61,12 +75,14 @@ def _case_phrases(line: str) -> list[str]:
     for part in line.split("; ")[1:]:
         if m := WHOLE_DOMAIN.match(part):
             many = m.group("verb") == "admit"
-            out.append(f"the {m.group('label')} case{'s' if many else ''} never "
-                       f"read{'' if many else 's'} it, so its value is open there")
+            out.append(MESSAGES["never-read"].format(
+                label=m.group("label"), s="s" if many else "",
+                verb="" if many else "s"))
         elif m := UNEXERCISED.match(part):
             many = m.group("verb") == "admit"
-            out.append(f"the {m.group('label')} case{'s' if many else ''} "
-                       f"do{'' if many else 'es'} not exercise it")
+            out.append(MESSAGES["unexercised"].format(
+                label=m.group("label"), s="s" if many else "",
+                verb="" if many else "es"))
     return out
 
 
@@ -78,14 +94,11 @@ def open_phrase(line: str) -> str | None:
         return "; ".join(_case_phrases(line)) or CASES
     phrases: list[str] = []
     if REFUTED in line:
-        phrases.append("only the test pairs refute the other values train "
-                       "admits, so a determination from train alone could "
-                       "pick it")
+        phrases.append(MESSAGES["refuted"])
     if IN_KIND in line:
-        phrases.append("values that differ from stored in kind fit as well, "
-                       "so the pairs do not fix it")
+        phrases.append(MESSAGES["in-kind"])
     if BELOW in line:
-        phrases.append("values smaller than stored fit as well")
+        phrases.append(MESSAGES["below"])
     return "; ".join(phrases) or None
 
 
@@ -93,7 +106,9 @@ def review_line(param: str, line: str) -> str | None:
     """The header line the parameter takes, or None when its sweep line
     leaves nothing open."""
     phrase = open_phrase(line)
-    return None if phrase is None else f"// review sweep: {param} — {phrase}"
+    if phrase is None:
+        return None
+    return MESSAGES["review"].format(param=param, phrase=phrase)
 
 
 def open_params(text: str) -> list[OpenParam]:
