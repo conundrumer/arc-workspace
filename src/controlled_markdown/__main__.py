@@ -22,8 +22,11 @@ from . import (
     ControlledMarkdownError,
     Registry,
     check_blocks,
+    check_closure,
+    check_dl_comments,
     check_file_fragments,
     check_links,
+    check_paths,
     parse,
     render,
     write,
@@ -60,7 +63,7 @@ def repo_root(start: Path | None = None) -> Path:
 # Where a program's prose can stand. Everything else under the root is data,
 # a build, or history.
 CODE_SUFFIXES = (".py", ".js", ".mjs")
-SKIPPED = {".venv", "node_modules", ".git", "data"}
+SKIPPED = {".venv", "node_modules", ".git", "data", ".scratch"}
 
 
 def code_files(root: Path) -> list[Path]:
@@ -93,17 +96,49 @@ def shown(path: Path) -> str:
         return str(path)
 
 
-def check_code(root: Path) -> int:
-    """Every fragment a program holds, read as the format. The rest of each
-    file is code, so nothing else in it is read."""
+# The lib's Souffle files, whose doc comments an agent reads.
+LIB_GLOBS = ("programs/lib.dl", "programs/lib/*.dl")
+
+
+def check_code(root: Path, document_set: set[Path]) -> int:
+    """Every fragment a program holds, read as the format, and every document
+    it names by path. The rest of each file is code, so nothing else in it is
+    read."""
     off = 0
     for path in code_files(root):
         try:
             check_file_fragments(path, shown(path), root)
+            # A test names the paths it makes up, so a name there stands for a
+            # shape and not for a document in the tree.
+            if "tests" not in path.relative_to(root).parts:
+                check_paths(path, shown(path), root)
         except ControlledMarkdownError as err:
             print(err)
             off += 1
+    for pattern in LIB_GLOBS:
+        for path in sorted(root.glob(pattern)):
+            try:
+                check_dl_comments(path, shown(path), root)
+            except ControlledMarkdownError as err:
+                print(err)
+                off += 1
     return off
+
+
+# Where the handbook starts: the composition and the two agent documents.
+HANDBOOK_ENTRIES = ("prompts/handbook.md", "prompts/agents/handbook.md",
+                    "prompts/agents/handbook-expanded.md")
+
+
+def check_handbook(root: Path, document_set: set[Path]) -> int:
+    """The rendered handbook links only where its reader can follow."""
+    entries = [root / name for name in HANDBOOK_ENTRIES]
+    try:
+        check_closure([e for e in entries if e.is_file()], document_set, root)
+    except ControlledMarkdownError as err:
+        print(err)
+        return 1
+    return 0
 
 
 def check(paths: list[Path]) -> int:
@@ -168,7 +203,10 @@ def main(argv: list[str]) -> int:
         if command == "check":
             off = check(paths)
             if not argv[2:]:
-                off += check_code(repo_root())
+                root = repo_root()
+                document_set = {p.resolve() for p in paths}
+                off += check_code(root, document_set)
+                off += check_handbook(root, document_set)
             return 1 if off else 0
         if command == "fmt":
             return fmt(paths)

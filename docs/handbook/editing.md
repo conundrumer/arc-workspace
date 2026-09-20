@@ -23,6 +23,7 @@
 - A string a program holds enters an agent's context when it is wrapped in `mctx`, and the check reads it there.
 - A hole in such a string is `{name}` in Python and `${name}` in JavaScript, and the value it takes is computed above the literal.
 - A string that opens with a marker is format lines, and any other is the text of one statement.
+- A document the handbook includes links only to another document it carries, or to a file outside the document set, so a reader can follow every link it holds. A composition document is an entry point, and its lead names what the render leaves out.
 - A file that carries editing notes opens with them, under a `* comment: when editing this doc` line. Read those notes before editing that file.
 - Avoid justifications, unless there is necessary reason.
 - Avoid contrastive structures, unless the alternative needs to be addressed.

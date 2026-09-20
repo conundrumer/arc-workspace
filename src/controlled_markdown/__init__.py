@@ -643,6 +643,137 @@ def check_file_fragments(path: Path, source: str,
                 err.message) from None
 
 
+# A path a document takes in the repo: the shapes the document set uses, so a
+# literal that names one is checked against the tree.
+DOC_PATH_RE = re.compile(
+    r"^(?:docs/[\w./-]+\.md|prompts/[\w./-]+\.md|CLAUDE\.md"
+    r"|\.claude/[\w./-]+\.md)$")
+
+
+def _named_paths(path: Path, text: str):
+    """Every string a file holds that names a document, with its line. A
+    string holding a hole or a wildcard names a shape and is passed over."""
+    def wanted(value: str, line: int):
+        if "{" in value or "*" in value or not DOC_PATH_RE.match(value):
+            return
+        yield line, value
+
+    if path.suffix == ".py":
+        for node in ast.walk(ast.parse(text, str(path))):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                yield from wanted(node.value, node.lineno)
+        return
+    for m in JS_STRING_RE.finditer(text):
+        yield from wanted(m.group(2), text.count("\n", 0, m.start()) + 1)
+
+
+JS_STRING_RE = re.compile(r"""(['"])((?:[^'"\\\n]|\\.)*?)\1""")
+
+
+def check_paths(path: Path, source: str, root: Path) -> None:
+    """Every document a file names by path stands in the tree. A name that
+    goes stale is a reference no reader can follow."""
+    for line, value in _named_paths(path, path.read_text()):
+        if not (root / value).exists():
+            raise ControlledMarkdownError(
+                source, line, "path-missing",
+                f"no file at `{value}`")
+
+
+# The lib's doc comments: `//!` heads a file's doc and `///` an item's. Each
+# line is the text of one statement, so it takes the rules on a statement's
+# text and neither the marker nor the indent rules.
+DL_DOC_RE = re.compile(r"^\s*(?://!|///)[ \t]?(.*)$")
+
+
+def dl_fragments(path: Path, source: str):
+    """Every doc-comment line a Souffle file holds. A line blank after its
+    marker carries no prose."""
+    for n, line in enumerate(path.read_text().split("\n"), 1):
+        m = DL_DOC_RE.match(line)
+        if m is not None and m.group(1).strip():
+            yield Fragment(m.group(1).strip(), path, source, n)
+
+
+def check_dl_comments(path: Path, source: str, root: Path | None = None):
+    """Every doc-comment line, read as the text of one statement."""
+    for fragment in dl_fragments(path, source):
+        node = Node(CONTENT, text=fragment.text, source=source,
+                    line=fragment.line)
+        document = Node(DOCUMENT, source=source)
+        document.children = [node]
+        check_links(document, path, root)
+
+
+def reached(entry: Path, registry: Registry) -> set[str]:
+    """Every document the composition at `entry` reaches, by source name: the
+    entry, what it includes, and what those include, down."""
+    out: set[str] = set()
+
+    def walk(path: Path) -> None:
+        try:
+            document = registry.open(path)
+        except OSError:
+            return
+        if document.source in out:
+            return
+        out.add(document.source)
+        for node in _walk(document):
+            for name in (INCLUDE, INLINE):
+                if not node.has(name):
+                    continue
+                where = (node.attr(name) or "").strip().partition("#")[0]
+                if where:
+                    walk(path.parent / where)
+
+    walk(entry)
+    return out
+
+
+def carried(node: Node) -> Iterator[Node]:
+    """Every node a render carries: the lines under a `comment` are the
+    editor's and reach no reader."""
+    for child in node.children:
+        if child.has(COMMENT):
+            continue
+        yield child
+        yield from carried(child)
+
+
+def check_closure(entries: list[Path], document_set: set[Path],
+                  root: Path) -> None:
+    """A document a composition includes links only to another document in
+    that set, or to a file outside the document set. A link to a document the
+    render leaves out sends its reader where the render does not go.
+
+    An entry document is the composition itself, and its lead is its own: it
+    points an editor at what the render leaves out, so it is not closed. Only
+    the lines a render carries count, so a link under a `comment` is the
+    editor's and not a reader's.
+    """
+    registry = Registry(root)
+    opened = {registry.rel(registry.open(e)) for e in entries}
+    inside: set[str] = set()
+    for entry in entries:
+        inside |= reached(entry, registry)
+    for source in sorted(inside - opened):
+        document = registry.documents[source]
+        file = registry.file(source)
+        for node in carried(document):
+            if node.kind == CODE or not node.text:
+                continue
+            for _, _, path, _ in _text_links(node):
+                if not path:
+                    continue
+                target = target_of(path, file, root)
+                if target not in document_set:
+                    continue
+                if registry.rel(registry.open(target)) not in inside:
+                    raise ControlledMarkdownError(
+                        source, node.line, "handbook-link",
+                        f"`{path}` is a document the handbook does not carry")
+
+
 def check_blocks(node: Node) -> None:
     """A line has at most one block under it, a block being a code node, a
     quote, or a table. Two quotes a blank line apart are two blocks. The
@@ -663,21 +794,26 @@ LINK_RE = re.compile(r"\[([^\]\n]*)\]\(([^)\s]+)\)")
 SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*:|^//|^#")
 
 
+def _text_links(node: Node) -> Iterator[tuple[Node, str, str, str]]:
+    """Every link in one node's text, as (node, text, path, slug). A backtick
+    span is literal, so a link written inside one is text."""
+    for part in SPAN_RE.split(node.text):
+        if part.startswith("`"):
+            continue
+        for m in LINK_RE.finditer(part):
+            target = m.group(2)
+            if SCHEME_RE.match(target):
+                continue
+            path, _, slug = target.partition("#")
+            yield node, m.group(1), path, slug
+
+
 def links(node: Node) -> Iterator[tuple[Node, str, str, str]]:
-    """Every link under `node`, as (node, text, path, slug). A backtick span
-    is literal, so a link written inside one is text."""
+    """Every link under `node`."""
     for child in _walk(node):
         if child.kind == CODE or not child.text:
             continue
-        for part in SPAN_RE.split(child.text):
-            if part.startswith("`"):
-                continue
-            for m in LINK_RE.finditer(part):
-                target = m.group(2)
-                if SCHEME_RE.match(target):
-                    continue
-                path, _, slug = target.partition("#")
-                yield child, m.group(1), path, slug
+        yield from _text_links(child)
 
 
 def target_of(path: str, file: Path, root: Path | None = None) -> Path:

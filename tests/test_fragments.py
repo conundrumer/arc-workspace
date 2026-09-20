@@ -6,9 +6,17 @@ check in silence. Each fixture here breaks one rule, and each is written where
 the repo's own check does not reach it.
 """
 
+from pathlib import Path
+
 import pytest
 
-from controlled_markdown import ControlledMarkdownError, check_file_fragments
+from controlled_markdown import (
+    ControlledMarkdownError,
+    check_closure,
+    check_dl_comments,
+    check_file_fragments,
+    check_paths,
+)
 
 MCTX_LITERAL = '''\
 from controlled_markdown import mctx
@@ -39,3 +47,63 @@ def test_the_extractor_reports_what_it_cannot_read(tmp_path, name, text, rule):
     with pytest.raises(ControlledMarkdownError) as err:
         check_file_fragments(path, name)
     assert err.value.rule == rule
+
+
+BAD_DOC_PATH_PY = '''\
+DOC = "docs/handbook/no-such-doc.md"
+'''
+
+BAD_DOC_PATH_JS = """\
+const DOC = 'docs/handbook/no-such-doc.md'
+"""
+
+SHAPED_PATHS = '''\
+SHAPE = "docs/handbook/{name}.md"
+GLOB = "docs/handbook/*.md"
+REAL = "docs/handbook/principles.md"
+'''
+
+
+@pytest.mark.parametrize(("name", "text"), [
+    ("named.py", BAD_DOC_PATH_PY),
+    ("named.js", BAD_DOC_PATH_JS),
+])
+def test_a_document_a_program_names_stands_in_the_tree(tmp_path, name, text):
+    path = tmp_path / name
+    path.write_text(text)
+    with pytest.raises(ControlledMarkdownError) as err:
+        check_paths(path, name, Path.cwd())
+    assert err.value.rule == "path-missing"
+
+
+def test_a_path_with_a_hole_or_a_wildcard_names_a_shape(tmp_path):
+    path = tmp_path / "shapes.py"
+    path.write_text(SHAPED_PATHS)
+    check_paths(path, "shapes.py", Path.cwd())
+
+
+BAD_DL_LINK = """\
+//! The module's doc, with a link to [Style](docs/handbook/no-such.md).
+.decl a(x: number)
+"""
+
+
+def test_a_doc_comment_in_the_lib_takes_the_text_rules(tmp_path):
+    path = tmp_path / "mod.dl"
+    path.write_text(BAD_DL_LINK)
+    with pytest.raises(ControlledMarkdownError) as err:
+        check_dl_comments(path, "mod.dl", Path.cwd())
+    assert err.value.rule == "link-missing"
+    assert err.value.line == 1
+
+
+def test_the_handbook_links_only_where_its_reader_can_follow(tmp_path):
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "one.md").write_text("# One\n- See [Two](docs/two.md).\n")
+    (docs / "two.md").write_text("# Two\n- The other one.\n")
+    entry = tmp_path / "entry.md"
+    entry.write_text("# Entry\n- The lead.\n* include: docs/one.md\n")
+    with pytest.raises(ControlledMarkdownError) as err:
+        check_closure([entry], {(docs / "two.md").resolve()}, tmp_path)
+    assert err.value.rule == "handbook-link"

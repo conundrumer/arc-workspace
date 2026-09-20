@@ -47,6 +47,8 @@
     - A hole that is a whole line places a fragment of its own, which the check reads where that fragment stands.
     - A `${…}` that is not a name is an error: the value it takes is computed above the literal and given a name.
 - A fence inside a JavaScript fragment is written with tildes, since the literal's own delimiter is a backtick.
+- A string that names a document by path names one the tree holds, and the check reports one it does not. A path holding a hole or a wildcard names a shape and is passed over.
+- A `///` or `//!` comment in a Souffle file is the text of one statement, and it takes the rules on a statement's text.
 
 ## Nesting
 
