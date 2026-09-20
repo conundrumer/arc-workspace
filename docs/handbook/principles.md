@@ -197,7 +197,7 @@
 - The program works in the task's own types: colors and orientation types.
 
 ### Numbers
-- **Grounding.** Every number in a solver counts concrete things that are present in the task.
+- **Grounding.** Every number in a solver counts concrete things the task has.
     - A distance counts the cells between something and an edge.
     - A size counts the members of a set.
     - A rank counts the members that come before one item in an order.
@@ -206,7 +206,6 @@
     - A wraparound shift is a walk around a cycle.
 - **Zero is absence.** A `0` counts nothing that is present.
     - In a spatial setting, `0` represents the absence of a gap, offset, or distance.
-    - A program is allowed to use `0` directly.
 
 ### Component instances
 - In the program, an instance of a component that is not a construction implements a claim and asserts that the task has that claim.

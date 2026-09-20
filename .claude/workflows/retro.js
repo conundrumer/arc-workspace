@@ -192,7 +192,7 @@ const REVIEW_SCHEMA = {
                 choice: { type: 'string', description: mctx`the reading's one-word label` },
                 wording: { type: 'string', description: mctx`the text the file carries under this reading` },
                 consequence: { type: 'string', description: mctx`what a session that reads this wording does differently` },
-                witness: { type: 'string', description: mctx`a task or a solver where this reading and the others part` },
+                witness: { type: 'string', description: mctx`a task or a solver where this reading and the others differ` },
               },
               required: ['choice', 'wording', 'consequence', 'witness'],
             },
@@ -227,7 +227,7 @@ const EDIT_SCHEMA = {
     verification: { type: 'string', description: mctx`what was run and its result` },
     review_lines: {
       type: 'array',
-      description: mctx`the draft solvers this fix wrote a review line into; empty when it wrote none`,
+      description: mctx`the solvers this fix wrote a review line into; empty when it wrote none`,
       items: {
         type: 'object',
         properties: {
@@ -237,7 +237,7 @@ const EDIT_SCHEMA = {
         required: ['task_id', 'line'],
       },
     },
-    notes: { type: 'string' },
+    notes: { type: 'string', description: mctx`a citation left pending; for a prune, one line per cut, and the meaning before and after of each rule the diff touches; for a solver, the report its role asks for` },
   },
   required: ['diffs', 'verification', 'review_lines', 'worktree'],
 }
@@ -260,7 +260,7 @@ const VERIFY_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          kind: { type: 'string', enum: ['wrong edit', 'broken rule', 'contradiction', 'test', 'dropped substance'] },
+          kind: { type: 'string', enum: ['wrong edit', 'broken rule', 'contradiction', 'test', 'dropped substance', 'partial change'] },
           finding: { type: 'string', description: mctx`what is wrong, in one or two sentences` },
           fixed: { type: 'string', description: mctx`what the fix for it was, or why it was left` },
           other_file: { type: 'string', description: mctx`the repo-relative path of the file the fix belongs in, when the finding was left for another file; empty otherwise` },
@@ -343,6 +343,20 @@ const SWEEP_LINES_SCHEMA = {
   required: ['solvers'],
 }
 
+// The apply stage returns the resolve shape, with the point in place of the lines.
+const APPLY_SCHEMA = {
+  type: 'object',
+  properties: {
+    acted: { type: 'array', items: { type: 'string' }, description: mctx`the form the solver was brought to, as one item` },
+    left: { type: 'array', items: { type: 'string' }, description: mctx`what the form leaves unfinished` },
+    report: { type: 'string', description: mctx`the repo-relative path of the report written` },
+    diff_path: { type: 'string', description: mctx`the repo-relative path of the diff file written for the change to the solver; empty when it changed nothing` },
+    changed: { type: 'boolean', description: mctx`whether the solver changed` },
+    verification: { type: 'string', description: mctx`what was run and its result: the solver, the lint, and the audit` },
+  },
+  required: ['acted', 'left', 'report', 'diff_path', 'changed', 'verification'],
+}
+
 const RESOLVE_SCHEMA = {
   type: 'object',
   properties: {
@@ -361,7 +375,7 @@ const CLEANUP_SCHEMA = {
   properties: {
     changed: { type: 'string', description: mctx`what changed, or \`no change\` with the reason` },
     run: { type: 'string', description: mctx`the run result after the pass, and the failure or finding your role's Procedure says to report as already there` },
-    carried: { type: 'array', items: { type: 'string' }, description: mctx`a file the brief did not name that a carry reached, and what changed in it` },
+    carried: { type: 'array', items: { type: 'string' }, description: mctx`a file the brief does not name that a rename changed, and what changed in it` },
   },
   required: ['changed', 'run', 'carried'],
 }
@@ -376,7 +390,7 @@ const GROUP_SCHEMA = {
         properties: {
           task_id: { type: 'string' },
           line: { type: 'string', description: mctx`the review line, verbatim` },
-          group: { type: 'string', description: mctx`the group id for the rule the line falls under, in the form your role's Procedure gives` },
+          group: { type: 'string', description: mctx`the group id of the rule that covers the line, in the form your role's Procedure gives` },
           rule: { type: 'string', description: mctx`the rule that decides the line, as doc and section` },
         },
         required: ['task_id', 'line', 'group', 'rule'],
@@ -407,7 +421,7 @@ const CONSISTENCY_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          point: { type: 'string', description: mctx`the point the solvers' review lines share` },
+          point: { type: 'string', description: mctx`the subject the solvers' review lines share` },
           solvers: { type: 'array', items: { type: 'string' }, description: mctx`the task ids the entry holds between` },
           principled: { type: 'boolean', description: mctx`whether the tasks differ in a way a rule of the docs names` },
           rule: { type: 'string', description: mctx`the doc section of the rule the entry rests on` },
@@ -462,10 +476,19 @@ const fixEntries = (groups, pruned) => JSON.stringify(
   })), null, 2)
 
 // The reader the pruned text serves, by where the text lives.
+const MAINTAINER = 'a maintainer editing the agent-facing documents'
+const SOLVER_SESSION = 'a future solver session that reads the file through `uv run python scripts/context.py` to write a Souffle solver'
 const readerFor = (target) =>
   target === 'docs/wf-solver/backlog.md' ? 'the user'
     : target.startsWith('prompts/roles/') ? 'the handbook agent that carries this file as its role, with the docs in its system prompt'
-      : 'a future solver session that reads the file through `uv run python scripts/context.py` to write a Souffle solver'
+      : target.startsWith('prompts/agents/') ? 'a handbook agent that reads the definition rendered from it'
+        : target === 'prompts/console.md' ? 'a console worker that reads the message in its stage'
+          : target === 'prompts/codex.md' ? 'a codex session that reads `AGENTS.md`'
+            : target === 'prompts/session.md' || target === 'prompts/run_dl.md' ? SOLVER_SESSION
+              : target === 'docs/handbook/editing.md' ? MAINTAINER
+                : target.startsWith('docs/handbook/') ? SOLVER_SESSION
+                  : target === 'programs/lib.dl' || target.startsWith('programs/lib/') ? SOLVER_SESSION
+                    : MAINTAINER
 
 // The diff of each file a fix changed beside the brief's targets: a code fix
 // writes a test with its change, so that test file is in scope too.
@@ -600,7 +623,7 @@ ${files}
 const NO_OTHERS = mctx`- The fix changed no file beside the target.`
 
 const verifyChain = (paths) => mctx`
-- The other code targets of this run changed the same tree. Their diffs are under these paths:
+- The other code targets of this retro changed the same tree. Their diffs are under these paths:
 
 ~~~
 ${paths}
@@ -711,13 +734,12 @@ const resolveTask = (taskId) => {
 `
 }
 
-const cleanupTask = (taskId, stage, record) => {
+const cleanupTask = (taskId) => {
   const solver = solverTarget(taskId)
   return mctx`
 - Files: ${solver}.
-- Regions: the whole file.
-- The ${stage} stage of this run last wrote the solver, and its record is at ${record}.
-- Scratch goes under \`.scratch/<task_id>/\`.
+- Span: the whole file.
+- Scratch: .scratch/${taskId}/.
 `
 }
 
@@ -725,7 +747,7 @@ const groupTask = (lines) => {
   const list = JSON.stringify(lines, null, 2)
   return mctx`
 - Group these review lines.
-- Each entry names the solver the line stood in, the line, and a seed key from its text.
+- Each entry names the task id of the solver the line stood in, the line, and a seed key from its text.
 
 ~~~json
 ${list}
@@ -1112,7 +1134,7 @@ async function applyStage(consistency) {
   const done = (await parallel(entries.map(d => async () => {
     const stems = [...new Set((d.solvers || []).map(s => (s || '').trim()).filter(Boolean))]
     const solvers = await parallel(stems.map(id => async () => {
-      const r = await agent(asRole('retro-apply', applyTask(id, d)), { label: `apply:${id}`, phase: 'Consistency', schema: RESOLVE_SCHEMA, ...agentOf('retro-apply') })
+      const r = await agent(asRole('retro-apply', applyTask(id, d)), { label: `apply:${id}`, phase: 'Consistency', schema: APPLY_SCHEMA, ...agentOf('retro-apply') })
       return r && { task_id: id, target: solverTarget(id), ...r }
     }))
     return { group: d.group, point: d.point, reading: d.reading, form: d.form,
@@ -1131,27 +1153,27 @@ const appliedSolvers = (applied) => (applied || []).flatMap(e => e.solvers || []
 // changed the file, and an apply that changed the file. Each owes the cleanup
 // pass of the procedure.
 const cleanupItems = (made, resolved, applied) => {
-  const items = new Map()
+  const items = new Set()
   for (const m of made || []) {
     if (m.kind !== 'solver' || !(m.edit.diffs || []).length) continue
-    for (const t of m.targets) items.set(t.replace(/^programs\/solvers\/|\.dl$/g, ''), { stage: 'Fix', record: diffPath(t) })
+    for (const t of m.targets) items.add(t.replace(/^programs\/solvers\/|\.dl$/g, ''))
   }
   for (const r of resolved || []) {
     if (!r.changed) continue
-    items.set(r.task_id, { stage: 'Resolve', record: r.report })
+    items.add(r.task_id)
   }
   for (const r of appliedSolvers(applied)) {
     if (!r.changed) continue
-    items.set(r.task_id, { stage: 'Apply', record: r.report })
+    items.add(r.task_id)
   }
-  return [...items].map(([task_id, wrote]) => ({ task_id, ...wrote }))
+  return [...items].map(task_id => ({ task_id }))
 }
 
 // One agent per solver the run wrote.
 async function cleanupStage(items) {
   if (!items.length) return null
-  const done = (await parallel(items.map(({ task_id, stage, record }) => async () => {
-    const r = await agent(asRole('cleanup', cleanupTask(task_id, stage, record)), { label: `cleanup:${task_id}`, phase: 'Cleanup', schema: CLEANUP_SCHEMA, ...agentOf('cleanup') })
+  const done = (await parallel(items.map(({ task_id }) => async () => {
+    const r = await agent(asRole('cleanup', cleanupTask(task_id)), { label: `cleanup:${task_id}`, phase: 'Cleanup', schema: CLEANUP_SCHEMA, ...agentOf('cleanup') })
     return r && { task_id, target: solverTarget(task_id), ...r }
   }))).filter(Boolean)
   log(`${done.filter(r => !/^no change/i.test(r.changed)).length} of ${done.length} solvers changed in cleanup; ${done.reduce((n, r) => n + (r.carried || []).length, 0)} files a carry reached`)

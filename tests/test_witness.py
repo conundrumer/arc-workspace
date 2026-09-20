@@ -67,9 +67,9 @@ def test_a_changed_grid_reports_both_grids(solvers, monkeypatch):
     assert (drift.kind, drift.case) == (witness.DRIFT, "Flip")
     assert drift.expected == [[2, 1]] and drift.actual == [[3, 3]]
     lines = witness.render_witness([drift])
-    assert lines[0] == ("two-colors: case Flip gives an output the entry "
+    assert lines[0] == ("two-colors: case Flip gives an output the witness "
                         "does not name")
-    assert "  the entry's output:" in lines
+    assert "  the witness's output:" in lines
     assert "  the solver's output:" in lines
 
 
@@ -98,10 +98,10 @@ def test_the_annotation_checks_report_what_they_accept_silently(solvers,
         f"form, which is {FORMS['witness']}, the id {SLUG_FORM}",
         "`// @relaxed bands` carries its indent before `//`; a nested line "
         "carries it after, as `//     @relaxed bands`",
-        "`@reassigned` names `arr_dim`; the entry's `assign` names "
+        "`@reassigned` names `arr_dim`; the witness's `assign` names "
         "no parameter",
         "`assign` is empty; omit the key",
-        "entry `orphan` of the witness file is named by no `@witness` line",
+        "witness `orphan` of the file is named by no `@witness` line",
     ]
 
 

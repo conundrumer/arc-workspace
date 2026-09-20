@@ -1,6 +1,6 @@
 export const meta = {
   name: 'cleanup-sweep',
-  description: mctx`Rewrite the inline workarounds the lint names, one cleanup-role agent per solver.`,
+  description: 'Rewrite the indirect negations the lint names, one cleanup-role agent per solver.',
   phases: [
     { title: 'Cleanup', detail: 'one agent under the cleanup role per solver, over the lines the lint names' },
   ],
@@ -26,15 +26,15 @@ const REPORT = {
   type: 'object',
   properties: {
     stem: { type: 'string' },
-    changed: { type: 'boolean', description: mctx`whether the file differs from before the pass` },
-    run: { type: 'string', enum: ['pass', 'fail'], description: mctx`the solver run after the pass` },
+    changed: { type: 'string', description: mctx`what changed, or \`no change\` with the reason` },
+    run: { type: 'string', description: mctx`the run result after the pass, and the failure or finding your role's Procedure says to report as already there` },
     kept: {
       type: 'array', items: { type: 'string' },
       description: mctx`each finding left as written, with the reason`,
     },
-    notes: { type: 'string', description: mctx`what the report section of the role asks for` },
+    carried: { type: 'array', items: { type: 'string' }, description: mctx`a file the brief does not name that a rename changed, and what changed in it` },
   },
-  required: ['stem', 'changed', 'run', 'kept', 'notes'],
+  required: ['stem', 'changed', 'run', 'kept', 'carried'],
 }
 
 if (!args || !args.roles || !Array.isArray(args.items)) {
@@ -58,7 +58,8 @@ const brief = (item) => {
   const findings = item.findings.join('\n')
   return mctx`
 - Files: ${solver}.
-- Regions: the lines the findings below name.
+- Scratch: .scratch/${item.stem}/.
+- Span: the lines the findings below name.
 - Every finding below is rewritten to the direct form it states.
     - A \`negated-value\` finding's comparison becomes the negated primitive.
     - A \`negated-use\` finding's wrapper relation goes, and the use that negated it negates the primitive.
@@ -85,7 +86,7 @@ const done = reports.filter(Boolean)
 log(`${done.length}/${args.items.length} solvers reported`)
 return {
   reports: done,
-  failed: done.filter((r) => r.run === 'fail').map((r) => r.stem),
+  failed: done.filter((r) => /fail/i.test(r.run)).map((r) => r.stem),
   kept: done.flatMap((r) => r.kept.map((k) => `${r.stem}: ${k}`)),
   missing: args.items.map((i) => i.stem).filter((s) => !done.some((r) => r.stem === s)),
 }

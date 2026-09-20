@@ -9,7 +9,7 @@
     - The grep counts every file under `programs/solvers/`, drafts included.
     - A repeated form that needs no banned form, and that the grep finds in fewer than four other solvers, goes in the review as an operation to promote, naming the sites, and gets no entry.
 - **Generality.** Treat a proposed operation as general when it states a concept-level operation over a caller-supplied domain and builds in no arrangement beyond the frame.
-    - An operation should be as abstract as possible.
+    - A lib operation should be as abstract as possible.
     - It involves geometric types only where there is no way to abstract the geometry away.
     - It never involves the Color type.
 - **Construction.**
@@ -18,10 +18,10 @@
 
 ## The entry
 - Give a proposed operation an entry under [proposals](docs/wf-solver/proposals), `<name>.md` named for the operation.
-- `head -n 3 docs/wf-solver/proposals/*.md` lists every entry's title and index sentence.
+- `head -n 3 docs/wf-solver/proposals/*.md` lists every entry's title and first sentence.
 - **The entry's fields.** An entry contains:
     - a `# <name> — <operation>` title
-    - an index sentence that stands alone
+    - a first sentence that stands alone
     - the code form, when it has one
     - a `Not:` line naming what is not this operation
     - a `Match:` line with a search signature that covers every statement of the operation, including statements whose atoms are in different lines or clauses, and statements where a solver accesses one lib call only through another
@@ -42,7 +42,7 @@
 - Put in the entry what a reader needs to judge the operation, and nothing else.
 
 ### Removing the entry
-- Remove the entry's file at these points:
+- Remove the entry's file at these times:
     - after its callers are migrated
     - at promotion, when the entry lists no callers
 
@@ -60,7 +60,7 @@
     - The entry's state decides what to do next.
     - If no entry exists, write one.
         - It has no result.
-    - If an entry is closed, keep its judgment.
+    - If an entry is closed and its judgment rests on a survey result, keep that judgment.
         - Encode the solver without the operation, in the way the entry states.
         - For a closed entry with no survey result, and a closing judgment that requires evidence from the solvers, strike its `Closed:` line and survey the entry.
         - For a closed entry with no survey result, and a judgment that can be made without evidence from the solvers, leave the entry closed.
@@ -69,7 +69,7 @@
     - Name an unlisted caller in the review, and the next survey lists it.
     - Count a family (`// @representative:` siblings with their representative) as one caller.
     - **The survey.** `uv run python scripts/survey.py <entry>` surveys an entry and writes the result into it.
-    - Run it when the pass needs the result of an entry in either state.
+    - Run it when the pass needs an entry's result and the entry has none, or some solvers are newer than its newest `Survey:` time.
     - The state sets the scope:
         - the entry has no result: the scope is every solver
         - some solvers are newer than the entry's newest `Survey:` time: the scope is those solvers, as `uv run python scripts/run_dl.py since <time>` lists them for that time
@@ -97,8 +97,8 @@
         - A lib call that states the proposed operation only over that call's domain is also not a caller.
 4. Leave promotion to the user, at the time they choose.
     - The `Callers` list is their evidence.
-    - No step reads its count.
-    - [Promote](docs/handbook/procedure.md#promote) states what a pass does when they say the word.
+    - Nothing in the order reads its count.
+    - [Promote](docs/handbook/procedure.md#promote) states what a pass does at that time.
 - **Reimplementations.** A reimplementation states an operation the lib already provides without calling it.
     - An entry lists the reimplementations its surveys found.
 - A site is no reimplementation when the lib call would need a value the program bans and no parameter supplies that value.
@@ -109,6 +109,6 @@
 
 ## Changes to existing definitions
 - Use the same protocol for changes to existing definitions, such as an edit to a relation or component already in the lib.
-- Start such a change at step 2, with the change as the survey's target.
+- Start such a change at item 2 of [The order](docs/handbook/lib-protocol.md#the-order), with the change as the survey's target.
 - The change has no comp form. Write the whole spec in the entry's fields.
 - Count as its callers the places the change would benefit.

@@ -53,8 +53,8 @@ FAILING = (DRIFT, ANNOTATION, UNDEFINED_CONCEPT)
 # Every sentence this check prints, keyed by the finding it states. A slot,
 # `{name}`, is filled at the site that fires.
 MESSAGES = mctx({
-        "no-entry": "`@witness {id}` names no entry of the witness file",
-        "reassigned": "`@reassigned` names {named}; the entry's `assign` names "
+        "no-entry": "`@witness {id}` names no witness in the file",
+        "reassigned": "`@reassigned` names {named}; the witness's `assign` names "
                       "{holds}",
         "relaxed-held": "`@relaxed {slug}` names the `@{held} {slug}` line; "
                         "`@relaxed` names a `@scene` line",
@@ -65,15 +65,15 @@ MESSAGES = mctx({
                    "is `{plausibility}`",
         "no-departure": "`@{kind} {slug}` is approximated and no witness under "
                         "its `@approximated:` shows case `{case}` departing",
-        "unnamed-entry": "entry `{id}` of the witness file is named by no "
+        "unnamed-entry": "witness `{id}` of the file is named by no "
                          "`@witness` line",
         "empty-assign": "`assign` is empty; omit the key",
         "undefined-concept": "{entry}: the concept case {case} is {undefined}; "
                              "take another input, or drop the peer with the "
                              "statement that no witness exists",
         "unlisted": "{entry}: case {case} is not listed",
-        "judged": "{entry}: case {case} gives the entry's judged output",
-        "unnamed-output": "{entry}: case {case} gives an output the entry does "
+        "judged": "{entry}: case {case} gives the witness's judged output",
+        "unnamed-output": "{entry}: case {case} gives an output the witness does "
                           "not name",
 })
 
@@ -531,7 +531,7 @@ def _lines_of(d: Drift) -> list[str]:
         return [MESSAGES["judged"].format(entry=d.entry, case=case),
                 *_side("the judged output", d.actual)]
     return [MESSAGES["unnamed-output"].format(entry=d.entry, case=case),
-            *_side("the entry's output", d.expected),
+            *_side("the witness's output", d.expected),
             *_side("the solver's output", d.actual)]
 
 

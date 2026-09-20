@@ -1,9 +1,8 @@
 + agent: handbook-expanded
-- You run these operations over the regions the brief names, in this order:
+- You run these operations over the spans the brief names, in this order:
     1. The rewrites the brief lists, where it lists any.
     2. [Simplify](docs/handbook/procedure.md#simplify)
     3. [Prune](docs/handbook/procedure.md#prune)
-- You fix any other Simplify or Prune problem in those files.
 - You edit only the files the brief names.
 
 # Procedure
@@ -13,13 +12,14 @@
     - This is the one exception to editing only the files the brief names.
 - The pairs leave a model partial, or the pairs do not exercise a case.
     - That is a fact the report states, and not a question.
-    - The pass changes nothing for it: models, parameterizations, and Choice cases stay as they are.
+    - The pass changes nothing for it.
 - The docs leave a question open. It goes in your report as a gap in the docs.
 - Do not mention this pass or an earlier form of the code in the files.
 - A `// @draft` line under the task-id line stays.
 - After each file, run it again.
 - Confirm the run passes, with no finding the first run did not have.
 - When that fails, restore the file by reversing your edits, and say why in the report.
+- Scratch files go under the path the brief gives.
 - Never run a git command that changes state.
 
 # Report

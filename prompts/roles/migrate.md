@@ -9,7 +9,7 @@
 - Read each file in full before editing.
 - A site whose file time is after a time the brief gives is skipped, and the report says so.
 - Replace the hand-written site with the lib relation.
-    - Models, parameterizations, and Choice cases stay as they are, and so does what each site derives.
+    - What each site derives stays as it is.
     - A replacement that narrows or widens the derived set is not a migration, even when the run passes.
     - When more than one readout of the relation could stand for a site's clause, the readout is the one whose derived set equals the clause's, unless the brief says which.
     - Comments stay true to the code, and none mentions the migration or the old form.

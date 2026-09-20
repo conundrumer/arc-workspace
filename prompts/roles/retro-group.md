@@ -6,9 +6,9 @@
 # Procedure
 - Take each line the brief contains, with its task id.
 - The brief seeds each line with a key from its text, and the key is a start, not a verdict.
-- Name the rule that decides the line: the section or bullet of [Principles](docs/handbook/principles.md), or of [Style](docs/handbook/style.md) when the line's point is theirs.
-- A line whose point is a keyword takes the bullet that names it, in [Setup](docs/handbook/keywords.md#setup), [Transformation](docs/handbook/keywords.md#transformation), or [Shape](docs/handbook/keywords.md#shape).
-- A line whose head names one rule while its point turns on another takes the rule of its point.
+- Name the rule that decides the line: the section or bullet of [Principles](docs/handbook/principles.md), or of [Style](docs/handbook/style.md) when the line's subject is theirs.
+- A line whose subject is a keyword takes the bullet that names it, in [Setup](docs/handbook/keywords.md#setup), [Transformation](docs/handbook/keywords.md#transformation), or [Shape](docs/handbook/keywords.md#shape).
+- A line whose head names one rule while its subject turns on another takes the rule of its subject.
 - Two lines share a group when one rule decides both.
 - A line that no rule you can name decides takes a group of its own.
 - A group id is a short kebab-case name for the rule, usable as a directory name.

@@ -1,12 +1,14 @@
 - You make the fixes the brief lists and no other change.
-- Apply each fix at every site it affects, in the files the brief names and in any other file: a rename at every occurrence, a changed rule at every text that restates it, a changed field or form at every reader of it.
-- You report every file you changed.
 - Your final text is data for a script, not a message for a person.
 
 # Procedure
-- Read the region first.
+
+## The sites
+- Read [Editing the agent-facing documents](docs/handbook/editing.md) before editing a file it names.
+- Read the text around each fix's site first.
 - Keep the file's conventions.
-- A file that opens with a `* comment: when editing this doc` block takes the notes under it; read them before editing that file.
+- Apply each fix at every site it affects, in the files the brief names and in any other file: a rename at every occurrence, a changed rule at every text that restates it, a changed field or form at every consumer of it.
+    - A file you changed that the brief does not name takes a diff of its own under `.scratch/retro/diffs/`, at a path you pick.
 - A general fix replaces the specific text it covers.
 - An addition that answers text the file already contains replaces that text.
 - A prose fix in the lib changes comments only.
@@ -18,9 +20,11 @@
     - If the fix leaves that task's solver something to act on, such as a case to add or drop, write `// review principle: <section heading> — <that point>` as the solver's last header line.
     - A solver the fix confirms as it stands takes no line.
     - Then run `uv run python scripts/run_dl.py lint <task_id>` on each solver that takes a line, and fix what the `header` category reports.
-    - What the docs settle is settled in this run: the line hands the point to this run's resolve stage, and it stays only where that stage leaves it unfinished.
+    - What the docs settle is settled in this retro: the line hands the subject to this retro's Resolve stage, and it stays only where that stage leaves it unfinished.
+
+## Verification
 - Verify by kind.
-    - Prose under `docs/`: `uv run python scripts/context.py > /dev/null`.
+    - Prose under `docs/` or `prompts/`: `uv run python -m controlled_markdown check`.
     - A lib comment or implementation: `uv run python scripts/run_dl.py <stem>` on every solver that instantiates the comp.
     - Code under `src/` or `tools/console/`: `uv run pytest -q` before and after.
     - A test is written only under the rule of the project `CLAUDE.md`.
@@ -31,6 +35,3 @@
 
 # Report
 - Write the diff of your changes to each file the brief names, verbatim, to that file's `diff_path`, and create the directory first.
-- A file you changed that the brief does not name takes a diff of its own under `.scratch/retro/diffs/`, at a path you pick.
-- Report one `diffs` entry per file you changed, the files the brief names and the others alike: the file, and the path its diff went to.
-- Then what was run and its result, any citation left pending, and for prose the net word count, words added minus words removed.

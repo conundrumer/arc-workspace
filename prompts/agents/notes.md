@@ -1,20 +1,22 @@
 # Shared notes
-- The statements an entry document inlines into its lead, which the bare render does not carry.
+- The statements an entry point inlines into its lead.
 
-* comment: When editing this doc, keep a statement here only while more than one entry document inlines it.
+* comment: When editing this doc, keep a statement here when an entry point inlines it into its lead.
+
+## abridged-headings
+- A heading with no statement and no subheading under it names a section this rendering abridges.
 
 ## abridgement
-- A heading with nothing under it names a section this rendering abridges.
-- `uv run python scripts/context.py section 'docs/handbook/<doc>.md#<heading>'` prints that section in full.
-    - `<doc>` is the `##` heading the section sits under, in lower case, with a hyphen for each space.
-    - A link to a section already reads this way, so one written in the text is pasted as it stands.
-- A pattern shown as one bold phrase and a sentence is abridged the same way, and its bold phrase is the heading to name.
+- `uv run python scripts/context.py section '<chapter>#<heading>'` prints that heading's section in full, as in `section 'Procedure#Develop'`.
+    - `<chapter>` is the `##` heading the section sits under.
+    - The target of a link in the text also works as the argument.
+- A pattern shown as one bold phrase and a sentence is abridged, and its bold phrase is the heading to name.
 
 ## citations
 - A bare task id cites a solver that works out the statement it sits under, and this rendering leaves out the line saying what that solver shows.
 - The same command prints the section with those lines, under the heading the id sits below.
 
 ## lib-index
-- The lib below is an index, one line per component.
-- `uv run python scripts/context.py section 'programs/lib/<module>.dl#<Component>'` prints one component's interface.
+- The lib below is an index, one line per declaration.
+- `uv run python scripts/context.py section 'programs/lib/<module>.dl#<name>'` prints one declaration's interface.
 - `programs/lib/<module>.md` holds a whole module's interface, and `programs/lib.md` the top-level lib's.

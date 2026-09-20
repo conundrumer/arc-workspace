@@ -46,7 +46,6 @@
     - If you find a model that meets the case conditions, add it.
     - For each parameter, try the model that derives its value from the input.
     - For each input-derived value constant across pairs, try the model that stores it in a parameter.
-    - A model equivalent to the model of a case the solver already has stays out of the review.
 4. Run the audit (`uv run python scripts/run_dl.py audit <task_id>`) and resolve the findings.
 
 ### Determine
@@ -60,18 +59,18 @@
     - Write the header and branch lines.
     - Judge each plausibility and verdict from the witness and each case's output on it.
     - List each plausibility and verdict in the review.
-    - On a branch's witness, an `other` verdict, or a non-concept verdict at `ordinary` plausibility, identifies a problem with the concept case.
+    - On a branch's witness, an `other` verdict identifies a problem with the concept case, and so does a non-concept verdict at `ordinary` plausibility.
 - **Divergence witness.**
     - Build each witness the header requires.
     - Write every case's output on it.
 - The condition a dropped peer fails decides what the review gives for it.
     - A peer dropped under Fidelity requires a witness in the review.
-    - A model that fails Fit stays out of the review, including any note that it was considered.
+    - A model that fails Fit or Equivalence stays out of the review, including any note that it was considered.
 - For each approximated rule, state in the review why no set of clauses states it.
 - When no witness can be built, replace the rule's text with the approximation's and remove the `@approximated:` line.
 - Record each witness with `uv run python scripts/run_dl.py record <task_id> <witness id> --separates "<what it separates>"`, with the grid on stdin.
     - For an `other` verdict, take the judged output from `uv run python scripts/run_dl.py grid <task_id>` on a control grid: the witness changed so that the program's output is the concept's reading.
-- Choose a witness on which each model's output is defined, or write an undefined outcome as such.
+- Choose a witness on which each model's output is defined, or write an undefined outcome as such for a case other than the concept case.
 - When the divergence requires a parameter to be reassigned, reassign that parameter.
 * comment:
     - The audit runs the same check.
@@ -82,7 +81,7 @@
         "id": slug,                              // unique within this file
         "separates": string,                     // models separated by this input
         "input": Grid,
-        "assign": {<parameter>: Fact[] | Grid},  // GRID_HxW form from patterns.md for stored parameters
+        "assign": {<parameter>: Fact[] | Grid},  // GRID_HxW form for stored parameters
         "output": {<case>: Grid | null}          // when the verdict is not other: each case's output, with null for undefined
                 | Grid                           // when the verdict is other: the annotator's judged output
       }] }
@@ -92,11 +91,12 @@
     Arg: number | string | Arg[]
     ```
 - Use a string for a lib constant and a list for a record.
+- [`GRID_HxW` for grid data](docs/handbook/patterns.md#grid_hxw-for-grid-data) states the form of a stored grid.
 - A `<case>` takes one of these forms:
     - the constructor's name, such as `Alt`
     - under a record-typed `Choice`, the record of the fields' constructor names, such as `[Table, Lookup]`
     - under a constructor with fields, the constructor applied to its fields' constructor names, such as `Recolor(Box, Size)`
-- For each entry named by `@witness`, put exactly the block's `@reassigned` parameters in `assign`.
+- For each witness `@witness` names, put exactly the block's `@reassigned` parameters in `assign`.
 
 ### Simplify
 - Express what the code claims with less code.
@@ -116,11 +116,10 @@
 - Do not compress it into a telegraphic style.
 
 ### Promote
-- Run this when the user says `promote` or `migrate` over an entry under `docs/wf-solver/proposals/`.
 - On `promote`, move the plain relations or proposal comp into the module under `programs/lib/` whose file doc admits it, and update the solver that introduced the proposal.
 - On `migrate`:
-    1. Spawn the `migrate` role with the entry's path, the call site in the solver that introduced the proposal, and the promotion's time.
-    2. Spawn the `cleanup` role with the regions that `migrate` changed and the lib call they now make.
+    1. Spawn the `migrate` role with the entry's path, the lib relation it became, the entry's callers, and the promotion's time.
+    2. Spawn the `cleanup` role with the files and spans that `migrate` changed, the lib call they now make, and a scratch path under `.scratch/`.
     3. List in the review the callers that `migrate` skipped.
 
 ### Review
@@ -130,6 +129,6 @@
     - An operation to promote.
     - A judgment call the session made.
     - An issue with something in a doc or tool that resulted in friction.
-    - An item carried over from an earlier pass's report or the handoff brief, marked with the pass it came from.
+    - An item carried over from an earlier pass's report or the handoff report it received, marked with the pass it came from.
         - Do not recheck it against the current runner, lib, or docs.
     - A fix or a problem in a file the pass does not edit, with the file, the line, and the fix it needs.

@@ -1,7 +1,7 @@
 + agent: handbook-expanded
-- The brief names one solver, `programs/solvers/<task_id>.dl`, and one change.
-- Make that change and no other.
-- Apply it at every site it affects.
+- The brief names one solver, `programs/solvers/<task_id>.dl`, and the changes it takes.
+- Make those changes, and the changes running the operations below over them requires, and no other.
+- Apply each at every site it affects.
 - The final text is data for a script, not a message for a person.
 
 # Procedure
@@ -19,6 +19,7 @@
 - Never run a git command that changes state.
 
 # Report
+- The items the operations route to the review go in the report.
 - State whether you changed the solver.
 - When you changed it, give the diff file at the path the brief gives.
 - Give the run, lint, and audit output verbatim.

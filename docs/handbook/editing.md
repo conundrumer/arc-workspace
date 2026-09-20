@@ -12,33 +12,33 @@
 - The `programs/` sections: the `//!` and `///` comments of `programs/lib.dl` and of the modules under `programs/lib/`.
 - The order the sections come in: [Handbook](prompts/handbook.md), which holds nothing of its own.
 - What a session at a terminal reads, and the passes it runs: [Solver session](prompts/session.md).
+    - Its context: `uv run python scripts/context.py`, then what each command the text names prints.
 - What a codex session on the repo reads: [Codex on arc-workspace](prompts/codex.md).
-    - Its chain: `uv run python scripts/context.py`, then what each command the text names prints.
+    - Its context: `AGENTS.md`, which `uv run python scripts/context.py --write` generates from it, then the user's message.
 - What each handbook agent reads: [handbook](prompts/agents/handbook.md) and [handbook-expanded](prompts/agents/handbook-expanded.md).
-- The statements more than one entry document inlines into its lead: [Shared notes](prompts/agents/notes.md).
-    - Its chain: the generated definition under `.claude/agents/`, then `uv run python scripts/context.py role <name>`, then the brief.
+    - Its context: the generated definition under `.claude/agents/`, then `uv run python scripts/context.py role <name>`, then the brief.
+- The statements an entry point inlines into its lead: [Shared notes](prompts/agents/notes.md).
 - The console messages: [Console messages](prompts/console.md).
-    - A worker's chain: the appendix, then the messages, as `tools/console/solver_console/prompts.py` builds them in a stage's order.
+    - A worker's context: the appendix, then the messages, as `tools/console/solver_console/prompts.py` builds them in a stage's order.
 - The roles: [roles](prompts/roles), one document per role. A role's `agent` attribute names the agent that runs it, and a role with none runs as `handbook`.
 - The audit's deletion report: [Deletion report](prompts/run_dl.md).
 - The other sentences a runner tool prints: the `MESSAGES` table at the top of its module under [dl](src/dl).
 - The workflow briefs and the schema descriptions: the scripts under [workflows](.claude/workflows).
-    - A workflow agent's chain: its role from `uv run python scripts/context.py workflow <name>`, then the brief its script builds.
-- What Codex reads: `AGENTS.md`.
-    - `uv run python scripts/context.py --write` generates it.
+    - A workflow agent's context: its role from `uv run python scripts/context.py workflow <name>`, then the brief its script builds.
 
-## What holds where
+## What goes where
 - A file is written for the reader its entry point names, and holds what that reader needs for the work it does there.
     - A document the handbook includes says nothing that holds for one entry point and not another.
     - The handbook holds the operations, and each entry point lists the operations its pass runs, as links, in order.
-    - A reader that writes solvers holds the lib as its interface; every other reader holds the index and reads a module's interface when it needs one.
+    - A console worker and the `handbook-expanded` agent read the lib as its interface.
+    - Every other reader reads the index, and a declaration's interface when it needs one.
 - A fact or a rule is stated in one file, and every other file links it.
-- A section's heading is its interface: a link depends on the heading, and never on what the body says.
+- A link depends on a section's heading, and never on what the body says.
 - No document restricts, replaces or redirects an operation another document carries.
 - A document the handbook includes links only to another document it carries, or to a file outside the document set.
-- A composition document is an entry point, and its lead names what the render leaves out.
-- The agent editions leave out the lines marked `draft` and `gloss`.
-- A render with no agent carries them, and so does `scripts/context.py section`.
+- A document rendered on its own is an entry point, and its lead names what the render leaves out.
+- A render leaves out the lines marked `draft` and `gloss` where its entry point excludes them.
+- The session render carries them, and so does `scripts/context.py section`.
 - Where two lists split a set, the second list is everything else.
 
 ## Writing a file
@@ -50,20 +50,18 @@
 - A bare path stands in code that compares it, and nowhere else.
 
 ## Prose a program holds
-- A string a program holds enters an agent's context when it is wrapped in `mctx`.
 - [Prose in code](src/controlled_markdown/writing.md#prose-in-code) states how such a string is written and read.
 
 ## Checking
 - `uv run python -m controlled_markdown check` reports what is off, each line carrying the rule's message.
 - `fmt` in place of `check` rewrites a file in canonical form.
-- The check resolves every link a document holds.
 - [Writing a document](src/controlled_markdown/writing.md) states a rule where the message is not enough, or where the file shows no instance of the construct you need.
 - [Templating a document](src/controlled_markdown/templating.md) states the directives the documents under `prompts/` compose and fill one another with.
 - A change that moves or reshapes this text ends with a diff of the handbook render and the console messages against HEAD, read for dropped lines.
 * comment:
     - A worktree of HEAD gives the old render.
 
-## Reading a chain
-- A chain is everything one reader receives, from its entry point to the last message, in the order it arrives.
-- A change to this text is reviewed by reading each chain it touches from the entry point to the end, as that reader, before it is done.
-- The check reads files, and a chain's contradictions, gaps and duplicates show only in the chain.
+## Reading a context
+- A reader's context is everything it receives, from its entry point to the last message, in the order it arrives.
+- A change to this text is reviewed by reading each context it touches from the entry point to the end, as that reader, before it is done.
+- The check reads files, and a context's contradictions, gaps and duplicates show only in the context.

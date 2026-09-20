@@ -104,9 +104,7 @@ MESSAGES = mctx({
         "determine": "write a determination relation",
         "open": "the train pairs leave several values, so record the surviving "
                 "values as the parameter's open values",
-        "over": "over the enumeration limit ({joint} > {limit}), so write "
-                "determination relations for parameters here until the product "
-                "of the remaining candidate counts is under {limit}",
+        "over": "over the enumeration limit ({joint} > {limit})",
         # Printed once under the over-the-limit section when some listed count is
         # a Position parameter's enumerable domain.
         "position-domain": "  A Position parameter's candidates are the cells of "

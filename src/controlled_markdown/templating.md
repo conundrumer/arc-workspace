@@ -14,6 +14,7 @@
 - Attributes under an `include` are its options.
     - `exclude` names the attributes to drop, throughout the included document and what it includes. A node that carries one goes with its subtree.
     - `abridged: all` renders every included document as its `index` attribute says. A list of paths, relative to the including file, abridges those documents alone.
+        - A document with no `index` attribute renders in full.
     - A document included with no `abridged` renders in full.
         ```
         * include: ../handbook.md
@@ -88,9 +89,9 @@
     ```
 - Each of the two stands where a statement stands, and the value it names may hold line breaks.
 
-## The interface
+## The names a document reads
 
-- A document's interface is the set of names it reads, and nothing declares it: a render reads it off the lines the document inlines and includes.
+- The names a document reads are declared nowhere: a render reads them off the lines the document inlines and includes.
 - A render given values takes the names given to equal the names read.
     - A name missing, and a name nothing reads, are both errors.
 - A render given no values fills nothing, and the text stands as written.

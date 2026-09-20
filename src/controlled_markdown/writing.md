@@ -43,6 +43,7 @@
 - A string a program holds enters an agent's context when it is wrapped in `mctx`, and the check reads it there.
     - In Python, `mctx` takes a string, or a dict whose every value is one. A call it cannot read out without running the program is an error.
     - In JavaScript, `mctx` tags a template literal. A backtick inside one opens a nested literal, which the check does not read.
+- A fragment is the string inside an `mctx` call.
 - A fragment that opens with a marker is format lines, and it takes every rule. Any other fragment is the text of one statement, and it takes the rules on a statement's text.
     - A block may stand at a fragment's top level, and the text that places the fragment supplies the line above.
 - A hole is `{name}` in Python and `${name}` in JavaScript, and the check reads one opaque word in its place.
@@ -142,9 +143,9 @@
     - Indentation starts from zero again under every heading.
 - The count of `#` follows the tree: the document's heading is `#`, its sections are `##`, and theirs are `###`.
 - A `+ ` line on the line after a heading is an attribute of that heading.
-- A heading carries the slug of its text as its id: lower case, each run of spaces as one hyphen, and the punctuation other than a hyphen dropped.
+- A heading's id is the slug of its text: lower case, each run of spaces as one hyphen, and the punctuation other than a hyphen dropped.
     - A heading is the only line that carries an id, and two sections of one document whose slugs meet is an error, settled by renaming a heading.
-- The lines above the first heading belong to the document.
+- The lines above the first heading are the document's lead, and they belong to the document.
     - A `+ ` line there is an attribute of the document, and it describes the document rather than any line in it.
 
 ## Front matter

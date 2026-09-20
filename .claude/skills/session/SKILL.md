@@ -45,7 +45,7 @@ argument-hint: [solver|retro|<task_id>]
     - It runs no edit or check itself: those go to agents.
     - The runs' agents read the window, check each issue, take a default on each open one, make the fixes the rulings keep, sweep the window's solvers, act on each review line those fixes and the sweep wrote into a solver, run the cleanup pass over each solver the runs wrote, and verify what they changed.
     - Each stage's rules live in its role, under [roles](prompts/roles).
-    - The `solver` role carries a solver fix and the resolve stage.
+    - The `solver` role carries a solver fix.
 - **Report.** The dry run returns every call with its default, its level, and what argues for and against it.
     - What reaches the user is a call whose fix changes a rule the user reads, in [Principles](docs/handbook/principles.md), [Keywords](docs/handbook/keywords.md), or a gloss, and the Verify issues.
     - A solver particular stays with the agents and the console's reports.

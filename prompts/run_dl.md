@@ -2,9 +2,9 @@
 - The parts of the audit's deletion section, one section per group the report prints.
 
 * comment: when editing this doc
-    - A section carries the name `render_deletions` asks for.
+    - A section's heading is the name `render_deletions` asks for.
     - The finding rows are data, and the code builds them under the header statement.
-    - A group's note states what its findings mean, and the reader takes the rows against it.
+    - A group's note states what its findings mean, and the reader reads the rows in light of it.
 
 ## baseline-fails
 - baseline fails: stored source does not pass train+test
@@ -24,7 +24,7 @@
 ## case
 - The cases agree on every pair, so dropping the case column changes nothing.
 - The column stays.
-- [Models and tasks](docs/handbook/principles.md#models-and-tasks) states what a case claims.
+* inline: #case-claim
 
 ## enumerator
 - {{count}}/{{judged}} deletions remove an enumerator over a bound variable:
@@ -49,6 +49,9 @@
 
 ## Partials
 
+### case-claim
+- [Models and tasks](docs/handbook/principles.md#models-and-tasks) states what a case claims.
+
 ### cases-settle-nothing
 - The pairs settle nothing about the cases.
-- [Models and tasks](docs/handbook/principles.md#models-and-tasks) states what a case claims.
+* inline: #case-claim

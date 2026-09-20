@@ -113,6 +113,9 @@
 - Each case that runs the approximation has a witness on which its output is not the verdict's.
 * comment
     - Precise reading: a case's output is not the verdict's when its output on the grid differs from the output the verdict names: the concept case's for `concept`, the output of the case that takes the named branch and the concept branch elsewhere for a branch's name, every case's for `other`, no case's for `any`.
+- A `// review <kind>: <text>` line stands last in the header, and it names a subject a retro left for its Resolve stage.
+    - A line whose kind is `cite` waits on the user.
+- A solver session leaves such a line as it is.
 - A family sibling's header, omitting other fields:
     ```
     // <task_id>
@@ -165,7 +168,7 @@
 ## Program
 - Program style applies to the program clauses and the Determine comp.
 - The single-consumer hint also applies to relations in Params.
-- **`@allow` directive.** A relation kept despite the lint's single-consumer hint has `// @allow: single-consumer — <reason>` on the line immediately above its declaration.
+- **`@allow` directive.** A relation kept despite a lint hint has `// @allow: <category> — <reason>` on the line immediately above its declaration, with the category the hint names.
     - Put the relation's gloss in a separate comment immediately above the directive.
     - The hint does not fire on the relation.
 - **`@workaround` directive.** A temporary workaround is under a `// @workaround: <the principled form it stands in for>` line.
@@ -186,8 +189,6 @@
 - **Complement tests.** The test negates the named case: `!params.bg(Col)` for non-bg.
 - **Off-edge tests.** The test is `!dist(P, D, 0)`.
 - **Narrowing.** When a clause binds an argument of a lib relation to a head column of a narrower type, it takes that type's `*_elem` atom.
-- **Aggregators.** Inline relations cannot appear inside aggregators.
-    - A non-inline relation wraps one when needed.
 
 ### Layout
 - Related atoms share a line.

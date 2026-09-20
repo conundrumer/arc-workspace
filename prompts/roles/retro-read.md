@@ -14,7 +14,7 @@
 - An issue can have one callout.
 - Do not merge issues that only share a file.
 - State each issue as what is wrong in the shared thing, not as what a session did.
-- The group is the file or the tool the issue is about: one doc file under `docs/`, the lib, meaning `programs/lib.dl` and the modules under `programs/lib/`, the runner, the console, or the task data.
+- The group is the file or the tool the issue is about: one doc file under `docs/` or a document under `prompts/`, the lib, meaning `programs/lib.dl` and the modules under `programs/lib/`, the runner, or the console.
     - A section or a lib relation is not a group.
     - One check agent takes a whole group.
 - Files you write go under `.scratch/retro/` and nowhere else.

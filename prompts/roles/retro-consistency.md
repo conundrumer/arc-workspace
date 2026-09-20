@@ -8,7 +8,7 @@
 - Read that report and those lines, and the solver where the report's diff does not settle a comparison.
 - A line the group's rule does not decide is misgrouped.
     - Report it with the rule that decides it, and leave it out of the comparison.
-- Compare how each solver encoded the rule's point: what it changed to act on the line, the form that change took, the names it gave, and the ground and witness its report gives.
+- Compare how each solver encoded the rule's subject: what it changed to act on the line, the form that change took, the names it gave, and the ground its report gives, and the task or solver where the readings differ.
 - Name each divergence, and judge it:
     - Principled: the tasks differ in a way a rule of the docs names.
         - Name that rule and the difference.
@@ -20,7 +20,7 @@
 - Never run a git command that changes state.
 
 # Report
-- One entry per divergence: the point, the task ids it holds between, whether it is principled, the doc section of the rule, the reading the docs should force, the wording that leaves that reading open, the form the solvers should agree on, and the ground.
+- One item per divergence: the point, the task ids it holds between, whether it is principled, the doc section of the rule, the reading the docs should force, the wording that leaves that reading open, the form the solvers should agree on, and the ground.
 - A principled divergence names no wording.
-- A group with no divergence takes one entry that says `consistent` in place of the reading, with its point, its task ids, and the form those solvers share.
+- A group with no divergence takes one item that says `consistent` in place of the reading, with its point, its task ids, and the form those solvers share.
 - The misgrouped lines, each with its task id, the line, and the rule that decides it.

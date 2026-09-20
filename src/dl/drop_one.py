@@ -39,7 +39,7 @@ MESSAGES = mctx({
         "both": "{count} fact(s) no pair needs:",
         "train-only": "{count} fact(s) the train pairs do not need, and the test "
                       "pairs do:",
-        "ground": "holds the picture's ground color, so the cell draws nothing "
+        "ground": "holds the picture's background color, so the cell draws nothing "
                   "wherever the picture is read",
         "sweep": "an enumerable parameter, so `sweep` can report the same drop",
 })

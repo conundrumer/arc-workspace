@@ -9,7 +9,6 @@ handbook agents run under.
 import hashlib
 import json
 import os
-import re
 import threading
 from pathlib import Path
 
@@ -51,22 +50,22 @@ def message(name: str, **values) -> str:
 
 def scratch_note() -> str:
     """Worker-only: where a worker's scratch files go, and what its shell
-    leaves alone. The note's headings sit a level under the handbook's own,
-    and the renderer has no depth offset, so they are pushed down here."""
-    return re.sub(r"(?m)^#", "##", message("scratch-note"))
+    leaves alone."""
+    return message("scratch-note")
 
 
 def append_path(index: bool = False) -> Path:
-    """The worker's system-prompt appendix: the scratch note, then the docs and
-    the lib, as dl.context renders them, the lib as its interface, or under
-    `index` as its index. The file is named by its content: items made while
-    the sources are unchanged share one file, and so one cached prefix, and a
-    file never changes under the session that reads it, since a worker
-    resumes by reading its own file again. The build also keeps the handbook
+    """The worker's system-prompt appendix: the docs and the lib, as
+    dl.context renders them, the lib as its interface, or under `index` as
+    its index, then the scratch note. The file is named by its content: items
+    made while the sources are unchanged share one file, and so one cached
+    prefix, and a file never changes under the session that reads it, since a
+    worker resumes by reading its own file again. The build also keeps the handbook
     agents' files and the lib's interface files current, so a session started
     plainly spawns an agent over the same handbook."""
-    text = scratch_note() + "\n" + render(
-        AGENT_NAMES[0] if index else AGENT_NAMES[1], agents=config.AGENTS)
+    text = render(
+        AGENT_NAMES[0] if index else AGENT_NAMES[1],
+        agents=config.AGENTS) + "\n" + scratch_note()
     digest = hashlib.sha1(text.encode()).hexdigest()[:10]
     path = config.STATE_DIR / f"appendix-{digest}.md"
     if path.exists():

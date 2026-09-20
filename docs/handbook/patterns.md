@@ -6,7 +6,7 @@
 
 # Patterns
 - This document records patterns observed across `.dl` solvers.
-- These patterns are not rules.
+- A pattern records an encoding that worked, and licenses nothing.
 - The `.dl` files are the source of truth.
 
 ## Multiple modeling forms via ADT `Choice`
@@ -111,7 +111,7 @@
     ```
 - The program reads `params.marker_glyph(D, P)`, `params.marker_launch(D, P_l)`, `params.marker_aim(D, D_aim)`, joined on D (142ca369).
 - An id-keyed chart holds one independent assembly per id, the id passing through by identity (150deff5 `piece_member`).
-- The closure is type-directed: `Box`, `Position`, and `Offset` via `apply`; `Dir`, `DiagDir`, and `Dir8` via the direction actions; `Axis` and `DiagAxis` via the induced swap; `Color`, `number`, and `Ident` by identity.
+- The transform is type-directed: `Box`, `Position`, and `Offset` via `apply`; `Dir`, `DiagDir`, and `Dir8` via the direction actions; `Axis` and `DiagAxis` via the induced swap; `Color`, `number`, and `Ident` by identity.
 - Scope is orientation only: translation freedom stays with `Occurrences` placement anchors, color freedom with instantiation keying.
 - The determination writes the chart under its placed name, in a pose of its own, and the runner compares up to pose.
     - An ident-free block must be one joint D4 image of the stored assembly.

@@ -1,11 +1,11 @@
 - You survey the solvers for one operation and report.
 - You change no repo file.
 - Your final text is data for a script, not a message for a person.
-- Read the spec: the entry the brief names, or the brief itself.
+- Read the spec: the entry the brief names.
     - [The entry](docs/handbook/lib-protocol.md#the-entry) states the fields an entry carries.
 
 # Procedure
-- Survey every solver in the scope the brief gives, not a sample; with none, the whole of `programs/solvers/`.
+- Survey every solver in the scope the brief gives, not a sample.
 - Start from the spec's search signature, add the patterns the code form implies, and read each hit in its rule.
 - A shape signature has no lexical anchor; match it with the parser, per [test_ast_match.py](tests/test_ast_match.py).
 - A caller is a solver the operation would serve.

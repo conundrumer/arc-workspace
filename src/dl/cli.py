@@ -1179,8 +1179,8 @@ def _parser() -> argparse.ArgumentParser:
         "record",
         help="run one solver on a grid you write and write the run into the "
              "task's witness file",
-        description="The entry goes into programs/witnesses/<task>.wit.json "
-                    "under <id>, replacing an entry of that id already "
+        description="The witness goes into programs/witnesses/<task>.wit.json "
+                    "under <id>, replacing a witness of that id already "
                     "there. A `---` line in the grid text puts the judged "
                     "output an `other` verdict takes behind it, and that "
                     "grid is stored in place of the per-case outputs.",
@@ -1189,7 +1189,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     record.add_argument("stem", help=STEM_HELP)
     record.add_argument("id", nargs="?",
-                        help="the entry's id, unique within the witness "
+                        help="the witness's id, unique within the witness "
                              "file; required unless `--format`")
     record.add_argument("file", nargs="?",
                         help="grid file; stdin when omitted or `-`")
