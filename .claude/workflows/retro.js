@@ -14,13 +14,13 @@ export const meta = {
   ],
 }
 
-// Each stage runs a handbook agent under a role from .claude/roles/: the
-// agent the role's first line names, `handbook` with no such line. Each role
-// carries its stage's procedure, and a task opens with the role text, then
-// the brief. The sweep, the sweep lines, the checks, and each prose unit of
-// the fix stage take no role: each runs one command and returns what that
-// command printed. This script carries the order, the fan-out, the return
-// schemas, and each instance's task.
+// A run takes its `roles` and its `sections` in `args`, as
+// `.claude/skills/session/SKILL.md` says to pass them. Each stage runs a
+// handbook agent under a role from prompts/roles/, and its brief is a section
+// of prompts/retro.md filled with the run's values. The sweep, the sweep
+// lines, the checks, and each prose unit of the fix stage take no role: each
+// runs one command and returns what that command printed. This script carries
+// the order, the fan-out, the return schemas, and each instance's values.
 //
 // An agent writes the diff of each file it changed to a file under
 // `.scratch/retro/diffs/`, and reports the path. A diff never travels through
@@ -44,10 +44,11 @@ export const meta = {
 // every other merge, one such unit at a time.
 //
 // args:
-//   { roles: {...} }   required in every run: the text of each role the run reaches, by role
-//                      name — { 'retro-read': '<the text of .claude/roles/retro-read.md>' }.
-//                      The script reads no file, so the caller passes the text. READ_ROLES and
-//                      FIX_ROLES name what each run needs; a missing one returns an error.
+//   { roles, sections, schemas }
+//                      required in every run: the output of `uv run python scripts/context.py
+//                      workflow retro`, field for field. The script reads no file, so the caller
+//                      passes the text. READ_ROLES and FIX_ROLES name the roles each run needs;
+//                      a missing one returns an error.
 //   {}                 full run; returns every call with its default, for, and against.
 //   { dry: true }      full run that stops before Fix and returns the fixes it would make.
 //   { fixes: [...] }   second run after the user's rulings: Fix, Resolve, Consistency, Apply, Cleanup,
@@ -73,21 +74,23 @@ export const meta = {
 //                      instead; `{ model, effort }` passes those two to Codex. A unit whose Codex
 //                      session returns nothing falls back to the handbook agent on its own.
 
+// ---------------------------------------------------------------- schemas
+
+// The return schemas, one per stage. Everything from the marker above to the
+// marker below is read out on its own: `scripts/context.py workflow` slices
+// the region, evaluates it, and prints each constant by name. Nothing in it
+// names anything outside it, so the slice stands alone.
+
 // The call's discretion level: how much room the default took beyond what the
 // grounds determine. A level-4 fix is not made in the first run.
-const TIER = {
-  type: 'integer',
-  minimum: 1,
-  maximum: 4,
-  description: '1: a ground states it outright, or it fixes a bug; 2: a ground determines it through a reading of the user\'s intent or of an existing convention, and that reading admits no other; 3: the grounds permit more than one option, and the default is defensible from them; 4: no ground bears on it',
-}
+const TIER = { type: 'integer', minimum: 1, maximum: 4 }
 
 const FIX_REF = {
   type: 'object',
   properties: {
     kind: { type: 'string', enum: ['prose', 'code', 'entry', 'solver'] },
-    target: { type: 'string', description: 'the one file the fix edits, repo-relative; for an entry, docs/wf-solver/proposals/<name>.md; for a solver, programs/solvers/<task_id>.dl' },
-    edit: { type: 'string', description: 'the smallest edit that closes the issue in this file, stated so an agent that has this file alone can make it without the issue in hand' },
+    target: { type: 'string', description: 'the file the fix edits, repo-relative; for an entry, docs/wf-solver/proposals/<name>.md; for a solver, programs/solvers/<task_id>.dl' },
+    edit: { type: 'string', description: 'the smallest edit that closes the issue in this file, stated as your role\'s Procedure requires' },
   },
   required: ['kind', 'target', 'edit'],
 }
@@ -98,7 +101,7 @@ const FIX_CANDIDATE = {
     ...FIX_REF.properties,
     for: { type: 'string' },
     against: { type: 'string' },
-    illustration: { type: 'string', description: 'a fix to docs/wf-solver/principles.md at level 3: for each cited task, the case sets under each reading and a witness input where the readings differ' },
+    illustration: { type: 'string', description: 'the illustration your role\'s Procedure requires of a level-3 fix to Principles' },
   },
   required: [...FIX_REF.required, 'for', 'against'],
 }
@@ -111,9 +114,9 @@ const ISSUES_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          id: { type: 'string', description: 'I1, I2, ... in count-descending order' },
-          group: { type: 'string', description: 'the file or tool the issue is about: a doc file, programs/lib.dl, the runner, the console, the task data' },
-          issue: { type: 'string', description: 'one plain sentence: what is wrong or missing in the shared thing, not what a session did' },
+          id: { type: 'string', description: 'I1, I2, and so on, in count-descending order' },
+          group: { type: 'string', description: 'the file or the tool the issue is about, as your role\'s Procedure defines a group' },
+          issue: { type: 'string', description: 'the issue in one plain sentence, stated as your role\'s Procedure requires' },
           count: { type: 'integer' },
           tasks: { type: 'array', items: { type: 'string' } },
           quote: { type: 'string', description: 'one callout, verbatim' },
@@ -123,7 +126,7 @@ const ISSUES_SCHEMA = {
     },
     borderline_drops: {
       type: 'array',
-      description: 'callouts dropped as task-local where the call was close: task id and the first words',
+      description: 'the borderline drops, each as your role\'s Report gives them',
       items: { type: 'string' },
     },
   },
@@ -141,13 +144,13 @@ const CHECK_SCHEMA = {
           id: { type: 'string' },
           status: { type: 'string', enum: ['closed', 'dropped', 'open'] },
           closed_by: { type: 'string', description: 'closed: the commit or the current text that closes it' },
-          tier: { ...TIER, description: `dropped: ${TIER.description}` },
+          tier: { ...TIER, description: 'dropped: the drop\'s discretion level, as your role\'s Procedure states it' },
           basis: { type: 'string', description: 'dropped: the principle, norm, or fact the drop rests on' },
-          for: { type: 'string', description: 'dropped: what argues for the drop, each reason its own sentence' },
-          against: { type: 'string', description: 'dropped: what argues against the drop, each reason its own sentence; empty when nothing does' },
+          for: { type: 'string', description: 'dropped: what argues for the drop, stated as your role\'s Procedure requires' },
+          against: { type: 'string', description: 'dropped: what argues against the drop, stated the same way; empty when nothing does' },
           changed_work: { type: 'boolean', description: 'open: whether the issue changed what a session did, or was only noted' },
           changed_how: { type: 'string', description: 'open: one sentence on what it caused' },
-          fixes: { type: 'array', items: FIX_CANDIDATE, description: 'open: the candidate fixes, the recommended one first; dropped: the declined fix' },
+          fixes: { type: 'array', items: FIX_CANDIDATE, description: 'open: the candidate fixes, in the order your role\'s Procedure gives; dropped: the declined fix' },
         },
         required: ['id', 'status'],
       },
@@ -166,14 +169,14 @@ const REVIEW_SCHEMA = {
         properties: {
           id: { type: 'string' },
           default: { type: 'string', enum: ['fix', 'replace', 'drop'], description: 'the outcome that holds unless the user rules otherwise' },
-          tier: TIER,
+          tier: { ...TIER, description: 'the call\'s discretion level, as your role\'s Procedure states it' },
           reason: { type: 'string', description: 'the answer to the two questions, in one or two sentences' },
           basis: { type: 'string', description: 'the principle, the norm, or the fact the call rests on' },
-          for: { type: 'string', description: 'what argues for the default, each reason its own sentence' },
-          against: { type: 'string', description: 'what argues against the default, each reason its own sentence; empty when nothing does' },
+          for: { type: 'string', description: 'what argues for the default, stated as your role\'s Procedure requires' },
+          against: { type: 'string', description: 'what argues against the default, stated the same way; empty when nothing does' },
           options: {
             type: 'array',
-            description: 'a fix to docs/wf-solver/principles.md: each reading of the rule as an option, the default first',
+            description: 'a fix to Principles: each reading of the rule as an option, the default first',
             items: {
               type: 'object',
               properties: {
@@ -348,7 +351,7 @@ const CLEANUP_SCHEMA = {
   type: 'object',
   properties: {
     changed: { type: 'string', description: 'what changed, or `no change` with the reason' },
-    run: { type: 'string', description: 'the run result after the pass, and any failure or finding the first run already had' },
+    run: { type: 'string', description: 'the run result after the pass, and the failure or finding your role\'s Procedure says to report as already there' },
     carried: { type: 'array', items: { type: 'string' }, description: 'a file the brief did not name that a carry reached, and what changed in it' },
   },
   required: ['changed', 'run', 'carried'],
@@ -364,7 +367,7 @@ const GROUP_SCHEMA = {
         properties: {
           task_id: { type: 'string' },
           line: { type: 'string', description: 'the review line, verbatim' },
-          group: { type: 'string', description: 'a short kebab-case id for the rule the line falls under; lines one rule decides share it' },
+          group: { type: 'string', description: 'the group id for the rule the line falls under, in the form your role\'s Procedure gives' },
           rule: { type: 'string', description: 'the rule that decides the line, as doc and section' },
         },
         required: ['task_id', 'line', 'group', 'rule'],
@@ -411,13 +414,36 @@ const CONSISTENCY_SCHEMA = {
   required: ['divergences', 'misgrouped'],
 }
 
+// ------------------------------------------------------------ schemas end
+
+// ---------------------------------------------------------------- briefs
+
+// The brief of each stage stands in prompts/retro.md, one section per stage,
+// with `{{name}}` where a run's value goes. `scripts/context.py workflow retro`
+// renders the sections, and the session passes them in `args.sections`.
+const sections = (args && args.sections) || {}
+
+// A section with its values in place. A name the section does not read, and a
+// name the section reads and the caller does not give, are both errors: the
+// brief and the caller state one interface between them.
+const fill = (name, values = {}) => {
+  const text = sections[name]
+  if (text === undefined) throw new Error(`no section \`${name}\` in args.sections`)
+  const used = new Set([...text.matchAll(/\{\{([A-Za-z0-9_.-]+)\}\}/g)].map(m => m[1]))
+  for (const k of used) if (!(k in values)) throw new Error(`${name}: no value for \`${k}\``)
+  for (const k of Object.keys(values)) if (!used.has(k)) throw new Error(`${name}: nothing reads \`${k}\``)
+  return text.replace(/\{\{([A-Za-z0-9_.-]+)\}\}/g, (_, k) => String(values[k]))
+}
+
 // ---------------------------------------------------------------- tasks
 
-const readTask = () => 'Read the retro window and return the issues.'
+const readTask = () => fill('read')
 
-const checkTask = (group, issues) => `Check these issues, all about ${group}.\n\n${JSON.stringify(issues, null, 2)}`
+const checkTask = (group, issues) =>
+  fill('check', { group, issues: JSON.stringify(issues, null, 2) })
 
-const reviewTask = (open) => `Review these open issues and their candidate fixes.\n\n${JSON.stringify(open, null, 2)}`
+const reviewTask = (open) =>
+  fill('review', { open: JSON.stringify(open, null, 2) })
 
 // A path under the diff directory, taken from the text it belongs to, so the
 // name holds no separator of its own.
@@ -447,117 +473,80 @@ const fixEntries = (groups, pruned) => JSON.stringify(
     fixes: g.fixes,
   })), null, 2)
 
-const fixTask = (groups, pruned = false) => [
-  groups.length > 1
-    ? `Make these fixes. Each entry names one file, the fixes that file takes, and the path its diff goes to.`
-    : `Make these fixes in ${groups[0].target}.`,
-  '',
-  fixEntries(groups, pruned),
-  '',
-  'Write the diff of your changes to each file named above, verbatim, to that file\'s `diff_path`. Create the directory first.',
-  `A file you changed that is not named above takes a diff of its own under \`${DIFF_DIR}/\`, at a path you pick.`,
-  'Report one `diffs` entry per file you changed, the files named above and the others alike: the file, and the path its diff went to.',
-].join('\n')
+const fixLead = (groups) => groups.length > 1
+  ? 'Make these fixes. Each entry names one file, the fixes that file takes, and the path its diff goes to.'
+  : `Make these fixes in ${groups[0].target}.`
+
+const fixTask = (groups, pruned = false) => fill('fix', {
+  lead: fixLead(groups),
+  entries: fixEntries(groups, pruned),
+  diff_dir: DIFF_DIR,
+})
 
 // A code unit works in a worktree of its own, so its brief says where it is,
 // how a command runs there, and how its change gets back.
-const worktreeNote = () => [
-  '',
-  'You are in a git worktree of the repo, checked out at HEAD. It is a full tree of its own, and every path above is relative to its root.',
-  'Work inside that tree and nowhere else: every read, every edit, and every command.',
-  'Run each `uv run` command from the root of that tree. The first one builds that tree\'s own environment.',
-  'A file you create is new to git, and a diff of the tracked files leaves it out. For each file you create, append the output of `git diff --no-index -- /dev/null <file>` to that file\'s diff.',
-  'Report the absolute path of the worktree in `worktree`.',
-].join('\n')
+const worktreeNote = () => '\n' + fill('worktree')
 
 // The verify pass of a code unit works in the worktree its fix worked in, so
 // the change it reads and the change it makes stay in one tree.
-const worktreeVerifyNote = (worktree) => [
-  '',
-  `The fix worked in a git worktree of the repo, at ${worktree}. Every path above is relative to that tree's root.`,
-  'Work inside that tree and nowhere else: every read, every edit, and every command.',
-  `Run each \`uv run\` command from ${worktree}.`,
-].join('\n')
+const worktreeVerifyNote = (worktree) => '\n' + fill('worktree-verify', { worktree })
 
 // The reader the pruned text serves, by where the text lives.
 const readerFor = (target) =>
   target === 'docs/wf-solver/backlog.md' ? 'the user'
-    : target.startsWith('.claude/roles/') ? 'the handbook agent that carries this file as its role, with the docs in its system prompt'
+    : target.startsWith('prompts/roles/') ? 'the handbook agent that carries this file as its role, with the docs in its system prompt'
       : 'a future solver session that reads the file through `uv run python scripts/context.py` to write a Souffle solver'
 
-const fixAndPruneTask = (groups, ruled) => [
-  fixTask(groups, true),
-  '',
-  'Work in two steps: the fix, under the fix role, then the prune, under the prune role, over the diff your fix made.',
-  'The reader of each file, for the prune step:',
-  '',
-  ...groups.map(g => `    ${g.target}: ${readerFor(g.target)}`),
-  '',
-  ...(ruled ? ['The user ruled for these fixes. The prune keeps the rule each edit states.', ''] : []),
-  'The prune step takes the edits above as the edits the diff was meant to make.',
-  'Each file named above takes two diffs: the fix step writes its own diff to that file\'s `diff_path`, and the prune step writes the diff of its own pass to that file\'s `prune_path`.',
-  'Run the verification command once over all the fix edits together, and once over all the prune edits together. It does not run per file.',
-  'Report both steps. The `diffs` field carries one entry per file the run changed, each `path` that file\'s `prune_path`, since the prune step left the final state. The `notes` field carries one line per cut, and the meaning before and after of each rule the diff touches.',
-].join('\n')
+const fixAndPruneTask = (groups, ruled) => fill('fix-and-prune', {
+  lead: fixLead(groups),
+  entries: fixEntries(groups, true),
+  diff_dir: DIFF_DIR,
+  readers: groups.map(g => `${g.target}: ${readerFor(g.target)}`).join('\n'),
+  ruled: ruled
+    ? 'The user ruled for these fixes. The prune keeps the rule each edit states.'
+    : 'The user ruled on none of these fixes.',
+})
 
 // The diff of each file a fix changed beside the brief's targets: a code fix
 // writes a test with its change, so that test file is in scope too.
 const otherDiffs = (made) => (made.edit.diffs || []).filter(d => d.file && !made.targets.includes(d.file))
 const diffFiles = (made) => [...new Set(otherDiffs(made).map(d => d.file))]
 
-const verifyTask = (made) => [
-  `Verify the changes to ${made.target}.`,
-  '',
-  ...made.groups.map(g => [
-    `${g.target} — the edits its changes were meant to make:`,
-    JSON.stringify(g.fixes.map(f => f.edit), null, 2),
-    made.kind === 'prose'
-      ? `Its fix diff is under ${diffPath(g.target)}, and the diff of the prune over that fix is under ${prunePath(g.target)}.`
-      : `Its diff is under ${diffPath(g.target)}.`,
-    '',
-  ].join('\n')),
-  ...(otherDiffs(made).length
-    ? ['The fix also changed these files. They are in scope beside the target: fix what you find in them. Each entry names the file, then the diff of its change.',
-      ...otherDiffs(made).map(d => `    ${d.file} — ${d.path}`), '']
-    : []),
-  ...(made.chain && made.chain.length
-    ? ['The other code targets of this run changed the same tree. Their diffs are under these paths:', ...made.chain.map(p => `    ${p}`), '']
-    : []),
-  `Write the diff of your own changes, verbatim, to ${verifyPath(made.label)}, and report that path. A pass that changed nothing writes no file and reports an empty path.`,
-  ...(made.worktree ? [worktreeVerifyNote(made.worktree)] : []),
-].join('\n')
+// A one-statement section placed inside another statement: the bullet it
+// renders with belongs to the statement it lands in.
+const sentence = (name, values) => fill(name, values).replace(/^- /, '')
 
-const mergeTask = (worktree) => [
-  `Take the change in the worktree at ${worktree} into the repo.`,
-  '',
-  `    uv run python scripts/retro_merge.py ${shq(worktree)}`,
-  '',
-  'Run it as one Bash call, in the foreground, with the Bash tool\'s `timeout` set to 600000.',
-  'It prints `{"applied": ..., "files": [...], "conflict": ...}`. Return that object as your structured output, field for field, changing nothing in it.',
-  'When the command fails, or prints nothing, return `applied` false, an empty `files`, and what went wrong in `conflict`.',
-  'Run no other command. Change no file yourself, and never run a git command of your own.',
-].join('\n')
+const verifyGroup = (made, g) => fill('verify-group', {
+  target: g.target,
+  edits: JSON.stringify(g.fixes.map(f => f.edit), null, 2),
+  diffs: made.kind === 'prose'
+    ? sentence('verify-prose-diffs', {
+      fix_path: diffPath(g.target), prune_path: prunePath(g.target),
+    })
+    : sentence('verify-code-diff', { diff_path: diffPath(g.target) }),
+})
 
-const checksTask = () => [
-  'Run the checks over the current tree: the suite, the handbook build, and every solver of the corpus.',
-  '',
-  '    uv run python scripts/retro_checks.py',
-  '',
-  'Run it as one Bash call, in the foreground, with the Bash tool\'s `timeout` set to 600000.',
-  'It prints `{"checks": [...]}`. Return that `checks` array, each entry as it stands.',
-  'Report a failure as a failure. Do not attribute it to other work, and do not report it as passing.',
-  'Change no file. Never run a git command that changes state.',
-].join('\n')
+const verifyTask = (made) => fill('verify', {
+  target: made.target,
+  groups: made.groups.map(g => verifyGroup(made, g)).join('\n\n'),
+  others: otherDiffs(made).length
+    ? fill('verify-others', {
+      files: otherDiffs(made).map(d => `${d.file} — ${d.path}`).join('\n'),
+    })
+    : fill('verify-no-others'),
+  chain: made.chain && made.chain.length
+    ? fill('verify-chain', { paths: made.chain.join('\n') })
+    : fill('verify-no-chain'),
+  verify_path: verifyPath(made.label),
+  worktree_note: made.worktree ? worktreeVerifyNote(made.worktree) : '',
+})
 
-const sweepTask = (stems) => [
-  'Sweep the parameter values of these solvers.',
-  '',
-  `    mkdir -p .scratch/retro/sweep && uv run python scripts/run_dl.py sweep --open ${stems.join(' ')}`,
-  '',
-  'Run it as one Bash call, in the foreground, with the Bash tool\'s `timeout` set to 600000. A stem whose cached sweep is missing, or was made from other solver code, sweeps again, and that takes minutes.',
-  'It prints `{"sweeps": [...], "skipped": [...]}`. Return that `sweeps` array, each entry as it stands.',
-  'Change no file outside `.scratch/retro/sweep/`. Never run a git command that changes state.',
-].join('\n')
+const mergeTask = (worktree) =>
+  fill('merge', { worktree, command_arg: shq(worktree) })
+
+const checksTask = () => fill('checks')
+
+const sweepTask = (stems) => fill('sweep', { stems: stems.join(' ') })
 
 // The console lists every `.md` under a task's report directory as a stage
 // report, so a resolve report stands beside the task's session reports.
@@ -565,22 +554,14 @@ const REPORT_DIR = 'tools/console/state/reports'
 
 const solverTarget = (taskId) => `programs/solvers/${taskId}.dl`
 
-const resolveTask = (taskId) => [
-  `Act on the review lines in programs/solvers/${taskId}.dl.`,
-  '',
-  'Every review line in the solver\'s header names a point to act on, except a line whose kind marks it as waiting on the user; `cite` is such a kind today. Work each line per the procedure\'s operations, as they apply to it.',
-  'Remove each line you finished. Leave a line you did not finish; when the solver carries no `// draft` line, return it to draft first: `uv run python -c "import sys; sys.path.insert(0, \'tools/console\'); from solver_console import solvers; solvers.mark_draft(\'<task_id>\'); solvers.withdraw_citations(\'<task_id>\')"`. A review line whose kind waits on the user is not yours: leave it as it is.',
-  'Run the solver, the lint, and the audit.',
-  `Write the diff of your change to the solver, verbatim, to ${resolvePath(taskId)}, and report that path. A run that changed nothing writes no file and reports an empty path.`,
-  `Write your report, in the form the Review operation gives, to ${REPORT_DIR}/${taskId}/retro.md. Create the directory first. The run, lint, and audit output go in your returned verification, not in the report.`,
-  'Never run a git command that changes state.',
-].join('\n')
+const resolveTask = (taskId) => fill('resolve', {
+  task_id: taskId,
+  diff_path: resolvePath(taskId),
+  report_path: `${REPORT_DIR}/${taskId}/retro.md`,
+})
 
-const cleanupTask = (taskId, source) => [
-  `Run Simplify, then Prune, over the whole of programs/solvers/${taskId}.dl.`,
-  source,
-  'Scratch goes under `.scratch/<task_id>/`.',
-].join('\n')
+const cleanupTask = (taskId, source) =>
+  fill('cleanup', { task_id: taskId, source })
 
 // The seed key of a review line: its kind, its head, and the start of its
 // point. A line of another form is no review line, and takes no key.
@@ -589,49 +570,33 @@ const seedKey = (line) => {
   return m ? `${m[1]}|${m[2]}|${m[3].slice(0, 40)}` : null
 }
 
-const groupTask = (lines) => [
-  'Group these review lines. Each entry names the solver the line stood in, the line, and a seed key from its text.',
-  '',
-  JSON.stringify(lines, null, 2),
-].join('\n')
+const groupTask = (lines) =>
+  fill('group', { lines: JSON.stringify(lines, null, 2) })
 
-const consistencyTask = (group, rule, members) => [
-  `Compare these solvers, the group \`${group}\`, under the rule ${rule}. Each entry names one solver, its report, and the review lines the Resolve stage acted on in it under that rule.`,
-  `Scratch goes under \`.scratch/retro/consistency/${group}/\`.`,
-  '',
-  JSON.stringify(members.map(r => ({
+const consistencyTask = (group, rule, members) => fill('consistency', {
+  group,
+  rule,
+  scratch: `.scratch/retro/consistency/${group}/`,
+  members: JSON.stringify(members.map(r => ({
     task_id: r.task_id,
     solver: r.target,
     report: `${REPORT_DIR}/${r.task_id}/retro.md`,
     acted: r.acted,
   })), null, 2),
-].join('\n')
+})
 
 // One solver of a divergence the docs' rules do not explain. The solver goes to
 // the form its group agreed on, under the reading that decides it.
-const applyTask = (taskId, d) => [
-  `Bring programs/solvers/${taskId}.dl to the form below, under the reading below.`,
-  '',
-  JSON.stringify({ point: d.point, reading: d.reading, form: d.form }, null, 2),
-  '',
-  'The solvers this entry holds between read that point differently. The form above is the form they agree on.',
-  'Change nothing the form does not reach. The model, the parameterization, and the Choice cases stay as they are.',
-  'Run the solver, the lint, and the audit.',
-  `Write the diff of your change to the solver, verbatim, to ${applyPath(taskId)}, and report that path. A run that changed nothing writes no file and reports an empty path.`,
-  `Write your report, in the form the Review operation gives, to ${REPORT_DIR}/${taskId}/retro-consistency.md. Create the directory first. The run, lint, and audit output go in your returned verification, not in the report.`,
-  'Report the point you brought the solver to in `acted`, as one entry, and what the form leaves unfinished in `left`.',
-  'Never run a git command that changes state.',
-].join('\n')
+const applyTask = (taskId, d) => fill('apply', {
+  task_id: taskId,
+  divergence: JSON.stringify(
+    { point: d.point, reading: d.reading, form: d.form }, null, 2),
+  diff_path: applyPath(taskId),
+  report_path: `${REPORT_DIR}/${taskId}/retro-consistency.md`,
+})
 
-const sweepLinesTask = (sweeps) => [
-  'Write the sweep review lines into these solvers.',
-  '',
-  `    uv run python scripts/run_dl.py sweep --mark ${sweeps.map(s => s.stem).join(' ')}`,
-  '',
-  'Run it as one Bash call, in the foreground, with the Bash tool\'s `timeout` set to 600000.',
-  'It prints `{"solvers": [...], "skipped": [...]}`. Return that `solvers` array, each entry as it stands.',
-  'Change no other file. Never run a git command that changes state.',
-].join('\n')
+const sweepLinesTask = (sweeps) =>
+  fill('sweep-lines', { stems: sweeps.map(s => s.stem).join(' ') })
 
 // ---------------------------------------------------------------- stages
 
@@ -662,7 +627,7 @@ const AGENT_LINE = /^Agent: (\S+)\n+/
 const ROLES = (args && args.roles) || {}
 const roleFile = (name) => {
   const text = ROLES[name]
-  if (typeof text !== 'string' || !text.trim()) throw new Error(`args.roles[${JSON.stringify(name)}] is missing: pass the text of .claude/roles/${name}.md`)
+  if (typeof text !== 'string' || !text.trim()) throw new Error(`args.roles[${JSON.stringify(name)}] is missing: pass the output of scripts/context.py workflow retro`)
   return text.trim()
 }
 const roleOf = (name) => roleFile(name).replace(AGENT_LINE, '')
@@ -674,7 +639,7 @@ const asRole = (name, task) => `${roleOf(name)}\n\n---\n\nYour brief:\n\n${task}
 // A prose unit takes the fix role, then the prune role over the diff the fix
 // step made.
 const asFixAndPrune = (task) =>
-  `${roleOf('retro-fix')}\n\n---\n\nThe second step, over the diff your fix made:\n\n${roleOf('retro-prune')}\n\n---\n\nYour brief:\n\n${task}`
+  `${roleOf('retro-fix')}\n\n---\n\n${fill('fix-and-prune-step')}\n\n${roleOf('retro-prune')}\n\n---\n\nYour brief:\n\n${task}`
 
 // ---------------------------------------------------------------- codex
 
@@ -702,19 +667,15 @@ const codexBrief = (u, ruled) => [
 // brief and the schema, makes AGENTS.md current, and hands the brief to one
 // Codex session. Codex makes the edits, writes the diffs, and runs the
 // verification.
-const codexTask = (u, ruled) => [
-  `Run the brief below through Codex. It covers ${u.targets.length} file${u.targets.length === 1 ? '' : 's'}: ${u.targets.join(', ')}.`,
-  '',
-  'Run this as one Bash call, in the foreground, with the Bash tool\'s `timeout` set to 600000. Copy the whole command, the brief between the two `RETRO_BRIEF` markers included, verbatim.',
-  '',
-  `uv run python scripts/retro_codex.py --label ${shq(u.label)} --schema ${shq(JSON.stringify(EDIT_SCHEMA))}${codexFlags()} <<'RETRO_BRIEF'`,
-  codexBrief(u, ruled),
-  'RETRO_BRIEF',
-  '',
-  'It prints the JSON of the Codex session\'s final message. Return that JSON as your structured output, field for field, changing nothing in it.',
-  'When the command fails, or prints nothing, return an empty `diffs`, an empty `verification`, an empty `review_lines`, and what went wrong in `notes`.',
-  'Run no other command. Make none of the edits yourself, and change no file. Never run a git command that changes state.',
-].join('\n')
+const codexTask = (u, ruled) => fill('codex', {
+  count: `${u.targets.length} file${u.targets.length === 1 ? '' : 's'}`,
+  targets: u.targets.join(', '),
+  command: [
+    `uv run python scripts/retro_codex.py --label ${shq(u.label)} --schema ${shq(JSON.stringify(EDIT_SCHEMA))}${codexFlags()} <<'RETRO_BRIEF'`,
+    codexBrief(u, ruled),
+    'RETRO_BRIEF',
+  ].join('\n'),
+})
 
 // A Codex session that left no final message comes back with nothing to
 // verify, and its unit falls back to the handbook agent.
@@ -1048,7 +1009,7 @@ async function followupStage(verify) {
 }
 
 const missing = rolesNeeded().filter(name => typeof ROLES[name] !== 'string' || !ROLES[name].trim())
-if (missing.length) return { error: `args.roles is missing ${missing.join(', ')}. Pass each role's text from .claude/roles/<name>.md under args.roles.` }
+if (missing.length) return { error: `args.roles is missing ${missing.join(', ')}. Pass the output of scripts/context.py workflow retro.` }
 
 // The solvers the caller names, whatever their headers hold. A run given stems
 // to sweep sweeps them first, and resolves the solvers its lines marked beside
@@ -1138,7 +1099,7 @@ if (open.length) {
 }
 const dry = args && args.dry
 // The doc whose fixes wait on the user's ruling, at any level.
-const PRINCIPLES = 'docs/wf-solver/principles.md'
+const PRINCIPLES = 'docs/handbook/principles.md'
 // A level-4 call is presented and not made, and so is a fix to PRINCIPLES. A dry run makes
 // nothing, so it lists them with the rest: the rulings filter them like any other fix.
 const stands = calls.filter(c => (c.default === 'fix' || c.default === 'replace') && c.fixes.length && (dry || c.tier !== 4))

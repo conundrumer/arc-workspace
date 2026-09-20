@@ -7,7 +7,7 @@ export const meta = {
 }
 
 // args:
-//   role   the text of .claude/roles/cleanup.md
+//   role   the output of `uv run python scripts/context.py role cleanup`
 //   items  [{ stem, findings: ['<lint finding line>', ...] }], one per solver,
 //          from `uv run python scripts/run_dl.py lint`, the `negated-value`
 //          and `negated-use` lines grouped by solver.
@@ -56,7 +56,7 @@ ${item.findings.map((f) => `  ${f}`).join('\n')}
 
 phase('Cleanup')
 const reports = await pipeline(args.items, (item) =>
-  agent(`${role}\n${brief(item)}`, {
+  agent(`${role}\n\nYour brief:\n\n${brief(item)}`, {
     label: `cleanup:${item.stem}`,
     phase: 'Cleanup',
     agentType,
