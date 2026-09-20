@@ -16,7 +16,7 @@
 - Head each part with that word and a colon on a line of its own; write no markdown heading and no bold.
 - Write no text before the `Callers:` line and none after the Reimplementations part: no reply framing, such as an opening kaomoji or a closing sound-name line.
 - Name the operation in the text.
-- The entry contains its own title and definition, and the `Survey:` line above the report states the scope and the survey's time, so the report restates none of those.
+- The report restates neither the entry's title and definition nor the scope and time the `Survey:` line above it states.
 - Cite a solver by its stem and the relation name.
 - Write no path under `.scratch/`.
 - Refer to an earlier result by its `Survey:` time, never by an ordinal.

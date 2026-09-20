@@ -8,7 +8,6 @@
 - This document records patterns observed across `.dl` solvers.
 - These patterns are not rules.
 - The `.dl` files are the source of truth.
-- The list exists so future sessions can scan what has been used.
 
 ## Multiple modeling forms via ADT `Choice`
 - Multiple models are encoded in one solver file as cases of an ADT `Choice` column on `out`.
@@ -49,7 +48,9 @@
     - `GRID_HxW` has no empty cell: every cell of its layout holds a value.
     - Each cell fact's Position is in the call's own H×W frame.
     - The runner expands the call before Souffle sees the file, and GRID is not defined in the lib.
-    - H and W are the grid's dims and take any size, so a call carries H·W cell values.
+    - H and W are the grid's dims and take any size.
+    * comment:
+        - A call therefore carries H·W cell values.
     - Cells can hold any per-cell data: colors, labels, transforms.
     - A distinguished cell is a Position fact, not a cell value (27a28665 `center_pos`).
     ```
@@ -174,7 +175,9 @@
 ## Stored total orders as dense ranks
 - A total order is stored in the parameters as dense rank data and is consumed only by comparison.
     - Ranks state each element's place in the sequence directly, and successor edges state it only through closure.
-    - Dense values keep the encoding canonical, since a gapped value encodes one order many ways.
+    - Dense values keep the encoding canonical.
+    * comment:
+        - A gapped value encodes one order many ways.
     - A store bases its ranks at 0, unless the clause that reads them compares a rank against a value that fixes another base.
     ```
     .decl ink_rank(c: Color, r: number)
@@ -261,13 +264,15 @@
 - A record that orders members by positional convention lacks that property: the convention is unstated data at the interface.
 - A repeated variable in a wide atom states the diagonal case directly: equal extents for a square, equal distances for a centered cell or one on a corner's diagonal.
 - The long encoding needs an agreement join for the same statement.
-- A derivation has a long layout because a clause that quantifies over an index emits one row per index value, and aggregation computes per index.
+- A derivation has a long layout.
+* comment:
+    - A clause that quantifies over an index emits one row per index value, and aggregation computes per index.
     - `Bbox` aggregates `edge_min` per Dir, then packs the four into `box`.
 - Widening derived data requires one pairing join at its defining clause.
 - A value that already holds the co-occurrence can be widened without another join.
 
 ## Universals via defect negation
-- "Every member of a closed domain satisfies R" is stated through a defect witness, since Datalog has no forall: one clause derives the keys where some member fails, and the universal is its negation.
+- "Every member of a closed domain satisfies R" is stated through a defect witness: one clause derives the keys where some member fails, and the universal is its negation.
     - A member missing from the tested relation is a defect, so existence and agreement are one test.
     ```
     broken(P, Col) :- arm(P, _, Col), dir_elem(D), !arm(P, D, Col).

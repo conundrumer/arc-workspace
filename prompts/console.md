@@ -100,7 +100,7 @@
     * inline: #callout-kinds
 - An entry a description excludes, such as a name local to this solver, is not a callout at all: leave it out.
 - P0 stands apart from that scale: use it only for a clear mechanical problem with the tooling, such as the runner, the linter, or the audit crashing, giving a wrong result, or lacking something the procedure needed.
-- A P0 is the first thing the user reads, so a judgment call never carries it.
+- A judgment call never carries a P0.
 * inline: #callouts-reply
 
 ## refused-callout
@@ -144,7 +144,8 @@
 
 ### Scratch
 - Files you write to answer a question about the task go in `.scratch/<task_id>/`, not the repo root.
-- Git ignores that path.
+* comment:
+    - Git ignores that path.
 
 ### Git
 - No git writes.
@@ -182,7 +183,9 @@
 
 ### advance-pass
 * inline: #advance-head
-- Read programs/solvers/{{tid}}.dl first — the reports describe it, but you edit the file itself.
+- Read programs/solvers/{{tid}}.dl first, and edit that file.
+* comment:
+    - The reports describe the solver; the file is what changes.
 - Run these operations over it, in this order:
     1. [Develop](docs/handbook/procedure.md#develop)
     2. [Determine](docs/handbook/procedure.md#determine)
@@ -254,7 +257,9 @@
 * comment: Stated once here; a message adds only what its own stage owes.
 
 - the model hypothesis as it now stands, what you changed and why, each choice point with the alternatives you tested and what ruled them out, and the open items
-- Those alternatives include the ones the data rules out: a review omits them, so the report carries them and the next session does not derive them again.
+- Those alternatives include the ones the data rules out, which a review omits and the report carries.
+* comment:
+    - The next session then does not derive them again.
 - A witness the report relies on and did not record goes in the report itself, as the input fragment and each model's output on it.
 
 ### handoff-end
@@ -265,7 +270,7 @@
 - Make it complete enough that the next session reruns nothing.
 
 ### callout-open
-- The console carries a callout to the user, so an open one does not stall the chain.
+- An open callout does not stall the chain.
 
 ### callout-section
 - A `## Callouts` section in a report above is likewise addressed to the user and waits on a ruling.

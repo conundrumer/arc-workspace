@@ -22,7 +22,7 @@
     - Prose under `docs/`: `uv run python scripts/context.py > /dev/null`.
     - A lib comment or implementation: `uv run python scripts/run_dl.py <stem>` on every solver that instantiates the comp.
     - Code under `src/` or `tools/console/`: `uv run pytest -q` before and after.
-    - A test is written only under the rule of the project `CLAUDE.md`: the failure it guards would be silent in use.
+    - A test is written only under the rule of the project `CLAUDE.md`.
 - A failure in the suite is reported as a failure.
 - Do not attribute it to other work, and do not report it as passing.
 - Never run a git command that changes state.

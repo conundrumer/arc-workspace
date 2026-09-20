@@ -17,19 +17,21 @@
     - The removal changed no pair's output and no determined value.
     - The pairs never instantiate the structure it removed, or another atom already implies that structure.
     - The session judges which.
-    - A column drop removes that argument at every atom of the relation.
-    - The variables that bound it are left unbound at the consumers.
+    * comment:
+        - A column drop removes that argument at every atom of the relation.
+        - The variables that bound it are left unbound at the consumers.
 
 ## case
 - The cases agree on every pair, so dropping the case column changes nothing.
-- The column carries the coverage hypothesis, and the pairs do not exercise it.
-- The column stays, since the hypothesis is the solver's claim and not a fact the pairs settle.
+- The column stays.
+- [Models and tasks](docs/handbook/principles.md#models-and-tasks) states what a case claims.
 
 ## enumerator
 - {{count}}/{{judged}} deletions remove an enumerator over a bound variable:
     - The enumerator runs over a variable another atom of its rule binds.
-    - It is the readable form of a per-member test.
-    - Its removal changes nothing, and that says nothing about the pairs.
+    - Its removal says nothing about the pairs.
+    * comment:
+        - It is the readable form of a per-member test.
 
 ## unprobed
 - {{count}} {{noun}} the probe cannot judge:
@@ -48,6 +50,5 @@
 ## Partials
 
 ### cases-settle-nothing
-- Every case emits an accepted grid on every pair, which holds of every passing multi-case solver.
-- The pairs settle nothing about the cases either way.
-- [Models and tasks](docs/handbook/principles.md#models-and-tasks) of Principles states what a case is.
+- The pairs settle nothing about the cases.
+- [Models and tasks](docs/handbook/principles.md#models-and-tasks) states what a case claims.

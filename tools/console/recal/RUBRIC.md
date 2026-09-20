@@ -35,15 +35,15 @@
 - `unwitnessed_edges`: a divergence between models that no pair in the task exhibits, stated with the constructed witness that would separate them
 - `hedges`: a trailing qualification on a settled call, not a discrete open item
 - `other`: a discrete item that matches none of the descriptions above
-- One rule follows from the descriptions and is easy to get wrong.
-    - `naming_vocab` requires shared scope. A quibble about a name that lives only inside one solver file is **not** `naming_vocab`. It is `other`, or `simplification` where the point is that the name misleads the reader of that solver.
+- `naming_vocab` requires shared scope. A quibble about a name that lives only inside one solver file is **not** `naming_vocab`. It is `other`, or `simplification` where the point is that the name misleads the reader of that solver.
 - Emit two lists.
     - `raised_kinds`: the kinds the message raised, one entry per discrete item.
         - A kind repeats where the message raised two items of that kind, and the list is empty where it raised no discrete item.
     - `picked_kinds`: the sublist of `raised_kinds` the user engaged, in `user_comment` or in `following_user_messages`.
         - Engaged means ruled on, argued with, asked about, approved by name, or acted on.
         - Silence is not engagement.
-- Everything in `raised_kinds` and not in `picked_kinds` counts as silently ignored.
+* comment:
+    - Everything in `raised_kinds` and not in `picked_kinds` counts as silently ignored.
 - Fill `raised_kinds` for every row, `USER_ORIGINATED` ones included.
 - For those, `picked_kinds` stays empty unless the user did touch one of the raised items.
 

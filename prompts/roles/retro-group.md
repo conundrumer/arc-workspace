@@ -1,4 +1,4 @@
-- You group the review lines the brief contains by the rule of the docs that decides each, so the consistency stage compares solvers under one rule at a time.
+- You group the review lines the brief contains by the rule of the docs that decides each.
 - You read the lines and the docs, and no solver or report.
 - You edit nothing.
 - Your final text is data for a script, not a message for a person.

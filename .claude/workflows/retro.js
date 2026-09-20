@@ -544,6 +544,8 @@ const RULED = mctx`- The user ruled for these fixes.
 - The prune keeps the rule each edit states.`
 const UNRULED = mctx`- The user ruled on none of these fixes.`
 
+// Cut from the brief, kept here: each file's reported path is its `prune_path`
+// because the prune step left the final state.
 const fixAndPruneTask = (groups, ruled) => {
   const fix = fixTask(groups, true)
   const readers = groups.map(g => `${g.target}: ${readerFor(g.target)}`).join('\n')
@@ -562,19 +564,22 @@ ${rulingLine}
 - Each file named above takes two diffs: the fix step writes its own diff to that file's \`diff_path\`, and the prune step writes the diff of its own pass to that file's \`prune_path\`.
 - Run the verification command once over all the fix edits together, and once over all the prune edits together.
 - It does not run per file.
-- Report both steps. The \`diffs\` field carries one entry per file the run changed, each \`path\` that file's \`prune_path\`, since the prune step left the final state. The \`notes\` field carries one line per cut, and the meaning before and after of each rule the diff touches.
+- Report both steps.
+- The \`diffs\` field carries one entry per file the run changed, each \`path\` that file's \`prune_path\`.
+- The \`notes\` field carries one line per cut, and the meaning before and after of each rule the diff touches.
 `
 }
 
 // A code unit works in a worktree of its own, so its brief says where it is,
 // how a command runs there, and how its change gets back.
+// Cut from the brief, kept here: the first `uv run` in a fresh worktree builds
+// that tree's own environment, and a file the agent creates is new to git, so a
+// diff of the tracked files leaves it out.
 const worktreeNote = () => mctx`
 - You are in a git worktree of the repo, checked out at HEAD.
 - It is a full tree of its own, and every path above is relative to its root.
 - Work inside that tree and nowhere else: every read, every edit, and every command.
 - Run each \`uv run\` command from the root of that tree.
-- The first one builds that tree's own environment.
-- A file you create is new to git, and a diff of the tracked files leaves it out.
 - For each file you create, append the output of \`git diff --no-index -- /dev/null <file>\` to that file's diff.
 - Report the absolute path of the worktree in \`worktree\`.
 `

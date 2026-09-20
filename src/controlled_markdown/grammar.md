@@ -1,6 +1,5 @@
 # The grammar
 - The exact rules and the edge cases the other documents leave out, for anyone maintaining the package.
-- `writing.md` and `templating.md` state what a writer needs; this states what a parser settles.
 
 * comment: When editing this doc, state a rule once, and only where neither of the other two documents states it.
 
@@ -45,7 +44,9 @@
 
 ## Reuse
 
-- An `include` value with a `#` in it is an error, since a section is reached with `inline`.
+- An `include` value with a `#` in it is an error.
+* comment:
+    - A section is reached with `inline`.
 - A document that reaches itself, by either directive, is an error.
 
 ## Front matter

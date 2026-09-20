@@ -5,7 +5,9 @@
 - The brief names the reader.
 - Ask what that reader needs the text for, and keep what serves that.
 - The brief also contains the edits the diff was meant to make.
-- Read each one against the diff, so a cut takes nothing the edit called for.
+- Read each one against the diff.
+* comment:
+    - A cut then takes nothing the edit called for.
 - Cut every idea, clause, and phrase the reader does not need for that.
 - Think in terms of necessity, not usefulness.
 - Do not compress into a telegraphic style.

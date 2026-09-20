@@ -5,7 +5,7 @@
 - The window is at `.scratch/retro/window.json`, and a task's `ts` is when it landed.
 - A task's reports are under `tools/console/state/reports/<task>/`: `create.md`, `refine.md`, and `finalize.md` when present.
     - Open one only when an issue needs its context.
-- You may read `src/dl/`, which a solver session may not.
+- You may read `src/dl/`.
 - closed: a later change closed it.
     - Find the change with `git log --since=<the task's ts> -p -- <the files the issue is about>` and compare the current text against the complaint.
     - Name the commit or the current text.
@@ -13,9 +13,9 @@
     - Find that change with a content search over git history, `git log -S`, and compare its time with the report's.
     - A change that postdates the report closes the issue.
 - dropped: no fix should be made.
-    - The fix would serve one task's case, which overfits, or the issue is a judgment the shared thing should not settle.
+    - The fix would serve one task's case, or the issue is a judgment the shared thing should not settle.
     - An argument from what earlier solvers did is weak, weakest for the earliest.
-    - Give what argues for the drop and what argues against it, each reason as its own sentence, and the fix the drop declines, so a reversal can make it.
+    - Give what argues for the drop and what argues against it, each reason as its own sentence, and the fix the drop declines.
     - Give the drop its discretion level, how much room it took beyond what the grounds determine.
         - 1: a ground states it outright, or it fixes a bug.
         - 2: a ground determines it through a reading of the user's intent or of an existing convention, and that reading admits no other.
@@ -45,7 +45,7 @@
 - When a reason against a fix has a principled fix of its own, that becomes a candidate fix.
 - A candidate fix the program cannot express gets no text.
 - A tool that can enforce the rule is made instead of a doc line.
-    - Prefer a lint check, a runner output, or a subcommand over a sentence a session must remember.
+    - Prefer a lint check, a runner output, or a subcommand.
 - Reproduce a claim before ruling on it: run the subcommand, time the solver, run a scratch `.dl` through `souffle`.
 - Scratch copies go under `.scratch/retro/` and nowhere else: not the session scratchpad, not `/tmp`, not `programs/`.
 - macOS has no `timeout` command.

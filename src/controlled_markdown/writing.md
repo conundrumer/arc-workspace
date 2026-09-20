@@ -13,11 +13,13 @@
 - A statement never starts with a character that Markdown reads as structure.
     - Those are `-`, `+`, `*`, `>`, `|`, and `#` when a space follows them, a number followed by `.` or `)`, `---`, `===`, `[ ]`, a code fence, and an HTML tag.
     - A backslash before the character escapes it, as in `\>` and `\---`.
-    - A statement that begins with a bold phrase needs no escape, since `**` has no space after the first `*`.
+    - A statement that begins with a bold phrase needs no escape.
 - A numbered statement is written with its number, a period, and a space.
     1. The numbers under one parent run from 1 with no gap.
     2. The rendered document shows them as an ordered list.
-    3. The source shows the numbers, so a reader of either view cites an item by number.
+    3. The source shows the numbers.
+    * comment:
+        - A reader of either view then cites an item by number.
 - An empty `-` line is a statement with no text, and it groups the lines under it.
 
 ## Links
@@ -42,7 +44,7 @@
     - In Python, `mctx` takes a string, or a dict whose every value is one. A call it cannot read out without running the program is an error.
     - In JavaScript, `mctx` tags a template literal. A backtick inside one opens a nested literal, which the check does not read.
 - A fragment that opens with a marker is format lines, and it takes every rule. Any other fragment is the text of one statement, and it takes the rules on a statement's text.
-    - A fragment is a run of lines and not a document, so a block may stand at its top level: the text that places it supplies the line above.
+    - A block may stand at a fragment's top level, and the text that places the fragment supplies the line above.
 - A hole is `{name}` in Python and `${name}` in JavaScript, and the check reads one opaque word in its place.
     - A hole that is a whole line places a fragment of its own, which the check reads where that fragment stands.
     - A `${…}` that is not a name is an error: the value it takes is computed above the literal and given a name.
@@ -95,7 +97,7 @@
 - A line that starts with `> ` is a quoted line, and consecutive quoted lines at one indent are one quote.
 - Quoted lines hold prose taken from elsewhere. A blank line ends a quote.
 - A quote sits under a statement or under a heading, and nothing goes under it.
-- A reader of the source sees the quote's body as Markdown, so code goes in a code node instead.
+- Code inside a quote goes in a code node instead.
 
 ## Code
 

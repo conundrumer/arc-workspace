@@ -1,6 +1,7 @@
 # Templating a document
 - The directives that build a document out of others and fill it with values, for anyone editing the prompts.
-- `writing.md` states the line forms these stand among.
+* comment:
+    - `writing.md` states the line forms these stand among.
 
 * comment: When editing this doc, state a line form only where this document changes it.
 
@@ -33,11 +34,14 @@
     ```
 - A heading inside the body lands under the section the inline stands in.
 - An inline stands where a statement stands, and it takes no options.
-- A section written to be inlined is headed by its own slug, so the heading at the site reads as the reference to it. A section a reader reads keeps a prose heading.
+- A section written to be inlined is headed by its own slug.
     ```
     ### prior-reports
     - The reports the sessions before you left.
     ```
+- A section a reader reads keeps a prose heading.
+* comment:
+    - The heading at the site then reads as the reference to the inlined section.
 
 ## Links
 
@@ -90,4 +94,4 @@
 - A render given values takes the names given to equal the names read.
     - A name missing, and a name nothing reads, are both errors.
 - A render given no values fills nothing, and the text stands as written.
-- Both branches of an `if` count, since a caller cannot know which one will render.
+- Both branches of an `if` count.

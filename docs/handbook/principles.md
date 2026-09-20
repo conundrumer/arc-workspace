@@ -204,7 +204,7 @@
 - Clause arithmetic expresses a relational operation.
     - The program states that operation directly.
     - A wraparound shift is a walk around a cycle.
-- **Zero is absence.** A `0` counts nothing that is present, so it represents an absence.
+- **Zero is absence.** A `0` counts nothing that is present.
     - In a spatial setting, `0` represents the absence of a gap, offset, or distance.
     - A program is allowed to use `0` directly.
 
@@ -281,11 +281,9 @@
 - When a task does not distinguish an orientation, neither does the program.
 - The orientation types represent each possible orientation choice as a value.
 - A mirrored variant task therefore requires a parameter edit rather than a change to the program.
-    + alternate wording: A mirrored variant task requires a parameter edit and no change to the program.
 - **Orientation per axis.** A model whose clauses differ between axes does not choose an orientation when one parameter names the axis on which the clauses are keyed.
 - The values of an orientation type that the task uses determine the encoding.
 - **Every value.** When a membership set meets all three conditions, the program enumerates every value of the orientation type, and the parameters are per orientation type rather than per value.
-    + alternate wording: the parameters are per orientation type.
     - It contains every value of an orientation type.
     - No associated data varies by value.
     - No variant task narrows the set.
@@ -294,7 +292,6 @@
             + gloss
 - **One member.** If one member is used and another must not be used, a parameter stores the chosen member.
 - **Another orientation type.** Switching to another orientation type requires another program rather than a reassignment.
-    + alternate wording: Switching to another orientation type requires another program.
     - Switching between cardinal and diagonal directions is one example.
     - a9f96cdd, d364b489
         - The two tasks paint one cell per direction and differ only in the type: a9f96cdd runs over the diagonals and d364b489 over the cardinals. Neither program reassigns into the other.

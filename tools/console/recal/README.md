@@ -13,6 +13,7 @@
     - It writes `corpus.json`.
 2. `python3 pool.py` filters to eligible pairs, dropping junk, duplicates, and bare workflow triggers, tags them for stratification, and samples.
     - It writes `_pool.json` and `_sample.json`.
+* comment:
     - For a checkpointed rerun the old eras are already labeled, so the sampling quotas only matter for pairs newer than the store.
 3. `python3 checkpoint.py todo _sample.json todo.json` gives the sample rows not yet in the store.
     - Only these get classified.
@@ -24,7 +25,9 @@
     - `counts` refuses a store with mixed rubric dates.
 5. `python3 checkpoint.py merge _sample.json batches/` folds the new labels into `labels.json`.
 6. `python3 checkpoint.py counts <era-cut>` gives era-split per-kind counts from the whole store.
-    - Eras derive from timestamps at this step, so pick the cut per run: typically old is everything up to the previous measurement, and new is since.
+    - Pick the cut per run: typically old is everything up to the previous measurement, and new is since.
+    * comment:
+        - Eras derive from timestamps at this step.
 7. Put the counts into `CALLOUT_RATES` as `(picked_old, raised_old, picked_new, raised_new)` per kind, and update the era-cut date in the comment above it.
 8. Sanity-check the band cuts: for each band, sum the weighted raised counts of its kinds and check the share of total volume.
     - A P1 band holding half the volume is what a miscalibrated cut looks like.

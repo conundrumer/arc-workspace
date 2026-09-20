@@ -73,8 +73,9 @@
     - For an `other` verdict, take the judged output from `uv run python scripts/run_dl.py grid <task_id>` on a control grid: the witness changed so that the program's output is the concept's reading.
 - Choose a witness on which each model's output is defined, or write an undefined outcome as such.
 - When the divergence requires a parameter to be reassigned, reassign that parameter.
-- The audit and `uv run python scripts/run_dl.py witness <task_id>` run the same check.
-- That check reads the solver against `programs/witnesses/<task_id>.wit.json`, whose shape is below.
+* comment:
+    - The audit runs the same check.
+- `uv run python scripts/run_dl.py witness <task_id>` reads the solver against `programs/witnesses/<task_id>.wit.json`, whose shape is below.
     ```
     { "id": <task_id>,
       "witnesses": [{

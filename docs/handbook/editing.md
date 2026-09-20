@@ -38,10 +38,8 @@
 - A bare path stands in code that compares it, and nowhere else.
 
 ## Prose a program holds
-- A string a program holds enters an agent's context when it is wrapped in `mctx`, and the check reads it there.
-- A hole in such a string is `{name}` in Python and `${name}` in JavaScript.
-- The value a hole takes is computed above the literal.
-- A string that opens with a marker is format lines, and any other is the text of one statement.
+- A string a program holds enters an agent's context when it is wrapped in `mctx`.
+- [Prose in code](src/controlled_markdown/writing.md#prose-in-code) states how such a string is written and read.
 
 ## Checking
 - `uv run python -m controlled_markdown check` reports what is off, each line carrying the rule's message.
@@ -49,4 +47,6 @@
 - The check resolves every link a document holds.
 - [Writing a document](src/controlled_markdown/writing.md) states a rule where the message is not enough, or where the file shows no instance of the construct you need.
 - [Templating a document](src/controlled_markdown/templating.md) states the directives the documents under `prompts/` compose and fill one another with.
-- A change that moves or reshapes this text ends with a diff of the handbook render and the console messages against HEAD, read for dropped lines. A worktree of HEAD gives the old render.
+- A change that moves or reshapes this text ends with a diff of the handbook render and the console messages against HEAD, read for dropped lines.
+* comment:
+    - A worktree of HEAD gives the old render.

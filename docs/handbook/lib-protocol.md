@@ -26,7 +26,7 @@
     - a `Not:` line naming what is not this operation
     - a `Match:` line with a search signature that covers every statement of the operation, including statements whose atoms are in different lines or clauses, and statements where a solver accesses one lib call only through another
         - state the shape in prose and match it with the parser ([test_ast_match.py](tests/test_ast_match.py))
-        - restate a `Match:` line that does not meet this spec, so the next survey reads it
+        - restate a `Match:` line that does not meet this spec
             - a signature that names an identifier the lib no longer declares, or a header field style.md no longer has, does not meet this spec, and its restatement uses the current name
     - a `Survey:` line per survey, its time to the minute, each followed by its own result
         - the line names the scope the survey covered, in one of two forms: `Survey: <date time> — every solver.` or `Survey: <date time> — the solvers since <the entry's previous survey time>.`
@@ -79,7 +79,6 @@
         - say in the review that the command failed and the role ran
     - If the pass ends with the entry still unsurveyed, say so in the review.
 3. Decide whether to close the proposal.
-    - This is the only judgment in the protocol.
     - **Close grounds.** Base that judgment on whether the operation does not follow principles, or whether it is not general and the solvers encode their tasks without it.
         - The solvers encode their tasks without it when:
         - the lib already provides the operation

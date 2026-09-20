@@ -6,7 +6,9 @@ argument-hint: [solver|retro|<task_id>]
 
 # Session
 - First, when the handbook is not in your system prompt, read the output of `uv run python scripts/context.py` in full.
-- It points back at each file for an entry or a body, so read the file when the work is on the doc itself.
+- Read the file itself when the work is on the doc.
+* comment:
+    - The output points back at each file for an entry or a body.
 - Then dispatch on `$ARGUMENTS`:
     - `solver` — run `bash scripts/queue.sh` for the next queued solver and work it per the procedure.
     - a task id — work that solver per the procedure.
@@ -85,6 +87,7 @@ argument-hint: [solver|retro|<task_id>]
         - A call whose fix carries an illustration shows it under the call: for each cited task, the case sets under each reading and a witness input where the readings differ.
         - A keyword addition or a gloss change is level 4, presented as a proposal for a separate session.
         - A citation of a draft solver is not presented.
+        * comment:
             - It waits in the doc in the pending form, and approval places it.
     - The workflow's Verify issues end the presentation: a failing check, a finding no round acted on, and an edit outside the run's targets, such as an approved solver.
     - Do not report non-issues.
