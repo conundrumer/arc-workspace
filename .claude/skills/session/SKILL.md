@@ -25,7 +25,7 @@ argument-hint: [solver|retro|<task_id>]
 ## `retro`
 - Rule on what the console's sessions called out beyond their own tasks. The workflow reads, checks, fixes, and verifies. The main session passes the roles, presents the result, and takes the rulings.
 - **Run.**
-    - Run the `retro` workflow (`.claude/workflows/retro.js`) with the output of `uv run python scripts/context.py workflow retro` in `args`: its `roles`, field for field. A retro takes three runs, each with its own `args`.
+    - Run the `retro` workflow (`.claude/workflows/retro.js`) with the output of `uv run python scripts/context.py workflow retro` in `args`: its `roles`, field for field. The script holds its own briefs. A retro takes three runs, each with its own `args`.
     - The first run is `dry: true`. It reads, checks, and reviews, and returns every call with its default and the fixes it would make, under `dry`. It makes no fix, and the sweep does not run in it.
     - The main session reads no window, report, solver, or doc. It runs no edit or check itself: those go to agents.
     - The runs' agents read the window, check each issue, take a default on each open one, make the fixes the rulings keep, sweep the window's solvers, act on each review line those fixes and the sweep wrote into a solver, run the cleanup pass over each solver the runs wrote, and verify what they changed. Each stage's rules live in its role, under [roles](prompts/roles). The `solver` role carries a solver fix and the resolve stage.

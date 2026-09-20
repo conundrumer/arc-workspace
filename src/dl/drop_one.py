@@ -6,6 +6,7 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 
 from arc.task import load as load_task
+from controlled_markdown import mctx
 from dl.domains import ENUM_TYPES, POSITION_TYPES
 from dl.solve import _profile, solver_file
 from dl.souffle import _pool_workers
@@ -14,8 +15,8 @@ from dl.source import (
     _comp_span,
     _param_atoms,
     _param_facts,
-    _split_args,
     _params_fact_lines,
+    _split_args,
     comp_decls,
     expand_macros,
     public_param,
@@ -30,18 +31,18 @@ type Hit = tuple[str, str, bool, list[str]]
 
 # Every sentence this module prints, keyed by the part it heads. A slot,
 # `{name}`, is filled by the render.
-MESSAGES = {
-    "baseline": "baseline fails: stored source does not pass train",
-    "none": "{stem}.dl: no parameter holds more than one stored fact",
-    "tested": "{tested} stored facts across {params} multi-fact {noun}",
-    "every": "every fact changes a train pair",
-    "both": "{count} fact(s) no pair needs:",
-    "train-only": "{count} fact(s) the train pairs do not need, and the test "
-                  "pairs do:",
-    "ground": "holds the picture's ground color, so the cell draws nothing "
-              "wherever the picture is read",
-    "sweep": "an enumerable parameter, so `sweep` can report the same drop",
-}
+MESSAGES = mctx({
+        "baseline": "baseline fails: stored source does not pass train",
+        "none": "{stem}.dl: no parameter holds more than one stored fact",
+        "tested": "{tested} stored facts across {params} multi-fact {noun}",
+        "every": "every fact changes a train pair",
+        "both": "{count} fact(s) no pair needs:",
+        "train-only": "{count} fact(s) the train pairs do not need, and the test "
+                      "pairs do:",
+        "ground": "holds the picture's ground color, so the cell draws nothing "
+                  "wherever the picture is read",
+        "sweep": "an enumerable parameter, so `sweep` can report the same drop",
+})
 
 GROUND_NOTE = MESSAGES["ground"]
 SWEEP_NOTE = MESSAGES["sweep"]

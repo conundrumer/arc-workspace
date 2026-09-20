@@ -281,7 +281,7 @@ def pending_cites() -> dict[str, list[str]]:
     for path in sorted(config.DOCS.glob("*.md")):
         try:
             document = nm.parse(path.read_text(), path.name)
-        except nm.NestedMarkdownError:
+        except nm.ControlledMarkdownError:
             continue
         _collect_pending(document, "", path.name, out)
     CITE_CACHE = (state, out)

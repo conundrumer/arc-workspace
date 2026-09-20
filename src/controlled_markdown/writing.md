@@ -36,6 +36,18 @@
 - A link written inside a backtick span is text.
 - A code file the check's config lists is read for its links alone, each at the file's own line, and nothing else in it is read as a document.
 
+## Prose in code
+
+- A string a program holds enters an agent's context when it is wrapped in `mctx`, and the check reads it there.
+    - In Python, `mctx` takes a string, or a dict whose every value is one. A call it cannot read out without running the program is an error.
+    - In JavaScript, `mctx` tags a template literal. A backtick inside one opens a nested literal, which the check does not read.
+- A fragment that opens with a marker is format lines, and it takes every rule. Any other fragment is the text of one statement, and it takes the rules on a statement's text.
+    - A fragment is a run of lines and not a document, so a block may stand at its top level: the text that places it supplies the line above.
+- A hole is `{name}` in Python and `${name}` in JavaScript, and the check reads one opaque word in its place.
+    - A hole that is a whole line places a fragment of its own, which the check reads where that fragment stands.
+    - A `${…}` that is not a name is an error: the value it takes is computed above the literal and given a name.
+- A fence inside a JavaScript fragment is written with tildes, since the literal's own delimiter is a backtick.
+
 ## Nesting
 
 - Indent by four spaces per level, with spaces only, and one space follows a marker.

@@ -15,12 +15,14 @@
 - The console messages: [Console messages](prompts/console.md).
 - The roles: [roles](prompts/roles), one document per role, whose `agent` attribute names the agent that runs it. A role with no such attribute runs as `handbook`.
 - The audit's deletion report: [Deletion report](prompts/run_dl.md).
-- The other sentences a runner tool prints: the `MESSAGES` table at the top of its module under [dl](src/dl). Those are code, and the rules below on justifications and contrastive structures apply to them.
+- The other sentences a runner tool prints: the `MESSAGES` table at the top of its module under [dl](src/dl).
+- The workflow briefs and the schema descriptions: the scripts under [workflows](.claude/workflows).
 
 ## Rules for every file
 - A file follows the shape the file shows.
-- Prose a code file holds sits in one named literal, or in one region the file marks, that the language reads out without running the program.
-- A workflow script marks two such regions, its briefs and its return schemas, and `uv run python scripts/context.py workflow <name>` reads both out.
+- A string a program holds enters an agent's context when it is wrapped in `mctx`, and the check reads it there.
+- A hole in such a string is `{name}` in Python and `${name}` in JavaScript, and the value it takes is computed above the literal.
+- A string that opens with a marker is format lines, and any other is the text of one statement.
 - A file that carries editing notes opens with them, under a `* comment: when editing this doc` line. Read those notes before editing that file.
 - Avoid justifications, unless there is necessary reason.
 - Avoid contrastive structures, unless the alternative needs to be addressed.

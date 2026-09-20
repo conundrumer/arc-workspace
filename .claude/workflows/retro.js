@@ -3,6 +3,7 @@ export const meta = {
   description: 'Rule on what console sessions called out beyond their own tasks: read, check, review, fix, resolve, clean up, verify, sweep.',
   phases: [
     { title: 'Read', detail: 'one agent turns the window into issues' },
+
     { title: 'Sweep', detail: 'one agent sweeps the parameter values of every solver the window names, beside the check and review stages; then one agent writes a review line into each solver a parameter stays open in', model: 'sonnet' },
     { title: 'Check', detail: 'one agent per group of issues: closed, dropped, or open with candidate fixes' },
     { title: 'Review', detail: 'one agent asks the two questions over every open issue and takes a default', model: 'fable' },
@@ -14,6 +15,17 @@ export const meta = {
   ],
 }
 
+// The tag that marks a string as prose an agent reads. `uv run python -m
+// controlled_markdown check` finds every `mctx` literal in the repo and reads
+// it as the format, so the words in one are checked where they stand.
+const mctx = (parts, ...values) => {
+  const text = parts.reduce((out, part, i) => out + part + (i < values.length ? values[i] : ''), '')
+  const lines = text.split('\n')
+  while (lines.length && !lines[0].trim()) lines.shift()
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop()
+  const pad = Math.min(...lines.filter(l => l.trim()).map(l => l.length - l.trimStart().length), Infinity)
+  return lines.map(l => (l.trim() ? l.slice(pad) : '')).join('\n')
+}
 // A run takes its `roles` in `args`, as `.claude/skills/session/SKILL.md`
 // says to pass them. Each stage runs a handbook agent under a role from
 // prompts/roles/, and its brief is built in the briefs region below. The
@@ -75,10 +87,8 @@ export const meta = {
 
 // ---------------------------------------------------------------- schemas
 
-// The return schemas, one per stage. Everything from the marker above to the
-// marker below is read out on its own: `scripts/context.py workflow` slices
-// the region, evaluates it, and prints each constant by name. Nothing in it
-// names anything outside it, so the slice stands alone.
+// The return schemas, one per stage. Each description is an `mctx` literal,
+// so the check reads its words where they stand.
 
 // The call's discretion level: how much room the default took beyond what the
 // grounds determine. A level-4 fix is not made in the first run.
@@ -88,8 +98,8 @@ const FIX_REF = {
   type: 'object',
   properties: {
     kind: { type: 'string', enum: ['prose', 'code', 'entry', 'solver'] },
-    target: { type: 'string', description: 'the file the fix edits, repo-relative; for an entry, docs/wf-solver/proposals/<name>.md; for a solver, programs/solvers/<task_id>.dl' },
-    edit: { type: 'string', description: 'the smallest edit that closes the issue in this file, stated as your role\'s Procedure requires' },
+    target: { type: 'string', description: mctx`the file the fix edits, repo-relative; for an entry, docs/wf-solver/proposals/<name>.md; for a solver, programs/solvers/<task_id>.dl` },
+    edit: { type: 'string', description: mctx`the smallest edit that closes the issue in this file, stated as your role's Procedure requires` },
   },
   required: ['kind', 'target', 'edit'],
 }
@@ -100,7 +110,7 @@ const FIX_CANDIDATE = {
     ...FIX_REF.properties,
     for: { type: 'string' },
     against: { type: 'string' },
-    illustration: { type: 'string', description: 'the illustration your role\'s Procedure requires of a level-3 fix to Principles' },
+    illustration: { type: 'string', description: mctx`the illustration your role's Procedure requires of a level-3 fix to Principles` },
   },
   required: [...FIX_REF.required, 'for', 'against'],
 }
@@ -113,19 +123,19 @@ const ISSUES_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          id: { type: 'string', description: 'I1, I2, and so on, in count-descending order' },
-          group: { type: 'string', description: 'the file or the tool the issue is about, as your role\'s Procedure defines a group' },
-          issue: { type: 'string', description: 'the issue in one plain sentence, stated as your role\'s Procedure requires' },
+          id: { type: 'string', description: mctx`I1, I2, and so on, in count-descending order` },
+          group: { type: 'string', description: mctx`the file or the tool the issue is about, as your role's Procedure defines a group` },
+          issue: { type: 'string', description: mctx`the issue in one plain sentence, stated as your role's Procedure requires` },
           count: { type: 'integer' },
           tasks: { type: 'array', items: { type: 'string' } },
-          quote: { type: 'string', description: 'one callout, verbatim' },
+          quote: { type: 'string', description: mctx`one callout, verbatim` },
         },
         required: ['id', 'group', 'issue', 'count', 'tasks', 'quote'],
       },
     },
     borderline_drops: {
       type: 'array',
-      description: 'the borderline drops, each as your role\'s Report gives them',
+      description: mctx`the borderline drops, each as your role's Report gives them`,
       items: { type: 'string' },
     },
   },
@@ -142,14 +152,14 @@ const CHECK_SCHEMA = {
         properties: {
           id: { type: 'string' },
           status: { type: 'string', enum: ['closed', 'dropped', 'open'] },
-          closed_by: { type: 'string', description: 'closed: the commit or the current text that closes it' },
-          tier: { ...TIER, description: 'dropped: the drop\'s discretion level, as your role\'s Procedure states it' },
-          basis: { type: 'string', description: 'dropped: the principle, norm, or fact the drop rests on' },
-          for: { type: 'string', description: 'dropped: what argues for the drop, stated as your role\'s Procedure requires' },
-          against: { type: 'string', description: 'dropped: what argues against the drop, stated the same way; empty when nothing does' },
-          changed_work: { type: 'boolean', description: 'open: whether the issue changed what a session did, or was only noted' },
-          changed_how: { type: 'string', description: 'open: one sentence on what it caused' },
-          fixes: { type: 'array', items: FIX_CANDIDATE, description: 'open: the candidate fixes, in the order your role\'s Procedure gives; dropped: the declined fix' },
+          closed_by: { type: 'string', description: mctx`closed: the commit or the current text that closes it` },
+          tier: { ...TIER, description: mctx`dropped: the drop's discretion level, as your role's Procedure states it` },
+          basis: { type: 'string', description: mctx`dropped: the principle, norm, or fact the drop rests on` },
+          for: { type: 'string', description: mctx`dropped: what argues for the drop, stated as your role's Procedure requires` },
+          against: { type: 'string', description: mctx`dropped: what argues against the drop, stated the same way; empty when nothing does` },
+          changed_work: { type: 'boolean', description: mctx`open: whether the issue changed what a session did, or was only noted` },
+          changed_how: { type: 'string', description: mctx`open: one sentence on what it caused` },
+          fixes: { type: 'array', items: FIX_CANDIDATE, description: mctx`open: the candidate fixes, in the order your role's Procedure gives; dropped: the declined fix` },
         },
         required: ['id', 'status'],
       },
@@ -167,28 +177,28 @@ const REVIEW_SCHEMA = {
         type: 'object',
         properties: {
           id: { type: 'string' },
-          default: { type: 'string', enum: ['fix', 'replace', 'drop'], description: 'the outcome that holds unless the user rules otherwise' },
-          tier: { ...TIER, description: 'the call\'s discretion level, as your role\'s Procedure states it' },
-          reason: { type: 'string', description: 'the answer to the two questions, in one or two sentences' },
-          basis: { type: 'string', description: 'the principle, the norm, or the fact the call rests on' },
-          for: { type: 'string', description: 'what argues for the default, stated as your role\'s Procedure requires' },
-          against: { type: 'string', description: 'what argues against the default, stated the same way; empty when nothing does' },
+          default: { type: 'string', enum: ['fix', 'replace', 'drop'], description: mctx`the outcome that holds unless the user rules otherwise` },
+          tier: { ...TIER, description: mctx`the call's discretion level, as your role's Procedure states it` },
+          reason: { type: 'string', description: mctx`the answer to the two questions, in one or two sentences` },
+          basis: { type: 'string', description: mctx`the principle, the norm, or the fact the call rests on` },
+          for: { type: 'string', description: mctx`what argues for the default, stated as your role's Procedure requires` },
+          against: { type: 'string', description: mctx`what argues against the default, stated the same way; empty when nothing does` },
           options: {
             type: 'array',
-            description: 'a fix to Principles: each reading of the rule as an option, the default first',
+            description: mctx`a fix to Principles: each reading of the rule as an option, the default first`,
             items: {
               type: 'object',
               properties: {
-                choice: { type: 'string', description: 'the reading\'s one-word label' },
-                wording: { type: 'string', description: 'the text the file carries under this reading' },
-                consequence: { type: 'string', description: 'what a session that reads this wording does differently' },
-                witness: { type: 'string', description: 'a task or a solver where this reading and the others part' },
+                choice: { type: 'string', description: mctx`the reading's one-word label` },
+                wording: { type: 'string', description: mctx`the text the file carries under this reading` },
+                consequence: { type: 'string', description: mctx`what a session that reads this wording does differently` },
+                witness: { type: 'string', description: mctx`a task or a solver where this reading and the others part` },
               },
               required: ['choice', 'wording', 'consequence', 'witness'],
             },
           },
-          fixes: { type: 'array', items: FIX_REF, description: 'the fix the default calls for, one entry per file it edits' },
-          covers: { type: 'array', items: { type: 'string' }, description: 'replace: the other issue ids this general fix also closes' },
+          fixes: { type: 'array', items: FIX_REF, description: mctx`the fix the default calls for, one entry per file it edits` },
+          covers: { type: 'array', items: { type: 'string' }, description: mctx`replace: the other issue ids this general fix also closes` },
         },
         required: ['id', 'default', 'tier', 'reason', 'basis', 'for', 'against'],
       },
@@ -202,27 +212,27 @@ const EDIT_SCHEMA = {
   properties: {
     diffs: {
       type: 'array',
-      description: 'one entry per file this fix changed, the files the brief names and the others alike; empty when it changed nothing',
+      description: mctx`one entry per file this fix changed, the files the brief names and the others alike; empty when it changed nothing`,
       items: {
         type: 'object',
         properties: {
-          file: { type: 'string', description: 'the repo-relative path of the changed file' },
-          path: { type: 'string', description: 'the repo-relative path of the diff file written for it, under .scratch/retro/diffs/' },
+          file: { type: 'string', description: mctx`the repo-relative path of the changed file` },
+          path: { type: 'string', description: mctx`the repo-relative path of the diff file written for it, under .scratch/retro/diffs/` },
         },
         required: ['file', 'path'],
       },
     },
-    worktree: { type: 'string', description: 'the absolute path of the worktree this fix worked in; empty for a fix that worked in the repo' },
-    net_words: { type: 'integer', description: 'prose: words added minus words removed' },
-    verification: { type: 'string', description: 'what was run and its result' },
+    worktree: { type: 'string', description: mctx`the absolute path of the worktree this fix worked in; empty for a fix that worked in the repo` },
+    net_words: { type: 'integer', description: mctx`prose: words added minus words removed` },
+    verification: { type: 'string', description: mctx`what was run and its result` },
     review_lines: {
       type: 'array',
-      description: 'the draft solvers this fix wrote a review line into; empty when it wrote none',
+      description: mctx`the draft solvers this fix wrote a review line into; empty when it wrote none`,
       items: {
         type: 'object',
         properties: {
           task_id: { type: 'string' },
-          line: { type: 'string', description: 'the review line, verbatim' },
+          line: { type: 'string', description: mctx`the review line, verbatim` },
         },
         required: ['task_id', 'line'],
       },
@@ -235,9 +245,9 @@ const EDIT_SCHEMA = {
 const MERGE_SCHEMA = {
   type: 'object',
   properties: {
-    applied: { type: 'boolean', description: 'whether the worktree\'s change went into the repo' },
-    files: { type: 'array', items: { type: 'string' }, description: 'the repo-relative paths the change covers' },
-    conflict: { type: 'string', description: 'what git reported when it refused the change; empty when it applied' },
+    applied: { type: 'boolean', description: mctx`whether the worktree's change went into the repo` },
+    files: { type: 'array', items: { type: 'string' }, description: mctx`the repo-relative paths the change covers` },
+    conflict: { type: 'string', description: mctx`what git reported when it refused the change; empty when it applied` },
   },
   required: ['applied', 'files', 'conflict'],
 }
@@ -251,15 +261,15 @@ const VERIFY_SCHEMA = {
         type: 'object',
         properties: {
           kind: { type: 'string', enum: ['wrong edit', 'broken rule', 'contradiction', 'test', 'dropped substance'] },
-          finding: { type: 'string', description: 'what is wrong, in one or two sentences' },
-          fixed: { type: 'string', description: 'what the fix for it was, or why it was left' },
-          other_file: { type: 'string', description: 'the repo-relative path of the file the fix belongs in, when the finding was left for another file; empty otherwise' },
+          finding: { type: 'string', description: mctx`what is wrong, in one or two sentences` },
+          fixed: { type: 'string', description: mctx`what the fix for it was, or why it was left` },
+          other_file: { type: 'string', description: mctx`the repo-relative path of the file the fix belongs in, when the finding was left for another file; empty otherwise` },
         },
         required: ['kind', 'finding', 'fixed', 'other_file'],
       },
     },
-    diff_path: { type: 'string', description: 'the repo-relative path of the diff file written for this pass\'s own changes; empty when it changed nothing' },
-    changed: { type: 'boolean', description: 'whether this pass changed a file' },
+    diff_path: { type: 'string', description: mctx`the repo-relative path of the diff file written for this pass's own changes; empty when it changed nothing` },
+    changed: { type: 'boolean', description: mctx`whether this pass changed a file` },
   },
   required: ['findings', 'diff_path', 'changed'],
 }
@@ -274,8 +284,8 @@ const CHECKS_SCHEMA = {
         properties: {
           command: { type: 'string' },
           passed: { type: 'boolean' },
-          summary: { type: 'string', description: 'the summary line, verbatim' },
-          failures: { type: 'string', description: 'every failure in full; empty when the check passed' },
+          summary: { type: 'string', description: mctx`the summary line, verbatim` },
+          failures: { type: 'string', description: mctx`every failure in full; empty when the check passed` },
         },
         required: ['command', 'passed', 'summary', 'failures'],
       },
@@ -295,13 +305,13 @@ const SWEEP_SCHEMA = {
           stem: { type: 'string' },
           params: {
             type: 'array',
-            description: 'the parameters the sweep leaves open',
+            description: mctx`the parameters the sweep leaves open`,
             items: {
               type: 'object',
               properties: {
                 param: { type: 'string' },
-                reported: { type: 'string', description: 'what the sweep reported for it, verbatim' },
-                line: { type: 'string', description: 'the review line to write for it, verbatim' },
+                reported: { type: 'string', description: mctx`what the sweep reported for it, verbatim` },
+                line: { type: 'string', description: mctx`the review line to write for it, verbatim` },
               },
               required: ['param', 'reported', 'line'],
             },
@@ -323,8 +333,8 @@ const SWEEP_LINES_SCHEMA = {
         type: 'object',
         properties: {
           task_id: { type: 'string' },
-          lines: { type: 'array', items: { type: 'string' }, description: 'the review lines written, verbatim; empty when every line already stood' },
-          lint_ok: { type: 'boolean', description: 'whether the lint\'s `header` category reports nothing after the change' },
+          lines: { type: 'array', items: { type: 'string' }, description: mctx`the review lines written, verbatim; empty when every line already stood` },
+          lint_ok: { type: 'boolean', description: mctx`whether the lint's \`header\` category reports nothing after the change` },
         },
         required: ['task_id', 'lines', 'lint_ok'],
       },
@@ -336,12 +346,12 @@ const SWEEP_LINES_SCHEMA = {
 const RESOLVE_SCHEMA = {
   type: 'object',
   properties: {
-    acted: { type: 'array', items: { type: 'string' }, description: 'the review lines acted on, verbatim' },
-    left: { type: 'array', items: { type: 'string' }, description: 'the review lines left in the header, verbatim, each with what is left to do' },
-    report: { type: 'string', description: 'the repo-relative path of the report written' },
-    diff_path: { type: 'string', description: 'the repo-relative path of the diff file written for the change to the solver; empty when it changed nothing' },
-    changed: { type: 'boolean', description: 'whether the solver changed' },
-    verification: { type: 'string', description: 'what was run and its result: the solver, the lint, and the audit' },
+    acted: { type: 'array', items: { type: 'string' }, description: mctx`the review lines acted on, verbatim` },
+    left: { type: 'array', items: { type: 'string' }, description: mctx`the review lines left in the header, verbatim, each with what is left to do` },
+    report: { type: 'string', description: mctx`the repo-relative path of the report written` },
+    diff_path: { type: 'string', description: mctx`the repo-relative path of the diff file written for the change to the solver; empty when it changed nothing` },
+    changed: { type: 'boolean', description: mctx`whether the solver changed` },
+    verification: { type: 'string', description: mctx`what was run and its result: the solver, the lint, and the audit` },
   },
   required: ['acted', 'left', 'report', 'diff_path', 'changed', 'verification'],
 }
@@ -349,9 +359,9 @@ const RESOLVE_SCHEMA = {
 const CLEANUP_SCHEMA = {
   type: 'object',
   properties: {
-    changed: { type: 'string', description: 'what changed, or `no change` with the reason' },
-    run: { type: 'string', description: 'the run result after the pass, and the failure or finding your role\'s Procedure says to report as already there' },
-    carried: { type: 'array', items: { type: 'string' }, description: 'a file the brief did not name that a carry reached, and what changed in it' },
+    changed: { type: 'string', description: mctx`what changed, or \`no change\` with the reason` },
+    run: { type: 'string', description: mctx`the run result after the pass, and the failure or finding your role's Procedure says to report as already there` },
+    carried: { type: 'array', items: { type: 'string' }, description: mctx`a file the brief did not name that a carry reached, and what changed in it` },
   },
   required: ['changed', 'run', 'carried'],
 }
@@ -365,9 +375,9 @@ const GROUP_SCHEMA = {
         type: 'object',
         properties: {
           task_id: { type: 'string' },
-          line: { type: 'string', description: 'the review line, verbatim' },
-          group: { type: 'string', description: 'the group id for the rule the line falls under, in the form your role\'s Procedure gives' },
-          rule: { type: 'string', description: 'the rule that decides the line, as doc and section' },
+          line: { type: 'string', description: mctx`the review line, verbatim` },
+          group: { type: 'string', description: mctx`the group id for the rule the line falls under, in the form your role's Procedure gives` },
+          rule: { type: 'string', description: mctx`the rule that decides the line, as doc and section` },
         },
         required: ['task_id', 'line', 'group', 'rule'],
       },
@@ -381,13 +391,13 @@ const CONSISTENCY_SCHEMA = {
   properties: {
     misgrouped: {
       type: 'array',
-      description: 'the lines of the group that its rule does not decide',
+      description: mctx`the lines of the group that its rule does not decide`,
       items: {
         type: 'object',
         properties: {
           task_id: { type: 'string' },
           line: { type: 'string' },
-          rule: { type: 'string', description: 'the rule that decides the line, as doc and section' },
+          rule: { type: 'string', description: mctx`the rule that decides the line, as doc and section` },
         },
         required: ['task_id', 'line', 'rule'],
       },
@@ -397,14 +407,14 @@ const CONSISTENCY_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          point: { type: 'string', description: 'the point the solvers\' review lines share' },
-          solvers: { type: 'array', items: { type: 'string' }, description: 'the task ids the entry holds between' },
-          principled: { type: 'boolean', description: 'whether the tasks differ in a way a rule of the docs names' },
-          rule: { type: 'string', description: 'the doc section of the rule the entry rests on' },
-          reading: { type: 'string', description: 'the reading the docs should force; `consistent` for a group with no divergence' },
-          wording: { type: 'string', description: 'the passage that leaves that reading open; empty when the divergence is principled' },
-          form: { type: 'string', description: 'the form the solvers should agree on' },
-          ground: { type: 'string', description: 'what the judgment rests on: the passage read, by doc and section' },
+          point: { type: 'string', description: mctx`the point the solvers' review lines share` },
+          solvers: { type: 'array', items: { type: 'string' }, description: mctx`the task ids the entry holds between` },
+          principled: { type: 'boolean', description: mctx`whether the tasks differ in a way a rule of the docs names` },
+          rule: { type: 'string', description: mctx`the doc section of the rule the entry rests on` },
+          reading: { type: 'string', description: mctx`the reading the docs should force; \`consistent\` for a group with no divergence` },
+          wording: { type: 'string', description: mctx`the passage that leaves that reading open; empty when the divergence is principled` },
+          form: { type: 'string', description: mctx`the form the solvers should agree on` },
+          ground: { type: 'string', description: mctx`what the judgment rests on: the passage read, by doc and section` },
         },
         required: ['point', 'solvers', 'principled', 'rule', 'reading', 'wording', 'form', 'ground'],
       },
@@ -413,7 +423,6 @@ const CONSISTENCY_SCHEMA = {
   required: ['divergences', 'misgrouped'],
 }
 
-// ------------------------------------------------------------ schemas end
 
 // ---------------------------------------------------------------- tasks
 
@@ -471,219 +480,319 @@ const seedKey = (line) => {
 
 // ---------------------------------------------------------------- briefs
 
-// The brief each stage sends its agent. Everything from the marker above to
-// the marker below is the prose this script holds: `scripts/context.py
-// workflow` slices the region and prints it, so a reader outside the script
-// reads the briefs without running it. Each brief is a template literal, so
-// the substitution, the branching, and the blocks a value carries are built
-// here beside the words that frame them.
+// The brief each stage sends its agent. Each is an `mctx` literal, so the
+// check reads its words as the format where they stand. A hole in a literal
+// is a name, and the value it takes is computed above it. A fence inside a
+// literal takes tildes, since the literal's own delimiter is a backtick.
 
-const ONE_CALL = "- Run it as one Bash call, in the foreground, with the Bash tool's `timeout` set to 600000."
-const NO_GIT = '- Never run a git command that changes state.'
-const NO_WRITES = '- Change no file. Never run a git command that changes state.'
-const RUN_THE_CHECKS = '- Run the solver, the lint, and the audit.'
+const ONE_CALL = mctx`- Run it as one Bash call, in the foreground, with the Bash tool's \`timeout\` set to 600000.`
+const NO_GIT = mctx`- Never run a git command that changes state.`
+const NO_WRITES = mctx`- Change no file. Never run a git command that changes state.`
+const RUN_THE_CHECKS = mctx`- Run the solver, the lint, and the audit.`
 
-const readTask = () => '- Read the retro window and return the issues.'
+// The second role of a prose unit, between the two role texts.
+const FIX_AND_PRUNE_STEP = mctx`- The second step, over the diff your fix made:`
 
-const checkTask = (group, issues) => `- Check these issues, all about ${group}.
+const readTask = () => mctx`- Read the retro window and return the issues.`
 
-\`\`\`json
-${JSON.stringify(issues, null, 2)}
-\`\`\``
+const checkTask = (group, issues) => {
+  const list = JSON.stringify(issues, null, 2)
+  return mctx`
+- Check these issues, all about ${group}.
 
-const reviewTask = (open) => `- Review these open issues and their candidate fixes.
+~~~json
+${list}
+~~~
+`
+}
 
-\`\`\`json
-${JSON.stringify(open, null, 2)}
-\`\`\``
+const reviewTask = (open) => {
+  const list = JSON.stringify(open, null, 2)
+  return mctx`
+- Review these open issues and their candidate fixes.
 
-const fixLead = (groups) => groups.length > 1
-  ? 'Make these fixes. Each entry names one file, the fixes that file takes, and the path its diff goes to.'
-  : `Make these fixes in ${groups[0].target}.`
+~~~json
+${list}
+~~~
+`
+}
 
-const fixTask = (groups, pruned = false) => `- ${fixLead(groups)}
+const fixOne = (target) => mctx`Make these fixes in ${target}.`
+const FIX_MANY = mctx`Make these fixes. Each entry names one file, the fixes that file takes, and the path its diff goes to.`
+const fixLead = (groups) => groups.length > 1 ? FIX_MANY : fixOne(groups[0].target)
 
-\`\`\`json
-${fixEntries(groups, pruned)}
-\`\`\`
+const fixTask = (groups, pruned = false) => {
+  const lead = fixLead(groups)
+  const entries = fixEntries(groups, pruned)
+  const dir = DIFF_DIR
+  return mctx`
+- ${lead}
+
+~~~json
+${entries}
+~~~
 
 - Write the diff of your changes to each file named above, verbatim, to that file's \`diff_path\`. Create the directory first.
-- A file you changed that is not named above takes a diff of its own under \`${DIFF_DIR}/\`, at a path you pick.
-- Report one \`diffs\` entry per file you changed, the files named above and the others alike: the file, and the path its diff went to.`
+- A file you changed that is not named above takes a diff of its own under \`${dir}/\`, at a path you pick.
+- Report one \`diffs\` entry per file you changed, the files named above and the others alike: the file, and the path its diff went to.
+`
+}
 
-const fixAndPruneTask = (groups, ruled) => `${fixTask(groups, true)}
+const RULED = mctx`- The user ruled for these fixes. The prune keeps the rule each edit states.`
+const UNRULED = mctx`- The user ruled on none of these fixes.`
+
+const fixAndPruneTask = (groups, ruled) => {
+  const fix = fixTask(groups, true)
+  const readers = groups.map(g => `${g.target}: ${readerFor(g.target)}`).join('\n')
+  const rulingLine = ruled ? RULED : UNRULED
+  return mctx`
+${fix}
 - Work in two steps: the fix, under the fix role, then the prune, under the prune role, over the diff your fix made.
 - The reader of each file, for the prune step:
 
-\`\`\`
-${groups.map(g => `${g.target}: ${readerFor(g.target)}`).join('\n')}
-\`\`\`
+~~~
+${readers}
+~~~
 
-- ${ruled
-    ? 'The user ruled for these fixes. The prune keeps the rule each edit states.'
-    : 'The user ruled on none of these fixes.'}
+${rulingLine}
 - The prune step takes the edits above as the edits the diff was meant to make.
 - Each file named above takes two diffs: the fix step writes its own diff to that file's \`diff_path\`, and the prune step writes the diff of its own pass to that file's \`prune_path\`.
 - Run the verification command once over all the fix edits together, and once over all the prune edits together. It does not run per file.
-- Report both steps. The \`diffs\` field carries one entry per file the run changed, each \`path\` that file's \`prune_path\`, since the prune step left the final state. The \`notes\` field carries one line per cut, and the meaning before and after of each rule the diff touches.`
-
-// The second role of a prose unit, between the two role texts.
-const FIX_AND_PRUNE_STEP = '- The second step, over the diff your fix made:'
+- Report both steps. The \`diffs\` field carries one entry per file the run changed, each \`path\` that file's \`prune_path\`, since the prune step left the final state. The \`notes\` field carries one line per cut, and the meaning before and after of each rule the diff touches.
+`
+}
 
 // A code unit works in a worktree of its own, so its brief says where it is,
 // how a command runs there, and how its change gets back.
-const worktreeNote = () => `
+const worktreeNote = () => mctx`
 - You are in a git worktree of the repo, checked out at HEAD. It is a full tree of its own, and every path above is relative to its root.
 - Work inside that tree and nowhere else: every read, every edit, and every command.
 - Run each \`uv run\` command from the root of that tree. The first one builds that tree's own environment.
 - A file you create is new to git, and a diff of the tracked files leaves it out. For each file you create, append the output of \`git diff --no-index -- /dev/null <file>\` to that file's diff.
-- Report the absolute path of the worktree in \`worktree\`.`
+- Report the absolute path of the worktree in \`worktree\`.
+`
 
 // The verify pass of a code unit works in the worktree its fix worked in, so
 // the change it reads and the change it makes stay in one tree.
-const worktreeVerifyNote = (worktree) => `
+const worktreeVerifyNote = (worktree) => mctx`
 - The fix worked in a git worktree of the repo, at ${worktree}. Every path above is relative to that tree's root.
 - Work inside that tree and nowhere else: every read, every edit, and every command.
-- Run each \`uv run\` command from ${worktree}.`
-
-const verifyGroup = (made, g) => `- ${g.target} — the edits its changes were meant to make:
-
-\`\`\`json
-${JSON.stringify(g.fixes.map(f => f.edit), null, 2)}
-\`\`\`
-
-- ${made.kind === 'prose'
-    ? `Its fix diff is under ${diffPath(g.target)}, and the diff of the prune over that fix is under ${prunePath(g.target)}.`
-    : `Its diff is under ${diffPath(g.target)}.`}`
-
-const verifyTask = (made) => `- Verify the changes to ${made.target}.
-
-\`\`\`
-${made.groups.map(g => verifyGroup(made, g)).join('\n\n')}
-\`\`\`
-
-- ${otherDiffs(made).length
-    ? `The fix also changed these files. They are in scope beside the target: fix what you find in them. Each entry names the file, then the diff of its change.
-
-\`\`\`
-${otherDiffs(made).map(d => `${d.file} — ${d.path}`).join('\n')}
-\`\`\`
+- Run each \`uv run\` command from ${worktree}.
 `
-    : 'The fix changed no file beside the target.'}
-- ${made.chain && made.chain.length
-    ? `The other code targets of this run changed the same tree. Their diffs are under these paths:
 
-\`\`\`
-${made.chain.join('\n')}
-\`\`\`
+const proseDiffs = (fix, prune) => mctx`- Its fix diff is under ${fix}, and the diff of the prune over that fix is under ${prune}.`
+const codeDiff = (diff) => mctx`- Its diff is under ${diff}.`
+
+const verifyGroup = (made, g) => {
+  const target = g.target
+  const edits = JSON.stringify(g.fixes.map(f => f.edit), null, 2)
+  const where = made.kind === 'prose'
+    ? proseDiffs(diffPath(g.target), prunePath(g.target))
+    : codeDiff(diffPath(g.target))
+  return mctx`
+- ${target} — the edits its changes were meant to make:
+
+~~~json
+${edits}
+~~~
+
+${where}
 `
-    : 'No other code target of this run changed the same tree.'}
-- Write the diff of your own changes, verbatim, to ${verifyPath(made.label)}, and report that path. A pass that changed nothing writes no file and reports an empty path.
-- ${made.worktree ? worktreeVerifyNote(made.worktree) : ''}`
+}
 
-const mergeTask = (worktree) => `- Take the change in the worktree at ${worktree} into the repo.
+const verifyOthers = (files) => mctx`
+- The fix also changed these files. They are in scope beside the target: fix what you find in them. Each entry names the file, then the diff of its change.
 
-\`\`\`
-uv run python scripts/retro_merge.py ${shq(worktree)}
-\`\`\`
+~~~
+${files}
+~~~
+`
+const NO_OTHERS = mctx`- The fix changed no file beside the target.`
+
+const verifyChain = (paths) => mctx`
+- The other code targets of this run changed the same tree. Their diffs are under these paths:
+
+~~~
+${paths}
+~~~
+`
+const NO_CHAIN = mctx`- No other code target of this run changed the same tree.`
+
+const verifyTask = (made) => {
+  const target = made.target
+  const groups = made.groups.map(g => verifyGroup(made, g)).join('\n\n')
+  const others = otherDiffs(made).length
+    ? verifyOthers(otherDiffs(made).map(d => `${d.file} — ${d.path}`).join('\n'))
+    : NO_OTHERS
+  const chain = made.chain && made.chain.length
+    ? verifyChain(made.chain.join('\n'))
+    : NO_CHAIN
+  const where = verifyPath(made.label)
+  const worktree = made.worktree ? '\n\n' + worktreeVerifyNote(made.worktree) : ''
+  return mctx`
+- Verify the changes to ${target}.
+
+${groups}
+
+${others}
+${chain}
+- Write the diff of your own changes, verbatim, to ${where}, and report that path. A pass that changed nothing writes no file and reports an empty path.
+` + worktree
+}
+
+const mergeTask = (worktree) => {
+  const arg = shq(worktree)
+  return mctx`
+- Take the change in the worktree at ${worktree} into the repo.
+
+~~~
+uv run python scripts/retro_merge.py ${arg}
+~~~
 
 ${ONE_CALL}
 - It prints \`{"applied": ..., "files": [...], "conflict": ...}\`. Return that object as your structured output, field for field, changing nothing in it.
 - When the command fails, or prints nothing, return \`applied\` false, an empty \`files\`, and what went wrong in \`conflict\`.
-- Run no other command. Change no file yourself, and never run a git command of your own.`
+- Run no other command. Change no file yourself, and never run a git command of your own.
+`
+}
 
-const checksTask = () => `- Run the checks over the current tree: the suite, the handbook build, and every solver of the corpus.
+const checksTask = () => mctx`
+- Run the checks over the current tree: the suite, the handbook build, and every solver of the corpus.
 
-\`\`\`
+~~~
 uv run python scripts/retro_checks.py
-\`\`\`
+~~~
 
 ${ONE_CALL}
 - It prints \`{"checks": [...]}\`. Return that \`checks\` array, each entry as it stands.
 - Report a failure as a failure. Do not attribute it to other work, and do not report it as passing.
-${NO_WRITES}`
+${NO_WRITES}
+`
 
-const sweepTask = (stems) => `- Sweep the parameter values of these solvers.
+const sweepTask = (stems) => {
+  const list = stems.join(' ')
+  return mctx`
+- Sweep the parameter values of these solvers.
 
-\`\`\`
-mkdir -p .scratch/retro/sweep && uv run python scripts/run_dl.py sweep --open ${stems.join(' ')}
-\`\`\`
+~~~
+mkdir -p .scratch/retro/sweep && uv run python scripts/run_dl.py sweep --open ${list}
+~~~
 
 ${ONE_CALL}
 - A stem whose cached sweep is missing, or was made from other solver code, sweeps again, and that takes minutes.
 - It prints \`{"sweeps": [...], "skipped": [...]}\`. Return that \`sweeps\` array, each entry as it stands.
-- Change no file outside \`.scratch/retro/sweep/\`. Never run a git command that changes state.`
+- Change no file outside \`.scratch/retro/sweep/\`. Never run a git command that changes state.
+`
+}
 
-const sweepLinesTask = (sweeps) => `- Write the sweep review lines into these solvers.
+const sweepLinesTask = (sweeps) => {
+  const list = sweeps.map(s => s.stem).join(' ')
+  return mctx`
+- Write the sweep review lines into these solvers.
 
-\`\`\`
-uv run python scripts/run_dl.py sweep --mark ${sweeps.map(s => s.stem).join(' ')}
-\`\`\`
+~~~
+uv run python scripts/run_dl.py sweep --mark ${list}
+~~~
 
 ${ONE_CALL}
 - It prints \`{"solvers": [...], "skipped": [...]}\`. Return that \`solvers\` array, each entry as it stands.
-- Change no other file. Never run a git command that changes state.`
+- Change no other file. Never run a git command that changes state.
+`
+}
 
-const resolveTask = (taskId) => `- Act on the review lines in programs/solvers/${taskId}.dl.
+const resolveTask = (taskId) => {
+  const solver = solverTarget(taskId)
+  const where = resolvePath(taskId)
+  const report = `${REPORT_DIR}/${taskId}/retro.md`
+  return mctx`
+- Act on the review lines in ${solver}.
 - Every review line in the solver's header names a point to act on, except a line whose kind marks it as waiting on the user; \`cite\` is such a kind today. Work each line per the procedure's operations, as they apply to it.
 - Remove each line you finished. Leave a line you did not finish; when the solver carries no \`// draft\` line, return it to draft first: \`uv run python -c "import sys; sys.path.insert(0, 'tools/console'); from solver_console import solvers; solvers.mark_draft('<task_id>'); solvers.withdraw_citations('<task_id>')"\`. A review line whose kind waits on the user is not yours: leave it as it is.
 ${RUN_THE_CHECKS}
-- Write the diff of your change to the solver, verbatim, to ${resolvePath(taskId)}, and report that path. A run that changed nothing writes no file and reports an empty path.
-- Write your report, in the form the Review operation gives, to ${REPORT_DIR}/${taskId}/retro.md. Create the directory first. The run, lint, and audit output go in your returned verification, not in the report.
-${NO_GIT}`
+- Write the diff of your change to the solver, verbatim, to ${where}, and report that path. A run that changed nothing writes no file and reports an empty path.
+- Write your report, in the form the Review operation gives, to ${report}. Create the directory first. The run, lint, and audit output go in your returned verification, not in the report.
+${NO_GIT}
+`
+}
 
-const cleanupTask = (taskId, source) => `- Run Simplify, then Prune, over the whole of programs/solvers/${taskId}.dl.
+const cleanupTask = (taskId, source) => {
+  const solver = solverTarget(taskId)
+  return mctx`
+- Run Simplify, then Prune, over the whole of ${solver}.
 - ${source}
-- Scratch goes under \`.scratch/<task_id>/\`.`
+- Scratch goes under \`.scratch/<task_id>/\`.
+`
+}
 
-const groupTask = (lines) => `- Group these review lines. Each entry names the solver the line stood in, the line, and a seed key from its text.
+const groupTask = (lines) => {
+  const list = JSON.stringify(lines, null, 2)
+  return mctx`
+- Group these review lines. Each entry names the solver the line stood in, the line, and a seed key from its text.
 
-\`\`\`json
-${JSON.stringify(lines, null, 2)}
-\`\`\``
+~~~json
+${list}
+~~~
+`
+}
 
-const consistencyTask = (group, rule, members) => `- Compare these solvers, the group \`${group}\`, under the rule ${rule}. Each entry names one solver, its report, and the review lines the Resolve stage acted on in it under that rule.
-- Scratch goes under \`.scratch/retro/consistency/${group}/\`.
-
-\`\`\`json
-${JSON.stringify(members.map(r => ({
+const consistencyTask = (group, rule, members) => {
+  const scratch = `.scratch/retro/consistency/${group}/`
+  const list = JSON.stringify(members.map(r => ({
     task_id: r.task_id,
     solver: r.target,
     report: `${REPORT_DIR}/${r.task_id}/retro.md`,
     acted: r.acted,
-  })), null, 2)}
-\`\`\``
+  })), null, 2)
+  return mctx`
+- Compare these solvers, the group \`${group}\`, under the rule ${rule}. Each entry names one solver, its report, and the review lines the Resolve stage acted on in it under that rule.
+- Scratch goes under \`${scratch}\`.
+
+~~~json
+${list}
+~~~
+`
+}
 
 // One solver of a divergence the docs' rules do not explain. The solver goes to
 // the form its group agreed on, under the reading that decides it.
-const applyTask = (taskId, d) => `- Bring programs/solvers/${taskId}.dl to the form below, under the reading below.
+const applyTask = (taskId, d) => {
+  const solver = solverTarget(taskId)
+  const divergence = JSON.stringify(
+    { point: d.point, reading: d.reading, form: d.form }, null, 2)
+  const where = applyPath(taskId)
+  const report = `${REPORT_DIR}/${taskId}/retro-consistency.md`
+  return mctx`
+- Bring ${solver} to the form below, under the reading below.
 
-\`\`\`json
-${JSON.stringify({ point: d.point, reading: d.reading, form: d.form }, null, 2)}
-\`\`\`
+~~~json
+${divergence}
+~~~
 
 - The solvers this entry holds between read that point differently. The form above is the form they agree on.
 - Change nothing the form does not reach. The model, the parameterization, and the Choice cases stay as they are.
 ${RUN_THE_CHECKS}
-- Write the diff of your change to the solver, verbatim, to ${applyPath(taskId)}, and report that path. A run that changed nothing writes no file and reports an empty path.
-- Write your report, in the form the Review operation gives, to ${REPORT_DIR}/${taskId}/retro-consistency.md. Create the directory first. The run, lint, and audit output go in your returned verification, not in the report.
+- Write the diff of your change to the solver, verbatim, to ${where}, and report that path. A run that changed nothing writes no file and reports an empty path.
+- Write your report, in the form the Review operation gives, to ${report}. Create the directory first. The run, lint, and audit output go in your returned verification, not in the report.
 - Report the point you brought the solver to in \`acted\`, as one entry, and what the form leaves unfinished in \`left\`.
-${NO_GIT}`
+${NO_GIT}
+`
+}
 
 // The agent of a prose unit runs one command, and the brief it hands on is
 // built at the call site, since it carries the unit's own two role texts.
-const codexTask = (count, targets, command) => `- Run the brief below through Codex. It covers ${count}: ${targets}.
+const codexTask = (count, targets, command) => mctx`
+- Run the brief below through Codex. It covers ${count}: ${targets}.
 - Run this as one Bash call, in the foreground, with the Bash tool's \`timeout\` set to 600000. Copy the whole command, the brief between the two \`RETRO_BRIEF\` markers included, verbatim.
 
-\`\`\`
+~~~
 ${command}
-\`\`\`
+~~~
 
 - It prints the JSON of the Codex session's final message. Return that JSON as your structured output, field for field, changing nothing in it.
 - When the command fails, or prints nothing, return an empty \`diffs\`, an empty \`verification\`, an empty \`review_lines\`, and what went wrong in \`notes\`.
-- Run no other command. Make none of the edits yourself, and change no file. Never run a git command that changes state.`
+- Run no other command. Make none of the edits yourself, and change no file. Never run a git command that changes state.
+`
 
-// ------------------------------------------------------------- briefs end
 
 
 // ---------------------------------------------------------------- stages

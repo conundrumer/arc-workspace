@@ -18,7 +18,7 @@ from controlled_markdown import (
     HEADING,
     QUOTE,
     TABLE,
-    NestedMarkdownError,
+    ControlledMarkdownError,
     Registry,
     check_blocks,
     check_links,
@@ -53,7 +53,7 @@ def test_case(path):
     text = path.read_text()
     kind, rule = expectation(text)
     if kind == "error" and rule not in RENDER_RULES:
-        with pytest.raises(NestedMarkdownError) as err:
+        with pytest.raises(ControlledMarkdownError) as err:
             check_shape(parse(text, path.name))
         assert err.value.rule == rule
         return
@@ -63,7 +63,7 @@ def test_case(path):
     canonical = write(document)
     assert write(parse(canonical, path.name)) == canonical
     if kind == "error":
-        with pytest.raises(NestedMarkdownError) as err:
+        with pytest.raises(ControlledMarkdownError) as err:
             _render_case(path)
         assert err.value.rule == rule
         return
@@ -118,7 +118,7 @@ def test_block_syntax_escape():
     document = parse(text)
     assert [c.text for c in document.children[0].children] == ["> quoted", "1. numbered"]
     assert write(document) == text
-    with pytest.raises(NestedMarkdownError) as err:
+    with pytest.raises(ControlledMarkdownError) as err:
         parse("# T\n- > quoted\n")
     assert err.value.rule == "block-syntax"
 
@@ -131,7 +131,7 @@ def test_number_run():
     assert (one.number, one.text) == (1, "one")
     assert write(document) == text
     assert full(document) == "# T\n\n1. one\n    - under\n2. two\n"
-    with pytest.raises(NestedMarkdownError) as err:
+    with pytest.raises(ControlledMarkdownError) as err:
         parse("# T\n1. one\n3. three\n")
     assert err.value.rule == "number-run"
 

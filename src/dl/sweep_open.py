@@ -7,6 +7,7 @@ restates that in a few words, under the parameter's name.
 
 import re
 
+from controlled_markdown import mctx
 from dl.paths import REPO_ROOT
 
 # Where a sweep's output is kept, one `<stem>.txt` per stem, stdout and
@@ -40,17 +41,17 @@ UNEXERCISED = re.compile(
 
 # Every phrase this module writes into a review line, keyed by what leaves
 # the parameter open. A slot, `{name}`, is filled at the site.
-MESSAGES = {
-    "never-read": "the {label} case{s} never read{verb} it, so its value is "
-                  "open there",
-    "unexercised": "the {label} case{s} do{verb} not exercise it",
-    "refuted": "only the test pairs refute the other values train admits, so "
-               "a determination from train alone could pick it",
-    "in-kind": "values that differ from stored in kind fit as well, so the "
-               "pairs do not fix it",
-    "below": "values smaller than stored fit as well",
-    "review": "// review sweep: {param} — {phrase}",
-}
+MESSAGES = mctx({
+        "never-read": "the {label} case{s} never read{verb} it, so its value is "
+                      "open there",
+        "unexercised": "the {label} case{s} do{verb} not exercise it",
+        "refuted": "only the test pairs refute the other values train admits, so "
+                   "a determination from train alone could pick it",
+        "in-kind": "values that differ from stored in kind fit as well, so the "
+                   "pairs do not fix it",
+        "below": "values smaller than stored fit as well",
+        "review": "// review sweep: {param} — {phrase}",
+})
 
 type ReportLine = tuple[str, str]
 type OpenParam = tuple[str, str, str]

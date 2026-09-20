@@ -21,6 +21,7 @@ longer cycles the same way.
 
 import re
 
+from controlled_markdown import mctx
 from dl.dlparse import Index, parse
 from dl.source import determined_params
 
@@ -30,10 +31,10 @@ PARAMS_INIT_RE = re.compile(r"\.init\s+(\w+)\s*=\s*Params\b")
 # every comp. Both sort outside the file's comp names, which are identifiers.
 # Every sentence this module prints, keyed by the part it heads. A slot,
 # `{name}`, is filled by the render.
-MESSAGES = {
-    "cycle": "circular determination: ",
-    "step": "{param} reads params.{reads} ({comp} line {lineno})",
-}
+MESSAGES = mctx({
+        "cycle": "circular determination: ",
+        "step": "{param} reads params.{reads} ({comp} line {lineno})",
+})
 
 PARAMS = "\0params"
 OUTER = "\0outer"

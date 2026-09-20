@@ -18,7 +18,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import subprocess
 import threading
 import time
 from functools import lru_cache
@@ -354,56 +353,12 @@ def section_text(where: str, docs: Path = DOCS_DIR) -> str:
     return nm.render(body, registry)
 
 
-# The workflow scripts, and the comment lines that mark each region a reader
-# outside the script takes out of it: the return schemas, which evaluate on
-# their own, and the briefs, which are read as text.
-WORKFLOW_SCRIPTS = {
-    "retro": REPO_ROOT / ".claude" / "workflows" / "retro.js",
-    "cleanup-sweep": REPO_ROOT / ".claude" / "workflows" / "cleanup-sweep.js",
-}
-SCHEMA_OPEN = "---- schemas"
-SCHEMA_CLOSE = "---- schemas end"
-BRIEF_OPEN = "---- briefs"
-BRIEF_CLOSE = "---- briefs end"
-
-
-def _region(path: Path, opens: str, closes: str) -> str:
-    """The lines a script marks off, between its two marker lines."""
-    lines = path.read_text().split("\n")
-    a = [i for i, ln in enumerate(lines) if ln.endswith(opens)]
-    b = [i for i, ln in enumerate(lines) if ln.endswith(closes)]
-    return "\n".join(lines[a[0] + 1:b[0]]).strip() if a and b else ""
-
-
-def workflow_schemas(name: str) -> dict:
-    """The return schemas a workflow script holds, by constant name. The
-    region between its two marker lines is sliced out and evaluated, so the
-    schemas stay in the script and a reader outside it still gets them."""
-    path = WORKFLOW_SCRIPTS.get(name)
-    if path is None or not path.is_file():
-        return {}
-    region = _region(path, SCHEMA_OPEN, SCHEMA_CLOSE)
-    if not region:
-        return {}
-    names = re.findall(r"^const ([A-Z_]+) = ", region, re.M)
-    script = f"{region}\nconsole.log(JSON.stringify({{{', '.join(names)}}}))"
-    done = subprocess.run(["node", "--input-type=module", "-"], input=script,
-                          capture_output=True, text=True)
-    if done.returncode != 0:
-        raise SystemExit(f"{path.name}: the schema region did not evaluate\n"
-                         f"{done.stderr.strip()}")
-    return json.loads(done.stdout)
-
-
 def workflow_bundle(name: str, roles: Path = ROLE_DIR) -> dict:
-    """What a workflow run needs, and what a reader needs to read it: the text
-    of each role it reaches, the return schemas its script holds, and the
-    briefs its script holds. Both regions come out of the script, the schemas
-    evaluated and the briefs as they stand."""
+    """What a workflow run needs: the text of each role it reaches. The script
+    holds its own briefs and its own return schemas, each an `mctx` literal
+    the check reads where it stands."""
     return {
         "roles": {r: role_text(r, roles) for r in _workflow_roles(name, roles)},
-        "schemas": workflow_schemas(name),
-        "briefs": _region(WORKFLOW_SCRIPTS[name], BRIEF_OPEN, BRIEF_CLOSE),
     }
 
 

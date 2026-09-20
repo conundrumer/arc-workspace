@@ -26,6 +26,7 @@ verbatim, `write` puts it back unchanged, and a render leaves it out.
 
 from __future__ import annotations
 
+import ast
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -34,7 +35,7 @@ from pathlib import Path
 # ---------------------------------------------------------------- errors
 
 
-class NestedMarkdownError(Exception):
+class ControlledMarkdownError(Exception):
     """A line that breaks a rule. `rule` is the rule's short name."""
 
     def __init__(self, source: str, line: int, rule: str, message: str):
@@ -146,7 +147,7 @@ def unescape(text: str, source: str, line: int) -> str:
         if BLOCK_RE.match(bare):
             return bare
     if BLOCK_RE.match(text):
-        raise NestedMarkdownError(source, line, "block-syntax",
+        raise ControlledMarkdownError(source, line, "block-syntax",
                            "a statement begins with Markdown block syntax")
     return text
 
@@ -179,7 +180,7 @@ def split_front(text: str, source: str) -> tuple[str, str, int]:
     for i, line in enumerate(lines[1:], start=1):
         if line.rstrip() == FRONT_FENCE:
             return "\n".join(lines[:i + 1]), "\n".join(lines[i + 1:]), i + 1
-    raise NestedMarkdownError(source, 1, "front-matter",
+    raise ControlledMarkdownError(source, 1, "front-matter",
                               "a front matter block needs a closing `---`")
 
 
@@ -206,8 +207,8 @@ def split_named(body: str) -> tuple[str, str | None]:
     return body.strip(), None
 
 
-def parse(text: str, source: str = "<input>") -> Node:
-    """Text as a document node. Raises NestedMarkdownError on the first broken rule."""
+def parse(text: str, source: str = "<input>", fragment: bool = False) -> Node:
+    """Text as a document node. Raises ControlledMarkdownError on the first broken rule."""
     front, text, offset = split_front(text, source)
     document = Node(DOCUMENT, source=source, front=front)
     # The open headings, shallowest first, each with its `#` count and the
@@ -234,10 +235,10 @@ def parse(text: str, source: str = "<input>") -> Node:
                 continue
             lead = line[:len(line) - len(line.lstrip(" \t"))]
             if "\t" in lead:
-                raise NestedMarkdownError(source, num, "indent-tab",
+                raise ControlledMarkdownError(source, num, "indent-tab",
                                    "indentation holds a tab")
             if len(lead) < code_indent:
-                raise NestedMarkdownError(source, num, "code-indent",
+                raise ControlledMarkdownError(source, num, "code-indent",
                                    "a code line sits at the fence's indent")
             body = line[code_indent:]
             code.text += "\n" + body
@@ -261,10 +262,10 @@ def parse(text: str, source: str = "<input>") -> Node:
 
         lead = line[:len(line) - len(line.lstrip(" \t"))]
         if "\t" in lead:
-            raise NestedMarkdownError(source, num, "indent-tab",
+            raise ControlledMarkdownError(source, num, "indent-tab",
                                "indentation holds a tab")
         if len(lead) % INDENT:
-            raise NestedMarkdownError(source, num, "indent-width",
+            raise ControlledMarkdownError(source, num, "indent-width",
                                "indentation is not a multiple of four spaces")
         level = len(lead) // INDENT
         body = line[len(lead):]
@@ -273,20 +274,20 @@ def parse(text: str, source: str = "<input>") -> Node:
         if body.startswith("#"):
             m = HEADING_RE.match(body)
             if m is None or len(m.group(1)) > 6:
-                raise NestedMarkdownError(source, num, "heading-depth",
+                raise ControlledMarkdownError(source, num, "heading-depth",
                                    "a heading takes one to six `#`")
             title = (m.group(2) or "").strip()
             if title and CLOSER_RE.search(title):
-                raise NestedMarkdownError(source, num, "heading-closer",
+                raise ControlledMarkdownError(source, num, "heading-closer",
                                    "a heading takes no closing `#`")
             count = len(m.group(1))
             if title:
                 title = unescape(title, source, num)
             if level > len(stack) - 1:
-                raise NestedMarkdownError(source, num, "indent-jump",
+                raise ControlledMarkdownError(source, num, "indent-jump",
                                    "indentation goes deeper by more than one level")
             if level and not _is_directive(stack[level]):
-                raise NestedMarkdownError(source, num, "heading-indent",
+                raise ControlledMarkdownError(source, num, "heading-indent",
                                    "a heading sits at column zero or under a "
                                    "directive")
             while heads and (heads[-1][2] > level
@@ -312,7 +313,7 @@ def parse(text: str, source: str = "<input>") -> Node:
         elif marker == "|":
             rest = body      # a table line is verbatim, marker and all
         elif marker not in "-+*>" or (len(body) > 1 and body[1] != " "):
-            raise NestedMarkdownError(source, num, "no-marker",
+            raise ControlledMarkdownError(source, num, "no-marker",
                                "a line opens with `-`, `+`, `*`, `>`, `|`, "
                                "`1.`, or `#`")
         else:
@@ -323,23 +324,23 @@ def parse(text: str, source: str = "<input>") -> Node:
             own = BLOCK_MARKER.get(block.kind, "```")
             if level > block_level:
                 rule = f"{block.kind}-{'nest' if marker == own else 'child'}"
-                raise NestedMarkdownError(source, num, rule,
+                raise ControlledMarkdownError(source, num, rule,
                                    f"nothing nests under a {block.kind}")
             if marker != own or level != block_level \
                     or stack[level] is not block_parent:
                 block = None
 
         if level > len(stack) - 1:
-            raise NestedMarkdownError(source, num, "indent-jump",
+            raise ControlledMarkdownError(source, num, "indent-jump",
                                "indentation goes deeper by more than one level")
         parent = stack[level]
         if parent.kind == ATTRIBUTE:
-            raise NestedMarkdownError(source, num, "attribute-leaf",
+            raise ControlledMarkdownError(source, num, "attribute-leaf",
                                "nothing indents under a `+` line")
 
         if fence is not None:
-            if parent.kind == DOCUMENT:
-                raise NestedMarkdownError(source, num, "code-parent",
+            if parent.kind == DOCUMENT and not fragment:
+                raise ControlledMarkdownError(source, num, "code-parent",
                                    "a code block needs a parent node")
             node = Node(CODE, text=body, line=num, source=source)
             parent.children.append(node)
@@ -354,7 +355,7 @@ def parse(text: str, source: str = "<input>") -> Node:
                 block.text += "\n" + rest
                 continue
             if parent.kind == DOCUMENT:
-                raise NestedMarkdownError(source, num, f"{kind}-parent",
+                raise ControlledMarkdownError(source, num, f"{kind}-parent",
                                    f"a {kind} needs a parent node")
             node = Node(kind, text=rest, line=num, source=source)
             parent.children.append(node)
@@ -371,14 +372,14 @@ def parse(text: str, source: str = "<input>") -> Node:
             continue
 
         if not rest.strip():
-            raise NestedMarkdownError(source, num, "attribute-name",
+            raise ControlledMarkdownError(source, num, "attribute-name",
                                "an attribute needs a name")
         name, value = split_named(unescape(rest, source, num))
         if not name:
-            raise NestedMarkdownError(source, num, "attribute-name",
+            raise ControlledMarkdownError(source, num, "attribute-name",
                                "an attribute needs a name")
         if name in RESERVED:
-            raise NestedMarkdownError(source, num, "attribute-reserved",
+            raise ControlledMarkdownError(source, num, "attribute-reserved",
                                f"`{name}` is a reserved attribute name")
 
         if marker == "*":
@@ -389,7 +390,7 @@ def parse(text: str, source: str = "<input>") -> Node:
                                       line=num, source=source))
         else:
             if name in parent.attributes():
-                raise NestedMarkdownError(source, num, "attribute-repeat",
+                raise ControlledMarkdownError(source, num, "attribute-repeat",
                                    f"`{name}` is already set on this node")
             node = Node(ATTRIBUTE, name=name, value=value, line=num,
                         source=source)
@@ -398,7 +399,7 @@ def parse(text: str, source: str = "<input>") -> Node:
         stack = stack[:level + 1] + [node]
 
     if code is not None:
-        raise NestedMarkdownError(source, code.line, "code-fence",
+        raise ControlledMarkdownError(source, code.line, "code-fence",
                                   "a code block needs a closing fence")
     _check_numbers(document)
     _mark_blank(document, blank_before)
@@ -420,7 +421,7 @@ def _check_numbers(node: Node) -> None:
     for child in node.children:
         if child.number:
             if child.number != want:
-                raise NestedMarkdownError(
+                raise ControlledMarkdownError(
                     child.source, child.line, "number-run",
                     f"a numbered statement runs 1, 2, 3; `{want}` is next")
             want += 1
@@ -451,13 +452,195 @@ def check_order(node: Node) -> None:
     for child in node.children:
         if child.kind == ATTRIBUTE:
             if seen:
-                raise NestedMarkdownError(child.source, child.line,
+                raise ControlledMarkdownError(child.source, child.line,
                                           "attribute-first",
                                           "a `+` line comes before every "
                                           "other line under one parent")
         else:
             seen = True
         check_order(child)
+
+
+# ----------------------------------------------------------------- prose
+
+def mctx(prose):
+    """A string a program holds that enters an agent's context. On a str it
+    strips the common indent and the blank lines around it; on a dict it
+    returns the dict as it stands, each value being a fragment of its own.
+
+    The name is the marker the check reads: every `mctx` call in the repo
+    gives up its strings, and each is checked as the format."""
+    if isinstance(prose, str):
+        return dedent(prose)
+    return prose
+
+
+def dedent(text: str) -> str:
+    """Text with the indent its lines share taken off and its outer blank
+    lines dropped."""
+    lines = text.split("\n")
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    pad = min((len(ln) - len(ln.lstrip(" ")) for ln in lines if ln.strip()),
+              default=0)
+    return "\n".join(ln[pad:] if ln.strip() else "" for ln in lines)
+
+
+# A hole a fragment leaves for the program to fill: `{name}` in Python,
+# `${name}` in JavaScript. The check puts one opaque word in its place, since
+# what stands there is a value and not prose.
+PY_HOLE_RE = re.compile(r"\{\{|\}\}|\{([A-Za-z_][A-Za-z0-9_.]*)\}")
+JS_HOLE_RE = re.compile(r"\$\{([^}]*)\}")
+HOLE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
+FILLED = "value"
+
+
+@dataclass
+class Fragment:
+    """One string a program holds, with where it stands."""
+    text: str
+    file: Path
+    source: str
+    line: int
+
+
+def _py_fragments(tree, path: Path, source: str):
+    """Every string an `mctx` call in a Python file gives up. A call whose
+    argument is not a literal is an error: the prose is read without running
+    the program."""
+    def values(node):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            yield node.lineno, dedent(node.value)
+        elif isinstance(node, ast.Dict):
+            for v in node.values:
+                yield from values(v)
+        else:
+            raise ControlledMarkdownError(
+                source, node.lineno, "mctx-literal",
+                "`mctx` takes a string or a dict of them, written out")
+
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == "mctx" and len(node.args) == 1):
+            for line, text in values(node.args[0]):
+                yield Fragment(text, path, source, line)
+
+
+# The tag, where it opens a literal: a name on its own, and not the word in
+# a comment or inside a span.
+JS_TAG_RE = re.compile(r"(?<![A-Za-z0-9_$`])mctx`")
+
+def _js_fragments(text: str, path: Path, source: str):
+    """Every string an `mctx` tag in a JavaScript file gives up. A backtick
+    inside the literal opens a nested one, which the check does not read."""
+    for m in JS_TAG_RE.finditer(text):
+        at = m.start()
+        line = text.count("\n", 0, at) + 1
+        j, depth, body = m.end(), 0, []
+        while j < len(text):
+            ch = text[j]
+            if ch == "\\" and j + 1 < len(text):
+                body.append(text[j + 1])
+                j += 2
+                continue
+            if ch == "$" and text[j:j + 2] == "${":
+                depth += 1
+            elif ch == "}" and depth:
+                depth -= 1
+            elif ch == "`":
+                if depth:
+                    raise ControlledMarkdownError(
+                        source, line + "".join(body).count("\n"), "mctx-nested",
+                        "a backtick inside an `mctx` literal opens a nested "
+                        "one")
+                break
+            body.append(ch)
+            j += 1
+        yield Fragment(dedent("".join(body)), path, source, line)
+
+
+PY_WHOLE_RE = re.compile(r"^\s*\{[A-Za-z_][A-Za-z0-9_.]*\}\s*$")
+JS_WHOLE_RE = re.compile(r"^\s*\$\{[^}]*\}\s*$")
+
+
+def _placed(text: str, whole: re.Pattern) -> str:
+    """A line that is one hole places a fragment of its own, checked where
+    that fragment stands, so this one reads past it."""
+    return "\n".join("" if whole.match(ln) else ln for ln in text.split("\n"))
+
+
+def _holed(fragment: Fragment) -> str:
+    """The fragment with each hole replaced by one opaque word, so what the
+    program fills is read as a value and not as prose. A line that is one
+    hole is left blank: it places a fragment the check reads on its own."""
+    if fragment.file.suffix == ".py":
+        def one(m):
+            if m.group(1) is None:
+                return m.group(0)[0]
+            return FILLED
+        return PY_HOLE_RE.sub(one, _placed(fragment.text, PY_WHOLE_RE))
+
+    def one(m):
+        if not HOLE_NAME_RE.match(m.group(1).strip()):
+            raise ControlledMarkdownError(
+                fragment.source, fragment.line, "hole-name",
+                f"`${{{m.group(1)}}}` is not a name; a fragment leaves a hole "
+                f"for a value the program computes above it")
+        return FILLED
+    return JS_HOLE_RE.sub(one, _placed(fragment.text, JS_WHOLE_RE))
+
+
+MARKER_RE = re.compile(r"^(?:[-+*>|]\s|\d+\.\s|#{1,6}\s|`{3,}|~{3,})")
+
+
+def check_fragment(fragment: Fragment, root: Path | None = None) -> None:
+    """One fragment under the rules its shape takes. A fragment that opens
+    with a marker is format lines and takes every rule; any other fragment is
+    the text of one statement and takes the text rules."""
+    text = _holed(fragment)
+    opening = next((ln for ln in text.split("\n") if ln.strip()), "")
+    if MARKER_RE.match(opening):
+        # A fragment is a run of lines, not a document: the brief that places
+        # it supplies the line a block stands under.
+        document = parse(text, fragment.source, fragment=True)
+        check_order(document)
+        check_blocks(document)
+        check_links(document, fragment.file, root)
+        return
+    if "\n" in text:
+        raise ControlledMarkdownError(
+            fragment.source, 1, "fragment-break",
+            "a fragment that is one statement holds one line")
+    node = Node(CONTENT, text=text, source=fragment.source, line=1)
+    document = Node(DOCUMENT, source=fragment.source)
+    document.children = [node]
+    check_links(document, fragment.file, root)
+
+
+def fragments(path: Path, source: str):
+    """Every fragment a file holds."""
+    text = path.read_text()
+    if path.suffix == ".py":
+        if "mctx" not in text:
+            return
+        yield from _py_fragments(ast.parse(text, str(path)), path, source)
+    elif "mctx`" in text:
+        yield from _js_fragments(text, path, source)
+
+
+def check_file_fragments(path: Path, source: str,
+                         root: Path | None = None) -> None:
+    """Every fragment a file holds, checked where it stands. An error carries
+    the file and the fragment's own line, offset within a multi-line one."""
+    for fragment in fragments(path, source):
+        try:
+            check_fragment(fragment, root)
+        except ControlledMarkdownError as err:
+            raise ControlledMarkdownError(
+                source, fragment.line + max(err.line - 1, 0), err.rule,
+                err.message) from None
 
 
 def check_blocks(node: Node) -> None:
@@ -468,7 +651,7 @@ def check_blocks(node: Node) -> None:
     for child in node.children:
         if child.kind in (CODE, QUOTE, TABLE):
             if seen:
-                raise NestedMarkdownError(child.source, child.line,
+                raise ControlledMarkdownError(child.source, child.line,
                                           "block-repeat",
                                           "a line carries one code node, "
                                           "quote, or table at most")
@@ -514,21 +697,21 @@ def check_links(document: Node, file: Path, root: Path | None = None) -> None:
     for node, text, path, ident in links(document):
         target = target_of(path, file, root)
         if not target.exists():
-            raise NestedMarkdownError(node.source, node.line, "link-missing",
+            raise ControlledMarkdownError(node.source, node.line, "link-missing",
                                       f"nothing at `{path}`")
         if not ident:
             continue
         if not target.is_file():
-            raise NestedMarkdownError(node.source, node.line, "link-missing",
+            raise ControlledMarkdownError(node.source, node.line, "link-missing",
                                       f"`{path}` is a directory and holds no "
                                       f"heading `{ident}`")
         heads = {slug(h.text): h.text for h in _walk(
             parse(target.read_text(), str(target))) if h.kind == HEADING}
         if ident not in heads:
-            raise NestedMarkdownError(node.source, node.line, "link-missing",
+            raise ControlledMarkdownError(node.source, node.line, "link-missing",
                                       f"no heading `{ident}` in `{path}`")
         if text != heads[ident]:
-            raise NestedMarkdownError(node.source, node.line, "link-text",
+            raise ControlledMarkdownError(node.source, node.line, "link-text",
                                       f"a link to a heading reads as that "
                                       f"heading: `{heads[ident]}`")
 
@@ -688,7 +871,7 @@ class Registry:
             if not ident:
                 continue
             if ident in out:
-                raise NestedMarkdownError(child.source, child.line,
+                raise ControlledMarkdownError(child.source, child.line,
                                           "id-repeat",
                                           f"`{ident}` is already an id in {rel}")
             out[ident] = child
@@ -763,12 +946,12 @@ def _fill(text: str, node: Node, st: _State) -> str:
     def one(m):
         name = m.group(1)
         if name not in st.values:
-            raise NestedMarkdownError(node.source, node.line,
+            raise ControlledMarkdownError(node.source, node.line,
                                       "variable-missing",
                                       f"no value for `{name}`")
         value = str(st.values[name])
         if "\n" in value:
-            raise NestedMarkdownError(node.source, node.line,
+            raise ControlledMarkdownError(node.source, node.line,
                                       "variable-block",
                                       f"the value of `{name}` holds a line "
                                       f"break, which fits a `code` or a "
@@ -869,7 +1052,7 @@ def _value_of(node: Node, name: str, st: _State) -> str:
     """The value a `code` or a `quote` directive names."""
     key = (node.attr(name) or "").strip()
     if key not in st.values:
-        raise NestedMarkdownError(node.source, node.line, "variable-missing",
+        raise ControlledMarkdownError(node.source, node.line, "variable-missing",
                                   f"no value for `{key}`")
     return str(st.values[key])
 
@@ -930,12 +1113,12 @@ def _include(node: Node, st: _State, seen: tuple[str, ...],
     """
     where = (node.attr(INCLUDE) or "").strip()
     if not where or "#" in where:
-        raise NestedMarkdownError(node.source, node.line, "include-missing",
+        raise ControlledMarkdownError(node.source, node.line, "include-missing",
                                   f"`{where}` is not a path; a section is "
                                   f"reached with `inline`")
     document = _document_at(node, where, st)
     if document.source in seen:
-        raise NestedMarkdownError(node.source, node.line, "include-cycle",
+        raise ControlledMarkdownError(node.source, node.line, "include-cycle",
                                   f"`{where}` includes itself")
     seen = seen + (document.source,)
     drop = drop + tuple(_split_list(node.attr("exclude")))
@@ -957,18 +1140,18 @@ def _inline(node: Node, st: _State, seen: tuple[str, ...],
     where, hashed, ident = value.partition("#")
     where, ident = where.strip(), ident.strip()
     if not hashed or not ident:
-        raise NestedMarkdownError(node.source, node.line, "inline-missing",
+        raise ControlledMarkdownError(node.source, node.line, "inline-missing",
                                   f"`{value}` names no section; a whole "
                                   f"document is reached with `include`")
     document = (_document_at(node, where, st) if where
                 else _own_document(node, st))
     key = f"{document.source}#{ident}"
     if key in seen:
-        raise NestedMarkdownError(node.source, node.line, "inline-cycle",
+        raise ControlledMarkdownError(node.source, node.line, "inline-cycle",
                                   f"`{value}` inlines itself")
     target = st.reg.ids.get(document.source, {}).get(ident)
     if target is None:
-        raise NestedMarkdownError(node.source, node.line, "inline-missing",
+        raise ControlledMarkdownError(node.source, node.line, "inline-missing",
                                   f"no section in {st.reg.rel(document)} "
                                   f"carries the id `{ident}`")
     return _expand(target.children, st, seen + (key,),
@@ -990,7 +1173,7 @@ def _own_document(node: Node, st: _State) -> Node:
     """The document a directive sits in."""
     document = st.reg.documents.get(node.source)
     if document is None:
-        raise NestedMarkdownError(node.source, node.line, "inline-missing",
+        raise ControlledMarkdownError(node.source, node.line, "inline-missing",
                                   f"`{node.source}` is not in the registry")
     return document
 
@@ -1002,7 +1185,7 @@ def _document_at(node: Node, where: str, st: _State) -> Node:
     try:
         return st.reg.open(path)
     except OSError:
-        raise NestedMarkdownError(node.source, node.line, "include-missing",
+        raise ControlledMarkdownError(node.source, node.line, "include-missing",
                                   f"no document at `{where}`") from None
 
 
@@ -1160,12 +1343,12 @@ def _require(document: Node, st: _State) -> None:
     used = _names(document.children, st, (), st.reg.rel(document))
     missing = sorted(used - set(st.values))
     if missing:
-        raise NestedMarkdownError(document.source, document.line,
+        raise ControlledMarkdownError(document.source, document.line,
                                   "variable-missing",
                                   f"no value for {_listed(missing)}")
     extra = sorted(set(st.values) - used)
     if extra:
-        raise NestedMarkdownError(document.source, document.line,
+        raise ControlledMarkdownError(document.source, document.line,
                                   "variable-unused",
                                   f"nothing reads {_listed(extra)}")
 

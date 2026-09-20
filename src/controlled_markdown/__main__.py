@@ -19,11 +19,11 @@ import tomllib
 from pathlib import Path
 
 from . import (
-    NestedMarkdownError,
+    ControlledMarkdownError,
     Registry,
     check_blocks,
+    check_file_fragments,
     check_links,
-    check_text_links,
     parse,
     render,
     write,
@@ -57,11 +57,22 @@ def repo_root(start: Path | None = None) -> Path:
     return _table(start)[0]
 
 
-def code_files(start: Path | None = None) -> list[Path]:
-    """The code files the table names. A link in one resolves; nothing else
-    in them is read as a document."""
-    folder, table = _table(start)
-    return [folder / name for name in table.get("code", [])]
+# Where a program's prose can stand. Everything else under the root is data,
+# a build, or history.
+CODE_SUFFIXES = (".py", ".js", ".mjs")
+SKIPPED = {".venv", "node_modules", ".git", "data"}
+
+
+def code_files(root: Path) -> list[Path]:
+    """Every file under the root that a program's prose can stand in."""
+    out = []
+    for path in sorted(root.rglob("*")):
+        if path.suffix not in CODE_SUFFIXES or not path.is_file():
+            continue
+        if SKIPPED & set(path.relative_to(root).parts):
+            continue
+        out.append(path)
+    return out
 
 
 def collect(names: list[str]) -> list[Path]:
@@ -82,17 +93,14 @@ def shown(path: Path) -> str:
         return str(path)
 
 
-def check_code(paths: list[Path]) -> int:
-    """Every link a code file holds resolves. The rest of the file is code,
-    so nothing else in it is read."""
+def check_code(root: Path) -> int:
+    """Every fragment a program holds, read as the format. The rest of each
+    file is code, so nothing else in it is read."""
     off = 0
-    root = repo_root()
-    for path in paths:
-        if not path.is_file():
-            continue
+    for path in code_files(root):
         try:
-            check_text_links(path.read_text(), path, shown(path), root)
-        except NestedMarkdownError as err:
+            check_file_fragments(path, shown(path), root)
+        except ControlledMarkdownError as err:
             print(err)
             off += 1
     return off
@@ -110,7 +118,7 @@ def check(paths: list[Path]) -> int:
             check_links(document, path, root)
             # The registry claims the ids, so a repeat is reported here.
             Registry(Path.cwd()).add(name, document, name)
-        except NestedMarkdownError as err:
+        except ControlledMarkdownError as err:
             print(err)
             off += 1
             continue
@@ -126,7 +134,7 @@ def fmt(paths: list[Path]) -> int:
         text = path.read_text()
         try:
             document = parse(text, name)
-        except NestedMarkdownError as err:
+        except ControlledMarkdownError as err:
             print(err)
             return 1
         out = write(document)
@@ -156,14 +164,16 @@ def main(argv: list[str]) -> int:
         print(usage, file=sys.stderr)
         return 2
     paths = collect(names)
-    code = code_files() if command == "check" and not argv[2:] else []
     try:
         if command == "check":
-            return 1 if check(paths) + check_code(code) else 0
+            off = check(paths)
+            if not argv[2:]:
+                off += check_code(repo_root())
+            return 1 if off else 0
         if command == "fmt":
             return fmt(paths)
         return show(paths)
-    except NestedMarkdownError as err:
+    except ControlledMarkdownError as err:
         print(err, file=sys.stderr)
         return 1
 

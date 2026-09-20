@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from arc.jsonio import format_file
+from controlled_markdown import mctx
 from dl.annotations import (
     Claim,
     merged_blocks,
@@ -51,30 +52,30 @@ FAILING = (DRIFT, ANNOTATION, UNDEFINED_CONCEPT)
 
 # Every sentence this check prints, keyed by the finding it states. A slot,
 # `{name}`, is filled at the site that fires.
-MESSAGES = {
-    "no-entry": "`@witness {id}` names no entry of the witness file",
-    "reassigned": "`@reassigned` names {named}; the entry's `assign` names "
-                  "{holds}",
-    "relaxed-held": "`@relaxed {slug}` names the `@{held} {slug}` line; "
-                    "`@relaxed` names a `@scene` line",
-    "relaxed-unknown": "`@relaxed {slug}` names no line of the header",
-    "no-witness": "`@{kind} {slug}` is approximated and has no `@witness` "
-                  "line under its `@approximated:`",
-    "foreign": "`@witness {id}` under `@approximated:` of `@{kind} {slug}` "
-               "is `{plausibility}`",
-    "no-departure": "`@{kind} {slug}` is approximated and no witness under "
-                    "its `@approximated:` shows case `{case}` departing",
-    "unnamed-entry": "entry `{id}` of the witness file is named by no "
-                     "`@witness` line",
-    "empty-assign": "`assign` is empty; omit the key",
-    "undefined-concept": "{entry}: the concept case {case} is {undefined}; "
-                         "take another input, or drop the peer with the "
-                         "statement that no witness exists",
-    "unlisted": "{entry}: case {case} is not listed",
-    "judged": "{entry}: case {case} gives the entry's judged output",
-    "unnamed-output": "{entry}: case {case} gives an output the entry does "
-                      "not name",
-}
+MESSAGES = mctx({
+        "no-entry": "`@witness {id}` names no entry of the witness file",
+        "reassigned": "`@reassigned` names {named}; the entry's `assign` names "
+                      "{holds}",
+        "relaxed-held": "`@relaxed {slug}` names the `@{held} {slug}` line; "
+                        "`@relaxed` names a `@scene` line",
+        "relaxed-unknown": "`@relaxed {slug}` names no line of the header",
+        "no-witness": "`@{kind} {slug}` is approximated and has no `@witness` "
+                      "line under its `@approximated:`",
+        "foreign": "`@witness {id}` under `@approximated:` of `@{kind} {slug}` "
+                   "is `{plausibility}`",
+        "no-departure": "`@{kind} {slug}` is approximated and no witness under "
+                        "its `@approximated:` shows case `{case}` departing",
+        "unnamed-entry": "entry `{id}` of the witness file is named by no "
+                         "`@witness` line",
+        "empty-assign": "`assign` is empty; omit the key",
+        "undefined-concept": "{entry}: the concept case {case} is {undefined}; "
+                             "take another input, or drop the peer with the "
+                             "statement that no witness exists",
+        "unlisted": "{entry}: case {case} is not listed",
+        "judged": "{entry}: case {case} gives the entry's judged output",
+        "unnamed-output": "{entry}: case {case} gives an output the entry does "
+                          "not name",
+})
 
 type Outcome = list[list[int]] | None
 type Assign = dict[str, list[list[object]]]

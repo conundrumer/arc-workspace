@@ -11,6 +11,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+from controlled_markdown import mctx
 from dl.paths import (
     FUNCTORS_LIB,
     FUNCTORS_SRC,
@@ -39,20 +40,20 @@ EXPRESSION_REPORT_MIN = 100
 
 # Every sentence this module raises or returns, keyed by what it reports. A
 # slot, `{name}`, is filled at the site that fires.
-MESSAGES = {
-    "pattern-on-functor": "a record pattern binds `{var}` (line {line}) from "
-                          "a Box a functor returned, which Souffle leaves "
-                          "ungrounded; read the Box through a lib relation, "
-                          "or derive it in a relation and take it apart there",
-    "expression-size": "expression size: {head}, {calls} functor calls after "
-                       "inlining",
-    "exited": "souffle exited {code}:",
-    "cpu-limit": "souffle exceeded the {seconds}s CPU limit on {name}",
-    "no-profile": "no rule named: the profile holds none",
-    "no-rerun": "no rule named: the rerun under a {seconds}s CPU limit gave "
-                "no profile",
-    "slowest": "slowest rule: {site}, {secs:.1f}s CPU, {tuples} tuples",
-}
+MESSAGES = mctx({
+        "pattern-on-functor": "a record pattern binds `{var}` (line {line}) from "
+                              "a Box a functor returned, which Souffle leaves "
+                              "ungrounded; read the Box through a lib relation, "
+                              "or derive it in a relation and take it apart there",
+        "expression-size": "expression size: {head}, {calls} functor calls after "
+                           "inlining",
+        "exited": "souffle exited {code}:",
+        "cpu-limit": "souffle exceeded the {seconds}s CPU limit on {name}",
+        "no-profile": "no rule named: the profile holds none",
+        "no-rerun": "no rule named: the rerun under a {seconds}s CPU limit gave "
+                    "no profile",
+        "slowest": "slowest rule: {site}, {secs:.1f}s CPU, {tuples} tuples",
+})
 
 # A profile's `source-locator`: the file, then the span it covers.
 LOCATOR_RE = re.compile(r"^(?P<file>.*) \[(?P<line>\d+):\d+-\d+:\d+\]$")

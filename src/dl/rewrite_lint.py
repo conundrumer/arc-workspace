@@ -31,6 +31,7 @@ import re
 from collections.abc import Iterable, Iterator
 from functools import lru_cache
 
+from controlled_markdown import mctx
 from dl.dlparse import (
     EXTERN,
     TOP,
@@ -90,35 +91,35 @@ type Finding = tuple[str, int, str, str]
 # Every sentence this lint prints, keyed by the category the finding carries.
 # A category whose text is built from the rule it read holds the form of that
 # text. A slot, `{name}`, is filled at the site that fires.
-MESSAGES = {
-    "keep": "; to keep it, paste above the declaration: "
-            "`// @allow: {cat} \u2014 <reason>`",
-    "choice-domain": "`{name}` keeps one arbitrary tuple per `{over}`; state "
-                     "what picks it",
-    "shared-read": "`{name}` is shared, and {cases} never reads it; move it "
-                   "under the marker of the cases that read it",
-    "typed-order": "{how} `{var}`, a `{type}`, which has no order; store the "
-                   "order as a parameter",
-    "choice-tag": "same body under `{one}` and `{other}`; one clause ranges "
-                  "over the tags",
-    "cross-choice": "branches bind {tags}; keep each choice in its own clause",
-    "raw-aggregate": "`{op}` in the program; read it through a lib component",
-    "subsumed-atom-twice": "`{atom}` appears twice in the body",
-    "subsumed-atom": "`{atom}` adds nothing next to `{other}`",
-    "negated-value": "`{atom}, {var} != {value}` \u21d2 `!{rewritten}`",
-    "named-complement": "`{atom}, {cmp}` \u21d2 `!{rewritten}`",
-    "decl-placement": "all uses of `{name}` are in {spot}",
-    "long-rule": "{width} > {limit} chars of code on one line; wrap the body",
-    "domain-enumerator": "`{atom}`; `{var}` is already bound by `{binder}`",
-    "argmax": "`{name}` is max/min via self-join; read it through a lib "
-              "component",
-    "common-subexpr": "{width} literals shared with `{name}` (line {line})",
-    "merge-tails": "; merge the tails into a disjunction",
-    "complement-rewrite": "`!{name}({args})` \u21d2 {parts}",
-    "other-member": "{pair} states the other member of a two-member type; "
-                    "write `{rel}({x}, {y})`",
-    "image-link": "{pair} through `{link}` is `{comp}`",
-}
+MESSAGES = mctx({
+        "keep": "; to keep it, paste above the declaration: "
+                "`// @allow: {cat} \u2014 <reason>`",
+        "choice-domain": "`{name}` keeps one arbitrary tuple per `{over}`; state "
+                         "what picks it",
+        "shared-read": "`{name}` is shared, and {cases} never reads it; move it "
+                       "under the marker of the cases that read it",
+        "typed-order": "{how} `{var}`, a `{type}`, which has no order; store the "
+                       "order as a parameter",
+        "choice-tag": "same body under `{one}` and `{other}`; one clause ranges "
+                      "over the tags",
+        "cross-choice": "branches bind {tags}; keep each choice in its own clause",
+        "raw-aggregate": "`{op}` in the program; read it through a lib component",
+        "subsumed-atom-twice": "`{atom}` appears twice in the body",
+        "subsumed-atom": "`{atom}` adds nothing next to `{other}`",
+        "negated-value": "`{atom}, {var} != {value}` \u21d2 `!{rewritten}`",
+        "named-complement": "`{atom}, {cmp}` \u21d2 `!{rewritten}`",
+        "decl-placement": "all uses of `{name}` are in {spot}",
+        "long-rule": "{width} > {limit} chars of code on one line; wrap the body",
+        "domain-enumerator": "`{atom}`; `{var}` is already bound by `{binder}`",
+        "argmax": "`{name}` is max/min via self-join; read it through a lib "
+                  "component",
+        "common-subexpr": "{width} literals shared with `{name}` (line {line})",
+        "merge-tails": "; merge the tails into a disjunction",
+        "complement-rewrite": "`!{name}({args})` \u21d2 {parts}",
+        "other-member": "{pair} states the other member of a two-member type; "
+                        "write `{rel}({x}, {y})`",
+        "image-link": "{pair} through `{link}` is `{comp}`",
+})
 
 # The directive that keeps a relation against a hint, on the line above
 # the relation's declaration: `// @allow: <category> — <why>`.

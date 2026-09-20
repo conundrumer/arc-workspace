@@ -11,6 +11,7 @@ import re
 from dataclasses import dataclass
 from functools import lru_cache
 
+from controlled_markdown import mctx
 from dl.annotations import FORMS, Annotations, read, resolved_claims
 from dl.context import lib_sources
 from dl.dlparse import (
@@ -218,80 +219,77 @@ LINT_COMPARISON = False
 
 # Every sentence the lint prints, keyed by the category the finding carries.
 # A category with one sentence holds it; one with several holds them by name.
-# A slot, `{name}`, is filled at the site that fires. The six token categories
-# print the token that fired in place of a sentence, so each holds its own
-# name and the table stays the whole catalog of categories.
-MESSAGES: dict[str, str | dict[str, str]] = {
-    RESERVED_CAT: "`{name}` is a Souffle reserved word; rename it",
-    SHADOWED_TYPE_CAT: "`{name}` also names a type inside `{comp}`, so the "
-                       "instance takes that name for its own type; rename it",
-    LIB_NAME_CAT: "`{name}` is a lib {kind}; rename it",
-    LIB_INTERNAL_CAT: {
-        "relation": "`{name}` is private to {comp}; read one of its public "
-                    "relations",
-        "comp": "`{name}` is internal to the lib; instantiate a public "
-                "component",
-    },
-    NO_ENTRY_CAT: "`{name}` is a proposal comp with no entry "
-                  "docs/wf-solver/proposals/{name}.md; write the entry, or "
-                  "fold the comp into the program",
-    LONE_PARSE_CAT: "no Determine comp reads this Parse comp; read it in "
-                    "Determine, or fold it into the program",
-    FAMILY_CASE_CAT: {
-        "record": "`{task_id}`'s `Choice` is a record; a sibling of it names "
-                  "no case",
-        "unknown": "`{case}` is no case of `{task_id}`'s `Choice`; name a "
-                   "case the representative holds",
-        "missing": "`{task_id}` declares no `Choice`; name a case the "
-                   "representative holds",
-    },
-    CASE_MARKER_CAT: "a marker over several cases joins their names with a "
-                     "comma: `// --- Box, Erode ---`",
-    HEADER_CAT: {
-        "open": "the file opens with `// <task_id>`",
-        "order": "header lines go in the order {order}",
-        "draft": "`@draft` goes under the task id",
-        "review": "`review` takes a kind: `// review <kind>: <text>`",
-        "once": "`{word}` stands once in the header",
-        "sibling": "a sibling carries `@representative:` in place of {drops}",
-        "slug": "`{slug}` names an earlier header line; a slug stands once "
-                "across `@scene` and `@rule`",
-        "prose": "no prose in the header; a remark about a case goes at its "
-                 "constructor, and a remark about a clause at the clause",
-        "keywords": "the header carries `@keywords:` or `@representative:`",
-        "rule": "the header has no `@rule` line; a rule is {form}",
-    },
-    KEYWORD_CAT: "`{word}` is not in keywords.md; propose it in the review",
-    GLOSS_CAT: {
-        "choice": "a gloss stands above `{name}`: what the choice is",
-        "branch": "`{name}` opens its own line",
-    },
-    WITNESS_CAT: {
-        "concept": "`{name}` is the concept branch; drop its `@witness` line",
-        "missing": "`{name}` is no concept branch and has no `@witness` "
-                   "line; add {form}",
-        "placed": "a witness line stands in a branch's comment block or "
-                  "under `@approximated:`",
-    },
-    CLAIM_CAT: {
-        "unstated": "`{slug}` names no `@scene` or `@rule` line of the header",
-        "instance": "`{name}` carries no `@claim` line; the claims the "
-                    "instance serves stand above it as {form}",
-        "concept": "`{name}` is the concept branch; the claim the choice "
-                   "answers stands above it as {form}",
-    },
-    INCLUDE_CAT: "the build adds the lib; drop the include",
-    BANNED_TYPE_CAT: "`{name}` is none of the types a solver may define, "
-                     "which are `Choice` and the types it reaches, "
-                     "`TiebreakResolution`, and a record filling a comp type "
-                     "param; re-encode it or propose it",
-    RIGID_CHART_CAT: RIGID_CHART_CAT,
-    ORIENTATION_CAT: ORIENTATION_CAT,
-    NONZERO_CAT: NONZERO_CAT,
-    ARITHMETIC_CAT: ARITHMETIC_CAT,
-    RANGE_CAT: RANGE_CAT,
-    COMPARISON_CAT: COMPARISON_CAT,
-}
+# A slot, `{name}`, is filled at the site that fires.
+MESSAGES: dict[str, str | dict[str, str]] = mctx({
+        RESERVED_CAT: "`{name}` is a Souffle reserved word; rename it",
+        SHADOWED_TYPE_CAT: "`{name}` also names a type inside `{comp}`, so the "
+                           "instance takes that name for its own type; rename it",
+        LIB_NAME_CAT: "`{name}` is a lib {kind}; rename it",
+        LIB_INTERNAL_CAT: {
+            "relation": "`{name}` is private to {comp}; read one of its public "
+                        "relations",
+            "comp": "`{name}` is internal to the lib; instantiate a public "
+                    "component",
+        },
+        NO_ENTRY_CAT: "`{name}` is a proposal comp with no entry "
+                      "docs/wf-solver/proposals/{name}.md; write the entry, or "
+                      "fold the comp into the program",
+        LONE_PARSE_CAT: "no Determine comp reads this Parse comp; read it in "
+                        "Determine, or fold it into the program",
+        FAMILY_CASE_CAT: {
+            "record": "`{task_id}`'s `Choice` is a record; a sibling of it names "
+                      "no case",
+            "unknown": "`{case}` is no case of `{task_id}`'s `Choice`; name a "
+                       "case the representative holds",
+            "missing": "`{task_id}` declares no `Choice`; name a case the "
+                       "representative holds",
+        },
+        CASE_MARKER_CAT: "a marker over several cases joins their names with a "
+                         "comma: `// --- Box, Erode ---`",
+        HEADER_CAT: {
+            "open": "the file opens with `// <task_id>`",
+            "order": "header lines go in the order {order}",
+            "draft": "`@draft` goes under the task id",
+            "review": "`review` takes a kind: `// review <kind>: <text>`",
+            "once": "`{word}` stands once in the header",
+            "sibling": "a sibling carries `@representative:` in place of {drops}",
+            "slug": "`{slug}` names an earlier header line; a slug stands once "
+                    "across `@scene` and `@rule`",
+            "prose": "no prose in the header; a remark about a case goes at its "
+                     "constructor, and a remark about a clause at the clause",
+            "keywords": "the header carries `@keywords:` or `@representative:`",
+            "rule": "the header has no `@rule` line; a rule is {form}",
+        },
+        KEYWORD_CAT: "`{word}` is not in keywords.md; propose it in the review",
+        GLOSS_CAT: {
+            "choice": "a gloss stands above `{name}`: what the choice is",
+            "branch": "`{name}` opens its own line",
+        },
+        WITNESS_CAT: {
+            "concept": "`{name}` is the concept branch; drop its `@witness` line",
+            "missing": "`{name}` is no concept branch and has no `@witness` "
+                       "line; add {form}",
+            "placed": "a witness line stands in a branch's comment block or "
+                      "under `@approximated:`",
+        },
+        CLAIM_CAT: {
+            "unstated": "`{slug}` names no `@scene` or `@rule` line of the header",
+            "instance": "`{name}` carries no `@claim` line; the claims the "
+                        "instance serves stand above it as {form}",
+            "concept": "`{name}` is the concept branch; the claim the choice "
+                       "answers stands above it as {form}",
+        },
+        INCLUDE_CAT: "the build adds the lib; drop the include",
+        BANNED_TYPE_CAT: "`{name}` is none of the types a solver may define, "
+                         "which are `Choice` and the types it reaches, "
+                         "`TiebreakResolution`, and a record filling a comp type "
+                         "param; re-encode it or propose it",
+})
+
+# The six token categories print the token that fired in place of a sentence,
+# so each stands under its own name. None is prose, so none is a fragment.
+MESSAGES.update({c: c for c in (RIGID_CHART_CAT, ORIENTATION_CAT, NONZERO_CAT,
+                                ARITHMETIC_CAT, RANGE_CAT, COMPARISON_CAT)})
 
 
 def say(category: str, variant: str = "", **slots: object) -> str:
@@ -358,9 +356,7 @@ def _find_arithmetic(line: str) -> list[tuple[int, str]]:
     out: list[tuple[int, str]] = []
     for m in re.finditer(r"[+\-*/%]", line):
         i = m.start()
-        if _value_context(line, i, i + 1):
-            out.append((i, line[i]))
-        elif line[i] == "-" and _is_unary_minus(line, i):
+        if _value_context(line, i, i + 1) or line[i] == "-" and _is_unary_minus(line, i):
             out.append((i, line[i]))
     return out
 

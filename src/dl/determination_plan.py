@@ -16,6 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from arc.task import load as load_task
+from controlled_markdown import mctx
 from dl.domains import (
     ENUM_TYPES,
     POSITION_TYPES,
@@ -98,27 +99,27 @@ ENUMERATION_LIMIT = 100
 
 # Every sentence the plan prints, keyed by the part it heads. A slot,
 # `{name}`, is filled by the render.
-MESSAGES = {
-    "none": "no actions",
-    "determine": "write a determination relation",
-    "open": "the train pairs leave several values, so record the surviving "
-            "values as the parameter's open values",
-    "over": "over the enumeration limit ({joint} > {limit}), so write "
-            "determination relations for parameters here until the product "
-            "of the remaining candidate counts is under {limit}",
-    # Printed once under the over-the-limit section when some listed count is
-    # a Position parameter's enumerable domain.
-    "position-domain": "  A Position parameter's candidates are the cells of "
-                       "the frame its stored value implies, so its count "
-                       "follows the frame the parse produces.",
-    "determined": "determined",
-    "covered": "the value is covered on this task's examples, so no "
-               "determination relation is needed",
-    "joint": "{survived} of {tried} joint assignments of the enumerated "
-             "parameters reproduce every train pair",
-    "embedded": "move data from clauses to fact parameters",
-    "verdicts": "each proposer's verdict on each parameter:",
-}
+MESSAGES = mctx({
+        "none": "no actions",
+        "determine": "write a determination relation",
+        "open": "the train pairs leave several values, so record the surviving "
+                "values as the parameter's open values",
+        "over": "over the enumeration limit ({joint} > {limit}), so write "
+                "determination relations for parameters here until the product "
+                "of the remaining candidate counts is under {limit}",
+        # Printed once under the over-the-limit section when some listed count is
+        # a Position parameter's enumerable domain.
+        "position-domain": "  A Position parameter's candidates are the cells of "
+                           "the frame its stored value implies, so its count "
+                           "follows the frame the parse produces.",
+        "determined": "determined",
+        "covered": "the value is covered on this task's examples, so no "
+                   "determination relation is needed",
+        "joint": "{survived} of {tried} joint assignments of the enumerated "
+                 "parameters reproduce every train pair",
+        "embedded": "move data from clauses to fact parameters",
+        "verdicts": "each proposer's verdict on each parameter:",
+})
 
 
 def probe_report(

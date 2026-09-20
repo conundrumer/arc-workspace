@@ -7,6 +7,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from arc.task import load as load_task
+from controlled_markdown import mctx
 from dl.domains import (
     ENUM_TYPES,
     MAG_POSITION_TYPES,
@@ -33,41 +34,40 @@ from dl.source import (
     swap_facts,
 )
 
-
 # Every sentence the sweep prints, keyed by the clause it states. A slot,
 # `{name}`, is filled by the render. `dl.sweep_open` reads these clauses back
 # off a cached report, so the wording is the interface between the two.
-MESSAGES = {
-    "skip": "{param}: not swept — {detail}",
-    "whole": "swept whole",
-    "near-set": "swept single-row changes; {swept} of {whole} sets",
-    "cut-set": "cut by the time limit; {run} of {whole} sets",
-    "near": " (swept single-column changes; {swept} of {whole} values)",
-    "cut": " (cut by the time limit; {run} of {whole} values)",
-    "unique-set": "{param}: unique as a set = {shown}{mark} (facts fit only "
-                  "together; {scope})",
-    "unique": "{param}: unique = {shown}{mark}{scope}",
-    "set-of": "{param}: set of {count} = [{shown}]{mark}{scope}",
-    "stored-set": "stored {shown} ({scope})",
-    "stored": "stored {shown}",
-    "admits-sets": "train also admits sets {shown}",
-    "admits": "train also admits [{shown}]",
-    "refutes": "test refutes {shown} — {note}",
-    "passing": "{shown} reproduce the stored outputs on test too",
-    "in-kind": "[{shown}] differ from stored in kind, so the pairs do not fix "
-               "this parameter",
-    "below": "[{shown}] fit and are smaller than stored",
-    "determined": "the determination picks the stored value",
-    "open": "a determination from train alone could pick it",
-    "cases": "{param}: the cases admit different values",
-    "whole-domain": "{label} admit{s} the whole domain [{shown}], so {label} "
-                    "never read{s} {param} — move {param} under the marker of "
-                    "the cases that read it",
-    "unexercised": "{label} admit{s} [{shown}], so the pairs do not exercise "
-                   "{param} under {label}",
-    "admits-case": "{label} admit{s} [{shown}]",
-    "progress": "sweeping {name}: {count} candidate values",
-}
+MESSAGES = mctx({
+        "skip": "{param}: not swept — {detail}",
+        "whole": "swept whole",
+        "near-set": "swept single-row changes; {swept} of {whole} sets",
+        "cut-set": "cut by the time limit; {run} of {whole} sets",
+        "near": " (swept single-column changes; {swept} of {whole} values)",
+        "cut": " (cut by the time limit; {run} of {whole} values)",
+        "unique-set": "{param}: unique as a set = {shown}{mark} (facts fit only "
+                      "together; {scope})",
+        "unique": "{param}: unique = {shown}{mark}{scope}",
+        "set-of": "{param}: set of {count} = [{shown}]{mark}{scope}",
+        "stored-set": "stored {shown} ({scope})",
+        "stored": "stored {shown}",
+        "admits-sets": "train also admits sets {shown}",
+        "admits": "train also admits [{shown}]",
+        "refutes": "test refutes {shown} — {note}",
+        "passing": "{shown} reproduce the stored outputs on test too",
+        "in-kind": "[{shown}] differ from stored in kind, so the pairs do not fix "
+                   "this parameter",
+        "below": "[{shown}] fit and are smaller than stored",
+        "determined": "the determination picks the stored value",
+        "open": "a determination from train alone could pick it",
+        "cases": "{param}: the cases admit different values",
+        "whole-domain": "{label} admit{s} the whole domain [{shown}], so {label} "
+                        "never read{s} {param} — move {param} under the marker of "
+                        "the cases that read it",
+        "unexercised": "{label} admit{s} [{shown}], so the pairs do not exercise "
+                       "{param} under {label}",
+        "admits-case": "{label} admit{s} [{shown}]",
+        "progress": "sweeping {name}: {count} candidate values",
+})
 
 MAX_CANDIDATES = 256
 TIME_LIMIT_SECONDS = 180.0
