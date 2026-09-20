@@ -1,0 +1,25 @@
++ lib: index
+
+# Codex on arc-workspace
+- The handbook and the repo's conventions, as a codex session on this repo reads them.
+- ARC-AGI-2 work for the 2026 Kaggle competition.
+- Python 3.12, `uv`.
+
+* inline: agents/notes.md#lib-index
+
+* inline: agents/notes.md#abridgement
+
+* inline: agents/notes.md#citations
+
+* include: handbook.md
+    + exclude: draft, gloss
+    + abridged: ../docs/handbook/patterns.md
+
+## Your work
+- A brief names the span your fix may change, and the fix stays inside it.
+- Write the prose in your own words, and copy the wording of neither the brief nor the text you are replacing.
+
+## Conventions
+- **A grid is drawn as a grid**, wherever one is written: one row per line, cells separated by spaces, background as `.`.
+- `uv run python -m controlled_markdown check` checks the agent-facing documents.
+- [Editing the agent-facing documents](docs/handbook/editing.md) states how the handbook above is edited.

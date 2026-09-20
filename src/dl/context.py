@@ -4,9 +4,9 @@ procedure uses.
 The lib renders as documentation: each file's `//!` and `///` comments as
 prose, and the declarations they document in code blocks, without the rule
 bodies. That is `lib: interface`. Under `lib: index` each file gives one line
-per top-level public component instead, under a note naming the interface file
-that holds the rest. Each file's interface is also written beside it, as the
-`.md` of the same stem.
+per top-level public component instead. Each file's interface is also written
+beside it, as the `.md` of the same stem, and `section_text` prints one
+component's interface from the source.
 
 An agent document under `prompts/agents/` states what its agent reads, and
 `write_agent` renders one per agent into `.claude/agents/`, front matter and
@@ -45,6 +45,8 @@ LIB_SRC = PROGRAMS_DIR / "lib.dl"
 AGENT_DIR = REPO_ROOT / "prompts" / "agents"
 # The session's own entry document: the handbook, and the passes it runs.
 SESSION_DOC = REPO_ROOT / "prompts" / "session.md"
+# The codex session's entry document, composed the same way.
+CODEX_DOC = REPO_ROOT / "prompts" / "codex.md"
 AGENT_PATH = REPO_ROOT / ".claude" / "agents" / "handbook.md"
 AGENT_NAMES = ("handbook", "handbook-expanded")
 
@@ -188,10 +190,6 @@ def _runs(items: list[Item], docs: dict[int, tuple[int, int]]) -> list[list[Item
     return out
 
 
-INTERFACE_NOTE = ("A module's interface file, its path with `.md` for `.dl`, holds "
-                  "each component's signature and the rest of its doc.")
-
-
 def lib_entries(text: str) -> str:
     """One lib file as an index: its `//!` lines as prose, then one line per
     top-level public component, its name and the first sentence of its doc. A
@@ -286,11 +284,10 @@ def lib_part(lib: Path = LIB_SRC, kind: str = "interface") -> str:
     interface, or as an index pointing at the interface file beside each
     source."""
     parts = []
-    for i, (path, text) in enumerate(lib_sources(lib)):
+    for path, text in lib_sources(lib):
         rel = Path("programs") / path.relative_to(lib.parent)
         if kind == "index":
-            note = f"\n\n{INTERFACE_NOTE}" if i == 0 else ""
-            parts.append(f"\n---\n\n## {rel} — index{note}\n\n{lib_entries(text)}")
+            parts.append(f"\n---\n\n## {rel} — index\n\n{lib_entries(text)}")
         else:
             parts.append(f"\n---\n\n## {rel}\n\n{lib_doc(text)}")
     return "".join(parts)
@@ -321,8 +318,8 @@ def render(name: str = "handbook-expanded", lib: Path = LIB_SRC,
             + lib_part(lib, (document.attr("lib") or "interface").strip()))
 
 
-def session_text(doc: Path = SESSION_DOC, lib: Path = LIB_SRC) -> str:
-    """What a session at a terminal reads: the handbook with its passes, then
+def entry_text(doc: Path, lib: Path = LIB_SRC) -> str:
+    """One entry document as its reader gets it: the document rendered, then
     the lib as the document's `lib` attribute says."""
     registry = nm.Registry(REPO_ROOT)
     document = registry.load(doc)
@@ -330,12 +327,19 @@ def session_text(doc: Path = SESSION_DOC, lib: Path = LIB_SRC) -> str:
             + lib_part(lib, (document.attr("lib") or "interface").strip()))
 
 
+def session_text(doc: Path = SESSION_DOC, lib: Path = LIB_SRC) -> str:
+    """What a session at a terminal reads: the handbook with its passes, then
+    the lib."""
+    return entry_text(doc, lib)
+
+
 def _doc_path(name: str, docs: Path = DOCS_DIR) -> Path:
     """The handbook doc a reader names: the slug of its title, as a render
-    shows it, its file stem, or the link target a document carries,
-    `<stem>.md`."""
+    shows it, its file stem, or the link form a document carries,
+    `docs/handbook/<stem>.md`."""
     if name.endswith(".md"):
         name = name[:-3]
+    name = name.rsplit("/", 1)[-1]
     want = nm.slug(name)
     for path in sorted(docs.glob("*.md")):
         if path.stem == want or path.stem == name:
@@ -347,18 +351,55 @@ def _doc_path(name: str, docs: Path = DOCS_DIR) -> Path:
     raise SystemExit(f"no handbook doc named `{name}`")
 
 
+def lib_component(src: Path, name: str) -> str:
+    """One component's interface, as the interface file beside `src` holds
+    it: the component's `///` prose, then its declarations in a code
+    block."""
+    text = src.read_text()
+    program = parse(text)
+    lines = text.splitlines()
+    docs = _doc_blocks(program, ITEM_DOC)
+    for run in _runs(program.items, docs):
+        if not any(_name(it) == name for it in run):
+            continue
+        it = run[0]
+        block = docs.get(it.line - 1)
+        prose = _prose(lines[block[0] - 1:block[1]], ITEM_DOC) if block else ""
+        if len(run) > 1 and isinstance(it, Define):
+            body = [" ".join(d.name for d in run)]
+        elif len(run) > 1:
+            body = [f".type {', '.join(t.name for t in run)} {it.rhs}"]
+        elif isinstance(it, Comp):
+            body = _comp_block(it, lines, docs)
+        else:
+            end = it.end_line if isinstance(it, Decl) else it.line
+            body = [lines[ln - 1].rstrip() for ln in range(it.line, end + 1)]
+        code = "```\n" + "\n".join(body) + "\n```"
+        return "\n\n".join(p for p in (f"# {name}", prose, code) if p) + "\n"
+    raise SystemExit(f"no component `{name}` in `{src.relative_to(REPO_ROOT)}`")
+
+
 def section_text(where: str, docs: Path = DOCS_DIR) -> str:
-    """One section of a handbook doc in full, named `<doc>#<section>`. Each
-    part is the title a render shows, slugified, so a reader runs the command
-    off the lines in front of them. A render leaves no line out, so the
-    section arrives with the glosses and the drafts an edition excludes."""
+    """One section of a handbook doc in full, named `<doc>#<section>`, or one
+    lib component's interface, named `programs/lib/<module>.dl#<Component>`.
+    The doc is the link form a document carries, the title a render shows, or
+    its file stem, and the section is the title a render shows, slugified, so
+    a reader runs the command off the lines in front of them. A render leaves
+    no line out, so the section arrives with the glosses and the drafts an
+    edition excludes."""
     name, _, ident = where.partition("#")
+    name, ident = name.strip(), ident.strip()
+    if name.endswith(".dl"):
+        src = REPO_ROOT / name
+        if not src.exists():
+            raise SystemExit(f"no lib source named `{name}`")
+        return lib_component(src, ident)
     registry = nm.Registry(REPO_ROOT)
-    document = registry.load(_doc_path(name.strip(), docs))
-    node = registry.ids[document.source].get(nm.slug(ident.strip()))
+    document = registry.load(_doc_path(name, docs))
+    node = registry.ids[document.source].get(nm.slug(ident))
     if node is None:
         raise SystemExit(
-            f"no section `{ident.strip()}` in {registry.rel(document)}")
+            f"no section `{ident}` in {registry.rel(document)}")
     body = nm.Node(nm.DOCUMENT, source=document.source)
     body.children = [node]
     return nm.render(body, registry)
@@ -444,10 +485,10 @@ def write_agent(path: Path = AGENT_PATH, lib: Path = LIB_SRC,
 
 
 # The files every codex session on the repo reads, in the desktop app or the
-# CLI: the handbook and the project CLAUDE.md as the project's AGENTS.md, and
-# the user's own style, `docs/codex-style.md`, as the developer instructions
-# in the project config. Neither is tracked, and the style file is the
-# user's to keep.
+# CLI: `prompts/codex.md` rendered as the project's AGENTS.md, and the user's
+# own style, `docs/codex-style.md`, as the developer instructions in the
+# project config. Neither is tracked, and the style file is the user's to
+# keep. CLAUDE.md is the Claude session's router and does not render here.
 CODEX_STYLE = Path("docs") / "codex-style.md"
 CODEX_CONFIG = Path(".codex") / "config.toml"
 # The project-doc budget; the default truncates the handbook silently.
@@ -490,14 +531,11 @@ extends = ":workspace"
 
 
 def write_codex(root: Path = REPO_ROOT, lib: Path = LIB_SRC,
-                agents: Path = AGENT_DIR) -> list[Path]:
+                doc: Path = CODEX_DOC) -> list[Path]:
     """Write the codex files under `root` and return their paths."""
-    claude_md = (root / "CLAUDE.md").read_text()
     style_path = root / CODEX_STYLE
     style = style_path.read_text() if style_path.exists() else None
-    return [_write_whole(root / "AGENTS.md",
-                         render("handbook-expanded", lib, agents)
-                         + "\n---\n\n# CLAUDE.md\n\n" + claude_md),
+    return [_write_whole(root / "AGENTS.md", entry_text(doc, lib)),
             _write_whole(root / CODEX_CONFIG, codex_config(style))]
 
 

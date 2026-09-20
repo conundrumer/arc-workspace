@@ -98,11 +98,7 @@
 4. Leave promotion to the user, at the time they choose.
     - The `Callers` list is their evidence.
     - No step reads its count.
-    - On `promote`: move the plain relations or proposal comp into the module under `programs/lib/` whose file doc admits it, and update the solver that introduced the proposal.
-    - On `migrate`:
-        1. Spawn the `migrate` role with the entry's path, the call site in the solver that introduced the proposal, and the promotion's time.
-        2. Spawn the `cleanup` role with the regions that `migrate` changed and the lib call they now make.
-        3. List in the review the callers that `migrate` skipped.
+    - [Promote](docs/handbook/procedure.md#promote) states what a pass does when they say the word.
 - **Reimplementations.** A reimplementation states an operation the lib already provides without calling it.
     - An entry lists the reimplementations its surveys found.
 - A site is no reimplementation when the lib call would need a value the program bans and no parameter supplies that value.

@@ -18,9 +18,9 @@
     4. [Witness](docs/handbook/procedure.md#witness)
     5. [Simplify](docs/handbook/procedure.md#simplify)
     6. [Prune](docs/handbook/procedure.md#prune)
+* inline: #scope
 * inline: #draft-mark
-* inline: #lib-survey
-* inline: #reimplementations
+* inline: #lib-protocol-scope
 - When a question about the data comes up, run something that answers it rather than working it out by hand.
 * inline: #handoff-end
 * inline: #report-complete
@@ -39,7 +39,9 @@
 * inline: #task
 * inline: #prior-reports
 * inline: #advance-head
-- The sessions before you wrote no solver: programs/solvers/{{tid}}.dl does not exist. The reports above are further input to the first operation.
+- The sessions before you left no solver: programs/solvers/{{tid}}.dl does not exist.
+- Take the reports above as input to the first operation.
+* inline: #finished
 - Run these operations, in this order:
     1. [Draft](docs/handbook/procedure.md#draft)
     2. [Develop](docs/handbook/procedure.md#develop)
@@ -52,13 +54,10 @@
 - What a report leaves unsettled is yours to settle.
 * inline: #scope
 * inline: #draft-mark
-* inline: #reimplementations
-* inline: #lib-survey
-* inline: #promote
+* inline: #lib-protocol-scope
 * inline: #callout-open
 * inline: #callout-section
 * inline: #callout-judge
-* inline: #finished
 * if: more
     * inline: #handoff-tail
 * unless: more
@@ -71,6 +70,7 @@
     * inline: #advance-pass
 * unless: reports
     * inline: #bare-pass
+* inline: #promote-op
 * inline: #review-tail
 
 ## handoff
@@ -137,7 +137,8 @@
 * inline: #handoff-wrap
 
 ## review-tail
-- You are the last session of the chain, so your review is your reply.
+- You are the last session of the chain, so run [Review](docs/handbook/procedure.md#review) after the operations above.
+- Your review is your reply.
 
 ## scratch-note
 * comment: Part of a worker's system prompt only.
@@ -186,6 +187,7 @@
 - Read programs/solvers/{{tid}}.dl first, and edit that file.
 * comment:
     - The reports describe the solver; the file is what changes.
+* inline: #finished
 - Run these operations over it, in this order:
     1. [Develop](docs/handbook/procedure.md#develop)
     2. [Determine](docs/handbook/procedure.md#determine)
@@ -197,18 +199,16 @@
 - What a report leaves unsettled is yours to settle.
 * inline: #scope
 * inline: #draft-mark
-* inline: #reimplementations
-* inline: #lib-survey
-* inline: #promote
+* inline: #lib-protocol-scope
 * inline: #callout-open
 * inline: #callout-section
 * inline: #callout-judge
-* inline: #finished
 
 ### bare-pass
 - You are the final session of a chained flow.
 - No earlier session left a report, so the solver file is the whole account.
 - Read programs/solvers/{{tid}}.dl first.
+* inline: #finished
 - Run these operations over it, in this order:
     1. [Develop](docs/handbook/procedure.md#develop)
     2. [Determine](docs/handbook/procedure.md#determine)
@@ -218,32 +218,29 @@
 - Judge the model and the code yourself, and edit what falls short.
 * inline: #scope
 * inline: #draft-mark
-* inline: #reimplementations
-* inline: #lib-survey
-* inline: #promote
-* inline: #finished
+* inline: #lib-protocol-scope
 
 ### advance-head
 - You are a later session of a chained flow: the sessions before you left the reports above.
 
 ### scope
 - Your edits stay in programs/solvers/{{tid}}.dl, programs/witnesses/{{tid}}.wit.json, .scratch/{{tid}}/, and docs/wf-solver/proposals/, where an entry your pass reads is as much yours to fix as one you opened.
+- An operation this message lists reaches whatever files it names, and nothing else does.
 - Every other file is the user's to change, even when the fix is designed and tested.
-- What falls short there goes in your callouts.
+- What falls short there is the user's to settle.
 
 ### draft-mark
-- Put `// @draft` on its own line under the task-id line when you write the solver, and leave it there; only the user's approval takes it off.
+- The solver carries `// @draft` on its own line under the task-id line, and only the user's approval takes it off.
 
-### lib-survey
-- When your pass needs a survey result that the entry does not carry, run `uv run python scripts/survey.py <entry>`, which surveys the entry and writes the result into it.
-- Your report and callouts carry the entry with whatever result stands in it.
+### lib-protocol-scope
+- [The order](docs/handbook/lib-protocol.md#the-order) states when your pass surveys a proposals entry, and what it does with the reimplementations one lists.
+- Those reimplementations are not yours to dispatch.
+- Your report carries each entry your pass read or wrote, with whatever result stands in it.
 
-### reimplementations
-- The reimplementations a proposals entry lists are not yours to dispatch.
-- Fix one only where it sits in a file your pass already has open, and leave the rest to the session that opens their files.
-
-### promote
-- The user's `promote` arrives in the finalize pass, as a comment to that session, with programs/lib.dl open to it then.
+### promote-op
+- Run this operation over it as well:
+    1. [Promote](docs/handbook/procedure.md#promote)
+        - When the user says `promote` or `migrate` over an entry under `docs/wf-solver/proposals/`.
 
 ### finished
 - A solver that already holds up under your judgment needs no edit from you: say so.
@@ -270,6 +267,7 @@
 - Make it complete enough that the next session reruns nothing.
 
 ### callout-open
+- A callout is addressed to the user and waits on their ruling.
 - An open callout does not stall the chain.
 
 ### callout-section

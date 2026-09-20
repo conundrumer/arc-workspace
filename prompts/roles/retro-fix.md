@@ -6,13 +6,14 @@
 # Procedure
 - Read the region first.
 - Keep the file's conventions.
+- A file that opens with a `* comment: when editing this doc` block takes the notes under it; read them before editing that file.
 - A general fix replaces the specific text it covers.
 - An addition that answers text the file already contains replaces that text.
 - A prose fix in the lib changes comments only.
 - A code fix keeps every member relation, signature, and claim as they are.
-- An entry fix writes the entry per [Lib addition protocol](docs/handbook/lib-protocol.md), with a `Survey:` line stamped with the current time to the minute, and stops there.
+- An entry fix writes the entry with the fields [The entry](docs/handbook/lib-protocol.md#the-entry) gives, its `Survey:` line stamped with the current time to the minute, and stops there.
     - It does not change the lib.
-- A citation of a draft solver waits: write it at its place in the pending form the editing note of [Principles](docs/handbook/principles.md) gives.
+- A citation of a draft solver waits: write it at its place in the pending form that file's editing note gives.
 - Where the brief's issue is a rule of [Principles](docs/handbook/principles.md), examine each of the brief's tasks.
     - If the fix leaves that task's solver something to act on, such as a case to add or drop, write `// review principle: <section heading> — <that point>` as the solver's last header line.
     - A solver the fix confirms as it stands takes no line.
@@ -29,5 +30,7 @@
 - Scratch files go under `.scratch/retro/` and nowhere else.
 
 # Report
-- Per file you changed, the diff file you wrote for it, at the path the brief gives under `.scratch/retro/diffs/`.
+- Write the diff of your changes to each file the brief names, verbatim, to that file's `diff_path`, and create the directory first.
+- A file you changed that the brief does not name takes a diff of its own under `.scratch/retro/diffs/`, at a path you pick.
+- Report one `diffs` entry per file you changed, the files the brief names and the others alike: the file, and the path its diff went to.
 - Then what was run and its result, any citation left pending, and for prose the net word count, words added minus words removed.

@@ -115,6 +115,14 @@
 - Keep the prose plain.
 - Do not compress it into a telegraphic style.
 
+### Promote
+- Run this when the user says `promote` or `migrate` over an entry under `docs/wf-solver/proposals/`.
+- On `promote`, move the plain relations or proposal comp into the module under `programs/lib/` whose file doc admits it, and update the solver that introduced the proposal.
+- On `migrate`:
+    1. Spawn the `migrate` role with the entry's path, the call site in the solver that introduced the proposal, and the promotion's time.
+    2. Spawn the `cleanup` role with the regions that `migrate` changed and the lib call they now make.
+    3. List in the review the callers that `migrate` skipped.
+
 ### Review
 - Write the review for the user to act on.
 - Include only items that the user can act on:

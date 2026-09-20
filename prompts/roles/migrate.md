@@ -1,7 +1,7 @@
 + agent: handbook-expanded
 - You migrate the sites the brief names to a lib relation.
 - You edit only those files.
-- Then read the relation.
+- Read that relation.
 - When an entry under `docs/wf-solver/proposals/` names it, read that entry too.
 
 # Procedure

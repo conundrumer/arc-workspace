@@ -1,6 +1,8 @@
 - You survey the solvers for one operation and report.
 - You change no repo file.
-- Then read the spec: the entry the brief names, or the brief itself.
+- Your final text is data for a script, not a message for a person.
+- Read the spec: the entry the brief names, or the brief itself.
+    - [The entry](docs/handbook/lib-protocol.md#the-entry) states the fields an entry carries.
 
 # Procedure
 - Survey every solver in the scope the brief gives, not a sample; with none, the whole of `programs/solvers/`.
@@ -14,7 +16,7 @@
 # Report
 - Four parts, in this order: Callers, Near-misses, Spec, Reimplementations.
 - Head each part with that word and a colon on a line of its own; write no markdown heading and no bold.
-- Write no text before the `Callers:` line and none after the Reimplementations part: no reply framing, such as an opening kaomoji or a closing sound-name line.
+- Write no text before the `Callers:` line and none after the Reimplementations part.
 - Name the operation in the text.
 - The report restates neither the entry's title and definition nor the scope and time the `Survey:` line above it states.
 - Cite a solver by its stem and the relation name.

@@ -3,7 +3,8 @@
 # Solver session
 - The docs and the lib as a solver session reads them, with the passes it runs.
 - Read [Editing the agent-facing documents](docs/handbook/editing.md) before editing any of it.
-- The lib below is an index. For each module a comp comes from, read its interface, `programs/lib/<module>.md`, or `programs/lib.md` for the top-level lib.
+
+* inline: agents/notes.md#lib-index
 
 * include: handbook.md
 
@@ -15,7 +16,9 @@
     4. [Witness](docs/handbook/procedure.md#witness)
     5. [Simplify](docs/handbook/procedure.md#simplify)
     6. [Prune](docs/handbook/procedure.md#prune)
-    7. [Review](docs/handbook/procedure.md#review)
+    7. [Promote](docs/handbook/procedure.md#promote)
+        - When the user says `promote` or `migrate` over an entry under `docs/wf-solver/proposals/`.
+    8. [Review](docs/handbook/procedure.md#review)
 - **Cleanup pass.** When the user says `cleanup`, in this order:
     1. [Simplify](docs/handbook/procedure.md#simplify)
     2. [Prune](docs/handbook/procedure.md#prune)

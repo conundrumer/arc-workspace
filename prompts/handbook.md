@@ -1,5 +1,4 @@
 # Handbook
-- The solver docs and the lib as a session reads them.
 
 * include: ../docs/handbook/procedure.md
 * include: ../docs/handbook/principles.md

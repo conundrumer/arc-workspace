@@ -16,7 +16,7 @@
 - {{count}}/{{judged}} deletions change nothing:
     - The removal changed no pair's output and no determined value.
     - The pairs never instantiate the structure it removed, or another atom already implies that structure.
-    - The session judges which.
+    - Judge which.
     * comment:
         - A column drop removes that argument at every atom of the relation.
         - The variables that bound it are left unbound at the consumers.

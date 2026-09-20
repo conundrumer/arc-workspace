@@ -59,11 +59,9 @@ const brief = (item) => {
   return mctx`
 - Files: ${solver}.
 - Regions: the lines the findings below name.
-- Each finding states a direct form; write it.
+- Every finding below is rewritten to the direct form it states.
     - A \`negated-value\` finding's comparison becomes the negated primitive.
     - A \`negated-use\` finding's wrapper relation goes, and the use that negated it negates the primitive.
-- Then run Simplify and Prune over those regions.
-- Every finding is rewritten.
 - A finding you leave as written is reported under \`kept\`, with the reason.
 - Findings:
 
@@ -76,7 +74,7 @@ ${findings}
 
 phase('Cleanup')
 const reports = await pipeline(args.items, (item) =>
-  agent(`${role}\n\nYour brief:\n\n${brief(item)}`, {
+  agent(`${role}\n\n---\n\nYour brief:\n\n${brief(item)}`, {
     label: `cleanup:${item.stem}`,
     phase: 'Cleanup',
     agentType,

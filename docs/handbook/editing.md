@@ -12,16 +12,28 @@
 - The `programs/` sections: the `//!` and `///` comments of `programs/lib.dl` and of the modules under `programs/lib/`.
 - The order the sections come in: [Handbook](prompts/handbook.md), which holds nothing of its own.
 - What a session at a terminal reads, and the passes it runs: [Solver session](prompts/session.md).
+- What a codex session on the repo reads: [Codex on arc-workspace](prompts/codex.md).
+    - Its chain: `uv run python scripts/context.py`, then what each command the text names prints.
 - What each handbook agent reads: [handbook](prompts/agents/handbook.md) and [handbook-expanded](prompts/agents/handbook-expanded.md).
+- The statements more than one entry document inlines into its lead: [Shared notes](prompts/agents/notes.md).
+    - Its chain: the generated definition under `.claude/agents/`, then `uv run python scripts/context.py role <name>`, then the brief.
 - The console messages: [Console messages](prompts/console.md).
+    - A worker's chain: the appendix, then the messages, as `tools/console/solver_console/prompts.py` builds them in a stage's order.
 - The roles: [roles](prompts/roles), one document per role. A role's `agent` attribute names the agent that runs it, and a role with none runs as `handbook`.
 - The audit's deletion report: [Deletion report](prompts/run_dl.md).
 - The other sentences a runner tool prints: the `MESSAGES` table at the top of its module under [dl](src/dl).
 - The workflow briefs and the schema descriptions: the scripts under [workflows](.claude/workflows).
+    - A workflow agent's chain: its role from `uv run python scripts/context.py workflow <name>`, then the brief its script builds.
+- What Codex reads: `AGENTS.md`.
+    - `uv run python scripts/context.py --write` generates it.
 
 ## What holds where
-- The handbook holds the operations and no pass.
-- An entry point lists the operations its pass runs, as links, in order.
+- A file is written for the reader its entry point names, and holds what that reader needs for the work it does there.
+    - A document the handbook includes says nothing that holds for one entry point and not another.
+    - The handbook holds the operations, and each entry point lists the operations its pass runs, as links, in order.
+    - A reader that writes solvers holds the lib as its interface; every other reader holds the index and reads a module's interface when it needs one.
+- A fact or a rule is stated in one file, and every other file links it.
+- A section's heading is its interface: a link depends on the heading, and never on what the body says.
 - No document restricts, replaces or redirects an operation another document carries.
 - A document the handbook includes links only to another document it carries, or to a file outside the document set.
 - A composition document is an entry point, and its lead names what the render leaves out.
@@ -55,9 +67,3 @@
 - A chain is everything one reader receives, from its entry point to the last message, in the order it arrives.
 - A change to this text is reviewed by reading each chain it touches from the entry point to the end, as that reader, before it is done.
 - The check reads files, and a chain's contradictions, gaps and duplicates show only in the chain.
-- The chains, and what assembles each:
-    - The session at a terminal: `uv run python scripts/context.py`, then what each command the text names prints.
-    - A handbook agent: its generated definition under `.claude/agents/`, then `uv run python scripts/context.py role <name>`, then the brief.
-    - A console worker: the appendix and the messages that `tools/console/solver_console/prompts.py` builds, in the order a stage sends them.
-    - A workflow agent: its role from `uv run python scripts/context.py workflow <name>`, then the brief its script builds.
-    - Codex: `AGENTS.md`.

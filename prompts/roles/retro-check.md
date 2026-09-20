@@ -29,7 +29,7 @@
     - solver: a solver under `programs/solvers/`, one file per task id.
     - entry: a lib change a caller can see, a member relation added or removed, a signature, a claim.
         - The retro does not make that change.
-        - The fix is a proposals entry per [Lib addition protocol](docs/handbook/lib-protocol.md) with its `Survey:` line, and the protocol runs from there.
+        - The fix is a proposals entry with the fields [The entry](docs/handbook/lib-protocol.md#the-entry) gives, its `Survey:` line included, and [The order](docs/handbook/lib-protocol.md#the-order) runs from there.
 - A fix edits one target.
 - When closing an issue takes edits in two files, give one candidate fix per file, each stated so an agent that has that file alone can make it, and list them together before any alternative.
 - Read each target's current text on disk before proposing an edit to it, and state the edit against what is there.

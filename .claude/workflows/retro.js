@@ -451,12 +451,13 @@ const REPORT_DIR = 'tools/console/state/reports'
 const solverTarget = (taskId) => `programs/solvers/${taskId}.dl`
 
 // One entry per file: the file, the fixes it takes, and where its diff goes.
-// A prose file takes a second path, for the diff of the prune step over it.
+// A prose file takes a second path, for the diff of the prune step over it,
+// and the reader that step serves.
 const fixEntries = (groups, pruned) => JSON.stringify(
   groups.map(g => ({
     target: g.target,
     diff_path: diffPath(g.target),
-    ...(pruned ? { prune_path: prunePath(g.target) } : {}),
+    ...(pruned ? { prune_path: prunePath(g.target), reader: readerFor(g.target) } : {}),
     fixes: g.fixes,
   })), null, 2)
 
@@ -489,10 +490,6 @@ const ONE_CALL = mctx`- Run it as one Bash call, in the foreground, with the Bas
 const NO_GIT = mctx`- Never run a git command that changes state.`
 const NO_WRITES = mctx`- Change no file.
 - Never run a git command that changes state.`
-const RUN_THE_CHECKS = mctx`- Run the solver, the lint, and the audit.`
-
-// The second role of a prose unit, between the two role texts.
-const FIX_AND_PRUNE_STEP = mctx`- The second step, over the diff your fix made:`
 
 const readTask = () => mctx`- Read the retro window and return the issues.`
 
@@ -518,55 +515,33 @@ ${list}
 `
 }
 
-const fixOne = (target) => mctx`Make these fixes in ${target}.`
-const FIX_MANY = mctx`Make these fixes. Each entry names one file, the fixes that file takes, and the path its diff goes to.`
-const fixLead = (groups) => groups.length > 1 ? FIX_MANY : fixOne(groups[0].target)
-
 const fixTask = (groups, pruned = false) => {
-  const lead = fixLead(groups)
   const entries = fixEntries(groups, pruned)
-  const dir = DIFF_DIR
   return mctx`
-- ${lead}
+- Make these fixes. Each entry names one file, the fixes that file takes, and the path its diff goes to.
+
+~~~json
+${entries}
+~~~
+`
+}
+
+const RULED = mctx`- The user ruled for these fixes.`
+const UNRULED = mctx`- The user ruled on none of these fixes.`
+
+// The values of one prose unit: each file with its fixes, its two diff paths,
+// and the reader its pruned text serves.
+const fixAndPruneTask = (groups, ruled) => {
+  const entries = fixEntries(groups, true)
+  const rulingLine = ruled ? RULED : UNRULED
+  return mctx`
+- Make these fixes. Each entry names one file, the fixes that file takes, the reader its pruned text serves, and the path each of its two diffs goes to.
 
 ~~~json
 ${entries}
 ~~~
 
-- Write the diff of your changes to each file named above, verbatim, to that file's \`diff_path\`.
-- Create the directory first.
-- A file you changed that is not named above takes a diff of its own under \`${dir}/\`, at a path you pick.
-- Report one \`diffs\` entry per file you changed, the files named above and the others alike: the file, and the path its diff went to.
-`
-}
-
-const RULED = mctx`- The user ruled for these fixes.
-- The prune keeps the rule each edit states.`
-const UNRULED = mctx`- The user ruled on none of these fixes.`
-
-// Cut from the brief, kept here: each file's reported path is its `prune_path`
-// because the prune step left the final state.
-const fixAndPruneTask = (groups, ruled) => {
-  const fix = fixTask(groups, true)
-  const readers = groups.map(g => `${g.target}: ${readerFor(g.target)}`).join('\n')
-  const rulingLine = ruled ? RULED : UNRULED
-  return mctx`
-${fix}
-- Work in two steps: the fix, under the fix role, then the prune, under the prune role, over the diff your fix made.
-- The reader of each file, for the prune step:
-
-~~~
-${readers}
-~~~
-
 ${rulingLine}
-- The prune step takes the edits above as the edits the diff was meant to make.
-- Each file named above takes two diffs: the fix step writes its own diff to that file's \`diff_path\`, and the prune step writes the diff of its own pass to that file's \`prune_path\`.
-- Run the verification command once over all the fix edits together, and once over all the prune edits together.
-- It does not run per file.
-- Report both steps.
-- The \`diffs\` field carries one entry per file the run changed, each \`path\` that file's \`prune_path\`.
-- The \`notes\` field carries one line per cut, and the meaning before and after of each rule the diff touches.
 `
 }
 
@@ -593,15 +568,14 @@ const worktreeVerifyNote = (worktree) => mctx`
 - Run each \`uv run\` command from ${worktree}.
 `
 
-const proseDiffs = (fix, prune) => mctx`- Its fix diff is under ${fix}, and the diff of the prune over that fix is under ${prune}.`
-const codeDiff = (diff) => mctx`- Its diff is under ${diff}.`
+const pruneDiff = (prune) => mctx`- The diff of the prune over that fix is under ${prune}.`
+const NO_PRUNE_DIFF = mctx`- The fix took no prune step.`
 
 const verifyGroup = (made, g) => {
   const target = g.target
   const edits = JSON.stringify(g.fixes.map(f => f.edit), null, 2)
-  const where = made.kind === 'prose'
-    ? proseDiffs(diffPath(g.target), prunePath(g.target))
-    : codeDiff(diffPath(g.target))
+  const diff = diffPath(g.target)
+  const prune = made.kind === 'prose' ? pruneDiff(prunePath(g.target)) : NO_PRUNE_DIFF
   return mctx`
 - ${target} — the edits its changes were meant to make:
 
@@ -609,7 +583,8 @@ const verifyGroup = (made, g) => {
 ${edits}
 ~~~
 
-${where}
+- Its fix diff is under ${diff}.
+${prune}
 `
 }
 
@@ -729,27 +704,19 @@ const resolveTask = (taskId) => {
   const where = resolvePath(taskId)
   const report = `${REPORT_DIR}/${taskId}/retro.md`
   return mctx`
-- Act on the review lines in ${solver}.
-- Every review line in the solver's header names a point to act on, except a line whose kind marks it as waiting on the user; \`cite\` is such a kind today.
-- Work each line per the procedure's operations, as they apply to it.
-- Remove each line you finished.
-- Leave a line you did not finish; when the solver carries no \`// draft\` line, return it to draft first: \`uv run python -c "import sys; sys.path.insert(0, 'tools/console'); from solver_console import solvers; solvers.mark_draft('<task_id>'); solvers.withdraw_citations('<task_id>')"\`. 
-- A review line whose kind waits on the user is not yours: leave it as it is.
-${RUN_THE_CHECKS}
-- Write the diff of your change to the solver, verbatim, to ${where}, and report that path.
-- A run that changed nothing writes no file and reports an empty path.
-- Write your report, in the form the Review operation gives, to ${report}.
-- Create the directory first.
-- The run, lint, and audit output go in your returned verification, not in the report.
-${NO_GIT}
+- The solver: ${solver}.
+- The task id: ${taskId}.
+- The diff path: ${where}.
+- The report path: ${report}.
 `
 }
 
-const cleanupTask = (taskId, source) => {
+const cleanupTask = (taskId, stage, record) => {
   const solver = solverTarget(taskId)
   return mctx`
-- Run Simplify, then Prune, over the whole of ${solver}.
-- ${source}
+- Files: ${solver}.
+- Regions: the whole file.
+- The ${stage} stage of this run last wrote the solver, and its record is at ${record}.
 - Scratch goes under \`.scratch/<task_id>/\`.
 `
 }
@@ -794,25 +761,14 @@ const applyTask = (taskId, d) => {
   const where = applyPath(taskId)
   const report = `${REPORT_DIR}/${taskId}/retro-consistency.md`
   return mctx`
-- Bring ${solver} to the form below, under the reading below.
+- The solver: ${solver}.
+- The diff path: ${where}.
+- The report path: ${report}.
+- The point, the reading, and the form:
 
 ~~~json
 ${divergence}
 ~~~
-
-- The solvers this entry holds between read that point differently.
-- The form above is the form they agree on.
-- Change nothing the form does not reach.
-- The model, the parameterization, and the Choice cases stay as they are.
-${RUN_THE_CHECKS}
-- Write the diff of your change to the solver, verbatim, to ${where}, and report that path.
-- A run that changed nothing writes no file and reports an empty path.
-- Write your report, in the form the Review operation gives, to ${report}.
-- Create the directory first.
-- The run, lint, and audit output go in your returned verification, not in the report.
-- Report the point you brought the solver to in \`acted\`, as one entry.
-- Report what the form leaves unfinished in \`left\`.
-${NO_GIT}
 `
 }
 
@@ -876,10 +832,6 @@ const agentOf = (name) => {
   return { agentType: m ? m[1] : 'handbook' }
 }
 const asRole = (name, task) => `${roleOf(name)}\n\n---\n\nYour brief:\n\n${task}`
-// A prose unit takes the fix role, then the prune role over the diff the fix
-// step made.
-const asFixAndPrune = (task) =>
-  `${roleOf('retro-fix')}\n\n---\n\n${FIX_AND_PRUNE_STEP}\n\n${roleOf('retro-prune')}\n\n---\n\nYour brief:\n\n${task}`
 
 // ---------------------------------------------------------------- codex
 
@@ -900,7 +852,7 @@ const codexFlags = () => [
 const codexBrief = (u, ruled) => [
   'You are running under a workflow, not a conversation. Your final message is the JSON the output schema gives and nothing else. Never run a git command that changes state.',
   '',
-  asFixAndPrune(fixAndPruneTask(u.groups, ruled)),
+  asRole('retro-fix-prune', fixAndPruneTask(u.groups, ruled)),
 ].join('\n')
 
 // The agent of a prose unit runs one command. The script it runs writes the
@@ -922,8 +874,8 @@ const codexReturned = (edit) => !!edit && !!(edit.verification || '').trim()
 
 // The roles a run reaches, by the run it is.
 const READ_ROLES = ['retro-read', 'retro-check', 'retro-review']
-const FIX_ROLES = ['retro-fix', 'solver', 'retro-prune', 'retro-verify', 'retro-group', 'retro-consistency', 'cleanup']
-const RESOLVE_ROLES = ['solver', 'retro-fix', 'retro-group', 'retro-consistency', 'cleanup']
+const FIX_ROLES = ['retro-fix', 'retro-fix-prune', 'solver', 'retro-verify', 'retro-group', 'retro-consistency', 'retro-apply', 'cleanup']
+const RESOLVE_ROLES = ['retro-resolve', 'retro-fix', 'retro-group', 'retro-consistency', 'retro-apply', 'cleanup']
 const rolesNeeded = () => args && args.resolve ? RESOLVE_ROLES
   : args && args.fixes ? FIX_ROLES
     : args && args.dry ? READ_ROLES
@@ -977,9 +929,9 @@ async function fixStage(fixes, ruled = false) {
       log(`${u.label}: the codex session returned nothing; the unit runs on a handbook agent instead`)
     }
     const prompt = u.kind === 'prose'
-      ? asFixAndPrune(fixAndPruneTask(u.groups, ruled))
+      ? asRole('retro-fix-prune', fixAndPruneTask(u.groups, ruled))
       : asRole(fixRole(u.kind), fixTask(u.groups) + (isolate ? worktreeNote() : ''))
-    const edit = await agent(prompt, { label: u.label, phase: 'Fix', schema: EDIT_SCHEMA, ...(isolate ? { isolation: 'worktree' } : {}), ...agentOf(u.kind === 'prose' ? 'retro-fix' : fixRole(u.kind)) })
+    const edit = await agent(prompt, { label: u.label, phase: 'Fix', schema: EDIT_SCHEMA, ...(isolate ? { isolation: 'worktree' } : {}), ...agentOf(u.kind === 'prose' ? 'retro-fix-prune' : fixRole(u.kind)) })
     return edit ? fixed(u, edit) : null
   }
 
@@ -1112,7 +1064,7 @@ async function resolveStage(taskIds) {
   const stems = [...new Set(taskIds.map(s => (s || '').trim()))].filter(Boolean)
   if (!stems.length) return null
   const done = (await parallel(stems.map(id => async () => {
-    const r = await agent(asRole('solver', resolveTask(id)), { label: `resolve:${id}`, phase: 'Resolve', schema: RESOLVE_SCHEMA, ...agentOf('solver') })
+    const r = await agent(asRole('retro-resolve', resolveTask(id)), { label: `resolve:${id}`, phase: 'Resolve', schema: RESOLVE_SCHEMA, ...agentOf('retro-resolve') })
     return r && { task_id: id, target: solverTarget(id), ...r }
   }))).filter(Boolean)
   log(`${done.reduce((n, r) => n + r.acted.length, 0)} review lines acted on over ${done.length} solvers; ${done.reduce((n, r) => n + r.left.length, 0)} left`)
@@ -1160,7 +1112,7 @@ async function applyStage(consistency) {
   const done = (await parallel(entries.map(d => async () => {
     const stems = [...new Set((d.solvers || []).map(s => (s || '').trim()).filter(Boolean))]
     const solvers = await parallel(stems.map(id => async () => {
-      const r = await agent(asRole('solver', applyTask(id, d)), { label: `apply:${id}`, phase: 'Consistency', schema: RESOLVE_SCHEMA, ...agentOf('solver') })
+      const r = await agent(asRole('retro-apply', applyTask(id, d)), { label: `apply:${id}`, phase: 'Consistency', schema: RESOLVE_SCHEMA, ...agentOf('retro-apply') })
       return r && { task_id: id, target: solverTarget(id), ...r }
     }))
     return { group: d.group, point: d.point, reading: d.reading, form: d.form,
@@ -1182,24 +1134,24 @@ const cleanupItems = (made, resolved, applied) => {
   const items = new Map()
   for (const m of made || []) {
     if (m.kind !== 'solver' || !(m.edit.diffs || []).length) continue
-    for (const t of m.targets) items.set(t.replace(/^programs\/solvers\/|\.dl$/g, ''), `A solver fix of this run wrote it; its diff is under ${diffPath(t)}.`)
+    for (const t of m.targets) items.set(t.replace(/^programs\/solvers\/|\.dl$/g, ''), { stage: 'Fix', record: diffPath(t) })
   }
   for (const r of resolved || []) {
     if (!r.changed) continue
-    items.set(r.task_id, `The Resolve stage of this run wrote it; its report is at ${r.report}.`)
+    items.set(r.task_id, { stage: 'Resolve', record: r.report })
   }
   for (const r of appliedSolvers(applied)) {
     if (!r.changed) continue
-    items.set(r.task_id, `The Apply step of this run brought it to the form its group agreed on; its report is at ${r.report}.`)
+    items.set(r.task_id, { stage: 'Apply', record: r.report })
   }
-  return [...items].map(([task_id, source]) => ({ task_id, source }))
+  return [...items].map(([task_id, wrote]) => ({ task_id, ...wrote }))
 }
 
 // One agent per solver the run wrote.
 async function cleanupStage(items) {
   if (!items.length) return null
-  const done = (await parallel(items.map(({ task_id, source }) => async () => {
-    const r = await agent(asRole('cleanup', cleanupTask(task_id, source)), { label: `cleanup:${task_id}`, phase: 'Cleanup', schema: CLEANUP_SCHEMA, ...agentOf('cleanup') })
+  const done = (await parallel(items.map(({ task_id, stage, record }) => async () => {
+    const r = await agent(asRole('cleanup', cleanupTask(task_id, stage, record)), { label: `cleanup:${task_id}`, phase: 'Cleanup', schema: CLEANUP_SCHEMA, ...agentOf('cleanup') })
     return r && { task_id, target: solverTarget(task_id), ...r }
   }))).filter(Boolean)
   log(`${done.filter(r => !/^no change/i.test(r.changed)).length} of ${done.length} solvers changed in cleanup; ${done.reduce((n, r) => n + (r.carried || []).length, 0)} files a carry reached`)
