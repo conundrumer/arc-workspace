@@ -5,13 +5,19 @@
     - Prefer nested lists:
         - When a sentence states two or more parallel parts, write them as a nested list, one item each.
         - An example or an instance of a principle is a sub-item under it.
-    - A citation points a reader at a worked application of the principle it is under. A task is cited when its solver's file shows the application without the session that built it, its gloss says what the principle's text does not, and no citation under that principle shows the same application. A task the principle is still open on, or whose solver requires a case under the principle, is not cited; its review line states it.
-    - A cited task is a bare id. A gloss that states the task's facts in the principle's terms, without the task's internal vocabulary, goes under the id as a statement annotated `+ gloss`.
+    - A citation points a reader at a worked application of the principle it is under.
+    - A task is cited when its solver's file shows the application without the session that built it, its gloss says what the principle's text does not, and no citation under that principle shows the same application.
+    - A task the principle is still open on, or whose solver requires a case under the principle, is not cited, and its review line states it.
+    - A cited task is a bare id.
+    - A gloss that states the task's facts in the principle's terms, without the task's internal vocabulary, goes under the id as a statement annotated `+ gloss`.
     - A draft solver is cited the same way, with `+ draft` under the id, and approval removes that line.
-    - A principle's formal statement goes under the principle as a statement annotated `+ formal`. The first formal statement under a definition starts with the term's symbol, and a symbol is declared in a formal statement under the definition or principle that first uses it.
+    - A principle's formal statement goes under the principle as a statement annotated `+ formal`.
+    - The first formal statement under a definition starts with the term's symbol.
+    - A symbol is declared in a formal statement under the definition or principle that first uses it.
 
 # Principles
-- The goal is for a solver to express a task in a way that matches a person's understanding as closely as possible, and for the corpus to extract as much as possible from the tasks. The relevant part of a person's understanding is how they think the task could vary.
+- The goal is for a solver to express a task in a way that matches a person's understanding as closely as possible, and for the corpus to extract as much as possible from the tasks.
+- The relevant part of a person's understanding is how they think the task could vary.
 
 ## Definitions
 
@@ -167,7 +173,8 @@
 - **corpus**: the approved solvers.
 - **precedent**: the encoding that the corpus already uses for a structure in the parse.
     - The solver that introduces or improves that encoding establishes the precedent.
-    - A precedent covers how the structure is found and encoded. It does not cover the tests performed inside that encoding.
+    - A precedent covers how the structure is found and encoded.
+    - It does not cover the tests performed inside that encoding.
 - **orientation type**: a type that meets each condition:
     - The lib enumerates its full value set.
     - Its values remain in the type under the D4 action.
@@ -179,7 +186,8 @@
 - The program states the task's concept without depending on how the task file or grid encodes it.
 
 ### Relational form
-- An ARC concept relates cells, regions, and their properties. The program states those relations directly.
+- An ARC concept relates cells, regions, and their properties.
+- The program states those relations directly.
 - A rule has a **relational form** when some set of clauses agrees with the rule on every input the generator produces on which the rule applies.
 - **Terms.** When two sets of clauses each have the relational form of a rule, the program takes the one stated in the rule's own terms.
 - An **approximation** is a set of clauses that the program runs in place of a rule that has no relational form.
@@ -193,7 +201,8 @@
     - A distance counts the cells between something and an edge.
     - A size counts the members of a set.
     - A rank counts the members that come before one item in an order.
-- Clause arithmetic expresses a relational operation. The program states that operation directly.
+- Clause arithmetic expresses a relational operation.
+    - The program states that operation directly.
     - A wraparound shift is a walk around a cycle.
 - **Zero is absence.** A `0` counts nothing that is present, so it represents an absence.
     - In a spatial setting, `0` represents the absence of a gap, offset, or distance.
@@ -240,20 +249,25 @@
     - A cell set differs in content from its `Canon` class id when the program treats the class as a single thing.
 
 ### Performance
-- The principled form is the right form regardless of performance. A form chosen for speed comes from constraints of the Datalog implementation and its runner.
+- The principled form is the right form regardless of performance.
+- A form chosen for speed comes from constraints of the Datalog implementation and its runner.
 
 ## Parameterization
 
 ### Invariance
-- ARC's symmetry group is generated by the elements of D4 together with color permutations. A task transformed by an element of the group is a variant task.
-- The model is equivariant. When its assignment and input are transformed together, every grid in its output is transformed in the same way.
+- ARC's symmetry group is generated by the elements of D4 together with color permutations.
+- A task transformed by an element of the group is a variant task.
+- The model is equivariant.
+- When its assignment and input are transformed together, every grid in its output is transformed in the same way.
 - Equivariant(M) ⇔ ∀γ ∈ Γ. ∀θ ∈ Θ. ∀x ∈ G. M(γ · θ, γ · x) = γ · M(θ, x)
     + formal
     - Γ: ARC's symmetry group
     - γ · M(θ, x) = {γ · y | y ∈ M(θ, x)}
 - The program is the part of the solver that stays unchanged under the group.
-- What a group element changes is task data. Orientations and colors are examples.
-- A way of combining content is not task data. Models that apply different combining operations to the same content define different families and differ in their clauses.
+- What a group element changes is task data.
+    - Orientations and colors are examples.
+- A way of combining content is not task data.
+- Models that apply different combining operations to the same content define different families and differ in their clauses.
     - dae9d2b5
         - Two adjacent 3×3 subgrids combine cell by cell. An output cell fills when at least one source cell is non-background, and the model has no count parameter.
             + gloss
@@ -263,8 +277,10 @@
 - A program literal belonging to an ARC type breaks equivariance when the group transforms that value.
 
 ### Orientation
-- Some tasks distinguish a particular direction, axis, or transformation. When a task does not distinguish an orientation, neither does the program.
-- The orientation types represent each possible orientation choice as a value. A mirrored variant task therefore requires a parameter edit rather than a change to the program.
+- Some tasks distinguish a particular direction, axis, or transformation.
+- When a task does not distinguish an orientation, neither does the program.
+- The orientation types represent each possible orientation choice as a value.
+- A mirrored variant task therefore requires a parameter edit rather than a change to the program.
     + alternate wording: A mirrored variant task requires a parameter edit and no change to the program.
 - **Orientation per axis.** A model whose clauses differ between axes does not choose an orientation when one parameter names the axis on which the clauses are keyed.
 - The values of an orientation type that the task uses determine the encoding.
@@ -277,8 +293,9 @@
         - One marker color paints cardinal arms, and another paints diagonal arms. The program enumerates every direction of each type, and each type has its own arm color parameter, keyed by marker color.
             + gloss
 - **One member.** If one member is used and another must not be used, a parameter stores the chosen member.
-- **Another orientation type.** Switching to another orientation type requires another program rather than a reassignment. Switching between cardinal and diagonal directions is one example.
+- **Another orientation type.** Switching to another orientation type requires another program rather than a reassignment.
     + alternate wording: Switching to another orientation type requires another program.
+    - Switching between cardinal and diagonal directions is one example.
     - a9f96cdd, d364b489
         - The two tasks paint one cell per direction and differ only in the type: a9f96cdd runs over the diagonals and d364b489 over the cardinals. Neither program reassigns into the other.
             + gloss
@@ -297,7 +314,8 @@
 ### Equivariant lib relations
 - An equivariant lib relation preserves the model's equivariance when its inputs derive from parameters, through an atom's arguments or a component instance's `@input` relations.
 - A non-equivariant one introduces a hidden orientation into an otherwise symmetric program.
-    - Mapping within a tile by distance modulo a period creates a hidden orientation. It is observable unless the extent less one is a multiple of the period.
+    - Mapping within a tile by distance modulo a period creates a hidden orientation.
+        - It is observable unless the extent less one is a multiple of the period.
     - An explicit anchor parameter or an equivariant encoding removes that hidden orientation.
         - 332efdb3
             - The motif case places a period-2 motif at every corner of the grid, so no corner is distinguished.
@@ -343,11 +361,14 @@
             - 3b4c2228
                 - Every test count occurs among the train counts, so the table has no unseen key and meets this condition.
                     + gloss
-        - Fit considers only the pairs. Being undefined on another input does not prevent a model from fitting.
+        - Fit considers only the pairs.
+        - Being undefined on another input does not prevent a model from fitting.
     - **Fidelity.** The model has an encoding allowed by Fidelity.
     - **Equivalence.** The model is not equivalent to the model of another case.
-- For a pair with two candidates, the concept case produces one of them. A peer model that produces the other under some assignment is a separate case when it meets the conditions above.
-- The pairs leave undetermined which model the task teaches. That undetermination is a choice point whose branches are those models.
+- For a pair with two candidates, the concept case produces one of them.
+- A peer model that produces the other under some assignment is a separate case when it meets the conditions above.
+- The pairs leave undetermined which model the task teaches.
+- That undetermination is a choice point whose branches are those models.
     * comment
         - A branch can keep, replace, or add a claim.
 - The outputs within one candidate introduce no case.
@@ -355,9 +376,12 @@
     - No clause treats one resolution differently from another.
 
 ### Parameters across cases
-- **One parameter.** In a task, a parameter admits each value that some assignment gives it while its case fits the task. A collection of case-specific parameters forms one parameter when every task that all of their cases fit admits a value common to every member. Using one parameter across those cases asserts this condition.
+- **One parameter.** In a task, a parameter admits each value that some assignment gives it while its case fits the task.
+    - A collection of case-specific parameters forms one parameter when every task that all of their cases fit admits a value common to every member.
+    - Using one parameter across those cases asserts this condition.
     * comment
-        - The condition is on the whole collection. Parameters that meet in pairs need not all admit one value.
+        - The condition is on the whole collection.
+        - Parameters that meet in pairs need not all admit one value.
     - d23f8c26
         - One column of an odd-width grid is kept. It is the center line on a stored axis in one case and the gap of a two-way divide on that axis in another. Any task that fits both uses one axis value.
             + gloss

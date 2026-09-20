@@ -16,5 +16,8 @@
 - **Cleanup pass.** When the user says `cleanup`, in this order:
     1. [Simplify](docs/handbook/procedure.md#simplify)
     2. [Prune](docs/handbook/procedure.md#prune)
-- **Outside the pass.** Fix a problem in a file the pass does not edit when the docs say how and the fix raises no new issue. Otherwise put it in the review.
-- **Delivery.** Write the review as a reply to the user. Finish all task updates first, and end the turn with the review.
+- **Outside the pass.** Fix a problem in a file the pass does not edit when the docs say how and the fix raises no new issue.
+    - Otherwise put it in the review.
+- **Delivery.** Write the review as a reply to the user.
+    - Finish all task updates first.
+    - End the turn with the review.

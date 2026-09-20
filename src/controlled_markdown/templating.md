@@ -41,7 +41,7 @@
 
 ## Links
 
-- A render rewrites a target taken from the document, one that opens with `./` or `../`, to stand from the repo root, since a session runs from there and the document's own path would not open.
+- A render rewrites a target taken from the document, one that opens with `./` or `../`, to stand from the repo root.
     ```
     - [Principles](../docs/handbook/principles.md), in a doc under prompts/, renders as [Principles](docs/handbook/principles.md).
     ```
@@ -87,6 +87,7 @@
 ## The interface
 
 - A document's interface is the set of names it reads, and nothing declares it: a render reads it off the lines the document inlines and includes.
-- A render given values takes the names given to equal the names read, so a name missing and a name nothing reads are both errors.
+- A render given values takes the names given to equal the names read.
+    - A name missing, and a name nothing reads, are both errors.
 - A render given no values fills nothing, and the text stands as written.
 - Both branches of an `if` count, since a caller cannot know which one will render.

@@ -63,7 +63,8 @@ const brief = (item) => {
     - A \`negated-value\` finding's comparison becomes the negated primitive.
     - A \`negated-use\` finding's wrapper relation goes, and the use that negated it negates the primitive.
 - Then run Simplify and Prune over those regions.
-- Every finding is rewritten. A finding you leave as written is reported under \`kept\`, with the reason.
+- Every finding is rewritten.
+- A finding you leave as written is reported under \`kept\`, with the reason.
 - Findings:
 
 ~~~

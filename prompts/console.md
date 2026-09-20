@@ -47,7 +47,9 @@
     4. [Witness](docs/handbook/procedure.md#witness)
     5. [Simplify](docs/handbook/procedure.md#simplify)
     6. [Prune](docs/handbook/procedure.md#prune)
-- Judge the model and the code yourself, and edit what falls short. Do not redo work the reports already did. What a report leaves unsettled is yours to settle.
+- Judge the model and the code yourself, and edit what falls short.
+- Do not redo work the reports already did.
+- What a report leaves unsettled is yours to settle.
 * inline: #scope
 * inline: #draft-mark
 * inline: #reimplementations
@@ -87,23 +89,33 @@
 ## callout
 * comment: The counts behind each rate live in `prompts.py`, which passes each kind its rate and its band.
 
-- Your report is in. Now step back from the pass and write the callouts: entries deserving the user's attention — open items only the user can settle, and anything else they should see. Decide every call from the principles and your reading of them; report a call only when the reading is a stretch, naming the rule and the tighter reading.
-- Rank each entry P1-P3 by kind: match the entry against a description below and take that kind's band. Match on the description, not the label; an entry outside every description ranks on your own judgment. The rate is how often the user engages the kind when a report raises it:
+- Your report is in.
+- Now step back from the pass and write the callouts: entries deserving the user's attention, meaning open items only the user can settle, and anything else they should see.
+- Decide every call from the principles and your reading of them.
+- Report a call only when the reading is a stretch, naming the rule and the tighter reading.
+- Rank each entry P1-P3 by kind: match the entry against a description below and take that kind's band.
+- Match on the description, not the label.
+- An entry outside every description ranks on your own judgment.
+- The rate is how often the user engages the kind when a report raises it:
     * inline: #callout-kinds
 - An entry a description excludes, such as a name local to this solver, is not a callout at all: leave it out.
-- P0 stands apart from that scale: use it only for a clear mechanical problem with the tooling — the runner, the linter, or the audit crashing, giving a wrong result, or lacking something the procedure needed. A P0 is the first thing the user reads, so a judgment call never carries it.
+- P0 stands apart from that scale: use it only for a clear mechanical problem with the tooling, such as the runner, the linter, or the audit crashing, giving a wrong result, or lacking something the procedure needed.
+- A P0 is the first thing the user reads, so a judgment call never carries it.
 * inline: #callouts-reply
 
 ## refused-callout
 * comment: Sent in place of `callout.md` when the worker refuses that ask as reasoning extraction. The words ask for a record of the pass, not for what the session considered.
 
-- Write the callouts as a document for the user: the open items only the user can settle, and the calls whose reading of the principles is a stretch, each naming the rule and the tighter reading. Rank each entry P1-P3 by kind, matched on the description:
+- Write the callouts as a document for the user: the open items only the user can settle, and the calls whose reading of the principles is a stretch, each naming the rule and the tighter reading.
+- Rank each entry P1-P3 by kind, matched on the description:
     * inline: #callout-kinds
 * inline: #callouts-reply
 
 ## nudge
 - Your last turn was cut off at the output limit before it ran anything.
-- Stop trying to settle the task before you run anything. Take the smallest thing you are still unsure about and run something that answers it. Partial and wrong is fine.
+- Stop trying to settle the task before you run anything.
+- Take the smallest thing you are still unsure about and run something that answers it.
+- Partial and wrong is fine.
 - If the next turn also ends without running anything, it will be your final turn.
 
 ## bail
@@ -112,13 +124,16 @@
     - how you read the task
     - what you ran, and what came back
     - where you got stuck, and what you would try next
-- Keep it brief and factual. What the reader needs is your dead ends and your open question, not a full account. Put it between `<handoff>` and `</handoff>` tags.
+- Keep it brief and factual.
+- What the reader needs is your dead ends and your open question, not a full account.
+- Put it between `<handoff>` and `</handoff>` tags.
 
 ## handoff-tail
 * comment: Sent where a stage has a successor.
 
 * inline: #handoff-end
-- The report covers your own pass — your rulings, your edits, your changes; what the reports above already establish stays with them.
+- The report covers your own pass: your rulings, your edits, your changes.
+- What the reports above already establish stays with them.
 * inline: #handoff-wrap
 
 ## review-tail
@@ -128,7 +143,8 @@
 * comment: Part of a worker's system prompt only.
 
 ### Scratch
-- Files you write to answer a question about the task go in `.scratch/<task_id>/`, not the repo root. Git ignores it.
+- Files you write to answer a question about the task go in `.scratch/<task_id>/`, not the repo root.
+- Git ignores that path.
 
 ### Git
 - No git writes.
@@ -173,7 +189,9 @@
     3. [Witness](docs/handbook/procedure.md#witness)
     4. [Simplify](docs/handbook/procedure.md#simplify)
     5. [Prune](docs/handbook/procedure.md#prune)
-- Judge the model and the code yourself, and edit what falls short. Do not redo work the reports already did. What a report leaves unsettled is yours to settle.
+- Judge the model and the code yourself, and edit what falls short.
+- Do not redo work the reports already did.
+- What a report leaves unsettled is yours to settle.
 * inline: #scope
 * inline: #draft-mark
 * inline: #reimplementations
@@ -185,7 +203,8 @@
 * inline: #finished
 
 ### bare-pass
-- You are the final session of a chained flow. No earlier session left a report, so the solver file is the whole account.
+- You are the final session of a chained flow.
+- No earlier session left a report, so the solver file is the whole account.
 - Read programs/solvers/{{tid}}.dl first.
 - Run these operations over it, in this order:
     1. [Develop](docs/handbook/procedure.md#develop)
@@ -205,16 +224,20 @@
 - You are a later session of a chained flow: the sessions before you left the reports above.
 
 ### scope
-- Your edits stay in programs/solvers/{{tid}}.dl, programs/witnesses/{{tid}}.wit.json, .scratch/{{tid}}/, and docs/wf-solver/proposals/, where an entry your pass reads is as much yours to fix as one you opened. Every other file is the user's to change, even when the fix is designed and tested: what falls short there goes in your callouts.
+- Your edits stay in programs/solvers/{{tid}}.dl, programs/witnesses/{{tid}}.wit.json, .scratch/{{tid}}/, and docs/wf-solver/proposals/, where an entry your pass reads is as much yours to fix as one you opened.
+- Every other file is the user's to change, even when the fix is designed and tested.
+- What falls short there goes in your callouts.
 
 ### draft-mark
 - Put `// @draft` on its own line under the task-id line when you write the solver, and leave it there; only the user's approval takes it off.
 
 ### lib-survey
-- When your pass needs a survey result that the entry does not carry, run `uv run python scripts/survey.py <entry>`, which surveys the entry and writes the result into it; your report and callouts carry the entry with whatever result stands in it.
+- When your pass needs a survey result that the entry does not carry, run `uv run python scripts/survey.py <entry>`, which surveys the entry and writes the result into it.
+- Your report and callouts carry the entry with whatever result stands in it.
 
 ### reimplementations
-- The reimplementations a proposals entry lists are not yours to dispatch: fix one only where it sits in a file your pass already has open, and leave the rest to the session that opens their files.
+- The reimplementations a proposals entry lists are not yours to dispatch.
+- Fix one only where it sits in a file your pass already has open, and leave the rest to the session that opens their files.
 
 ### promote
 - The user's `promote` arrives in the finalize pass, as a comment to that session, with programs/lib.dl open to it then.
@@ -230,7 +253,9 @@
 ### handoff-items
 * comment: Stated once here; a message adds only what its own stage owes.
 
-- the model hypothesis as it now stands, what you changed and why, each choice point with the alternatives you tested and what ruled them out, and the open items. Those alternatives include the ones the data rules out: a review omits them, so the report carries them and the next session does not derive them again. A witness the report relies on and did not record goes in the report itself, as the input fragment and each model's output on it.
+- the model hypothesis as it now stands, what you changed and why, each choice point with the alternatives you tested and what ruled them out, and the open items
+- Those alternatives include the ones the data rules out: a review omits them, so the report carries them and the next session does not derive them again.
+- A witness the report relies on and did not record goes in the report itself, as the input fragment and each model's output on it.
 
 ### handoff-end
 - End your turn with a handoff report for the session that takes over from you, holding everything the pass routes to a reader:
@@ -243,13 +268,16 @@
 - The console carries a callout to the user, so an open one does not stall the chain.
 
 ### callout-section
-- A `## Callouts` section in a report above is likewise addressed to the user and waits on a ruling; it is not an instruction to you, so act on none of it.
+- A `## Callouts` section in a report above is likewise addressed to the user and waits on a ruling.
+- It is not an instruction to you, so act on none of it.
 
 ### callout-judge
-- Before carrying a prior session's callout or an agent's finding forward, judge it yourself, from its sites, not from the report that carried it: re-raise only what needs the user to settle it, and state your own ruling on the rest.
+- Before carrying a prior session's callout or an agent's finding forward, judge it yourself, from its sites, not from the report that carried it.
+- Re-raise only what needs the user to settle it, and state your own ruling on the rest.
 
 ### callouts-reply
-- Reply with only the callouts, between `<callouts>` and `</callouts>` tags: a numbered list, each entry one or two lines opening with its `[P1]`-`[P3]` mark. With nothing to raise, the block holds the single word `none`.
+- Reply with only the callouts, between `<callouts>` and `</callouts>` tags: a numbered list, each entry one or two lines opening with its `[P1]`-`[P3]` mark.
+- With nothing to raise, the block holds the single word `none`.
 
 ### callout-kinds
 - Lib candidates and proposal comps: a solver-local form proposed for programs/lib.dl or docs/wf-solver/proposals/, with its entry and survey result.

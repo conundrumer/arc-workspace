@@ -22,7 +22,7 @@
 
 ## Links
 
-- A reference to another document is a Markdown link, `[text](path)`, the path taken from the repo root, since that is where a session runs.
+- A reference to another document is a Markdown link, `[text](path)`, the path taken from the repo root.
     ```
     - [Principles](docs/handbook/principles.md) states what a case is.
     ```
@@ -46,7 +46,7 @@
 - A hole is `{name}` in Python and `${name}` in JavaScript, and the check reads one opaque word in its place.
     - A hole that is a whole line places a fragment of its own, which the check reads where that fragment stands.
     - A `${…}` that is not a name is an error: the value it takes is computed above the literal and given a name.
-- A fence inside a JavaScript fragment is written with tildes, since the literal's own delimiter is a backtick.
+- A fence inside a JavaScript fragment is written with tildes.
 - A string that names a document by path names one the tree holds, and the check reports one it does not. A path holding a hole or a wildcard names a shape and is passed over.
 - A `///` or `//!` comment in a Souffle file is the text of one statement, and it takes the rules on a statement's text.
 
@@ -137,7 +137,7 @@
 - A line that starts with `# ` is a heading, and a heading is a statement.
 - A heading stands at column zero, and so do the lines under it.
     - The lines under a heading run to the next heading of the same depth or a shallower one.
-    - Indentation starts from zero again under every heading, so a document never indents far.
+    - Indentation starts from zero again under every heading.
 - The count of `#` follows the tree: the document's heading is `#`, its sections are `##`, and theirs are `###`.
 - A `+ ` line on the line after a heading is an attribute of that heading.
 - A heading carries the slug of its text as its id: lower case, each run of spaces as one hyphen, and the punctuation other than a hyphen dropped.

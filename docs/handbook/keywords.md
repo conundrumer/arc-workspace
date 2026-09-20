@@ -2,7 +2,8 @@
 
 # Keywords
 - Keywords index the solvers by concepts that a grep over the code cannot find.
-- A keyword names a task concept or a composition property of the program. The mechanism its gloss names is one instance of that concept, not the keyword's boundary.
+- A keyword names a task concept or a composition property of the program.
+- The mechanism its gloss names is one instance of that concept, not the keyword's boundary.
 
 ## Setup
 - The structure a concept depends on: what the input is and how it decomposes.
