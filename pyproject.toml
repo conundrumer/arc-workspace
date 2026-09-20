@@ -10,7 +10,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/arc", "src/dl", "src/study"]
+packages = ["src/arc", "src/dl", "src/controlled_markdown", "src/study"]
 
 [dependency-groups]
 dev = [
@@ -53,3 +53,16 @@ venv = ".venv"
 
 [tool.pyrefly]
 search-path = [".", "src"]
+
+[tool.controlled_markdown]
+# The agent-facing documents. `check` and `fmt` read this set when no path is
+# given, so the command that guards them is one word wherever it is written.
+paths = ["CLAUDE.md", "docs/handbook", "prompts", ".claude/skills",
+         "src/controlled_markdown", "tools/console/recal"]
+# The code files that hold prose. A link in one resolves like a link in a
+# document, and nothing else in them is read as Controlled Markdown.
+code = ["src/dl/lint.py", "src/dl/rewrite_lint.py", "src/dl/witness.py",
+        "src/dl/deletions.py", "src/dl/drop_one.py", "src/dl/sweep.py",
+        "src/dl/sweep_open.py", "src/dl/determine_deps.py",
+        "src/dl/souffle.py", "src/dl/determination_plan.py",
+        ".claude/workflows/retro.js", ".claude/workflows/cleanup-sweep.js"]
