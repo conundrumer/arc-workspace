@@ -3,6 +3,7 @@
 # Solver session
 - The docs and the lib as a solver session reads them, with the passes it runs.
 - Read [Editing the agent-facing documents](docs/handbook/editing.md) before editing any of it.
+- The lib below is an index. For each module a comp comes from, read its interface, `programs/lib/<module>.md`, or `programs/lib.md` for the top-level lib.
 
 * include: handbook.md
 
