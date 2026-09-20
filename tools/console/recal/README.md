@@ -12,7 +12,7 @@
 2. `python3 pool.py` filters to eligible pairs, dropping junk, duplicates, and bare workflow triggers, tags them for stratification, and samples. It writes `_pool.json` and `_sample.json`.
     - For a checkpointed rerun the old eras are already labeled, so the sampling quotas only matter for pairs newer than the store.
 3. `python3 checkpoint.py todo _sample.json todo.json` gives the sample rows not yet in the store. Only these get classified.
-4. Classify `todo.json` in subagent batches of about 25 pairs. Each batch prompt carries [Classification rubric](RUBRIC.md) in full and writes `batches/out_<n>.json`.
+4. Classify `todo.json` in subagent batches of about 25 pairs. Each batch prompt carries [Classification rubric](tools/console/recal/RUBRIC.md) in full and writes `batches/out_<n>.json`.
     - Before this step, refresh the kind descriptions in the rubric from `CALLOUT_RATES`. They match verbatim.
     - A description change invalidates the store: bump `RUBRIC_DATE` in `checkpoint.py` and re-classify everything. `counts` refuses a store with mixed rubric dates.
 5. `python3 checkpoint.py merge _sample.json batches/` folds the new labels into `labels.json`.

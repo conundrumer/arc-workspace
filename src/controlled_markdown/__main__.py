@@ -52,6 +52,11 @@ def configured(start: Path | None = None) -> list[str]:
     return [str(folder / name) for name in table.get("paths", [])]
 
 
+def repo_root(start: Path | None = None) -> Path:
+    """The folder the config sits in, which a link's target stands from."""
+    return _table(start)[0]
+
+
 def code_files(start: Path | None = None) -> list[Path]:
     """The code files the table names. A link in one resolves; nothing else
     in them is read as a document."""
@@ -81,11 +86,12 @@ def check_code(paths: list[Path]) -> int:
     """Every link a code file holds resolves. The rest of the file is code,
     so nothing else in it is read."""
     off = 0
+    root = repo_root()
     for path in paths:
         if not path.is_file():
             continue
         try:
-            check_text_links(path.read_text(), path, shown(path))
+            check_text_links(path.read_text(), path, shown(path), root)
         except NestedMarkdownError as err:
             print(err)
             off += 1
@@ -94,13 +100,14 @@ def check_code(paths: list[Path]) -> int:
 
 def check(paths: list[Path]) -> int:
     off = 0
+    root = repo_root()
     for path in paths:
         name = shown(path)
         text = path.read_text()
         try:
             document = parse(text, name)
             check_blocks(document)
-            check_links(document, path)
+            check_links(document, path, root)
             # The registry claims the ids, so a repeat is reported here.
             Registry(Path.cwd()).add(name, document, name)
         except NestedMarkdownError as err:

@@ -6,11 +6,10 @@ export const meta = {
   ],
 }
 
-// args:
-//   role   the output of `uv run python scripts/context.py role cleanup`
-//   items  [{ stem, findings: ['<lint finding line>', ...] }], one per solver,
-//          from `uv run python scripts/run_dl.py lint`, the `negated-value`
-//          and `negated-use` lines grouped by solver.
+// A run takes its `roles` in `args`, as `.claude/skills/session/SKILL.md`
+// says to pass them, beside `items`: [{ stem, findings: ['<lint finding
+// line>', ...] }], one per solver, from `uv run python scripts/run_dl.py
+// lint`, the `negated-value` and `negated-use` lines grouped by solver.
 
 const REPORT = {
   type: 'object',
@@ -27,32 +26,38 @@ const REPORT = {
   required: ['stem', 'changed', 'run', 'kept', 'notes'],
 }
 
-if (!args || typeof args.role !== 'string' || !Array.isArray(args.items)) {
-  return { error: 'args needs { role: <cleanup role text>, items: [{ stem, findings }] }' }
+if (!args || !args.roles || !Array.isArray(args.items)) {
+  return { error: 'args needs { roles, items: [{ stem, findings }] }' }
 }
 
 // A role's first line may name its agent. The spawn takes the agent from
 // that line and the prompt from the rest.
 const AGENT_LINE = /^Agent: (\S+)\n+/
-const agentMatch = args.role.trim().match(AGENT_LINE)
+const agentMatch = args.roles.cleanup.trim().match(AGENT_LINE)
 const agentType = agentMatch ? agentMatch[1] : 'handbook'
-const role = args.role.trim().replace(AGENT_LINE, '')
+const role = args.roles.cleanup.trim().replace(AGENT_LINE, '')
 
-const brief = (item) => `
-Brief
+// ---------------------------------------------------------------- briefs
 
-Files: programs/solvers/${item.stem}.dl.
-Regions: the lines the findings below name.
+// The brief this sweep sends its agent. Everything from the marker above to
+// the marker below is the prose this script holds: `scripts/context.py
+// workflow` slices the region and prints it, so a reader outside the script
+// reads the brief without running it.
 
-Each finding states a direct form; write it. A \`negated-value\` finding's
-comparison becomes the negated primitive. A \`negated-use\` finding's wrapper
-relation goes, and the use that negated it negates the primitive. Then run
-Simplify and Prune over those regions. Every finding is rewritten; a finding
-that cannot be rewritten is reported under kept, with the reason.
+const brief = (item) => `- Files: programs/solvers/${item.stem}.dl.
+- Regions: the lines the findings below name.
+- Each finding states a direct form; write it.
+    - A \`negated-value\` finding's comparison becomes the negated primitive.
+    - A \`negated-use\` finding's wrapper relation goes, and the use that negated it negates the primitive.
+- Then run Simplify and Prune over those regions.
+- Every finding is rewritten. A finding you leave as written is reported under \`kept\`, with the reason.
+- Findings:
 
-Findings:
-${item.findings.map((f) => `  ${f}`).join('\n')}
-`
+\`\`\`
+${item.findings.join('\n')}
+\`\`\``
+
+// ------------------------------------------------------------- briefs end
 
 phase('Cleanup')
 const reports = await pipeline(args.items, (item) =>

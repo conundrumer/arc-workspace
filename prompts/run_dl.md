@@ -50,4 +50,4 @@
 ### cases-settle-nothing
 - Every case emits an accepted grid on every pair, which holds of every passing multi-case solver.
 - The pairs settle nothing about the cases either way.
-- [Models and tasks](../docs/handbook/principles.md#models-and-tasks) of Principles states what a case is.
+- [Models and tasks](docs/handbook/principles.md#models-and-tasks) of Principles states what a case is.

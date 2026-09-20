@@ -10,13 +10,13 @@
 - **Construction.** Judge whether the operation is a construction. A construction's `.comp` line ends with `// @construction`.
 
 ## The entry
-- Give a proposed operation an entry under [proposals](../wf-solver/proposals), `<name>.md` named for the operation. `head -n 3 docs/wf-solver/proposals/*.md` lists every entry's title and index sentence.
+- Give a proposed operation an entry under [proposals](docs/wf-solver/proposals), `<name>.md` named for the operation. `head -n 3 docs/wf-solver/proposals/*.md` lists every entry's title and index sentence.
 - **The entry's fields.** An entry contains:
     - a `# <name> — <operation>` title
     - an index sentence that stands alone
     - the code form, when it has one
     - a `Not:` line naming what is not this operation
-    - a `Match:` line with a search signature that covers every statement of the operation, including statements whose atoms are in different lines or clauses, and statements where a solver accesses one lib call only through another. State the shape in prose and match it with the parser ([test_ast_match.py](../../tests/test_ast_match.py))
+    - a `Match:` line with a search signature that covers every statement of the operation, including statements whose atoms are in different lines or clauses, and statements where a solver accesses one lib call only through another. State the shape in prose and match it with the parser ([test_ast_match.py](tests/test_ast_match.py))
         - restate a `Match:` line that does not meet this spec, so the next survey reads it
             - a signature that names an identifier the lib no longer declares, or a header field style.md no longer has, does not meet this spec, and its restatement uses the current name
     - a `Survey:` line per survey, its time to the minute, each followed by its own result. The line names the scope the survey covered, in one of two forms: `Survey: <date time> — every solver.` or `Survey: <date time> — the solvers since <the entry's previous survey time>.` A survey's scope includes drafts.

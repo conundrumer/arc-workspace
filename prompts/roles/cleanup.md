@@ -3,7 +3,7 @@
 
 # Procedure
 - Before the first edit of a file, run `uv run python scripts/run_dl.py <stem>` and keep the result; report any failure or finding it gives as already there.
-- A relation's name is a former name that [Former names](../../docs/handbook/former-names.md) lists, or collides with another relation's name in the file. The pass renames it in every solver that shares that name. This is the one exception to editing only the files the brief names.
+- A relation's name is a former name that [Former names](docs/handbook/former-names.md) lists, or collides with another relation's name in the file. The pass renames it in every solver that shares that name. This is the one exception to editing only the files the brief names.
 - The pairs leave a model partial, or the pairs do not exercise a case. That is a fact the report states. It is not a question, and the pass changes nothing for it: models, parameterizations, and Choice cases stay as they are.
 - The docs leave a question open. It goes in the review as a gap in the docs.
 - Do not mention this pass or an earlier form of the code in the files.

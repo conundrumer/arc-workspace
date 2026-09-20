@@ -7,7 +7,7 @@
 - Label each row on two axes.
 
 * comment: when editing this doc
-    - The kind descriptions match `CALLOUT_RATES` in `tools/console/solver_console/prompts.py` verbatim. A change to one invalidates the store; [Callout rate recalibration](README.md) says what a change costs.
+    - The kind descriptions match `CALLOUT_RATES` in `tools/console/solver_console/prompts.py` verbatim. A change to one invalidates the store; [Callout rate recalibration](tools/console/recal/README.md) says what a change costs.
 
 ## Origin
 - `FROM_REPORT`: the comment engages something the preceding assistant message itself raised. It answers a question it asked, rules on an option it listed, quotes or paraphrases one of its items, picks among its alternatives, vetoes something it proposed, or tells it to proceed with a specific named thing from it.

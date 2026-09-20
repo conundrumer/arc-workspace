@@ -497,12 +497,22 @@ def links(node: Node) -> Iterator[tuple[Node, str, str, str]]:
                 yield child, m.group(1), path, slug
 
 
-def check_links(document: Node, file: Path) -> None:
-    """Every link in the document resolves: the file or directory stands
-    relative to the document, and a slug names a heading of that file whose
-    text the link text gives. An external target is skipped."""
+def target_of(path: str, file: Path, root: Path | None = None) -> Path:
+    """Where a link's target stands. A target that opens with `./` or `../`
+    is relative to the document that holds it; every other target is relative
+    to the repo root, since that is where a session runs."""
+    if not path:
+        return file.resolve()
+    base = file.parent if path.startswith(("./", "../")) else (root or Path.cwd())
+    return (base / path).resolve()
+
+
+def check_links(document: Node, file: Path, root: Path | None = None) -> None:
+    """Every link in the document resolves: the file or directory stands where
+    `target_of` puts it, and a slug names a heading of that file whose text the
+    link text gives. An external target is skipped."""
     for node, text, path, ident in links(document):
-        target = (file.parent / path).resolve() if path else file.resolve()
+        target = target_of(path, file, root)
         if not target.exists():
             raise NestedMarkdownError(node.source, node.line, "link-missing",
                                       f"nothing at `{path}`")
@@ -523,7 +533,8 @@ def check_links(document: Node, file: Path) -> None:
                                       f"heading: `{heads[ident]}`")
 
 
-def check_text_links(text: str, file: Path, source: str) -> None:
+def check_text_links(text: str, file: Path, source: str,
+                     root: Path | None = None) -> None:
     """Every link in raw text resolves, each reported at its own line. The
     text is not parsed, so a code file is read for its links and nothing
     else."""
@@ -533,7 +544,7 @@ def check_text_links(text: str, file: Path, source: str) -> None:
         node = Node(CONTENT, text=line, source=source, line=n)
         document = Node(DOCUMENT, source=source)
         document.children = [node]
-        check_links(document, file)
+        check_links(document, file, root)
 
 
 def _write_children(parent: Node, out: list[str], level: int) -> None:
@@ -882,15 +893,17 @@ def _block(node: Node, st: _State) -> Node:
 
 
 def _rooted(text: str, node: Node, st: _State) -> str:
-    """A link's target as the repo root sees it. Every session runs from the
-    root, so a target relative to the document it stands in would not open."""
+    """A link's target as the repo root sees it. A target that opens with `./`
+    or `../` is relative to the document it stands in, so the render rewrites
+    it; every other target already stands from the root and is left alone."""
     base = st.reg.file(node.source)
     if base is None:
         return text
 
     def one(m):
         path = m.group(2).partition("#")[0]
-        if not path or SCHEME_RE.match(m.group(2)):
+        if (not path or SCHEME_RE.match(m.group(2))
+                or not path.startswith(("./", "../"))):
             return m.group(0)
         whole = (base.parent / path).resolve()
         rooted = relative(whole, st.reg.root)

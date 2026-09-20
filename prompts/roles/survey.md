@@ -3,7 +3,7 @@
 # Procedure
 - Survey every solver in the scope the brief gives, not a sample; with none, the whole of `programs/solvers/`.
 - Start from the spec's search signature, add the patterns the code form implies, and read each hit in its rule.
-- A shape signature has no lexical anchor; match it with the parser, per [test_ast_match.py](../../tests/test_ast_match.py).
+- A shape signature has no lexical anchor; match it with the parser, per [test_ast_match.py](tests/test_ast_match.py).
 - A caller is a solver the operation would serve. A near-miss looks close, and the spec's exclusions rule it out; name the one that does. When the spec has a surfacing solver, read its call site: that is the evidence for the spec question.
 - Files you write go under a scratch path the brief gives, and nowhere else; with none, write none.
 

@@ -25,10 +25,10 @@ reads it: the agent's name on the first line, then the prompt's opening text.
 for a reader whose handbook shows that section as a heading alone.
 
 `workflow <name>` prints what a workflow run needs, as JSON: the text of each
-role it reaches, each section of its document as a template, and the return
-schemas its script holds. The schemas come out of the script itself: the
-region its two marker lines bound is sliced out and evaluated, so a schema
-stays where the run reads it.
+role it reaches, the return schemas its script holds, and the briefs it sends.
+Both come out of the script itself, each from the region its own two marker
+lines bound: the schemas evaluated, the briefs as they stand. A reader outside
+the script reads them without running it.
 """
 
 import json

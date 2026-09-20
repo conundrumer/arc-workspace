@@ -22,15 +22,16 @@
 
 ## Links
 
-- A reference to another document is a Markdown link, `[text](path)`, the path relative to the document the link sits in.
+- A reference to another document is a Markdown link, `[text](path)`, the path taken from the repo root, since that is where a session runs.
     ```
-    - [Principles](principles.md) states what a case is.
+    - [Principles](docs/handbook/principles.md) states what a case is.
     ```
 - A `#` and a slug after the path name a section of that document, and the link text is that heading's text.
     ```
-    - [Models and tasks](principles.md#models-and-tasks) defines a case.
+    - [Models and tasks](docs/handbook/principles.md#models-and-tasks) defines a case.
     ```
 - The check resolves every link: it reports a path that names nothing, a slug no heading carries, and text that is not the heading's.
+- A path that opens with `./` or `../` is taken from the document that holds it instead.
 - A target with a scheme, such as `https:`, is an external address, and the check passes it over.
 - A link written inside a backtick span is text.
 - A code file the check's config lists is read for its links alone, each at the file's own line, and nothing else in it is read as a document.

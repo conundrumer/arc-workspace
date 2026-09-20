@@ -354,22 +354,25 @@ def section_text(where: str, docs: Path = DOCS_DIR) -> str:
     return nm.render(body, registry)
 
 
-# The documents a workflow fills: the sections it sends as briefs, keyed by
-# the name the script asks for.
-WORKFLOW_DOCS = {
-    "retro": REPO_ROOT / "prompts" / "retro.md",
-    "cleanup-sweep": REPO_ROOT / "prompts" / "cleanup-sweep.md",
-}
-
-# The workflow scripts, and the two comment lines that mark the region of
-# each holding its return schemas. The region is read out on its own, so the
-# lines between the markers evaluate without the rest of the script.
+# The workflow scripts, and the comment lines that mark each region a reader
+# outside the script takes out of it: the return schemas, which evaluate on
+# their own, and the briefs, which are read as text.
 WORKFLOW_SCRIPTS = {
     "retro": REPO_ROOT / ".claude" / "workflows" / "retro.js",
     "cleanup-sweep": REPO_ROOT / ".claude" / "workflows" / "cleanup-sweep.js",
 }
 SCHEMA_OPEN = "---- schemas"
 SCHEMA_CLOSE = "---- schemas end"
+BRIEF_OPEN = "---- briefs"
+BRIEF_CLOSE = "---- briefs end"
+
+
+def _region(path: Path, opens: str, closes: str) -> str:
+    """The lines a script marks off, between its two marker lines."""
+    lines = path.read_text().split("\n")
+    a = [i for i, ln in enumerate(lines) if ln.endswith(opens)]
+    b = [i for i, ln in enumerate(lines) if ln.endswith(closes)]
+    return "\n".join(lines[a[0] + 1:b[0]]).strip() if a and b else ""
 
 
 def workflow_schemas(name: str) -> dict:
@@ -379,12 +382,9 @@ def workflow_schemas(name: str) -> dict:
     path = WORKFLOW_SCRIPTS.get(name)
     if path is None or not path.is_file():
         return {}
-    lines = path.read_text().split("\n")
-    opens = [i for i, ln in enumerate(lines) if ln.endswith(SCHEMA_OPEN)]
-    closes = [i for i, ln in enumerate(lines) if ln.endswith(SCHEMA_CLOSE)]
-    if not opens or not closes:
+    region = _region(path, SCHEMA_OPEN, SCHEMA_CLOSE)
+    if not region:
         return {}
-    region = "\n".join(lines[opens[0] + 1:closes[0]])
     names = re.findall(r"^const ([A-Z_]+) = ", region, re.M)
     script = f"{region}\nconsole.log(JSON.stringify({{{', '.join(names)}}}))"
     done = subprocess.run(["node", "--input-type=module", "-"], input=script,
@@ -396,26 +396,14 @@ def workflow_schemas(name: str) -> dict:
 
 
 def workflow_bundle(name: str, roles: Path = ROLE_DIR) -> dict:
-    """What a workflow run needs: the text of each role it reaches, each
-    section of its document as a template with the `{{names}}` left standing
-    for the script to fill, and the return schemas its script holds, read out
-    of the script's own marked region."""
-    registry = nm.Registry(REPO_ROOT)
-    document = registry.load(WORKFLOW_DOCS[name])
-    def rendered(node: nm.Node) -> str:
-        body = nm.Node(nm.DOCUMENT, source=document.source)
-        body.children = list(node.children)
-        return nm.render(body, registry).strip()
-
-    ids = registry.ids[document.source]
-    # A partial the script fills is a section like any other, so the bundle
-    # carries the `###` under Partials beside the `##` briefs.
-    sections = {i: rendered(n) for i, n in ids.items() if n.depth in (2, 3)
-                and i != "partials"}
+    """What a workflow run needs, and what a reader needs to read it: the text
+    of each role it reaches, the return schemas its script holds, and the
+    briefs its script holds. Both regions come out of the script, the schemas
+    evaluated and the briefs as they stand."""
     return {
         "roles": {r: role_text(r, roles) for r in _workflow_roles(name, roles)},
-        "sections": sections,
         "schemas": workflow_schemas(name),
+        "briefs": _region(WORKFLOW_SCRIPTS[name], BRIEF_OPEN, BRIEF_CLOSE),
     }
 
 

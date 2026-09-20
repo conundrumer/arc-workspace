@@ -2,7 +2,7 @@
 
 # Procedure
 - Take each line the brief contains, with its task id. The brief seeds each line with a key from its text; the key is a start, not a verdict.
-- Name the rule that decides the line: the section or bullet of [Principles](../../docs/handbook/principles.md), or of [Style](../../docs/handbook/style.md) or [Keywords](../../docs/handbook/keywords.md) when the line's point is theirs. A line whose head names one rule while its point turns on another takes the rule of its point.
+- Name the rule that decides the line: the section or bullet of [Principles](docs/handbook/principles.md), or of [Style](docs/handbook/style.md) or [Keywords](docs/handbook/keywords.md) when the line's point is theirs. A line whose head names one rule while its point turns on another takes the rule of its point.
 - Two lines share a group when one rule decides both. A line that no rule you can name decides takes a group of its own.
 - A group id is a short kebab-case name for the rule, usable as a directory name.
 - Edit no file. Never run a git command that changes state.

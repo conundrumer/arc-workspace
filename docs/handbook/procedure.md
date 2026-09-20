@@ -18,7 +18,7 @@
 - **Source reading.** Do not read `src/dl/` during a pass. If you do, report to the user why, as a gap in the docs or the runner.
 - **Corpus.** Take a draft as no evidence for a claim about the corpus, and cite one in a doc under `docs/` only in a survey result.
 - **Keywords.**
-    - If no keyword in [Keywords](keywords.md) fits, propose one in the review, and add it to the solver's `@keywords:` line.
+    - If no keyword in [Keywords](docs/handbook/keywords.md) fits, propose one in the review, and add it to the solver's `@keywords:` line.
     - If an existing keyword's gloss should change, propose it in the review.
 
 ## Operations

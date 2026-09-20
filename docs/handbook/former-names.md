@@ -15,7 +15,7 @@
 | concept rule | claim |
 | lib primitive | lib relation |
 | `Position`, the record | `Box`; `Position` is its cell reading |
-- Fit names the case condition that [Cases](principles.md#cases) states.
+- Fit names the case condition that [Cases](docs/handbook/principles.md#cases) states.
 
 ## Identifiers
 | Former | Current |

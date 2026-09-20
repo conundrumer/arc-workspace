@@ -41,11 +41,11 @@
 
 ## Links
 
-- A render rewrites a link's target to stand relative to the repo root, since a session runs from there and a path relative to the source document would not open.
+- A render rewrites a target taken from the document, one that opens with `./` or `../`, to stand from the repo root, since a session runs from there and the document's own path would not open.
     ```
-    - [Principles](principles.md), in a doc under docs/handbook/, renders as [Principles](docs/handbook/principles.md).
+    - [Principles](../docs/handbook/principles.md), in a doc under prompts/, renders as [Principles](docs/handbook/principles.md).
     ```
-- An external target and a slug are left as they stand.
+- A target already taken from the root stands as it is, and so do an external target and a slug.
 
 ## Variables
 
