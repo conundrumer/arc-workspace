@@ -60,6 +60,7 @@
 - Avoid contrastive structures, unless the alternative needs to be addressed.
 - A reference to a document or a section is a link, as [Links](src/controlled_markdown/writing.md#links) gives it.
 - A bare path stands in code that compares it, and nowhere else.
+- Prefer precise and conventional words.
 
 ## Prose a program holds
 - [Prose in code](src/controlled_markdown/writing.md#prose-in-code) states how such a string is written and read.
