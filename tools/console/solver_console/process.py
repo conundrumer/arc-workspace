@@ -638,7 +638,10 @@ def on_result(worker: dict, it: dict | None, ev: dict, phase: str) -> None:
                 store.say(it, store.event("stopped"), sess=phase)
             else:
                 if refusals.refusal_kind(ev) == refusals.RETRIED_REFUSAL:
-                    recover = refusals.REPORT_ASKS.get(worker["trigger"])
+                    # a console ask climbs the ladder; a user comment is cut
+                    # and left for the user to send again
+                    recover = refusals.REPORT_ASKS.get(worker["trigger"]) or (
+                        refusals.REWIND if worker.get("comment") and ask else None)
                 store.say(it, store.event(refusals.failure_note(ev, reason,
                                                                 bool(recover))),
                           sess=phase)
@@ -672,9 +675,9 @@ def on_result(worker: dict, it: dict | None, ev: dict, phase: str) -> None:
         store.DEFERRED.put_nowait(("revive", worker, escalate, handoff))
         drain.ensure_drain()
     elif recover:
-        # The refused ask is in the live process's history as much as in the
-        # transcript, so the retry comes from a fresh process over a
-        # transcript with the ask cut out.
+        # The refused message is in the live process's history as much as in
+        # the transcript, so the process goes: what comes next reads a
+        # transcript with the message cut out.
         workers.detach_for_respawn(it, worker)
         store.DEFERRED.put_nowait(("refuse", worker, recover, ask))
         drain.ensure_drain()

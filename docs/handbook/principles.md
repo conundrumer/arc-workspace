@@ -16,8 +16,9 @@
     - A symbol is declared in a formal statement under the definition or principle that first uses it.
 
 # Principles
-- The goal is for a solver to express a task in a way that matches a person's understanding as closely as possible, and for the corpus to extract as much as possible from the tasks.
-- The relevant part of a person's understanding is how they think the task could vary.
+- The goal is for the corpus to take as much as it can from each task, in this order:
+    - **Concept.** The solver expresses the task as a person sees it, as closely as possible.
+    - **Coverage.** The solver also expresses alternative ways to see the task, for the diversity of ways of writing a solver.
 
 ## Definitions
 
@@ -94,7 +95,7 @@
     - **scene claim**: what every input contains.
         - A scene claim is an invariant of the inputs.
     - **rule**: what the output takes from the input.
-- **concept**: the understanding of the task that a person forms.
+- **concept**: what a person takes the task to be an instance of.
     - **concept statement**: the claims that express the concept.
 - **concept case**: the case whose model the concept statement describes.
 

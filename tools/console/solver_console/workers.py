@@ -36,10 +36,12 @@ def clean_trigger(text: str) -> str | None:
 
 def launch(it: dict, message: str, phase: str, trigger: str | None = None,
            handoff: bool = False, admitted: bool = False,
-           escalated: bool = False) -> None:
+           escalated: bool = False, comment: bool = False) -> None:
     """Spawn the phase worker if needed, then enqueue one turn. The nudge and
     the bail are turns of one chain and keep its count; every other turn starts
-    its own, so a turn asked to think hard is judged on its own stretches."""
+    its own, so a turn asked to think hard is judged on its own stretches.
+    `comment` marks a turn the user's own words opened, which a refusal
+    rewinds rather than asks again."""
     if store.RELOADING and not admitted:
         raise store.Reject("server reload in progress")
     if not escalated:
@@ -99,6 +101,7 @@ def launch(it: dict, message: str, phase: str, trigger: str | None = None,
     start_turn(it, worker, phase, trigger=trigger, handoff=handoff, slash=slash)
     # the message as sent, which is how its transcript row reads
     worker["ask"] = message
+    worker["comment"] = comment
     worker["outbound"].put_nowait({"type": "user",
         "message": {"role": "user", "content": message}})
 
@@ -125,9 +128,9 @@ def start_turn(it: dict, worker: dict, phase: str, trigger: str | None = None,
     worker.pop("steer", None)
     worker.pop("woke", None)
     worker.update(state=state, started=time.time(), trigger=trigger,
-                  handoff=handoff, slash=slash, seen=set(), got_result=False,
-                  think_run=0, reqs={}, launch={}, touched=set(), compacted=False,
-                  idle_since=None)
+                  handoff=handoff, slash=slash, comment=False, seen=set(),
+                  got_result=False, think_run=0, reqs={}, launch={},
+                  touched=set(), compacted=False, idle_since=None)
 
 
 def steer(it: dict, worker: dict, text: str, phase: str) -> None:

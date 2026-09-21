@@ -1,5 +1,6 @@
-"""A report ask the model's safeguards refused: the ladder of retries it
-gets, and the landing the stage settles into once the retries run out."""
+"""A turn the model's safeguards refused: the ladder of retries a report ask
+gets, the landing the stage settles into once the retries run out, and the
+rewind a refused user comment gets instead."""
 
 import json
 import re
@@ -15,10 +16,12 @@ SAFEGUARD = re.compile(r"safeguards flagged.*?\[(\w+)\]", re.S)
 # for its reasoning. A report ask can read that way, so one refused under it
 # is retried: in plainer words first, then on REFUSAL_MODEL, and after that
 # the stage lands with what it has. The ladder answers the console's own
-# asks, by the trigger the turn carries; a refused user comment is the
-# user's to resend.
+# asks, by the trigger the turn carries. A refused user comment is the user's
+# to resend, so it gets no retry; it is cut from the transcript instead, and
+# the next comment resumes a session without the refusal behind it.
 RETRIED_REFUSAL = "reasoning_extraction"
 REPORT_ASKS = {"handoff": "handoff", "bail": "handoff", "callout": "callout"}
+REWIND = "comment"  # the recovery a refused user comment gets: the cut, no retry
 REFUSAL_RETRIES = 2  # asks sent again before the stage lands without one
 
 
@@ -84,8 +87,23 @@ def last_worker_text(it: dict, phase: str) -> str:
     return ""
 
 
+def cut_ask(it: dict, phase: str, session: str, ask: str | None, noun: str) -> None:
+    """Cut the refused message out of the stage's transcript. Caller holds
+    LOCK, with the stage's worker gone."""
+    path = workers.transcript_of(session)
+    if path is None or not ask:
+        return
+    try:
+        if strip_ask(path, ask):
+            store.say(it, store.event(f"refused {noun} cut from the transcript"),
+                      sess=phase)
+    except OSError as exc:
+        store.say(it, store.event(f"transcript cut failed: {exc}"), sess=phase)
+
+
 def recover_refusal(worker: dict, kind: str, ask: str | None) -> None:
-    """Send a refused report ask again, one rung up the ladder.
+    """Send a refused report ask again, one rung up the ladder, or, for a
+    refused user comment (REWIND), cut it and leave the resend to the user.
 
     Runs on the drain thread with the worker already detached, the way revive
     does: the process dies first, the refused ask comes out of the transcript
@@ -106,16 +124,14 @@ def recover_refusal(worker: dict, kind: str, ask: str | None) -> None:
                           sess=phase)
                 it.pop("callout_wait", None)
                 store.turn_died(it, phase)
+            elif kind == REWIND:
+                cut_ask(it, phase, session, ask, "comment")
+                store.say(it, store.event("the refused comment is out of the "
+                                          "session — send it again in other words"),
+                          sess=phase)
+                store.turn_died(it, phase)
             else:
-                path = workers.transcript_of(session)
-                if path is not None and ask:
-                    try:
-                        if strip_ask(path, ask):
-                            store.say(it, store.event("refused ask cut from the transcript"),
-                                      sess=phase)
-                    except OSError as exc:
-                        store.say(it, store.event(f"transcript cut failed: {exc}"),
-                                  sess=phase)
+                cut_ask(it, phase, session, ask, "ask")
                 counts = it.setdefault("refused", {}).setdefault(phase, {})
                 counts[kind] = counts.get(kind, 0) + 1
                 retry_refusal(it, phase, kind, counts[kind])

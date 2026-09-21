@@ -61,7 +61,8 @@ def submit_comment(it: dict, text: str, sess: str | None = None) -> None:
     if not text.startswith("/") and not store.busy_elsewhere(it, sess):
         it["state"] = store.COMMENTED
         it["updated"] = False
-    workers.launch(it, text, sess, trigger=workers.clean_trigger(text))
+    workers.launch(it, text, sess, trigger=workers.clean_trigger(text),
+                   comment=True)
 
 
 act_comment = store.action(submit_comment)
