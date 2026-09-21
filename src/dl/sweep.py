@@ -34,40 +34,16 @@ from dl.source import (
     swap_facts,
 )
 
-# Every sentence the sweep prints, keyed by the clause it states. A slot,
-# `{name}`, is filled by the render. `dl.sweep_open` reads these clauses back
-# off a cached report, so the wording is the interface between the two.
-MESSAGES = mctx({
-        "skip": "{param}: not swept — {detail}",
-        "whole": "swept whole",
-        "near-set": "swept single-row changes; {swept} of {whole} sets",
-        "cut-set": "cut by the time limit; {run} of {whole} sets",
-        "near": " (swept single-column changes; {swept} of {whole} values)",
-        "cut": " (cut by the time limit; {run} of {whole} values)",
-        "unique-set": "{param}: unique as a set = {shown}{mark} (facts fit only "
-                      "together; {scope})",
-        "unique": "{param}: unique = {shown}{mark}{scope}",
-        "set-of": "{param}: set of {count} = [{shown}]{mark}{scope}",
-        "stored-set": "stored {shown} ({scope})",
-        "stored": "stored {shown}",
-        "admits-sets": "train also admits sets {shown}",
-        "admits": "train also admits [{shown}]",
-        "refutes": "test refutes {shown} — {note}",
-        "passing": "{shown} reproduce the stored outputs on test too",
-        "in-kind": "[{shown}] differ from stored in kind, so the pairs do not fix "
-                   "this parameter",
-        "below": "[{shown}] fit and are smaller than stored",
-        "determined": "the determination picks the stored value",
-        "open": "a determination from train alone could pick it",
-        "cases": "{param}: the cases admit different values",
-        "whole-domain": "{label} admit{s} the whole domain [{shown}], so {label} "
-                        "never read{s} {param} — move {param} under the marker of "
-                        "the cases that read it",
-        "unexercised": "{label} admit{s} [{shown}], so the pairs do not exercise "
-                       "{param} under {label}",
-        "admits-case": "{label} admit{s} [{shown}]",
-        "progress": "sweeping {name}: {count} candidate values",
-})
+# `dl.sweep_open` reads the clauses of a report back off a cached run, so
+# the wording the render prints is the interface between the two.
+PROGRESS = mctx("sweeping {name}: {count} candidate values")
+"""The line the sweep prints to stderr as it starts one parameter."""
+
+REFUTES = mctx("test refutes {shown} — {note}")
+"""The clause on the values the test pairs refute."""
+
+PASSING = mctx("{shown} reproduce the stored outputs on test too")
+"""The clause on the values the test pairs admit as well."""
 
 MAX_CANDIDATES = 256
 TIME_LIMIT_SECONDS = 180.0
@@ -286,7 +262,7 @@ def sweep_report(
             admits = frozenset.intersection(*passing) if passing else None
             return vals, profile == reference, admits
 
-        print(MESSAGES["progress"].format(
+        print(PROGRESS.format(
             name=public_param(param), count=len(candidates)),
               file=sys.stderr)
         rows, run = _run_candidates(test, candidates, clock)
@@ -466,7 +442,7 @@ def _set_sweep(
         profile = _profile(swap_facts(source, param, sorted(value)), task.train)
         return value if profile == reference else None
 
-    print(MESSAGES["progress"].format(name=name, count=len(subsets)),
+    print(PROGRESS.format(name=name, count=len(subsets)),
           file=sys.stderr)
     rows, run = _run_candidates(test, subsets, clock)
     fitting = [f for f in rows if f]
@@ -528,8 +504,9 @@ def _refuted_note(param: str, determined: set[str]) -> str:
     """What a refuted extra means for this parameter: a determination that
     reproduces the stored value already picks it from train; without one,
     such a determination is open."""
-    return (MESSAGES["determined"] if param in determined
-            else MESSAGES["open"])
+    return (mctx("the determination picks the stored value")
+            if param in determined
+            else mctx("a determination from train alone could pick it"))
 
 
 def render_sweep(
@@ -561,7 +538,8 @@ def render_sweep(
     lines = []
     for param, status, detail in results:
         if status == "skip":
-            lines.append(MESSAGES["skip"].format(param=param, detail=detail))
+            lines.append(mctx("{param}: not swept — {detail}").format(
+                param=param, detail=detail))
             continue
         if status == "cases":
             lines.append(_render_cases(param, detail, show))
@@ -569,13 +547,15 @@ def render_sweep(
         if status in ("swept-set", "swept-set-near", "swept-set-cut"):
             fitting, stored, types, verdicts = detail[:4]
             stored_set = frozenset(stored)
-            scope = MESSAGES["whole"]
+            scope = mctx("swept whole")
             if status == "swept-set-near":
                 swept, whole = detail[4]
-                scope = MESSAGES["near-set"].format(swept=swept, whole=whole)
+                scope = mctx("swept single-row changes; {swept} of {whole} "
+                             "sets").format(swept=swept, whole=whole)
             elif status == "swept-set-cut":
                 run, whole = detail[4]
-                scope = MESSAGES["cut-set"].format(run=run, whole=whole)
+                scope = mctx("cut by the time limit; {run} of {whole} "
+                             "sets").format(run=run, whole=whole)
 
             def show_value(value, types=types):
                 return "{" + ", ".join(show(v, types) for v in sorted(value)) + "}"
@@ -586,33 +566,40 @@ def render_sweep(
             shown_s = show_value(stored_set)
             if set(fitting) == {stored_set}:
                 mark = " ✓" if status == "swept-set" else ""
-                lines.append(MESSAGES["unique-set"].format(
+                lines.append(mctx(
+                    "{param}: unique as a set = {shown}{mark} (facts fit only "
+                    "together; {scope})").format(
                     param=param, shown=shown_s, mark=mark, scope=scope))
                 continue
             extras = sorted(set(fitting) - {stored_set}, key=sorted)
             refuted = [e for e in extras if not verdicts.get(e, False)]
             passing = [e for e in extras if verdicts.get(e, False)]
             parts = [
-                MESSAGES["stored-set"].format(shown=shown_s, scope=scope),
-                MESSAGES["admits-sets"].format(shown=show_values(extras)),
+                mctx("stored {shown} ({scope})").format(
+                    shown=shown_s, scope=scope),
+                mctx("train also admits sets {shown}").format(
+                    shown=show_values(extras)),
             ]
             if refuted:
-                parts.append(MESSAGES["refutes"].format(
+                parts.append(REFUTES.format(
                     shown=show_values(refuted),
                     note=_refuted_note(param, determined)))
             if passing:
-                parts.append(MESSAGES["passing"].format(
-                    shown=show_values(passing)))
+                parts.append(PASSING.format(shown=show_values(passing)))
             lines.append(f"{param}: " + "; ".join(parts))
             continue
         fitting, stored, types, verdicts = detail[:4]
         scope = ""
         if status == "swept-near":
             swept, whole = detail[4]
-            scope = MESSAGES["near"].format(swept=swept, whole=whole)
+            scope = " " + mctx(
+                "(swept single-column changes; {swept} of {whole} "
+                "values)").format(swept=swept, whole=whole)
         elif status == "swept-cut":
             run, whole = detail[4]
-            scope = MESSAGES["cut"].format(run=run, whole=whole)
+            scope = " " + mctx(
+                "(cut by the time limit; {run} of {whole} values)").format(
+                    run=run, whole=whole)
         vset, sset = set(fitting), set(stored)
         def shown(vals, types=types):
             return ", ".join(show(v, types) for v in vals)
@@ -621,10 +608,12 @@ def render_sweep(
         if vset == sset:
             mark = "" if scope else " ✓"
             if len(sset) == 1:
-                lines.append(MESSAGES["unique"].format(
-                    param=param, shown=shown_s, mark=mark, scope=scope))
+                lines.append(
+                    mctx("{param}: unique = {shown}{mark}{scope}").format(
+                        param=param, shown=shown_s, mark=mark, scope=scope))
             else:
-                lines.append(MESSAGES["set-of"].format(
+                lines.append(mctx(
+                    "{param}: set of {count} = [{shown}]{mark}{scope}").format(
                     param=param, count=len(sset), shown=shown_s, mark=mark,
                     scope=scope))
             continue
@@ -633,24 +622,28 @@ def render_sweep(
         extras = sorted(vset - sset)
         refuted = [e for e in extras if not verdicts.get(e, False)]
         passing = [e for e in extras if verdicts.get(e, False)]
-        parts = [MESSAGES["stored"].format(shown=shown_s),
-                 MESSAGES["admits"].format(shown=shown(extras))]
+        parts = [mctx("stored {shown}").format(shown=shown_s),
+                 mctx("train also admits [{shown}]").format(
+                     shown=shown(extras))]
         if refuted:
-            parts.append(MESSAGES["refutes"].format(
+            parts.append(REFUTES.format(
                 shown=f"[{shown(refuted)}]",
                 note=_refuted_note(param, determined)))
         if passing:
-            parts.append(MESSAGES["passing"].format(
-                shown=f"[{shown(passing)}]"))
+            parts.append(PASSING.format(shown=f"[{shown(passing)}]"))
             kind = [e for e in passing
                     if not any(_num_peer(e, s, types) for s in sset)]
             if kind:
-                parts.append(MESSAGES["in-kind"].format(shown=shown(kind)))
+                parts.append(
+                    mctx("[{shown}] differ from stored in kind, so the pairs "
+                         "do not fix this parameter").format(shown=shown(kind)))
             below = sorted(
                 e for e in passing if any(_num_below(e, s, types) for s in sset)
             )
             if below:
-                parts.append(MESSAGES["below"].format(shown=shown(below)))
+                parts.append(
+                    mctx("[{shown}] fit and are smaller than stored").format(
+                        shown=shown(below)))
         lines.append(f"{param}: " + "; ".join(parts) + scope)
     return lines
 
@@ -663,18 +656,24 @@ def _render_cases(param: str, detail: tuple, show) -> str:
         groups.setdefault(values, []).append(case)
     order = sorted(groups.items(), key=lambda g: (len(g[0]), sorted(g[1])))
     least = order[0][0]
-    parts = [MESSAGES["cases"].format(param=param)]
+    parts = [mctx("{param}: the cases admit different values").format(
+        param=param)]
     for values, cases in order:
         label = ", ".join(cases)
         s = "" if len(cases) > 1 else "s"
         shown = ", ".join(show(v, types) for v in sorted(values))
         if values == domain:
-            parts.append(MESSAGES["whole-domain"].format(
+            parts.append(mctx(
+                "{label} admit{s} the whole domain [{shown}], so {label} never "
+                "read{s} {param} — move {param} under the marker of the cases "
+                "that read it").format(
                 label=label, s=s, shown=shown, param=param))
         elif values != least:
-            parts.append(MESSAGES["unexercised"].format(
+            parts.append(mctx(
+                "{label} admit{s} [{shown}], so the pairs do not exercise "
+                "{param} under {label}").format(
                 label=label, s=s, shown=shown, param=param))
         else:
-            parts.append(MESSAGES["admits-case"].format(
+            parts.append(mctx("{label} admit{s} [{shown}]").format(
                 label=label, s=s, shown=shown))
     return "; ".join(parts)

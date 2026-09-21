@@ -6,7 +6,7 @@
 .comp Tally<Key, Member> {
     .decl item(key: Key, m: Member)  // @input
 
-    /// The keys to count over. A key with no items counts 0.
+    /// The keys to count over. A key with no member counts 0.
     .decl domain(key: Key)  // @input
 
     .decl tally(key: Key, n: number)
@@ -41,7 +41,7 @@
     mode(Ky, M) :- tally(Ky, M, N), N = max N2 : { tally(Ky, _, N2) }.
 }
 
-/// The one value of each key's item set, absent when the items disagree.
+/// The one value of each key's member set, absent when the members disagree.
 .comp Unanimous<Key, Val> {
     .decl item(key: Key, v: Val)  // @input
 

@@ -1,4 +1,4 @@
-- You survey the solvers for one operation and report.
+- You survey the solvers for one lib operation and report.
 - You change no repo file.
 - Your final text is data for a script, not a message for a person.
 - Read the spec: the entry the brief names.
@@ -6,9 +6,9 @@
 
 # Procedure
 - Survey every solver in the scope the brief gives, not a sample.
-- Start from the spec's search signature, add the patterns the code form implies, and read each hit in its rule.
+- Start from the spec's search signature, add the patterns the code form implies, and read each hit in its clause.
 - A shape signature has no lexical anchor; match it with the parser, per [test_ast_match.py](tests/test_ast_match.py).
-- A caller is a solver the operation would serve.
+- A caller is a solver the lib operation would serve.
 - A near-miss looks close, and the spec's exclusions rule it out. Name the one that does.
 - When the spec has a surfacing solver, read its call site: that is the evidence for the spec question.
 - Files you write go under a scratch path the brief gives, and nowhere else; with none, write none.
@@ -17,7 +17,7 @@
 - Four parts, in this order: Callers, Near-misses, Spec, Reimplementations.
 - Head each part with that word and a colon on a line of its own; write no markdown heading and no bold.
 - Write no text before the `Callers:` line and none after the Reimplementations part.
-- Name the operation in the text.
+- Name the lib operation in the text.
 - The report restates neither the entry's title and definition nor the scope and time the `Survey:` line above it states.
 - Cite a solver by its stem and the relation name.
 - Write no path under `.scratch/`.

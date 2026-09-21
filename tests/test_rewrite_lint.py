@@ -140,7 +140,7 @@ out(X) :- helper(X).
 def test_long_rule():
     long = "out(P) :- " + ", ".join(f"g{i}(P)" for i in range(20)) + "."
     src = f".decl out(p: number)\n{long}\n"
-    assert "long-rule" in cats(src)
+    assert "long-clause" in cats(src)
 
 
 def test_parse_error_is_a_finding():

@@ -125,7 +125,7 @@
                 + gloss
     * comment
         - A model that agrees with the concept case on every input on which the concept case is defined has no witness against it, whatever it gives elsewhere.
-- **annotator**: the user or agent who judges a witness.
+- **annotator**: whoever judges a witness.
 - **plausibility**: the annotator's ordinal estimate of how readily the generator could produce the witness. Its value is the first applicable level:
     - `ordinary`: readily, without breaking any invariant of the inputs.
         - 3b4c2228
@@ -200,9 +200,9 @@
 - **Grounding.** Every number in a solver counts concrete things the task has.
     - A distance counts the cells between something and an edge.
     - A size counts the members of a set.
-    - A rank counts the members that come before one item in an order.
-- Clause arithmetic expresses a relational operation.
-    - The program states that operation directly.
+    - A rank counts the members that come before a given member in an order.
+- Clause arithmetic expresses a relation.
+    - The program states that relation directly.
     - A wraparound shift is a walk around a cycle.
 - **Zero is absence.** A `0` counts nothing that is present.
     - In a spatial setting, `0` represents the absence of a gap, offset, or distance.

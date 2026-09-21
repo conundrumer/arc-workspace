@@ -61,8 +61,8 @@ const brief = (item) => {
 - Scratch: .scratch/${item.stem}/.
 - Span: the lines the findings below name.
 - Every finding below is rewritten to the direct form it states.
-    - A \`negated-value\` finding's comparison becomes the negated primitive.
-    - A \`negated-use\` finding's wrapper relation goes, and the use that negated it negates the primitive.
+    - A \`negated-value\` finding's comparison becomes the negated lib relation.
+    - A \`negated-use\` finding's wrapper relation goes, and the use that negated it negates the lib relation.
 - A finding you leave as written is reported under \`kept\`, with the reason.
 - Findings:
 

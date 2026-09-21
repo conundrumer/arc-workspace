@@ -4,8 +4,8 @@ export const meta = {
   phases: [
     { title: 'Read', detail: 'one agent turns the window into issues' },
 
-    { title: 'Sweep', detail: 'one agent sweeps the parameter values of every solver the window names, beside the check and review stages; then one agent writes a review line into each solver a parameter stays open in', model: 'sonnet' },
-    { title: 'Check', detail: 'one agent per group of issues: closed, dropped, or open with candidate fixes' },
+    { title: 'Sweep', detail: 'one agent sweeps the parameter values of every solver the window names, beside the check and review phases; then one agent writes a review line into each solver a parameter stays open in', model: 'sonnet' },
+    { title: 'Check', detail: 'one agent per area of issues: closed, dropped, or open with candidate fixes' },
     { title: 'Review', detail: 'one agent asks the two questions over every open issue and takes a default', model: 'fable' },
     { title: 'Fix', detail: 'each code target in a worktree of its own, merged into the repo one merge at a time, the prose targets in units of at most five that a Codex session fixes then prunes, every other target in parallel' },
     { title: 'Resolve', detail: 'one agent per solver that took a review line in this run, which acts on the line and writes its report' },
@@ -27,9 +27,9 @@ const mctx = (parts, ...values) => {
   return lines.map(l => (l.trim() ? l.slice(pad) : '')).join('\n')
 }
 // A run takes its `roles` in `args`, as `.claude/skills/session/SKILL.md`
-// says to pass them. Each stage runs a handbook agent under a role from
+// says to pass them. Each phase runs a handbook agent under a role from
 // prompts/roles/, and its brief is built in the briefs region below. The
-// sweep, the sweep lines, the checks, and each prose unit of the fix stage
+// sweep, the sweep lines, the tree checks, and each prose unit of the fix phase
 // take no role: each runs one command and returns what that command printed.
 // This script carries the order, the fan-out, the return schemas, and the
 // briefs.
@@ -39,16 +39,16 @@ const mctx = (parts, ...values) => {
 // a return value, so a later brief names the path and the agent that takes
 // that brief reads it.
 //
-// The prose units of the fix stage run on Codex: the agent of such a unit runs
+// The prose units of the fix phase run on Codex: the agent of such a unit runs
 // `scripts/retro_codex.py`, which hands the unit's brief to one `codex exec`
 // session and prints that session's final message. Codex makes the edits.
 //
-// Each unit of the fix stage is a chain of its own: the verify pass of a unit
+// Each unit of the fix phase is a chain of its own: the verify phase of a unit
 // starts as soon as that unit's fix lands, beside the fix of another unit. The
-// checks are a barrier after every unit, since they test the combined tree.
+// tree checks are a barrier after every unit, since they test the combined tree.
 //
 // A code unit takes a git worktree of the repo at HEAD, so the code units run
-// beside each other rather than one at a time. Its fix and its verify pass both
+// beside each other rather than one at a time. Its fix and its verify phase both
 // work in that worktree. `scripts/retro_merge.py` then takes the worktree's
 // whole change into the repo and removes the worktree. Two applies on one tree
 // can race, so the merges run one at a time, in the order the units reach them.
@@ -62,36 +62,36 @@ const mctx = (parts, ...values) => {
 //                      returns an error.
 //   {}                 full run; returns every call with its default, for, and against.
 //   { dry: true }      full run that stops before Fix and returns the fixes it would make.
-//   { fixes: [...] }   second run after the user's rulings: Fix, Resolve, Consistency, Apply, Cleanup,
+//   { fixes: [...] }   second run after the user's rulings: Fix, Resolve, Consistency, Cleanup,
 //                      and Verify, over the given fixes.
 //                      Each fix: { id, kind, target, edit, tasks }: a call's id with one entry
 //                      per target, as the dry run returned them under `dry`, and the issue's
 //                      task ids, which a fix over a principle writes a review line into.
 //                      The fixes are ruled: the prune step keeps their substance.
 //   { resolve: [...] } Resolve over the given task ids, whatever review lines their headers hold.
-//                      It reaches Consistency, the Apply step of that stage, and Cleanup after it, then
-//                      the checks under Verify, and no other stage. The returned object carries the
+//                      It reaches Consistency, the Apply step of that phase, and Cleanup after it, then
+//                      the tree checks under Verify, and no other phase. The returned object carries the
 //                      Apply results under `applied`.
 //   { sweep: [...] }   in a resolve run alone: the solver stems the run sweeps first. A name that
 //                      is not a task id is dropped. The sweep writes its review lines, then Resolve
 //                      takes those solvers beside the ones args.resolve names, which may be an
 //                      empty list. The returned object carries the sweep and the sweep lines.
 //   { worktrees: false }
-//                      runs the code units of the fix stage one at a time on the repo itself, for a
+//                      runs the code units of the fix phase one at a time on the repo itself, for a
 //                      tree where a worktree cannot work. Absent or `true`, each code unit takes a
 //                      worktree of its own and its change is merged back.
-//   { codex: ... }     how the prose units of the fix stage run. The default is a Codex session
+//   { codex: ... }     how the prose units of the fix phase run. The default is a Codex session
 //                      under Codex's own model and effort. `false` runs them on a handbook agent
 //                      instead; `{ model, effort }` passes those two to Codex. A unit whose Codex
 //                      session returns nothing falls back to the handbook agent on its own.
 
 // ---------------------------------------------------------------- schemas
 
-// The return schemas, one per stage. Each description is an `mctx` literal,
+// The return schemas, one per phase. Each description is an `mctx` literal,
 // so the check reads its words where they stand.
 
-// The call's discretion level: how much room the default took beyond what the
-// grounds determine. A level-4 fix is not made in the first run.
+// The call's discretion tier: how much room the default took beyond what the
+// grounds determine. A tier-4 fix is not made in the first run.
 const TIER = { type: 'integer', minimum: 1, maximum: 4 }
 
 const FIX_REF = {
@@ -110,7 +110,7 @@ const FIX_CANDIDATE = {
     ...FIX_REF.properties,
     for: { type: 'string' },
     against: { type: 'string' },
-    illustration: { type: 'string', description: mctx`the illustration your role's Procedure requires of a level-3 fix to Principles` },
+    illustration: { type: 'string', description: mctx`the illustration your role's Procedure requires of a tier-3 fix to Principles` },
   },
   required: [...FIX_REF.required, 'for', 'against'],
 }
@@ -124,13 +124,13 @@ const ISSUES_SCHEMA = {
         type: 'object',
         properties: {
           id: { type: 'string', description: mctx`I1, I2, and so on, in count-descending order` },
-          group: { type: 'string', description: mctx`the file or the tool the issue is about, as your role's Procedure defines a group` },
+          area: { type: 'string', description: mctx`the area, as your role's Procedure defines one` },
           issue: { type: 'string', description: mctx`the issue in one plain sentence, stated as your role's Procedure requires` },
           count: { type: 'integer' },
           tasks: { type: 'array', items: { type: 'string' } },
           quote: { type: 'string', description: mctx`one callout, verbatim` },
         },
-        required: ['id', 'group', 'issue', 'count', 'tasks', 'quote'],
+        required: ['id', 'area', 'issue', 'count', 'tasks', 'quote'],
       },
     },
     borderline_drops: {
@@ -153,7 +153,7 @@ const CHECK_SCHEMA = {
           id: { type: 'string' },
           status: { type: 'string', enum: ['closed', 'dropped', 'open'] },
           closed_by: { type: 'string', description: mctx`closed: the commit or the current text that closes it` },
-          tier: { ...TIER, description: mctx`dropped: the drop's discretion level, as your role's Procedure states it` },
+          tier: { ...TIER, description: mctx`dropped: the drop's discretion tier, as your role's Procedure states it` },
           basis: { type: 'string', description: mctx`dropped: the principle, norm, or fact the drop rests on` },
           for: { type: 'string', description: mctx`dropped: what argues for the drop, stated as your role's Procedure requires` },
           against: { type: 'string', description: mctx`dropped: what argues against the drop, stated the same way; empty when nothing does` },
@@ -178,7 +178,7 @@ const REVIEW_SCHEMA = {
         properties: {
           id: { type: 'string' },
           default: { type: 'string', enum: ['fix', 'replace', 'drop'], description: mctx`the outcome that holds unless the user rules otherwise` },
-          tier: { ...TIER, description: mctx`the call's discretion level, as your role's Procedure states it` },
+          tier: { ...TIER, description: mctx`the call's discretion tier, as your role's Procedure states it` },
           reason: { type: 'string', description: mctx`the answer to the two questions, in one or two sentences` },
           basis: { type: 'string', description: mctx`the principle, the norm, or the fact the call rests on` },
           for: { type: 'string', description: mctx`what argues for the default, stated as your role's Procedure requires` },
@@ -192,9 +192,9 @@ const REVIEW_SCHEMA = {
                 choice: { type: 'string', description: mctx`the reading's one-word label` },
                 wording: { type: 'string', description: mctx`the text the file carries under this reading` },
                 consequence: { type: 'string', description: mctx`what a session that reads this wording does differently` },
-                witness: { type: 'string', description: mctx`a task or a solver where this reading and the others differ` },
+                where: { type: 'string', description: mctx`a task or a solver on which this reading and the others differ` },
               },
-              required: ['choice', 'wording', 'consequence', 'witness'],
+              required: ['choice', 'wording', 'consequence', 'where'],
             },
           },
           fixes: { type: 'array', items: FIX_REF, description: mctx`the fix the default calls for, one entry per file it edits` },
@@ -268,8 +268,8 @@ const VERIFY_SCHEMA = {
         required: ['kind', 'finding', 'fixed', 'other_file'],
       },
     },
-    diff_path: { type: 'string', description: mctx`the repo-relative path of the diff file written for this pass's own changes; empty when it changed nothing` },
-    changed: { type: 'boolean', description: mctx`whether this pass changed a file` },
+    diff_path: { type: 'string', description: mctx`the repo-relative path of the diff file written for your own changes; empty when it changed nothing` },
+    changed: { type: 'boolean', description: mctx`whether you changed a file` },
   },
   required: ['findings', 'diff_path', 'changed'],
 }
@@ -343,7 +343,7 @@ const SWEEP_LINES_SCHEMA = {
   required: ['solvers'],
 }
 
-// The apply stage returns the resolve shape, with the point in place of the lines.
+// The Apply step returns the resolve shape, with the subject in place of the lines.
 const APPLY_SCHEMA = {
   type: 'object',
   properties: {
@@ -421,7 +421,7 @@ const CONSISTENCY_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          point: { type: 'string', description: mctx`the subject the solvers' review lines share` },
+          subject: { type: 'string', description: mctx`what the solvers' review lines share` },
           solvers: { type: 'array', items: { type: 'string' }, description: mctx`the task ids the entry holds between` },
           principled: { type: 'boolean', description: mctx`whether the tasks differ in a way a rule of the docs names` },
           rule: { type: 'string', description: mctx`the doc section of the rule the entry rests on` },
@@ -430,7 +430,7 @@ const CONSISTENCY_SCHEMA = {
           form: { type: 'string', description: mctx`the form the solvers should agree on` },
           ground: { type: 'string', description: mctx`what the judgment rests on: the passage read, by doc and section` },
         },
-        required: ['point', 'solvers', 'principled', 'rule', 'reading', 'wording', 'form', 'ground'],
+        required: ['subject', 'solvers', 'principled', 'rule', 'reading', 'wording', 'form', 'ground'],
       },
     },
   },
@@ -450,11 +450,11 @@ const slug = (text) => text.split('/').join('__').replace(/[^A-Za-z0-9._-]+/g, '
 const diffPath = (target) => `${DIFF_DIR}/${slug(target)}.diff`
 // A prose target takes a second pass, and its prune step leaves its own diff.
 const prunePath = (target) => `${DIFF_DIR}/${slug(target)}__prune.diff`
-// A verify pass fixes what it finds, so it leaves a diff of its own.
+// A verify phase fixes what it finds, so it leaves a diff of its own.
 const verifyPath = (label) => `${DIFF_DIR}/${slug(label)}__verify.diff`
-// A resolve pass writes the solver, so it leaves a diff of its own.
+// A resolve phase writes the solver, so it leaves a diff of its own.
 const resolvePath = (taskId) => `${DIFF_DIR}/${slug(taskId)}__resolve.diff`
-// An apply pass writes the solver beside the resolve pass, so its diff takes a
+// An apply step writes the solver beside the resolve phase, so its diff takes a
 // path of its own.
 const applyPath = (taskId) => `${DIFF_DIR}/${slug(taskId)}__apply.diff`
 
@@ -484,7 +484,7 @@ const readerFor = (target) =>
       : target.startsWith('prompts/agents/') ? 'a handbook agent that reads the definition rendered from it'
         : target === 'prompts/console.md' ? 'a console worker that reads the message in its stage'
           : target === 'prompts/codex.md' ? 'a codex session that reads `AGENTS.md`'
-            : target === 'prompts/session.md' || target === 'prompts/run_dl.md' ? SOLVER_SESSION
+            : target === 'prompts/session.md' || target === 'prompts/run_dl.md' || target === '.claude/skills/session/SKILL.md' || target === 'CLAUDE.md' ? SOLVER_SESSION
               : target === 'docs/handbook/editing.md' ? MAINTAINER
                 : target.startsWith('docs/handbook/') ? SOLVER_SESSION
                   : target === 'programs/lib.dl' || target.startsWith('programs/lib/') ? SOLVER_SESSION
@@ -496,7 +496,7 @@ const otherDiffs = (made) => (made.edit.diffs || []).filter(d => d.file && !made
 const diffFiles = (made) => [...new Set(otherDiffs(made).map(d => d.file))]
 
 // The seed key of a review line: its kind, its head, and the start of its
-// point. A line of another form is no review line, and takes no key.
+// subject. A line of another form is no review line, and takes no key.
 const seedKey = (line) => {
   const m = /^\/\/\s*review\s+(\w+):\s*(.*?)\s+—\s+(.*)$/.exec(line)
   return m ? `${m[1]}|${m[2]}|${m[3].slice(0, 40)}` : null
@@ -504,7 +504,7 @@ const seedKey = (line) => {
 
 // ---------------------------------------------------------------- briefs
 
-// The brief each stage sends its agent. Each is an `mctx` literal, so the
+// The brief each phase sends its agent. Each is an `mctx` literal, so the
 // check reads its words as the format where they stand. A hole in a literal
 // is a name, and the value it takes is computed above it. A fence inside a
 // literal takes tildes, since the literal's own delimiter is a backtick.
@@ -516,10 +516,10 @@ const NO_WRITES = mctx`- Change no file.
 
 const readTask = () => mctx`- Read the retro window and return the issues.`
 
-const checkTask = (group, issues) => {
+const checkTask = (area, issues) => {
   const list = JSON.stringify(issues, null, 2)
   return mctx`
-- Check these issues, all about ${group}.
+- Check these issues, all about ${area}.
 
 ~~~json
 ${list}
@@ -582,7 +582,7 @@ const worktreeNote = () => mctx`
 - Report the absolute path of the worktree in \`worktree\`.
 `
 
-// The verify pass of a code unit works in the worktree its fix worked in, so
+// The verify phase of a code unit works in the worktree its fix worked in, so
 // the change it reads and the change it makes stay in one tree.
 const worktreeVerifyNote = (worktree) => mctx`
 - The fix worked in a git worktree of the repo, at ${worktree}.
@@ -650,7 +650,7 @@ ${groups}
 ${others}
 ${chain}
 - Write the diff of your own changes, verbatim, to ${where}, and report that path.
-- A pass that changed nothing writes no file and reports an empty path.
+- A run that changed nothing writes no file and reports an empty path.
 ` + worktree
 }
 
@@ -765,7 +765,7 @@ const consistencyTask = (group, rule, members) => {
   })), null, 2)
   return mctx`
 - Compare these solvers, the group \`${group}\`, under the rule ${rule}.
-- Each entry names one solver, its report, and the review lines the Resolve stage acted on in it under that rule.
+- Each entry names one solver, its report, and the review lines the Resolve phase acted on in it under that rule.
 - Scratch goes under \`${scratch}\`.
 
 ~~~json
@@ -779,14 +779,14 @@ ${list}
 const applyTask = (taskId, d) => {
   const solver = solverTarget(taskId)
   const divergence = JSON.stringify(
-    { point: d.point, reading: d.reading, form: d.form }, null, 2)
+    { subject: d.subject, reading: d.reading, form: d.form }, null, 2)
   const where = applyPath(taskId)
   const report = `${REPORT_DIR}/${taskId}/retro-consistency.md`
   return mctx`
 - The solver: ${solver}.
 - The diff path: ${where}.
 - The report path: ${report}.
-- The point, the reading, and the form:
+- The subject, the reading, and the form:
 
 ~~~json
 ${divergence}
@@ -816,7 +816,7 @@ ${command}
 
 
 
-// ---------------------------------------------------------------- stages
+// ---------------------------------------------------------------- phases
 
 const byKey = (items, key) => {
   const m = new Map()
@@ -837,7 +837,7 @@ const kindOf = (fixes) =>
 
 const fixRole = (kind) => (kind === 'solver' ? 'solver' : 'retro-fix')
 
-// A stage's task under its role: the role text, then the brief, so the agent
+// A phase's task under its role: the role text, then the brief, so the agent
 // has its role before its first action. The texts come from args. A role's
 // first line may name its agent. The spawn takes the agent from that line
 // and the prompt from the rest.
@@ -924,12 +924,12 @@ const PROSE_UNIT = 5
 // Whether a code unit takes a worktree of its own.
 const WORKTREES = !(args && args.worktrees === false)
 
-// Each unit is a chain: the fix, then the verify pass over what that fix left,
+// Each unit is a chain: the fix, then the verify phase over what that fix left,
 // then, for a unit in a worktree, the merge of that worktree into the repo. A
 // unit's chain runs beside the chains of the other units. The return carries
-// the units that landed and the findings of their verify passes. The phase of
+// the units that landed and the findings of their verify phases. The phase of
 // every agent here is set per call, since the chains overlap.
-async function fixStage(fixes, ruled = false) {
+async function fixPhase(fixes, ruled = false) {
   const targets = [...byKey(fixes, f => f.target)].map(([target, fs]) => ({ target, fixes: fs, kind: kindOf(fs) }))
   const code = targets.filter(t => t.kind === 'code').map(t => unit([t], 'code'))
   const proseUnits = chunks(targets.filter(t => t.kind === 'prose'), PROSE_UNIT)
@@ -957,7 +957,7 @@ async function fixStage(fixes, ruled = false) {
     return edit ? fixed(u, edit) : null
   }
 
-  // The verify pass of one unit, over the diffs that unit's own fix left. A fix
+  // The verify phase of one unit, over the diffs that unit's own fix left. A fix
   // that changed nothing leaves nothing to read.
   const verifyUnit = async (m) => {
     if (!(m.edit.diffs || []).length) return null
@@ -991,7 +991,7 @@ async function fixStage(fixes, ruled = false) {
     return { made: null, finding: null }
   }
 
-  // The stages of one chain. A stage of a unit whose fix returned nothing
+  // The steps of one chain. A step of a unit whose fix returned nothing
   // passes that on.
   const fixStep = (isolate) => async (u) => ({ made: await makeFix(u, isolate) })
   const verifyStep = async (s) => (s.made ? { ...s, finding: await verifyUnit(s.made) } : s)
@@ -999,7 +999,7 @@ async function fixStage(fixes, ruled = false) {
 
   // Units of one serial run edit the same tree and the same suite, so they go
   // one at a time, each starting from the tree the previous one left. Each
-  // verify pass judges the tests of the whole run, so it takes the paths of the
+  // verify phase judges the tests of the whole run, so it takes the paths of the
   // other diffs of that run.
   const serial = async (units) => {
     const made = []
@@ -1028,8 +1028,8 @@ async function fixStage(fixes, ruled = false) {
   return { made: done.map(s => s.made), findings }
 }
 
-// The checks test the combined tree, so they are a barrier after every unit.
-async function checksStage() {
+// The tree checks test the combined tree, so they are a barrier after every unit.
+async function checksPhase() {
   const done = await agent(checksTask(), { label: 'checks', phase: 'Verify', schema: CHECKS_SCHEMA, model: 'sonnet', effort: 'low' })
   const checks = done ? done.checks : []
   log(`${checks.filter(c => !c.passed).length} failing checks`)
@@ -1043,14 +1043,14 @@ const chunks = (items, size) => {
   return out
 }
 
-// The label one agent of a chunked stage carries.
+// The label one agent of a chunked phase carries.
 const chunkLabel = (name, i, n) => (n > 1 ? `${name}:${i + 1}/${n}` : name)
 
 // The window names the solvers the sessions wrote. A name that is not a task
 // id names no solver, and is dropped. The stems go in chunks of at most 25, one
 // agent per chunk, so a parameter value the pairs leave open is reported beside
 // the calls.
-async function sweepStage(stems) {
+async function sweepPhase(stems) {
   const ids = [...new Set((stems || []).map(s => (s || '').trim()).filter(s => /^[0-9a-f]{8}$/.test(s)))]
   if (!ids.length) return null
   const parts = chunks(ids, 25)
@@ -1066,7 +1066,7 @@ async function sweepStage(stems) {
 // A solver the sweep leaves a parameter open in takes one review line per open
 // parameter, and keeps the draft state it has. The solvers go in chunks of at
 // most 20, one agent per chunk.
-async function sweepLinesStage(sweeps) {
+async function sweepLinesPhase(sweeps) {
   const open = (sweeps || []).filter(s => s.params && s.params.length)
   if (!open.length) return null
   const parts = chunks(open, 20)
@@ -1081,8 +1081,8 @@ async function sweepLinesStage(sweeps) {
 
 // What the docs settle is settled in this run: a draft that took a review line
 // here acts on it here. One agent per solver, as the solver fixes of the fix
-// stage run.
-async function resolveStage(taskIds) {
+// phase run.
+async function resolvePhase(taskIds) {
   const stems = [...new Set(taskIds.map(s => (s || '').trim()))].filter(Boolean)
   if (!stems.length) return null
   const done = (await parallel(stems.map(id => async () => {
@@ -1093,16 +1093,16 @@ async function resolveStage(taskIds) {
   return done
 }
 
-// The Resolve stage takes each solver on its own. One agent then groups the
+// The Resolve phase takes each solver on its own. One agent then groups the
 // lines it acted on by the rule that decides each, and one agent per group
-// reads that group's solvers side by side, so a point two of them read
+// reads that group's solvers side by side, so a subject two of them read
 // differently is reported as a divergence. A group of one solver runs no
 // agent, and a line the group's rule does not decide comes back as misgrouped.
-async function consistencyStage(resolved) {
+async function consistencyPhase(resolved) {
   const acted = (resolved || []).filter(r => r && (r.acted || []).length)
   if (acted.length < 2) return null
   // A line of another form is a continuation of the line above it, and carries
-  // no point of its own, so the group agent never sees it.
+  // no subject of its own, so the group agent never sees it.
   const lines = acted.flatMap(r => r.acted.map(line => ({ task_id: r.task_id, line, seed: seedKey(line) })).filter(l => l.seed))
   if (!lines.length) return null
   const g = await agent(asRole('retro-group', groupTask(lines)), { label: 'group', phase: 'Consistency', schema: GROUP_SCHEMA, ...agentOf('retro-group') })
@@ -1128,7 +1128,7 @@ async function consistencyStage(resolved) {
 // reading, one agent per solver. The divergence itself is recorded under
 // `record` in the run's result, for the user to read. The solvers of one entry
 // run together, and the entries run beside each other.
-async function applyStage(consistency) {
+async function applyPhase(consistency) {
   const entries = ((consistency && consistency.divergences) || []).filter(d => d && d.principled === false)
   if (!entries.length) return null
   const done = (await parallel(entries.map(d => async () => {
@@ -1137,8 +1137,8 @@ async function applyStage(consistency) {
       const r = await agent(asRole('retro-apply', applyTask(id, d)), { label: `apply:${id}`, phase: 'Consistency', schema: APPLY_SCHEMA, ...agentOf('retro-apply') })
       return r && { task_id: id, target: solverTarget(id), ...r }
     }))
-    return { group: d.group, point: d.point, reading: d.reading, form: d.form,
-             record: { point: d.point, rule: d.rule, reading: d.reading, wording: d.wording,
+    return { group: d.group, subject: d.subject, reading: d.reading, form: d.form,
+             record: { subject: d.subject, rule: d.rule, reading: d.reading, wording: d.wording,
                        form: d.form, ground: d.ground, solvers: d.solvers },
              solvers: (solvers || []).filter(Boolean) }
   }))).filter(Boolean)
@@ -1170,7 +1170,7 @@ const cleanupItems = (made, resolved, applied) => {
 }
 
 // One agent per solver the run wrote.
-async function cleanupStage(items) {
+async function cleanupPhase(items) {
   if (!items.length) return null
   const done = (await parallel(items.map(({ task_id }) => async () => {
     const r = await agent(asRole('cleanup', cleanupTask(task_id)), { label: `cleanup:${task_id}`, phase: 'Cleanup', schema: CLEANUP_SCHEMA, ...agentOf('cleanup') })
@@ -1194,11 +1194,11 @@ const kindForTarget = (target) =>
       : target.endsWith('.md') ? 'prose'
         : 'code'
 
-// A verify pass fixes what it finds in its own target and leaves a finding
+// A verify phase fixes what it finds in its own target and leaves a finding
 // that needs another file, naming that file. Each such finding becomes a fix on
 // that file, and each such fix is verified in its own chain, as the first round
 // runs. This round starts no round of its own.
-async function followupStage(verify) {
+async function followupPhase(verify) {
   const fixes = (verify ? verify.findings : []).flatMap(v =>
     v.findings.map(f => ({ f, target: (f.other_file || '').trim() }))
       .filter(({ target }, i, xs) => target && !(v.targets || [v.target]).includes(target) && xs.findIndex(x => x.target === target) === i)
@@ -1206,19 +1206,19 @@ async function followupStage(verify) {
         id: `verify:${v.target}`,
         kind: kindForTarget(target),
         target,
-        edit: `A verify pass over ${v.target} found this and left it: ${f.finding} ${f.fixed || ''}`.trim(),
+        edit: `A verify step over ${v.target} found this and left it: ${f.finding} ${f.fixed || ''}`.trim(),
       })))
   if (!fixes.length) return null
   log(`${fixes.length} follow-up fixes from the verify findings`)
   phase('Fix')
-  const { made, findings } = await fixStage(fixes, true)
+  const { made, findings } = await fixPhase(fixes, true)
   phase('Verify')
-  // A fix that reported no diff changed nothing. The checks run only over a
+  // A fix that reported no diff changed nothing. The tree checks run only over a
   // code change.
   const changed = made.filter(m => (m.edit.diffs || []).length)
   const codeChanged = changed.some(m => m.kind === 'code')
   log(`${changed.length} of ${made.length} follow-up fixes changed a file`)
-  return { fixes: made, verify: changed.length ? { findings, checks: codeChanged ? await checksStage() : [] } : null }
+  return { fixes: made, verify: changed.length ? { findings, checks: codeChanged ? await checksPhase() : [] } : null }
 }
 
 const missing = rolesNeeded().filter(name => typeof ROLES[name] !== 'string' || !ROLES[name].trim())
@@ -1233,39 +1233,39 @@ if (args && args.resolve) {
   let sweepLines = null
   if (toSweep.length) {
     phase('Sweep')
-    sweep = await sweepStage(toSweep)
-    sweepLines = await sweepLinesStage(sweep)
+    sweep = await sweepPhase(toSweep)
+    sweepLines = await sweepLinesPhase(sweep)
   }
   phase('Resolve')
-  const resolved = await resolveStage([...args.resolve, ...resolveStems(null, sweepLines)])
+  const resolved = await resolvePhase([...args.resolve, ...resolveStems(null, sweepLines)])
   phase('Consistency')
-  const consistency = await consistencyStage(resolved)
-  const applied = await applyStage(consistency)
+  const consistency = await consistencyPhase(resolved)
+  const applied = await applyPhase(consistency)
   phase('Cleanup')
-  const cleanup = await cleanupStage(cleanupItems(null, resolved, applied))
-  // Resolve and Cleanup both edit solvers, so the checks run over the tree
+  const cleanup = await cleanupPhase(cleanupItems(null, resolved, applied))
+  // Resolve and Cleanup both edit solvers, so the tree checks run over the tree
   // they leave.
   phase('Verify')
-  const checks = await checksStage()
+  const checks = await checksPhase()
   return { tally: null, closed: null, calls: null, fixes: null, entries: null, resolve: resolved,
            consistency, applied, cleanup, verify: { findings: [], checks }, followups: null, sweep, sweep_lines: sweepLines, borderline_drops: null }
 }
 
 if (args && args.fixes) {
   phase('Fix')
-  // Each unit is verified in its own chain; the checks wait for every unit, and
-  // for the stages that write the solvers beside them.
-  const { made, findings } = await fixStage(args.fixes, true)
+  // Each unit is verified in its own chain; the tree checks wait for every unit, and
+  // for the phases that write the solvers beside them.
+  const { made, findings } = await fixPhase(args.fixes, true)
   phase('Resolve')
-  const resolved = await resolveStage(resolveStems(made, null))
+  const resolved = await resolvePhase(resolveStems(made, null))
   phase('Consistency')
-  const consistency = await consistencyStage(resolved)
-  const applied = await applyStage(consistency)
+  const consistency = await consistencyPhase(resolved)
+  const applied = await applyPhase(consistency)
   phase('Cleanup')
-  const cleanup = await cleanupStage(cleanupItems(made, resolved, applied))
+  const cleanup = await cleanupPhase(cleanupItems(made, resolved, applied))
   phase('Verify')
-  const verify = { findings, checks: await checksStage() }
-  const followups = await followupStage(verify)
+  const verify = { findings, checks: await checksPhase() }
+  const followups = await followupPhase(verify)
   return { fixes: made.filter(m => m.kind !== 'entry'), entries: made.filter(m => m.kind === 'entry'), resolve: resolved, consistency, applied, cleanup, verify, followups }
 }
 
@@ -1273,15 +1273,15 @@ phase('Read')
 const read = await agent(asRole('retro-read', readTask()), { label: 'read', phase: 'Read', schema: ISSUES_SCHEMA, ...agentOf('retro-read') })
 if (!read) return { error: 'read agent returned nothing' }
 const issues = read.issues
-// The sweep runs beside the check and review stages, and is awaited before any fix.
-const sweeping = (args && args.dry) ? null : sweepStage([...new Set(issues.flatMap(i => i.tasks || []))])
+// The sweep runs beside the check and review phases, and is awaited before any fix.
+const sweeping = (args && args.dry) ? null : sweepPhase([...new Set(issues.flatMap(i => i.tasks || []))])
 log(`${issues.length} issues from the window; ${read.borderline_drops.length} borderline drops`)
 if (!issues.length) return { tally: { issues: 0 }, consistency: null, applied: null, borderline_drops: read.borderline_drops }
 
 phase('Check')
-const groups = byKey(issues, i => i.group)
-const checks = (await parallel([...groups].map(([group, gi]) => () =>
-  agent(asRole('retro-check', checkTask(group, gi)), { label: `check:${group}`, phase: 'Check', schema: CHECK_SCHEMA, ...agentOf('retro-check') })
+const areas = byKey(issues, i => i.area)
+const checks = (await parallel([...areas].map(([area, gi]) => () =>
+  agent(asRole('retro-check', checkTask(area, gi)), { label: `check:${area}`, phase: 'Check', schema: CHECK_SCHEMA, ...agentOf('retro-check') })
 ))).filter(Boolean).flatMap(r => r.results)
 const issueById = new Map(issues.map(i => [i.id, i]))
 const withIssue = r => ({ ...r, issue: issueById.get(r.id)?.issue, tasks: issueById.get(r.id)?.tasks, count: issueById.get(r.id)?.count })
@@ -1311,9 +1311,9 @@ if (open.length) {
   }
 }
 const dry = args && args.dry
-// The doc whose fixes wait on the user's ruling, at any level.
+// The doc whose fixes wait on the user's ruling, at any tier.
 const PRINCIPLES = 'docs/handbook/principles.md'
-// A level-4 call is presented and not made, and so is a fix to PRINCIPLES. A dry run makes
+// A tier-4 call is presented and not made, and so is a fix to PRINCIPLES. A dry run makes
 // nothing, so it lists them with the rest: the rulings filter them like any other fix.
 const stands = calls.filter(c => (c.default === 'fix' || c.default === 'replace') && c.fixes.length && (dry || c.tier !== 4))
 // one agent per general fix: fixes that several replaced issues point at collapse to one
@@ -1325,26 +1325,26 @@ for (const c of calls) tally[c.default] = (tally[c.default] || 0) + 1
 log(`${fixes.length} fixes to make`)
 
 phase('Fix')
-// The sweep overlaps the reading stages only: the fix and verify stages run solvers under a CPU limit.
+// The sweep overlaps the reading phases only: the fix and verify phases run solvers under a CPU limit.
 const sweep = sweeping ? await sweeping : null
-const sweepLines = sweep ? await sweepLinesStage(sweep) : null
-// Each unit is verified in its own chain; the checks wait for every unit, and
-// for the stages that write the solvers beside them.
-const { made, findings } = fixes.length && !dry ? await fixStage(fixes) : { made: [], findings: [] }
+const sweepLines = sweep ? await sweepLinesPhase(sweep) : null
+// Each unit is verified in its own chain; the tree checks wait for every unit, and
+// for the phases that write the solvers beside them.
+const { made, findings } = fixes.length && !dry ? await fixPhase(fixes) : { made: [], findings: [] }
 
 phase('Resolve')
-const resolved = dry ? null : await resolveStage(resolveStems(made, sweepLines))
+const resolved = dry ? null : await resolvePhase(resolveStems(made, sweepLines))
 
 phase('Consistency')
-const consistency = dry ? null : await consistencyStage(resolved)
-const applied = dry ? null : await applyStage(consistency)
+const consistency = dry ? null : await consistencyPhase(resolved)
+const applied = dry ? null : await applyPhase(consistency)
 
 phase('Cleanup')
-const cleanup = dry ? null : await cleanupStage(cleanupItems(made, resolved, applied))
+const cleanup = dry ? null : await cleanupPhase(cleanupItems(made, resolved, applied))
 
 phase('Verify')
-const verify = made.length ? { findings, checks: await checksStage() } : null
-const followups = verify ? await followupStage(verify) : null
+const verify = made.length ? { findings, checks: await checksPhase() } : null
+const followups = verify ? await followupPhase(verify) : null
 
 
 return {

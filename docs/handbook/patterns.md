@@ -261,7 +261,7 @@
     - On a domain with identity only, such as colors, the distinctness join is the concept itself.
 - Order inside a wide atom is a tag column or a repeated value, never slot position.
 - A pairing relation holds all orders as rows, as `opposite` and `turn` do, so which member fills which slot is data.
-- A record that orders members by positional convention lacks that property: the convention is unstated data at the interface.
+- A record that orders members by positional convention lacks that property: the convention is unstated data at the call boundary.
 - A repeated variable in a wide atom states the diagonal case directly: equal extents for a square, equal distances for a centered cell or one on a corner's diagonal.
 - The long encoding needs an agreement join for the same statement.
 - A derivation has a long layout.

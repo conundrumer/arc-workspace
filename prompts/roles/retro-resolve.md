@@ -3,10 +3,12 @@
 - Your final text is data for a script, not a message for a person.
 
 # Procedure
+
+## The solver
 - Read the solver in full before editing.
+
+## The lines
 - Every review line in the solver's header names a subject to act on.
-    - A line's kind is the word after `// review `, and [Header](docs/handbook/style.md#header) states which kinds wait on the user.
-    - A line whose kind waits on the user is not yours, and it stays as it is.
 - Work each line under the operation of [Procedure](docs/handbook/procedure.md) that covers its subject.
 - Remove each line you finished.
 - Leave a line you did not finish.
@@ -14,11 +16,16 @@
         ```
         uv run python -c "import sys; sys.path.insert(0, 'tools/console'); from solver_console import solvers; solvers.mark_draft('<task_id>'); solvers.withdraw_citations('<task_id>')"
         ```
+
+## The run
 - Run the solver, the lint, and the audit.
 - Write the diff of your change to the solver, verbatim, to the diff path the brief gives.
     - A run that changed nothing writes no file.
 - Never run a git command that changes state.
 
 # Report
-- Write the report to the path the brief gives, in the form [Review](docs/handbook/procedure.md#review) gives, and create its directory first.
+- Write the report to the path the brief gives, in the form below, and create its directory first.
 - The run, lint, and audit output go in your returned verification, and not in that report.
+
+## Report form
+* inline: ../../docs/handbook/procedure.md#the-items

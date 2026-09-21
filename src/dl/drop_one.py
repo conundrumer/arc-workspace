@@ -29,23 +29,10 @@ type Site = tuple[int, int, int, str]
 # param, fact text, whether the test pairs survive the drop, notes
 type Hit = tuple[str, str, bool, list[str]]
 
-# Every sentence this module prints, keyed by the part it heads. A slot,
-# `{name}`, is filled by the render.
-MESSAGES = mctx({
-        "baseline": "baseline fails: stored source does not pass train",
-        "none": "{stem}.dl: no parameter holds more than one stored fact",
-        "tested": "{tested} stored facts across {params} multi-fact {noun}",
-        "every": "every fact changes a train pair",
-        "both": "{count} fact(s) no pair needs:",
-        "train-only": "{count} fact(s) the train pairs do not need, and the test "
-                      "pairs do:",
-        "ground": "holds the picture's background color, so the cell draws nothing "
-                  "wherever the picture is read",
-        "sweep": "an enumerable parameter, so `sweep` can report the same drop",
-})
-
-GROUND_NOTE = MESSAGES["ground"]
-SWEEP_NOTE = MESSAGES["sweep"]
+GROUND_NOTE = mctx("holds the picture's background color, so the cell draws "
+                   "nothing wherever the picture is read")
+SWEEP_NOTE = mctx("an enumerable parameter, so `sweep` can report the same "
+                  "drop")
 
 
 def _atom_sites(source: str, param: str) -> list[Site]:
@@ -222,10 +209,11 @@ def render_drop_one(
 ) -> list[str]:
     """The drop-one report, as printable lines."""
     if report is None:
-        return [MESSAGES["baseline"]]
+        return [mctx("drop-one baseline fails: stored source does not pass train")]
     hits, tested, params = report
     if not tested:
-        return [MESSAGES["none"].format(stem=stem)]
+        return [mctx("{stem}.dl: no parameter holds more than one stored "
+                     "fact").format(stem=stem)]
 
     def entries(group: list[Hit]) -> list[str]:
         lines = []
@@ -235,19 +223,22 @@ def render_drop_one(
         return lines
 
     noun = "parameter" if params == 1 else "parameters"
-    lines = [MESSAGES["tested"].format(
-        tested=tested, params=params, noun=noun)]
+    lines = [mctx("{tested} stored facts across {params} multi-fact "
+                  "{noun}").format(tested=tested, params=params, noun=noun)]
     both = [h for h in hits if h[2]]
     train_only = [h for h in hits if not h[2]]
     if not hits:
-        lines.append(MESSAGES["every"])
+        lines.append(mctx("every fact changes a train pair"))
         return lines
     if both:
         lines.append("")
-        lines.append(MESSAGES["both"].format(count=len(both)))
+        lines.append(mctx("{count} fact(s) no pair needs:")
+                     .format(count=len(both)))
         lines += entries(both)
     if train_only:
         lines.append("")
-        lines.append(MESSAGES["train-only"].format(count=len(train_only)))
+        lines.append(
+            mctx("{count} fact(s) the train pairs do not need, and the test "
+                 "pairs do:").format(count=len(train_only)))
         lines += entries(train_only)
     return lines

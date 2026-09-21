@@ -5,7 +5,7 @@
 - When an entry under `docs/wf-solver/proposals/` names it, read that entry too.
 
 # Procedure
-- Before the first edit of a file, run `uv run python scripts/run_dl.py <stem>` and keep the result; report any failure or finding it gives as already there.
+- Before the first edit of a file, run `uv run python scripts/run_dl.py <stem>` and keep the run result; report any failure or finding it gives as already there.
 - Read each file in full before editing.
 - A site whose file time is after a time the brief gives is skipped, and the report says so.
 - Replace the hand-written site with the lib relation.

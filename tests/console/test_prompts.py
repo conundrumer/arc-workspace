@@ -26,8 +26,6 @@ def briefs(s):
         "refused-callout": s.refused_callout_brief,
         "nudge": s.nudge_brief,
         "bail": s.bail_brief,
-        "handoff-tail": s.handoff_tail,
-        "review-tail": s.review_tail,
         "scratch-note": s.scratch_note,
         "survey": lambda: s.survey_brief(
             "docs/wf-solver/proposals/x.md", "programs/", ".scratch/x"),

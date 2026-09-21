@@ -59,10 +59,3 @@ search-path = [".", "src"]
 # given, so the command that guards them is one word wherever it is written.
 paths = ["CLAUDE.md", "docs/handbook", "prompts", ".claude/skills",
          "src/controlled_markdown", "tools/console/recal"]
-# The code files that hold prose. A link in one resolves like a link in a
-# document, and nothing else in them is read as Controlled Markdown.
-code = ["src/dl/lint.py", "src/dl/rewrite_lint.py", "src/dl/witness.py",
-        "src/dl/deletions.py", "src/dl/drop_one.py", "src/dl/sweep.py",
-        "src/dl/sweep_open.py", "src/dl/determine_deps.py",
-        "src/dl/souffle.py", "src/dl/determination_plan.py",
-        ".claude/workflows/retro.js", ".claude/workflows/cleanup-sweep.js"]

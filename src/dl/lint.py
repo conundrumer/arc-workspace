@@ -217,86 +217,8 @@ BANNED_TYPE_CAT = "banned type"
 # lint's `typed-order` rule reads off the column types.
 LINT_COMPARISON = False
 
-# Every sentence the lint prints, keyed by the category the finding carries.
-# A category with one sentence holds it; one with several holds them by name.
-# A slot, `{name}`, is filled at the site that fires.
-MESSAGES: dict[str, str | dict[str, str]] = mctx({
-        RESERVED_CAT: "`{name}` is a Souffle reserved word; rename it",
-        SHADOWED_TYPE_CAT: "`{name}` also names a type inside `{comp}`, so the "
-                           "instance takes that name for its own type; rename it",
-        LIB_NAME_CAT: "`{name}` is a lib {kind}; rename it",
-        LIB_INTERNAL_CAT: {
-            "relation": "`{name}` is private to {comp}; read one of its public "
-                        "relations",
-            "comp": "`{name}` is internal to the lib; instantiate a public "
-                    "component",
-        },
-        NO_ENTRY_CAT: "`{name}` is a proposal comp with no entry "
-                      "docs/wf-solver/proposals/{name}.md; write the entry, or "
-                      "fold the comp into the program",
-        LONE_PARSE_CAT: "no Determine comp reads this Parse comp; read it in "
-                        "Determine, or fold it into the program",
-        FAMILY_CASE_CAT: {
-            "record": "`{task_id}`'s `Choice` is a record; a sibling of it names "
-                      "no case",
-            "unknown": "`{case}` is no case of `{task_id}`'s `Choice`; name a "
-                       "case the representative holds",
-            "missing": "`{task_id}` declares no `Choice`; name a case the "
-                       "representative holds",
-        },
-        CASE_MARKER_CAT: "a marker over several cases joins their names with a "
-                         "comma: `// --- Box, Erode ---`",
-        HEADER_CAT: {
-            "open": "the file opens with `// <task_id>`",
-            "order": "header lines go in the order {order}",
-            "draft": "`@draft` goes under the task id",
-            "review": "`review` takes a kind: `// review <kind>: <text>`",
-            "once": "`{word}` stands once in the header",
-            "sibling": "a sibling carries `@representative:` in place of {drops}",
-            "slug": "`{slug}` names an earlier header line; a slug stands once "
-                    "across `@scene` and `@rule`",
-            "prose": "no prose in the header; a remark about a case goes at its "
-                     "constructor, and a remark about a clause at the clause",
-            "keywords": "the header carries `@keywords:` or `@representative:`",
-            "rule": "the header has no `@rule` line; a rule is {form}",
-        },
-        KEYWORD_CAT: "`{word}` is not in keywords.md; propose it in the review",
-        GLOSS_CAT: {
-            "choice": "a gloss stands above `{name}`: what the choice is",
-            "branch": "`{name}` opens its own line",
-        },
-        WITNESS_CAT: {
-            "concept": "`{name}` is the concept branch; drop its `@witness` line",
-            "missing": "`{name}` is no concept branch and has no `@witness` "
-                       "line; add {form}",
-            "placed": "a witness line stands in a branch's comment block or "
-                      "under `@approximated:`",
-        },
-        CLAIM_CAT: {
-            "unstated": "`{slug}` names no `@scene` or `@rule` line of the header",
-            "instance": "`{name}` carries no `@claim` line; the claims the "
-                        "instance serves stand above it as {form}",
-            "concept": "`{name}` is the concept branch; the claim the choice "
-                       "answers stands above it as {form}",
-        },
-        INCLUDE_CAT: "the build adds the lib; drop the include",
-        BANNED_TYPE_CAT: "`{name}` is none of the types a solver may define, "
-                         "which are `Choice` and the types it reaches, "
-                         "`TiebreakResolution`, and a record filling a comp type "
-                         "param; re-encode it or propose it",
-})
-
-# The six token categories print the token that fired in place of a sentence,
-# so each stands under its own name. None is prose, so none is a fragment.
-MESSAGES.update({c: c for c in (RIGID_CHART_CAT, ORIENTATION_CAT, NONZERO_CAT,
-                                ARITHMETIC_CAT, RANGE_CAT, COMPARISON_CAT)})
-
-
-def say(category: str, variant: str = "", **slots: object) -> str:
-    """One message of the table, with its slots filled."""
-    entry = MESSAGES[category]
-    text = entry[variant] if isinstance(entry, dict) else entry
-    return text.format(**slots)
+RESERVED_NAME = mctx("`{name}` is a Souffle reserved word; rename it")
+"""The finding on a declared name Souffle reserves."""
 
 
 def _strip_block_comments(source: str) -> str:
@@ -412,7 +334,7 @@ def _reserved_names(raw_lines: list[str]) -> list[tuple[str, int, str, str]]:
             if name not in RESERVED_WORDS:
                 continue
             findings.append((
-                RESERVED_CAT, lineno, say(RESERVED_CAT, name=name),
+                RESERVED_CAT, lineno, RESERVED_NAME.format(name=name),
                 raw.rstrip(),
             ))
     return findings
@@ -440,7 +362,7 @@ def _reserved_inner_names(
             if name not in RESERVED_WORDS:
                 continue
             findings.append((
-                RESERVED_CAT, line, say(RESERVED_CAT, name=name),
+                RESERVED_CAT, line, RESERVED_NAME.format(name=name),
                 raw_lines[line - 1].rstrip(),
             ))
 
@@ -522,7 +444,9 @@ def _shadowed_types(
                 continue
             findings.append((
                 SHADOWED_TYPE_CAT, init.line,
-                say(SHADOWED_TYPE_CAT, name=targ, comp=init.comp),
+                mctx("`{name}` also names a type inside `{comp}`, so the "
+                     "instance takes that name for its own type; rename it")
+                .format(name=targ, comp=init.comp),
                 raw_lines[init.line - 1].rstrip(),
             ))
     return findings
@@ -557,7 +481,9 @@ def _lib_named(
             ):
                 continue
             findings.append((
-                LIB_NAME_CAT, it.line, say(LIB_NAME_CAT, name=name, kind=kind),
+                LIB_NAME_CAT, it.line,
+                mctx("`{name}` is a lib {kind}; rename it").format(
+                    name=name, kind=kind),
                 raw_lines[it.line - 1].rstrip(),
             ))
 
@@ -602,7 +528,8 @@ def _lib_internal(
             if seg.startswith("_") and comp in lib_comps:
                 findings.append((
                     LIB_INTERNAL_CAT, atom.line,
-                    say(LIB_INTERNAL_CAT, "relation", name=seg, comp=comp),
+                    mctx("`{name}` is private to {comp}; read one of its "
+                         "public relations").format(name=seg, comp=comp),
                     raw_lines[atom.line - 1].rstrip(),
                 ))
                 return
@@ -615,7 +542,8 @@ def _lib_internal(
                 if it.comp.startswith("_") and it.comp in lib_comps:
                     findings.append((
                         LIB_INTERNAL_CAT, it.line,
-                        say(LIB_INTERNAL_CAT, "comp", name=it.comp),
+                        mctx("`{name}` is internal to the lib; instantiate "
+                             "a public component").format(name=it.comp),
                         raw_lines[it.line - 1].rstrip(),
                     ))
             elif isinstance(it, Rule):
@@ -638,7 +566,10 @@ def _comps_without_entry(
         if (PROPOSALS_DIR / f"{it.name}.md").is_file():
             continue
         findings.append((
-            NO_ENTRY_CAT, it.line, say(NO_ENTRY_CAT, name=it.name),
+            NO_ENTRY_CAT, it.line,
+            mctx("`{name}` is a proposal comp with no entry "
+                 "docs/wf-solver/proposals/{name}.md; write the entry, or "
+                 "fold the comp into the program").format(name=it.name),
             raw_lines[it.line - 1].rstrip(),
         ))
     return findings
@@ -661,7 +592,9 @@ def _lone_parse(
     if determine is not None and _reads_parse(program, determine, raw_lines):
         return []
     return [(
-        LONE_PARSE_CAT, comp.line, say(LONE_PARSE_CAT),
+        LONE_PARSE_CAT, comp.line,
+        mctx("no Determine comp reads this Parse comp; read it in Determine, "
+             "or fold it into the program"),
         raw_lines[comp.line - 1].rstrip(),
     )]
 
@@ -721,10 +654,15 @@ def _family_case(
         if any(case in it.branches for it in choices):
             continue
         if choices and not any(it.branches for it in choices):
-            why = say(FAMILY_CASE_CAT, "record", task_id=task_id)
+            why = mctx("`{task_id}`'s `Choice` is a record; a sibling of it "
+                       "names no case").format(task_id=task_id)
+        elif choices:
+            why = mctx("`{case}` is no case of `{task_id}`'s `Choice`; name a "
+                       "case the representative holds").format(
+                           task_id=task_id, case=case)
         else:
-            variant = "unknown" if choices else "missing"
-            why = say(FAMILY_CASE_CAT, variant, task_id=task_id, case=case)
+            why = mctx("`{task_id}` declares no `Choice`; name a case the "
+                       "representative holds").format(task_id=task_id)
         findings.append((FAMILY_CASE_CAT, f.line, why,
                          raw_lines[f.line - 1].rstrip()))
     return findings
@@ -743,7 +681,9 @@ def _case_marker(raw_lines: list[str]) -> list[tuple[str, int, str, str]]:
             continue
         if any("/" in name for name in marker_names(m.group(1))):
             findings.append((
-                CASE_MARKER_CAT, lineno, say(CASE_MARKER_CAT),
+                CASE_MARKER_CAT, lineno,
+                mctx("a marker over several cases joins their names with a "
+                     "comma: `// --- Box, Erode ---`"),
                 raw.rstrip(),
             ))
     return findings
@@ -787,7 +727,7 @@ def _header(
         findings.append((HEADER_CAT, lineno, why, raw_lines[lineno - 1].rstrip()))
 
     if not raw_lines or not raw_lines[0].strip().startswith("//"):
-        return [(HEADER_CAT, 1, say(HEADER_CAT, "open"),
+        return [(HEADER_CAT, 1, mctx("the file opens with `// <task_id>`"),
                  raw_lines[0].rstrip() if raw_lines else "")]
     # Every header line the order check reads, as (line, rank, word).
     placed = [(f.line, HEADER_RANK[f.word], f.word) for f in ann.fields]
@@ -796,44 +736,55 @@ def _header(
     last = -1
     for lineno, rank, _ in placed:
         if rank < last:
-            flag(lineno, say(HEADER_CAT, "order",
-                             order=", ".join(HEADER_ORDER)))
+            flag(lineno, mctx("header lines go in the order {order}").format(
+                order=", ".join(HEADER_ORDER)))
         last = max(last, rank)
     seen: set[str] = set()
     for f in ann.fields:
         if f.word == "draft":
             if f.line > 2:
-                flag(f.line, say(HEADER_CAT, "draft"))
+                flag(f.line, mctx("`@draft` goes under the task id"))
             continue
         if f.word == "review":
             if not f.kind:
-                flag(f.line, say(HEADER_CAT, "review"))
+                flag(f.line,
+                     mctx("`review` takes a kind: `// review <kind>: <text>`"))
         elif f.word in seen:
-            flag(f.line, say(HEADER_CAT, "once", word=f.word))
+            flag(f.line, mctx("`{word}` stands once in the header").format(
+                word=f.word))
         elif "representative" in seen or (f.word == "representative" and seen):
-            flag(f.line, say(HEADER_CAT, "sibling",
-                             drops=", ".join(f"`{w}`" for w in SIBLING_DROPS)))
+            flag(f.line,
+                 mctx("a sibling carries `@representative:` in place of "
+                      "{drops}").format(
+                     drops=", ".join(f"`{w}`" for w in SIBLING_DROPS)))
         seen.add(f.word)
     slugs: set[str] = set()
     for c in ann.claims:
         if c.slug in slugs:
-            flag(c.line, say(HEADER_CAT, "slug", slug=c.slug))
+            flag(c.line,
+                 mctx("`{slug}` names an earlier header line; a slug stands "
+                      "once across `@scene` and `@rule`").format(slug=c.slug))
         slugs.add(c.slug)
     for lineno in ann.prose[:1]:
-        flag(lineno, say(HEADER_CAT, "prose"))
+        flag(lineno,
+             mctx("no prose in the header; a remark about a case goes at its "
+                  "constructor, and a remark about a clause at the clause"))
     known = _known_keywords()
     keywords = ann.field_lines("keywords")
     if keywords and known:
         for word in ann.keywords():
             if word not in known:
                 findings.append((KEYWORD_CAT, keywords[0].line,
-                                 say(KEYWORD_CAT, word=word),
+                                 mctx("`{word}` is not in keywords.md; "
+                                      "propose it in the review").format(
+                                     word=word),
                                  raw_lines[keywords[0].line - 1].rstrip()))
     if not seen & {"keywords", "representative"}:
-        flag(1, say(HEADER_CAT, "keywords"))
+        flag(1, mctx("the header carries `@keywords:` or `@representative:`"))
     elif ("keywords" in seen and "output" not in seen
             and not any(c.kind == "rule" for c in ann.claims)):
-        flag(1, say(HEADER_CAT, "rule", form=FORMS["rule"]))
+        flag(1, mctx("the header has no `@rule` line; a rule is {form}")
+             .format(form=FORMS["rule"]))
     return findings
 
 
@@ -1024,29 +975,35 @@ def _glosses(
     for is_choice, td in targets:
         if is_choice and not _gloss_above(raw_lines, td.line):
             findings.append((GLOSS_CAT, td.line,
-                             say(GLOSS_CAT, "choice", name=td.name),
+                             mctx("a gloss stands above `{name}`: what the "
+                                  "choice is").format(name=td.name),
                              raw_lines[td.line - 1].rstrip()))
         for name, at in _branch_sites(td, raw_lines):
             if at is None:
                 findings.append((GLOSS_CAT, td.line,
-                                 say(GLOSS_CAT, "branch", name=name),
+                                 mctx("`{name}` opens its own line").format(
+                                     name=name),
                                  raw_lines[td.line - 1].rstrip()))
                 continue
             held.update(_comment_lines_above(raw_lines, at))
             witnessed = bool(_witnesses_of(ann, raw_lines, at))
             if name == td.branches[0] and witnessed:
                 findings.append((WITNESS_CAT, at,
-                                 say(WITNESS_CAT, "concept", name=name),
+                                 mctx("`{name}` is the concept branch; drop "
+                                      "its `@witness` line").format(name=name),
                                  raw_lines[at - 1].rstrip()))
             elif name != td.branches[0] and not witnessed:
                 findings.append((WITNESS_CAT, at,
-                                 say(WITNESS_CAT, "missing", name=name,
-                                     form=WITNESS_FORM),
+                                 mctx("`{name}` is no concept branch and has "
+                                      "no `@witness` line; add {form}").format(
+                                     name=name, form=WITNESS_FORM),
                                  raw_lines[at - 1].rstrip()))
     for w in ann.witnesses:
         if w.approximates or w.line in held:
             continue
-        findings.append((WITNESS_CAT, w.line, say(WITNESS_CAT, "placed"),
+        findings.append((WITNESS_CAT, w.line,
+                         mctx("a witness line stands in a branch's comment "
+                              "block or under `@approximated:`"),
                          raw_lines[w.line - 1].rstrip()))
     return findings
 
@@ -1091,29 +1048,36 @@ def _claims(
     for ref in ann.refs:
         for slug in ref.slugs:
             if slug not in stated:
-                flag(ref.line, say(CLAIM_CAT, "unstated", slug=slug))
+                flag(ref.line,
+                     mctx("`{slug}` names no `@scene` or `@rule` line of the "
+                          "header").format(slug=slug))
     if not ann.claims:
         return findings
     at = {ref.above for ref in ann.refs}
     for init in _claimed_instances(program.items):
         if init.line not in at:
-            flag(init.line, say(CLAIM_CAT, "instance", name=init.inst,
-                                form=FORMS["claim"]))
+            flag(init.line,
+                 mctx("`{name}` carries no `@claim` line; the claims the "
+                      "instance serves stand above it as {form}").format(
+                     name=init.inst, form=FORMS["claim"]))
     for point in _choice_adts(program.items):
         td = point[1]
         if td is None or not td.branches:
             continue
         name, line = _branch_sites(td, raw_lines)[0]
         if line is not None and line not in at:
-            flag(line, say(CLAIM_CAT, "concept", name=name,
-                           form=FORMS["claim"]))
+            flag(line,
+                 mctx("`{name}` is the concept branch; the claim the choice "
+                      "answers stands above it as {form}").format(
+                     name=name, form=FORMS["claim"]))
     return findings
 
 
 def _includes(
     items: list[Item], raw_lines: list[str],
 ) -> list[tuple[str, int, str, str]]:
-    return [(INCLUDE_CAT, it.line, say(INCLUDE_CAT),
+    return [(INCLUDE_CAT, it.line,
+             mctx("the build adds the lib; drop the include"),
              raw_lines[it.line - 1].rstrip())
             for it in items if isinstance(it, Include)]
 
@@ -1184,7 +1148,10 @@ def _banned_types(
         if not linted or td.name in sanctioned:
             continue
         findings.append((
-            BANNED_TYPE_CAT, td.line, say(BANNED_TYPE_CAT, name=td.name),
+            BANNED_TYPE_CAT, td.line,
+            mctx("`{name}` is none of the types "
+                 "[Types](docs/handbook/solver-file.md#types) lists; "
+                 "re-encode it or propose it").format(name=td.name),
             raw_lines[td.line - 1].rstrip(),
         ))
     return findings

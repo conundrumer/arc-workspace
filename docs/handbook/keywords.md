@@ -29,20 +29,20 @@
 - `span` — the model depends on an extent delimited by marks
 - `enclose` — cells or objects act by whether they are closed off from the grid edge
 - `mapping` — a color-to-color relation recolors cells
-- `count` — a count determines output content or extent, or which item acts
-- `rank` — an order or rank determines placement, color, or which item acts
+- `count` — a count determines output content or extent, or which piece acts
+- `rank` — an order or rank determines placement, color, or which piece acts
 - `repair` — damaged cells are restored from their counterparts elsewhere in the grid; a symmetry gives one set of counterparts
 - `classify` — the input, or a part of it, maps to a class; the output renders the class
 - `induce` — the input pairs content with the content a rule maps it to, and that rule varies per input; the program reads the rule from those pairs, validates it against them, and applies it beyond them
 - `move` — content translates, stacks, or shears within the frame
-- `pack` — items jointly fill a region exactly
+- `pack` — pieces jointly fill a region exactly
 - `stamp` — a footprint stamps at qualifying positions
 - `border` — cells act by which side of a border or outline they lie on, or are the drawn outline
 - `select` — output keeps a distinguished part of the input
 - `parity` — the model depends on even/odd alternation, along a position or along an order
 - `cross` — cells where designated lines cross act
-- `merge` — like-valued items within a task-given proximity fuse into one unit; the output treats the unit as one thing
-- `match` — items found in the input pair off by a shared property, and the output acts on the pairs; matching against stored data is `lookup`
+- `merge` — like-valued pieces within a task-given proximity fuse into one unit; the output treats the unit as one thing
+- `match` — pieces found in the input pair off by a shared property, and the output acts on the pairs; matching against stored data is `lookup`
 
 ## Shape
-- `latent-canvas` — the program constructs a canvas neither grid fully shows, and the output is determined by that canvas. A canvas is a frame of cells that contains the whole scene in one state.
+- `latent-canvas` — the program constructs a canvas neither grid fully shows, and the output is determined by that canvas. A canvas is a frame of cells that contains the whole picture in one state.

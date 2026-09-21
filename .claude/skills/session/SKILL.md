@@ -7,11 +7,9 @@ argument-hint: [solver|retro|<task_id>]
 # Session
 - First, when the handbook is not in your system prompt, read the output of `uv run python scripts/context.py` in full.
 - Read the file itself when the work is on the doc.
-* comment:
-    - The output points back at each file for an entry or a body.
 - Then dispatch on `$ARGUMENTS`:
-    - `solver` — run `bash scripts/queue.sh` for the next queued solver and work it per the procedure.
-    - a task id — work that solver per the procedure.
+    - `solver` — run `bash scripts/queue.sh` for the next queued solver and work it per the creation pass.
+    - a task id — work that solver per the creation pass.
     - `retro` — rule on what the console's sessions called out beyond their own tasks, per the retro section below.
     - anything else — an ordinary working request; proceed with the docs as context.
         - A solver session is declared by keyword, never inferred from prose.
@@ -21,7 +19,7 @@ argument-hint: [solver|retro|<task_id>]
 - `claude` registers the agent files at its start only, so a session cannot write them for itself.
 - When one is missing, say so before any spawn.
 - Read the lib before writing or editing a solver, as the handbook renders it.
-- When a primitive's interface leaves the semantics open, read its body in the module.
+- When a lib relation's interface leaves the semantics open, read its body in the module.
 - If requested to continue from prior solver work, run `uv run python scripts/inspect-session.py --solver-only` and read the output in full.
 - `bash scripts/queue.sh` prints the next solver and its estimated complexity.
 
@@ -43,17 +41,17 @@ argument-hint: [solver|retro|<task_id>]
         - It makes no fix, and the sweep does not run in it.
     - The main session reads no window, report, solver, or doc.
     - It runs no edit or check itself: those go to agents.
-    - The runs' agents read the window, check each issue, take a default on each open one, make the fixes the rulings keep, sweep the window's solvers, act on each review line those fixes and the sweep wrote into a solver, run the cleanup pass over each solver the runs wrote, and verify what they changed.
-    - Each stage's rules live in its role, under [roles](prompts/roles).
+    - The runs' agents read the window, check each issue, take a default on each open one, make the fixes the rulings keep, sweep the window's solvers, act on each review line those fixes and the sweep wrote into a solver, run the `cleanup` role over each solver the runs wrote, and verify what they changed.
+    - Each phase's rules live in its role, under [roles](prompts/roles).
     - The `solver` role carries a solver fix.
-- **Report.** The dry run returns every call with its default, its level, and what argues for and against it.
+- **Report.** The dry run returns every call with its default, its tier, and what argues for and against it.
     - What reaches the user is a call whose fix changes a rule the user reads, in [Principles](docs/handbook/principles.md), [Keywords](docs/handbook/keywords.md), or a gloss, and the Verify issues.
     - A solver particular stays with the agents and the console's reports.
-    - Present the calls, as one numbered list, ordered by dependency and then by level ascending.
+    - Present the calls, as one numbered list, ordered by dependency and then by tier ascending.
     - Issue ids stay out, and so do quotes.
     - A call is a decision in the settle form:
         ```
-        ### <n>. [<level>] <what is wrong in the shared thing, as a question>? <the default>.
+        ### <n>. [<tier>] <what is wrong in the shared thing, as a question>? <the default>.
 
         - **Context:**
             - <what the thing is and does, for a reader who does not have the doc in their head>
@@ -69,8 +67,8 @@ argument-hint: [solver|retro|<task_id>]
                     - <its evidence, or `Given <condition>. <likelihood>.`>
             2. **<label>.** <the option's action>
         ```
-        - The level is the call's discretion level, as the check and review roles define it.
-        - A level-4 fix, and a fix to [Principles](docs/handbook/principles.md) at any level, is presented for ruling like every other call.
+        - The tier is the call's discretion tier, as the check and review roles define it.
+        - A tier-4 fix, and a fix to [Principles](docs/handbook/principles.md) at any tier, is presented for ruling like every other call.
         - The default states what holds, the fix or the drop.
         - The default is option 1, and the other options come strongest first, each labeled in one word.
         - Reasons come strongest first.
@@ -84,11 +82,9 @@ argument-hint: [solver|retro|<task_id>]
     - Some calls carry more.
         - A call whose fix edits [Principles](docs/handbook/principles.md): Context quotes the text before and after, and shows the concrete cases with small grid fragments.
             - The options are the readings the workflow returned, each with its wording and its consequence over the approved solvers.
-        - A call whose fix carries an illustration shows it under the call: for each cited task, the case sets under each reading and a witness input where the readings differ.
-        - A keyword addition or a gloss change is level 4, presented as a proposal for a separate session.
+        - A call whose fix carries an illustration shows it under the call.
+        - A keyword addition or a gloss change is presented as a proposal for a separate session.
         - A citation of a draft solver is not presented.
-        * comment:
-            - It waits in the doc in the pending form, and approval places it.
     - The workflow's Verify issues end the presentation: a failing check, a finding no round acted on, and an edit outside the run's targets, such as an approved solver.
     - Do not report non-issues.
     - A failing check blocks the close.
@@ -101,7 +97,7 @@ argument-hint: [solver|retro|<task_id>]
         - **Queued**: it goes into the batch with nothing more from the user.
         - **Needs ruling**: it waits on the user.
     - The rulings for fixes go into a second run with `roles` again and the fixes as `fixes` in `args`: the fixes as the dry run returned them under `dry`, each with its call id, kind, target, edit, and task ids, filtered to those the rulings keep, plus any fix a ruling for another option calls for.
-    - The second run's prune pass keeps their substance, revises the wording to the file's style, and reports that the meaning held.
+    - The second run's prune step keeps their substance, revises the wording to the file's style, and reports that the meaning held.
     - The sweep goes into a third run after the fixes run, with `roles` again, `resolve` in `args` as an empty list, and `sweep` holding the window's task ids.
     - That run sweeps those solvers, marks the drafts a parameter stays open in, and resolves, compares, and cleans up those drafts.
     - It reports its Verify issues.

@@ -1,0 +1,148 @@
++ index: headings
+* comment: when editing this doc
+    - Write in the indicative mood.
+    - Write what File structure says by editing the template, and describe only what the template cannot explain.
+
+# Solver file
+- What each part of a solver file means.
+
+## File structure
+- A solver is one file, `<task_id>.dl`.
+    ```
+    // <task_id>
+    // @draft
+    // @keywords: <keywords from keywords.md>
+    // @scene <slug>: <what every input contains, as the concept reads it>
+    //  <continuation>
+    // @rule <slug>: <what the output takes from the input>
+    //     @approximated: <the rule the program runs>
+    //     @witness <id>: <plausibility> <verdict>
+
+    // <what the choice is>
+    .type Choice =
+        // @claim <rule or scene slug>
+        CaseA {}
+        // @scene <slug>: <replacement claim>
+        // @rule <slug>: <replacement claim>
+        // @rule <new slug>: <added claim>
+        //     @approximated: <the rule the program runs>
+        //     @witness <id>: <plausibility> <verdict>
+        // @witness <id>: <plausibility> <verdict>
+        //     @relaxed <slug of the scene claim this witness breaks>
+        //     @reassigned <parameter changed for this witness>
+        // @witness <id>: <plausibility> <verdict>
+        //     @relaxed <slug of the scene claim this witness breaks>
+      | CaseB {}
+
+    .decl out(p: Position, col: Color, ch: Choice)
+
+    .comp Params {
+        .decl bg(c: Color) bg(0).
+        // <gloss, where the name does not say what it is>
+        .decl recolor(c_fg: Color, c_fill: Color)
+        recolor(3, 1).
+        recolor(5, 4).
+
+        // --- CaseA ---
+        ...
+
+        // --- CaseB ---
+        ...
+    }
+
+    .init params = Params
+
+    .comp Parse<Key> { ... }
+    .init parse = Parse<Unit>
+
+    // shared program clauses
+
+    // <gloss>
+    // @claim <slug> <slug>
+    .init shape = Components<Unit>
+
+    // --- CaseA ---
+    out(..., $CaseA()) :- ...
+
+    // --- CaseB ---
+    out(..., $CaseB()) :- ...
+
+    .comp Determine { ... }
+    ```
+
+### Header
+- `@scene` and `@rule` are in dependency order.
+- A `// review <kind>: <text>` line stands last in the header, and it names a subject a retro left for its Resolve phase.
+- A solver session leaves such a line as it is.
+- A family sibling's header, omitting other fields:
+    ```
+    // <task_id>
+    // @draft
+    // @representative: <family's first-solved task id> <Case when the sibling has one case of its Choice>
+    ```
+- A witness under an `@approximated:` line is not `foreign`.
+- Each case that runs the approximation has a witness on which its output is not the verdict's.
+* comment
+    - Precise reading: a case's output is not the verdict's when its output on the grid differs from the output the verdict names: the concept case's for `concept`, the output of the case that takes the named branch and the concept branch elsewhere for a branch's name, every case's for `other`, no case's for `any`.
+
+### Cases
+- A solver with one case has no `Choice`, case markers, or case column on `out`.
+- **Case markers.** Cases do not interleave: each case's Params and clauses are under its marker.
+    - Cases that share facts or clauses are under one marker naming them, `// --- Box, Erode ---`.
+    - A marker may fix a constructor's fields, `// --- Derive(g=Iso) ---`, for the part of that case where the field is that branch.
+    - The comma still separates cases.
+- **`impl_choice`.** The relation that enumerates the cases is `impl_choice`, and its column is `ch`.
+    - A record-typed `Choice` gets one enumerator per field, named for the field's type, as in `.decl locate_choice(l: Locate)`.
+    - `impl_choice` contains whole `Choice` values, and it appears when a clause reads one.
+
+## Params
+- Params contains the parameterization and what derives from it.
+- The program reads a parameter as `params.<rel>`.
+- `.init helpers = ParamsHelpers` gives the declarations inside Params the shared helpers as `helpers.<rel>`.
+    - The program has no access to those helpers.
+- **Empty parameterization.** A task with an empty parameterization keeps the comp empty and the `.init` unchanged: `.comp Params {}`.
+- **`@singleton-axis` literal.** A structure that extends along one axis is written in a two-axis type, and the other axis takes a literal `1`.
+    - The clause containing that literal ends with `// @singleton-axis: <what the structure is>`.
+
+## Types
+- A solver may define:
+    - an ADT in `Choice`, in one of these places:
+        - as `Choice` itself
+        - as the type of a field in the `Choice` record
+        - as the type of a field in a `Choice` constructor
+    - `TiebreakResolution` for alt outputs
+    - a record used as a type argument of a generic comp
+
+## Program
+- **`@allow` directive.** A relation kept despite a lint hint has `// @allow: <category> — <reason>` on the line immediately above its declaration, with the category the hint names.
+    - The hint does not fire on the relation.
+- **`@workaround` directive.** A temporary workaround is under a `// @workaround: <the principled form it stands in for>` line.
+- **`@claim` directive.** At program scope or inside `Parse`, an instance of a component without an `@construction` mark has the directive, one line per instance, naming the claims the instance serves.
+    - Each slug names a claim in the solver's header.
+    - In a family sibling, that claim belongs to the representative's header.
+
+## Components
+- **Keys.** Every comp but `Params` and `Determine` takes a `Key` type param.
+    - Keyed relations share the key across cases.
+    - Single-set sites key on `Unit`.
+- **Instance-level inputs.**
+    - An input that is the same across cases is part of the instance's identity and takes no key.
+    - An input that varies per case is per-key data and keys the comp by `Choice`.
+- **Nested comps.** A nested comp's outputs are read through the instance path.
+- **Proposal comps.** A comp outside `Params`, `Determine`, and `Parse` is lib code, and a solver writes one only as a proposal comp, per [Lib addition protocol](docs/handbook/lib-protocol.md).
+
+## Parse
+- A `.comp Parse<Key>` contains a derivation that the program and the Determine comp share.
+
+## Determination
+- `Determine` contains the determination as one relation per determined parameter, with the parameter's name and schema, derived from `ex_in` and `ex_out`.
+- A determination relation that mirrors no parameter is a helper and takes no parameter's name.
+- A derived relation has no determination relation.
+- When several determined parameters use an Ident for the same entity, their determination relations derive the same id for that entity. The derived id need not equal the stored id.
+- **Test inputs.** A clause that keeps the parameter values that no example contradicts ranges over examples with `ex_out` rows.
+
+## Alt outputs
+- A task JSON may give a pair alternate outputs in an alt, whose `kind` names how the outputs differ.
+- An alt with kind `rule` gives the pair a second candidate.
+- An alt with kind `tiebreak` gives resolutions within one candidate.
+- The solver enumerates them through a trailing `out` column of type `TiebreakResolution`.

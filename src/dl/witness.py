@@ -1,8 +1,8 @@
 """Hand-written grids a solver's cases are pinned to.
 
 A witness file holds grids the author built to tell the solver's cases
-apart, each with the outcome every case is expected to give. style.md
-states the file's shape.
+apart, each with the outcome every case is expected to give.
+procedure.md states the file's shape.
 
 An entry's `assign` field reassigns a `Params` parameter before the run,
 so the entry stands at the assignment its `separates` names rather than
@@ -49,33 +49,6 @@ UNDEFINED_CONCEPT = "undefined-concept"
 
 FAILING = (DRIFT, ANNOTATION, UNDEFINED_CONCEPT)
 """The kinds that fail the check."""
-
-# Every sentence this check prints, keyed by the finding it states. A slot,
-# `{name}`, is filled at the site that fires.
-MESSAGES = mctx({
-        "no-entry": "`@witness {id}` names no witness in the file",
-        "reassigned": "`@reassigned` names {named}; the witness's `assign` names "
-                      "{holds}",
-        "relaxed-held": "`@relaxed {slug}` names the `@{held} {slug}` line; "
-                        "`@relaxed` names a `@scene` line",
-        "relaxed-unknown": "`@relaxed {slug}` names no line of the header",
-        "no-witness": "`@{kind} {slug}` is approximated and has no `@witness` "
-                      "line under its `@approximated:`",
-        "foreign": "`@witness {id}` under `@approximated:` of `@{kind} {slug}` "
-                   "is `{plausibility}`",
-        "no-departure": "`@{kind} {slug}` is approximated and no witness under "
-                        "its `@approximated:` shows case `{case}` departing",
-        "unnamed-entry": "witness `{id}` of the file is named by no "
-                         "`@witness` line",
-        "empty-assign": "`assign` is empty; omit the key",
-        "undefined-concept": "{entry}: the concept case {case} is {undefined}; "
-                             "take another input, or drop the peer with the "
-                             "statement that no witness exists",
-        "unlisted": "{entry}: case {case} is not listed",
-        "judged": "{entry}: case {case} gives the witness's judged output",
-        "unnamed-output": "{entry}: case {case} gives an output the witness does "
-                          "not name",
-})
 
 type Outcome = list[list[int]] | None
 type Assign = dict[str, list[list[object]]]
@@ -205,7 +178,7 @@ def _validate(data: object, path: Path) -> None:
 
 def load_witnesses(task_id: str) -> Witness | None:
     """The task's witness file, or None when it has none. A file off the
-    shape style.md states raises a ValueError."""
+    shape procedure.md states raises a ValueError."""
     path = witness_path(task_id)
     if not path.exists():
         return None
@@ -374,7 +347,9 @@ def _departs(verdict: str, case: str, concept: str) -> bool:
 
 
 def _no_witness_note(c: Claim) -> str:
-    return MESSAGES["no-witness"].format(kind=c.kind, slug=c.slug)
+    return mctx("`@{kind} {slug}` is approximated and has no `@witness` "
+                "line under its `@approximated:`").format(kind=c.kind,
+                                                          slug=c.slug)
 
 
 def _annotation_findings(source: str, entries: list[Entry],
@@ -411,10 +386,12 @@ def _annotation_findings(source: str, entries: list[Entry],
         entry = by_id.get(a.id)
         if entry is None:
             note(f"line {a.line}", a.id,
-                 MESSAGES["no-entry"].format(id=a.id))
+                 mctx("`@witness {id}` names no witness in the file")
+                 .format(id=a.id))
         elif sorted(a.reassigned) != sorted(entry.assign):
             note(a.id, a.id,
-                 MESSAGES["reassigned"].format(
+                 mctx("`@reassigned` names {named}; the witness's `assign` "
+                      "names {holds}").format(
                      named=_params(a.reassigned),
                      holds=_params(list(entry.assign))))
         for slug in a.relaxed:
@@ -422,9 +399,12 @@ def _annotation_findings(source: str, entries: list[Entry],
                 continue
             held = kinds.get(slug)
             note(a.id, a.id,
-                 MESSAGES["relaxed-held"].format(slug=slug, held=held)
+                 mctx("`@relaxed {slug}` names the `@{held} {slug}` line; "
+                      "`@relaxed` names a `@scene` line")
+                 .format(slug=slug, held=held)
                  if held else
-                 MESSAGES["relaxed-unknown"].format(slug=slug))
+                 mctx("`@relaxed {slug}` names no line of the header")
+                 .format(slug=slug))
     concept = concept_case(source)
 
     def approximated(c: Claim, want: list[str]) -> None:
@@ -434,13 +414,16 @@ def _annotation_findings(source: str, entries: list[Entry],
         for w in c.witnesses:
             if w.plausibility == FOREIGN:
                 note(f"line {w.line}", "",
-                     MESSAGES["foreign"].format(
+                     mctx("`@witness {id}` under `@approximated:` of "
+                          "`@{kind} {slug}` is `{plausibility}`").format(
                          id=w.id, kind=c.kind, slug=c.slug,
                          plausibility=FOREIGN))
         for case in want:
             if not any(_departs(w.verdict, case, concept) for w in c.witnesses):
                 note(f"line {c.line}", "",
-                     MESSAGES["no-departure"].format(
+                     mctx("`@{kind} {slug}` is approximated and no witness "
+                          "under its `@approximated:` shows case `{case}` "
+                          "departing").format(
                          kind=c.kind, slug=c.slug, case=case))
 
     restated: dict[str, set[str]] = {}
@@ -468,9 +451,11 @@ def _annotation_findings(source: str, entries: list[Entry],
                      if name else [])
     for e in entries:
         if e.empty_assign:
-            note(e.id, e.id, MESSAGES["empty-assign"])
+            note(e.id, e.id, mctx("`assign` is empty; omit the key"))
         if e.id not in named:
-            note("", e.id, MESSAGES["unnamed-entry"].format(id=e.id))
+            note("", e.id,
+                 mctx("witness `{id}` of the file is named by no `@witness` "
+                      "line").format(id=e.id))
     return findings
 
 
@@ -522,15 +507,20 @@ def _lines_of(d: Drift) -> list[str]:
     if d.kind == ANNOTATION:
         return [f"{d.entry}: {d.note}" if d.entry else d.note]
     if d.kind == UNDEFINED_CONCEPT:
-        return [MESSAGES["undefined-concept"].format(
+        return [mctx("{entry}: the concept case {case} is {undefined}; take "
+                     "another input, or drop the peer with the statement that "
+                     "no witness exists").format(
             entry=d.entry, case=case, undefined=UNDEFINED)]
     if d.kind == UNLISTED:
-        return [MESSAGES["unlisted"].format(entry=d.entry, case=case),
+        return [mctx("{entry}: case {case} is not listed")
+                .format(entry=d.entry, case=case),
                 *_side("the solver's output", d.actual)]
     if d.rejected_output:
-        return [MESSAGES["judged"].format(entry=d.entry, case=case),
+        return [mctx("{entry}: case {case} gives the witness's judged output")
+                .format(entry=d.entry, case=case),
                 *_side("the judged output", d.actual)]
-    return [MESSAGES["unnamed-output"].format(entry=d.entry, case=case),
+    return [mctx("{entry}: case {case} gives an output the witness does not "
+                 "name").format(entry=d.entry, case=case),
             *_side("the witness's output", d.expected),
             *_side("the solver's output", d.actual)]
 

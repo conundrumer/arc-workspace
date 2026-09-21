@@ -12,6 +12,7 @@
 | --- | --- |
 | Fit, fit pass, fit-plan | determination, determination pass, `determination-plan` |
 | rule (the Datalog sense) | clause |
+| Draft (the procedure operation) | Write |
 | concept rule | claim |
 | lib primitive | lib relation |
 | `Position`, the record | `Box`; `Position` is its cell reading |

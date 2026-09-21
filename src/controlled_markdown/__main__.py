@@ -5,8 +5,9 @@
     uv run python -m controlled_markdown render <path> [paths...]
 
 `check` reports each file that fails to parse or is not in canonical form, and
-exits 1 when any does. `fmt` rewrites each file in canonical form and prints
-the ones it changed. With no path, both read the set under
+exits 1 when any does. A run given no path also counts, over the whole set, the
+sites each partial is inlined at. `fmt` rewrites each file in canonical form
+and prints the ones it changed. With no path, both read the set under
 `[tool.controlled_markdown]` in `pyproject.toml`, so the command that guards the
 documents is one word wherever it is written. `render` prints the first path as
 ordinary Markdown, with its includes resolved from the files they name, and it
@@ -26,6 +27,7 @@ from . import (
     check_dl_comments,
     check_file_fragments,
     check_links,
+    check_partial_sites,
     check_paths,
     parse,
     render,
@@ -125,9 +127,11 @@ def check_code(root: Path, document_set: set[Path]) -> int:
     return off
 
 
-# Where the handbook starts: the composition and the two agent documents.
+# Where the handbook starts: the composition, the two agent documents, and
+# the session document, which inlines the operations its passes run.
 HANDBOOK_ENTRIES = ("prompts/handbook.md", "prompts/agents/handbook.md",
-                    "prompts/agents/handbook-expanded.md")
+                    "prompts/agents/handbook-expanded.md",
+                    "prompts/session.md")
 
 
 def check_handbook(root: Path, document_set: set[Path]) -> int:
@@ -141,9 +145,12 @@ def check_handbook(root: Path, document_set: set[Path]) -> int:
     return 0
 
 
-def check(paths: list[Path]) -> int:
+def check(paths: list[Path], whole: bool = True) -> int:
+    """Every document the paths name. `whole` says the paths are the document
+    set, which is what the partial-sites rule counts over."""
     off = 0
     root = repo_root()
+    parsed: list[tuple[Path, object]] = []
     for path in paths:
         name = shown(path)
         text = path.read_text()
@@ -157,8 +164,15 @@ def check(paths: list[Path]) -> int:
             print(err)
             off += 1
             continue
+        parsed.append((path.resolve(), document))
         if write(document) != text:
             print(f"{name}: not in canonical form")
+            off += 1
+    if whole:
+        # The rule counts the sites in every document, so it runs once the
+        # whole set is parsed.
+        for err in check_partial_sites(parsed):
+            print(err)
             off += 1
     return off
 
@@ -201,13 +215,18 @@ def main(argv: list[str]) -> int:
     paths = collect(names)
     try:
         if command == "check":
-            off = check(paths)
-            if not argv[2:]:
+            whole = not argv[2:]
+            off = check(paths, whole)
+            if whole:
                 root = repo_root()
                 document_set = {p.resolve() for p in paths}
                 off += check_code(root, document_set)
                 off += check_handbook(root, document_set)
-            return 1 if off else 0
+            if off:
+                return 1
+            word = "document" if len(paths) == 1 else "documents"
+            print(f"check: {len(paths)} {word}, ok")
+            return 0
         if command == "fmt":
             return fmt(paths)
         return show(paths)

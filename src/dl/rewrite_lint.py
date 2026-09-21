@@ -88,39 +88,6 @@ EXAMPLE_SRC = frozenset({"in", "ex_in", "ex_out"})
 
 type Finding = tuple[str, int, str, str]
 
-# Every sentence this lint prints, keyed by the category the finding carries.
-# A category whose text is built from the rule it read holds the form of that
-# text. A slot, `{name}`, is filled at the site that fires.
-MESSAGES = mctx({
-        "keep": "; to keep it, paste above the declaration: "
-                "`// @allow: {cat} \u2014 <reason>`",
-        "choice-domain": "`{name}` keeps one arbitrary tuple per `{over}`; state "
-                         "what picks it",
-        "shared-read": "`{name}` is shared, and {cases} never reads it; move it "
-                       "under the marker of the cases that read it",
-        "typed-order": "{how} `{var}`, a `{type}`, which has no order; store the "
-                       "order as a parameter",
-        "choice-tag": "same body under `{one}` and `{other}`; one clause ranges "
-                      "over the tags",
-        "cross-choice": "branches bind {tags}; keep each choice in its own clause",
-        "raw-aggregate": "`{op}` in the program; read it through a lib component",
-        "subsumed-atom-twice": "`{atom}` appears twice in the body",
-        "subsumed-atom": "`{atom}` adds nothing next to `{other}`",
-        "negated-value": "`{atom}, {var} != {value}` \u21d2 `!{rewritten}`",
-        "named-complement": "`{atom}, {cmp}` \u21d2 `!{rewritten}`",
-        "decl-placement": "all uses of `{name}` are in {spot}",
-        "long-rule": "{width} > {limit} chars of code on one line; wrap the body",
-        "domain-enumerator": "`{atom}`; `{var}` is already bound by `{binder}`",
-        "argmax": "`{name}` is max/min via self-join; read it through a lib "
-                  "component",
-        "common-subexpr": "{width} literals shared with `{name}` (line {line})",
-        "merge-tails": "; merge the tails into a disjunction",
-        "complement-rewrite": "`!{name}({args})` \u21d2 {parts}",
-        "other-member": "{pair} states the other member of a two-member type; "
-                        "write `{rel}({x}, {y})`",
-        "image-link": "{pair} through `{link}` is `{comp}`",
-})
-
 # The directive that keeps a relation against a hint, on the line above
 # the relation's declaration: `// @allow: <category> — <why>`.
 _ALLOW_RE = re.compile(r"//\s*@allow:\s*([\w-]+)")
@@ -133,7 +100,8 @@ ALLOWABLE_HINTS = frozenset({"pass-through", "single-consumer", "chain-join"})
 def keep_line(cat: str) -> str:
     """The line an author pastes above the declaration to keep the code
     against this hint, tacked onto the hint's message."""
-    return MESSAGES["keep"].format(cat=cat)
+    return mctx("; to keep it, paste above the declaration: "
+                "`// @allow: {cat} \u2014 <reason>`").format(cat=cat)
 
 # Souffle's primitive types. A column typed by one states no domain, so
 # it never counts as wider than an element type.
@@ -674,7 +642,7 @@ class _Lint:
             atom = d.body[0] if d.body else None
             assert isinstance(atom, Atom)  # _projection admitted this def
             parts.append(f"!{_atom_str(atom, names)}")
-        return MESSAGES["complement-rewrite"].format(
+        return mctx("`!{name}({args})` \u21d2 {parts}").format(
             name=key[1], args=", ".join(canon),
             parts="`" + ", ".join(parts) + "`")
 
@@ -868,7 +836,8 @@ class _Lint:
                     continue
                 self.add(
                     "choice-domain", decl.line,
-                    MESSAGES["choice-domain"].format(
+                    mctx("`{name}` keeps one arbitrary tuple per `{over}`; "
+                         "state what picks it").format(
                         name=name, over=", ".join(decl.choice_domain)),
                 )
 
@@ -900,7 +869,9 @@ class _Lint:
                     continue
                 self.add(
                     "shared-read", decl.line,
-                    MESSAGES["shared-read"].format(
+                    mctx("`{name}` is shared, and {cases} never reads it; "
+                         "move it under the marker of the cases that read "
+                         "it").format(
                         name=name,
                         cases=", ".join(f"`${c}()`" for c in missing)),
                 )
@@ -1034,7 +1005,9 @@ class _Lint:
                 seen.add((line, v))
                 self.add(
                     "typed-order", line,
-                    MESSAGES["typed-order"].format(how=how, var=v, type=t),
+                    mctx("{how} `{var}`, a `{type}`, which has no order; "
+                         "store the order as a parameter").format(
+                        how=how, var=v, type=t),
                 )
 
         for lit in body_literals(info.rule):
@@ -1204,7 +1177,8 @@ class _Lint:
             if len(names) == len(tags) == 2 and self._tags_enumerated(names):
                 self.add(
                     "choice-tag", rule.line,
-                    MESSAGES["choice-tag"].format(
+                    mctx("same body under `{one}` and `{other}`; one clause "
+                         "ranges over the tags").format(
                         one=_term_str(tags[1]), other=_term_str(tags[0])),
                 )
                 return
@@ -1239,7 +1213,8 @@ class _Lint:
                     tags |= b
                 self.add(
                     "cross-choice", disj.line,
-                    MESSAGES["cross-choice"].format(
+                    mctx("branches bind {tags}; keep each choice in its own "
+                         "clause").format(
                                 tags=", ".join(f"`${t}()`" for t in sorted(tags))),
                 )
 
@@ -1253,7 +1228,8 @@ class _Lint:
                     if isinstance(side, Agg):
                         self.add(
                             "raw-aggregate", lit.line,
-                            MESSAGES["raw-aggregate"].format(op=side.op),
+                            mctx("`{op}` in the program; read it through a "
+                                 "lib component").format(op=side.op),
                         )
 
     def subsumed_atoms(self, info: RuleInfo) -> None:
@@ -1271,15 +1247,16 @@ class _Lint:
                     if all(_term_str(x) == _term_str(y) for x, y in pairs):
                         if i < j:
                             self.add("subsumed-atom", b.line,
-                                     MESSAGES["subsumed-atom-twice"].format(
-                                         atom=_atom_str(b)))
+                                     mctx("`{atom}` appears twice in the "
+                                          "body").format(atom=_atom_str(b)))
                     elif all(
                         isinstance(x, Wild) or _term_str(x) == _term_str(y)
                         for x, y in pairs
                     ):
                         self.add(
                             "subsumed-atom", a.line,
-                            MESSAGES["subsumed-atom"].format(
+                            mctx("`{atom}` adds nothing next to "
+                                 "`{other}`").format(
                                 atom=_atom_str(a), other=_atom_str(b)),
                         )
 
@@ -1462,7 +1439,8 @@ class _Lint:
             rel = _OTHER_MEMBER.get(t)
             if rel is None:
                 return None
-            return MESSAGES["other-member"].format(
+            return mctx("{pair} states the other member of a two-member "
+                        "type; write `{rel}({x}, {y})`").format(
                 pair=pair, rel=rel, x=x, y=y)
         if len(diff) != 2:
             return None
@@ -1472,7 +1450,7 @@ class _Lint:
         link = self._image_link(a.args[p].name, b.args[p].name, atoms)
         if link is None:
             return None
-        return MESSAGES["image-link"].format(
+        return mctx("{pair} through `{link}` is `{comp}`").format(
             pair=pair, link=link, comp=_IMAGE_COMPS[link])
 
     def _image_link(self, p: str, q: str, atoms: list[Atom]) -> str | None:
@@ -1524,7 +1502,8 @@ class _Lint:
                                 tuple(const if j == i else a for j, a in enumerate(atom.args)),
                                 atom.line)
                 self.add("negated-value", atom.line,
-                         MESSAGES["negated-value"].format(
+                         mctx("`{atom}, {var} != {value}` \u21d2 "
+                              "`!{rewritten}`").format(
                              atom=_atom_str(atom), var=v,
                              value=_term_str(const),
                              rewritten=_atom_str(new_atom)))
@@ -1627,7 +1606,7 @@ class _Lint:
             qual = f"{atom.qual}." if atom.qual else ""
             self.add(
                 "named-complement", atom.line,
-                MESSAGES["named-complement"].format(
+                mctx("`{atom}, {cmp}` \u21d2 `!{rewritten}`").format(
                         atom=_atom_str(atom), cmp=_lit_str(cmp),
                         rewritten=f"{qual}{atom.name}({_term_str(other)})"),
             )
@@ -1650,7 +1629,8 @@ class _Lint:
             if spot is None or spot == self.ix.section_at(decl.line):
                 continue
             self.add("decl-placement", decl.line,
-                 MESSAGES["decl-placement"].format(name=name, spot=spot))
+                 mctx("all uses of `{name}` are in {spot}").format(
+                     name=name, spot=spot))
 
     def long_rule(self, info: RuleInfo) -> None:
         """A rule whose whole body stands on its first line and runs past
@@ -1665,8 +1645,9 @@ class _Lint:
         if not code.endswith("."):
             return
         if len(code) > LINE_LIMIT:
-            self.add("long-rule", rule.line,
-                     MESSAGES["long-rule"].format(
+            self.add("long-clause", rule.line,
+                     mctx("{width} > {limit} chars of code on one line; wrap "
+                          "the body").format(
                              width=len(code), limit=LINE_LIMIT))
 
     # --- hint rules ---
@@ -1706,7 +1687,8 @@ class _Lint:
             if binder is not None and not self._narrows(info.scope, atom, binder, v):
                 self.add(
                     "domain-enumerator", atom.line,
-                    MESSAGES["domain-enumerator"].format(
+                    mctx("`{atom}`; `{var}` is already bound by "
+                         "`{binder}`").format(
                         atom=_atom_str(atom), var=v, binder=binder.name),
                 )
 
@@ -1762,7 +1744,8 @@ class _Lint:
         uses = self.uses(key)
         if uses and all(u.role == "neg" for u in uses):
             self.add("argmax", rule.line,
-                     MESSAGES["argmax"].format(name=rule.head.name))
+                     mctx("`{name}` is max/min via self-join; read it through "
+                          "a lib component").format(name=rule.head.name))
 
     def const_join(self, info: RuleInfo) -> None:
         """Hint: a variable internal to a rule's Params reads. The join
@@ -1913,10 +1896,10 @@ class _Lint:
                for body in _flatten(cur.rule.body or [])
                for lit in body):
             return None
-        msg = MESSAGES["common-subexpr"].format(
+        msg = mctx("{width} literals shared with `{name}` (line {line})").format(
             width=width, name=ph.name, line=prev.rule.line)
         if _canon_window([ph]) == _canon_window([ch]):
-            return msg + MESSAGES["merge-tails"]
+            return msg + mctx("; merge the tails into a disjunction")
         return msg if width >= 3 else None
 
 

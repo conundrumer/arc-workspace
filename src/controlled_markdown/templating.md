@@ -24,6 +24,8 @@
 - A document's `index` attribute says what it abridges to, and it gives the title heading and the lines above the first section, then the lines the attribute asks for.
     - `index: headings` gives one line per heading.
     - `index: entries` gives one line per `## ` section: its text and the first sentence of its first statement.
+- A heading's rendered level comes from its depth in the rendered tree, and not from the count of `#` it carries in the source.
+    - A heading that is a direct child of a console message section renders at the top level.
 
 ## Inline
 
@@ -40,6 +42,7 @@
     ### prior-reports
     - The reports the sessions before you left.
     ```
+- The sections under a `Partials` heading are the document's partials, the runs of lines more than one site inlines.
 - A section a reader reads keeps a prose heading.
 * comment:
     - The heading at the site then reads as the reference to the inlined section.

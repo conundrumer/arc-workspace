@@ -97,28 +97,6 @@ def run_probe(task) -> dict[str, set[tuple]]:
 # determination — the session's choice which — until the rest go under.
 ENUMERATION_LIMIT = 100
 
-# Every sentence the plan prints, keyed by the part it heads. A slot,
-# `{name}`, is filled by the render.
-MESSAGES = mctx({
-        "none": "no actions",
-        "determine": "write a determination relation",
-        "open": "the train pairs leave several values, so record the surviving "
-                "values as the parameter's open values",
-        "over": "over the enumeration limit ({joint} > {limit})",
-        # Printed once under the over-the-limit section when some listed count is
-        # a Position parameter's enumerable domain.
-        "position-domain": "  A Position parameter's candidates are the cells of "
-                           "the frame its stored value implies, so its count "
-                           "follows the frame the parse produces.",
-        "determined": "determined",
-        "covered": "the value is covered on this task's examples, so no "
-                   "determination relation is needed",
-        "joint": "{survived} of {tried} joint assignments of the enumerated "
-                 "parameters reproduce every train pair",
-        "embedded": "move data from clauses to fact parameters",
-        "verdicts": "each proposer's verdict on each parameter:",
-})
-
 
 def probe_report(
     stem: str,
@@ -484,28 +462,39 @@ def render_determination_plan(
     open_valued = [param for param in sorted(surviving)
                    if len(surviving[param]) > 1]
     if not determine and not over and not embedded and not open_valued:
-        lines.append(MESSAGES["none"])
-    section(MESSAGES["determine"], determine)
+        lines.append(mctx("no actions"))
+    section(mctx("write a determination relation"), determine)
     section(
-        MESSAGES["open"],
+        mctx("the train pairs leave several values, so record the surviving "
+             "values as the parameter's open values"),
         [f"{param} ({', '.join(surviving[param])})" for param in open_valued],
     )
     if over:
         section(
-            MESSAGES["over"].format(joint=joint, limit=ENUMERATION_LIMIT),
+            mctx("over the enumeration limit ({joint} > {limit})").format(
+                joint=joint, limit=ENUMERATION_LIMIT),
             [f"{param}({n})" for param, n in settle],
         )
         position_domain = {
             param: vs.get("position-domain") for param, vs in results
         }
         if any(position_domain.get(p) == f"enumerable({n})" for p, n in settle):
-            lines.append(MESSAGES["position-domain"])
-    section(MESSAGES["determined"], done)
-    section(MESSAGES["covered"], [covered_line(param) for param in covered])
+            # One line under the over-the-limit section, when a listed count
+            # is a Position parameter's enumerable domain.
+            lines.append("  " + mctx(
+                "A Position parameter's candidates are the cells of the frame "
+                "its stored value implies, so its count follows the frame the "
+                "parse produces."))
+    section(mctx("determined"), done)
+    section(mctx("the value is covered on this task's examples, so no "
+                 "determination relation is needed"),
+            [covered_line(param) for param in covered])
     if surviving:
         lines.append(
-            MESSAGES["joint"].format(survived=survived, tried=tried))
-    section(MESSAGES["embedded"], embedded)
+            mctx("{survived} of {tried} joint assignments of the enumerated "
+                 "parameters reproduce every train pair").format(
+                survived=survived, tried=tried))
+    section(mctx("move data from clauses to fact parameters"), embedded)
 
     if verdicts:
         detail = [
@@ -514,6 +503,6 @@ def render_determination_plan(
             if vs
         ]
         if detail:
-            lines += ["", MESSAGES["verdicts"]]
+            lines += ["", mctx("each proposer's verdict on each parameter:")]
             lines += [f"  {line}" for line in detail]
     return lines

@@ -521,9 +521,15 @@ def _py_fragments(tree, path: Path, source: str):
                 source, node.lineno, "mctx-literal",
                 "`mctx` takes a string or a dict of them, written out")
 
+    def tagged(func) -> bool:
+        """The call is `mctx`, by its own name or through a module."""
+        if isinstance(func, ast.Name):
+            return func.id == "mctx"
+        return isinstance(func, ast.Attribute) and func.attr == "mctx"
+
     for node in ast.walk(tree):
-        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-                and node.func.id == "mctx" and len(node.args) == 1):
+        if (isinstance(node, ast.Call) and tagged(node.func)
+                and len(node.args) == 1):
             for line, text in values(node.args[0]):
                 yield Fragment(text, path, source, line)
 
@@ -772,6 +778,65 @@ def check_closure(entries: list[Path], document_set: set[Path],
                     raise ControlledMarkdownError(
                         source, node.line, "handbook-link",
                         f"`{path}` is a document the handbook does not carry")
+
+
+# The heading whose sections are the partials of a document: the runs of
+# lines the document's own messages inline.
+PARTIALS = "Partials"
+
+
+def partials(document: Node) -> list[Node]:
+    """The sections under a `Partials` heading of `document`: the headings one
+    level under it. A heading deeper than that belongs to a partial's body."""
+    out: list[Node] = []
+    for node in _walk(document):
+        if node.kind == HEADING and node.text == PARTIALS:
+            out.extend(c for c in node.children if c.kind == HEADING)
+    return out
+
+
+def inline_sites(documents: list[tuple[Path, Node]]) -> dict[tuple[Path, str], int]:
+    """How many `inline` directives reach each section, keyed by the target
+    document's resolved path and the id the directive names. A directive with
+    no path before the `#` reaches its own document."""
+    out: dict[tuple[Path, str], int] = {}
+    for file, document in documents:
+        for node in _walk(document):
+            value = node.attr(INLINE)
+            if value is None:
+                continue
+            where, hashed, ident = value.strip().partition("#")
+            where, ident = where.strip(), ident.strip()
+            if not hashed or not ident:
+                continue
+            target = (file.parent / where).resolve() if where else file
+            out[(target, ident)] = out.get((target, ident), 0) + 1
+    return out
+
+
+# How many sites a partial is inlined at. A run of lines one site uses belongs
+# at that site.
+PARTIAL_SITES = 2
+
+
+def check_partial_sites(
+        documents: list[tuple[Path, Node]]) -> list[ControlledMarkdownError]:
+    """Each partial is inlined at `PARTIAL_SITES` sites at least, counted over
+    the whole document set. Each file is given as its resolved path and its
+    parsed document, and the errors come back one per partial."""
+    sites = inline_sites(documents)
+    out: list[ControlledMarkdownError] = []
+    for file, document in documents:
+        for heading in partials(document):
+            ident = slug(heading.text)
+            count = sites.get((file.resolve(), ident), 0)
+            if count < PARTIAL_SITES:
+                out.append(ControlledMarkdownError(
+                    heading.source, heading.line, "partial-sites",
+                    f"`{ident}` is a partial inlined at {count} "
+                    f"{'site' if count == 1 else 'sites'}; a partial is "
+                    f"inlined at two sites at least"))
+    return out
 
 
 def check_blocks(node: Node) -> None:
@@ -1477,14 +1542,17 @@ def _require(document: Node, st: _State) -> None:
     if not st.given:
         return
     used = _names(document.children, st, (), st.reg.rel(document))
+    # A document node stands over every line and carries no line of its own,
+    # so the report names the document's first line.
+    line = document.line or 1
     missing = sorted(used - set(st.values))
     if missing:
-        raise ControlledMarkdownError(document.source, document.line,
+        raise ControlledMarkdownError(document.source, line,
                                   "variable-missing",
                                   f"no value for {_listed(missing)}")
     extra = sorted(set(st.values) - used)
     if extra:
-        raise ControlledMarkdownError(document.source, document.line,
+        raise ControlledMarkdownError(document.source, line,
                                   "variable-unused",
                                   f"nothing reads {_listed(extra)}")
 

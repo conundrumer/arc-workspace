@@ -1,6 +1,6 @@
 # Writing a document
 - The lines and the markers, for anyone editing a document.
-- `README.md` says what the format is and what the other documents hold.
+- [Controlled Markdown](src/controlled_markdown/README.md) says what the format is and what the other documents hold.
 
 * comment: when editing this doc
     - Put each marker to use before its rule, so a reader of the source sees the marker at work.
@@ -32,11 +32,12 @@
     ```
     - [Models and tasks](docs/handbook/principles.md#models-and-tasks) defines a case.
     ```
+- A path left out names a heading of the same document, as `[text](#slug)`.
 - The check resolves every link: it reports a path that names nothing, a slug no heading carries, and text that is not the heading's.
 - A path that opens with `./` or `../` is taken from the document that holds it instead.
 - A target with a scheme, such as `https:`, is an external address, and the check passes it over.
 - A link written inside a backtick span is text.
-- A code file the check's config lists is read for its links alone, each at the file's own line, and nothing else in it is read as a document.
+- A code file under the repo is read for its `mctx` fragments and for the document paths it names, each at the file's own line, and nothing else in it is read as a document.
 
 ## Prose in code
 
@@ -88,10 +89,10 @@
 - `comment` is the directive every editor uses: it heads a note for the editor, and no render shows the lines under it.
     - A note of one line is the value.
         ```
-        * comment: Sent in place of `handoff.md` when the worker refuses that ask.
+        * comment: Sent in place of `handoff` when the worker refuses that ask.
         ```
     - A note of several lines goes under a bare `comment`, or under one whose value says when the lines apply, as the note at the top of this document does.
-- The rest of the directives compose a document and fill it with values, and `templating.md` states them.
+- The rest of the directives compose a document and fill it with values, and [Templating a document](src/controlled_markdown/templating.md) states them.
 
 ## Quotes
 
@@ -144,6 +145,7 @@
 - The count of `#` follows the tree: the document's heading is `#`, its sections are `##`, and theirs are `###`.
 - A `+ ` line on the line after a heading is an attribute of that heading.
 - A heading's id is the slug of its text: lower case, each run of spaces as one hyphen, and the punctuation other than a hyphen dropped.
+    - The characters dropped are every one that is not a letter, a digit, an underscore, a space or a hyphen, the backtick among them.
     - A heading is the only line that carries an id, and two sections of one document whose slugs meet is an error, settled by renaming a heading.
 - The lines above the first heading are the document's lead, and they belong to the document.
     - A `+ ` line there is an attribute of the document, and it describes the document rather than any line in it.

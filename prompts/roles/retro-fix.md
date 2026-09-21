@@ -12,15 +12,15 @@
 - A general fix replaces the specific text it covers.
 - An addition that answers text the file already contains replaces that text.
 - A prose fix in the lib changes comments only.
-- A code fix keeps every member relation, signature, and claim as they are.
+- A code fix keeps every member relation, signature, and documented guarantee as they are.
 - An entry fix writes the entry with the fields [The entry](docs/handbook/lib-protocol.md#the-entry) gives, its `Survey:` line stamped with the current time to the minute, and stops there.
     - It does not change the lib.
 - A citation of a draft solver waits: write it at its place in the pending form that file's editing note gives.
 - Where the brief's issue is a rule of [Principles](docs/handbook/principles.md), examine each of the brief's tasks.
-    - If the fix leaves that task's solver something to act on, such as a case to add or drop, write `// review principle: <section heading> — <that point>` as the solver's last header line.
+    - If the fix leaves that task's solver something to act on, such as a case to add or drop, write `// review principle: <section heading> — <that subject>` as the solver's last header line.
     - A solver the fix confirms as it stands takes no line.
     - Then run `uv run python scripts/run_dl.py lint <task_id>` on each solver that takes a line, and fix what the `header` category reports.
-    - What the docs settle is settled in this retro: the line hands the subject to this retro's Resolve stage, and it stays only where that stage leaves it unfinished.
+    - What the docs settle is settled in this retro: the line hands the subject to this retro's Resolve phase, and it stays only where that phase leaves it unfinished.
 
 ## Verification
 - Verify by kind.

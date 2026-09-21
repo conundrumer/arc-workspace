@@ -2,16 +2,22 @@
 - The messages the console sends a worker, one section per message.
 * comment
     - A section's heading is the name the console asks for.
-    - The sections under Partials are the runs of lines that more than one message uses.
 
 ## create
 * inline: #task
-
-### Reference solver
+- The reference TS solver:
 * code: reference
     + language: ts
 - You are the first session of a chained flow: you create the solver, then a separate session takes over from your report.
-* inline: #creation-ops
+* inline: #every-pass-rules
+* inline: #ops-head
+* inline: #op-write
+* inline: #op-develop
+* inline: #op-determine
+* inline: #op-witness
+* inline: #op-simplify
+* inline: #op-prune
+* inline: #pass-head
 * inline: #scope
 * inline: #draft-mark
 * inline: #lib-protocol-duties
@@ -25,12 +31,13 @@
 * inline: #prior-reports
 * inline: #advance-head
 * inline: #read-first
-- Run these operations over it, in this order:
-    1. [Develop](docs/handbook/procedure.md#develop)
-    2. [Determine](docs/handbook/procedure.md#determine)
-    3. [Witness](docs/handbook/procedure.md#witness)
-    4. [Simplify](docs/handbook/procedure.md#simplify)
-    5. [Prune](docs/handbook/procedure.md#prune)
+* inline: #every-pass-rules
+* inline: #ops-head
+* inline: #op-develop
+* inline: #op-determine
+* inline: #op-witness
+* inline: #op-simplify
+* inline: #op-prune
 * inline: #pass-rules
 * if: more
     * inline: #handoff-tail
@@ -43,7 +50,14 @@
 * inline: #advance-head
 - The sessions before you left no solver: programs/solvers/{{tid}}.dl does not exist.
 - Take the reports above as input to the first operation.
-* inline: #creation-ops
+* inline: #every-pass-rules
+* inline: #ops-head
+* inline: #op-write
+* inline: #op-develop
+* inline: #op-determine
+* inline: #op-witness
+* inline: #op-simplify
+* inline: #op-prune
 * inline: #pass-rules
 * if: more
     * inline: #handoff-tail
@@ -56,13 +70,26 @@
 * if: reports
     * inline: #prior-reports
     * inline: #read-first
-    * inline: #final-ops
+    * inline: #every-pass-rules
+    * inline: #ops-head
+    * inline: #op-develop
+    * inline: #op-determine
+    * inline: #op-witness
+    * inline: #op-simplify
+    * inline: #op-prune
     * inline: #pass-rules
 * unless: reports
     - No earlier session left a report, so the solver file is the whole account.
     - Read programs/solvers/{{tid}}.dl first.
     * inline: #finished
-    * inline: #final-ops
+    * inline: #every-pass-rules
+    * inline: #ops-head
+    * inline: #op-develop
+    * inline: #op-determine
+    * inline: #op-witness
+    * inline: #op-simplify
+    * inline: #op-prune
+    * inline: #pass-head
     * inline: #judge
     * inline: #scope
     * inline: #draft-mark
@@ -85,16 +112,16 @@
 ## callout
 * comment: The counts behind each rate live in `prompts.py`, which passes each kind its rate and its band.
 
-- Your report is in.
-- Now step back from the pass and write the callouts: entries deserving the user's attention, meaning open items only the user can settle, and anything else they should see.
+- Your pass is in.
+- Now step back from the pass and write the callouts: what deserves the user's attention, meaning open items only the user can settle, and anything else they should see.
 - Decide every call from the principles and your reading of them.
 - Report a call only when the reading is a stretch, naming the rule and the tighter reading.
-- Rank each entry P1-P3 by kind: match the entry against a description below and take that kind's band.
+- Rank each callout P1-P3 by kind: match the callout against a description below and take that kind's band.
 - Match on the description, not the label.
-- An entry outside every description ranks on your own judgment.
+- A callout outside every description ranks on your own judgment.
 - The rate is how often the user engages the kind when a report raises it:
     * inline: #callout-kinds
-- An entry a description excludes, such as a name local to this solver, is not a callout at all: leave it out.
+- What a description excludes, such as a name local to this solver, is not a callout at all: leave it out.
 * inline: #p0
 * inline: #callouts-reply
 
@@ -102,7 +129,7 @@
 * comment: Sent in place of `callout` when the worker refuses that ask as reasoning extraction. The words ask for a record of the pass, not for what the session considered.
 
 - Write the callouts as a document for the user: the open items only the user can settle, and the calls whose reading of the principles is a stretch, each naming the rule and the tighter reading.
-- Rank each entry P1-P3 by kind, matched on the description:
+- Rank each callout P1-P3 by kind, matched on the description:
     * inline: #callout-kinds
 * inline: #p0
 * inline: #callouts-reply
@@ -123,18 +150,6 @@
 - Keep it brief and factual.
 - What the reader needs is your dead ends and your open question, not a full account.
 - Put it between `<handoff>` and `</handoff>` tags.
-
-## handoff-tail
-* comment: Sent where a stage has a successor.
-
-* inline: #handoff-end
-- The report covers your own pass: your rulings, your edits, your changes.
-- What the reports above already establish stays with them.
-* inline: #handoff-wrap
-
-## review-tail
-- Run [Review](docs/handbook/procedure.md#review) after the operations above.
-- Your review is your reply.
 
 ## scratch-note
 * comment: Part of the system prompt of a worker and of a survey session.
@@ -157,32 +172,60 @@
 - A grid location is cited as pair, side, places — `train0 input (11,2), (13,2); test1 output rows 2–4, cols 1–3`, or a single `row N` / `col N` — all 0-based cell coordinates.
 
 ## survey
-* comment: Sent by `scripts/survey.py`.
+* comment: Sent by `tools/console/solver_console/surveys.py`, which `scripts/survey.py` runs.
 
-- Survey the operation the entry {{entry}} specifies, over the scope ({{scope}}).
+- Survey the lib operation the entry {{entry}} specifies, over the scope ({{scope}}).
 - Write the files you need under {{scratch}}, and change no file outside that path.
-- Your reply is the report, its four parts and nothing besides them.
+- Your reply is the report.
 
 ## Partials
 
-### creation-ops
-- Run these operations, in this order:
-    1. [Draft](docs/handbook/procedure.md#draft)
-    2. [Develop](docs/handbook/procedure.md#develop)
-    3. [Determine](docs/handbook/procedure.md#determine)
-    4. [Witness](docs/handbook/procedure.md#witness)
-    5. [Simplify](docs/handbook/procedure.md#simplify)
-    6. [Prune](docs/handbook/procedure.md#prune)
+### every-pass-rules
 
-### final-ops
-- Run these operations over it, in this order:
-    1. [Develop](docs/handbook/procedure.md#develop)
-    2. [Determine](docs/handbook/procedure.md#determine)
-    3. [Witness](docs/handbook/procedure.md#witness)
-    4. [Simplify](docs/handbook/procedure.md#simplify)
-    5. [Prune](docs/handbook/procedure.md#prune)
-    6. [Promote](docs/handbook/procedure.md#promote)
-        - When the user says `promote` or `migrate` over an entry under `docs/wf-solver/proposals/`.
+#### Every pass
+* inline: ../docs/handbook/procedure.md#every-pass
+
+#### Review items
+* inline: ../docs/handbook/procedure.md#review-items
+
+### op-write
+
+#### Write
+* inline: ../docs/handbook/procedure.md#write
+
+### op-develop
+
+#### Develop
+* inline: ../docs/handbook/procedure.md#develop
+
+### op-determine
+
+#### Determine
+* inline: ../docs/handbook/procedure.md#determine
+
+### op-witness
+
+#### Witness
+* inline: ../docs/handbook/procedure.md#witness
+
+### op-simplify
+
+#### Simplify
+* inline: ../docs/handbook/procedure.md#simplify
+
+### op-prune
+
+#### Prune
+* inline: ../docs/handbook/procedure.md#prune
+
+### ops-head
+
+#### Operations
+- Run the operations below, through Prune, in this order.
+
+### pass-head
+
+#### Your pass
 
 ### judge
 - Judge the model and the code yourself, and edit what falls short.
@@ -207,6 +250,7 @@
 * inline: #finished
 
 ### pass-rules
+* inline: #pass-head
 * inline: #judge
 - Do not redo work the reports already did.
 - What a report leaves unsettled is yours to settle.
@@ -224,7 +268,7 @@
 - You are a later session of a chained flow: the sessions before you left the reports above.
 
 ### scope
-- Your edits stay in programs/solvers/{{tid}}.dl, programs/witnesses/{{tid}}.wit.json, .scratch/{{tid}}/, docs/wf-solver/proposals/, and the files an operation this message lists names.
+- Your edits stay in programs/solvers/{{tid}}.dl, programs/witnesses/{{tid}}.wit.json, .scratch/{{tid}}/, docs/wf-solver/proposals/, and the files an operation this message carries names.
     - An entry your pass reads is as much yours to fix as one you opened.
 - Any other file is the user's to change, and a fix you have for one goes in your report.
 
@@ -232,8 +276,7 @@
 - The solver carries `// @draft` on its own line under the task-id line, and only the user's approval takes it off.
 
 ### lib-protocol-duties
-- [The order](docs/handbook/lib-protocol.md#the-order) states when your pass surveys a proposals entry, and what it does with the reimplementations an entry lists.
-- Your report carries each entry your pass read or wrote, with whatever result stands in it.
+- Your report carries each entry your pass read or wrote, with whatever survey result stands in it.
 
 ### finished
 - A solver that already holds up under your judgment needs no edit from you: say so.
@@ -259,8 +302,23 @@
 ### report-complete
 - Make it complete enough that the next session reruns nothing.
 
+### handoff-tail
+* comment: Sent where a stage has a successor.
+
+* inline: #handoff-end
+- The report covers your own pass: your rulings, your edits, your changes.
+- What the reports above already establish stays with them.
+* inline: #handoff-wrap
+
+### review-tail
+
+#### Review
+- The review comes after the pass.
+* inline: ../docs/handbook/procedure.md#review
+- Your review is your reply.
+
 ### callouts-reply
-- Reply with only the callouts, between `<callouts>` and `</callouts>` tags: a numbered list, each entry one or two lines opening with its `[P0]`-`[P3]` mark.
+- Reply with only the callouts, between `<callouts>` and `</callouts>` tags: a numbered list, each callout one or two lines opening with its rank, `[P0]` to `[P3]`.
 - With nothing to raise, the block holds the single word `none`.
 
 ### callout-kinds
@@ -282,5 +340,5 @@
     - P{{hedges-band}}, engaged {{hedges-rate}}% of the time.
 
 ### p0
-- P0 stands apart from that scale: use it only for a clear mechanical problem with the tooling, such as the runner, the linter, or the audit crashing, giving a wrong result, or lacking something the procedure needed.
-- A judgment call never carries a P0.
+- P0 stands apart from that scale: use it only for a clear mechanical problem with the tooling, such as the runner, the linter, or the audit crashing, giving a wrong result, or lacking something an operation needed.
+- A judgment never carries a P0.

@@ -54,18 +54,23 @@ def scratch_note() -> str:
     return message("scratch-note")
 
 
-def append_path(index: bool = False) -> Path:
+def append_text(index: bool = False) -> str:
     """The worker's system-prompt appendix: the docs and the lib, as
-    dl.context renders them, the lib as its interface, or under `index` as
-    its index, then the scratch note. The file is named by its content: items
-    made while the sources are unchanged share one file, and so one cached
-    prefix, and a file never changes under the session that reads it, since a
-    worker resumes by reading its own file again. The build also keeps the handbook
-    agents' files and the lib's interface files current, so a session started
-    plainly spawns an agent over the same handbook."""
-    text = render(
+    dl.context renders them, the lib as its interface, or under `index` as its
+    index, then the scratch note."""
+    return render(
         AGENT_NAMES[0] if index else AGENT_NAMES[1],
         agents=config.AGENTS) + "\n" + scratch_note()
+
+
+def append_path(index: bool = False) -> Path:
+    """The appendix `append_text` gives, as a file. The file is named by its
+    content: items made while the sources are unchanged share one file, and so
+    one cached prefix, and a file never changes under the session that reads
+    it, since a worker resumes by reading its own file again. The build also
+    keeps the handbook agents' files and the lib's interface files current, so
+    a session started plainly spawns an agent over the same handbook."""
+    text = append_text(index)
     digest = hashlib.sha1(text.encode()).hexdigest()[:10]
     path = config.STATE_DIR / f"appendix-{digest}.md"
     if path.exists():
@@ -192,17 +197,6 @@ def nudge_brief() -> str:
 
 def bail_brief() -> str:
     return message("bail")
-
-
-def handoff_tail() -> str:
-    """The handoff tail, under the blank line that parts it from the message
-    it follows."""
-    return "\n\n" + message("handoff-tail")
-
-
-def review_tail() -> str:
-    """The review tail, parted the same way."""
-    return "\n\n" + message("review-tail")
 
 
 def task_text(tid: str) -> str:

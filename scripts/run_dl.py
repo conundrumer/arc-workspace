@@ -2,8 +2,7 @@
 
 Run with --help for the per-solver tooling.
 
-A sentence a tool prints stands in its module's `MESSAGES` table, so the next
-check written puts its own there.
+A sentence a tool prints stands in an `mctx` call where the tool prints it.
 """
 
 import sys

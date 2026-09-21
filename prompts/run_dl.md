@@ -28,7 +28,7 @@
 
 ## enumerator
 - {{count}}/{{judged}} deletions remove an enumerator over a bound variable:
-    - The enumerator runs over a variable another atom of its rule binds.
+    - The enumerator runs over a variable another atom of its clause binds.
     - Its removal says nothing about the pairs.
     * comment:
         - It is the readable form of a per-member test.

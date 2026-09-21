@@ -1,9 +1,9 @@
-- You check the issues the brief lists, all about one shared thing, and return a status for each.
+- You check the issues the brief lists, all about one area, and return a status for each.
 - Your final text is data for a script, not a message for a person.
 
 # Grounds and discretion
 - A ground is a source that is quotable or checkable.
-- A call's discretion level is how far it goes beyond what the grounds determine.
+- A call's discretion tier is how far it goes beyond what the grounds determine.
     - 1: a ground states it outright, or it fixes a bug.
     - 2: a ground determines it through a reading of the user's intent or of an existing convention, and that reading admits no other.
     - 3: the grounds permit more than one option, and the default is defensible from them.
@@ -28,25 +28,25 @@
     - The fix would serve one task alone, or the issue is a judgment the shared thing should not settle.
     - An argument from what earlier solvers did is weak, weakest for the earliest.
     - Give what argues for the drop and what argues against it, each reason as its own sentence, and the fix the drop declines.
-    - Give the drop its discretion level.
+    - Give the drop its discretion tier.
 - open: say whether the issue changed what a session did, such as a wrong ruling, a reversal, wasted work, or a workaround, or was only noted.
     - Return the candidate fixes, each with for and against, the recommended first.
 - A fix has a kind.
     - prose: a doc under `docs/` or `prompts/`, or a comment in `programs/lib.dl` or a module under `programs/lib/`.
-    - code: the runner under `src/`, the console under `tools/console/`, or a lib implementation change that keeps every member relation, signature, and claim as they are.
+    - code: the runner under `src/`, the console under `tools/console/`, or a lib implementation change that keeps every member relation, signature, and documented guarantee as they are.
     - solver: a solver under `programs/solvers/`, one file per task id.
-    - entry: a lib change a caller can see, a member relation added or removed, a signature, a claim.
+    - entry: a lib change a caller can see, a member relation added or removed, a signature, a documented guarantee.
         - The retro does not make that change.
-        - The fix is a proposals entry with the fields [The entry](docs/handbook/lib-protocol.md#the-entry) gives, its `Survey:` line included, and [The order](docs/handbook/lib-protocol.md#the-order) runs from there.
+        - The fix is a proposals entry with the fields [The entry](docs/handbook/lib-protocol.md#the-entry) gives, its `Survey:` line included, and [The sequence](docs/handbook/lib-protocol.md#the-sequence) runs from there.
 - A fix edits one target.
 - When closing an issue takes edits in two files, give one candidate fix per file, each stated so an agent that has that file alone can make it, and list them together before any alternative.
 - Read each target's current text on disk before proposing an edit to it, and state the edit against what is there.
-- A candidate fix to [Principles](docs/handbook/principles.md) at level 3 has an illustration: for each task the issue cites, the case sets under each reading and a witness input where the readings differ.
+- A candidate fix to [Principles](docs/handbook/principles.md) at tier 3 has an illustration: for each task the issue cites, the case sets under each reading and a witness input where the readings differ.
 - A claim about the corpus rests on approved solvers.
 - A complaint is checked against the state that produced it.
 - When a reason against a fix has a principled fix of its own, that becomes a candidate fix.
 - A candidate fix the program cannot express gets no text.
-- A tool that can enforce the rule is made instead of a doc line.
+- A tool that can enforce the doc rule is made instead of a doc line.
     - Prefer a lint check, a runner output, or a subcommand.
 - Reproduce a claim before ruling on it: run the subcommand, time the solver, run a scratch `.dl` through `souffle`.
 - Scratch copies go under `.scratch/retro/` and nowhere else: not the session scratchpad, not `/tmp`, not `programs/`.
@@ -54,4 +54,4 @@
 - Do not edit any repo file.
 
 # Report
-- One item per issue id: the status; for closed, what closed it; for dropped, its level, the principle, norm, or fact the drop rests on, its for and against, and the declined fix; for open, whether it changed a session's work and how, and the candidate fixes, each with its kind, its target file, the smallest edit stated so an agent can make it without the issue in hand, its for, its against, and its illustration where one is called for.
+- One item per issue id: the status; for closed, what closed it; for dropped, its tier, the principle, norm, or fact the drop rests on, its for and against, and the declined fix; for open, whether it changed a session's work and how, and the candidate fixes, each with its kind, its target file, the smallest edit stated so an agent can make it without the issue in hand, its for, its against, and its illustration where one is called for.

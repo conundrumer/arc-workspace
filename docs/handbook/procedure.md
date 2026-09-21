@@ -1,15 +1,13 @@
-+ index: headings
 * comment: when editing this doc
     - Write in the imperative mood.
-    - Do not add notices about tooling when it would not change the reader's action or when the tooling already explains itself
+    - Do not add notices about tooling when it would not change the reader's action or when the tooling already explains itself.
 
 # Procedure
-- The operations of a solver session.
-- The entry point that runs them lists the ones its pass takes.
+- The operations a pass runs, and what holds for every pass.
 
 ## Every pass
-- **Task per operation.** Create a task per operation, and do them one at a time.
-- **Lib protocol.** Apply the lib addition protocol where its trigger holds.
+- **One operation at a time.** Finish each operation before you start the next.
+- **Lib protocol.** Apply [Lib addition protocol](docs/handbook/lib-protocol.md) where its trigger holds.
 - **Roles.**
     - Run `uv run python scripts/context.py role <role>`.
     - Spawn the agent its first line names.
@@ -24,9 +22,13 @@
     - If no keyword in [Keywords](docs/handbook/keywords.md) fits, propose one in the review, and add it to the solver's `@keywords:` line.
     - If an existing keyword's gloss should change, propose it in the review.
 
+## Review items
+- A pass that asks for a report and no review puts the items the operations route to the review in that report.
+- A pass that asks for a review and no report puts the items the messages route to the report in that review.
+
 ## Operations
 
-### Draft
+### Write
 1. Analyze the task and the reference TS solver.
     - When they are not in the message, read them: `cat data/tasks/<task_id>.json ../arc-synth-bun/programs/solvers/<task_id>.ts`.
     - Do not pipe the task into anything.
@@ -50,7 +52,7 @@
 
 ### Determine
 - Run the plan (`uv run python scripts/run_dl.py determination-plan <task_id>`).
-- When the plan lists actions and a different parameterization would give a simpler or more principled model, change the parameterization and run [Develop](docs/handbook/procedure.md#develop) again over the changed solver.
+- When the plan lists actions and a different parameterization would give a simpler or more principled model, change the parameterization and run [Develop](#develop) again over the changed solver.
 - Otherwise, do the actions the plan lists.
 - In the plan's over-the-limit section, pick whichever parameters are simplest to determine until the product of the remaining candidate counts goes under the enumeration limit.
 
@@ -101,7 +103,7 @@
 ### Simplify
 - Express what the code claims with less code.
 - The model, its parameterization, and its cases stay as they are.
-- **Awkward code.** The targets are code that:
+- Simplify covers code that:
     - Reimplements what the lib provides.
     - Reads as implementation detail with no conceptual meaning.
     - Has repetition where a principled form exists.
@@ -110,12 +112,13 @@
 ### Prune
 - The reader is a future session that needs to understand the solver and its model hypothesis.
 - Cut everything that does not serve that reader, exhaustively, from unnecessary words to irrelevant ideas.
-- Judge necessity from the artifact alone, not from the session.
+- Judge necessity from the artifact alone, not from the session that built it.
 - Prune text copied from prior solvers like new text.
 - Keep the prose plain.
 - Do not compress it into a telegraphic style.
 
 ### Promote
+- When the user says `promote` or `migrate` over an entry under `docs/wf-solver/proposals/`.
 - On `promote`, move the plain relations or proposal comp into the module under `programs/lib/` whose file doc admits it, and update the solver that introduced the proposal.
 - On `migrate`:
     1. Spawn the `migrate` role with the entry's path, the lib relation it became, the entry's callers, and the promotion's time.
@@ -124,11 +127,13 @@
 
 ### Review
 - Write the review for the user to act on.
+
+#### The items
 - Include only items that the user can act on:
     - A case to keep or add.
-    - An operation to promote.
-    - A judgment call the session made.
+    - A lib operation to promote.
+    - A judgment the session made.
     - An issue with something in a doc or tool that resulted in friction.
-    - An item carried over from an earlier pass's report or the handoff report it received, marked with the pass it came from.
+    - An item carried over from an earlier pass's report, marked with the pass it came from.
         - Do not recheck it against the current runner, lib, or docs.
     - A fix or a problem in a file the pass does not edit, with the file, the line, and the fix it needs.

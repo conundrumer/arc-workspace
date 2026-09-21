@@ -14,12 +14,11 @@
 - An issue can have one callout.
 - Do not merge issues that only share a file.
 - State each issue as what is wrong in the shared thing, not as what a session did.
-- The group is the file or the tool the issue is about: one doc file under `docs/` or a document under `prompts/`, the lib, meaning `programs/lib.dl` and the modules under `programs/lib/`, the runner, or the console.
-    - A section or a lib relation is not a group.
-    - One check agent takes a whole group.
+- The area is the file or the tool the issue is about: one doc file under `docs/` or a document under `prompts/`, the lib, meaning `programs/lib.dl` and the modules under `programs/lib/`, the runner, or the console.
+    - A section or a lib relation is not an area.
 - Files you write go under `.scratch/retro/` and nowhere else.
 - Do not edit any repo file.
 
 # Report
-- Issues in count-descending order, each with an id, its group, the issue in one plain sentence, the count, the tasks, and one callout quoted verbatim.
+- Issues in count-descending order, each with an id, its area, the issue in one plain sentence, the count, the tasks, and one callout quoted verbatim.
 - Then the borderline drops, each as the task id and the first words of the callout.
