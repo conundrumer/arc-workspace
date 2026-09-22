@@ -7,32 +7,23 @@
       [0,0,1],
       [1,1,1]
     ],
-    "output": {
-      "[PerColor, Excluded]": [
+    "output": [{
+      "cases": ["[PerColor, Excluded]","[PerRegion, Excluded]"],
+      "grid": [
         [1],
         [1],
         [1],
         [1]
-      ],
-      "[PerColor, Included]": [
-        [1,0],
-        [1,0],
-        [1,0],
-        [1,0]
-      ],
-      "[PerRegion, Excluded]": [
-        [1],
-        [1],
-        [1],
-        [1]
-      ],
-      "[PerRegion, Included]": [
+      ]
+    }, {
+      "cases": ["[PerColor, Included]","[PerRegion, Included]"],
+      "grid": [
         [1,0],
         [1,0],
         [1,0],
         [1,0]
       ]
-    }
+    }]
   }, {
     "id": "split-color",
     "separates": "PerColor (one bar per color) from PerRegion (one bar per connected region): a color in two regions of different sizes",
@@ -40,36 +31,25 @@
       [2,1,2,2],
       [1,1,1,1]
     ],
-    "output": {
-      "[PerColor, Excluded]": [
+    "output": [{
+      "cases": ["[PerColor, Excluded]","[PerColor, Included]"],
+      "grid": [
         [1,2],
         [1,2],
         [1,2],
         [1,0],
         [1,0]
-      ],
-      "[PerColor, Included]": [
-        [1,2],
-        [1,2],
-        [1,2],
-        [1,0],
-        [1,0]
-      ],
-      "[PerRegion, Excluded]": [
-        [1,2,2],
-        [1,2,0],
-        [1,0,0],
-        [1,0,0],
-        [1,0,0]
-      ],
-      "[PerRegion, Included]": [
+      ]
+    }, {
+      "cases": ["[PerRegion, Excluded]","[PerRegion, Included]"],
+      "grid": [
         [1,2,2],
         [1,2,0],
         [1,0,0],
         [1,0,0],
         [1,0,0]
       ]
-    }
+    }]
   }, {
     "id": "diagonal-split",
     "separates": "PerRegion(Edge) (a region joins along edges alone) from PerRegion(Corner) (a corner touch also joins): a color whose regions touch at a corner",
@@ -78,38 +58,14 @@
       [2,2,1,1],
       [1,1,2,1]
     ],
-    "output": {
-      "[PerColor, Excluded]": [
-        [1,2],
-        [1,2],
-        [1,2],
-        [1,2],
-        [1,0],
-        [1,0],
-        [1,0],
-        [1,0]
+    "output": [{
+      "cases": [
+        "[PerColor, Excluded]",
+        "[PerColor, Included]",
+        "[PerRegion, Excluded]",
+        "[PerRegion, Included]"
       ],
-      "[PerColor, Included]": [
-        [1,2],
-        [1,2],
-        [1,2],
-        [1,2],
-        [1,0],
-        [1,0],
-        [1,0],
-        [1,0]
-      ],
-      "[PerRegion, Excluded]": [
-        [1,2],
-        [1,2],
-        [1,2],
-        [1,2],
-        [1,0],
-        [1,0],
-        [1,0],
-        [1,0]
-      ],
-      "[PerRegion, Included]": [
+      "grid": [
         [1,2],
         [1,2],
         [1,2],
@@ -119,6 +75,6 @@
         [1,0],
         [1,0]
       ]
-    }
+    }]
   }]
 }

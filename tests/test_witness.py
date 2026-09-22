@@ -64,7 +64,7 @@ def test_a_changed_grid_reports_both_grids(solvers, monkeypatch):
                         _emit([("$Copy", [[1, 2]]), ("$Flip", [[3, 3]])]))
 
     (drift,) = witness.witness_report(STEM)
-    assert (drift.kind, drift.case) == (witness.DRIFT, "Flip")
+    assert (drift.kind, drift.cases) == (witness.DRIFT, ["Flip"])
     assert drift.expected == [[2, 1]] and drift.actual == [[3, 3]]
     lines = witness.render_witness([drift])
     assert lines[0] == ("two-colors: case Flip gives an output the witness "

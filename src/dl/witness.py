@@ -59,7 +59,9 @@ class Entry:
     """One witness grid and what the solver is expected to give on it.
 
     `output` is a grid per case, where None is an undefined outcome, or one
-    bare grid, the judged output that every case must differ from.
+    bare grid, the judged output that every case must differ from. The file
+    writes the per-case form as groups, one grid under the cases that give
+    it; `_output` spreads a group over its cases.
 
     `assign` holds replacement `Params` facts per parameter, each row the
     arguments of one fact as the `.dl` writes them: a number as a number, a
@@ -96,12 +98,14 @@ class Drift:
     line's form, the entry it names, a `@relaxed` slug, the `@reassigned`
     parameters, or an entry no line names. `entry` is the entry's id,
     followed by the parameters it reassigns, and it is empty when no entry
-    answers the line. `expected` stands for nothing on an UNLISTED finding,
-    and neither `expected` nor `actual` stands for anything on an
-    UNDEFINED_CONCEPT one. An ANNOTATION finding reads as `note`."""
+    answers the line. `cases` names every case the finding holds for, which
+    is the cases that give one outcome where another is expected.
+    `expected` stands for nothing on an UNLISTED finding, and neither
+    `expected` nor `actual` stands for anything on an UNDEFINED_CONCEPT one.
+    An ANNOTATION finding reads as `note`."""
 
     entry: str
-    case: str
+    cases: list[str]
     expected: Outcome | None
     actual: Outcome
     kind: str = DRIFT
@@ -113,13 +117,39 @@ def witness_path(task_id: str) -> Path:
     return WITNESS_DIR / f"{task_id}.wit.json"
 
 
+def _is_groups(v: object) -> bool:
+    """A list of groups, which is the per-case form the file writes. An
+    empty list is a file that names no case; a rejected output is a list of
+    rows, so no list stands for both."""
+    return isinstance(v, list) and all(isinstance(g, dict) for g in v)
+
+
 def _output(value: object) -> dict[str, Outcome] | list[list[int]]:
-    """An entry's `output` as the code carries it. A bare grid stays a grid;
-    a per-case object keys the one case of a solver without a `Choice` by
-    the name the runner prints."""
+    """An entry's `output` as the code carries it: a grid per case, or the
+    bare grid a rejected output holds. A group's grid spreads over the cases
+    the group names. An object of one grid per case is read as well, which
+    is the form the file held before groups. Either form keys the one case
+    of a solver without a `Choice` by the name the runner prints."""
     if isinstance(value, dict):
         return {k or NO_CHOICE: v for k, v in value.items()}
+    if _is_groups(value):
+        return {c or NO_CHOICE: g["grid"] for g in value for c in g["cases"]}
     return value
+
+
+def grouped_output(outcomes: dict[str, Outcome]) -> list[dict]:
+    """The per-case outcomes as the file writes them: one group per distinct
+    grid, naming the cases that give it. The groups follow the order the
+    cases come in, and so do the cases within a group."""
+    groups: list[dict] = []
+    at: dict[str, int] = {}
+    for case, grid in outcomes.items():
+        key = json.dumps(grid)
+        if key not in at:
+            at[key] = len(groups)
+            groups.append({"cases": [], "grid": grid})
+        groups[at[key]]["cases"].append(case)
+    return groups
 
 
 ENTRY_KEYS = {"id", "separates", "input", "output", "assign"}
@@ -131,6 +161,26 @@ def _is_grid(v: object) -> bool:
             and all(isinstance(r, list) and r
                     and all(isinstance(c, int) and 0 <= c <= 9 for c in r)
                     for r in v))
+
+
+GROUP_KEYS = {"cases", "grid"}
+
+
+def _check_groups(groups: list, fail: Callable[[str, str], None]) -> None:
+    held: set[str] = set()
+    for i, g in enumerate(groups):
+        if set(g) != GROUP_KEYS:
+            fail(f"output/{i}", "the keys are `cases` and `grid`")
+        cases = g["cases"]
+        if not (isinstance(cases, list) and cases
+                and all(isinstance(c, str) for c in cases)):
+            fail(f"output/{i}/cases", "a list of case names")
+        for c in cases:
+            if c in held:
+                fail(f"output/{i}/cases", f"case {c} is named by two groups")
+            held.add(c)
+        if g["grid"] is not None and not _is_grid(g["grid"]):
+            fail(f"output/{i}/grid", "a grid or null")
 
 
 def _check_entry(e: object, fail: Callable[[str, str], None]) -> None:
@@ -151,8 +201,10 @@ def _check_entry(e: object, fail: Callable[[str, str], None]) -> None:
         for case, g in out.items():
             if g is not None and not _is_grid(g):
                 fail(f"output/{case}", "a grid or null")
+    elif _is_groups(out):
+        _check_groups(out, fail)
     elif not _is_grid(out):
-        fail("output", "a grid per case, or one rejected output")
+        fail("output", "a group per grid, or one rejected output")
     assign = e.get("assign", {})
     if not isinstance(assign, dict) or not all(
             isinstance(v, list) and all(isinstance(f, list) for f in v)
@@ -211,12 +263,25 @@ def read_witness_data(task_id: str) -> dict:
     return data
 
 
+def _grouped_entry(entry: dict) -> dict:
+    """The entry with its per-case outcomes written as groups. An entry that
+    holds the object form is converted here, so a file returns to one form
+    on any write of it."""
+    out = entry.get("output")
+    if not isinstance(out, dict):
+        return entry
+    return {**entry, "output": grouped_output(_output(out))}
+
+
 def write_witness_data(task_id: str, data: dict) -> Path:
     """Write a witness file, after the shape check. Every write of a witness
     file goes through here, so one layout stands over the directory: the
-    file's own conventions, and every grid one row per line."""
+    file's own conventions, groups for the per-case outcomes, and every grid
+    one row per line."""
     path = witness_path(task_id)
     _validate(data, path)
+    data = {**data, "witnesses": [_grouped_entry(e)
+                                  for e in data["witnesses"]]}
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(format_file(data))
     return path
@@ -284,35 +349,54 @@ def undefined_concept(label: str, concept: str,
         return []
     if outcomes.get(concept) is not None:
         return []
-    return [Drift(entry=label, case=concept, expected=None, actual=None,
+    return [Drift(entry=label, cases=[concept], expected=None, actual=None,
                   kind=UNDEFINED_CONCEPT)]
+
+
+type Mismatch = tuple[str, Outcome, Outcome]
+
+
+def _merged(label: str, rows: list[Mismatch], kind: str = DRIFT,
+            rejected: bool = False) -> list[Drift]:
+    """One finding per distinct pair of expected and actual outcome, naming
+    the cases that give that pair. The findings follow the order the cases
+    come in, and so do the cases within a finding."""
+    findings: list[Drift] = []
+    at: dict[str, int] = {}
+    for case, want, got in rows:
+        key = json.dumps([want, got])
+        if key not in at:
+            at[key] = len(findings)
+            findings.append(Drift(entry=label, cases=[], expected=want,
+                                  actual=got, kind=kind,
+                                  rejected_output=rejected))
+        findings[at[key]].cases.append(case)
+    return findings
 
 
 def _entry_findings(entry: Entry, actuals: dict[str, Outcome],
                     concept: str) -> list[Drift]:
     """The findings on one entry, given what its input produced."""
+    label = _label(entry)
     findings = undefined_concept(
-        _label(entry), concept, actuals,
+        label, concept, actuals,
         () if entry.rejected_output else entry.output)
     if entry.rejected_output:
-        return findings + [
-            Drift(entry=_label(entry), case=case, expected=entry.output,
-                  actual=got, rejected_output=True)
+        return findings + _merged(label, [
+            (case, entry.output, got)
             for case, got in actuals.items()
             if got == entry.output
-        ]
-    findings += [
-        Drift(entry=_label(entry), case=case, expected=want,
-              actual=actuals.get(case))
+        ], rejected=True)
+    findings += _merged(label, [
+        (case, want, actuals.get(case))
         for case, want in entry.output.items()
         if actuals.get(case) != want
-    ]
-    findings += [
-        Drift(entry=_label(entry), case=case, expected=None, actual=got,
-              kind=UNLISTED)
+    ])
+    findings += _merged(label, [
+        (case, None, got)
         for case, got in actuals.items()
         if case not in entry.output
-    ]
+    ], kind=UNLISTED)
     return findings
 
 
@@ -373,8 +457,9 @@ def _annotation_findings(source: str, entries: list[Entry],
     findings: list[Drift] = []
 
     def note(entry: str, case: str, text: str) -> None:
-        findings.append(Drift(entry=entry, case=case, expected=None,
-                              actual=None, kind=ANNOTATION, note=text))
+        findings.append(Drift(entry=entry, cases=[case] if case else [],
+                              expected=None, actual=None, kind=ANNOTATION,
+                              note=text))
 
     ann = read(source)
     for bad in ann.malformed:
@@ -503,7 +588,10 @@ def _side(label: str, value: Outcome) -> list[str]:
 
 
 def _lines_of(d: Drift) -> list[str]:
-    case = d.case
+    """One block for one finding. A finding that holds for several cases
+    names them all and draws its grids once."""
+    case = ", ".join(d.cases)
+    one = len(d.cases) == 1
     if d.kind == ANNOTATION:
         return [f"{d.entry}: {d.note}" if d.entry else d.note]
     if d.kind == UNDEFINED_CONCEPT:
@@ -513,14 +601,20 @@ def _lines_of(d: Drift) -> list[str]:
             entry=d.entry, case=case, undefined=UNDEFINED)]
     if d.kind == UNLISTED:
         return [mctx("{entry}: case {case} is not listed")
+                .format(entry=d.entry, case=case) if one else
+                mctx("{entry}: these cases are not listed: {case}")
                 .format(entry=d.entry, case=case),
                 *_side("the solver's output", d.actual)]
     if d.rejected_output:
         return [mctx("{entry}: case {case} gives the witness's judged output")
-                .format(entry=d.entry, case=case),
+                .format(entry=d.entry, case=case) if one else
+                mctx("{entry}: these cases give the witness's judged output: "
+                     "{case}").format(entry=d.entry, case=case),
                 *_side("the judged output", d.actual)]
     return [mctx("{entry}: case {case} gives an output the witness does not "
-                 "name").format(entry=d.entry, case=case),
+                 "name").format(entry=d.entry, case=case) if one else
+            mctx("{entry}: these cases give an output the witness does not "
+                 "name: {case}").format(entry=d.entry, case=case),
             *_side("the witness's output", d.expected),
             *_side("the solver's output", d.actual)]
 

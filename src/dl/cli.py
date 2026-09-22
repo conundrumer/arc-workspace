@@ -101,6 +101,7 @@ from dl.witness import (
     assigned_source,
     case_outcomes,
     finding_lines,
+    grouped_output,
     load_witnesses,
     put_entry,
     read_witness_data,
@@ -423,25 +424,39 @@ def _sections(text: str) -> list[str]:
     return sections
 
 
+def _run_body(c) -> list[str]:
+    """What one case emits, indented under its name."""
+    if c.error:
+        return [f"  {c.error}"]
+    lines = [f"  {line}" for line in _grid_lines(c.grid)]
+    if c.conflicts:
+        lines.append(f"  conflicts at: {c.conflicts}")
+    if c.missing:
+        lines.append(f"  missing cells at: {c.missing}")
+    return lines
+
+
 def _print_run(stem: str, grid: list[list[int]],
                actuals: list) -> list[str]:
     """Print the input, what each case emits, and the cases that emit
-    nothing; return those silent cases."""
+    nothing; return those silent cases. Cases that emit the same thing are
+    named together, above the one printing of it."""
     print("input:")
     for line in _grid_lines(grid):
         print(f"  {line}")
+    bodies: dict[str, list[str]] = {}
+    named: dict[str, list[str]] = {}
     for c in actuals:
+        body = _run_body(c)
+        key = "\n".join(body)
+        bodies.setdefault(key, body)
+        named.setdefault(key, []).append(c.case or '(out)')
+    for key, body in bodies.items():
         print()
-        print(f"{c.case or '(out)'}:")
-        if c.error:
-            print(f"  {c.error}")
-            continue
-        for line in _grid_lines(c.grid):
-            print(f"  {line}")
-        if c.conflicts:
-            print(f"  conflicts at: {c.conflicts}")
-        if c.missing:
-            print(f"  missing cells at: {c.missing}")
+        for name in named[key]:
+            print(f"{name}:")
+        for line in body:
+            print(line)
 
     emitted = {case_label(c.case) for c in actuals}
     silent = [b for b in case_branches(stem) if b not in emitted]
@@ -575,7 +590,7 @@ def cmd_record(stem: str, entry_id: str, separates: str,
             print(f"  {line}")
         output: object = judged
     else:
-        output = outcomes
+        output = grouped_output(outcomes)
     entry: dict = {"id": entry_id, "separates": separates, "input": grid}
     if assign:
         entry["assign"] = assign

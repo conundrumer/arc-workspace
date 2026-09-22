@@ -11,16 +11,19 @@
       [0,0,0,0,8,8,0,0,5,5,5,5,5],
       [0,0,0,0,8,8,0,0,0,0,0,0,0]
     ],
-    "output": {
-      "Separated": [
+    "output": [{
+      "cases": ["Separated"],
+      "grid": [
         [0,0,0,0,3,3,0,0,5,5,5,5,5],
         [0,0,0,0,3,3,0,0,5,2,5,5,5],
         [2,2,0,0,3,3,0,0,5,5,5,5,5],
         [2,2,0,0,3,3,0,0,5,5,5,3,5],
         [0,0,0,0,3,3,0,0,5,5,5,5,5],
         [0,0,0,0,3,3,0,0,0,0,0,0,0]
-      ],
-      "Anchor": [
+      ]
+    }, {
+      "cases": ["Anchor"],
+      "grid": [
         [0,0,0,0,2,2,0,0,5,5,5,5,5],
         [0,0,0,0,2,2,0,0,5,2,5,5,5],
         [3,3,0,0,2,2,0,0,5,5,5,5,5],
@@ -28,7 +31,7 @@
         [0,0,0,0,2,2,0,0,5,5,5,5,5],
         [0,0,0,0,2,2,0,0,0,0,0,0,0]
       ]
-    }
+    }]
   }, {
     "id": "spanning-shape",
     "separates": "The legend shows one marker on the left at mid height and two markers on the right, one high and one low. Outside it a tall shape on the left spans the height of two shapes stacked on the right, so the left shape and each right shape meet along the reading axis without covering the same extent of it. Both cases read the constellations as one sequence: the left shape leads, so it takes the high right marker's color and the high right shape takes the left marker's color. The two constellations have the same arrangement, so the generator pairs the left shape with the left marker and each right shape with the right marker at its own height.",

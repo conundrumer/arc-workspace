@@ -84,10 +84,12 @@
         "separates": string,                     // models separated by this input
         "input": Grid,
         "assign": {<parameter>: Fact[] | Grid},  // GRID_HxW form for stored parameters
-        "output": {<case>: Grid | null}          // when the verdict is not other: each case's output, with null for undefined
+        "output": Group[]                        // when the verdict is not other: one group per distinct output
                 | Grid                           // when the verdict is other: the annotator's judged output
       }] }
 
+    Group: { "cases": <case>[],           // the cases that give this output
+             "grid": Grid | null }        // null for undefined
     Grid: number[][]                      // rows of colors
     Fact: Arg[]                           // the arguments of one fact
     Arg: number | string | Arg[]

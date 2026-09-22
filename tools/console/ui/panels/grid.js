@@ -5,10 +5,14 @@ import { html, useEffect, useRef } from "/vendor/htm-preact-standalone.module.js
 export const ARC = ["#000000","#0074D9","#FF4136","#2ECC40","#FFDC00","#AAAAAA","#F012BE","#FF851B","#7FDBFF","#870C25"];
 
 function cellPx(w,h){ const m=Math.max(w,h); return m<=10?16:m<=15?12:m<=22?9:7; }
+/* label: one name, or the several names of a grid that stands for more than
+   one case, a line each. The size follows the first line. */
 export function Grid({g, label, places}){
   const w=g[0].length, h=g.length, px=cellPx(w,h);
+  const lines = !label ? [] : (Array.isArray(label) ? label : [label]);
   return html`<div class="gwrap">
-    ${label && html`<div class="glabel">${label+" · "+h+"×"+w}</div>`}
+    ${lines.map((s,i)=>html`<div class="glabel" key=${s}>
+      ${i===0 ? s+" · "+h+"×"+w : s}</div>`)}
     <div class="agrid" style=${{"--cell":px+"px", gridTemplateColumns:`repeat(${w},${px}px)`}}>
       ${g.map((row,y)=>row.map((v,x)=>html`<div key=${y+":"+x}
         class=${places && covers(places,y,x) ? "hl" : null}

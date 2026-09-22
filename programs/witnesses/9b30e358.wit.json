@@ -15,8 +15,9 @@
       [3,3,3,3,9,3,3],
       [3,3,3,3,3,3,3]
     ],
-    "output": {
-      "[Edge, Toward, EdgeLine]": [
+    "output": [{
+      "cases": ["[Edge, Toward, EdgeLine]","[Edge, Toward, Majority]"],
+      "grid": [
         [3,3,3,9,2,9,3],
         [3,3,3,2,9,2,3],
         [3,3,3,9,9,9,3],
@@ -27,20 +28,10 @@
         [3,3,3,9,9,9,3],
         [3,3,3,3,9,3,3],
         [3,3,3,3,3,3,3]
-      ],
-      "[Edge, Toward, Majority]": [
-        [3,3,3,9,2,9,3],
-        [3,3,3,2,9,2,3],
-        [3,3,3,9,9,9,3],
-        [3,3,3,3,9,3,3],
-        [3,3,3,3,3,3,3],
-        [3,3,3,9,2,9,3],
-        [3,3,3,2,9,2,3],
-        [3,3,3,9,9,9,3],
-        [3,3,3,3,9,3,3],
-        [3,3,3,3,3,3,3]
-      ],
-      "[Ink, Both, Majority]": [
+      ]
+    }, {
+      "cases": ["[Ink, Both, Majority]"],
+      "grid": [
         [3,3,3,3,9,3,3],
         [3,3,3,9,2,9,3],
         [3,3,3,2,9,2,3],
@@ -51,8 +42,10 @@
         [3,3,3,9,9,9,3],
         [3,3,3,3,9,3,3],
         [3,3,3,9,2,9,3]
-      ],
-      "[Ink, Toward, EdgeLine]": [
+      ]
+    }, {
+      "cases": ["[Ink, Toward, EdgeLine]","[Ink, Toward, Majority]"],
+      "grid": [
         [3,3,3,3,9,3,3],
         [3,3,3,9,2,9,3],
         [3,3,3,2,9,2,3],
@@ -63,23 +56,11 @@
         [3,3,3,9,9,9,3],
         [3,3,3,3,9,3,3],
         [3,3,3,3,3,3,3]
-      ],
-      "[Ink, Toward, Majority]": [
-        [3,3,3,3,9,3,3],
-        [3,3,3,9,2,9,3],
-        [3,3,3,2,9,2,3],
-        [3,3,3,9,9,9,3],
-        [3,3,3,3,9,3,3],
-        [3,3,3,9,2,9,3],
-        [3,3,3,2,9,2,3],
-        [3,3,3,9,9,9,3],
-        [3,3,3,3,9,3,3],
-        [3,3,3,3,3,3,3]
-      ],
-      "[Ink, Both, EdgeLine]": null,
-      "[Edge, Both, Majority]": null,
-      "[Edge, Both, EdgeLine]": null
-    }
+      ]
+    }, {
+      "cases": ["[Ink, Both, EdgeLine]","[Edge, Both, Majority]","[Edge, Both, EdgeLine]"],
+      "grid": null
+    }]
   }, {
     "id": "dense-ink",
     "separates": "the majority and the edge-line background readings when the ink outnumbers the background",
@@ -95,8 +76,9 @@
       [2,5,2,5,2],
       [2,2,2,2,2]
     ],
-    "output": {
-      "[Edge, Toward, EdgeLine]": [
+    "output": [{
+      "cases": ["[Edge, Toward, EdgeLine]","[Ink, Toward, EdgeLine]"],
+      "grid": [
         [2,2,2,2,2],
         [2,5,2,5,2],
         [2,2,2,2,2],
@@ -107,8 +89,10 @@
         [2,2,2,2,2],
         [2,5,2,5,2],
         [2,2,2,2,2]
-      ],
-      "[Edge, Toward, Majority]": [
+      ]
+    }, {
+      "cases": ["[Edge, Toward, Majority]","[Ink, Toward, Majority]"],
+      "grid": [
         [5,5,5,5,5],
         [5,5,5,5,5],
         [5,5,5,5,5],
@@ -119,8 +103,10 @@
         [2,2,2,2,2],
         [2,5,2,5,2],
         [2,2,2,2,2]
-      ],
-      "[Ink, Both, Majority]": [
+      ]
+    }, {
+      "cases": ["[Ink, Both, Majority]"],
+      "grid": [
         [5,5,5,5,5],
         [5,5,5,5,5],
         [5,5,5,5,5],
@@ -131,34 +117,10 @@
         [2,2,2,2,2],
         [2,5,2,5,2],
         [5,5,5,5,5]
-      ],
-      "[Ink, Toward, EdgeLine]": [
-        [2,2,2,2,2],
-        [2,5,2,5,2],
-        [2,2,2,2,2],
-        [2,2,2,2,2],
-        [2,5,2,5,2],
-        [2,2,2,2,2],
-        [2,5,2,5,2],
-        [2,2,2,2,2],
-        [2,5,2,5,2],
-        [2,2,2,2,2]
-      ],
-      "[Ink, Toward, Majority]": [
-        [5,5,5,5,5],
-        [5,5,5,5,5],
-        [5,5,5,5,5],
-        [2,2,2,2,2],
-        [2,5,2,5,2],
-        [2,2,2,2,2],
-        [2,5,2,5,2],
-        [2,2,2,2,2],
-        [2,5,2,5,2],
-        [2,2,2,2,2]
-      ],
-      "[Ink, Both, EdgeLine]": null,
-      "[Edge, Both, Majority]": null,
-      "[Edge, Both, EdgeLine]": null
-    }
+      ]
+    }, {
+      "cases": ["[Ink, Both, EdgeLine]","[Edge, Both, Majority]","[Edge, Both, EdgeLine]"],
+      "grid": null
+    }]
   }]
 }

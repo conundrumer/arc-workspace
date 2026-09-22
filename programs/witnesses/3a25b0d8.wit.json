@@ -25,8 +25,9 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
-    "output": {
-      "Mirror": [
+    "output": [{
+      "cases": ["Mirror"],
+      "grid": [
         [5,5,5,5,5,5,5,5,5],
         [5,4,5,5,5,5,5,5,5],
         [5,4,5,5,5,5,5,5,5],
@@ -38,8 +39,10 @@
         [5,4,5,5,5,5,5,5,5],
         [5,4,5,5,5,5,5,5,5],
         [5,5,5,5,5,5,5,5,5]
-      ],
-      "Stored": [
+      ]
+    }, {
+      "cases": ["Stored"],
+      "grid": [
         [5,5,5,5,5,5,5,5,5],
         [5,3,5,5,5,5,5,5,5],
         [5,3,5,5,5,5,5,5,5],
@@ -52,7 +55,7 @@
         [5,3,5,5,5,5,5,5,5],
         [5,5,5,5,5,5,5,5,5]
       ]
-    }
+    }]
   }, {
     "id": "no-mirror",
     "separates": "Stored against Mirror: neither figure folds onto itself across either axis, though the holes still answer to each other left to right. Stored keeps the stored axis and paints both holes; Mirror finds no axis and emits no grid.",
@@ -66,16 +69,19 @@
       [8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8],
       [8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8]
     ],
-    "output": {
-      "Stored": [
+    "output": [{
+      "cases": ["Stored"],
+      "grid": [
         [1,1,1,1,1,1,1,1],
         [1,3,3,1,4,4,4,1],
         [1,3,3,1,4,4,4,1],
         [1,1,1,1,1,1,1,1],
         [1,1,1,1,8,8,8,8]
-      ],
-      "Mirror": null
-    }
+      ]
+    }, {
+      "cases": ["Mirror"],
+      "grid": null
+    }]
   }, {
     "id": "staggered-holes",
     "separates": "The two figures share one outline. Each holds four holes above its center hole, two on each side of the midline, and the two holes of one side sit at staggered rows. The painted figure staggers them the other way, so the two holes of a class rank in one order in the plain figure and in the other order in the painted figure. Both cases then give each plain hole the color of the other hole of its class, and each emits a complete grid. The holes stand in the same columns in both figures, so the generator gives each hole the color of the hole in its own columns.",

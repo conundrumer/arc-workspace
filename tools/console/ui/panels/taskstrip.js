@@ -2,9 +2,9 @@
    item's task, and of each task the session's feed mentions, one tab per
    task. A pair's alt output, where the task has one, stands beside the
    output under its kind. A task with a witness file gets one more tab: each
-   entry's input beside the outcome it pins on every case, with the models
-   that input separates and the fields of the solver's `@witness` block for
-   that entry. */
+   entry's input beside the outcomes it pins, one grid under the cases that
+   give it, with the models that input separates and the fields of the
+   solver's `@witness` block for that entry. */
 import { html, useState, useEffect, useMemo } from "/vendor/htm-preact-standalone.module.js";
 import { Grid } from "/ui/panels/grid.js";
 import { tasks, ensureTask } from "/ui/server.js";
@@ -32,15 +32,21 @@ function Pairs({task}){
 
 const WIT = "witnesses";
 
-/* A witness entry's outcomes as a per-case map: a bare grid is the judged
-   output every case must differ from, keyed by the word for that; null is
-   an undefined outcome. */
+/* The file writes the per-case outcomes as groups, one grid under the cases
+   that give it, and held the object form of one grid per case before that. */
+const isGroups = o => Array.isArray(o) && !Array.isArray(o[0]);
+
+/* A witness entry's outcomes as [cases, grid] pairs: a bare grid is the
+   judged output every case must differ from, named by the word for that;
+   null is an undefined outcome. */
 function outcomes(w){
-  return Array.isArray(w.output) ? [["rejected", w.output]] : Object.entries(w.output);
+  if(isGroups(w.output)) return w.output.map(g=>[g.cases, g.grid]);
+  if(Array.isArray(w.output)) return [[["rejected"], w.output]];
+  return Object.entries(w.output).map(([c,g])=>[[c], g]);
 }
 /* the mark between the input and the outcomes: the cases give theirs on it,
    or, for a judged output, no case may give it */
-const markOf = w => Array.isArray(w.output) ? "≠" : "→";
+const markOf = w => Array.isArray(w.output) && !isGroups(w.output) ? "≠" : "→";
 
 /* The lines a `@witness` block adds under the model: the plausibility and
    the verdict on one line, then a line per field that holds a slug or
@@ -65,9 +71,10 @@ function Witness({w}){
           <${Grid} g=${w.input} label=${label}/>
           <span class="arr">${markOf(w)}</span>
           <div class="outs">
-            ${outcomes(w).map(([c,g])=>
-              g ? html`<${Grid} key=${c} g=${g} label=${c}/>`
-                : html`<div class="gwrap" key=${c}><div class="glabel">${c}</div>
+            ${outcomes(w).map(([cases,g])=>
+              g ? html`<${Grid} key=${cases[0]} g=${g} label=${cases}/>`
+                : html`<div class="gwrap" key=${cases[0]}>
+                         ${cases.map(c=>html`<div class="glabel" key=${c}>${c}</div>`)}
                          <div class="undef">undefined</div></div>`)}
           </div>
         </div>`

@@ -7,6 +7,7 @@ Layout rules:
   - Grid rows (list[list[int]]) render one row per line, no inter-cell spaces.
   - Lists of plain ints render one-line: [1,0,2]. So does any list whose
     elements are scalars and lists of plain ints: [[0,2,0,2],"D4_LR"].
+  - A list of strings that runs past 80 cols renders one string per line.
   - Any other list of lists renders one element per line.
   - Dicts with ≤2 primitive-valued keys render one-line if they fit in 80 cols.
 """
@@ -75,18 +76,26 @@ def _fmt_list(lst: list[Any], depth: int) -> str:
         return one_line
     if _is_list_of_dicts(lst):
         return _fmt_brace_up(lst, depth)
-    if all(_is_list(v) for v in lst):
+    if all(_is_list(v) or _is_scalar(v) for v in lst):
         return _fmt_rows(lst, depth)
     raise NotImplementedError(f"unsupported list element types in {lst!r}")
 
 
+WIDTH = 80
+
+
 def _try_compact_list(lst: list[Any]) -> str | None:
     """One-line rendering of a list whose every element is a scalar or a
-    list of plain ints; None when some element needs more room."""
+    list of plain ints; None when some element needs more room. A list of
+    strings that runs past the width needs more room, so the names a long
+    list holds stand one per line."""
     items = [_compact_item(v) for v in lst]
     if any(i is None for i in items):
         return None
-    return "[" + ",".join(items) + "]"
+    line = "[" + ",".join(items) + "]"
+    if len(line) > WIDTH and all(isinstance(v, str) for v in lst):
+        return None
+    return line
 
 
 def _compact_item(v: Any) -> str | None:
@@ -98,7 +107,7 @@ def _compact_item(v: Any) -> str | None:
 
 
 def _fmt_rows(rows: list[Any], depth: int) -> str:
-    """One element per line, for a list of lists no other rule covers."""
+    """One element per line, for a list no other rule covers."""
     inner = "  " * (depth + 1)
     outer = "  " * depth
     body = ",\n".join(f"{inner}{_fmt_value(r, depth + 1)}" for r in rows)

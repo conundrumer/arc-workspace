@@ -12,18 +12,21 @@
       [0,4,4,4,4,4,0],
       [0,0,0,0,0,0,0]
     ],
-    "output": {
-      "Hollow": [
+    "output": [{
+      "cases": ["Hollow"],
+      "grid": [
         [4,4,4],
         [4,0,4],
         [4,4,4]
-      ],
-      "Nest": [
+      ]
+    }, {
+      "cases": ["Nest"],
+      "grid": [
         [0,0,0],
         [0,4,0],
         [0,0,0]
       ]
-    }
+    }]
   }, {
     "id": "overlap-chain",
     "separates": "A border ring encloses three blobs in a staircase: the first spans rows 2-4, the second rows 4-6, the third rows 6-8. The first blob's mark meets the second's on row 4 and the second's meets the third's on row 6, while the first and the third are disjoint. The closure puts all three marks in one class, so both cases draw the three cells on one output row. The first blob lies strictly above the third in the input, so the generator's redraw places the three cells on three rows, one per step of the staircase.",
