@@ -1,0 +1,75 @@
+// 9f236235
+// @draft
+// @keywords: decompose d4 scale
+// @scene cut: lines that run the whole way across, each in one color, cut the
+//  grid into panels
+// @scene even: the panels are equal in size
+// @scene solid: every panel holds one color
+// @rule mini: the output has one cell per panel, holding that panel's color,
+//  and params.pose places the panel arrangement in the output frame
+
+// how the panels are found
+.type Choice =
+    // @claim cut
+    Cut {}
+    // @scene cut: the cutting lines are evenly spaced, so the panels are the
+    //  blocks of a lattice
+    // @witness unequal: borderline concept
+    //     @relaxed even
+  | Lattice {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // how the panel arrangement lands in the output
+    .decl pose(d: D4) pose(D4_LR).
+
+    // --- Lattice ---
+    // width of a cutting line
+    // @ignore: derive — the concept case never reads gap, so no input
+    // separates the derived width from the stored one
+    .decl gap(g: number) gap(1).
+}
+
+.init params = Params
+
+// A line of the grid, axis-only on a.
+.type Line = [a: Axis, l: Position]
+
+// The one color a line holds.
+// @claim cut
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
+
+// A line of one color cuts.
+.decl divider(a: Axis, l: Position)
+divider(A, L) :- line_color.value([A, L], _).
+
+// Where a cell's panel sits in the panel arrangement.
+.decl panel(p: Position, p_tile: Position, ch: Choice)
+
+// --- Cut ---
+
+// @claim cut
+.init panels = DividerTiles<Unit>
+panels.cell($U(), P) :- in(P, _).
+panels.divider($U(), A, L) :- divider(A, L).
+
+panel(P, P_tile, $Cut()) :- panels.tile_of($U(), P, P_tile).
+
+// --- Lattice ---
+
+// The panel size: the shortest run from a grid edge to a cutting line.
+// @claim even
+.init panel_size = Extremes<Unit>
+panel_size.cand($U(), K) :- divider(A, L), axis_of(D, A), dist(L, D, K).
+
+panel(P, P_tile, $Lattice()) :-
+    in(P, _), panel_size.low($U(), K), params.gap(G),
+    divide_by_size_2d(P, K, G, P_tile, _).
+
+// --- Cut, Lattice ---
+
+out(P_grid_out, Col, Ch) :-
+    panel(P, P_tile, Ch), in(P, Col),              // a panel's color
+    params.pose(D), apply(D, P_tile, P_grid_out).  // where that panel lands

@@ -1,0 +1,25 @@
+// 9edfc990
+// @draft
+// @keywords: objects markers
+// @rule spread: a walk starts at a params.ink cell and steps to cardinally
+//  adjacent params.bg cells; every params.bg cell it reaches takes params.ink
+// @rule keep: every other cell keeps its color
+
+.decl out(p: Position, col: Color)
+
+.comp Params {
+    // @derive DominantColor: variant concept
+    .decl bg(c: Color) bg(0).
+    .decl ink(c: Color) ink(1).
+}
+
+.init params = Params
+
+// The node set holds the ink as well as the field, since a seed must be a node.
+// @claim spread
+.init flood = Reach<Unit>
+flood.node($U(), P) :- in(P, Col), ( params.bg(Col) ; params.ink(Col) ).
+flood.seed($U(), P) :- in(P, Col), params.ink(Col).
+
+out(P, Col) :- flood.reach($U(), P), params.ink(Col).
+out(P, Col) :- in(P, Col), !flood.reach($U(), P).

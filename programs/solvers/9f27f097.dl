@@ -1,0 +1,145 @@
+// 9f27f097
+// @draft
+// @keywords: d4 repair markers
+// @scene bg: the commonest color is the background
+// @scene blank: the cells of one other color form a solid rectangle
+// @scene block: the cells of every remaining color form a solid rectangle of
+//  the blank rectangle's extent
+// @rule fill: each blank cell holds the block's cell at its place in the
+//  blank's box, reflected
+// @rule keep: every other cell keeps its input color
+
+// what names the blank's color
+.type Hue =
+    // @claim blank
+    Stored {}
+    // @scene sole: the blank is the one color whose cells fill their own box
+    // @witness recolored: variant Solid
+  | Solid {}
+
+// what fixes the reflection
+.type Mirror =
+    // @claim fill
+    Fixed {}
+    // @scene apart: the two rectangles share no line of one axis
+    // @rule fill: each blank cell holds the block's cell at its place in the
+    //  blank's box, under the reflection that inverts the axis whose lines
+    //  the two rectangles never share
+    // @witness beside: variant concept
+  | Stacked {}
+
+// what the copy covers
+.type Fill =
+    // @claim fill
+    Cells {}
+    // @rule fill: every cell of the blank's box holds the block's cell at its
+    //  place in that box, reflected
+    // @witness notch: variant concept
+    //     @relaxed blank
+  | Box {}
+
+.type Choice = [h: Hue, m: Mirror, f: Fill]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- Stored ---
+
+    .decl blank(col: Color) blank(0).
+
+    // --- Fixed ---
+
+    .decl mirror(d: D4) mirror(D4_LR).
+}
+
+.init params = Params
+
+.decl hue_choice(h: Hue)
+hue_choice($Stored()). hue_choice($Solid()).
+
+.decl mirror_choice(m: Mirror)
+mirror_choice($Fixed()). mirror_choice($Stacked()).
+
+.decl fill_choice(f: Fill)
+fill_choice($Cells()). fill_choice($Box()).
+
+// @claim bg
+.init palette = Mode<Unit, Color, Position>
+palette.item($U(), Col, P) :- in(P, Col).
+
+// The blank's color; each Hue branch names it.
+.decl blank_color(h: Hue, col: Color)
+
+.decl blank(h: Hue, p: Position)
+blank(H, P) :- in(P, Col), blank_color(H, Col).
+
+// A block cell: neither the background nor the blank.
+.decl block(h: Hue, p: Position)
+block(H, P) :-
+    in(P, Col), hue_choice(H), !palette.mode($U(), Col), !blank_color(H, Col).
+
+// @claim blank fill
+.init blank_box = Bbox<Hue>
+blank_box.cell(H, P) :- blank(H, P).
+
+// @claim block fill
+.init block_box = Bbox<Hue>
+block_box.cell(H, P) :- block(H, P).
+
+// The reflection the copy takes; each Mirror branch supplies it.
+.decl mirror(h: Hue, m: Mirror, d: D4)
+
+// The block cell a cell of the blank's box copies.
+.decl source(h: Hue, m: Mirror, p: Position, p_src: Position)
+source(H, M, P, P_src) :-
+    in(P, _), blank_box.box(H, B_blank),
+    crop(P, B_blank, P_rel),                    // the cell's place in the blank
+    mirror(H, M, D), apply(D, P_rel, P_rel2),   // that place under the reflection
+    in(P_src, _), block_box.box(H, B_block),
+    crop(P_src, B_block, P_rel2).               // the block's cell at that place
+
+// The cells the copy covers.
+.decl target(h: Hue, f: Fill, p: Position)
+
+out(P, Col, [H, M, F]) :- target(H, F, P), source(H, M, P, P_src), in(P_src, Col).
+out(P, Col, [H, M, F]) :-
+    in(P, Col), hue_choice(H), mirror_choice(M), fill_choice(F), !target(H, F, P).
+
+// --- Stored ---
+
+blank_color($Stored(), Col) :- params.blank(Col).
+
+// --- Solid ---
+
+// @claim sole
+.init color_box = Bbox<Color>
+color_box.cell(Col, P) :- in(P, Col).
+
+// A color whose box holds a cell of another color.
+.decl mixed(col: Color)
+mixed(Col) :- color_box.box(Col, B), in(P, _), inside(P, B), !in(P, Col).
+
+blank_color($Solid(), Col) :- in(_, Col), !mixed(Col).
+
+// --- Fixed ---
+
+mirror(H, $Fixed(), D) :- hue_choice(H), params.mirror(D).
+
+// --- Stacked ---
+
+// A line of family a holds a cell of each rectangle.
+// @ignore: store — the reflection's consumer takes a D4, so storing this axis
+// puts the Fixed branch's parameter behind a conversion
+.decl together(h: Hue, a: Axis)
+together(H, A) :- axis_elem(A), blank(H, P), block(H, Q), same_line(A, P, Q).
+
+// The reflection inverts the axis whose lines the two never share.
+mirror(H, $Stacked(), D) :- hue_choice(H), flip_of(A, D), !together(H, A).
+
+// --- Cells ---
+
+target(H, $Cells(), P) :- blank(H, P).
+
+// --- Box ---
+
+target(H, $Box(), P) :- in(P, _), blank_box.box(H, B), inside(P, B).

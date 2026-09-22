@@ -1,0 +1,168 @@
+// 9ddd00f0
+// @draft
+// @keywords: decompose scale
+// @scene blocks: single background lines divide the grid into an arrangement
+//  of square blocks, and the arrangement holds as many blocks along an axis as
+//  a block holds cells
+// @scene ink: one color draws the blocks
+// @rule mark: every block is filled with ink but for one background cell —
+//  the cell whose place in the block is the block's place in the arrangement
+
+// how the grid divides into blocks
+.type Size =
+    // @claim blocks
+    Frame {}
+    // @scene blocks: single background lines divide the grid into an
+    //  arrangement of square blocks, each of the extent a drawn block shows
+    // @witness half: foreign concept
+    //     @relaxed blocks
+  | Drawn {}
+    // @scene blocks: a background line that neighbors an inked line cuts the
+    //  grid, and the cuts divide it into an arrangement of blocks
+    // @witness erased-column: ordinary concept
+  | Separator {}
+    // @scene blocks: a background line whose mirror line is also background
+    //  cuts the grid, and the cuts divide it into an arrangement of blocks
+    // @witness lone-block: ordinary concept
+  | Mirror {}
+
+// what the output does with the input's ink
+.type Precedence =
+    // @claim mark
+    Redraw {}
+    // @rule mark: a block's background cells take ink but for the cell whose
+    //  place in the block is the block's place in the arrangement, and every
+    //  ink cell of the input keeps its color
+    // @witness whole: borderline concept
+  | Complete {}
+    // @rule mark: a block that holds no ink is filled with ink but for the
+    //  cell whose place in the block is the block's place in the
+    //  arrangement, and every other cell keeps its input color
+    // @witness whole: borderline concept
+    // @witness gapped: borderline concept
+  | Blank {}
+
+// the block division crossed with the output's precedence over the input's ink
+.type Choice = [s: Size, p: Precedence]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: ordinary concept
+    .decl bg(col: Color) bg(0).
+
+    // --- Frame, Drawn ---
+
+    // The background line between neighboring blocks.
+    // @derive SepThickness: foreign concept
+    //     @relaxed blocks
+    .decl gap(g: number) gap(1).
+}
+
+.init params = Params
+
+.decl size_choice(s: Size)
+size_choice($Frame()). size_choice($Drawn()).
+size_choice($Separator()). size_choice($Mirror()).
+
+// The color the blocks are drawn in.
+// @ignore: single-consumer — the ink color is the object of scene claim `ink`
+.decl ink(col: Color)
+ink(Col) :- in(_, Col), !params.bg(Col).
+
+// A cell's block, and its place in that block.
+.decl cell(p: Position, p_tile: Position, p_intile: Position, s: Size)
+
+// --- Frame ---
+
+// The one division whose block holds as many cells as the grid holds blocks.
+cell(P, P_tile, P_intile, $Frame()) :-
+    in(P, _), axis_elem(A), sub_extent(P, A, N), params.gap(G),
+    divide_2d(P, N, G, P_tile, P_intile), axis_dim(P_intile, A, N).
+
+// --- Drawn ---
+
+// @claim blocks
+.init block = Components<Unit>
+block.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+// @claim blocks
+.init block_box = Bbox<Ident>
+block_box.cell(Id, P) :- block.label($U(), P, Id).
+
+// The division into blocks of a drawn block's extent.
+cell(P, P_tile, P_intile, $Drawn()) :-
+    in(P, _), block_box.box(_, B), box_extent(B, P, _, K),
+    params.gap(G), divide_by_size_2d(P, K, G, P_tile, P_intile).
+
+// --- Separator, Mirror ---
+
+// A line of axis A holds ink.
+.decl line_ink(a: Axis, l: Position)
+line_ink(A, L) :- in(P, Col), !params.bg(Col), axis_elem(A), split(P, A, L, _).
+
+// A line of axis A holds no ink.
+.decl blank_line(a: Axis, l: Position)
+blank_line(A, L) :- in(P, _), axis_elem(A), split(P, A, L, _), !line_ink(A, L).
+
+// The branches that cut on blank lines.
+.decl cut_choice(s: Size)
+cut_choice($Separator()). cut_choice($Mirror()).
+
+// @claim blocks
+.init cut = DividerTiles<Size>
+cut.cell(S, P) :- in(P, _), cut_choice(S).
+cut.divider($Separator(), A, L) :-
+    blank_line(A, L), axis_of(D, A), neighbor(L, D, L2), line_ink(A, L2).  // next to an inked line
+cut.divider($Mirror(), A, L) :-
+    blank_line(A, L), flip_of(A, D), apply(D, L, L2), blank_line(A, L2).   // mirrored by a blank line
+
+// A part of one branch's division.
+.type CutTile = [s: Size, p_tile: Position]
+
+// @claim blocks
+.init cut_box = Bbox<CutTile>
+cut_box.cell([S, P_tile], P) :- cut.tile_of(S, P, P_tile).
+
+// The parts the cuts leave, each read in its own frame.
+cell(P, P_tile, P_intile, S) :-
+    cut.tile_of(S, P, P_tile), cut_box.box([S, P_tile], B), crop(P, B, P_intile).
+
+// --- shared ---
+
+// The picture the grid holds.
+.decl paint(p: Position, col: Color, s: Size)
+paint(P, Col, S) :-
+    cell(P, P_tile, P_intile, S),
+    ( P_tile != P_intile, ink(Col)           // ink fills the block
+    ; P_tile = P_intile, params.bg(Col) ).   // but for its place in the arrangement
+paint(P, Col, S) :-                          // the lines between the blocks
+    in(P, _), size_choice(S), !cell(P, _, _, S), params.bg(Col).
+
+// --- Redraw ---
+
+out(P, Col, [S, $Redraw()]) :- paint(P, Col, S).
+
+// --- Complete ---
+
+out(P, Col, [S, $Complete()]) :-
+    in(P, C), size_choice(S),
+    ( !params.bg(C), Col = C           // the input's ink stays
+    ; params.bg(C), paint(P, Col, S)   // a background cell takes the picture
+    ).
+
+// --- Blank ---
+
+// A block that holds ink.
+.decl drawn(p_tile: Position, s: Size)
+drawn(P_tile, S) :- cell(P, P_tile, _, S), in(P, Col), !params.bg(Col).
+
+// The cells of the blocks the output draws: those of no drawn block.
+.decl blank(p: Position, s: Size)
+blank(P, S) :- cell(P, P_tile, _, S), !drawn(P_tile, S).
+
+out(P, Col, [S, $Blank()]) :-
+    in(P, C), size_choice(S),
+    ( blank(P, S), paint(P, Col, S)   // a blank block takes the picture
+    ; !blank(P, S), Col = C           // every other cell keeps its color
+    ).

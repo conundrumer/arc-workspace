@@ -1,0 +1,113 @@
+// 9def23fe
+// @draft
+// @keywords: cast lines
+// @scene rect: the ink holds one solid rectangle of one color
+// @scene dots: every other ink cell is a lone cell of one other color
+// @rule beam: on each side of the rectangle, every line the rectangle spans
+//  takes the rectangle's color out to the grid edge, unless a dot lies on
+//  that line between the rectangle and that edge
+// @rule keep: every other cell keeps its input color
+
+// what tells the rectangle from the dots
+.type Find =
+    // @claim rect dots beam
+    Hue {}
+    // @scene dots: every other ink cell is a lone cell
+    // @rule beam: on each side of the ink that touches other ink, every line
+    //  that ink spans takes its own color out to the grid edge, unless a lone
+    //  ink cell lies on that line between it and that edge
+    // @witness sameink: variant Touch
+    //     @relaxed dots
+  | Touch {}
+
+// where the beams start
+.type Extent =
+    // @claim beam
+    Box {}
+    // @rule beam: from each cell of the rectangle, every line through it
+    //  takes the rectangle's color out to the grid edge, unless a dot lies
+    //  on that line between the cell and that edge
+    // @witness notch: variant Cells
+    //     @relaxed rect
+  | Cells {}
+
+// what tells the rectangle from the dots, crossed with where the beams start
+.type Choice = [f: Find, e: Extent]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    .decl bg(col: Color) bg(0).
+
+    // --- Hue ---
+    // the rectangle's color, which its beams also take
+    .decl beam(col: Color) beam(2).
+}
+
+.init params = Params
+
+.decl find_choice(f: Find)
+find_choice($Hue()). find_choice($Touch()).
+
+.decl extent_choice(e: Extent)
+extent_choice($Box()). extent_choice($Cells()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([F, E]) :- find_choice(F), extent_choice(E).
+
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !params.bg(Col).
+
+// The rectangle, as each Find branch finds it.
+.decl rect(p: Position, f: Find)
+
+// A dot: ink outside the rectangle.
+.decl dot(p: Position, f: Find)
+dot(P, F) :- find_choice(F), ink(P), !rect(P, F).
+
+// The color the beams take.
+.decl paint(col: Color, f: Find)
+
+// --- Hue ---
+
+rect(P, $Hue()) :- in(P, Col), params.beam(Col).
+paint(Col, $Hue()) :- params.beam(Col).
+
+// --- Touch ---
+
+// A rectangle cell: ink that touches other ink.
+rect(P, $Touch()) :- ink(P), dir_elem(D), neighbor(P, D, Q), ink(Q).
+paint(Col, $Touch()) :- rect(P, $Touch()), in(P, Col).
+
+// The region the beams start from.
+.decl body(p: Position, ch: Choice)
+
+// --- Box ---
+
+// @claim rect beam
+.init bx = Bbox<Find>
+bx.cell(F, P) :- rect(P, F).
+
+body(P, [F, $Box()]) :- in(P, _), bx.box(F, B), crop(P, B, _).
+
+// --- Cells ---
+
+body(P, [F, $Cells()]) :- rect(P, F).
+
+// The body casts toward each edge, over the cells outside it.
+// @claim beam
+.init cast = Ray<Choice>
+cast.dir(Ch, D) :- impl_choice(Ch), dir_elem(D).
+cast.mark(Ch, P) :- body(P, Ch).
+cast.cell(Ch, P) :- impl_choice(Ch), in(P, _), !body(P, Ch).
+cast.blocked([F, E], P) :- impl_choice([F, E]), dot(P, F).
+
+// A cell a cast reaches, where no dot stops that cast short of the edge.
+.decl fill(p: Position, ch: Choice)
+fill(P, Ch) :- cast.ray(Ch, P, D, _, Src), !cast.stop(Ch, _, D, _, Src).
+
+out(P, Col, [F, E]) :-
+    in(P, C0), impl_choice([F, E]),
+    ( fill(P, [F, E]), paint(Col, F)    // a beam
+    ; !fill(P, [F, E]), Col = C0 ).

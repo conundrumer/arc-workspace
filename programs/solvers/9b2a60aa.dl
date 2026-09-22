@@ -92,7 +92,7 @@ aligned(A, P, Q) :- marker(P), marker(Q), axis_elem(A), same_line(A, P, Q).
 bent(A) :- marker(P), marker(Q), axis_elem(A), !aligned(A, P, Q).
 
 // The marker line's axis.
-// @allow: single-consumer — the axis is the object of scene claim `line`
+// @ignore: single-consumer — the axis is the object of scene claim `line`
 .decl line_axis(a: Axis)
 line_axis(A) :- axis_elem(A), !bent(A).
 

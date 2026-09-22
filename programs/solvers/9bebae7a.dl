@@ -1,0 +1,76 @@
+// 9bebae7a
+// @draft
+// @keywords: objects markers d4
+// @scene pieces: the ink is one shape of params.shape_color and one marker of
+//  params.mark_color
+// @scene arms: the marker is two straight arms crossing at one cell, and it
+//  reaches farther from that cell toward one direction than toward any other
+// @rule side: the marker's far direction, turned a quarter turn in
+//  params.turn_sense, gives the side the copy goes to
+// @rule copy: the shape's reflection across that side of its bounding box
+//  sits just beyond that edge, in the shape's color
+// @rule erase: every other cell is params.bg, the marker's cells included
+
+.decl out(p: Position, col: Color)
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl shape_color(c: Color) shape_color(4).
+    .decl mark_color(c: Color) mark_color(6).
+    // The quarter turn from the marker's far direction to the copy's side.
+    .decl turn_sense(s: Sense) turn_sense(SENSE_CC).
+}
+
+.init params = Params
+
+// Each piece's own bounding box.
+// @claim pieces arms copy
+.init bbox = Bbox<Color>
+bbox.cell(Col, P) :- in(P, Col), !params.bg(Col).
+
+.decl mark(p: Position)
+mark(P) :- in(P, Col), params.mark_color(Col).
+
+// The cell the marker's two arms cross at.
+.decl crossing(p: Position)
+crossing(P) :-
+    mark(P), perp_dir(D, D2),
+    neighbor(P, D, Q), mark(Q), neighbor(P, D2, Q2), mark(Q2).
+
+// How far the marker reaches from its crossing cell toward d.
+.decl reach(d: Dir, k: number)
+reach(D, K) :-
+    crossing(P), params.mark_color(Col), bbox.box(Col, B), crop(P, B, P_inner),
+    dir_elem(D), dist(P_inner, D, K).
+
+// The direction the marker reaches farthest toward.
+// @claim arms
+.init far = ArgExtremes<Unit, Dir>
+far.cand($U(), D, K) :- reach(D, K).
+
+// The side of the shape's box the copy sits beyond: a quarter turn from the
+// marker's far direction.
+.decl copy_dir(d: Dir)
+copy_dir(D2) :- far.high($U(), D, _), params.turn_sense(S), turn(S, D, D2).
+
+// The copy's box: the shape's box moved one shape-length toward that side,
+// so the two boxes meet at the mirror.
+.decl copy_box(b: Box)
+copy_box(B2) :-
+    copy_dir(D), axis_of(D, A),
+    params.shape_color(Col), bbox.box(Col, B),
+    in(P, _), box_extent(B, P, A, N), jump(B, D, N, B2).
+
+// A shape cell paints where it stands, and again at its reflection.
+.decl paint(p: Position)
+paint(P_grid_out) :-
+    in(P_grid_in, Col), params.shape_color(Col),
+    ( P_grid_out = P_grid_in
+    ; bbox.box(Col, B), crop(P_grid_in, B, P_inner),    // read in the shape's box
+      copy_dir(D), axis_of(D, A), flip_of(A, F),
+      apply(F, P_inner, P_flip),                          // reflected across that side's axis
+      copy_box(B2), compose(B2, P_flip, P_grid_out),      // seated in the copy's box
+      in(P_grid_out, _) ).                                // within the grid
+
+out(P, Col) :- paint(P), params.shape_color(Col).
+out(P, Col) :- in(P, _), !paint(P), params.bg(Col).

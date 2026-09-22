@@ -99,7 +99,7 @@ copy(Pm, D, Q2, Ch) :-
     march(Pm, D, V, Ch), compose(Q, V, Q2), in(Q2, _).
 
 // The march that arrives at the block.
-// @allow: single-consumer — naming the concept the model turns on
+// @ignore: single-consumer — naming the concept the model turns on
 .decl arrives(p_mark: Position, d: Dir, ch: Choice)
 arrives(Pm, D, Ch) :- copy(Pm, D, Q, Ch), at_block(Pm, Q).
 

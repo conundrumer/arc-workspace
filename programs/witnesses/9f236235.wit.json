@@ -1,0 +1,28 @@
+{
+  "id": "9f236235",
+  "witnesses": [{
+    "id": "unequal",
+    "separates": "panels cut by the lines that draw them, against panels read off an even lattice",
+    "input": [
+      [3,3,5,0,0,0,0],
+      [5,5,5,5,5,5,5],
+      [0,0,5,4,4,4,4],
+      [0,0,5,4,4,4,4],
+      [0,0,5,4,4,4,4]
+    ],
+    "output": [{
+      "cases": ["Cut"],
+      "grid": [
+        [0,3],
+        [4,0]
+      ]
+    }, {
+      "cases": ["Lattice"],
+      "grid": [
+        [0,0,5,3],
+        [4,4,5,0],
+        [4,4,5,0]
+      ]
+    }]
+  }]
+}

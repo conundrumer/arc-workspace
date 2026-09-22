@@ -1,0 +1,112 @@
+// 9f5f939b
+// @draft
+// @keywords: markers objects span
+// @scene dominoes: every run of ink is a domino, two adjacent cells with no
+//  other ink cell touching either
+// @rule cross: a cell takes the mark color when four dominoes point at it,
+//  one from each cardinal direction, each lying along the direction it
+//  stands in, its near end one cell away
+// @rule keep: every other cell keeps its color
+
+// how far from the cell the dominoes of a cross stand
+.type Gap =
+    // @claim cross
+    Near {}
+    // @rule cross: a cell takes the mark color when four dominoes point at
+    //  it, one from each cardinal direction, each lying along the direction
+    //  it stands in, the four near ends at one distance from the cell
+    // @witness wide: ordinary concept
+  | Centered {}
+    // @rule cross: a cell takes the mark color when four dominoes point at
+    //  it, one from each cardinal direction, each lying along the direction
+    //  it stands in, the two near ends on each axis at one distance from the
+    //  cell
+    // @witness oblong: ordinary concept
+  | Midpoint {}
+
+// what ink between the cell and a domino does
+.type Sight =
+    // @claim cross
+    Any {}
+    // @rule cross: a cell takes the mark color when four dominoes point at
+    //  it, one from each cardinal direction, each lying along the direction
+    //  it stands in, its near end one cell away and the first ink the cell
+    //  meets toward it
+    // @witness plugged: variant Clear
+    //     @relaxed dominoes
+  | Clear {}
+
+.type Choice = [gap: Gap, sight: Sight]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    //     @relaxed dominoes
+    .decl bg(c: Color) bg(8).
+    // the color a cross's center takes
+    .decl mark(c: Color) mark(4).
+}
+
+.init params = Params
+
+.decl gap_choice(g: Gap)
+gap_choice($Near()). gap_choice($Centered()). gap_choice($Midpoint()).
+
+.decl sight_choice(s: Sight)
+sight_choice($Any()). sight_choice($Clear()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([G, S]) :- gap_choice(G), sight_choice(S).
+
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !params.bg(Col).
+
+// E is an end of a domino, the other cell one step toward D.
+.decl domino_end(e: Position, d: Dir)
+domino_end(E, D) :- ink(E), dir_elem(D), neighbor(E, D, F), ink(F).
+
+// --- Near ---
+
+// A domino points at P from direction D, one cell away.
+.decl near_arm(s: Sight, p: Position, d: Dir)
+near_arm($Any(), P, D) :-
+    in(P, _), neighbor(P, D, G), neighbor(G, D, E), domino_end(E, D).
+// Clear adds to Any that the cell between holds no ink.
+near_arm($Clear(), P, D) :- near_arm($Any(), P, D), neighbor(P, D, G), !ink(G).
+
+// A domino points at P from each side of axis A, one cell away.
+.decl near_pair(s: Sight, p: Position, a: Axis)
+near_pair(S, P, A) :-
+    near_arm(S, P, D), axis_of(D, A), opposite(D, O), near_arm(S, P, O).
+
+// --- Centered, Midpoint ---
+
+// @claim cross
+.init see = Ray<Unit>
+see.dir($U(), D) :- dir_elem(D).
+see.mark($U(), P) :- in(P, _).
+see.blocked($U(), P) :- ink(P).
+
+// A domino points at P from direction D, its near end K cells away.
+.decl arm(s: Sight, p: Position, d: Dir, k: number)
+arm($Any(), P, D, K) :- see.cast($U(), E, D, K, P), K > 0, domino_end(E, D).
+arm($Clear(), P, D, K) :- see.stop($U(), E, D, K, P), domino_end(E, D).
+
+// Dominoes point at P from both sides of axis A, both near ends K cells away.
+.decl balanced(s: Sight, p: Position, a: Axis, k: number)
+balanced(S, P, A, K) :-
+    arm(S, P, D, K), axis_of(D, A), opposite(D, O), arm(S, P, O, K).
+
+// --- output ---
+
+// P is the center of a cross.
+.decl cross(ch: Choice, p: Position)
+cross([$Near(), S], P) :- near_pair(S, P, A), perp(A, A2), near_pair(S, P, A2).
+cross([$Centered(), S], P) :-
+    balanced(S, P, A, K), perp(A, A2), balanced(S, P, A2, K).
+cross([$Midpoint(), S], P) :-
+    balanced(S, P, A, _), perp(A, A2), balanced(S, P, A2, _).
+
+out(P, Col, Ch) :- cross(Ch, P), params.mark(Col).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !cross(Ch, P).

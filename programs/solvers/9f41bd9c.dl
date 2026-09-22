@@ -1,0 +1,253 @@
+// 9f41bd9c
+// @draft
+// @keywords: objects lines move cast d4
+// @scene ground: the ground fills the lines against one edge, and the sky
+//  fills the rest
+// @scene comb: one comb of a single color stands in the sky, flush against a
+//  side edge, and its lowest line rests on the ground's surface
+// @scene teeth: the comb's top lines are solid across its span, and every
+//  line below them has a gap: those are the teeth
+// @rule cross: the comb crosses the sky and comes to rest flush against the
+//  opposite side edge, and the sky takes the cells it left
+// @rule drag: each comb line lags toward the side the comb came from by the
+//  count of teeth lines above it
+// @rule scrape: the leading tooth tip is the tip nearest the edge the comb
+//  crossed to, and on the ground's surface every cell behind it takes the
+//  scrape color
+
+// how the comb crosses to the far side
+.type Cross =
+    // @claim cross
+    Slide {}
+    // @rule cross: the comb reflects across the grid's midline, which lands
+    //  it against the opposite side edge with its teeth reversed
+    // @witness lopsided-teeth: variant any
+  | Mirror {}
+
+// what tells the comb's head from its teeth
+.type Head =
+    // @claim teeth
+    Solid {}
+    // @scene teeth: the comb's head is the lines above its topmost gapped
+    //  line, and every line from that one down is one of the teeth
+    // @witness braced-comb: borderline Below
+    //     @relaxed teeth
+  | Below {}
+    // @scene teeth: the comb's head is its top lines, as many as
+    //  params.head_lines counts, and every line below them is one of the teeth
+    // @witness thick-head: variant concept
+    //     @relaxed teeth
+  | Fixed {}
+
+// what the drag does below the first teeth line
+.type Drag =
+    // @claim drag
+    Lag {}
+    // @rule drag: the comb down to its first teeth line lands flush, and each
+    //  cell of that line trails a streak toward the corner of the ground and
+    //  the side the comb came from, down to the ground
+    // @witness ragged-teeth: variant concept
+  | Cast {}
+
+// what a tooth's tip is
+.type Tip =
+    // @claim scrape
+    Ground {}
+    // @rule scrape: the leading tip is the landed cell of the comb's lowest
+    //  line nearest the edge the comb crossed to, and on the ground's surface
+    //  every cell behind it takes the scrape color
+    // @witness floating-comb: borderline concept
+    //     @relaxed comb
+  | Lowest {}
+
+.type Choice = [cross: Cross, head: Head, drag: Drag, tip: Tip]
+
+// a landed comb: which crossing, and which head split
+.type Landing = [cross: Cross, head: Head]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // the sky the comb stands in
+    // @derive DominantColor: variant derived
+    .decl bg(c: Color) bg(1).
+    // @derive RarestColor: variant derived
+    .decl comb(c: Color) comb(5).
+    .decl ground(c: Color) ground(6).
+    .decl scrape(c: Color) scrape(9).
+    // the edge the ground lies against
+    .decl ground_dir(d: Dir) ground_dir(DIR_B).
+
+    // --- Fixed ---
+    .decl head_lines(n: number) head_lines(2).
+}
+
+.init params = Params
+
+.decl cross_choice(c: Cross)
+cross_choice($Slide()). cross_choice($Mirror()).
+
+.decl head_choice(h: Head)
+head_choice($Solid()). head_choice($Below()). head_choice($Fixed()).
+
+.decl drag_choice(dg: Drag)
+drag_choice($Lag()). drag_choice($Cast()).
+
+.decl tip_choice(t: Tip)
+tip_choice($Ground()). tip_choice($Lowest()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([C, H, Dg, T]) :-
+    cross_choice(C), head_choice(H), drag_choice(Dg), tip_choice(T).
+
+// --- the scene ---
+
+.decl comb(p: Position)
+comb(P) :- in(P, Col), params.comb(Col).
+
+.decl ground(p: Position)
+ground(P) :- in(P, Col), params.ground(Col).
+
+// @claim ground
+.init rim = Rim<Unit>
+rim.cell($U(), P) :- ground(P).
+
+// the ground's top line
+.decl surface(p: Position)
+surface(P) :- params.ground_dir(D), opposite(D, D_up), rim.rim_dir($U(), P, D_up).
+
+// the line parallel to the ground that a cell sits on
+.decl line_of(p: Position, l: Position)
+line_of(P, L) :- in(P, _), params.ground_dir(D), axis_of(D, A), split(P, A, L, _).
+
+.decl travel_axis(a: Axis)
+travel_axis(A) :- params.ground_dir(D), axis_of(D, A_g), perp(A_g, A).
+
+.decl crossing(d_from: Dir, d_to: Dir)
+crossing(D_from, D_to) :-
+    comb(P), travel_axis(A), axis_of(D_from, A),
+    dist(P, D_from, 0), opposite(D_from, D_to).
+
+// @claim teeth cross scrape
+.init cbox = Bbox<Unit>
+cbox.cell($U(), P) :- comb(P).
+
+.decl comb_line(l: Position)
+comb_line(L) :- comb(P), line_of(P, L).
+
+// a comb line with a gap across the comb's span
+.decl gapped_line(l: Position)
+gapped_line(L) :- cbox.box($U(), B), line_of(P, L), crop(P, B, _), !comb(P).
+
+// each comb cell's place on the far side, before the teeth drag back
+.decl crossed(c: Cross, p: Position, p_far: Position)
+
+// --- Slide ---
+
+crossed($Slide(), P, P2) :-
+    comb(P), crossing(_, D_to),
+    cbox.box($U(), B), dist(B, D_to, K),   // the room ahead of the comb
+    jump(P, D_to, K, P2).
+
+// --- Mirror ---
+
+crossed($Mirror(), P, P2) :-
+    comb(P), travel_axis(A), flip_of(A, F), apply(F, P, P2).
+
+// --- the teeth ---
+
+.decl teeth_line(h: Head, l: Position)
+
+// --- Solid ---
+
+teeth_line($Solid(), L) :- gapped_line(L).
+
+// --- Below ---
+
+// a comb line at or below a gapped one
+teeth_line($Below(), L) :-
+    comb_line(L), gapped_line(L0),
+    params.ground_dir(D), opposite(D, D_up), !nearer(D_up, L, L0).
+
+// --- Fixed ---
+
+// a comb line the head does not reach down to
+teeth_line($Fixed(), L) :-
+    comb(P), line_of(P, L),
+    cbox.box($U(), B), crop(P, B, P_rel),                // the cell in the comb's frame
+    params.ground_dir(D), opposite(D, D_up),
+    dist(P_rel, D_up, K), params.head_lines(N), K >= N.  // past the head's lines
+
+// --- the drag ---
+
+// how far a comb line lags: the count of teeth lines above it
+// @claim drag
+.init lag = Order<Head, Position>
+lag.elem(H, L) :- head_choice(H), comb_line(L).
+lag.before(H, L1, L2) :-
+    teeth_line(H, L1), comb_line(L2),                               // a teeth line
+    params.ground_dir(D), opposite(D, D_up), nearer(D_up, L1, L2).  // above it
+
+// where the comb comes to rest
+.decl moved(c: Cross, h: Head, dg: Drag, p: Position)
+
+// --- Lag ---
+
+moved(C, H, $Lag(), P2) :-
+    crossed(C, P, P1), line_of(P, L), lag.rank(H, L, K),
+    crossing(D_from, _), jump(P1, D_from, K, P2), in(P2, _).
+
+// --- Cast ---
+
+// the corner the teeth trail toward: the ground, and back the way the comb came
+.decl trail_dir(d: DiagDir)
+trail_dir(D_diag) :-
+    params.ground_dir(D), crossing(D_from, _), diag_dirs(D_diag, _, D, D_from).
+
+.decl landing(l: Landing)
+landing([C, H]) :- cross_choice(C), head_choice(H).
+
+// the streaks the landed first teeth line trails down to the ground
+// @claim drag
+.init trail = Ray<Landing>
+trail.mark([C, H], P1) :-
+    crossed(C, P, P1),
+    line_of(P, L), teeth_line(H, L), lag.rank(H, L, 0).  // the topmost teeth line
+trail.dir(Lg, D) :- landing(Lg), trail_dir(D).
+trail.blocked(Lg, P) :- landing(Lg), ground(P).
+
+// the comb down to its first teeth line lands flush
+moved(C, H, $Cast(), P1) :- crossed(C, P, P1), line_of(P, L), lag.rank(H, L, 0).
+moved(C, H, $Cast(), P) :- trail.clear_cast([C, H], P, _, _, _).
+
+// --- the tips ---
+
+.decl tip(ch: Choice, p: Position)
+
+// --- Ground ---
+
+tip([C, H, Dg, $Ground()], P) :-
+    moved(C, H, Dg, P), params.ground_dir(D), neighbor(P, D, Q), ground(Q).
+
+// --- Lowest ---
+
+.decl bottom_line(l: Position)
+bottom_line(L) :-
+    comb_line(L), cbox.box($U(), B), params.ground_dir(D), same_dist(D, L, B).
+
+tip([C, H, Dg, $Lowest()], P) :- moved(C, H, Dg, P), line_of(P, L), bottom_line(L).
+
+// --- the render ---
+
+// the ground the dragged teeth scraped: the surface behind the leading tip
+.decl scraped(ch: Choice, p: Position)
+scraped(Ch, P) :- surface(P), tip(Ch, Q), crossing(_, D_to), nearer(D_to, Q, P).
+
+.decl paint(ch: Choice, p: Position, col: Color)
+paint([C, H, Dg, T], P, Col) :- moved(C, H, Dg, P), tip_choice(T), params.comb(Col).
+paint(Ch, P, Col) :- scraped(Ch, P), params.scrape(Col).
+paint([C, H, Dg, T], P, Col) :-
+    impl_choice([C, H, Dg, T]), comb(P), !moved(C, H, Dg, P), params.bg(Col).
+
+out(P, Col, Ch) :- paint(Ch, P, Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !paint(Ch, P, _).

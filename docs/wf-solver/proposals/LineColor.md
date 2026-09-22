@@ -1,6 +1,6 @@
 # `LineColor<Key>` — the color a whole line holds
 
-The one color each line of a frame holds throughout, per key: a line whose cells all carry one color pairs with that color, and a line whose cells disagree pairs with nothing. It is how a solver finds a separator, a stripe, a filled row or column, or a painted border edge, before anything reads what that line does. `DividerFrame` consumes cutting lines and leaves the finding to its caller, so every solver that cuts on a drawn line writes the finding itself.
+The one color each line of a frame holds throughout, per key: a line whose cells all carry one color pairs with that color, and a line whose cells disagree pairs with nothing. It is how a solver finds a separator, a stripe, a filled row or column, or a painted border edge, before anything reads what that line does. `DividerTiles` consumes cutting lines and leaves the finding to its caller, so every solver that cuts on a drawn line writes the finding itself.
 
 ```
 .comp LineColor<Key> {
@@ -16,7 +16,7 @@ The one color each line of a frame holds throughout, per key: a line whose cells
 
     // The line at l holds col and nothing else. l is the along component
     // `split` gives, so the line runs perpendicular to a — the convention
-    // `DividerFrame.divider` takes.
+    // `DividerTiles.divider` takes.
     .decl line(key: Key, a: Axis, l: Position, col: Color)
     line(K, A, L, Col) :- one.value([K, A, L], Col).
 
@@ -26,7 +26,7 @@ The one color each line of a frame holds throughout, per key: a line whose cells
 }
 ```
 
-Not: a line that merely holds a color somewhere; the commonest color of a line (`Mode`); a maximal run of one color inside a line (`Runs`); `DividerFrame` (which takes the cutting lines as its input); a uniform region that is not a full line; a per-line test of something other than color agreement.
+Not: a line that merely holds a color somewhere; the commonest color of a line (`Mode`); a maximal run of one color inside a line (`Runs`); `DividerTiles` (which takes the cutting lines as its input); a uniform region that is not a full line; a per-line test of something other than color agreement.
 
 Match: a `Unanimous` instance over `Color`, keyed by an axis and a line position that `split` produces from the grid's cells — or the same agreement written by hand, as a clash rule over two cells of one line, or as a defect negation over a color class. Grep signature: `grep -ln 'Unanimous<' programs/solvers/*.dl` intersected with `grep -ln 'split(P, A' programs/solvers/*.dl`, then read the instance's `item` rule; for the hand-written forms, the shape is matched with the parser.
 

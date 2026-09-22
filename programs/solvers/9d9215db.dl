@@ -1,0 +1,162 @@
+// 9d9215db
+// @draft
+// @keywords: markers border decompose rank span
+// @scene lattice: the ink sits on a lattice of every other cell, held one
+//  blank cell in from the grid's border
+// @scene rings: the lattice peels into square rings, one per distance from
+//  the nearest lattice edge, and each inked cell sits on one of them
+// @scene nesting: the inked rings run consecutively from the outermost
+// @scene corner-ink: every inked ring holds ink at one of its four corners
+// @scene patch: a ring's ink away from its corners sits one step along the
+//  ring from a corner
+// @rule draw: the output draws one ring per ring that holds ink
+// @rule seat: each drawn ring sits on the ring it came from
+// @rule corners: a drawn ring's four corner cells take the color of the ink
+//  at a corner of the ring it came from
+// @rule sides: the rest of a drawn ring takes the color of the ink away from
+//  the corners of the ring it came from
+// @rule blank: every other cell takes the background
+
+// which ring a drawn ring sits on
+.type Seat =
+    // @claim seat
+    Own {}
+    // @rule seat: the drawn rings take the outermost rings, in the order of
+    //  the rings they came from
+    // @witness skipped-ring: variant concept
+    //     @relaxed nesting
+  | Nest {}
+
+// what makes a ring one the output draws
+.type Source =
+    // @claim draw
+    AnyInk {}
+    // @rule draw: the output draws one ring per ring that holds ink at one
+    //  of its corners
+    // @witness cornerless-ring: variant concept
+    //     @relaxed corner-ink
+  | CornerInk {}
+
+// how far the side ink reaches along the ring it draws
+.type Spread =
+    // @claim sides
+    Full {}
+    // @rule sides: a drawn ring's cells no nearer a corner than the side ink
+    //  is to a corner of the ring it came from take that ink's color
+    // @witness gapped-side: foreign concept
+    //     @relaxed patch
+  | Span {}
+
+// a drawn ring's seat, what makes a ring drawn, and the side ink's reach
+.type Choice = [seat: Seat, src: Source, sp: Spread]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    .decl bg(col: Color) bg(0).
+
+    // The blank border the lattice sits inside.
+    .decl margin(k: number) margin(1).
+
+    // A lattice cell is one grid cell, with one blank cell to the next.
+    .decl lat_size(k: number) lat_size(1).
+    .decl lat_gap(g: number) lat_gap(1).
+}
+
+.init params = Params
+
+.decl seat_choice(s: Seat)
+seat_choice($Own()). seat_choice($Nest()).
+
+.decl source_choice(s: Source)
+source_choice($AnyInk()). source_choice($CornerInk()).
+
+.decl spread_choice(s: Spread)
+spread_choice($Full()). spread_choice($Span()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, Src, Sp]) :- seat_choice(S), source_choice(Src), spread_choice(Sp).
+
+// The lattice cell a grid cell holds.
+.decl lat(p_grid: Position, p_lat: Position)
+lat(P_grid, P_lat) :-
+    in(P_grid, _),
+    params.margin(M), uniform_inset(M, B), crop(P_grid, B, P_rel),  // inside the border
+    params.lat_size(K), params.lat_gap(G),
+    divide_by_size_2d(P_rel, K, G, P_lat, _).                       // every other cell
+
+.decl ink(p_lat: Position, col: Color)
+ink(P_lat, Col) :- lat(P_grid, P_lat), in(P_grid, Col), !params.bg(Col).
+
+// @claim rings
+.init peel = Rim<Unit>
+peel.cell($U(), P_lat) :- lat(_, P_lat).
+
+// Distances from a lattice cell to the four corners of its own ring; the
+// lowest of them runs along that ring.
+// @claim corners sides
+.init reach = Extremes<Position>
+reach.cand(P_lat, J) :-
+    peel.depth($U(), P_lat, K), uniform_inset(K, B), relative(B, P_lat, P_rel),
+    diag_dir_elem(Diag), corner_dist(P_rel, Diag, J).
+
+// The ring a lattice cell sits on, and how far along that ring it sits from
+// the ring's nearest corner.
+.decl place(p_lat: Position, k: number, j: number)
+place(P_lat, K, J) :- peel.depth($U(), P_lat, K), reach.low(P_lat, J).
+
+// The places a ring has, each a distance from the ring's nearest corner.
+.decl ring_place(j: number)
+ring_place(J) :- place(_, _, J).
+
+// The rings whose ink the output draws.
+.decl source(src: Source, k: number)
+source($AnyInk(), K) :- ink(P_lat, _), place(P_lat, K, _).
+source($CornerInk(), K) :- ink(P_lat, _), place(P_lat, K, 0).
+
+// The ring a source ring's ink draws on.
+.decl seat(st: Seat, src: Source, k: number, k_out: number)
+
+// The place of a drawn ring that takes the ink at a place of the ring it
+// came from.
+// @ignore: store — the correspondence follows the ring's places, which
+// follow the lattice's extent; this task fixes the grid size, so the value
+// is constant here alone
+.decl copy(sp: Spread, j_out: number, j_src: number)
+copy(Sp, 0, 0) :- spread_choice(Sp).   // the corners pair off
+
+// A lattice cell of the drawing, and the ink it copies.
+.decl draw(ch: Choice, p_lat: Position, col: Color)
+draw([St, Src, Sp], P_lat, Col) :-
+    seat(St, Src, K, K_out), place(P_lat, K_out, J_out),  // a place on the seated ring
+    ink(Q_lat, Col), place(Q_lat, K, J_src),              // ink on the ring it draws
+    copy(Sp, J_out, J_src).
+
+.decl drawn(ch: Choice, p_grid: Position)
+drawn(Ch, P_grid) :- lat(P_grid, P_lat), draw(Ch, P_lat, _).
+
+out(P_grid, Col, Ch) :- lat(P_grid, P_lat), draw(Ch, P_lat, Col).
+out(P_grid, Col, Ch) :-
+    in(P_grid, _), impl_choice(Ch), !drawn(Ch, P_grid), params.bg(Col).
+
+// --- Own ---
+seat($Own(), Src, K, K) :- source(Src, K).
+
+// --- Nest ---
+
+// @claim seat
+.init order = Ordinal<Source>
+order.idx_set(Src, K) :- source(Src, K).
+
+seat($Nest(), Src, K, R) :- order.rank(Src, K, R).
+
+// --- Full ---
+
+// The side ink reaches every place of the ring but its corners.
+copy($Full(), J_out, J_src) :- ring_place(J_out), J_out > 0, ring_place(J_src), J_src > 0.
+
+// --- Span ---
+
+// The side ink reaches the places no nearer a corner than the ink itself.
+copy($Span(), J_out, J_src) :- ring_place(J_out), ring_place(J_src), J_src > 0, J_out >= J_src.

@@ -46,7 +46,7 @@ ring_box(Id, B) :-
 ring(Id, P) :- in(P, _), ring_box(Id, B), geq(P, B), !rect_box.inside(Id, P).
 ```
 
-Not: `Border` (the frame inside a border, viewed inward, with no cells outside the box); `BoxCells.on_edge` (the box's own edge lines); `Rim` (a set's own boundary cells, which follow the set's shape rather than a box); a box translated by a Shift (16b78196, 4522001f), which moves a box instead of letting it out; a box let out with no band read off it; the enclosed cells of a box (`Bbox.inside`, `geq` alone).
+Not: the frame inside a uniform border, viewed inward, with no cells outside the box; `BoxCells.on_edge` (the box's own edge lines); `Rim` (a set's own boundary cells, which follow the set's shape rather than a box); a box translated by a Shift (16b78196, 4522001f), which moves a box instead of letting it out; a box let out with no band read off it; the enclosed cells of a box (`Bbox.inside`, `geq` alone).
 
 Match: a rule deriving a second box from a box margin and a width, through `displacement` or `compose` with an `Inset`, joined by a rule that tests `geq` against that second box and negates membership in the first. Grep `displacement(` and `uniform_delta(` in `programs/solvers/*.dl`, then read each site for the width-to-box direction; a site may instead relax the cell (`compose(P, W, P_near), geq(P_near, M)`), which is the same operation with the addition on the other side.
 

@@ -1,0 +1,108 @@
+// 9caba7c3
+// @draft
+// @keywords: markers stamp count
+// @scene squares: 3×3 squares of params.field cells, with params.mark in
+//  place of some rim cells, lie on noise of field cells and background; no
+//  two squares share a cell, and every mark is in a square.
+// @rule square: a square is a 3×3 window of field and mark cells with a field
+//  center and some mark; where such windows overlap, the square is the one
+//  holding the most marks.
+// @rule paint: the square's center becomes params.center_paint and its other
+//  field cells params.rim_paint; the marks stay.
+
+// which of the overlapping windows is the square
+.type Choice =
+    // @claim square
+    Count {}
+    // @rule square: a square is a 3×3 window of field and mark cells with a
+    //  field center and some mark, unless another such window's marks
+    //  strictly contain its own.
+    // @witness gap: ordinary concept
+  | Maximal {}
+    // @rule square: a square is a 3×3 window of field and mark cells with a
+    //  field center and some mark, holding every mark of the windows it
+    //  overlaps.
+    // @witness gap: ordinary concept
+  | Complete {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    .decl field(c: Color) field(5).
+    // @derive RarestColor: variant derived
+    .decl mark(c: Color) mark(2).
+    .decl center_paint(c: Color) center_paint(4).
+    .decl rim_paint(c: Color) rim_paint(7).
+}
+
+.init params = Params
+
+.decl field_cell(p: Position)
+field_cell(P) :- in(P, Col), params.field(Col).
+
+.decl mark_cell(p: Position)
+mark_cell(P) :- in(P, Col), params.mark(Col).
+
+// The 3×3 window centered at P: the cell and its eight neighbors, whole on
+// the grid.
+.decl window(p_center: Position, q: Position)
+window(P, Q) :-
+    in(P, _), interior(P, ZERO),                 // off the frame's border
+    ( Q = P
+    ; dir8_elem(D), neighbor(P, D, Q)
+    ).
+
+// A window with a cell that is neither field nor mark.
+.decl broken(p_center: Position)
+broken(P) :- window(P, Q), !field_cell(Q), !mark_cell(Q).
+
+// The marks of a candidate: a window of field and mark cells with a field
+// center.
+.decl cand_mark(p_center: Position, q: Position)
+cand_mark(P, Q) :- window(P, Q), mark_cell(Q), field_cell(P), !broken(P).
+
+// Two windows that share a cell.
+.decl overlap(p_center: Position, p_center2: Position)
+overlap(P, P2) :- window(P, Q), window(P2, Q), P != P2.
+
+.decl dominated(p_center: Position, ch: Choice)
+
+// --- Count ---
+// @claim square
+.init marks = Tally<Position, Position>
+marks.item(P, Q) :- cand_mark(P, Q).
+
+dominated(P, $Count()) :- overlap(P, P2), marks.tally(P, N), marks.tally(P2, N2), N2 > N.
+
+// --- Maximal ---
+// The candidates' mark sets on both sides, so candidates compare with each other.
+// @claim square
+.init maximal = KeyedSetCompare<Position, Position, Position>
+maximal.pattern_member(P, Q)  :- cand_mark(P, Q).
+maximal.observed_member(P, Q) :- cand_mark(P, Q).
+
+dominated(P, $Maximal()) :-
+    maximal.covers(P2, P),      // P2's marks hold all of P's
+    !maximal.equals(P2, P).     // and more besides
+
+// --- Complete ---
+dominated(P, $Complete()) :- overlap(P, P2), cand_mark(P2, Q), !window(P, Q).
+
+// --- output ---
+
+.decl impl_choice(ch: Choice)
+impl_choice($Count()). impl_choice($Maximal()). impl_choice($Complete()).
+
+.decl square(p_center: Position, ch: Choice)
+square(P, Ch) :- cand_mark(P, _), impl_choice(Ch), !dominated(P, Ch).
+
+.decl painted(p: Position, col: Color, ch: Choice)
+painted(Q, Col, Ch) :-
+    square(P, Ch), window(P, Q),
+    ( Q = P, params.center_paint(Col)                // the center
+    ; Q != P, field_cell(Q), params.rim_paint(Col)   // the rim's field cells
+    ).
+
+out(P, Col, Ch) :- painted(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, _, Ch).
