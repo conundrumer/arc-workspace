@@ -1463,7 +1463,8 @@ def _index_nodes(document: Node, st: _State, seen: tuple[str, ...],
                  kind: str, drop: tuple[str, ...] = (),
                  abridged: set[Path] | str | None = None) -> list[Node]:
     """A document as an index: its title heading, the lines above its first
-    section, and one line per section or per entry."""
+    section, a line naming the command that prints a section in full, and one
+    line per section or per entry."""
     rel = st.reg.rel(document)
     top = _top(document)
     lead: list[Node] = []
@@ -1472,6 +1473,16 @@ def _index_nodes(document: Node, st: _State, seen: tuple[str, ...],
             break
         lead.append(child)
     body = _expand(lead, st, seen, rel, drop, abridged)
+    chapter = Path(document.source).stem if top is document else top.text
+    if kind == "entries":
+        note = ("Each line below is an entry's title and its first sentence, "
+                "and `uv run python scripts/context.py section "
+                f"'{chapter}#<title>'` prints the entry in full.")
+    else:
+        note = ("Each heading below names a section this rendering abridges, "
+                "and `uv run python scripts/context.py section "
+                f"'{chapter}#<heading>'` prints it in full.")
+    body.append(Node(CONTENT, text=note, source=top.source, line=top.line))
     body += _entry_lines(top) if kind == "entries" else _heading_lines(top)
     if top is document:
         return body

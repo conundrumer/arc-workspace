@@ -30,6 +30,7 @@
     out(P, Col, [$PairExist(), $PerCell()]) :- ...
     out(P, Col, [$Count(),     $SliceMap()]) :- ...
     ```
+- A clause for one branch of a field writes that field's constructor and a variable for each other field.
 - When only some combinations are cases, the record remains, and `impl_choice` lists only those combinations.
 - A flat sum duplicates the shared clauses and causes the linter's `choice-tag` finding.
 

@@ -7,8 +7,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 
 + lib: index
 
-* inline: notes.md#abridged-headings
-
 * inline: notes.md#abridgement
 
 * inline: notes.md#citations

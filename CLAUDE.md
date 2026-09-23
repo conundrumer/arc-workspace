@@ -36,7 +36,7 @@
     - `data/tasks/` regenerates from them via `scripts/materialize.py`.
     - Upstream is pinned via submodules, and corrections live in patches, not in `data/upstream/`.
 - **Type aliases use the `type` keyword** (PEP 695, native to 3.12).
-- **A grid is drawn as a grid**, wherever one is written: one row per line, cells separated by spaces, background as `.`.
+- **A grid is drawn as a grid**, wherever one is written: one row per line, cells separated by spaces, 0 as `0`.
 
 ## Tests
 - A test costs an edit each time the code it pins changes, and a later session pays it.

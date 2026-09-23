@@ -160,7 +160,7 @@ def case_frame(peers: list[Peer]) -> tuple[pd.DataFrame, list[Skipped]]:
     for peer in peers:
         try:
             report = features_report(str(peer.path))
-        except (OSError, ParseError) as error:
+        except (OSError, ParseError, RuntimeError) as error:
             skipped.append(Skipped(str(peer.path), str(error)))
             continue
         for case in report.cases:

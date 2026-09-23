@@ -16,63 +16,16 @@ tools: Read, Grep, Glob, Bash, Write
 - Never run a git command that changes state.
 - Your reply is the report's path.
 
+* inline: notes.md#abridgement
+
+* inline: notes.md#citations-carried
+* include: ../../docs/handbook/principles.md
+
 ## Grids
 * inline: ../console.md#grids
 
-# Principles
-* inline: notes.md#citations-carried
-
-## The goal
-* inline: ../../docs/handbook/principles.md#the-goal
-
-## Definitions
-
-### The solver's parts
-* inline: ../../docs/handbook/principles.md#the-solvers-parts
-
-### Models and tasks
-* inline: ../../docs/handbook/principles.md#models-and-tasks
-
-### The generator
-* inline: ../../docs/handbook/principles.md#the-generator
-
-### The concept
-* inline: ../../docs/handbook/principles.md#the-concept
-
-### Choice points and open parameters
-* inline: ../../docs/handbook/principles.md#choice-points-and-open-parameters
-
-### Witnesses
-* inline: ../../docs/handbook/principles.md#witnesses
-
-### Equivalence
-* inline: ../../docs/handbook/principles.md#equivalence
-
-## Relational form
-* inline: ../../docs/handbook/principles.md#relational-form
-
-## Parameterization
-
-### Invariance
-* inline: ../../docs/handbook/principles.md#invariance
-
-### Orientation
-* inline: ../../docs/handbook/principles.md#orientation
-
-### Color
-* inline: ../../docs/handbook/principles.md#color
-
-### Stored or derived
-* inline: ../../docs/handbook/principles.md#stored-or-derived
-
-### Open parameters
-* inline: ../../docs/handbook/principles.md#open-parameters
-
-## Cases
-* inline: ../../docs/handbook/principles.md#cases
-
-# Keywords
+## Keywords
 * inline: ../../docs/handbook/keywords.md#keywords
 
-# Analyze
+## Analyze
 * inline: ../../docs/handbook/procedure.md#analyze

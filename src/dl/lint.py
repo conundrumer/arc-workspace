@@ -2,7 +2,7 @@
 
 `.comp` blocks are skipped wholesale — a proposal comp is lib code on its
 way out of the solver, and its proposal entry is what makes it legitimate,
-so a comp with no entry is a finding — except the comps whose rules are
+so a comp with no entry is a hint — except the comps whose rules are
 model hypotheses, which lint as program. The public entry point is
 `lint_program`; run_dl.py calls it after running each solver.
 """
@@ -18,8 +18,11 @@ from dl.dlparse import (
     SECTION_RE,
     Agg,
     Atom,
+    BinOp,
+    Call,
     Cmp,
     Comp,
+    Ctor,
     Decl,
     Define,
     Disj,
@@ -31,9 +34,14 @@ from dl.dlparse import (
     Neg,
     ParseError,
     Program,
+    Rec,
     Rigid,
     Rule,
+    Term,
     TypeDecl,
+    UnOp,
+    Var,
+    Wild,
     marker_names,
     parse,
 )
@@ -146,7 +154,8 @@ LIB_INTERNAL_CAT = "lib internal"
 # legitimate only with its entry under docs/wf-solver/proposals/.
 STOCK_COMPS = ("Params", "Determine", "Parse")
 PROPOSALS_DIR = REPO_ROOT / "docs" / "wf-solver" / "proposals"
-# The category a proposal comp with no entry is reported under.
+# The category a proposal comp with no entry is reported under. It is a
+# hint: the lib pass writes the entry after the solver is written.
 NO_ENTRY_CAT = "comp without entry"
 # The category a Parse comp that no Determine comp reads is reported
 # under.
@@ -164,6 +173,12 @@ CLAIM_CAT = "claim"
 # A header keyword the doc does not list. A session adds the keyword it needs
 # and proposes it in its review, so this is a hint, not a finding.
 KEYWORD_CAT = "keyword"
+# A case never reads a field that encodes a choice point, so every branch
+# of that point gives the case's output. The session judges whether the
+# point belongs under the case, so this is a hint.
+UNREAD_FIELD_CAT = "unread-field"
+# The categories of `lint_program` that report as hints.
+HINT_CATS = frozenset({KEYWORD_CAT, NO_ENTRY_CAT, UNREAD_FIELD_CAT})
 # Every header line in the order they stand, with the rank the order check
 # reads.
 HEADER_ORDER = ("@draft", "@representative", "@keywords", "@scene", "@rule",
@@ -184,6 +199,7 @@ CASE_MARKER_CAT = "case marker"
 # line of its own, and its directive lines are its description.
 GLOSS_CAT = "gloss"
 FIELD_TYPE_RE = re.compile(r":\s*(\w+)")
+BRANCH_FIELDS_RE = re.compile(r"(\w+)\s*\{([^}]*)\}")
 BRANCH_LINE_RE = r"^\s*(?:\|\s*)?{name}\s*\{{"
 # The concept branch stands first in its type and carries no witness line;
 # every other branch carries at least one.
@@ -568,8 +584,8 @@ def _comps_without_entry(
         findings.append((
             NO_ENTRY_CAT, it.line,
             mctx("`{name}` is a proposal comp with no entry "
-                 "docs/wf-solver/proposals/{name}.md; write the entry, or "
-                 "fold the comp into the program").format(name=it.name),
+                 "docs/wf-solver/proposals/{name}.md; the lib pass writes "
+                 "the entry, or the comp folds into the program").format(name=it.name),
             raw_lines[it.line - 1].rstrip(),
         ))
     return findings
@@ -960,10 +976,11 @@ def branch_above(source: str, line: int) -> str:
 def _glosses(
     ann: Annotations, items: list[Item], raw_lines: list[str],
 ) -> list[tuple[str, int, str, str]]:
-    """`Choice` lacking the gloss above the type, and the constructors of a
+    """`Choice` lacking the gloss above the type, the constructors of a
     choice ADT — of `Choice` itself, and of the ADTs named as field types —
-    that open no line of their own, and each `@witness` line that stands
-    under neither a branch nor an `@approximated:` line."""
+    that open no line of their own, a concept branch that carries a
+    `@witness` line, and each `@witness` line that stands under neither a
+    branch nor an `@approximated:` line."""
     targets: list[tuple[bool, TypeDecl]] = []
     seen: set[str] = set()
     for field, td in _choice_adts(items):
@@ -986,17 +1003,10 @@ def _glosses(
                                  raw_lines[td.line - 1].rstrip()))
                 continue
             held.update(_comment_lines_above(raw_lines, at))
-            witnessed = bool(_witnesses_of(ann, raw_lines, at))
-            if name == td.branches[0] and witnessed:
+            if name == td.branches[0] and _witnesses_of(ann, raw_lines, at):
                 findings.append((WITNESS_CAT, at,
                                  mctx("`{name}` is the concept branch; drop "
                                       "its `@witness` line").format(name=name),
-                                 raw_lines[at - 1].rstrip()))
-            elif name != td.branches[0] and not witnessed:
-                findings.append((WITNESS_CAT, at,
-                                 mctx("`{name}` is no concept branch and has "
-                                      "no `@witness` line; add {form}").format(
-                                     name=name, form=WITNESS_FORM),
                                  raw_lines[at - 1].rstrip()))
     for w in ann.witnesses:
         if w.approximates or w.line in held:
@@ -1005,6 +1015,249 @@ def _glosses(
                          mctx("a witness line stands in a branch's comment "
                               "block or under `@approximated:`"),
                          raw_lines[w.line - 1].rstrip()))
+    return findings
+
+
+def unwitnessed_branches(source: str) -> list[tuple[int, str]]:
+    """Each branch of a choice ADT, nested ones included, that is not its
+    type's first and carries no `@witness` line, as the line it opens and
+    the finding's text. The Witness operation writes those lines after the
+    solver runs, so the witness report reads this and the lint does not."""
+    src = _strip_block_comments(source)
+    raw_lines = src.splitlines()
+    ann = read(src)
+    try:
+        items = parse(source).items
+    except ParseError:
+        return []
+    out: list[tuple[int, str]] = []
+    seen: set[str] = set()
+    for _, td in _choice_adts(items):
+        if td is None or td.name in seen:
+            continue
+        seen.add(td.name)
+        for name, at in _branch_sites(td, raw_lines):
+            if (at is not None and name != td.branches[0]
+                    and not _witnesses_of(ann, raw_lines, at)):
+                out.append((at, mctx("`{name}` is no concept branch and has "
+                                     "no `@witness` line; add {form}").format(
+                    name=name, form=WITNESS_FORM)))
+    return out
+
+
+ENUMERATOR = "impl_choice"
+"""The relation that states the held cases, which enumerates them."""
+
+
+def _all_rules(items: list[Item]) -> list[Rule]:
+    """Every rule of the program, the rules inside comps included."""
+    out: list[Rule] = []
+    for it in items:
+        if isinstance(it, Rule):
+            out.append(it)
+        elif isinstance(it, Comp):
+            out.extend(_all_rules(it.items))
+    return out
+
+
+def _enumerators(items: list[Item]) -> set[str]:
+    """The relations that list constructors and nothing else: `impl_choice`,
+    and each top-level relation whose every clause is a fact of one
+    argument, a constructor or a record."""
+    shape: dict[str, bool] = {}
+    for r in items:
+        if not isinstance(r, Rule):
+            continue
+        one = (r.body is None and len(r.head.args) == 1
+               and isinstance(r.head.args[0], (Ctor, Rec)))
+        shape[r.head.name] = shape.get(r.head.name, True) and one
+    return {name for name, one in shape.items() if one} | {ENUMERATOR}
+
+
+def _subterms(term: Term):
+    """Every term inside `term`, `term` itself first, aggregate bodies
+    included."""
+    stack = [term]
+    while stack:
+        t = stack.pop()
+        yield t
+        if isinstance(t, (Ctor, Rec, Call)):
+            stack.extend(t.args)
+        elif isinstance(t, BinOp):
+            stack.extend((t.lhs, t.rhs))
+        elif isinstance(t, UnOp):
+            stack.append(t.arg)
+        elif isinstance(t, Agg):
+            if t.expr is not None:
+                stack.append(t.expr)
+            for lit in t.body:
+                stack.extend(_lit_terms(lit))
+
+
+def _lit_terms(lit: Lit) -> list[Term]:
+    """The top-level terms of one literal."""
+    if isinstance(lit, Atom):
+        return list(lit.args)
+    if isinstance(lit, Neg):
+        return list(lit.atom.args)
+    if isinstance(lit, Cmp):
+        return [lit.lhs, lit.rhs]
+    if isinstance(lit, Disj):
+        return [t for b in lit.branches for sub in b for t in _lit_terms(sub)]
+    return []
+
+
+def _lit_atoms(lit: Lit) -> list[Atom]:
+    if isinstance(lit, Atom):
+        return [lit]
+    if isinstance(lit, Neg):
+        return [lit.atom]
+    if isinstance(lit, Disj):
+        return [a for b in lit.branches for sub in b for a in _lit_atoms(sub)]
+    return []
+
+
+def _var_uses(rule: Rule, enums: set[str]) -> dict[str, int]:
+    """How often each variable of a clause stands where it carries a value.
+    A variable that is the one argument of an enumerator atom only ranges
+    over the constructors, and that place does not count."""
+    lits: list[Lit] = [rule.head, *(rule.body or ())]
+    skip: set[int] = set()
+    for lit in lits:
+        for a in _lit_atoms(lit):
+            if (a.qual is None and a.name in enums and len(a.args) == 1
+                    and isinstance(a.args[0], Var)):
+                skip.add(id(a.args[0]))
+    uses: dict[str, int] = {}
+    for lit in lits:
+        for top in _lit_terms(lit):
+            for t in _subterms(top):
+                if isinstance(t, Var) and id(t) not in skip:
+                    uses[t.name] = uses.get(t.name, 0) + 1
+    return uses
+
+
+def _reads(term: Term, uses: dict[str, int]) -> bool:
+    """A field written as `term` is read: it is no `_`, and no variable the
+    clause uses nowhere else."""
+    if isinstance(term, Wild):
+        return False
+    return not (isinstance(term, Var) and uses.get(term.name, 0) <= 1)
+
+
+FIELD_NAME_TYPE_RE = re.compile(r"(\w+)\s*:\s*(\w+)")
+
+
+def _unread_fields(
+    items: list[Item], raw_lines: list[str],
+) -> list[tuple[str, int, str, str]]:
+    """Each case, a constructor at its parent, that never reads a field
+    encoding a choice point.
+
+    The parent is a constructor with fields, whose fields are the choice
+    points under it, or a record-typed `Choice`, whose fields are the choice
+    points beside the one the case's constructor stands at. A clause reads
+    a field where it writes that case's constructor at the parent and puts
+    at the field anything but `_` or a variable it uses nowhere else. A
+    variable whose only other place is the one argument of an enumerator
+    atom (`impl_choice`, or a relation of one-argument facts) counts as used
+    nowhere else. A clause of an enumerator writes no case. A record that
+    leaves a field's case open, with a variable or `_`, reads each other
+    field it puts a value at for every case of the open field, so no case
+    of that field is reported against those fields. A case the solver writes
+    nowhere at its parent is not reported."""
+    adts = [td for _, td in _choice_adts(items) if td is not None]
+    by_name = {td.name: td for td in adts}
+    types = {it.name: it for it in items if isinstance(it, TypeDecl)}
+    # Each constructor's fields that encode a choice point: (index, name).
+    points: dict[str, list[tuple[int, str]]] = {}
+    owner: dict[str, TypeDecl] = {}
+    for td in adts:
+        for m in BRANCH_FIELDS_RE.finditer(td.rhs):
+            fields = FIELD_NAME_TYPE_RE.findall(m.group(2))
+            owner[m.group(1)] = td
+            chosen = [(j, name) for j, (name, typ) in enumerate(fields)
+                      if typ in by_name]
+            if chosen:
+                points[m.group(1)] = chosen
+    choice = types.get("Choice")
+    roots: list[tuple[str, TypeDecl | None]] = []
+    if choice is not None and not choice.branches:
+        roots = [(name, by_name.get(typ)) for name, typ
+                 in FIELD_NAME_TYPE_RE.findall(choice.rhs)]
+    if not points and len(roots) < 2:
+        return []
+
+    rules = _all_rules(items)
+    enums = _enumerators(items)
+    written: set[tuple[str, int]] = set()
+    read: set[tuple[str, int]] = set()
+    rec_written: set[tuple[str, int]] = set()
+    rec_read: set[tuple[str, int, int]] = set()
+    open_read: set[tuple[int, int]] = set()
+
+    def root_ctor(t: Term, i: int) -> str | None:
+        td = roots[i][1]
+        if isinstance(t, Ctor) and td is not None and t.name in td.branches:
+            return t.name
+        return None
+
+    def choice_record(t: Rec) -> bool:
+        return len(t.args) == len(roots) and all(
+            isinstance(a, (Var, Wild)) or root_ctor(a, i) is not None
+            for i, a in enumerate(t.args))
+
+    top_rules = {id(r) for r in items if isinstance(r, Rule)}
+    for rule in rules:
+        if id(rule) in top_rules and rule.head.name in enums:
+            continue
+        uses = _var_uses(rule, enums)
+        for lit in [rule.head, *(rule.body or ())]:
+            for top in _lit_terms(lit):
+                for t in _subterms(top):
+                    if isinstance(t, Ctor) and t.name in points:
+                        for j, _name in points[t.name]:
+                            if j >= len(t.args):
+                                continue
+                            written.add((t.name, j))
+                            if _reads(t.args[j], uses):
+                                read.add((t.name, j))
+                    elif (isinstance(t, Rec) and len(roots) > 1
+                          and choice_record(t)):
+                        for i, a in enumerate(t.args):
+                            ctor = root_ctor(a, i)
+                            if ctor is not None:
+                                rec_written.add((ctor, i))
+                            for j, b in enumerate(t.args):
+                                if j == i or not _reads(b, uses):
+                                    continue
+                                if ctor is None:
+                                    open_read.add((i, j))
+                                else:
+                                    rec_read.add((ctor, i, j))
+
+    findings: list[tuple[str, int, str, str]] = []
+
+    def hint(ctor: str, field: str) -> None:
+        td = owner.get(ctor)
+        at = next((n for name, n in _branch_sites(td, raw_lines)
+                   if name == ctor and n is not None), td.line) if td else 1
+        findings.append((
+            UNREAD_FIELD_CAT, at,
+            mctx("case `{case}` never reads field `{field}`, so the choice "
+                 "point `{field}` encodes stands under the other branches")
+            .format(case=ctor, field=field),
+            raw_lines[at - 1].rstrip()))
+
+    for ctor, chosen in points.items():
+        for j, name in chosen:
+            if (ctor, j) in written and (ctor, j) not in read:
+                hint(ctor, name)
+    for ctor, i in sorted(rec_written, key=lambda k: (k[1], k[0])):
+        for j, (name, _td) in enumerate(roots):
+            if (j != i and (ctor, i, j) not in rec_read
+                    and (i, j) not in open_read):
+                hint(ctor, name)
     return findings
 
 
@@ -1236,6 +1489,7 @@ def lint_program(source: str) -> list[tuple[str, int, str, str]]:
     findings.extend(_lone_parse(program, raw_lines))
     findings.extend(_banned_types(program.items, raw_lines))
     findings.extend(_glosses(ann, program.items, raw_lines))
+    findings.extend(_unread_fields(program.items, raw_lines))
     findings.extend(_claims(ann, src, program, raw_lines))
     findings.extend(_includes(program.items, raw_lines))
     findings.extend(_params_data(program.comps().get("Params"), raw_lines, code))

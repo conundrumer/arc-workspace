@@ -25,10 +25,6 @@ def solvers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path
 
 
-def test_dots_and_spaces_are_the_same_grid():
-    assert parse_grid(". 3 .\n3 3 3\n") == parse_grid("030\n333")
-
-
 def test_ragged_rows_raise():
     with pytest.raises(ValueError, match="differ in width"):
         parse_grid("03\n333")

@@ -608,7 +608,6 @@ MARKER = "==== {what} ====\n"
 # The sample values a printed message takes in place of the ones a run fills.
 SAMPLE_TID = "0000abcd"
 SAMPLE_TASK = '{"train": [{"input": [[0]], "output": [[1]]}], "test": []}'
-SAMPLE_REFERENCE = "// reference solver"
 SAMPLE_REPORTS = "<prior reports>"
 SAMPLE_ENTRY = "docs/wf-solver/proposals/<entry>.md"
 SAMPLE_SCOPE = "every solver"
@@ -795,8 +794,7 @@ def _stage_messages(stage: str, stages: list[str], prompts) -> list[tuple[str, s
     if stage == first:
         out.append((mctx("message: create"),
                     prompts.message("create", tid=SAMPLE_TID,
-                                    task=SAMPLE_TASK,
-                                    reference=SAMPLE_REFERENCE)))
+                                    task=SAMPLE_TASK)))
     else:
         out.append((mctx("message: advance, where the stages before it left "
                          "a solver on disk"),

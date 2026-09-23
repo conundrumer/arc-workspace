@@ -131,7 +131,7 @@ def check_code(root: Path, document_set: set[Path]) -> int:
 # the session document, which inlines the operations its passes run.
 HANDBOOK_ENTRIES = ("prompts/handbook.md", "prompts/agents/handbook.md",
                     "prompts/agents/handbook-expanded.md",
-                    "prompts/agents/analyze.md",
+                    "prompts/agents/analyze.md", "prompts/agents/create.md",
                     "prompts/agents/analyze-next.md", "prompts/session.md")
 
 

@@ -11,6 +11,9 @@
 ## Every pass
 * inline: ../docs/handbook/procedure.md#every-pass
 
+## Every session
+* inline: ../docs/handbook/procedure.md#every-session
+
 ## Creation pass
 - The first pass, in this order.
 

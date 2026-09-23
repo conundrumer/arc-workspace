@@ -160,11 +160,12 @@ VALUES = "_store_values"
 class Move:
     """The grid on which a relation's value differs: the train input it
     comes from, and the transformation that made it. `identity` says the
-    concept case gives that grid unchanged."""
+    concept case gives that grid unchanged, and `input` is the grid."""
 
     grid: str
     change: str
     identity: bool = False
+    input: list[list[int]] | None = None
 
 
 @dataclass
@@ -1346,7 +1347,8 @@ def _attach_witnesses(stem, source, path, task, cands, pending,
                     continue
                 if value is None and not diverges(f, grid):
                     continue
-                f.move = Move(label, change, at_concept(grid) == grid)
+                f.move = Move(label, change, at_concept(grid) == grid,
+                              grid)
 
 
 def _stored_colors(source: str, defines: dict[str, int]) -> set[int]:

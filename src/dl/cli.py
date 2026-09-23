@@ -40,7 +40,7 @@ from dl.determine import (
 )
 from dl.dlparse import ParseError, parse
 from dl.drop_one import drop_one_report, render_drop_one
-from dl.facts import parse_grid
+from dl.facts import Candidate, parse_grid
 from dl.features import (
     FileFeatures,
     case_branches,
@@ -51,12 +51,13 @@ from dl.features import (
 from dl.features_run import case_label, run_features
 from dl.lint import (
     HEADER_CAT,
-    KEYWORD_CAT,
+    HINT_CATS,
     LIB_NAME_CAT,
     RESERVED_CAT,
     SHADOWED_TYPE_CAT,
     lint_program,
 )
+from dl.models import Cases, case_space, model_label
 from dl.paths import REPO_ROOT, all_stems
 from dl.render import (
     _grid_lines,
@@ -105,15 +106,19 @@ from dl.sweep_open import (
     settled_params,
 )
 from dl.witness import (
+    WITNESS_FILE_OK,
     WITNESS_OK,
     annotation_lines,
     assigned_source,
-    case_outcomes,
+    branch_outcomes,
+    file_shape,
     grouped_output,
+    load_witness_file,
     load_witnesses,
     put_entry,
     read_witness_data,
     render_witness,
+    runner_outcomes,
     witness_path,
     witness_report,
     write_witness_data,
@@ -133,7 +138,7 @@ def _lint_kinds(source: str, hints: bool) -> list[Findings]:
     dec: Findings = []
     adv: Findings = []
     for f in lint_program(source):
-        (adv if f[0] == KEYWORD_CAT else style).append(f)
+        (adv if f[0] in HINT_CATS else style).append(f)
     for f in lint_rewrites(source, hints):
         (adv if f[0] in HINTS else dec).append(f)
     return [style, dec, adv]
@@ -364,9 +369,9 @@ TIME_LIMIT_HELP = ("wall-clock limit in seconds for the sweep runs; the "
                "report as not swept")
 
 GRID_HELP = """\
-Grid format: one line per row, one character per cell — a digit 0-9, or `.`
-for 0. Spaces and commas between cells are optional; blank lines and lines
-starting with `#` are skipped. Text starting with `[` is read as JSON.
+Grid format: one line per row, one digit 0-9 per cell. Spaces and commas
+between cells are optional; blank lines and lines starting with `#` are
+skipped. Text starting with `[` is read as JSON.
 """
 
 STEM_HELP = "a stem, or a path to a solver file named for the task id"
@@ -443,47 +448,77 @@ def _run_body(c) -> list[str]:
     return lines
 
 
-def _print_run(stem: str, grid: list[list[int]],
-               actuals: list) -> list[str]:
-    """Print the input, what each case emits, and the cases that emit
-    nothing; return those silent cases. Cases that emit the same thing are
-    named together, above the one printing of it."""
+def _model_body(cands: list, resolution: bool) -> list[str]:
+    """What one model emits: each grid under its resolution when it emits
+    more than one."""
+    if len(cands) == 1:
+        return _run_body(cands[0])
+    lines: list[str] = []
+    for c in cands:
+        tail = c.case.split("\t")[-1] if resolution else c.case
+        lines.append(f"  {tail}:")
+        lines += [f"  {line}" for line in _run_body(c)]
+    return lines
+
+
+def _print_run(grid: list[list[int]], actuals: list, space: Cases,
+               resolution: bool,
+               runner: dict[str, list[list[int]] | None]) -> None:
+    """Print the input, what each branch model of `space` emits and what
+    each case the runner holds gives, then the ones that
+    emit nothing. Models that emit the same thing are named together, above
+    the one printing of it. A case the runner holds that gives no grid is
+    undefined there."""
     print("input:")
     for line in _grid_lines(grid):
         print(f"  {line}")
+    by_case: dict[str, list] = {}
+    for c in actuals:
+        fine = model_label(c.case, resolution)
+        by_case.setdefault(fine, []).append(c)
+        if (coarse := case_label(c.case, resolution)) != fine:
+            by_case.setdefault(coarse, []).append(c)
+    models = space.models()
+    for name, got in runner.items():
+        by_case[name] = [Candidate(name, got, [], [])] if got else []
+        models[name] = name
     bodies: dict[str, list[str]] = {}
     named: dict[str, list[str]] = {}
-    for c in actuals:
-        body = _run_body(c)
+    silent: list[str] = []
+    grids: set = set()
+    for name, case in models.items():
+        cands = by_case.get(case)
+        if not cands:
+            silent.append(name)
+            continue
+        grids |= {tuple(tuple(row) for row in c.grid)
+                  for c in cands if not c.error}
+        body = _model_body(cands, resolution)
         key = "\n".join(body)
         bodies.setdefault(key, body)
-        named.setdefault(key, []).append(c.case or '(out)')
+        named.setdefault(key, []).append(name)
     for key, body in bodies.items():
         print()
         for name in named[key]:
             print(f"{name}:")
         for line in body:
             print(line)
-
-    emitted = {case_label(c.case) for c in actuals}
-    silent = [b for b in case_branches(stem) if b not in emitted]
     if silent:
         print()
         for name in silent:
-            print(f"{name if name.startswith('[') else '$' + name}"
-                  ": emits nothing")
-    cases = len(actuals) + len(silent)
-    if cases > 1:
-        distinct = {tuple(tuple(row) for row in c.grid)
-                    for c in actuals if not c.error}
+            print(f"{name}: undefined" if name in runner
+                  else f"{name}: emits nothing")
+    if len(models) > 1:
+        held = (f", {len(runner)} case(s) the runner holds" if runner
+                else "")
         print()
-        print(f"{cases} cases, {len(distinct)} distinct grid(s)")
-    return silent
+        print(f"{len(models) - len(runner)} branch models{held}, "
+              f"{len(grids)} distinct grid(s)")
 
 
 def cmd_grid(stem: str, path: str | None = None) -> int:
     """Run one solver on a grid the caller wrote, in place of a stored pair,
-    and print what each case emits."""
+    and print what each branch model emits."""
     if _missing(stem):
         return 2
     text = _grid_text(path)
@@ -500,13 +535,18 @@ def cmd_grid(stem: str, path: str | None = None) -> int:
     build_functors()
     if _compile_failed(stem):
         return 1
+    solver, task_id = solver_file(stem)
+    source = solver.read_text()
     try:
-        actuals = run_dl(solver_file(stem)[1], grid, stem=stem)
+        actuals = run_dl(task_id, grid, stem=stem)
+        cases = case_branches(stem, grid=grid)
+        space = case_space(source, cases)
+        runner = runner_outcomes(stem, sorted(space.runner), grid, source)
     except Exception as e:
         print(f"{type(e).__name__}: {e}", file=sys.stderr)
         return 1
 
-    _print_run(stem, grid, actuals)
+    _print_run(grid, actuals, space, res_out_stem(stem), runner)
     return 0
 
 
@@ -544,7 +584,8 @@ def cmd_format(stem: str) -> int:
 def cmd_record(stem: str, entry_id: str, separates: str,
                path: str | None = None, assign_text: str | None = None) -> int:
     """Run one solver on a grid the caller wrote and write the run into the
-    task's witness file, as the entry `entry_id`."""
+    task's witness file, as the entry `entry_id`: one group per distinct
+    outcome of the branch models, each model by its name."""
     if _missing(stem):
         return 2
     assign = _assign_arg(assign_text)
@@ -572,17 +613,20 @@ def cmd_record(stem: str, entry_id: str, separates: str,
     build_functors()
     if _compile_failed(stem):
         return 1
+    run_source = assigned_source(source, assign)
     try:
-        actuals = run_dl_source(
-            assigned_source(source, assign), grid, solver_path=solver)
+        actuals = run_dl_source(run_source, grid, solver_path=solver)
+        cases = case_branches(stem, run_source, grid)
+        space = case_space(run_source, cases)
+        runner = runner_outcomes(stem, sorted(space.runner), grid,
+                                 run_source)
     except Exception as e:
         print(f"{type(e).__name__}: {e}", file=sys.stderr)
         return 1
 
-    silent = _print_run(stem, grid, actuals)
-    outcomes = case_outcomes(actuals, res_out_stem(stem))
-    for name in silent:
-        outcomes.setdefault(name, None)
+    resolution = res_out_stem(stem)
+    _print_run(grid, actuals, space, resolution, runner)
+    outcomes = branch_outcomes(space, actuals, resolution) | runner
     if judged is not None:
         print()
         print("judged output:")
@@ -960,21 +1004,21 @@ def cmd_deletions(stem: str) -> int:
     return _print_deletions(stem)
 
 
-def _print_witness(stem: str) -> int:
+def _print_witness(stem: str, file: Path | None = None) -> int:
     """The features each `@witness` line of `stem` states, then its witness
-    report. Non-zero on a differing output or an annotation finding."""
+    report, against `file` when given. Non-zero on a failing finding."""
     path, task_id = solver_file(stem)
-    witness = load_witnesses(task_id)
+    witness = load_witness_file(file) if file else load_witnesses(task_id)
     print("`@witness` lines:")
     for line in annotation_lines(path.read_text()):
         print(f"  {line}")
     print()
     if witness is None:
-        print(f"no witness file at {witness_path(task_id)}")
+        print(f"no witness file at {file or witness_path(task_id)}")
     else:
         grids = len(witness.entries)
         print(f"{grids} witness grid{'s' if grids != 1 else ''} run")
-    lines = render_witness(witness_report(stem))
+    lines = render_witness(witness_report(stem, file))
     passed = lines[-1] == WITNESS_OK
     for line in (lines[:-1] if passed else lines):
         print(f"  {line}")
@@ -983,13 +1027,38 @@ def _print_witness(stem: str) -> int:
     return 0 if passed else 1
 
 
-def cmd_witness(stem: str) -> int:
-    """Run the task's witness grids through the solver and report each case
-    whose output differs from the one its entry names."""
+def _print_shape(path: Path) -> int:
+    """The shape findings of the witness file at `path`. Non-zero on a
+    finding."""
+    findings = file_shape(path)
+    for line in findings:
+        print(line)
+    return 1 if findings else 0
+
+
+def cmd_witness(stem: str | None, file: str | None = None) -> int:
+    """Run the task's witness grids through the solver, or the grids of
+    `file`, and report each case whose output differs from the one its entry
+    names. The file's shape is checked first. Without a stem, the shape
+    check of `file` is the whole report."""
+    if stem is None and file is None:
+        print("witness: give a stem, --file, or both", file=sys.stderr)
+        return 2
+    if file is not None and not Path(file).exists():
+        print(f"no witness file at {file}", file=sys.stderr)
+        return 2
+    if stem is None:
+        if _print_shape(Path(file)):
+            return 1
+        print(WITNESS_FILE_OK)
+        return 0
     if _missing(stem):
         return 2
+    path = Path(file) if file else witness_path(solver_file(stem)[1])
+    if path.exists() and _print_shape(path):
+        return 1
     build_functors()
-    return _print_witness(stem)
+    return _print_witness(stem, Path(file) if file else None)
 
 
 def _print_derive(stem: str) -> int:
@@ -1137,8 +1206,7 @@ def cmd_features(stem: str | None = None, run: bool = False,
     if stem and _missing(stem):
         return 2
     stems = [stem] if stem else all_stems()
-    if run:
-        build_functors()
+    build_functors()
     files: list[FileFeatures] = []
     skipped: list[dict[str, str]] = []
     bad = False
@@ -1146,7 +1214,7 @@ def cmd_features(stem: str | None = None, run: bool = False,
         try:
             dynamic = run_features(s, case_branches(s)) if run else None
             files.append(features_report(s, _sweep_counts(s, skipped), dynamic))
-        except ParseError as e:
+        except (ParseError, RuntimeError) as e:
             print(f"{s}: {e}", file=sys.stderr)
             skipped.append({"stem": s, "reason": str(e)})
             bad = True
@@ -1347,17 +1415,29 @@ def _parser() -> argparse.ArgumentParser:
                     "on control grids from each example's palette, are left "
                     "out. The audit does not run it.",
     ).add_argument("stem", help="one solver")
-    sub.add_parser(
+    witness = sub.add_parser(
         "witness",
         help="run the task's hand-written witness grids and report where "
              "the solver and the file disagree",
         description="Where the solver and "
                     "programs/witnesses/<task>.wit.json disagree: a case "
-                    "whose output differs from the one its entry names, and "
-                    "a `@witness` line the file does not bear out. Without "
-                    "a witness file, every `@witness` line of the solver "
-                    "names no entry.",
-    ).add_argument("stem", help="one solver")
+                    "whose output differs from the one its entry names, a "
+                    "name that denotes no case, a `@witness` line the "
+                    "file does not bear out, a verdict that denotes no "
+                    "case, a branch that is not its "
+                    "type's first and has no `@witness` line, and two held "
+                    "cases, `impl_choice`'s and the runner's, that no "
+                    "witness separates. Without a "
+                    "witness file, no grid runs, no branch needs a "
+                    "`@witness` line, and every `@witness` line of the "
+                    "solver names no entry. The file's shape is checked "
+                    "first. With "
+                    "--file and no stem, the shape check is the whole "
+                    "report, and it needs no solver.",
+    )
+    witness.add_argument("stem", nargs="?", help="one solver")
+    witness.add_argument("--file", metavar="PATH",
+                         help="a witness file to read in place of the task's")
     sub.add_parser(
         "derive",
         help="the built-in derivations of stored parameters that fit, each held as a case",
@@ -1511,7 +1591,7 @@ def main(argv: list[str]) -> int:
         case "determination-plan":
             return cmd_determination_plan(args.stem, args.verdicts)
         case "witness":
-            return cmd_witness(args.stem)
+            return cmd_witness(args.stem, args.file)
         case "derive":
             return cmd_derive(args.stem)
         case "store":

@@ -81,8 +81,8 @@
 ### Header
 - `@scene` and `@rule` are in dependency order.
 - `@keywords` carries the keywords any case claims.
-- A `// review <kind>: <text>` line stands last in the header, and it names a subject a retro left for its Resolve phase.
-- A solver session leaves such a line as it is.
+- A `// review <kind>: <text>` line stands last in the header.
+- Leave it as it is.
 - A family sibling's header, omitting other fields:
     ```
     // <task_id>
@@ -97,6 +97,8 @@
 ### Cases
 - A case's model reads its output grids from `out` at that case, one grid per tiebreak resolution.
 - A branch's clauses are the clauses shared by its cases and absent from the other cases.
+- A constructor is named for its branch, the branch's slug in CamelCase: `bbox-region` gives `BboxRegion`.
+- `@claim` under the concept branch's constructor names the header claim the choice point turns on, which each other branch's `@scene` or `@rule` line replaces.
 - A solver with one case has no `Choice`, case markers, or case column on `out`.
 - **Case markers.** Cases do not interleave: each case's Params and clauses are under its marker.
     - Cases that share facts or clauses are under one marker naming them, `// --- Box, Erode ---`.
@@ -104,7 +106,7 @@
     - The comma still separates cases.
 - **`impl_choice`.** The relation that enumerates the cases is `impl_choice`, and its column is `ch`.
     - A record-typed `Choice` gets one enumerator per field, named for the field's type, as in `.decl locate_choice(l: Locate)`.
-    - `impl_choice` contains whole `Choice` values, and it appears when a clause reads one.
+    - `impl_choice` contains whole `Choice` values, and it appears when a clause reads one or when the cases are not every combination of the fields.
 
 ## Params
 - Params contains the parameterization and what derives from it.
@@ -174,14 +176,24 @@
         "id": slug,                              // unique within this file
         "separates": string,                     // models separated by this input
         "input": Grid,
-        "assign": {<parameter>: Fact[] | Grid},  // the parameters the witness reassigns; a stored grid in GRID_HxW form
-        "output": Group[]                        // when the verdict is not other: every case, one group per distinct output
+        "assign": {<parameter>: Fact[] | Grid},  // the parameters the witness reassigns
+        "output": Group[]                        // when the verdict is not other: every branch model, one group per distinct output
                 | Grid                           // when the verdict is other: the annotator's judged output
       }] }
 
-    Group: { "cases": <case>[],           // the cases that give this output
+    Group: { "cases": <name>[],           // the models that give this output
              "grid": Grid | null }        // null for undefined
     Grid: number[][]                      // rows of colors
     Fact: Arg[]                           // the arguments of one fact
     Arg: number | string | Arg[]
     ```
+- Use a string for a lib constant and a list for a record.
+- [`GRID_HxW` for grid data](docs/handbook/patterns.md#grid_hxw-for-grid-data) states the form of a stored grid.
+- A `<name>` denotes one model, in one of these forms:
+    - `concept`: the concept case
+    - a constructor's name, such as `Alt`: that branch's model, for a nested constructor too
+        - A constructor that stands at more than one place denotes its first, and `<parent> & <name>` denotes it at another.
+    - a branch's slug, such as `bbox-region`: the constructor named for it, as [Cases](docs/handbook/solver-file.md#cases) states
+    - `<name> & <name>`: the case with those branches
+    - `<param>=<Proposer>`: the case the runner holds under `@derive`
+    - `<rel>=stored`: the case the runner holds under `@store`, whose entry has `output` per case and no `assign`

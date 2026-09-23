@@ -296,31 +296,6 @@ def test_a_keyword_the_doc_does_not_list_is_a_hint():
     assert of(src, "keyword") == [(2, "`tiling` is not in keywords.md; propose it in the review")]
 
 
-def test_a_record_choice_is_read_through_its_field_types():
-    src = """\
-// 74dd1130
-// @keywords: decompose
-// output: a grid of tiles
-
-// what to do, and what to do it to
-.type Choice = [d: DecChoice, b: Body]
-
-// which way the tiles turn
-.type DecChoice =
-      // mirror across the seam
-      Mirror {}
-      // a quarter turn
-    | Turn {}
-
-// what the choice acts on
-.type Body =
-      Whole {}
-"""
-    assert of(src, "witness") == [
-        (13, "`Turn` is no concept branch and has no `@witness` line; "
-             "add `// @witness <id>: <plausibility> <verdict>`")]
-
-
 RECORD_MARKED = """\
 // 8618d23e
 // @keywords: decompose

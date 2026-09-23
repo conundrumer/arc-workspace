@@ -1,16 +1,24 @@
 """Hand-written grids a solver's cases are pinned to.
 
-A witness file holds grids the author built to tell the solver's cases
-apart, each with the outcome every case is expected to give.
-solver-file.md states the file's shape.
+A witness file holds grids the author built to tell the solver's branch
+models apart, each with the outcome every model is expected to give.
+solver-file.md states the file's shape, and `dl.models` reads the names a
+group gives.
 
 An entry's `assign` field reassigns a `Params` parameter before the run,
 so the entry stands at the assignment its `separates` names rather than
 at the stored one.
+
+Every held case fits the task, so only witnesses tell two of them apart:
+the file's inputs, and for a case the runner holds, the witness the runner
+builds for it. The report names each pair of held cases no witness
+separates.
+`shape_findings` checks a file's shape alone, with no solver, and the
+report runs it first.
 """
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -29,9 +37,12 @@ from dl.annotations import (
     store_relation,
     witness_blocks,
 )
+from dl.dlparse import ParseError, parse
 from dl.facts import Candidate
+from dl.features import case_branches, declares_held, held_cases
 from dl.features_run import NO_CHOICE, case_label, case_members
-from dl.lint import branch_above, concept_case
+from dl.lint import branch_above, unwitnessed_branches
+from dl.models import Cases, Coarse, Space, case_space, model_label
 from dl.paths import PROGRAMS_DIR
 from dl.render import _grid_lines
 from dl.solve import res_out_stem, run_dl_source, solver_file
@@ -49,11 +60,14 @@ WITNESS_OK = "witness: ok"
 
 DRIFT = "drift"
 UNLISTED = "unlisted"
+UNRESOLVED = "unresolved"
 ANNOTATION = "annotation"
-FAILING = (DRIFT, ANNOTATION)
+UNSEPARATED = "unseparated"
+FAILING = (DRIFT, UNRESOLVED, ANNOTATION, UNSEPARATED)
 """The kinds that fail the check."""
 
-type Outcome = list[list[int]] | None
+type Grid = list[list[int]]
+type Outcome = Grid | None
 type Assign = dict[str, list[list[object]]]
 
 
@@ -67,9 +81,7 @@ class Entry:
     it; `_output` spreads a group over its cases.
 
     `assign` holds replacement `Params` facts per parameter, each row the
-    arguments of one fact as the `.dl` writes them: a number as a number, a
-    lib constant such as `AXIS_H` as a string, and a record such as a
-    Position as a list of its arguments.
+    arguments of one fact in the form solver-file.md (Witness file) gives.
     """
 
     id: str
@@ -93,17 +105,15 @@ class Witness:
 
 @dataclass
 class Drift:
-    """One finding on one entry. `kind` is DRIFT when a case gives an
-    outcome the entry does not name, UNLISTED when the solver has a case
-    the entry's `output` does not name, and ANNOTATION when a
-    `@witness` line of the solver and the witness file disagree — over the
-    line's form, the entry it names, a `@relaxed` slug, the `@reassigned`
-    parameters, or an entry no line names. `entry` is the entry's id,
-    followed by the parameters it reassigns, and it is empty when no entry
-    answers the line. `cases` names every case the finding holds for, which
-    is the cases that give one outcome where another is expected.
-    `expected` stands for nothing on an UNLISTED finding. An ANNOTATION
-    finding reads as `note`."""
+    """One finding on one entry. `kind` is DRIFT, UNLISTED, UNRESOLVED,
+    ANNOTATION or UNSEPARATED, each the finding the `witness` help text in
+    `dl.cli` describes; an UNSEPARATED finding names the two cases in
+    `cases`. `entry` is the entry's id, followed by the parameters it reassigns, and
+    it is empty when no entry answers the line. `cases` names every case
+    the finding holds for, which is the cases that give one outcome where
+    another is expected, by the names the entry writes. `expected` stands
+    for nothing on an UNLISTED or UNRESOLVED finding. An ANNOTATION finding
+    reads as `note`."""
 
     entry: str
     cases: list[str]
@@ -229,28 +239,103 @@ def _validate(data: object, path: Path) -> None:
             f"witnesses/{i}" + (f"/{where}" if where else ""), msg))
 
 
+WITNESS_FILE_OK = "witness file: ok"
+"""The pass line of the shape check."""
+
+
+def _rect_grid(v: object) -> bool:
+    """A grid of at least one cell, each row as long as the first, each
+    cell an integer from 0 to 9."""
+    return (isinstance(v, list) and bool(v)
+            and all(isinstance(r, list) and r and len(r) == len(v[0])
+                    for r in v)
+            and all(type(c) is int and 0 <= c <= 9 for r in v for c in r))
+
+
+def _entry_shape(e: object) -> list[str]:
+    """What stands off the shape in one entry, each without its prefix."""
+    if not isinstance(e, dict):
+        return ["a witness is an object"]
+    out = [mctx("missing field `{key}`").format(key=k)
+           for k in ("id", "separates", "input", "output") if k not in e]
+    if "input" in e and not _rect_grid(e["input"]):
+        out.append(mctx("`input` is no rectangular grid of integers 0 to 9"))
+    if "output" in e:
+        o = e["output"]
+        if _is_groups(o):
+            seen: set[str] = set()
+            for i, g in enumerate(o):
+                cases = g.get("cases")
+                if "grid" not in g or not isinstance(cases, list):
+                    out.append(mctx("group {i} holds no `cases` list and "
+                                    "`grid`").format(i=i))
+                    continue
+                if g["grid"] is not None and not _rect_grid(g["grid"]):
+                    out.append(mctx("the `grid` of group {i} is no "
+                                    "rectangular grid of integers 0 to 9")
+                               .format(i=i))
+                for c in cases:
+                    if c in seen:
+                        out.append(mctx("`{name}` stands in two groups")
+                                   .format(name=c))
+                    seen.add(c)
+        elif not _rect_grid(o):
+            out.append(mctx("`output` is neither a list of groups nor a "
+                            "rectangular grid of integers 0 to 9"))
+    if "assign" in e:
+        a = e["assign"]
+        if not isinstance(a, dict):
+            out.append(mctx("`assign` is no object"))
+        else:
+            out += [mctx("the `assign` value of `{param}` is neither a list "
+                         "of facts nor a grid").format(param=k)
+                    for k, v in a.items()
+                    if not (isinstance(v, list)
+                            and all(isinstance(f, list) for f in v))]
+    return out
+
+
+def shape_findings(data: object) -> list[str]:
+    """What stands off a witness file's shape, one line per finding, each
+    prefixed with the id of the witness it holds for. A witness without an
+    id is named by its place in `witnesses`."""
+    if not isinstance(data, dict):
+        return [mctx("the file is no object")]
+    out = [mctx("missing field `{key}`").format(key=k)
+           for k in ("id", "witnesses") if k not in data]
+    entries = data.get("witnesses", [])
+    if not isinstance(entries, list):
+        return out + [mctx("`witnesses` is no list")]
+    seen: set[str] = set()
+    for i, e in enumerate(entries):
+        wid = e.get("id") if isinstance(e, dict) else None
+        name = wid if isinstance(wid, str) else f"witnesses/{i}"
+        if isinstance(wid, str):
+            if wid in seen:
+                out.append(mctx("{id}: the id stands on two witnesses")
+                           .format(id=wid))
+            seen.add(wid)
+        out += [f"{name}: {line}" for line in _entry_shape(e)]
+    return out
+
+
+def file_shape(path: Path) -> list[str]:
+    """`shape_findings` of the file at `path`, and a finding for a file
+    that holds no JSON."""
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError as err:
+        return [mctx("the file is no JSON: {err}").format(err=err)]
+    return shape_findings(data)
+
+
 def load_witnesses(task_id: str) -> Witness | None:
     """The task's witness file, or None when it has none. A file off the
-    shape procedure.md states raises a ValueError."""
+    shape solver-file.md (Witness file) gives raises a ValueError."""
     path = witness_path(task_id)
     if not path.exists():
         return None
-    data = json.loads(path.read_text())
-    _validate(data, path)
-    return Witness(
-        id=data["id"],
-        entries=[
-            Entry(
-                id=e["id"],
-                separates=e["separates"],
-                input=e["input"],
-                output=_output(e["output"]),
-                assign={k: list(v) for k, v in e.get("assign", {}).items()},
-                empty_assign="assign" in e and not e["assign"],
-            )
-            for e in data["witnesses"]
-        ],
-    )
+    return load_witness_file(path)
 
 
 def read_witness_data(task_id: str) -> dict:
@@ -298,6 +383,30 @@ def put_entry(data: dict, entry: dict) -> None:
     data["witnesses"].append(entry)
 
 
+def load_witness_file(path: Path) -> Witness:
+    """A witness file at any path, as `load_witnesses` reads one."""
+    data = json.loads(path.read_text())
+    _validate(data, path)
+    return _witness(data)
+
+
+def _witness(data: dict) -> Witness:
+    return Witness(
+        id=data["id"],
+        entries=[
+            Entry(
+                id=e["id"],
+                separates=e["separates"],
+                input=e["input"],
+                output=_output(e["output"]),
+                assign={k: list(v) for k, v in e.get("assign", {}).items()},
+                empty_assign="assign" in e and not e["assign"],
+            )
+            for e in data["witnesses"]
+        ],
+    )
+
+
 def _outcome(c: Candidate) -> Outcome:
     return None if (c.error or c.conflicts or c.missing) else c.grid
 
@@ -313,6 +422,40 @@ def case_outcomes(candidates: list[Candidate],
         if name not in out or got is None:
             out[name] = got
     return out
+
+
+def model_outcomes(candidates: list[Candidate],
+                   resolution: bool) -> dict[str, Outcome]:
+    """What each case gives on one grid, keyed as `dl.models` spells a
+    case, with each constructor's fields kept. A case emitting more than one
+    grid keeps the first, and an undefined one."""
+    out: dict[str, Outcome] = {}
+    for c in candidates:
+        name = model_label(c.case, resolution)
+        got = _outcome(c)
+        if name not in out or got is None:
+            out[name] = got
+    return out
+
+
+def runner_outcomes(stem: str, ids: Iterable[str], grid: list[list[int]],
+                    source: str) -> dict[str, Outcome]:
+    """What each case the runner holds gives on one grid, by its id. A
+    derived case runs `source`, and a stored case the solver's file."""
+    from dl.derive import derived_outcome
+    from dl.store import store_outcome
+    return {c: store_outcome(stem, c, grid) if c.endswith(f"={STORED}")
+            else derived_outcome(stem, c, grid, source)
+            for c in ids}
+
+
+def branch_outcomes(space: Cases, candidates: list[Candidate],
+                    resolution: bool) -> dict[str, Outcome]:
+    """What each branch model of `space` gives on one grid, by the model's
+    name; None for a model that emits nothing."""
+    got = case_outcomes(candidates, resolution) | model_outcomes(
+        candidates, resolution)
+    return {name: got.get(label) for name, label in space.models().items()}
 
 
 def _rows(rows: list[list[object]]) -> list[tuple]:
@@ -359,25 +502,50 @@ def _merged(label: str, rows: list[Mismatch], kind: str = DRIFT,
     return findings
 
 
-def _entry_findings(entry: Entry,
-                    actuals: dict[str, Outcome]) -> list[Drift]:
-    """The findings on one entry, given what its input produced."""
+def _entry_findings(entry: Entry, space: Cases,
+                    emitted: dict[str, Outcome], actuals: dict[str, Outcome],
+                    held: set[str],
+                    runner: dict[str, Outcome],
+                    impl: set[str] | None = None) -> list[Drift]:
+    """The findings on one entry, given what its input produced. `emitted`
+    holds the outcome of each case the run emits, spelled with its fields;
+    `actuals` holds those and the runner's labels of them, `held` the cases
+    the solver states, and `runner` the outcomes of the cases the runner
+    holds that the entry names. `impl` holds the cases `impl_choice` holds,
+    and is None when the solver declares no `impl_choice`; a name whose case
+    it does not hold denotes no case of the solver."""
     label = _label(entry)
     if entry.rejected_output:
         return _merged(label, [
             (case, entry.output, got)
-            for case, got in actuals.items()
+            for case, got in emitted.items()
             if got == entry.output
         ], rejected=True)
-    findings = _merged(label, [
-        (case, want, actuals.get(case))
-        for case, want in entry.output.items()
-        if actuals.get(case) != want
-    ])
+    rows: list[Mismatch] = []
+    unresolved: list[str] = []
+    named: set[str] = set()
+    for name, want in entry.output.items():
+        case = space.resolve(name)
+        if case is None or (impl is not None and case not in runner
+                            and case not in impl
+                            and case_label(case) not in impl):
+            unresolved.append(name)
+            continue
+        named.add(case)
+        named |= {m for m in space.models().values()
+                  if case_label(m) == case}
+        got = runner.get(case) if case in runner else actuals.get(case)
+        if got != want:
+            rows.append((name, want, got))
+    findings = _merged(label, rows)
+    if unresolved:
+        findings.append(Drift(entry=label, cases=unresolved, expected=None,
+                              actual=None, kind=UNRESOLVED))
     findings += _merged(label, [
-        (case, None, got)
-        for case, got in actuals.items()
-        if case not in entry.output
+        (name, None, actuals.get(case))
+        for name, case in space.models().items()
+        if case not in named
+        and (case in actuals or case_label(case) in held)
     ], kind=UNLISTED)
     return findings
 
@@ -396,20 +564,44 @@ departs on it."""
 CONCEPT = "concept"
 """The verdict that names the concept case."""
 
+OTHER = "other"
+"""The verdict of a judged output, which no case gives, so every case
+departs on it."""
+
+DERIVED = "derived"
+"""The verdict of a `@derive` line that names the case the line holds.
+`STORED` names the case of a `@store` line the same way."""
+
 
 def _params(names: list[str]) -> str:
     """A parameter list as a finding names it."""
     return ", ".join(f"`{n}`" for n in sorted(names)) or "no parameter"
 
 
-def _departs(verdict: str, case: str, concept: str) -> bool:
+def verdict_case(verdict: str, space: Cases,
+                 own: dict[str, str] | None = None) -> str | None:
+    """The case a verdict names, read as a name of a witness group is
+    (`dl.models`). `own` maps the word
+    `derived` or `stored` to the case id of the `@derive` or `@store` line
+    the verdict stands on. None for `any` and `other`, which name no one
+    case, and for a verdict that denotes no case."""
+    if verdict in (ANY, OTHER):
+        return None
+    if own and verdict in own:
+        return own[verdict]
+    return space.resolve(verdict)
+
+
+def _departs(verdict: str, case: str, space: Cases) -> bool:
     """A witness line of this verdict shows `case` departing: the verdict is
-    not `any`, and it names some other case. A verdict of `concept` names
-    the concept case."""
-    if verdict == ANY:
-        return False
-    named = concept if verdict == CONCEPT else verdict
-    return named != case and named not in case_members(case)
+    `other`, or it names a case of another label than `case`. The verdict
+    `any` names no case, and neither does a verdict that denotes no case,
+    which is a finding of its own."""
+    if verdict == OTHER:
+        return True
+    named = verdict_case(verdict, space)
+    return (named is not None and named != case
+            and case_label(named) != case_label(case))
 
 
 def _no_witness_note(c: Claim) -> str:
@@ -419,14 +611,16 @@ def _no_witness_note(c: Claim) -> str:
 
 
 def _annotation_findings(source: str, entries: list[Entry],
-                         cases: list[str]) -> list[Drift]:
+                         cases: list[str], space: Cases) -> list[Drift]:
     """Where a solver's `@witness` lines and the witness file disagree: a
     line off the form of the witness grammar, a line that names no entry of
     the file, a `@relaxed` slug the header's claims do not carry, a block
     whose `@reassigned` parameters are not the entry's `assign` keys, an
     entry whose `assign` is empty, and an entry no line names. A `@derive`
     line names the entry of its case id, and the derive report reads that
-    entry.
+    entry. The verdict of each `@witness`, `@derive` and `@store` line
+    resolves in `space` (`verdict_case`), and one that denotes no case of
+    the solver is a finding.
 
     An approximated claim is read against the cases as well. A header
     `@approximated:` runs on every case, so each case stands under a witness
@@ -458,10 +652,30 @@ def _annotation_findings(source: str, entries: list[Entry],
                  mctx("`@relaxed {slug}` names no line of the header")
                  .format(slug=slug))
 
+    def verdict_note(line: int, verdict: str,
+                     own: dict[str, str] | None = None) -> None:
+        if verdict in (ANY, OTHER) or verdict_case(verdict, space, own):
+            return
+        note(f"line {line}", "",
+             mctx("the verdict `{verdict}` denotes no case of the solver")
+             .format(verdict=verdict))
+
     ann = read(source)
     for bad in ann.malformed:
         if bad.word in WITNESS_WORDS:
             note(f"line {bad.line}", "", bad.why)
+    for w in ann.witnesses:
+        verdict_note(w.line, w.verdict)
+    derived = derive_ids(source)
+    for d in ann.derives:
+        param = derive_param(source, d)
+        case = f"{param}={d.proposer}"
+        verdict_note(d.line, d.verdict,
+                     {DERIVED: case} if case in derived else None)
+    for st in ann.stores:
+        rel = store_relation(source, st)
+        verdict_note(st.line, st.verdict,
+                     {STORED: f"{rel}={STORED}"} if rel else None)
     named = set()
     for a in merged_blocks(ann.witnesses):
         named.add(a.id)
@@ -484,7 +698,6 @@ def _annotation_findings(source: str, entries: list[Entry],
         if rel := store_relation(source, st):
             relaxed_notes(f"line {st.line}", f"{rel}={STORED}", st.relaxed)
     named |= derive_ids(source) | store_ids(source)
-    concept = concept_case(source)
 
     def approximated(c: Claim, want: list[str]) -> None:
         if not c.witnesses:
@@ -498,7 +711,8 @@ def _annotation_findings(source: str, entries: list[Entry],
                          id=w.id, kind=c.kind, slug=c.slug,
                          plausibility=FOREIGN))
         for case in want:
-            if not any(_departs(w.verdict, case, concept) for w in c.witnesses):
+            if not any(_departs(w.verdict, case, space)
+                       for w in c.witnesses):
                 note(f"line {c.line}", "",
                      mctx("`@{kind} {slug}` is approximated and no witness "
                           "under its `@approximated:` shows case `{case}` "
@@ -545,41 +759,157 @@ def annotation_lines(source: str) -> list[str]:
     return lines or ["no witness lines"]
 
 
-def _store_outcomes(stem: str, entry: Entry) -> dict[str, Outcome]:
-    """What the stored case of each `<rel>=stored` key of the entry gives on
-    the entry's input. The runner owns that case, so no `assign` states
-    it."""
+def _runner_outcomes(stem: str, entry: Entry, space: Cases,
+                     source: str) -> dict[str, Outcome]:
+    """What each case the runner holds and the entry names gives on the
+    entry's input. A stored case is the runner's own, so no `assign` states
+    it; a derived case runs `source`, the reassigned one."""
     if not isinstance(entry.output, dict):
         return {}
-    ids = [c for c in entry.output if c.endswith(f"={STORED}")]
-    if not ids:
-        return {}
-    from dl.store import store_outcome
-    return {c: store_outcome(stem, c, entry.input) for c in ids}
+    ids = [c for c in entry.output if c in space.runner]
+    return runner_outcomes(stem, ids, entry.input, source) if ids else {}
 
 
-def witness_report(stem: str) -> list[Drift]:
-    """Run every witness grid of `stem`'s task through the solver and
-    report where the outcomes and the file disagree, then pair each
-    `@witness` line of the solver to an entry of the file. An entry
-    carrying `assign` runs the reassigned source. A task with no witness
-    file runs no grid, and every `@witness` line of the solver names no
-    entry."""
+def held_case_labels(source: str) -> list[str]:
+    """The cases the solver holds, spelled as the run's FAIL list spells
+    them: the cases `impl_choice` holds, or every case the `Choice` spells
+    when the solver declares no `impl_choice`, then the cases the runner
+    holds under `@derive` and `@store`."""
+    try:
+        held = held_cases(parse(source), source, full=True)
+    except ParseError:
+        held = None
+    if held is None:
+        space = case_space(source)
+        if isinstance(space, Space):
+            held = space.cases()
+        elif isinstance(space, Coarse):
+            held = case_branches("", source)
+        else:
+            held = [space.concept]
+    runner = derive_ids(source) | store_ids(source)
+    return list(held) + sorted(runner)
+
+
+def _held_outcomes(stem: str, held: list[str], entry: Entry, source: str,
+                   candidates: list[Candidate],
+                   resolution: bool) -> dict[str, Outcome]:
+    """What each held case gives on the entry's input, None for a case that
+    emits nothing there. `source` is the source the entry stands at, and
+    `candidates` its run on the entry's input."""
+    got = case_outcomes(candidates, resolution) | model_outcomes(
+        candidates, resolution)
+    runner = [c for c in held if "=" in c]
+    out = {c: got.get(c) for c in held if "=" not in c}
+    if runner:
+        out |= runner_outcomes(stem, runner, entry.input, source)
+    return out
+
+
+def built_witnesses(stem: str, runner: list[str]) -> dict[str, Grid]:
+    """The input of the witness the runner builds for each of its cases:
+    the derive report's swap for a derived case, and the store report's
+    grid for a stored one. A case whose witness is an entry of the file,
+    or that no built grid separates, has none here."""
+    from dl.derive import derive_report
+    from dl.store import OWNED, store_report
+    out: dict[str, Grid] = {}
+    if any(not c.endswith(f"={STORED}") for c in runner):
+        for d in derive_report(stem).derivations:
+            if d.case in runner and d.swap is not None:
+                out[d.case] = d.swap.input
+    if any(c.endswith(f"={STORED}") for c in runner):
+        for f in store_report(stem).found:
+            if (f.kind == OWNED and f.case_id in runner
+                    and f.move is not None and f.move.input is not None):
+                out[f.case_id] = f.move.input
+    return out
+
+
+type Scoped = tuple[dict[str, Outcome], str | None]
+"""What each held case gives on one witness input, and the runner's case
+the witness is built for; None for an entry of the file, which counts for
+every pair."""
+
+
+def _unseparated(held: list[str], outcomes: list[Scoped]) -> list[Drift]:
+    """A finding per unordered pair of held cases that give one outcome on
+    every witness input that counts for the pair. Train inputs never tell
+    two held cases apart, as every held case fits the task, so the
+    witnesses do: each entry of the file, and for a pair with a case the
+    runner holds, the witness the runner builds for that case."""
+    return [
+        Drift(entry="", cases=[a, b], expected=None, actual=None,
+              kind=UNSEPARATED)
+        for i, a in enumerate(held) for b in held[i + 1:]
+        if all(o.get(a) == o.get(b) for o, built in outcomes
+               if built is None or built in (a, b))
+    ]
+
+
+def witness_report(stem: str, file: Path | None = None) -> list[Drift]:
+    """The findings of the `witness` command, which its help text in
+    `dl.cli` describes. `file` stands in for the task's witness file. Each
+    name of a group resolves to a case, which `dl.models` states. An entry
+    carrying `assign` runs the reassigned source, and an entry of a derived
+    case's id runs the held cases at the stored value, as the derive report
+    reads it. The pairs of held cases (`held_case_labels`) are checked over
+    the entries and over the witnesses the runner builds
+    (`built_witnesses`), with every held case run at the stored value."""
     path, task_id = solver_file(stem)
     source = path.read_text()
-    witness = load_witnesses(task_id) or Witness(id=task_id)
+    if file is not None:
+        witness: Witness | None = load_witness_file(file)
+    else:
+        witness = load_witnesses(task_id)
+    unwitnessed = [] if witness is None else [
+        Drift(entry=f"line {at}", cases=[], expected=None, actual=None,
+              kind=ANNOTATION, note=text)
+        for at, text in unwitnessed_branches(source)]
+    held = [] if witness is None else held_case_labels(source)
+    witness = witness or Witness(id=task_id)
     resolution = res_out_stem(stem)
     findings: list[Drift] = []
     cases: list[str] = []
+    separating: list[Scoped] = []
     for entry in witness.entries:
-        candidates = run_dl_source(
-            assigned_source(source, entry.assign), entry.input,
-            solver_path=path)
+        run_source = assigned_source(source, entry.assign)
+        candidates = run_dl_source(run_source, entry.input, solver_path=path)
+        # An entry of a derived case's id holds the derived value in its
+        # `assign`, so the held cases stand at the stored value, as the
+        # derive report reads that entry; the derived case sets its own
+        # parameter.
+        if held and entry.assign and entry.id in derive_ids(source):
+            separating.append((_held_outcomes(
+                stem, held, entry, source,
+                run_dl_source(source, entry.input, solver_path=path),
+                resolution), None))
+        elif held:
+            separating.append((_held_outcomes(stem, held, entry, run_source,
+                                              candidates, resolution), None))
         actuals = case_outcomes(candidates, resolution)
+        stated = case_branches(stem, run_source, entry.input)
+        for name in stated:
+            actuals.setdefault(name, None)
         cases += [c for c in actuals if c not in cases]
-        actuals |= _store_outcomes(stem, entry)
-        findings += _entry_findings(entry, actuals)
-    return findings + _annotation_findings(source, witness.entries, cases)
+        emitted = model_outcomes(candidates, resolution)
+        space = case_space(run_source, stated)
+        findings += _entry_findings(
+            entry, space, emitted, actuals | emitted,
+            set(stated) | set(actuals),
+            _runner_outcomes(stem, entry, space, run_source),
+            set(stated) if declares_held(run_source) else None)
+    runner = [c for c in held if "=" in c]
+    for case, grid in (built_witnesses(stem, runner) if runner else {}).items():
+        built = Entry(id=case, separates="", input=grid)
+        separating.append((_held_outcomes(
+            stem, held, built, source,
+            run_dl_source(source, grid, solver_path=path), resolution), case))
+    return (findings + unwitnessed
+            + _annotation_findings(source, witness.entries, cases,
+                                   case_space(source,
+                                              case_branches(stem, source)))
+            + _unseparated(held, separating))
 
 
 def _side(label: str, value: Outcome) -> list[str]:
@@ -595,12 +925,21 @@ def _lines_of(d: Drift) -> list[str]:
     one = len(d.cases) == 1
     if d.kind == ANNOTATION:
         return [f"{d.entry}: {d.note}" if d.entry else d.note]
+    if d.kind == UNSEPARATED:
+        return [mctx("no witness separates `{a}` from `{b}`")
+                .format(a=d.cases[0], b=d.cases[1])]
     if d.kind == UNLISTED:
         return [mctx("{entry}: case {case} is not listed")
                 .format(entry=d.entry, case=case) if one else
                 mctx("{entry}: these cases are not listed: {case}")
                 .format(entry=d.entry, case=case),
                 *_side("the solver's output", d.actual)]
+    if d.kind == UNRESOLVED:
+        names = ", ".join(f"`{n}`" for n in d.cases)
+        return [mctx("{entry}: the name {names} denotes no case of the solver")
+                .format(entry=d.entry, names=names) if one else
+                mctx("{entry}: these names denote no case of the solver: "
+                     "{names}").format(entry=d.entry, names=names)]
     if d.rejected_output:
         return [mctx("{entry}: case {case} gives the witness's judged output")
                 .format(entry=d.entry, case=case) if one else

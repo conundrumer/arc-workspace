@@ -22,6 +22,7 @@
             + abridged: all
         ```
 - A document's `index` attribute says what it abridges to, and it gives the title heading and the lines above the first section, then the lines the attribute asks for.
+    - Above those lines, the index names the command that prints a section in full.
     - `index: headings` gives one line per heading.
     - `index: entries` gives one line per `## ` section: its text and the first sentence of its first statement.
 - A heading's rendered level comes from its depth in the rendered tree, and not from the count of `#` it carries in the source.

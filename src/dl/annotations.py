@@ -507,11 +507,33 @@ def store_ids(source: str) -> set[str]:
             if (rel := store_relation(source, b))}
 
 
+IGNORE_DERIVE_RE = re.compile(r"//\s*@ignore:\s*derive\b")
+
+
+def derive_ignored(source: str) -> set[str]:
+    """The parameters an `@ignore: derive` line dismisses: the one the
+    `.decl` under the line declares."""
+    out: set[str] = set()
+    lines = source.splitlines()
+    for i, raw in enumerate(lines):
+        if IGNORE_DERIVE_RE.match(raw.strip()) is None:
+            continue
+        for below in lines[i + 1:]:
+            text = below.strip()
+            if not text or text.startswith("//"):
+                continue
+            if m := DECL_RE.match(below):
+                out.add(m[1])
+            break
+    return out
+
+
 def derive_ids(source: str) -> set[str]:
     """The case id `<param>=<Proposer>` of every `@derive` line that stands
-    above a `.decl`."""
+    above a `.decl` no `@ignore: derive` line dismisses."""
+    ignored = derive_ignored(source)
     return {f"{param}={b.proposer}" for b in derive_blocks(source)
-            if (param := derive_param(source, b))}
+            if (param := derive_param(source, b)) and param not in ignored}
 
 
 def merged_blocks(blocks: list[Witness]) -> list[Witness]:

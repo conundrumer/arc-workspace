@@ -5,9 +5,6 @@
 
 ## create
 * inline: #task
-- The reference TS solver:
-* code: reference
-    + language: ts
 - You are the first session of a chained flow: you create the solver, then a separate session takes over from your report.
 * inline: #every-pass-rules
 * inline: #ops-head
@@ -163,7 +160,7 @@
 - No git writes.
 
 ### Grids
-- A color: the marks are `3` on a field of `5`. A row: `3 5 5 5 3`. A grid:
+- A color: the marks are `3` on a field of `5`. A row: `3 5 5 5 3`. A `0` cell is written `0`. A grid:
     ```
     3 5 5 5 3
     5 5 5 5 5
@@ -321,7 +318,7 @@
 ### callout-kinds
 - Lib candidates and proposal comps: a solver-local form proposed for programs/lib.dl or docs/wf-solver/proposals/, with its entry and survey result.
     - P{{lib-candidates-band}}, engaged {{lib-candidates-rate}}% of the time.
-- Doc issues: an issue with something in docs/handbook that resulted in friction.
+- Doc issues: an issue with something in docs/handbook that interfered with the pass.
     - P{{doc-issues-band}}, engaged {{doc-issues-rate}}% of the time.
 - Naming and vocabulary: a name with shared scope — a lib comp, a type, doc wording, a proposals entry; a name local to one solver is not this kind.
     - P{{naming-band}}, engaged {{naming-rate}}% of the time.

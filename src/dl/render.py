@@ -2,15 +2,16 @@
 
 from collections import defaultdict
 
+from dl.models import model_label
 from dl.solve import PairResult, _grid_key
 from dl.souffle import TEMP_NAME_RE
 
 
 def _grid_lines(grid: list[list[int]]) -> list[str]:
-    """One line per row; 0 rendered as '.' for readability."""
+    """One line per row, cells separated by spaces."""
     if not grid or not grid[0]:
         return ["(empty)"]
-    return [" ".join("." if c == 0 else str(c) for c in row) for row in grid]
+    return [" ".join(str(c) for c in row) for row in grid]
 
 
 def render_diff(expected: list[list[int]], actual: list[list[int]]) -> list[str]:
@@ -37,9 +38,10 @@ def render_diff(expected: list[list[int]], actual: list[list[int]]) -> list[str]
     return lines
 
 
-def _short(name: str) -> str:
-    """Case label for listings; a long one is cut short."""
-    return name if len(name) <= 40 else name[:37] + "..."
+def _case(name: str) -> str:
+    """A variant's name for listings: the case in full, as `model_label`
+    spells it, then any trailing `out` column."""
+    return " ".join(model_label(part) for part in name.split("\t"))
 
 
 def _count(n: int, noun: str) -> str:
@@ -120,11 +122,9 @@ def render_pair_failure(p: PairResult, stem: str | None = None) -> list[str]:
     multi = len(p.variants) > 1
 
     if has_named or multi:
-        pass_v = [_short(v.name) or "(out)" for v in p.variants if v.ok]
-        fail_v = [_short(v.name) or "(out)" for v in p.variants if not v.ok]
-        lines.append(f"  cases: {len(pass_v)} pass / {len(fail_v)} fail")
-        if pass_v:
-            lines.append(f"    pass: {', '.join(pass_v)}")
+        n_pass = sum(1 for v in p.variants if v.ok)
+        fail_v = [_case(v.name) for v in p.variants if not v.ok]
+        lines.append(f"  cases: {n_pass} pass / {len(fail_v)} fail")
         if fail_v:
             lines.append(f"    fail: {', '.join(fail_v)}")
 
@@ -140,7 +140,7 @@ def render_pair_failure(p: PairResult, stem: str | None = None) -> list[str]:
             tuple(v.missing),
             v.error,
         )
-        groups[key].append(_short(v.name) or "(out)")
+        groups[key].append(_case(v.name))
 
     for (actual_key, conflicts_tup, missing_tup, error), names in groups.items():
         actual = [list(r) for r in actual_key]

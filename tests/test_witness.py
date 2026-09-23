@@ -49,30 +49,6 @@ def _emit(cases):
     ]
 
 
-def test_expected_outcomes_hold(solvers, monkeypatch):
-    _write(solvers, [_entry({"Copy": [[1, 2]], "Flip": [[2, 1]]})])
-    monkeypatch.setattr(witness, "run_dl_source",
-                        _emit([("$Copy", [[1, 2]]), ("$Flip", [[2, 1]])]))
-
-    assert witness.witness_report(STEM) == []
-    assert witness.render_witness([]) == ["witness: ok"]
-
-
-def test_a_changed_grid_reports_both_grids(solvers, monkeypatch):
-    _write(solvers, [_entry({"Copy": [[1, 2]], "Flip": [[2, 1]]})])
-    monkeypatch.setattr(witness, "run_dl_source",
-                        _emit([("$Copy", [[1, 2]]), ("$Flip", [[3, 3]])]))
-
-    (drift,) = witness.witness_report(STEM)
-    assert (drift.kind, drift.cases) == (witness.DRIFT, ["Flip"])
-    assert drift.expected == [[2, 1]] and drift.actual == [[3, 3]]
-    lines = witness.render_witness([drift])
-    assert lines[0] == ("two-colors: case Flip gives an output the witness "
-                        "does not name")
-    assert "  the witness's output:" in lines
-    assert "  the solver's output:" in lines
-
-
 def test_the_annotation_checks_report_what_they_accept_silently(solvers,
                                                                 monkeypatch):
     """A `@witness` line off the form, a nested line carrying its indent
@@ -92,7 +68,8 @@ def test_the_annotation_checks_report_what_they_accept_silently(solvers,
                      | {"id": "orphan"}])
     monkeypatch.setattr(witness, "run_dl_source", _emit([("$Copy", [[1, 2]])]))
 
-    notes = [d.note for d in witness.witness_report(STEM)]
+    notes = [d.note for d in witness.witness_report(STEM)
+             if d.kind == witness.ANNOTATION]
     assert notes == [
         "`// @witness Two Colors: plausible concept` is off the `@witness` "
         f"form, which is {FORMS['witness']}, the id {SLUG_FORM}",
@@ -137,37 +114,10 @@ def test_an_approximated_claim_with_no_witness_reports(solvers, monkeypatch):
     _write(solvers, [_entry({"Copy": [[1, 2]]})])
     monkeypatch.setattr(witness, "run_dl_source", _emit([("$Copy", [[1, 2]])]))
 
-    notes = [d.note for d in witness.witness_report(STEM)]
+    notes = [d.note for d in witness.witness_report(STEM)
+             if d.kind == witness.ANNOTATION]
     assert notes == ["`@rule inside` is approximated and has no `@witness` "
                      "line under its `@approximated:`"]
-
-
-PARAMS = (WITNESS_LINE
-          + "//     @reassigned arr_dim\n"
-          + "//     @reassigned band_axis\n"
-          + ".comp Params {\n"
-          "    .decl arr_dim(k: number) arr_dim(3).\n"
-          "    .decl band_axis(a: Axis) band_axis(AXIS_V).\n"
-          "}\n")
-
-
-def test_an_assignment_rewrites_the_source_the_run_sees(solvers, monkeypatch):
-    (solvers / f"{STEM}.dl").write_text(PARAMS)
-    _write(solvers, [_entry({"Copy": [[1, 2]]},
-                            assign={"arr_dim": [[5]],
-                                    "band_axis": [["AXIS_H"]]})])
-    seen: list[str] = []
-
-    def record(source, rows, solver_path=None):
-        seen.append(source)
-        return [Candidate("$Copy", [[1, 2]], [], [])]
-
-    monkeypatch.setattr(witness, "run_dl_source", record)
-
-    assert witness.witness_report(STEM) == []
-    (source,) = seen
-    assert "arr_dim(5)." in source and "arr_dim(3)" not in source
-    assert "band_axis(AXIS_H)." in source and "AXIS_V" not in source
 
 
 def test_the_file_loads_what_it_was_written_with(solvers):

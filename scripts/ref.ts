@@ -1,9 +1,9 @@
 // Run the reference TS solver of one task on the grid on stdin, and print
-// the output grid: one row per line, cells separated by spaces, 0 as `.`.
+// the output grid: one row per line, cells separated by spaces.
 //
 //   bun scripts/ref.ts <task_id> < grid.txt
 //
-// The grid is rows of digits, with `.` for 0, spaces and commas optional,
+// The grid is rows of digits, spaces and commas optional,
 // and `#` lines skipped, or a JSON array of rows.
 
 import { resolve } from "node:path";
@@ -23,8 +23,12 @@ if (text.startsWith("[")) {
     .split("\n")
     .filter((line) => line.trim() && !line.trimStart().startsWith("#"))
     .map((line) =>
-      [...line.replace(/[\s,]/g, "")].map((ch) => (ch === "." ? 0 : Number(ch))),
+      [...line.replace(/[\s,]/g, "")].map(Number),
     );
+}
+if (grid.some((row) => row.some((c) => !Number.isInteger(c) || c < 0 || c > 9))) {
+  console.error("bad grid: a cell is a digit 0-9");
+  process.exit(1);
 }
 if (!grid.length || !grid[0].length || grid.some((row) => row.length !== grid[0].length)) {
   console.error("bad grid");
@@ -50,5 +54,5 @@ try {
 if (!out || !out.length) {
   console.log("undefined");
 } else {
-  for (const row of out) console.log(row.map((c) => (c === 0 ? "." : String(c))).join(" "));
+  for (const row of out) console.log(row.join(" "));
 }

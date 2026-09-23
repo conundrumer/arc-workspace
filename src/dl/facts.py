@@ -150,7 +150,7 @@ def _parse_value(text: str):
 def parse_grid(text: str) -> list[list[int]]:
     """A hand-written grid as rows of colors.
 
-    One line per row, one character per cell: a digit 0-9, or `.` for 0.
+    One line per row, one digit 0-9 per cell.
     Spaces and commas between cells are optional, blank lines and `#`
     comment lines are skipped. Text that starts with `[` is read as JSON
     instead, so a grid pasted out of a task file works unchanged.
@@ -162,7 +162,7 @@ def parse_grid(text: str) -> list[list[int]]:
         rows = json.loads(stripped)
     else:
         rows = [
-            [0 if ch == "." else int(ch) for ch in re.sub(r"[\s,]", "", line)]
+            [int(ch) for ch in re.sub(r"[\s,]", "", line)]
             for line in stripped.splitlines()
             if line.strip() and not line.lstrip().startswith("#")
         ]

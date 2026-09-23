@@ -20,6 +20,8 @@
 - Write the prose in your own words, and copy the wording of neither the brief nor the text you are replacing.
 
 ## Conventions
-- **A grid is drawn as a grid**, wherever one is written: one row per line, cells separated by spaces, background as `.`.
 - `uv run python -m controlled_markdown check` checks the agent-facing documents.
 - [Editing the agent-facing documents](docs/handbook/editing.md) states how the handbook above is edited.
+
+## Grids
+* inline: console.md#grids

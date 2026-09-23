@@ -25,7 +25,12 @@ from dataclasses import dataclass
 
 from arc.task import load as load_task
 from controlled_markdown import mctx
-from dl.annotations import DECL_RE, Derive, derive_blocks, derive_param
+from dl.annotations import (
+    Derive,
+    derive_blocks,
+    derive_ignored,
+    derive_param,
+)
 from dl.determination_plan import (
     fact_params,
     per_grid_matches,
@@ -34,6 +39,7 @@ from dl.determination_plan import (
 )
 from dl.domains import _lib_defines
 from dl.lint import concept_case
+from dl.models import case_space
 from dl.store import concept_reads
 from dl.paths import PROPOSERS_SRC
 from dl.solve import res_out_stem, run_dl_source, solver_file
@@ -46,6 +52,7 @@ from dl.witness import (
     assigned_source,
     case_outcomes,
     load_witnesses,
+    model_outcomes,
 )
 
 DERIVE_OK = "derive: ok"
@@ -56,7 +63,6 @@ OTHER = "other"
 
 COMP_RE = re.compile(r"^\.comp\s+(\w+)")
 
-IGNORE_RE = re.compile(r"//\s*@ignore:\s*derive\b")
 """The directive that dismisses this check. It stands above the
 parameter's `.decl`, and names the parameter declared under it."""
 
@@ -164,6 +170,29 @@ def _concept_outcome(source: str, grid: list[list[int]], path,
     return outcomes.get(concept)
 
 
+def derived_outcome(stem: str, case_id: str, grid: list[list[int]],
+                    source: str | None = None) -> Outcome:
+    """What the derived case `case_id`, `<param>=<Proposer>`, gives on one
+    grid: the concept case of `source`, the solver's file when omitted, at
+    the value the proposer gives on the grid. None when the proposer gives
+    no value there."""
+    param, _sep, proposer = case_id.partition("=")
+    path, _task_id = solver_file(stem)
+    if source is None:
+        source = path.read_text()
+    value = probe_grid(grid).get(proposer, set())
+    if not value:
+        return None
+    resolution = res_out_stem(stem)
+    candidates = run_dl_source(swap_facts(source, param, sorted(value)),
+                               grid, solver_path=path)
+    concept = case_space(source).concept
+    fine = model_outcomes(candidates, resolution)
+    if concept in fine:
+        return fine[concept]
+    return case_outcomes(candidates, resolution).get(concept_case(source))
+
+
 NO_COLOR = mctx("the parameter is not one color")
 NO_FREE_COLOR = mctx("no train input has a free color")
 ONE_OUTPUT = mctx("the concept case gives one output at both values, or is "
@@ -258,24 +287,6 @@ def entry_witness(stem: str, param: str, proposer: str,
     return out
 
 
-def _ignored_params(source: str) -> set[str]:
-    """The parameters an `@ignore: derive` line dismisses: the one the
-    `.decl` under the line declares."""
-    out: set[str] = set()
-    lines = source.splitlines()
-    for i, raw in enumerate(lines):
-        if IGNORE_RE.match(raw.strip()) is None:
-            continue
-        for below in lines[i + 1:]:
-            text = below.strip()
-            if not text or text.startswith("//"):
-                continue
-            if m := DECL_RE.match(below):
-                out.add(m[1])
-            break
-    return out
-
-
 def derive_report(stem: str) -> Report:
     """Every derivation of the solver's stored parameters, each with its
     witness and its `@derive` line, and the findings that stand on them."""
@@ -288,7 +299,7 @@ def derive_report(stem: str) -> Report:
     entries = {e.id: e
                for e in (load_witnesses(task_id) or Witness(task_id)).entries}
     reads = concept_reads(source)
-    dismissed = _ignored_params(source)
+    dismissed = derive_ignored(source)
     findings: list[Finding] = []
     annotated: dict[str, Derive] = {}
     for block in derive_blocks(source):

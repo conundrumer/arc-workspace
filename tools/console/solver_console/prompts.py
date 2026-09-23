@@ -206,16 +206,8 @@ def task_text(tid: str) -> str:
     return p.read_text().rstrip() if p.exists() else "(missing)"
 
 
-def reference_text(tid: str) -> str:
-    """The reference TS solver under `config.REF_DIR`, or `(missing)` where no
-    file stands."""
-    p = config.REF_DIR / "programs" / "solvers" / f"{tid}.ts"
-    return p.read_text().rstrip() if p.exists() else "(missing)"
-
-
 def create_message(tid: str) -> str:
-    return message("create", tid=tid, task=task_text(tid),
-                   reference=reference_text(tid))
+    return message("create", tid=tid, task=task_text(tid))
 
 
 def reports_block(rows: list[tuple[str, str, str]]) -> str:

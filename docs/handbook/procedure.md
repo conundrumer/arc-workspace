@@ -7,21 +7,23 @@
 
 ## Every pass
 - **One operation at a time.** Finish each operation before you start the next.
-- **Cleanup.** When the user says `cleanup`, run [Simplify](#simplify), then [Prune](#prune).
 - **Lib protocol.** Apply [Lib addition protocol](docs/handbook/lib-protocol.md) where its trigger holds.
-- **Roles.**
-    - Run `uv run python scripts/context.py role <role>`.
-    - Spawn the agent its first line names.
-    - The prompt is the rest of its output, followed by the brief.
 - **Source reading.**
     - Do not read `src/dl/` during a pass.
-    - If you do, report to the user why, as a gap in the docs or the runner.
+    - If you do, say why in the review, as a gap in the docs or the runner.
 - **Corpus.**
     - Take a draft as no evidence for a claim about the corpus.
     - Cite a draft in a doc under `docs/` only in a survey result.
 - **Keywords.**
     - If no keyword in [Keywords](docs/handbook/keywords.md) fits, propose one in the review, and add it to the solver's `@keywords:` line.
     - If an existing keyword's gloss should change, propose it in the review.
+
+## Every session
+- **Cleanup.** When the user says `cleanup`, run [Simplify](#simplify), then [Prune](#prune).
+- **Roles.**
+    - Run `uv run python scripts/context.py role <role>`.
+    - Spawn the agent its first line names.
+    - The prompt is the rest of its output, followed by the brief.
 
 ## Review items
 - A pass that asks for a report and no review puts the items the operations route to the review in that report.
@@ -32,6 +34,8 @@
 ### Analyze
 1. Read the task: `cat data/tasks/<task_id>.json`.
     - Do not pipe the task into anything.
+    - Read it whole here; a probe you write may load the file.
+    - A pair's `alt` of kind `rule` is a second candidate, and of kind `tiebreak` a tiebreak.
 2. Write the concept to `.scratch/<task_id>/concept.md`, in this form:
     ```
     # <task_id>
@@ -57,20 +61,28 @@
     - `bun scripts/ref.ts <task_id>` runs it on the grid on stdin.
 2. Form every other branch.
     - A branch is stated by the slugs of the claims it replaces or adds, and its parameters.
-    - A branch that derives a parameter's value, or stores a value the program derives, is stated as that derivation or that stored value.
-    - Form them from the pairs, the reference TS solver, the headers of the solvers under `programs/solvers/`, probes over the pairs, and variations of the task.
+    - A branch that derives a parameter's value, or stores a value the program derives, is stated as that derivation or that stored value, and by the claim it replaces.
+    - Form them from the pairs, the reference TS solver, the headers of the solvers under `programs/solvers/`, probes over the pairs, and variant tasks.
         - `grep -l '^// @keywords:.*<keyword>' programs/solvers/*.dl` lists the solvers under a keyword, and `awk '/^$/{exit} 1' programs/solvers/<id>.dl` prints one solver's header.
-3. Judge each branch's standing.
-    - The concept case: each witness with verdict `other`, with the items below and the judged output.
+        - A probe is a script you write under `.scratch/<task_id>/` that runs a reading over grids and prints the outputs.
+    - Name each branch by a slug of its own.
+    - A claim considered and not formed as a branch goes under Not formed, with why.
+3. Place each choice point at the concept or under a branch, as [Choice points and open parameters](docs/handbook/principles.md#choice-points-and-open-parameters) states.
+    - For each two choice points where neither stands under a branch of the other, state the model of a case that takes a non-concept branch at both.
+    - When that model is one branch's model alone, the other point's property does not exist with that branch, and that section says where the point goes.
+    - Report an open parameter with its open values.
+4. Judge each branch's standing.
+    - The concept case: each witness with verdict `other` that no branch below lists, with the items below, and the rule restated as the generator applies it, which the concept file's rule approximates.
     - A branch that fails Fit: the pair it fails.
     - A branch that fits every pair: one of its witnesses, with:
-        - the input and the outputs on it, as a probe prints them
+        - its id in the witness file
         - the scene claim the witness breaks, when it breaks one
         - the assignment it stands at, when that is not the stored one
         - its plausibility and verdict
     - A branch with no witness: why there is none.
-4. Write the witnesses to `.scratch/<task_id>/witnesses.json` in the witness file's shape, with the branch names as the case names and every fitting branch in each witness's groups.
-5. Write the report to `.scratch/<task_id>/report.md`, in this form:
+5. Write the witnesses to `.scratch/<task_id>/witnesses.json` in the witness file's shape, with each branch's slug as its name, and every fitting branch in the groups of each witness.
+    - `uv run python scripts/run_dl.py witness --file .scratch/<task_id>/witnesses.json` checks the file's shape.
+6. Write the report to `.scratch/<task_id>/report.md`, in this form:
 
     ```
     # <task_id>
@@ -82,19 +94,28 @@
     - `<property>`
         - `concept`: <the concept branch>
         - `<branch>`: <its claims>, <its standing>
+            - `<property>`: <a choice point under this branch, in the same form, with this branch as its concept branch>
+    - `<property>` & `<property>`: <the model of a case that takes a non-concept branch at both>
 
     ## Not formed
     - <claim>: <why>
+
+    ## Interference
+    - <the doc or tool line that interfered, and how>, or `none`
     ```
 
 ### Write
-1. Read the task and the reference TS solver.
-    - When they are not in the message, read them: `cat data/tasks/<task_id>.json ../arc-synth-bun/programs/solvers/<task_id>.ts`.
+1. Read the task: `cat data/tasks/<task_id>.json`.
     - Do not pipe the task into anything.
-    - The reference TS solver solves the task.
-    - It might not encode the best model.
-2. Write the solver (`programs/solvers/<task_id>.dl`).
-    - Write the header's `@scene` and `@rule` lines with it.
+2. Read the Analyze files, one at a time: `.scratch/<task_id>/concept.md`, `report.md`, and `witnesses.json`.
+    - The concept file gives the concept case's claims, and the report gives each branch's standing.
+3. Write the solver (`programs/solvers/<task_id>.dl`).
+    - Write the header's `@scene` and `@rule` lines from the concept file's claims, and `Params` from its parameters, under their names.
+    - A rule the report restates takes the restated text, and the concept file's text stands under it as its `@approximated:` line.
+    - Each branch the report gives a witness is a constructor, nested as the report nests its choice point.
+    - A concept branch's constructor takes a name of your own.
+    - The cases are the combinations of those branches that fit, which the run shows.
+    - A `<property>` & `<property>` line of the report gives what a case that takes both branches reads.
     - Leave the `Determine` comp for the Determine operation.
 
 ### Develop
@@ -103,53 +124,48 @@
     - When a hint appears, judge it, and put that judgment in the review.
     - Flag performance issues in the review.
     - When a performance issue prevents the principled form, make a temporary workaround, marked with the `@workaround` directive.
-3. Look for peer models, and make the cases exactly the models that meet the case conditions.
-    - If you find a model that meets the case conditions, add it.
-        - Your own judgment or taste is not grounds for omitting it.
-    - For each parameter, try the model that derives its value from the input.
-        - The runner has built-in derivations. `uv run python scripts/run_dl.py derive <task_id>` lists the ones that fit, and holds each as a case unless an `@ignore: derive` line dismisses it; write no branch for those.
-        - Write every other derivation as a branch.
-    - For each value the program fixes or derives, try the model that stores it.
-        - `uv run python scripts/run_dl.py store <task_id>` lists the derived ones.
-            - Write no branch for one the runner holds as a case.
-4. Run the audit (`uv run python scripts/run_dl.py audit <task_id>`) and resolve the findings.
+3. Form each claim under the report's Not formed as a branch, and add its case when it meets the case conditions.
+4. Hold each branch that derives a parameter's value, or stores a value the program derives, as a case.
+    - `uv run python scripts/run_dl.py derive <task_id>` lists the built-in derivations that fit.
+    - `uv run python scripts/run_dl.py store <task_id>` lists the derived values it holds as stored cases.
+    - Write the directive line each prints, in the form the [`@derive` directive](docs/handbook/solver-file.md#params) gives, with the plausibility and verdict the report gives the branch.
+    - A branch the runner holds loses its constructor and gets no clauses of its own.
+5. Run the audit (`uv run python scripts/run_dl.py audit <task_id>`) and resolve the findings.
 
 ### Determine
 - Run the plan (`uv run python scripts/run_dl.py determination-plan <task_id>`).
-- When the plan lists actions and a different parameterization would give a simpler or more principled model, change the parameterization and run [Develop](#develop) again over the changed solver.
+- When the plan lists actions and a different parameterization would give a simpler or more principled model, change the parameterization, run [Develop](#develop) again over the changed solver, and put the change in the review.
 - Otherwise, do the actions the plan lists.
 - In the plan's over-the-limit section, pick whichever parameters are simplest to determine until the product of the remaining candidate counts goes under the enumeration limit.
 
 ### Witness
 - **Concept and branch claims.**
-    - Write the header and branch lines.
-    - Judge each plausibility and verdict from the witness and each case's output on it.
-    - List each plausibility and verdict in the review.
-    - On a branch's witness, an `other` verdict identifies a problem with the concept case, and so does a non-concept verdict at `ordinary` plausibility.
+    - Write the `@witness` lines of the header and the branches, with each plausibility and verdict as the report gives it, `@relaxed` for the scene claim it breaks, and `@reassigned` for each parameter of the assignment it stands at.
+    - A witness of the concept case with verdict `other` stands under an `@approximated:` line of the rule it breaks.
+    - On a branch's witness, an `other` verdict identifies a problem with the concept case, and so does a non-concept verdict at `ordinary` plausibility; it goes in the review as open.
 - **Divergence witness.**
-    - Build each witness the header requires.
-    - Write every case's output on it.
-- The condition a dropped peer fails decides what the review gives for it.
-    - A peer dropped under Relational form requires in the review why no set of clauses states its claim.
-    - A model that fails Fit or Equivalence stays out of the review, including any note that it was considered.
+    - Copy the witness file: `cp .scratch/<task_id>/witnesses.json programs/witnesses/<task_id>.wit.json`.
+    - Remove from the groups each name that denotes no case of the solver, and remove a witness that then separates nothing.
+    - Rename each name for a case the runner holds to the form [Witness file](docs/handbook/solver-file.md#witness-file) gives it, and remove a witness of such a branch, which the runner builds itself.
+    - Add each branch added in Develop to the groups of every copied witness.
+    - Rewrite each `assign` in the form `Params` reads.
+    - For a branch added in Develop, build the witness its `@witness` line needs.
+    - Judge the plausibility and verdict of a witness you build, and put that judgment in the review.
+- A branch dropped under a case condition goes in the review with the condition it fails, and for Relational form with why no set of clauses states its claim.
 - For each approximated rule, state in the review why no set of clauses states it.
 - When no witness can be built, replace the rule's text with the approximation's and remove the `@approximated:` line.
-- Record each witness with `uv run python scripts/run_dl.py record <task_id> <witness id> --separates "<what it separates>"`, with the grid on stdin.
+- Record each witness you build with `uv run python scripts/run_dl.py record <task_id> <witness id> --separates "<what it separates>"`, with the grid on stdin.
     - For an `other` verdict, take the judged output from `uv run python scripts/run_dl.py grid <task_id>` on a control grid: the witness changed so that the program's output is the concept's reading.
 - Write an undefined outcome as such.
-- When the divergence requires a parameter to be reassigned, reassign that parameter.
+- When the divergence requires a parameter to be reassigned, reassign that parameter with `--assign`.
 * comment:
     - The audit runs the same check.
 - `uv run python scripts/run_dl.py witness <task_id>` reads the solver against `programs/witnesses/<task_id>.wit.json`, whose shape [Witness file](docs/handbook/solver-file.md#witness-file) gives.
-- Use a string for a lib constant and a list for a record.
-- [`GRID_HxW` for grid data](docs/handbook/patterns.md#grid_hxw-for-grid-data) states the form of a stored grid.
-- A `<case>` takes one of these forms:
-    - the constructor's name, such as `Alt`
-    - under a record-typed `Choice`, the record of the fields' constructor names, such as `[Table, Lookup]`
-    - under a constructor with fields, the constructor applied to its fields' constructor names, such as `Recolor(Box, Size)`
-    - `<param>=<Proposer>` for a case the runner holds under `@derive`
-    - `<rel>=stored` for a case the runner holds under `@store`, whose entry has `output` per case and no `assign`
-- For each witness `@witness` names, put exactly the block's `@reassigned` parameters in `assign`.
+- Run the audit again when the file is complete.
+- `witness` reports a pair of cases that no witness separates. Resolve it by the first that applies, and put the resolution in the review.
+    - A case never reads a `Choice` field: the choice point that field encodes stands under the other branches, and the type is reshaped to put it there.
+    - The cases' clauses differ: build the witness that shows it.
+    - Otherwise, the case that takes more non-concept branches leaves: by an `@ignore: derive` line when the runner holds it, and by an `impl_choice` that omits it when not.
 
 ### Simplify
 - Express what the code claims with less code.
@@ -161,6 +177,7 @@
     - Has unusual or needless indirection.
 
 ### Prune
+- The text is the solver's header and comments.
 - The reader is a future session that needs to understand the solver and its model hypothesis.
 - Cut everything that does not serve that reader, exhaustively, from unnecessary words to irrelevant ideas.
 - Judge necessity from the artifact alone, not from the session that built it.
@@ -183,7 +200,7 @@
 - Include only:
     - A lib operation to promote.
     - A judgment the session made.
-    - An issue with something in a doc or tool that resulted in friction.
+    - An issue with a doc or tool that interfered with the pass.
     - An item carried over from an earlier pass's report, marked with the pass it came from.
         - Do not recheck it against the current runner, lib, or docs.
     - A fix or a problem in a file the pass does not edit, with the file, the line, and the fix it needs.

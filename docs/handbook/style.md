@@ -46,7 +46,7 @@
 - `@scene` is only included when `@claim` or `@relaxed` names it, the text of a `@rule` or `@approximated:` line depends on it, or a branch replaces it.
 
 ## Cases
-- **Choice gloss.** The gloss of the choice is above `.type Choice` and nowhere else.
+- **Choice gloss.** The gloss of a choice is above its type, and nowhere else.
 - **Other branches.** Every other branch has at least one `@witness` line.
 - **Concept branch.** The concept branch is declared first in `Choice`, and in each field's type of a record-typed `Choice`.
 - **Branch witness lines.** A witness's nested lines are under the first branch that has it, and a later branch has the `@witness` line alone.
@@ -70,7 +70,6 @@
 
 ### Bans
 - **Literals.** Literals are banned.
-    - The linter flags a literal in a program clause even where a `// @singleton-axis:` comment stands on it.
     - The program may read `0` and `ZERO` directly.
     - It reads every other lib constant macro, all colors, and non-zero task-shape lengths, offsets, and gaps from Params.
 - **Position destructure.** Destructuring a Position is banned.
@@ -110,6 +109,8 @@
 - A clause does not range over choice tags through a disjunction.
 
 ## Components
-- **Proposal comps.** The program-style checks skip a proposal comp, and a proposal comp with no entry is flagged.
+- **Proposal comps.** The program-style checks skip a proposal comp.
+- A proposal comp with no entry is a hint.
+    + deferred
 - **Shared comp instances.** A comp instance is shared exactly when its case-specific versions differ only in the case name.
     - A comp instance stays per-case when one case derives a value and another reads it from Params, even when one derivation could feed every case.

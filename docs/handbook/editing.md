@@ -2,23 +2,16 @@
 - The handbook, the console's messages to a worker, the documents that say what each agent reads, and what the tools print to a session.
 
 ## Where a section lives
-- [Principles](docs/handbook/principles.md)
-- [Solver file](docs/handbook/solver-file.md)
-- [Style](docs/handbook/style.md)
-- [Patterns](docs/handbook/patterns.md)
-- [Keywords](docs/handbook/keywords.md)
-- [Lib addition protocol](docs/handbook/lib-protocol.md)
-- [Former names](docs/handbook/former-names.md)
+- The handbook's documents, in order: [Handbook](prompts/handbook.md), which holds nothing of its own.
 - The operations: [Procedure](docs/handbook/procedure.md).
 - The `programs/` sections: the `//!` and `///` comments of `programs/lib.dl` and of the modules under `programs/lib/`.
-- The order the sections come in: [Handbook](prompts/handbook.md), which holds nothing of its own.
 - What every session in the repo reads: [arc-workspace](CLAUDE.md).
 - What a session at a terminal reads, and the passes it runs: [Session](.claude/skills/session/SKILL.md), then [Solver session](prompts/session.md).
     - [Session](.claude/skills/session/SKILL.md) carries no `comment` directive.
     - Its context: `context session`, then what each command the text names prints.
 - What a codex session on the repo reads: [Codex on arc-workspace](prompts/codex.md).
     - Its context: `context codex`, then the user's message.
-- What each agent reads: [handbook](prompts/agents/handbook.md), [handbook-expanded](prompts/agents/handbook-expanded.md), and [analyze](prompts/agents/analyze.md).
+- What each agent reads: the prompt of its name under [agents](prompts/agents).
     - Its context: `context agent <name>`.
     - The `analyze` agent reads [Analyze after the concept](prompts/agents/analyze-next.md) after it writes the concept.
 - The statements an entry point inlines into its lead: [Shared notes](prompts/agents/notes.md).
@@ -43,15 +36,15 @@
     - A document the handbook includes says nothing that holds for one entry point and not another.
     - An entry point inlines each operation it runs, in order, under a heading of its name.
     - A session's entry point inlines [Every pass](docs/handbook/procedure.md#every-pass) as well.
-    - A console worker and the `handbook-expanded` agent read the lib as its interface.
-    - The `analyze` agent reads no lib.
-    - Every other reader reads the index, and a declaration's interface when it needs one.
+    - An entry point's `+ lib:` attribute says how it reads the lib.
+    - A reader of the index reads a declaration's interface when it needs one.
 - A fact or a rule is stated in one file, and every other file links it.
 - A link depends on a section's heading, and never on what the body says.
 - No document restricts, replaces or redirects an operation another document carries.
 - A document the handbook includes links only to a document an entry point in `HANDBOOK_ENTRIES` in [__main__.py](src/controlled_markdown/__main__.py) carries, or to a file outside the document set.
 - A document rendered on its own is an entry point, and its lead names what the render leaves out when a link in the render leads there.
-- A render leaves out the lines marked `draft` and `gloss` where its entry point excludes them.
+- A render leaves out the lines that carry an attribute its entry point excludes.
+    - `deferred` marks a section of a pass no entry point runs yet.
     - The session render carries them, and so does `scripts/context.py section`.
 - Where two lists split a set, the second list is everything else.
 
