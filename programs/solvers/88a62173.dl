@@ -1,6 +1,6 @@
 // 88a62173
 // @draft
-// @keywords: decompose select count
+// @keywords: decompose select rank
 // input: A cross of blank lines cuts the grid into a 2×2 arrangement of
 //  equal tiles.
 // output: Three tiles carry one pattern and the fourth its own; the output

@@ -1,6 +1,6 @@
 // 93b4f4b3
 // @draft
-// @keywords: objects enclose crop match
+// @keywords: objects enclose crop match color-class
 // input: A panel of one color closes off holes from the grid edge. The other
 //  non-background colors are the shapes, one shape per color.
 // output: The panel's box, with each hole in the color of the shape whose

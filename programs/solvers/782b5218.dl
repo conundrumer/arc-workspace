@@ -1,6 +1,6 @@
 // 782b5218
 // @draft
-// @keywords: border enclose cast
+// @keywords: border enclose cast noise
 // input: A barrier of params.barrier cells crosses a field of noise in one
 //  other color.
 // output: The output keeps the barrier, paints its params.fill_dir side in

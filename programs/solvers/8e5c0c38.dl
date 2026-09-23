@@ -1,5 +1,5 @@
 // 8e5c0c38
-// @keywords: objects symmetry repair d4
+// @keywords: objects symmetry repair d4 noise
 // input: Shapes lie on the background, each a mirror-symmetric figure with a
 //  few stray cells added.
 // output: The output keeps, per shape, the cells whose mirror image across the

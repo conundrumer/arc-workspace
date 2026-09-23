@@ -1,6 +1,6 @@
 // 538b439f
 // @draft
-// @keywords: objects lines d4 span
+// @keywords: objects lines d4 span bbox noise
 // input: a line of one color crosses a plain field; solid rectangles and
 //  dust sit on the field. A rectangle is a component that fills its
 //  bounding box and reaches more than one line on both axes; every dust

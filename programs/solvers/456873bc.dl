@@ -1,6 +1,6 @@
 // 456873bc
 // @draft
-// @keywords: decompose scale stamp repair
+// @keywords: decompose scale stamp repair occlude
 // output: The grid divides into square tiles separated by gaps, and holds a
 //  fractal: a tile carries a copy of the tile shape at each place the shape
 //  inks. Tile side and tile count are one number, so a tile's place in the

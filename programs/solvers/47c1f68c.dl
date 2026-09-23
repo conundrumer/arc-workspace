@@ -1,6 +1,6 @@
 // 47c1f68c
 // @draft
-// @keywords: decompose symmetry tile-arrangement d4 lookup
+// @keywords: decompose symmetry tile-arrangement d4 lookup select
 // input: A full row and a full column of one color cut the grid into four
 //  equal quadrants. One quadrant holds a pattern; the other three are
 //  blank.

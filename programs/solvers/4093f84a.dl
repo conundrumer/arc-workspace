@@ -1,6 +1,6 @@
 // 4093f84a
 // @draft
-// @keywords: lines markers count lookup
+// @keywords: lines markers count lookup select
 // input: a stripe of params.stripe spanning the grid edge to edge on one
 //  axis, with dots of one other color on both sides of it
 // output: the dots are dropped; on each line across the stripe, the stripe

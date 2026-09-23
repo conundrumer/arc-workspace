@@ -1,5 +1,5 @@
 // c3f564a4
-// @keywords: wallpaper repair lines
+// @keywords: wallpaper repair lines noise
 // input: a diagonal-stripe wallpaper — one color per stripe, the stripe
 //  sequence periodic — corrupted by noise patches
 // output: the output restores the wallpaper. The period varies per pair,

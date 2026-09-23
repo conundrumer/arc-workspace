@@ -1,6 +1,6 @@
 // 1bfc4729
 // @draft
-// @keywords: markers border lookup cast
+// @keywords: markers border lookup cast perimeter
 // output: Two marks sit in the grid, one in each half of the task axis. Each
 //  half is painted in its mark's color: the grid border where it runs through
 //  the half, and one full line across the half.

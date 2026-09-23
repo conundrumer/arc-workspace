@@ -1,5 +1,5 @@
 // 0e671a1a
-// @keywords: markers span
+// @keywords: markers span chain
 // input: Marks, each named by its color.
 // output: The marks are joined into a chain. A leg turns once, at the elbow
 //  standing with the destination along params.axis and with the source across

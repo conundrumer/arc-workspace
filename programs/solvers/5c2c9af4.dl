@@ -1,6 +1,6 @@
 // 5c2c9af4
 // @draft
-// @keywords: markers walk border
+// @keywords: markers walk border rings
 // output: Three dots of one color sit equally spaced along a diagonal. The
 //  output draws concentric square outlines around the middle dot, spaced by the
 //  gap between neighboring dots, as far out as the grid shows any part of one.

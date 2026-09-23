@@ -1,6 +1,6 @@
 // 8b9c3697
 // @draft
-// @keywords: objects move span
+// @keywords: objects move span enclose select
 // input: The grid is a background, the commonest color, with movers of
 //  params.mover and anchors of a third color on it. An anchor is a
 //  component; its cavity is the cells with anchor cells of it on both sides

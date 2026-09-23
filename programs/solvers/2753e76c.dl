@@ -1,6 +1,6 @@
 // 2753e76c
 // @draft
-// @keywords: objects count rank
+// @keywords: objects count rank color-class
 // input: Solid rectangles of several colors lie on the grid.
 // output: The output is a bar chart of how many rectangles each color has:
 //  one row per color, rows ordered by count, each bar as many cells long as

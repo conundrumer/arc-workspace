@@ -1,6 +1,6 @@
 // 3345333e
 // @draft
-// @keywords: symmetry repair
+// @keywords: symmetry repair occlude select
 // input: A figure mirror-symmetric across a line of params.axis, occluded by
 //  a solid rectangle of a second color.
 // output: The output erases the rectangle and restores what it hid. The

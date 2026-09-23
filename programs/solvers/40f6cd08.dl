@@ -1,6 +1,6 @@
 // 40f6cd08
 // @draft
-// @keywords: objects scale border
+// @keywords: objects scale border bbox crop depth rings
 // input: Solid rectangles sit on the background. One holds a stack of nested
 //  color layers; the rest hold a single color. A layer is one color's
 //  bounding box inside the pattern rectangle, held as four margins.

@@ -1,6 +1,6 @@
 // 2f767503
 // @draft
-// @keywords: markers objects cast
+// @keywords: markers objects cast noise select
 // input: specks of params.speck lie on a params.bg field. One params.eye
 //  cell sits against a line of params.lens cells and looks through the lens
 //  cell it touches.

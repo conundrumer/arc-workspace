@@ -1,6 +1,6 @@
 // 4612dd53
 // @draft
-// @keywords: lines count objects
+// @keywords: lines count objects bbox crop repair
 // input: The marks draw a lattice of dashed lines inside their bounding box:
 //  some rows and some columns of that box carry a line.
 // output: The output repairs each line, painting its missing cells in the

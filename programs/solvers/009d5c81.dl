@@ -1,5 +1,5 @@
 // 009d5c81
-// @keywords: markers lookup
+// @keywords: markers lookup select
 // input: a shape and a key of marker cells
 // output: The key's pattern selects a color from a stored table; the
 //  output paints the shape in that color and clears the key.

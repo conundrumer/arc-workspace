@@ -1,6 +1,6 @@
 // 93c31fbe
 // @draft
-// @keywords: markers d4 select
+// @keywords: markers d4 select bbox crop
 // input: Marks bracket rectangles: each mark bends at one corner of its box,
 //  with its two arms along the box's edges. Content cells lie inside some of
 //  those boxes and loose elsewhere.

@@ -1,6 +1,6 @@
 // 9caba7c3
 // @draft
-// @keywords: markers stamp count
+// @keywords: markers stamp noise rank
 // @scene squares: 3×3 squares of params.field cells, with params.mark in
 //  place of some rim cells, lie on noise of field cells and background; no
 //  two squares share a cell, and every mark is in a square.

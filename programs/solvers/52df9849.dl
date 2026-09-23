@@ -1,6 +1,6 @@
 // 52df9849
 // @draft
-// @keywords: lines occlude
+// @keywords: lines occlude continue
 // input: shapes overlap on a plain ground; each shape is a segment swept
 //  along one of the four axes: a bar, a block, a diagonal line. The input
 //  draws shapes over one another, so a covered shape shows with a piece

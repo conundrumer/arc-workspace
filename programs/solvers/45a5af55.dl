@@ -1,6 +1,6 @@
 // 45a5af55
 // @draft
-// @keywords: lines grow rank
+// @keywords: lines grow rank rings depth
 // input: A stack of one-color lines.
 // output: A square of nested rings: the line at distance K from the outer
 //  edge paints the ring at depth K. The side spans the stack and its mirror

@@ -1,5 +1,5 @@
 // 42a50994
-// @keywords: objects select
+// @keywords: objects select enclose noise
 // output: Noise dots; a dot with a companion among its eight surrounding cells
 //  stays; a lone dot becomes bg.
 

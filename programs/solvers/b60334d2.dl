@@ -1,5 +1,5 @@
 // b60334d2
-// @keywords: markers lookup stamp
+// @keywords: markers lookup stamp select
 // output: Marker cells on an empty grid; each grows a 3×3 ring — corner cells
 //  one color, side cells another — and erases to bg. The cases are
 //  data-equivalent on this task.

@@ -1,5 +1,5 @@
 // d492a647
-// @keywords: markers walk parity
+// @keywords: markers walk parity noise
 // output: A noise-speckled bg grid holds a single seed cell of a unique
 //  color. The seed's color paints every bg cell offset from it by an even
 //  count on both axes. Noise cells stay.

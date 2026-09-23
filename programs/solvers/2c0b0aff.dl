@@ -1,6 +1,6 @@
 // 2c0b0aff
 // @draft
-// @keywords: objects crop count select
+// @keywords: objects crop select rank
 // input: rectangular panels on params.bg, each stippled with params.mark in
 //  single cells, pairs, and crosses
 // output: The output is the panel holding the most crosses.

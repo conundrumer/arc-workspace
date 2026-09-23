@@ -1,6 +1,6 @@
 // 42f14c03
 // @draft
-// @keywords: objects crop pack count
+// @keywords: objects crop pack count bbox
 // output: The grid holds several objects. One of them has holes in its box, and
 //  the other objects are the pieces that go in those holes. That object is the
 //  one whose every hole takes a piece. The output is its box: the object's own

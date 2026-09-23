@@ -1,6 +1,6 @@
 // 551d5bf1
 // @draft
-// @keywords: objects border cast
+// @keywords: objects border cast enclose
 // input: Rectangle outlines are drawn on a blank grid, some with border cells
 //  missing.
 // output: The output paints the inside of every rectangle, and each missing

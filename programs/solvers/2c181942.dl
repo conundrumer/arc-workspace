@@ -1,5 +1,5 @@
 // 2c181942
-// @keywords: objects markers d4
+// @keywords: objects markers d4 bbox select
 // input: A hub of bars, one per side of its box, sits among loose pieces on
 //  params.bg. The hub is the one object where colors meet; every piece is a
 //  single color. A bar's color names the piece that belongs to it, and that

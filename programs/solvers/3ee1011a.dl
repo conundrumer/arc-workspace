@@ -1,6 +1,6 @@
 // 3ee1011a
 // @draft
-// @keywords: objects count rank
+// @keywords: objects count rank rings
 // input: bars lying on the background, one color each
 // output: The output is a square of concentric frames; its side is the
 //  longest bar's cell count, and each frame takes one bar's color.

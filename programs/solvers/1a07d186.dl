@@ -1,6 +1,6 @@
 // 1a07d186
 // @draft
-// @keywords: lines move
+// @keywords: lines move select
 // input: A line is one whole row or column of one non-bg color, and loose
 //  colored cells sit off the lines.
 // output: Lines stay put. Each loose cell moves to the line of its own color

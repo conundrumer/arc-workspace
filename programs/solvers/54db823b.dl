@@ -1,6 +1,6 @@
 // 54db823b
 // @draft
-// @keywords: objects count select
+// @keywords: objects select rank
 // input: Non-bg cells form objects, and each object holds some cells of
 //  params.mark.
 // output: The object with the fewest mark cells is erased to params.bg.

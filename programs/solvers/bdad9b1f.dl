@@ -1,5 +1,5 @@
 // bdad9b1f
-// @keywords: lines lookup border
+// @keywords: lines lookup border perimeter
 // input: Two 2-cell segments on bg, each seated on a grid edge.
 // output: Each segment extends into a full line; the cell where the lines
 //  cross gets params.cross.

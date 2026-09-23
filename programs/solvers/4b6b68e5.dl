@@ -1,6 +1,6 @@
 // 4b6b68e5
 // @draft
-// @keywords: objects enclose count
+// @keywords: objects enclose noise rank select
 // input: Outlines and lone specks lie on params.bg.
 // output: Each outline is kept, the cells it closes off take the commonest
 //  color among the specks trapped there, and the rest of the grid is

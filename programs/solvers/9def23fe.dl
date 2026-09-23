@@ -1,6 +1,6 @@
 // 9def23fe
 // @draft
-// @keywords: cast lines
+// @keywords: cast lines objects
 // @scene rect: the ink holds one solid rectangle of one color
 // @scene dots: every other ink cell is a lone cell of one other color
 // @rule beam: on each side of the rectangle, every line the rectangle spans

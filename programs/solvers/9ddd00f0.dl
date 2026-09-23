@@ -1,6 +1,6 @@
 // 9ddd00f0
 // @draft
-// @keywords: decompose scale
+// @keywords: decompose scale repair
 // @scene blocks: single background lines divide the grid into an arrangement
 //  of square blocks, and the arrangement holds as many blocks along an axis as
 //  a block holds cells

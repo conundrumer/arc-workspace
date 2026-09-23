@@ -1,6 +1,6 @@
 // 23b5c85d
 // @draft
-// @keywords: objects crop select count
+// @keywords: objects crop select occlude rank
 // input: Solid colored rectangles overlap on a bg field, so some are
 //  partly hidden. No two share a color, so color individuates them.
 // output: The bounding box of the object with the fewest cells.

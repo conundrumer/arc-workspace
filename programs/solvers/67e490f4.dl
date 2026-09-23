@@ -1,6 +1,6 @@
 // 67e490f4
 // @draft
-// @keywords: objects enclose rank crop d4 count
+// @keywords: objects enclose rank crop d4 count congruent
 // input: A stencil sits among scattered pieces: one block of a single color
 //  with cutouts, each a region of the field color inside the block.
 // output: The stencil's box, each cutout filled with the commonest color among

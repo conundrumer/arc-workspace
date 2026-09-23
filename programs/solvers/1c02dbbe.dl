@@ -1,6 +1,6 @@
 // 1c02dbbe
 // @draft
-// @keywords: markers span
+// @keywords: markers span select
 // output: A slab covers most of the grid. Like-colored marks come in threes:
 //  one on a corner of the slab, two in the margins beside it. Each color paints
 //  a rectangle of the slab reaching from its corner mark to the crossing of the

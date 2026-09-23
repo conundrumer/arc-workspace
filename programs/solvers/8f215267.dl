@@ -1,6 +1,6 @@
 // 8f215267
 // @draft
-// @keywords: objects count border enclose
+// @keywords: objects count border enclose select
 // input: Hollow frames, one color each, stand in a background field, with
 //  small blobs of their colors around them.
 // output: The output keeps each frame, erases the blobs, and writes dots on

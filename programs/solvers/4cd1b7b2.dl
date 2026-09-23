@@ -1,5 +1,5 @@
 // 4cd1b7b2
-// @keywords: lines pack
+// @keywords: lines pack repair
 // input: The input is a grid whose rows and columns each hold every palette
 //  color once, with some cells blanked.
 // output: The output restores them: a blank takes the one color its row and

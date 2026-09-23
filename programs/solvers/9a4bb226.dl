@@ -1,6 +1,6 @@
 // 9a4bb226
 // @draft
-// @keywords: objects crop select count
+// @keywords: objects crop select rank
 // @scene blocks: the ink forms separate blocks, each a filled rectangle
 // @scene counts: one block has three colors and every other block has two
 // @rule most: the output is the block with the most colors

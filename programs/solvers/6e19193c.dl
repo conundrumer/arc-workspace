@@ -1,6 +1,6 @@
 // 6e19193c
 // @draft
-// @keywords: objects cast
+// @keywords: objects cast bbox
 // input: objects on bg, each missing one corner of its bounding box: the tip
 // output: From the tip, the object casts a diagonal ray in its own color,
 //  away from the box, to the grid edge. The tip cell itself stays blank.

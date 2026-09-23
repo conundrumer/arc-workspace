@@ -1,6 +1,6 @@
 // 896d5239
 // @draft
-// @keywords: markers merge span
+// @keywords: markers merge span chain noise
 // input: A noise grid of two colors carries chevrons in params.mark: an apex
 //  mark with a diagonal arm toward each corner of one cardinal, each arm a
 //  chain of marks within params.reach steps of one another.

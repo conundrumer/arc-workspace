@@ -1,6 +1,6 @@
 // 337b420f
 // @draft
-// @keywords: decompose overlay objects select move count
+// @keywords: decompose overlay objects select move rank
 // input: Separators cut the input into equal panels, and each panel holds
 //  one large shape with a smaller decoy.
 // output: The output frame is one panel, and every large shape keeps the

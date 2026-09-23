@@ -1,5 +1,5 @@
 // be03b35f
-// @keywords: decompose d4
+// @keywords: decompose d4 repair
 // input: Three quadrant-witnesses of a canonical 2×2, anchored at the input's
 //  TL, TR, and BL corners. The marker quadrant (BR) is absent from the
 //  template.

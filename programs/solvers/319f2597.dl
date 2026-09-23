@@ -1,5 +1,5 @@
 // 319f2597
-// @keywords: markers cast
+// @keywords: markers cast noise
 // input: A mark of params.mark sits in a field of noise.
 // output: Every cell sharing a row or a column with the mark is painted, edge
 //  to edge; cells holding params.spare resist and keep their color.

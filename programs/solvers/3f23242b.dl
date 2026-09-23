@@ -1,6 +1,6 @@
 // 3f23242b
 // @draft
-// @keywords: markers stamp cast lookup border
+// @keywords: markers stamp cast lookup border occlude
 // output: Each mark seats a bracket of ink on itself, and a line runs along one
 //  bracket edge across the whole grid. The bracket covers the line where the two
 //  meet, and every other cell passes through.

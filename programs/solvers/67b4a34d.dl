@@ -1,5 +1,5 @@
 // 67b4a34d
-// @keywords: crop symmetry repair latent-canvas
+// @keywords: crop symmetry repair latent-canvas occlude
 // output: A grid symmetric about its center, occluded by a solid mask-color
 //  patch; the output is the occluded content, restored from symmetric
 //  counterparts.

@@ -1,6 +1,6 @@
 // 2faf500b
 // @draft
-// @keywords: objects markers decompose move
+// @keywords: objects markers decompose move select
 // input: shapes lie on a bg field. Each shape carries marks that cut it: on
 //  one of the two axes, every line of the shape holds a mark.
 // output: the shape comes apart at that cut — each part steps one cell

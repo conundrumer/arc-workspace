@@ -80,6 +80,7 @@
 
 ### Header
 - `@scene` and `@rule` are in dependency order.
+- `@keywords` carries the keywords any case claims.
 - A `// review <kind>: <text>` line stands last in the header, and it names a subject a retro left for its Resolve phase.
 - A solver session leaves such a line as it is.
 - A family sibling's header, omitting other fields:

@@ -1,6 +1,6 @@
 // 18419cfa
 // @draft
-// @keywords: objects markers repair d4
+// @keywords: objects markers repair d4 enclose
 // input: Walls of params.frame close off interiors, each holding a partial
 //  params.ink pattern.
 // output: Every pattern gains its mirror image within its own interior; the

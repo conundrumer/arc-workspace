@@ -1,5 +1,5 @@
 // 0a1d4ef5
-// @keywords: objects rank
+// @keywords: objects rank noise
 // output: Solid one-color rectangles sit on a field of noise, laid out in a
 //  grid: on each axis the rectangles group into bands, and the output is
 //  that layout — one cell per rectangle, holding its color, at its band's

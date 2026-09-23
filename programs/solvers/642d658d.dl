@@ -1,5 +1,5 @@
 // 642d658d
-// @keywords: count rank
+// @keywords: count rank noise
 // input: A noise grid holds plus shapes: four same-colored arms around a
 //  center cell.
 // output: The output is one cell, painted the arm color that the select

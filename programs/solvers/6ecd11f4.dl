@@ -1,6 +1,6 @@
 // 6ecd11f4
 // @draft
-// @keywords: objects crop scale overlay
+// @keywords: objects crop scale overlay select
 // input: two objects on bg: a large monochrome shape and a small
 //  multicolored square
 // output: The shape is a blown-up mask with the square's cell arrangement:

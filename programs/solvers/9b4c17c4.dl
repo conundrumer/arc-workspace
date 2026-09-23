@@ -1,6 +1,6 @@
 // 9b4c17c4
 // @draft
-// @keywords: objects lines move
+// @keywords: objects lines move enclose
 // @scene field: the grid is two rectangular fields, each one connected
 //  region of one background color
 // @scene shape: the ink shapes are rectangles, each surrounded by one field

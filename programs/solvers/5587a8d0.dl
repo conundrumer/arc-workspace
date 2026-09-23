@@ -1,6 +1,6 @@
 // 5587a8d0
 // @draft
-// @keywords: objects count rank
+// @keywords: objects count rank rings
 // input: the non-bg cells
 // output: The output is a square of nested rings, one ring per patch: the
 //  largest patch draws the outermost ring, and each smaller patch draws a

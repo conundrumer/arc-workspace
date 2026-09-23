@@ -1,6 +1,6 @@
 // 62593bfd
 // @draft
-// @keywords: objects move count d4
+// @keywords: objects move count d4 congruent
 // input: single-colored blobs sit on a background.
 // output: each blob slides flush to an edge: a blob that has a partner goes
 //  to params.paired_dir, a blob with no partner to the opposite edge.

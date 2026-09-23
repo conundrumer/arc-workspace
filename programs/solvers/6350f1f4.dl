@@ -1,6 +1,6 @@
 // 6350f1f4
 // @draft
-// @keywords: decompose scale repair stamp
+// @keywords: decompose scale repair stamp noise
 // input: Separator lines cut the grid into a square arrangement of square
 //  blocks, as many blocks along an axis as cells along a block.
 // output: Each block is either a copy of one two-colored template or a solid

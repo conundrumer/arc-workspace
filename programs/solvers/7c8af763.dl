@@ -1,6 +1,6 @@
 // 7c8af763
 // @draft
-// @keywords: objects decompose markers count
+// @keywords: objects decompose markers rank
 // input: lines of one color cutting the grid into bg regions, with marks in
 //  other colors on the lines
 // output: Each region fills with the color of the majority of the marks that

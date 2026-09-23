@@ -1,6 +1,6 @@
 // 465b7d93
 // @draft
-// @keywords: markers border scale
+// @keywords: markers border scale select
 // input: A rectangular frame of params.frame stands on a field of params.bg,
 //  and a small shape of one other color sits outside it.
 // output: The shape is erased, and its color paints the frame's inner rim.

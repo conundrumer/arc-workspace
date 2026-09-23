@@ -1,6 +1,6 @@
 // 9edfc990
 // @draft
-// @keywords: objects markers
+// @keywords: objects markers flood
 // @rule spread: a walk starts at a params.ink cell and steps to cardinally
 //  adjacent params.bg cells; every params.bg cell it reaches takes params.ink
 // @rule keep: every other cell keeps its color

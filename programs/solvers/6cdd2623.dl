@@ -1,6 +1,6 @@
 // 6cdd2623
 // @draft
-// @keywords: markers border cast span rank
+// @keywords: markers border cast span rank noise perimeter
 // input: Noise cells of several colors sit on a bg ground. One color, the
 //  line color, appears only on the grid border, as marks facing each other
 //  in pairs across the grid.

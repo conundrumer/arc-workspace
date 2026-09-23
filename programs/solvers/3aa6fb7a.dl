@@ -1,6 +1,6 @@
 // 3aa6fb7a
 // @draft
-// @keywords: objects stamp lookup
+// @keywords: objects stamp lookup bbox
 // input: Ink lies on params.bg in L-triominoes: three cells of a 2x2 square,
 //  the fourth empty.
 // output: That empty cell takes params.fill; the rest passes through.

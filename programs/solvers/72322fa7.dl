@@ -1,6 +1,6 @@
 // 72322fa7
 // @draft
-// @keywords: markers objects induce stamp
+// @keywords: markers objects induce stamp repair
 // input: figures on a bg field: a center cell of one color with arms of
 //  another color around it, at the ends of a row, a column, both (a plus), or
 //  both diagonals (an X)

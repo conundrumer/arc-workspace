@@ -1,5 +1,5 @@
 // 1fad071e
-// @keywords: objects count stamp
+// @keywords: objects count stamp noise
 // input: squares of params.block_color, params.block_dim on a side, beside a
 //  second color's squares and single-cell noise.
 // output: Count those squares, then draw the count as a bar in a fixed out_dim

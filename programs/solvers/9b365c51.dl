@@ -1,6 +1,6 @@
 // 9b365c51
 // @draft
-// @keywords: lines objects markers rank match
+// @keywords: lines objects markers rank match select
 // @scene bars: a bar is a line across the axis that holds one color
 //  throughout, neither the background nor the ink
 // @scene shapes: the ink forms solid rectangles, no two on one line across

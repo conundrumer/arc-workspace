@@ -1,6 +1,6 @@
 // 9bebae7a
 // @draft
-// @keywords: objects markers d4
+// @keywords: objects markers d4 bbox select
 // @scene pieces: the ink is one shape of params.shape_color and one marker of
 //  params.mark_color
 // @scene arms: the marker is two straight arms crossing at one cell, and it

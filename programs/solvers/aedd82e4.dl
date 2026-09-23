@@ -1,5 +1,5 @@
 // aedd82e4
-// @keywords: objects classify
+// @keywords: objects classify noise
 // output: Isolated ink cells — no 4-neighbor ink — recolor to params.mark. The
 //  rest of the grid is underdetermined (ink color equals params.ink in every
 //  pair).

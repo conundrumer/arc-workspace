@@ -1,6 +1,6 @@
 // 6ffbe589
 // @draft
-// @keywords: objects crop count d4 merge select
+// @keywords: objects crop count d4 merge select bbox noise rank
 // input: a figure drawn in several colors with one-cell gaps in its lines,
 //  and stray cells far from it. Cells with at most one cell between them
 //  cluster, and the figure is the largest cluster.

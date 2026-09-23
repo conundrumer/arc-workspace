@@ -1,6 +1,6 @@
 // 31aa019c
 // @draft
-// @keywords: markers count rank stamp lookup
+// @keywords: markers count rank stamp lookup noise
 // input: Noise cells of many colors sit over params.bg.
 // output: One cell is marked out by its color's cell count; the output holds
 //  only that cell, keeping its color, ringed by params.border.

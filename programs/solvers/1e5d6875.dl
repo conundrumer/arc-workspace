@@ -1,6 +1,6 @@
 // 1e5d6875
 // @draft
-// @keywords: objects move d4 lookup
+// @keywords: objects move d4 lookup bbox
 // input: the grid holds L-trominoes of two colors, each filling three corners
 //  of a 2x2 bbox.
 // output: every piece emits a copy of itself one diagonal step away, painted

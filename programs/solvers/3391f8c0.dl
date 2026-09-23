@@ -1,6 +1,6 @@
 // 3391f8c0
 // @draft
-// @keywords: objects stamp
+// @keywords: objects stamp bbox
 // input: Two colors each appear as copies of one shape, and the two shapes
 //  fill the same bbox.
 // output: Every copy is replaced by the other color's shape, in that other

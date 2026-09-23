@@ -1,5 +1,5 @@
 // 264363fd
-// @keywords: objects markers stamp cast
+// @keywords: objects markers stamp cast bbox crop select
 // input: Solid rectangles and one loose template sit on a background. Each
 //  rectangle's minority-colored cells are markers.
 // output: The template stamps onto every marker, its box center landing on

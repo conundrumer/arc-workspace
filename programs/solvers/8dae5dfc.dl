@@ -1,6 +1,6 @@
 // 8dae5dfc
 // @draft
-// @keywords: objects permutation merge
+// @keywords: objects permutation merge depth rings
 // output: Each object is a nest of concentric rings. Adjacent rings of one
 //  color fuse into one layer. The output reverses the layer colors of each
 //  object: the layer k-th from the outside takes the color of the layer k-th

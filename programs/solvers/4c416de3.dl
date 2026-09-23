@@ -1,5 +1,5 @@
 // 4c416de3
-// @keywords: objects markers d4 stamp
+// @keywords: objects markers d4 stamp repair
 // input: Outlines drawn in params.frame bound boxes. A box corner may seat a
 //  stamp: a one-color shape drawn around that corner. At least one corner
 //  carries its stamp whole; the others carry a single cell of it, or

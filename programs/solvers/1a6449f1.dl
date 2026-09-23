@@ -1,5 +1,5 @@
 // 1a6449f1
-// @keywords: crop objects border enclose select count
+// @keywords: crop objects border enclose select noise rank
 // input: Colored noise fills the grid, and rings of one color sit in it.
 // output: The input cropped to the box of the ring inside that holds the most
 //  cells.

@@ -1,5 +1,5 @@
 // 2013d3e2
-// @keywords: decompose crop
+// @keywords: decompose crop bbox
 // input: A figure sits on background.
 // output: Output is the corner region of its bounding box.
 

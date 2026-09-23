@@ -1,6 +1,6 @@
 // 825aa9e9
 // @draft
-// @keywords: objects move
+// @keywords: objects move enclose
 // input: a floor of one color along one edge of the grid, with shapes of
 //  another color hanging above it on a background
 // output: Each shape falls toward the floor as one body and comes to rest

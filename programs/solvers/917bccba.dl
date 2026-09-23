@@ -1,6 +1,6 @@
 // 917bccba
 // @draft
-// @keywords: lines border move
+// @keywords: lines border move occlude
 // input: a rectangle outline in one ink, and a cross in another. The cross
 //  is two full lines of the grid, and they meet inside the rectangle. The
 //  rectangle covers the cross where the two overlap.

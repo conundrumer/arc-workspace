@@ -1,6 +1,6 @@
 // 516b51b7
 // @draft
-// @keywords: objects walk border parity lookup
+// @keywords: objects walk border parity lookup rings
 // input: solid ink rectangles on the background
 // output: Each rectangle gains concentric rings: its outline keeps its
 //  ink, and every cell inside takes a color that follows how deep it

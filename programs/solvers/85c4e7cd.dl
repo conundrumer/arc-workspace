@@ -1,5 +1,5 @@
 // 85c4e7cd
-// @keywords: permutation
+// @keywords: permutation rings
 // input: the grid decomposes into concentric square rings, one color per ring
 // output: each ring takes the color of the ring as deep from the center as it
 //  is from the border

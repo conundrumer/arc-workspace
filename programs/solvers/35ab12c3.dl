@@ -1,5 +1,5 @@
 // 35ab12c3
-// @keywords: markers cast move
+// @keywords: markers cast move color-class
 // input: Cells of one color are the corners of an outline.
 // output: Each cell sights the nearest same-color cell along each of the
 //  eight directions, and a sight is drawn when the cell's other sights do

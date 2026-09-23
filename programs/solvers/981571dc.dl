@@ -1,5 +1,5 @@
 // 981571dc
-// @keywords: symmetry repair
+// @keywords: symmetry repair noise
 // output: The clean cells show a pattern symmetric about a stored center. A
 //  noise cell takes the color of a clean cell in its orbit under the pattern's
 //  symmetry group.

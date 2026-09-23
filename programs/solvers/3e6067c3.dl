@@ -1,6 +1,6 @@
 // 3e6067c3
 // @draft
-// @keywords: objects markers walk
+// @keywords: objects markers walk route chain
 // input: boxes holding a colored label, and single cells spelling a color
 //  sequence
 // output: Consecutive entries of the sequence name boxes that a clear

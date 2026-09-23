@@ -1,6 +1,6 @@
 // 27f8ce4f
 // @draft
-// @keywords: tile-arrangement stamp count
+// @keywords: tile-arrangement stamp rank
 // output: The output tiles the input by itself: an input-shaped arrangement
 //  of input-sized tiles, where a tile holds a copy of the input if its index
 //  cell carries the input's commonest color, and is bg otherwise.

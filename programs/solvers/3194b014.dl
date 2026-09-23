@@ -1,6 +1,6 @@
 // 3194b014
 // @draft
-// @keywords: objects count
+// @keywords: objects noise rank
 // input: Non-bg cells form connected components: shapes of solid color, and
 //  scattered noise.
 // output: The output is a 3×3 swatch of the color of the biggest component.

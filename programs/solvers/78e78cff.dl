@@ -1,6 +1,6 @@
 // 78e78cff
 // @draft
-// @keywords: markers border cast
+// @keywords: markers border cast flood enclose
 // input: A broken frame of one ink sits on a plain ground, with one lone cell
 //  of a third color inside it. The ground is the commonest color, the seed is
 //  the lone cell of its color, and the frame is the remaining ink.

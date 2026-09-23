@@ -1,6 +1,6 @@
 // 96a8c0cd
 // @draft
-// @keywords: markers walk
+// @keywords: markers walk perimeter
 // input: One marker cell on the grid border, and bars of other colors over
 //  the background.
 // output: A walker starts at the marker and takes one heading, away from the

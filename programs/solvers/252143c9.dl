@@ -1,6 +1,6 @@
 // 252143c9
 // @draft
-// @keywords: decompose markers cast
+// @keywords: decompose markers cast noise select
 // input: a bg cross through the grid center, cutting four quadrants each
 //  speckled in its own color
 // output: The center cell of the cross carries one of those four colors.

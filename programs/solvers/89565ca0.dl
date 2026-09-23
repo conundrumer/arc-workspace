@@ -1,5 +1,5 @@
 // 89565ca0
-// @keywords: objects cast enclose count rank
+// @keywords: objects cast enclose count rank noise occlude
 // input: Frames of distinct colors lie stacked on the background, and
 //  specks of one further color litter the grid.
 // output: A frame's lines run on under whatever hides them — a speck, or a

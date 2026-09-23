@@ -1,5 +1,5 @@
 // 184a9768
-// @keywords: objects enclose pack
+// @keywords: objects enclose pack select
 // input: Frames stand among loose pieces: an object is a frame when it
 //  closes background off from the grid edge.
 // output: The pieces translate into the holes so closed and fill them

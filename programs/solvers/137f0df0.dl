@@ -1,5 +1,5 @@
 // 137f0df0
-// @keywords: lines span
+// @keywords: lines span bbox
 // input: The input holds a field of blocks, cut by lines that carry no block.
 // output: A block-free line that crosses the field's bounding box is painted
 //  along its whole length: params.inside_paint where it crosses the box,

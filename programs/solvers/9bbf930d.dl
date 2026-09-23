@@ -1,5 +1,5 @@
 // 9bbf930d
-// @keywords: walk move lines
+// @keywords: walk move lines enclose
 // @scene wall: the edge on params.wall_dir is a solid line of one ink, and
 //  the line inside it is blank
 // @scene pipes: a pipe is two parallel bars of one ink with a one-cell blank

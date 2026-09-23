@@ -1,5 +1,5 @@
 // 2d0172a1
-// @keywords: objects enclose rank
+// @keywords: objects enclose rank bbox
 // @scene ink: the commoner color is the background and the other is the ink
 //  the curves are drawn in
 // @scene curve: each connected run of ink is one curve

@@ -1,5 +1,5 @@
 // 09c534e7
-// @keywords: objects markers border
+// @keywords: objects markers border enclose flood
 // output: Ink networks on bg, each holding one seed cell of a non-outline
 //  color. The seed's color fills the network's interior — the cells with all
 //  eight neighbors on the ink; everything else passes through.

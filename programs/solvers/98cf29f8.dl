@@ -1,6 +1,6 @@
 // 98cf29f8
 // @draft
-// @keywords: objects markers move span
+// @keywords: objects markers move span bbox
 // input: two objects, one color each. one fills its own bounding box — the
 //  anchor. the other — the lever — faces it along a cardinal direction, and
 //  splits across that direction's axis: the slabs where it fills its box are

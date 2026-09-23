@@ -1,5 +1,5 @@
 // 1a2e2828
-// @keywords: lines select
+// @keywords: lines select occlude
 // input: Full-length stripes cross; at each crossing one stripe shows
 //  through.
 // output: The top stripe is covered by none, so its lines stay uniform.

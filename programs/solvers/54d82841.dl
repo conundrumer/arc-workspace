@@ -1,6 +1,6 @@
 // 54d82841
 // @draft
-// @keywords: markers objects cast
+// @keywords: markers objects cast perimeter
 // input: A cup is a wall of ink around one bg cell, open on a single side.
 // output: Every cup puts a mark on the grid edge.
 

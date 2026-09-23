@@ -1,6 +1,6 @@
 // 7acdf6d3
 // @draft
-// @keywords: objects span count pack
+// @keywords: objects span count pack enclose
 // input: Two colors sit on a bg. Each 8-connected component of a color is a
 //  container; its hollow is the bg cells between two of its cells along
 //  params.hollow_axis. The other color's cells are loose pieces.

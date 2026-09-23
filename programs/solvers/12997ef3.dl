@@ -1,5 +1,5 @@
 // 12997ef3
-// @keywords: markers crop tile-arrangement rank stamp mapping
+// @keywords: markers crop tile-arrangement rank stamp mapping bbox
 // input: a stencil shape in one color sits on a blank grid beside a line of
 //  single-cell markers.
 // output: the output lays out one tile per marker along the marker line's

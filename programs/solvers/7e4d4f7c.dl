@@ -1,5 +1,5 @@
 // 7e4d4f7c
-// @keywords: lines mapping
+// @keywords: lines mapping depth
 // output: The output holds params.out_h rows measured from params.header_dir,
 //  over the input's across extent. Every row but the last takes the input row
 //  at its own depth. The last row takes the input's row at depth 0, recolored:

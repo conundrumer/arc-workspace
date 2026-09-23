@@ -1,6 +1,6 @@
 // 79369cc6
 // @draft
-// @keywords: markers stamp d4
+// @keywords: markers stamp d4 bbox crop
 // input: The template is the bounding box of the fill-colored cells; its
 //  other cells carry the mark color.
 // output: Wherever a D4 image of the template's mark cells appears in the

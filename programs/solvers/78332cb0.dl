@@ -1,6 +1,6 @@
 // 78332cb0
 // @draft
-// @keywords: decompose continue rank
+// @keywords: decompose continue rank chain
 // input: Separator lines cut the grid into equal tiles, each holding one
 //  shape on bg.
 // output: A shape that touches an edge of its tile continues into the tile

@@ -1,5 +1,5 @@
 // 0607ce86
-// @keywords: objects repair select
+// @keywords: objects repair select noise
 // output: The grid holds an arrangement of identical solid rectangles under
 //  noise: single cells painted over the bg, and cells inside the rectangles
 //  repainted. The output stamps one undamaged copy at every rectangle and

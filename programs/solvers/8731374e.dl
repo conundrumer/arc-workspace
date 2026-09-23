@@ -1,6 +1,6 @@
 // 8731374e
 // @draft
-// @keywords: crop markers cast select count
+// @keywords: crop markers cast select rank noise
 // input: a solid block of one color sits in colored noise, with a few flaw
 //  cells of another color inside it; the block is the largest rectangle
 //  outlined in one color

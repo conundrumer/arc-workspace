@@ -1,5 +1,5 @@
 // fc754716
-// @keywords: border
+// @keywords: border perimeter
 // output: A single non-bg dot. The output paints the grid border with the dot's
 //  color; every other cell is bg.
 

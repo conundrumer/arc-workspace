@@ -1,6 +1,6 @@
 // 4852f2fa
 // @draft
-// @keywords: markers crop tile-arrangement count select stamp
+// @keywords: markers crop tile-arrangement count select stamp bbox
 // input: One shape sits on a blank grid beside scattered single-cell
 //  markers.
 // output: The output repeats the shape's bounding box along one axis, one

@@ -1,5 +1,5 @@
 // 505fff84
-// @keywords: lines markers span rank move
+// @keywords: lines markers span rank move noise
 // input: Noise rows; the two marker colors bracket one segment per marked
 //  row.
 // output: The output stacks the strictly-between segments: contributing

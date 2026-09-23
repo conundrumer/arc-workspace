@@ -1,6 +1,6 @@
 // 5792cb4d
 // @draft
-// @keywords: objects permutation rank
+// @keywords: objects permutation rank chain
 // input: the non-bg cells, forming one chain whose ends are the two cells
 //  that have a single neighbor
 // output: The output reverses the chain's colors: each cell takes the

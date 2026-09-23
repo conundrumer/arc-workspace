@@ -1,6 +1,6 @@
 // 902510d5
 // @draft
-// @keywords: objects markers count
+// @keywords: objects markers count rank
 // input: ink on a plain field: one large group of touching cells, a marker
 //  cell at a grid corner, and loose cells elsewhere
 // output: the large group stays and the loose cells go. A right isosceles

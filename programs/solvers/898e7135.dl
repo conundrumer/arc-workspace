@@ -1,5 +1,5 @@
 // 898e7135
-// @keywords: objects enclose scale d4 pack
+// @keywords: objects enclose scale d4 pack noise
 // input: A board sits among loose pieces and scattered noise cells on
 //  params.bg. The board is the object that closes background off from the
 //  grid edge; the regions it closes off are its holes.

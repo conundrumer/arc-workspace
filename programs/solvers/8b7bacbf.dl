@@ -1,6 +1,6 @@
 // 8b7bacbf
 // @draft
-// @keywords: objects markers border
+// @keywords: objects markers border enclose
 // input: Hollow boxes and wires lie on a background. An object is
 //  same-colored ink, 8-connected. A marker is the one cell of its color, and
 //  the color beside it is its guide color. Objects touch side by side, and

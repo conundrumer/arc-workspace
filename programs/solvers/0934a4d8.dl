@@ -1,5 +1,5 @@
 // 0934a4d8
-// @keywords: symmetry decompose crop repair latent-canvas
+// @keywords: symmetry decompose crop repair latent-canvas occlude
 // input: a mosaic that overhangs the grid and decomposes into an arrangement
 //  of square tiles, occluded by a solid block of params.mask
 // output: The output is the block's content. Each tile carries the subgroup of

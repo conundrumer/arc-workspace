@@ -1,6 +1,6 @@
 // 5614dbcf
 // @draft
-// @keywords: decompose count select
+// @keywords: decompose count select noise
 // output: The grid divides into an arrangement of equal tiles, and the output
 //  is that arrangement: one cell per tile.
 

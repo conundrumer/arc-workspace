@@ -1,5 +1,5 @@
 // f8b3ba0a
-// @keywords: decompose objects count rank
+// @keywords: decompose objects count rank select
 // input: Color blocks on bg, one color dominant.
 // output: Output is a 1D layout along axis_of(params.rank_dir): the minority
 //  colors, anchored at params.rank_dir, in descending count order; the

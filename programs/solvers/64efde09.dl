@@ -1,6 +1,6 @@
 // 64efde09
 // @draft
-// @keywords: objects markers d4 cast
+// @keywords: objects markers d4 cast congruent
 // input: congruent 2-wide bars on a background in different D4 poses, with a
 //  few single cells among them
 // output: A single cell is the tip of a beam that one bar casts: an open lane

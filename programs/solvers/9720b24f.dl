@@ -1,6 +1,6 @@
 // 9720b24f
 // @draft
-// @keywords: objects enclose
+// @keywords: objects enclose color-class select
 // @scene container: a container is every cell of one color
 // @scene outline-shape: each container is drawn as one 8-connected
 //  shape.

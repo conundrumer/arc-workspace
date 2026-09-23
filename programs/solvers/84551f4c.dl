@@ -1,6 +1,6 @@
 // 84551f4c
 // @draft
-// @keywords: objects walk d4 move
+// @keywords: objects walk d4 move chain
 // input: Bars stand on the ground edge: runs of ink rising from it.
 // output: A bar of the pusher color topples: it turns a quarter turn about
 //  its base cell and lies along the ground. A standing bar that a toppled

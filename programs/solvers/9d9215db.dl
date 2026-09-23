@@ -1,6 +1,6 @@
 // 9d9215db
 // @draft
-// @keywords: markers border decompose rank span
+// @keywords: markers border decompose rank span rings
 // @scene lattice: the ink sits on a lattice of every other cell, held one
 //  blank cell in from the grid's border
 // @scene rings: the lattice peels into square rings, one per distance from

@@ -1,6 +1,6 @@
 // 890034e9
 // @draft
-// @keywords: markers border stamp
+// @keywords: markers border stamp noise
 // input: Colored noise fills the grid. One color draws nothing but a
 //  rectangle outline, and the outline's hole has a twin elsewhere in the
 //  noise.

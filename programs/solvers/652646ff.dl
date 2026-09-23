@@ -1,6 +1,6 @@
 // 652646ff
 // @draft
-// @keywords: lookup occlude rank
+// @keywords: lookup occlude rank noise
 // input: figures of one shape, each in its own color, drawn over one
 //  another on a plain ground, with stray cells of further colors littering
 //  the grid

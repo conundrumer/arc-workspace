@@ -1,6 +1,6 @@
 // 9ba4a9aa
 // @draft
-// @keywords: objects merge select crop
+// @keywords: objects merge select crop chain enclose
 // @scene ground: the commonest color is the background
 // @scene squares: the ink holds 3×3 squares; a square is framed when a
 //  uniform border surrounds a center of another color, and one square, the

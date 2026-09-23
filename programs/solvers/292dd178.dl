@@ -1,6 +1,6 @@
 // 292dd178
 // @draft
-// @keywords: objects border walk cast
+// @keywords: objects border walk cast bbox enclose
 // input: Rectangular outlines in params.wall each miss one cell of their
 //  perimeter.
 // output: The cells strictly inside an outline's bounding box take
