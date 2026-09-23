@@ -1105,8 +1105,9 @@ INCLUDE = "include"
 INLINE = "inline"
 CODE_OF = "code"
 QUOTE_OF = "quote"
+TEXT_OF = "text"
 # The directives that read a value, beyond the two that name text to fill.
-READERS = (CODE_OF, QUOTE_OF, "if", "unless")
+READERS = (CODE_OF, QUOTE_OF, TEXT_OF, "if", "unless")
 
 VARIABLE_RE = re.compile(r"\{\{([A-Za-z0-9_.-]+)\}\}")
 SPAN_RE = re.compile(r"(`[^`]*`)")
@@ -1187,7 +1188,7 @@ def _expand(nodes: list[Node], st: _State, seen: tuple[str, ...],
             continue
         if node.has("unless") and _bound(node, "unless", st):
             continue
-        if node.has(CODE_OF) or node.has(QUOTE_OF):
+        if node.has(CODE_OF) or node.has(QUOTE_OF) or node.has(TEXT_OF):
             if st.given:
                 out.append(_block(node, st))
             continue
@@ -1250,7 +1251,7 @@ def _reached(node: Node, st: _State, seen: tuple[str, ...]) -> set[str]:
 
 
 def _value_of(node: Node, name: str, st: _State) -> str:
-    """The value a `code` or a `quote` directive names."""
+    """The value a `code`, a `quote`, or a `text` directive names."""
     key = (node.attr(name) or "").strip()
     if key not in st.values:
         raise ControlledMarkdownError(node.source, node.line, "variable-missing",
@@ -1265,7 +1266,12 @@ def _fence(text: str) -> str:
 
 
 def _block(node: Node, st: _State) -> Node:
-    """The code node or the quote a `code` or a `quote` directive renders."""
+    """The block a `code`, a `quote`, or a `text` directive renders. A `text`
+    block carries the value as it stands, so a render marks it up no
+    further."""
+    if node.has(TEXT_OF):
+        return Node(CODE, text=_value_of(node, TEXT_OF, st),
+                    source=node.source, line=node.line)
     if node.has(CODE_OF):
         text = _value_of(node, CODE_OF, st)
         fence = _fence(text)

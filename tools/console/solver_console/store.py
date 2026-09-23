@@ -50,8 +50,9 @@ WORKER_HANDOFF_ENV = "CONSOLE_WORKER_HANDOFF"
 # moves it on when the user asks; with the auto finalize setting on, a landing
 # whose next stage is finalize hands on like any other. An item built for one
 # stage alone never hands off.
-# Every report is also written under state/reports/, so it outlives the item a
-# commit drops and can seed a later stage over a solver already committed.
+# Every report is also written under state/reports/, with the stage's solver
+# diff beside it, so both outlive the item a commit drops and can seed a later
+# stage over a solver already committed.
 #
 # A turn ends in NEEDS_REVIEW, whether it reported a result or died mid-flight;
 # a worker that never reported a session falls back to QUEUED instead. `load`
@@ -327,6 +328,7 @@ def migrate(it: dict) -> None:
         text = (it.pop("handoff_report", None) or "").strip()
         it["reports"] = {"create": text} if text else {}
     it.pop("handoff_report", None)
+    it.setdefault("diffs", {})
     seed_report(it)
     if "sessions" not in it:
         old = it.pop("session", None)
@@ -418,14 +420,20 @@ def shared_writes(it: dict, touched: set[str] | None = None) -> list[str]:
 
 
 def seed_report(it: dict) -> None:
-    """Adopt the report files when state carries none, so an item that came
-    back after a restart or a commit still knows what earlier stages found."""
+    """Adopt the report and diff files when state carries none, so an item
+    that came back after a restart or a commit still knows what earlier stages
+    found and what they changed."""
     reports = it.setdefault("reports", {})
+    diffs = it.setdefault("diffs", {})
     for name in stage_names(it):
         if not (reports.get(name) or "").strip():
             text = solvers.report_of(it, name)
             if text:
                 reports[name] = text
+        if not (diffs.get(name) or "").strip():
+            diff = solvers.diff_of(it, name)
+            if diff:
+                diffs[name] = diff
         text = reports.get(name) or ""
         collapsed = solvers.collapse_callouts(text)
         if collapsed != text:

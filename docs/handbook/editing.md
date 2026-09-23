@@ -18,8 +18,9 @@
     - Its context: `context session`, then what each command the text names prints.
 - What a codex session on the repo reads: [Codex on arc-workspace](prompts/codex.md).
     - Its context: `context codex`, then the user's message.
-- What each handbook agent reads: [handbook](prompts/agents/handbook.md) and [handbook-expanded](prompts/agents/handbook-expanded.md).
+- What each agent reads: [handbook](prompts/agents/handbook.md), [handbook-expanded](prompts/agents/handbook-expanded.md), and [analyze](prompts/agents/analyze.md).
     - Its context: `context agent <name>`.
+    - The `analyze` agent reads [Analyze after the concept](prompts/agents/analyze-next.md) after it writes the concept.
 - The statements an entry point inlines into its lead: [Shared notes](prompts/agents/notes.md).
 - The console messages: [Console messages](prompts/console.md).
     - A worker's context: the appendix, the message the stage opens with, then each message a condition sends, under that condition: `context console <stage>`.
@@ -43,12 +44,13 @@
     - An entry point inlines each operation it runs, in order, under a heading of its name.
     - A session's entry point inlines [Every pass](docs/handbook/procedure.md#every-pass) as well.
     - A console worker and the `handbook-expanded` agent read the lib as its interface.
+    - The `analyze` agent reads no lib.
     - Every other reader reads the index, and a declaration's interface when it needs one.
 - A fact or a rule is stated in one file, and every other file links it.
 - A link depends on a section's heading, and never on what the body says.
 - No document restricts, replaces or redirects an operation another document carries.
 - A document the handbook includes links only to a document an entry point in `HANDBOOK_ENTRIES` in [__main__.py](src/controlled_markdown/__main__.py) carries, or to a file outside the document set.
-- A document rendered on its own is an entry point, and its lead names what the render leaves out.
+- A document rendered on its own is an entry point, and its lead names what the render leaves out when a link in the render leads there.
 - A render leaves out the lines marked `draft` and `gloss` where its entry point excludes them.
     - The session render carries them, and so does `scripts/context.py section`.
 - Where two lists split a set, the second list is everything else.

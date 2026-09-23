@@ -143,7 +143,7 @@ def srv(tmp_path, monkeypatch):
     for name, lib in (("handbook", "index"), ("handbook-expanded", "interface")):
         (agents / f"{name}.md").write_text(
             f"---\nname: {name}\ndescription: A stub.\nmodel: opus\n"
-            f"effort: high\ntools: Read, Grep\n---\n\n"
+            f"tools: Read, Grep\n---\n\n"
             f"+ lib: {lib}\n\n* include: {back}\n")
     monkeypatch.setattr(s, "AGENTS", agents)
     # The proposals dir is its own name, so the test tree sets it too.

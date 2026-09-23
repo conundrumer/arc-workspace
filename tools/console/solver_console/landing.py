@@ -289,14 +289,14 @@ def solver_diff(it: dict, phase: str) -> str:
 
 
 def file_report(it: dict, phase: str, text: str) -> None:
-    """A landing's text becomes the stage report, with the stage's solver diff
-    under it; the next filing replaces it, so what stands is always the last
-    thing the session wrote."""
+    """A landing's text becomes the stage report, and the stage's solver diff
+    is filed beside it; the next filing replaces both, so what stands is
+    always the last thing the session wrote and the change it left."""
     diff = solver_diff(it, phase)
-    if diff:
-        text = text.rstrip() + "\n\n## Solver diff\n\n```diff\n" + diff + "\n```"
     it.setdefault("reports", {})[phase] = text
+    it.setdefault("diffs", {})[phase] = diff
     solvers.save_report(it["id"], phase, text)
+    solvers.save_diff(it["id"], phase, diff)
 
 
 def land_handoff(it: dict, phase: str, text: str) -> None:

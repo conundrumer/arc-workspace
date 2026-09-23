@@ -185,13 +185,11 @@ def append_survey(path: Path, header: str, result: str) -> None:
 
 def survey_session() -> list[str]:
     """The flags that run the session as the agent the survey role names: the
-    appendix that agent reads as its system prompt, and the agent's model and
-    effort."""
+    appendix that agent reads as its system prompt, and the agent's model."""
     agent, _ = prompts.role("survey")
     meta = agent_meta(AGENT_NAMES[0], config.AGENTS)
     append = prompts.append_path(index=agent == meta["name"])
-    return ["--system-prompt-file", str(append),
-            "--model", meta["model"], "--effort", meta["effort"]]
+    return ["--system-prompt-file", str(append), "--model", meta["model"]]
 
 
 def survey_kill(proc: subprocess.Popen) -> None:

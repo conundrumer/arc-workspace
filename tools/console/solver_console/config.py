@@ -53,7 +53,7 @@ FAKE = os.environ.get("CONSOLE_FAKE") == "1"
 CLAUDE = os.environ.get("CONSOLE_CLAUDE", "claude")
 # The models the pipeline settings pick between, under the names the console
 # shows for them.
-MODEL_IDS = {"opus": os.environ.get("CONSOLE_OPUS_MODEL", "claude-opus-5"),
+MODEL_IDS = {"opus": os.environ.get("CONSOLE_OPUS_MODEL", "claude-opus-5-5"),
              "fable": os.environ.get("CONSOLE_FABLE_MODEL", "claude-fable-5")}
 # What each settable stage runs until the user sets it. The finalize pass has
 # no setting: it is the fable read.
@@ -65,9 +65,9 @@ FINALIZE_MODEL = "fable"
 # reaped; `compact_landing` compacts a finalize session the autopilot opened
 # as soon as its callouts land, while the account can still afford the turn.
 AUTO_DEFAULTS = {"finalize": False, "compact": False, "compact_landing": False}
-# What a claude stage runs at when its chain names no effort; it overrides
-# the per-model default in the user's settings.
-CLAUDE_EFFORT = os.environ.get("CONSOLE_CLAUDE_EFFORT", "high")
+# What a claude stage runs at when its chain names no effort. Empty passes no
+# effort flag, so the stage runs at the model's own default.
+CLAUDE_EFFORT = os.environ.get("CONSOLE_CLAUDE_EFFORT", "")
 COMMIT_MODEL = os.environ.get("CONSOLE_COMMIT_MODEL", "claude-opus-5")
 # What a stage moves to when its model's safeguards refuse a report ask twice
 # over. A report summarizes the transcript, so a smaller model writes it.

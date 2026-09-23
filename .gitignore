@@ -24,6 +24,8 @@ tests/scratch/
 /AGENTS.md
 .claude/agents/handbook.md
 .claude/agents/handbook-expanded.md
+.claude/agents/analyze.md
+.claude/analyze-next.md
 programs/lib.md
 programs/lib/*.md
 

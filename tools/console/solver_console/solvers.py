@@ -1,5 +1,5 @@
-"""Reads of the solver files, the reports beside them, and the callouts
-those reports carry."""
+"""Reads of the solver files, the reports and solver diffs beside them, and
+the callouts those reports carry."""
 
 import hashlib
 import json
@@ -7,7 +7,13 @@ import re
 from pathlib import Path
 
 import controlled_markdown as nm
-from dl.annotations import merged_blocks, witness_blocks
+from dl.annotations import (
+    Witness,
+    derive_blocks,
+    derive_param,
+    merged_blocks,
+    witness_blocks,
+)
 from dl.annotations import read as read_annotations
 from dl.corpus import literal_count
 from dl.dlparse import ParseError, parse
@@ -341,6 +347,9 @@ def witness_view(item_id: str) -> dict | None:
     file, and the error a file off its shape raises in place of the
     entries.
 
+    A `@derive` line is a block of the case id `<param>=<Proposer>`, which
+    is the id its entry takes.
+
     An entry the solver names in no block keeps the file's fields alone. A
     block that names no entry follows the entries, as an entry that holds
     the block's fields and no grid."""
@@ -352,14 +361,24 @@ def witness_view(item_id: str) -> dict | None:
         entries = json.loads(path.read_text())["witnesses"]
     except (ValueError, KeyError, TypeError) as exc:
         return {"error": str(exc)}
-    blocks = {a.id: a
-              for a in merged_blocks(witness_blocks(solver_text(item_id)))}
+    source = solver_text(item_id)
+    blocks = {a.id: a for a in merged_blocks(witness_blocks(source))}
+    blocks.update({a.id: a for a in _derive_blocks(source)})
     for entry in entries:
         block = blocks.pop(entry.get("id"), None)
         if block is not None:
             entry.update(_block_fields(block))
     entries += [{"id": a.id, **_block_fields(a)} for a in blocks.values()]
     return {"entries": entries}
+
+
+def _derive_blocks(source: str) -> list[Witness]:
+    """Each `@derive` line as a block of its case id."""
+    return [
+        Witness(f"{param}={b.proposer}", b.plausibility, b.verdict, b.line)
+        for b in derive_blocks(source)
+        if (param := derive_param(source, b))
+    ]
 
 
 def _block_fields(block) -> dict:
@@ -401,11 +420,14 @@ def report_path(item_id: str, stage: str) -> Path:
     return config.REPORT_DIR / item_id / f"{stage}.md"
 
 
-def save_report(item_id: str, stage: str, text: str) -> None:
-    """File a stage's report, in one step: the write lands beside the report
-    and takes its place by a rename, so a reader that is not under LOCK — the
-    retro view, a session reading the file — sees a whole report."""
-    p = report_path(item_id, stage)
+def diff_path(item_id: str, stage: str) -> Path:
+    return config.REPORT_DIR / item_id / f"{stage}.diff"
+
+
+def save_file(p: Path, text: str) -> None:
+    """Write `text` in one step: the write lands beside the file and takes its
+    place by a rename, so a reader that is not under LOCK — the retro view, a
+    session reading the file — sees whole text."""
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_name(f".{p.name}.swap")
     try:
@@ -415,12 +437,37 @@ def save_report(item_id: str, stage: str, text: str) -> None:
         tmp.unlink(missing_ok=True)
 
 
+def save_report(item_id: str, stage: str, text: str) -> None:
+    """File a stage's report."""
+    save_file(report_path(item_id, stage), text)
+
+
+def save_diff(item_id: str, stage: str, text: str) -> None:
+    """File the solver diff of a stage, beside that stage's report. A stage
+    that changed nothing leaves no diff file, so an empty diff takes away the
+    file an earlier filing left."""
+    p = diff_path(item_id, stage)
+    if text:
+        save_file(p, text)
+    else:
+        p.unlink(missing_ok=True)
+
+
 def report_of(it: dict, stage: str) -> str:
     """A stage's handoff report, from state or from the file that outlives it."""
     text = ((it.get("reports") or {}).get(stage) or "").strip()
     if text:
         return text
     p = report_path(it["id"], stage)
+    return p.read_text().strip() if p.exists() else ""
+
+
+def diff_of(it: dict, stage: str) -> str:
+    """A stage's solver diff, from state or from the file that outlives it."""
+    text = ((it.get("diffs") or {}).get(stage) or "").strip()
+    if text:
+        return text
+    p = diff_path(it["id"], stage)
     return p.read_text().strip() if p.exists() else ""
 
 

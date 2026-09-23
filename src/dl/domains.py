@@ -20,6 +20,15 @@ def _lib_defines() -> dict[str, int]:
             for m in re.finditer(r"^#define (\w+)\s+(\d+)", text, flags=re.MULTILINE)}
 
 
+def _lib_record_defines() -> dict[str, str]:
+    """Constant-name -> record text from the lib's #define tables. A Box
+    constant such as `ZERO` stands for `[0, 0, 0, 0]`."""
+    return {m.group(1): m.group(2)
+            for _, text in lib_sources()
+            for m in re.finditer(r"^#define (\w+)\s+(\[[^\n]*\])",
+                                 text, flags=re.MULTILINE)}
+
+
 def _enum_domain(type_name: str, defines: dict[str, int]) -> list[int]:
     prefix = ENUM_TYPES[type_name]
     return sorted(v for k, v in defines.items() if k.startswith(prefix))

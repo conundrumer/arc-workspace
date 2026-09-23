@@ -88,20 +88,22 @@ EXAMPLE_SRC = frozenset({"in", "ex_in", "ex_out"})
 
 type Finding = tuple[str, int, str, str]
 
-# The directive that keeps a relation against a hint, on the line above
-# the relation's declaration: `// @allow: <category> — <why>`.
-_ALLOW_RE = re.compile(r"//\s*@allow:\s*([\w-]+)")
+# The directive that keeps a relation against a finding, on the line above
+# the relation's declaration: `// @ignore: <category> — <why>`. Above a
+# `.init` the directive may name one relation of the instance, as
+# `// @ignore <rel>: <category> — <why>`.
+_IGNORE_RE = re.compile(r"//\s*@ignore(?:\s+[\w.]+)?:\s*([\w-]+)")
 
-# The hint categories `@allow` can silence: the ones whose finding sits on
+# The hint categories `@ignore` can silence: the ones whose finding sits on
 # the relation's declaration line, which is where the directive is read.
-ALLOWABLE_HINTS = frozenset({"pass-through", "single-consumer", "chain-join"})
+IGNORABLE_HINTS = frozenset({"pass-through", "single-consumer", "chain-join"})
 
 
 def keep_line(cat: str) -> str:
     """The line an author pastes above the declaration to keep the code
     against this hint, tacked onto the hint's message."""
     return mctx("; to keep it, paste above the declaration: "
-                "`// @allow: {cat} \u2014 <reason>`").format(cat=cat)
+                "`// @ignore: {cat} \u2014 <reason>`").format(cat=cat)
 
 # Souffle's primitive types. A column typed by one states no domain, so
 # it never counts as wider than an element type.
@@ -414,7 +416,7 @@ def lint_rewrites(source: str, hints: bool = False) -> list[Finding]:
     at_decl = {lint.decl_of(key).line: key for key in lint.program_keys()}
     findings = [
         f for f in findings
-        if (key := at_decl.get(f[1])) is None or not lint.allowed(f[0], key)
+        if (key := at_decl.get(f[1])) is None or not lint.ignored(f[0], key)
     ]
     findings.sort(key=lambda f: (f[1], f[0]))
     return [(cat, ln, match, raw(ln)) for cat, ln, match, _ in findings]
@@ -429,11 +431,11 @@ class _Lint:
         self._const_targets: set[tuple[str, str]] | None = None
         self._comps: dict[str, Comp] | None = None
         self._records: dict[str, list[str]] | None = None
-        # The category each `@allow:` directive names, by its line.
-        self.allows = {
+        # The category each `@ignore:` directive names, by its line.
+        self.ignores = {
             c.line: m.group(1)
             for c in ix.program.comments
-            if c.own_line and (m := _ALLOW_RE.match(c.text))
+            if c.own_line and (m := _IGNORE_RE.match(c.text))
         }
         # Choice tags: branch names of the ADTs the file declares.
         self.choice_tags = {
@@ -511,11 +513,11 @@ class _Lint:
     def decl_of(self, key: RelKey) -> Decl:
         return self.ix.decls[key[0]][key[1]]
 
-    def allowed(self, cat: str, key: RelKey) -> bool:
-        """Whether the relation carries an `@allow:` directive naming this
+    def ignored(self, cat: str, key: RelKey) -> bool:
+        """Whether the relation carries an `@ignore:` directive naming this
         category, on the line above its declaration: the author kept the
         relation against that category, so it does not fire here."""
-        return self.allows.get(self.decl_of(key).line - 1) == cat
+        return self.ignores.get(self.decl_of(key).line - 1) == cat
 
     def defs(self, key: RelKey) -> list[Rule]:
         """Rules and facts whose head is `key`."""
@@ -713,7 +715,7 @@ class _Lint:
     def single_consumer(self, key: RelKey) -> None:
         """Hint: one rule, one positive use, a two-literal body. The
         corpus both inlines and keeps this shape — the name's value is the
-        call. `// @allow: single-consumer — <reason>` above the declaration
+        call. `// @ignore: single-consumer — <reason>` above the declaration
         states that call, and silences the hint for that relation."""
         if key[1] == "impl_choice":
             return  # the corpus-wide case enumerator keeps its name

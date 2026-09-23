@@ -2,7 +2,7 @@
 
 A witness file holds grids the author built to tell the solver's cases
 apart, each with the outcome every case is expected to give.
-procedure.md states the file's shape.
+solver-file.md states the file's shape.
 
 An entry's `assign` field reassigns a `Params` parameter before the run,
 so the entry stands at the assignment its `separates` names rather than
@@ -10,18 +10,23 @@ at the stored one.
 """
 
 import json
-from collections.abc import Callable, Collection
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from arc.jsonio import format_file
 from controlled_markdown import mctx
 from dl.annotations import (
+    STORED,
     Claim,
+    derive_ids,
+    derive_param,
     merged_blocks,
     read,
     relaxable,
     resolved_claims,
+    store_ids,
+    store_relation,
     witness_blocks,
 )
 from dl.facts import Candidate
@@ -45,9 +50,7 @@ WITNESS_OK = "witness: ok"
 DRIFT = "drift"
 UNLISTED = "unlisted"
 ANNOTATION = "annotation"
-UNDEFINED_CONCEPT = "undefined-concept"
-
-FAILING = (DRIFT, ANNOTATION, UNDEFINED_CONCEPT)
+FAILING = (DRIFT, ANNOTATION)
 """The kinds that fail the check."""
 
 type Outcome = list[list[int]] | None
@@ -92,17 +95,15 @@ class Witness:
 class Drift:
     """One finding on one entry. `kind` is DRIFT when a case gives an
     outcome the entry does not name, UNLISTED when the solver has a case
-    the entry's `output` does not name, UNDEFINED_CONCEPT when the run
-    leaves the concept case's outcome undefined, and ANNOTATION when a
+    the entry's `output` does not name, and ANNOTATION when a
     `@witness` line of the solver and the witness file disagree — over the
     line's form, the entry it names, a `@relaxed` slug, the `@reassigned`
     parameters, or an entry no line names. `entry` is the entry's id,
     followed by the parameters it reassigns, and it is empty when no entry
     answers the line. `cases` names every case the finding holds for, which
     is the cases that give one outcome where another is expected.
-    `expected` stands for nothing on an UNLISTED finding, and neither
-    `expected` nor `actual` stands for anything on an UNDEFINED_CONCEPT one.
-    An ANNOTATION finding reads as `note`."""
+    `expected` stands for nothing on an UNLISTED finding. An ANNOTATION
+    finding reads as `note`."""
 
     entry: str
     cases: list[str]
@@ -337,22 +338,6 @@ def _label(entry: Entry) -> str:
     return f"{entry.id} [{', '.join(entry.assign)}]"
 
 
-def undefined_concept(label: str, concept: str,
-                      outcomes: dict[str, Outcome],
-                      named: Collection[str] = ()) -> list[Drift]:
-    """The finding on an entry whose concept case the run leaves undefined.
-    `outcomes` carries an undefined case as None, and a case that emitted
-    nothing has no row there. `named` supplies the case names the entry
-    lists. The finding stands on a concept case that `outcomes` or `named`
-    holds; a concept case the solver leaves unspelled gets none."""
-    if not concept or concept not in set(outcomes) | set(named):
-        return []
-    if outcomes.get(concept) is not None:
-        return []
-    return [Drift(entry=label, cases=[concept], expected=None, actual=None,
-                  kind=UNDEFINED_CONCEPT)]
-
-
 type Mismatch = tuple[str, Outcome, Outcome]
 
 
@@ -374,20 +359,17 @@ def _merged(label: str, rows: list[Mismatch], kind: str = DRIFT,
     return findings
 
 
-def _entry_findings(entry: Entry, actuals: dict[str, Outcome],
-                    concept: str) -> list[Drift]:
+def _entry_findings(entry: Entry,
+                    actuals: dict[str, Outcome]) -> list[Drift]:
     """The findings on one entry, given what its input produced."""
     label = _label(entry)
-    findings = undefined_concept(
-        label, concept, actuals,
-        () if entry.rejected_output else entry.output)
     if entry.rejected_output:
-        return findings + _merged(label, [
+        return _merged(label, [
             (case, entry.output, got)
             for case, got in actuals.items()
             if got == entry.output
         ], rejected=True)
-    findings += _merged(label, [
+    findings = _merged(label, [
         (case, want, actuals.get(case))
         for case, want in entry.output.items()
         if actuals.get(case) != want
@@ -442,14 +424,15 @@ def _annotation_findings(source: str, entries: list[Entry],
     line off the form of the witness grammar, a line that names no entry of
     the file, a `@relaxed` slug the header's claims do not carry, a block
     whose `@reassigned` parameters are not the entry's `assign` keys, an
-    entry whose `assign` is empty, and an entry no line names.
+    entry whose `assign` is empty, and an entry no line names. A `@derive`
+    line names the entry of its case id, and the derive report reads that
+    entry.
 
     An approximated claim is read against the cases as well. A header
-    `@approximated:` runs on every case, and a branch one on the cases its
-    branch holds, so each of those cases stands under a witness that shows
-    it departing. A case whose branch carries a `@rule` line of the claim's
-    slug restates the claim, so the header's approximation does not run on
-    that case and no witness is asked of it."""
+    `@approximated:` runs on every case, so each case stands under a witness
+    that shows it departing. A case whose branch carries a `@rule` line of
+    the claim's slug restates the claim, so the approximation does not run
+    on that case and no witness is asked of it."""
     by_id = {e.id: e for e in entries}
     claims = resolved_claims(source)
     slugs = relaxable(claims)
@@ -460,6 +443,20 @@ def _annotation_findings(source: str, entries: list[Entry],
         findings.append(Drift(entry=entry, cases=[case] if case else [],
                               expected=None, actual=None, kind=ANNOTATION,
                               note=text))
+
+    def relaxed_notes(where: str, case: str, relaxed: list[str]) -> None:
+        """A `@relaxed` slug the header's `@scene` lines do not carry."""
+        for slug in relaxed:
+            if slug in slugs:
+                continue
+            held = kinds.get(slug)
+            note(where, case,
+                 mctx("`@relaxed {slug}` names the `@{held} {slug}` line; "
+                      "`@relaxed` names a `@scene` line")
+                 .format(slug=slug, held=held)
+                 if held else
+                 mctx("`@relaxed {slug}` names no line of the header")
+                 .format(slug=slug))
 
     ann = read(source)
     for bad in ann.malformed:
@@ -479,17 +476,14 @@ def _annotation_findings(source: str, entries: list[Entry],
                       "names {holds}").format(
                      named=_params(a.reassigned),
                      holds=_params(list(entry.assign))))
-        for slug in a.relaxed:
-            if slug in slugs:
-                continue
-            held = kinds.get(slug)
-            note(a.id, a.id,
-                 mctx("`@relaxed {slug}` names the `@{held} {slug}` line; "
-                      "`@relaxed` names a `@scene` line")
-                 .format(slug=slug, held=held)
-                 if held else
-                 mctx("`@relaxed {slug}` names no line of the header")
-                 .format(slug=slug))
+        relaxed_notes(a.id, a.id, a.relaxed)
+    for d in ann.derives:
+        if param := derive_param(source, d):
+            relaxed_notes(f"line {d.line}", f"{param}={d.proposer}", d.relaxed)
+    for st in ann.stores:
+        if rel := store_relation(source, st):
+            relaxed_notes(f"line {st.line}", f"{rel}={STORED}", st.relaxed)
+    named |= derive_ids(source) | store_ids(source)
     concept = concept_case(source)
 
     def approximated(c: Claim, want: list[str]) -> None:
@@ -528,12 +522,6 @@ def _annotation_findings(source: str, entries: list[Entry],
     for c in ann.claims:
         if c.approximated:
             approximated(c, not_restated(c.slug))
-    for c in ann.branch_claims:
-        if not c.approximated:
-            continue
-        name = branch_above(source, c.line)
-        approximated(c, [k for k in cases if name in case_members(k)]
-                     if name else [])
     for e in entries:
         if e.empty_assign:
             note(e.id, e.id, mctx("`assign` is empty; omit the key"))
@@ -557,6 +545,19 @@ def annotation_lines(source: str) -> list[str]:
     return lines or ["no witness lines"]
 
 
+def _store_outcomes(stem: str, entry: Entry) -> dict[str, Outcome]:
+    """What the stored case of each `<rel>=stored` key of the entry gives on
+    the entry's input. The runner owns that case, so no `assign` states
+    it."""
+    if not isinstance(entry.output, dict):
+        return {}
+    ids = [c for c in entry.output if c.endswith(f"={STORED}")]
+    if not ids:
+        return {}
+    from dl.store import store_outcome
+    return {c: store_outcome(stem, c, entry.input) for c in ids}
+
+
 def witness_report(stem: str) -> list[Drift]:
     """Run every witness grid of `stem`'s task through the solver and
     report where the outcomes and the file disagree, then pair each
@@ -568,7 +569,6 @@ def witness_report(stem: str) -> list[Drift]:
     source = path.read_text()
     witness = load_witnesses(task_id) or Witness(id=task_id)
     resolution = res_out_stem(stem)
-    concept = concept_case(source)
     findings: list[Drift] = []
     cases: list[str] = []
     for entry in witness.entries:
@@ -577,7 +577,8 @@ def witness_report(stem: str) -> list[Drift]:
             solver_path=path)
         actuals = case_outcomes(candidates, resolution)
         cases += [c for c in actuals if c not in cases]
-        findings += _entry_findings(entry, actuals, concept)
+        actuals |= _store_outcomes(stem, entry)
+        findings += _entry_findings(entry, actuals)
     return findings + _annotation_findings(source, witness.entries, cases)
 
 
@@ -594,11 +595,6 @@ def _lines_of(d: Drift) -> list[str]:
     one = len(d.cases) == 1
     if d.kind == ANNOTATION:
         return [f"{d.entry}: {d.note}" if d.entry else d.note]
-    if d.kind == UNDEFINED_CONCEPT:
-        return [mctx("{entry}: the concept case {case} is {undefined}; take "
-                     "another input, or drop the peer with the statement that "
-                     "no witness exists").format(
-            entry=d.entry, case=case, undefined=UNDEFINED)]
     if d.kind == UNLISTED:
         return [mctx("{entry}: case {case} is not listed")
                 .format(entry=d.entry, case=case) if one else

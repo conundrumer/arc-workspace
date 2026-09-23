@@ -106,7 +106,7 @@ def worker_agents(append: str) -> str:
     for the worker."""
     def agent(meta: dict[str, str], text: str) -> dict:
         return {"description": meta["description"], "prompt": agent_prompt(text),
-                "model": meta["model"], "effort": meta["effort"],
+                "model": meta["model"],
                 "tools": [t.strip() for t in meta["tools"].split(",")]}
     index, expanded = (agent_meta(name, config.AGENTS) for name in AGENT_NAMES)
     return json.dumps({
@@ -218,47 +218,57 @@ def create_message(tid: str) -> str:
                    reference=reference_text(tid))
 
 
-def reports_block(pairs: list[tuple[str, str]]) -> str:
-    """The reports as one value, each under the heading of its stage."""
-    return "\n\n".join(f"## handoff report from the {name} session\n\n{text}"
-                       for name, text in pairs)
+def reports_block(rows: list[tuple[str, str, str]]) -> str:
+    """The prior stages as one value: each report in an element of its own,
+    and each solver diff in another, so a session reads the console's account
+    of the change apart from what the session before it wrote. A stage that
+    changed nothing carries no diff element."""
+    out = []
+    for name, text, diff in rows:
+        out.append(f'<handoff-report stage="{name}">\n{text}\n</handoff-report>')
+        if diff:
+            out.append(f'<solver-diff stage="{name}">\n{diff}\n</solver-diff>')
+    return "\n\n".join(out)
 
 
-def prior_reports(it: dict, upto: str) -> list[tuple[str, str]]:
-    """Each stage's report through `upto`, in chain order."""
+def prior_reports(it: dict, upto: str) -> list[tuple[str, str, str]]:
+    """Each stage's report and solver diff through `upto`, in chain order."""
     names = store.stage_names(it)
     at = names.index(upto) + 1 if upto in names else len(names)
-    return [(name, text) for name in names[:at] if (text := solvers.report_of(it, name))]
+    return [(name, text, solvers.diff_of(it, name))
+            for name in names[:at] if (text := solvers.report_of(it, name))]
 
 
-def persisted_reports(item_id: str, skip: str = "") -> list[tuple[str, str]]:
-    """The report files a task left behind, in chain order. A file whose stage
-    the chain does not name follows the ones it does, so none is dropped."""
+def persisted_reports(item_id: str, skip: str = "") -> list[tuple[str, str, str]]:
+    """The report files a task left behind, each with the solver diff beside
+    it, in chain order. A file whose stage the chain does not name follows the
+    ones it does, so none is dropped."""
     order = [st["name"] for st in store.default_chain()]
     stems = [s for s in solvers.report_stages(item_id) if s != skip]
     names = ([n for n in order if n in stems]
              + [n for n in stems if n not in order])
-    pairs = []
+    rows = []
     for name in names:
         text = solvers.report_path(item_id, name).read_text().strip()
         if text:
-            pairs.append((name, text))
-    return pairs
+            dp = solvers.diff_path(item_id, name)
+            rows.append((name, text, dp.read_text().strip() if dp.exists() else ""))
+    return rows
 
 
 def advance_message(it: dict, prev: str, more: bool) -> str:
     # A stage that hands on again takes over from the report before it. The
     # final stage judges the whole chain, so it reads every earlier report.
     pairs = (prior_reports(it, prev) if not more
-             else [(prev, solvers.report_of(it, prev))])
-    pairs = [(name, text) for name, text in pairs if text]
+             else [(prev, solvers.report_of(it, prev), solvers.diff_of(it, prev))])
+    pairs = [row for row in pairs if row[1]]
     tid = it["id"]
     name = "advance" if solvers.solver_path(tid).exists() else "no-solver"
     return message(name, tid=tid, task=task_text(tid),
                    reports=reports_block(pairs), more="yes" if more else "")
 
 
-def finalize_message(item_id: str, pairs: list[tuple[str, str]]) -> str:
+def finalize_message(item_id: str, pairs: list[tuple[str, str, str]]) -> str:
     """The first message of a finalize pass started over a committed solver."""
     return message("finalize", tid=item_id, task=task_text(item_id),
                    reports=reports_block(pairs))

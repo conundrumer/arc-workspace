@@ -92,7 +92,6 @@
         - Write no text that implies an outcome.
     - **Necessity.** Measure need against the task, not against a case.
         - A comp that serves one case while another case encodes the task without it is not needed.
-        - Remove the case whose hypothesis has no relational form without that comp.
     - **Not a caller.** Do not count a near-miss as a caller.
         - A lib call that states the proposed operation only over that call's domain is also not a caller.
 4. Leave promotion to the user, at the time they choose.

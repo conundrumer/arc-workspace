@@ -346,9 +346,9 @@ def start_finalize(item_id: str) -> dict:
           "landed": [], "dirty": False, "updated": False, "rev": 0,
           "lastActive": {stage["name"]: None}, "title": solvers.title_of(item_id),
           "feed": [], "append": str(prompts.append_path()), "ver": 0,
-          "reports": {}}
+          "reports": {}, "diffs": {}}
     store.STATE["items"].append(it)
-    seeded = ", ".join(name for name, _ in pairs)
+    seeded = ", ".join(name for name, *_ in pairs)
     store.say(it, store.event("started · "
                               + (f"seeded from {seeded}" if seeded
                                  else "no earlier reports")))

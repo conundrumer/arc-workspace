@@ -2,7 +2,6 @@
 name: handbook-expanded
 description: "The handbook, with the lib's full interface: every component's relations and their docs."
 model: opus
-effort: high
 tools: Read, Grep, Glob, Bash, Edit, Write
 ---
 

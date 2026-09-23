@@ -15,11 +15,19 @@ from pathlib import Path
 from types import ModuleType
 
 from arc.task import Alt, Example
-from dl.annotations import header_keywords
+from dl.annotations import STORED, header_keywords
 from dl.corpus import literal_count
 from dl.deletions import deletion_report, render_deletions
+from dl.derive import (
+    DERIVE_OK,
+    derive_hint,
+    derive_report,
+    render_derive,
+    render_findings,
+)
 from dl.derived_constant import derived_constant_report, render_derived_constant
 from dl.determination_plan import (
+    per_grid_candidates,
     probe_report,
     render_determination_plan,
     settle_survivors,
@@ -47,7 +55,6 @@ from dl.lint import (
     LIB_NAME_CAT,
     RESERVED_CAT,
     SHADOWED_TYPE_CAT,
-    concept_case,
     lint_program,
 )
 from dl.paths import REPO_ROOT, all_stems
@@ -83,6 +90,8 @@ from dl.source import (
     doc_keywords,
     expand_macros,
 )
+from dl.store import STORE_OK, render_store, store_hint, store_report
+from dl.store import render_findings as render_store_findings
 from dl.sweep import (
     MAX_CANDIDATES,
     TIME_LIMIT_SECONDS,
@@ -100,13 +109,11 @@ from dl.witness import (
     annotation_lines,
     assigned_source,
     case_outcomes,
-    finding_lines,
     grouped_output,
     load_witnesses,
     put_entry,
     read_witness_data,
     render_witness,
-    undefined_concept,
     witness_path,
     witness_report,
     write_witness_data,
@@ -134,7 +141,7 @@ def _lint_kinds(source: str, hints: bool) -> list[Findings]:
 
 def _finding_line(stem: str, kind: str, cat: str, lineno: int, match: str) -> str:
     """One finding as a line. A hint carries no category: the categories
-    `@allow` takes name themselves in the line the hint prints to paste."""
+    `@ignore` takes name themselves in the line the hint prints to paste."""
     if kind == "hint":
         return f"{stem}.dl:{lineno}: {match}"
     if kind == "lint" and " " not in match:
@@ -537,9 +544,7 @@ def cmd_format(stem: str) -> int:
 def cmd_record(stem: str, entry_id: str, separates: str,
                path: str | None = None, assign_text: str | None = None) -> int:
     """Run one solver on a grid the caller wrote and write the run into the
-    task's witness file, as the entry `entry_id`. A run that leaves the
-    concept case undefined prints the witness check's finding on it, and the
-    entry is written all the same."""
+    task's witness file, as the entry `entry_id`."""
     if _missing(stem):
         return 2
     assign = _assign_arg(assign_text)
@@ -578,11 +583,6 @@ def cmd_record(stem: str, entry_id: str, separates: str,
     outcomes = case_outcomes(actuals, res_out_stem(stem))
     for name in silent:
         outcomes.setdefault(name, None)
-    findings = undefined_concept(entry_id, concept_case(source), outcomes)
-    if findings:
-        print()
-        for line in finding_lines(findings):
-            print(line)
     if judged is not None:
         print()
         print("judged output:")
@@ -604,8 +604,20 @@ def cmd_record(stem: str, entry_id: str, separates: str,
         return 2
     print()
     print(f"wrote entry `{entry_id}` to {path}")
-    print(f"add: // @witness {entry_id}: <plausibility> <verdict>")
+    print(_record_hint(stem, entry_id))
     return 0
+
+
+def _record_hint(stem: str, entry_id: str) -> str:
+    """The line the session adds for the entry: the `@derive` form when the
+    id names a derivation of the solver, the `@store` form when it names a
+    relation the runner stores, and the `@witness` form otherwise."""
+    name, sep, tail = entry_id.partition("=")
+    if sep and tail == STORED:
+        return store_hint(name)
+    if sep and tail in per_grid_candidates(stem).get(name, []):
+        return derive_hint(tail)
+    return f"add: // @witness {entry_id}: <plausibility> <verdict>"
 
 
 SOLVER_PATH_RE = re.compile(r"programs/solvers/([^/]+)\.dl$")
@@ -980,10 +992,55 @@ def cmd_witness(stem: str) -> int:
     return _print_witness(stem)
 
 
+def _print_derive(stem: str) -> int:
+    """The derive report's findings. Non-zero on a finding."""
+    report = derive_report(stem)
+    lines = render_findings(report)
+    passed = lines[-1] == DERIVE_OK
+    for line in (lines[:-1] if passed else lines):
+        print(f"  {line}")
+    if passed:
+        print(DERIVE_OK)
+    return 0 if passed else 1
+
+
+def cmd_derive(stem: str) -> int:
+    """The derivations of the solver's stored parameters, each with its
+    witness and the line that records the judgment."""
+    if _missing(stem):
+        return 2
+    build_functors()
+    for line in render_derive(derive_report(stem)):
+        print(line)
+    return 0
+
+
+def _print_store(stem: str) -> int:
+    """The store report's findings. Non-zero on a finding."""
+    lines = render_store_findings(store_report(stem))
+    passed = lines[-1] == STORE_OK
+    for line in (lines[:-1] if passed else lines):
+        print(f"  {line}")
+    if passed:
+        print(STORE_OK)
+    return 0 if passed else 1
+
+
+def cmd_store(stem: str) -> int:
+    """The program relations that hold one value on every input, each with
+    its witness and the line that records the judgment."""
+    if _missing(stem):
+        return 2
+    build_functors()
+    for line in render_store(store_report(stem)):
+        print(line)
+    return 0
+
+
 def cmd_audit(stem: str, time_limit: float = TIME_LIMIT_SECONDS) -> int:
     """The evidence audits of a finished solver: parameter value sweep,
-    deletions, witness. The sweep runs under the time limit, and the other
-    two run after it."""
+    deletions, witness, derive, store. The sweep runs under the time limit,
+    and the others run after it."""
     if _missing(stem):
         return 2
     build_functors()
@@ -994,7 +1051,14 @@ def cmd_audit(stem: str, time_limit: float = TIME_LIMIT_SECONDS) -> int:
     deletions = _print_deletions(stem)
     print()
     print("--- witness ---")
-    return deletions or _print_witness(stem)
+    witness = _print_witness(stem)
+    print()
+    print("--- derive ---")
+    derive = _print_derive(stem)
+    print()
+    print("--- store ---")
+    store = _print_store(stem)
+    return deletions or witness or derive or store
 
 
 def cmd_drop_one(stem: str) -> int:
@@ -1139,7 +1203,7 @@ def cmd_expand(stem: str) -> int:
 COMMANDS = ("run", "lint", "grid", "record", "sweep", "deletions", "audit",
             "determination-plan", "size",
             "keywords", "expand", "since", "drop-one", "derived-constant", "features",
-            "witness")
+            "witness", "derive", "store")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -1257,10 +1321,11 @@ def _parser() -> argparse.ArgumentParser:
     ).add_argument("stem", help="one solver")
     audit = sub.add_parser(
         "audit",
-        help="parameter value sweep + deletion report + witness report",
-        description="The sweep, the deletion report and the witness report "
-                    "over one solver. Only the sweep runs under the time "
-                    "limit.",
+        help="parameter value sweep + deletion report + witness report + "
+             "derive report + store report",
+        description="The sweep, the deletion report, the witness report, "
+                    "the derive report and the store report over one "
+                    "solver. Only the sweep runs under the time limit.",
     )
     audit.add_argument("stem", help="one solver")
     audit.add_argument("--time-limit", type=float, dest="time_limit",
@@ -1292,6 +1357,24 @@ def _parser() -> argparse.ArgumentParser:
                     "a `@witness` line the file does not bear out. Without "
                     "a witness file, every `@witness` line of the solver "
                     "names no entry.",
+    ).add_argument("stem", help="one solver")
+    sub.add_parser(
+        "derive",
+        help="the built-in derivations of stored parameters that fit, each held as a case",
+        description="Each stored parameter a proposer of "
+                    "programs/proposers.dl states on every input, with the "
+                    "witness that tells the derived case from the stored "
+                    "reading and the `@derive` line to write.",
+    ).add_argument("stem", help="one solver")
+    sub.add_parser(
+        "store",
+        help="the program relations that hold one value on every input",
+        description="Each program relation between `in` and `out` whose "
+                    "value over a column subset is the same on every input "
+                    "of the task, with the witness that tells the stored "
+                    "case from the derivation and the `@store` line to "
+                    "write. A relation over 20000 rows on some input is not "
+                    "checked, and the report names it.",
     ).add_argument("stem", help="one solver")
     plan = sub.add_parser(
         "determination-plan",
@@ -1429,6 +1512,10 @@ def main(argv: list[str]) -> int:
             return cmd_determination_plan(args.stem, args.verdicts)
         case "witness":
             return cmd_witness(args.stem)
+        case "derive":
+            return cmd_derive(args.stem)
+        case "store":
+            return cmd_store(args.stem)
         case "size":
             return cmd_size(args.stem)
         case "features":

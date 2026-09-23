@@ -50,6 +50,10 @@ SESSION_DOC = REPO_ROOT / "prompts" / "session.md"
 CODEX_DOC = REPO_ROOT / "prompts" / "codex.md"
 AGENT_PATH = REPO_ROOT / ".claude" / "agents" / "handbook.md"
 AGENT_NAMES = ("handbook", "handbook-expanded")
+# The steps the analyze agent reads after it writes the concept: a document
+# under `AGENT_DIR` with no front matter, rendered to its own file.
+ANALYZE_NEXT = "analyze-next"
+ANALYZE_NEXT_PATH = REPO_ROOT / ".claude" / "analyze-next.md"
 
 
 APPENDIX = mctx("the system-prompt appendix")
@@ -284,7 +288,9 @@ def interface_path(src: Path) -> Path:
 def lib_part(lib: Path = LIB_SRC, kind: str = "interface") -> str:
     """The lib's files, each under a heading naming its file: as each file's
     interface, or as an index pointing at the interface file beside each
-    source."""
+    source. `none` leaves the lib out."""
+    if kind == "none":
+        return ""
     parts = []
     for path, text in lib_sources(lib):
         rel = Path("programs") / path.relative_to(lib.parent)
@@ -449,14 +455,14 @@ def agent_prompt(handbook: str) -> str:
 
 
 def agent_definition(document: nm.Node, handbook: str) -> str:
-    """A handbook agent's definition file: the agent document's front matter
-    as it stands, then the prompt."""
+    """An agent's definition file: the agent document's front matter as it
+    stands, then the prompt. A document whose `message` attribute is `brief`
+    takes the brief alone as its message, and its rendering is the whole
+    prompt; any other agent's message opens with a role, and the prompt says
+    so."""
+    if (document.attr("message") or "").strip() == "brief":
+        return f"{document.front}\n{handbook}"
     return f"{document.front}\n{agent_prompt(handbook)}"
-
-
-def expanded_agent_path(path: Path = AGENT_PATH) -> Path:
-    """The expanded agent's file, beside the handbook agent's file."""
-    return path.with_name(f"{path.stem}-expanded{path.suffix}")
 
 
 def _write_whole(path: Path, text: str) -> Path:
@@ -485,17 +491,32 @@ def write_interfaces(lib: Path = LIB_SRC) -> list[Path]:
         for path, text in lib_sources(lib)]
 
 
+def agent_names(agents: Path = AGENT_DIR) -> list[str]:
+    """The agents defined under `agents`: one per document with front
+    matter."""
+    return [p.stem for p in sorted(agents.glob("*.md"))
+            if p.read_text().startswith("---\n")]
+
+
 def write_agent(path: Path = AGENT_PATH, lib: Path = LIB_SRC,
                 agents: Path = AGENT_DIR) -> Path:
-    """Write both handbook agent definitions and the lib's interface files,
-    and return the handbook agent's path. `path` holds the handbook agent;
-    `expanded_agent_path(path)` holds the expanded agent."""
+    """Write every agent definition under `agents` and the lib's interface
+    files, and return the handbook agent's path. `path` holds the handbook
+    agent, and each other agent's file sits beside it under the agent's
+    name."""
     write_interfaces(lib)
-    for name in AGENT_NAMES:
-        out = path if name == AGENT_NAMES[0] else expanded_agent_path(path)
+    for name in agent_names(agents):
+        out = path if name == AGENT_NAMES[0] else path.with_name(f"{name}{path.suffix}")
         _write_whole(out, agent_definition(agent_document(name, agents),
                                            render(name, lib, agents)))
     return path
+
+
+def write_analyze_next(path: Path = ANALYZE_NEXT_PATH,
+                       agents: Path = AGENT_DIR) -> Path:
+    """Write the steps the analyze agent reads after it writes the concept,
+    and return the path."""
+    return _write_whole(path, render(ANALYZE_NEXT, agents=agents))
 
 
 # The files every codex session on the repo reads, in the desktop app or the
@@ -649,14 +670,29 @@ def codex_context() -> str:
     return _section("AGENTS.md", entry_text(CODEX_DOC))
 
 
+def agent_prompt_text(name: str, lib: Path = LIB_SRC,
+                      agents: Path = AGENT_DIR) -> str:
+    """An agent's system prompt: what its definition file holds under the
+    front matter."""
+    document = agent_document(name, agents)
+    text = render(name, lib, agents)
+    if (document.attr("message") or "").strip() == "brief":
+        return text
+    return agent_prompt(text)
+
+
 def agent_context(name: str) -> str:
-    """One handbook agent's system prompt, as `--write` writes it. The front
-    matter the harness reads stands above it in the file, and the agent
-    receives what follows."""
-    if name not in AGENT_NAMES:
+    """One agent's system prompt, as `--write` writes it. The front matter
+    the harness reads stands above it in the file, and the agent receives
+    what follows."""
+    if name not in agent_names():
         raise SystemExit(f"no agent named `{name}`; the agents are "
-                         + ", ".join(AGENT_NAMES))
-    return _section(f".claude/agents/{name}.md", agent_prompt(render(name)))
+                         + ", ".join(agent_names()))
+    text = _section(f".claude/agents/{name}.md", agent_prompt_text(name))
+    if name == "analyze":
+        text += "\n" + _section(str(ANALYZE_NEXT_PATH.relative_to(REPO_ROOT)),
+                                render(ANALYZE_NEXT))
+    return text
 
 
 def _role_agent(name: str, roles: Path = ROLE_DIR) -> str:
@@ -1048,7 +1084,7 @@ def workflow_context(name: str) -> str:
 CONTEXT_READERS = {
     "session": (None, lambda: []),
     "codex": (None, lambda: []),
-    "agent": ("<name>", lambda: list(AGENT_NAMES)),
+    "agent": ("<name>", agent_names),
     "role": ("<name>", lambda: sorted(p.stem for p in ROLE_DIR.glob("*.md"))),
     "console": ("<stage>", console_stages),
     "survey": (None, lambda: []),

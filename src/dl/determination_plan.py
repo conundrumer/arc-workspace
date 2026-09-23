@@ -15,6 +15,7 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from arc.task import Example, Task
 from arc.task import load as load_task
 from controlled_markdown import mctx
 from dl.domains import (
@@ -23,6 +24,7 @@ from dl.domains import (
     _color_domain,
     _enum_domain,
     _lib_defines,
+    _lib_record_defines,
     _number_domain,
     _position_domain,
 )
@@ -98,6 +100,79 @@ def run_probe(task) -> dict[str, set[tuple]]:
 ENUMERATION_LIMIT = 100
 
 
+def stored_value(arg: str, type_: str, defines: dict[str, int]):
+    """One argument of a stored fact, as a comparison with a proposal reads
+    it: a Position as its numbers, an enum name as its number."""
+    if type_ in POSITION_TYPES:
+        if not arg.startswith("["):
+            arg = _lib_record_defines().get(arg, arg)
+        return tuple(int(x) for x in _split_args(arg[1:-1]))
+    return int(arg) if arg.lstrip("-").isdigit() else defines[arg]
+
+
+def fact_params(source: str,
+                defines: dict[str, int]) -> dict[str, tuple[list[str], set]]:
+    """Each Params parameter whose value is stored facts, with its column
+    types and its stored value. A parameter a rule derives is left out, and
+    so is one with no facts."""
+    s, e = _comp_span(source, "Params")
+    params_text = "\n".join(source.splitlines()[s:e])
+    out = {}
+    for param, types in comp_decls(source, "Params").items():
+        if not types or _rules(params_text, param):
+            continue
+        facts = _param_facts(source, param)
+        if not facts:
+            continue
+        out[param] = (types, {
+            tuple(stored_value(a, t, defines) for a, t in zip(args, types))
+            for args in facts
+        })
+    return out
+
+
+def per_grid_matches(
+    stem: str,
+) -> tuple[list[str], dict[str, dict[str, list[bool]]]]:
+    """For each stored fact parameter, whether each proposer of the
+    parameter's types proposes exactly the stored value on each input taken
+    alone. The labels name the inputs, train then test.
+
+    An input runs as a one-example task holding that grid as its only test
+    input, so the probe reads no output.
+    """
+    path, task_id = solver_file(stem)
+    source = expand_macros(path.read_text())
+    task = load_task(task_id)
+    defines = _lib_defines()
+    ptypes = proposer_decls()
+    labels = ([f"train {i}" for i in range(len(task.train))]
+              + [f"test {i}" for i in range(len(task.test))])
+    grids = [ex.input for ex in task.train] + [ex.input for ex in task.test]
+    with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
+        proposals = list(executor.map(probe_grid, grids))
+    matches = {}
+    for param, (types, stored) in fact_params(source, defines).items():
+        matches[public_param(param)] = {
+            name: [p.get(name, set()) == stored for p in proposals]
+            for name, tys in sorted(ptypes.items()) if tys == types
+        }
+    return labels, matches
+
+
+def probe_grid(grid: list[list[int]]) -> dict[str, set[tuple]]:
+    """The proposals on one input taken alone."""
+    return run_probe(Task(train=[], test=[Example(input=grid, output=[])]))
+
+
+def per_grid_candidates(stem: str) -> dict[str, list[str]]:
+    """Each stored fact parameter of the solver, with the proposers that
+    propose exactly its stored value on every input taken alone."""
+    _labels, matches = per_grid_matches(stem)
+    return {param: [name for name, per in per_proposer.items() if all(per)]
+            for param, per_proposer in matches.items()}
+
+
 def probe_report(
     stem: str,
 ) -> tuple[list[tuple[str, dict[str, str]]], list[str], set[str]]:
@@ -133,35 +208,21 @@ def probe_report(
     ptypes = proposer_decls()
     proposals = run_probe(task)
 
-    def stored_value(a: str, t: str):
-        if t in POSITION_TYPES:
-            return tuple(int(x) for x in _split_args(a[1:-1]))
-        return int(a) if a.lstrip("-").isdigit() else defines[a]
-
     supported = set(ENUM_TYPES) | POSITION_TYPES | {"Color", "number"}
     results = []
-    embedded = []
-    for param, types in comp_decls(source, "Params").items():
-        if not types:
-            continue
-        rules = _rules(params_text, param)
-        if rules:
-            if any(
-                not exempt_literal(m.group(0), singleton_axis)
-                for text, singleton_axis in rules
-                for m in NUMERIC_LITERAL_RE.finditer(text)
-            ):
-                embedded.append(param)
-            continue
-        if not _param_facts(source, param):
-            continue
+    embedded = [
+        param
+        for param, types in comp_decls(source, "Params").items()
+        if types and any(
+            not exempt_literal(m.group(0), singleton_axis)
+            for text, singleton_axis in _rules(params_text, param)
+            for m in NUMERIC_LITERAL_RE.finditer(text)
+        )
+    ]
+    for param, (types, stored) in fact_params(source, defines).items():
         if any(t not in supported for t in types):
             results.append((public_param(param), {}))
             continue
-        stored = {
-            tuple(stored_value(a, t) for a, t in zip(args, types))
-            for args in _param_facts(source, param)
-        }
         verdicts = {}
         for name, cand in sorted(proposals.items()):
             if ptypes[name] != types:

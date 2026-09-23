@@ -14,15 +14,18 @@ With no argument the command prints the handbook, the passes a session runs,
 and the lib. That form and `--write` also write the lib's interface files, the
 `.md` beside each of its sources, which the handbook's lib index points at.
 
-`--write` writes the agents that run a role under `prompts/roles/` with the
-handbook as their system prompt: `.claude/agents/handbook.md`, over the
-handbook with the lib and some docs as an index, and
-`.claude/agents/handbook-expanded.md`, over the handbook with the lib's full
-interface and every doc in full. It also writes the files a codex session on
-the repo reads: `AGENTS.md`, [Codex on arc-workspace](prompts/codex.md)
-rendered, and `.codex/config.toml`, with `docs/codex-style.md` as the
-developer instructions. The files are not tracked; write them before a
-session that spawns an agent starts, and before a codex session starts.
+`--write` writes one agent under `.claude/agents/` per document under
+`prompts/agents/`, each with the context its document composes as its system
+prompt: `handbook.md`, over the handbook with the lib and some docs as an
+index; `handbook-expanded.md`, over the handbook with the lib's full
+interface and every doc in full; and `analyze.md`, a standalone agent over
+the principles, the keywords, and the Analyze operation. It writes
+`.claude/analyze-next.md`, the steps the `analyze` agent reads after it writes
+the concept. It also writes the files a codex session on the repo reads:
+`AGENTS.md`, [Codex on arc-workspace](prompts/codex.md) rendered, and
+`.codex/config.toml`, with `docs/codex-style.md` as the developer
+instructions. The files are not tracked; write them before a session that
+spawns an agent starts, and before a codex session starts.
 
 `role <name>` prints `prompts/roles/<name>.md` as a session spawning that role
 reads it: the agent's name on the first line, then the prompt's opening text.
@@ -60,12 +63,13 @@ import sys
 from dl.context import (
     context_text,
     contexts_text,
-    expanded_agent_path,
+    agent_names,
     role_text,
     section_text,
     session_text,
     workflow_bundle,
     write_agent,
+    write_analyze_next,
     write_codex,
     write_interfaces,
 )
@@ -81,7 +85,8 @@ if __name__ == "__main__":
     elif args == ["--write"]:
         interfaces = write_interfaces()
         path = write_agent()
-        for out in (*interfaces, path, expanded_agent_path(path),
+        agents = [path.with_name(f"{name}{path.suffix}") for name in agent_names()]
+        for out in (*interfaces, *agents, write_analyze_next(),
                     *write_codex()):
             print(out.relative_to(REPO_ROOT))
     elif len(args) == 2 and args[0] == "role":

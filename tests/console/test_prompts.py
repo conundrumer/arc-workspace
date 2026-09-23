@@ -8,8 +8,9 @@ break would sit until then.
 """
 
 TID = "007bbfb7"
-ITEM = {"id": TID, "reports": {"create": "the create report body"}}
-REPORTS = [("create", "the create report body")]
+ITEM = {"id": TID, "reports": {"create": "the create report body"},
+        "diffs": {"create": "@@ -1 +1 @@\n-old\n+new"}}
+REPORTS = [("create", "the create report body", "@@ -1 +1 @@\n-old\n+new")]
 
 
 def briefs(s):

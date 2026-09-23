@@ -21,8 +21,11 @@ singleton, and every other pair carries one. A split task selects one candidate
 at every pair, and `Alts` relates a task to its split tasks. `Fits` is stated on
 a split task, and `Fam` and `Case.Fit` quantify over the split tasks.
 
-Two models are equivalent over a domain: the assignment–input pairs on which
-the concept case is defined. A divergence off that domain refutes nothing.
+Two assignments agree when, at every input, the two models give the same set of
+grids, or neither is defined. Two models are equivalent when each assignment of
+either has an assignment of the other that it agrees with. A divergence witness
+is an input where, at some assignment, the two models give different sets, or
+one is defined and the other is not.
 
 A parameter of a case admits the values a fitting assignment gives it.
 `Common` is the One parameter test on a collection: every task all of their
@@ -98,56 +101,32 @@ def Alts (T T' : Task G) : Prop :=
 /-- `fam(M) = { T : ∃T′ ∈ alts(T). ∃θ. M(θ) ⊨ T′ }`, as a predicate on tasks. -/
 def Fam (M : Model Θ G) (T : Task G) : Prop := ∃ T', Alts T T' ∧ ∃ θ, Fits M θ T'
 
-/-- The domain of comparison: the assignment–input pairs the comparison ranges
-over. For a solver it is `Defined C` for the concept case `C`. -/
-abbrev Domain (Θ G : Type) := Θ → G → Prop
+/-- Two assignments agree: at every input, the two models give the same set of
+grids, or neither is defined. -/
+def Agree (A : Model Θ₁ G) (B : Model Θ₂ G) (θ : Θ₁) (φ : Θ₂) : Prop :=
+  ∀ x, A θ x = B φ x ∨ (¬ Defined A θ x ∧ ¬ Defined B φ x)
 
-/-- Equivalent models, within one parameterization: the same outputs at every
-assignment–input pair of the domain. -/
-def Equivalent (D : Domain Θ G) (A B : Model Θ G) : Prop :=
-  ∀ θ x, D θ x → A θ x = B θ x
+/-- Equivalent models: each assignment of either has an assignment of the other
+that it agrees with. -/
+def Equivalent (A : Model Θ₁ G) (B : Model Θ₂ G) : Prop :=
+  (∀ θ, ∃ φ, Agree A B θ φ) ∧ (∀ φ, ∃ θ, Agree A B θ φ)
 
-/-- A divergence witness in the domain refutes equivalence. -/
-theorem not_equivalent_of_witness {D : Domain Θ G} {A B : Model Θ G}
-    (h : ∃ θ x, D θ x ∧ A θ x ≠ B θ x) : ¬ Equivalent D A B := by
-  intro hs
-  obtain ⟨θ, x, hD, hne⟩ := h
-  exact hne (hs θ x hD)
-
-/-- A model that agrees with the concept case wherever the concept case is
-defined is equivalent to it, whatever it gives elsewhere. -/
-theorem equivalent_of_agree {C B : Model Θ G}
-    (h : ∀ θ x, Defined C θ x → C θ x = B θ x) : Equivalent (Defined C) C B := h
-
-/-- An isomorphism of parameterizations: a bijection between their
-assignments. -/
-structure Iso (Θ₁ Θ₂ : Type) where
-  to : Θ₁ → Θ₂
-  inv : Θ₂ → Θ₁
-  left_inv : ∀ θ, inv (to θ) = θ
-  right_inv : ∀ θ, to (inv θ) = θ
-
-/-- Equivalent models across two parameterizations: some isomorphism of the
-parameterizations carries every assignment of one to an assignment of the
-other on which the outputs agree at every input of the domain. The domain is
-stated on the first parameterization. -/
-def EquivalentAcross (D : Domain Θ₁ G) (A : Model Θ₁ G) (B : Model Θ₂ G) : Prop :=
-  ∃ e : Iso Θ₁ Θ₂, ∀ θ x, D θ x → A θ x = B (e.to θ) x
-
-/-- Within one parameterization, the identity isomorphism makes the two
-readings agree. -/
-theorem equivalentAcross_of_equivalent {D : Domain Θ G} {A B : Model Θ G}
-    (h : Equivalent D A B) : EquivalentAcross D A B :=
-  ⟨⟨id, id, fun _ => rfl, fun _ => rfl⟩, h⟩
-
-/-- A divergence witness in the domain under every isomorphism of the
-parameterizations refutes equivalence across them. -/
-theorem not_equivalentAcross_of_witness {D : Domain Θ₁ G} {A : Model Θ₁ G}
-    {B : Model Θ₂ G} (h : ∀ e : Iso Θ₁ Θ₂, ∃ θ x, D θ x ∧ A θ x ≠ B (e.to θ) x) :
-    ¬ EquivalentAcross D A B := by
-  intro ⟨e, hs⟩
-  obtain ⟨θ, x, hD, hne⟩ := h e
-  exact hne (hs θ x hD)
+/-- An assignment of one model that agrees with no assignment of the other
+refutes equivalence. Against each assignment of the other model it has a
+divergence witness: an input where the two sets differ and at least one model
+is defined. -/
+theorem not_equivalent_of_witness {A : Model Θ₁ G} {B : Model Θ₂ G}
+    (h : ∃ θ, ∀ φ, ∃ x, A θ x ≠ B φ x ∧ (Defined A θ x ∨ Defined B φ x)) :
+    ¬ Equivalent A B := by
+  intro ⟨hfwd, _⟩
+  obtain ⟨θ, hθ⟩ := h
+  obtain ⟨φ, hφ⟩ := hfwd θ
+  obtain ⟨x, hne, hdef⟩ := hθ φ
+  rcases hφ x with heq | ⟨hnA, hnB⟩
+  · exact hne heq
+  · rcases hdef with hA | hB
+    · exact hnA hA
+    · exact hnB hB
 
 /-! ## Equivariance
 

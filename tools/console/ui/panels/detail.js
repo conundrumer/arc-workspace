@@ -103,6 +103,8 @@ export function PeekBody({d}){
     ${reports.map((r,i)=>[
       html`<div class="railhead" key=${"h"+i}><span>${r.stage+" report"}</span></div>`,
       html`<pre class="peektext" key=${"t"+i}>${r.text}</pre>`,
+      r.diff && html`<div class="railhead" key=${"dh"+i}><span>${r.stage+" diff"}</span></div>`,
+      r.diff && html`<pre class="peektext" key=${"d"+i}>${r.diff}</pre>`,
     ])}
     ${!reports.length && html`<p class="placeholder">no reports</p>`}
   </div>`;

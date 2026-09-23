@@ -16,23 +16,27 @@
     - A symbol is declared in a formal statement under the definition or principle that first uses it.
 
 # Principles
-- The goal is for the corpus to take as much as it can from each task, in this order:
-    - **Concept.** The solver expresses the task as a person sees it, as closely as possible.
-    - **Coverage.** The solver also expresses alternative ways to see the task, for the diversity of ways of writing a solver.
+
+## The goal
+- The goal is for the solvers to enumerate the models that fit the tasks.
+    - A solver holds the concept case.
+    - It holds a case for every other model the pass forms that meets the case conditions.
+        - A model the pass forms is a case whether or not a person sees the task that way.
 
 ## Definitions
 
 ### The solver's parts
 - **parameter**: a relation whose facts are stored rather than derived.
-- **derived data**: a relation derived by a clause, including a clause inside `Params`.
+- **derived data**: a relation derived by a clause.
     * comment
         - Derived data is not a parameter.
 * comment
     - **parameter value**: the facts that a task gives a parameter.
-- **parameterization**: the parameters together with the values allowed for each one.
+- **parameterization**: the parameters together with the values each one takes across the generator's tasks.
     - Θ = ∏ᵢ Θᵢ
         + formal
-        - Θᵢ: the values allowed for parameter i
+        - Θᵢ: the values parameter i takes across the generator's tasks
+            - A parameter's type is its encoding, and a value of the type that no task gives is outside Θᵢ.
         - θ ∈ Θ: an assignment
 - **assignment**: one choice of value for each parameter.
 - **program**: the clauses that derive `out` from `in` and the parameters.
@@ -80,7 +84,6 @@
 - **peer model**: another model whose family contains this task.
 - **hypothesis**: the assertion that a task belongs to a model's family.
 - **case**: one model in the solver, together with its hypothesis.
-    - A case's model reads its output grids from `out` at that case, one grid per tiebreak resolution.
 
 ### The generator
 - **generator**: the process that produces the task and other tasks.
@@ -108,7 +111,6 @@
                 + draft
                 - A scaled copy of a marked drawing stamps at each block; the stamp's content and which cells of a block's box it reaches combine, so each is its own point.
                     + gloss
-        - A branch's clauses are the clauses shared by its cases and absent from the other cases.
         - A branch's model is the model of a case with that branch, with every other choice point fixed to its concept branch.
 - **open parameter**: a parameter whose value the pairs leave unresolved.
     - **open values**: two or more values of a parameter that the pairs leave unresolved.
@@ -116,16 +118,14 @@
     - An undetermined property is an open parameter when its possible answers are values of one parameter.
 
 ### Witnesses
-- **divergence witness**: an input on which the concept case is defined and either of these holds:
-    - two models produce different outputs at some assignment.
+- **divergence witness**: an input on which either of these holds:
+    - at some assignment, two models give different outputs, or one is defined and the other is not.
     - a model's output at some assignment differs from the output the generator pairs with the input.
     - A branch's witnesses are divergence witnesses between its model and the concept branch's model.
     - An output identical to the input is still defined, so a divergence at such an output is valid.
         - 41e4d17e
             - On a solid block, the model based on enclosed regions finds none and returns the input. The model based on objects finds the block and casts from it.
                 + gloss
-    * comment
-        - A model that agrees with the concept case on every input on which the concept case is defined has no witness against it, whatever it gives elsewhere.
 - **annotator**: whoever judges a witness.
 - **plausibility**: the annotator's ordinal estimate of how readily the generator could produce the witness. Its value is the first applicable level:
     - `ordinary`: readily, without breaking any invariant of the inputs.
@@ -144,27 +144,29 @@
 - **verdict**: the annotator's judgment of the output that the generator would pair with the witness.
     - `concept`: the concept case's output.
     - the branch's name: that branch's output.
-    - `any`: any case's output.
+    - `any`: the output of any case defined on the witness.
     - `other`: an output that no case produces.
 
 ### Equivalence
-- Two models over the same parameterization are equivalent when they give the same output for every assignment and every input on which the concept case is defined.
-    - Equivalent(A, B) ⇔ ∀θ ∈ Θ. ∀x ∈ G_C(θ). A(θ, x) = B(θ, x)
+- Two models are equivalent when each assignment of either has an assignment of the other that it agrees with.
+    - Equivalent(A, B) ⇔ (∀θ ∈ Θ. ∃φ ∈ Θ′. Agree(θ, φ)) ∧ (∀φ ∈ Θ′. ∃θ ∈ Θ. Agree(θ, φ))
         + formal
-        - G_C(θ): the inputs on which the concept case is defined at θ
-- An **isomorphism** between two parameterizations pairs their assignments bijectively.
-    - Iso(e, Θ, Θ′) ⇔ (∀θ ∈ Θ. e⁻¹(e(θ)) = θ) ∧ (∀φ ∈ Θ′. e(e⁻¹(φ)) = φ)
-        + formal
-        - e : Θ → Θ′; e⁻¹ : Θ′ → Θ
-    - Models over those parameterizations are equivalent when every pair of matched assignments gives the same output for every input on which the concept case is defined.
-        - EquivalentAcross(A, B) ⇔ ∃e. Iso(e, Θ, Θ′) ∧ ∀θ ∈ Θ. ∀x ∈ G_C(θ). A(θ, x) = B(e(θ), x)
+    - Two assignments agree when, on every input, the two models give the same output or neither is defined.
+        - Agree(θ, φ) ⇔ ∀x ∈ G. A(θ, x) = B(φ, x) ∨ (¬Def_A(θ, x) ∧ ¬Def_B(φ, x))
             + formal
+            - Def_M(θ, x): M is defined at θ and x
 - Agreement on every input in the current task does not establish equivalence between models.
-    - 44f52bb0
-        - One model stores one symmetry group and two output grids. The other stores two group-to-output entries. Both models agree on every input of this task.
+    - 3b4c2228
+        - The stored table and the derived form agree on every input of this task, and a table holding a grid the derived form cannot draw gives it where the derived form gives another.
             + gloss
-- For models over different parameterizations, equivalence is refuted by a witness under every possible isomorphism.
-    - (∀e. Iso(e, Θ, Θ′) ⇒ ∃θ ∈ Θ. ∃x ∈ G_C(θ). A(θ, x) ≠ B(e(θ), x)) ⇒ ¬EquivalentAcross(A, B)
+- Agreement on every input the generator produces does not establish equivalence either: the comparison ranges over every input.
+    - 00dbd492
+        - The two readings of an object's empty region part only where the outline is broken, an input the generator never produces, and each reading is a case.
+            + gloss
+    * comment
+        - The 9f41bd9c create and refine sessions read a scene claim as narrowing the comparison, and dropped a peer that parts from the concept case only off the scene.
+- An assignment that agrees with no assignment of the other model refutes equivalence, and a divergence witness against each of those assignments shows it.
+    - (∃θ ∈ Θ. ∀φ ∈ Θ′. ¬Agree(θ, φ)) ⇒ ¬Equivalent(A, B)
         + formal
 
 ### Structures and the lib
@@ -176,26 +178,23 @@
     - The solver that introduces or improves that encoding establishes the precedent.
     - A precedent covers how the structure is found and encoded.
     - It does not cover the tests performed inside that encoding.
-- **orientation type**: a type that meets each condition:
-    - The lib enumerates its full value set.
-    - Its values remain in the type under the D4 action.
 - **component**: a comp declared in a module under `programs/lib/`, or a proposal comp.
 - **construction**: a component whose outputs give another form of its inputs.
 - **equivariant lib relation**: a lib relation whose output changes under each D4 element exactly as its input does.
 
 ## Fidelity
 - The program states the task's concept without depending on how the task file or grid encodes it.
+- The program states the concept's relations directly.
 
 ### Relational form
 - An ARC concept relates cells, regions, and their properties.
-- The program states those relations directly.
-- A rule has a **relational form** when some set of clauses agrees with the rule on every input the generator produces on which the rule applies.
-- **Terms.** When two sets of clauses each have the relational form of a rule, the program takes the one stated in the rule's own terms.
+- A claim has a **relational form** when some set of clauses agrees with the claim on every input the generator produces on which the claim applies.
 - An **approximation** is a set of clauses that the program runs in place of a rule that has no relational form.
     - The approximation disagrees with the rule on some such input, and that input is a divergence witness.
 
 ### ARC types
 - The program works in the task's own types: colors and orientation types.
+- A program literal belonging to an ARC type breaks equivariance when the group transforms that value.
 
 ### Numbers
 - **Grounding.** Every number in a solver counts concrete things the task has.
@@ -217,6 +216,11 @@
 ### Indirection
 
 - A parameter has the form required by the clause or component that uses it.
+- **Shared form.** A shared parameter has one form.
+    - When the consumers require different forms, each case has its own parameter in the form read by its consumer.
+    - 2013d3e2
+        - The output is a corner region of the non-background bounding box. The quadrant case stores it as a tile position, and the fixed-window case stores it as a corner.
+            + gloss
 - A parameter is keyed by objects the program already has.
 - A clause used only to translate one representation into another is evidence that one of those representations is unjustified.
     - Naming a position in a 2×2 tile by its corner creates a second name for the same key.
@@ -274,15 +278,15 @@
     - 3428a4f5
         - Two 6×5 subgrids separated by one row combine cell by cell. A parameter gives the exact number of non-background source cells that fills an output cell. Its value is one, and no possible value makes at least one source cell sufficient.
             + gloss
-- A program literal belonging to an ARC type breaks equivariance when the group transforms that value.
 
 ### Orientation
 - Some tasks distinguish a particular direction, axis, or transformation.
 - When a task does not distinguish an orientation, neither does the program.
-- The orientation types represent each possible orientation choice as a value.
+- An **orientation type** is a type that meets each condition:
+    - Its full value set is enumerated.
+    - Its values remain in the type under the D4 action.
 - A mirrored variant task therefore requires a parameter edit rather than a change to the program.
 - **Orientation per axis.** A model whose clauses differ between axes does not choose an orientation when one parameter names the axis on which the clauses are keyed.
-- The values of an orientation type that the task uses determine the encoding.
 - **Every value.** When a membership set meets all three conditions, the program enumerates every value of the orientation type, and the parameters are per orientation type rather than per value.
     - It contains every value of an orientation type.
     - No associated data varies by value.
@@ -319,17 +323,17 @@
                 + gloss
 
 ### Stored or derived
-- Structure over colors is stored as a parameter.
+- Where a stored value fits, the concept case stores structure over colors as a parameter.
     - an ordering
     - a mapping
     - a partition
 - Deriving a value asserts that the value depends on the source from which it is derived.
     - **Two parameterizations.** Storing a value and deriving that value produce two different parameterizations.
-        - On an input where the derivation gives a value other than the stored one, the two models diverge under every isomorphism, so they are not equivalent.
+        - On an input where the derivation gives a value other than the stored one, the stored value agrees with no assignment of the derived model, so they are not equivalent.
         - 3b4c2228
             - One model renders a count as marks down a diagonal. Another looks up a stored grid for the count. Every train and test count is a key of the table, so the models never differ on a pair.
                 + gloss
-- **Redundant value.** A value already fixed by another parameter is derived data rather than a second parameter.
+- **Redundant value.** A value that follows from another parameter in every variant task is derived data rather than a second parameter.
 
 ### Open parameters
 - The solver stores every open value of an open parameter.
@@ -358,9 +362,8 @@
             - 3b4c2228
                 - Every test count occurs among the train counts, so the table has no unseen key and meets this condition.
                     + gloss
-        - Fit considers only the pairs.
         - Being undefined on another input does not prevent a model from fitting.
-    - **Fidelity.** The model has an encoding allowed by Fidelity.
+    - **Relational form.** Each claim the case's branches replace or add has a relational form.
     - **Equivalence.** The model is not equivalent to the model of another case.
 - For a pair with two candidates, the concept case produces one of them.
 - A peer model that produces the other under some assignment is a separate case when it meets the conditions above.
@@ -369,8 +372,6 @@
     * comment
         - A branch can keep, replace, or add a claim.
 - The outputs within one candidate introduce no case.
-    - No parameter stores the resolution values.
-    - No clause treats one resolution differently from another.
 
 ### Parameters across cases
 - **One parameter.** In a task, a parameter admits each value that some assignment gives it while its case fits the task.
@@ -388,11 +389,6 @@
 - **Distinct parameters.** Parameters are distinct when some task that their cases fit admits no value common to them.
     - 87ab05b8
         - Three cases locate the region by a part count or a size. All values are 2 in this task, while a 6×6 sibling sets the part count to 3 and keeps the sizes at 2.
-            + gloss
-- **Shared form.** A shared parameter has one form.
-    - When the consumers require different forms, each case has its own parameter in the form read by its consumer.
-    - 2013d3e2
-        - The output is a corner region of the non-background bounding box. The quadrant case stores it as a tile position, and the fixed-window case stores it as a corner.
             + gloss
 
 ## Corpus consistency

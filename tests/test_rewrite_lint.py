@@ -203,15 +203,15 @@ out(P, Col) :- a(P, Q), b(Q, R), c(R, Col), e(Col).
     assert len(fs) == 1 and "disjunction" in fs[0][2]
 
 
-def test_allow_directive_silences_single_consumer():
+def test_ignore_directive_silences_single_consumer():
     rest = """\
 .decl stage(x: number)
 stage(X) :- g(X), !h(X).
 .decl out(x: number)
 out(X) :- stage(X).
 """
-    allowed = f"// @allow: single-consumer — the name states the stage\n{rest}"
-    assert "single-consumer" not in cats(allowed, hints=True)
+    ignored = f"// @ignore: single-consumer — the name states the stage\n{rest}"
+    assert "single-consumer" not in cats(ignored, hints=True)
     assert "single-consumer" in cats(rest, hints=True)
 
 

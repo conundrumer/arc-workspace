@@ -1045,6 +1045,12 @@ def _claims(
 
     stated = {c.slug for c in resolved_claims(source)}
     stated |= {c.slug for c in ann.branch_claims}
+    for c in ann.branch_claims:
+        if c.approximated is not None:
+            flag(c.line,
+                 mctx("`@{kind} {slug}` stands in a branch and carries "
+                      "`@approximated:`; a branch's `@rule` states the rule "
+                      "it runs").format(kind=c.kind, slug=c.slug))
     for ref in ann.refs:
         for slug in ref.slugs:
             if slug not in stated:

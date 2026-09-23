@@ -63,7 +63,7 @@
     ```
 - A heading and a quote take one too. A code node and a table are literal.
 - A backtick span is literal, so a variable written inside one is text, as the ones in this document are.
-- A value is a string, and one that holds a line break is an error. Line breaks reach a render through `code` and `quote`.
+- A value is a string, and one that holds a line break is an error. Line breaks reach a render through `code`, `quote`, and `text`.
 - A double brace with no name between the braces is text.
 
 ## Conditions
@@ -87,10 +87,15 @@
     ```
 - `quote` renders the value its name gives as a quote.
     ```
-    * if: reports
-        * quote: reports
+    * if: notes
+        * quote: notes
     ```
-- Each of the two stands where a statement stands, and the value it names may hold line breaks.
+- `text` renders the value its name gives as it stands, with no fence and no quote marker, so a value that carries its own markup reaches the reader unchanged.
+    ```
+    * if: reports
+        * text: reports
+    ```
+- Each of the three stands where a statement stands, and the value it names may hold line breaks.
 
 ## The names a document reads
 

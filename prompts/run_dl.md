@@ -44,7 +44,7 @@
     - The run says nothing about the pairs.
 
 ## unexercised
-- the pairs do not exercise the coverage hypothesis:
+- the pairs do not separate the case's model from the concept case's:
     * inline: #cases-settle-nothing
 
 ## Partials

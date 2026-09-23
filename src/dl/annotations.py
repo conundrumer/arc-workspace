@@ -38,8 +38,14 @@ PLAIN_FIELD_RE = re.compile(r"^(\w+)(?:\s+(\w+))?:\s*(.*)$")
 SLUG = r"[a-z0-9]+(?:-[a-z0-9]+)*"
 CLAIM_TAIL_RE = re.compile(rf"^\s+({SLUG}):\s*(\S.*)$")
 WITNESS_TAIL_RE = re.compile(rf"^\s+({SLUG}):\s*(\S+)\s+(\S+)$")
+DERIVE_TAIL_RE = re.compile(r"^\s+(\w+):\s*(\S+)\s+(\S+)$")
+STORE_TAIL_RE = re.compile(r"^(?:\s+([\w.]+))?:\s*(\S+)\s+(\S+)$")
 REF_TAIL_RE = re.compile(rf"^(\s+{SLUG})+$")
 REPRESENTATIVE_TAIL_RE = re.compile(r"^(\S+)(?:\s+(\S+))?$")
+# The relation a declaration names.
+DECL_RE = re.compile(r"^\s*\.decl\s+(\w+)")
+# The instance an initialization names.
+INIT_RE = re.compile(r"^\s*\.init\s+(\w+)\s*=")
 
 # The header fields, in the order they stand. `draft` goes first, under the
 # task id.
@@ -62,11 +68,18 @@ FORMS = {
     "claim": "`// @claim <slug> [<slug> ...]`",
     "witness": "`// @witness <id>: <plausibility> <verdict>`",
     "witness-nested": "`//     @witness <id>: <plausibility> <verdict>`",
+    "derive": "`// @derive <Proposer>: <plausibility> <verdict>`",
+    "store": ("`// @store: <plausibility> <verdict>` above a `.decl`, or "
+              "`// @store <relation>: <plausibility> <verdict>` above a "
+              "`.init`"),
     "approximated": "`//     @approximated: <text>`",
     "relaxed": "`//     @relaxed <slug>`",
     "reassigned": "`//     @reassigned <parameter>`",
 }
 SLUG_FORM = "a slug of lowercase words joined by `-`"
+
+# The tail of the case id of a relation the runner stores.
+STORED = "stored"
 
 # A retired directive, with the form that took its place.
 RETIRED = {
@@ -114,6 +127,38 @@ class Witness:
 
 
 @dataclass
+class Derive:
+    """One `@derive` line: the proposer that states the parameter's value,
+    the plausibility and the verdict of the derived case's witness, the
+    number of the first line under it that is not a comment — the line the
+    directive stands above — and the slugs its nested `@relaxed` lines
+    name."""
+
+    proposer: str
+    plausibility: str
+    verdict: str
+    line: int
+    above: int
+    relaxed: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class Store:
+    """One `@store` line: the instance's relation the line names, empty
+    where the line names none, the plausibility and the verdict of the
+    stored case's witness, the number of the first line under it that is
+    not a comment — the line the directive stands above — and the slugs its
+    nested `@relaxed` lines name."""
+
+    rel: str
+    plausibility: str
+    verdict: str
+    line: int
+    above: int
+    relaxed: list[str] = field(default_factory=list)
+
+
+@dataclass
 class Claim:
     """One claim: a `@scene` line or a `@rule` line, with the text of the
     `@approximated:` line nested under it, if any, and the `@witness` lines
@@ -157,6 +202,8 @@ class Annotations:
     branch_claims: list[Claim] = field(default_factory=list)
     refs: list[Ref] = field(default_factory=list)
     witnesses: list[Witness] = field(default_factory=list)
+    derives: list[Derive] = field(default_factory=list)
+    stores: list[Store] = field(default_factory=list)
     malformed: list[Malformed] = field(default_factory=list)
     prose: list[int] = field(default_factory=list)
     """The header lines the grammar parses as nothing, the task id aside."""
@@ -222,7 +269,7 @@ def read(source: str) -> Annotations:
     lines = source.splitlines()
     out = Annotations(header_end=_header_end(lines))
     open_claim: Claim | None = None     # the claim an `@approximated:` takes
-    open_witness: Witness | None = None  # the block a nested line joins
+    open_witness: Witness | Derive | Store | None = None  # the block a nested line joins
     open_field: Field | None = None      # the field a continuation joins
 
     def bad(lineno: int, why: str, word: str = "") -> None:
@@ -344,6 +391,30 @@ def read(source: str) -> Annotations:
             out.witnesses.append(block)
             open_claim, open_witness = None, block
             continue
+        if word == "derive":
+            v = DERIVE_TAIL_RE.match(tail)
+            if v is None:
+                bad(lineno, f"`{shown}` is off the `@derive` form, which is "
+                            f"{FORMS['derive']}", "derive")
+                open_claim = open_witness = None
+            else:
+                block = Derive(v[1], v[2], v[3], lineno,
+                               _next_code_line(lines, lineno + 1))
+                out.derives.append(block)
+                open_claim, open_witness = None, block
+            continue
+        if word == "store":
+            v = STORE_TAIL_RE.match(tail)
+            if v is None:
+                bad(lineno, f"`{shown}` is off the `@store` form, which is "
+                            f"{FORMS['store']}", "store")
+                open_claim = open_witness = None
+            else:
+                block = Store(v[1] or "", v[2], v[3], lineno,
+                              _next_code_line(lines, lineno + 1))
+                out.stores.append(block)
+                open_claim, open_witness = None, block
+            continue
         if word == "approximated":
             text = tail.lstrip(":").strip() if tail.startswith(":") else ""
             if not tail.startswith(":"):
@@ -366,18 +437,24 @@ def read(source: str) -> Annotations:
             elif open_witness is None:
                 bad(lineno, f"`@{word}` stands under a `@witness` line; none "
                             "stands above this one", word)
+            elif word == "relaxed":
+                open_witness.relaxed.append(value)
+            elif not isinstance(open_witness, Witness):
+                held = "derive" if isinstance(open_witness, Derive) else "store"
+                bad(lineno, "`@reassigned` stands under a `@witness` line; "
+                            f"the line above it is `@{held}`", word)
             else:
-                (open_witness.relaxed if word == "relaxed"
-                 else open_witness.reassigned).append(value)
+                open_witness.reassigned.append(value)
             continue
-        if word in ("input", "allow", "workaround", "singleton-axis",
+        if word in ("input", "ignore", "workaround", "singleton-axis",
                     "construction"):
             continue  # marks of other grammars, read elsewhere
         bad(lineno, f"`@{word}` is no directive of the grammar; the "
                     "directives are "
                     + ", ".join(f"`@{w}`" for w in
                                 (*PREFIXED_FIELDS, *CLAIM_KINDS, "claim",
-                                 "witness", *NESTED_WORDS)))
+                                 "witness", "derive", "store",
+                                 *NESTED_WORDS)))
         open_claim = open_witness = None
     return out
 
@@ -385,6 +462,56 @@ def read(source: str) -> Annotations:
 def witness_blocks(source: str) -> list[Witness]:
     """The solver's `@witness` lines, in the order they stand."""
     return read(source).witnesses
+
+
+def derive_blocks(source: str) -> list[Derive]:
+    """The solver's `@derive` lines, in the order they stand."""
+    return read(source).derives
+
+
+def derive_param(source: str, block: Derive) -> str:
+    """The parameter a `@derive` line stands above: the `.decl` name on its
+    `above` line, and empty when that line declares no relation."""
+    lines = source.splitlines()
+    if not 1 <= block.above <= len(lines):
+        return ""
+    m = DECL_RE.match(lines[block.above - 1])
+    return m[1] if m else ""
+
+
+def store_blocks(source: str) -> list[Store]:
+    """The solver's `@store` lines, in the order they stand."""
+    return read(source).stores
+
+
+def store_relation(source: str, block: Store) -> str:
+    """The relation a `@store` line stands above: the `.decl` name on its
+    `above` line where the line names no relation, and the instance path
+    joined to the named relation where it does. A line above neither form
+    gives nothing."""
+    lines = source.splitlines()
+    if not 1 <= block.above <= len(lines):
+        return ""
+    text = lines[block.above - 1]
+    if not block.rel:
+        m = DECL_RE.match(text)
+        return m[1] if m else ""
+    m = INIT_RE.match(text)
+    return f"{m[1]}.{block.rel}" if m else ""
+
+
+def store_ids(source: str) -> set[str]:
+    """The case id `<rel>=stored` of every `@store` line that stands above
+    a declaration."""
+    return {f"{rel}={STORED}" for b in store_blocks(source)
+            if (rel := store_relation(source, b))}
+
+
+def derive_ids(source: str) -> set[str]:
+    """The case id `<param>=<Proposer>` of every `@derive` line that stands
+    above a `.decl`."""
+    return {f"{param}={b.proposer}" for b in derive_blocks(source)
+            if (param := derive_param(source, b))}
 
 
 def merged_blocks(blocks: list[Witness]) -> list[Witness]:

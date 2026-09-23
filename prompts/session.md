@@ -35,11 +35,6 @@
 ### Review
 * inline: ../docs/handbook/procedure.md#review
 
-## Cleanup pass
-- When the user says `cleanup`, in this order:
-    1. [Simplify](#simplify)
-    2. [Prune](#prune)
-
 ## Promote
 * inline: ../docs/handbook/procedure.md#promote
 

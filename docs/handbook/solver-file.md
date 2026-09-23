@@ -25,7 +25,6 @@
         // @scene <slug>: <replacement claim>
         // @rule <slug>: <replacement claim>
         // @rule <new slug>: <added claim>
-        //     @approximated: <the rule the program runs>
         //     @witness <id>: <plausibility> <verdict>
         // @witness <id>: <plausibility> <verdict>
         //     @relaxed <slug of the scene claim this witness breaks>
@@ -37,6 +36,8 @@
     .decl out(p: Position, col: Color, ch: Choice)
 
     .comp Params {
+        // @derive <Proposer>: <plausibility> <verdict>
+        //     @relaxed <slug of the scene claim this witness breaks>
         .decl bg(c: Color) bg(0).
         // <gloss, where the name does not say what it is>
         .decl recolor(c_fg: Color, c_fill: Color)
@@ -60,6 +61,13 @@
     // <gloss>
     // @claim <slug> <slug>
     .init shape = Components<Unit>
+
+    // @store: <plausibility> <verdict>
+    //     @relaxed <slug of the scene claim this witness breaks>
+    .decl band(p: Position)
+
+    // @store box: <plausibility> <verdict>
+    .init outline = Outlines<Unit>
 
     // --- CaseA ---
     out(..., $CaseA()) :- ...
@@ -86,6 +94,8 @@
     - Precise reading: a case's output is not the verdict's when its output on the grid differs from the output the verdict names: the concept case's for `concept`, the output of the case that takes the named branch and the concept branch elsewhere for a branch's name, every case's for `other`, no case's for `any`.
 
 ### Cases
+- A case's model reads its output grids from `out` at that case, one grid per tiebreak resolution.
+- A branch's clauses are the clauses shared by its cases and absent from the other cases.
 - A solver with one case has no `Choice`, case markers, or case column on `out`.
 - **Case markers.** Cases do not interleave: each case's Params and clauses are under its marker.
     - Cases that share facts or clauses are under one marker naming them, `// --- Box, Erode ---`.
@@ -103,6 +113,9 @@
 - **Empty parameterization.** A task with an empty parameterization keeps the comp empty and the `.init` unchanged: `.comp Params {}`.
 - **`@singleton-axis` literal.** A structure that extends along one axis is written in a two-axis type, and the other axis takes a literal `1`.
     - The clause containing that literal ends with `// @singleton-axis: <what the structure is>`.
+- **`@derive` directive.** The runner holds the case that derives the parameter's value with the built-in derivation the line names.
+    - The verdict `derived` names that case, beside the verdicts a `@witness` line takes.
+    - `// @ignore: derive — <reason>` in its place states that no witness separates the derived reading from the stored one, and the runner then holds no case.
 
 ## Types
 - A solver may define:
@@ -114,8 +127,11 @@
     - a record used as a type argument of a generic comp
 
 ## Program
-- **`@allow` directive.** A relation kept despite a lint hint has `// @allow: <category> — <reason>` on the line immediately above its declaration, with the category the hint names.
-    - The hint does not fire on the relation.
+- **`@ignore` directive.** A relation kept despite a finding has `// @ignore: <category> — <reason>` on the line immediately above its declaration, with the category the finding names.
+    - The finding does not fire on the relation.
+    - Above a `.init`, `// @ignore <relation>: <category> — <reason>` dismisses that one relation of the instance, and the bare form dismisses every relation of it.
+- **`@store` directive.** The relation has one value on every input, and the runner holds the case that stores it.
+    - The verdict `stored` names that case, beside the verdicts a `@witness` line takes.
 - **`@workaround` directive.** A temporary workaround is under a `// @workaround: <the principled form it stands in for>` line.
 - **`@claim` directive.** At program scope or inside `Parse`, an instance of a component without an `@construction` mark has the directive, one line per instance, naming the claims the instance serves.
     - Each slug names a claim in the solver's header.
@@ -145,4 +161,26 @@
 - A task JSON may give a pair alternate outputs in an alt, whose `kind` names how the outputs differ.
 - An alt with kind `rule` gives the pair a second candidate.
 - An alt with kind `tiebreak` gives resolutions within one candidate.
-- The solver enumerates them through a trailing `out` column of type `TiebreakResolution`.
+- The solver enumerates a tiebreak's resolutions through a trailing `out` column of type `TiebreakResolution`.
+- No parameter stores the resolution values.
+- No clause treats one resolution differently from another.
+
+## Witness file
+- `programs/witnesses/<task_id>.wit.json` holds the witnesses the solver's cases are pinned to.
+    ```
+    { "id": <task_id>,
+      "witnesses": [{
+        "id": slug,                              // unique within this file
+        "separates": string,                     // models separated by this input
+        "input": Grid,
+        "assign": {<parameter>: Fact[] | Grid},  // the parameters the witness reassigns; a stored grid in GRID_HxW form
+        "output": Group[]                        // when the verdict is not other: every case, one group per distinct output
+                | Grid                           // when the verdict is other: the annotator's judged output
+      }] }
+
+    Group: { "cases": <case>[],           // the cases that give this output
+             "grid": Grid | null }        // null for undefined
+    Grid: number[][]                      // rows of colors
+    Fact: Arg[]                           // the arguments of one fact
+    Arg: number | string | Arg[]
+    ```

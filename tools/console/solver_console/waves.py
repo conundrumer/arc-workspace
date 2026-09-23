@@ -60,7 +60,7 @@ def make_items(picked: list[tuple[str, int]], chain: list[dict], wave: int,
             "landed": [], "dirty": False, "updated": False, "rev": 0,
             "lastActive": dict.fromkeys(names),
             "title": "", "feed": [], "append": append, "ver": 0,
-            "reports": {},
+            "reports": {}, "diffs": {},
         }
         if night:
             # the cap follows the workers autopilot started, whether or not it

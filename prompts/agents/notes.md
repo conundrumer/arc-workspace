@@ -21,3 +21,6 @@
 - The lib below is an index, one line per declaration.
 - `uv run python scripts/context.py section 'programs/lib/<module>.dl#<name>'` prints one declaration's interface.
 - `programs/lib/<module>.md` holds a whole module's interface, and `programs/lib.md` the top-level lib's.
+
+## citations-carried
+- A bare task id cites a solver that works out the statement it sits under, and the line under the id says what that solver shows.

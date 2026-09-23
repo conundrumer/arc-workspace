@@ -182,8 +182,8 @@ class Handler(BaseHTTPRequestHandler):
             if not solvers.solver_path(item_id).exists():
                 return self.reply({"error": "no solver"}, 404)
             with store.LOCK:
-                reports = [{"stage": name, "text": text}
-                           for name, text in prompts.persisted_reports(item_id)]
+                reports = [{"stage": name, "text": text, "diff": diff}
+                           for name, text, diff in prompts.persisted_reports(item_id)]
             self.reply({"id": item_id, "title": solvers.title_of(item_id),
                         "header": solvers.header_of(item_id),
                         "needs": solvers.needs_of(item_id),
