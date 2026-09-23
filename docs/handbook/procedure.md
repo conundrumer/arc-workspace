@@ -54,6 +54,7 @@
 1. Read the reference TS solver: `cat ../arc-synth-bun/programs/solvers/<task_id>.ts`.
     - The reference TS solver solves the task.
     - Each claim it makes that the concept statement does not make, or makes differently, is a branch.
+    - `bun scripts/ref.ts <task_id>` runs it on the grid on stdin.
 2. Form every other branch.
     - A branch is stated by the slugs of the claims it replaces or adds, and its parameters.
     - A branch that derives a parameter's value, or stores a value the program derives, is stated as that derivation or that stored value.
