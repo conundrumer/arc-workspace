@@ -46,6 +46,7 @@
     - `<name>`: <its value, or each open value>
         - <what it holds, where the name does not say>
     ```
+    - Check that it fits every pair.
     - After this step, the file is not changed.
 3. Only after step 2 is complete, read the next steps: `cat .claude/analyze-next.md`.
 
@@ -62,13 +63,28 @@
     - The concept case: each witness with verdict `other`, with the items below and the judged output.
     - A branch that fails Fit: the pair it fails.
     - A branch that fits every pair: one of its witnesses, with:
-        - the input and each fitting branch's output, as a probe that runs them on it prints them
+        - the input and the outputs on it, as a probe prints them
         - the scene claim the witness breaks, when it breaks one
         - the assignment it stands at, when that is not the stored one
         - its plausibility and verdict
     - A branch with no witness: why there is none.
-4. Write the witnesses to `.scratch/<task_id>/witnesses.json` in the witness file's shape, with the branch names as the case names.
-- The report holds the concept with its parameters, each choice point with its branches and their standing, and each claim considered and not formed as a branch, with why.
+4. Write the witnesses to `.scratch/<task_id>/witnesses.json` in the witness file's shape, with the branch names as the case names and every fitting branch in each witness's groups.
+5. Write the report to `.scratch/<task_id>/report.md`, in this form:
+
+    ```
+    # <task_id>
+
+    ## Concept
+    - <its standing, and what the steps after the concept found about it>
+
+    ## Choice points
+    - `<property>`
+        - `concept`: <the concept branch>
+        - `<branch>`: <its claims>, <its standing>
+
+    ## Not formed
+    - <claim>: <why>
+    ```
 
 ### Write
 1. Read the task and the reference TS solver.

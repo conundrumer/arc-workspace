@@ -14,7 +14,7 @@ tools: Read, Grep, Glob, Bash, Write
 - Run Analyze on it.
 - Put the files you write under `.scratch/<task_id>/` and nowhere else.
 - Never run a git command that changes state.
-- Your reply is the report.
+- Your reply is the report's path.
 
 ## Grids
 * inline: ../console.md#grids
