@@ -16,6 +16,7 @@ from dl.annotations import FORMS, Annotations, read, resolved_claims
 from dl.context import lib_sources
 from dl.dlparse import (
     SECTION_RE,
+    TOP,
     Agg,
     Atom,
     BinOp,
@@ -28,6 +29,7 @@ from dl.dlparse import (
     Disj,
     Functor,
     Include,
+    Index,
     Init,
     Item,
     Lit,
@@ -177,8 +179,13 @@ KEYWORD_CAT = "keyword"
 # of that point gives the case's output. The session judges whether the
 # point belongs under the case, so this is a hint.
 UNREAD_FIELD_CAT = "unread-field"
+# The Case markers rule of solver-file.md, checked on a clause that names
+# one case's constructor other than a concept branch's. The session judges
+# whether the clause belongs to the case, so this is a hint.
+CASE_SECTION_CAT = "case section"
 # The categories of `lint_program` that report as hints.
-HINT_CATS = frozenset({KEYWORD_CAT, NO_ENTRY_CAT, UNREAD_FIELD_CAT})
+HINT_CATS = frozenset({KEYWORD_CAT, NO_ENTRY_CAT, UNREAD_FIELD_CAT,
+                       CASE_SECTION_CAT})
 # Every header line in the order they stand, with the rank the order check
 # reads.
 HEADER_ORDER = ("@draft", "@representative", "@keywords", "@scene", "@rule",
@@ -1261,6 +1268,78 @@ def _unread_fields(
     return findings
 
 
+MARKER_CASE_RE = re.compile(r"[A-Z]\w*")
+
+
+def _section_cases(section: str | None) -> set[str]:
+    """The constructors a section marker names, in any form a marker
+    writes: `$Box`, `Box, Erode`, `$Count + $PerCell`, `Derive(g=Iso)`."""
+    if section is None:
+        return set()
+    return {c for name in marker_names(section)
+            for c in MARKER_CASE_RE.findall(name)}
+
+
+def _admitting_terms(lit: Lit) -> list[Term]:
+    """The top-level terms of one literal, less those of a negated atom and
+    of a `!=` comparison, which shut a case out rather than name it."""
+    if isinstance(lit, Neg) or (isinstance(lit, Cmp) and lit.op == "!="):
+        return []
+    if isinstance(lit, Disj):
+        return [t for b in lit.branches for sub in b
+                for t in _admitting_terms(sub)]
+    return _lit_terms(lit)
+
+
+def _case_sections(
+    program: Program, raw_lines: list[str],
+) -> list[tuple[str, int, str, str]]:
+    """Each top-level clause that names exactly one constructor of a choice
+    ADT other than its type's first, and stands outside that constructor's
+    marker: before the first marker, or under a marker that names choice
+    constructors and not that one. A marker that names no choice
+    constructor, such as `// --- Output ---`, is neutral. A constructor
+    under a negation or a `!=` comparison is not named. A clause that lists
+    constructors belongs to no case: a clause of an enumerator
+    (`impl_choice`, or a relation of one-argument facts), and a fact whose
+    one argument is a constructor or a record."""
+    items = program.items
+    adts = [td for _, td in _choice_adts(items) if td is not None]
+    ctors = {b for td in adts for b in td.branches}
+    cases = {b for td in adts for b in td.branches[1:]}
+    if not cases:
+        return []
+    enums = _enumerators(items)
+    findings: list[tuple[str, int, str, str]] = []
+    for info in Index(program).rules:
+        rule = info.rule
+        if info.scope != TOP or (rule.head.qual is None
+                                 and rule.head.name in enums):
+            continue
+        if (rule.body is None and len(rule.head.args) == 1
+                and isinstance(rule.head.args[0], (Ctor, Rec))):
+            continue
+        named = {t.name for lit in [rule.head, *(rule.body or ())]
+                 for top in _admitting_terms(lit) for t in _subterms(top)
+                 if isinstance(t, Ctor) and t.name in cases}
+        if len(named) != 1:
+            continue
+        (case,) = named
+        marked = _section_cases(info.section) & ctors
+        if info.section is not None and (not marked or case in marked):
+            continue
+        where = (mctx("stands before the first marker")
+                 if info.section is None else
+                 mctx("stands under `// --- {section} ---`")
+                 .format(section=info.section))
+        findings.append((
+            CASE_SECTION_CAT, rule.line,
+            mctx("the clause names case `{case}` and {where}")
+            .format(case=case, where=where),
+            raw_lines[rule.line - 1].rstrip()))
+    return findings
+
+
 @lru_cache(maxsize=2)
 def _constructions(text: str) -> frozenset[str]:
     """The lib components marked `// @construction`. An instance of one of
@@ -1490,6 +1569,7 @@ def lint_program(source: str) -> list[tuple[str, int, str, str]]:
     findings.extend(_banned_types(program.items, raw_lines))
     findings.extend(_glosses(ann, program.items, raw_lines))
     findings.extend(_unread_fields(program.items, raw_lines))
+    findings.extend(_case_sections(program, raw_lines))
     findings.extend(_claims(ann, src, program, raw_lines))
     findings.extend(_includes(program.items, raw_lines))
     findings.extend(_params_data(program.comps().get("Params"), raw_lines, code))

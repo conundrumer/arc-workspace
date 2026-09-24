@@ -107,17 +107,19 @@ from dl.sweep_open import (
 )
 from dl.witness import (
     WITNESS_FILE_OK,
-    WITNESS_OK,
     annotation_lines,
     assigned_source,
     branch_outcomes,
     file_shape,
+    finding_lines,
     grouped_output,
+    held_case_labels,
     load_witness_file,
     load_witnesses,
+    pass_line,
+    passes,
     put_entry,
     read_witness_data,
-    render_witness,
     runner_outcomes,
     witness_path,
     witness_report,
@@ -463,12 +465,14 @@ def _model_body(cands: list, resolution: bool) -> list[str]:
 
 def _print_run(grid: list[list[int]], actuals: list, space: Cases,
                resolution: bool,
-               runner: dict[str, list[list[int]] | None]) -> None:
+               runner: dict[str, list[list[int]] | None],
+               held: list[str] | None = None) -> None:
     """Print the input, what each branch model of `space` emits and what
     each case the runner holds gives, then the ones that
     emit nothing. Models that emit the same thing are named together, above
     the one printing of it. A case the runner holds that gives no grid is
-    undefined there."""
+    undefined there. `held`, when given, stands in for the branch models:
+    each held case, by the label the run spells it with."""
     print("input:")
     for line in _grid_lines(grid):
         print(f"  {line}")
@@ -478,7 +482,8 @@ def _print_run(grid: list[list[int]], actuals: list, space: Cases,
         by_case.setdefault(fine, []).append(c)
         if (coarse := case_label(c.case, resolution)) != fine:
             by_case.setdefault(coarse, []).append(c)
-    models = space.models()
+    models = ({c: c for c in held} if held is not None
+              else space.models())
     for name, got in runner.items():
         by_case[name] = [Candidate(name, got, [], [])] if got else []
         models[name] = name
@@ -509,16 +514,18 @@ def _print_run(grid: list[list[int]], actuals: list, space: Cases,
             print(f"{name}: undefined" if name in runner
                   else f"{name}: emits nothing")
     if len(models) > 1:
-        held = (f", {len(runner)} case(s) the runner holds" if runner
-                else "")
+        extra = (f", {len(runner)} case(s) the runner holds" if runner
+                 else "")
         print()
-        print(f"{len(models) - len(runner)} branch models{held}, "
+        kind = "held cases" if held is not None else "branch models"
+        print(f"{len(models) - len(runner)} {kind}{extra}, "
               f"{len(grids)} distinct grid(s)")
 
 
-def cmd_grid(stem: str, path: str | None = None) -> int:
+def cmd_grid(stem: str, path: str | None = None, every: bool = False) -> int:
     """Run one solver on a grid the caller wrote, in place of a stored pair,
-    and print what each branch model emits."""
+    and print what each branch model emits, or with `every` what each held
+    case emits."""
     if _missing(stem):
         return 2
     text = _grid_text(path)
@@ -546,7 +553,9 @@ def cmd_grid(stem: str, path: str | None = None) -> int:
         print(f"{type(e).__name__}: {e}", file=sys.stderr)
         return 1
 
-    _print_run(grid, actuals, space, res_out_stem(stem), runner)
+    held = ([c for c in held_case_labels(source) if "=" not in c]
+            if every else None)
+    _print_run(grid, actuals, space, res_out_stem(stem), runner, held)
     return 0
 
 
@@ -1018,13 +1027,13 @@ def _print_witness(stem: str, file: Path | None = None) -> int:
     else:
         grids = len(witness.entries)
         print(f"{grids} witness grid{'s' if grids != 1 else ''} run")
-    lines = render_witness(witness_report(stem, file))
-    passed = lines[-1] == WITNESS_OK
-    for line in (lines[:-1] if passed else lines):
+    findings = witness_report(stem, file)
+    for line in finding_lines(findings):
         print(f"  {line}")
-    if passed:
-        print(WITNESS_OK)
-    return 0 if passed else 1
+    if not passes(findings):
+        return 1
+    print(pass_line(findings))
+    return 0
 
 
 def _print_shape(path: Path) -> int:
@@ -1315,12 +1324,22 @@ def _parser() -> argparse.ArgumentParser:
     grid = sub.add_parser(
         "grid",
         help="run one solver on a grid you write, printing each case's output",
+        description="Prints the output of each branch model: the concept "
+                    "case, and for each branch that is not its type's "
+                    "first, the case that takes it with the first branch "
+                    "everywhere else. With --all, prints the output of "
+                    "every case of the solver, by the label the run spells it with. "
+                    "Either form also prints each case the runner holds, "
+                    "and names together the cases that give one output.",
         epilog=GRID_HELP,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     grid.add_argument("stem", help=STEM_HELP)
     grid.add_argument("file", nargs="?",
                       help="grid file; stdin when omitted or `-`")
+    grid.add_argument("--all", action="store_true", dest="every",
+                      help="print every case of the solver, not the branch models "
+                           "alone")
 
     record = sub.add_parser(
         "record",
@@ -1425,9 +1444,18 @@ def _parser() -> argparse.ArgumentParser:
                     "name that denotes no case, a `@witness` line the "
                     "file does not bear out, a verdict that denotes no "
                     "case, a branch that is not its "
-                    "type's first and has no `@witness` line, and two held "
+                    "type's first and has no `@witness` line, two held "
                     "cases, `impl_choice`'s and the runner's, that no "
-                    "witness separates. Without a "
+                    "witness separates, and each held case that no run "
+                    "shows defined and differing from the case that takes "
+                    "its type's first branch in place of one of its "
+                    "branches, over the task's pairs and the witnesses. "
+                    "Those cases are named by branch, with their count; "
+                    "when not every case taking the branch is one, each "
+                    "one is listed below it. A held case whose run times "
+                    "out on an input is a finding of its own, naming the "
+                    "case and the input, and no other finding rests on "
+                    "its outcome there. Without a "
                     "witness file, no grid runs, no branch needs a "
                     "`@witness` line, and every `@witness` line of the "
                     "solver names no entry. The file's shape is checked "
@@ -1547,7 +1575,7 @@ def main(argv: list[str]) -> int:
         case "lint":
             return cmd_lint(args.stem, args.hints)
         case "grid":
-            return cmd_grid(args.stem, args.file)
+            return cmd_grid(args.stem, args.file, args.every)
         case "record":
             if args.as_format:
                 if args.id or args.file or args.separates or args.assign:

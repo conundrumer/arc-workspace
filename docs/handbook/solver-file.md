@@ -22,9 +22,9 @@
     .type Choice =
         // @claim <rule or scene slug>
         CaseA {}
-        // @scene <slug>: <replacement claim>
-        // @rule <slug>: <replacement claim>
-        // @rule <new slug>: <added claim>
+        // @scene <slug>: <what this branch changes in the claim, and where it is undefined>
+        // @rule <slug>: <what this branch changes in the claim, and where it is undefined>
+        // @rule <new slug>: <added claim, and where it is undefined>
         //     @witness <id>: <plausibility> <verdict>
         // @witness <id>: <plausibility> <verdict>
         //     @relaxed <slug of the scene claim this witness breaks>
@@ -98,7 +98,8 @@
 - A case's model reads its output grids from `out` at that case, one grid per tiebreak resolution.
 - A branch's clauses are the clauses shared by its cases and absent from the other cases.
 - A constructor is named for its branch, the branch's slug in CamelCase: `bbox-region` gives `BboxRegion`.
-- `@claim` under the concept branch's constructor names the header claim the choice point turns on, which each other branch's `@scene` or `@rule` line replaces.
+- `@claim` under the concept branch's constructor names the header claim the choice point turns on, which each other branch's `@scene` or `@rule` line changes.
+    - A case's reading of a claim is the header's claim with each of its branches' changes made.
 - A solver with one case has no `Choice`, case markers, or case column on `out`.
 - **Case markers.** Cases do not interleave: each case's Params and clauses are under its marker.
     - Cases that share facts or clauses are under one marker naming them, `// --- Box, Erode ---`.
@@ -146,7 +147,7 @@
     - Single-set sites key on `Unit`.
 - **Instance-level inputs.**
     - An input that is the same across cases is part of the instance's identity and takes no key.
-    - An input that varies per case is per-key data and keys the comp by `Choice`.
+    - An input that varies per case is per-key data and keys the comp by the `Choice` fields it varies with.
 - **Nested comps.** A nested comp's outputs are read through the instance path.
 - **Proposal comps.** A comp outside `Params`, `Determine`, and `Parse` is lib code, and a solver writes one only as a proposal comp, per [Lib addition protocol](docs/handbook/lib-protocol.md).
 
@@ -195,5 +196,4 @@
         - A constructor that stands at more than one place denotes its first, and `<parent> & <name>` denotes it at another.
     - a branch's slug, such as `bbox-region`: the constructor named for it, as [Cases](docs/handbook/solver-file.md#cases) states
     - `<name> & <name>`: the case with those branches
-    - `<param>=<Proposer>`: the case the runner holds under `@derive`
-    - `<rel>=stored`: the case the runner holds under `@store`, whose entry has `output` per case and no `assign`
+    - `<param>=<Proposer>` and `<rel>=stored`: a case the runner holds under `@derive` or `@store`

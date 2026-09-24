@@ -106,6 +106,7 @@
 - **choice point**: an undetermined property whose possible answers are models represented by cases.
     - A choice point stands at the concept, or under a branch when its property exists only with that branch.
         - When the property exists with several branches of a point, those branches form one branch of it, and the choice among them is a point under that branch.
+        - When the property exists only with a combination of branches of different points, the point stands under one of those branches.
     - **branch**: one possible answer to a choice point.
         - The **concept branch** at a choice point is the branch taken by the claims the point stands under.
         - Each case takes one branch at each choice point at the concept, and at each under a branch it takes.
@@ -124,13 +125,16 @@
     - at some assignment, two models give different outputs, or one is defined and the other is not.
     - a model's output at some assignment differs from the output the generator pairs with the input.
     - A branch's witnesses are divergence witnesses between its model and the concept branch's model.
+    - A witness stands at this task's stored assignment when the model it is for is defined there and differs there from what it is separated from. Otherwise it stands at the assignment that changes the fewest of that model's parameters and at which that holds, and at the stored assignment when there is none.
+        - The model a witness is for is the branch's model for a branch's witness, and the concept case's model for a witness of the concept case.
+    - A witness breaks a scene claim when the concept case's claim, read at the assignment the witness stands at, is false of it.
     - An output identical to the input is still defined, so a divergence at such an output is valid.
         - 41e4d17e
             - On a solid block, the model based on enclosed regions finds none and returns the input. The model based on objects finds the block and casts from it.
                 + gloss
 - **annotator**: whoever judges a witness.
 - **plausibility**: the annotator's ordinal estimate of how readily the generator could produce the witness. Its value is the first applicable level:
-    - `ordinary`: readily, without breaking any invariant of the inputs.
+    - `ordinary`: readily, breaking no scene claim of the concept case.
         - 3b4c2228
             - A table containing a grid the derived form cannot draw breaks no regularity of the inputs, and the pairs do not say which of the two the task teaches.
                 + gloss
@@ -149,7 +153,7 @@
     - `any`: the output of any case defined on the witness.
     - `other`: an output that no case produces.
 
-### Equivalence
+### Equivalence and subsumption
 - Two models are equivalent when each assignment of either has an assignment of the other that it agrees with.
     - Equivalent(A, B) ⇔ (∀θ ∈ Θ. ∃φ ∈ Θ′. Agree(θ, φ)) ∧ (∀φ ∈ Θ′. ∃θ ∈ Θ. Agree(θ, φ))
         + formal
@@ -170,6 +174,10 @@
 - An assignment that agrees with no assignment of the other model refutes equivalence, and a divergence witness against each of those assignments shows it.
     - (∃θ ∈ Θ. ∀φ ∈ Θ′. ¬Agree(θ, φ)) ⇒ ¬Equivalent(A, B)
         + formal
+- A model is subsumed by another when the two are not equivalent and each assignment of it has an assignment of the other at which, on every input where it is defined, its output is the other's.
+    - Subsumed(A, B) ⇔ ¬Equivalent(A, B) ∧ ∀θ ∈ Θ. ∃φ ∈ Θ′. ∀x ∈ G. Def_A(θ, x) ⇒ A(θ, x) = B(φ, x)
+        + formal
+    - A witness shows that a model is not subsumed only where that model is defined.
 
 ## Relational form
 - An ARC concept relates cells, regions, and their properties.
@@ -252,7 +260,7 @@
     + formal
 - M_open(θ, x) = ⋂_{v ∈ open(i)} M(θ[i ↦ v], x)
     + formal
-    - M_open: the case's model, which reads open(i) in place of θᵢ
+    - M_open: the model read with open(i) in place of θᵢ
 - The program runs with every open value of the parameter.
     - The output consists of the grids that every open value produces.
         - At those values, the model does not fit a task containing a pair whose accepted output some open value does not produce.
@@ -276,6 +284,8 @@
         - Being undefined on another input does not prevent a model from fitting.
     - **Relational form.** Each claim the case's branches replace or add has a relational form.
     - **Equivalence.** The model is not equivalent to the model of another case.
+        - Of two cases with equivalent models, the one that takes more non-concept branches fails it, and of two with equal counts, one of them.
+    - **Subsumption.** The model of a case other than the concept case is not subsumed by the model of another case.
 - For a pair with two candidates, the concept case produces one of them.
 - A peer model that produces the other under some assignment is a separate case when it meets the conditions above.
 - The pairs leave undetermined which model the task teaches.

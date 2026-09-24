@@ -25,7 +25,9 @@ Two assignments agree when, at every input, the two models give the same set of
 grids, or neither is defined. Two models are equivalent when each assignment of
 either has an assignment of the other that it agrees with. A divergence witness
 is an input where, at some assignment, the two models give different sets, or
-one is defined and the other is not.
+one is defined and the other is not. A model is subsumed by another when the two
+are not equivalent and each assignment of it has an assignment of the other that
+gives the same set at every input where it is defined.
 
 A parameter of a case admits the values a fitting assignment gives it.
 `Common` is the One parameter test on a collection: every task all of their
@@ -127,6 +129,37 @@ theorem not_equivalent_of_witness {A : Model Θ₁ G} {B : Model Θ₂ G}
   · rcases hdef with hA | hB
     · exact hnA hA
     · exact hnB hB
+
+/-- `A` is subsumed by `B`: the two are not equivalent, and each assignment of
+`A` has an assignment of `B` that gives the same set at every input where `A` is
+defined. -/
+def Subsumed (A : Model Θ₁ G) (B : Model Θ₂ G) : Prop :=
+  ¬ Equivalent A B ∧ ∀ θ, ∃ φ, ∀ x, Defined A θ x → A θ x = B φ x
+
+/-- A subsumed model is not equivalent to the model that subsumes it. -/
+theorem not_equivalent_of_subsumed {A : Model Θ₁ G} {B : Model Θ₂ G}
+    (h : Subsumed A B) : ¬ Equivalent A B := h.1
+
+/-- Equivalent models meet the second condition of `Subsumed` in both directions:
+each assignment of either has an assignment of the other that gives the same set
+at every input where the first is defined. So only the first condition keeps an
+equivalent model from being subsumed. -/
+theorem subsumed_agreement_of_equivalent {A : Model Θ₁ G} {B : Model Θ₂ G}
+    (h : Equivalent A B) :
+    (∀ θ, ∃ φ, ∀ x, Defined A θ x → A θ x = B φ x) ∧
+      (∀ φ, ∃ θ, ∀ x, Defined B φ x → B φ x = A θ x) := by
+  obtain ⟨hfwd, hbwd⟩ := h
+  refine ⟨fun θ => ?_, fun φ => ?_⟩
+  · obtain ⟨φ, hφ⟩ := hfwd θ
+    refine ⟨φ, fun x hx => ?_⟩
+    rcases hφ x with heq | ⟨hnA, _⟩
+    · exact heq
+    · exact absurd hx hnA
+  · obtain ⟨θ, hθ⟩ := hbwd φ
+    refine ⟨θ, fun x hx => ?_⟩
+    rcases hθ x with heq | ⟨_, hnB⟩
+    · exact heq.symm
+    · exact absurd hx hnB
 
 /-! ## Equivariance
 

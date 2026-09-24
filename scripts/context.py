@@ -16,11 +16,7 @@ and the lib. That form and `--write` also write the lib's interface files, the
 
 `--write` writes one agent under `.claude/agents/` per document under
 `prompts/agents/`, each with the context its document composes as its system
-prompt: `handbook.md`, over the handbook abridged, with the lib as an
-index; `handbook-expanded.md`, over the handbook with the lib's full
-interface and the patterns abridged; `analyze.md`, a standalone agent over
-the principles, the keywords, and the Analyze operation; and `create.md`, over
-the handbook with the lib's full interface and the creation operations. It writes
+prompt, which each document's lead describes. It writes
 `.claude/analyze-next.md`, the steps the `analyze` agent reads after it writes
 the concept. It also writes the files a codex session on the repo reads:
 `AGENTS.md`, [Codex on arc-workspace](prompts/codex.md) rendered, and

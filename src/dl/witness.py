@@ -18,11 +18,13 @@ report runs it first.
 """
 
 import json
+import subprocess
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from arc.jsonio import format_file
+from arc.task import load as load_task
 from controlled_markdown import mctx
 from dl.annotations import (
     STORED,
@@ -40,9 +42,17 @@ from dl.annotations import (
 from dl.dlparse import ParseError, parse
 from dl.facts import Candidate
 from dl.features import case_branches, declares_held, held_cases
-from dl.features_run import NO_CHOICE, case_label, case_members
+from dl.features_run import NO_CHOICE, _split, case_label, case_members
 from dl.lint import branch_above, unwitnessed_branches
-from dl.models import Cases, Coarse, Space, case_space, model_label
+from dl.models import (
+    TERM_RE,
+    Cases,
+    Coarse,
+    Space,
+    _adts,
+    case_space,
+    model_label,
+)
 from dl.paths import PROGRAMS_DIR
 from dl.render import _grid_lines
 from dl.solve import res_out_stem, run_dl_source, solver_file
@@ -56,14 +66,17 @@ and of a case that emits nothing at all. The file writes it as `null` and
 the code carries it as None."""
 
 WITNESS_OK = "witness: ok"
-"""The pass line, printed when no finding stands."""
+"""The pass line, printed when no finding fails the check. When findings
+that do not fail it stand, the line carries their count."""
 
 DRIFT = "drift"
 UNLISTED = "unlisted"
 UNRESOLVED = "unresolved"
 ANNOTATION = "annotation"
 UNSEPARATED = "unseparated"
-FAILING = (DRIFT, UNRESOLVED, ANNOTATION, UNSEPARATED)
+SUBSUMED = "subsumed"
+TIMEOUT = "timeout"
+FAILING = (DRIFT, UNRESOLVED, ANNOTATION, UNSEPARATED, SUBSUMED, TIMEOUT)
 """The kinds that fail the check."""
 
 type Grid = list[list[int]]
@@ -97,6 +110,42 @@ class Entry:
         return isinstance(self.output, list)
 
 
+@dataclass(frozen=True)
+class TimedOut:
+    """The outcome of a case whose run timed out on an input. It equals no
+    other case's outcome and is no undefined one, so no finding rests on
+    it."""
+
+    case: str
+
+
+class Timeouts:
+    """The runs of held cases that timed out, as TIMEOUT findings, once per
+    input and case."""
+
+    def __init__(self) -> None:
+        self.findings: list[Drift] = []
+        self._seen: set[tuple[str, str]] = set()
+
+    def note(self, where: str, case: str,
+             err: subprocess.TimeoutExpired) -> None:
+        if (where, case) in self._seen:
+            return
+        self._seen.add((where, case))
+        self.findings.append(Drift(
+            entry=where, cases=[case] if case else [], expected=None,
+            actual=None, kind=TIMEOUT, note=f"{err.timeout:g}"))
+
+    def run(self, source: str, grid: Grid, path: Path,
+            where: str) -> list[Candidate] | None:
+        """The run of `source` on `grid`, or None when it timed out."""
+        try:
+            return run_dl_source(source, grid, solver_path=path)
+        except subprocess.TimeoutExpired as err:
+            self.note(where, "", err)
+            return None
+
+
 @dataclass
 class Witness:
     id: str
@@ -106,10 +155,15 @@ class Witness:
 @dataclass
 class Drift:
     """One finding on one entry. `kind` is DRIFT, UNLISTED, UNRESOLVED,
-    ANNOTATION or UNSEPARATED, each the finding the `witness` help text in
-    `dl.cli` describes; an UNSEPARATED finding names the two cases in
-    `cases`. `entry` is the entry's id, followed by the parameters it reassigns, and
-    it is empty when no entry answers the line. `cases` names every case
+    ANNOTATION, UNSEPARATED, SUBSUMED or TIMEOUT, each the finding the
+    `witness` help text in `dl.cli` describes; a TIMEOUT finding names the
+    input in `entry`, the case in `cases` (empty when the run of every case
+    the solver states timed out) and the limit in `note`; an UNSEPARATED
+    finding names the two cases in `cases`, and a SUBSUMED finding the branch and its type's first
+    branch, with the count in `note` and, when not every case taking the
+    branch is subsumed, the subsumed ones in `subsumed`. `entry` is the entry's
+    id, followed by the parameters it reassigns, and it is empty when no
+    entry answers the line. `cases` names every case
     the finding holds for, which is the cases that give one outcome where
     another is expected, by the names the entry writes. `expected` stands
     for nothing on an UNLISTED or UNRESOLVED finding. An ANNOTATION finding
@@ -122,6 +176,7 @@ class Drift:
     kind: str = DRIFT
     rejected_output: bool = False
     note: str = ""
+    subsumed: list[str] = field(default_factory=list)
 
 
 def witness_path(task_id: str) -> Path:
@@ -439,14 +494,26 @@ def model_outcomes(candidates: list[Candidate],
 
 
 def runner_outcomes(stem: str, ids: Iterable[str], grid: list[list[int]],
-                    source: str) -> dict[str, Outcome]:
+                    source: str, timeouts: Timeouts | None = None,
+                    where: str = "") -> dict[str, Outcome]:
     """What each case the runner holds gives on one grid, by its id. A
-    derived case runs `source`, and a stored case the solver's file."""
+    derived case runs `source`, and a stored case the solver's file. With
+    `timeouts`, a case whose run times out is noted there, as on the input
+    `where`, and gives TimedOut; without, the timeout is raised."""
     from dl.derive import derived_outcome
     from dl.store import store_outcome
-    return {c: store_outcome(stem, c, grid) if c.endswith(f"={STORED}")
-            else derived_outcome(stem, c, grid, source)
-            for c in ids}
+    out: dict[str, Outcome] = {}
+    for c in ids:
+        try:
+            out[c] = (store_outcome(stem, c, grid)
+                      if c.endswith(f"={STORED}")
+                      else derived_outcome(stem, c, grid, source))
+        except subprocess.TimeoutExpired as err:
+            if timeouts is None:
+                raise
+            timeouts.note(where, c, err)
+            out[c] = TimedOut(c)  # type: ignore[assignment]
+    return out
 
 
 def branch_outcomes(space: Cases, candidates: list[Candidate],
@@ -511,7 +578,8 @@ def _entry_findings(entry: Entry, space: Cases,
     holds the outcome of each case the run emits, spelled with its fields;
     `actuals` holds those and the runner's labels of them, `held` the cases
     the solver states, and `runner` the outcomes of the cases the runner
-    holds that the entry names. `impl` holds the cases `impl_choice` holds,
+    holds. An entry whose id is a case the runner holds need not list that
+    case. `impl` holds the cases `impl_choice` holds,
     and is None when the solver declares no `impl_choice`; a name whose case
     it does not hold denotes no case of the solver."""
     label = _label(entry)
@@ -535,6 +603,8 @@ def _entry_findings(entry: Entry, space: Cases,
         named |= {m for m in space.models().values()
                   if case_label(m) == case}
         got = runner.get(case) if case in runner else actuals.get(case)
+        if isinstance(got, TimedOut):
+            continue
         if got != want:
             rows.append((name, want, got))
     findings = _merged(label, rows)
@@ -546,6 +616,11 @@ def _entry_findings(entry: Entry, space: Cases,
         for name, case in space.models().items()
         if case not in named
         and (case in actuals or case_label(case) in held)
+    ] + [
+        (case, None, runner.get(case))
+        for case in sorted(space.runner)
+        if case not in named and case != entry.id
+        and not isinstance(runner.get(case), TimedOut)
     ], kind=UNLISTED)
     return findings
 
@@ -759,15 +834,16 @@ def annotation_lines(source: str) -> list[str]:
     return lines or ["no witness lines"]
 
 
-def _runner_outcomes(stem: str, entry: Entry, space: Cases,
-                     source: str) -> dict[str, Outcome]:
-    """What each case the runner holds and the entry names gives on the
-    entry's input. A stored case is the runner's own, so no `assign` states
-    it; a derived case runs `source`, the reassigned one."""
+def _runner_outcomes(stem: str, entry: Entry, space: Cases, source: str,
+                     timeouts: Timeouts) -> dict[str, Outcome]:
+    """What each case the runner holds gives on the entry's input. A stored
+    case is the runner's own, so no `assign` states it; a derived case runs
+    `source`, the reassigned one."""
     if not isinstance(entry.output, dict):
         return {}
-    ids = [c for c in entry.output if c in space.runner]
-    return runner_outcomes(stem, ids, entry.input, source) if ids else {}
+    ids = sorted(space.runner)
+    return runner_outcomes(stem, ids, entry.input, source, timeouts,
+                           _label(entry)) if ids else {}
 
 
 def held_case_labels(source: str) -> list[str]:
@@ -792,17 +868,24 @@ def held_case_labels(source: str) -> list[str]:
 
 
 def _held_outcomes(stem: str, held: list[str], entry: Entry, source: str,
-                   candidates: list[Candidate],
-                   resolution: bool) -> dict[str, Outcome]:
+                   candidates: list[Candidate] | None, resolution: bool,
+                   timeouts: Timeouts, where: str) -> dict[str, Outcome]:
     """What each held case gives on the entry's input, None for a case that
     emits nothing there. `source` is the source the entry stands at, and
-    `candidates` its run on the entry's input."""
-    got = case_outcomes(candidates, resolution) | model_outcomes(
-        candidates, resolution)
+    `candidates` its run on the entry's input, None when that run timed
+    out; a case whose run timed out gives TimedOut, and `timeouts` notes it
+    as on the input `where`."""
     runner = [c for c in held if "=" in c]
-    out = {c: got.get(c) for c in held if "=" not in c}
+    if candidates is None:
+        out: dict[str, Outcome] = {
+            c: TimedOut(c) for c in held if "=" not in c}  # type: ignore[misc]
+    else:
+        got = case_outcomes(candidates, resolution) | model_outcomes(
+            candidates, resolution)
+        out = {c: got.get(c) for c in held if "=" not in c}
     if runner:
-        out |= runner_outcomes(stem, runner, entry.input, source)
+        out |= runner_outcomes(stem, runner, entry.input, source, timeouts,
+                               where)
     return out
 
 
@@ -847,6 +930,133 @@ def _unseparated(held: list[str], outcomes: list[Scoped]) -> list[Drift]:
     ]
 
 
+type Term = tuple[str, list["Term"]]
+"""A constructor and the terms of its fields, as a case label writes it."""
+
+
+def _term(text: str) -> Term:
+    m = TERM_RE.match(text.strip())
+    if m is None:
+        return (text.strip(), [])
+    args = m.group(2)
+    return (m.group(1), [_term(a) for a in _split(args)]
+            if args and args.strip() else [])
+
+
+def _spelled(t: Term) -> str:
+    return f"{t[0]}({', '.join(_spelled(a) for a in t[1])})" if t[1] else t[0]
+
+
+def _swaps(t: Term, types: dict[str, dict[str, list[str]]],
+           owner: dict[str, str]) -> list[tuple[str, str, list[Term]]]:
+    """Each constructor of `t` that is not its type's first, with that
+    type's first constructor and the terms `t` becomes when that one
+    constructor is put in its place: its bare name, and its name applied to
+    the first constructor of each field's type, down to where a field's
+    type holds no branches."""
+    out: list[tuple[str, str, list[Term]]] = []
+    ctor, args = t
+    if ctor in owner:
+        typ = owner[ctor]
+        first = next(iter(types[typ]))
+        if ctor != first:
+            out.append((ctor, first, [(first, []),
+                                      _concept_term(typ, types, (typ,))]))
+    for i, a in enumerate(args):
+        for x, c, subs in _swaps(a, types, owner):
+            out.append((x, c, [(ctor, args[:i] + [sub] + args[i + 1:])
+                               for sub in subs]))
+    return out
+
+
+def _concept_term(typ: str, types: dict[str, dict[str, list[str]]],
+                  chain: tuple[str, ...]) -> Term:
+    first = next(iter(types[typ]))
+    fts = types[typ][first]
+    if not fts or any(ft not in types or ft in chain for ft in fts):
+        return (first, [])
+    return (first, [_concept_term(ft, types, chain + (ft,)) for ft in fts])
+
+
+def branch_pairs(held: list[str], source: str,
+                 concept: str | None) -> list[tuple[str, str, str, str]]:
+    """Each held case A that takes a branch X other than its type's first at
+    one choice point, with the held case B that takes that type's first
+    branch there and A's branches elsewhere, as (X, that first branch, A,
+    B). A case the runner holds stands as X against the concept case, its
+    stored counterpart; there the first branch is the concept case."""
+    try:
+        types = _adts(parse(source).items)
+    except ParseError:
+        types = {}
+    owner = {c: t for t, cs in types.items() for c in cs}
+    names = set(held)
+    out: list[tuple[str, str, str, str]] = []
+    for a in held:
+        if "=" in a:
+            if concept in names:
+                out.append((a, concept, a, concept))
+            continue
+        record = a.startswith("[")
+        roots = [_term(m) for m in _split(a[1:-1])] if record else [_term(a)]
+        for i, root in enumerate(roots):
+            for x, first, subs in _swaps(root, types, owner):
+                for sub in subs:
+                    spelled = [_spelled(r) for r in roots[:i] + [sub]
+                               + roots[i + 1:]]
+                    b = f"[{', '.join(spelled)}]" if record else spelled[0]
+                    if b in names:
+                        out.append((x, first, a, b))
+                        break
+    return out
+
+
+def _subsumed(pairs: list[tuple[str, str, str, str]], outcomes: list[Scoped],
+              unseparated: list[Drift]) -> list[Drift]:
+    """One finding per branch X of `branch_pairs` that some case taking it
+    is subsumed in: how many of the cases taking X are subsumed by their
+    counterpart, of those that have one, and which, when not all are. Case
+    A is subsumed by case B when, on every input that counts for the pair,
+    A is undefined or gives B's outcome. The inputs are the task's pairs,
+    and the witnesses that `_unseparated` reads. A pair `unseparated` names
+    is that finding alone."""
+    same = {frozenset(d.cases) for d in unseparated}
+    total: dict[tuple[str, str], int] = {}
+    hit: dict[tuple[str, str], list[str]] = {}
+    for x, first, a, b in pairs:
+        if frozenset((a, b)) in same:
+            continue
+        counted = [o for o, built in outcomes
+                   if built is None or built in (a, b)]
+        total[(x, first)] = total.get((x, first), 0) + 1
+        if all(o.get(a) is None or o.get(a) == o.get(b) for o in counted):
+            hit.setdefault((x, first), []).append(a)
+    return [Drift(entry="", cases=[x, first], expected=None, actual=None,
+                  kind=SUBSUMED, note=f"{len(cases)} of {total[(x, first)]}",
+                  subsumed=cases if len(cases) < total[(x, first)] else [])
+            for (x, first), cases in hit.items()]
+
+
+def _pair_outcomes(stem: str, held: list[str], source: str, path: Path,
+                   task_id: str, resolution: bool,
+                   timeouts: Timeouts) -> list[Scoped]:
+    """What each held case gives on the input of each train and test pair
+    of the task, at the stored value; none when the task is not
+    materialized."""
+    try:
+        task = load_task(task_id)
+    except FileNotFoundError:
+        return []
+    pairs = [(f"{kind} {i}", ex) for kind, exs in (("train", task.train),
+                                                  ("test", task.test))
+             for i, ex in enumerate(exs)]
+    return [(_held_outcomes(
+        stem, held, Entry(id="", separates="", input=ex.input), source,
+        timeouts.run(source, ex.input, path, where), resolution, timeouts,
+        where), None)
+        for where, ex in pairs]
+
+
 def witness_report(stem: str, file: Path | None = None) -> list[Drift]:
     """The findings of the `witness` command, which its help text in
     `dl.cli` describes. `file` stands in for the task's witness file. Each
@@ -855,7 +1065,9 @@ def witness_report(stem: str, file: Path | None = None) -> list[Drift]:
     case's id runs the held cases at the stored value, as the derive report
     reads it. The pairs of held cases (`held_case_labels`) are checked over
     the entries and over the witnesses the runner builds
-    (`built_witnesses`), with every held case run at the stored value."""
+    (`built_witnesses`), with every held case run at the stored value, and
+    each branch is checked for the cases its type's first branch subsumes
+    (`_subsumed`) over those inputs and the task's pairs."""
     path, task_id = solver_file(stem)
     source = path.read_text()
     if file is not None:
@@ -872,9 +1084,11 @@ def witness_report(stem: str, file: Path | None = None) -> list[Drift]:
     findings: list[Drift] = []
     cases: list[str] = []
     separating: list[Scoped] = []
+    timeouts = Timeouts()
     for entry in witness.entries:
+        where = _label(entry)
         run_source = assigned_source(source, entry.assign)
-        candidates = run_dl_source(run_source, entry.input, solver_path=path)
+        candidates = timeouts.run(run_source, entry.input, path, where)
         # An entry of a derived case's id holds the derived value in its
         # `assign`, so the held cases stand at the stored value, as the
         # derive report reads that entry; the derived case sets its own
@@ -882,13 +1096,20 @@ def witness_report(stem: str, file: Path | None = None) -> list[Drift]:
         if held and entry.assign and entry.id in derive_ids(source):
             separating.append((_held_outcomes(
                 stem, held, entry, source,
-                run_dl_source(source, entry.input, solver_path=path),
-                resolution), None))
+                timeouts.run(source, entry.input, path, where),
+                resolution, timeouts, where), None))
         elif held:
-            separating.append((_held_outcomes(stem, held, entry, run_source,
-                                              candidates, resolution), None))
+            separating.append((_held_outcomes(
+                stem, held, entry, run_source, candidates, resolution,
+                timeouts, where), None))
+        if candidates is None:
+            continue
+        try:
+            stated = case_branches(stem, run_source, entry.input)
+        except subprocess.TimeoutExpired as err:
+            timeouts.note(where, "", err)
+            continue
         actuals = case_outcomes(candidates, resolution)
-        stated = case_branches(stem, run_source, entry.input)
         for name in stated:
             actuals.setdefault(name, None)
         cases += [c for c in actuals if c not in cases]
@@ -897,19 +1118,26 @@ def witness_report(stem: str, file: Path | None = None) -> list[Drift]:
         findings += _entry_findings(
             entry, space, emitted, actuals | emitted,
             set(stated) | set(actuals),
-            _runner_outcomes(stem, entry, space, run_source),
+            _runner_outcomes(stem, entry, space, run_source, timeouts),
             set(stated) if declares_held(run_source) else None)
     runner = [c for c in held if "=" in c]
     for case, grid in (built_witnesses(stem, runner) if runner else {}).items():
         built = Entry(id=case, separates="", input=grid)
+        where = mctx("the witness built for `{case}`").format(case=case)
         separating.append((_held_outcomes(
             stem, held, built, source,
-            run_dl_source(source, grid, solver_path=path), resolution), case))
+            timeouts.run(source, grid, path, where), resolution, timeouts,
+            where), case))
+    space = case_space(source, case_branches(stem, source))
+    unseparated = _unseparated(held, separating)
+    subsumed = _subsumed(
+        branch_pairs(held, source, space.concept),
+        separating + _pair_outcomes(stem, held, source, path, task_id,
+                                    resolution, timeouts),
+        unseparated) if held else []
     return (findings + unwitnessed
-            + _annotation_findings(source, witness.entries, cases,
-                                   case_space(source,
-                                              case_branches(stem, source)))
-            + _unseparated(held, separating))
+            + _annotation_findings(source, witness.entries, cases, space)
+            + unseparated + subsumed + timeouts.findings)
 
 
 def _side(label: str, value: Outcome) -> list[str]:
@@ -928,6 +1156,19 @@ def _lines_of(d: Drift) -> list[str]:
     if d.kind == UNSEPARATED:
         return [mctx("no witness separates `{a}` from `{b}`")
                 .format(a=d.cases[0], b=d.cases[1])]
+    if d.kind == TIMEOUT:
+        return [mctx("{entry}: case `{case}` timed out after {limit}s, so no "
+                     "finding rests on its outcome there")
+                .format(entry=d.entry, case=d.cases[0], limit=d.note)
+                if d.cases else
+                mctx("{entry}: the run of the solver's cases timed out after "
+                     "{limit}s, so no finding rests on their outcomes there")
+                .format(entry=d.entry, limit=d.note)]
+    if d.kind == SUBSUMED:
+        return [mctx("no run shows `{a}` defined and differing from `{b}` "
+                     "({count} cases)")
+                .format(a=d.cases[0], b=d.cases[1], count=d.note),
+                *(f"  {c}" for c in d.subsumed)]
     if d.kind == UNLISTED:
         return [mctx("{entry}: case {case} is not listed")
                 .format(entry=d.entry, case=case) if one else
@@ -959,10 +1200,17 @@ def finding_lines(findings: list[Drift]) -> list[str]:
     return [line for d in findings for line in _lines_of(d)]
 
 
-def render_witness(findings: list[Drift]) -> list[str]:
-    """One block per finding, and `witness: ok` when no finding fails the
-    check."""
-    lines = finding_lines(findings)
-    if not any(d.kind in FAILING for d in findings):
-        lines.append(WITNESS_OK)
-    return lines
+def passes(findings: list[Drift]) -> bool:
+    """No finding fails the check."""
+    return not any(d.kind in FAILING for d in findings)
+
+
+def pass_line(findings: list[Drift]) -> str:
+    """`witness: ok`, followed by the count of the findings above it when
+    any stand. Every finding of a passing report is one that does not fail
+    the check."""
+    n = len(findings)
+    if not n:
+        return WITNESS_OK
+    return f"{WITNESS_OK}, {n} non-failing finding{'s' if n != 1 else ''}"
+

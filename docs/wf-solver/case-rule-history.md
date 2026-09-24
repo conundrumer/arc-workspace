@@ -742,3 +742,17 @@ All are in the working tree, uncommitted.
 | The concept slot | procedure.md, Analyze after the concept | a04b2602 clean run | Kept. |
 | "including that the generator produces no input on which only one of them gives an output" | procedure.md, equivalence standing | a251c730 first run | Kept. The Domination proposal would remove it. |
 | "and the plausibility of each input on which it gives no output" | procedure.md, concept slot | a251c730 second run | Kept. The Domination proposal would remove it. |
+
+## 2026-09-23 — Subsumption enters as the fourth condition
+
+The user rules on the Domination proposal of 2026-09-22, under the name Subsumption:
+
+> "domination (subsumption? i prefer that . it's more precise /conventional right): the circumstance here is different. before, agents were refusing to add cases in the first place and they use this as an excuse. now, we have a big starting point and if it's up to a mechanical check to remove then should be fine?"
+
+The difference from the 2026-07-10 rule and from Refused input is where the rule acts. Analyze forms every branch and Create holds every combination that fits; the runner then reports a held case that no input run shows defined and differing from another, and the pass builds the witness that shows it or drops the case. No agent judges a model out before it is formed.
+
+The condition, in principles.md under Cases, with the definition under Equivalence: a model is subsumed by another when the two are not equivalent and each assignment of it has an assignment of the other at which, on every input where it is defined, its output is the other's; the concept case meets the condition whether or not it is subsumed. Fit is unchanged, so "Being undefined on another input does not prevent a model from fitting" stands: a subsumed model fits, and fails the fourth condition.
+
+What this reverses: Refused input (2026-09-11), in that a strict hypothesis that never differs from the tolerant peer where it is defined is now subsumed by it, and the letter of "No other removal" (2026-09-15), which gains a fourth mechanical test and keeps its reason.
+
+In the corpus at the time: ComponentLines on a5f85a15 and TouchedCorner on a57f2f04 are subsumed by their concept branches; ColorBox on a57f2f04 is subsumed at the stored scan set and not at a narrower one.
