@@ -1,0 +1,228 @@
+// a096bf4d
+// @draft
+// @keywords: decompose markers span
+// @scene tile-lattice: full rows and full columns of params.separator cut the
+//  grid into a lattice of equal tiles, with a separator line along each grid
+//  edge
+// @scene common-tile: at each tile position, most tiles hold the same color;
+//  together those colors form the common tile (a frame of one color around a
+//  2×2 interior of the frame color and a pattern color)
+// @scene marks: a mark is a tile cell whose color differs from the common
+//  tile's color at that position
+// @scene every-mark-paired: each mark has at least one other mark of the same
+//  color at the same tile position, in a tile of the same tile row or the
+//  same tile column
+// @rule span-fill: for two marks of the same color at the same tile position,
+//  in tiles of the same tile row or tile column, each tile from one of those
+//  tiles to the other, both included, takes that color at that position
+// @rule rest-kept: every other cell keeps its input color
+
+// which tile cells can be marks
+.type MarkScope =
+    // @claim marks
+    WholeTile {}
+    // @scene marks: a mark is a cell inside the tile's outer ring whose color
+    //  differs from the common tile's color at that position
+    // @witness ring-mark: variant concept
+  | Interior {}
+    // @scene marks: a mark is a tile cell at a position where the common tile
+    //  holds its less frequent color, and whose color differs from that color
+    // @witness frame-colored-interior: variant concept
+  | PatternPositions {}
+
+// what a mark differs from
+.type MarkBase =
+    // @claim marks
+    CommonColor {}
+    // @scene marks: a mark is a tile cell whose color is none of the common
+    //  tile's colors
+    // @witness frame-color-mark: borderline concept
+  | OffPalette {}
+
+// which tiles a span paints
+.type SpanTarget =
+    // @claim span-fill
+    EveryTile {}
+    // @rule span-fill: for two marks of the same color at the same tile
+    //  position, in tiles of the same tile row or tile column, each tile from
+    //  one of those tiles to the other whose cell at that position is not a
+    //  mark takes that color at that position
+    // @witness lone-between: borderline KeepMarks
+    //     @relaxed every-mark-paired
+  | KeepMarks {}
+
+// where the separator color comes from
+.type SeparatorSource =
+    // @claim tile-lattice
+    StoredSeparator {}
+    // @scene tile-lattice: full rows and full columns of the one color of the
+    //  grid's border ring cut the grid into a lattice of equal tiles, with a
+    //  separator line along each grid edge; the branch is undefined where the
+    //  border ring is not one color
+    // @witness separator-1: variant DerivedSeparator
+    //     @relaxed tile-lattice
+  | DerivedSeparator {}
+
+.type Choice = [scope: MarkScope, base: MarkBase, target: SpanTarget, sep: SeparatorSource]
+
+// a line of the grid
+.type Line = [a: Axis, l: Position]
+
+.type Tile = [sep: SeparatorSource, p_tile: Position]
+
+.type Place = [sep: SeparatorSource, p_intile: Position]
+
+// a color of the common tile one separator reading finds
+.type Hue = [sep: SeparatorSource, col: Color]
+
+// the marks of one color at one tile position, under a reading of the marks
+.type Span = [sep: SeparatorSource, scope: MarkScope, base: MarkBase,
+              p_intile: Position, col: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- StoredSeparator ---
+    .decl separator(c: Color) separator(0).
+}
+
+.init params = Params
+
+.decl mark_scope_choice(s: MarkScope)
+mark_scope_choice($WholeTile()). mark_scope_choice($Interior()). mark_scope_choice($PatternPositions()).
+
+.decl mark_base_choice(b: MarkBase)
+mark_base_choice($CommonColor()). mark_base_choice($OffPalette()).
+
+.decl span_target_choice(t: SpanTarget)
+span_target_choice($EveryTile()). span_target_choice($KeepMarks()).
+
+.decl separator_source_choice(x: SeparatorSource)
+separator_source_choice($StoredSeparator()). separator_source_choice($DerivedSeparator()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([S, B, T, X]) :-
+    mark_scope_choice(S), mark_base_choice(B), span_target_choice(T),
+    separator_source_choice(X).
+
+// --- the separator ---
+
+.decl separator(x: SeparatorSource, col: Color)
+
+// --- StoredSeparator ---
+separator($StoredSeparator(), Col) :- params.separator(Col).
+
+// --- DerivedSeparator ---
+
+// @claim tile-lattice
+.init border = Unanimous<Unit, Color>
+border.item($U(), Col) :- in(P, Col), dir_elem(D), dist(P, D, 0).
+
+separator($DerivedSeparator(), Col) :- border.value($U(), Col).
+
+// --- the lattice ---
+
+// @claim tile-lattice
+.init line_color = Unanimous<Line, Color>
+line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
+
+// @claim tile-lattice
+.init lattice = DividerTiles<SeparatorSource>
+lattice.cell(X, P) :- separator(X, _), in(P, _).
+lattice.divider(X, A, L) :- line_color.value([A, L], Col), separator(X, Col).
+
+// Some tile reaches the grid's edge, so no separator line runs along it.
+.decl open_edge(x: SeparatorSource)
+open_edge(X) :- lattice.tile_of(X, P, _), dir_elem(D), dist(P, D, 0).
+
+// --- the common tile ---
+
+// @claim common-tile
+.init tile_box = Bbox<Tile>
+tile_box.cell([X, P_tile], P_grid) :- lattice.tile_of(X, P_grid, P_tile).
+
+.decl tile_cell(x: SeparatorSource, p_tile: Position, p_intile: Position,
+                p_grid: Position, col: Color)
+tile_cell(X, P_tile, P_intile, P_grid, Col) :-
+    in(P_grid, Col), tile_box.box([X, P_tile], B), crop(P_grid, B, P_intile).
+
+// @claim common-tile
+.init common = Mode<Place, Color, Position>
+common.item([X, P_intile], Col, P_tile) :- tile_cell(X, P_tile, P_intile, _, Col).
+
+// --- the marks ---
+
+// The tile positions where a mark can stand.
+.decl in_scope(x: SeparatorSource, s: MarkScope, p_intile: Position)
+
+// --- WholeTile ---
+in_scope(X, $WholeTile(), P_intile) :- common.mode([X, P_intile], _).
+
+// --- Interior ---
+in_scope(X, $Interior(), P_intile) :-
+    common.mode([X, P_intile], _), interior(P_intile, ZERO).
+
+// --- PatternPositions, OffPalette ---
+
+// The number of tile positions where the common tile holds each color.
+// @claim marks
+.init palette = Tally<Hue, Position>
+palette.item([X, Col], P_intile) :- common.mode([X, P_intile], Col).
+
+// --- PatternPositions ---
+
+// @claim marks
+.init pattern = ArgExtremes<SeparatorSource, Color>
+pattern.cand(X, Col, N) :- palette.tally([X, Col], N).
+
+in_scope(X, $PatternPositions(), P_intile) :-
+    common.mode([X, P_intile], Col), pattern.low(X, Col, _).
+
+.decl mark(x: SeparatorSource, s: MarkScope, b: MarkBase,
+           p_tile: Position, p_intile: Position, col: Color)
+
+// --- CommonColor ---
+mark(X, S, $CommonColor(), P_tile, P_intile, Col) :-
+    in_scope(X, S, P_intile), tile_cell(X, P_tile, P_intile, _, Col),
+    !common.mode([X, P_intile], Col).
+
+// --- OffPalette ---
+mark(X, S, $OffPalette(), P_tile, P_intile, Col) :-
+    in_scope(X, S, P_intile), tile_cell(X, P_tile, P_intile, _, Col),
+    !palette.tally([X, Col], _).
+
+// --- the spans ---
+
+// @claim span-fill
+.init span = Between<Span>
+span.mark([X, S, B, P_intile, Col], P_tile) :- mark(X, S, B, P_tile, P_intile, Col).
+span.axis(K, A) :- span.mark(K, _), axis_elem(A).
+span.cell([X, S, B, P_intile, Col], P_tile) :-
+    span.mark([X, S, B, P_intile, Col], _), tile_box.box([X, P_tile], _).
+
+// A tile between two marks of the span that does not already hold its color.
+// A mark reads as between itself, and it keeps its color.
+.decl span_cell(x: SeparatorSource, s: MarkScope, b: MarkBase,
+                p_tile: Position, p_intile: Position, col: Color)
+span_cell(X, S, B, P_tile, P_intile, Col) :-
+    span.between([X, S, B, P_intile, Col], P_tile), !mark(X, S, B, P_tile, P_intile, Col).
+
+// A cell two spans give different colors has two outputs, so the case has no
+// output grid.
+.decl paint(ch: Choice, p: Position, col: Color)
+
+// --- EveryTile ---
+paint([S, B, $EveryTile(), X], P_grid, Col) :-
+    span_cell(X, S, B, P_tile, P_intile, Col), tile_cell(X, P_tile, P_intile, P_grid, _).
+
+// --- KeepMarks ---
+paint([S, B, $KeepMarks(), X], P_grid, Col) :-
+    span_cell(X, S, B, P_tile, P_intile, Col), !mark(X, S, B, P_tile, P_intile, _),
+    tile_cell(X, P_tile, P_intile, P_grid, _).
+
+out(P, Col, Ch) :-
+    impl_choice(Ch), Ch = [_, _, _, X], separator(X, _), !open_edge(X), in(P, Col_in),
+    ( paint(Ch, P, Col)
+    ; !paint(Ch, P, _), Col = Col_in
+    ).
+

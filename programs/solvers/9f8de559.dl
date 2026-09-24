@@ -1,0 +1,422 @@
+// 9f8de559
+// @draft
+// @keywords: markers cast bbox rank
+// @scene field: a solid rectangle of params.field_color sits inside the grid
+//  and does not touch the grid edge
+// @scene pointer: inside the field, a straight line of params.body_color cells
+//  runs along a row, a column, or a diagonal, and one params.head_color cell
+//  continues that line at one end
+// @rule ray: the ray starts at the head and steps away from the body, in the
+//  direction from the body cell next to the head to the head
+// @rule exit: the ray passes over field cells, and the first cell it reaches
+//  outside the field takes the field color; no other cell changes
+
+// how the ray's direction is read
+.type Direction =
+    // @claim ray
+    Adjacent {}
+    // @rule ray: the ray steps from the head away from the body cell nearest
+    //  the head (taxicab distance), along the sign of each axis; among nearest
+    //  body cells, the first in the order from params.tie_corner along
+    //  params.tie_axis
+    // @witness gap-head: borderline NearestBody
+    //     @relaxed pointer
+  | NearestBody {}
+    // @rule ray: the ray steps from the head along the axis on which body
+    //  cells touch, away from the body; undefined when body cells touch on
+    //  two axes or lie on both sides of the head
+    // @witness bent-head: foreign any
+    //     @relaxed pointer
+  | BodyAxis {}
+
+// which head cells cast
+.type Source =
+    // @claim ray
+    EveryHead {}
+    // @rule ray: only the first head cell in the order from
+    //  params.head_corner along params.head_axis casts
+    // @witness two-heads: borderline concept
+    //     @relaxed pointer
+    //     @reassigned head_corner
+    //     @reassigned head_axis
+    // @witness stray-head: borderline ScanHead
+    //     @relaxed pointer
+    //     @reassigned head_corner
+    //     @reassigned head_axis
+  | ScanHead {}
+
+// which cell the ray paints
+.type Stop =
+    // @claim exit
+    FieldExit {}
+    // @rule exit: the first cell on the ray that is not the field color takes
+    //  the field color; no field cell needs to exist
+    // @witness speck-on-ray: borderline any
+    //     @relaxed field
+    // @witness body-speck: borderline any
+    //     @relaxed pointer
+  | FirstNonfield {}
+
+// the color the painted cell takes
+.type Paint =
+    // @claim exit
+    FieldPaint {}
+    // @rule exit: the first cell the ray reaches outside the field takes
+    //  params.paint_color
+    // @witness other-paint: ordinary concept
+    //     @reassigned paint_color
+  | StoredPaint {}
+    // @rule exit: the first cell the ray reaches outside the field takes
+    //  the color most common in the input; undefined at a tie
+    // @witness small-field: variant concept
+  | DominantPaint {}
+
+// how the field color is found
+.type FieldColor =
+    // @claim field
+    StoredField {}
+    // @scene field: a solid rectangle of the color most common among the
+    //  cells next to the pointer, other than the pointer colors; undefined at
+    //  a tie
+    // @witness field-3: variant DerivedField
+    //     @relaxed field
+    // @witness small-field: variant concept
+  | DerivedField {}
+
+// how the head and body colors are found
+.type PointerColors =
+    // @claim pointer
+    StoredPointer {}
+    // @scene pointer: inside the field's bounding box, the cells not of the
+    //  field color have two colors; the head color has one cell and the body
+    //  color more; undefined otherwise
+    // @witness swap-pointer: variant DerivedPointer
+    //     @relaxed pointer
+  | DerivedPointer {}
+
+.type Choice = [direction: Direction, source: Source, stop: Stop, paint: Paint,
+                field: FieldColor, pointer: PointerColors]
+
+// The head and body colors of a pointer.
+.type Pointer = [head: Color, body: Color]
+
+// A head cell of a pointer.
+.type HeadCell = [ptr: Pointer, p: Position]
+
+// A ray cast under a stop reading, a field color, and a pointer.
+.type Cast = [stop: Stop, field: Color, ptr: Pointer]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- StoredField ---
+    // @derive DominantColor: variant derived
+    //     @relaxed field
+    .decl field_color(c: Color) field_color(7).
+
+    // --- StoredPointer ---
+    // @derive RarestColor: variant derived
+    //     @relaxed pointer
+    .decl head_color(c: Color) head_color(2).
+    .decl body_color(c: Color) body_color(6).
+
+    // --- StoredPaint ---
+    // @ignore: derive — the concept case never reads paint_color, so no input
+    // separates the derived color from the stored one
+    .decl paint_color(c: Color) paint_color(7).
+
+    // --- NearestBody ---
+    // The order that breaks a tie among nearest body cells. The pairs hold
+    // no tie, so every value stays open.
+    .decl tie_corner(d: DiagDir)
+    tie_corner(DIAG_TL). tie_corner(DIAG_TR). tie_corner(DIAG_BL). tie_corner(DIAG_BR).
+    .decl tie_axis(a: Axis) tie_axis(AXIS_V). tie_axis(AXIS_H).
+
+    // --- ScanHead ---
+    // The order whose first head cell casts. The pairs hold one head cell
+    // each, so every value stays open.
+    .decl head_corner(d: DiagDir)
+    head_corner(DIAG_TL). head_corner(DIAG_TR). head_corner(DIAG_BL). head_corner(DIAG_BR).
+    .decl head_axis(a: Axis) head_axis(AXIS_V). head_axis(AXIS_H).
+}
+
+.init params = Params
+
+// The scan orders over a pointer's head cells, and the step each order's
+// first nearest body cell gives a head cell. A scan order runs from a corner
+// along a primary axis.
+.comp Parse<Key> {
+    .type Scan = [ky: Key, corner: DiagDir, axis: Axis]
+    .type HeadKey = [ky: Key, p: Position]
+    .type HeadScan = [ky: Key, p: Position, corner: DiagDir, axis: Axis]
+
+    .decl head(ky: Key, p: Position)
+    .decl body(ky: Key, p: Position)
+
+    // @claim ray
+    .init scan = LexOrder<Scan>
+    scan.corner([Ky, C, A], C) :- scan.cell([Ky, C, A], _).
+    scan.axis([Ky, C, A], A) :- scan.cell([Ky, C, A], _).
+    scan.cell([Ky, C, A], P) :- head(Ky, P), diag_dir_elem(C), axis_elem(A).
+
+    // The body cells nearest each head cell, by taxicab distance.
+    // @claim ray
+    .init near = ArgExtremes<HeadKey, Position>
+    near.cand([Ky, P], Q, N) :-
+        head(Ky, P), body(Ky, Q), relative(P, Q, V),
+        diag_dist(V, Diag, _, K1, K2), K1 >= 0, K2 >= 0,     // the corner facing away from Q
+        corner_dist(V, Diag, N).
+
+    // @claim ray
+    .init tie = LexOrder<HeadScan>
+    tie.corner([Ky, P, C, A], C) :- tie.cell([Ky, P, C, A], _).
+    tie.axis([Ky, P, C, A], A) :- tie.cell([Ky, P, C, A], _).
+    tie.cell([Ky, P, C, A], Q) :- near.low([Ky, P], Q, _), diag_dir_elem(C), axis_elem(A).
+
+    // The step from the first nearest body cell Q toward head cell P, along
+    // the sign of each axis.
+    .decl tie_step(ky: Key, p: Position, c: DiagDir, a: Axis, d: Dir8)
+    tie_step(Ky, P, C, A, D) :-
+        tie.first([Ky, P, C, A], Q),
+        ( perp_dir(D, D2), nearer(D, P, Q), same_dist(D2, P, Q)
+        ; diag_dirs(D, _, D1, D2), nearer(D1, P, Q), nearer(D2, P, Q) ).
+}
+
+// @ignore tie_step: store — the order columns run over every scan order, and
+//  the program reads the stored orders from params.tie_corner and params.tie_axis
+.init parse = Parse<Pointer>
+parse.head(Ptr, P) :- head(Ptr, P).
+parse.body(Ptr, P) :- body(Ptr, P).
+
+.decl direction_choice(d: Direction)
+direction_choice($Adjacent()). direction_choice($NearestBody()). direction_choice($BodyAxis()).
+
+.decl stop_choice(s: Stop)
+stop_choice($FieldExit()). stop_choice($FirstNonfield()).
+
+.decl source_choice(s: Source)
+source_choice($EveryHead()). source_choice($ScanHead()).
+
+.decl paint_choice(p: Paint)
+paint_choice($FieldPaint()). paint_choice($StoredPaint()). paint_choice($DominantPaint()).
+
+.decl field_color_choice(f: FieldColor)
+field_color_choice($StoredField()). field_color_choice($DerivedField()).
+
+.decl pointer_colors_choice(p: PointerColors)
+pointer_colors_choice($StoredPointer()). pointer_colors_choice($DerivedPointer()).
+
+// Under BodyAxis with derived pointer colors, FirstNonfield paints the cell
+// FieldExit paints on every input, so that combination is not a case.
+.decl impl_choice(ch: Choice)
+impl_choice([Ds, Hs, St, Pt, Fs, Ps]) :-
+    direction_choice(Ds), Ds != $BodyAxis(), source_choice(Hs), stop_choice(St),
+    paint_choice(Pt), field_color_choice(Fs), pointer_colors_choice(Ps).
+impl_choice([$BodyAxis(), Hs, St, Pt, Fs, $StoredPointer()]) :-
+    source_choice(Hs), stop_choice(St), paint_choice(Pt), field_color_choice(Fs).
+impl_choice([$BodyAxis(), Hs, $FieldExit(), Pt, Fs, $DerivedPointer()]) :-
+    source_choice(Hs), paint_choice(Pt), field_color_choice(Fs).
+
+// The bounding box of each color's cells.
+// @claim field exit
+.init field = Bbox<Color>
+field.cell(Col, P) :- in(P, Col).
+
+// The field color and pointer each field-color and pointer-color reading
+// gives.
+.decl palette(fs: FieldColor, ps: PointerColors, f: Color, ptr: Pointer)
+
+// The field color each field-color reading gives for a pointer.
+.decl field_of(fs: FieldColor, ptr: Pointer, f: Color)
+
+.decl pointer_cand(ptr: Pointer)
+
+.decl head(ptr: Pointer, p: Position)
+head([H, B], P) :- pointer_cand([H, B]), in(P, H).
+
+.decl body(ptr: Pointer, p: Position)
+body([H, B], P) :- pointer_cand([H, B]), in(P, B).
+
+// The step from the body to each head cell under each direction reading.
+.decl heading(ds: Direction, ptr: Pointer, p: Position, d: Dir8)
+
+// The head cells that cast under each source reading.
+.decl source(hs: Source, ptr: Pointer, p: Position)
+
+// Some casting head cell has no step.
+.decl unaimed(ds: Direction, hs: Source, ptr: Pointer)
+unaimed(Ds, Hs, Ptr) :- direction_choice(Ds), source(Hs, Ptr, P), !heading(Ds, Ptr, P, _).
+
+// The cast from each head cell toward its step.
+// @claim ray exit
+.init ray = Ray<Cast>
+ray.dir([St, F, Ptr], D) :- stop_choice(St), palette(_, _, F, Ptr), heading(_, Ptr, _, D).
+ray.mark([St, F, Ptr], P) :- stop_choice(St), palette(_, _, F, Ptr), head(Ptr, P).
+
+// The cell each case paints.
+.decl exit(ds: Direction, hs: Source, st: Stop, fs: FieldColor, ps: PointerColors, p: Position)
+exit(Ds, Hs, St, Fs, Ps, P) :-
+    palette(Fs, Ps, F, Ptr), source(Hs, Ptr, Src), heading(Ds, Ptr, Src, D),
+    ray.stop([St, F, Ptr], P, D, _, Src).
+
+// The color each paint reading gives the exit cell in field color f.
+// @ignore: store — StoredPaint is the stored reading of this color
+.decl paint(pt: Paint, f: Color, col: Color)
+
+// The field the stop reading needs exists.
+.decl framed(st: Stop, f: Color)
+
+out(P, Col, [Ds, Hs, St, Pt, Fs, Ps]) :-
+    impl_choice([Ds, Hs, St, Pt, Fs, Ps]),
+    palette(Fs, Ps, F, Ptr), source(Hs, Ptr, _), !unaimed(Ds, Hs, Ptr), framed(St, F),
+    ( exit(Ds, Hs, St, Fs, Ps, P), paint(Pt, F, Col)
+    ; in(P, Col), !exit(Ds, Hs, St, Fs, Ps, P) ).
+
+// --- Adjacent ---
+// The step from each body cell next to a head cell.
+// @claim ray
+.init touch = Unanimous<HeadCell, Dir8>
+touch.item([Ptr, P], D) :- head(Ptr, P), body(Ptr, Q), neighbor(Q, D, P).
+
+heading($Adjacent(), Ptr, P, D) :- touch.value([Ptr, P], D).
+
+// --- NearestBody ---
+// The step under each open tie order; the orders must agree.
+// @claim ray
+.init nearest = Unanimous<HeadCell, Dir8>
+nearest.item([Ptr, P], D) :-
+    parse.tie_step(Ptr, P, C, A, D), params.tie_corner(C), params.tie_axis(A).
+
+heading($NearestBody(), Ptr, P, D) :- nearest.value([Ptr, P], D).
+
+// --- BodyAxis ---
+// The axis on which body cells touch.
+// @claim ray
+.init aligned = Unanimous<Pointer, Axis4>
+aligned.item(Ptr, A) :- body(Ptr, P), body(Ptr, Q), neighbor(P, D, Q), axis4_of(D, A).
+
+// The step on that axis from each body cell toward the head cell.
+// @claim ray
+.init away = Unanimous<HeadCell, Dir8>
+away.item([Ptr, P], D) :-
+    head(Ptr, P), aligned.value(Ptr, A), axis4_of(D, A), body(Ptr, Q), nearer(D, P, Q).
+
+heading($BodyAxis(), Ptr, P, D) :- away.value([Ptr, P], D).
+
+// --- EveryHead ---
+source($EveryHead(), Ptr, P) :- head(Ptr, P).
+
+// --- ScanHead ---
+// The first head cell under each open head order; the orders must agree.
+// @claim ray
+.init pick = Unanimous<Pointer, Position>
+pick.item(Ptr, P) :- parse.scan.first([Ptr, C, A], P), params.head_corner(C), params.head_axis(A).
+
+source($ScanHead(), Ptr, P) :- pick.value(Ptr, P).
+
+// --- FieldExit ---
+framed($FieldExit(), F) :- field.box(F, _).
+
+ray.blocked([$FieldExit(), F, Ptr], P) :-
+    palette(_, _, F, Ptr), field.box(F, B), in(P, _), !inside(P, B).
+
+// --- FirstNonfield ---
+framed($FirstNonfield(), F) :- palette(_, _, F, _).
+
+ray.blocked([$FirstNonfield(), F, Ptr], P) :- palette(_, _, F, Ptr), in(P, Col), Col != F.
+
+// --- FieldPaint ---
+paint($FieldPaint(), F, F) :- palette(_, _, F, _).
+
+// --- StoredPaint ---
+paint($StoredPaint(), F, Col) :- palette(_, _, F, _), params.paint_color(Col).
+
+// --- DominantPaint ---
+// @claim exit
+.init commonest = Mode<Unit, Color, Position>
+commonest.item($U(), Col, P) :- in(P, Col).
+
+paint($DominantPaint(), F, Col) :- palette(_, _, F, _), commonest.mode($U(), Col).
+
+// --- StoredField ---
+field_of($StoredField(), Ptr, F) :- pointer_cand(Ptr), params.field_color(F).
+
+// --- DerivedField ---
+// The commonest color among the cells next to the pointer, other than the
+// pointer colors.
+// @claim field
+.init around = Mode<Pointer, Color, Position>
+around.item([H, B], Col, Q) :-
+    ( head([H, B], P) ; body([H, B], P) ),
+    neighbor(P, _, Q), in(Q, Col), Col != H, Col != B.
+
+field_of($DerivedField(), Ptr, F) :- around.mode(Ptr, F).
+
+// --- StoredPointer ---
+pointer_cand([H, B]) :- params.head_color(H), params.body_color(B).
+
+palette(Fs, $StoredPointer(), F, [H, B]) :-
+    params.head_color(H), params.body_color(B), field_of(Fs, [H, B], F).
+
+// --- DerivedPointer ---
+// The cells of field color F's bounding box that are not of color F.
+.decl inset(f: Color, p: Position, col: Color)
+inset(F, P, Col) :- field.box(F, B), in(P, Col), inside(P, B), Col != F.
+
+// Color Col has more than one cell in F's box.
+.decl repeated(f: Color, col: Color)
+repeated(F, Col) :- inset(F, P, Col), inset(F, Q, Col), P != Q.
+
+// A color in F's box other than H and B.
+.decl third(f: Color, h: Color, b: Color)
+third(F, H, B) :- inset(F, _, H), inset(F, _, B), inset(F, _, Col), Col != H, Col != B.
+
+// The pointer read inside F's box.
+.decl derived_pointer(f: Color, ptr: Pointer)
+derived_pointer(F, [H, B]) :-
+    inset(F, _, H), !repeated(F, H),
+    inset(F, _, B), repeated(F, B), !third(F, H, B).
+
+pointer_cand(Ptr) :- derived_pointer(_, Ptr).
+
+palette(Fs, $DerivedPointer(), F, Ptr) :- derived_pointer(F, Ptr), field_of(Fs, Ptr, F).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.head(E, P) :- ex_in(E, P, Col), params.head_color(Col).
+    parse.body(E, P) :- ex_in(E, P, Col), params.body_color(Col).
+
+    .decl changed(e: Example, q: Position)
+    changed(E, Q) :- ex_in(E, Q, C_in), ex_out(E, Q, C_out), C_in != C_out.
+
+    // A changed cell lies on the line from head cell P toward D.
+    .decl cast(e: Example, p: Position, d: Dir8)
+    cast(E, P, D) :-
+        parse.head(E, P), changed(E, Q), same_line(A, P, Q), axis4_of(D, A), nearer(D, Q, P).
+
+    // Under order (C, A), the first head cell casts nowhere.
+    .decl head_contradicted(c: DiagDir, a: Axis)
+    head_contradicted(C, A) :- parse.scan.first([E, C, A], P), ex_out(E, _, _), !cast(E, P, _).
+
+    .decl head_order(c: DiagDir, a: Axis)
+    head_order(C, A) :- diag_dir_elem(C), axis_elem(A), !head_contradicted(C, A).
+
+    .decl head_corner(c: DiagDir)
+    head_corner(C) :- head_order(C, _).
+
+    .decl head_axis(a: Axis)
+    head_axis(A) :- head_order(_, A).
+
+    // Under order (C, A), a head cell's step casts nowhere.
+    .decl tie_contradicted(c: DiagDir, a: Axis)
+    tie_contradicted(C, A) :- parse.tie_step(E, P, C, A, D), ex_out(E, _, _), !cast(E, P, D).
+
+    .decl tie_order(c: DiagDir, a: Axis)
+    tie_order(C, A) :- diag_dir_elem(C), axis_elem(A), !tie_contradicted(C, A).
+
+    .decl tie_corner(c: DiagDir)
+    tie_corner(C) :- tie_order(C, _).
+
+    .decl tie_axis(a: Axis)
+    tie_axis(A) :- tie_order(_, A).
+}
