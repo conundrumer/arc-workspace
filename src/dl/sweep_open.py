@@ -19,9 +19,14 @@ SWEEP_CACHE = REPO_ROOT / ".scratch" / "retro" / "sweep"
 # `test refutes` clause leaves the parameter open only under the note that
 # no determination picks the stored value, so the note is the clause here.
 REFUTED = "a determination from train alone could pick it"
-IN_KIND = "differ from stored in kind, so the pairs do not fix this parameter"
+IN_KIND = "and stored are open values, differing in a nominal argument"
 BELOW = "fit and are smaller than stored"
 CASES = "the cases admit different values"
+
+# A cached sweep from before the in-kind clause took its present words
+# carries this form.
+IN_KIND_EARLIER = (
+    "differ from stored in kind, so the pairs do not fix this parameter")
 
 # The sweep prints its progress to stderr, one line per parameter, and the
 # elapsed time under the report. A cached sweep from before the progress line
@@ -86,10 +91,9 @@ def open_phrase(line: str) -> str | None:
         phrases.append(
             mctx("only the test pairs refute the other values train admits, "
                  "so a determination from train alone could pick it"))
-    if IN_KIND in line:
+    if IN_KIND in line or IN_KIND_EARLIER in line:
         phrases.append(
-            mctx("values that differ from stored in kind fit as well, so the "
-                 "pairs do not fix it"))
+            mctx("open values that differ from stored in a nominal argument"))
     if BELOW in line:
         phrases.append(mctx("values smaller than stored fit as well"))
     return "; ".join(phrases) or None

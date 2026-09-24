@@ -14,8 +14,9 @@ parameter no swap separates takes a hand-built entry of the witness file,
 under the id `<param>=<Proposer>`.
 
 The runner holds a case only where the concept case reads the parameter.
-A parameter read under the marker of another branch alone has the concept
-case as its derived reading, so no case stands apart from it. A
+A parameter that only another branch reads, through clauses whose head
+carries that branch's constructor, has the concept case as its derived
+reading, so no case stands apart from it. A
 `// @ignore: derive` line above the parameter's `.decl` dismisses the case
 the session judges no case.
 """
@@ -410,7 +411,8 @@ def render_derive(report: Report) -> list[str]:
                 lines.append("  " + mctx(
                     "the case needs an entry `{case}`, its `assign` holding "
                     "`{param}` at the value `{proposer}` gives on the "
-                    "entry's input").format(case=d.case, param=d.param,
+                    "entry's input, or an `@ignore: derive` line when no "
+                    "input separates them").format(case=d.case, param=d.param,
                                              proposer=d.proposer))
                 continue
         if d.line is not None:

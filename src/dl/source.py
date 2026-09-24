@@ -11,6 +11,15 @@ from dl.paths import REPO_ROOT
 SOLVE_DIRECTIVES = ".input in(IO=stdin)\n.output out(IO=stdout)\n"
 DETERMINE_DIRECTIVES = ".input ex_in\n.input ex_out\n.output _determination_diff(IO=stdout)\n"
 
+# The solve-mode output when `out` has columns after the color: each cell
+# once per case, with each trailing column as its ordinal, and each trailing
+# column's values by ordinal, `OUT_CASE` followed by the column's index from
+# zero. A case's value can be long, and printing `out` itself would repeat it
+# on every cell.
+OUT_CELLS = "_runner_out"
+OUT_CASE = "_runner_case"
+OUT_DECL_RE = re.compile(r"^\.decl\s+out\s*\(([^)]*)\)", re.M)
+
 COMP_HEADER_RE = re.compile(r"\.comp\s+(\w+)")
 DECL_RE = re.compile(r"\.decl\s+(\w+)\s*\(([^)]*)\)")
 GRID_CALL_RE = re.compile(r"\bGRID_(STAMP_)?(MASK_|SPARSE_)?(\d+)x(\d+)\s*\(")
@@ -520,9 +529,40 @@ def swap_facts(source: str, param: str, rows: list[tuple]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _out_directives(expanded: str) -> str | None:
+    """The rules and directives that print `out` as `OUT_CELLS` and the
+    `OUT_CASE` relations; None when `out` has no column after the color or
+    its declaration is not found."""
+    decls = OUT_DECL_RE.findall(expanded)
+    if len(decls) != 1:
+        return None
+    fields = _split_args(decls[0])
+    if len(fields) < 3 or any(":" not in f for f in fields):
+        return None
+    types = [f.split(":", 1)[1].strip() for f in fields]
+    trailing = [f"V{i}" for i in range(len(types) - 2)]
+    ords = ", ".join(f"ord({v})" for v in trailing)
+    keys = ", ".join(f"k{i}: number" for i in range(len(trailing)))
+    lines = [
+        ".input in(IO=stdin)",
+        f".decl {OUT_CELLS}(p: {types[0]}, col: {types[1]}, {keys})",
+        f"{OUT_CELLS}(P, C, {ords}) :- out(P, C, {', '.join(trailing)}).",
+        f".output {OUT_CELLS}(IO=stdout)",
+    ]
+    for i, (v, typ) in enumerate(zip(trailing, types[2:], strict=True)):
+        args = ", ".join(v if w == v else "_" for w in trailing)
+        lines += [
+            f".decl {OUT_CASE}{i}(k: number, v: {typ})",
+            f"{OUT_CASE}{i}(ord({v}), {v}) :- out(_, _, {args}).",
+            f".output {OUT_CASE}{i}(IO=stdout)",
+        ]
+    return "\n".join(lines) + "\n"
+
+
 def build_source(source: str) -> str:
     """Assemble the solve-mode program from a solver file's source."""
-    return f"{expand_macros(source)}\n{SOLVE_DIRECTIVES}"
+    expanded = expand_macros(source)
+    return f"{expanded}\n{_out_directives(expanded) or SOLVE_DIRECTIVES}"
 
 
 def build_determine_source(source: str, params: dict[str, list[str]]) -> str:

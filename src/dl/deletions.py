@@ -1,8 +1,9 @@
 """Delete structure from a solver and report what the pairs still accept."""
 
+import os
 import re
 from collections.abc import Callable, Iterator
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 
 import controlled_markdown as nm
 from arc.task import load as load_task
@@ -452,6 +453,46 @@ def _case_findings(
     return findings
 
 
+def _determines(src: str, task) -> bool:
+    r = determine_check(src, task)
+    return r is not None and not r.error and not r.diff
+
+
+# What every deletion's test reads, set once in each worker process:
+# the task, its pairs, the reference profile, and whether the stored
+# source determines.
+_judge: dict = {}
+
+
+def _judge_init(task, reference: list, determines: bool) -> None:
+    _judge.update(task=task, examples=list(task.train) + list(task.test),
+                  reference=reference, determines=determines)
+
+
+def _judge_deletion(tagged: tuple[str, Deletion]) -> Finding | None:
+    """The finding one deletion raises, or None when it changes a pair."""
+    task, examples = _judge["task"], _judge["examples"]
+    determines = _judge["determines"]
+    mode, (lineno, kind, text, mod) = tagged
+    if mode == "solve":
+        # The determination check is the expensive one, so it waits on the
+        # profile, which most deletions already fail.
+        profile = _profile(mod, examples, _judge["reference"])
+        if profile != _judge["reference"]:
+            # A None profile is a failing pair, and a file Souffle
+            # rejects fails every pair; a profile that differs measured
+            # the pairs.
+            if profile is None and _ungrounds(mod, examples[0]):
+                return (lineno,
+                        UNPROBED_CASE if kind == CASE_COLUMN
+                        else UNGROUNDED_DELETION, text)
+            return None
+        return ((lineno, kind, text)
+                if not determines or _determines(mod, task) else None)
+    return ((lineno, f"determination {kind}", text)
+            if _determines(mod, task) else None)
+
+
 def deletion_report(stem: str) -> tuple[int, list[Finding]] | None:
     """Structural deletions that change no pair's output or derived value.
 
@@ -467,6 +508,9 @@ def deletion_report(stem: str) -> tuple[int, list[Finding]] | None:
     stood for it. A deletion whose run fails for an ungrounded variable
     reports under a kind of its own, since that run measured nothing.
     None when the stored source itself fails.
+
+    The deletions are judged in worker processes: on a warm cache the
+    judging is Python work, which threads would run one at a time.
     """
     path, task_id = solver_file(stem)
     source = path.read_text()
@@ -476,38 +520,20 @@ def deletion_report(stem: str) -> tuple[int, list[Finding]] | None:
     if reference is None:
         return None
 
-    def determine_ok(src: str) -> bool:
-        r = determine_check(src, task)
-        return r is not None and not r.error and not r.diff
-
-    determines = determine_ok(source)
-    dels = [("solve", d) for d in deletions(source)]
+    determines = _determines(source, task)
+    # The Determine comp's deletions go first: each runs the determination
+    # check, which takes longest, so the pool starts them before the rest.
+    dels = ([("determine", d) for d in deletions(source, determine=True)]
+            if determines else [])
+    dels += [("solve", d) for d in deletions(source)]
     dels += [("solve", d) for d in column_deletions(source)]
-    if determines:
-        dels += [("determine", d) for d in deletions(source, determine=True)]
 
-    def test(tagged: tuple[str, Deletion]) -> tuple[int, str, str] | None:
-        mode, (lineno, kind, text, mod) = tagged
-        if mode == "solve":
-            # The determination check is the expensive one, so it waits on the
-            # profile, which most deletions already fail.
-            profile = _profile(mod, examples)
-            if profile != reference:
-                # A None profile is a failing pair, and a file Souffle
-                # rejects fails every pair; a profile that differs measured
-                # the pairs.
-                if profile is None and _ungrounds(mod, examples[0]):
-                    return (lineno,
-                            UNPROBED_CASE if kind == CASE_COLUMN
-                            else UNGROUNDED_DELETION, text)
-                return None
-            return ((lineno, kind, text)
-                    if not determines or determine_ok(mod) else None)
-        return ((lineno, f"determination {kind}", text)
-                if determine_ok(mod) else None)
-
-    with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
-        findings = [r for r in executor.map(test, dels) if r]
+    workers = _pool_workers() or os.cpu_count() or 1
+    with ProcessPoolExecutor(
+        max_workers=workers, initializer=_judge_init,
+        initargs=(task, reference, determines),
+    ) as executor:
+        findings = [r for r in executor.map(_judge_deletion, dels) if r]
     findings = _case_findings(
         source, findings, lambda: _cases_agree(source, examples, reference)
     )
@@ -579,7 +605,6 @@ def render_deletions(stem: str, report: tuple[int, list[Finding]] | None) -> lis
         lines += _section(
             "ungrounded", count=len(ungrounded),
             noun="deletion" if len(ungrounded) == 1 else "deletions")
-        lines += entries(ungrounded)
     if unexercised:
         lines.append("")
         lines += _section("unexercised")

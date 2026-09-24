@@ -37,7 +37,7 @@ from dl.derived_constant import (
     _build,
     _controls,
     _edges,
-    _index,
+    _index as _merged_index,
     _instances,
     _reachable,
     _tuple_sets,
@@ -46,6 +46,7 @@ from dl.determination_plan import fact_params
 from dl.dlparse import (
     TOP,
     Comp,
+    Ctor,
     Index,
     ParseError,
     TypeDecl,
@@ -54,7 +55,7 @@ from dl.dlparse import (
 )
 from dl.domains import _lib_defines
 from dl.facts import grid_to_facts
-from dl.lint import choice_points, concept_case
+from dl.lint import _subterms, choice_points, concept_case
 from dl.solve import (
     parse_output,
     res_out_stem,
@@ -232,6 +233,18 @@ class Report:
 
 
 # --- candidates -------------------------------------------------------
+
+def _index(source: str) -> Index:
+    """The solver's index with the lib merged in, each rule under the
+    section marker the solver's own text gives it. The lib's lines number
+    another file, so a lib rule stands under no marker, and a lib comp's
+    span hides no marker of the solver."""
+    ix = _merged_index(source)
+    own = Index(parse(source)).rules
+    for i, info in enumerate(ix.rules):
+        info.section = own[i].section if i < len(own) else None
+    return ix
+
 
 def _solver_scopes(source: str) -> set[str]:
     """The top level and the comps the solver declares as program code."""
@@ -1196,17 +1209,15 @@ def _ancestors(rel: str, bodies: dict[str, set[str]]) -> set[str]:
     return seen
 
 
-def _concept_rules(ix: Index, branches: set[str],
-                   concept: set[str]) -> set[int]:
-    """The rules the concept case runs: the ones under no branch marker,
-    and the ones under a marker of a concept branch."""
-    out: set[int] = set()
-    for i, info in enumerate(ix.rules):
-        marked = ({c.lstrip("$") for c in marker_cases(info.section)}
-                  & branches if info.section else set())
-        if not marked or marked & concept:
-            out.add(i)
-    return out
+def _concept_rules(ix: Index, others: set[str]) -> set[int]:
+    """The rules whose tuples the concept case holds: the ones whose head
+    carries no constructor of another branch. A rule the concept case
+    holds none of feeds it nothing, wherever it stands."""
+    return {
+        i for i, info in enumerate(ix.rules)
+        if not any(isinstance(t, Ctor) and t.name in others
+                   for arg in info.rule.head.args for t in _subterms(arg))
+    }
 
 
 def concept_reads(source: str) -> set[str]:
@@ -1219,12 +1230,12 @@ def concept_reads(source: str) -> set[str]:
         ix = _index(expanded)
     except ParseError:
         return params
-    branches, concept, _universes = _branch_names(
-        source, ix, _case_types(ix))
-    if not branches:
+    points = choice_points(source)
+    if not points:
         return params
+    others = {b.name for p in points for b in p.branches if not b.is_concept}
     bodies = _body_map(ix, _solver_scopes(expanded), deep=True,
-                       rules=_concept_rules(ix, branches, concept))
+                       rules=_concept_rules(ix, others))
     read = _ancestors("out", bodies)
     holder = next((name for name, init in ix.inits.get(TOP, {}).items()
                    if init.comp == "Params"), "params")
@@ -1401,6 +1412,8 @@ def _findings(source: str, stem: str, found: list[Found], cands: dict,
             out.append(Finding(f.rel, mctx(
                 "one value on every input and no `@store` or "
                 "`@ignore: store` line")))
+        if _asks_params(f) and not f.folded:
+            out.append(Finding(f.rel, _params_ask(f)))
         if f.case_id in ids:
             f.entry = f.case_id
     return out
@@ -1533,9 +1546,10 @@ def _headline(f: Found) -> str:
         return mctx("{name}: one {noun} up to translation on every input"
                     ).format(name=name, noun=_noun(f))
     if f.colors:
-        value = _inline(f)
-        return mctx("{name}: one color on every input: {value}; store it in "
-                    "Params").format(name=name, value=value)
+        if _asks_params(f):
+            return mctx("{name}: {ask}").format(name=name, ask=_params_ask(f))
+        return (mctx("{name}: one color on every input: {value}").format(
+            name=name, value=_inline(f)) + _in_case(f))
     if _drawn(f):
         return (mctx("{name}: one {noun} on every input").format(
             name=name, noun=_noun(f)) + _in_case(f))
@@ -1545,6 +1559,18 @@ def _headline(f: Found) -> str:
                      ).format(name=name, n=members) + _in_case(f))
     return (mctx("{name}: one value on every input: {value}").format(
         name=name, value=_inline(f)) + _in_case(f))
+
+
+def _asks_params(f: Found) -> bool:
+    """The value is a color the concept case reads, and the runner holds no
+    case that stores it: its stored reading is a Params parameter."""
+    return (f.kind == OWNED and f.colors and f.read and f.concept
+            and f.line is None)
+
+
+def _params_ask(f: Found) -> str:
+    return mctx("one color on every input: {value}; store it in Params"
+                ).format(value=_inline(f))
 
 
 def _in_case(f: Found) -> str:
@@ -1615,6 +1641,8 @@ def render_store(report: Report) -> list[str]:
             lines += ["  " + ln for ln in _drawn(f)]
             lines.append("  " + _witness_line(f))
             lines.append("  " + store_hint(f.rel))
+            lines.append("  " + ignore_hint(f.rel))
+        elif _asks_params(f):
             lines.append("  " + ignore_hint(f.rel))
         elif f.kind == OWNED and f.line is not None and f.read:
             # The witness the line's plausibility and verdict judge.

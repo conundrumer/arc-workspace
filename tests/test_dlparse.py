@@ -186,3 +186,19 @@ top(X) :- o.seen(X), o.i.node(X).
     assert [r.role for r in ix.refs_of(("Inner", "node"))] == ["head", "pos", "pos"]
 
 
+
+
+def test_two_heads_parse_as_two_rules():
+    """A clause with two heads parses to what the two one-head clauses
+    over its body parse to."""
+    two = parse("a(X), b(X) :- c(X), X > 1.")
+    pair = parse("a(X) :- c(X), X > 1. b(X) :- c(X), X > 1.")
+    assert len(two.items) == 2
+    assert two.items == pair.items
+
+
+def test_a_changed_text_parses_again():
+    first = parse(".decl a(x: number)\n")
+    second = parse(".decl b(x: number)\n")
+    assert [it.name for it in first.items] == ["a"]
+    assert [it.name for it in second.items] == ["b"]

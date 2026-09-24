@@ -107,7 +107,7 @@
     - <claim>: <why>
 
     ## Interference
-    - <the doc or tool line that interfered, and how>
+    - <the doc or tool line that interfered or cost effort, and how>
     ```
 
 ### Write
@@ -130,11 +130,11 @@
     - Flag performance issues in the review.
     - When a performance issue prevents the principled form, make a temporary workaround, marked with the `@workaround` directive.
 3. Form each claim under the Analyze report's Not formed as a branch, and add its case when it meets the case conditions.
-4. Hold each branch that derives a parameter's value, or stores a value the program derives, as a case.
+4. Hold as a case each built-in derivation that fits a parameter, and each stored reading of a value the program derives.
     - `uv run python scripts/run_dl.py derive <task_id>` lists the built-in derivations that fit.
     - `uv run python scripts/run_dl.py store <task_id>` lists the derived values it holds as stored cases.
-    - Write the directive line each prints, in the form the [`@derive` directive](docs/handbook/solver-file.md#params) gives, with the plausibility and verdict the Analyze report gives the branch.
-    - A branch the runner holds loses its constructor and gets no clauses of its own.
+    - Write the directive line each prints, in the form the [`@derive` directive](docs/handbook/solver-file.md#params) gives, with the plausibility and verdict the Analyze report gives the branch of that derivation, when it has one.
+    - A branch whose derivation the runner offers loses its constructor and gets no clauses of its own.
 5. Run the audit (`uv run python scripts/run_dl.py audit <task_id>`) and resolve the findings.
     - A check the audit skips goes in the review as open.
 
@@ -226,7 +226,7 @@
 - Include only:
     - A lib operation to promote.
     - A judgment the session made.
-    - An issue with a doc or tool that interfered with the pass.
+    - An issue with a doc or tool that interfered with the pass or cost it effort.
     - An item carried over from an earlier pass's report, marked with the pass it came from.
         - Do not recheck it against the current runner, lib, or docs.
     - A fix or a problem in a file the pass does not edit, with the file, the line, and the fix it needs.

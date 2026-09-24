@@ -18,8 +18,10 @@ report runs it first.
 """
 
 import json
+import re
 import subprocess
 from collections.abc import Callable, Iterable
+from concurrent.futures import Executor, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -42,7 +44,7 @@ from dl.annotations import (
 from dl.dlparse import ParseError, parse
 from dl.facts import Candidate
 from dl.features import case_branches, declares_held, held_cases
-from dl.features_run import NO_CHOICE, _split, case_label, case_members
+from dl.features_run import NO_CHOICE, _split, case_label
 from dl.lint import branch_above, unwitnessed_branches
 from dl.models import (
     TERM_RE,
@@ -56,6 +58,7 @@ from dl.models import (
 from dl.paths import PROGRAMS_DIR
 from dl.render import _grid_lines
 from dl.solve import res_out_stem, run_dl_source, solver_file
+from dl.souffle import _pool_workers
 from dl.source import swap_facts
 
 WITNESS_DIR = PROGRAMS_DIR / "witnesses"
@@ -102,8 +105,6 @@ class Entry:
     input: list[list[int]]
     output: dict[str, Outcome] | list[list[int]] = field(default_factory=dict)
     assign: Assign = field(default_factory=dict)
-    empty_assign: bool = False
-    """The file writes an `assign` key that holds nothing."""
 
     @property
     def rejected_output(self) -> bool:
@@ -135,6 +136,14 @@ class Timeouts:
         self.findings.append(Drift(
             entry=where, cases=[case] if case else [], expected=None,
             actual=None, kind=TIMEOUT, note=f"{err.timeout:g}"))
+
+    def merge(self, other: "Timeouts") -> None:
+        """Take in the findings `other` noted, as if noted here in turn."""
+        for f in other.findings:
+            key = (f.entry, f.cases[0] if f.cases else "")
+            if key not in self._seen:
+                self._seen.add(key)
+                self.findings.append(f)
 
     def run(self, source: str, grid: Grid, path: Path,
             where: str) -> list[Candidate] | None:
@@ -455,7 +464,6 @@ def _witness(data: dict) -> Witness:
                 input=e["input"],
                 output=_output(e["output"]),
                 assign={k: list(v) for k, v in e.get("assign", {}).items()},
-                empty_assign="assign" in e and not e["assign"],
             )
             for e in data["witnesses"]
         ],
@@ -576,12 +584,13 @@ def _entry_findings(entry: Entry, space: Cases,
                     impl: set[str] | None = None) -> list[Drift]:
     """The findings on one entry, given what its input produced. `emitted`
     holds the outcome of each case the run emits, spelled with its fields;
-    `actuals` holds those and the runner's labels of them, `held` the cases
-    the solver states, and `runner` the outcomes of the cases the runner
-    holds. An entry whose id is a case the runner holds need not list that
-    case. `impl` holds the cases `impl_choice` holds,
-    and is None when the solver declares no `impl_choice`; a name whose case
-    it does not hold denotes no case of the solver."""
+    `actuals` holds those and the runner's labels of them, `held` the names
+    of the cases the solver states (`_names`), and `runner` the outcomes of
+    the cases the runner holds. An entry whose id is a case the runner holds
+    need not list that case. `impl` holds the names of the cases
+    `impl_choice` holds, and is None when the solver declares no
+    `impl_choice`; a name whose case it does not hold denotes no case of the
+    solver."""
     label = _label(entry)
     if entry.rejected_output:
         return _merged(label, [
@@ -595,8 +604,7 @@ def _entry_findings(entry: Entry, space: Cases,
     for name, want in entry.output.items():
         case = space.resolve(name)
         if case is None or (impl is not None and case not in runner
-                            and case not in impl
-                            and case_label(case) not in impl):
+                            and case not in impl):
             unresolved.append(name)
             continue
         named.add(case)
@@ -615,7 +623,7 @@ def _entry_findings(entry: Entry, space: Cases,
         (name, None, actuals.get(case))
         for name, case in space.models().items()
         if case not in named
-        and (case in actuals or case_label(case) in held)
+        and (case in actuals or case in held)
     ] + [
         (case, None, runner.get(case))
         for case in sorted(space.runner)
@@ -669,14 +677,31 @@ def verdict_case(verdict: str, space: Cases,
 
 def _departs(verdict: str, case: str, space: Cases) -> bool:
     """A witness line of this verdict shows `case` departing: the verdict is
-    `other`, or it names a case of another label than `case`. The verdict
-    `any` names no case, and neither does a verdict that denotes no case,
-    which is a finding of its own."""
+    `other`, or it names a case other than `case`. A verdict that names a
+    constructor without its fields names the runner's label, which stands
+    for every case under that constructor, `case` among them when that is
+    its label. The verdict `any` names no case, and neither does a verdict
+    that denotes no case, which is a finding of its own."""
     if verdict == OTHER:
         return True
     named = verdict_case(verdict, space)
-    return (named is not None and named != case
-            and case_label(named) != case_label(case))
+    return named is not None and named not in (case, case_label(case))
+
+
+def _constructors(case: str) -> set[str]:
+    """Every constructor a case spelled in full takes, nested ones
+    included."""
+    return set(re.findall(r"\w+", case))
+
+
+def _names(cases: Iterable[str]) -> set[str]:
+    """The names that denote the given cases: each case spelled in full,
+    and its runner's label, which a name of a constructor written without
+    its fields resolves to. A case with a nested constructor is spelled with
+    parentheses and a runner's label never is, so two cases that differ in a
+    nested constructor stay apart."""
+    cases = list(cases)
+    return set(cases) | {case_label(c) for c in cases}
 
 
 def _no_witness_note(c: Claim) -> str:
@@ -689,9 +714,9 @@ def _annotation_findings(source: str, entries: list[Entry],
                          cases: list[str], space: Cases) -> list[Drift]:
     """Where a solver's `@witness` lines and the witness file disagree: a
     line off the form of the witness grammar, a line that names no entry of
-    the file, a `@relaxed` slug the header's claims do not carry, a block
-    whose `@reassigned` parameters are not the entry's `assign` keys, an
-    entry whose `assign` is empty, and an entry no line names. A `@derive`
+    the file, a `@relaxed` slug the header's claims do not carry, and a
+    block whose `@reassigned` parameters are not the entry's `assign` keys.
+    An entry that no line names is no finding here. A `@derive`
     line names the entry of its case id, and the derive report reads that
     entry. The verdict of each `@witness`, `@derive` and `@store` line
     resolves in `space` (`verdict_case`), and one that denotes no case of
@@ -751,9 +776,7 @@ def _annotation_findings(source: str, entries: list[Entry],
         rel = store_relation(source, st)
         verdict_note(st.line, st.verdict,
                      {STORED: f"{rel}={STORED}"} if rel else None)
-    named = set()
     for a in merged_blocks(ann.witnesses):
-        named.add(a.id)
         entry = by_id.get(a.id)
         if entry is None:
             note(f"line {a.line}", a.id,
@@ -772,7 +795,6 @@ def _annotation_findings(source: str, entries: list[Entry],
     for st in ann.stores:
         if rel := store_relation(source, st):
             relaxed_notes(f"line {st.line}", f"{rel}={STORED}", st.relaxed)
-    named |= derive_ids(source) | store_ids(source)
 
     def approximated(c: Claim, want: list[str]) -> None:
         if not c.witnesses:
@@ -806,18 +828,11 @@ def _annotation_findings(source: str, entries: list[Entry],
         """The cases the header's approximation still runs on: the ones no
         branch of theirs restates under that slug."""
         names = restated.get(slug, set())
-        return [k for k in cases if not names & set(case_members(k))]
+        return [k for k in cases if not names & _constructors(k)]
 
     for c in ann.claims:
         if c.approximated:
             approximated(c, not_restated(c.slug))
-    for e in entries:
-        if e.empty_assign:
-            note(e.id, e.id, mctx("`assign` is empty; omit the key"))
-        if e.id not in named:
-            note("", e.id,
-                 mctx("witness `{id}` of the file is named by no `@witness` "
-                      "line").format(id=e.id))
     return findings
 
 
@@ -865,6 +880,19 @@ def held_case_labels(source: str) -> list[str]:
             held = [space.concept]
     runner = derive_ids(source) | store_ids(source)
     return list(held) + sorted(runner)
+
+
+def _stated(stem: str, source: str, grid: list[list[int]],
+            choice: list[str]) -> tuple[list[str], list[str]]:
+    """The cases the solver states on `grid`, by the runner's label and
+    spelled in full. A solver that declares `impl_choice` states the cases
+    a run on `grid` finds it holding. Another states `choice`, the cases of
+    its `Choice` as `held_case_labels` spells them, which no grid
+    changes."""
+    if declares_held(source):
+        full = held_cases(parse(source), source, grid, full=True) or []
+        return list(dict.fromkeys(case_label(c) for c in full)), full
+    return case_branches(stem, source, grid), choice
 
 
 def _held_outcomes(stem: str, held: list[str], entry: Entry, source: str,
@@ -1037,12 +1065,24 @@ def _subsumed(pairs: list[tuple[str, str, str, str]], outcomes: list[Scoped],
             for (x, first), cases in hit.items()]
 
 
+def _held_part(stem: str, held: list[str], entry: Entry, source: str,
+               path: Path, resolution: bool,
+               where: str) -> tuple[dict[str, Outcome], Timeouts]:
+    """What each held case gives on the entry's input at `source`, and the
+    timeouts its runs noted."""
+    timeouts = Timeouts()
+    return _held_outcomes(
+        stem, held, entry, source,
+        timeouts.run(source, entry.input, path, where), resolution, timeouts,
+        where), timeouts
+
+
 def _pair_outcomes(stem: str, held: list[str], source: str, path: Path,
                    task_id: str, resolution: bool,
-                   timeouts: Timeouts) -> list[Scoped]:
+                   pool: Executor) -> list[tuple[Scoped, Timeouts]]:
     """What each held case gives on the input of each train and test pair
-    of the task, at the stored value; none when the task is not
-    materialized."""
+    of the task, at the stored value, with the timeouts each pair's runs
+    noted; none when the task is not materialized."""
     try:
         task = load_task(task_id)
     except FileNotFoundError:
@@ -1050,11 +1090,60 @@ def _pair_outcomes(stem: str, held: list[str], source: str, path: Path,
     pairs = [(f"{kind} {i}", ex) for kind, exs in (("train", task.train),
                                                   ("test", task.test))
              for i, ex in enumerate(exs)]
-    return [(_held_outcomes(
-        stem, held, Entry(id="", separates="", input=ex.input), source,
-        timeouts.run(source, ex.input, path, where), resolution, timeouts,
-        where), None)
-        for where, ex in pairs]
+    runs = [pool.submit(_held_part, stem, held,
+                        Entry(id="", separates="", input=ex.input), source,
+                        path, resolution, where)
+            for where, ex in pairs]
+    return [((out, None), timeouts)
+            for out, timeouts in (r.result() for r in runs)]
+
+
+type EntryPart = tuple[Scoped | None, list[str], list[Drift], Timeouts]
+"""What one entry adds to the report: its held cases' outcomes, the cases
+it states in full, its findings, and the timeouts its runs noted."""
+
+
+def _entry_part(stem: str, entry: Entry, source: str, path: Path,
+                held: list[str], choice: list[str],
+                resolution: bool) -> EntryPart:
+    """The findings on one entry of the witness file, and what the report
+    reads from it besides."""
+    timeouts = Timeouts()
+    where = _label(entry)
+    run_source = assigned_source(source, entry.assign)
+    candidates = timeouts.run(run_source, entry.input, path, where)
+    separating: Scoped | None = None
+    # An entry of a derived case's id holds the derived value in its
+    # `assign`, so the held cases stand at the stored value, as the
+    # derive report reads that entry; the derived case sets its own
+    # parameter.
+    if held and entry.assign and entry.id in derive_ids(source):
+        separating = (_held_outcomes(
+            stem, held, entry, source,
+            timeouts.run(source, entry.input, path, where),
+            resolution, timeouts, where), None)
+    elif held:
+        separating = (_held_outcomes(
+            stem, held, entry, run_source, candidates, resolution,
+            timeouts, where), None)
+    if candidates is None:
+        return separating, [], [], timeouts
+    try:
+        stated, full = _stated(stem, run_source, entry.input, choice)
+    except subprocess.TimeoutExpired as err:
+        timeouts.note(where, "", err)
+        return separating, [], [], timeouts
+    actuals = case_outcomes(candidates, resolution)
+    for name in stated:
+        actuals.setdefault(name, None)
+    emitted = model_outcomes(candidates, resolution)
+    space = case_space(run_source, stated)
+    names = _names(full)
+    findings = _entry_findings(
+        entry, space, emitted, actuals | emitted, names | set(actuals),
+        _runner_outcomes(stem, entry, space, run_source, timeouts),
+        names if declares_held(run_source) else None)
+    return separating, full, findings, timeouts
 
 
 def witness_report(stem: str, file: Path | None = None) -> list[Drift]:
@@ -1079,61 +1168,51 @@ def witness_report(stem: str, file: Path | None = None) -> list[Drift]:
               kind=ANNOTATION, note=text)
         for at, text in unwitnessed_branches(source)]
     held = [] if witness is None else held_case_labels(source)
+    choice = [c for c in held if "=" not in c]
     witness = witness or Witness(id=task_id)
     resolution = res_out_stem(stem)
     findings: list[Drift] = []
     cases: list[str] = []
     separating: list[Scoped] = []
     timeouts = Timeouts()
-    for entry in witness.entries:
-        where = _label(entry)
-        run_source = assigned_source(source, entry.assign)
-        candidates = timeouts.run(run_source, entry.input, path, where)
-        # An entry of a derived case's id holds the derived value in its
-        # `assign`, so the held cases stand at the stored value, as the
-        # derive report reads that entry; the derived case sets its own
-        # parameter.
-        if held and entry.assign and entry.id in derive_ids(source):
-            separating.append((_held_outcomes(
-                stem, held, entry, source,
-                timeouts.run(source, entry.input, path, where),
-                resolution, timeouts, where), None))
-        elif held:
-            separating.append((_held_outcomes(
-                stem, held, entry, run_source, candidates, resolution,
-                timeouts, where), None))
-        if candidates is None:
-            continue
-        try:
-            stated = case_branches(stem, run_source, entry.input)
-        except subprocess.TimeoutExpired as err:
-            timeouts.note(where, "", err)
-            continue
-        actuals = case_outcomes(candidates, resolution)
-        for name in stated:
-            actuals.setdefault(name, None)
-        cases += [c for c in actuals if c not in cases]
-        emitted = model_outcomes(candidates, resolution)
-        space = case_space(run_source, stated)
-        findings += _entry_findings(
-            entry, space, emitted, actuals | emitted,
-            set(stated) | set(actuals),
-            _runner_outcomes(stem, entry, space, run_source, timeouts),
-            set(stated) if declares_held(run_source) else None)
     runner = [c for c in held if "=" in c]
-    for case, grid in (built_witnesses(stem, runner) if runner else {}).items():
-        built = Entry(id=case, separates="", input=grid)
-        where = mctx("the witness built for `{case}`").format(case=case)
-        separating.append((_held_outcomes(
-            stem, held, built, source,
-            timeouts.run(source, grid, path, where), resolution, timeouts,
-            where), case))
+    # Each entry, built witness and pair runs on its own, in a thread: the
+    # time goes to Souffle subprocesses. Their parts join in the order a
+    # run one after another would give.
+    with ThreadPoolExecutor(max_workers=_pool_workers()) as pool:
+        built_runs = pool.submit(built_witnesses, stem, runner) \
+            if runner else None
+        entry_runs = [pool.submit(_entry_part, stem, entry, source, path,
+                                  held, choice, resolution)
+                      for entry in witness.entries]
+        pair_runs = _pair_outcomes(
+            stem, held, source, path, task_id, resolution, pool) \
+            if held else []
+        for run in entry_runs:
+            scoped, full, entry_findings, entry_timeouts = run.result()
+            if scoped is not None:
+                separating.append(scoped)
+            cases += [c for c in full if c not in cases]
+            findings += entry_findings
+            timeouts.merge(entry_timeouts)
+        built = built_runs.result() if built_runs else {}
+        built_parts = [
+            (case, pool.submit(
+                _held_part, stem, held, Entry(id=case, separates="", input=grid),
+                source, path, resolution,
+                mctx("the witness built for `{case}`").format(case=case)))
+            for case, grid in built.items()]
+        for case, run in built_parts:
+            out, built_timeouts = run.result()
+            separating.append((out, case))
+            timeouts.merge(built_timeouts)
     space = case_space(source, case_branches(stem, source))
     unseparated = _unseparated(held, separating)
+    for _scoped, pair_timeouts in pair_runs:
+        timeouts.merge(pair_timeouts)
     subsumed = _subsumed(
         branch_pairs(held, source, space.concept),
-        separating + _pair_outcomes(stem, held, source, path, task_id,
-                                    resolution, timeouts),
+        separating + [scoped for scoped, _ in pair_runs],
         unseparated) if held else []
     return (findings + unwitnessed
             + _annotation_findings(source, witness.entries, cases, space)

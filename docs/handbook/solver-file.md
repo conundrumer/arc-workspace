@@ -102,7 +102,7 @@
     - A case's reading of a claim is the header's claim with each of its branches' changes made.
 - A solver with one case has no `Choice`, case markers, or case column on `out`.
 - **Case markers.** Cases do not interleave: each case's Params and clauses are under its marker.
-    - Cases that share facts or clauses are under one marker naming them, `// --- Box, Erode ---`.
+    - Cases that share facts or clauses are under one marker naming them as the [Witness file](docs/handbook/solver-file.md#witness-file) names cases, `// --- Box, Erode ---`.
     - A marker may fix a constructor's fields, `// --- Derive(g=Iso) ---`, for the part of that case where the field is that branch.
     - The comma still separates cases.
 - **`impl_choice`.** The relation that enumerates the cases is `impl_choice`, and its column is `ch`.

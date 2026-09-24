@@ -2,9 +2,10 @@
 
 import json
 import re
+from functools import lru_cache
 from typing import NamedTuple
 
-from dl.source import _split_args
+from dl.source import OUT_CASE, OUT_CELLS, _split_args
 
 
 class Candidate(NamedTuple):
@@ -79,6 +80,11 @@ def _candidate(case: str, cells: list[tuple[int, ...]]) -> Candidate:
     return Candidate(case, grid, sorted(conflicts), missing)
 
 
+# How many parsed outputs `parse_output` keeps. The pairs of one audit give
+# the same output under most of a solver's variants.
+OUTPUT_MEMO_SIZE = 64
+
+
 def parse_output(stdout: str) -> list[Candidate]:
     """Parse Souffle's default text output for the `out` relation.
 
@@ -94,21 +100,39 @@ def parse_output(stdout: str) -> list[Candidate]:
     bounds that disagree — carries that message in `error` and an empty
     grid, so the other cases still report their grids.
     """
+    return [
+        c._replace(grid=[row[:] for row in c.grid],
+                   conflicts=list(c.conflicts), missing=list(c.missing))
+        for c in _parsed_output(stdout)
+    ]
+
+
+@lru_cache(maxsize=OUTPUT_MEMO_SIZE)
+def _parsed_output(stdout: str) -> tuple[Candidate, ...]:
+    """The candidates of `parse_output`, kept by text and shared between
+    its callers, which each get a copy."""
     parts = re.split(r"^={3,}$", stdout, flags=re.MULTILINE)
     if len(parts) < 3:
         raise ValueError(f"unexpected souffle output:\n{stdout}")
-    data = parts[1].strip()
-    if not data:
-        return [Candidate("", [], [], [])]
+    if f"\n{OUT_CELLS}\n" in stdout:
+        rels = _parse_relations(stdout)
+        lines, cases = _cell_lines(rels), _case_values(rels)
+    else:
+        lines, cases = parts[1].strip().splitlines(), None
+    if not lines:
+        return (Candidate("", [], [], []),)
 
     line_re = re.compile(r"\[(-?\d+), (-?\d+), (-?\d+), (-?\d+)\]\t(-?\d+)(?:\t(.+))?$")
     grouped: dict[str, list] = {}
-    for line in data.splitlines():
+    for line in lines:
         m = line_re.match(line)
         if not m:
             raise ValueError(f"unexpected fact line: {line!r}")
         groups = m.groups()
         case = groups[5] if groups[5] is not None else ""
+        if cases is not None:
+            case = "\t".join(
+                cases[i][k] for i, k in enumerate(case.split("\t")))
         cells = grouped.setdefault(case, [])
         cells.append(tuple(int(x) for x in groups[:5]))
 
@@ -118,7 +142,21 @@ def parse_output(stdout: str) -> list[Candidate]:
             candidates.append(_candidate(case, grouped[case]))
         except ValueError as e:
             candidates.append(Candidate(case, [], [], [], error=str(e)))
-    return candidates
+    return tuple(candidates)
+
+
+def _cell_lines(rels: dict[str, list[str]]) -> list[str]:
+    """The rows of `OUT_CELLS`, each case written as its ordinals."""
+    return rels.get(OUT_CELLS, [])
+
+
+def _case_values(rels: dict[str, list[str]]) -> list[dict[str, str]]:
+    """Each trailing column's values of `out`, by the ordinal `OUT_CELLS`
+    writes for them, in column order."""
+    columns: list[dict[str, str]] = []
+    while (rows := rels.get(f"{OUT_CASE}{len(columns)}")) is not None:
+        columns.append(dict(row.split("\t", 1) for row in rows))
+    return columns
 
 
 def _parse_block(stdout: str) -> list[str]:

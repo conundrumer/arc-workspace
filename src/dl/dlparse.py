@@ -18,6 +18,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 AGG_OPS = {"count", "sum", "max", "min", "mean"}
 WORD_OPS = {"band", "bor", "bxor", "bshl", "bshr", "land", "lor", "lxor"}
@@ -373,10 +374,20 @@ class _Parser:
     def program(self) -> list[Item]:
         items: list[Item] = []
         while self.peek().kind != "eof":
-            items.append(self.item())
+            items.extend(self.item())
         return items
 
-    def item(self) -> Item:
+    def item(self) -> list[Item]:
+        """The next item, or the rules of a clause with several heads,
+        one per head."""
+        t = self.peek()
+        if (t.kind == "hash" or t.text == "."
+                or (t.kind == "ident" and t.text == "RIGID"
+                    and self.at("(", 1))):
+            return [self.one_item()]
+        return self.clause()
+
+    def one_item(self) -> Item:
         t = self.peek()
         if t.kind == "hash":
             return self.hash_directive()
@@ -393,9 +404,7 @@ class _Parser:
             if word == "functor":
                 return self.functor()
             raise ParseError(t.line, f"unknown directive .{word}")
-        if t.kind == "ident" and t.text == "RIGID" and self.at("(", 1):
-            return self.rigid()
-        return self.clause()
+        return self.rigid()
 
     def rigid(self) -> Rigid:
         line = self.next().line  # RIGID
@@ -406,10 +415,12 @@ class _Parser:
         while not self.at(")"):
             if self.peek().kind == "eof":
                 raise ParseError(line, f"unterminated RIGID {name}")
-            it = self.item()
-            if not (isinstance(it, Decl) or (isinstance(it, Rule) and it.body is None)):
-                raise ParseError(line, f"RIGID {name} holds decls and facts only")
-            items.append(it)
+            for it in self.item():
+                if not (isinstance(it, Decl)
+                        or (isinstance(it, Rule) and it.body is None)):
+                    raise ParseError(line,
+                                     f"RIGID {name} holds decls and facts only")
+                items.append(it)
         end = self.next().line  # ')'
         return Rigid(name, items, line, end)
 
@@ -436,7 +447,7 @@ class _Parser:
         while not self.at("}"):
             if self.peek().kind == "eof":
                 raise ParseError(line, f"unterminated comp {name}")
-            items.append(self.item())
+            items.extend(self.item())
         end = self.next().line  # '}'
         return Comp(name, params, items, line, end, base, base_targs)
 
@@ -541,14 +552,17 @@ class _Parser:
             text += " stateful"
         return Functor(name, text, line)
 
-    def clause(self) -> Rule:
+    def clause(self) -> list[Rule]:
+        """A clause's rules. A rule with several heads, `a(X), b(X) :-
+        body.`, is one rule per head, each over the whole clause's span
+        and body, as Souffle reads it."""
         if GRID_RE.match(self.peek().text) and self.at("(", 1):
-            return self.grid_fact()
+            return [self.grid_fact()]
         head = self.atom()
         if self.at("."):
             end = self.next().line
             plan, end = self.plan(end)
-            return Rule(head, None, head.line, end, plan=plan)
+            return [Rule(head, None, head.line, end, plan=plan)]
         if self.at("<="):
             self.next()
             dominant = self.atom()
@@ -556,13 +570,17 @@ class _Parser:
             body = self.conj()
             end = self.expect(".").line
             plan, end = self.plan(end)
-            return Rule(head, [dominant, *body], head.line, end, sub=True,
-                        plan=plan)
+            return [Rule(head, [dominant, *body], head.line, end, sub=True,
+                         plan=plan)]
+        heads = [head]
+        while self.at(","):
+            self.next()
+            heads.append(self.atom())
         self.expect(":-")
         body = self.conj()
         end = self.expect(".").line
         plan, end = self.plan(end)
-        return Rule(head, body, head.line, end, plan=plan)
+        return [Rule(h, body, head.line, end, plan=plan) for h in heads]
 
     def grid_fact(self) -> Rule:
         """A GRID macro call. Its arguments are cell tokens, not terms, so
@@ -798,7 +816,16 @@ class _Parser:
         return args
 
 
+# How many parsed programs `parse` keeps. One audit parses the same few
+# hundred texts again and again: a solver, its deletion variants, and the
+# proposers file on every probe.
+PARSE_MEMO_SIZE = 256
+
+
+@lru_cache(maxsize=PARSE_MEMO_SIZE)
 def parse(source: str) -> Program:
+    """The program `source` holds. The same text gives the same object, so
+    a caller reads the tree and does not change it."""
     tokens, comments = _lex(source)
     return Program(_Parser(tokens).program(), comments)
 

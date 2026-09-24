@@ -50,7 +50,7 @@
     - <a file the pass does not edit, and the line>: <the fix it needs>
 
     ## Interference
-    - <the doc or tool line that interfered, and how>
+    - <the doc or tool line that interfered or cost effort, and how>
     ```
 - A section with nothing holds `none`.
 - Nothing in the report waits on a ruling.

@@ -1,14 +1,21 @@
 """Invoke the `souffle` binary on a built program, and build what it links."""
 
+import hashlib
 import json
+import os
+import random
 import re
+import shlex
 import signal
 import subprocess
 import tempfile
 import time
+import zlib
 from collections import defaultdict
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from dataclasses import asdict, dataclass
+from functools import lru_cache
 from pathlib import Path
 
 from controlled_markdown import mctx
@@ -54,6 +61,58 @@ CPU_LIMIT_SECONDS = 5
 # A pair that overruns the budget lands well inside this multiple of it, and
 # a pair that does not is past reporting anyway.
 PROFILE_CPU_FACTOR = 10
+
+
+# One file per Souffle run, named by the hash of everything the run reads.
+CACHE_DIR = REPO_ROOT / ".scratch" / "cache" / "souffle"
+
+# What the stored runs may take on disk. A write now and then removes the
+# least recently used runs past it, at most once per interval across every
+# runner process, which the marker file's mtime records.
+CACHE_CAP_BYTES = 20 << 30
+CACHE_PRUNE_EVERY = 200
+CACHE_PRUNE_INTERVAL_SECONDS = 300
+CACHE_PRUNE_MARKER = ".pruned"
+CACHE_ZLIB_LEVEL = 6
+
+# A temp file older than this lost its writer to a kill before the rename.
+CACHE_STALE_TEMP_SECONDS = 3600
+
+# A preprocessor include, as Souffle's preprocessor resolves it: relative to
+# the directory of the file that holds it.
+INCLUDE_RE = re.compile(r'^\s*#include\s+"([^"]+)"', re.M)
+
+# The flags every run passes ahead of its own. `-L` loads the functor library
+# `build_functors` compiled, which lib.dl's relations call into.
+BASE_FLAGS = ["-w", "-L", str(PROGRAMS_DIR), "-lfunctors"]
+
+
+def _preprocessor_flags() -> list[str]:
+    """The preprocessor Souffle calls, named by its full path. Souffle's own
+    default is `gcc -x c -E`, and on macOS `gcc` is an xcrun shim that
+    looks up clang on each call. Empty where xcrun is absent, which leaves
+    Souffle's default."""
+    try:
+        clang = subprocess.run(["xcrun", "-f", "clang"], capture_output=True,
+                               text=True, timeout=10).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if not clang or not os.access(clang, os.X_OK):
+        return []
+    return [f"--preprocessor={shlex.quote(clang)} -x c -E"]
+
+
+# Passed on every run and kept out of the cache key: the preprocessor's
+# output is the same whichever path names it.
+PREPROCESSOR_FLAGS = _preprocessor_flags()
+
+
+@dataclass(frozen=True)
+class _Ran:
+    """What the runner takes from one Souffle run."""
+    returncode: int
+    stdout: str
+    stderr: str
 
 
 class _CpuLimit(RuntimeError):
@@ -104,6 +163,146 @@ def build_functors() -> None:
     )
 
 
+@lru_cache(maxsize=1)
+def _souffle_version() -> str:
+    try:
+        return subprocess.run(["souffle", "--version"], capture_output=True,
+                              text=True, timeout=30).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def _included(text: str, base: Path, seen: set[Path], digest) -> None:
+    """Feed `digest` each file `text` includes, and each file those include,
+    once per file."""
+    for name in INCLUDE_RE.findall(text):
+        path = Path(os.path.normpath(base / name))
+        if path in seen:
+            continue
+        seen.add(path)
+        digest.update(f"\0include {path}\0".encode())
+        try:
+            body = path.read_text()
+        except OSError:
+            digest.update(b"missing")
+            continue
+        digest.update(body.encode())
+        _included(body, path.parent, seen, digest)
+
+
+def _cache_key(built: str, flags: list[str], stdin_text: str) -> str | None:
+    """The hash of everything one run reads: the program, each file it
+    includes, the functor library's source, the facts on stdin or in a `-F`
+    directory, the flags, and the Souffle version. None for a run that writes
+    a file of its own (`-p`), which a stored result cannot stand for."""
+    if "-p" in flags:
+        return None
+    digest = hashlib.sha256()
+    digest.update(_souffle_version().encode())
+    digest.update(b"\0program\0" + built.encode())
+    _included(built, SOLVERS_DIR, set(), digest)
+    digest.update(b"\0functors\0" + FUNCTORS_SRC.read_bytes())
+    digest.update(b"\0stdin\0" + stdin_text.encode())
+    args = iter([*BASE_FLAGS, *flags])
+    for arg in args:
+        digest.update(b"\0flag\0" + arg.encode())
+        if arg == "-F":
+            # The fact directory is a fresh temp dir per run: its files count,
+            # and its name does not.
+            facts = Path(next(args))
+            for f in sorted(facts.iterdir()):
+                digest.update(f"\0fact {f.name}\0".encode() + f.read_bytes())
+    return digest.hexdigest()
+
+
+def _cache_read(key: str) -> _Ran | None:
+    path = CACHE_DIR / f"{key}.json.z"
+    try:
+        ran = _Ran(**json.loads(zlib.decompress(path.read_bytes())))
+        os.utime(path)
+        return ran
+    except (OSError, ValueError, TypeError, zlib.error):
+        return None
+
+
+def _cache_prune() -> None:
+    """Remove the least recently used runs until the rest fit the cap, and
+    the temp files a killed writer left. Skipped when a prune ran within the
+    interval; two processes that prune at once only repeat each other."""
+    marker = CACHE_DIR / CACHE_PRUNE_MARKER
+    now = time.time()
+    try:
+        if now - marker.stat().st_mtime < CACHE_PRUNE_INTERVAL_SECONDS:
+            return
+    except FileNotFoundError:
+        pass
+    marker.touch()
+    entries = []
+    with os.scandir(CACHE_DIR) as scan:
+        for entry in scan:
+            try:
+                st = entry.stat()
+            except OSError:
+                continue
+            if entry.name.startswith(".tmp"):
+                if now - st.st_mtime > CACHE_STALE_TEMP_SECONDS:
+                    Path(entry.path).unlink(missing_ok=True)
+            elif entry.name.endswith(".json.z"):
+                entries.append((st.st_mtime, st.st_size, entry.path))
+    total = sum(size for _, size, _ in entries)
+    for _, size, path in sorted(entries):
+        if total <= CACHE_CAP_BYTES:
+            break
+        Path(path).unlink(missing_ok=True)
+        total -= size
+
+
+def _cache_write(key: str, ran: _Ran) -> None:
+    """Store `ran` under `key`. Several runner processes write at once, so the
+    file is written under a temp name and renamed into place."""
+    try:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            dir=CACHE_DIR, prefix=".tmp", suffix=".json.z", delete=False,
+        ) as tf:
+            tf.write(zlib.compress(json.dumps(asdict(ran)).encode(),
+                                   CACHE_ZLIB_LEVEL))
+        os.replace(tf.name, CACHE_DIR / f"{key}.json.z")
+        if random.randrange(CACHE_PRUNE_EVERY) == 0:
+            _cache_prune()
+    except OSError:
+        pass
+
+
+def _cached_run(
+    built: str, flags: list[str], stdin_text: str,
+    invoke: Callable[[Path], _Ran], cpu_limit: int | None = None,
+) -> _Ran:
+    """`invoke` on `built` as a temp source, or the stored result of the same
+    run. A run Souffle ended with a return code is stored, a failure among
+    them. A run the CPU limit ended is stored under that limit, and raises
+    the same `_CpuLimit` again: `ulimit -t` counts the run's own CPU
+    seconds, so the load on the machine has no part in it. A run another
+    signal or a timeout ended is not stored, since the load had a part in
+    it."""
+    key = _cache_key(built, flags, stdin_text)
+    limited = None if key is None or cpu_limit is None else f"{key}-cpu{cpu_limit}"
+    if key is not None and (hit := _cache_read(key)) is not None:
+        return hit
+    if limited is not None and (hit := _cache_read(limited)) is not None:
+        raise _CpuLimit(hit.stderr)
+    with _temp_source(built) as run_path:
+        try:
+            ran = invoke(run_path)
+        except _CpuLimit as e:
+            if limited is not None:
+                _cache_write(limited, _Ran(-signal.SIGXCPU, "", str(e)))
+            raise
+    if key is not None and ran.returncode >= 0:
+        _cache_write(key, ran)
+    return ran
+
+
 @contextmanager
 def _temp_source(built: str) -> Iterator[Path]:
     """Built source as a file Souffle can read.
@@ -134,15 +333,19 @@ def _run_source(
     that leaves it out — a search running many variants of one source —
     pays nothing for a run it drops anyway.
     """
-    with _temp_source(built) as run_path:
-        try:
-            return _souffle(run_path, stdin_text, extra_args, cpu_limit)
-        except _CpuLimit as e:
-            if solver_path is None:
-                raise RuntimeError(str(e)) from None
-            note = _slowest_rule_note(
-                built, stdin_text, extra_args, cpu_limit, solver_path)
-            raise RuntimeError(f"{e}\n{note}") from None
+    flags = extra_args or []
+    try:
+        ran = _cached_run(
+            built, ["-D-", *flags], stdin_text,
+            lambda run_path: _souffle(run_path, stdin_text, flags, cpu_limit),
+            cpu_limit)
+    except _CpuLimit as e:
+        if solver_path is None:
+            raise RuntimeError(str(e)) from None
+        note = _slowest_rule_note(
+            built, stdin_text, extra_args, cpu_limit, solver_path)
+        raise RuntimeError(f"{e}\n{note}") from None
+    return _stdout(ran)
 
 
 def _explained(stderr: str) -> str:
@@ -169,12 +372,9 @@ def expression_report(built: str) -> str | None:
     solver should read. None when the count is under the threshold or the
     program does not compile."""
     try:
-        with _temp_source(built) as run_path:
-            result = subprocess.run(
-                ["souffle", "--show=transformed-datalog", "-w", "-L", str(PROGRAMS_DIR),
-                 "-lfunctors", str(run_path)],
-                input="", capture_output=True, text=True, timeout=60,
-            )
+        result = _cached_run(
+            built, ["--show=transformed-datalog"], "",
+            lambda run_path: _plain(["--show=transformed-datalog"], run_path))
     except subprocess.TimeoutExpired:
         return None
     if result.returncode != 0:
@@ -202,12 +402,9 @@ def compile_check(built: str) -> str | None:
     check is an early report, and the pair runs still say what they hit.
     """
     try:
-        with _temp_source(built) as run_path:
-            result = subprocess.run(
-                ["souffle", "-g", "-", "-w", "-L", str(PROGRAMS_DIR), "-lfunctors",
-                 str(run_path)],
-                capture_output=True, text=True, timeout=60,
-            )
+        result = _cached_run(
+            built, ["-g", "-"], "",
+            lambda run_path: _plain(["-g", "-"], run_path))
     except subprocess.TimeoutExpired:
         return None
     if result.returncode == 0:
@@ -217,13 +414,27 @@ def compile_check(built: str) -> str | None:
     return EXITED.format(code=result.returncode) + f"\n{detail}"
 
 
+def _plain(flags: list[str], dl_path: Path) -> _Ran:
+    """A Souffle run that evaluates nothing, under a wall timeout alone."""
+    result = subprocess.run(
+        ["souffle", *flags, *BASE_FLAGS, *PREPROCESSOR_FLAGS, str(dl_path)],
+        input="", capture_output=True, text=True, timeout=60,
+    )
+    return _Ran(result.returncode, result.stdout, result.stderr)
+
+
+def _stdout(ran: _Ran) -> str:
+    """The run's stdout, or the failure Souffle reported, raised."""
+    if ran.returncode != 0:
+        raise RuntimeError(
+            EXITED.format(code=ran.returncode) + f"\n{_explained(ran.stderr)}")
+    return ran.stdout
+
+
 def _souffle(
     dl_path: Path, stdin_text: str, extra_args: list[str] | None = None,
     cpu_limit: int = CPU_LIMIT_SECONDS,
-) -> str:
-    # -L/-lfunctors load the functor shared library build_functors compiled —
-    # lib.dl's relations call into it.
-    #
+) -> _Ran:
     # Two bounds on runaway souffle (some rule shapes can hang the evaluator
     # and exhaust system memory). The kernel CPU-time limit (`ulimit -t`, via
     # a sh wrapper — preexec_fn is unsafe under threads) counts only souffle's
@@ -231,7 +442,7 @@ def _souffle(
     # wall timeout backstops hangs that block without spinning; it stays low
     # so inefficient solvers surface. The default budgets one grid; a run fed
     # every example at once (determination) passes a limit scaled to what it carries.
-    cmd = ["souffle", "-D-", "-w", "-L", str(PROGRAMS_DIR), "-lfunctors",
+    cmd = ["souffle", "-D-", *BASE_FLAGS, *PREPROCESSOR_FLAGS,
            *(extra_args or []), str(dl_path)]
     result = subprocess.run(
         ["/bin/sh", "-c", f'ulimit -t {cpu_limit}; exec "$0" "$@"', *cmd],
@@ -244,11 +455,7 @@ def _souffle(
         raise _CpuLimit(
             mctx("souffle exceeded the {seconds}s CPU limit on {name}").format(
                 seconds=cpu_limit, name=dl_path.name))
-    if result.returncode != 0:
-        raise RuntimeError(
-            EXITED.format(code=result.returncode)
-            + f"\n{_explained(result.stderr)}")
-    return result.stdout
+    return _Ran(result.returncode, result.stdout, result.stderr)
 
 
 def _rule_records(relation: dict) -> Iterator[dict]:
@@ -323,9 +530,9 @@ def _slowest_rule_note(
         profile_path = Path(tmp_dir) / "profile.json"
         try:
             with _temp_source(built) as run_path:
-                _souffle(run_path, stdin_text,
-                         [*(extra_args or []), "-p", str(profile_path)],
-                         PROFILE_CPU_FACTOR * cpu_limit)
+                _stdout(_souffle(run_path, stdin_text,
+                                 [*(extra_args or []), "-p", str(profile_path)],
+                                 PROFILE_CPU_FACTOR * cpu_limit))
                 slowest = slowest_rule(json.loads(profile_path.read_text()))
                 if slowest is None:
                     return mctx("no clause named: the profile holds none")

@@ -4,7 +4,8 @@ import itertools
 import re
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Iterable
+from concurrent.futures import Future, ThreadPoolExecutor
 
 from arc.task import load as load_task
 from controlled_markdown import mctx
@@ -18,7 +19,15 @@ from dl.domains import (
     _number_domain,
     _position_domain,
 )
-from dl.solve import _profile, _profile_cases, solver_file
+from dl.solve import (
+    PairRun,
+    _pair_profile,
+    _profile,
+    cases_of,
+    profile_of,
+    res_out,
+    solver_file,
+)
 from dl.souffle import _pool_workers
 from dl.source import (
     RIGID_CHART_PREFIX,
@@ -78,6 +87,88 @@ def _run_candidates(test, candidates: list, clock: _Clock) -> tuple[list, int]:
                 break
             rows.extend(executor.map(test, candidates[i:i + chunk]))
     return rows, len(rows)
+
+
+class _TrainRuns:
+    """The train runs of the stored value and of every candidate, in one
+    pool: one job per stored pair, then one job per candidate, which runs
+    the candidate's pairs in order.
+
+    The jobs go in in the order the sweep reads them: the stored value's
+    first, then each parameter's candidates, the parameter with the fewest
+    first. A candidate that comes up once the clock is spent is left out,
+    unless it is in the first chunk of a parameter the sweep has entered, so
+    a parameter in flight still gives a reading, as `_run_candidates` does.
+    A candidate stops at its first pair that differs from the stored
+    value's, as `_profile` does, unless it keeps every pair for the
+    per-case sets.
+    """
+
+    def __init__(self, source: str, examples: list, clock: _Clock):
+        self.examples = examples
+        self.clock = clock
+        self.res = res_out(source)
+        self.chunk = _pool_workers() or 8
+        self.entered: set[str] = set()
+        self.candidates: dict[str, list[Future]] = {}
+        self.pool = ThreadPoolExecutor(max_workers=_pool_workers())
+        self.stored = [self.pool.submit(_pair_profile, source, ex, self.res)
+                       for ex in examples]
+
+    def __enter__(self) -> "_TrainRuns":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.pool.shutdown(wait=True, cancel_futures=True)
+
+    def submit(self, param: str, mods: list[str], keep_all: bool) -> None:
+        """Queue a job for each of the parameter's candidate sources. The
+        first parameter queued is the first the sweep enters, whatever the
+        clock reads."""
+        if not self.candidates:
+            self.entered.add(param)
+        self.candidates[param] = [
+            self.pool.submit(self._run, param, index, mod, keep_all)
+            for index, mod in enumerate(mods)]
+
+    def _run(self, param: str, index: int, mod: str,
+             keep_all: bool) -> list[PairRun] | None:
+        """The candidate's pair runs in pair order, or None when the limit
+        leaves it out. The stored value's jobs went in first, so they have
+        started by the time this one waits on them."""
+        if self.clock.spent() and not (param in self.entered
+                                       and index < self.chunk):
+            return None
+        runs: list[PairRun] = []
+        for ex, stored in zip(self.examples, self.stored, strict=True):
+            runs.append(_pair_profile(mod, ex, self.res))
+            if not keep_all and runs[-1][0] != stored.result()[0]:
+                break
+        return runs
+
+    def stored_runs(self) -> Iterable[PairRun]:
+        return (f.result() for f in self.stored)
+
+    def rows(self, param: str, candidates: list, reference: list,
+             want: bool) -> tuple[list, int]:
+        """The rows of the candidates run, in candidate order, and how many
+        there are, as `_run_candidates` gives them for the sweep's `test`:
+        (value, fits, admitted cases). The rows stop at the first candidate
+        the limit left out."""
+        self.entered.add(param)
+        rows: list = []
+        for vals, job in zip(candidates, self.candidates[param], strict=True):
+            runs = job.result()
+            if runs is None:
+                break
+            if want:
+                profile, passing = cases_of(runs, self.res)
+                admits = frozenset.intersection(*passing) if passing else None
+                rows.append((vals, profile == reference, admits))
+            else:
+                rows.append((vals, profile_of(runs, reference) == reference,
+                             None))
+        return rows, len(rows)
 
 
 def stored_rows(
@@ -228,86 +319,89 @@ def sweep_report(
     ran = False
     # A spent limit costs the report the parameters that ask for the most
     # runs.
-    for rank, param, types, stored, candidates, status, scope in sorted(
-            prepared, key=lambda p: (len(p[4]), p[0])):
-        if ran and clock.spent():
-            results.append(
-                (rank, 0, (public_param(param), "skip", "time limit")))
-            continue
-
-        if reference is None:
-            if shared:
-                reference, passing = _profile_cases(source, task.train)
-                base_cases = (frozenset.intersection(*passing) if passing
-                              else frozenset())
-            else:
-                reference = _profile(source, task.train)
-            ran = True
-            if reference is None:
-                results.append((rank, 0, (
-                    public_param(param), "skip", "stored value fails train")))
+    order = sorted(prepared, key=lambda p: (len(p[4]), p[0]))
+    with _TrainRuns(source, task.train, clock) as train_runs:
+        # Every candidate's train runs go in up front, so no parameter
+        # waits on another's slowest run. A parameter that may ask for the
+        # per-case sets keeps every pair.
+        for _rank, param, _types, _stored, candidates, _status, _scope in order:
+            train_runs.submit(
+                param, [swap_fact(source, param, v) for v in candidates],
+                keep_all=(param in shared
+                          and len(_param_facts(source, param)) == 1))
+        for rank, param, types, stored, candidates, status, scope in order:
+            if ran and clock.spent():
+                results.append(
+                    (rank, 0, (public_param(param), "skip", "time limit")))
                 continue
 
-        facts = _param_facts(source, param)
-        # The per-case sets need every pair, so the profile's early return
-        # goes only for the shared parameters this report covers.
-        cases_wanted = (param in shared and len(base_cases) > 1
-                        and len(facts) == 1)
+            if reference is None:
+                if shared:
+                    reference, passing = cases_of(train_runs.stored_runs(),
+                                                  train_runs.res)
+                    base_cases = (frozenset.intersection(*passing) if passing
+                                  else frozenset())
+                else:
+                    reference = profile_of(train_runs.stored_runs())
+                ran = True
+                if reference is None:
+                    results.append((rank, 0, (
+                        public_param(param), "skip", "stored value fails train")))
+                    continue
 
-        def test(vals, param=param, want=cases_wanted):
-            mod = swap_fact(source, param, vals)
-            if not want:
-                return vals, _profile(mod, task.train) == reference, None
-            profile, passing = _profile_cases(mod, task.train)
-            admits = frozenset.intersection(*passing) if passing else None
-            return vals, profile == reference, admits
+            facts = _param_facts(source, param)
+            # The per-case sets need every pair, so the profile's early return
+            # goes only for the shared parameters this report covers.
+            cases_wanted = (param in shared and len(base_cases) > 1
+                            and len(facts) == 1)
 
-        print(PROGRESS.format(
-            name=public_param(param), count=len(candidates)),
-              file=sys.stderr)
-        rows, run = _run_candidates(test, candidates, clock)
-        ran = True
-        fitting = [v for v, ok, _ in rows if ok]
+            print(PROGRESS.format(
+                name=public_param(param), count=len(candidates)),
+                  file=sys.stderr)
+            rows, run = train_runs.rows(param, candidates, reference,
+                                        cases_wanted)
+            ran = True
+            fitting = [v for v, ok, _ in rows if ok]
 
-        if run < len(candidates):
-            # A cut sweep reads part of the candidate set, so it reports
-            # what it saw and leaves the test runs out.
-            results.append((rank, 0, (
-                public_param(param), "swept-cut",
-                (fitting, stored, types, {}, (run, len(candidates))))))
-            continue
+            if run < len(candidates):
+                # A cut sweep reads part of the candidate set, so it reports
+                # what it saw and leaves the test runs out.
+                results.append((rank, 0, (
+                    public_param(param), "swept-cut",
+                    (fitting, stored, types, {}, (run, len(candidates))))))
+                continue
 
-        case_result = _case_result(param, types, candidates, base_cases, rows) \
-            if cases_wanted else None
+            case_result = _case_result(param, types, candidates, base_cases, rows) \
+                if cases_wanted else None
 
-        if not set(stored) <= set(fitting):
-            results.append((rank, 0, _set_sweep(
-                source, param, stored, types, candidates, task, reference,
-                max_candidates, clock)))
+            if not set(stored) <= set(fitting):
+                results.append((rank, 0, _set_sweep(
+                    source, param, stored, types, candidates, task, reference,
+                    max_candidates, clock)))
+                if case_result:
+                    results.append((rank, 1, case_result))
+                continue
+
+            verdicts: dict[tuple, bool] = {}
+            extras = sorted(set(fitting) - set(stored))
+            if extras and set(stored) <= set(fitting):
+                if test_reference is None:
+                    test_reference = _profile(source, task.test)
+                if test_reference is None:
+                    verdicts = {e: False for e in extras}
+                else:
+                    def test_check(vals, param=param, ref=test_reference):
+                        return _profile(swap_fact(source, param, vals),
+                                        task.test, ref) == ref
+
+                    with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
+                        verdicts = dict(zip(extras, executor.map(test_check, extras)))
+            detail = (fitting, stored, types, verdicts)
+            if scope:
+                detail = detail + (scope,)
+            results.append((rank, 0, (public_param(param), status, detail)))
             if case_result:
                 results.append((rank, 1, case_result))
-            continue
-
-        verdicts: dict[tuple, bool] = {}
-        extras = sorted(set(fitting) - set(stored))
-        if extras and set(stored) <= set(fitting):
-            if test_reference is None:
-                test_reference = _profile(source, task.test)
-            if test_reference is None:
-                verdicts = {e: False for e in extras}
-            else:
-                def test_check(vals, param=param):
-                    profile = _profile(swap_fact(source, param, vals), task.test)
-                    return profile == test_reference
-
-                with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
-                    verdicts = dict(zip(extras, executor.map(test_check, extras)))
-        detail = (fitting, stored, types, verdicts)
-        if scope:
-            detail = detail + (scope,)
-        results.append((rank, 0, (public_param(param), status, detail)))
-        if case_result:
-            results.append((rank, 1, case_result))
     return [r for _, _, r in sorted(results, key=lambda r: r[:2])]
 
 
@@ -439,7 +533,8 @@ def _set_sweep(
     stored_set = frozenset(stored)
 
     def test(value):
-        profile = _profile(swap_facts(source, param, sorted(value)), task.train)
+        profile = _profile(swap_facts(source, param, sorted(value)),
+                           task.train, reference)
         return value if profile == reference else None
 
     print(PROGRESS.format(name=name, count=len(subsets)),
@@ -459,8 +554,8 @@ def _set_sweep(
         else:
             def test_check(value):
                 profile = _profile(
-                    swap_facts(source, param, sorted(value)), task.test
-                )
+                    swap_facts(source, param, sorted(value)), task.test,
+                    test_reference)
                 return profile == test_reference
 
             with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
@@ -635,8 +730,8 @@ def render_sweep(
                     if not any(_num_peer(e, s, types) for s in sset)]
             if kind:
                 parts.append(
-                    mctx("[{shown}] differ from stored in kind, so the pairs "
-                         "do not fix this parameter").format(shown=shown(kind)))
+                    mctx("[{shown}] and stored are open values, differing "
+                         "in a nominal argument").format(shown=shown(kind)))
             below = sorted(
                 e for e in passing if any(_num_below(e, s, types) for s in sset)
             )

@@ -1,6 +1,7 @@
 """Run a solver in solve mode and compare its output to the stored pairs."""
 
 import re
+from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -220,7 +221,15 @@ def _pair_profile(mod_source: str, ex, res: bool
     return _pair_entry(actuals, ex, res), _passing(actuals, ex)
 
 
-def _profile(mod_source: str, examples: list) -> list[frozenset[str]] | None:
+type PairRun = tuple[frozenset[str] | None, frozenset[str]]
+"""One pair's profile entry, None when the pair fails, and its
+passing-variant set, as `_pair_profile` gives them."""
+
+
+def _profile(
+    mod_source: str, examples: list,
+    reference: list[frozenset[str]] | None = None,
+) -> list[frozenset[str]] | None:
     """Per-pair variant-name sets under this source; None on any failure.
 
     A modified source must reproduce the original's profile, not merely
@@ -229,15 +238,29 @@ def _profile(mod_source: str, examples: list) -> list[frozenset[str]] | None:
     variant names are enumeration terms with no stable identity, so its
     profile is the grid set instead.
 
-    A failing pair ends the run.
+    A failing pair ends the run. With `reference`, so does the first pair
+    whose entry differs from the reference's: the profile returned then
+    holds the pairs run so far, and it differs from the reference.
     """
     res = res_out(mod_source)
+    return profile_of((_pair_profile(mod_source, ex, res) for ex in examples),
+                      reference)
+
+
+def profile_of(runs: Iterable[PairRun],
+               reference: list[frozenset[str]] | None = None
+               ) -> list[frozenset[str]] | None:
+    """The profile the pair runs give, read in pair order, as `_profile`
+    reads it; a run is taken only when the ones before it leave the
+    profile open."""
     profile: list[frozenset[str]] = []
-    for ex in examples:
-        entry, _ = _pair_profile(mod_source, ex, res)
+    for i, (entry, _) in enumerate(runs):
         if entry is None:
             return None
         profile.append(entry)
+        if reference is not None and (i >= len(reference)
+                                      or entry != reference[i]):
+            return profile
     return profile
 
 
@@ -252,10 +275,19 @@ def _profile_cases(
     ends the run as it does in `_profile`.
     """
     res = res_out(mod_source)
+    return cases_of((_pair_profile(mod_source, ex, res) for ex in examples),
+                    res)
+
+
+def cases_of(
+    runs: Iterable[PairRun], res: bool
+) -> tuple[list[frozenset[str]] | None, list[frozenset[str]] | None]:
+    """The profile and the passing-variant sets the pair runs give, read in
+    pair order, as `_profile_cases` reads them; `res` is whether the
+    solver's `out` ends in a `TiebreakResolution`."""
     profile: list[frozenset[str]] | None = []
     passing: list[frozenset[str]] | None = None if res else []
-    for ex in examples:
-        entry, ok = _pair_profile(mod_source, ex, res)
+    for entry, ok in runs:
         if passing is not None:
             passing.append(ok)
         if entry is None:

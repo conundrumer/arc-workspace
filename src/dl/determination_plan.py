@@ -404,7 +404,7 @@ def settle_survivors(
         mod = source
         for (param, _types, _cands), vals in zip(enumerated, assignment):
             mod = swap_fact(mod, param, vals)
-        return _profile(mod, task.train) == reference
+        return _profile(mod, task.train, reference) == reference
 
     with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
         fits = list(executor.map(test, assignments))

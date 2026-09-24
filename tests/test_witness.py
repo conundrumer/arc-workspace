@@ -52,9 +52,8 @@ def _emit(cases):
 def test_the_annotation_checks_report_what_they_accept_silently(solvers,
                                                                 monkeypatch):
     """A `@witness` line off the form, a nested line carrying its indent
-    before the comment marker, an entry no line names, a block whose
-    `@reassigned` parameters are not the entry's `assign` keys, and an entry
-    whose `assign` is empty. The reader takes both nesting forms, so the
+    before the comment marker, and a block whose `@reassigned` parameters
+    are not the entry's `assign` keys. The reader takes both nesting forms, so the
     `@reassigned` line in the accepted form reaches its block. The run passes
     every grid, so nothing else reports these."""
     (solvers / f"{STEM}.dl").write_text(
@@ -63,9 +62,7 @@ def test_the_annotation_checks_report_what_they_accept_silently(solvers,
         + WITNESS_LINE
         + "//     @reassigned arr_dim\n"
         + "    // @relaxed bands\n")
-    _write(solvers, [_entry({"Copy": [[1, 2]]}),
-                     _entry({"Copy": [[1, 2]]}, assign={})
-                     | {"id": "orphan"}])
+    _write(solvers, [_entry({"Copy": [[1, 2]]})])
     monkeypatch.setattr(witness, "run_dl_source", _emit([("$Copy", [[1, 2]])]))
 
     notes = [d.note for d in witness.witness_report(STEM)
@@ -77,8 +74,6 @@ def test_the_annotation_checks_report_what_they_accept_silently(solvers,
         "carries it after, as `//     @relaxed bands`",
         "`@reassigned` names `arr_dim`; the witness's `assign` names "
         "no parameter",
-        "`assign` is empty; omit the key",
-        "witness `orphan` of the file is named by no `@witness` line",
     ]
 
 

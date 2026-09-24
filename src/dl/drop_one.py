@@ -170,7 +170,8 @@ def drop_one_report(stem: str) -> tuple[list[Hit], int, int] | None:
     ]
 
     def train_ok(item) -> bool:
-        return _profile(_drop_site(source, item[2]), task.train) == reference
+        return _profile(_drop_site(source, item[2]), task.train,
+                        reference) == reference
 
     with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
         dead = [w for w, ok in zip(work, executor.map(train_ok, work)) if ok]
@@ -181,8 +182,8 @@ def drop_one_report(stem: str) -> tuple[list[Hit], int, int] | None:
 
         def holds(item) -> bool:
             return (test_reference is not None
-                    and _profile(_drop_site(source, item[2]), task.test)
-                    == test_reference)
+                    and _profile(_drop_site(source, item[2]), task.test,
+                                 test_reference) == test_reference)
 
         with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
             test_ok = list(executor.map(holds, dead))

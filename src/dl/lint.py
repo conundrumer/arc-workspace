@@ -1455,9 +1455,9 @@ def _banned_types(
 
     The closure walk seeds on `Choice` and `TiebreakResolution` and follows
     references through solver-declared types; the param-fill sanction takes
-    the record types some `.init` passes as a type argument. Names resolve
-    in file scope only, and a declaration in a skipped comp can sanction
-    but is never flagged."""
+    the record types some `.init` passes as a type argument, and the records
+    their fields reach through records. Names resolve in file scope only,
+    and a declaration in a skipped comp can sanction but is never flagged."""
     scoped = _type_scopes(items)
     by_name: dict[str, list[TypeDecl]] = {}
     for td, _ in scoped:
@@ -1479,7 +1479,14 @@ def _banned_types(
         if any(RECORD_RHS_RE.match(td.rhs.strip()) for td in tds)
     }
     filled = {targ for init in _inits(items) for targ in init.targs}
-    sanctioned |= records & filled
+    stack = list(records & filled)
+    while stack:
+        name = stack.pop()
+        if name in sanctioned:
+            continue
+        sanctioned.add(name)
+        for td in by_name[name]:
+            stack.extend((_type_refs(td, declared) & records) - sanctioned)
 
     findings: list[tuple[str, int, str, str]] = []
     for td, linted in scoped:
