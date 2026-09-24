@@ -1,0 +1,370 @@
+// 9f669b64
+// @draft
+// @keywords: objects markers move
+// @scene background: every cell not in one of three objects is the
+//  background color
+// @scene wedge: one object is a wedge. It narrows toward one side, and its
+//  narrow end touches the projectile.
+// @scene projectile: one solid rectangle touches the wedge's narrow end. Its
+//  width across the launch direction is even.
+// @scene target: one solid rectangle lies in line with the projectile, on the
+//  side away from the wedge. It spans the projectile's whole width across the
+//  launch direction, and it extends past the projectile on both sides. It may
+//  touch the projectile or lie across a background gap.
+// @rule launch-direction: the projectile moves in the direction that points
+//  from the wedge through the projectile
+// @rule wedge-stays: the wedge keeps its cells
+// @rule projectile-to-edge: the projectile moves in the launch direction until
+//  its far side touches the grid edge. Its old cells become background.
+// @rule target-split: the center line of the projectile's path cuts the target
+//  in two halves. Each half shifts outward, away from that line and across the
+//  launch direction, by half the projectile's width.
+// @rule path-clear: the cells in the projectile's path that the moved
+//  projectile does not cover are background
+
+// which objects are the wedge, the projectile, and the target
+.type Roles =
+    // @claim projectile
+    Touch {}
+    // @scene projectile: the projectile is the object with the other two
+    //  wholly on opposite sides of it along one axis. The target is the one
+    //  of those two that is a solid rectangle spanning the projectile across
+    //  that axis, and the wedge is the other.
+    // @witness wedge-apart: variant projectile-between
+    //     @relaxed wedge
+    // @witness bar-launcher: variant projectile-between
+    //     @relaxed wedge
+  | ProjectileBetween {}
+
+// the direction the projectile moves
+.type Launch =
+    // @claim launch-direction
+    FromWedge {}
+    // @rule launch-direction: the projectile moves toward the side on which
+    //  the target lies wholly beyond it
+    // @witness target-aside: foreign push-out
+    //     @relaxed target
+    // @witness target-behind: foreign push-out
+    //     @relaxed target
+    // @witness wedge-corner: foreign any
+    //     @relaxed wedge
+  | TowardTarget {}
+    // @rule launch-direction: the projectile moves toward the side the wedge
+    //  narrows to: off its back side, every wedge cell has a wedge cell
+    //  behind it
+    // @witness tip-down: foreign concept
+    //     @relaxed wedge
+    // @witness reversed-wedge: foreign concept
+    //     @relaxed wedge
+  | WedgeTip {}
+
+// where the projectile stops
+.type Stop =
+    // @claim projectile-to-edge
+    ToEdge {}
+    // @rule projectile-to-edge: along params.far_axis, the projectile's
+    //  leading side stops on the target's far side. Along the other axis, its
+    //  trailing side stops on the target's near side.
+    // @witness target-off-edge: ordinary concept
+  | StopPerAxis {}
+
+// how far each target half moves
+.type Shift =
+    // @claim target-split
+    HalfWidth {}
+    // @rule target-split: each half shifts by params.shift. A cell on the
+    //  cut line is in neither half, and the model is undefined.
+    // @witness wide-projectile: variant concept
+  | ShiftOne {}
+    // @rule target-split: each half shifts by the count of projectile lines
+    //  strictly on its side of the projectile's center line. A cell on the
+    //  cut line is in neither half, and the model is undefined.
+    // @witness odd-aside: foreign push-out
+    //     @relaxed projectile
+    //     @relaxed target
+    // @witness odd-even: borderline any
+    //     @relaxed projectile
+    // @witness odd-offset: foreign odd-floor
+    //     @relaxed projectile
+    //     @relaxed target
+    // @witness odd-side-tip: foreign concept
+    //     @relaxed wedge
+  | OddFloor {}
+    // @rule target-split: each half shifts by the count of the projectile's
+    //  lines it covers ahead of the projectile. A cell on the cut line is in
+    //  neither half, and the model is undefined.
+    // @witness target-aside: foreign push-out
+    // @witness target-behind: foreign push-out
+    // @witness partial-path: borderline concept
+    //     @relaxed target
+  | PushOut {}
+
+// where the target is cut
+.type SplitLine =
+    // @claim target-split
+    PathCenter {}
+    // @rule target-split: the target's own center line cuts it in two
+    //  halves. A cell on that line is in neither half, and the model is
+    //  undefined.
+    // @witness off-center: variant concept
+  | SplitTargetCenter {}
+
+.type Choice = [roles: Roles, launch: Launch, stop: Stop, shift: Shift, split: SplitLine]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    .decl bg(c: Color) bg(7).
+
+    // --- StopPerAxis ---
+    // The axis on which the projectile stops by its leading side.
+    .decl far_axis(a: Axis) far_axis(AXIS_V).
+
+    // The side of the projectile, and of the target, that the stop lines up,
+    // per launch direction.
+    .decl anchor(d: Dir, d_anchor: Dir)
+    anchor(D, D) :- far_axis(A), axis_of(D, A).
+    anchor(D, D_a) :- axis_of(D, A), !far_axis(A), opposite(D, D_a).
+
+    // --- ShiftOne ---
+    .decl shift(k: number) shift(1).
+}
+
+.init params = Params
+
+// Every combination of the branches, less each case that gives the output
+// of the case with HalfWidth in its place on every input.
+.decl impl_choice(ch: Choice)
+impl_choice([R, L, St, Sh, C]) :-
+    roles_choice(R), launch_choice(L), stop_choice(St), shift_choice(Sh), split_line_choice(C),
+    !as_half_width([R, L, St, Sh, C]).
+
+// Under ProjectileBetween, the target spans the projectile, so a cut on the
+// path's center line strands a target cell when the width is odd. OddFloor
+// differs from HalfWidth only where WedgeTip turns the launch off the target,
+// and there StopPerAxis finds no target line to stop on. PushOut also agrees
+// with HalfWidth on an even width while the target lies ahead, as it does
+// under FromWedge and TowardTarget.
+.decl as_half_width(ch: Choice)
+as_half_width([$ProjectileBetween(), L, St, $OddFloor(), $PathCenter()]) :-
+    launch_choice(L), L != $WedgeTip(), stop_choice(St).
+as_half_width([$ProjectileBetween(), L, St, $PushOut(), $PathCenter()]) :-
+    launch_choice(L), L != $WedgeTip(), stop_choice(St).
+as_half_width([$ProjectileBetween(), $WedgeTip(), $StopPerAxis(), $OddFloor(), $PathCenter()]).
+
+.decl roles_choice(r: Roles)
+roles_choice($Touch()). roles_choice($ProjectileBetween()).
+
+.decl launch_choice(l: Launch)
+launch_choice($FromWedge()). launch_choice($TowardTarget()). launch_choice($WedgeTip()).
+
+.decl stop_choice(s: Stop)
+stop_choice($ToEdge()). stop_choice($StopPerAxis()).
+
+.decl shift_choice(s: Shift)
+shift_choice($HalfWidth()). shift_choice($ShiftOne()). shift_choice($OddFloor()).
+shift_choice($PushOut()).
+
+.decl split_line_choice(c: SplitLine)
+split_line_choice($PathCenter()). split_line_choice($SplitTargetCenter()).
+
+// @claim wedge projectile target
+.init piece = Components<Color>
+piece.node(Col, P) :- in(P, Col), !params.bg(Col).
+
+.decl obj(id: Ident, p: Position)
+obj(Id, P) :- piece.label(_, P, Id).
+
+// @claim projectile target
+.init hull = Bbox<Ident>
+hull.cell(Id, P) :- obj(Id, P).
+
+// A cell of the object's box that the object does not hold.
+.decl hole(id: Ident)
+hole(Id) :- hull.box(Id, B), in(P, _), inside(P, B), !obj(Id, P).
+
+.decl rect(id: Ident)
+rect(Id) :- hull.box(Id, _), !hole(Id).
+
+.decl touch(id: Ident, id2: Ident)
+touch(Id, Id2) :- obj(Id, P), dir_elem(D), neighbor(P, D, Q), obj(Id2, Q), Id != Id2.
+
+// Every cell of Id lies strictly nearer edge D than every cell of Id2.
+.decl beyond(id: Ident, id2: Ident, d: Dir)
+beyond(Id, Id2, D) :-
+    hull.box(Id, B), hull.box(Id2, B2), Id != Id2, opposite(D, D_back),
+    obj(Id, P), box_edge(P, B, D_back),       // a cell on Id's side away from D
+    nearer(D, P, B2).
+
+// Id2 reaches no farther than Id on a side across D.
+.decl short_side(id: Ident, id2: Ident, d: Dir)
+short_side(Id, Id2, D) :-
+    hull.box(Id, B), hull.box(Id2, B2), Id != Id2, perp_dir(D, E), !nearer(E, B2, B).
+
+.decl roles(r: Roles, w: Ident, p: Ident, t: Ident)
+
+// --- Touch ---
+roles($Touch(), W, P, T) :-
+    touch(W, P), !rect(W),                    // the wedge is the one non-rectangle
+    rect(P), rect(T), T != P.
+
+// --- ProjectileBetween ---
+roles($ProjectileBetween(), W, P, T) :-
+    beyond(T, P, D), opposite(D, D2), beyond(W, P, D2),
+    rect(T), !short_side(P, T, D).            // the target spans the projectile
+
+// The roles with the launch direction.
+.decl shot(r: Roles, l: Launch, p: Ident, t: Ident, d: Dir)
+
+// --- FromWedge ---
+shot(R, $FromWedge(), P, T, D) :-
+    roles(R, W, P, T), beyond(W, P, D_back), opposite(D_back, D).
+
+// --- TowardTarget ---
+shot(R, $TowardTarget(), P, T, D) :- roles(R, _, P, T), beyond(T, P, D).
+
+// --- WedgeTip ---
+// A cell off the object's back side from D with no object cell behind it.
+.decl unbacked(id: Ident, d: Dir)
+unbacked(Id, D) :-
+    hull.box(Id, B), obj(Id, P), opposite(D, D_back),
+    !box_edge(P, B, D_back), neighbor(P, D_back, Q), !obj(Id, Q).
+
+// A cell off the object's front side toward D with no object cell ahead.
+.decl stepped(id: Ident, d: Dir)
+stepped(Id, D) :-
+    hull.box(Id, B), obj(Id, P), dir_elem(D),
+    !box_edge(P, B, D), neighbor(P, D, Q), !obj(Id, Q).
+
+shot(R, $WedgeTip(), P, T, D) :-
+    roles(R, W, P, T), stepped(W, D), !unbacked(W, D).   // the wedge narrows toward D
+
+// The projectile's translation.
+.decl travel(st: Stop, p: Ident, t: Ident, d: Dir, v: Offset)
+
+// --- ToEdge ---
+travel($ToEdge(), P, T, D, V) :-
+    shot(_, _, P, T, D), hull.box(P, B), dist(B, D, K), jump_offset(D, K, V).
+
+// --- StopPerAxis ---
+travel($StopPerAxis(), P, T, D, V) :-
+    shot(_, _, P, T, D), params.anchor(D, D_a), axis_of(D, A),
+    hull.box(P, B), obj(P, Q), box_edge(Q, B, D_a),
+    hull.box(T, B2), obj(T, Q2), box_edge(Q2, B2, D_a), same_line(A, Q, Q2),
+    relative(Q, Q2, V).
+
+.decl flies(r: Roles, l: Launch, st: Stop, p: Position, col: Color)
+flies(R, L, St, Q, Col) :-
+    shot(R, L, P, T, D), travel(St, P, T, D, V),
+    obj(P, P_cell), in(P_cell, Col), compose(P_cell, V, Q).
+
+.type Side = [id: Ident, d: Dir]
+
+// Each object's lines across each direction, ranked from that edge.
+// @claim target-split
+.init lines = Ordinal<Side>
+lines.idx_set([Id, D], K) :- obj(Id, P), dir_elem(D), dist(P, D, K).
+
+// A line of the object's half toward D: fewer of its lines lie nearer D than
+// farther.
+.decl half_line(id: Ident, d: Dir, k: number)
+half_line(Id, D, K) :-
+    lines.rank([Id, D], K, R), lines.rank_desc([Id, D], K, R2), R < R2.
+
+// The object has a middle line across D: its line count is odd.
+.decl center_line(id: Ident, d: Dir)
+center_line(Id, D) :- lines.rank([Id, D], K, R), lines.rank_desc([Id, D], K, R).
+
+// The object whose center line cuts the target.
+.decl cut_owner(c: SplitLine, p: Ident, t: Ident, o: Ident)
+
+// --- PathCenter ---
+cut_owner($PathCenter(), P, T, P) :- shot(_, _, P, T, _).
+
+// --- SplitTargetCenter ---
+cut_owner($SplitTargetCenter(), P, T, T) :- shot(_, _, P, T, _).
+
+// The halves of target T, launched toward D, under the cut on O's center
+// line, toward E.
+.decl halves(p: Ident, t: Ident, o: Ident, d: Dir, e: Dir)
+halves(P, T, O, D, E) :- shot(_, _, P, T, D), cut_owner(_, P, T, O), perp_dir(D, E).
+
+// A target cell as near E as a line of O's half toward E. A cell on O's
+// middle line is in neither half.
+.decl half(o: Ident, t: Ident, d: Dir, p: Position, e: Dir)
+half(O, T, D, P, E) :-
+    halves(_, T, O, D, E), obj(T, P), dist(P, E, K_p), half_line(O, E, K), K_p <= K.
+
+// The count of the object's lines in its half toward D.
+// @claim target-split
+.init half_width = Tally<Side, number>
+half_width.item([Id, D], K) :- half_line(Id, D, K).
+half_width.domain([Id, D]) :- hull.box(Id, _), dir_elem(D).
+
+// How far each half of the target moves.
+.decl amount(sh: Shift, p: Ident, t: Ident, o: Ident, d: Dir, e: Dir, k: number)
+
+// --- HalfWidth ---
+amount($HalfWidth(), P, T, O, D, E, K) :-
+    halves(P, T, O, D, E), half_width.tally([P, E], K),
+    !center_line(P, E).                      // the projectile's width is even
+
+// --- ShiftOne ---
+amount($ShiftOne(), P, T, O, D, E, K) :- halves(P, T, O, D, E), params.shift(K).
+
+// --- OddFloor ---
+amount($OddFloor(), P, T, O, D, E, K) :-
+    halves(P, T, O, D, E), half_width.tally([P, E], K).
+
+// --- PushOut ---
+.type Half = [p: Ident, t: Ident, o: Ident, d: Dir, e: Dir]
+
+// The projectile's lines each half covers ahead of the projectile.
+// @claim target-split
+.init cover = Tally<Half, number>
+cover.item([P, T, O, D, E], K) :-
+    halves(P, T, O, D, E), half(O, T, D, Q, E), hull.box(P, B), nearer(D, Q, B),
+    dist(Q, E, K), obj(P, Q2), dist(Q2, E, K).
+cover.domain([P, T, O, D, E]) :- halves(P, T, O, D, E).
+
+amount($PushOut(), P, T, O, D, E, K) :- cover.tally([P, T, O, D, E], K).
+
+.decl lands(r: Roles, l: Launch, sh: Shift, c: SplitLine, p: Position, q: Position)
+lands(R, L, Sh, C, P_cell, Q) :-
+    shot(R, L, P, T, D), cut_owner(C, P, T, O),
+    half(O, T, D, P_cell, E), amount(Sh, P, T, O, D, E, K), jump(P_cell, E, K, Q).
+
+// Some target cell has no landing.
+.decl stranded(r: Roles, l: Launch, sh: Shift, c: SplitLine)
+stranded(R, L, Sh, C) :-
+    shot(R, L, _, T, _), obj(T, P), shift_choice(Sh), split_line_choice(C),
+    !lands(R, L, Sh, C, P, _).
+
+// The input with the projectile and the target lifted.
+.decl ground(r: Roles, l: Launch, p: Position, col: Color)
+ground(R, L, P, Col) :-
+    shot(R, L, P_id, T, _), in(P, Col_in),
+    ( !obj(P_id, P), !obj(T, P), Col = Col_in   // the wedge and the background
+    ; obj(P_id, P), params.bg(Col)              // the projectile's old cells
+    ; obj(T, P), params.bg(Col)                 // the target's old cells
+    ).
+
+// The roles or the launch direction have two readings.
+.decl ambiguous(r: Roles, l: Launch)
+ambiguous(R, L) :-
+    shot(R, L, P, T, D), shot(R, L, P2, T2, D2), ( P != P2 ; T != T2 ; D != D2 ).
+
+// The case has a grid.
+.decl ready(ch: Choice)
+ready([R, L, St, Sh, C]) :-
+    impl_choice([R, L, St, Sh, C]),
+    shot(R, L, P, T, D), !ambiguous(R, L), travel(St, P, T, D, _), !stranded(R, L, Sh, C).
+
+// The moved projectile over the moved target over the ground.
+out(Q, Col, [R, L, St, Sh, C]) :-
+    ready([R, L, St, Sh, C]), in(Q, _),
+    ( flies(R, L, St, Q, Col)
+    ; !flies(R, L, St, Q, _), lands(R, L, Sh, C, P, Q), in(P, Col)
+    ; !flies(R, L, St, Q, _), !lands(R, L, Sh, C, _, Q), ground(R, L, Q, Col)
+    ).

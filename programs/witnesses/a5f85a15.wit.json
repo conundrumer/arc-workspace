@@ -1,0 +1,276 @@
+{
+  "id": "a5f85a15",
+  "witnesses": [{
+    "id": "gap",
+    "separates": "A main-diagonal line with a one-cell gap after its first cell: runs restart the count after the gap, and diagonal-class counts across it.",
+    "input": [
+      [5,0,0,0],
+      [0,0,0,0],
+      [0,0,5,0],
+      [0,0,0,5]
+    ],
+    "output": [{
+      "cases": [
+        "concept",
+        "grid-diagonal",
+        "column-parity",
+        "derived-axis",
+        "color-runs",
+        "bg=DominantColor"
+      ],
+      "grid": [
+        [5,0,0,0],
+        [0,0,0,0],
+        [0,0,5,0],
+        [0,0,0,4]
+      ]
+    }, {
+      "cases": ["diagonal-class"],
+      "grid": [
+        [5,0,0,0],
+        [0,0,0,0],
+        [0,0,4,0],
+        [0,0,0,5]
+      ]
+    }]
+  }, {
+    "id": "inner-segment",
+    "separates": "A main-diagonal segment that starts inside the grid: the concept counts from the segment's first cell, and grid-diagonal counts from the grid-edge cell of its diagonal.",
+    "input": [
+      [0,0,0,0,0],
+      [0,0,5,0,0],
+      [0,0,0,5,0],
+      [0,0,0,0,5],
+      [0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": [
+        "concept",
+        "diagonal-class",
+        "column-parity",
+        "derived-axis",
+        "color-runs",
+        "bg=DominantColor"
+      ],
+      "grid": [
+        [0,0,0,0,0],
+        [0,0,5,0,0],
+        [0,0,0,4,0],
+        [0,0,0,0,5],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["grid-diagonal"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,0,4,0,0],
+        [0,0,0,5,0],
+        [0,0,0,0,4],
+        [0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "touching-lines",
+    "separates": "Two main-diagonal lines side by side: the concept counts along each line, and column-parity marks the cells in odd columns.",
+    "input": [
+      [5,5,0,0],
+      [0,5,5,0],
+      [0,0,5,5],
+      [0,0,0,5]
+    ],
+    "output": [{
+      "cases": [
+        "concept",
+        "diagonal-class",
+        "grid-diagonal",
+        "derived-axis",
+        "color-runs",
+        "bg=DominantColor"
+      ],
+      "grid": [
+        [5,5,0,0],
+        [0,4,4,0],
+        [0,0,5,5],
+        [0,0,0,4]
+      ]
+    }, {
+      "cases": ["column-parity"],
+      "grid": [
+        [5,4,0,0],
+        [0,4,5,0],
+        [0,0,5,4],
+        [0,0,0,4]
+      ]
+    }]
+  }, {
+    "id": "anti-diagonal-odd",
+    "separates": "One anti-diagonal line of three cells: the stored step finds no line and returns the input, and derived-axis marks the middle cell.",
+    "input": [
+      [0,0,5],
+      [0,5,0],
+      [5,0,0]
+    ],
+    "output": [{
+      "cases": ["concept","diagonal-class","color-runs","bg=DominantColor"],
+      "grid": [
+        [0,0,5],
+        [0,5,0],
+        [5,0,0]
+      ]
+    }, {
+      "cases": ["grid-diagonal","column-parity","derived-axis"],
+      "grid": [
+        [0,0,5],
+        [0,4,0],
+        [5,0,0]
+      ]
+    }]
+  }, {
+    "id": "odd-column-start",
+    "separates": "A main-diagonal line that starts on the top edge at an odd column: the concept counts from the line's first cell, and column-parity marks the cells in odd columns.",
+    "input": [
+      [0,5,0,0],
+      [0,0,5,0],
+      [0,0,0,5],
+      [0,0,0,0]
+    ],
+    "output": [{
+      "cases": [
+        "concept",
+        "diagonal-class",
+        "grid-diagonal",
+        "derived-axis",
+        "color-runs",
+        "bg=DominantColor"
+      ],
+      "grid": [
+        [0,5,0,0],
+        [0,0,4,0],
+        [0,0,0,5],
+        [0,0,0,0]
+      ]
+    }, {
+      "cases": ["column-parity"],
+      "grid": [
+        [0,4,0,0],
+        [0,0,5,0],
+        [0,0,0,4],
+        [0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "two-colors",
+    "separates": "One main-diagonal run of a 5 cell then two 7 cells: the concept counts across the color change, and color-runs starts a new count at it.",
+    "input": [
+      [5,0,0],
+      [0,7,0],
+      [0,0,7]
+    ],
+    "output": [{
+      "cases": [
+        "concept",
+        "diagonal-class",
+        "grid-diagonal",
+        "column-parity",
+        "derived-axis",
+        "bg=DominantColor"
+      ],
+      "grid": [
+        [5,0,0],
+        [0,4,0],
+        [0,0,7]
+      ]
+    }, {
+      "cases": ["color-runs"],
+      "grid": [
+        [5,0,0],
+        [0,7,0],
+        [0,0,4]
+      ]
+    }]
+  }, {
+    "id": "anti-diagonal-even",
+    "separates": "One anti-diagonal line of four cells, with the start edge fixed to the top: the stored step finds no line and returns the input, and DerivedAxis counts from the line's upper end.",
+    "input": [
+      [0,0,0,5],
+      [0,0,5,0],
+      [0,5,0,0],
+      [5,0,0,0]
+    ],
+    "assign": {
+      "start_edge": [
+        ["DIR_T"]
+      ]
+    },
+    "output": [{
+      "cases": ["concept","DiagonalClass","ColorRuns","bg=DominantColor"],
+      "grid": [
+        [0,0,0,5],
+        [0,0,5,0],
+        [0,5,0,0],
+        [5,0,0,0]
+      ]
+    }, {
+      "cases": ["GridDiagonal"],
+      "grid": [
+        [0,0,0,5],
+        [0,0,4,0],
+        [0,4,0,0],
+        [5,0,0,0]
+      ]
+    }, {
+      "cases": ["ColumnParity"],
+      "grid": [
+        [0,0,0,4],
+        [0,0,5,0],
+        [0,4,0,0],
+        [5,0,0,0]
+      ]
+    }, {
+      "cases": ["DerivedAxis"],
+      "grid": [
+        [0,0,0,5],
+        [0,0,4,0],
+        [0,5,0,0],
+        [4,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "anti-diagonal-wide",
+    "separates": "One anti-diagonal line of three cells in a 3x4 grid: DerivedAxis counts along the line, GridDiagonal under the stored step marks each ink cell whose min(row, column) is odd, and GridDiagonal under DerivedAxis counts along the anti-diagonal.",
+    "input": [
+      [0,0,0,5],
+      [0,0,5,0],
+      [0,5,0,0]
+    ],
+    "output": [{
+      "cases": ["concept","DiagonalClass","ColorRuns","bg=DominantColor"],
+      "grid": [
+        [0,0,0,5],
+        [0,0,5,0],
+        [0,5,0,0]
+      ]
+    }, {
+      "cases": ["GridDiagonal"],
+      "grid": [
+        [0,0,0,5],
+        [0,0,4,0],
+        [0,4,0,0]
+      ]
+    }, {
+      "cases": ["ColumnParity"],
+      "grid": [
+        [0,0,0,4],
+        [0,0,5,0],
+        [0,4,0,0]
+      ]
+    }, {
+      "cases": ["DerivedAxis"],
+      "grid": [
+        [0,0,0,5],
+        [0,0,4,0],
+        [0,5,0,0]
+      ]
+    }]
+  }]
+}

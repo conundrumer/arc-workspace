@@ -1,0 +1,808 @@
+{
+  "id": "9f669b64",
+  "witnesses": [{
+    "id": "target-off-edge",
+    "separates": "stop-per-axis from the concept: the target stands one cell short of the grid edge. The concept runs the projectile to the grid edge; stop-per-axis stops it with its trailing side on the target's near side.",
+    "input": [
+      [2,7,7,7,7,7,7,7,7,7],
+      [2,2,7,7,7,7,7,8,8,7],
+      [2,2,2,2,9,9,7,8,8,7],
+      [2,2,2,2,9,9,7,8,8,7],
+      [2,2,7,7,7,7,7,8,8,7],
+      [2,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7]
+    ],
+    "output": [{
+      "cases": [
+        "concept",
+        "ProjectileBetween",
+        "TowardTarget",
+        "WedgeTip",
+        "ShiftOne",
+        "OddFloor",
+        "PushOut",
+        "SplitTargetCenter",
+        "bg=DominantColor"
+      ],
+      "grid": [
+        [2,7,7,7,7,7,7,8,8,7],
+        [2,2,7,7,7,7,7,8,8,7],
+        [2,2,2,2,7,7,7,7,9,9],
+        [2,2,2,2,7,7,7,7,9,9],
+        [2,2,7,7,7,7,7,8,8,7],
+        [2,7,7,7,7,7,7,8,8,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7]
+      ]
+    }, {
+      "cases": ["StopPerAxis"],
+      "grid": [
+        [2,7,7,7,7,7,7,8,8,7],
+        [2,2,7,7,7,7,7,8,8,7],
+        [2,2,2,2,7,7,7,9,9,7],
+        [2,2,2,2,7,7,7,9,9,7],
+        [2,2,7,7,7,7,7,8,8,7],
+        [2,7,7,7,7,7,7,8,8,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "wide-projectile",
+    "separates": "shift-one from the concept: the projectile is four cells wide. The concept moves each target half out by two cells; shift-one moves them by one, and the projectile covers the rest.",
+    "input": [
+      [7,7,6,6,6,6,6,6,7,7],
+      [7,7,6,6,6,6,6,6,7,7],
+      [7,7,7,6,6,6,6,7,7,7],
+      [7,7,7,1,1,1,1,7,7,7],
+      [7,7,7,1,1,1,1,7,7,7],
+      [7,7,7,1,1,1,1,7,7,7],
+      [7,7,8,8,8,8,8,8,7,7],
+      [7,7,8,8,8,8,8,8,7,7],
+      [7,7,8,8,8,8,8,8,7,7],
+      [7,7,8,8,8,8,8,8,7,7]
+    ],
+    "output": [{
+      "cases": [
+        "concept",
+        "ProjectileBetween",
+        "TowardTarget",
+        "WedgeTip",
+        "StopPerAxis",
+        "OddFloor",
+        "PushOut",
+        "SplitTargetCenter",
+        "bg=DominantColor"
+      ],
+      "grid": [
+        [7,7,6,6,6,6,6,6,7,7],
+        [7,7,6,6,6,6,6,6,7,7],
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [8,8,8,7,7,7,7,8,8,8],
+        [8,8,8,1,1,1,1,8,8,8],
+        [8,8,8,1,1,1,1,8,8,8],
+        [8,8,8,1,1,1,1,8,8,8]
+      ]
+    }, {
+      "cases": ["ShiftOne"],
+      "grid": [
+        [7,7,6,6,6,6,6,6,7,7],
+        [7,7,6,6,6,6,6,6,7,7],
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,8,8,8,7,7,8,8,8,7],
+        [7,8,8,1,1,1,1,8,8,7],
+        [7,8,8,1,1,1,1,8,8,7],
+        [7,8,8,1,1,1,1,8,8,7]
+      ]
+    }]
+  }, {
+    "id": "off-center",
+    "separates": "split-target-center from the concept: the target extends one cell above the projectile and five cells below it. The concept cuts the target on the projectile's center line; split-target-center cuts it on its own center line and leaves background cells beside the projectile.",
+    "input": [
+      [2,7,7,7,7,7,7,7,7,7],
+      [2,2,7,7,7,7,7,7,8,8],
+      [2,2,2,2,9,9,7,7,8,8],
+      [2,2,2,2,9,9,7,7,8,8],
+      [2,2,7,7,7,7,7,7,8,8],
+      [2,7,7,7,7,7,7,7,8,8],
+      [7,7,7,7,7,7,7,7,8,8],
+      [7,7,7,7,7,7,7,7,8,8],
+      [7,7,7,7,7,7,7,7,8,8],
+      [7,7,7,7,7,7,7,7,7,7]
+    ],
+    "output": [{
+      "cases": [
+        "concept",
+        "ProjectileBetween",
+        "TowardTarget",
+        "WedgeTip",
+        "StopPerAxis",
+        "ShiftOne",
+        "OddFloor",
+        "PushOut",
+        "bg=DominantColor"
+      ],
+      "grid": [
+        [2,7,7,7,7,7,7,7,8,8],
+        [2,2,7,7,7,7,7,7,8,8],
+        [2,2,2,2,7,7,7,7,9,9],
+        [2,2,2,2,7,7,7,7,9,9],
+        [2,2,7,7,7,7,7,7,8,8],
+        [2,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,8,8]
+      ]
+    }, {
+      "cases": ["SplitTargetCenter"],
+      "grid": [
+        [2,7,7,7,7,7,7,7,8,8],
+        [2,2,7,7,7,7,7,7,8,8],
+        [2,2,2,2,7,7,7,7,9,9],
+        [2,2,2,2,7,7,7,7,9,9],
+        [2,2,7,7,7,7,7,7,7,7],
+        [2,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,8,8]
+      ]
+    }]
+  }, {
+    "id": "wedge-apart",
+    "separates": "projectile-between from the concept: one background column lies between the wedge and the projectile. The concept finds no rectangle that touches the wedge and is undefined; projectile-between takes the object between the other two.",
+    "input": [
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,2],
+      [7,4,7,7,7,7,7,7,2,2],
+      [7,4,7,7,7,1,1,7,2,2],
+      [7,4,7,7,7,1,1,7,2,2],
+      [7,4,7,7,7,7,7,7,2,2],
+      [7,7,7,7,7,7,7,7,7,2],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7]
+    ],
+    "output": [{
+      "cases": [
+        "concept",
+        "TowardTarget",
+        "WedgeTip",
+        "StopPerAxis",
+        "ShiftOne",
+        "OddFloor",
+        "PushOut",
+        "SplitTargetCenter",
+        "bg=DominantColor"
+      ],
+      "grid": null
+    }, {
+      "cases": ["ProjectileBetween"],
+      "grid": [
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,4,7,7,7,7,7,7,7,2],
+        [7,4,7,7,7,7,7,7,2,2],
+        [1,1,7,7,7,7,7,7,2,2],
+        [1,1,7,7,7,7,7,7,2,2],
+        [7,4,7,7,7,7,7,7,2,2],
+        [7,4,7,7,7,7,7,7,7,2],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "target-aside",
+    "separates": "push-out and toward-target from the concept: the wedge sits above the projectile and the target sits to its right. The concept sends the projectile down and shifts the whole target right; push-out leaves the target in place, since it covers no path line; toward-target sends the projectile right through the target.",
+    "input": [
+      [7,7,7,6,6,6,6,7,7,7],
+      [7,7,7,6,6,6,6,7,7,7],
+      [7,7,7,7,6,6,7,7,8,8],
+      [7,7,7,7,1,1,7,7,8,8],
+      [7,7,7,7,1,1,7,7,8,8],
+      [7,7,7,7,7,7,7,7,8,8],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7]
+    ],
+    "output": [{
+      "cases": ["concept","WedgeTip","ShiftOne","OddFloor","bg=DominantColor"],
+      "grid": [
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,7,6,6,7,7,7,8],
+        [7,7,7,7,7,7,7,7,7,8],
+        [7,7,7,7,7,7,7,7,7,8],
+        [7,7,7,7,7,7,7,7,7,8],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,1,1,7,7,7,7],
+        [7,7,7,7,1,1,7,7,7,7]
+      ]
+    }, {
+      "cases": ["ProjectileBetween","StopPerAxis"],
+      "grid": null
+    }, {
+      "cases": ["TowardTarget"],
+      "grid": [
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,6,6,6,6,7,8,8],
+        [7,7,7,7,6,6,7,7,8,8],
+        [7,7,7,7,7,7,7,7,1,1],
+        [7,7,7,7,7,7,7,7,1,1],
+        [7,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7]
+      ]
+    }, {
+      "cases": ["PushOut"],
+      "grid": [
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,7,6,6,7,7,8,8],
+        [7,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,1,1,7,7,7,7],
+        [7,7,7,7,1,1,7,7,7,7]
+      ]
+    }, {
+      "cases": ["SplitTargetCenter"],
+      "grid": [
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,7,6,6,7,8,7,7],
+        [7,7,7,7,7,7,7,8,7,7],
+        [7,7,7,7,7,7,7,8,7,7],
+        [7,7,7,7,7,7,7,8,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,1,1,7,7,7,7],
+        [7,7,7,7,1,1,7,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "tip-down",
+    "separates": "wedge-tip from the concept: the wedge touches the projectile with its left side and narrows downward. The concept sends the projectile right through the target; wedge-tip sends it down.",
+    "input": [
+      [7,7,7,7,7,7,7,7,8,8],
+      [2,2,2,2,9,9,7,7,8,8],
+      [2,2,2,2,9,9,7,7,8,8],
+      [7,2,2,7,7,7,7,7,8,8],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7]
+    ],
+    "output": [{
+      "cases": [
+        "concept",
+        "ProjectileBetween",
+        "TowardTarget",
+        "StopPerAxis",
+        "ShiftOne",
+        "OddFloor",
+        "PushOut",
+        "SplitTargetCenter",
+        "bg=DominantColor"
+      ],
+      "grid": [
+        [7,7,7,7,7,7,7,7,8,8],
+        [2,2,2,2,7,7,7,7,9,9],
+        [2,2,2,2,7,7,7,7,9,9],
+        [7,2,2,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7]
+      ]
+    }, {
+      "cases": ["WedgeTip"],
+      "grid": [
+        [7,7,7,7,7,7,7,7,7,8],
+        [2,2,2,2,7,7,7,7,7,8],
+        [2,2,2,2,7,7,7,7,7,8],
+        [7,2,2,7,7,7,7,7,7,8],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,9,9,7,7,7,7],
+        [7,7,7,7,9,9,7,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "bar-launcher",
+    "separates": "projectile-between from the concept: the upstream pair this variant drops, whose launcher is a rectangle. The concept finds no wedge and is undefined; projectile-between takes the middle object and runs it up through the other rectangle.",
+    "input": [
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,9,9,9,9,7,7,7],
+      [7,7,7,9,9,9,9,7,7,7],
+      [7,7,7,7,3,3,7,7,7,7],
+      [7,7,7,7,3,3,7,7,7,7],
+      [7,7,7,7,8,8,7,7,7,7],
+      [7,7,7,7,8,8,7,7,7,7],
+      [7,7,7,7,8,8,7,7,7,7],
+      [7,7,7,7,8,8,7,7,7,7]
+    ],
+    "output": [{
+      "cases": [
+        "concept",
+        "TowardTarget",
+        "WedgeTip",
+        "StopPerAxis",
+        "ShiftOne",
+        "OddFloor",
+        "PushOut",
+        "SplitTargetCenter",
+        "bg=DominantColor"
+      ],
+      "grid": null
+    }, {
+      "cases": ["ProjectileBetween"],
+      "grid": [
+        [7,7,7,7,3,3,7,7,7,7],
+        [7,7,7,7,3,3,7,7,7,7],
+        [7,7,9,9,7,7,9,9,7,7],
+        [7,7,9,9,7,7,9,9,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,8,8,7,7,7,7],
+        [7,7,7,7,8,8,7,7,7,7],
+        [7,7,7,7,8,8,7,7,7,7],
+        [7,7,7,7,8,8,7,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "odd-aside",
+    "separates": "odd-floor from the concept: the projectile is three cells wide and the target sits beside its path. The concept has no half width and is undefined; odd-floor and shift-one shift the target right by one cell; push-out leaves it in place.",
+    "input": [
+      [7,7,6,6,6,6,6,7,7,7],
+      [7,7,6,6,6,6,6,7,7,7],
+      [7,7,7,6,6,6,7,7,8,8],
+      [7,7,7,1,1,1,7,7,8,8],
+      [7,7,7,1,1,1,7,7,8,8],
+      [7,7,7,7,7,7,7,7,8,8],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7]
+    ],
+    "output": [{
+      "cases": [
+        "concept",
+        "ProjectileBetween",
+        "WedgeTip",
+        "StopPerAxis",
+        "SplitTargetCenter",
+        "bg=DominantColor"
+      ],
+      "grid": null
+    }, {
+      "cases": ["TowardTarget"],
+      "grid": [
+        [7,7,6,6,6,6,6,7,7,7],
+        [7,7,6,6,6,6,6,7,8,8],
+        [7,7,7,6,6,6,7,7,8,8],
+        [7,7,7,7,7,7,7,1,1,1],
+        [7,7,7,7,7,7,7,1,1,1],
+        [7,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7]
+      ]
+    }, {
+      "cases": ["ShiftOne","OddFloor"],
+      "grid": [
+        [7,7,6,6,6,6,6,7,7,7],
+        [7,7,6,6,6,6,6,7,7,7],
+        [7,7,7,6,6,6,7,7,7,8],
+        [7,7,7,7,7,7,7,7,7,8],
+        [7,7,7,7,7,7,7,7,7,8],
+        [7,7,7,7,7,7,7,7,7,8],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,1,1,1,7,7,7,7],
+        [7,7,7,1,1,1,7,7,7,7]
+      ]
+    }, {
+      "cases": ["PushOut"],
+      "grid": [
+        [7,7,6,6,6,6,6,7,7,7],
+        [7,7,6,6,6,6,6,7,7,7],
+        [7,7,7,6,6,6,7,7,8,8],
+        [7,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,1,1,1,7,7,7,7],
+        [7,7,7,1,1,1,7,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "partial-path",
+    "separates": "push-out from the concept: the target's left end lies inside the projectile's path. The concept shifts the left half by half the projectile's width; push-out shifts it by the one projectile line it covers.",
+    "input": [
+      [7,7,6,6,6,6,6,6,7,7],
+      [7,7,6,6,6,6,6,6,7,7],
+      [7,7,7,6,6,6,6,7,7,7],
+      [7,7,7,1,1,1,1,7,7,7],
+      [7,7,7,1,1,1,1,7,7,7],
+      [7,7,7,1,1,1,1,7,7,7],
+      [7,7,7,7,8,8,8,8,8,7],
+      [7,7,7,7,8,8,8,8,8,7],
+      [7,7,7,7,8,8,8,8,8,7],
+      [7,7,7,7,8,8,8,8,8,7]
+    ],
+    "output": [{
+      "cases": [
+        "concept",
+        "TowardTarget",
+        "WedgeTip",
+        "StopPerAxis",
+        "OddFloor",
+        "bg=DominantColor"
+      ],
+      "grid": [
+        [7,7,6,6,6,6,6,6,7,7],
+        [7,7,6,6,6,6,6,6,7,7],
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,8,7,7,7,7,8,8,8],
+        [7,7,8,1,1,1,1,8,8,8],
+        [7,7,8,1,1,1,1,8,8,8],
+        [7,7,8,1,1,1,1,8,8,8]
+      ]
+    }, {
+      "cases": ["ProjectileBetween","SplitTargetCenter"],
+      "grid": null
+    }, {
+      "cases": ["ShiftOne"],
+      "grid": [
+        [7,7,6,6,6,6,6,6,7,7],
+        [7,7,6,6,6,6,6,6,7,7],
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,8,7,7,8,8,8,8],
+        [7,7,7,1,1,1,1,8,8,8],
+        [7,7,7,1,1,1,1,8,8,8],
+        [7,7,7,1,1,1,1,8,8,8]
+      ]
+    }, {
+      "cases": ["PushOut"],
+      "grid": [
+        [7,7,6,6,6,6,6,6,7,7],
+        [7,7,6,6,6,6,6,6,7,7],
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,8,7,7,7,8,8,8],
+        [7,7,7,1,1,1,1,8,8,8],
+        [7,7,7,1,1,1,1,8,8,8],
+        [7,7,7,1,1,1,1,8,8,8]
+      ]
+    }]
+  }, {
+    "id": "reversed-wedge",
+    "separates": "wedge-tip from the concept under stop-per-axis: the wedge narrows away from the projectile, and the target is longer along the launch than the projectile. wedge-tip launches the projectile up and stop-per-axis lines up its top with the target's top; the concept launches it down.",
+    "input": [
+      [7,7,7,7,6,6,7,7,7,7],
+      [7,7,7,6,6,6,6,7,7,7],
+      [7,7,7,6,6,6,6,7,7,7],
+      [7,7,7,7,1,1,7,7,7,7],
+      [7,7,7,7,1,1,7,7,7,7],
+      [7,7,7,7,1,1,7,7,7,7],
+      [7,7,8,8,8,8,8,8,7,7],
+      [7,7,8,8,8,8,8,8,7,7],
+      [7,7,8,8,8,8,8,8,7,7],
+      [7,7,8,8,8,8,8,8,7,7]
+    ],
+    "output": [{
+      "cases": [
+        "concept",
+        "ProjectileBetween",
+        "TowardTarget",
+        "StopPerAxis",
+        "ShiftOne",
+        "OddFloor",
+        "PushOut",
+        "SplitTargetCenter",
+        "bg=DominantColor"
+      ],
+      "grid": [
+        [7,7,7,7,6,6,7,7,7,7],
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,8,8,8,7,7,8,8,8,7],
+        [7,8,8,8,1,1,8,8,8,7],
+        [7,8,8,8,1,1,8,8,8,7],
+        [7,8,8,8,1,1,8,8,8,7]
+      ]
+    }, {
+      "cases": ["WedgeTip"],
+      "grid": [
+        [7,7,7,7,1,1,7,7,7,7],
+        [7,7,7,6,1,1,6,7,7,7],
+        [7,7,7,6,1,1,6,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,8,8,8,7,7,8,8,8,7],
+        [7,8,8,8,7,7,8,8,8,7],
+        [7,8,8,8,7,7,8,8,8,7],
+        [7,8,8,8,7,7,8,8,8,7]
+      ]
+    }]
+  }, {
+    "id": "target-behind",
+    "separates": "toward-target and push-out from the concept: the target lies beyond the wedge, behind the projectile. The concept launches the projectile away from the wedge and still splits the target; push-out leaves the target in place, since it covers no projectile line ahead of the projectile; toward-target launches the projectile toward the target, through the wedge.",
+    "input": [
+      [7,7,8,8,8,8,8,8,7,7],
+      [7,7,8,8,8,8,8,8,7,7],
+      [7,7,8,8,8,8,8,8,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,6,6,6,6,7,7,7],
+      [7,7,7,6,6,6,6,7,7,7],
+      [7,7,7,7,6,6,7,7,7,7],
+      [7,7,7,7,1,1,7,7,7,7],
+      [7,7,7,7,1,1,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7]
+    ],
+    "output": [{
+      "cases": [
+        "concept",
+        "WedgeTip",
+        "ShiftOne",
+        "OddFloor",
+        "SplitTargetCenter",
+        "bg=DominantColor"
+      ],
+      "grid": [
+        [7,8,8,8,7,7,8,8,8,7],
+        [7,8,8,8,7,7,8,8,8,7],
+        [7,8,8,8,7,7,8,8,8,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,7,6,6,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,1,1,7,7,7,7],
+        [7,7,7,7,1,1,7,7,7,7]
+      ]
+    }, {
+      "cases": ["ProjectileBetween"],
+      "grid": [
+        [8,8,8,6,6,6,6,8,8,8],
+        [8,8,8,6,6,6,6,8,8,8],
+        [8,8,8,7,6,6,7,8,8,8],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,1,1,7,7,7,7],
+        [7,7,7,7,1,1,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7]
+      ]
+    }, {
+      "cases": ["TowardTarget"],
+      "grid": [
+        [7,8,8,8,1,1,8,8,8,7],
+        [7,8,8,8,1,1,8,8,8,7],
+        [7,8,8,8,7,7,8,8,8,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,7,6,6,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7]
+      ]
+    }, {
+      "cases": ["StopPerAxis"],
+      "grid": [
+        [7,8,8,8,7,7,8,8,8,7],
+        [7,8,8,8,1,1,8,8,8,7],
+        [7,8,8,8,1,1,8,8,8,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,7,6,6,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7]
+      ]
+    }, {
+      "cases": ["PushOut"],
+      "grid": [
+        [7,7,8,8,8,8,8,8,7,7],
+        [7,7,8,8,8,8,8,8,7,7],
+        [7,7,8,8,8,8,8,8,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,7,6,6,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,1,1,7,7,7,7],
+        [7,7,7,7,1,1,7,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "odd-even",
+    "separates": "odd-floor from the concept under split-target-center: the projectile is three cells wide and the target six. The concept has no half width and is undefined; odd-floor cuts the target on its own center line and moves each half out by one cell.",
+    "input": [
+      [7,7,6,6,6,6,6,7,7,7],
+      [7,7,6,6,6,6,6,7,7,7],
+      [7,7,7,6,6,6,7,7,7,7],
+      [7,7,7,1,1,1,7,7,7,7],
+      [7,7,7,1,1,1,7,7,7,7],
+      [7,7,7,1,1,1,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,8,8,8,8,8,8,7,7,7],
+      [7,8,8,8,8,8,8,7,7,7],
+      [7,8,8,8,8,8,8,7,7,7]
+    ],
+    "output": [{
+      "cases": [
+        "concept",
+        "ProjectileBetween",
+        "TowardTarget",
+        "WedgeTip",
+        "StopPerAxis",
+        "ShiftOne",
+        "OddFloor",
+        "PushOut",
+        "SplitTargetCenter",
+        "bg=DominantColor"
+      ],
+      "grid": null
+    }]
+  }, {
+    "id": "odd-offset",
+    "separates": "odd-floor from the concept: the projectile is three cells wide, and the target below it reaches only its right column. The concept has no half width and is undefined; odd-floor takes the whole target as the right half and moves it right by one cell.",
+    "input": [
+      [7,7,7,6,6,6,6,6,7,7],
+      [7,7,7,6,6,6,6,6,7,7],
+      [7,7,7,7,6,6,6,7,7,7],
+      [7,7,7,7,1,1,1,7,7,7],
+      [7,7,7,7,1,1,1,7,7,7],
+      [7,7,7,7,1,1,1,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,8,8,8,8],
+      [7,7,7,7,7,7,8,8,8,8],
+      [7,7,7,7,7,7,8,8,8,8]
+    ],
+    "output": [{
+      "cases": [
+        "concept",
+        "ProjectileBetween",
+        "TowardTarget",
+        "WedgeTip",
+        "StopPerAxis",
+        "SplitTargetCenter",
+        "bg=DominantColor"
+      ],
+      "grid": null
+    }, {
+      "cases": ["ShiftOne","OddFloor","PushOut"],
+      "grid": [
+        [7,7,7,6,6,6,6,6,7,7],
+        [7,7,7,6,6,6,6,6,7,7],
+        [7,7,7,7,6,6,6,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,1,1,1,8,8,8],
+        [7,7,7,7,1,1,1,8,8,8],
+        [7,7,7,7,1,1,1,8,8,8]
+      ]
+    }]
+  }, {
+    "id": "wedge-corner",
+    "separates": "toward-target from from-wedge under projectile-between: the wedge lies above and to the left of the projectile, apart from it. from-wedge finds two launch directions and is undefined; toward-target sends the projectile down through the target.",
+    "input": [
+      [6,6,6,6,7,7,7,7,7,7],
+      [6,6,6,6,7,7,7,7,7,7],
+      [7,6,6,7,7,7,7,7,7,7],
+      [7,7,7,7,1,1,7,7,7,7],
+      [7,7,7,7,1,1,7,7,7,7],
+      [7,7,7,7,1,1,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,8,8,8,8,8,8,7,7],
+      [7,7,8,8,8,8,8,8,7,7],
+      [7,7,8,8,8,8,8,8,7,7]
+    ],
+    "output": [{
+      "cases": [
+        "concept",
+        "ProjectileBetween",
+        "TowardTarget",
+        "WedgeTip",
+        "StopPerAxis",
+        "ShiftOne",
+        "OddFloor",
+        "PushOut",
+        "SplitTargetCenter",
+        "bg=DominantColor"
+      ],
+      "grid": null
+    }]
+  }, {
+    "id": "odd-side-tip",
+    "separates": "odd-floor from the concept under projectile-between and wedge-tip: the wedge lies left of the projectile and narrows down, and the target lies to the right. The projectile is three cells wide across the downward launch, so the concept's half width is undefined; odd-floor moves the whole target right by one cell.",
+    "input": [
+      [7,7,7,7,7,7,7,7,7,7],
+      [6,6,6,7,7,7,7,8,8,7],
+      [6,6,6,1,1,1,7,8,8,7],
+      [7,6,7,1,1,1,7,8,8,7],
+      [7,7,7,7,7,7,7,8,8,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7]
+    ],
+    "output": [{
+      "cases": [
+        "concept",
+        "ProjectileBetween",
+        "TowardTarget",
+        "StopPerAxis",
+        "ShiftOne",
+        "OddFloor",
+        "PushOut",
+        "SplitTargetCenter",
+        "bg=DominantColor"
+      ],
+      "grid": [
+        [7,7,7,7,7,7,7,8,8,7],
+        [6,6,6,7,7,7,7,8,8,7],
+        [6,6,6,7,7,7,7,1,1,1],
+        [7,6,7,7,7,7,7,1,1,1],
+        [7,7,7,7,7,7,7,8,8,7],
+        [7,7,7,7,7,7,7,8,8,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7]
+      ]
+    }, {
+      "cases": ["WedgeTip"],
+      "grid": null
+    }]
+  }]
+}
