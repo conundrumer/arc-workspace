@@ -133,3 +133,18 @@ def test_the_written_files_hold_to_the_schema():
     assert paths
     for path in paths:
         assert witness.load_witnesses(path.name.removesuffix(".wit.json"))
+
+
+def test_an_assign_string_that_is_no_constant_is_a_finding():
+    """Souffle reads a name that is no `#define` as a variable and fails on
+    the fact, so each such string, at any depth of a record, is a finding,
+    and a lib constant is none."""
+    assert witness.assign_findings({
+        "first_axis": [["SYM_TB"], ["H"]],
+        "box": [[["ZERO", ["DIR_T", "Top"]]]],
+    }) == [
+        "the `assign` value of `first_axis` holds `H`, which is no constant "
+        "of the lib",
+        "the `assign` value of `box` holds `Top`, which is no constant of "
+        "the lib",
+    ]

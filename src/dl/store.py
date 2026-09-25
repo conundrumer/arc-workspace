@@ -55,7 +55,8 @@ from dl.dlparse import (
 )
 from dl.domains import _lib_defines
 from dl.facts import grid_to_facts
-from dl.lint import _subterms, choice_points, concept_case
+from dl.lint import _subterms, choice_points
+from dl.models import Forced, Space, case_space
 from dl.solve import (
     parse_output,
     res_out_stem,
@@ -64,7 +65,12 @@ from dl.solve import (
 )
 from dl.souffle import _pool_workers, _run_source
 from dl.source import SOLVE_DIRECTIVES, expand_macros
-from dl.witness import Witness, case_outcomes, load_witnesses
+from dl.witness import (
+    Witness,
+    concept_outcome,
+    load_witnesses,
+    model_outcomes,
+)
 
 STORE_OK = "store: ok"
 """The pass line, printed when no finding stands."""
@@ -685,9 +691,10 @@ def _type_args(ix: Index, path: str) -> dict[str, str]:
 
 
 def _twin_text(rel: str, decl, cols: list[int], ref: frozenset,
-               subst: dict[str, str]) -> str:
+               subst: dict[str, str], fed: bool = False) -> str:
     """The twin relation: the keys of the derivation against the stored
-    value set."""
+    value set. With `fed`, the twin holds the derivation instead, and the
+    relation takes the twin's keys against the stored value set."""
 
     def type_of(f) -> str:
         return subst.get(f.type, f.type)
@@ -706,10 +713,11 @@ def _twin_text(rel: str, decl, cols: list[int], ref: frozenset,
             body.append(f"K{i}")
     take = ", ".join(f"V{i}" for i in cols)
     facts = "".join(f"{VALUES}({', '.join(row)}).\n" for row in values)
+    into, source = (rel, TWIN) if fed else (TWIN, rel)
     return (f"\n.decl {VALUES}({value_fields})\n{facts}"
             f".decl {TWIN}({fields})\n"
-            f"{TWIN}({', '.join(head)}) :- "
-            f"{rel}({', '.join(body)}), {VALUES}({take}).\n")
+            f"{into}({', '.join(head)}) :- "
+            f"{source}({', '.join(body)}), {VALUES}({take}).\n")
 
 
 def _fact_arg(text: str) -> str:
@@ -724,9 +732,11 @@ def _stored_facts(rel: str, facts: tuple) -> str:
         f"{rel}({', '.join(_fact_arg(a) for a in row)}).\n" for row in facts)
 
 
-def _head_rules(ix: Index, rel: str) -> list:
-    """The rules of the program whose head is the relation, each as its
-    first and last line."""
+def _head_rules(expanded: str, ix: Index, rel: str) -> list | None:
+    """The rules of the solver's own text whose head is the relation, each
+    as its first and last line. None when a rule of the lib feeds it: the
+    lib's line numbers count lines of another file."""
+    own = len(Index(parse(expanded)).rules)
     prefixes: dict[str, list[str]] = {TOP: [""]}
     for path, comp in _instances(ix):
         prefixes.setdefault(comp, []).append(path)
@@ -738,39 +748,106 @@ def _head_rules(ix: Index, rel: str) -> list:
             name = ".".join(x for x in (prefix, r.atom.qual or "",
                                         r.atom.name) if x)
             if name == rel:
+                if r.rule >= own:
+                    return None
                 rule = ix.rules[r.rule].rule
                 out.append((rule.line, rule.end_line))
     return out
 
 
-def _replace_clauses(expanded: str, ix: Index, found: Found) -> str:
-    """The program with the clauses that derive the relation taken out and
-    the stored facts put in their place."""
+def _feed_rules(expanded: str, ix: Index, rel: str) -> list | None:
+    """The rules that feed the relation, each as its first and last line,
+    where every one of them stands at the top level of the solver's own
+    text. None when a rule of the lib or of a comp feeds it, or no rule
+    does."""
+    own = len(Index(parse(expanded)).rules)
+    prefixes: dict[str, list[str]] = {TOP: [""]}
+    for path, comp in _instances(ix):
+        prefixes.setdefault(comp, []).append(path)
+    out = set()
+    for r in ix.refs:
+        if r.role != "head":
+            continue
+        for prefix in prefixes.get(r.scope, []):
+            name = ".".join(x for x in (prefix, r.atom.qual or "",
+                                        r.atom.name) if x)
+            if name != rel:
+                continue
+            if r.rule >= own or r.scope != TOP:
+                return None
+            rule = ix.rules[r.rule].rule
+            out.add((rule.line, rule.end_line))
+    return sorted(out) or None
+
+
+def _rename_feeds(source: str, spans: list, rel: str, twin: str) -> str:
+    """The source with the rules in `spans` deriving `twin` where they
+    derive `rel`, and reading `twin` where they read `rel`."""
+    pattern = re.compile(r"(?<![\w.])" + re.escape(rel) + r"\s*\(")
+    lines = source.splitlines()
+    for start, end in spans:
+        for i in range(start - 1, min(end, len(lines))):
+            code, sep, comment = lines[i].partition("//")
+            lines[i] = pattern.sub(twin + "(", code) + sep + comment
+    return "\n".join(lines) + "\n"
+
+
+def _replace_clauses(expanded: str, spans: list, found: Found) -> str:
+    """The program with the clauses in `spans`, the ones that derive the
+    relation, taken out and the stored facts put in their place."""
     lines = expanded.splitlines()
-    for start, end in _head_rules(ix, found.rel):
+    for start, end in spans:
         for i in range(start - 1, min(end, len(lines))):
             lines[i] = ""
     return ("\n".join(lines) + "\n"
             + _stored_facts(found.rel, found.facts))
 
 
+def _twin_facts(found: Found, decl, subst: dict[str, str]) -> str:
+    """The twin relation holding the stored facts."""
+    fields = ", ".join(f"{f.name}: {subst.get(f.type, f.type)}"
+                       for f in decl.fields)
+    return f"\n.decl {TWIN}({fields})\n" + _stored_facts(TWIN, found.facts)
+
+
 def store_case_program(expanded: str, ix: Index, found: Found, decl,
                        subst: dict[str, str]) -> str:
     """The solve-mode program running the stored case. A relation with no
-    key column takes the stored facts in place of its clauses; one with key
-    columns keeps its keys and takes its values from the stored set."""
+    key column takes the stored facts in place of its clauses, and where a
+    lib rule feeds it, the solver's top-level reads read a twin that holds
+    the stored facts. One with key columns keeps its keys and takes its
+    values from the stored set.
+
+    Where the solver's own top-level rules feed the relation, those rules
+    derive the twin instead, and the relation takes the twin's keys against
+    the stored set, so every reader, a lib comp's included, reads the
+    stored values. Otherwise the solver's top-level reads read the twin,
+    which takes the relation's keys against the stored set."""
     if not found.keys:
-        text = _replace_clauses(expanded, ix, found)
+        spans = _head_rules(expanded, ix, found.rel)
+        if spans is not None:
+            text = _replace_clauses(expanded, spans, found)
+        else:
+            text = (_rename_reads(expanded, found.rel, TWIN)
+                    + _twin_facts(found, decl, subst))
     else:
         cols = [i for i, f in enumerate(decl.fields) if f.name in found.cols]
-        text = (_rename_reads(expanded, found.rel, TWIN)
-                + _twin_text(found.rel, decl, cols, found.ref, subst))
+        spans = _feed_rules(expanded, ix, found.rel)
+        if spans is not None:
+            text = (_rename_feeds(expanded, spans, found.rel, TWIN)
+                    + _twin_text(found.rel, decl, cols, found.ref, subst,
+                                 fed=True))
+        else:
+            text = (_rename_reads(expanded, found.rel, TWIN)
+                    + _twin_text(found.rel, decl, cols, found.ref, subst))
     return f"{text}\n{SOLVE_DIRECTIVES}"
 
 
 def store_outcome(stem: str, case_id: str, grid: list[list[int]]):
     """What the stored case named by `case_id` gives on one grid, and None
-    when the runner holds no such case."""
+    when the runner holds no such case. The stored run reads the concept
+    case's output. When the concept case does not read the relation, it
+    reads the output of the case that does (`_reader_outcome`)."""
     report = store_report(stem)
     for f in report.found:
         if f.kind == OWNED and f.case_id == case_id:
@@ -779,9 +856,50 @@ def store_outcome(stem: str, case_id: str, grid: list[list[int]]):
             built = _case_program(source, f)
             if built is None:
                 return None
-            return _case_outcome(built, grid, path, concept_case(source),
+            if not f.read and f.used_in:
+                return _reader_outcome(built, grid, path, source, f.used_in,
+                                       res_out_stem(stem))
+            return _case_outcome(built, grid, path, source,
                                  res_out_stem(stem))
     return None
+
+
+def _marker_nodes(space: Space, used_in: str) -> Forced | None:
+    """The nodes a case fixes to take every constructor the markers of
+    `used_in` name, each at its first place. None when a marker is not a
+    plain constructor name, or when no case takes them all."""
+    required: Forced = {}
+    for marker in used_in.split(", "):
+        sites = space.sites.get(marker.strip())
+        if not sites:
+            return None
+        for node, ctor in space.required(sites[0]).items():
+            if required.setdefault(node, ctor) != ctor:
+                return None
+    return required
+
+
+def _reader_outcome(built: str, grid: list[list[int]], path, source: str,
+                    used_in: str, resolution: bool):
+    """What the case that reads the relation gives on one grid, under the
+    stored case's program. That case is the one the run emits that takes
+    every constructor the markers of `used_in` name and differs from the
+    concept case at the fewest choice points (`Space.nearest`), the first
+    in run order on a tie. None when no emitted case takes them."""
+    space = case_space(source)
+    if not isinstance(space, Space):
+        return None
+    required = _marker_nodes(space, used_in)
+    if required is None:
+        return None
+    try:
+        got = parse_output(_run_source(built, grid_to_facts(grid),
+                                       solver_path=path))
+    except Exception:
+        return None
+    emitted = model_outcomes(got, resolution)
+    nearest = space.nearest(required, list(emitted))
+    return emitted[nearest[0]] if nearest else None
 
 
 def _case_program(source: str, found: Found) -> str | None:
@@ -812,23 +930,22 @@ def _decl_of(source: str, rel: str):
     return hit[1], _type_args(ix, rel.rpartition(".")[0])
 
 
-def _concept_outcome(source: str, grid: list[list[int]], path, concept: str,
+def _concept_outcome(source: str, grid: list[list[int]], path,
                      resolution: bool):
-    outcomes = case_outcomes(
-        run_dl_source(source, grid, solver_path=path), resolution)
-    return outcomes.get(concept)
+    return concept_outcome(run_dl_source(source, grid, solver_path=path),
+                           resolution, source)
 
 
-def _case_outcome(built: str, grid: list[list[int]], path, concept: str,
+def _case_outcome(built: str, grid: list[list[int]], path, source: str,
                   resolution: bool):
-    """What the concept case gives on one grid, under a program already
-    assembled for the run."""
+    """What the concept case of `source` gives on one grid, under a program
+    already assembled for the run."""
     try:
         got = parse_output(_run_source(built, grid_to_facts(grid),
                                        solver_path=path))
     except Exception:
         return None
-    return case_outcomes(got, resolution).get(concept)
+    return concept_outcome(got, resolution, source)
 
 
 # --- the report -------------------------------------------------------
@@ -1317,7 +1434,6 @@ def _attach_witnesses(stem, source, path, task, cands, pending,
         batches.append([(f"train {i}", D4_NAMES[d], g)
                         for d, g in _d4_images(grid).items()])
     batches.append(_swaps(trains, held))
-    concept = concept_case(source)
     resolution = res_out_stem(stem)
     outcomes: dict[int, object] = {}
     programs: dict[int, str | None] = {}
@@ -1325,7 +1441,7 @@ def _attach_witnesses(stem, source, path, task, cands, pending,
     def at_concept(grid):
         key = id(grid)
         if key not in outcomes:
-            outcomes[key] = _concept_outcome(source, grid, path, concept,
+            outcomes[key] = _concept_outcome(source, grid, path,
                                              resolution)
         return outcomes[key]
 
@@ -1337,7 +1453,7 @@ def _attach_witnesses(stem, source, path, task, cands, pending,
         stored = programs[id(f)]
         if stored is None:
             return False
-        return at_concept(grid) != _case_outcome(stored, grid, path, concept,
+        return at_concept(grid) != _case_outcome(stored, grid, path, source,
                                                  resolution)
 
     for batch in batches:
@@ -1401,9 +1517,13 @@ def _findings(source: str, stem: str, found: list[Found], cands: dict,
             out.append(Finding(where, _no_finding(rel, cands, unread,
                                                   held_back, differs)))
             continue
-        needs = (block.verdict == OTHER
-                 or (f.move is None and f.case_id not in ids))
-        if needs and f.case_id not in ids:
+        if f.case_id in ids:
+            continue
+        if block.verdict == OTHER:
+            out.append(Finding(where, mctx(
+                "the verdict `{verdict}` needs an entry `{case}`").format(
+                    verdict=OTHER, case=f.case_id)))
+        elif f.move is None:
             out.append(Finding(where, mctx(
                 "the case needs an entry `{case}`").format(case=f.case_id)))
     for f in found:
@@ -1574,11 +1694,11 @@ def _params_ask(f: Found) -> str:
 
 
 def _in_case(f: Found) -> str:
-    """The case a relation the concept case neither reads nor feeds stands
-    under."""
+    """The marker a relation the concept case neither reads nor feeds
+    stands under."""
     if f.read or not f.used_in:
         return ""
-    return mctx("; in case `{case}`").format(case=f.used_in)
+    return mctx("; under `{case}`").format(case=f.used_in)
 
 
 def _witness_line(f: Found) -> str:

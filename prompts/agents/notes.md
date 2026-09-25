@@ -49,8 +49,8 @@
     ## Fixes elsewhere
     - <a file the pass does not edit, and the line>: <the fix it needs>
 
-    ## Interference
-    - <the doc or tool line that interfered or cost effort, and how>
+    ## Doc and tool issues
+    - `delay` or `interference`: <the doc or tool line, and how it slowed the pass, or what the pass wrote wrong because of it>
     ```
 - A section with nothing holds `none`.
 - Nothing in the report waits on a ruling.

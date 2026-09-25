@@ -12,9 +12,11 @@ renderer writes them as `-`.
 """
 
 import re
+import subprocess
 from dataclasses import asdict, dataclass, field, fields
 from itertools import product
 
+from controlled_markdown import mctx
 from dl.corpus import rule_literals
 from dl.dlparse import (
     EXTERN,
@@ -182,6 +184,50 @@ def held_cases(program: Program, source: str,
         if (label := spell(row)) not in cases:
             cases.append(label)
     return cases
+
+
+HELD_INPUT_CAT = "held input"
+"""The lint category of an `impl_choice` whose rows depend on the input."""
+
+
+def held_input_findings(task_id: str,
+                        source: str) -> list[tuple[str, int, str, str]]:
+    """A lint finding, as `dl.lint.lint_program` gives one, when the rows
+    `impl_choice` holds on the empty input differ from its rows on a train
+    input of the task. `grid --all` and `features` read the rows on the
+    empty input, and `run` reads them per pair. No finding stands when
+    the program declares no `impl_choice`, when the task is not materialized,
+    or when a run fails."""
+    from arc.task import load as load_task
+
+    try:
+        program = parse(source)
+        decl = next((it for it in program.items
+                     if isinstance(it, Decl) and it.name == "impl_choice"),
+                    None)
+        if decl is None:
+            return []
+        task = load_task(task_id)
+        empty = set(held_cases(program, source, full=True) or [])
+        differ = [i for i, ex in enumerate(task.train)
+                  if set(held_cases(program, source, ex.input, full=True)
+                         or []) != empty]
+    except (ParseError, FileNotFoundError, RuntimeError,
+            subprocess.TimeoutExpired):
+        return []
+    if not differ:
+        return []
+    names = ", ".join(str(i) for i in differ)
+    text = (mctx("`impl_choice` holds other cases on train input {inputs} "
+                 "than on the empty input, which `grid --all` and "
+                 "`features` read").format(inputs=names)
+            if len(differ) == 1 else
+            mctx("`impl_choice` holds other cases on train inputs {inputs} "
+                 "than on the empty input, which `grid --all` and "
+                 "`features` read").format(inputs=names))
+    lines = source.splitlines()
+    raw = lines[decl.line - 1] if 0 < decl.line <= len(lines) else ""
+    return [(HELD_INPUT_CAT, decl.line, text, raw)]
 
 
 def case_branches(stem: str, source: str | None = None,

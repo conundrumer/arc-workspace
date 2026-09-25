@@ -106,7 +106,7 @@
     - A marker may fix a constructor's fields, `// --- Derive(g=Iso) ---`, for the part of that case where the field is that branch.
     - The comma still separates cases.
 - **`impl_choice`.** The relation that enumerates the cases is `impl_choice`, and its column is `ch`.
-    - A record-typed `Choice` gets one enumerator per field, named for the field's type, as in `.decl locate_choice(l: Locate)`.
+    - A record-typed `Choice` gets one enumerator per field a clause enumerates, named for the field's type, as in `.decl locate_choice(l: Locate)`.
     - `impl_choice` contains whole `Choice` values, and it appears when a clause reads one or when the cases are not every combination of the fields.
 
 ## Params
@@ -178,7 +178,7 @@
         "separates": string,                     // models separated by this input
         "input": Grid,
         "assign": {<parameter>: Fact[] | Grid},  // the parameters the witness reassigns
-        "output": Group[]                        // when the verdict is not other: every branch model, one group per distinct output
+        "output": Group[]                        // when the verdict is not other: one group per distinct output
                 | Grid                           // when the verdict is other: the annotator's judged output
       }] }
 

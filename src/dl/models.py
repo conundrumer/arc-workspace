@@ -244,6 +244,74 @@ class Space:
             return self._written(name)
         return self._conjunction([name])
 
+    def nodes(self, case: str) -> Forced | None:
+        """The constructor a case spelled in full takes at each node, the
+        nodes that take their type's first constructor included. None when
+        the text spells no case in full."""
+        forced: Forced = {}
+        bare: list[str] = []
+        text = case.strip()
+        if self.record:
+            if not (text.startswith("[") and text.endswith("]")):
+                return None
+            members = _split(text[1:-1]) if text[1:-1].strip() else []
+            if len(members) != len(self.roots):
+                return None
+            ok = all(self._term(m, (i,), t, forced, bare)
+                     for i, (m, t) in enumerate(
+                         zip(members, self.roots, strict=True)))
+        else:
+            ok = bool(self.roots) and self._term(
+                text, (0,), self.roots[0], forced, bare)
+        return forced if ok and not bare else None
+
+    def _first(self, ctor: str) -> bool:
+        """The constructor is its type's first."""
+        typ = self.sites[ctor][0].type
+        return ctor == next(iter(self.types[typ]))
+
+    def _departures(self, forced: Forced) -> list[tuple[Node, str]]:
+        """The nodes whose constructor is not its type's first, with that
+        constructor, in the order the choice points stand."""
+        return sorted(((n, c) for n, c in forced.items()
+                       if not self._first(c)),
+                      key=lambda nc: (len(nc[0]), nc[0]))
+
+    def required(self, site: Site) -> Forced:
+        """The nodes a case fixes to take a constructor at one of its
+        places: that place, and each node on the way to it."""
+        return dict(site.above) | {site.node: site.ctor}
+
+    def nearest(self, required: Forced, cases: list[str]) -> list[str]:
+        """The cases of `cases` that take the required constructors and
+        differ from the concept case at the fewest choice points. A choice
+        point differs when it takes a constructor other than its type's
+        first. Ties keep every case, in the order `cases` gives them."""
+        found: list[tuple[int, str]] = []
+        for case in cases:
+            forced = self.nodes(case)
+            if forced is None or any(forced.get(n) != c
+                                     for n, c in required.items()):
+                continue
+            found.append((len(self._departures(forced)), case))
+        if not found:
+            return []
+        least = min(d for d, _ in found)
+        return [c for d, c in found if d == least]
+
+    def short_name(self, case: str) -> str:
+        """The shortest name of a case spelled in full: `concept`, or the
+        conjunction of the constructors at the choice points where it
+        differs from the concept case, in the order the choice points
+        stand. A case that conjunction does not resolve to is named by the
+        case written out."""
+        forced = self.nodes(case)
+        if forced is None:
+            return case
+        ctors = [c for _, c in self._departures(forced)]
+        name = " & ".join(ctors) if ctors else CONCEPT
+        return name if self.resolve(name) == case else case
+
     def _site_name(self, site: Site) -> str:
         """The name of a constructor at one of its places. The first place
         takes the bare name, which resolves there. Any other place takes
@@ -268,16 +336,21 @@ class Space:
         branch is its own point (principles.md, Choice points), so a type
         that is the field of more than one constructor gives a model at
         each place; `_site_name` names them."""
-        out: dict[str, str] = {}
+        return {name: label for name, label, _ in self.model_sites()}
+
+    def model_sites(self) -> list[tuple[str, str, Site | None]]:
+        """Each branch model as `models` gives it, with the place of the
+        constructor it takes; None for the concept case."""
+        out: list[tuple[str, str, Site | None]] = []
         if (c := self.concept) is not None:
-            out[CONCEPT] = c
+            out.append((CONCEPT, c, None))
         for ctor, sites in self.sites.items():
             for site in sites:
                 if ctor == next(iter(self.types[site.type])):
                     continue
-                label = self.spell(dict(site.above) | {site.node: ctor})
+                label = self.spell(self.required(site))
                 if label is not None:
-                    out[self._site_name(site)] = label
+                    out.append((self._site_name(site), label, site))
         return out
 
 

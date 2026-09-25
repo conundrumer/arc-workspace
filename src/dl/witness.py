@@ -45,7 +45,7 @@ from dl.dlparse import ParseError, parse
 from dl.facts import Candidate
 from dl.features import case_branches, declares_held, held_cases
 from dl.features_run import NO_CHOICE, _split, case_label
-from dl.lint import branch_above, unwitnessed_branches
+from dl.lint import branch_above, concept_case, unwitnessed_branches
 from dl.models import (
     TERM_RE,
     Cases,
@@ -58,7 +58,7 @@ from dl.models import (
 from dl.paths import PROGRAMS_DIR
 from dl.render import _grid_lines
 from dl.solve import res_out_stem, run_dl_source, solver_file
-from dl.souffle import _pool_workers
+from dl.souffle import FIRST_ERROR_RE, _pool_workers
 from dl.source import swap_facts
 
 WITNESS_DIR = PROGRAMS_DIR / "witnesses"
@@ -79,7 +79,10 @@ ANNOTATION = "annotation"
 UNSEPARATED = "unseparated"
 SUBSUMED = "subsumed"
 TIMEOUT = "timeout"
-FAILING = (DRIFT, UNRESOLVED, ANNOTATION, UNSEPARATED, SUBSUMED, TIMEOUT)
+FAILED = "failed"
+ASSIGN = "assign"
+FAILING = (DRIFT, UNRESOLVED, ANNOTATION, UNSEPARATED, SUBSUMED, TIMEOUT,
+           FAILED, ASSIGN)
 """The kinds that fail the check."""
 
 type Grid = list[list[int]]
@@ -164,13 +167,19 @@ class Witness:
 @dataclass
 class Drift:
     """One finding on one entry. `kind` is DRIFT, UNLISTED, UNRESOLVED,
-    ANNOTATION, UNSEPARATED, SUBSUMED or TIMEOUT, each the finding the
-    `witness` help text in `dl.cli` describes; a TIMEOUT finding names the
-    input in `entry`, the case in `cases` (empty when the run of every case
-    the solver states timed out) and the limit in `note`; an UNSEPARATED
-    finding names the two cases in `cases`, and a SUBSUMED finding the branch and its type's first
-    branch, with the count in `note` and, when not every case taking the
-    branch is subsumed, the subsumed ones in `subsumed`. `entry` is the entry's
+    ANNOTATION, UNSEPARATED, SUBSUMED, TIMEOUT, FAILED or ASSIGN, each the finding
+    the `witness` help text in `dl.cli` describes; a TIMEOUT finding names
+    the input in `entry`, the case in `cases` (empty when the run of every
+    case the solver states timed out) and the limit in `note`; a FAILED
+    finding names the entry in `entry` and the first line of Souffle's error
+    in `note`, and an ASSIGN finding the entry and the line on the `assign`
+    string in `note`; an UNRESOLVED finding with a `note` names one constructor,
+    and `note` holds the names of the nearest held cases under it; an UNSEPARATED
+    finding names the two cases in `cases`, and a SUBSUMED finding either
+    the branch and its type's first branch, with the count in `note` and,
+    when not every case taking the branch is subsumed, the subsumed ones in
+    `subsumed`, or, with no `note`, the subsumed case and then the cases
+    that subsume it. `entry` is the entry's
     id, followed by the parameters it reassigns, and it is empty when no
     entry answers the line. `cases` names every case
     the finding holds for, which is the cases that give one outcome where
@@ -314,6 +323,42 @@ def _rect_grid(v: object) -> bool:
             and all(isinstance(r, list) and r and len(r) == len(v[0])
                     for r in v)
             and all(type(c) is int and 0 <= c <= 9 for r in v for c in r))
+
+
+def _lib_constants() -> set[str]:
+    """The names the lib's `#define` tables give. No solver defines a
+    constant of its own."""
+    from dl.domains import _lib_defines, _lib_record_defines
+    return set(_lib_defines()) | set(_lib_record_defines())
+
+
+def _strings(value: object) -> list[str]:
+    """Every string a fact argument holds, at any depth of a record."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [s for v in value for s in _strings(v)]
+    return []
+
+
+def assign_findings(assign: dict) -> list[str]:
+    """One line per string argument of an `assign` fact that is no constant
+    of the lib; Souffle takes such a name for a variable and fails on the
+    fact."""
+    known: set[str] | None = None
+    out: list[str] = []
+    for param, rows in assign.items():
+        if not (isinstance(rows, list)
+                and all(isinstance(f, list) for f in rows)):
+            continue
+        for value in _strings(rows):
+            if known is None:
+                known = _lib_constants()
+            if value not in known:
+                out.append(mctx("the `assign` value of `{param}` holds "
+                                "`{value}`, which is no constant of the lib")
+                           .format(param=param, value=value))
+    return out
 
 
 def _entry_shape(e: object) -> list[str]:
@@ -501,6 +546,17 @@ def model_outcomes(candidates: list[Candidate],
     return out
 
 
+def concept_outcome(candidates: list[Candidate], resolution: bool,
+                    source: str) -> Outcome:
+    """What the concept case of `source` gives on one grid; None when it
+    emits nothing. The case is keyed as `dl.models` spells it in full, and
+    by the runner's label only where the case space spells no concept."""
+    space = case_space(source)
+    if isinstance(space, Space) and space.concept is not None:
+        return model_outcomes(candidates, resolution).get(space.concept)
+    return case_outcomes(candidates, resolution).get(concept_case(source))
+
+
 def runner_outcomes(stem: str, ids: Iterable[str], grid: list[list[int]],
                     source: str, timeouts: Timeouts | None = None,
                     where: str = "") -> dict[str, Outcome]:
@@ -524,13 +580,34 @@ def runner_outcomes(stem: str, ids: Iterable[str], grid: list[list[int]],
     return out
 
 
+def listed_models(space: Cases, held: list[str] | None) -> dict[str, str]:
+    """The cases a witness entry lists, each by its name: each branch model
+    of `space`. `held` holds the cases the solver holds, spelled in full,
+    and is None when every case is held. A model whose case is not held
+    gives way to the nearest held cases under its constructor
+    (`Space.nearest`), each by its shortest name (`Space.short_name`)."""
+    if held is None or not isinstance(space, Space):
+        return space.models()
+    kept = set(held)
+    out: dict[str, str] = {}
+    for name, label, site in space.model_sites():
+        if site is None or label in kept:
+            out.setdefault(name, label)
+            continue
+        for case in space.nearest(space.required(site), held):
+            out.setdefault(space.short_name(case), case)
+    return out
+
+
 def branch_outcomes(space: Cases, candidates: list[Candidate],
-                    resolution: bool) -> dict[str, Outcome]:
-    """What each branch model of `space` gives on one grid, by the model's
-    name; None for a model that emits nothing."""
+                    resolution: bool,
+                    held: list[str] | None = None) -> dict[str, Outcome]:
+    """What each case `listed_models` names gives on one grid, by its name;
+    None for a case that emits nothing."""
     got = case_outcomes(candidates, resolution) | model_outcomes(
         candidates, resolution)
-    return {name: got.get(label) for name, label in space.models().items()}
+    return {name: got.get(label)
+            for name, label in listed_models(space, held).items()}
 
 
 def _rows(rows: list[list[object]]) -> list[tuple]:
@@ -581,17 +658,19 @@ def _entry_findings(entry: Entry, space: Cases,
                     emitted: dict[str, Outcome], actuals: dict[str, Outcome],
                     held: set[str],
                     runner: dict[str, Outcome],
-                    impl: set[str] | None = None) -> list[Drift]:
+                    full: list[str] | None = None) -> list[Drift]:
     """The findings on one entry, given what its input produced. `emitted`
     holds the outcome of each case the run emits, spelled with its fields;
     `actuals` holds those and the runner's labels of them, `held` the names
     of the cases the solver states (`_names`), and `runner` the outcomes of
     the cases the runner holds. An entry whose id is a case the runner holds
-    need not list that case. `impl` holds the names of the cases
-    `impl_choice` holds, and is None when the solver declares no
+    need not list that case. `full` holds the cases `impl_choice` holds,
+    spelled in full, and is None when the solver declares no
     `impl_choice`; a name whose case it does not hold denotes no case of the
-    solver."""
+    solver. The entry lists the cases `listed_models` names."""
     label = _label(entry)
+    impl = None if full is None else _names(full)
+    listed = listed_models(space, full)
     if entry.rejected_output:
         return _merged(label, [
             (case, entry.output, got)
@@ -608,20 +687,28 @@ def _entry_findings(entry: Entry, space: Cases,
             unresolved.append(name)
             continue
         named.add(case)
-        named |= {m for m in space.models().values()
-                  if case_label(m) == case}
+        named |= {m for m in listed.values() if case_label(m) == case}
         got = runner.get(case) if case in runner else actuals.get(case)
         if isinstance(got, TimedOut):
             continue
         if got != want:
             rows.append((name, want, got))
     findings = _merged(label, rows)
-    if unresolved:
-        findings.append(Drift(entry=label, cases=unresolved, expected=None,
+    plain: list[str] = []
+    for name in unresolved:
+        nearest = _nearest_names(name, space, full)
+        if nearest:
+            findings.append(Drift(entry=label, cases=[name], expected=None,
+                                  actual=None, kind=UNRESOLVED,
+                                  note=", ".join(f"`{n}`" for n in nearest)))
+        else:
+            plain.append(name)
+    if plain:
+        findings.append(Drift(entry=label, cases=plain, expected=None,
                               actual=None, kind=UNRESOLVED))
     findings += _merged(label, [
         (name, None, actuals.get(case))
-        for name, case in space.models().items()
+        for name, case in listed.items()
         if case not in named
         and (case in actuals or case in held)
     ] + [
@@ -631,6 +718,20 @@ def _entry_findings(entry: Entry, space: Cases,
         and not isinstance(runner.get(case), TimedOut)
     ], kind=UNLISTED)
     return findings
+
+
+def _nearest_names(name: str, space: Cases,
+                   full: list[str] | None) -> list[str]:
+    """For a name that is a constructor, or its slug, whose case the solver
+    does not hold: the names of the nearest held cases under that
+    constructor (`Space.nearest`). Empty for any other name."""
+    if full is None or not isinstance(space, Space) or "&" in name:
+        return []
+    sites = space._sites(name.strip())
+    if not sites or space.resolve(name) in full:
+        return []
+    return [space.short_name(c)
+            for c in space.nearest(space.required(sites[0]), full)]
 
 
 # The words of the witness grammar, which is what this check reports on. A
@@ -1039,30 +1140,59 @@ def branch_pairs(held: list[str], source: str,
     return out
 
 
-def _subsumed(pairs: list[tuple[str, str, str, str]], outcomes: list[Scoped],
+def _subsumes(a: str, b: str, outcomes: list[Scoped]) -> bool:
+    """Case B subsumes case A over the inputs that count for the pair: on
+    none is A defined and differing from B, and on some A is undefined
+    where B gives a grid, so the two are not equivalent there."""
+    counted = [o for o, built in outcomes if built is None or built in (a, b)]
+    return (all(o.get(a) is None or o.get(a) == o.get(b) for o in counted)
+            and any(o.get(a) is None and isinstance(o.get(b), list)
+                    for o in counted))
+
+
+def _subsumed(pairs: list[tuple[str, str, str, str]], held: list[str],
+              concept: str | None, outcomes: list[Scoped],
               unseparated: list[Drift]) -> list[Drift]:
-    """One finding per branch X of `branch_pairs` that some case taking it
-    is subsumed in: how many of the cases taking X are subsumed by their
-    counterpart, of those that have one, and which, when not all are. Case
-    A is subsumed by case B when, on every input that counts for the pair,
-    A is undefined or gives B's outcome. The inputs are the task's pairs,
-    and the witnesses that `_unseparated` reads. A pair `unseparated` names
-    is that finding alone."""
+    """The held cases that another held case subsumes (`_subsumes`). The
+    inputs are the task's pairs, and the witnesses that `_unseparated`
+    reads; a pair `unseparated` names is that finding alone.
+
+    A case subsumed by its counterpart in `branch_pairs` is counted under
+    the branch X it takes there: one finding per such X, with how many of
+    the cases taking X are subsumed by their counterpart, of those that
+    have one, and which, when not all are. Each other held case but the
+    concept case that cases the solver's `Choice` spells subsume is a
+    finding naming it and those cases, less each one that subsumes
+    another of them. A case the runner holds stands against the concept
+    case alone."""
     same = {frozenset(d.cases) for d in unseparated}
     total: dict[tuple[str, str], int] = {}
     hit: dict[tuple[str, str], list[str]] = {}
     for x, first, a, b in pairs:
         if frozenset((a, b)) in same:
             continue
-        counted = [o for o, built in outcomes
-                   if built is None or built in (a, b)]
         total[(x, first)] = total.get((x, first), 0) + 1
-        if all(o.get(a) is None or o.get(a) == o.get(b) for o in counted):
+        if _subsumes(a, b, outcomes):
             hit.setdefault((x, first), []).append(a)
-    return [Drift(entry="", cases=[x, first], expected=None, actual=None,
-                  kind=SUBSUMED, note=f"{len(cases)} of {total[(x, first)]}",
-                  subsumed=cases if len(cases) < total[(x, first)] else [])
-            for (x, first), cases in hit.items()]
+    out = [Drift(entry="", cases=[x, first], expected=None, actual=None,
+                 kind=SUBSUMED, note=f"{len(cases)} of {total[(x, first)]}",
+                 subsumed=cases if len(cases) < total[(x, first)] else [])
+           for (x, first), cases in hit.items()]
+    counted = {a for cases in hit.values() for a in cases}
+    spelled = [c for c in held if "=" not in c]
+    for a in spelled:
+        if a == concept or a in counted:
+            continue
+        partners = [b for b in spelled if b != a
+                    and frozenset((a, b)) not in same
+                    and _subsumes(a, b, outcomes)]
+        partners = [b for b in partners
+                    if not any(_subsumes(c, b, outcomes)
+                               for c in partners if c != b)]
+        if partners:
+            out.append(Drift(entry="", cases=[a, *partners], expected=None,
+                             actual=None, kind=SUBSUMED))
+    return out
 
 
 def _held_part(stem: str, held: list[str], entry: Entry, source: str,
@@ -1142,8 +1272,38 @@ def _entry_part(stem: str, entry: Entry, source: str, path: Path,
     findings = _entry_findings(
         entry, space, emitted, actuals | emitted, names | set(actuals),
         _runner_outcomes(stem, entry, space, run_source, timeouts),
-        names if declares_held(run_source) else None)
+        full if declares_held(run_source) else None)
     return separating, full, findings, timeouts
+
+
+def _souffle_error(err: RuntimeError) -> str:
+    """The first line of the error Souffle reported, or the first line of
+    the failure when it names no error line."""
+    text = str(err)
+    m = FIRST_ERROR_RE.search(text)
+    if m:
+        return text[m.start():].splitlines()[0]
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    return lines[0] if lines else text
+
+
+def _entry_or_failure(stem: str, entry: Entry, source: str, path: Path,
+                      held: list[str], choice: list[str],
+                      resolution: bool) -> EntryPart:
+    """`_entry_part`, and in place of its findings an ASSIGN finding per
+    `assign` string that is no constant of the lib, or a FAILED finding
+    when a Souffle run on the entry fails."""
+    if bad := assign_findings(entry.assign):
+        return None, [], [Drift(entry=_label(entry), cases=[], expected=None,
+                                actual=None, kind=ASSIGN, note=line)
+                         for line in bad], Timeouts()
+    try:
+        return _entry_part(stem, entry, source, path, held, choice,
+                           resolution)
+    except RuntimeError as err:
+        return None, [], [Drift(entry=_label(entry), cases=[],
+                                expected=None, actual=None, kind=FAILED,
+                                note=_souffle_error(err))], Timeouts()
 
 
 def witness_report(stem: str, file: Path | None = None) -> list[Drift]:
@@ -1155,15 +1315,18 @@ def witness_report(stem: str, file: Path | None = None) -> list[Drift]:
     reads it. The pairs of held cases (`held_case_labels`) are checked over
     the entries and over the witnesses the runner builds
     (`built_witnesses`), with every held case run at the stored value, and
-    each branch is checked for the cases its type's first branch subsumes
-    (`_subsumed`) over those inputs and the task's pairs."""
+    each held case is checked for the held cases that subsume it
+    (`_subsumed`) over those inputs and the task's pairs. With `file`, the
+    report holds the entries' findings only: the pair, subsumption and
+    `@witness` line findings are the task's own file's."""
     path, task_id = solver_file(stem)
     source = path.read_text()
     if file is not None:
         witness: Witness | None = load_witness_file(file)
     else:
         witness = load_witnesses(task_id)
-    unwitnessed = [] if witness is None else [
+    entries_only = file is not None
+    unwitnessed = [] if witness is None or entries_only else [
         Drift(entry=f"line {at}", cases=[], expected=None, actual=None,
               kind=ANNOTATION, note=text)
         for at, text in unwitnessed_branches(source)]
@@ -1181,13 +1344,13 @@ def witness_report(stem: str, file: Path | None = None) -> list[Drift]:
     # run one after another would give.
     with ThreadPoolExecutor(max_workers=_pool_workers()) as pool:
         built_runs = pool.submit(built_witnesses, stem, runner) \
-            if runner else None
-        entry_runs = [pool.submit(_entry_part, stem, entry, source, path,
-                                  held, choice, resolution)
+            if runner and not entries_only else None
+        entry_runs = [pool.submit(_entry_or_failure, stem, entry, source,
+                                  path, held, choice, resolution)
                       for entry in witness.entries]
         pair_runs = _pair_outcomes(
             stem, held, source, path, task_id, resolution, pool) \
-            if held else []
+            if held and not entries_only else []
         for run in entry_runs:
             scoped, full, entry_findings, entry_timeouts = run.result()
             if scoped is not None:
@@ -1206,12 +1369,14 @@ def witness_report(stem: str, file: Path | None = None) -> list[Drift]:
             out, built_timeouts = run.result()
             separating.append((out, case))
             timeouts.merge(built_timeouts)
+    if entries_only:
+        return findings + timeouts.findings
     space = case_space(source, case_branches(stem, source))
     unseparated = _unseparated(held, separating)
     for _scoped, pair_timeouts in pair_runs:
         timeouts.merge(pair_timeouts)
     subsumed = _subsumed(
-        branch_pairs(held, source, space.concept),
+        branch_pairs(held, source, space.concept), held, space.concept,
         separating + [scoped for scoped, _ in pair_runs],
         unseparated) if held else []
     return (findings + unwitnessed
@@ -1243,6 +1408,13 @@ def _lines_of(d: Drift) -> list[str]:
                 mctx("{entry}: the run of the solver's cases timed out after "
                      "{limit}s, so no finding rests on their outcomes there")
                 .format(entry=d.entry, limit=d.note)]
+    if d.kind == SUBSUMED and not d.note:
+        if len(d.cases) == 2:
+            return [mctx("no run shows `{a}` defined and differing from "
+                         "`{b}`").format(a=d.cases[0], b=d.cases[1])]
+        return [mctx("no run shows `{a}` defined and differing from these "
+                     "cases:").format(a=d.cases[0]),
+                *(f"  {c}" for c in d.cases[1:])]
     if d.kind == SUBSUMED:
         return [mctx("no run shows `{a}` defined and differing from `{b}` "
                      "({count} cases)")
@@ -1254,6 +1426,16 @@ def _lines_of(d: Drift) -> list[str]:
                 mctx("{entry}: these cases are not listed: {case}")
                 .format(entry=d.entry, case=case),
                 *_side("the solver's output", d.actual)]
+    if d.kind == FAILED:
+        return [mctx("{entry}: the run failed: {error}")
+                .format(entry=d.entry, error=d.note)]
+    if d.kind == ASSIGN:
+        return [f"{d.entry}: {d.note}"]
+    if d.kind == UNRESOLVED and d.note:
+        return [mctx("{entry}: the name `{name}` denotes no case of the "
+                     "solver; the held cases that take `{name}` and differ "
+                     "least from the concept are {cases}")
+                .format(entry=d.entry, name=d.cases[0], cases=d.note)]
     if d.kind == UNRESOLVED:
         names = ", ".join(f"`{n}`" for n in d.cases)
         return [mctx("{entry}: the name {names} denotes no case of the solver")
@@ -1279,9 +1461,12 @@ def finding_lines(findings: list[Drift]) -> list[str]:
     return [line for d in findings for line in _lines_of(d)]
 
 
-def passes(findings: list[Drift]) -> bool:
-    """No finding fails the check."""
-    return not any(d.kind in FAILING for d in findings)
+def passes(findings: list[Drift], file: bool = False) -> bool:
+    """No finding fails the check. With `file`, the report reads a file
+    other than the task's, which may name cases the solver no longer
+    holds, so an UNRESOLVED finding does not fail it."""
+    failing = set(FAILING) - {UNRESOLVED} if file else set(FAILING)
+    return not any(d.kind in failing for d in findings)
 
 
 def pass_line(findings: list[Drift]) -> str:

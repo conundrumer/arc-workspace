@@ -39,8 +39,6 @@ from dl.determination_plan import (
     proposer_decls,
 )
 from dl.domains import _lib_defines
-from dl.lint import concept_case
-from dl.models import case_space
 from dl.store import concept_reads
 from dl.paths import PROPOSERS_SRC
 from dl.solve import res_out_stem, run_dl_source, solver_file
@@ -51,9 +49,8 @@ from dl.witness import (
     Witness,
     _rows,
     assigned_source,
-    case_outcomes,
+    concept_outcome,
     load_witnesses,
-    model_outcomes,
 )
 
 DERIVE_OK = "derive: ok"
@@ -164,11 +161,12 @@ def _stored_colors(source: str, defines: dict[str, int]) -> set[int]:
     }
 
 
-def _concept_outcome(source: str, grid: list[list[int]], path,
-                     concept: str, resolution: bool) -> Outcome:
-    outcomes = case_outcomes(
-        run_dl_source(source, grid, solver_path=path), resolution)
-    return outcomes.get(concept)
+def _concept_outcome(run: str, grid: list[list[int]], path, source: str,
+                     resolution: bool) -> Outcome:
+    """What the concept case of `source` gives on one grid, run under the
+    program `run`."""
+    return concept_outcome(run_dl_source(run, grid, solver_path=path),
+                           resolution, source)
 
 
 def derived_outcome(stem: str, case_id: str, grid: list[list[int]],
@@ -187,11 +185,7 @@ def derived_outcome(stem: str, case_id: str, grid: list[list[int]],
     resolution = res_out_stem(stem)
     candidates = run_dl_source(swap_facts(source, param, sorted(value)),
                                grid, solver_path=path)
-    concept = case_space(source).concept
-    fine = model_outcomes(candidates, resolution)
-    if concept in fine:
-        return fine[concept]
-    return case_outcomes(candidates, resolution).get(concept_case(source))
+    return concept_outcome(candidates, resolution, source)
 
 
 NO_COLOR = mctx("the parameter is not one color")
@@ -213,7 +207,6 @@ def swap_witness(stem: str, param: str, proposer: str, types: list[str],
     path, task_id = solver_file(stem)
     source = path.read_text()
     task = load_task(task_id)
-    concept = concept_case(source)
     resolution = res_out_stem(stem)
     held = _stored_colors(expand_macros(source), _lib_defines())
     free_seen = False
@@ -227,9 +220,9 @@ def swap_witness(stem: str, param: str, proposer: str, types: list[str],
         cand = probe_grid(grid).get(proposer, set())
         if not cand:
             continue
-        got = _concept_outcome(source, grid, path, concept, resolution)
+        got = _concept_outcome(source, grid, path, source, resolution)
         at_derived = _concept_outcome(
-            swap_facts(source, param, sorted(cand)), grid, path, concept,
+            swap_facts(source, param, sorted(cand)), grid, path, source,
             resolution)
         if at_derived == got:
             continue
@@ -272,12 +265,11 @@ def entry_witness(stem: str, param: str, proposer: str,
             proposer=proposer, got=_show(got), want=_show(want)))
     path, _task_id = solver_file(stem)
     source = path.read_text()
-    concept = concept_case(source)
     resolution = res_out_stem(stem)
-    at_stored = _concept_outcome(source, entry.input, path, concept,
+    at_stored = _concept_outcome(source, entry.input, path, source,
                                  resolution)
     at_assigned = _concept_outcome(
-        assigned_source(source, entry.assign), entry.input, path, concept,
+        assigned_source(source, entry.assign), entry.input, path, source,
         resolution)
     if at_stored is None and at_assigned is None:
         out.append(mctx("the concept case is undefined at the stored and at "

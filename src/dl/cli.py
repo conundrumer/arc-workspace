@@ -46,6 +46,8 @@ from dl.features import (
     case_branches,
     features_json,
     features_report,
+    held_cases,
+    held_input_findings,
     render_features,
 )
 from dl.features_run import case_label, run_features
@@ -108,12 +110,14 @@ from dl.sweep_open import (
 from dl.witness import (
     WITNESS_FILE_OK,
     annotation_lines,
+    assign_findings,
     assigned_source,
     branch_outcomes,
     file_shape,
     finding_lines,
     grouped_output,
     held_case_labels,
+    listed_models,
     load_witness_file,
     load_witnesses,
     pass_line,
@@ -133,14 +137,19 @@ type Findings = list[tuple[str, int, str, str]]
 LINT_KINDS = ("lint", "rewrite", "hint")
 
 
-def _lint_kinds(source: str, hints: bool) -> list[Findings]:
+def _lint_kinds(source: str, hints: bool,
+                task_id: str | None = None) -> list[Findings]:
     """Findings per kind, in LINT_KINDS order; the hint kind is empty
-    unless enabled."""
+    unless enabled. With `task_id`, the lint kind also holds the finding
+    on an `impl_choice` that depends on the input
+    (`dl.features.held_input_findings`), which runs Souffle."""
     style: Findings = []
     dec: Findings = []
     adv: Findings = []
     for f in lint_program(source):
         (adv if f[0] in HINT_CATS else style).append(f)
+    if task_id is not None:
+        style += held_input_findings(task_id, source)
     for f in lint_rewrites(source, hints):
         (adv if f[0] in HINTS else dec).append(f)
     return [style, dec, adv]
@@ -180,12 +189,18 @@ SECTIONS = (
 def _print_findings(stems: list[str], hints: bool) -> str | None:
     """Print the sections for `stems`; return the verdict line."""
     by_kind: list[dict[str, Findings]] = [{}, {}, {}]
-    for stem in stems:
-        source = solver_file(stem)[0].read_text()
-        for held, found in zip(by_kind, _lint_kinds(source, hints),
-                               strict=True):
-            if found:
-                held[stem] = found
+
+    def kinds(stem: str) -> list[Findings]:
+        path, task_id = solver_file(stem)
+        return _lint_kinds(path.read_text(), hints, task_id)
+
+    # The `impl_choice` check runs Souffle, so the solvers lint in threads.
+    with ThreadPoolExecutor(max_workers=_pool_workers()) as pool:
+        for stem, found_kinds in zip(stems, pool.map(kinds, stems),
+                                     strict=True):
+            for held, found in zip(by_kind, found_kinds, strict=True):
+                if found:
+                    held[stem] = found
 
     counts = [sum(len(v) for v in held.values()) for held in by_kind]
     held_by_kind = dict(zip(LINT_KINDS, by_kind, strict=True))
@@ -207,9 +222,11 @@ def _print_findings(stems: list[str], hints: bool) -> str | None:
 def cmd_lint(
     stem: str | None, hints: bool = False,
 ) -> int:
-    """Lint only: no solver runs, no determination checks, no Souffle needed."""
+    """Lint only: no pair runs and no determination checks. Souffle runs
+    only for `impl_choice` (`dl.features.held_input_findings`)."""
     if stem is not None and _missing(stem):
         return 2
+    build_functors()
     verdict = _print_findings([stem] if stem else all_stems(), hints)
     if verdict is None:
         return 1
@@ -249,9 +266,11 @@ def _compile_failed(stem: str) -> bool:
 
 def _print_lint_sections(stem: str, hints: bool) -> str | None:
     """Print one solver's findings and hints; return the verdict line. Lint
-    needs no Souffle, so it stands whether or not the solver compiles."""
-    source = solver_file(stem)[0].read_text()
-    found = dict(zip(LINT_KINDS, _lint_kinds(source, hints), strict=True))
+    stands whether or not the solver compiles: the one check that runs
+    Souffle gives no finding when the run fails."""
+    path, task_id = solver_file(stem)
+    found = dict(zip(LINT_KINDS, _lint_kinds(path.read_text(), hints,
+                                             task_id), strict=True))
     for _label, one, kinds in SECTIONS:
         gathered = [(kind, f) for kind in kinds for f in found[kind]]
         if not gathered:
@@ -466,13 +485,16 @@ def _model_body(cands: list, resolution: bool) -> list[str]:
 def _print_run(grid: list[list[int]], actuals: list, space: Cases,
                resolution: bool,
                runner: dict[str, list[list[int]] | None],
-               held: list[str] | None = None) -> None:
+               held: list[str] | None = None,
+               listed: dict[str, str] | None = None) -> None:
     """Print the input, what each branch model of `space` emits and what
     each case the runner holds gives, then the ones that
     emit nothing. Models that emit the same thing are named together, above
     the one printing of it. A case the runner holds that gives no grid is
     undefined there. `held`, when given, stands in for the branch models:
-    each held case, by the label the run spells it with."""
+    each held case, by the label the run spells it with. `listed`, when
+    given, stands in for them as well: each case by the name it has there
+    (`dl.witness.listed_models`)."""
     print("input:")
     for line in _grid_lines(grid):
         print(f"  {line}")
@@ -483,6 +505,7 @@ def _print_run(grid: list[list[int]], actuals: list, space: Cases,
         if (coarse := case_label(c.case, resolution)) != fine:
             by_case.setdefault(coarse, []).append(c)
     models = ({c: c for c in held} if held is not None
+              else dict(listed) if listed is not None
               else space.models())
     for name, got in runner.items():
         by_case[name] = [Candidate(name, got, [], [])] if got else []
@@ -524,8 +547,8 @@ def _print_run(grid: list[list[int]], actuals: list, space: Cases,
 
 def cmd_grid(stem: str, path: str | None = None, every: bool = False) -> int:
     """Run one solver on a grid the caller wrote, in place of a stored pair,
-    and print what each branch model emits, or with `every` what each held
-    case emits."""
+    and print what each case `dl.witness.listed_models` names emits, as
+    `record` does, or with `every` what each held case emits."""
     if _missing(stem):
         return 2
     text = _grid_text(path)
@@ -549,13 +572,21 @@ def cmd_grid(stem: str, path: str | None = None, every: bool = False) -> int:
         cases = case_branches(stem, grid=grid)
         space = case_space(source, cases)
         runner = runner_outcomes(stem, sorted(space.runner), grid, source)
+        try:
+            listed = listed_models(
+                space, held_cases(parse(source), source, grid, full=True))
+        except ParseError:
+            listed = listed_models(space, None)
     except Exception as e:
         print(f"{type(e).__name__}: {e}", file=sys.stderr)
         return 1
 
-    held = ([c for c in held_case_labels(source) if "=" not in c]
-            if every else None)
-    _print_run(grid, actuals, space, res_out_stem(stem), runner, held)
+    if every:
+        held = [c for c in held_case_labels(source) if "=" not in c]
+        _print_run(grid, actuals, space, res_out_stem(stem), runner, held)
+    else:
+        _print_run(grid, actuals, space, res_out_stem(stem), runner,
+                   listed=listed)
     return 0
 
 
@@ -594,11 +625,19 @@ def cmd_record(stem: str, entry_id: str, separates: str,
                path: str | None = None, assign_text: str | None = None) -> int:
     """Run one solver on a grid the caller wrote and write the run into the
     task's witness file, as the entry `entry_id`: one group per distinct
-    outcome of the branch models, each model by its name."""
+    outcome of the cases `dl.witness.listed_models` names. These are the
+    branch models, each by its name. A model whose case `impl_choice` does
+    not hold gives way to the nearest held cases under its constructor,
+    each by its shortest name and with its own outcome. An `assign` string
+    that is no constant of the lib stops the run."""
     if _missing(stem):
         return 2
     assign = _assign_arg(assign_text)
     if assign is None:
+        return 2
+    if bad := assign_findings(assign):
+        for line in bad:
+            print(f"{entry_id}: {line}", file=sys.stderr)
         return 2
     text = _grid_text(path)
     if text is None:
@@ -629,13 +668,18 @@ def cmd_record(stem: str, entry_id: str, separates: str,
         space = case_space(run_source, cases)
         runner = runner_outcomes(stem, sorted(space.runner), grid,
                                  run_source)
+        try:
+            held = held_cases(parse(run_source), run_source, grid, full=True)
+        except ParseError:
+            held = None
     except Exception as e:
         print(f"{type(e).__name__}: {e}", file=sys.stderr)
         return 1
 
     resolution = res_out_stem(stem)
-    _print_run(grid, actuals, space, resolution, runner)
-    outcomes = branch_outcomes(space, actuals, resolution) | runner
+    _print_run(grid, actuals, space, resolution, runner,
+               listed=listed_models(space, held))
+    outcomes = branch_outcomes(space, actuals, resolution, held) | runner
     if judged is not None:
         print()
         print("judged output:")
@@ -1030,7 +1074,7 @@ def _print_witness(stem: str, file: Path | None = None) -> int:
     findings = witness_report(stem, file)
     for line in finding_lines(findings):
         print(f"  {line}")
-    if not passes(findings):
+    if not passes(findings, file is not None):
         return 1
     print(pass_line(findings))
     return 0
@@ -1297,7 +1341,7 @@ def _parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     lint = sub.add_parser(
-        "lint", help="lint only, no solver runs",
+        "lint", help="lint only, no pair runs",
         description="The output has two sections. A finding has to be "
                     "fixed. A hint is the session's call, and changes "
                     "neither the verdict nor the exit code.",
@@ -1327,7 +1371,9 @@ def _parser() -> argparse.ArgumentParser:
         description="Prints the output of each branch model: the concept "
                     "case, and for each branch that is not its type's "
                     "first, the case that takes it with the first branch "
-                    "everywhere else. With --all, prints the output of "
+                    "everywhere else. When `impl_choice` does not hold that "
+                    "case, the nearest held cases that take the branch "
+                    "stand in its place. With --all, prints the output of "
                     "every case of the solver, by the label the run spells it with. "
                     "Either form also prints each case the runner holds, "
                     "and names together the cases that give one output.",
@@ -1446,16 +1492,22 @@ def _parser() -> argparse.ArgumentParser:
                     "case, a branch that is not its "
                     "type's first and has no `@witness` line, two held "
                     "cases, `impl_choice`'s and the runner's, that no "
-                    "witness separates, and each held case that no run "
-                    "shows defined and differing from the case that takes "
-                    "its type's first branch in place of one of its "
-                    "branches, over the task's pairs and the witnesses. "
-                    "Those cases are named by branch, with their count; "
-                    "when not every case taking the branch is one, each "
-                    "one is listed below it. A held case whose run times "
+                    "witness separates, and each held case but the "
+                    "concept case that no run shows defined and differing "
+                    "from another held case that some run shows defined "
+                    "where it is not, over the task's pairs and the "
+                    "witnesses. Where that other case takes its type's "
+                    "first branch in place of one of the first case's "
+                    "branches, those first cases are named by branch, "
+                    "with their count; when not every case taking the "
+                    "branch is one, each one is listed below it. "
+                    "Otherwise the finding names the case and each other "
+                    "case. A held case whose run times "
                     "out on an input is a finding of its own, naming the "
                     "case and the input, and no other finding rests on "
-                    "its outcome there. Without a "
+                    "its outcome there. A Souffle failure on an entry is a "
+                    "finding on that entry, with the first line of the "
+                    "error. Without a "
                     "witness file, no grid runs, no branch needs a "
                     "`@witness` line, and every `@witness` line of the "
                     "solver names no entry. The file's shape is checked "
@@ -1465,7 +1517,8 @@ def _parser() -> argparse.ArgumentParser:
     )
     witness.add_argument("stem", nargs="?", help="one solver")
     witness.add_argument("--file", metavar="PATH",
-                         help="a witness file to read in place of the task's")
+                         help="a witness file to read in place of the task's; "
+                              "the report holds its entries' findings only")
     sub.add_parser(
         "derive",
         help="the built-in derivations of stored parameters that fit, each held as a case",

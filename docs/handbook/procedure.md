@@ -106,8 +106,8 @@
     ## Not formed
     - <claim>: <why>
 
-    ## Interference
-    - <the doc or tool line that interfered or cost effort, and how>
+    ## Doc and tool issues
+    - `delay` or `interference`: <the doc or tool line, and how it slowed the pass, or what the pass wrote wrong because of it>
     ```
 
 ### Write
@@ -118,7 +118,7 @@
     - A rule that report restates takes the restated text, and the concept file's text stands under it as its `@approximated:` line.
     - Each branch that report gives a witness is a constructor, nested as the report nests its choice point.
     - A concept branch's constructor takes a name of your own.
-    - An open parameter of that report is a `Params` relation with a fact per open value, and no constructor; its values are the report's, whatever the concept file gives.
+    - An open parameter of that report, unless [Principles](docs/handbook/principles.md) make it a choice point, is a `Params` relation with a fact per open value, and no constructor; its values are the report's, whatever the concept file gives.
     - The cases are the combinations of those branches that fit, which the run shows.
     - A `<branch>` & `<branch>` line of that report gives what the case that takes both branches reads.
     - Leave the `Determine` comp for the Determine operation.
@@ -152,7 +152,7 @@
     - On a branch's witness, an `other` verdict identifies a problem with the concept case, and so does a non-concept verdict at `ordinary` plausibility; it goes in the review as open.
 - **Divergence witness.**
     - When `programs/witnesses/<task_id>.wit.json` does not exist, copy the Analyze file to it: `cp .scratch/<task_id>/witnesses.json programs/witnesses/<task_id>.wit.json`.
-    - Remove from the groups each name that denotes no case of the solver, rewrite a `separates` text that names it, and remove a witness that then separates nothing.
+    - Replace each name that denotes no case of the solver with the cases `witness` names for it, or remove it when `witness` names none, rewrite a `separates` text that names it, and remove a witness that then separates nothing.
     - Rename each name for a case the runner holds to the form [Witness file](docs/handbook/solver-file.md#witness-file) gives it, and remove a witness of such a branch, which the runner builds itself.
     - Add each branch added in Develop to the groups of every witness of the file.
     - Rewrite each `assign` in the form `Params` reads.
@@ -175,7 +175,7 @@
     - A case never reads a `Choice` field: the choice point that field encodes stands under the other branches, and the type is reshaped to put it there.
     - The cases' clauses differ and some input separates them: build the witness that shows it.
     - Otherwise the case fails Equivalence and leaves.
-- `witness` reports each case that no run shows defined and differing from the case that takes the concept branch at one of its points, under the branch it takes there. Resolve it by the first that applies, and put the resolution in the review.
+- `witness` reports each case that no run shows defined and differing from another case. Resolve it by the first that applies, and put the resolution in the review.
     - Some input, at some assignment, shows the case defined and differing: build the witness that shows it, with `--assign` when it needs one.
     - Otherwise the case fails Subsumption and leaves.
     - A case or branch that leaves under Subsumption is not an error of the Analyze report.
