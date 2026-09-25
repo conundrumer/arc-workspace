@@ -15,6 +15,7 @@ from pathlib import Path
 from types import ModuleType
 
 from arc.task import Alt, Example
+from controlled_markdown import mctx
 from dl.annotations import STORED, header_keywords
 from dl.corpus import literal_count
 from dl.deletions import deletion_report, render_deletions
@@ -385,39 +386,33 @@ def cmd_pairs(stem: str, path: str) -> int:
     return 1 if failed else 0
 
 
-TIME_LIMIT_HELP = ("wall-clock limit in seconds for the sweep runs; the "
-               "parameter in flight reports as cut and the ones behind it "
-               "report as not swept")
+TIME_LIMIT_HELP = mctx("wall-clock limit in seconds on the sweep's solver "
+                       "runs; once they take that long, the parameter in "
+                       "progress reports as cut, and each parameter not yet "
+                       "started reports as not swept")
 
-GRID_HELP = """\
-Grid format: one line per row, one digit 0-9 per cell. Spaces and commas
-between cells are optional; blank lines and lines starting with `#` are
-skipped. Text starting with `[` is read as JSON.
-"""
+GRID_HELP = mctx("Grid format: one line per row, one digit 0-9 per cell. "
+                 "Spaces and commas between cells are optional; blank lines "
+                 "and lines starting with `#` are skipped. Text starting with "
+                 "`[` is read as JSON.")
 
-STEM_HELP = "a stem, or a path to a solver file named for the task id"
+STEM_HELP = mctx("a stem, or a path to a solver file whose name starts with "
+                 "the task id")
 
-RUN_HELP = """\
-To profile one grid by hand, build the file in programs/solvers/, so that
-`#include "../lib.dl"` resolves, and link the functor library that lib.dl's
-relations call:
-
-    { echo '#include "../lib.dl"'
-      cat programs/solvers/<stem>.dl
-      echo '.input in(IO=stdin)'
-      echo '.output out(IO=stdout)'
-    } > programs/solvers/.tmp.dl
-    souffle -D- -w -L programs -lfunctors programs/solvers/.tmp.dl
-
-Souffle reads one fact line per cell on stdin: `[top, bottom, left, right]`
-edge distances, a tab, then the color. In a 3x3 grid the top-left cell, in
-color 7, is
-
-    [0, 2, 0, 2]<TAB>7
-
-Add `-p <file>` for a profile that souffleprof reads. A solver with GRID or
-RIGID call sites runs on the `expand` command's output.
-"""
+RUN_HELP = mctx("""
+    - To profile one grid by hand, write a file beside the solvers, so that `#include "../lib.dl"` resolves, and link the functor library that the lib's relations call:
+        ```
+        { echo '#include "../lib.dl"'
+          cat programs/solvers/<stem>.dl
+          echo '.input in(IO=stdin)'
+          echo '.output out(IO=stdout)'
+        } > programs/solvers/.tmp.dl
+        souffle -D- -w -L programs -lfunctors programs/solvers/.tmp.dl
+        ```
+    - Souffle reads one fact line per cell on stdin: `[top, bottom, left, right]` edge distances, a tab, then the color. In a 3x3 grid the top-left cell, in color 7, is `[0, 2, 0, 2]<TAB>7`.
+    - For a solver with GRID calls or RIGID blocks, put the `expand` command's output in place of the `cat` line.
+    - Add `-p <file>` for a profile that souffleprof reads.
+    """)
 
 
 SEPARATOR = "---"
@@ -1329,291 +1324,266 @@ COMMANDS = ("run", "lint", "grid", "record", "sweep", "deletions", "audit",
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run Souffle solvers and their checks.",
+        description=mctx("Run Souffle solvers and their checks."),
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     run = sub.add_parser(
         "run",
-        help="pairs, lint, determination checks; the default when no command "
-             "is named",
+        help=mctx("pairs, lint and determination checks; the command run when "
+                  "the first argument is not a command"),
         epilog=RUN_HELP,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     lint = sub.add_parser(
-        "lint", help="lint only, no pair runs",
-        description="The output has two sections. A finding has to be "
-                    "fixed. A hint is the session's call, and changes "
-                    "neither the verdict nor the exit code.",
+        "lint", help=mctx("lint only, no pair runs"),
+        description=mctx("A hint changes neither the verdict nor the exit "
+                         "code."),
     )
     run.add_argument("stems", nargs="*",
-                     help="the solvers to run; one runs its pairs, lint and "
-                          "determination check, several run as a corpus over "
-                          "those solvers alone, and none runs the whole "
-                          "corpus. Each one is a stem or a path to a solver "
-                          "file whose name keeps the task id as its prefix")
+                     help=mctx("the solvers to run, each a stem or a path to "
+                               "a solver file whose name starts with the task "
+                               "id. One solver runs its pairs, lint and "
+                               "determination check; several give the report "
+                               "of a run over every solver, over those "
+                               "solvers; none runs every solver."))
     lint.add_argument("stem", nargs="?",
-                      help="one solver; all of them when omitted")
+                      help=mctx("one solver; all of them when omitted"))
     for p in (run, lint):
         p.add_argument("--hints", action=argparse.BooleanOptionalAction,
-                       default=True, help="include the hints section")
+                       default=True, help=mctx("include the hints section"))
     run.add_argument("--time", action="store_true", dest="timed",
-                     help="print wall times: per phase for one solver, "
-                          "slowest 15 for a full run")
+                     help=mctx("print wall times: per phase for one solver, "
+                               "the slowest 15 for more than one"))
     run.add_argument("--pairs", metavar="FILE",
-                     help="run the named solver against ad-hoc pairs from "
-                          "this JSON file instead of the stored task; an "
-                          'example without "output" prints the emitted grids')
+                     help=mctx("run the one solver given against the pairs "
+                               "of this JSON file in place of the task's; "
+                               'for a pair without "output", print the '
+                               "grids the solver emits"))
 
     grid = sub.add_parser(
         "grid",
-        help="run one solver on a grid you write, printing each case's output",
-        description="Prints the output of each branch model: the concept "
-                    "case, and for each branch that is not its type's "
-                    "first, the case that takes it with the first branch "
-                    "everywhere else. When `impl_choice` does not hold that "
-                    "case, the nearest held cases that take the branch "
-                    "stand in its place. With --all, prints the output of "
-                    "every case of the solver, by the label the run spells it with. "
-                    "Either form also prints each case the runner holds, "
-                    "and names together the cases that give one output.",
+        help=mctx("run one solver on a grid you write, printing what each "
+                  "branch model emits"),
+        description=mctx("Prints the output of the concept case and of each "
+                         "branch's model. When `impl_choice` does not hold "
+                         "the case of a branch's model, the cases "
+                         "`impl_choice` holds that take that branch and "
+                         "differ from the concept case at the fewest choice "
+                         "points are printed in its place. With or without "
+                         "`--all`, it also prints each case the runner "
+                         "holds."),
         epilog=GRID_HELP,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     grid.add_argument("stem", help=STEM_HELP)
     grid.add_argument("file", nargs="?",
-                      help="grid file; stdin when omitted or `-`")
+                      help=mctx("grid file; stdin when omitted or `-`"))
     grid.add_argument("--all", action="store_true", dest="every",
-                      help="print every case of the solver, not the branch models "
-                           "alone")
+                      help=mctx("print every case of the solver"))
 
     record = sub.add_parser(
         "record",
-        help="run one solver on a grid you write and write the run into the "
-             "task's witness file",
-        description="The witness goes into programs/witnesses/<task>.wit.json "
-                    "under <id>, replacing a witness of that id already "
-                    "there. A `---` line in the grid text puts the judged "
-                    "output an `other` verdict takes behind it, and that "
-                    "grid is stored in place of the per-case outputs.",
+        help=mctx("run one solver on a grid you write and write the run into "
+                  "the task's witness file"),
+        description=mctx("The witness replaces a witness with the same id. "
+                         "For an `other` verdict, put the judged output "
+                         "after a `---` line of the grid text."),
         epilog=GRID_HELP,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     record.add_argument("stem", help=STEM_HELP)
     record.add_argument("id", nargs="?",
-                        help="the witness's id, unique within the witness "
-                             "file; required unless `--format`")
+                        help=mctx("the witness's id; required unless "
+                                  "`--format`"))
     record.add_argument("file", nargs="?",
-                        help="grid file; stdin when omitted or `-`")
-    record.add_argument("--separates", help="what the entry separates; "
-                                            "required unless `--format`")
+                        help=mctx("grid file; stdin when omitted or `-`"))
+    record.add_argument("--separates",
+                        help=mctx("what the witness separates; required "
+                                  "unless `--format`"))
     record.add_argument("--assign", metavar="JSON", dest="assign",
-                        help="replacement facts per parameter, as the "
-                             "entry's `assign` object; the run takes the "
-                             "reassigned source")
+                        help=mctx("the witness's `assign` object; the run "
+                                  "reads those facts in place of the stored "
+                                  "ones"))
     record.add_argument("--format", action="store_true", dest="as_format",
-                        help="rewrite the task's witness file through the "
-                             "serializer and add no entry")
+                        help=mctx("rewrite the task's witness file through "
+                                  "the serializer and add no witness"))
 
     sweep = sub.add_parser(
-        "sweep", help="parameter value sweep only",
-        description="Which values of each Params parameter's domain "
-                    "reproduce every train pair. A ✓ marks a parameter the "
-                    "pairs settle to its stored value; every other line names "
-                    "what it leaves open.",
+        "sweep", help=mctx("parameter value sweep only"),
+        description=mctx("For each Params parameter, the values of its "
+                         "domain that reproduce every train pair. A ✓ marks "
+                         "a parameter that a whole sweep finds the train "
+                         "pairs fix to its stored value."),
     )
-    sweep.add_argument("stem", nargs="?", help="one solver")
+    sweep.add_argument("stem", nargs="?", help=mctx("one solver"))
     sweep.add_argument("cap", nargs="?", type=int, default=MAX_CANDIDATES,
-                       help="candidate count the sweep holds to: above it "
-                            "the sweep narrows to one-column and one-row "
-                            "changes, and it bounds those too")
+                       help=mctx("the most candidates the sweep tries for one "
+                                 "parameter; when a parameter has more, the "
+                                 "sweep tries only single-column changes of "
+                                 "the stored facts, or single-row changes "
+                                 "for a parameter swept as a set, up to that "
+                                 "count"))
     sweep.add_argument("--time-limit", type=float, dest="time_limit",
                        default=TIME_LIMIT_SECONDS, help=TIME_LIMIT_HELP)
     over = sweep.add_mutually_exclusive_group()
     over.add_argument("--open", nargs="+", metavar="STEM", dest="open_stems",
-                      help="report as JSON, over these stems, the parameters "
-                           "each sweep leaves open and the `// review sweep:` "
-                           "line each one takes")
+                      help=mctx("report as JSON, for these solvers, the "
+                                "parameters each sweep leaves open and the "
+                                "`// review sweep:` line each one takes"))
     over.add_argument("--mark", nargs="+", metavar="STEM", dest="mark_stems",
-                      help="the same reading, written into the solvers: each "
-                           "open parameter without a `review sweep:` line yet "
-                           "gets one as the last header line. The report names "
-                           "each line written, and each lint finding the "
-                           "header carries after the write")
+                      help=mctx("write that `// review sweep:` line into the "
+                                "solver for each open parameter that has none "
+                                "yet. The report lists each line written, and "
+                                "each lint finding on the header after the "
+                                "write"))
     sweep.add_argument("--cached", action="store_true",
-                       help="with `--open` or `--mark`, take only the stems "
-                            "whose cached sweep matches their current code, "
-                            "or carries no hash to match, and skip the rest "
-                            "with a reason. A stem whose only change since "
-                            "the sweep is a comment line still matches")
+                       help=mctx("with `--open` or `--mark`, take only the "
+                                 "solvers whose cached sweep matches their "
+                                 "current code, or carries no hash to match, "
+                                 "and skip the rest with a reason. A solver "
+                                 "whose only change since the sweep is a "
+                                 "comment line still matches"))
 
     sub.add_parser(
-        "deletions", help="deletion report only",
-        description="The rules and facts of the solver that no train pair "
-                    "needs.",
-    ).add_argument("stem", help="one solver")
+        "deletions", help=mctx("deletion report only"),
+        description=mctx("The clauses and facts of the solver that no train "
+                         "pair needs."),
+    ).add_argument("stem", help=mctx("one solver"))
     audit = sub.add_parser(
         "audit",
-        help="parameter value sweep + deletion report + witness report + "
-             "derive report + store report",
-        description="The sweep, the deletion report, the witness report, "
-                    "the derive report and the store report over one "
-                    "solver. Only the sweep runs under the time limit.",
+        help=mctx("parameter value sweep + deletion report + witness report "
+                  "+ derive report + store report"),
     )
-    audit.add_argument("stem", help="one solver")
+    audit.add_argument("stem", help=mctx("one solver"))
     audit.add_argument("--time-limit", type=float, dest="time_limit",
                        default=TIME_LIMIT_SECONDS, help=TIME_LIMIT_HELP)
     sub.add_parser(
         "drop-one",
-        help="which stored facts of a multi-fact parameter no pair needs",
-        description="The stored facts of a multi-fact Params parameter "
-                    "that no train pair needs. A fact the test pairs still "
-                    "need reports apart from one dead on both. The audit does "
-                    "not run it.",
-    ).add_argument("stem", help="one solver")
+        help=mctx("which stored facts of a multi-fact parameter no train pair "
+                  "needs"),
+        description=mctx("A fact that only the test pairs need is reported "
+                         "apart from one that no pair needs."),
+    ).add_argument("stem", help=mctx("one solver"))
     sub.add_parser(
         "derived-constant",
-        help="program relations that hold the same tuples on every example",
-        description="Each program relation between `in` and `out` that "
-                    "holds the same tuples on every train and test example. A "
-                    "relation empty everywhere, and one that keeps its tuples "
-                    "on control grids from each example's palette, are left "
-                    "out. The audit does not run it.",
-    ).add_argument("stem", help="one solver")
+        help=mctx("program relations that hold the same tuples on every "
+                  "example"),
+        description=mctx("The examples are the train and test examples. A "
+                         "relation that is empty on every example is left "
+                         "out, and so is one that keeps its tuples on "
+                         "grids made from each example's palette."),
+    ).add_argument("stem", help=mctx("one solver"))
     witness = sub.add_parser(
         "witness",
-        help="run the task's hand-written witness grids and report where "
-             "the solver and the file disagree",
-        description="Where the solver and "
-                    "programs/witnesses/<task>.wit.json disagree: a case "
-                    "whose output differs from the one its entry names, a "
-                    "name that denotes no case, a `@witness` line the "
-                    "file does not bear out, a verdict that denotes no "
-                    "case, a branch that is not its "
-                    "type's first and has no `@witness` line, two held "
-                    "cases, `impl_choice`'s and the runner's, that no "
-                    "witness separates, and each held case but the "
-                    "concept case that no run shows defined and differing "
-                    "from another held case that some run shows defined "
-                    "where it is not, over the task's pairs and the "
-                    "witnesses. Where that other case takes its type's "
-                    "first branch in place of one of the first case's "
-                    "branches, those first cases are named by branch, "
-                    "with their count; when not every case taking the "
-                    "branch is one, each one is listed below it. "
-                    "Otherwise the finding names the case and each other "
-                    "case. A held case whose run times "
-                    "out on an input is a finding of its own, naming the "
-                    "case and the input, and no other finding rests on "
-                    "its outcome there. A Souffle failure on an entry is a "
-                    "finding on that entry, with the first line of the "
-                    "error. Without a "
-                    "witness file, no grid runs, no branch needs a "
-                    "`@witness` line, and every `@witness` line of the "
-                    "solver names no entry. The file's shape is checked "
-                    "first. With "
-                    "--file and no stem, the shape check is the whole "
-                    "report, and it needs no solver.",
+        help=mctx("run the task's witness grids and report where the solver "
+                  "and the witness file disagree"),
+        description=mctx("The report checks the file's shape first. With "
+                         "--file and no stem, the shape check is the whole "
+                         "report, and it needs no solver."),
     )
-    witness.add_argument("stem", nargs="?", help="one solver")
+    witness.add_argument("stem", nargs="?", help=mctx("one solver"))
     witness.add_argument("--file", metavar="PATH",
-                         help="a witness file to read in place of the task's; "
-                              "the report holds its entries' findings only")
+                         help=mctx("a witness file to read in place of the "
+                                   "task's; the report has only the findings "
+                                   "on its witnesses"))
     sub.add_parser(
         "derive",
-        help="the built-in derivations of stored parameters that fit, each held as a case",
-        description="Each stored parameter a proposer of "
-                    "programs/proposers.dl states on every input, with the "
-                    "witness that tells the derived case from the stored "
-                    "reading and the `@derive` line to write.",
-    ).add_argument("stem", help="one solver")
+        help=mctx("the built-in derivations of stored parameters that fit, "
+                  "each held as a case"),
+        description=mctx("Each stored parameter whose value a proposer of "
+                         "`programs/proposers.dl` derives on every input, "
+                         "with the witness that separates the derived case "
+                         "from the stored one."),
+    ).add_argument("stem", help=mctx("one solver"))
     sub.add_parser(
         "store",
-        help="the program relations that hold one value on every input",
-        description="Each program relation between `in` and `out` whose "
-                    "value over a column subset is the same on every input "
-                    "of the task, with the witness that tells the stored "
-                    "case from the derivation and the `@store` line to "
-                    "write. A relation over 20000 rows on some input is not "
-                    "checked, and the report names it.",
-    ).add_argument("stem", help="one solver")
+        help=mctx("the program relations that hold one value on every input"),
+        description=mctx("Each program relation between `in` and `out` whose "
+                         "value over a subset of its columns is the same on "
+                         "every input of the task, with the witness that "
+                         "separates the stored case from the derived one. "
+                         "A relation with "
+                         "more than 20000 rows on some input is not "
+                         "checked."),
+    ).add_argument("stem", help=mctx("one solver"))
     plan = sub.add_parser(
         "determination-plan",
-        help="which Params parameters need determination relations",
-        description="Each Params parameter under the action it needs: "
-                    "write a determination relation, record its open "
-                    "values, write determination relations until the product "
-                    "of the remaining candidate counts is under the "
-                    "enumeration limit, move data from clauses into fact "
-                    "parameters, or none.",
+        help=mctx("which Params parameters need determination relations"),
     )
-    plan.add_argument("stem", help="one solver")
+    plan.add_argument("stem", help=mctx("one solver"))
     plan.add_argument("--verdicts", action="store_true",
-                      help="append each proposer's verdict on each parameter")
+                      help=mctx("append each proposer's verdict on each "
+                                "parameter"))
 
     size = sub.add_parser(
-        "size", help="literal count per solver",
-        description="Print each named solver's literal count, count first.",
+        "size", help=mctx("literal count per solver"),
+        description=mctx("Print each solver's literal count, count first."),
     )
     size.add_argument("stem", nargs="?",
-                      help="one solver; all of them when omitted")
+                      help=mctx("one solver; all of them when omitted"))
 
     features = sub.add_parser(
-        "features", help="per-case features, one TSV row per Choice case",
-        description="Print one row per case of each named solver. A rule "
-                    "belongs to the cases whose constructors its head holds, "
-                    "and so do the rules it reads, transitively. `atoms`, "
-                    "`rules` and `facts` weigh what one case reaches and no "
-                    "other; `shared_*` weigh what two cases reach, `reach_*` "
-                    "weigh a case's whole reach, and `unreached_atoms` weighs "
-                    "what no case reaches. The ratios stand against the "
-                    "smallest case of the file. With `--run`, "
-                    "`pairs_separating` and `pairs_undefined` count over "
-                    "every pair of the task, train and test alike, keyed by "
-                    "the grid a case emits.",
+        "features", help=mctx("per-case features, one TSV row per Choice case"),
+        description=mctx("A clause belongs to the cases whose constructors "
+                         "appear in its head, and so do the clauses it "
+                         "reads, transitively. `rules` counts clauses. "
+                         "`atoms`, `rules` and `facts` count "
+                         "what one case reaches and no other; `shared_*` "
+                         "count what two cases reach, `reach_*` count a "
+                         "case's whole reach, and `unreached_atoms` counts "
+                         "what no case reaches. A ratio divides a case's "
+                         "count by the least count in that column among the "
+                         "file's cases. "
+                         "With `--run`, `pairs_separating` and "
+                         "`pairs_undefined` count over every pair of the "
+                         "task, train and test alike, keyed by the grid a "
+                         "case emits."),
     )
     features.add_argument("stem", nargs="?",
-                          help="one solver, as a stem or a path to a solver "
-                               "file; all of them when omitted")
+                          help=mctx("one solver, as a stem or a path to a "
+                                    "solver file; all of them when omitted"))
     features.add_argument("--run", action="store_true",
-                          help="run every pair of the task, train and test, "
-                               "and fill the separation columns from what "
-                               "each case emits")
+                          help=mctx("run every pair of the task, train and "
+                                    "test, and fill the separation columns "
+                                    "from what each case emits"))
     features.add_argument("--json", action="store_true", dest="as_json",
-                          help="print JSON instead of TSV, with the pairwise "
-                               "matrix of separating pairs per solver")
+                          help=mctx("print JSON in place of TSV, with the "
+                                    "pairwise matrix of separating pairs per "
+                                    "solver"))
 
     keywords = sub.add_parser(
-        "keywords", help="how many solvers carry each keyword of keywords.md",
-        description="Read the `// @keywords:` header line of each named "
-                    "solver, count the solvers carrying each keyword of "
-                    "keywords.md, and name every header keyword the doc "
-                    "does not list.",
+        "keywords",
+        help=mctx("how many solvers carry each keyword of the Keywords doc"),
+        description=mctx("Count, for each keyword of the Keywords doc, the "
+                         "solvers whose `// @keywords:` line carries it, and "
+                         "list each header keyword the doc does not."),
     )
     keywords.add_argument("stem", nargs="*",
-                          help="solvers to read; all of them when omitted")
+                          help=mctx("solvers to read; all of them when "
+                                    "omitted"))
 
     since = sub.add_parser(
         "since",
-        help="the solvers in scope for a delta survey since a date-time",
-        description="Print the stem of each solver a survey since the given "
-                    "date-time covers: the ones the commits since then touch, "
-                    "plus the ones whose working-tree content differs from "
-                    "HEAD. Commits touching more than half the corpus "
-                    "count as a mechanical rewrite: the solvers a rewriting "
-                    "commit touches are out of scope, and of a rewriting "
-                    "window only the solvers its commits add stay in scope. "
-                    "The working-tree half stands either way.",
+        help=mctx("the solvers in scope for a delta survey since a date-time"),
+        description=mctx("Print the stem of each solver that the commits "
+                         "since the given date-time touch, and of each "
+                         "solver whose working-tree content differs from "
+                         "HEAD. A commit that touches more than half the "
+                         "solvers gives no stems. When the other commits "
+                         "together touch more than half, only the solvers "
+                         "that those commits create are printed from "
+                         "them."),
     )
-    since.add_argument("when", help="a date-time git reads, e.g. "
-                                    '"2026-09-08 14:30"')
+    since.add_argument("when", help=mctx("a date-time git reads, e.g. "
+                                         '"2026-09-08 14:30"'))
 
     sub.add_parser(
         "expand",
-        help="the source after GRID and RIGID expansion, as Souffle sees it",
-        description="Print the solver source with each GRID and RIGID call "
-                    "replaced by what it emits and nothing else changed.",
-    ).add_argument("stem", help="one solver")
+        help=mctx("the source after GRID and RIGID expansion, as Souffle "
+                  "sees it"),
+        description=mctx("Print the solver source with each GRID call and "
+                         "RIGID block replaced by what it emits and nothing else "
+                         "changed."),
+    ).add_argument("stem", help=mctx("one solver"))
     return parser
 
 

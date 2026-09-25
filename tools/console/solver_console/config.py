@@ -4,6 +4,8 @@ workers with."""
 import os
 from pathlib import Path
 
+from controlled_markdown import mctx
+
 HERE = Path(__file__).resolve().parents[1]
 ROOT = HERE.parents[1]
 STATE_DIR = Path(os.environ.get("CONSOLE_STATE_DIR", HERE / "state"))
@@ -166,13 +168,12 @@ COMMIT_STAGE = ["programs/solvers", "programs/witnesses", "docs/wf-solver/propos
 
 def commit_brief(paths: list[str]) -> str:
     """The committer's brief over `paths`: the files solver workers changed."""
-    return f"""Commit the changes that solver workers left in the working tree.
-
-Scope: these files, which solver workers changed: {", ".join(paths)}. Leave every other change alone.
-
-The console has already committed {" and ".join(p + "/" for p in COMMIT_STAGE)}, so what git does not track there is a stray file, not work: stage no untracked file, and say in your report what you left.
-
-Read git status and the diffs, and recent git log for message style. Group the changes into clean commits the way the log does; write each message from what the diff shows."""
+    return mctx("""
+        - Commit the changes that solver workers left in these files: {paths}. Leave every other change alone.
+        - A file that git does not track under {staged} is no worker's work, because the console has already committed those paths. Leave it, and list each one in your report.
+        - Read `git status`, the diffs, and the recent `git log`. Group the changes into commits as the recent commits in the log are grouped, and write each message in the log's style, from what its diff shows.
+        """).format(paths=", ".join(paths),
+                    staged=", ".join(p + "/" for p in COMMIT_STAGE))
 
 
 COMMIT_TIMEOUT = 900  # seconds a committer session may run

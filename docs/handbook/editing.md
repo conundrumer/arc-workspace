@@ -27,6 +27,7 @@
     - A worker's context: the appendix, the message the stage opens with, then each message a condition sends, under that condition: `context console <stage>`.
     - A survey session's context: the appendix, its role, then the `survey` message: `context survey`.
     - The system reminders the console prefixes to a message: [workers.py](tools/console/solver_console/workers.py).
+    - The committer's brief: `commit_brief` in [config.py](tools/console/solver_console/config.py).
 - The roles: [roles](prompts/roles), one document per role. A role's `agent` attribute says which agent runs it, and a role with none runs as `handbook`.
     - Its context: `context role <name>`.
     - A role's brief comes from the script or the session that spawns it, and the `context role` output gives that file's path.
