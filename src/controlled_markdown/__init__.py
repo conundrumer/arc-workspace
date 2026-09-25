@@ -1477,11 +1477,11 @@ def _index_nodes(document: Node, st: _State, seen: tuple[str, ...],
     if kind == "entries":
         note = ("Each line below is an entry's title and its first sentence, "
                 "and `uv run python scripts/context.py section "
-                f"'{chapter}#<title>'` prints the entry in full.")
+                f"'{chapter}#<title>'` prints the whole entry.")
     else:
-        note = ("Each heading below names a section this rendering abridges, "
+        note = ("Only this chapter's headings are shown below, "
                 "and `uv run python scripts/context.py section "
-                f"'{chapter}#<heading>'` prints it in full.")
+                f"'{chapter}#<heading>'` prints a section.")
     body.append(Node(CONTENT, text=note, source=top.source, line=top.line))
     body += _entry_lines(top) if kind == "entries" else _heading_lines(top)
     if top is document:

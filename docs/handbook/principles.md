@@ -18,10 +18,9 @@
 # Principles
 
 ## The goal
-- The goal is for the solvers to enumerate the models that fit the tasks.
-    - A solver holds the concept case.
-    - It holds a case for every other model the pass forms that meets the case conditions.
-        - A model the pass forms is a case whether or not a person sees the task that way.
+- The corpus supports the synthesis of solver programs, and takes as much as it can from each task, in this order:
+    - **Concept.** A solver has a case for the concept.
+    - **Coverage.** A solver has a case for each other model that meets the case conditions.
 
 ## Definitions
 

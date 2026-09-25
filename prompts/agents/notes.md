@@ -4,7 +4,7 @@
 * comment: When editing this doc, keep a statement here when more than one entry point inlines it.
 
 ## abridgement
-- `uv run python scripts/context.py section '<chapter>#<heading>'` prints a section this rendering abridges, in full.
+- `uv run python scripts/context.py section '<chapter>#<heading>'` prints a whole section.
     - The target of a link in the text also works as the argument.
     - A link into a document this rendering does not carry is followed the same way.
 
