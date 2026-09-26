@@ -1,18 +1,24 @@
-"""Program relations that hold one value on every input: the cases a
+"""Program relations that hold one value on every input: the branches a
 stored value states.
 
 A relation between `in` and `out` whose projection onto some of its columns
 is the same on every input of the task, train and test, states a model that
-stores that value rather than reading it off the grid. That model is a case
-of the solver, and the runner owns it: the solver carries one `// @store`
-line above the relation's declaration, and no branch.
+stores that value rather than reading it off the grid. That model's reading
+is a branch of a choice point on the relation: the solver carries one
+`// @store` line above the relation's declaration, and no constructor.
 
-The witness tells the stored case from the derivation. The tool builds one
-by turning or mirroring a train input, or by swapping a stored color with a
-free one: the derivation follows the grid, the stored value does not, and
-the two cases give different outputs, or one is defined and the other is
-not. A relation no such grid separates takes
-a hand-built entry of the witness file, under the id `<rel>=stored`.
+The witness tells the cases that take the branch from the same cases with
+the relation derived. The tool builds one by turning or mirroring a train
+input, or by swapping a stored color with a free one: the derivation
+follows the grid, the stored value does not. The witness's id is the
+branch's name, `<rel>=stored`; an entry of that id in the witness file is
+kept, and a relation no such grid separates takes one built by hand.
+
+A `@store` line is a branch `<rel>=stored` of a choice point on the
+relation, which stands under each held case that reads the relation and
+takes a value found for it (`value_cases`); `dl.models.enumeration` holds
+the cases that take it. `stored_program` gives the program a case with one
+or more store branches runs.
 """
 
 import itertools
@@ -21,14 +27,17 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from functools import lru_cache
+from pathlib import Path
 
 from arc.task import load as load_task
 from controlled_markdown import mctx
 from dl.annotations import (
     DECL_RE,
     INIT_RE,
+    STORE,
     STORED,
     Store,
+    ignore_lines,
     store_blocks,
     store_relation,
 )
@@ -47,6 +56,8 @@ from dl.dlparse import (
     TOP,
     Comp,
     Ctor,
+    Decl,
+    Field,
     Index,
     ParseError,
     TypeDecl,
@@ -56,18 +67,29 @@ from dl.dlparse import (
 from dl.domains import _lib_defines
 from dl.facts import grid_to_facts
 from dl.lint import _subterms, choice_points
-from dl.models import Forced, Space, case_space
+from dl.models import CaseId, Cases, Space, case_space, enumeration, held_choice
 from dl.solve import (
+    TASK_ID_RE,
     parse_output,
     res_out_stem,
     run_dl_source,
     solver_file,
 )
 from dl.souffle import _pool_workers, _run_source
-from dl.source import SOLVE_DIRECTIVES, expand_macros
+from dl.source import (
+    SOLVE_DIRECTIVES,
+    assigned_source,
+    comp_decls,
+    expand_macros,
+    with_line_above,
+)
 from dl.witness import (
     Witness,
+    assign_findings,
+    branch_diverges,
     concept_outcome,
+    drop_findings,
+    load_witness_file,
     load_witnesses,
     model_outcomes,
 )
@@ -75,13 +97,11 @@ from dl.witness import (
 STORE_OK = "store: ok"
 """The pass line, printed when no finding stands."""
 
+SHARED = "shared"
+"""The case label of a finding that holds one value for every case."""
+
 OTHER = "other"
 """The verdict that takes a judged output, which only an entry holds."""
-
-IGNORE_RE = re.compile(r"//\s*@ignore(?:\s+([\w.]+))?:\s*store\b")
-"""The directive that dismisses this check. Above a `.decl` it names the
-relation declared under it; above a `.init` the bare form dismisses the
-whole instance and the named form one relation of it."""
 
 POS_TYPES = frozenset({"Position", "Box"})
 """Types whose value is a cell of the frame."""
@@ -211,14 +231,28 @@ class Found:
     folded: bool = False
     """The relation stands downstream of another the report names, so that
     one answers for it."""
+    failed: str = ""
+    """The error of the stored case's first run that failed."""
+    site: str = ""
+    """The instance whose `.init` a directive on the relation stands above,
+    and empty where it stands above the relation's own `.decl`."""
+    spelled: str = ""
+    """The relation as its `@store` line names it: the instance joined to
+    the named relation, or the declared name."""
 
     @property
-    def case_id(self) -> str:
-        return f"{self.rel}={STORED}"
+    def case_id(self) -> CaseId:
+        return CaseId(f"{self.spelled or self.rel}={STORED}")
 
     @property
     def colors(self) -> bool:
         return bool(self.types) and all(t == COLOR_TYPE for t in self.types)
+
+    @property
+    def held(self) -> bool:
+        """Some case reads the relation: the concept case, or a case under
+        the markers of its reads and feeds."""
+        return self.read or bool(self.used_in)
 
 
 @dataclass
@@ -234,6 +268,8 @@ class Finding:
 class Report:
     found: list[Found] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
+    """Relations over `ROW_CAP` rows on some input, which the report does
+    not check."""
     findings: list[Finding] = field(default_factory=list)
     error: str = ""
 
@@ -258,15 +294,16 @@ def _solver_scopes(source: str) -> set[str]:
                     if c not in ("Params", "Determine", "ParamsHelpers")}
 
 
-def _candidates(ix: Index, scopes: set[str]) -> dict[str, tuple]:
+def _candidates(ix: Index, scopes: set[str]
+                ) -> dict[str, tuple[tuple[str, str], Decl]]:
     """Path -> (key, decl) for the relations between `in` and `out` that a
     clause of a solver scope reads or writes."""
     forward, backward = _edges(ix)
     wanted = (_reachable(forward, (TOP, "in"))
               & _reachable(backward, (TOP, "out")))
-    out: dict[str, tuple] = {}
+    out: dict[str, tuple[tuple[str, str], Decl]] = {}
 
-    def add(name: str, key: tuple, decl) -> None:
+    def add(name: str, key: tuple[str, str], decl: Decl) -> None:
         if key not in wanted or "inline" in decl.qualifiers or name in out:
             return
         if not any(r.scope in scopes for r in ix.refs_of(key)):
@@ -281,6 +318,48 @@ def _candidates(ix: Index, scopes: set[str]) -> dict[str, tuple]:
             for name, decl in ix.decls.get(scope, {}).items():
                 add(f"{path}.{name}", (scope, name), decl)
     return out
+
+
+def _site(ix: Index, rel: str, own: set[str]) -> tuple[str, str]:
+    """The instance whose `.init` a directive on the relation stands above,
+    and the relation as that directive names it. The instance is the
+    innermost one on the relation's path that the solver's own text
+    initializes, and empty where the solver's own text declares the
+    relation, which the directive then names by its declared name."""
+    parts = rel.split(".")
+    scope, at = TOP, -1
+    for i, inst in enumerate(parts[:-1]):
+        holder = next((s for s in ix.chain(scope)
+                       if inst in ix.inits.get(s, {})), None)
+        if holder is None:
+            break
+        if holder in own:
+            at = i
+        scope = ix.inits[holder][inst].comp
+    else:
+        if any(s in own for s in ix.chain(scope)
+               if parts[-1] in ix.decls.get(s, {})):
+            return "", parts[-1]
+    if at < 0:
+        return "", rel
+    return parts[at], ".".join(parts[at:])
+
+
+def relation_site(source: str, spelled: str) -> str:
+    """The site (`_site`) of the relation a `@store` line spells `spelled`
+    (`Found.spelled`), and empty where no relation of the solver is spelled
+    so."""
+    expanded = expand_macros(source)
+    try:
+        ix = _index(expanded)
+        own = {TOP} | set(parse(expanded).comps())
+    except ParseError:
+        return ""
+    for rel, _key in _relation_keys(ix):
+        site, named = _site(ix, rel, own)
+        if named == spelled:
+            return site
+    return ""
 
 
 def _uses(ix: Index, key: tuple, scopes: set[str], branches: set[str],
@@ -619,42 +698,69 @@ def _swaps(grids: list[list[list[int]]],
 
 # --- the stored case --------------------------------------------------
 
-def _top_level_lines(source: str) -> list[int]:
-    """The indices of the source lines that stand outside every comp."""
-    depth = 0
-    out = []
-    for i, raw in enumerate(source.splitlines()):
-        code = raw.split("//")[0]
-        opens = code.count("{")
-        closes = code.count("}")
-        if depth == 0 and not code.lstrip().startswith(".comp"):
-            out.append(i)
-        depth += opens - closes
-        depth = max(depth, 0)
+def _paths(ix: Index) -> dict[str, list[str]]:
+    """Each scope's instance paths, the top level's the empty path."""
+    out: dict[str, list[str]] = {TOP: [""]}
+    for path, comp in _instances(ix):
+        out.setdefault(comp, []).append(path)
     return out
 
 
-def _rename_reads(source: str, rel: str, twin: str) -> str:
-    """The source with the top-level clause bodies reading `twin` where
-    they read `rel`."""
-    pattern = re.compile(r"(?<![\w.])" + re.escape(rel) + r"\s*\(")
-    lines = source.splitlines()
-    top = set(_top_level_lines(source))
-    in_body = False
-    for i, raw in enumerate(lines):
-        if i not in top:
+def _rule_refs(expanded: str, ix: Index, rel: str, roles: set[str],
+               skip_shared: bool = False) -> list[tuple[int, str]] | None:
+    """The rules of the solver's own text that reference the relation in
+    one of `roles`, each as its index and the name it spells the relation
+    by. None when a rule of the lib does, or a rule in a comp of more than
+    one instance: an edit to its text would reach every instance. With
+    `skip_shared`, such a rule is left out, and the others are returned."""
+    own = len(Index(parse(expanded)).rules)
+    paths = _paths(ix)
+    out: list[tuple[int, str]] = []
+    for r in ix.refs:
+        if r.role not in roles:
             continue
-        code, sep, comment = raw.partition("//")
-        if in_body:
-            code = pattern.sub(twin + "(", code)
-        elif ":-" in code:
-            head, arrow, body = code.partition(":-")
-            code = head + arrow + pattern.sub(twin + "(", body)
-            in_body = True
-        if code.rstrip().endswith("."):
-            in_body = False
-        lines[i] = code + sep + comment
+        spelled = ".".join(x for x in (r.atom.qual or "", r.atom.name) if x)
+        held = paths.get(r.scope, [])
+        if not any(".".join(x for x in (p, spelled) if x) == rel
+                   for p in held):
+            continue
+        if r.rule >= own or len(held) > 1:
+            if skip_shared:
+                continue
+            return None
+        out.append((r.rule, spelled))
+    return out
+
+
+def _rename(expanded: str, ix: Index, hits: list[tuple[int, str]],
+            twin: str, body_only: bool) -> str:
+    """The source with each rule of `hits` spelling `twin` where it spells
+    the relation: in its body alone with `body_only`, and in its head and
+    body otherwise."""
+    lines = expanded.splitlines()
+    for idx, spelled in sorted(set(hits)):
+        rule = ix.rules[idx].rule
+        pattern = re.compile(r"(?<![\w.])" + re.escape(spelled) + r"\s*\(")
+        in_body = not body_only
+        for i in range(rule.line - 1, min(rule.end_line, len(lines))):
+            code, sep, comment = lines[i].partition("//")
+            if in_body:
+                code = pattern.sub(twin + "(", code)
+            elif ":-" in code:
+                head, arrow, body = code.partition(":-")
+                code = head + arrow + pattern.sub(twin + "(", body)
+                in_body = True
+            lines[i] = code + sep + comment
     return "\n".join(lines) + "\n"
+
+
+def _rename_reads(expanded: str, ix: Index, rel: str, twin: str) -> str:
+    """The source with the solver's clause bodies reading `twin` where they
+    read `rel`, a comp's clauses included. The lib's rules, and those of a
+    comp of more than one instance, keep reading `rel`."""
+    hits = _rule_refs(expanded, ix, rel, {"pos", "neg", "agg"},
+                      skip_shared=True) or []
+    return _rename(expanded, ix, hits, twin, body_only=True)
 
 
 def _comp_params(ix: Index) -> dict[str, list[str]]:
@@ -691,12 +797,13 @@ def _type_args(ix: Index, path: str) -> dict[str, str]:
 
 
 def _twin_text(rel: str, decl, cols: list[int], ref: frozenset,
-               subst: dict[str, str], fed: bool = False) -> str:
+               subst: dict[str, str], fed: bool = False,
+               n: int = 0) -> str:
     """The twin relation: the keys of the derivation against the stored
     value set. With `fed`, the twin holds the derivation instead, and the
     relation takes the twin's keys against the stored value set."""
 
-    def type_of(f) -> str:
+    def type_of(f: Field) -> str:
         return subst.get(f.type, f.type)
 
     fields = ", ".join(f"{f.name}: {type_of(f)}" for f in decl.fields)
@@ -712,12 +819,13 @@ def _twin_text(rel: str, decl, cols: list[int], ref: frozenset,
             head.append(f"K{i}")
             body.append(f"K{i}")
     take = ", ".join(f"V{i}" for i in cols)
-    facts = "".join(f"{VALUES}({', '.join(row)}).\n" for row in values)
-    into, source = (rel, TWIN) if fed else (TWIN, rel)
-    return (f"\n.decl {VALUES}({value_fields})\n{facts}"
-            f".decl {TWIN}({fields})\n"
+    twin, stored = _twin(TWIN, n), _twin(VALUES, n)
+    facts = "".join(f"{stored}({', '.join(row)}).\n" for row in values)
+    into, source = (rel, twin) if fed else (twin, rel)
+    return (f"\n.decl {stored}({value_fields})\n{facts}"
+            f".decl {twin}({fields})\n"
             f"{into}({', '.join(head)}) :- "
-            f"{source}({', '.join(body)}), {VALUES}({take}).\n")
+            f"{source}({', '.join(body)}), {stored}({take}).\n")
 
 
 def _fact_arg(text: str) -> str:
@@ -736,60 +844,18 @@ def _head_rules(expanded: str, ix: Index, rel: str) -> list | None:
     """The rules of the solver's own text whose head is the relation, each
     as its first and last line. None when a rule of the lib feeds it: the
     lib's line numbers count lines of another file."""
-    own = len(Index(parse(expanded)).rules)
-    prefixes: dict[str, list[str]] = {TOP: [""]}
-    for path, comp in _instances(ix):
-        prefixes.setdefault(comp, []).append(path)
-    out = []
-    for r in ix.refs:
-        if r.role != "head":
-            continue
-        for prefix in prefixes.get(r.scope, []):
-            name = ".".join(x for x in (prefix, r.atom.qual or "",
-                                        r.atom.name) if x)
-            if name == rel:
-                if r.rule >= own:
-                    return None
-                rule = ix.rules[r.rule].rule
-                out.append((rule.line, rule.end_line))
-    return out
+    hits = _rule_refs(expanded, ix, rel, {"head"})
+    if hits is None:
+        return None
+    return [(ix.rules[i].rule.line, ix.rules[i].rule.end_line)
+            for i, _spelled in hits]
 
 
 def _feed_rules(expanded: str, ix: Index, rel: str) -> list | None:
-    """The rules that feed the relation, each as its first and last line,
-    where every one of them stands at the top level of the solver's own
-    text. None when a rule of the lib or of a comp feeds it, or no rule
-    does."""
-    own = len(Index(parse(expanded)).rules)
-    prefixes: dict[str, list[str]] = {TOP: [""]}
-    for path, comp in _instances(ix):
-        prefixes.setdefault(comp, []).append(path)
-    out = set()
-    for r in ix.refs:
-        if r.role != "head":
-            continue
-        for prefix in prefixes.get(r.scope, []):
-            name = ".".join(x for x in (prefix, r.atom.qual or "",
-                                        r.atom.name) if x)
-            if name != rel:
-                continue
-            if r.rule >= own or r.scope != TOP:
-                return None
-            rule = ix.rules[r.rule].rule
-            out.add((rule.line, rule.end_line))
-    return sorted(out) or None
-
-
-def _rename_feeds(source: str, spans: list, rel: str, twin: str) -> str:
-    """The source with the rules in `spans` deriving `twin` where they
-    derive `rel`, and reading `twin` where they read `rel`."""
-    pattern = re.compile(r"(?<![\w.])" + re.escape(rel) + r"\s*\(")
-    lines = source.splitlines()
-    for start, end in spans:
-        for i in range(start - 1, min(end, len(lines))):
-            code, sep, comment = lines[i].partition("//")
-            lines[i] = pattern.sub(twin + "(", code) + sep + comment
-    return "\n".join(lines) + "\n"
+    """The rules of the solver's own text that feed the relation, each as
+    its index and the name it spells the relation by. None when a rule of
+    the lib feeds it, or no rule does."""
+    return _rule_refs(expanded, ix, rel, {"head"}) or None
 
 
 def _replace_clauses(expanded: str, spans: list, found: Found) -> str:
@@ -803,117 +869,155 @@ def _replace_clauses(expanded: str, spans: list, found: Found) -> str:
             + _stored_facts(found.rel, found.facts))
 
 
-def _twin_facts(found: Found, decl, subst: dict[str, str]) -> str:
+def _twin(name: str, n: int) -> str:
+    """The name of a relation a stored program adds, for its `n`-th store
+    branch."""
+    return name if n == 0 else f"{name}_{n}"
+
+
+def _twin_facts(found: Found, decl, subst: dict[str, str],
+                n: int = 0) -> str:
     """The twin relation holding the stored facts."""
     fields = ", ".join(f"{f.name}: {subst.get(f.type, f.type)}"
                        for f in decl.fields)
-    return f"\n.decl {TWIN}({fields})\n" + _stored_facts(TWIN, found.facts)
+    twin = _twin(TWIN, n)
+    return f"\n.decl {twin}({fields})\n" + _stored_facts(twin, found.facts)
 
 
 def store_case_program(expanded: str, ix: Index, found: Found, decl,
-                       subst: dict[str, str]) -> str:
-    """The solve-mode program running the stored case. A relation with no
+                       subst: dict[str, str], n: int = 0) -> str:
+    """The program with one relation's value stored, for the `n`-th store
+    branch a case takes, without the solve directives. A relation with no
     key column takes the stored facts in place of its clauses, and where a
-    lib rule feeds it, the solver's top-level reads read a twin that holds
-    the stored facts. One with key columns keeps its keys and takes its
-    values from the stored set.
+    lib rule feeds it, the solver's reads read a twin that holds the stored
+    facts. One with key columns keeps its keys and takes its values from
+    the stored set.
 
-    Where the solver's own top-level rules feed the relation, those rules
-    derive the twin instead, and the relation takes the twin's keys against
-    the stored set, so every reader, a lib comp's included, reads the
-    stored values. Otherwise the solver's top-level reads read the twin,
-    which takes the relation's keys against the stored set."""
+    Where the solver's own rules feed the relation, those rules derive the
+    twin instead, and the relation takes the twin's keys against the stored
+    set, so every reader, a lib comp's included, reads the stored values.
+    Otherwise the solver's reads read the twin, which takes the relation's
+    keys against the stored set. A solver's read or feed counts at the top
+    level and in a comp of one instance."""
     if not found.keys:
         spans = _head_rules(expanded, ix, found.rel)
         if spans is not None:
             text = _replace_clauses(expanded, spans, found)
         else:
-            text = (_rename_reads(expanded, found.rel, TWIN)
-                    + _twin_facts(found, decl, subst))
+            text = (_rename_reads(expanded, ix, found.rel, _twin(TWIN, n))
+                    + _twin_facts(found, decl, subst, n))
     else:
         cols = [i for i, f in enumerate(decl.fields) if f.name in found.cols]
-        spans = _feed_rules(expanded, ix, found.rel)
-        if spans is not None:
-            text = (_rename_feeds(expanded, spans, found.rel, TWIN)
+        feeds = _feed_rules(expanded, ix, found.rel)
+        twin = _twin(TWIN, n)
+        if feeds is not None:
+            text = (_rename(expanded, ix, feeds, twin, body_only=False)
                     + _twin_text(found.rel, decl, cols, found.ref, subst,
-                                 fed=True))
+                                 fed=True, n=n))
         else:
-            text = (_rename_reads(expanded, found.rel, TWIN)
-                    + _twin_text(found.rel, decl, cols, found.ref, subst))
-    return f"{text}\n{SOLVE_DIRECTIVES}"
+            text = (_rename_reads(expanded, ix, found.rel, twin)
+                    + _twin_text(found.rel, decl, cols, found.ref, subst,
+                                 n=n))
+    return text
 
 
-def store_outcome(stem: str, case_id: str, grid: list[list[int]]):
-    """What the stored case named by `case_id` gives on one grid, and None
-    when the runner holds no such case. The stored run reads the concept
-    case's output. When the concept case does not read the relation, it
-    reads the output of the case that does (`_reader_outcome`)."""
-    report = store_report(stem)
-    for f in report.found:
-        if f.kind == OWNED and f.case_id == case_id:
-            path, _task_id = solver_file(stem)
-            source = path.read_text()
-            built = _case_program(source, f)
-            if built is None:
-                return None
-            if not f.read and f.used_in:
-                return _reader_outcome(built, grid, path, source, f.used_in,
-                                       res_out_stem(stem))
-            return _case_outcome(built, grid, path, source,
-                                 res_out_stem(stem))
-    return None
+def _takes(case: CaseId, f: Found) -> bool:
+    """The case takes the value `f` holds: `f` holds one value for every
+    case, or the case takes each branch `f`'s case label names."""
+    return (f.case == SHARED
+            or _case_members(f.case) <= set(re.findall(r"\w+", case)))
 
 
-def _marker_nodes(space: Space, used_in: str) -> Forced | None:
-    """The nodes a case fixes to take every constructor the markers of
-    `used_in` name, each at its first place. None when a marker is not a
-    plain constructor name, or when no case takes them all."""
-    required: Forced = {}
-    for marker in used_in.split(", "):
-        sites = space.sites.get(marker.strip())
-        if not sites:
-            return None
-        for node, ctor in space.required(sites[0]).items():
-            if required.setdefault(node, ctor) != ctor:
-                return None
-    return required
+def value_cases(source: str, found: list[Found], bases: list[CaseId],
+                space: Cases) -> dict[int, list[CaseId]]:
+    """For each owned finding, by `id`, the cases of `bases` that read its
+    relation (`case_reads`) and take its value (`_takes`), the concept case
+    first."""
+    owned = [f for f in found if f.kind == OWNED]
+    if not owned:
+        return {}
+    ordered = sorted(bases, key=lambda c: c != space.concept)
+    reads = case_reads(source, space, ordered)
+    return {id(f): [c for c in ordered
+                    if _reads(f.rel, reads[c][0]) and _takes(c, f)]
+            for f in owned}
 
 
-def _reader_outcome(built: str, grid: list[list[int]], path, source: str,
-                    used_in: str, resolution: bool):
-    """What the case that reads the relation gives on one grid, under the
-    stored case's program. That case is the one the run emits that takes
-    every constructor the markers of `used_in` name and differs from the
-    concept case at the fewest choice points (`Space.nearest`), the first
-    in run order on a tie. None when no emitted case takes them."""
-    space = case_space(source)
-    if not isinstance(space, Space):
-        return None
-    required = _marker_nodes(space, used_in)
-    if required is None:
-        return None
-    try:
-        got = parse_output(_run_source(built, grid_to_facts(grid),
-                                       solver_path=path))
-    except Exception:
-        return None
-    emitted = model_outcomes(got, resolution)
-    nearest = space.nearest(required, list(emitted))
-    return emitted[nearest[0]] if nearest else None
+def _reads(rel: str, read: set[str]) -> bool:
+    """A case that reads the relations `read` reads `rel`: it reads `rel`,
+    or a relation of the instance that holds `rel`, which the relations
+    fed to that instance answer for."""
+    inst = rel.rpartition(".")[0]
+    return rel in read or bool(inst) and any(r.startswith(inst + ".")
+                                             for r in read)
 
 
-def _case_program(source: str, found: Found) -> str | None:
-    """The stored case's program, built off the solver's expanded source."""
+def _task_of(source: str) -> str | None:
+    """The task the solver's header line `// <task_id>` names."""
+    first = source.split("\n", 1)[0].removeprefix("//").strip()
+    return first if TASK_ID_RE.fullmatch(first) else None
+
+
+DIRECTIVE_LINE_RE = re.compile(r"^(\s*)//\s*@(?:store|derive|ignore)\b.*$",
+                               re.M)
+"""A `@store`, `@derive` or `@ignore` line, which states no value."""
+
+
+def found_values(source: str) -> tuple[Found, ...]:
+    """The owned findings of the store report on the inputs of the task the
+    solver's header names, at the stored assignment, every relation
+    counted whatever `@ignore: store` line stands on it: the values a store
+    branch stores. Empty when the header names no task or no `@store` line
+    stands. The `@store`, `@derive` and `@ignore` lines change no value, so
+    two sources that differ in those lines alone share one report."""
+    task_id = _task_of(source)
+    if task_id is None or not store_blocks(source):
+        return ()
+    return _values(task_id, DIRECTIVE_LINE_RE.sub(r"\1//", source))
+
+
+@lru_cache(maxsize=16)
+def _values(task_id: str, source: str) -> tuple[Found, ...]:
+    report = _report(source, solver_file(task_id)[0], task_id)
+    return tuple(f for f in report.found if f.kind == OWNED)
+
+
+def replaces_clauses(source: str, f: Found) -> bool:
+    """The stored program gives the relation its facts in place of its
+    clauses (`store_case_program`), so a case with the value stored reads
+    nothing the relation derives from."""
+    if f.keys:
+        return False
     expanded = expand_macros(source)
     try:
         ix = _index(expanded)
     except ParseError:
-        return None
-    hit = _candidates(ix, _solver_scopes(expanded)).get(found.rel)
-    if hit is None:
-        return None
-    subst = _type_args(ix, found.rel.rpartition(".")[0])
-    return store_case_program(expanded, ix, found, hit[1], subst)
+        return False
+    return _head_rules(expanded, ix, f.rel) is not None
+
+
+def stored_program(source: str, found: list[Found]) -> str | None:
+    """The solve-mode program of a case that takes a store branch for each
+    finding of `found`, built off the solver's expanded source: each
+    relation's value stored in turn. None when a relation is no program
+    relation of the source."""
+    text = expand_macros(source)
+    for n, f in enumerate(found):
+        try:
+            ix = _index(text)
+        except ParseError:
+            return None
+        hit = _candidates(ix, _solver_scopes(text)).get(f.rel)
+        if hit is None:
+            return None
+        subst = _type_args(ix, f.rel.rpartition(".")[0])
+        text = store_case_program(text, ix, f, hit[1], subst, n)
+    return f"{text}\n{SOLVE_DIRECTIVES}"
+
+
+def _case_program(source: str, found: Found) -> str | None:
+    """The program of the case that takes one store branch."""
+    return stored_program(source, [found])
 
 
 def _decl_of(source: str, rel: str):
@@ -930,47 +1034,22 @@ def _decl_of(source: str, rel: str):
     return hit[1], _type_args(ix, rel.rpartition(".")[0])
 
 
-def _concept_outcome(source: str, grid: list[list[int]], path,
-                     resolution: bool):
-    return concept_outcome(run_dl_source(source, grid, solver_path=path),
-                           resolution, source)
-
-
-def _case_outcome(built: str, grid: list[list[int]], path, source: str,
-                  resolution: bool):
-    """What the concept case of `source` gives on one grid, under a program
-    already assembled for the run."""
-    try:
-        got = parse_output(_run_source(built, grid_to_facts(grid),
-                                       solver_path=path))
-    except Exception:
-        return None
-    return concept_outcome(got, resolution, source)
+def _stored_run(built: str, grid: list[list[int]], path) -> list:
+    """The run of a program assembled for a stored case on one grid. A
+    failed run raises its error."""
+    return parse_output(_run_source(built, grid_to_facts(grid),
+                                    solver_path=path))
 
 
 # --- the report -------------------------------------------------------
 
 def _ignore_sites(source: str) -> set[str]:
-    """The relations an `@ignore: store` line dismisses: the one a `.decl`
-    under the line names, the one an instance's `.init` and the line's own
-    relation name give, and, where the line names none, every relation of
-    the instance."""
-    out: set[str] = set()
-    lines = source.splitlines()
-    for i, raw in enumerate(lines):
-        mark = IGNORE_RE.match(raw.strip())
-        if mark is None:
-            continue
-        for below in lines[i + 1:]:
-            text = below.strip()
-            if not text or text.startswith("//"):
-                continue
-            if (m := DECL_RE.match(below)) and not mark[1]:
-                out.add(m[1])
-            elif m := INIT_RE.match(below):
-                out.add(f"{m[1]}.{mark[1]}" if mark[1] else m[1] + ".")
-            break
-    return out
+    """The sites of the bare `@ignore: store` lines (`ignore_lines`): a
+    relation a `.decl` declares, `<instance>.<relation>` for a line that
+    names a relation above a `.init`, and `<instance>.` for one that names
+    none there."""
+    return {i.site for i in ignore_lines(source)
+            if i.kind == STORE and not i.name and i.site}
 
 
 def _names(spelled: str, rel: str) -> bool:
@@ -989,8 +1068,12 @@ def _ignored(sites: set[str], rel: str) -> bool:
 
 def _run_all(built: str, grids: list[list[list[int]]],
              names: list[str]) -> list[dict] | None:
-    got = _run_each(built, grids, names)
-    return None if any(g is None for g in got) else got
+    out: list[dict] = []
+    for g in _run_each(built, grids, names):
+        if g is None:
+            return None
+        out.append(g)
+    return out
 
 
 def _run_each(built: str, grids: list[list[list[int]]],
@@ -1001,12 +1084,20 @@ def _run_each(built: str, grids: list[list[list[int]]],
         return list(pool.map(lambda g: _tuple_sets(built, g, names), grids))
 
 
-def store_report(stem: str) -> Report:
+def store_report(stem: str, witness_file: Path | None = None) -> Report:
     """Every column subset of the solver's program relations that holds one
     value on every input, with its witness and its `@store` line, and the
-    findings that stand on them."""
+    findings that stand on them. `witness_file` stands in for the task's
+    witness file."""
     path, task_id = solver_file(stem)
-    source = path.read_text()
+    return _report(path.read_text(), path, task_id, stem, witness_file)
+
+
+def _report(source: str, path, task_id: str, stem: str = "",
+            witness_file: Path | None = None) -> Report:
+    """`store_report` on `source`, a solver of the task `task_id`. Without
+    `stem`, the report holds the findings on the relations alone: no
+    witness and no audit finding."""
     expanded = expand_macros(source)
     try:
         ix = _index(expanded)
@@ -1039,9 +1130,9 @@ def store_report(stem: str) -> Report:
     over: set[str] = set()
     for cname, name in of_count.items():
         got = [next(iter(g[cname]), None) for g in per_count]
-        if any(x is None for x in got):
+        rows = [int(x) for x in got if x is not None]
+        if len(rows) != len(got):
             continue
-        rows = [int(x) for x in got]
         if max(rows) <= ROW_CAP:
             continue
         over.add(name)
@@ -1062,8 +1153,9 @@ def store_report(stem: str) -> Report:
     }
     raw = _analyze(per_grid, run_names, cands, casetypes, resolved, skipped)
     if not raw:
-        return Report(skipped=sorted(skipped),
-                      findings=_findings(source, stem, [], cands, differs))
+        return Report(skipped=sorted(skipped), findings=_findings(
+            source, stem, [], cands, differs, ix, witness_file)
+            if stem else [])
 
     flagged = sorted({name for name, _case in raw})
     probe = _build(source, flagged)
@@ -1106,14 +1198,17 @@ def store_report(stem: str) -> Report:
     afterwards. A relation derived from one of these inherits its value
     from it."""
     sites = _ignore_sites(source)
+    with_line = [rel for b in store_blocks(source)
+                 if (rel := store_relation(source, b))]
     for (name, case), (types, keep, fam0, rows) in sorted(raw.items()):
         key, decl = cands[name]
-        if _ignored(sites, name):
+        if _ignored(sites, name) and not any(_names(r, name)
+                                             for r in with_line):
             continue
         case_cols = [i for i in range(len(types)) if types[i] in casetypes]
         members = (_ctor_names(case) if case
                    else _section_cases(ix, key, branches))
-        label = ", ".join(sorted(members)) if members else "shared"
+        label = ", ".join(sorted(members)) if members else SHARED
         is_concept = (not members) or bool(members & concept_branches)
         reads, use_cases = _uses(ix, key, scopes, branches,
                                  concept_branches)
@@ -1190,10 +1285,18 @@ def store_report(stem: str) -> Report:
     found = [p[0] for p in pending]
     _fold(found, _body_map(ix, scopes, deep=True),
           universes)
-    _attach_witnesses(stem, source, path, task, cands, pending, projection)
     _attach_lines(source, found)
+    own = {TOP} | set(parse(expanded).comps())
+    for f in found:
+        f.site, f.spelled = _site(ix, f.rel, own)
+        if f.line is not None:
+            f.spelled = store_relation(source, f.line) or f.spelled
+    if not stem:
+        return Report(found=found, skipped=sorted(skipped))
+    _attach_witnesses(stem, source, path, task, cands, pending, projection)
     return Report(found=found, skipped=sorted(skipped),
-                  findings=_findings(source, stem, found, cands, differs))
+                  findings=_findings(source, stem, found, cands, differs, ix,
+                                            witness_file))
 
 
 def _relation_keys(ix: Index) -> list[tuple[str, tuple]]:
@@ -1212,7 +1315,8 @@ def _body_map(ix: Index, scopes: set[str],
     """Each relation's body relations, by instance path. A relation derived
     inside a lib comp takes the relations fed to its instance, and, where
     `deep` stands, the relations of that instance it derives from. Where
-    `rules` stands, only the rules it names give edges."""
+    `rules` stands, only the rules it names give edges. A relation of a
+    solver scope that none of those rules derives has no body relations."""
     by_rule: dict[int, list] = {}
     for r in ix.refs:
         by_rule.setdefault(r.rule, []).append(r)
@@ -1223,7 +1327,13 @@ def _body_map(ix: Index, scopes: set[str],
         comp_of[path] = comp
     backward = _edges(ix)[1]
 
-    def full(prefix: str, atom) -> str:
+    def full(prefix: str, atom, scope: str) -> str:
+        # A name the comp does not hold is a top-level one, like `params`.
+        head = (atom.qual or atom.name).split(".")[0]
+        if prefix and not any(head in ix.decls.get(s, {})
+                              or head in ix.inits.get(s, {})
+                              for s in ix.chain(scope)):
+            prefix = ""
         return ".".join(x for x in (prefix, atom.qual or "", atom.name) if x)
 
     keys = dict(_relation_keys(ix))
@@ -1240,12 +1350,12 @@ def _body_map(ix: Index, scopes: set[str],
             if rules is not None and r.rule not in rules:
                 continue
             for prefix in prefixes.get(r.scope, []):
-                if full(prefix, r.atom) != rel:
+                if full(prefix, r.atom, r.scope) != rel:
                     continue
                 seen = True
-                out |= {full(prefix, b.atom) for b in by_rule[r.rule]
+                out |= {full(prefix, b.atom, b.scope) for b in by_rule[r.rule]
                         if b.role != "head"}
-        if seen:
+        if seen or key[0] in scopes:
             return out
         # Derived inside a lib comp. The instance holds what the top level
         # feeds it, so the feeds answer for every relation of it.
@@ -1256,9 +1366,9 @@ def _body_map(ix: Index, scopes: set[str],
             if rules is not None and r.rule not in rules:
                 continue
             for prefix in prefixes.get(r.scope, []):
-                if not full(prefix, r.atom).startswith(inst + "."):
+                if not full(prefix, r.atom, r.scope).startswith(inst + "."):
                     continue
-                out |= {full(prefix, b.atom) for b in by_rule[r.rule]
+                out |= {full(prefix, b.atom, b.scope) for b in by_rule[r.rule]
                         if b.role != "head"}
         if out and not deep:
             return out
@@ -1327,9 +1437,9 @@ def _ancestors(rel: str, bodies: dict[str, set[str]]) -> set[str]:
 
 
 def _concept_rules(ix: Index, others: set[str]) -> set[int]:
-    """The rules whose tuples the concept case holds: the ones whose head
-    carries no constructor of another branch. A rule the concept case
-    holds none of feeds it nothing, wherever it stands."""
+    """The rules whose tuples a case holds: the ones whose head carries no
+    constructor of `others`, the branches the case does not take. A rule
+    the case holds none of feeds it nothing, wherever it stands."""
     return {
         i for i, info in enumerate(ix.rules)
         if not any(isinstance(t, Ctor) and t.name in others
@@ -1337,26 +1447,53 @@ def _concept_rules(ix: Index, others: set[str]) -> set[int]:
     }
 
 
-def concept_reads(source: str) -> set[str]:
-    """The Params parameters the concept case reads: the ones a rule it
-    runs reads, and the ones a relation it reads derives from. A solver
-    with no choice point runs one case, which reads every parameter."""
+def _params_read(holder: str, params: set[str], read: set[str]) -> set[str]:
+    """The Params parameters among the relations `read`, by instance path:
+    a parameter is read as `<holder>.<param>`, and a relation of another
+    instance or of the top level that shares its name is not it."""
+    return {p for p in params if f"{holder}.{p}" in read}
+
+
+def _holder(ix: Index) -> str:
+    """The instance of `Params`."""
+    return next((name for name, init in ix.inits.get(TOP, {}).items()
+                 if init.comp == "Params"), "params")
+
+
+def case_reads(source: str, space: Cases, cases: list[CaseId],
+               cut: frozenset[str] = frozenset()
+               ) -> dict[CaseId, tuple[set[str], set[str]]]:
+    """What each case of `cases` reads: the relations `out` derives from,
+    by instance path, and the Params parameters among them. A case holds
+    the rules whose head carries no constructor it does not take: of a
+    `Space`, the constructors of every type; of another space, the
+    non-concept branches. The relations of `cut` are ones whose facts a
+    stored program puts in place of their clauses (`replaces_clauses`),
+    and they derive from nothing."""
     expanded = expand_macros(source)
     params = set(fact_params(expanded, _lib_defines()))
     try:
         ix = _index(expanded)
     except ParseError:
-        return params
-    points = choice_points(source)
-    if not points:
-        return params
-    others = {b.name for p in points for b in p.branches if not b.is_concept}
-    bodies = _body_map(ix, _solver_scopes(expanded), deep=True,
-                       rules=_concept_rules(ix, others))
-    read = _ancestors("out", bodies)
-    holder = next((name for name, init in ix.inits.get(TOP, {}).items()
-                   if init.comp == "Params"), "params")
-    return {p for p in params if f"{holder}.{p}" in read or p in read}
+        return {c: (set(), set()) for c in cases}
+    holder = _holder(ix)
+    scopes = _solver_scopes(expanded)
+    if isinstance(space, Space):
+        ctors = {c for branches in space.types.values() for c in branches}
+        others = {c: ctors - set(re.findall(r"\w+", c)) for c in cases}
+    else:
+        rest = {b.name for p in choice_points(source) for b in p.branches
+                if not b.is_concept}
+        others = {c: rest for c in cases}
+    out: dict[CaseId, tuple[set[str], set[str]]] = {}
+    for case in cases:
+        bodies = _body_map(ix, scopes, deep=True,
+                           rules=_concept_rules(ix, others[case]))
+        for rel in cut:
+            bodies[rel] = set()
+        read = _ancestors("out", bodies)
+        out[case] = (read, _params_read(holder, params, read))
+    return out
 
 
 def _fold(found: list[Found], bodies: dict[str, set[str]],
@@ -1398,7 +1535,7 @@ def _fold(found: list[Found], bodies: dict[str, set[str]],
 
 def _merge(found: list[Found]) -> list[Found]:
     """One entry per finding, with the cases that give the same value on one
-    line."""
+    line, and the rows of every one of those cases."""
     out: list[Found] = []
     by_sig: dict[tuple, Found] = {}
     for f in found:
@@ -1411,6 +1548,7 @@ def _merge(found: list[Found]) -> list[Found]:
         cases = set(held.case.split(", ")) | set(f.case.split(", "))
         held.case = ", ".join(sorted(cases))
         held.concept = held.concept or f.concept
+        held.facts = tuple(sorted(set(held.facts) | set(f.facts)))
     return out
 
 
@@ -1419,12 +1557,18 @@ def _attach_witnesses(stem, source, path, task, cands, pending,
     """Give each owned finding the first grid on which its value differs:
     a D4 image of a train input, then a color swap of one. A grid the
     relation stands empty on holds no value, and it is the witness where
-    the concept case and the stored case give different outputs there, or
-    one of them is defined and the other is not."""
+    some held case that takes the value (`value_cases`) gives different
+    outputs with the relation derived and with the value stored, or is
+    defined in one and not in the other. A color value gets one where a
+    `@store` line stands on it."""
     wanted = [(f, args) for f, args in pending if f.kind == OWNED
-              and not f.colors and f.read and not f.folded]
+              and (not f.colors or f.line is not None)
+              and f.held and not f.folded]
     if not wanted:
         return
+    space = case_space(source)
+    readers = value_cases(source, [f for f, _ in wanted],
+                          held_choice(source, space), space)
     names = sorted({f.rel for f, _ in wanted})
     built = _build(source, names)
     held = _stored_colors(expand_macros(source), _lib_defines())
@@ -1435,26 +1579,45 @@ def _attach_witnesses(stem, source, path, task, cands, pending,
                         for d, g in _d4_images(grid).items()])
     batches.append(_swaps(trains, held))
     resolution = res_out_stem(stem)
-    outcomes: dict[int, object] = {}
+    derived: dict[int, list] = {}
     programs: dict[int, str | None] = {}
+    concept = space.concept
 
-    def at_concept(grid):
-        key = id(grid)
-        if key not in outcomes:
-            outcomes[key] = _concept_outcome(source, grid, path,
-                                             resolution)
-        return outcomes[key]
+    def outcome(got, case):
+        if case is None or case == concept:
+            return concept_outcome(got, resolution, source)
+        return model_outcomes(got, resolution).get(case)
+
+    def at_derived(grid) -> list:
+        """The run of the solver as it stands on the grid."""
+        if id(grid) not in derived:
+            derived[id(grid)] = run_dl_source(source, grid, solver_path=path)
+        return derived[id(grid)]
+
+    def first_reader(f, grid):
+        """What the first held case that takes `f`'s value gives with the
+        relation derived."""
+        cases = readers.get(id(f)) or [None]
+        return outcome(at_derived(grid), cases[0])
 
     def diverges(f, grid) -> bool:
-        """The concept case and the stored case give different outputs on
-        the grid, or one of them is defined and the other is not."""
+        """Some held case that takes `f`'s value gives different outputs
+        with the relation derived and with the value stored, or is defined
+        in one and not in the other. A run with the value stored that
+        fails gives no answer, and its error stands on `f`."""
         if id(f) not in programs:
             programs[id(f)] = _case_program(source, f)
         stored = programs[id(f)]
-        if stored is None:
+        if stored is None or f.failed:
             return False
-        return at_concept(grid) != _case_outcome(stored, grid, path, source,
-                                                 resolution)
+        try:
+            got = _stored_run(stored, grid, path)
+        except RuntimeError as err:
+            f.failed = str(err)
+            return False
+        base = at_derived(grid)
+        return any(outcome(base, c) != outcome(got, c)
+                   for c in readers.get(id(f)) or [None])
 
     for batch in batches:
         left = [(f, args) for f, args in wanted if f.move is None]
@@ -1474,7 +1637,7 @@ def _attach_witnesses(stem, source, path, task, cands, pending,
                     continue
                 if value is None and not diverges(f, grid):
                     continue
-                f.move = Move(label, change, at_concept(grid) == grid,
+                f.move = Move(label, change, first_reader(f, grid) == grid,
                               grid)
 
 
@@ -1496,21 +1659,71 @@ def _attach_lines(source: str, found: list[Found]) -> None:
         f.line = next((b for rel, b in spelled if _names(rel, f.rel)), None)
 
 
+def _instance_holds(ix: Index, inst: str, path: str) -> bool:
+    """Whether some instance named `inst` holds a relation at `path`."""
+    for inits in ix.inits.values():
+        if inst not in inits:
+            continue
+        scope, *hops = [inits[inst].comp, *path.split(".")]
+        for hop in hops[:-1]:
+            init = next((ix.inits[c][hop] for c in ix.chain(scope)
+                         if hop in ix.inits.get(c, {})), None)
+            if init is None:
+                break
+            scope = init.comp
+        else:
+            if any(hops[-1] in ix.decls.get(c, {}) for c in ix.chain(scope)):
+                return True
+    return False
+
+
+def _unnamed(source: str, block: Store, ix: Index) -> str | None:
+    """Why a named `@store` line names no relation of an instance, and None
+    where it does."""
+    if not block.rel:
+        return None
+    text = source.splitlines()[block.above - 1] if block.above else ""
+    if DECL_RE.match(text):
+        return mctx("`@store {rel}` stands above a `.decl`").format(
+            rel=block.rel)
+    m = INIT_RE.match(text)
+    if m and not _instance_holds(ix, m[1], block.rel):
+        return mctx("`{rel}` is no relation of the instance `{inst}`"
+                    ).format(rel=block.rel, inst=m[1])
+    return None
+
+
 def _findings(source: str, stem: str, found: list[Found], cands: dict,
-              differs: dict[str, str]) -> list[Finding]:
-    """The findings the audit prints."""
+              differs: dict[str, str], ix: Index,
+              witness_file: Path | None = None) -> list[Finding]:
+    """The findings the audit prints. `witness_file` stands in for the
+    task's witness file."""
     _path, task_id = solver_file(stem)
-    ids = {e.id for e in (load_witnesses(task_id) or Witness(task_id)).entries}
+    witness = load_witnesses(task_id) if witness_file is None \
+        else load_witness_file(witness_file) if witness_file.exists() \
+        else None
+    entries = {e.id: e for e in (witness or Witness(task_id)).entries}
+    ids = set(entries)
     out: list[Finding] = []
-    owned = {f.rel: f for f in found if f.kind == OWNED and f.read}
-    unread = {f.rel for f in found if f.kind == OWNED and not f.read}
+    owned = {f.rel: f for f in found if f.kind == OWNED and f.held}
+    unread = {f.rel for f in found if f.kind == OWNED and not f.held}
     held_back = {f.rel: f for f in found if f.kind != OWNED}
+    params = comp_decls(source, "Params")
     for block in store_blocks(source):
         rel = store_relation(source, block)
         where = f"line {block.line}"
+        if (why := _unnamed(source, block, ix)) is not None:
+            out.append(Finding(where, why))
+            continue
         if not rel:
             out.append(Finding(where, mctx(
                 "`@store` stands above no `.decl` or `.init`")))
+            continue
+        if rel in params:
+            out.append(Finding(where, mctx(
+                "the `@store` line is on `{rel}`, which is also the name of a "
+                "parameter, so `{rel}=stored` denotes two branches"
+            ).format(rel=rel)))
             continue
         f = next((v for k, v in owned.items() if _names(rel, k)), None)
         if f is None:
@@ -1518,16 +1731,20 @@ def _findings(source: str, stem: str, found: list[Found], cands: dict,
                                                   held_back, differs)))
             continue
         if f.case_id in ids:
+            out += [Finding(f.case_id, text) for text in _entry_witness(
+                stem, source, f.case_id, entries[f.case_id])]
             continue
-        if block.verdict == OTHER:
-            out.append(Finding(where, mctx(
-                "the verdict `{verdict}` needs an entry `{case}`").format(
-                    verdict=OTHER, case=f.case_id)))
-        elif f.move is None:
-            out.append(Finding(where, mctx(
-                "the case needs an entry `{case}`").format(case=f.case_id)))
+        if block.verdict == OTHER or f.move is None:
+            out.append(Finding(where, _witness_ask(
+                f, block.verdict == OTHER)))
+    out += [Finding(where, text)
+            for where, text in drop_findings(enumeration(source), STORE)]
     for f in found:
-        if (f.kind == OWNED and f.read and f.concept and not f.colors
+        if f.failed:
+            out.append(Finding(f.rel, mctx(
+                "the case `{case}` failed: {error}").format(
+                    case=f.case_id, error=f.failed)))
+        if (f.kind == OWNED and f.held and not f.colors
                 and f.line is None and not f.folded):
             out.append(Finding(f.rel, mctx(
                 "one value on every input and no `@store` or "
@@ -1539,6 +1756,50 @@ def _findings(source: str, stem: str, found: list[Found], cands: dict,
     return out
 
 
+def _entry_witness(stem: str, source: str, name: str, entry) -> list[str]:
+    """Where the witness file's entry of a `@store` branch's name fails to
+    witness it: its `assign` holds a fault `assign_findings` finds, or at
+    its assignment no case that takes the branch gives an output other than
+    the same case with the relation derived
+    (`dl.witness.branch_diverges`). No finding where no held case takes
+    the branch."""
+    space = enumeration(source)
+    branch = next((b for held in space.runner.values()
+                   for b in held.branches if b.name == name), None)
+    if branch is None:
+        return []
+    if bad := assign_findings(entry.assign, source):
+        return bad
+    if branch_diverges(stem, space, branch, entry.input,
+                       assigned_source(source, entry.assign)) is not None:
+        return []
+    return [mctx("at the witness's assignment, each case that takes "
+                 "`{case}` gives the output of the case that takes the "
+                 "derived value there and the same branches elsewhere").format(
+                     case=name)]
+
+
+def _witness_ask(f: Found, other: bool) -> str:
+    """What asks for a witness of the id `<rel>=stored`, where one is
+    needed: for the verdict `other`, or where no built grid separates the
+    cases that take the branch."""
+    lead = (mctx("the verdict `{verdict}` needs").format(verdict=OTHER)
+            if other else mctx("`{case}` needs").format(case=f.case_id))
+    return mctx("{lead} a witness whose id is `{case}`").format(
+        lead=lead, case=f.case_id)
+
+
+def lined(source: str, f: Found) -> str | None:
+    """`source` with a `@store` line on the finding's relation, as
+    `store_hint` gives it: above the instance's `.init` where the finding
+    has a site, and above the relation's `.decl` otherwise. None when
+    neither stands."""
+    text = f"// @store{_named(f.spelled, f.site)}: <plausibility> <verdict>"
+    if f.site:
+        return with_line_above(source, rf"^\s*\.init\s+{f.site}\s*=", text)
+    return with_line_above(source, rf"^\s*\.decl\s+{f.spelled}\b", text)
+
+
 def _no_finding(rel: str, cands: dict, unread: set[str],
                 held_back: dict[str, Found],
                 differs: dict[str, str]) -> str:
@@ -1548,7 +1809,7 @@ def _no_finding(rel: str, cands: dict, unread: set[str],
         return mctx("`{rel}` is no program relation between `in` and `out`"
                     ).format(rel=rel)
     if rel in unread:
-        return mctx("`{rel}` is no relation the concept case reads").format(
+        return mctx("`{rel}` is no relation a case reads").format(
             rel=rel)
     f = next((v for k, v in held_back.items() if _names(rel, k)), None)
     if f is not None:
@@ -1703,29 +1964,41 @@ def _in_case(f: Found) -> str:
 
 def _witness_line(f: Found) -> str:
     if f.entry:
-        return mctx("witness: entry {case}").format(case=f.case_id)
-    if f.move is None:
-        return mctx("no witness: every D4 element and every swap keeps the "
-                    "value; the case needs an entry `{case}`").format(
+        return mctx("witness: `{case}` in the witness file").format(
             case=f.case_id)
+    if f.move is None:
+        return mctx("no witness: no D4 image or color swap of a train "
+                    "input changes the value; {ask}").format(
+                        ask=_witness_ask(f, False))
     line = mctx("witness: {grid} {change}").format(grid=f.move.grid,
                                                    change=f.move.change)
-    if f.move.identity:
+    if f.move.identity and f.read:
         line += mctx("; the concept case gives the input unchanged")
+    elif f.move.identity:
+        line += mctx("; the case under `{case}` gives the input unchanged"
+                     ).format(case=f.used_in)
     return line
 
 
-def _named(rel: str) -> str:
+def _named(rel: str, site: str) -> str:
     """The name a directive above the instance's `.init` gives the relation:
-    its path inside the instance, and nothing for a top-level relation."""
+    its path inside the instance, and nothing above the relation's own
+    `.decl`. `rel` spells the relation from the site, and without a site
+    from the path's first instance."""
     _root, _dot, path = rel.partition(".")
     return f" {path}" if path else ""
 
 
-def store_hint(rel: str) -> str:
+def _add(site: str) -> str:
+    return f"add above `.init {site}`:" if site else "add:"
+
+
+def store_hint(rel: str, site: str) -> str:
     """The line the session adds at the relation's site: the bare form above
-    a top-level `.decl`, and the named form above an instance's `.init`."""
-    return f"add: // @store{_named(rel)}: <plausibility> <verdict>"
+    the relation's `.decl`, and the named form above an instance's
+    `.init`."""
+    return (f"{_add(site)} // @store{_named(rel, site)}: "
+            "<plausibility> <verdict>")
 
 
 def _no_case(f: Found) -> str:
@@ -1740,10 +2013,12 @@ def _no_case(f: Found) -> str:
                 ).format(keys=keys)
 
 
-def ignore_hint(rel: str) -> str:
+def ignore_hint(rel: str, site: str, alone: bool = False) -> str:
     """The line the session adds instead when it judges the stored model
-    no case, at the same site and in the same two forms."""
-    return f"or:  // @ignore{_named(rel)}: store — <reason>"
+    no case, at the same site and in the same two forms. `alone` says no
+    `@store` line stands above it in the report, so it names the site."""
+    lead = f"{_add(site)} " if alone and site else "or:  "
+    return f"{lead}// @ignore{_named(rel, site)}: store — <reason>"
 
 
 def _rank(f: Found) -> tuple:
@@ -1757,14 +2032,14 @@ def render_store(report: Report) -> list[str]:
     lines: list[str] = []
     for f in sorted([f for f in report.found if not f.folded], key=_rank):
         lines.append(_headline(f))
-        if (f.kind == OWNED and f.line is None and not f.colors and f.read):
+        if (f.kind == OWNED and f.line is None and not f.colors and f.held):
             lines += ["  " + ln for ln in _drawn(f)]
             lines.append("  " + _witness_line(f))
-            lines.append("  " + store_hint(f.rel))
-            lines.append("  " + ignore_hint(f.rel))
+            lines.append("  " + store_hint(f.spelled, f.site))
+            lines.append("  " + ignore_hint(f.spelled, f.site))
         elif _asks_params(f):
-            lines.append("  " + ignore_hint(f.rel))
-        elif f.kind == OWNED and f.line is not None and f.read:
+            lines.append("  " + ignore_hint(f.spelled, f.site, alone=True))
+        elif f.kind == OWNED and f.line is not None and f.held:
             # The witness the line's plausibility and verdict judge.
             lines.append("  " + _witness_line(f))
         elif f.kind != OWNED:
@@ -1772,17 +2047,30 @@ def render_store(report: Report) -> list[str]:
             lines.append("  " + mctx("no case: the value {why}").format(
                 why=_no_case(f)))
         if f.under:
-            lines.append("  " + mctx("with it: {rels}").format(
-                rels=", ".join(f.under)))
-    if report.skipped:
-        lines.append(mctx("not checked: {rels}").format(
-            rels=", ".join(f"`{n}`" for n in report.skipped)))
+            lines.append("  " + mctx(
+                "relations that derive from this one and hold one value "
+                "too, which need no `@store` or `@ignore: store` line: "
+                "{rels}").format(
+                rels=", ".join(f"`{r}`" for r in f.under)))
+    lines += _skipped_lines(report)
     return lines or [mctx("no findings")]
 
 
+def _skipped_lines(report: Report) -> list[str]:
+    """The relations the report did not check, under the cap that
+    applied."""
+    if not report.skipped:
+        return []
+    return [mctx("not checked, over {cap} rows on an input, too many to be a "
+                 "stored value: {rels}").format(
+        cap=ROW_CAP, rels=", ".join(f"`{n}`" for n in report.skipped))]
+
+
 def render_findings(report: Report) -> list[str]:
-    """The audit's section: one line per finding, and `store: ok` when none
-    stands."""
+    """The audit's section: one line per finding, or `store: ok` when none
+    stands, then the relations the report did not check."""
     if report.error:
         return [report.error]
-    return [f"{f.where}: {f.text}" for f in report.findings] or [STORE_OK]
+    return ([f"{f.where}: {f.text}" for f in report.findings] or [STORE_OK]
+            ) + _skipped_lines(report)
+

@@ -422,7 +422,8 @@ def run(args) -> int:
         if projections:
             projected = min(projections)
             parts.append(f"→ {projected:.0f}% at reset")
-            if label == "5h" and projected > OVERRUN and to_reset_h > 1:
+            if (label == "5h" and projected > OVERRUN
+                    and to_reset_h is not None and to_reset_h > 1):
                 d.flag("BRAKE" if projected > OVERRUN_BRAKE else "FIX",
                        f"5h overrun projected ({projected:.0f}% at reset, "
                        f"{age(reset - now)} away)")
@@ -599,7 +600,7 @@ def run(args) -> int:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     ap.add_argument("--port", type=int, default=int(os.environ.get("CONSOLE_PORT", 8347)))
     ap.add_argument("--peek", action="store_true", help="do not move the snapshot")
     ap.add_argument("--reset", action="store_true", help="forget the snapshot first")

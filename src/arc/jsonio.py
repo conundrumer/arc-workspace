@@ -89,9 +89,12 @@ def _try_compact_list(lst: list[Any]) -> str | None:
     list of plain ints; None when some element needs more room. A list of
     strings that runs past the width needs more room, so the names a long
     list holds stand one per line."""
-    items = [_compact_item(v) for v in lst]
-    if any(i is None for i in items):
-        return None
+    items: list[str] = []
+    for v in lst:
+        item = _compact_item(v)
+        if item is None:
+            return None
+        items.append(item)
     line = "[" + ",".join(items) + "]"
     if len(line) > WIDTH and all(isinstance(v, str) for v in lst):
         return None

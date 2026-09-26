@@ -15,6 +15,7 @@ packages = ["src/arc", "src/dl", "src/controlled_markdown", "src/study"]
 [dependency-groups]
 dev = [
   "pandas>=3.0.5",
+  "pandas-stubs>=3.0.5",
   "pyright>=1.1.409",
   "pytest>=8",
   "pytest-xdist>=3",
@@ -45,11 +46,12 @@ addopts = "-ra -n 8 --maxschedchunk=1"
 
 [tool.pyright]
 include = ["src", "scripts", "tests"]
-exclude = ["**/__pycache__", ".venv", "data", "archive"]
+exclude = ["**/__pycache__", ".venv", "data", "archive", "tests/scratch"]
 pythonVersion = "3.12"
-typeCheckingMode = "strict"
+typeCheckingMode = "basic"
 venvPath = "."
 venv = ".venv"
+extraPaths = ["tools/console"]
 
 [tool.pyrefly]
 search-path = [".", "src"]

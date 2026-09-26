@@ -9,7 +9,7 @@ from arc.task import load as load_task
 from dl.dlparse import TOP, Index, ParseError, Program, parse
 from dl.facts import _parse_relations, grid_to_facts
 from dl.lint import _lib_items, _lib_source
-from dl.solve import solver_file
+from dl.solve import solver_file, solver_name
 from dl.souffle import _pool_workers, _run_source
 from dl.source import SOLVE_DIRECTIVES, expand_macros
 
@@ -211,9 +211,10 @@ def derived_constant_report(
     grids = [ex.input for ex in task.train] + [ex.input for ex in task.test]
 
     with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
-        per_grid = list(executor.map(
+        runs = list(executor.map(
             lambda g: _tuple_sets(built, g, names), grids))
-    if any(g is None for g in per_grid):
+    per_grid = [g for g in runs if g is not None]
+    if len(per_grid) != len(runs):
         return "the stored source fails an example"
 
     constant = {
@@ -248,7 +249,7 @@ def render_derived_constant(
 ) -> list[str]:
     """The derived-constant report, as printable lines."""
     if isinstance(report, str):
-        return [f"{stem}.dl: {report}"]
+        return [f"{solver_name(stem)}: {report}"]
     constants, tested, dropped = report
     lines = [f"{tested} relations read `in` and feed `out`"]
     if not constants:

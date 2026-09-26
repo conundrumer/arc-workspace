@@ -385,7 +385,7 @@ class _Parser:
                 or (t.kind == "ident" and t.text == "RIGID"
                     and self.at("(", 1))):
             return [self.one_item()]
-        return self.clause()
+        return [*self.clause()]
 
     def one_item(self) -> Item:
         t = self.peek()

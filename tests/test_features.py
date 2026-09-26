@@ -4,11 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from dl import cli, features_run, solve
+from dl import cli, models, solve
 from dl.corpus import literal_count
 from dl.dlparse import parse
 from dl.features import CaseFeatures, features_report
 from dl.features_run import report_of
+from dl.models import CaseId
 from dl.paths import all_stems
 from dl.solve import PairResult, VariantResult, solver_file
 
@@ -145,19 +146,20 @@ def _pair(named_grids) -> PairResult:
 
 
 def test_an_undefined_case_is_separated_from_a_defined_one():
-    report = report_of([_pair([("$A", [[1]]), ("$B", None)])], ["A", "B"])
+    a, b = CaseId("A"), CaseId("B")
+    report = report_of([_pair([("$A", [[1]]), ("$B", None)])], [a, b])
     assert report.separating == {"A": 1, "B": 1}
     assert report.undefined == {"A": 0, "B": 1}
     assert report.classes == 2
-    assert report.separates["A"]["B"] == 1
+    assert report.separates[a][b] == 1
 
 
 def test_a_record_case_label_drops_the_dollars():
     """A record case prints as `[$Table, $Lookup]` on the run and labels as
     `[Table, Lookup]`, each constructor stripped of its `$` and of its
     arguments."""
-    assert features_run.case_label("[$Table, $Lookup]") == "[Table, Lookup]"
-    assert features_run.case_label(
+    assert models.case_label("[$Table, $Lookup]") == "[Table, Lookup]"
+    assert models.case_label(
         "[$Derive(g=Iso), $Lookup]") == "[Derive, Lookup]"
     report = report_of([_pair([("[$Table, $Lookup]", [[1]]),
                                ("[$Derive(g=Iso), $Lookup]", [[2]])])])

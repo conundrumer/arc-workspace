@@ -39,19 +39,21 @@ from dl.dlparse import (
     parse,
 )
 from dl.facts import _parse_relations, grid_to_facts
-from dl.features_run import (
+from dl.features_run import Matrix, RunReport
+from dl.models import (
     NO_CHOICE,
-    Matrix,
-    RunReport,
+    CaseId,
     case_label,
-    case_members,
+    case_space,
+    held_choice,
+    model_label,
 )
 from dl.rewrite_lint import _ctor_names, _record_fields
 from dl.solve import solver_file
 from dl.souffle import _run_source
 from dl.source import expand_macros
 
-type Reach = dict[str, set[int]]
+type Reach = dict[CaseId, set[int]]
 
 
 @dataclass
@@ -117,28 +119,12 @@ def _components(program: Program) -> list[list[str]]:
             if (t := types.get(name)) and t.branches]
 
 
-def case_names(program: Program, source: str | None = None) -> list[str]:
-    """The cases of one program.
-
-    A program that declares `impl_choice` has the cases that relation
-    holds, read off a run of `source` on an empty grid. Otherwise a
-    `Choice` declared as an ADT gives one case per branch, and a `Choice`
-    declared as a record of ADTs gives one case per combination of their
-    branches, named as the record that `out` carries, in declaration order.
-    A file with no `Choice` is one case.
-    """
-    held = held_cases(program, source) if source is not None else None
-    if held is not None:
-        return held or [NO_CHOICE]
-    return _case_names(_components(program)) or [NO_CHOICE]
-
-
-def _case_names(components: list[list[str]]) -> list[str]:
+def _case_names(components: list[list[str]]) -> list[CaseId]:
     if not components:
         return []
     if len(components) == 1:
-        return list(components[0])
-    return [f"[{', '.join(combo)}]"
+        return [CaseId(c) for c in components[0]]
+    return [CaseId(f"[{', '.join(combo)}]")
             for combo in product(*components)]
 
 
@@ -161,7 +147,7 @@ def declares_held(source: str) -> bool:
 
 def held_cases(program: Program, source: str,
                grid: list[list[int]] | None = None,
-               full: bool = False) -> list[str] | None:
+               full: bool = False) -> list[CaseId] | None:
     """The case labels `impl_choice` holds when `source` runs on `grid`, in
     the order Souffle writes them; None when the program declares no
     top-level `impl_choice`. `full` spells each case with its constructors'
@@ -171,15 +157,13 @@ def held_cases(program: Program, source: str,
     or by a rule over per-field enumerators, and a run gives its contents in
     either form. A case that emits nothing on the grid is still held.
     """
-    from dl.models import model_label
-
     if not _declares_held(program):
         return None
     stdout = _run_source(f"{expand_macros(source)}\n{HELD_DIRECTIVES}",
                          grid_to_facts(grid or []))
     rows = _parse_relations(stdout).get("impl_choice", [])
     spell = model_label if full else case_label
-    cases: list[str] = []
+    cases: list[CaseId] = []
     for row in rows:
         if (label := spell(row)) not in cases:
             cases.append(label)
@@ -231,7 +215,7 @@ def held_input_findings(task_id: str,
 
 
 def case_branches(stem: str, source: str | None = None,
-                  grid: list[list[int]] | None = None) -> list[str]:
+                  grid: list[list[int]] | None = None) -> list[CaseId]:
     """The case names of one solver, empty for a solver with no `Choice`.
 
     `source` stands in for the solver's file, as a reassigned source does,
@@ -252,12 +236,16 @@ def case_branches(stem: str, source: str | None = None,
     return _case_names(_components(program))
 
 
-def _matches(case: str, ctor: str) -> bool:
+def _matches(case: CaseId, ctor: str) -> bool:
     """Whether `ctor` names `case`. A case named as a record (`[Table,
-    Or]`) is named by any of its members."""
+    Or]`) is named by any of its members, and a case spelled with its
+    constructors' fields (`Recolor(Box, Size)`) by any constructor it
+    takes."""
     if case == ctor:
         return True
-    return case.startswith("[") and ctor in case_members(case)
+    if case == NO_CHOICE:
+        return False
+    return ctor in re.findall(r"\w+", case)
 
 
 # --- the rule graph ---
@@ -333,7 +321,7 @@ def _instance(key: RelKey) -> str | None:
     return name.split(".", 1)[0]
 
 
-def _reach(nodes: list[RuleNode], cases: list[str]) -> Reach:
+def _reach(nodes: list[RuleNode], cases: list[CaseId]) -> Reach:
     """The rules each case reaches.
 
     A rule belongs to a case when its head holds only constructors that
@@ -354,7 +342,7 @@ def _reach(nodes: list[RuleNode], cases: list[str]) -> Reach:
              if any(_matches(case, c) for case in cases)} for n in nodes]
     seeded = any(held)
 
-    def owns(case: str, i: int) -> bool:
+    def owns(case: CaseId, i: int) -> bool:
         return all(_matches(case, c) for c in held[i])
 
     out: Reach = {}
@@ -470,7 +458,7 @@ def features_report(
     program = parse(source)
     index = Index(program)
     nodes = _nodes(index, source.splitlines())
-    cases = case_names(program, source)
+    cases = held_choice(source, case_space(source)) or [NO_CHOICE]
     reach = _reach(nodes, cases)
 
     reached = {i for found in reach.values() for i in found}

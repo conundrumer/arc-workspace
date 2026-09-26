@@ -2,10 +2,10 @@
 
 # Keywords
 - Keywords index the solvers for a reader who has the headers and not the code.
-- A keyword names a task concept or a composition property of the program.
-- A keyword is admitted when a variant task can carry the concept it names, and no listed keyword names that concept.
-    - A concept narrower than a listed keyword's is admitted when it names a different parse or rule.
-- The mechanism its gloss names is one instance of that concept, not the keyword's boundary.
+- A keyword denotes a task concept or a composition property of the program.
+- A keyword is admitted when a variant task can carry the concept it denotes, and no listed keyword denotes that concept.
+    - A concept narrower than a listed keyword's is admitted when it needs a different parse or rule.
+- The mechanism a keyword's gloss states is one instance of the concept the keyword denotes, not the keyword's boundary.
 
 ## Setup
 - The structure a concept depends on: what the input is and how it decomposes.

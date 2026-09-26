@@ -13,7 +13,7 @@ from dl.facts import grid_to_facts, parse_output
 from dl.lint import _lib_source
 from dl.paths import REPO_ROOT
 from dl.rewrite_lint import _elem_tables, _lib_scopes
-from dl.solve import _profile, res_out, solver_file
+from dl.solve import _profile, res_out, solver_file, solver_name
 from dl.souffle import _pool_workers, _run_source
 from dl.source import _comp_span, build_source
 
@@ -217,7 +217,7 @@ def _column_type(atom: str, var: re.Pattern, lib: dict[str, Decl]) -> str | None
     declaration's fields."""
     m = ATOM_RE.match(atom)
     decl = lib.get(atom[:m.end() - 1].strip()) if m else None
-    if decl is None or not atom.endswith(")"):
+    if m is None or decl is None or not atom.endswith(")"):
         return None
     for i, arg in enumerate(_split_top_args(atom[m.end():-1])):
         if var.search(arg):
@@ -566,9 +566,10 @@ def render_deletions(stem: str, report: tuple[int, list[Finding]] | None) -> lis
     if report is None:
         return _section("baseline-fails")
     total, findings = report
+    name = solver_name(stem)
 
     def entries(group: list[Finding]) -> list[str]:
-        return [f"{ROW}- {stem}.dl:{n}: {kind} `{text}`" for n, kind, text in group]
+        return [f"{ROW}- {name}:{n}: {kind} `{text}`" for n, kind, text in group]
 
     apart = (UNPROBED_CASE, UNGROUNDED_DELETION, UNEXERCISED_CASES)
     enumerators = [f for f in findings if f[1].endswith(BOUND_ENUMERATOR)]

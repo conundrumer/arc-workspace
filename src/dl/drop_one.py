@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from arc.task import load as load_task
 from controlled_markdown import mctx
 from dl.domains import ENUM_TYPES, POSITION_TYPES
-from dl.solve import _profile, solver_file
+from dl.solve import _profile, solver_file, solver_name
 from dl.souffle import _pool_workers
 from dl.source import (
     RIGID_CHART_PREFIX,
@@ -213,8 +213,8 @@ def render_drop_one(
         return [mctx("drop-one baseline fails: stored source does not pass train")]
     hits, tested, params = report
     if not tested:
-        return [mctx("{stem}.dl: no parameter holds more than one stored "
-                     "fact").format(stem=stem)]
+        return [mctx("{solver}: no parameter holds more than one stored "
+                     "fact").format(solver=solver_name(stem))]
 
     def entries(group: list[Hit]) -> list[str]:
         lines = []

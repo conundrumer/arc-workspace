@@ -4,6 +4,7 @@
 
 ## Commands
 - `uv run pytest -q`
+- `uv run pyright`
 - `uv run python scripts/materialize.py`
 - `uv run python scripts/run_dl.py`
     - Run all Souffle solvers; `--help` for per-solver tooling.

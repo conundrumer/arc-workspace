@@ -3,11 +3,14 @@
 `.comp` blocks are skipped wholesale — a proposal comp is lib code on its
 way out of the solver, and its proposal entry is what makes it legitimate,
 so a comp with no entry is a hint — except the comps whose rules are
-model hypotheses, which lint as program. The public entry point is
+model hypotheses, which lint as program. The clauses of `impl_choice`,
+of its enumerators, and of the relations only they read are skipped too
+(`case_enumeration`). The public entry point is
 `lint_program`; run_dl.py calls it after running each solver.
 """
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -47,7 +50,7 @@ from dl.dlparse import (
     marker_names,
     parse,
 )
-from dl.features_run import NO_CHOICE, case_label
+from dl.models import NO_CHOICE, CaseId, case_label
 from dl.paths import REPO_ROOT
 from dl.solve import solver_file
 from dl.source import KEYWORDS_DOC, doc_keywords
@@ -83,7 +86,7 @@ LIB_KINDS = {
 def _lib_names(text: str) -> dict[str, str]:
     """The lib's top-level names, each with its kind."""
     return {it.name: LIB_KINDS[type(it)] for it in _lib_items(text)
-            if type(it) in LIB_KINDS}
+            if isinstance(it, (TypeDecl, Comp, Decl, Functor, Define))}
 
 
 # The zero box: a box, not an orientation.
@@ -514,7 +517,7 @@ def _lib_named(
     return findings
 
 
-def _atoms(lits: list[Lit]):
+def _atoms(lits: Sequence[Lit]):
     """Every atom a body reads: positive, negated, in aggregate bodies,
     and in disjunction branches."""
     for lit in lits:
@@ -946,16 +949,16 @@ def choice_points(source: str) -> list[ChoicePoint]:
     return points
 
 
-def concept_case(source: str) -> str:
+def concept_case(source: str) -> CaseId | None:
     """The case the concept branches make, spelled as the runner spells a
     case name. A solver that declares no `Choice` has the one case the
     runner names. A choice point that ranges over no ADT leaves the case
-    unspelled, and the answer is empty."""
+    unspelled, and the answer is None."""
     points = choice_points(source)
     if not points:
         return NO_CHOICE
     if any(not p.branches for p in points):
-        return ""
+        return None
     names = [p.branches[0].name for p in points]
     if len(points) == 1 and points[0].field == SELF:
         return case_label(f"${names[0]}()")
@@ -978,6 +981,18 @@ def branch_above(source: str, line: int) -> str:
             if at is not None and line in _comment_lines_above(raw_lines, at):
                 return name
     return ""
+
+
+def witness_line_branches(source: str) -> set[str]:
+    """The constructors of every choice ADT, nested ones included: the
+    branches whose comment block holds a `@witness` line (`_glosses`). A
+    source that does not parse has none."""
+    try:
+        items = parse(source).items
+    except ParseError:
+        return set()
+    return {name for _, td in _choice_adts(items) if td is not None
+            for name in td.branches}
 
 
 def _glosses(
@@ -1079,6 +1094,40 @@ def _enumerators(items: list[Item]) -> set[str]:
                and isinstance(r.head.args[0], (Ctor, Rec)))
         shape[r.head.name] = shape.get(r.head.name, True) and one
     return {name for name, one in shape.items() if one} | {ENUMERATOR}
+
+
+def case_enumeration(items: list[Item]) -> frozenset[str]:
+    """The top-level relations whose clauses the program-style checks skip:
+    the clauses of `impl_choice`, of its enumerators, and of the relations
+    only they read (style.md, Components). A relation is read by the clause
+    whose body holds it, and a clause inside a comp is a reader outside the
+    set. The rule is transitive: a relation whose every reader is in the set
+    joins it, until no relation joins."""
+    heads: dict[str, list[Rule]] = {}
+    readers: dict[str, set[str | None]] = {}
+    for it in items:
+        rules = [it] if isinstance(it, Rule) else (
+            _all_rules(it.items) if isinstance(it, Comp) else [])
+        for r in rules:
+            head = r.head.name if isinstance(it, Rule) and r.head.qual is None \
+                else None
+            if head is not None:
+                heads.setdefault(head, []).append(r)
+            for a in _atoms(r.body or []):
+                if a.qual is None:
+                    readers.setdefault(a.name, set()).add(head)
+    if ENUMERATOR not in heads:
+        return frozenset()
+    enums = _enumerators(items)
+    read = {a.name for r in heads[ENUMERATOR] for a in _atoms(r.body or [])
+            if a.qual is None}
+    found = {ENUMERATOR} | (read & enums)
+    while True:
+        more = {name for name in heads.keys() - found
+                if readers.get(name) and readers[name] <= found}
+        if not more:
+            return frozenset(found)
+        found |= more
 
 
 def _subterms(term: Term):
@@ -1506,8 +1555,10 @@ def lint_program(source: str) -> list[tuple[str, int, str, str]]:
     """Flag program code that violates the style doc.
 
     Returns (category, lineno, match, raw_line) per finding. The category
-    names what was flagged. Skips // and /* */ comments and the `.comp`
-    blocks that hold no program code, whose spans come from the parsed source.
+    names what was flagged. Skips // and /* */ comments, the `.comp`
+    blocks that hold no program code, and the clauses of `impl_choice`, of
+    its enumerators, and of the relations only they read; their spans come
+    from the parsed source.
     The reserved-name check reads every line, comps included, since Souffle
     rejects such a name anywhere; the parse extends it to the inner name
     positions. A source that does not parse returns the line-level findings
@@ -1542,6 +1593,11 @@ def lint_program(source: str) -> list[tuple[str, int, str, str]]:
             skip.add(comp.line)
         else:
             skip.update(range(comp.line, comp.end_line + 1))
+    enumeration = case_enumeration(program.items)
+    for it in program.items:
+        if isinstance(it, Rule) and it.head.qual is None \
+                and it.head.name in enumeration:
+            skip.update(range(it.line, it.end_line + 1))
 
     for lineno in range(1, len(raw_lines) + 1):
         for m in RIGID_CHART_RE.finditer(code(lineno)):

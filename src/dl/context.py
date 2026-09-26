@@ -83,6 +83,7 @@ INPUT_MARK_RE = re.compile(r"//\s*@input\b")
 
 # The items a `///` block may document.
 DOCUMENTED = (Decl, Comp, Define, TypeDecl, Init)
+type Documented = Decl | Comp | Define | TypeDecl | Init
 
 
 def _prose(comment_lines: list[str], mark: str) -> str:
@@ -163,33 +164,36 @@ def _comp_block(comp: Comp, lines: list[str], docs: dict[int, tuple[int, int]]) 
             continue
         end = it.end_line if isinstance(it, Decl) else it.line
         out.extend(lines[ln - 1].rstrip() for ln in range(it.line, end + 1))
-        if is_input:
+        if isinstance(it, Decl) and is_input:
             out.extend(lines[ln - 1].rstrip() for ln in sorted(set(facts.get(it.name, []))))
     out.append(lines[comp.end_line - 1].rstrip())
     return out
 
 
-def _runs(items: list[Item], docs: dict[int, tuple[int, int]]) -> list[list[Item]]:
+def _runs(items: list[Item], docs: dict[int, tuple[int, int]]) -> list[list[Documented]]:
     """The top-level public items a `///` block may document, each in its
     run. Undocumented siblings on consecutive lines fold into the item over
     them: defines, or subtypes of one base."""
     items = [it for it in items if not isinstance(it, (Include, Rule))]
-    out: list[list[Item]] = []
+    out: list[list[Documented]] = []
     i = 0
     while i < len(items):
         it = items[i]
         if _hidden(it) or not isinstance(it, DOCUMENTED):
             i += 1
             continue
-        run = [it]
+        run: list[Documented] = [it]
         j = i + 1
-        while (j < len(items) and type(items[j]) is type(it)
-               and items[j].line == run[-1].line + 1
-               and docs.get(items[j].line - 1) is None and not _hidden(items[j])
-               and (isinstance(it, Define)
-                    or (isinstance(it, TypeDecl) and it.rhs.startswith("<:")
-                        and items[j].rhs == it.rhs))):
-            run.append(items[j])
+        while j < len(items):
+            nxt = items[j]
+            if not (isinstance(nxt, DOCUMENTED) and type(nxt) is type(it)
+                    and nxt.line == run[-1].line + 1
+                    and docs.get(nxt.line - 1) is None and not _hidden(nxt)
+                    and (isinstance(it, Define)
+                         or (isinstance(it, TypeDecl) and isinstance(nxt, TypeDecl)
+                             and it.rhs.startswith("<:") and nxt.rhs == it.rhs))):
+                break
+            run.append(nxt)
             j += 1
         out.append(run)
         i = j
@@ -262,11 +266,10 @@ def lib_doc(text: str) -> str:
         block = docs.get(it.line - 1)
         if block is not None:
             emit_prose(_prose(lines[block[0] - 1:block[1]], ITEM_DOC))
-        if len(run) > 1:
-            if isinstance(it, Define):
-                emit_code([" ".join(d.name for d in run)])
-            else:
-                emit_code([f".type {', '.join(t.name for t in run)} {it.rhs}"])
+        if len(run) > 1 and isinstance(it, Define):
+            emit_code([" ".join(_name(d) for d in run)])
+        elif len(run) > 1 and isinstance(it, TypeDecl):
+            emit_code([f".type {', '.join(_name(t) for t in run)} {it.rhs}"])
         elif isinstance(it, Comp):
             emit_code(_comp_block(it, lines, docs))
         else:
@@ -374,9 +377,9 @@ def lib_component(src: Path, name: str) -> str:
         block = docs.get(it.line - 1)
         prose = _prose(lines[block[0] - 1:block[1]], ITEM_DOC) if block else ""
         if len(run) > 1 and isinstance(it, Define):
-            body = [" ".join(d.name for d in run)]
-        elif len(run) > 1:
-            body = [f".type {', '.join(t.name for t in run)} {it.rhs}"]
+            body = [" ".join(_name(d) for d in run)]
+        elif len(run) > 1 and isinstance(it, TypeDecl):
+            body = [f".type {', '.join(_name(t) for t in run)} {it.rhs}"]
         elif isinstance(it, Comp):
             body = _comp_block(it, lines, docs)
         else:

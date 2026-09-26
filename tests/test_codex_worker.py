@@ -167,6 +167,8 @@ def codex(tmp_path, stub):
 def adapter():
     """The adapter module, loaded once so the in-process tests share it."""
     spec = importlib.util.spec_from_file_location("codex_adapter", ADAPTER)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"no module loader for {ADAPTER}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module

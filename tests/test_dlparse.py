@@ -11,9 +11,11 @@ from dl.dlparse import (
     TOP,
     Atom,
     Cmp,
+    Decl,
     Index,
     Neg,
     ParseError,
+    Rule,
     body_literals,
     marker_cases,
     parse,
@@ -151,6 +153,7 @@ def test_body_literals():
         " N = count : { f(P, K), K > 1 }, N > 0.\n"
     )
     rule = parse(src).items[0]
+    assert isinstance(rule, Rule)
     lits = list(body_literals(rule))
     assert [l.name for l in lits if isinstance(l, Atom)] == ["a", "b", "c", "d", "f"]
     assert sum(isinstance(l, Neg) for l in lits) == 1
@@ -159,6 +162,7 @@ def test_body_literals():
     assert [l.name for l in shallow if isinstance(l, Atom)] == ["a", "b", "c", "d"]
     assert sum(isinstance(l, Cmp) for l in shallow) == 2
     fact = parse("seed(3).\n").items[0]
+    assert isinstance(fact, Rule)
     assert list(body_literals(fact)) == []
 
 
@@ -200,5 +204,7 @@ def test_two_heads_parse_as_two_rules():
 def test_a_changed_text_parses_again():
     first = parse(".decl a(x: number)\n")
     second = parse(".decl b(x: number)\n")
-    assert [it.name for it in first.items] == ["a"]
-    assert [it.name for it in second.items] == ["b"]
+    [a] = first.items
+    [b] = second.items
+    assert isinstance(a, Decl) and a.name == "a"
+    assert isinstance(b, Decl) and b.name == "b"

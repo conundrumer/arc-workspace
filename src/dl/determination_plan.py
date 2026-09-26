@@ -12,6 +12,7 @@ import itertools
 import math
 import re
 import tempfile
+from collections.abc import Set as AbstractSet
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -102,11 +103,14 @@ ENUMERATION_LIMIT = 100
 
 def stored_value(arg: str, type_: str, defines: dict[str, int]):
     """One argument of a stored fact, as a comparison with a proposal reads
-    it: a Position as its numbers, an enum name as its number."""
-    if type_ in POSITION_TYPES:
-        if not arg.startswith("["):
-            arg = _lib_record_defines().get(arg, arg)
-        return tuple(int(x) for x in _split_args(arg[1:-1]))
+    it: a Position as its numbers, an enum name as its number, a record as
+    the tuple of its fields."""
+    if not arg.startswith("[") and (type_ in POSITION_TYPES
+                                    or arg not in defines):
+        arg = _lib_record_defines().get(arg, arg)
+    if arg.startswith("["):
+        return tuple(stored_value(x, "", defines)
+                     for x in _split_args(arg[1:-1]))
     return int(arg) if arg.lstrip("-").isdigit() else defines[arg]
 
 
@@ -427,7 +431,7 @@ def settle_survivors(
 
 def determination_plan(
     results: list[tuple[str, dict[str, str]]],
-    determined: set[str] = frozenset(),
+    determined: AbstractSet[str] = frozenset(),
 ) -> tuple[list[str], list[tuple[str, int]], list[str], list[str]]:
     """Classify parameters: (determine, settle, done, exact).
 

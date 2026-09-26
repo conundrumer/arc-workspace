@@ -1,6 +1,6 @@
 # Case inclusion: the decision history
 
-What decided which models become cases in a `.dl` solver, from the first "Coverage" principle to the three case conditions of 2026-09-22.
+What decided which models become cases in a `.dl` solver, from the first "Coverage" principle on.
 
 Sources: `git log` over `docs/wf-solver/`, and Claude Code transcripts under `~/.claude/projects/-Users-davidlu-code-arc-workspace/`. Transcript timestamps are UTC and run four hours ahead of the commit dates.
 
@@ -743,6 +743,62 @@ All are in the working tree, uncommitted.
 | "including that the generator produces no input on which only one of them gives an output" | procedure.md, equivalence standing | a251c730 first run | Kept. The Domination proposal would remove it. |
 | "and the plausibility of each input on which it gives no output" | procedure.md, concept slot | a251c730 second run | Kept. The Domination proposal would remove it. |
 
+## 2026-09-23 — every input, and branches in place of models
+
+The session had asked whether a witness input's plausibility may decide case membership, or whether any model that differs from another anywhere is a distinct reading, with the 2026-09-18 bound dropped. The user chose the second (02:33Z): "2". Then (02:38Z) "well double check your proposal. ultrathink", and (02:47Z) "go".
+
+The edits:
+
+- Agree ranges over every input: "Two assignments agree when, on every input, the two models give the same output or neither is defined." `G_C` goes.
+- The divergence witness loses "on which the concept case is defined". Its first bullet becomes "at some assignment, two models give different outputs, or one is defined and the other is not." The 2026-09-18 source comment goes.
+- The reach line goes, and so do the two Analyze clauses added for a251c730.
+
+No Domination condition was added. So a strengthening became a case again, as under Refused input (2026-09-11). The bound on contrived models moved from a case condition to where a model comes from: Analyze forms them before any program exists.
+
+### The concept file is fixed, and Analyze reports branches
+
+The user (03:06Z):
+
+> "i feel agents are intrinsically conservative and dont want to overstate anything, even if it means being inconsistent. as long as the output is constrained ... lets ultrathink of resolutions"
+
+And (03:11Z): "go and ensure you dont fall into bug-patch-mode". Two lines followed. The concept file is not changed after Analyze step 2. Of the reference TS solver: "Each claim it makes that the concept statement does not make, or makes differently, is a branch." Analyze's report became one entry per choice point, each with its branches and their standing.
+
+### Nothing the pass thinks of is dropped by the pass
+
+On the goal's `* comment` line, "A model the pass forms is a case whether or not a person sees the task that way" (03:37Z): "yes it was ablation. uncomment."
+
+An a2fd1cf0 run left out a scan-order pick as "not equivariant". The user (03:37Z): "i guess it's fine bc the create session can rejudge it? as long as all dropped things are reported". Then (03:42Z): "we should add it, and also instruct the create (and subsequent?) agents to rejudge them", and "well not even rejudge. if it passes it passes". The Analyze report gained a slot for each claim considered and not formed, with why.
+
+On what Create does with that slot (18:23Z):
+
+> "3 b. add them all. if it was thought of, then it's a potential case, and if it passes as a case, add it"
+
+### Combinations of branches
+
+a57f2f04's Analyze gave eight choice points. The user (19:00Z): "ok yea i accept having that many choice points but our tooling was not designed for 256 cases". Create had held nine cases, one per branch. The user (19:02Z): "i'm confused about the cases situation. usually the cartesian product is just taken. whats happening here, why picking specific ones?" On a witness file that names all 256 cases per group (19:04Z): "yea but it's impractical, should still change".
+
+The user said "go" (19:10Z) to this design: the cases are the combinations of the report's branches that fit, and a witness pins a branch's model, not a case.
+
+### Who reconciles cases that do not combine
+
+On an a5f85a15 report whose flat choice points did not combine: "whose burdne should it be to reconcile the cases" (20:11Z), and (20:44Z):
+
+> "i just want the solver to be in its best form, and for the agents to do waht they're best at, and for the tooling to support them best"
+
+On a proposal that Create leave a runner hint under Open (20:50Z): "why keep it open? ok focus on the goals again and ultrathink on the best resolution". The user approved the result (20:53Z): "ok. apply. then review".
+
+- Analyze places each choice point at the concept or under a branch, and says what a case that takes a non-concept branch at two points reads.
+- `witness` reports two held cases that no witness separates.
+- Create resolves such a pair by nesting, then by a separating witness, then by dropping a case, and reports it as a departure.
+
+### An approximation is for the concept case only
+
+On a concept witness with verdict `other` (21:33Z):
+
+> "restate. but unclear on the apprx thing. to be clear, it should only be used for the concept case"
+
+Analyze's report restates the rule as the generator applies it. Create writes the restated rule as the `@rule` line and the concept file's rule under it as the `@approximated:` line.
+
 ## 2026-09-23 — Subsumption enters as the fourth condition
 
 The user rules on the Domination proposal of 2026-09-22, under the name Subsumption:
@@ -756,3 +812,306 @@ The condition, in principles.md under Cases, with the definition under Equivalen
 What this reverses: Refused input (2026-09-11), in that a strict hypothesis that never differs from the tolerant peer where it is defined is now subsumed by it, and the letter of "No other removal" (2026-09-15), which gains a fourth mechanical test and keeps its reason.
 
 In the corpus at the time: ComponentLines on a5f85a15 and TouchedCorner on a57f2f04 are subsumed by their concept branches; ColorBox on a57f2f04 is subsumed at the stored scan set and not at a narrower one.
+
+## 2026-09-23 — no pass judges subsumption before forming
+
+The user (23:23Z):
+
+> "why was subsumption removed? if it's the case of agents using it to disregard cases, would ANalyze be at risk of that/"
+
+The session named the a57f2f04 Analyze pass, which had left out a touched-corner reading because it "states no rule beyond those two cases". It proposed a line against that. The user (23:25Z): "don't add it yet."
+
+A Create pass then reported that the runner's first subsumption check had kept it from holding models that are restrictions of other models. The user approved three items (23:49Z): "approve 1-3".
+
+1. A witness is judged at the assignment it stands at, which is the stored assignment unless its divergence needs a reassignment. A scene claim that names a parameter is read at that assignment too.
+2. Under Subsumption: the runner reports it on a held case, and no pass judges it before the case is formed.
+3. Refine on 9f669b64 forms again the combinations and the branch that its Create pass had omitted, and the subsumption finding decides each.
+
+The user added (23:54Z): "principles doc changes need extra scrutiny".
+
+On the second batch of twenty Analyze runs (2026-09-24T00:23Z):
+
+> "i only care about interference and issues w principles
+> 1. plausaibiltiy: approve
+> 2-3 how to improve docs so it's clearer and analyze agents wouldnt complain (prefer updates over additions)"
+
+The results:
+
+- `ordinary` plausibility became "readily, breaking no scene claim of the concept case".
+- The Analyze step that forms branches says: "A branch is formed whether or not another branch's model subsumes it."
+
+## 2026-09-24 to 2026-09-25 — the loop tests the docs and tooling
+
+The session ran Analyze, Create and Refine agents to find where the docs and tooling fail them. The user's rulings on what the loop is for:
+
+- 2026-09-24T00:27Z, on a Refine brief that carried rulings: "the refine agent you launched. why did you give it instructions? the point is to test our docs and tooling. solver is secondary"
+- 2026-09-25T02:33Z, on a runner change the session had asked an agent to make: "ok i hope you didn't tel lthe agent to do that. the purpose is for the docs to do their job. you stay out"
+- 2026-09-25T13:55Z: "ok one more thing: primary goal is improve toolings/docs but secondary goal is to make more solvers in their best form, but do so via ensuring docs/tooling are good"
+- 2026-09-25T13:56Z, on the session's "Solvers come only from the agents": "yes and you shouldn't have to direct the agent"
+
+A brief to a pass then holds only the task id: `- Task: <id>.`
+
+## 2026-09-24 to 2026-09-25 — how the docs are edited
+
+- 2026-09-24T01:41Z: "i dont want doc bloat esp in principles btw. i will approve increasing precision with few words or deletions. or makming obvious corrections. but i feel uncomfortable with lots of edits to principles"
+- 2026-09-24T01:58Z: "i should have started with a prefrence: do not prefer additions. do not state what is inferrable and unmisreadable."
+- 2026-09-25T00:57Z: "and you know my preference: add new text only as last resort"
+- 2026-09-25T01:01Z, correcting the session's list of kinds of edit:
+
+    > "0. deleting wrong text
+    >
+    > 2. updating existing text.
+    > 3. adding new text. appending counts."
+
+    The order is then: delete wrong text, make no change, update existing text, add new text.
+- 2026-09-25T14:35Z: "in general, prefer cheap precision increases, ie only a few words more at most, always increase precision"
+
+## 2026-09-25 — the goal is reworded (9b78018)
+
+The goal block from 2026-09-22 set off a model safeguard in agent sessions. The session read the goal's history in git. The user (01:53Z):
+
+> "basically all of this holds. so what do you infer it should actually say? it changed recently bc it was influencing solver agents to drop cases, but that's already solved"
+
+The goal became:
+
+> - The corpus supports the synthesis of solver programs, and takes as much as it can from each task, in this order:
+>     - **Concept.** A solver has a case for the concept.
+>     - **Coverage.** A solver has a case for each other model that meets the case conditions.
+
+"The pass forms" and "whether or not a person sees the task that way" went. Inclusion is left to the case conditions.
+
+## 2026-09-25 — subsumption against every held case (b876d19)
+
+A Refine pass on a1570a43 removed 17 cases that another held case subsumes. The runner had compared each case only with the case that takes the concept branch at one of its points, so it had not reported them. The session told the runner agent to drop its widening of the check. The user (02:33Z): "you stay out", as quoted above. On whether the pass was right to remove the 17 cases (02:34Z): "was it?", and (02:39Z) "you got briefed on the cases history doc? i probably had more comments on this".
+
+The history shows the partner in the comparison was always any case. The user (02:42Z): "widen". `witness` now compares each case with every other held case, the concept case exempt, and the procedure's line says "differing from another case". The 17 cases stay out.
+
+## 2026-09-25 — rulings from the dispatcher loop
+
+The user limited what comes to him (14:44Z): "disregard lib/keyword proposals and related, focus is delays/interference/inconsistencies/ stuff that seems broken".
+
+### A concept error is fixed by the pass that finds it
+
+A Create pass on a1aa0c1e found a witness with verdict `other` that points at the concept, and put it under Open, saying a later Analyze pass that forms the model would settle it. The user (14:44Z):
+
+> "confused about "a later Analyze pass". that doesn't make sense. there's only one analyze pass at the beginning. if that agent made decisions based on the assumption there would be a later analyze pass, there is something wrong there"
+
+The session's recommendation left a rerun of Analyze to the user per task. The user vetoed it (14:53Z):
+
+> "really? i want things to be increasingly autonomous. so "you decide per task whether to run Analyze again" veto. but we need to find a way to amke ti work as i want"
+
+Then (14:54Z): "other options? why give it to analyze? don't stay boxed in to what we have". Of the options, the user chose "Whichever pass finds it fixes the concept case, with the witness as evidence" (14:57Z):
+
+> "sounds right, so that means we can Refine it to fix it. i just dont want cases to be arbitrarily dropped"
+
+procedure.md's Witness step now reads:
+
+> - On a branch's witness on which no open values disagree, an `other` verdict identifies a problem with the concept case, and so does a non-concept verdict at `ordinary` plausibility; the concept case is fixed to give the judged output, the verdict becomes `concept`, and the fix goes in the review as a departure.
+
+A Refine on a1aa0c1e with no ruling then fixed the concept, gave `four-rungs` the verdict `concept`, and kept all 270 cases.
+
+### Open items, misnamed tags, and split orders
+
+- 15:07Z: "also i accept open items that point towards something being wrong. dont leave out."
+- 15:07Z, on a solver that works but has a constructor named for a reading another branch shares (a25697e4): "opt1". solver-file.md now reads: "A constructor denotes only its branch's reading, not a reading another branch shares, and is named for its branch". A Refine on a25697e4 with no ruling then restructured the solver and kept all 32 cases.
+- On a scan order stored as two parameters, a corner and an axis, whose product cannot express a sibling task's set of open orders (15:02Z): "conceptually, lexorder takes one Thing. we just split it into 2 bc that's the only primitive we have. so something feels like indirection?" Then (15:04Z): "ok there's no reason to split it into 2 and that seems to be causing problems too so lets think of ways to prevent that from happening". principles.md now reads "The solver stores every open value of an open parameter in one relation, keyed by value", and the `const-join` lint hint says to store a product join as one relation over both columns.
+
+## 2026-09-25 — Subsumption compares at the same assignment
+
+The Subsumption definition said that each assignment of a model has some assignment of the other at which the outputs match. The runner compares both models at the witness's own assignment. On a47bf94d a pass dropped `x-complement` under the definition although its witness passed the check. The user (15:38Z):
+
+> "send agent to check docs/wf-solver/case-rule-history.md to infer how i would decide"
+
+The session read the history as favoring the runner's form: the 2026-09-16 and 2026-09-23 rulings put removal on a mechanical check. principles.md now reads:
+
+> - A model is subsumed by another when the two are not equivalent and, at every assignment of their parameters, on every input where it is defined, its output is the other's.
+>     - Subsumed(A, B) ⇔ ¬Equivalent(A, B) ∧ ∀θ ∈ Θ. ∀x ∈ G. Def_A(θ, x) ⇒ A(θ, x) = B(θ, x)
+
+The session had said the old definition's refutation is not mechanical, since a witness would have to show the case differing at every assignment of the other model, which the runner cannot enumerate for stored tables and grids. The user asked (15:42Z):
+
+> "it's not mechanical, but it still sounds checkable ie given proof no judgment needed?"
+
+The session's answer: for a parameter of an enumerated type, the check is mechanical; for a table or a grid, the refutation is an argument about the other model's clauses, which an agent must read and verify. As of 15:44Z the user had not ruled, and the same-assignment form stood.
+
+## 2026-09-25 — the tooling defects, and what waits on the user
+
+- 15:48Z, on changes to what a tool prints: "make sure updates to agent facing text like tool results also get doc review scrutiny esp if they restate things an agent alreadyk nows from their context ie  handbook".
+- 19:06Z, on a bug sweep whose fixes the session held for the user: "Why does it wait on me". Then (19:07Z): "Only “what you can’t settle” waits on me". The seven sweep fixes went to the tooling dispatcher.
+
+The user then asked about the defects (19:12Z): "Why does tooling keep having bugs?" The session named the volume of changes and thin tests. The user (19:13Z):
+
+> "Tests have basically never caught bugs. “Lots of changes” is a trigger not a cause."
+
+The session's second answer: a fixer checked only the command that showed the defect, and one idea was implemented in several places. The user (19:15Z): "Ideally, we should write code in such a way that this class of bugs is not possible to make I. The first place", and (19:16Z) "I mean, why is it possible to write such buggy code in the first place?" The session named four causes: case ids are strings built and parsed at many sites; eight functions each compute which cases the runner holds; the case-space classes share a base that declares nothing; and pyright is configured and never run. It had already sent a refactor of the runner to one enumeration of held cases.
+
+The user cancelled that refactor (19:20Z):
+
+> "It sounds like it’s not worth refactoring at this point. The point was to improve tooling. We burned a lot of solver agent runs on testing for bugs."
+
+Then (19:22Z): "Pause on further fixes."
+
+## 2026-09-25 — the decisions the session made on its own
+
+The user asked (19:23Z): "What were some of the least defensible decisions you made on your own?" The first on the session's list was a change it made earlier on 2026-09-25 without a ruling: the runner held a derived case for each case that reads the parameter, where on 2026-09-22 it had held one for the concept case only. The session had then edited solver-file.md to describe the new runner. Four of the seven sweep defects were in that code, and three committed solvers failed `witness` because of it.
+
+The user (19:28Z):
+
+> "Ultrathink about those decisions, send agents to gather more info and evidence to help judge them, and then write into the decisions doc whatever actually needs my judgement, keeping in mind nonreasons like amount of code or text to change, bc it’s not a factor and it is a strict requirement for docs and tooling and new solvers to be consistent and principled"
+
+And (19:29Z):
+
+> "And be sure to think thru all the options and reasons and consequences wrt the point of this project
+>
+> And to ensure the writing serves me. The reader"
+
+The decisions document, `.scratch/decisions.md`, held six items.
+
+### How the decisions document is written
+
+- 20:56Z: "somethings not right. you dumped a lot of detail. i dont judge based on detail. i judge based on consequences"
+- 20:57Z: "also its burdensome to read dense paragraphs. prefer nested lists"
+- 21:03Z: "i'm reading #1. it's not making sense to me. i need concrete examples/previews of what the consequence looks like"
+- 21:05Z: "and it seems like there's not enough to infer from case history about what i prefer?"
+- 21:08Z: "the agents that went to look for evidence was supposed to look at the case history doc?? concerned"
+
+Three of the six evidence agents had been sent to this document, and their reports had quoted the rulings that bear on items 1 and 2. The session had cut those quotes when it rewrote the document around consequences. Item 1 then gained a list of what the rulings settle, and a real solver under each option.
+
+On terms:
+
+- 21:11Z, on "reading", the word for a parameter's value stored or derived: "i still dont know what a reading is", then "use a self-explanatory term". The document now says "stored" or "derived".
+- 21:19Z: "I'm confused by "copy". it's not a copy? so use a self-explanatory term". The runner's names, such as `field=DominantColor & Maximal`, are not copies of anything. The document now says "runner-added case": a case the runner holds for a `@derive` or `@store` line and the solver text does not list.
+- 21:32Z: "i rmemeber adding the ignore (dont call it drop) line in case no witness could be made for it". The document now says "ignore line" for the line, and "leaves" for a case that fails a case condition.
+
+On why the items closed so easily once asked (21:57Z): "how is it that things end up being easily decided". The session's answer: it had written each item from the state of the code and the docs, and had not first applied the user's rulings to it. The history agents had already reported that the history supports option 1 of items 1 and 2.
+
+## 2026-09-25 — `@derive` and `@store` lines are branches
+
+Item 1 asked who adds the case in which a parameter's value is derived instead of stored, or stored instead of derived. The example was 9caba7c3, which has a choice point with three branches and two `@derive` lines, on `field` and `mark`. Its text lists three cases. The runner held nine: those three, each with `field` derived, and each with `mark` derived. It never combined the two lines.
+
+What the history settles, as item 1 records it:
+
+- The 2026-09-09 ruling, "Cases go to every model divergence the pairs leave open, so the reparameterization exception is gone", rules out a runner that adds a derived case for the concept case only.
+- The 2026-09-23 ruling on a57f2f04, "usually the cartesian product is just taken", makes a derived value a choice point that combines with every other one. 9caba7c3 then has twelve cases.
+- No ruling says who adds the case. The 2026-09-22 entry "The runner holds cases the solver does not write" records a session design.
+
+The first option had the solver write each derived value as a branch, as 2bcee788 writes its `Minority` branch, and removed the `@derive` lines. The user (21:19Z):
+
+> "> The @derive lines go
+>
+> this is undesirable. makes it all verbose. what's the defense for opt 1?
+>
+> > A session that reads the file sees three constructors, and learns of the other six cases from this output.
+>
+> is this a fact or a reason?"
+
+The session answered that the defense is one set of rules for every branch, and that this does not need the verbose form: the `@derive` line stays, the docs define it as a branch of a choice point on the parameter, and the runner expands it as a branch. The user (21:25Z): "i dont understand the diff btwn preprocessing and just keeping it in the runner". The session's answer: in both, the runner holds cases the solver does not list. Kept as a separate kind of case, each rule on cases needs its own clause for it: its name form, its ignore form, which cases get one, whether two combine, and its place in Subsumption. Expanded as a branch, it falls under the rules every branch falls under. The user (21:27Z): "so this is an impl detail that i shouldn't care about in the end?" The session: yes, and what the user sees is that a solver with two lines gets their combinations as cases, and that every solver with such a line gets a Refine pass.
+
+The user (21:34Z):
+
+> "what was the problem in the first place? the fact that these @store @derive branches didn't actually combinatorially combine and the lack of docs explaining their behavior?"
+
+The session answered yes, and added a third cause: the runner's behavior had been changed twice on the session's judgment, and the docs had been edited to follow the runner.
+
+### The ignore line stays
+
+The session had said that the ignore lines go, since a case leaves by a `@witness` verdict or by Subsumption like any branch. The user (21:32Z):
+
+> "explain. i rmemeber adding the ignore (dont call it drop) line in case no witness could be made for it"
+
+The session withdrew that. A branch that no witness separates leaves under Equivalence by the ordinary rule, and the review records why. A derived branch is not written by the session: `derive` proposes it again on every pass. So the ignore line is the record in the file that the branch was tried and left.
+
+The user (21:35Z):
+
+> "ok so im warm towards the solution but i have a feeling there's a lot of gaps given you thought we could get rid of @ignore. like. for combined @store/@derived branches, there may not be a witness, and then how to ignore that?"
+
+Then (21:36Z): "how is it done for normal branches?" A written combination that leaves is left out of `impl_choice`. For a derived branch, the per-case form `// @ignore: derive <name> — <reason>` names the combination, and `<name>` may be a `<name> & <name>` form.
+
+The user (21:38Z): "think of more edge cases like this". The session listed eleven. The user (21:40Z): "filter this down to what you can't resolve on your own". The session resolved all but one on existing rules:
+
+- A derived branch whose only separating witness breaks a scene claim stays, under "do not drop a peer for any raeson if it passes". Ignore lines written on plausibility are reverted to branches with `@relaxed` witnesses.
+- `derive` and `store` record the witness they build into the witness file, with an id.
+- `derive` checks equivalence against the written branches before it proposes, so 2bcee788's `Minority` gets no proposal.
+- The one left was item 2.
+
+### The docs now
+
+solver-file.md's `@derive` directive reads:
+
+> - **`@derive` directive.** The line is a branch of a choice point on the parameter, which stands under the branches that read it, with the parameter's value derived by the built-in derivation the line's `<Proposer>` selects; lines on one parameter are branches of one point, and the runner holds the cases that take one of them.
+>     - The verdict `derived` denotes that branch, beside the verdicts a `@witness` line takes, and its witness's id is the branch's name.
+>     - `// @ignore: derive — <reason>` in its place records that the branch failed Equivalence or Subsumption, and the runner then holds no case that takes it; `// @ignore: derive <name> — <reason>` under the `@derive` line records that for only the case `<name>` with the branch.
+
+The `@store` directive reads the same way: "the line is a branch of a choice point on it, which stands under the branches that read it, with the relation's value stored per case; the runner holds the cases that take that branch." The Witness file's name form reads "`<param>=<Proposer>` and `<rel>=stored`: a `@derive` or `@store` line's branch, read as a constructor's name".
+
+procedure.md's Develop step 4 reads "Hold as a branch each built-in derivation that fits a parameter, and each stored reading of a value the program derives", and "A branch whose model is equivalent to that of a `@derive` or `@store` branch loses its constructor and gets no clauses of its own."
+
+As of 22:50Z, the runner's expansion of these lines as branches was queued with the tooling dispatcher. A Refine pass on each of the 39 solvers with a `@derive` or `@store` line waits on it.
+
+## 2026-09-25 — the cases as one clause over the enumerators
+
+A written combination that leaves is left out of `impl_choice`, and 305b1341 lists six of its eight combinations one per line. The user (21:40Z):
+
+> "> The solver lists the combinations it holds
+>
+> this seems verbose too. i wonder if there's a way to encourage factoring or if there's a better way to say "include these, exclude these""
+
+The session named the forms the corpus already has: 9f669b64 writes the product less a relation, `!as_half_width([R, L, St, Sh, C])`; a09f6c25 writes the product with constraints; a nested constructor needs no listing; and 447fd412 lists a free product of four in four lines. The user (21:46Z): "enumerating cases: i think thats right but i'll have to see examples". After the memory item below, the user asked (22:03Z): "no i mean show exmaples of case enum", and "the desired result i mean". The session showed three solvers under the rule:
+
+- 447fd412: `impl_choice([C, V]) :- carry_choice(C), cover_choice(V).`
+- 305b1341: the stack choice nested under `Lattice`, as `Lattice {stack: Stack}`, so that the excluded combinations do not exist.
+- 9f669b64: unchanged, as the exemplar.
+
+The user (22:05Z): "lgtm do all". solver-file.md now reads:
+
+> - `impl_choice` contains whole `Choice` values, for a record, as a clause over the enumerators that excludes each combination that is not a case, and it appears when a clause reads one or when the cases are not every combination of the fields.
+
+patterns.md follows: "When only some combinations are cases, the record remains, and `impl_choice` excludes the others".
+
+## 2026-09-25 — Subsumption at the parameters either model reads
+
+Item 2 asked at what assignment Subsumption compares two models that read different parameters. The example was a09f6c25. Its `SizeBound` branch reads the open parameter `noise_size`, and `MinSizeNoise` computes the smallest size. `store` proposed `MinSizeNoise` with the size stored as 1. The solver's `@ignore low: store` line dismissed that model as `SizeBound` at the bound 1, and a Refine pass could not judge the line.
+
+The user (21:46Z): "decision 2: fill w my rulings and examples". The document then recorded as settled: the comparison is at one assignment, the witness's (the 2026-09-23 rulings); and the form in which each assignment of one model may be matched by some assignment of the other is the reparameterization exception the 2026-09-09 ruling removed. What stayed open was what that assignment gives a parameter only one model reads. Under option 1, the assignment covers every parameter either model reads. A witness that reassigns `noise_size` to 3 then shows the stored-size model differing from `SizeBound`, and the model stays as a case.
+
+The user (21:55Z): "so item 2, it sounds like there's no good defense for opt2?" The session's answer: option 2's one argument is that it removes contrived cases, the 2026-09-18 worry "we can invent contrived models by tacking on rules?", and the 2026-09-23 ruling had answered it with "a big starting point" and "a mechanical check". Item 2 was marked settled on option 1.
+
+principles.md now reads:
+
+> - A model is subsumed by another when the two are not equivalent and, at every assignment of the parameters either reads, on every input where it is defined, its output is the other's.
+
+procedure.md's line on a case `witness` reports reads: "Some input, at some assignment of the parameters either case reads, shows the case defined and differing: build the witness that shows it, with `--assign` when it needs one, and the case meets Subsumption and stays."
+
+## 2026-09-25 — cross-task fixes, the witness search, the type checker, and the row cap
+
+On item 6, the row cap of the `store` check, the user asked (21:57Z): "item 6:why is this a problem? you know why the cap exists right?" The cap is a bound on run time: without it, 446ef5d2's check failed the runner's 5 s CPU limit per run. The session withdrew the item.
+
+The user on the rest (21:59Z):
+
+> "3. the problem with proactive fix is the corpus is not consistently in the same standard. if it was the consistent subset then i'd be fine w opt1
+>
+>
+> 4 5 opt1"
+
+1. **Item 3**, who acts on a fix one task's pass finds in another task's file. Under option 1, the named task's Reconcile judges the item. The session took "the consistent subset" to be the tasks whose Analyze files the analyze agent wrote under `.scratch/<id>/`; items on other tasks are routed by hand. procedure.md's Refine now reads:
+
+    > - **Departures.** Judge each departure and open item of that report, and each `## Fixes elsewhere` item on this task's files in another task's latest report (`grep -l <task_id> .scratch/*/create.md .scratch/*/refine-*.md`), under the current docs, from the solver, the witness file, and the pairs; an item on an Analyze file is judged as a departure, and a `## Fixes elsewhere` item that holds is applied to the solver or the witness file.
+
+    The verification dispatcher queues a Refine on a task that another task's report names under `## Fixes elsewhere`, when that task has those Analyze files.
+2. **Item 4**, the `witness --propose` search. Under option 1, the search and its `--grids` option are removed, and the pass builds each witness itself. procedure.md's line on `witness` lost the `--propose` clause and reads "`uv run python scripts/run_dl.py witness <task_id>` reads the solver against `programs/witnesses/<task_id>.wit.json`, whose shape [Witness file](docs/handbook/solver-file.md#witness-file) gives."
+3. **Item 5**, a type checker. Under option 1, pyright in basic mode gates each change to the runner once its errors are cleared, and case ids get a value type in place of `str`.
+
+## 2026-09-25 — memory proposals, and the order of the work
+
+The user asked what else was pending (22:00Z): "what were the other things? the cases enum, you said you would do a doc update? and we also have a held queue of tooling fixes?", and "and a queue of solvers to re-refine after all these updates im assuming". The session's list ended with two memory proposals under "Waiting on your word". The user (22:02Z):
+
+> "4 drop and also i want to know what is making you repeat memory proposals (reason is i dont want to say "approve all" and that gets swept in"
+
+The session's answer: the user had dropped the first proposal at 14:45Z, and the compaction summary of 15:36Z still listed it as awaiting the user's word. Each later list of what waits on the user was taken from the summary. The session said a proposal is made once, in its own sentence, and never enters a pending list.
+
+After "lgtm do all" (22:05Z), the user added (22:06Z):
+
+> "tooling fixes need to be GOOD. not introduce bugs. do what makes sense for that. if the answer is local refactoring i will permit it."
+
+The work was ordered docs, then tooling, then solvers. The tooling dispatcher's rules carry the user's words: a fix whose corpus run shows a change the fix does not explain is reverted. The pyright fix runs first and alone.
+
+One more doc edit followed from the `@derive` and `@store` branches. `derive` and `store` record their witness into the witness file, so the file must exist when they run. The copy of the Analyze witness file moved from the Witness step to Write step 2: "Write the solver (`programs/solvers/<task_id>.dl`), and copy the Analyze file to the witness file: `cp .scratch/<task_id>/witnesses.json programs/witnesses/<task_id>.wit.json`."

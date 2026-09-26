@@ -20,6 +20,8 @@ def run_hook(script, stdin_text, env=None):
         if env is not None:
             stack.enter_context(_environ(env))
         spec = importlib.util.spec_from_file_location("hook_under_test", script)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"no module loader for {script}")
         module = importlib.util.module_from_spec(spec)
         code = 0
         try:

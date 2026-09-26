@@ -117,7 +117,7 @@
 - **open parameter**: a parameter whose value the pairs leave unresolved.
     - **open values**: two or more values of a parameter that the pairs leave unresolved.
     - A sibling task containing an input on which the open values disagree fixes the parameter to one of those values.
-    - An undetermined property is an open parameter when its possible answers are values of one parameter.
+    - An undetermined property is an open parameter when its possible answers are values of one parameter, with the program unchanged.
 
 ### Witnesses
 - **divergence witness**: an input on which one of these holds:
@@ -173,8 +173,8 @@
 - An assignment that agrees with no assignment of the other model refutes equivalence, and a divergence witness against each of those assignments shows it.
     - (∃θ ∈ Θ. ∀φ ∈ Θ′. ¬Agree(θ, φ)) ⇒ ¬Equivalent(A, B)
         + formal
-- A model is subsumed by another when the two are not equivalent and each assignment of it has an assignment of the other at which, on every input where it is defined, its output is the other's.
-    - Subsumed(A, B) ⇔ ¬Equivalent(A, B) ∧ ∀θ ∈ Θ. ∃φ ∈ Θ′. ∀x ∈ G. Def_A(θ, x) ⇒ A(θ, x) = B(φ, x)
+- A model is subsumed by another when the two are not equivalent and, at every assignment of the parameters either reads, on every input where it is defined, its output is the other's.
+    - Subsumed(A, B) ⇔ ¬Equivalent(A, B) ∧ ∀θ ∈ Θ. ∀x ∈ G. Def_A(θ, x) ⇒ A(θ, x) = B(θ, x)
         + formal
     - A witness shows that a model is not subsumed only where that model is defined.
 
@@ -214,7 +214,7 @@
     - Its full value set is enumerated.
     - Its values remain in the type under the D4 action.
 - A mirrored variant task therefore requires a parameter edit rather than a change to the program.
-- **Orientation per axis.** A model whose clauses differ between axes does not choose an orientation when one parameter names the axis on which the clauses are keyed.
+- **Orientation per axis.** A model whose clauses differ between axes does not choose an orientation when one parameter stores the axis on which the clauses are keyed.
 - **Every value.** When a membership set meets each condition below, the program enumerates every value of the orientation type, and the parameters are per orientation type rather than per value.
     - It contains every value of an orientation type.
     - No associated data varies by value.
@@ -224,7 +224,7 @@
             + gloss
 - **One member.** If one member is used and another must not be used, a parameter stores the chosen member.
 - **Another orientation type.** Switching to another orientation type requires another program rather than a reassignment.
-    - Switching between cardinal and diagonal directions is one example.
+    - Switching between cardinal and diagonal directions is one example, and switching between 4- and 8-adjacency is another.
     - a9f96cdd, d364b489
         - The two tasks paint one cell per direction and differ only in the type: a9f96cdd runs over the diagonals and d364b489 over the cardinals. Neither program reassigns into the other.
             + gloss
@@ -254,7 +254,7 @@
 - **Redundant value.** A value that follows from another parameter in every variant task is derived data rather than a second parameter.
 
 ### Open parameters
-- The solver stores every open value of an open parameter.
+- The solver stores every open value of an open parameter in one relation, keyed by value.
 - open(i) ⊆ Θᵢ: the open values of parameter i
     + formal
 - M_open(θ, x) = ⋂_{v ∈ open(i)} M(θ[i ↦ v], x)
@@ -272,7 +272,7 @@
     - **Fit.** The model fits some split task at its stored assignment.
         - Fit(S_M, T) ⇔ ∃T′ ∈ alts(T). M(stored_M(D(T))) ⊨ T′
             + formal
-        - For a case with an open parameter, the model is M_open at the stored open values.
+        - For a case with an open parameter, only Fit reads the model as M_open at the stored open values.
         - **Unseen key.** When a test uses a key that no train pair contains, a lookup table fails Fit.
             - 1fad071e
                 - The test count is 3, and the train counts are 2 and 4. The table is therefore ruled out.

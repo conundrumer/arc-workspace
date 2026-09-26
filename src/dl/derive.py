@@ -1,55 +1,65 @@
-"""Derived readings of stored parameters: the cases a proposer states.
+"""Derived readings of stored parameters: the branches a proposer states.
 
 A proposer of `programs/proposers.dl` that gives a parameter's stored value
 on every input, each input read alone, states a model that derives the value
-from the input. That model is a case of the solver, and the runner owns it:
-the solver carries one `// @derive` line above the parameter's `.decl`, and
-no branch.
+from the input. That model's reading is a branch of a choice point on the
+parameter: the solver carries one `// @derive` line above the parameter's
+`.decl`, and no constructor. `dl.models.enumeration` holds the cases that
+take the branch.
 
-The witness tells the derived case from the stored reading. The tool builds
-one by swapping the stored color with a color the input does not hold: the
-proposer follows the swap, the stored fact does not, and the concept case
-gives different outputs at the two values, or is defined at one alone. A
-parameter no swap separates takes a hand-built entry of the witness file,
-under the id `<param>=<Proposer>`.
+The witness tells the cases that take the branch from the same cases at
+the stored value. The tool builds one by swapping the stored color with a
+color the input does not hold: the proposer follows the swap, the stored
+fact does not, and some case that takes the branch gives an output other
+than the same case at the stored value, or one of the two is defined
+alone. The witness's id is the branch's name, `<param>=<Proposer>`; an
+entry of that id in the witness file is kept, and a parameter no swap
+separates takes one built by hand.
 
-The runner holds a case only where the concept case reads the parameter.
-A parameter that only another branch reads, through clauses whose head
-carries that branch's constructor, has the concept case as its derived
-reading, so no case stands apart from it. A
-`// @ignore: derive` line above the parameter's `.decl` dismisses the case
-the session judges no case.
+A `// @ignore: derive` line stands above the parameter's `.decl` when the
+session judges a derivation no branch, in place of its `@derive` line;
+`// @ignore: derive <name>` under a `@derive` line excludes every held
+case that takes the line's branch and every branch whose name `<name>`
+contains.
 """
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 from arc.task import load as load_task
 from controlled_markdown import mctx
 from dl.annotations import (
+    DERIVE,
+    Branch,
     Derive,
     derive_blocks,
-    derive_ignored,
     derive_param,
+    ignore_lines,
 )
 from dl.determination_plan import (
     fact_params,
     per_grid_matches,
-    probe_grid,
     proposer_decls,
 )
 from dl.domains import _lib_defines
-from dl.store import concept_reads
+from dl.models import CaseId, Cases, enumeration
+from dl.store import case_reads
 from dl.paths import PROPOSERS_SRC
-from dl.solve import res_out_stem, run_dl_source, solver_file
-from dl.source import _render_arg, expand_macros, swap_facts
+from dl.solve import solver_file
+from dl.source import (
+    _render_arg,
+    assigned_source,
+    expand_macros,
+    with_line_above,
+)
 from dl.witness import (
     Entry,
-    Outcome,
     Witness,
-    _rows,
-    assigned_source,
-    concept_outcome,
+    assign_findings,
+    branch_diverges,
+    drop_findings,
+    load_witness_file,
     load_witnesses,
 )
 
@@ -61,38 +71,31 @@ OTHER = "other"
 
 COMP_RE = re.compile(r"^\.comp\s+(\w+)")
 
-"""The directive that dismisses this check. It stands above the
-parameter's `.decl`, and names the parameter declared under it."""
-
 
 @dataclass
 class Swap:
     """The witness the tool builds: on the input `grid` names, the color
     `free` stands in for the color `stored` holds, and `input` is the
-    swapped grid. `at_stored` and `at_derived` are what the concept case
-    gives on it at the stored value and at the derived value, each None
-    where the case is undefined, as a Group's null grid."""
+    swapped grid. `case` is the first case that takes the branch and gives
+    there an output other than `other`, the case that takes the stored
+    value there and the same branches elsewhere, by its shortest name."""
 
     grid: str
     stored: int
     free: int
     input: list[list[int]]
-    at_stored: Outcome
-    at_derived: Outcome
-
-    @property
-    def identity(self) -> bool:
-        """The concept case gives the input unchanged at the stored
-        value."""
-        return self.at_stored == self.input
+    case: CaseId
+    other: str
 
 
 @dataclass
 class Derivation:
     """One parameter read off the input by one proposer. `line` is the
     solver's `@derive` line where one stands, `entry` the witness file's
-    entry of the case's id, and `swap` the witness the tool builds, with
-    `reason` in its place where it builds none."""
+    entry of the branch's name, and `swap` the witness the tool builds, with
+    `reason` in its place where it builds none. `source` is the solver's
+    source with the `@derive` line standing, as the witness is recorded
+    on it."""
 
     param: str
     proposer: str
@@ -102,14 +105,19 @@ class Derivation:
     swap: Swap | None = None
     reason: str = ""
     read: bool = True
-    """The concept case reads the parameter. Where it does not, the
-    derived reading is the concept case, and the runner holds no case."""
+    """Some held case reads the parameter. Where none does, no case takes
+    the branch."""
     ignored: bool = False
-    """An `@ignore: derive` line dismisses the case."""
+    """A bare `@ignore: derive` line stands in place of the `@derive`
+    line."""
+    excluded: bool = False
+    """The `@ignore: derive <name>` lines under the `@derive` line exclude
+    every case that takes the branch."""
+    source: str = ""
 
     @property
-    def case(self) -> str:
-        return f"{self.param}={self.proposer}"
+    def case(self) -> CaseId:
+        return CaseId(f"{self.param}={self.proposer}")
 
 
 @dataclass
@@ -161,53 +169,26 @@ def _stored_colors(source: str, defines: dict[str, int]) -> set[int]:
     }
 
 
-def _concept_outcome(run: str, grid: list[list[int]], path, source: str,
-                     resolution: bool) -> Outcome:
-    """What the concept case of `source` gives on one grid, run under the
-    program `run`."""
-    return concept_outcome(run_dl_source(run, grid, solver_path=path),
-                           resolution, source)
-
-
-def derived_outcome(stem: str, case_id: str, grid: list[list[int]],
-                    source: str | None = None) -> Outcome:
-    """What the derived case `case_id`, `<param>=<Proposer>`, gives on one
-    grid: the concept case of `source`, the solver's file when omitted, at
-    the value the proposer gives on the grid. None when the proposer gives
-    no value there."""
-    param, _sep, proposer = case_id.partition("=")
-    path, _task_id = solver_file(stem)
-    if source is None:
-        source = path.read_text()
-    value = probe_grid(grid).get(proposer, set())
-    if not value:
-        return None
-    resolution = res_out_stem(stem)
-    candidates = run_dl_source(swap_facts(source, param, sorted(value)),
-                               grid, solver_path=path)
-    return concept_outcome(candidates, resolution, source)
-
-
 NO_COLOR = mctx("the parameter is not one color")
 NO_FREE_COLOR = mctx("no train input has a free color")
-ONE_OUTPUT = mctx("the concept case gives one output at both values, or is "
-                  "undefined at both, on every swap")
+ONE_OUTPUT = mctx("on every swap, each case that takes the branch gives the "
+                  "output of the case that takes the stored value there and "
+                  "the same branches elsewhere")
 
 
-def swap_witness(stem: str, param: str, proposer: str, types: list[str],
-                 stored: set[tuple]) -> tuple[Swap | None, str]:
-    """The swap that tells the derived case from the stored reading, and
-    the reason in its place where no swap tells them apart. The first train
-    input on whose swapped grid the concept case gives different outputs at
-    the stored value and at the value the proposer gives, or is defined at
-    one value alone, is the witness."""
+def swap_witness(stem: str, space: Cases, branch: Branch, source: str,
+                 types: list[str], stored: set[tuple]
+                 ) -> tuple[Swap | None, str]:
+    """The swap that tells the cases that take `branch` from the same cases
+    at the stored value (`dl.witness.branch_diverges`), and the reason in
+    its place where no swap tells them apart. The first train input whose
+    swapped grid shows it is the witness. `space` and `source` are the
+    solver's with the branch's line standing."""
     if types != ["Color"] or len(stored) != 1:
         return None, NO_COLOR
     color = next(iter(stored))[0]
-    path, task_id = solver_file(stem)
-    source = path.read_text()
+    _path, task_id = solver_file(stem)
     task = load_task(task_id)
-    resolution = res_out_stem(stem)
     held = _stored_colors(expand_macros(source), _lib_defines())
     free_seen = False
     for i, ex in enumerate(task.train):
@@ -217,16 +198,10 @@ def swap_witness(stem: str, param: str, proposer: str, types: list[str],
             continue
         free_seen = True
         grid = _swap_grid(ex.input, color, free[0])
-        cand = probe_grid(grid).get(proposer, set())
-        if not cand:
-            continue
-        got = _concept_outcome(source, grid, path, source, resolution)
-        at_derived = _concept_outcome(
-            swap_facts(source, param, sorted(cand)), grid, path, source,
-            resolution)
-        if at_derived == got:
-            continue
-        return Swap(f"train {i}", color, free[0], grid, got, at_derived), ""
+        pair = branch_diverges(stem, space, branch, grid, source)
+        if pair is not None:
+            return Swap(f"train {i}", color, free[0], grid, pair[0],
+                        space.name_of(pair[1])), ""
     if not free_seen:
         return None, NO_FREE_COLOR
     return None, ONE_OUTPUT
@@ -245,54 +220,56 @@ def _names(params) -> str:
     return ", ".join(f"`{n}`" for n in sorted(params)) or "no parameter"
 
 
-def entry_witness(stem: str, param: str, proposer: str,
+def entry_witness(stem: str, space: Cases, branch: Branch, source: str,
                   entry: Entry) -> list[str]:
-    """Where a witness file entry fails to witness the derived case: its
-    `assign` names another parameter, the proposer gives another value on
-    its input, or the concept case gives one output at both values or is
-    undefined at both."""
-    out: list[str] = []
-    if sorted(entry.assign) != [param]:
-        out.append(mctx("`assign` names {named}; a derive entry's `assign` "
-                        "names `{param}` alone").format(
-            named=_names(entry.assign), param=param))
-        return out
-    want = set(_rows(entry.assign[param]))
-    got = probe_grid(entry.input).get(proposer, set())
-    if got != want:
-        out.append(mctx("`{proposer}` gives {got} on the input; `assign` "
-                        "gives {want}").format(
-            proposer=proposer, got=_show(got), want=_show(want)))
-    path, _task_id = solver_file(stem)
-    source = path.read_text()
-    resolution = res_out_stem(stem)
-    at_stored = _concept_outcome(source, entry.input, path, source,
-                                 resolution)
-    at_assigned = _concept_outcome(
-        assigned_source(source, entry.assign), entry.input, path, source,
-        resolution)
-    if at_stored is None and at_assigned is None:
-        out.append(mctx("the concept case is undefined at the stored and at "
-                        "the assigned value"))
-    elif at_stored == at_assigned:
-        out.append(mctx("the concept case gives one output at the stored and "
-                        "at the assigned value"))
-    return out
+    """Where the witness file's entry of the branch's name fails to witness
+    it: its `assign` holds a fault `assign_findings` finds, or at its
+    assignment no case that takes the branch gives an output other than
+    the same case at the stored value (`dl.witness.branch_diverges`).
+    `space` and `source` are the solver's with the branch's line
+    standing."""
+    if bad := assign_findings(entry.assign, source):
+        return bad
+    if branch_diverges(stem, space, branch, entry.input,
+                       assigned_source(source, entry.assign)) is not None:
+        return []
+    return [mctx("at the witness's assignment, each case that takes "
+                 "`{case}` gives the output of the case that takes the stored "
+                 "value there and the same branches elsewhere").format(
+                     case=branch.name)]
 
 
-def derive_report(stem: str) -> Report:
+def _lined(source: str, param: str, proposer: str) -> str | None:
+    """`source` with a `@derive` line of `proposer` above the parameter's
+    `.decl` in `Params`, as the session writes it. None when no `.decl`
+    stands there."""
+    return with_line_above(
+        source, rf"^\s*\.decl\s+{re.escape(param)}\b",
+        f"// @derive {proposer}: <plausibility> <verdict>", "Params")
+
+
+def derive_report(stem: str, witness_file: Path | None = None) -> Report:
     """Every derivation of the solver's stored parameters, each with its
-    witness and its `@derive` line, and the findings that stand on them."""
+    witness and its `@derive` line, and the findings that stand on them.
+    A derivation with no `@derive` line is judged with its line standing.
+    `witness_file` stands in for the task's witness file."""
     path, task_id = solver_file(stem)
     source = path.read_text()
     params = fact_params(expand_macros(source), _lib_defines())
     labels, matches = per_grid_matches(stem)
     comments = proposer_comments()
     proposers = proposer_decls()
-    entries = {e.id: e
-               for e in (load_witnesses(task_id) or Witness(task_id)).entries}
-    reads = concept_reads(source)
-    dismissed = derive_ignored(source)
+    witness = load_witnesses(task_id) if witness_file is None \
+        else load_witness_file(witness_file) if witness_file.exists() \
+        else None
+    entries = {e.id: e for e in (witness or Witness(task_id)).entries}
+    space = enumeration(source)
+    reads = set().union(*(params for _read, params in case_reads(
+        source, space, space.plain).values()))
+    lines = {b.line: b for b in space.lines if b.kind == DERIVE}
+    taken = {b for held in space.runner.values() for b in held.branches}
+    dismissed = {i.site for i in ignore_lines(source)
+                 if i.kind == DERIVE and not i.name}
     findings: list[Finding] = []
     annotated: dict[str, Derive] = {}
     for block in derive_blocks(source):
@@ -309,8 +286,7 @@ def derive_report(stem: str) -> Report:
             continue
         if param not in reads:
             findings.append(Finding(where, mctx(
-                "`@derive` stands above a parameter the concept case does "
-                "not read")))
+                "`@derive` stands above a parameter no held case reads")))
             continue
         per = matches.get(param, {}).get(block.proposer)
         if per is None or not all(per):
@@ -324,18 +300,32 @@ def derive_report(stem: str) -> Report:
         annotated[case] = block
         if block.verdict == OTHER and case not in entries:
             findings.append(Finding(where, mctx(
-                "the verdict `{verdict}` needs an entry `{case}`").format(
-                    verdict=OTHER, case=case)))
+                "the verdict `{verdict}` needs a witness whose id is "
+                "`{case}`").format(verdict=OTHER, case=case)))
+    findings += [Finding(where, text)
+                 for where, text in drop_findings(space, DERIVE)]
     derivations: list[Derivation] = []
     for param, per_proposer in matches.items():
         for proposer, per in per_proposer.items():
             if not all(per):
                 continue
-            d = Derivation(param, proposer, comments.get(proposer, ""),
-                           annotated.get(f"{param}={proposer}"),
+            line = annotated.get(f"{param}={proposer}")
+            d = Derivation(param, proposer, comments.get(proposer, ""), line,
                            read=param in reads,
-                           ignored=param in dismissed)
+                           ignored=line is None and param in dismissed)
             if not d.read or d.ignored:
+                derivations.append(d)
+                continue
+            if line is not None:
+                d.source, lined = source, space
+                branch = lines.get(line.line)
+                d.excluded = branch is None or branch not in taken
+            else:
+                d.source = _lined(source, param, proposer) or ""
+                lined = enumeration(d.source) if d.source else space
+                branch = next((b for b in lined.lines
+                               if b.name == d.case), None)
+            if d.excluded or branch is None:
                 derivations.append(d)
                 continue
             entry = entries.get(d.case)
@@ -343,12 +333,13 @@ def derive_report(stem: str) -> Report:
                 d.entry = d.case
                 findings += [
                     Finding(d.case, text)
-                    for text in entry_witness(stem, param, proposer, entry)
+                    for text in entry_witness(stem, lined, branch, d.source,
+                                              entry)
                 ]
             else:
                 types, stored = params.get(param, ([], set()))
-                d.swap, d.reason = swap_witness(stem, param, proposer, types,
-                                                stored)
+                d.swap, d.reason = swap_witness(stem, lined, branch,
+                                                d.source, types, stored)
             if d.line is None and (d.entry or d.swap is not None):
                 findings.append(Finding(param, mctx(
                     "`{proposer}` derives the stored value on every input "
@@ -359,17 +350,10 @@ def derive_report(stem: str) -> Report:
 
 
 def _witness_line(swap: Swap) -> str:
-    line = mctx("witness: {grid} with {stored} and {free} swapped").format(
-        grid=swap.grid, stored=swap.stored, free=swap.free)
-    if swap.at_stored is None:
-        line += mctx("; the concept case is undefined at the stored value")
-    elif swap.identity:
-        line += mctx("; the concept case gives the input unchanged")
-    else:
-        line += mctx("; the concept case gives another grid")
-    if swap.at_derived is None:
-        line += mctx("; the derived case is undefined")
-    return line
+    return mctx("witness: {grid} with {stored} and {free} swapped; there "
+                "`{case}` differs from `{other}`"
+                ).format(grid=swap.grid, stored=swap.stored, free=swap.free,
+                         case=swap.case, other=swap.other)
 
 
 def render_derive(report: Report) -> list[str]:
@@ -382,31 +366,32 @@ def render_derive(report: Report) -> list[str]:
             param=d.param, proposer=d.proposer, comment=d.comment))
         if d.ignored:
             lines.append("  " + mctx(
-                "no case: the `@ignore: derive` line above the declaration "
-                "dismisses it"))
+                "no case takes the branch: `@ignore: derive` stands in place "
+                "of its `@derive` line"))
             continue
         if not d.read:
             lines.append("  " + mctx(
-                "no case: the concept case does not read the parameter"))
+                "no branch: no held case reads the parameter"))
+            continue
+        if d.excluded:
+            lines.append("  " + mctx(
+                "no case takes the branch: the `@ignore: derive <name>` "
+                "lines under its `@derive` line exclude every case that "
+                "would"))
             continue
         # The witness the line's plausibility and verdict judge, shown
         # whether or not the line stands yet.
         if d.entry:
-            lines.append("  " + mctx("witness: entry {case}").format(
-                case=d.case))
+            lines.append("  " + mctx("witness: `{case}` in the witness file"
+                                     ).format(case=d.case))
         elif d.swap is not None:
             lines.append("  " + _witness_line(d.swap))
         else:
             lines.append("  " + mctx("no witness: {reason}").format(
                 reason=d.reason))
-            if d.line is None:
-                lines.append("  " + mctx(
-                    "the case needs an entry `{case}`, its `assign` holding "
-                    "`{param}` at the value `{proposer}` gives on the "
-                    "entry's input, or an `@ignore: derive` line when no "
-                    "input separates them").format(case=d.case, param=d.param,
-                                             proposer=d.proposer))
-                continue
+            lines.append("  " + mctx(
+                "a `@derive` line needs a witness whose id is `{case}`"
+                ).format(case=d.case))
         if d.line is not None:
             lines.append("  " + mctx(
                 "line {line}: @derive {proposer}: {plausibility} {verdict}")

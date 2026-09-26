@@ -76,6 +76,8 @@ def load_console():
                  if n in ("console_server", "quota", "calibrate") or n.startswith(PACKAGE)]:
         del sys.modules[name]
     spec = importlib.util.spec_from_file_location("console_server", SERVER_PY)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"no module loader for {SERVER_PY}")
     entry = importlib.util.module_from_spec(spec)
     sys.modules["console_server"] = entry
     spec.loader.exec_module(entry)

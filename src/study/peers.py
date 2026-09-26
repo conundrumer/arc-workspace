@@ -24,6 +24,7 @@ from arc.task import load as load_task
 from dl.context import uncommented
 from dl.dlparse import Comp, Decl, ParseError, TypeDecl, parse
 from dl.features_run import ABSENT, UNDEF, Key, _pair_keys, report_of
+from dl.models import CaseId
 from dl.paths import REPO_ROOT, SOLVERS_DIR
 from dl.solve import PairResult, res_out_stem, run_pair
 from dl.souffle import _pool_workers
@@ -439,7 +440,7 @@ def _pairs_of(task_id: str) -> list[tuple[str, int, object]]:
             for idx, ex in enumerate(examples)]
 
 
-def peer_key(pair: PairResult, keys: dict[str, Key]) -> Key:
+def peer_key(pair: PairResult, keys: dict[CaseId, Key]) -> Key:
     """A program's key on one pair: the grids it emits there, `UNDEF` when the
     run failed, `ABSENT` when it emitted nothing."""
     if pair.error or not pair.variants:
@@ -517,14 +518,12 @@ def run_rows(rows: list[Row], progress=None) -> None:
         for kind, idx, ex in pairs_of[row.task_id]:
             work.append((job, (job.stem, job.task_id, kind, idx, ex)))
 
-    slots: list[PairResult | None] = [None] * len(work)
-
-    def one(i: int) -> None:
-        slots[i] = run_pair(*work[i][1])
+    def one(i: int) -> PairResult:
+        return run_pair(*work[i][1])
 
     with ThreadPoolExecutor(max_workers=_pool_workers()) as pool:
-        list(pool.map(one, range(len(work))))
-    for (job, _), result in zip(work, slots, strict=True):
+        results = list(pool.map(one, range(len(work))))
+    for (job, _), result in zip(work, results, strict=True):
         job.results.append(result)
 
     for task_id in task_ids:

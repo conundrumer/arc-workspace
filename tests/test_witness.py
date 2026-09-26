@@ -6,8 +6,9 @@ import pytest
 
 from arc.jsonio import format_file
 from dl import cli, solve, witness
-from dl.annotations import FORMS, SLUG_FORM, read
+from dl.annotations import FORMS, SLUG_FORM, Branch, read
 from dl.facts import Candidate
+from dl.models import NO_CHOICE, CaseId, HeldCase, NoChoice
 
 STEM = "abcd1234"
 
@@ -120,8 +121,10 @@ def test_the_file_loads_what_it_was_written_with(solvers):
                             assign={"arr_dim": [[5]]}),
                      _entry([[9, 9]])])
     loaded = witness.load_witnesses(STEM)
+    assert loaded is not None
     assert loaded.id == STEM
-    assert loaded.entries[0].output["Flip"] is None
+    output = loaded.entries[0].output
+    assert isinstance(output, dict) and output["Flip"] is None
     assert loaded.entries[0].assign == {"arr_dim": [[5]]}
     assert loaded.entries[1].rejected_output
     assert loaded.entries[1].output == [[9, 9]]
@@ -143,8 +146,126 @@ def test_an_assign_string_that_is_no_constant_is_a_finding():
         "first_axis": [["SYM_TB"], ["H"]],
         "box": [[["ZERO", ["DIR_T", "Top"]]]],
     }) == [
-        "the `assign` value of `first_axis` holds `H`, which is no constant "
-        "of the lib",
-        "the `assign` value of `box` holds `Top`, which is no constant of "
-        "the lib",
+        "the `assign` value of `first_axis` holds `H`, which is not a lib "
+        "constant",
+        "the `assign` value of `box` holds `Top`, which is not a lib "
+        "constant",
     ]
+
+
+def test_a_verdict_of_an_unheld_model_reads_as_that_models_output():
+    """A verdict naming a branch model whose case `impl_choice` does not
+    hold reads as that case's output, which the report runs. A held case
+    departs under the verdict where its output differs from that one, so a
+    held case that gives the verdict's grid leaves the approximation
+    without a witness, and the verdict is no finding of its own."""
+    source = (
+        "// @rule foot: the foot stands beside the block\n"
+        "//     @approximated: the foot stands on the dot's line\n"
+        "//     @witness two-colors: borderline Near\n"
+        ".type U = NeedA {} | Near {} | Skip {}\n"
+        ".type O = NeedB {} | SkipO {} | OtherO {}\n"
+        ".type Choice = [u: U, o: O]\n"
+        ".decl impl_choice(ch: Choice)\n")
+    held = [CaseId(c) for c in ("[NeedA, NeedB]", "[Near, SkipO]",
+                                "[Near, OtherO]")]
+    space = witness.case_space(source)
+    assert witness.unheld_verdicts(source, space, held) == {
+        "two-colors": [CaseId("[Near, NeedB]")]}
+
+    def notes(near: list[list[int]]) -> list[str]:
+        outcomes: dict[str, dict[CaseId, witness.Got]] = {"two-colors": {
+            **dict(zip(held, [None, [[1]], [[2]]], strict=True)),
+            CaseId("[Near, NeedB]"): near}}
+        return [d.note for d in witness._annotation_findings(
+            source, [witness.Entry("two-colors", "", [[1]])], held, space,
+            outcomes)]
+
+    assert notes([[3]]) == []
+    assert notes([[2]]) == [
+        "`@rule foot` is approximated and no witness under its "
+        "`@approximated:` shows case `[Near, OtherO]` giving an output "
+        "other than the verdict's"]
+
+
+GRID_PARAMS = """.comp Params {
+    .decl shape(p: Position)
+    GRID_MASK_2x2(shape,
+        1, _,
+        _, 1)
+}
+"""
+
+
+def test_assign_replaces_a_grid_call() -> None:
+    """An `assign` on a parameter a GRID call stores replaces that call.
+    Facts added beside the call would join its cells, and the run would
+    read the union with no sign of it."""
+    facts = witness.assigned_source(GRID_PARAMS, {"shape": [[[0, 1, 0, 1]]]})
+    assert "GRID_" not in facts and "shape([0, 1, 0, 1])." in facts
+    grid = witness.assigned_source(GRID_PARAMS, {"shape": [[0, 1, 1]]})
+    assert "GRID_MASK_1x3(shape,\n        _, 1, 1)" in grid
+    assert grid.count("GRID_") == 1
+
+
+def test_record_all_keeps_each_witness_but_its_groups_and_writes_nothing_on_a_failure(
+        solvers, monkeypatch, tmp_path):
+    """`record --all` rewrites only the groups: a lost `assign` or judged
+    output would pass unseen. A failed run leaves the file as it was."""
+    target = tmp_path / "copy.wit.json"
+    grid = [[1, 2], [3, 4]]
+    entries = [
+        {"id": "a", "separates": "it's a", "input": grid,
+         "assign": {"x": [[1]]}, "output": [{"cases": ["Old"], "grid": grid}]},
+        {"id": "b", "separates": "b", "input": grid, "output": [[5]]},
+        {"id": "c", "separates": "c", "input": [[7]],
+         "output": [{"cases": ["Old"], "grid": grid}]},
+    ]
+    target.write_text(format_file({"id": STEM, "witnesses": entries}))
+    monkeypatch.setattr(cli, "assign_findings", lambda assign, source: [])
+
+    def outcomes(stem, solver, source, g, assign, show):
+        if g == [[7]] and fail:
+            raise TimeoutError("slow")
+        return {"New": g, "Copy=1": [[9]]}
+
+    monkeypatch.setattr(cli, "_record_outcomes", outcomes)
+    fail = True
+    before = target.read_text()
+    assert cli.cmd_record_all(STEM, str(target)) == 1
+    assert target.read_text() == before
+    fail = False
+    assert cli.cmd_record_all(STEM, str(target)) == 0
+    after = witness.read_witness_data(STEM, target)["witnesses"]
+    groups = [{"cases": ["New"], "grid": grid},
+              {"cases": ["Copy=1"], "grid": [[9]]}]
+    assert after[0] == {**entries[0], "output": groups}
+    assert after[1] == entries[1]
+    assert after[2]["output"] == [{"cases": ["New"], "grid": [[7]]},
+                                  {"cases": ["Copy=1"], "grid": [[9]]}]
+    assert not (solvers / "witnesses" / f"{STEM}.wit.json").exists()
+
+
+def test_the_built_witnesses_read_the_witness_file_given(tmp_path, monkeypatch):
+    # Under --witness-file, the reports that decide which branches get a
+    # built witness read that file, not the task's.
+    from dl import derive, store
+    file = tmp_path / "own.wit.json"
+    read: list = []
+
+    def reader(empty):
+        def report(stem, witness_file=None):
+            read.append(witness_file)
+            return empty
+        return report
+    monkeypatch.setattr(derive, "derive_report",
+                        reader(derive.Report([], [])))
+    monkeypatch.setattr(store, "store_report", reader(store.Report()))
+    space = NoChoice()
+    derived = Branch("derive", "p", "Prop", 1)
+    stored = Branch("store", "q", witness.STORED, 2)
+    space.lines = [derived, stored]
+    space.runner = {CaseId(b.name): HeldCase(NO_CHOICE, (b,))
+                    for b in space.lines}
+    witness.built_witnesses(STEM, space, set(), file)
+    assert read == [file, file]

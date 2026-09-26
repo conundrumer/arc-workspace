@@ -27,13 +27,19 @@ def task_id_of(arg: str) -> str:
     return found.group() if found else name
 
 
+def solver_name(stem: str) -> str:
+    """The solver file a stem argument names, as a finding line gives it: the
+    argument as the caller wrote it, with `.dl` where it has none."""
+    return stem if stem.endswith(".dl") else f"{stem}.dl"
+
+
 def solver_file(arg: str) -> tuple[Path, str]:
     """The solver file a caller's argument names, with its task id. The
     argument is a stem (`8403a5d5`), a file name (`8403a5d5.dl`), or a path
     to a `.dl` file, relative to the working directory or absolute. A path
     that exists as given is that file; every other argument resolves under
     programs/solvers/, where a bare stem names a corpus solver."""
-    path = Path(arg if arg.endswith(".dl") else f"{arg}.dl")
+    path = Path(solver_name(arg))
     if not path.exists():
         path = SOLVERS_DIR / path
     return path, task_id_of(path.name)

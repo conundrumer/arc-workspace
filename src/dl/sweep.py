@@ -5,10 +5,18 @@ import re
 import sys
 import time
 from collections.abc import Iterable
+from collections.abc import Set as AbstractSet
 from concurrent.futures import Future, ThreadPoolExecutor
 
 from arc.task import load as load_task
 from controlled_markdown import mctx
+from dl.dlparse import (
+    SECTION_RE,
+    ParseError,
+    TypeDecl,
+    marker_names,
+    parse,
+)
 from dl.domains import (
     ENUM_TYPES,
     MAG_POSITION_TYPES,
@@ -19,6 +27,8 @@ from dl.domains import (
     _number_domain,
     _position_domain,
 )
+from dl.facts import grid_to_facts, parse_output
+from dl.models import BRANCH_RE, TERM_RE, Space, case_space, model_label
 from dl.solve import (
     PairRun,
     _pair_profile,
@@ -28,13 +38,14 @@ from dl.solve import (
     res_out,
     solver_file,
 )
-from dl.souffle import _pool_workers
+from dl.souffle import _pool_workers, _run_source
 from dl.source import (
     RIGID_CHART_PREFIX,
     _comp_span,
     _param_facts,
     _render_arg,
     _split_args,
+    build_source,
     comp_decls,
     expand_macros,
     public_param,
@@ -210,11 +221,152 @@ def param_domains(
     return domains
 
 
+def _reading_cases(source: str, param: str) -> frozenset[str]:
+    """The names the section marker above the parameter's decl in Params
+    holds, each with the fields it fixes: `Derive(g=Iso)`. A parameter
+    above every marker is shared, and the set is empty for it."""
+    start, end = _comp_span(source, "Params")
+    section = None
+    for line in source.splitlines()[start:end]:
+        if m := SECTION_RE.match(line.lstrip()):
+            section = m.group(1)
+        elif re.match(rf"\s*\.decl\s+{param}\s*\(", line):
+            break
+    if section is None:
+        return frozenset()
+    return frozenset(c.lstrip("$") for c in marker_names(section))
+
+
+def _ctor_names(value: str) -> set[str]:
+    """The constructor names a printed case value holds: `[$A($B), $C]`
+    gives `A`, `B` and `C`."""
+    return set(re.findall(r"\$(\w+)", value))
+
+
+def _field_names(source: str) -> dict[str, list[str]]:
+    """Each constructor's field names, in declaration order."""
+    try:
+        items = parse(source).items
+    except ParseError:
+        return {}
+    return {m.group(1): re.findall(r"(\w+)\s*:", m.group(2))
+            for it in items if isinstance(it, TypeDecl) and it.branches
+            for m in BRANCH_RE.finditer(it.rhs)}
+
+
+def _marker_test(source: str, res: bool, names: frozenset[str]):
+    """A test of whether a printed case is one of the cases the marker
+    names in `names` mark. A name marks the cases that take its
+    constructor, with each field it fixes taking the constructor it fixes
+    there. Where the `Choice` spells no case in full, a name marks the
+    cases that take its constructor."""
+    bare = {n.split("(", 1)[0].strip() for n in names}
+    space = case_space(source)
+    if not isinstance(space, Space):
+        return lambda case: bool(_ctor_names(case) & bare)
+    fields = _field_names(source)
+    wanted = []
+    for name in names:
+        m = TERM_RE.match(name)
+        if m is None:
+            continue
+        fixed = {}
+        for part in (m.group(2) or "").split(","):
+            key, eq, value = part.partition("=")
+            if eq:
+                fixed[key.strip()] = value.strip().lstrip("$")
+        wanted.append((m.group(1), fixed))
+
+    def marks(forced, ctor: str, fixed: dict[str, str]) -> bool:
+        own = fields.get(ctor, [])
+        return any(
+            c == ctor and all(
+                f in own and forced.get(node + (own.index(f),)) == v
+                for f, v in fixed.items())
+            for node, c in forced.items())
+
+    def test(case: str) -> bool:
+        forced = space.nodes(model_label(case, res))
+        if forced is None:
+            return bool(_ctor_names(case) & bare)
+        return any(marks(forced, ctor, fixed) for ctor, fixed in wanted)
+
+    return test
+
+
+def _reading_runs(mod: str, examples: list, res: bool,
+                  marked) -> list[frozenset[str]]:
+    """Per pair, the cases that give a grid under `mod` and that `marked`
+    holds to read the parameter. A case with conflicting or missing cells
+    gives no grid. A `TiebreakResolution` solver's resolution column is
+    left off each case. A run that fails raises its error."""
+    out = []
+    for ex in examples:
+        actuals = parse_output(
+            _run_source(build_source(mod), grid_to_facts(ex.input)))
+        cases = {c.case for c in actuals
+                 if not (c.error or c.conflicts or c.missing)}
+        out.append(frozenset(
+            c.rsplit("\t", 1)[0] if res else c
+            for c in cases if marked(c)))
+    return out
+
+
+def _run_failed(err: RuntimeError) -> str:
+    """The reason a sweep line gives for a run that failed: the first
+    error line Souffle printed, or the error's first line."""
+    lines = [ln.strip() for ln in str(err).splitlines() if ln.strip()]
+    first = next((ln for ln in lines if ln.startswith("Error")),
+                 lines[0] if lines else "")
+    return mctx("the run failed: {error}").format(error=first)
+
+
+def _undefined(source: str, param: str, extras: list, source_of,
+               examples: list) -> tuple[frozenset[str], dict[object, bool]]:
+    """The extras at which no case that reads the parameter is defined on
+    every train pair, each mapped to whether those cases emit nothing on
+    every pair; and the names of the cases that read the parameter.
+
+    A value reproduces the pairs while its case fits the task, so a value
+    that the pairs reproduce only because the reading cases emit nothing is
+    no admitted value. A shared parameter is read by every case, and the
+    stored profile already holds them, so only a parameter under a case
+    marker is checked. Nor is one whose reading cases are undefined on some
+    pair under the stored value too. `source_of` gives the source under one
+    extra. A run that fails raises its error.
+    """
+    names = _reading_cases(source, param)
+    if not names or not extras:
+        return names, {}
+    res = res_out(source)
+    marked = _marker_test(source, res, names)
+    if not frozenset.intersection(*_reading_runs(source, examples, res,
+                                                 marked)):
+        return names, {}
+
+    def check(value):
+        return _reading_runs(source_of(value), examples, res, marked)
+
+    with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
+        runs = dict(zip(extras, executor.map(check, extras)))
+    return names, {
+        value: not any(per_pair)
+        for value, per_pair in runs.items()
+        if not frozenset.intersection(*per_pair)
+    }
+
+
+type SweepResult = tuple[str, str, str | tuple]
+"""A parameter's line of the sweep, as `sweep_report` gives it: the
+parameter, the status, and the detail, which is the reason text for a
+`skip` status and a tuple for every other status."""
+
+
 def sweep_report(
     stem: str,
     max_candidates: int = MAX_CANDIDATES,
     time_limit: float = TIME_LIMIT_SECONDS,
-) -> list[tuple[str, str, object]]:
+) -> list[SweepResult]:
     """Conditional sweep of each enumerable parameter.
 
     Sweeps one parameter at a time with the others at their stored values; an
@@ -249,14 +401,21 @@ def sweep_report(
     it. Each such parameter reports its per-case value sets too, from the
     same runs (see _case_result).
 
+    A value fits only while a case that reads the parameter is defined on
+    every train pair under it (see _undefined). The values the pairs
+    reproduce only because those cases emit nothing leave the fitting
+    values, and the detail names them.
+
     Returns (param, status, detail): status 'swept' carries
-    (fitting, stored, types, verdicts) — verdicts maps each extra fitting
-    value to its test-pass bool — 'swept-near' and 'swept-cut' carry that
-    shape with a trailing (swept, whole) scope, 'swept-set' carries the
-    same shape with frozensets of value tuples for fitting and verdict
-    keys, 'swept-set-near' and 'swept-set-cut' add the scope to that,
-    'cases' carries (per_case, types, domain), and 'skip' carries the
-    reason.
+    (fitting, stored, types, verdicts, scope, gaps) — verdicts maps each
+    extra fitting value to its test-pass bool, scope is None, and gaps is
+    None or (the names of the reading cases, each undefined value mapped
+    to whether those cases emit nothing on every pair) — 'swept-near' and
+    'swept-cut' carry that shape with the scope (swept, whole),
+    'swept-set' carries the same shape with frozensets of value tuples
+    for fitting and verdict keys, 'swept-set-near' and 'swept-set-cut'
+    add the scope to that, 'cases' carries (per_case, types, domain), and
+    'skip' carries the reason.
     """
     # Macros expand first, so a GRID-fed parameter reads as ordinary facts and
     # a RIGID chart as an ordinary generated-name parameter; re-expansion at
@@ -275,7 +434,7 @@ def sweep_report(
 
     # The report keeps the declaration order, so each entry carries the
     # rank of its parameter and its place within that parameter.
-    results: list[tuple[int, int, tuple[str, str, object]]] = []
+    results: list[tuple[int, int, SweepResult]] = []
     prepared: list[tuple[int, str, list[str], list[tuple], list[tuple],
                         str, tuple | None]] = []
     for rank, (param, types) in enumerate(params.items()):
@@ -362,13 +521,27 @@ def sweep_report(
                                         cases_wanted)
             ran = True
             fitting = [v for v, ok, _ in rows if ok]
+            gaps = None
+            if run < len(candidates) or set(stored) <= set(fitting):
+                try:
+                    names, undefined = _undefined(
+                        source, param, sorted(set(fitting) - set(stored)),
+                        lambda v, param=param: swap_fact(source, param, v),
+                        task.train)
+                except RuntimeError as err:
+                    results.append((rank, 0, (
+                        public_param(param), "skip", _run_failed(err))))
+                    continue
+                fitting = [v for v in fitting if v not in undefined]
+                gaps = (names, undefined) if undefined else None
 
             if run < len(candidates):
                 # A cut sweep reads part of the candidate set, so it reports
                 # what it saw and leaves the test runs out.
                 results.append((rank, 0, (
                     public_param(param), "swept-cut",
-                    (fitting, stored, types, {}, (run, len(candidates))))))
+                    (fitting, stored, types, {}, (run, len(candidates)),
+                     gaps))))
                 continue
 
             case_result = _case_result(param, types, candidates, base_cases, rows) \
@@ -396,9 +569,7 @@ def sweep_report(
 
                     with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
                         verdicts = dict(zip(extras, executor.map(test_check, extras)))
-            detail = (fitting, stored, types, verdicts)
-            if scope:
-                detail = detail + (scope,)
+            detail = (fitting, stored, types, verdicts, scope, gaps)
             results.append((rank, 0, (public_param(param), status, detail)))
             if case_result:
                 results.append((rank, 1, case_result))
@@ -411,7 +582,7 @@ def _case_result(
     candidates: list[tuple],
     base_cases: frozenset[str],
     rows: list[tuple[tuple, bool, frozenset[str] | None]],
-) -> tuple[str, str, object] | None:
+) -> SweepResult | None:
     """The per-case entry for one shared parameter, or None when the cases
     admit one value set.
 
@@ -501,7 +672,7 @@ def _set_sweep(
     reference: list[frozenset[str]],
     max_candidates: int,
     clock: _Clock,
-) -> tuple[str, str, object]:
+) -> SweepResult:
     """Sweep a parameter whose facts fit only together, as one unit.
 
     Candidate values are the non-empty subsets of the singleton candidates;
@@ -541,9 +712,20 @@ def _set_sweep(
           file=sys.stderr)
     rows, run = _run_candidates(test, subsets, clock)
     fitting = [f for f in rows if f]
+    gaps = None
+    if run < len(subsets) or stored_set in fitting:
+        try:
+            names, undefined = _undefined(
+                source, param, sorted(set(fitting) - {stored_set}, key=sorted),
+                lambda value: swap_facts(source, param, sorted(value)),
+                task.train)
+        except RuntimeError as err:
+            return (name, "skip", _run_failed(err))
+        fitting = [f for f in fitting if f not in undefined]
+        gaps = (names, undefined) if undefined else None
     if run < len(subsets):
         return (name, "swept-set-cut",
-                (fitting, stored, types, {}, (run, len(subsets))))
+                (fitting, stored, types, {}, (run, len(subsets)), gaps))
 
     verdicts: dict[frozenset, bool] = {}
     extras = sorted(set(fitting) - {stored_set}, key=sorted)
@@ -560,10 +742,7 @@ def _set_sweep(
 
             with ThreadPoolExecutor(max_workers=_pool_workers()) as executor:
                 verdicts = dict(zip(extras, executor.map(test_check, extras)))
-    detail = (fitting, stored, types, verdicts)
-    if scope:
-        detail = detail + (scope,)
-    return (name, status, detail)
+    return (name, status, (fitting, stored, types, verdicts, scope, gaps))
 
 
 def _mag_vec(vals: tuple, types: list[str]) -> list[int]:
@@ -595,7 +774,7 @@ def _num_below(e: tuple, s: tuple, types: list[str]) -> bool:
             and any(a < b for a, b in zip(em, sm)))
 
 
-def _refuted_note(param: str, determined: set[str]) -> str:
+def _refuted_note(param: str, determined: AbstractSet[str]) -> str:
     """What a refuted extra means for this parameter: a determination that
     reproduces the stored value already picks it from train; without one,
     such a determination is open."""
@@ -604,9 +783,37 @@ def _refuted_note(param: str, determined: set[str]) -> str:
             else mctx("a determination from train alone could pick it"))
 
 
+def _gap_clauses(gaps, shown) -> list[str]:
+    """The clauses on the values the pairs reproduce only because no case
+    that reads the parameter is defined on every train pair. `shown`
+    renders a list of values."""
+    if not gaps:
+        return []
+    names, undefined = gaps
+    label = ", ".join(f"`{n}`" for n in sorted(names))
+    nothing = [v for v, empty in undefined.items() if empty]
+    partial = [v for v, empty in undefined.items() if not empty]
+    parts = []
+    if nothing:
+        parts.append(mctx(
+            "the {label} cases are undefined on every train pair at {shown}").format(
+            label=label, shown=shown(sorted(nothing))))
+    if partial:
+        parts.append(mctx(
+            "no {label} case is defined on every train pair at {shown}").format(
+            label=label, shown=shown(sorted(partial))))
+    return parts
+
+
+def _gaps(detail: tuple) -> tuple | None:
+    """The gaps a swept line's detail carries; None where it carries
+    none."""
+    return detail[5] if len(detail) > 5 else None
+
+
 def render_sweep(
-    results: list[tuple[str, str, object]],
-    determined: set[str] = frozenset(),
+    results: list[SweepResult],
+    determined: AbstractSet[str] = frozenset(),
 ) -> list[str]:
     """One line per result; ` ✓` marks a parameter the sweep settles.
 
@@ -619,7 +826,9 @@ def render_sweep(
     set` — so a reader keys on the mark rather than on one form. A
     partial sweep covers part of the candidate set, so its line names
     that scope and drops the mark, in the value forms and the set form
-    alike.
+    alike. A value the pairs reproduce only because the cases that read
+    the parameter emit nothing is no fitting value, and its own clause
+    names it.
     """
     defines = _lib_defines()
     names = {v: k for k, v in defines.items()}
@@ -632,7 +841,7 @@ def render_sweep(
 
     lines = []
     for param, status, detail in results:
-        if status == "skip":
+        if isinstance(detail, str):
             lines.append(mctx("{param}: not swept — {detail}").format(
                 param=param, detail=detail))
             continue
@@ -641,6 +850,7 @@ def render_sweep(
             continue
         if status in ("swept-set", "swept-set-near", "swept-set-cut"):
             fitting, stored, types, verdicts = detail[:4]
+            gaps = _gaps(detail)
             stored_set = frozenset(stored)
             scope = mctx("swept whole")
             if status == "swept-set-near":
@@ -659,12 +869,15 @@ def render_sweep(
                 return "[" + ", ".join(show_value(v) for v in values) + "]"
 
             shown_s = show_value(stored_set)
+            gap_parts = _gap_clauses(
+                gaps, lambda vs: show_values(sorted(vs, key=sorted)))
             if set(fitting) == {stored_set}:
                 mark = " ✓" if status == "swept-set" else ""
-                lines.append(mctx(
+                lines.append("; ".join([mctx(
                     "{param}: unique as a set = {shown}{mark} (facts fit only "
                     "together; {scope})").format(
-                    param=param, shown=shown_s, mark=mark, scope=scope))
+                    param=param, shown=shown_s, mark=mark, scope=scope)]
+                    + gap_parts))
                 continue
             extras = sorted(set(fitting) - {stored_set}, key=sorted)
             refuted = [e for e in extras if not verdicts.get(e, False)]
@@ -681,9 +894,10 @@ def render_sweep(
                     note=_refuted_note(param, determined)))
             if passing:
                 parts.append(PASSING.format(shown=show_values(passing)))
-            lines.append(f"{param}: " + "; ".join(parts))
+            lines.append(f"{param}: " + "; ".join(parts + gap_parts))
             continue
         fitting, stored, types, verdicts = detail[:4]
+        gaps = _gaps(detail)
         scope = ""
         if status == "swept-near":
             swept, whole = detail[4]
@@ -700,17 +914,18 @@ def render_sweep(
             return ", ".join(show(v, types) for v in vals)
 
         shown_s = shown(stored)
+        gap_parts = _gap_clauses(gaps, lambda vs: f"[{shown(vs)}]")
         if vset == sset:
             mark = "" if scope else " ✓"
             if len(sset) == 1:
-                lines.append(
-                    mctx("{param}: unique = {shown}{mark}{scope}").format(
-                        param=param, shown=shown_s, mark=mark, scope=scope))
+                head = mctx("{param}: unique = {shown}{mark}{scope}").format(
+                    param=param, shown=shown_s, mark=mark, scope=scope)
             else:
-                lines.append(mctx(
+                head = mctx(
                     "{param}: set of {count} = [{shown}]{mark}{scope}").format(
                     param=param, count=len(sset), shown=shown_s, mark=mark,
-                    scope=scope))
+                    scope=scope)
+            lines.append("; ".join([head] + gap_parts))
             continue
         # Each finding about the extras gets its own clause, so a refuted
         # extra cannot hide a surviving one.
@@ -739,7 +954,7 @@ def render_sweep(
                 parts.append(
                     mctx("[{shown}] fit and are smaller than stored").format(
                         shown=shown(below)))
-        lines.append(f"{param}: " + "; ".join(parts) + scope)
+        lines.append(f"{param}: " + "; ".join(parts + gap_parts) + scope)
     return lines
 
 

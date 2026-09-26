@@ -31,11 +31,11 @@
     out(P, Col, [$Count(),     $SliceMap()]) :- ...
     ```
 - A clause for one branch of a field writes that field's constructor and a variable for each other field.
-- When only some combinations are cases, the record remains, and `impl_choice` lists only those combinations.
+- When only some combinations are cases, the record remains, and `impl_choice` excludes the others, as [Cases](docs/handbook/solver-file.md#cases) states.
 - A flat sum duplicates the shared clauses and causes the linter's `choice-tag` finding.
 
 ## Choice grounding via `impl_choice`
-- If the case column otherwise appears only under negation, a clause shared by all cases needs a positive atom to bind its case variable. An enumeration relation provides it, one fact per case.
+- If the case column otherwise appears only under negation, a clause shared by all cases needs a positive atom to bind its case variable. An enumeration relation that holds each case provides it.
     ```
     .decl impl_choice(ch: Choice)
     impl_choice($CaseA()). impl_choice($CaseB()).
@@ -283,7 +283,7 @@
 - Repeating the tested atom once per member states the same universal by hand: the members become variable positions, and an assembly join must bind one variable per member.
 
 ## Open values joined per value
-- The program derives the output, or a value the output depends on, once per open value, keyed by that value, and keeps it only where every open value gives the same one: `Unanimous` over the per-value results (9f8de559 `nearest`, `pick`), or one `out` clause over every value, where two colors at a cell leave the grid undefined (28a6681f).
+- The program derives the output, or a value the output depends on one-to-one, once per open value, keyed by that value in each case that shares the keyed clauses, and keeps it only where every open value gives the same one, and under tiebreak resolutions the same grid, through any resolution: `Unanimous` over the per-value results, or one `out` clause over every value, where two colors at a cell leave the grid undefined (28a6681f).
     - Neither form makes the output undefined where some open value gives nothing, since the other values' result still stands. A defect clause states it, as in [Universals via defect negation](docs/handbook/patterns.md#universals-via-defect-negation).
 
 ## `cell_split` — input cell with its axis decomposition

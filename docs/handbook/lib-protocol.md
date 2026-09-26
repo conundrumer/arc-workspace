@@ -18,11 +18,11 @@
     - **Proposal comp.** If those relations need a banned form, place them in a proposal comp: a `.comp` named for the operation.
     - **Extension of a lib comp.** Write no comp for an extension of a lib comp. Keep its local clause beside the instance.
     - Run the solver and confirm that the operation works in context.
-2. Report the operation: name it, describe it, show the solver-local version, and name the sites the grep found.
+2. Report the operation: name it, describe it, show the solver-local version, and list the sites the grep found.
 
 ## The lib pass
 + deferred
-- Runs over the operations the reports name.
+- Runs over the operations the reports list.
 - An operation with a proposal comp, or with sites in four or more other solvers, gets an entry.
 - The `Match:` line of an entry under [proposals](docs/wf-solver/proposals) is the grep for that entry's operation.
 
@@ -33,13 +33,13 @@
     - a `# <name> — <operation>` title
     - a first sentence that stands alone
     - the code form, when it has one
-    - a `Not:` line naming what is not that operation
+    - a `Not:` line stating what is not that operation
     - a `Match:` line with a search signature that covers every statement of the operation, including statements whose atoms are in different lines or clauses, and statements where a solver accesses one lib call only through another
         - state the shape in prose and match it with the parser ([test_ast_match.py](tests/test_ast_match.py))
         - restate a `Match:` line that does not meet this spec
-            - a signature that names an identifier the lib no longer declares, or a header field that [Header](docs/handbook/solver-file.md#header) no longer has, does not meet this spec, and its restatement uses the current name
+            - a signature that uses an identifier the lib no longer declares, or a header field that [Header](docs/handbook/solver-file.md#header) no longer has, does not meet this spec, and its restatement uses the current name
     - a `Survey:` line per survey, its time to the minute, each followed by its own result
-        - the line names the scope the survey covered, as one of these: `Survey: <date time> — every solver.` or `Survey: <date time> — the solvers since <the entry's previous survey time>.`
+        - the line states the scope the survey covered, as one of these: `Survey: <date time> — every solver.` or `Survey: <date time> — the solvers since <the entry's previous survey time>.`
         - a survey's scope includes drafts
         - the survey result that is relevant to the operation: the near-misses (sites that resemble the operation without stating it), the spec question, and a `Callers` list of the solvers that would call it
             - a citation is the stem and the relation name
@@ -47,7 +47,7 @@
         - text with no `Survey:` line above it counts as no result
         - a survey result stays as written, except for a strike: strike a solver from its `Callers` list when that solver no longer writes the operation, and strike a statement that the entry's current code form, `Not:` line, or `Match:` line contradicts
         - a survey result's spec question is the user's to apply
-        - a pass that finds a further site for one names that site in the review
+        - a pass that finds a further site for one lists that site in the review
     - a `Closed: <date time>` line with the judgment, when the operation is closed
 - Put in the entry what a reader needs to judge the operation, and nothing else.
 
@@ -69,7 +69,7 @@
         - For a closed entry with no survey result, and a closing judgment that requires evidence from the solvers, strike its `Closed:` line and survey the entry.
         - For a closed entry with no survey result, and a judgment that can be made without evidence from the solvers, leave the entry closed.
     - Run the survey again when the pass uses that result for a judgment, including a close.
-    - Name an unlisted caller in the review, and the next survey lists it.
+    - List an unlisted caller in the review, and the next survey lists it.
     - Count a family (`// @representative:` siblings with their representative) as one caller.
     - **The survey.** `uv run python scripts/survey.py <entry>` surveys an entry and writes the survey result into it.
     - Run it when the pass needs an entry's survey result and the entry has none, or some solvers are newer than its newest `Survey:` time.

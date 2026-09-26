@@ -3,8 +3,10 @@ runs."""
 
 import bisect
 import re
+from collections.abc import Iterable, Sequence
+from typing import TypeGuard
 
-from dl.dlparse import SECTION_RE, Comp, Decl, Index, ParseError, Rigid, parse
+from dl.dlparse import SECTION_RE, Comp, Decl, Index, ParseError, Rigid, Rule, parse
 from dl.paths import REPO_ROOT
 
 # Per-mode IO directives, appended to the built source.
@@ -514,8 +516,152 @@ def swap_fact(source: str, param: str, values: tuple) -> str:
     return swap_facts(source, param, [values])
 
 
+# One GRID call in Params: its span in the source, the macro's name, the
+# arguments between the relation and the cells, and the indent of its line.
+type GridCall = tuple[int, int, str, list[str], str]
+
+
+def param_grid_calls(source: str, param: str) -> list[GridCall]:
+    """The GRID calls in Params that store `param`, in source order."""
+    lines = source.splitlines(keepends=True)
+    s, e = _comp_span(source, "Params")
+    lo = sum(len(ln) for ln in lines[:s])
+    hi = sum(len(ln) for ln in lines[:e])
+    out: list[GridCall] = []
+    for m in GRID_CALL_RE.finditer(source, lo, hi):
+        line_start = source.rfind("\n", 0, m.start()) + 1
+        prefix = source[line_start:m.start()]
+        if "//" in prefix:
+            continue
+        depth, i = 1, m.end()
+        while i < len(source) and depth:
+            if source[i] == "(":
+                depth += 1
+            elif source[i] == ")":
+                depth -= 1
+            i += 1
+        args = _split_args(source[m.end():i - 1])
+        h, w = int(m.group(3)), int(m.group(4))
+        if args[0] != param:
+            continue
+        macro = source[m.start():m.end() - 1].rstrip()
+        indent = prefix if not prefix.strip() else ""
+        out.append((m.start(), i, macro, args[1:len(args) - h * w], indent))
+    return out
+
+
+def _without_span(source: str, start: int, end: int) -> str:
+    """`source` less [start, end), and less the line it stood on when
+    nothing else stands there."""
+    line_start = source.rfind("\n", 0, start) + 1
+    line_end = source.find("\n", end)
+    line_end = len(source) if line_end < 0 else line_end + 1
+    if not source[line_start:start].strip() and not source[end:line_end].strip():
+        return source[:line_start] + source[line_end:]
+    return source[:start] + source[end:]
+
+
+# A cell of a grid an `assign` gives: a number, or the name of a lib
+# constant.
+type Cell = int | str
+
+
+def grid_call_text(macro: str, param: str, keys: list[str],
+                   grid: Sequence[Sequence[Cell]], indent: str) -> str:
+    """A call of `macro`'s form that stores `grid` as `param`, with `keys`
+    as its leading columns. A mask form takes 1 as a member cell and 0 as
+    an empty cell. A stamp form raises ValueError, as a grid gives no
+    anchor, and so does a sparse form, as a grid of colors marks no cell
+    empty."""
+    m = GRID_CALL_RE.match(macro + "(")
+    if m is None or m.group(1) or m.group(2) == "SPARSE_":
+        raise ValueError(f"{macro} takes no grid of colors")
+    mask = m.group(2) == "MASK_"
+    if mask and any(c not in (0, 1) for row in grid for c in row):
+        raise ValueError(f"{macro} takes 1 and 0 cells only")
+    h, w = len(grid), len(grid[0])
+    cell = (lambda c: "1" if c else "_") if mask else str
+    body = f",\n{indent}    ".join(", ".join(cell(c) for c in row)
+                                  for row in grid)
+    head = ", ".join([param, *keys])
+    name = f"GRID_{'MASK_' if mask else ''}{h}x{w}"
+    return f"{name}({head},\n{indent}    {body})"
+
+
+def swap_grid(source: str, param: str,
+              grid: Sequence[Sequence[Cell]]) -> str:
+    """Replace `param`'s one GRID call in Params with a call of its form
+    that stores `grid`, and drop `param`'s Params facts
+    (`grid_call_text`). A `param` that no single GRID call stores raises
+    ValueError."""
+    calls = param_grid_calls(source, param)
+    if len(calls) != 1:
+        raise ValueError(f"{len(calls)} GRID calls store {param}")
+    start, end, macro, keys, indent = calls[0]
+    text = grid_call_text(macro, param, keys, grid, indent)
+    return _swap_atoms(source[:start] + text + source[end:], param, [])
+
+
 def swap_facts(source: str, param: str, rows: list[tuple]) -> str:
-    """Replace `param`'s Params facts with one fact per row."""
+    """Replace `param`'s Params facts and GRID calls with one fact per
+    row."""
+    for start, end, *_ in reversed(param_grid_calls(source, param)):
+        source = _without_span(source, start, end)
+    return _swap_atoms(source, param, rows)
+
+
+# An `assign` object: per parameter, its facts or its grid, in the form
+# solver-file.md (Witness file) gives.
+type Assign = dict[str, list[list[object]]]
+
+
+def _rect_grid(v: object) -> TypeGuard[list[list[int]]]:
+    """A grid of at least one cell, each row as long as the first, each
+    cell an integer from 0 to 9."""
+    return (_rect(v)
+            and all(type(c) is int and 0 <= c <= 9 for r in v for c in r))
+
+
+def _rect(v: object) -> TypeGuard[list[list[object]]]:
+    """At least one row, each a non-empty list as long as the first."""
+    return (isinstance(v, list) and bool(v)
+            and all(isinstance(r, list) and r and len(r) == len(v[0])
+                    for r in v))
+
+
+def assign_grid(value: object, source: str,
+                param: str) -> TypeGuard[list[list[Cell]]]:
+    """Whether `value`, an `assign` value of `param`, is a grid: a GRID
+    call stores `param`, and `value` is rows of cells, each a number or a
+    name. The relation a GRID call stores has a Position column, so each
+    fact of it holds a record, and no fact list reads as a grid."""
+    return (_rect(value)
+            and all(type(c) in (int, str) for r in value for c in r)
+            and bool(param_grid_calls(source, param)))
+
+
+def _rows(rows: Sequence[Sequence[object]]) -> list[tuple]:
+    """A parameter's replacement facts as `swap_facts` takes them: one tuple
+    per fact, and a list argument a record."""
+    return [
+        tuple(tuple(a) if isinstance(a, list) else a for a in row)
+        for row in rows
+    ]
+
+
+def assigned_source(source: str, assign: Assign) -> str:
+    """The solver source with the reassignments applied. A grid assigned to
+    a parameter a GRID call stores replaces that call (`swap_grid`)."""
+    for param, rows in assign.items():
+        if assign_grid(rows, source, param):
+            source = swap_grid(source, param, rows)
+        else:
+            source = swap_facts(source, param, _rows(rows))
+    return source
+
+
+def _swap_atoms(source: str, param: str, rows: list[tuple]) -> str:
+    """Replace `param`'s Params fact atoms with one fact per row."""
     lines = source.splitlines()
     _, e = _comp_span(source, "Params")
     for i in _params_fact_lines(source):
@@ -626,3 +772,45 @@ def doc_keywords(text: str) -> dict[str, list[str]]:
         elif m := KEYWORD_BULLET_RE.match(line):
             held.append(m.group(1))
     return sections
+
+
+_CASE_NAME_RE = re.compile(r"([A-Za-z_]\w*)\s*(\()?")
+
+
+def case_term(case: str) -> str:
+    """The Souffle term of a case label as `dl.models.Space.cases` spells
+    one: `[A, B(C)]` is `[$A(), $B($C())]`."""
+    return _CASE_NAME_RE.sub(
+        lambda m: f"${m.group(1)}(" if m.group(2) else f"${m.group(1)}()",
+        case)
+
+
+def with_held_cases(source: str, cases: Iterable[str]) -> str:
+    """`source` with each top-level clause of `impl_choice` taken out and
+    one fact per case of `cases` in their place. The lines of the clauses
+    are left blank, so every other line keeps its number."""
+    program = parse(source)
+    lines = source.splitlines()
+    for it in program.items:
+        if isinstance(it, Rule) and it.head.name == "impl_choice" \
+                and it.head.qual is None:
+            for i in range(it.line - 1, it.end_line):
+                lines[i] = ""
+    lines += [f"impl_choice({case_term(c)})." for c in cases]
+    return "\n".join(lines) + "\n"
+
+
+def with_line_above(source: str, pattern: str, text: str,
+                    comp: str | None = None) -> str | None:
+    """`source` with the comment line `text` put above the first line that
+    `pattern`, a regular expression, matches, at that line's indent: inside
+    the comp `comp` where one is given. None when no line matches."""
+    lines = source.splitlines()
+    start, end = _comp_span(source, comp) if comp else (0, len(lines))
+    rx = re.compile(pattern)
+    for i in range(start, min(end, len(lines))):
+        if rx.match(lines[i]):
+            indent = lines[i][:len(lines[i]) - len(lines[i].lstrip())]
+            lines.insert(i, indent + text)
+            return "\n".join(lines) + "\n"
+    return None

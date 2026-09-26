@@ -37,7 +37,9 @@ PLAIN_FIELD_RE = re.compile(r"^(\w+)(?:\s+(\w+))?:\s*(.*)$")
 # A slug: lowercase words joined by `-`.
 SLUG = r"[a-z0-9]+(?:-[a-z0-9]+)*"
 CLAIM_TAIL_RE = re.compile(rf"^\s+({SLUG}):\s*(\S.*)$")
-WITNESS_TAIL_RE = re.compile(rf"^\s+({SLUG}):\s*(\S+)\s+(\S+)$")
+# A verdict is one name, which may join names with `&`, spaced or not.
+VERDICT = r"\S+(?:\s*&\s*\S+)*"
+WITNESS_TAIL_RE = re.compile(rf"^\s+({SLUG}):\s*(\S+)\s+({VERDICT})$")
 DERIVE_TAIL_RE = re.compile(r"^\s+(\w+):\s*(\S+)\s+(\S+)$")
 STORE_TAIL_RE = re.compile(r"^(?:\s+([\w.]+))?:\s*(\S+)\s+(\S+)$")
 REF_TAIL_RE = re.compile(rf"^(\s+{SLUG})+$")
@@ -500,40 +502,123 @@ def store_relation(source: str, block: Store) -> str:
     return f"{m[1]}.{block.rel}" if m else ""
 
 
-def store_ids(source: str) -> set[str]:
-    """The case id `<rel>=stored` of every `@store` line that stands above
-    a declaration."""
-    return {f"{rel}={STORED}" for b in store_blocks(source)
-            if (rel := store_relation(source, b))}
+@dataclass(frozen=True)
+class Branch:
+    """The branch a `@derive` or `@store` line holds: `kind` is `derive` or
+    `store`, `target` the parameter or the relation as the line spells it
+    (`store_relation`), `reading` the Proposer or `stored`, and `line` the
+    directive's line."""
+
+    kind: str
+    target: str
+    reading: str
+    line: int
+
+    @property
+    def name(self) -> str:
+        """The branch's name, `<param>=<Proposer>` or `<rel>=stored`."""
+        return f"{self.target}={self.reading}"
 
 
-IGNORE_DERIVE_RE = re.compile(r"//\s*@ignore:\s*derive\b")
+DERIVE = "derive"
+STORE = "store"
 
 
-def derive_ignored(source: str) -> set[str]:
-    """The parameters an `@ignore: derive` line dismisses: the one the
-    `.decl` under the line declares."""
-    out: set[str] = set()
-    lines = source.splitlines()
-    for i, raw in enumerate(lines):
-        if IGNORE_DERIVE_RE.match(raw.strip()) is None:
+def branch_lines(source: str) -> list[Branch]:
+    """The branch of every `@derive` line that stands above a `.decl` and
+    of every `@store` line that stands above a relation, in file order. A
+    second line of one name holds no branch of its own."""
+    out: list[Branch] = []
+    for d in derive_blocks(source):
+        if param := derive_param(source, d):
+            out.append(Branch(DERIVE, param, d.proposer, d.line))
+    for s in store_blocks(source):
+        if rel := store_relation(source, s):
+            out.append(Branch(STORE, rel, STORED, s.line))
+    seen: set[str] = set()
+    kept: list[Branch] = []
+    for b in sorted(out, key=lambda b: b.line):
+        if b.name not in seen:
+            seen.add(b.name)
+            kept.append(b)
+    return kept
+
+
+IGNORE_BRANCH_RE = re.compile(
+    r"^//\s*@ignore(?:\s+([\w.]+))?:\s*(derive|store)\b\s*(.*)$")
+"""An `@ignore` line of the `derive` or `store` category: the relation it
+names, the category, and the text after the category."""
+
+
+@dataclass(frozen=True)
+class Ignore:
+    """One `@ignore: derive` or `@ignore <relation>: store` line.
+
+    `name` is the `<name>` the line gives, all the text between the
+    category and the dash, and empty for the bare form: it lists the
+    branches of the cases the line excludes (`dl.models.CaseSpace.matching`). `site` is what the
+    line stands above: the `.decl` name, or for a store line above a
+    `.init`, `<instance>.<relation>`, or `<instance>.` where the line names
+    no relation; empty where it stands above neither. `under` is the line
+    of the `@derive` line a named derive line stands under: the nearest one
+    above it in its comment block, 0 where none stands there."""
+
+    kind: str
+    relation: str
+    name: str
+    line: int
+    site: str
+    under: int = 0
+
+
+def _ignore_site(lines: list[str], i: int, kind: str,
+                 relation: str) -> str:
+    """The site of the ignore line at `i` (0-based), past blank and comment
+    lines."""
+    for below in lines[i + 1:]:
+        text = below.strip()
+        if not text or text.startswith("//"):
             continue
-        for below in lines[i + 1:]:
-            text = below.strip()
-            if not text or text.startswith("//"):
-                continue
-            if m := DECL_RE.match(below):
-                out.add(m[1])
-            break
-    return out
+        if (m := DECL_RE.match(below)) and not relation:
+            return m[1]
+        if kind == STORE and (m := INIT_RE.match(below)):
+            return f"{m[1]}.{relation}" if relation else m[1] + "."
+        return ""
+    return ""
 
 
-def derive_ids(source: str) -> set[str]:
-    """The case id `<param>=<Proposer>` of every `@derive` line that stands
-    above a `.decl` no `@ignore: derive` line dismisses."""
-    ignored = derive_ignored(source)
-    return {f"{param}={b.proposer}" for b in derive_blocks(source)
-            if (param := derive_param(source, b)) and param not in ignored}
+def _derive_above(lines: list[str], i: int) -> int:
+    """The line of the nearest `@derive` line above the line at `i`
+    (0-based) in its comment block, 0 where none stands there."""
+    for j in range(i - 1, -1, -1):
+        m = COMMENT_RE.match(lines[j])
+        if m is None:
+            return 0
+        if m[3].startswith("@derive "):
+            return j + 1
+    return 0
+
+
+@lru_cache(maxsize=16)
+def ignore_lines(source: str) -> tuple[Ignore, ...]:
+    """Every `@ignore: derive` and `@ignore <relation>: store` line, in file
+    order. A derive line that names a relation is no line of this form."""
+    lines = source.splitlines()
+    out: list[Ignore] = []
+    for i, raw in enumerate(lines):
+        m = IGNORE_BRANCH_RE.match(raw.strip())
+        if m is None:
+            continue
+        relation, kind, tail = m[1] or "", m[2], (m[3] or "").strip()
+        if kind == DERIVE and relation:
+            continue
+        name = ("" if not tail or tail[0] in "—-"
+                else tail.split("—", 1)[0].strip())
+        out.append(Ignore(kind, relation, name, i + 1,
+                          _ignore_site(lines, i, kind, relation),
+                          _derive_above(lines, i) if kind == DERIVE and name
+                          else 0))
+    return tuple(out)
 
 
 def merged_blocks(blocks: list[Witness]) -> list[Witness]:

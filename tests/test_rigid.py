@@ -66,6 +66,7 @@ def test_expansion():
 def test_determined_params_and_build():
     params = determined_params(SOLVER)
     assert params == {"marker_glyph": ["Position"], "marker_aim": ["DiagDir"]}
+    assert params is not None
     built = build_determine_source(SOLVER, params)
     assert ("determine_rigid_marker_glyph(D4, A0) :- determine.marker_glyph(B0), "
             "d4_elem(D4), apply(D4, B0, A0)." in built)

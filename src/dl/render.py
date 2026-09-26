@@ -3,7 +3,7 @@
 from collections import defaultdict
 
 from dl.models import model_label
-from dl.solve import PairResult, _grid_key
+from dl.solve import PairResult, _grid_key, solver_name
 from dl.souffle import TEMP_NAME_RE
 
 
@@ -85,7 +85,7 @@ def render_stem_failures(stem: str, pairs: list[PairResult]) -> list[str]:
     and in what prints, which names a file the reader can open.
     """
     bad = [p for p in pairs if not p.ok]
-    shared = {TEMP_NAME_RE.sub(f"{stem}.dl", p.error) for p in bad if p.error}
+    shared = {TEMP_NAME_RE.sub(solver_name(stem), p.error) for p in bad if p.error}
     if len(bad) > 1 and len(shared) == 1 and all(p.error for p in bad):
         names = ", ".join(f"{p.kind}[{p.idx}]" for p in bad)
         return [f"{names}: FAIL", *_error_lines(shared.pop())]
@@ -98,7 +98,7 @@ def render_pair_failure(p: PairResult, stem: str | None = None) -> list[str]:
     tempfile's in the error."""
     lines = [f"{p.kind}[{p.idx}]: FAIL"]
     if p.error:
-        error = TEMP_NAME_RE.sub(f"{stem}.dl", p.error) if stem else p.error
+        error = TEMP_NAME_RE.sub(solver_name(stem), p.error) if stem else p.error
         lines.extend(_error_lines(error))
         return lines
     if not p.variants:

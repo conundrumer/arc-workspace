@@ -38,12 +38,12 @@
 - A Box column is read as a cell with the `Position` alias, a translation with the `Offset` alias, or a rectangle, margin, or frame change with bare `Box`.
 - A comment states a bare Box's reading where the name does not.
 - A variable is named for its reading: `B` for a box, `V` for an offset, and `P_rel` for a cell read relative to a box.
-- `M` does not name a box.
+- A box is not named `M`.
 - "Frame" in a component's name means a frame of cells derived from data, as in `Frame2D`.
 - The coordinate-frame sense is stated in prose and Position variable names.
 
 ## Header
-- `@scene` is only included when `@claim` or `@relaxed` names it, the text of a `@rule` or `@approximated:` line depends on it, or a branch replaces it.
+- `@scene` is only included when `@claim` or `@relaxed` denotes it, the text of a `@rule` or `@approximated:` line depends on it, or a branch replaces it.
 
 ## Cases
 - **Choice gloss.** The gloss of a choice is above its type, and nowhere else.
@@ -64,7 +64,7 @@
 - [Types](docs/handbook/solver-file.md#types) lists the types a solver may define, and any other type is banned.
 
 ## Program
-- Program style applies to the program clauses and the Determine comp.
+- Program style applies to the Determine comp and to the program clauses other than the clauses of `impl_choice`, of the enumerators, and of the relations that only `impl_choice` and the enumerators read.
 - The single-consumer hint also applies to relations in Params.
 - The gloss of a relation that carries an `@ignore` directive is in a separate comment immediately above that directive.
 
@@ -78,14 +78,14 @@
     - **Bound comparisons.** A comparison of a distance against a bound is program style, is not arithmetic, and needs no lib relation.
 
 ### Idioms
-- **Complement tests.** The test negates the named case: `!params.bg(Col)` for non-bg.
+- **Complement tests.** The test negates the relation of the values it excludes: `!params.bg(Col)` for non-bg.
 - **Off-edge tests.** The test is `!dist(P, D, 0)`.
 - **Narrowing.** When a clause binds an argument of a lib relation to a head column of a narrower type, it takes that type's `*_elem` atom.
 
 ### Layout
 - [File structure](docs/handbook/solver-file.md#file-structure) gives the template, and a file takes its block order and layout from it.
 - Related atoms share a line.
-- If a line's atoms do not already state what it does, an inline `// ` comment names what the line does.
+- If a line's atoms do not already state what it does, an inline `// ` comment states what the line does.
     ```
     header_color(Idx, Col) :-
         in(P, Col),                                       // input cell

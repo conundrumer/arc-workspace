@@ -11,7 +11,9 @@ separation classes.
 import sys
 from dataclasses import dataclass, field
 
-from dl.solve import PairResult, res_out_stem, run_task
+from arc.task import load as load_task
+from dl.models import Cases, CaseId, case_label, model_label
+from dl.solve import PairResult, res_out_stem, run_task, solver_file
 
 UNDEF = "UNDEF"
 """The key of a case that emits no readable grid on a pair."""
@@ -19,78 +21,18 @@ UNDEF = "UNDEF"
 ABSENT = "ABSENT"
 """The key of a case that emits nothing at all on a pair."""
 
-NO_CHOICE = "(out)"
-"""The case name of a solver without a `Choice`: `out` carries no case
-column, and the whole file is one case."""
-
 type Grid = str | tuple[tuple[int, ...], ...]
 type Key = frozenset[Grid] | str
-type Matrix = dict[str, dict[str, int]]
+type Matrix = dict[CaseId, dict[CaseId, int]]
 
 
 @dataclass
 class RunReport:
-    cases: list[str] = field(default_factory=list)
-    separating: dict[str, int] = field(default_factory=dict)
-    undefined: dict[str, int] = field(default_factory=dict)
+    cases: list[CaseId] = field(default_factory=list)
+    separating: dict[CaseId, int] = field(default_factory=dict)
+    undefined: dict[CaseId, int] = field(default_factory=dict)
     separates: Matrix = field(default_factory=dict)
     classes: int = 0
-
-
-def _ctor(text: str) -> str:
-    """One constructor of a case name, without its `$` and its arguments."""
-    return text.strip().removeprefix("$").split("(", 1)[0]
-
-
-def _split(body: str) -> list[str]:
-    """A record body split at the commas between its members. A comma inside
-    a constructor's arguments stands inside that member."""
-    parts: list[str] = []
-    depth = 0
-    current: list[str] = []
-    for ch in body:
-        if ch in "([{":
-            depth += 1
-        elif ch in ")]}":
-            depth -= 1
-        if ch == "," and depth == 0:
-            parts.append("".join(current))
-            current = []
-        else:
-            current.append(ch)
-    parts.append("".join(current))
-    return parts
-
-
-def case_members(case: str) -> list[str]:
-    """The constructors one case label stands for: the members of a record
-    label, and otherwise the label itself."""
-    if case.startswith("[") and case.endswith("]"):
-        body = case[1:-1].strip()
-        return [_ctor(m) for m in _split(body)] if body else []
-    return [case]
-
-
-def case_label(name: str, resolution: bool = False) -> str:
-    """The case a variant name stands for.
-
-    `out` may carry columns past the case, tab-joined into the name. A
-    resolution solver carries its `TiebreakResolution` term last, and that
-    term is no case; what leads the name is. Every constructor of the name
-    drops its `$` and its arguments: `$Ctor` and `$Ctor(args)` stand for
-    `Ctor`, and a record case keeps its brackets and commas around the
-    constructors it holds, `[Table, Lookup]`. A name with nothing left is
-    the one case of a solver without a `Choice`.
-    """
-    parts = name.split("\t")
-    if resolution:
-        parts = parts[:-1]
-    head = parts[0] if parts else ""
-    if not head:
-        return NO_CHOICE
-    if head.startswith("[") and head.endswith("]"):
-        return f"[{', '.join(case_members(head))}]"
-    return _ctor(head)
 
 
 def _grid(variant) -> Grid:
@@ -100,28 +42,63 @@ def _grid(variant) -> Grid:
 
 
 def _pair_keys(
-    pairs: list[PairResult], cases: list[str] | None, resolution: bool,
-) -> tuple[list[str], list[dict[str, Key]]]:
+    pairs: list[PairResult], cases: list[CaseId] | None, resolution: bool,
+    held: list[dict[CaseId, Grid]] | None = None,
+) -> tuple[list[CaseId], list[dict[CaseId, Key]]]:
     """The cases in the order the pairs produce them, and each pair's key
     per case. `cases` leads that order, so a case silent on every pair is
-    still reported. A pair that fails outright produces no case."""
-    order: list[str] = list(cases or [])
-    per_pair: list[dict[str, Key]] = []
-    for p in pairs:
-        emitted: dict[str, set[Grid]] = {}
+    still reported. A variant is keyed by its case spelled in full
+    (`dl.models.model_label`) when `cases` spells it so, and by the
+    runner's label otherwise. `held` holds, per pair, the grid each case
+    that takes a `@derive` or `@store` branch gives there. A pair that
+    fails outright produces no case."""
+    order: list[CaseId] = list(cases or [])
+    known = set(order)
+    per_pair: list[dict[CaseId, Key]] = []
+    for i, p in enumerate(pairs):
+        emitted: dict[CaseId, set[Grid]] = {}
         for v in p.variants:
-            name = case_label(v.name, resolution)
+            full = model_label(v.name, resolution)
+            name = full if full in known else case_label(v.name, resolution)
             if name not in order:
                 order.append(name)
             emitted.setdefault(name, set()).add(_grid(v))
-        per_pair.append({n: frozenset(g) for n, g in emitted.items()})
+        keys: dict[CaseId, Key] = {n: frozenset(g) for n, g in emitted.items()}
+        if held is not None and p.variants:
+            for name, grid in held[i].items():
+                if name not in order:
+                    order.append(name)
+                keys[name] = frozenset({grid})
+        per_pair.append(keys)
     return order, per_pair
 
 
-def report_of(pairs: list[PairResult], cases: list[str] | None = None,
-              resolution: bool = False) -> RunReport:
-    """The separation report over one solver's pair results."""
-    cases, per_pair = _pair_keys(pairs, cases, resolution)
+def _held_grids(stem: str, space: Cases, pairs: list[PairResult]
+                ) -> list[dict[CaseId, Grid]]:
+    """Per pair, the grid each case that takes a `@derive` or `@store`
+    branch gives on the pair's input, or `UNDEF` where it gives none."""
+    from dl.witness import held_outcomes
+
+    path, task_id = solver_file(stem)
+    task = load_task(task_id)
+    source = path.read_text()
+    ids = list(space.runner)
+    out: list[dict[CaseId, Grid]] = []
+    for p in pairs:
+        ex = (task.train if p.kind == "train" else task.test)[p.idx]
+        got = held_outcomes(stem, space, ids, ex.input, source)
+        out.append({c: UNDEF if not isinstance(g, list)
+                    else tuple(tuple(row) for row in g)
+                    for c, g in got.items()})
+    return out
+
+
+def report_of(pairs: list[PairResult], cases: list[CaseId] | None = None,
+              resolution: bool = False,
+              held: list[dict[CaseId, Grid]] | None = None) -> RunReport:
+    """The separation report over one solver's pair results, with `held`
+    as `_pair_keys` takes it."""
+    cases, per_pair = _pair_keys(pairs, cases, resolution, held)
     separates = {
         a: {b: sum(1 for keys in per_pair
                    if keys.get(a, ABSENT) != keys.get(b, ABSENT))
@@ -141,10 +118,12 @@ def report_of(pairs: list[PairResult], cases: list[str] | None = None,
                      separates=separates, classes=len(tuples))
 
 
-def run_features(stem: str, cases: list[str] | None = None) -> RunReport:
+def run_features(stem: str, space: Cases) -> RunReport:
     """Run every pair of `stem`, train and test, and report how its cases
-    separate. `cases` names the cases the source declares, so one that emits
-    nothing on every pair is reported rather than dropped."""
+    separate: the held cases of `space` (`dl.models.enumeration`), so one
+    that emits nothing on every pair is reported rather than dropped, and
+    the cases that take a `@derive` or `@store` branch."""
     pairs = run_task(stem).pairs
     print(f"{stem}: {len(pairs)} pairs", file=sys.stderr)
-    return report_of(pairs, cases, res_out_stem(stem))
+    held = _held_grids(stem, space, pairs) if space.runner else None
+    return report_of(pairs, space.plain, res_out_stem(stem), held)

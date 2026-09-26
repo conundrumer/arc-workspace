@@ -96,5 +96,6 @@ def test_a_cpu_limit_end_replays_under_its_own_limit_alone(
 
     assert ended(limited, 5) == "limit on run 1"
     assert ended(finished, 5) == "limit on run 1"
-    assert ended(finished, 50).stdout == "done"
+    ran = ended(finished, 50)
+    assert isinstance(ran, souffle._Ran) and ran.stdout == "done"
     assert len(calls) == 2

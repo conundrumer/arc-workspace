@@ -22,7 +22,7 @@ import pandas as pd
 
 from dl.dlparse import ParseError, parse
 from dl.features import _components, features_report
-from dl.features_run import case_members
+from dl.models import case_members
 from dl.paths import REPO_ROOT, SOLVERS_DIR
 
 OUT_DIR = REPO_ROOT / ".scratch" / "peers"

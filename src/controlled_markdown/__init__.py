@@ -582,20 +582,20 @@ def _holed(fragment: Fragment) -> str:
     program fills is read as a value and not as prose. A line that is one
     hole is left blank: it places a fragment the check reads on its own."""
     if fragment.file.suffix == ".py":
-        def one(m):
+        def py_hole(m):
             if m.group(1) is None:
                 return m.group(0)[0]
             return FILLED
-        return PY_HOLE_RE.sub(one, _placed(fragment.text, PY_WHOLE_RE))
+        return PY_HOLE_RE.sub(py_hole, _placed(fragment.text, PY_WHOLE_RE))
 
-    def one(m):
+    def js_hole(m):
         if not HOLE_NAME_RE.match(m.group(1).strip()):
             raise ControlledMarkdownError(
                 fragment.source, fragment.line, "hole-name",
                 f"`${{{m.group(1)}}}` is not a name; a fragment leaves a hole "
                 f"for a value the program computes above it")
         return FILLED
-    return JS_HOLE_RE.sub(one, _placed(fragment.text, JS_WHOLE_RE))
+    return JS_HOLE_RE.sub(js_hole, _placed(fragment.text, JS_WHOLE_RE))
 
 
 MARKER_RE = re.compile(r"^(?:[-+*>|]\s|\d+\.\s|#{1,6}\s|`{3,}|~{3,})")
@@ -764,7 +764,7 @@ def check_closure(entries: list[Path], document_set: set[Path],
         inside |= reached(entry, registry)
     for source in sorted(inside - opened):
         document = registry.documents[source]
-        file = registry.file(source)
+        file = registry.sources[source]
         for node in carried(document):
             if node.kind == CODE or not node.text:
                 continue
@@ -1410,8 +1410,8 @@ def _document_nodes(document: Node, st: _State, seen: tuple[str, ...],
 
 def _is_abridged(document: Node, st: _State,
                  abridged: set[Path] | str | None) -> bool:
-    if abridged == "all":
-        return True
+    if isinstance(abridged, str):
+        return abridged == "all"
     if not abridged:
         return False
     return st.reg.file(document.source) in abridged

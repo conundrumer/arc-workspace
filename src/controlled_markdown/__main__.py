@@ -21,6 +21,7 @@ from pathlib import Path
 
 from . import (
     ControlledMarkdownError,
+    Node,
     Registry,
     check_blocks,
     check_closure,
@@ -152,7 +153,7 @@ def check(paths: list[Path], whole: bool = True) -> int:
     set, which is what the partial-sites rule counts over."""
     off = 0
     root = repo_root()
-    parsed: list[tuple[Path, object]] = []
+    parsed: list[tuple[Path, Node]] = []
     for path in paths:
         name = shown(path)
         text = path.read_text()

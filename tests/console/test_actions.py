@@ -169,7 +169,8 @@ def test_a_kill_leaves_a_session_already_waited_for_alone(srv, monkeypatch):
     monkeypatch.setattr(srv.os, "killpg", lambda *a: hits.append(a))
 
     class Session:
-        pid, returncode = 999999, 0
+        pid = 999999
+        returncode: int | None = 0
 
         def kill(self):
             hits.append("kill")

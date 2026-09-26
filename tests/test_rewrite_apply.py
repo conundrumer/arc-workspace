@@ -6,7 +6,7 @@ import shutil
 
 import pytest
 
-from dl.dlparse import Atom, Neg, Var, parse
+from dl.dlparse import Atom, Neg, Rule, Var, parse
 from dl.rewrite_lint import _atom_str, _lit_str, _term_str, lint_rewrites
 from dl.source import build_source
 from dl.souffle import compile_check
@@ -29,11 +29,11 @@ def _rewritten_uses(source: str) -> list[str]:
     defs = {
         it.head.name: it
         for it in program.items
-        if hasattr(it, "head") and it.body and it.head.name in flagged
+        if isinstance(it, Rule) and it.body and it.head.name in flagged
     }
     out: list[str] = []
     for it in program.items:
-        if not hasattr(it, "head") or not it.body:
+        if not isinstance(it, Rule) or not it.body:
             continue
         negs = [
             lit for lit in it.body
@@ -50,6 +50,7 @@ def _rewritten_uses(source: str) -> list[str]:
                     a.name: _term_str(lit.atom.args[i])
                     for i, a in enumerate(d.head.args) if isinstance(a, Var)
                 }
+                assert d.body
                 atom = d.body[0]
                 assert isinstance(atom, Atom)
                 lits.append(f"!{_atom_str(atom, names)}")

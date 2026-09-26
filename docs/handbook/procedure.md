@@ -23,7 +23,7 @@
 - **Cleanup.** When the user says `cleanup`, run [Simplify](#simplify), then [Prune](#prune).
 - **Roles.**
     - Run `uv run python scripts/context.py role <role>`.
-    - Spawn the agent its first line names.
+    - Spawn the agent its first line states.
     - The prompt is the rest of its output, followed by the brief.
 
 ## Review items
@@ -62,7 +62,7 @@
     - `bun scripts/ref.ts <task_id>` runs it on the grid on stdin.
 2. Form every other branch.
     - A branch is stated by the slugs of the claims it replaces or adds, its parameters, and the inputs on which it is undefined.
-    - A branch is formed whether or not another branch's model subsumes it.
+    - A branch is formed whether or not another branch's model subsumes it, and whatever its witnesses' plausibility.
     - A branch that derives a parameter's value, or stores a value the program derives, is stated as that derivation or that stored value, and by the claim it replaces.
     - Form them from the pairs, the reference TS solver, the headers of the solvers under `programs/solvers/`, probes over the pairs, and variant tasks.
         - `grep -l '^// @keywords:.*<keyword>' programs/solvers/*.dl` lists the solvers under a keyword, and `awk '/^$/{exit} 1' programs/solvers/<id>.dl` prints one solver's header.
@@ -113,13 +113,13 @@
 ### Write
 1. Read the Analyze files, one at a time: `.scratch/<task_id>/concept.md`, `analyze.md`, and `witnesses.json`.
     - The concept file gives the concept case's claims, and the Analyze report gives each branch's standing.
-2. Write the solver (`programs/solvers/<task_id>.dl`).
+2. Write the solver (`programs/solvers/<task_id>.dl`), and copy the Analyze file to the witness file: `cp .scratch/<task_id>/witnesses.json programs/witnesses/<task_id>.wit.json`.
     - Write the header's `@scene` and `@rule` lines from the concept file's claims, and `Params` from its parameters, under their names.
-    - A rule that report restates takes the restated text, and the concept file's text stands under it as its `@approximated:` line.
+    - A rule that report restates takes the restated text, and the concept file's text stands under it as its `@approximated:` line when the restated text has no relational form.
     - Each branch that report gives a witness is a constructor, nested as the report nests its choice point.
     - A concept branch's constructor takes a name of your own.
-    - An open parameter of that report, unless [Principles](docs/handbook/principles.md) make it a choice point, is a `Params` relation with a fact per open value, and no constructor; its values are the report's, whatever the concept file gives.
-    - The cases are the combinations of those branches that fit, which the run shows.
+    - An open parameter of that report, or one the pairs leave unresolved, unless [Principles](docs/handbook/principles.md) make it a choice point, is a `Params` relation with a fact per open value, and no constructor; its values are the report's where it gives them, whatever the concept file gives.
+    - The cases are the combinations of those branches that fit, which the run shows, whether or not one case's model subsumes another's.
     - A `<branch>` & `<branch>` line of that report gives what the case that takes both branches reads.
     - Leave the `Determine` comp for the Determine operation.
 
@@ -129,12 +129,12 @@
     - When a hint appears, judge it, and put that judgment in the review.
     - Flag performance issues in the review.
     - When a performance issue prevents the principled form, make a temporary workaround, marked with the `@workaround` directive.
-3. Form each claim under the Analyze report's Not formed as a branch, and add its case when it meets the case conditions.
-4. Hold as a case each built-in derivation that fits a parameter, and each stored reading of a value the program derives.
+3. Form each claim under the Analyze report's Not formed as a branch, and add as cases the combinations that take it and meet Fit and Relational form.
+4. Hold as a branch each built-in derivation that fits a parameter, and each stored reading of a value the program derives.
     - `uv run python scripts/run_dl.py derive <task_id>` lists the built-in derivations that fit.
-    - `uv run python scripts/run_dl.py store <task_id>` lists the derived values it holds as stored cases.
-    - Write the directive line each prints, in the form the [`@derive` directive](docs/handbook/solver-file.md#params) gives, with the plausibility and verdict the Analyze report gives the branch of that derivation, when it has one.
-    - A branch whose derivation the runner offers loses its constructor and gets no clauses of its own.
+    - `uv run python scripts/run_dl.py store <task_id>` lists the derived values that are the same on every input.
+    - Write the directive line each prints, in the form the [`@derive`](docs/handbook/solver-file.md#params) or [`@store`](docs/handbook/solver-file.md#program) directive gives, with the plausibility and verdict of the witness it records.
+    - A branch whose model is equivalent to that of a `@derive` or `@store` branch loses its constructor and gets no clauses of its own.
 5. Run the audit (`uv run python scripts/run_dl.py audit <task_id>`) and resolve the findings.
     - A check the audit skips goes in the review as open.
 
@@ -147,15 +147,15 @@
 
 ### Witness
 - **Concept and branch claims.**
-    - Write the `@witness` lines of the header and the branches, with each plausibility and verdict as the Analyze report gives it, `@relaxed` for the scene claim it breaks, and `@reassigned` for each parameter that the assignment it stands at changes.
-    - A witness of the concept case with verdict `other` stands under an `@approximated:` line of the rule it breaks.
-    - On a branch's witness, an `other` verdict identifies a problem with the concept case, and so does a non-concept verdict at `ordinary` plausibility; it goes in the review as open.
+    - Write the `@witness` lines of the header and the branches, with each plausibility and verdict as the Analyze report gives it, `@relaxed` for the scene claim it breaks, which rules out `ordinary`, and `@reassigned` for each parameter that the assignment it stands at changes.
+        * comment: The clause "which rules out `ordinary`" restates the plausibility definition, and a64e4611 Create needed it.
+    - A witness of the concept case stands under the branch its verdict denotes, and with verdict `other` under an `@approximated:` line of the rule whose approximation disagrees on it.
+    - On a branch's witness with no `@reassigned` line, on which no open values disagree and no approximation disagrees with its rule, an `other` verdict identifies a problem with the concept case, and so does a non-concept verdict at `ordinary` plausibility; the concept case is fixed to give the judged output, the verdict becomes `concept`, and the fix goes in the review as a departure.
 - **Divergence witness.**
-    - When `programs/witnesses/<task_id>.wit.json` does not exist, copy the Analyze file to it: `cp .scratch/<task_id>/witnesses.json programs/witnesses/<task_id>.wit.json`.
-    - Replace each name that denotes no case of the solver with the cases `witness` names for it, or remove it when `witness` names none, rewrite a `separates` text that names it, and remove a witness that then separates nothing.
-    - Rename each name for a case the runner holds to the form [Witness file](docs/handbook/solver-file.md#witness-file) gives it, and remove a witness of such a branch, which the runner builds itself.
-    - Add each branch added in Develop to the groups of every witness of the file.
+    - Replace each name that denotes no case of the solver with the cases `witness` lists for it, or remove it when `witness` lists none, rewrite a `separates` text that mentions it, and remove a witness that then separates nothing.
+    - Rename each name for a case the runner holds to the form [Witness file](docs/handbook/solver-file.md#witness-file) gives it, and remove each witness that duplicates the one `derive` or `store` records.
     - Rewrite each `assign` in the form `Params` reads.
+    - Rewrite the groups of every witness of the witness file: `uv run python scripts/run_dl.py record <task_id> --all`.
     - For a branch added in Develop, build the witness its `@witness` line needs.
     - Judge the plausibility and verdict of a witness you build, and put that judgment in the review.
 - A branch dropped under a case condition goes in the review with the condition it fails, and for Relational form with why no set of clauses states its claim.
@@ -170,13 +170,13 @@
 - Run the solver against the Analyze file: `uv run python scripts/run_dl.py witness <task_id> --file .scratch/<task_id>/witnesses.json`.
     - A case whose output differs from the one the Analyze file gives it is an error in the solver to fix, unless the Analyze file erred; then it goes in the review as a departure, with why.
     - Each other difference the run prints under a witness, and that no step of [Develop](#develop) through [Witness](#witness) requires, goes in the review as one departure.
-- Run the audit again when the file is complete.
-- `witness` reports a pair of cases that no witness separates. Resolve it by the first that applies, and put the resolution in the review.
+- Run the audit again when the witness file is complete.
+- `witness` without `--file` reports a pair of cases that no witness separates. Resolve it by the first that applies, and put the resolution in the review.
     - A case never reads a `Choice` field: the choice point that field encodes stands under the other branches, and the type is reshaped to put it there.
     - The cases' clauses differ and some input separates them: build the witness that shows it.
     - Otherwise the case fails Equivalence and leaves.
-- `witness` reports each case that no run shows defined and differing from another case. Resolve it by the first that applies, and put the resolution in the review.
-    - Some input, at some assignment, shows the case defined and differing: build the witness that shows it, with `--assign` when it needs one.
+- `witness` without `--file` reports each case that no run shows defined and differing from another case. Resolve it by the first that applies, and put the resolution in the review.
+    - Some input, at some assignment of the parameters either case reads, shows the case defined and differing: build the witness that shows it, with `--assign` when it needs one, and the case meets Subsumption and stays.
     - Otherwise the case fails Subsumption and leaves.
     - A case or branch that leaves under Subsumption is not an error of the Analyze report.
 
@@ -204,12 +204,12 @@
     * comment:
         - The Analyze files are listed here as well as in Write because the Refine render does not carry Write.
 - Run these in this order.
-- **Rulings.** A ruling in your brief decides an item of that report. Apply each ruling, and quote it in the report where you apply it. Then run again each operation from [Develop](#develop) through [Witness](#witness) that the change touches.
-- **Departures.** Judge each departure of that report from the solver, the witness file, and the pairs.
+- **Rulings.** A ruling in your brief decides an item of that report. Apply each ruling, and quote it in the report where you apply it. Then run again each operation from [Develop](#develop) through [Witness](#witness) that applying the rulings touches.
+- **Departures.** Judge each departure and open item of that report, and each `## Fixes elsewhere` item on this task's files in another task's latest report (`grep -l <task_id> .scratch/*/create.md .scratch/*/refine-*.md`), under the current docs, from the solver, the witness file, and the pairs; an item on an Analyze file is judged as a departure, and a `## Fixes elsewhere` item that holds is applied to the solver or the witness file.
     - Run the solver against the Analyze file, as [Witness](#witness) says.
-    - A departure holds when what it rests on is true and each case it adds or keeps meets every case condition.
-    - Revert a departure that does not hold, and run again each operation the change touches.
-- A ruled or reverted item is not formed or judged again.
+    - A departure holds when what it rests on is true and each case it adds or keeps meets every case condition, and each case it drops fails one in a `witness --every-case` run with that case restored.
+    - Revert a departure that does not hold, make the solver follow the docs on each open item they decide, and run again each operation these changes and each applied fix touch.
+- A ruled, reverted, or applied item, a `## Fixes elsewhere` item judged in the latest report, or an open item the docs decide, is not formed or judged again.
 
 ### Promote
 - When the user says `promote` or `migrate` over an entry under `docs/wf-solver/proposals/`.
@@ -228,5 +228,5 @@
     - A judgment the session made.
     - An issue with a doc or tool that interfered with the pass or cost it effort.
     - An item carried over from an earlier pass's report, marked with the pass it came from.
-        - Do not recheck it against the current runner, lib, or docs.
+        - Do not recheck it against the current runner, lib, or docs, unless Reconcile judges it.
     - A fix or a problem in a file the pass does not edit, with the file, the line, and the fix it needs.

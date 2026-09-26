@@ -23,7 +23,7 @@ from solver_console import surveys  # noqa: E402
 
 
 def main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
+    ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("entry", help="a path under docs/wf-solver/proposals/, "
                                   "or the entry's name")

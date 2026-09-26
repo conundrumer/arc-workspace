@@ -20,6 +20,8 @@ behind the `hints` flag.
 Relation-level rules run over the scopes that hold program code, which
 `PROGRAM_SCOPES` names. Other `.comp` interiors are proposal comps,
 lib code on its way out of the solver, and stay out, matching `lint.py`.
+So do the clauses of `impl_choice`, of its enumerators, and of the
+relations only they read (`dl.lint.case_enumeration`).
 
 The public entry point is `lint_rewrites`; findings share `lint_program`'s
 tuple shape.
@@ -69,7 +71,7 @@ from dl.dlparse import (
     parse,
     term_vars,
 )
-from dl.lint import PLAN_RE, _lib_source
+from dl.lint import PLAN_RE, _lib_source, case_enumeration
 from dl.source import shared_params
 
 LINE_LIMIT = 100   # code only; a trailing comment does not count
@@ -431,6 +433,10 @@ class _Lint:
         self._const_targets: set[tuple[str, str]] | None = None
         self._comps: dict[str, Comp] | None = None
         self._records: dict[str, list[str]] | None = None
+        # The keys of `impl_choice`, of its enumerators, and of the
+        # relations only they read: their clauses stay out.
+        self.enumeration = {(TOP, name)
+                            for name in case_enumeration(ix.program.items)}
         # The category each `@ignore:` directive names, by its line.
         self.ignores = {
             c.line: m.group(1)
@@ -500,6 +506,7 @@ class _Lint:
             (scope, name)
             for scope in PROGRAM_SCOPES
             for name in self.ix.decls.get(scope, {})
+            if (scope, name) not in self.enumeration
         ]
 
     def program_rules(self) -> list[tuple[int, RuleInfo]]:
@@ -508,7 +515,9 @@ class _Lint:
             for i, info in enumerate(self.ix.rules)
             if info.scope in PROGRAM_SCOPES and not info.rule.grid
             and not info.rule.sub
+            and self.rule_head_key(i) not in self.enumeration
         ]
+
 
     def decl_of(self, key: RelKey) -> Decl:
         return self.ix.decls[key[0]][key[1]]
@@ -717,8 +726,6 @@ class _Lint:
         corpus both inlines and keeps this shape — the name's value is the
         call. `// @ignore: single-consumer — <reason>` above the declaration
         states that call, and silences the hint for that relation."""
-        if key[1] == "impl_choice":
-            return  # the corpus-wide case enumerator keeps its name
         if not self.inlinable(key):
             return
         defs = self.defs(key)
@@ -832,16 +839,16 @@ class _Lint:
         """A `choice-domain` declaration in program code: the relation
         keeps one arbitrary tuple per key, so which one it keeps is a
         choice the program does not state."""
-        for scope in PROGRAM_SCOPES:
-            for name, decl in self.ix.decls.get(scope, {}).items():
-                if not decl.choice_domain:
-                    continue
-                self.add(
-                    "choice-domain", decl.line,
-                    mctx("`{name}` keeps one arbitrary tuple per `{over}`; "
-                         "state what picks it").format(
-                        name=name, over=", ".join(decl.choice_domain)),
-                )
+        for key in self.program_keys():
+            decl = self.decl_of(key)
+            if not decl.choice_domain:
+                continue
+            self.add(
+                "choice-domain", decl.line,
+                mctx("`{name}` keeps one arbitrary tuple per `{over}`; "
+                     "state what picks it").format(
+                    name=key[1], over=", ".join(decl.choice_domain)),
+            )
 
     def shared_read(self) -> None:
         """A shared parameter some case never reads. A shared parameter
@@ -1097,6 +1104,8 @@ class _Lint:
                 p: subst.get(t, t)
                 for p, t in zip(params, init.targs, strict=False)
             }
+        if comp is None:
+            return [], chain
         return self._comp_cols(comp, atom.name, subst, chain)
 
     def _comp_init(
@@ -1412,13 +1421,16 @@ class _Lint:
         ]
         compared = [
             i for i in diff
-            if isinstance(a.args[i], Var) and isinstance(b.args[i], Var)
-            and frozenset((a.args[i].name, b.args[i].name)) in neq
+            if isinstance(ai := a.args[i], Var) and isinstance(bi := b.args[i], Var)
+            and frozenset((ai.name, bi.name)) in neq
         ]
         if len(compared) != 1:
             return None
         v = compared[0]
-        x, y = a.args[v].name, b.args[v].name
+        av, bv = a.args[v], b.args[v]
+        if not (isinstance(av, Var) and isinstance(bv, Var)):
+            return None
+        x, y = av.name, bv.name
         if x in head_vars or y in head_vars:
             return None
         # Some other atom reads both compared values, a solver pairing map
@@ -1447,9 +1459,10 @@ class _Lint:
         if len(diff) != 2:
             return None
         [p] = [i for i in diff if i != v]
-        if not (isinstance(a.args[p], Var) and isinstance(b.args[p], Var)):
+        ap, bp = a.args[p], b.args[p]
+        if not (isinstance(ap, Var) and isinstance(bp, Var)):
             return None
-        link = self._image_link(a.args[p].name, b.args[p].name, atoms)
+        link = self._image_link(ap.name, bp.name, atoms)
         if link is None:
             return None
         return mctx("{pair} through `{link}` is `{comp}`").format(
@@ -1752,9 +1765,10 @@ class _Lint:
     def const_join(self, info: RuleInfo) -> None:
         """Hint: a variable internal to a rule's Params reads. The join
         states no per-example thing — it derives a task constant, which
-        the corpus names in its own relation. Quiet inside Params and
-        under a head that is itself task-constant: those are the named
-        forms."""
+        the corpus names in its own relation. Reads that share no variable
+        form a product: one stored relation over their columns replaces
+        them. Quiet inside Params and under a head that is itself
+        task-constant: those are the named forms."""
         rule = info.rule
         if rule.body is None or info.scope == "Params":
             return
@@ -1789,8 +1803,13 @@ class _Lint:
                 s = f"{a.qual}.{a.name}"
                 if s not in rels:
                     rels.append(s)
-            msg = (f"`{'`, `'.join(rels)}` join on `{', '.join(sorted(internal))}`; "
-                   f"name the derived constant in Params")
+            if len(rels) > 1 and _disjoint(literal_vars(lit) for lit in creads):
+                msg = (f"`{'`, `'.join(rels)}` share no variable; "
+                       "one Params relation over their columns replaces them")
+            else:
+                msg = (f"`{'`, `'.join(rels)}` join on "
+                       f"`{', '.join(sorted(internal))}`; "
+                       f"name the derived constant in Params")
             if msg in seen:
                 continue
             seen.add(msg)
@@ -2032,6 +2051,16 @@ def _has_wild(t: Term) -> bool:
         if isinstance(x, (Ctor, Rec, Call)):
             stack.extend(x.args)
     return False
+
+
+def _disjoint(var_sets: Iterable[set[str]]) -> bool:
+    """No variable in more than one of the sets."""
+    seen: set[str] = set()
+    for vs in var_sets:
+        if vs & seen:
+            return False
+        seen |= vs
+    return True
 
 
 def _drops_columns(d: Rule) -> bool:
