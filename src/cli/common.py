@@ -28,7 +28,7 @@ from solver.witness import AssignValue
 from solver.witness import read as read_witness_file
 from souffle import SouffleEngine
 
-LIMITS = Limits(cpu_seconds=5.0, wall_seconds=10.0)
+LIMITS = Limits(cpu_seconds=20.0, wall_seconds=40.0)
 """The limits of one run on one grid: five CPU seconds, and a wall clock
 of twice that."""
 
