@@ -19,6 +19,7 @@ from handbook.context import (
     write_codex,
     write_interfaces,
 )
+from handbook.libcheck import check
 from handbook.paths import REPO_ROOT
 
 HELP = mctx("""
@@ -34,7 +35,7 @@ HELP = mctx("""
         uv run python scripts/context.py context <reader> [args]  # one reader's context
         ```
     - With no argument, the command prints the handbook, the passes a session runs, and the lib. That form and `--write` also write the lib's interface files: the `.md` beside each lib source, which the handbook's lib index points to.
-    - `--write` writes the files below, which git does not track. A session reads them only when they were written before it started.
+    - `--write` first checks the lib's sources, prints what the checks find and exits 1 when they find anything. Otherwise it writes the files below, which git does not track. A session reads them only when they were written before it started.
         - One agent under `.claude/agents/` per document under `prompts/agents/`, with the context its document composes as its system prompt.
         - `.claude/analyze-next.md`, the steps the `analyze` agent reads after it writes the concept.
         - The files a codex session on the repo reads: `AGENTS.md`, [Codex on arc-workspace](prompts/codex.md) rendered, and `.codex/config.toml`, with `docs/codex-style.md` as its developer instructions.
@@ -58,6 +59,9 @@ if __name__ == "__main__":
     if args and args[0] in ("--help", "-h"):
         print(HELP)
     elif args == ["--write"]:
+        if findings := check():
+            print("\n".join(findings))
+            sys.exit(1)
         interfaces = write_interfaces()
         path = write_agent()
         agents = [path.with_name(f"{name}{path.suffix}") for name in agent_names()]
