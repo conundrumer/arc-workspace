@@ -70,6 +70,7 @@ from solver.model import (
     UnderMarker,
     concept_branch,
     dependence,
+    is_concept,
     load,
     other_branches,
     section_at,
@@ -436,17 +437,55 @@ def check_claim(solver: Solver, runs: Runs) -> list[Finding]:
 def check_comp_without_entry(solver: Solver, runs: Runs) -> list[Finding]:
     """A proposal comp with no entry under docs/wf-solver/proposals/, a
     hint (style.md:112-113 "A proposal comp with no entry is a hint";
-    solver-file.md:152 "A comp outside `Params`, `Determine`, and `Parse`
+    solver-file.md:153 "A comp outside `Params`, `Determine`, and `Parse`
     is lib code, and a solver writes one only as a proposal comp").
     Serves the purest form: the comp is lib code on its way out of the
-    solver."""
+    solver. A proposal comp whose relations no derivation of the concept
+    case reads (`solver.model.dependence`) is a `proposal comp` lint in
+    place of that hint (lib-protocol.md "In the pass": a proposal comp
+    holds relations "the concept case reads"), naming through `cover`
+    the cases whose derivations read them."""
     v = view(solver, runs)
-    return [lint(spanned(c.span).first, LintNamed(
+    comps = [c for c in v.own_components
+             if c.scope == TOP and c.name not in STOCK_COMPS]
+    readers = _comp_readers(solver, runs, [c.name for c in comps])
+    out: list[Finding] = []
+    for c in comps:
+        line = spanned(c.span).first
+        got = readers.get(c.name)
+        if got is not None:
+            out.append(lint(line, LintNamed(
+                Category.PROPOSAL_COMP, LintSentence.PROPOSAL_UNREAD,
+                (c.name, *got))))
+        elif not (proposals() / f"{c.name}.md").is_file():
+            out.append(lint(line, LintNamed(
                 Category.COMP_WITHOUT_ENTRY, LintSentence.NO_PROPOSAL_ENTRY,
-                (c.name,)))
-            for c in v.own_components
-            if c.scope == TOP and c.name not in STOCK_COMPS
-            and not (proposals() / f"{c.name}.md").is_file()]
+                (c.name,))))
+    return out
+
+
+def _comp_readers(solver: Solver, runs: Runs, comps: Sequence[str]
+                  ) -> dict[str, tuple[str, ...]]:
+    """Each of `comps` whose units no derivation of the concept case
+    depends on (`solver.model.dependence`), with the fewest names that
+    cover the cases whose derivations depend on one of them; none where
+    the run that enumerates the solver's cases gives no result."""
+    every = runs.cases
+    if not comps or not isinstance(every, tuple):
+        return {}
+    bases = list(dict.fromkeys(c.base for c in every))
+    rd = dependence(solver, bases)
+    out: dict[str, tuple[str, ...]] = {}
+    for name in comps:
+        reading: set[Base | None] = set()
+        for u in solver.program.units:
+            if u.scope.components[:1] == (name,):
+                reading |= set(rd.units.get(u.id, ()))
+        if any(is_concept(solver, b) for b in reading):
+            continue
+        out[name] = cover(solver, [c for c in every if c.base in reading],
+                          every)
+    return out
 
 
 def check_parse_unshared_with_determine(solver: Solver, runs: Runs

@@ -6,7 +6,7 @@ from enum import StrEnum
 
 from engine import Grid
 from solver.annotations import ClaimKind, Verdict
-from solver.model import Base, Branch, Case, ConstructorBranch
+from solver.model import Branch, Case, ConstructorBranch, StoreBranch
 from solver.solve import Outcome, PairId
 from solver.witness import AssignValue, GroupGrid, RejectedOutput
 
@@ -164,33 +164,45 @@ ANNOTATION_SHAPES = (ApproximatedWithoutWitness, ApproximationUnwitnessed,
 
 
 @dataclass(frozen=True)
-class Taking:
-    """One side of an unseparated pair, or a part both sides take: a base,
-    None where it holds none, and `@derive` and `@store` branches."""
+class DerivedAt:
+    """`<rel>=derived`: the derived branch of a `@store` point, the branch
+    a case takes there where it takes no `@store` branch."""
 
-    base: Base | None
-    branches: tuple[Branch, ...]
+    store: StoreBranch
+
+
+type PointBranch = ConstructorBranch | Branch | DerivedAt
+"""The branch a case takes at one choice point: a constructor, a `@derive`
+branch or `<param>=stored`, a `@store` branch or `<rel>=derived`."""
 
 
 @dataclass(frozen=True)
 class UnseparatedPayload:
-    """Cases that differ by `a` and `b` and that no witness separates, and
-    under `under` what both cases of each such pair take: one finding per
-    pair of bases, naming the branch choices under which it holds
-    (history "One finding per unseparated pair of bases")."""
+    """Pairs of cases of the solver that no witness separates and that
+    differ by the branches `a` and `b` alone, at the points where they
+    differ: `contexts` holds one case of each such pair, with the fewest
+    names that cover those cases among the cases of their side that have
+    a counterpart on the other, none where that is every one; `of` counts
+    the pairs of the solver's cases that differ by `a` and `b` alone.
+    Both cases of a pair take the same branch at every other point."""
 
-    a: Taking
-    b: Taking
-    under: tuple[Taking, ...]
+    a: tuple[PointBranch, ...]
+    b: tuple[PointBranch, ...]
+    contexts: CaseSet
+    of: int
 
 
 @dataclass(frozen=True)
 class SubsumedPayload:
-    """No run shows `subsumed` defined and differing from each case of
-    `by` (principles.md:176, :179, :287)."""
+    """Pairs of cases of the solver that differ by the branches `a` and `b`
+    alone, where no run shows the `a` case defined and differing from the
+    `b` case and some run shows them apart (principles.md:176, :179,
+    :287); `contexts` and `of` as `UnseparatedPayload` has them."""
 
-    subsumed: Case
-    by: CaseSet
+    a: tuple[PointBranch, ...]
+    b: tuple[PointBranch, ...]
+    contexts: CaseSet
+    of: int
 
 
 @dataclass(frozen=True)

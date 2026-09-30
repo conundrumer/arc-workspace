@@ -928,42 +928,24 @@ def _literals(body: Sequence[BodyLiteral] | None) -> Iterator[BodyLiteral]:
             yield lit
 
 
-def _all_atoms(body: Sequence[BodyLiteral] | None) -> Iterator[AtomLiteral]:
-    """Every atom literal of a body, those of its aggregates and its
-    disjunctions among them."""
-    for lit in body or ():
-        match lit:
-            case AtomLiteral(atom=atom):
-                yield lit
-                for t in atom.args:
-                    yield from _term_literals(t)
-            case Comparison(lhs=lhs, rhs=rhs):
-                yield from _term_literals(lhs)
-                yield from _term_literals(rhs)
-            case Disjunction(branches=branches):
-                for b in branches:
-                    yield from _all_atoms(b)
-            case _:
-                pass
+_PART = AdtValue("", ())
+"""A part of a record or constructor value in a `Pattern` that nothing
+fixes, where some other part of it is fixed."""
 
 
-def _term_literals(term: Term) -> Iterator[AtomLiteral]:
-    match term:
-        case Aggregate(expr=expr, body=body):
-            if expr is not None:
-                yield from _term_literals(expr)
-            yield from _all_atoms(body)
-        case ConstructorTerm(args=args) | RecordTerm(args=args) \
-                | IntrinsicCall(args=args) | FunctorCall(args=args):
-            for a in args:
-                yield from _term_literals(a)
-        case UnaryTerm(arg=arg) | Cast(term=arg):
-            yield from _term_literals(arg)
-        case BinaryTerm(lhs=lhs, rhs=rhs):
-            yield from _term_literals(lhs)
-            yield from _term_literals(rhs)
-        case _:
-            pass
+def _compatible(a: Value, b: Value) -> bool:
+    """Whether two values of a `Pattern` may be one value: equal where
+    both fix a part (`_PART`)."""
+    if a == _PART or b == _PART:
+        return True
+    if isinstance(a, AdtValue) and isinstance(b, AdtValue):
+        return a.constructor == b.constructor \
+            and len(a.args) == len(b.args) \
+            and all(_compatible(x, y) for x, y in zip(a.args, b.args))
+    if isinstance(a, RecordValue) and isinstance(b, RecordValue):
+        return len(a.fields) == len(b.fields) \
+            and all(_compatible(x, y) for x, y in zip(a.fields, b.fields))
+    return a == b
 
 
 type Place = tuple[InstancePath, DeclId]
@@ -992,7 +974,7 @@ class StoredAlready:
     each variable of the head's terms at those columns takes stored values
     alone, following its bindings through stored relations (`_var`). A
     term with no variable, a literal fact's among them, is not stored
-    already, nor is a value on a cycle of the test. A relation is read at
+    already, nor is a value read on a cycle of the relations. A relation is read at
     each instance it stands at (`Place`): the clauses of a relation there
     are the units of the solver's own text whose head names it at that
     instance (`solver.model.Graph`), and, for a relation of a lib
@@ -1013,7 +995,7 @@ class StoredAlready:
                 self.heads.setdefault(place, []).append((u, at))
         self.done: dict[tuple[Place, frozenset[int], Pattern], bool] = {}
         self.open: set[tuple[Place, frozenset[int], Pattern]] = set()
-        self.pure: dict[Place, bool] = {}
+        self.holds: dict[tuple[Place, Pattern], bool] = {}
         self.constants = solver.lib.constants
 
     def place(self, unit: Unit, at: InstancePath, rel: RelationName
@@ -1051,7 +1033,7 @@ class StoredAlready:
         if key in self.open:
             return False
         self.open.add(key)
-        frames = self._frames(place, row)
+        frames = [f for f in self._frames(place, row) if self._feasible(f)]
         got = bool(frames) and all(
             self._term(frame.unit.head.args[c], frame)
             for frame in frames for c in sorted(cols))
@@ -1088,16 +1070,48 @@ class StoredAlready:
                 out.append(_Frame(u, at, env))
         return out
 
+    def _feasible(self, frame: _Frame) -> bool:
+        """Whether each positive atom of the clause's body may hold a row
+        with the values the frame fixes of its terms (`_can_hold`): a
+        clause whose body reads a relation that holds no such row puts no
+        row in."""
+        for lit in frame.unit.body or ():
+            if not isinstance(lit, AtomLiteral) or lit.negated:
+                continue
+            decl = self._decl(lit.atom, frame)
+            if decl is None:
+                continue
+            row = tuple(self._known(t, frame.env) for t in lit.atom.args)
+            if all(v is None for v in row):
+                continue
+            if not self._can_hold(decl, row):
+                return False
+        return True
+
+    def _can_hold(self, place: Place, row: Pattern) -> bool:
+        """Whether the relation at `place` may hold a row that `row`
+        admits: a relation no clause feeds may, and one some clause feeds
+        where a clause that may put such a row in is feasible."""
+        key = (place, row)
+        if key in self.holds:
+            return self.holds[key]
+        self.holds[key] = True
+        feeding = self._feeding(place)
+        got = not feeding or any(self._feasible(f)
+                                 for f in self._frames(place, row))
+        self.holds[key] = got
+        return got
+
     def _matches(self, term: Term, known: Value | None,
                  env: dict[str, Value]) -> bool:
         """Whether a head's term may take a value `known` admits, each
         variable whose value `known` fixes bound in `env`."""
-        if known is None:
+        if known is None or known == _PART:
             return True
         match term:
             case Variable(name=name):
                 if name in env:
-                    return env[name] == known
+                    return _compatible(env[name], known)
                 env[name] = known
                 return True
             case ConstructorTerm(name=name, args=args):
@@ -1120,7 +1134,8 @@ class StoredAlready:
 
     def _known(self, term: Term, env: Mapping[str, Value]) -> Value | None:
         """What an atom's term fixes of the value it stands for: None
-        where it fixes less than the whole value."""
+        where it fixes none of it, and a record or constructor value with
+        `_PART` at each part it does not fix."""
         match term:
             case Variable(name=name):
                 return env.get(name)
@@ -1130,12 +1145,12 @@ class StoredAlready:
                 return self.constants.get(name)
             case ConstructorTerm(name=name, args=args):
                 vals = [self._known(a, env) for a in args]
-                return None if any(v is None for v in vals) else AdtValue(
-                    name, tuple(v for v in vals if v is not None))
+                return AdtValue(name, tuple(_PART if v is None else v
+                                            for v in vals))
             case RecordTerm(args=args):
                 vals = [self._known(a, env) for a in args]
-                return None if any(v is None for v in vals) else RecordValue(
-                    tuple(v for v in vals if v is not None))
+                return None if all(v is None for v in vals) else RecordValue(
+                    tuple(_PART if v is None else v for v in vals))
             case _:
                 return None
 
@@ -1144,70 +1159,35 @@ class StoredAlready:
         return bool(names) and all(self._var(n, frame) for n in names)
 
     def _var(self, name: str, frame: _Frame) -> bool:
-        """Whether a variable takes stored values alone: it, and each
-        variable a test of it holds, is bound and tested against stored
-        relations alone (`_alone`)."""
-        ok: dict[str, bool] = {}
-        tested: dict[str, set[str]] = {}
-        work = [name]
-        while work:
-            v = work.pop()
-            if v in ok:
-                continue
-            ok[v] = self._alone(v, frame)
-            if not ok[v]:
-                if v == name:
-                    return False
-                continue
-            tested[v] = self._tested_with(v, frame)
-            work += sorted(w for w in tested[v] if w not in ok)
-        stored = {v for v, good in ok.items() if good}
-        while falls := {v for v in stored if not tested[v] <= stored}:
-            stored -= falls
-        return name in stored
+        """Whether a variable takes stored values alone: the row does not
+        fix it, and a positive atom of the body binds it at columns whose
+        value is stored (`_bound_stored`). Every other literal that holds
+        it, a test or a join, only narrows the stored values it takes, so
+        a relation fed from the values of an open parameter is stored
+        already."""
+        return name not in frame.env \
+            and self._bound_stored(frame.unit.body, name, frame)
 
-    def _alone(self, name: str, frame: _Frame) -> bool:
-        """Whether a variable is bound, and bound and tested against
-        stored relations alone; a comparison binds nothing."""
-        if name in frame.env:
-            return False
-        bound = False
-        for lit in _literals(frame.unit.body):
-            if not isinstance(lit, AtomLiteral):
+    def _bound_stored(self, body: Sequence[BodyLiteral] | None, name: str,
+                      frame: _Frame) -> bool:
+        """Whether some positive atom of `body` binds `name` at columns
+        whose value is stored (`_atom`); a disjunction binds it so where
+        each of its branches does."""
+        for lit in body or ():
+            if isinstance(lit, Disjunction):
+                if lit.branches and all(self._bound_stored(b, name, frame)
+                                        for b in lit.branches):
+                    return True
+                continue
+            if not isinstance(lit, AtomLiteral) or lit.negated:
                 continue
             atom = lit.atom
             cols = tuple(j for j, t in enumerate(atom.args)
                          if name in _vars(t))
-            if lit.negated:
-                if cols and not self._reads(atom, cols, frame):
-                    return False
-                continue
             binding = self._binding(atom, cols, frame)
-            if binding:
-                bound = True
-                if not self._atom(atom, binding, frame):
-                    return False
-            rest = tuple(j for j in cols if j not in binding)
-            if rest and not self._reads(atom, rest, frame):
-                return False
-        return bound
-
-    def _tested_with(self, name: str, frame: _Frame) -> set[str]:
-        out: set[str] = set()
-        for lit in _literals(frame.unit.body):
-            match lit:
-                case AtomLiteral(atom=atom, negated=False):
-                    cols = tuple(j for j, t in enumerate(atom.args)
-                                 if name in _vars(t))
-                    if cols == self._binding(atom, cols, frame):
-                        continue
-                case AtomLiteral() | Comparison():
-                    if name not in _literal_vars(lit):
-                        continue
-                case _:
-                    continue
-            out |= _literal_vars(lit)
-        return {w for w in out if w != name and w not in frame.env}
+            if binding and self._atom(atom, binding, frame):
+                return True
+        return False
 
     def _decl(self, atom: Atom, frame: _Frame) -> Place | None:
         return self.place(frame.unit, frame.at, atom.relation)
@@ -1242,29 +1222,6 @@ class StoredAlready:
         row = tuple(None if j in cols else self._known(t, frame.env)
                     for j, t in enumerate(atom.args))
         return self.at(decl, frozenset(cols), row)
-
-    def _reads(self, atom: Atom, cols: tuple[int, ...], frame: _Frame
-               ) -> bool:
-        decl = self._decl(atom, frame)
-        if decl is not None and self._inline(decl):
-            return self._pure(decl, len(atom.args))
-        return self._atom(atom, cols, frame)
-
-    def _pure(self, decl: Place, width: int) -> bool:
-        """Whether an inline relation reads nothing but Params relations
-        and inline relations that do the same."""
-        if decl not in self.pure:
-            self.pure[decl] = False
-            self.pure[decl] = all(
-                self._pure_atom(lit.atom, f)
-                for f in self._frames(decl, (None,) * width)
-                for lit in _all_atoms(f.unit.body))
-        return self.pure[decl]
-
-    def _pure_atom(self, atom: Atom, frame: _Frame) -> bool:
-        decl = self._decl(atom, frame)
-        return decl is not None and (self._params(decl) or (
-            self._inline(decl) and self._pure(decl, len(atom.args))))
 
     def _params(self, place: Place) -> bool:
         return self.decls[place[1]].scope == Scope((PARAMS,))

@@ -15,7 +15,7 @@
 ## In the pass
 1. Write plain program relations that state the lib operation.
     - When cases share those relations, key them.
-    - **Proposal comp.** If those relations need a banned form, place them in a proposal comp: a `.comp` named for the operation.
+    - **Proposal comp.** If those relations need a banned form and the concept case reads them, place them in a proposal comp: a `.comp` named for the operation.
     - **Extension of a lib comp.** Write no comp for an extension of a lib comp. Keep its local clause beside the instance.
     - Run the solver and confirm that the operation works in context.
 2. Report the operation: name it, describe it, show the solver-local version, and list the sites the grep found.

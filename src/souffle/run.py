@@ -3,8 +3,8 @@ input and output directives, the facts written to files, the result read
 back per output relation, and each run stored under the hash of all it
 reads."""
 
-import bisect
 import contextlib
+import gc
 import hashlib
 import json
 import math
@@ -492,38 +492,65 @@ def _marks_only(line: str, mark: str) -> bool:
 
 def _blocks(stdout: str) -> dict[str, list[list[str]]]:
     """The relations Souffle printed, each as its rows of column texts."""
-    return {name: [line.split("\t") for line in lines]
-            for name, lines in _block_lines(stdout).items()}
+    return {name: [line.split("\t") for line in _lines(stdout, span)]
+            for name, span in _block_spans(stdout).items()}
 
 
-def _block_lines(stdout: str) -> dict[str, list[str]]:
-    """The relations Souffle printed, each as its rows' lines: a line of
-    `-`, the name, the header, a line of `=`, the rows, a line of `=`."""
-    lines = stdout.split("\n")
-    if lines and lines[-1] == "":
-        lines.pop()
-    # The lines made of `=` alone, by index: the rows between two of them
-    # are read without a test per line.
-    marks: list[int] = []
-    at = line = 0
-    for m in _EQUALS_LINE.finditer(stdout):
-        line += stdout.count("\n", at, m.start())
-        at = m.start()
-        if line < len(lines):
-            marks.append(line)
-    out: dict[str, list[str]] = {}
-    i = 0
-    while i + 3 < len(lines):
-        k = bisect.bisect_left(marks, i + 4)
-        end = marks[k] if k < len(marks) else None
-        if end is None or not _marks_only(lines[i], "-") or not _marks_only(lines[i + 3], "="):
+def _block_spans(stdout: str) -> dict[str, tuple[int, int]]:
+    """The relations Souffle printed, each as the span of `stdout` its
+    rows' lines stand in: a line of `-`, the name, the header, a line of
+    `=`, the rows, a line of `=`. A block is found by its lines alone, and
+    the rows are not split into lines here."""
+    out: dict[str, tuple[int, int]] = {}
+    at, n = 0, len(stdout)
+    while at < n:
+        ends: list[int] = []
+        pos = at
+        for _ in range(4):
+            e = stdout.find("\n", pos)
+            if e < 0:
+                break
+            ends.append(e)
+            pos = e + 1
+        if len(ends) < 3:
             break
-        out[lines[i + 1]] = lines[i + 4:end]
-        i = end + 1
+        if len(ends) == 3:
+            ends.append(n)
+        dashes, name_end, header_end, equals_end = ends
+        if not _marks_only(stdout[at:dashes], "-") \
+                or not _marks_only(stdout[header_end + 1:equals_end], "="):
+            break
+        start = equals_end + 1
+        end = _equals_line(stdout, start)
+        if end is None:
+            break
+        out[stdout[dashes + 1:name_end]] = (start, end)
+        at = stdout.find("\n", end)
+        at = n if at < 0 else at + 1
     return out
 
 
-_EQUALS_LINE = re.compile(r"^=+$", re.M)
+def _equals_line(stdout: str, start: int) -> int | None:
+    """Where the first line at or after `start`, a line's start, that is
+    made of `=` alone begins."""
+    at = start
+    while at < len(stdout):
+        if stdout.startswith("=", at):
+            end = stdout.find("\n", at)
+            end = len(stdout) if end < 0 else end
+            if _marks_only(stdout[at:end], "="):
+                return at
+        nxt = stdout.find("\n=", at)
+        if nxt < 0:
+            return None
+        at = nxt + 1
+    return None
+
+
+def _lines(stdout: str, span: tuple[int, int]) -> list[str]:
+    """The lines of `stdout` in `span`, which ends after a line's end."""
+    start, end = span
+    return stdout[start:end - 1].split("\n") if end > start else []
 
 
 _UNREAD: Value = object()  # type: ignore[assignment]
@@ -550,7 +577,7 @@ class _Printed(Mapping[RelationName, Rows]):
         self._tree = tree
         self._printed_as = dict(printed_as)
         self._caps = dict(caps)
-        self._lines: dict[str, list[str]] | None = None
+        self._spans: dict[str, tuple[int, int]] | None = None
         self._sets: dict[str, frozenset[str]] = {}
         self._types: dict[RelationName, tuple[str, ...]] = {}
         self._rows: dict[RelationName, Rows] = {}
@@ -591,7 +618,9 @@ class _Printed(Mapping[RelationName, Rows]):
         if self._stdout == other._stdout and self._printed_as == other._printed_as \
                 and self._caps == other._caps:
             return True
-        return all(self._set(r) == other._set(r) for r in self._outputs)
+        return all((self._caps.get(r) == other._caps.get(r)
+                    and self._text(r) == other._text(r))
+                   or self._set(r) == other._set(r) for r in self._outputs)
 
     def _column_types(self, rel: RelationName) -> tuple[str, ...]:
         with self._lock:
@@ -602,11 +631,22 @@ class _Printed(Mapping[RelationName, Rows]):
                 got = self._types[rel] = tuple(c.type for c in hit.decl.columns)
             return got
 
+    def _span(self, rel: RelationName) -> tuple[int, int]:
+        """Where the printed rows of `rel` stand in the text, all of them
+        where the run printed more than its cap plus one."""
+        if self._spans is None:
+            self._spans = _block_spans(self._stdout)
+        return self._spans.get(self._printed_as.get(rel, rel.text), (0, 0))
+
+    def _text(self, rel: RelationName) -> str:
+        """The printed rows of `rel` as one text: equal texts hold equal
+        sets of rows, and the rows of one set print in one order."""
+        start, end = self._span(rel)
+        return self._stdout[start:end]
+
     def _block(self, rel: RelationName) -> list[str]:
         """The printed rows of `rel`, as lines: at most its cap plus one."""
-        if self._lines is None:
-            self._lines = _block_lines(self._stdout)
-        lines = self._lines.get(self._printed_as.get(rel, rel.text), [])
+        lines = _lines(self._stdout, self._span(rel))
         cap = self._caps.get(rel)
         return lines if cap is None else lines[:cap + 1]
 
@@ -619,7 +659,12 @@ class _Printed(Mapping[RelationName, Rows]):
         return got
 
     def _read(self, rel: RelationName) -> Rows:
-        return _rows_of(rel, self._block(rel), self._tree)
+        rows = _rows_of(rel, self._block(rel), self._tree)
+        # The rows hold no reference cycle, and a result holds many of
+        # them: the collector leaves the objects that stand now out of its
+        # passes, which would otherwise walk every row held.
+        gc.freeze()
+        return rows
 
 
 def _capped_copy(rel: RelationName, cap: int, tree: Tree, taken: set[str]
@@ -687,6 +732,23 @@ def _rows_of(rel: RelationName, lines: list[str], tree: Tree) -> Rows:
     hit = tree.resolve(rel, Scope(()))
     assert hit is not None
     cols = [c.type for c in hit.decl.columns]
+    if cols and lines:
+        # Column by column: each distinct text is read once, and the rows
+        # share the value read from it.
+        try:
+            columns = list(zip(*[line.split("\t") for line in lines],
+                               strict=True))
+            if len(columns) == len(cols):
+                values = []
+                for column, c in zip(columns, cols, strict=True):
+                    seen = {t: printed(t, c, tree, hit.place, hit.start)
+                            for t in dict.fromkeys(column)}
+                    values.append(list(map(seen.__getitem__, column)))
+                return tuple(zip(*values, strict=True))
+        except ValueError:
+            pass
+    # Row by row, where a row is not of the relation's width or a value
+    # is not read, so that the error names the first such row.
     # Per column, each text already read: a column's values repeat
     # across rows, and reading one resolves its type at each level.
     read: list[dict[str, Value]] = [{} for _ in cols]

@@ -11,6 +11,7 @@ from arc.task import Example, pair_name
 from checker.finding import LINT_SHAPES, Finding
 from checker.render import (
     LineForm,
+    _ticked,
     Section,
     case_name,
     failure_text,
@@ -167,8 +168,9 @@ def _one_failure(cases: Sequence[CaseOnPair]) -> RunFailure | None:
 def pair_failure_lines(solver: Solver, name: str,
                        cases: Sequence[CaseOnPair], ex: Example) -> list[str]:
     """A failing pair: what its run hit, or each case whose grids are
-    none of the pair's candidates with why, then each grid the pair does
-    not accept, against the stored output."""
+    none of the pair's candidates with why, the count of the cases that
+    fit, fail and give no output, then each grid the pair does not
+    accept, against the stored output."""
     lines = [mctx("{pair}: FAIL").format(pair=name)]
     whole = _one_failure(cases)
     if whole is not None:
@@ -190,15 +192,18 @@ def pair_failure_lines(solver: Solver, name: str,
         grids = o.grids if isinstance(o, Grids) else ()
         if reasons := _reasons(grids, ex):
             groups.setdefault(reasons, []).append(case_name(solver, c.case))
-    lines += [f"  {', '.join(cases)}: {'; '.join(reasons)}"
-              for reasons, cases in groups.items()]
+    lines += [f"  {', '.join(names)}: {'; '.join(reasons)}"
+              for reasons, names in groups.items()]
+    empty = sum(not isinstance(c.outcome, Grids) for c in cases)
+    many = len(cases) > 1 or resolved(solver)
+    if many and (bad or empty):
+        fit = sum(bool(c.matches) for c in cases)
+        count = mctx("cases: {p} pass / {f} fail / {n} no output") if empty \
+            else mctx("cases: {p} pass / {f} fail")
+        lines.append("  " + count.format(p=fit, f=len(bad), n=empty))
     if not bad:
         return lines
-    many = len(cases) > 1 or resolved(solver)
     if many:
-        passing = len(cases) - len(bad)
-        lines.append("  " + mctx("cases: {p} pass / {f} fail").format(
-            p=passing, f=len(bad)))
         lines.append("    " + mctx("fail: {cases}").format(
             cases=", ".join(case_name(solver, c.case) for c in bad)))
     by_grid: dict[Grid, list[str]] = {}
@@ -324,6 +329,25 @@ NO_ROWS = mctx("{head}: no rows")
 JUDGED_OUTPUT = mctx("judged output:")
 WOULD_RECORD = mctx("would record witness `{id}`")
 WROTE = mctx("wrote witness `{id}` to {path}")
+
+
+def not_written(id: str, names: Sequence[str], kind: str, lineless: bool
+                ) -> str:
+    """The line of a witness a survey built and did not write, since its
+    groups hold `names`, which denote no case of the solver; `lineless`
+    where the survey built it with a `@derive` or `@store` line (`kind`)
+    the solver does not hold."""
+    if lineless:
+        return mctx("wrote no witness `{id}`: no `@{kind}` line holds "
+                    "`{id}`, so its groups name {names}, which denote no "
+                    "case of the solver; with the line written, `{kind}` "
+                    "writes it").format(id=id, kind=kind,
+                                        names=_ticked(names))
+    return mctx("wrote no witness `{id}`: its groups name {names}, which "
+                "denote no case of the solver").format(
+        id=id, names=_ticked(names))
+
+
 FORMATTED = mctx("formatted {path}")
 RERECORDED_ONE = mctx("re-recorded witness `{id}` in {path}: {change}")
 

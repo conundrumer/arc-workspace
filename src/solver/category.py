@@ -12,6 +12,7 @@ class Category(StrEnum):
     LIB_NAME = "lib name"
     LIB_INTERNAL = "lib internal"
     COMP_WITHOUT_ENTRY = "comp without entry"
+    PROPOSAL_COMP = "proposal comp"
     PARSE_UNSHARED_WITH_DETERMINE = "parse unshared with determine"
     FAMILY_CASE = "family case"
     HEADER = "header"

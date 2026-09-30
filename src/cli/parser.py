@@ -252,7 +252,7 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
     witness = command(
         "witness",
         lambda a: audit.cmd_witness(a.stem, a.file, a.every_case,
-                                    a.witness_file),
+                                    a.witness_file, a.try_path),
         help=mctx("run the task's witness grids and report where the solver "
                   "and the witness file disagree"),
         description=mctx("The report checks the file's shape first. With "
@@ -273,6 +273,15 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                          help=mctx("a witness file to read in place of the "
                                    "task's; the report is the one the "
                                    "task's file gets"))
+    witness.add_argument("--try", metavar="PATH", dest="try_path",
+                         help=mctx("a grid file read as a candidate "
+                                   "witness: run the solver's cases on it "
+                                   "as `record` would, and print its "
+                                   "groups, the unseparated branch "
+                                   "differences whose pairs it separates, "
+                                   "and the subsumed ones whose pairs it "
+                                   "shows defined and differing; nothing "
+                                   "is written"))
     witness.add_argument("--every-case", action="store_true",
                          help=mctx("run with `impl_choice` holding every "
                                    "case of `Choice`; for each case the "

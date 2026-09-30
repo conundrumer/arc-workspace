@@ -31,7 +31,6 @@ from checker.payloads.witness import (  # noqa: F401  (re-exported)
     SeparatesPayload,
     StandsElsewhere,
     SubsumedPayload,
-    Taking,
     TaskAssignPayload,
     UnheldPayload,
     UnjustifiedDropPayload,
@@ -207,6 +206,7 @@ class LintSentence(StrEnum):
     LIB_PRIVATE = "lib private"
     LIB_INTERNAL_COMP = "lib internal comp"
     NO_PROPOSAL_ENTRY = "no proposal entry"
+    PROPOSAL_UNREAD = "proposal unread"
     PARSE_UNREAD = "parse unread"
     FAMILY_NOT_PARSED = "family not parsed"
     FAMILY_RECORD = "family record"

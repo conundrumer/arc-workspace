@@ -8,6 +8,7 @@ from pathlib import Path
 from checker import Finding, Kind, Runs, check_faults
 from checker.branches import (
     BuiltBy,
+    unnamed,
     check_color_structure_stored,
     check_stored_or_derived,
     check_two_parameterizations,
@@ -26,7 +27,14 @@ from checker.render import (
 from checker.render.branches import derive_lines, record_lines, store_lines
 from checker.render.surveys import render_deletions, render_sweep
 from checker.sweep import MAX_CANDIDATES, TIME_LIMIT_SECONDS, survey_sweep
-from checker.witness import WITNESS_CHECKS, check_case_conditions
+from checker.render.witness import try_lines
+from checker.witness import (
+    TRY_ID,
+    WITNESS_CHECKS,
+    TryResult,
+    check_case_conditions,
+    try_witness,
+)
 from cli import text
 from cli.common import (
     LIMITS,
@@ -34,16 +42,19 @@ from cli.common import (
     compile_failure,
     failed_lines,
     engine,
+    grid_text,
+    parse_grid,
+    sections,
     load_solver,
     missing,
     no_task,
     shown_path,
 )
-from cli.record import absent, read_file, target, with_file
+from cli.record import absent, failure_lines, read_file, target, with_file
 from solver import witness
 from engine import RunFailure
 from solver.model import Solver
-from solver.witness import Entry, WitnessFile
+from solver.witness import Entry, Groups, WitnessFile
 from souffle import SouffleEngine
 
 # `witness`
@@ -71,15 +82,18 @@ def witness_findings(solver: Solver, runs: Runs, every_case: bool
 
 
 def _witness_report(eng: SouffleEngine, solver: Solver,
-                    given: WitnessFile | None, every_case: bool
+                    given: WitnessFile | None, every_case: bool,
+                    runs: Runs | None = None
                     ) -> tuple[list[str], list[Finding]] | RunFailure:
     """The `@witness` lines, the count of witness grids, and the
-    report; the failure of `witness_findings` where it gives one."""
+    report; the failure of `witness_findings` where it gives one. `runs`
+    are the command's runs where it has them already."""
     file = given or solver.witness_file
     lines = commands.witness_head(
         solver, None if file is None else len(file.entries),
         shown_path(witness.path(solver.task_id)))
-    runs = Runs(eng, solver, LIMITS, given=given)
+    if runs is None:
+        runs = Runs(eng, solver, LIMITS, given=given)
     findings = witness_findings(solver, runs, every_case)
     if not isinstance(findings, list):
         return findings
@@ -88,11 +102,17 @@ def _witness_report(eng: SouffleEngine, solver: Solver,
 
 def cmd_witness(arg: str | None, file: str | None = None,
                 every_case: bool = False,
-                witness_file: str | None = None) -> int:
+                witness_file: str | None = None,
+                try_path: str | None = None) -> int:
     """The witness report of a solver, against the task's witness file,
-    `file` in place of it, or `witness_file` read as the task's own."""
+    `file` in place of it, or `witness_file` read as the task's own; with
+    `try_path`, what the grid there would change as a witness."""
     if file is not None and witness_file is not None:
         print(text.BOTH_FILES, file=sys.stderr)
+        return 2
+    if try_path is not None and (arg is None or file is not None
+                                 or every_case):
+        print(text.TRY_ALONE, file=sys.stderr)
         return 2
     if arg is None and witness_file is not None:
         print(text.WITNESS_FILE_STEM, file=sys.stderr)
@@ -131,6 +151,8 @@ def cmd_witness(arg: str | None, file: str | None = None,
     if failure is not None:
         print("\n".join(failed_lines(solver, failure)))
         return 1
+    if try_path is not None:
+        return _try(eng, solver, try_path)
     got = _witness_report(eng, solver, given, every_case)
     if not isinstance(got, tuple):
         print(commands.RUN_FAILED.format(error=failure_text(got)))
@@ -138,6 +160,28 @@ def cmd_witness(arg: str | None, file: str | None = None,
     lines, findings = got
     print("\n".join(lines))
     return 0 if pass_line(Section.WITNESS, findings) is not None else 1
+
+
+def _try(eng: SouffleEngine, solver: Solver, path: str) -> int:
+    """`witness --try`: the grid at `path` as a candidate witness
+    (`checker.witness.try_witness`); nothing is written."""
+    written = grid_text(path)
+    if written is None:
+        return 2
+    parts = sections(written)
+    if len(parts) > 1:
+        print(text.TRY_ONE_GRID, file=sys.stderr)
+        return 2
+    grid = parse_grid(parts[0])
+    if grid is None:
+        return 2
+    got = try_witness(solver, Runs(eng, solver, LIMITS),
+                      Entry(TRY_ID, "", grid, (), Groups(())))
+    if not isinstance(got, TryResult):
+        print("\n".join(failure_lines(solver, got)))
+        return 1
+    print("\n".join(try_lines(solver, got)))
+    return 0
 
 
 def _shape_only(path: Path) -> int:
@@ -196,20 +240,30 @@ def _branch_solver(arg: str, witness_file: str | None,
 
 
 def _built(solver: Solver, at: Path,
-           built: Sequence[tuple[Entry, BuiltBy]], corpus: bool) -> int:
+           built: Sequence[tuple[Entry, BuiltBy]], corpus: bool,
+           runs: Runs, kind: str) -> int:
     """Each witness a survey built, as `record` prints it, each followed
     by the line that says it was written, after one write of them all;
-    over every solver, nothing is written."""
+    over every solver, nothing is written. An entry whose groups hold a
+    name that denotes no case of the solver, as where the survey built it
+    with a line the solver does not hold, is not written, and its line
+    says why."""
     if not built:
         return 0
     if corpus:
         print(commands.CORPUS_READ_ONLY)
-    problems = () if corpus \
-        else witness.put(at, solver.task_id, [e for e, _by in built])
+    solver_cases = runs.cases if isinstance(runs.cases, tuple) else ()
+    bad = {e.id: unnamed(solver, solver_cases, e) for e, _by in built}
+    problems = () if corpus else witness.put(
+        at, solver.task_id, [e for e, _by in built if not bad[e.id]])
     for e, by in built:
         print("\n".join(record_lines(e, by.solver, by.cases)))
         print()
-        if corpus:
+        if bad[e.id]:
+            print(commands.not_written(
+                e.id, bad[e.id], kind,
+                len(by.solver.branches) != len(solver.branches)))
+        elif corpus:
             print(commands.WOULD_RECORD.format(id=e.id))
         elif not problems:
             print(commands.WROTE.format(id=e.id, path=at))
@@ -229,12 +283,13 @@ def cmd_derive(arg: str, witness_file: str | None = None,
     if got is None:
         return 2
     solver, at = got
-    survey = Runs(eng, solver, LIMITS).derive_survey
+    runs = Runs(eng, solver, LIMITS)
+    survey = runs.derive_survey
     print("\n".join(derive_lines(solver, survey)))
     built = [(d.built, d.built_by) for d in survey.derivations
              if d.built is not None and d.built_by is not None
              and not d.entry]
-    return _built(solver, at, built, corpus)
+    return _built(solver, at, built, corpus, runs, "derive")
 
 
 def cmd_store(arg: str, witness_file: str | None = None,
@@ -247,12 +302,13 @@ def cmd_store(arg: str, witness_file: str | None = None,
     if got is None:
         return 2
     solver, at = got
-    survey = Runs(eng, solver, LIMITS).store_survey
+    runs = Runs(eng, solver, LIMITS)
+    survey = runs.store_survey
     print("\n".join(store_lines(solver, survey)))
     built = [(f.built, f.built_by) for f in survey.listed
              if f.built is not None and f.built_by is not None
              and f.store_branch and not f.entry]
-    return _built(solver, at, built, corpus)
+    return _built(solver, at, built, corpus, runs, "store")
 
 
 # `audit`
@@ -289,7 +345,7 @@ def cmd_audit(arg: str, time_limit: float = TIME_LIMIT_SECONDS,
     deletions = survey_deletions(solver, runs)
     out += render_deletions(solver, deletions)
     out += ["", commands.AUDIT_SECTION.format(name="witness")]
-    report = _witness_report(eng, solver, None, False)
+    report = _witness_report(eng, solver, None, False, runs)
     assert isinstance(report, tuple)
     lines, found = report
     out += lines

@@ -118,8 +118,9 @@
 - **`@singleton-axis` literal.** A structure that extends along one axis is written in a two-axis type, and the other axis takes a literal `1`.
     - The clause containing that literal ends with `// @singleton-axis: <what the structure is>`.
 - **`@derive` directive.** The line is a branch of a choice point on the parameter, at which each case whose base reads the parameter takes a branch and whose concept branch is the stored parameter, with the parameter's value derived by the built-in derivation the line's `<Proposer>` selects; lines on one parameter are branches of one point, and the cases that take one of them are cases of the solver.
+    - In a run on an input, a pair's or a witness's, the parameter takes the value the derivation gives on that input; where it gives none, every case that takes the branch is undefined on that input.
     - The verdict `derived` denotes that branch, beside the verdicts a `@witness` line takes, and its witness's id is the branch's name; a further witness of the branch is in the witness file, and the solver has no `@witness` line for it.
-    - `// @ignore: derive — <reason>` in its place records that the branch failed Equivalence or Subsumption, and no case that takes it is then a case of the solver; `// @ignore: derive <name> — <reason>` under the `@derive` line records that for the cases of `<name>` that take the line's branch.
+    - `// @ignore: derive — <reason>` in its place records that the cases taking the branch fail a case condition, Fit, Equivalence or Subsumption, and no case that takes it is then a case of the solver; `// @ignore: derive <name> — <reason>` under the `@derive` line records that for the cases of `<name>` that take the line's branch.
 
 ## Types
 - A solver may define:

@@ -585,9 +585,9 @@ def _no_witness_text(w: object) -> str:
                         "swapped for a free color: {error}").format(
                 grid=grid, error=failure_text(failure))
         case _:
-            return mctx("on every swap, each case that takes the branch "
-                        "gives the output of the case that takes the stored "
-                        "value there and the same branches elsewhere")
+            return mctx("no color swap of a train input shows the branch's "
+                        "model defined and giving an output other than the "
+                        "model of the stored value")
 
 
 # The `store` block

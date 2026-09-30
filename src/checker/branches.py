@@ -21,6 +21,7 @@ from checker.judged import (
     Fit,
     Fits,
     Swap,
+    base_constructors,
     fit,
     is_concept,
     no_result,
@@ -45,9 +46,10 @@ from solver.model import (
     StoreBranch,
     branch_under,
     cases,
+    concept_branch,
     takes,
 )
-from solver.names import Denoted, denote
+from solver.names import Denoted, denote, denoted_cases
 from solver.problems import Fault
 from solver.solve import (
     Assignment,
@@ -70,6 +72,7 @@ from solver.vocabulary import COLOR
 from solver.witness import (
     Entry,
     GroupGrid,
+    Groups,
     Undefined,
     grouped,
 )
@@ -171,7 +174,7 @@ class NoWitness(StrEnum):
     NO_FREE_COLOR = "no free color"
     """No train input has a color neither it nor a parameter holds."""
     ONE_OUTPUT = "one output"
-    """On every swap, each case that takes the branch gives its
+    """On no swap is the branch's model defined and other than its
     counterpart's output."""
     UNCHANGED = "unchanged"
     """No D4 image or color swap of a train input changes the value."""
@@ -206,11 +209,12 @@ def _differ(a: Outcome, b: Outcome) -> bool:
 
 def diverges(runs: Runs, solver: Solver, cases: Sequence[Case],
              branch: DeriveBranch | StoreBranch, grid: Grid,
-             assign: Assignment
+             assign: Assignment, defined: bool = False
              ) -> tuple[Case, Case] | RunFailure | None:
     """The first case of `cases` that gives on `grid` at `assign` an
-    output other than its counterpart's, with that counterpart; the first
-    failed run where none does and a run failed; None otherwise."""
+    output other than its counterpart's, with that counterpart; with
+    `defined`, only a case defined there counts. The first failed run
+    where none does and a run failed; None otherwise."""
     pairs = [(c, counterpart(c, branch)) for c in cases]
     got = outcomes(runs.engine, solver,
                    [x for pair in pairs for x in pair], grid, assign,
@@ -221,7 +225,7 @@ def diverges(runs: Runs, solver: Solver, cases: Sequence[Case],
         for o in (a, b):
             if not isinstance(o, (Grids, Undefined)):
                 failed = failed or o
-        if _differ(a, b):
+        if _differ(a, b) and (not defined or isinstance(a, Grids)):
             return case, other
     return failed
 
@@ -241,13 +245,37 @@ def stored_colors(solver: Solver) -> frozenset[int]:
 type Witness = SwapWitness | NoWitness | FailedOn
 
 
+def branch_models(solver: Solver, cases: Sequence[Case],
+                  branch: DeriveBranch | StoreBranch) -> list[Case]:
+    """The cases of `cases` a branch's witness is judged on: the branch's
+    model, the case that takes it with the concept case's base and no
+    other `@derive` or `@store` branch (principles.md:116, :126); where
+    the concept case's base does not read the branch's point, the cases
+    that take the branch alone whose bases take the fewest constructors
+    other than their points' concept branches."""
+    alone = [c for c in cases if c.branches == (branch,)]
+    model = [c for c in alone if is_concept(solver, counterpart(c, branch))]
+    if model or not alone:
+        return model
+    firsts = set() if solver.choice is None else {
+        concept_branch(p).name for p in solver.choice.points
+        if p.constructors}
+
+    def others(c: Case) -> int:
+        return len([n for n in base_constructors(c.base) if n not in firsts])
+
+    fewest = min(others(c) for c in alone)
+    return [c for c in alone if others(c) == fewest]
+
+
 def swap_witness(runs: Runs, solver: Solver, cases: Sequence[Case],
                  branch: DeriveBranch | StoreBranch, color: int | None
                  ) -> Witness:
     """The color-swap witness of `branch` (`judged.swaps`): the first
-    swapped train input on which a case that takes it diverges from its
-    counterpart. `color` is the one color the branch's value holds; None
-    where it holds other than one color."""
+    swapped train input on which the branch's model (`branch_models`) is
+    defined and gives an output other than its counterpart's, the concept
+    branch's model (principles.md:126-127). `color` is the one color the
+    branch's value holds; None where it holds other than one color."""
     task = solver.task
     if color is None or task is None:
         return NoWitness.NOT_ONE_COLOR
@@ -255,9 +283,11 @@ def swap_witness(runs: Runs, solver: Solver, cases: Sequence[Case],
                   frozenset({color}), stored_colors(solver))
     if not found:
         return NoWitness.NO_FREE_COLOR
+    models = branch_models(solver, cases, branch)
     failed: FailedOn | None = None
     for s in found:
-        got = diverges(runs, solver, cases, branch, s.grid, Assignment(()))
+        got = diverges(runs, solver, models, branch, s.grid, Assignment(()),
+                       defined=True)
         if isinstance(got, tuple):
             return SwapWitness(s, got[0], got[1])
         if got is not None and failed is None:
@@ -291,6 +321,23 @@ class BuiltBy:
 
     solver: Solver
     cases: tuple[Case, ...]
+
+
+def unnamed(solver: Solver, cases: Sequence[Case], entry: Entry
+            ) -> tuple[str, ...]:
+    """The names of the entry's groups that denote no case of `cases`,
+    the solver's cases, in the order the groups hold them: a survey writes
+    an entry only where each name it holds denotes a case of the solver
+    (solver-file.md:185)."""
+    if not isinstance(entry.output, Groups):
+        return ()
+    out: list[str] = []
+    for g in entry.output.groups:
+        for n in g.cases:
+            got = denoted_cases(solver, n, cases)
+            if (isinstance(got, Fault) or not got) and n not in out:
+                out.append(n)
+    return tuple(out)
 
 
 def file_entry(runs: Runs, name: str) -> Entry | None:

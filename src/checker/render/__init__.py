@@ -433,6 +433,14 @@ LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
         "`{0}` is a proposal comp with no entry "
         "docs/wf-solver/proposals/{0}.md; the lib pass writes the entry, or "
         "the comp folds into the program").format(*n),
+    LintSentence.PROPOSAL_UNREAD: lambda n, _: (mctx(
+        "`{comp}` is a proposal comp, and no derivation of the concept case "
+        "reads its relations; the cases that read them: {cases} "
+        "([In the pass](docs/handbook/lib-protocol.md#in-the-pass))").format(
+            comp=n[0], cases=_ticked(n[1:])) if n[1:] else mctx(
+        "`{comp}` is a proposal comp, and no derivation of any case reads "
+        "its relations ([In the pass]"
+        "(docs/handbook/lib-protocol.md#in-the-pass))").format(comp=n[0])),
     LintSentence.PARSE_UNREAD: lambda n, _: mctx(
         "no Determine comp reads this Parse comp; read it in Determine, or "
         "fold it into the program"),

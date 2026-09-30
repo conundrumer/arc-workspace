@@ -2,7 +2,9 @@
 reproduce every train pair, and what the test pairs say of the others."""
 
 import itertools
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
@@ -310,15 +312,35 @@ class _Sweeper:
 
     def chunks[V](self, values: list[V], fn: Callable[[V], object],
                   first: bool) -> tuple[list[object], int]:
-        """`fn` over `values` in chunks, the clock read between them; the
-        first chunk always runs."""
-        out: list[object] = []
+        """`fn` over `values` in order, as many at once as `parallel` runs,
+        each value started only while the clock has time left, save the
+        first `workers()` values where `first`; a value starts as soon as
+        one before it ends, so no run waits on a slower one. The values
+        that started are a prefix of `values`: their results, and their
+        count."""
         size = workers()
-        for i in range(0, len(values), size):
-            if (out or not first) and self.clock.spent():
-                break
-            out += parallel(fn, values[i:i + size])
-        return out, len(out)
+        lock = threading.Lock()
+        started = [0]
+        results: list[object] = [None] * len(values)
+
+        def claim() -> int | None:
+            with lock:
+                i = started[0]
+                if i >= len(values):
+                    return None
+                if not (first and i < size) and self.clock.spent():
+                    return None
+                started[0] = i + 1
+                return i
+
+        def work() -> None:
+            while (i := claim()) is not None:
+                results[i] = fn(values[i])
+
+        with ThreadPoolExecutor(max_workers=size) as pool:
+            for f in [pool.submit(work) for _ in range(min(size, len(values)))]:
+                f.result()
+        return results[:started[0]], started[0]
 
     def gaps[V](self, marker: CaseMarker | None, extras: list[V],
                 program_of: Callable[[V], Program]

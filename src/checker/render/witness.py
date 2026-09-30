@@ -14,18 +14,19 @@ from checker.payloads.witness import (
     CaseSet,
     ConceptPayload,
     Condition,
+    DerivedAt,
     DriftPayload,
     ConceptUnenumeratedPayload,
     DroppedPayload,
     ForeignUnderApproximated,
     NoDivergence,
+    PointBranch,
     ReassignedMismatch,
     RelaxedNoClaim,
     RelaxedNotScene,
     SeparatesPayload,
     StandsElsewhere,
     SubsumedPayload,
-    Taking,
     TaskAssignPayload,
     UnheldPayload,
     UnjustifiedDropPayload,
@@ -55,6 +56,8 @@ from solver.model import (
     StoredAtDerive,
 )
 from solver.solve import Grids, Outcome, PairId
+from typing import TYPE_CHECKING
+
 from solver.witness import (
     AssignArg,
     AssignRows,
@@ -64,6 +67,9 @@ from solver.witness import (
     Resolutions,
     Undefined,
 )
+
+if TYPE_CHECKING:
+    from checker.witness import TryResult
 
 WITNESS_KINDS = frozenset({
     Kind.DRIFT, Kind.UNLISTED, Kind.ANNOTATION, Kind.UNSEPARATED,
@@ -135,33 +141,17 @@ def _ref_name(ref: BranchRef) -> str:
     return branch_name(ref)
 
 
-def _taking_text(solver: Solver, t: Taking) -> str:
-    """A side or a shared part by its name: the base and the branches the
-    part holds, named as a model (`solver.names.name`), branches alone
-    joined by ` & `."""
-    if t.base is None:
-        return joined([branch_name(b) for b in t.branches])
-    return names.name(solver, Case(t.base, t.branches))
-
-
-def _side_text(solver: Solver, side: Taking, other: Taking) -> str:
-    """One side of an unseparated pair as one name: its own, and for a
-    side that holds nothing, the first branch at each point where the
-    other side takes a branch, `<param>=stored` at a `@derive` point,
-    joined as one name (`joined`). A `@store` point's first branch, the
-    derived value, has no name, and is stated after the name."""
-    if side.base is not None or side.branches:
-        return f"`{_taking_text(solver, side)}`"
-    named = [names.branch_text(StoredAtDerive(b.parameter))
-             for b in other.branches
-             if isinstance(b, DeriveBranch | StoredAtDerive)]
-    derived = [mctx("the derived value of `{r}`").format(r=b.spelled)
-               for b in other.branches if isinstance(b, StoreBranch)]
-    parts = ([f"`{joined(named)}`"] if named else []) + derived
-    if len(parts) == 1:
-        return parts[0]
-    return mctx("{firsts} and {last}").format(firsts=", ".join(parts[:-1]),
-                                              last=parts[-1])
+def _branches_text(parts: Sequence[PointBranch]) -> str:
+    """One side of a branch difference as one name: the branch it takes
+    at each point where the two sides differ, joined as a name
+    (`joined`)."""
+    out: list[str] = []
+    for x in parts:
+        if isinstance(x, DerivedAt):
+            out.append(f"{x.store.spelled}={names.DERIVED}")
+        else:
+            out.append(_ref_name(x))
+    return f"`{joined(out)}`"
 
 
 def _arg_text(arg: AssignArg) -> object:
@@ -228,16 +218,28 @@ def _annotation_text(solver: Solver, p: AnnotationPayload) -> str:
                 + _WITNESSES)
 
 
-def _unseparated_lines(solver: Solver, p: UnseparatedPayload) -> list[str]:
-    neither = (mctx("neither takes another `@derive` or `@store` branch")
-               if p.a.branches or p.b.branches
-               else mctx("neither takes a `@derive` or `@store` branch"))
-    return [mctx("no witness separates {a} from {b}").format(
-        a=_side_text(solver, p.a, p.b), b=_side_text(solver, p.b, p.a)),
-        *(f"  {neither}" if part.base is None and not part.branches
-          else "  " + mctx("both take `{name}`").format(
-              name=_taking_text(solver, part))
-          for part in p.under)]
+def _pairs_lines(p: UnseparatedPayload | SubsumedPayload) -> list[str]:
+    """A branch difference and the pairs it holds: how many of the pairs
+    that differ by it alone, and the names of the branches both cases of
+    each such pair take elsewhere."""
+    a, b = _branches_text(p.a), _branches_text(p.b)
+    n, of = len(p.contexts.cases), p.of
+    if isinstance(p, UnseparatedPayload):
+        head = mctx("no witness separates {a} from {b}").format(a=a, b=b)
+    else:
+        head = mctx("no run shows {a} defined and differing from {b}"
+                    ).format(a=a, b=b)
+    if not p.contexts.names:
+        return [head + " " + (
+            mctx("in the one pair of cases that differs by these branches "
+                 "alone") if of == 1 else
+            mctx("in any of the {of} pairs of cases that differ by these "
+                 "branches alone").format(of=of))]
+    return [head + " " + mctx(
+        "in {n} of the {of} pairs of cases that differ by these branches "
+        "alone; both cases of each such pair take one of:").format(
+            n=n, of=of),
+        *(f"  `{name}`" for name in p.contexts.names)]
 
 
 def _dropped_line(solver: Solver, p: DroppedPayload) -> str:
@@ -313,16 +315,8 @@ def witness_lines(solver: Solver, f: Finding) -> list[str]:
                 mctx("{entry}: these cases are not listed: {case}").format(
                     entry=at, case=case),
                 *_side(mctx("the solver's output"), actual)]
-        case UnseparatedPayload():
-            return _unseparated_lines(solver, p)
-        case SubsumedPayload(subsumed=a, by=by):
-            if len(by.names) == 1:
-                return [mctx("no run shows `{a}` defined and differing from "
-                             "`{b}`").format(a=case_name(solver, a),
-                                             b=by.names[0])]
-            return [mctx("no run shows `{a}` defined and differing from "
-                         "these cases:").format(a=case_name(solver, a)),
-                    *(f"  {n}" for n in by.names)]
+        case UnseparatedPayload() | SubsumedPayload():
+            return _pairs_lines(p)
         case ConceptPayload(concept=concept):
             return [mctx("{entry}: the concept case gives a grid other than "
                          "the judged output").format(entry=at),
@@ -379,3 +373,42 @@ def witness_lines(solver: Solver, f: Finding) -> list[str]:
                     else line]
         case _:
             _no_sentence(f)
+
+
+def try_lines(solver: Solver, result: "TryResult") -> list[str]:
+    """The `witness --try` report: the candidate's groups as `record`
+    prints them, the unseparated branch differences whose pairs it
+    separates, and the subsumed ones whose pairs it shows defined and
+    differing; it writes nothing."""
+    from checker.render.branches import record_lines
+
+    lines = record_lines(result.entry, solver, result.cases)[1:] + [""]
+
+    def counted(n: int, left: int) -> str:
+        return mctx("all {n} of its pairs").format(n=n) if not left \
+            else mctx("{k} of its {n} pairs, {left} left").format(
+                k=n - left, n=n, left=left)
+
+    if result.unseparated:
+        lines.append(mctx("unseparated branch differences it separates:"))
+        for x in result.unseparated:
+            p = x.finding.payload
+            assert isinstance(p, UnseparatedPayload)
+            lines.append("  " + mctx("{a} from {b}: {count}").format(
+                a=_branches_text(p.a), b=_branches_text(p.b),
+                count=counted(len(p.contexts.cases), x.left)))
+    if result.subsumed:
+        lines.append(mctx("subsumed branch differences it shows defined and "
+                          "differing:"))
+        for x in result.subsumed:
+            p = x.finding.payload
+            assert isinstance(p, SubsumedPayload)
+            lines.append("  " + mctx(
+                "{a} defined and differing from {b}: {count}").format(
+                a=_branches_text(p.a), b=_branches_text(p.b),
+                count=counted(len(p.contexts.cases), x.left)))
+    if not result.unseparated and not result.subsumed:
+        lines.append(mctx("it separates no unseparated pair and shows no "
+                          "subsumed case defined and differing"))
+    lines.append(mctx("wrote nothing"))
+    return lines

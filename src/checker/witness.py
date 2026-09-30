@@ -37,17 +37,18 @@ from checker.payloads.witness import (
     ConceptPayload,
     ConceptUnenumeratedPayload,
     Condition,
+    DerivedAt,
     DriftPayload,
     DroppedPayload,
     ForeignUnderApproximated,
     NoDivergence,
+    PointBranch,
     ReassignedMismatch,
     RelaxedNoClaim,
     RelaxedNotScene,
     SeparatesPayload,
     StandsElsewhere,
     SubsumedPayload,
-    Taking,
     TaskAssignPayload,
     UnheldPayload,
     UnjustifiedDropPayload,
@@ -59,7 +60,15 @@ from checker.payloads.witness import (
 from checker.readable import finding_of
 from checker.runs import Runs
 from checker.variants import parallel
-from engine import CpuLimit, Grid, Resolved, Scope, WallLimit
+from engine import (
+    AdtValue,
+    CpuLimit,
+    Grid,
+    Resolved,
+    RunFailure,
+    Scope,
+    WallLimit,
+)
 from engine.program import DeclId
 from solver.annotations import (
     Claim,
@@ -73,14 +82,17 @@ from solver.annotations import (
 from solver.model import (
     Case,
     ConstructorBranch,
+    DeriveBranch,
     Solver,
     StoreBranch,
+    StoredAtDerive,
     concept_branch,
     enumerates,
     every_base,
     is_concept,
     load,
     other_branches,
+    value_at,
 )
 from solver.names import (
     Denoted,
@@ -99,6 +111,7 @@ from solver.problems import (
 )
 from solver.solve import (
     Assignment,
+    group_grid,
     as_grid,
     candidates,
     Candidate,
@@ -117,6 +130,8 @@ from solver.witness import (
     RejectedOutput,
     Resolutions,
     Undefined,
+    WitnessFile,
+    grouped,
 )
 
 # What the checks read
@@ -507,7 +522,10 @@ def _groups(solver: Solver, runs: Runs, entry: Entry,
     solver's cases `unheld`. Under the `witness --every-case` form the
     names denote the solver's cases still, those the solver's own
     `impl_choice` holds (`_shown`): a dropped case is judged by
-    `check_case_conditions` alone (solver-file.md:185)."""
+    `check_case_conditions` alone (solver-file.md:185). A given file's
+    name is read as the model of the branches it names (`_model_set`):
+    the file gives each branch's output, and no other case is compared
+    with it (procedure.md:84, :171)."""
     assert isinstance(entry.output, Groups)
     solver_cases = [c for c in solver_cases if _shown(runs, c)]
     where = _at(runs, entry)
@@ -518,7 +536,8 @@ def _groups(solver: Solver, runs: Runs, entry: Entry,
     for group in entry.output.groups:
         in_group: set[Case] = set()
         for n in group.cases:
-            cases = denoted_cases(solver, n, solver_cases)
+            cases = denoted_cases(solver, n, solver_cases) \
+                if runs.given is None else _model_set(solver, n, solver_cases)
             if isinstance(cases, Fault):
                 # The task's file's names are read with the model; a given
                 # file's are read here.
@@ -562,6 +581,20 @@ def _groups(solver: Solver, runs: Runs, entry: Entry,
                     UnlistedPayload(_case_set(runs, cases), got))
             for cases, _w, got in _merged(rows)]
     return out
+
+
+def _model_set(solver: Solver, text: str, solver_cases: Sequence[Case]
+               ) -> frozenset[Case] | Fault:
+    """A given file's group name read as a branch's model
+    (procedure.md:84, :171): the one case `model_of` gives for it among
+    the solver's cases, none where that model is no case of the solver;
+    the problem where the name denotes nothing."""
+    d = denote(solver, text)
+    if isinstance(d, Fault):
+        return d
+    model = model_of(solver, d, solver_cases)
+    return frozenset() if model is None or model not in solver_cases \
+        else frozenset({model})
 
 
 def _own(solver: Solver, entry: Entry, solver_cases: Sequence[Case]
@@ -1025,44 +1058,175 @@ def check_witness_assignment(solver: Solver, runs: Runs) -> list[Finding]:
 # The case conditions
 
 
-def _taking(runs: Runs, a: Case, b: Case
-            ) -> tuple[Taking, Taking, Taking]:
-    """Where `a` and `b` differ, and what both take: the bases where they
-    differ, and the branches one takes and the other does not."""
-    one = a.base == b.base
-    return (Taking(None if one else a.base,
-                   tuple(x for x in a.branches if x not in b.branches)),
-            Taking(None if one else b.base,
-                   tuple(x for x in b.branches if x not in a.branches)),
-            Taking(a.base if one else None,
-                   tuple(x for x in a.branches if x in b.branches)))
+type _Point = tuple[str, ...]
+"""A choice point: `("choice", *path)` for a point of `Choice`,
+`("derive", param)` and `("store", rel)` for a `@derive` and a `@store`
+point."""
+
+
+def _point_branches(solver: Solver, case: Case
+                    ) -> dict[_Point, PointBranch | None]:
+    """The branch `case` takes at each choice point of the solver, in the
+    order of the points: None at a point of `Choice` its base does not
+    reach, `<param>=stored` at a `@derive` point where it takes no
+    `@derive` branch, and `<rel>=derived` at a `@store` point where it
+    takes no `@store` branch."""
+    out: dict[_Point, PointBranch | None] = {}
+    choice = solver.choice
+    if choice is not None and case.base is not None:
+        for p in choice.points:
+            at = value_at(choice, case.base, p.path)
+            out[("choice", *p.path)] = next(
+                (c for c in p.constructors if isinstance(at, AdtValue)
+                 and c.name == at.constructor), None)
+    for b in solver.branches:
+        if isinstance(b, DeriveBranch):
+            key = ("derive", b.parameter)
+            if key not in out:
+                out[key] = StoredAtDerive(b.parameter)
+            if b in case.branches:
+                out[key] = b
+        elif isinstance(b, StoreBranch):
+            out[("store", b.spelled)] = b if b in case.branches \
+                else DerivedAt(b)
+    return out
+
+
+def _concept_only(solver: Solver, side: Sequence[PointBranch | None]
+                  ) -> bool:
+    """Whether a side of a difference takes no constructor other than its
+    point's concept branch."""
+    firsts = set() if solver.choice is None else {
+        concept_branch(p).name for p in solver.choice.points
+        if p.constructors}
+    return all(not isinstance(x, ConstructorBranch) or x.name in firsts
+               for x in side)
+
+
+type _Difference = tuple[tuple[_Point, ...],
+                         tuple[PointBranch | None, ...],
+                         tuple[PointBranch | None, ...]]
+"""The points at which two cases differ, and the branch each takes
+there."""
+
+
+def _differing(solver: Solver, runs: Runs, a: Case, b: Case) -> int:
+    """How many choice points `a` and `b` take different branches at."""
+    pa, pb = _point_branches(solver, a), _point_branches(solver, b)
+    return len([k for k in pa if pa[k] != pb.get(k)])
+
+
+def _spanning(solver: Solver, runs: Runs,
+              pairs: Sequence[tuple[Case, Case]]
+              ) -> set[tuple[Case, Case]]:
+    """Pairs of `pairs` that join the cases of each class of agreeing
+    cases, those that differ at the fewest points first: every other pair
+    agrees through them."""
+    order = sorted(range(len(pairs)), key=lambda i: (
+        _differing(solver, runs, *pairs[i]), i))
+    parent: dict[Case, Case] = {}
+
+    def find(c: Case) -> Case:
+        while parent.setdefault(c, c) != c:
+            c = parent[c]
+        return c
+
+    out: set[tuple[Case, Case]] = set()
+    for i in order:
+        a, b = pairs[i]
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
+            out.add(pairs[i])
+    return out
+
+
+def _by_difference(solver: Solver, runs: Runs,
+                   pairs: Sequence[tuple[Case, Case]],
+                   needed: set[tuple[Case, Case]], directed: bool,
+                   kind: Kind) -> list[Finding]:
+    """One finding of `kind` per branch difference among `pairs` that some
+    pair of `needed` holds (history "One finding per unseparated pair of
+    bases", grouped by the branches on which the two differ): the pairs
+    whose two cases differ by the same branches at the same points, named
+    by the fewest names that cover the branches both take elsewhere
+    (`solver.names.cover`), with the count of pairs. A pair is `(a, b)`
+    in the order the finding states it where `directed`, else in either
+    order, stated from the side that takes a constructor other than a
+    concept branch where one side alone does."""
+    shown = [c for c in _solver_cases(runs) if _shown(runs, c)]
+    points = {c: _point_branches(solver, c) for c in shown}
+    groups: dict[_Difference, list[Case]] = {}
+    wanted: set[_Difference] = set()
+    for a, b in pairs:
+        pa, pb = points[a], points[b]
+        at = tuple(k for k in pa if pa[k] != pb.get(k))
+        side_a = tuple(pa[k] for k in at)
+        side_b = tuple(pb[k] for k in at)
+        key, case = (at, side_a, side_b), a
+        flipped = (at, side_b, side_a)
+        if not directed and (flipped in groups or (
+                key not in groups and _concept_only(solver, side_a)
+                and not _concept_only(solver, side_b))):
+            key, case = flipped, b
+        groups.setdefault(key, []).append(case)
+        if (a, b) in needed:
+            wanted.add(key)
+    out: list[Finding] = []
+    for (at, side_a, side_b), chosen in groups.items():
+        if (at, side_a, side_b) not in wanted:
+            continue
+
+        def rest(c: Case) -> tuple[PointBranch | None, ...]:
+            return tuple(v for k, v in points[c].items() if k not in at)
+
+        def taking(side: tuple[PointBranch | None, ...]) -> list[Case]:
+            return [c for c in shown
+                    if tuple(points[c][k] for k in at) == side]
+
+        named, other = side_a, side_b
+        if _concept_only(solver, side_a) \
+                and not _concept_only(solver, side_b):
+            twin = {rest(c): c for c in taking(side_b)}
+            chosen = [twin[rest(c)] for c in chosen]
+            named, other = side_b, side_a
+        partners = {rest(c) for c in taking(other)}
+        universe = [c for c in taking(named) if rest(c) in partners]
+        names = () if set(chosen) == set(universe) \
+            else cover(solver, chosen, universe)
+        order = {c: i for i, c in enumerate(universe)}
+        contexts = CaseSet(tuple(sorted(chosen, key=order.__getitem__)),
+                           names)
+        parts_a = tuple(x for x in side_a if x is not None)
+        parts_b = tuple(x for x in side_b if x is not None)
+        payload = UnseparatedPayload(parts_a, parts_b, contexts,
+                                     len(universe)) \
+            if kind is Kind.UNSEPARATED \
+            else SubsumedPayload(parts_a, parts_b, contexts, len(universe))
+        out.append(Finding(kind, AtCase(Case(None, ())), payload))
+    return out
 
 
 def check_equivalence(solver: Solver, runs: Runs) -> list[Finding]:
     """principles.md:285: "**Equivalence.** The model is not equivalent to
     the model of another case." The evidence is the witness file and the
-    task's pairs: two cases of the solver that agree on every entry and every pair
-    are a pair no witness separates (procedure.md:174). One finding per
-    pair of bases, naming the branch choices under which it holds (history
-    "One finding per unseparated pair of bases"); a pair where some run
-    gave no result is not reported, and each run on a pair that gave no
-    result is reported at its pair (the entries' runs are
-    `check_entry_outputs`'s). Where the solver takes no `@derive` or
-    `@store` branch, a finding names no branch choice."""
+    task's pairs: two cases of the solver that agree on every entry and
+    every pair are a pair no witness separates (procedure.md:174). One
+    finding per branch difference among those pairs (`_by_difference`);
+    a pair where some run gave no result is not reported, and each run on
+    a pair that gave no result is reported at its pair (the entries' runs
+    are `check_entry_outputs`'s)."""
     failures = _pair_failures(runs) if _reads_inputs(runs) else []
-    inputs = _inputs(runs)
-    found: dict[tuple[Taking, Taking], list[Taking]] = {}
-    for a, b in _unseparated(runs, inputs):
-        if not (_shown(runs, a) and _shown(runs, b)):
-            continue
-        side_a, side_b, under = _taking(runs, a, b)
-        key = (side_a, side_b)
-        found.setdefault(key, []).append(under)
-    any_branch = bool(solver.branches)
-    return failures + [Finding(Kind.UNSEPARATED, AtCase(Case(None, ())),
-                    UnseparatedPayload(a, b,
-                                       tuple(under) if any_branch else ()))
-            for (a, b), under in found.items()]
+    pairs = _unseparated_pairs(runs)
+    return failures + _by_difference(
+        solver, runs, pairs, _spanning(solver, runs, pairs), False,
+        Kind.UNSEPARATED)
+
+
+def _unseparated_pairs(runs: Runs) -> list[tuple[Case, Case]]:
+    """The pairs of shown cases no witness separates (`_unseparated`)."""
+    return [(a, b) for a, b in _unseparated(runs, _inputs(runs))
+            if _shown(runs, a) and _shown(runs, b)]
 
 
 def _subsumers(solver: Solver, inputs: Inputs, a: Case,
@@ -1079,23 +1243,123 @@ def _subsumers(solver: Solver, inputs: Inputs, a: Case,
 def check_subsumption(solver: Solver, runs: Runs) -> list[Finding]:
     """principles.md:287: "**Subsumption.** The model of a case other than
     the concept case is not subsumed by the model of another case." Over
-    the witness file and the task's pairs, a case of the solver that no run shows
-    defined and differing from another case of the solver, where some run shows the
-    two apart, is a finding with those cases (procedure.md:178); a pair no
-    witness separates is `check_equivalence`'s alone."""
+    the witness file and the task's pairs, a case of the solver that no
+    run shows defined and differing from another case of the solver,
+    where some run shows the two apart, is subsumed by it
+    (procedure.md:178); a pair no witness separates is
+    `check_equivalence`'s alone. One finding per branch difference among
+    those pairs (`_by_difference`), each pair a subsumed case and a case
+    that subsumes it and subsumes no other that does."""
     if not _reads_inputs(runs):
         return []
+    pairs, nearest = _subsumed_pairs(solver, runs)
+    return _by_difference(solver, runs, pairs, nearest, True, Kind.SUBSUMED)
+
+
+def _subsumed_pairs(solver: Solver, runs: Runs
+                    ) -> tuple[list[tuple[Case, Case]], set[tuple[Case, Case]]]:
+    """Each shown case with each case that subsumes it (`_subsumers`),
+    and of those pairs, each subsumed case with the subsumer that differs
+    from it at the fewest points."""
     inputs = _inputs(runs)
     same = {frozenset(p) for p in _unseparated(runs, inputs)}
     solver_cases = [c for c in _solver_cases(runs) if _shown(runs, c)]
-    out: list[Finding] = []
+    pairs: list[tuple[Case, Case]] = []
+    nearest: set[tuple[Case, Case]] = set()
     for a in solver_cases:
         others = [b for b in solver_cases if frozenset((a, b)) not in same]
-        partners = _subsumers(solver, inputs, a, others)
-        if partners:
-            out.append(Finding(Kind.SUBSUMED, AtCase(a),
-                               SubsumedPayload(a, _case_set(runs, partners))))
-    return out
+        by = _subsumers(solver, inputs, a, others)
+        pairs += [(a, b) for b in by]
+        if by:
+            nearest.add((a, min(by, key=lambda b: _differing(
+                solver, runs, a, b))))
+    return pairs, nearest
+
+
+TRY_ID = "try"
+"""The id of the candidate entry `witness --try` runs."""
+
+
+@dataclass(frozen=True)
+class Narrowed:
+    """A finding of the `witness` report on the pairs of one branch
+    difference, and how many of its pairs stay as they are with a
+    candidate witness in the file."""
+
+    finding: Finding
+    left: int
+
+
+@dataclass(frozen=True)
+class TryResult:
+    """What a candidate witness would change (`try_witness`): the entry as
+    `record` would write it, the cases its groups were built from, the
+    unseparated and the subsumed branch differences of the report whose
+    pairs it would reduce."""
+
+    entry: Entry
+    cases: tuple[Case, ...]
+    unseparated: tuple[Narrowed, ...]
+    subsumed: tuple[Narrowed, ...]
+
+
+def try_witness(solver: Solver, runs: Runs, entry: Entry
+                ) -> TryResult | RunFailure | Fault:
+    """The `witness --try` survey: the report's unseparated and subsumed
+    branch differences (`check_equivalence`, `check_subsumption`), each
+    with the count of its pairs that stay with `entry` added to the
+    witness file, where that is fewer than it has; the entry's groups as
+    `record` builds them. It writes nothing. The first run on the entry
+    that gives no result, where one does."""
+    solver_cases = _solver_cases(runs)
+    got = [(c, runs.outcome(entry, c)) for c in solver_cases]
+    failed = next((o for _c, o in got if not isinstance(o, Grids | Undefined)),
+                  None)
+    if failed is not None:
+        assert not isinstance(failed, Grids | Undefined)
+        return failed
+    given = [(c, group_grid(o)) for c, o in got
+             if isinstance(o, Grids | Undefined)]
+    entry = replace(entry, output=grouped(solver, given))
+    file = solver.witness_file
+    entries = (() if file is None else file.entries) + (entry,)
+    tried = replace(solver, witness_file=WitnessFile(solver.task_id,
+                                                     entries))
+    after = Runs(runs.engine, tried, runs.limits, kept=runs.kept)
+    pairs = _unseparated_pairs(runs)
+    before_u = _by_difference(solver, runs, pairs,
+                              _spanning(solver, runs, pairs), False,
+                              Kind.UNSEPARATED)
+    pairs = _unseparated_pairs(after)
+    after_u = _by_difference(tried, after, pairs, set(pairs), False,
+                             Kind.UNSEPARATED)
+    pairs, nearest = _subsumed_pairs(solver, runs)
+    before_s = _by_difference(solver, runs, pairs, nearest, True,
+                              Kind.SUBSUMED)
+    pairs, _nearest = _subsumed_pairs(tried, after)
+    after_s = _by_difference(tried, after, pairs, set(pairs), True,
+                             Kind.SUBSUMED)
+
+    def narrowed(before: list[Finding], now: list[Finding]
+                 ) -> tuple[Narrowed, ...]:
+        left: dict[tuple[object, object], int] = {}
+        for f in now:
+            p = f.payload
+            assert isinstance(p, UnseparatedPayload | SubsumedPayload)
+            left[(p.a, p.b)] = len(p.contexts.cases)
+            if f.kind is Kind.UNSEPARATED:
+                left[(p.b, p.a)] = len(p.contexts.cases)
+        out: list[Narrowed] = []
+        for f in before:
+            p = f.payload
+            assert isinstance(p, UnseparatedPayload | SubsumedPayload)
+            n = left.get((p.a, p.b), 0)
+            if n < len(p.contexts.cases):
+                out.append(Narrowed(f, n))
+        return tuple(out)
+
+    return TryResult(entry, tuple(c for c, _g in given),
+                     narrowed(before_u, after_u), narrowed(before_s, after_s))
 
 
 def check_case_conditions(solver: Solver, runs: Runs) -> list[Finding]:
