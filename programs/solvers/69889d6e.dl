@@ -22,10 +22,10 @@
     .decl corner(d: DiagDir) corner(DIAG_TR).
     .decl first_axis(a: Axis) first_axis(AXIS_V).
 
-    // --- Wall ---
+    // --- $Wall ---
     .decl wall(c: Color) wall(1).
 
-    // --- Solid ---
+    // --- $Solid ---
     .decl bg(c: Color) bg(0).
 }
 
@@ -35,9 +35,9 @@
 impl_choice($Wall()). impl_choice($Solid()).
 
 .decl blocked(ch: Choice, p: Position)
-// --- Wall ---
+// --- $Wall ---
 blocked($Wall(), P) :- in(P, Col), params.wall(Col).
-// --- Solid ---
+// --- $Solid ---
 blocked($Solid(), P) :- in(P, Col), !params.bg(Col).
 
 // The walker at p, about to step toward d.

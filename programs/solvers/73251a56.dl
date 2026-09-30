@@ -20,10 +20,10 @@
 .comp Params {
     .decl hole(col: Color) hole(0).
 
-    // --- Slide, Bg ---
+    // --- $Slide, $Bg ---
     .decl transform(d: D4) transform(D4_DG).
 
-    // --- Label ---
+    // --- $Label ---
     .decl label(p: Position, id: Ident)
     GRID_21x21(label,
         0, 1, 0, 0, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9,10,
@@ -64,7 +64,7 @@ intact(P, Col) :- in(P, Col), !params.hole(Col).
 .decl hole(p: Position)
 hole(P) :- in(P, Col), params.hole(Col).
 
-// --- Slide, Bg ---
+// --- $Slide, $Bg ---
 
 // Mirror image of each cell under the symmetry.
 .decl mirror(p: Position, q: Position)
@@ -83,7 +83,7 @@ out(P, Col, Ch) :- impl_choice(Ch), intact(P, Col).
 // A hole repaints from its mirror cell.
 out(P, Col, Ch) :- sym_choice(Ch), hole(P), mirror(P, Q), intact(Q, Col).
 
-// --- Slide ---
+// --- $Slide ---
 
 // The fix axis's two ends: grid corners on the fix line.
 .decl fix_corner(diag: DiagDir)
@@ -97,7 +97,7 @@ seek.blocked($U(), P) :- intact(P, _).
 
 out(P, Col, $Slide()) :- residual(P), seek.stop($U(), P2, _, _, P), intact(P2, Col).
 
-// --- Bg ---
+// --- $Bg ---
 
 .decl fix_color(col: Color)
 fix_color(Col) :- intact(P, Col), on_fix(P).
@@ -111,7 +111,7 @@ out(P, Col, $Bg()) :-
     ; !on_fix(P), dominant.mode($U(), Col)      // elsewhere — the dominant color
     ).
 
-// --- Label ---
+// --- $Label ---
 
 // Each class's color, read off the pair's intact cells.
 .decl label_color(id: Ident, col: Color)

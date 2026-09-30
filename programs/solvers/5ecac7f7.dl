@@ -31,14 +31,14 @@
     .decl bg(col: Color) bg(7).
     .decl axis(a: Axis) axis(AXIS_H).   // panels and shapes both run along it
 
-    // --- Separator ---
+    // --- $Separator ---
     .decl sep(col: Color) sep(6).
 
-    // --- Divide ---
+    // --- $Divide ---
     .decl panels(n: number) panels(3).
     .decl gap(g: number) gap(1).
 
-    // --- Lookup ---
+    // --- $Lookup ---
     // A panel's place -> the place of the shape it contributes. A place is
     // a Position: the count of members toward each edge of axis.
     .decl pick(p_panel: Position, p_shape: Position)
@@ -61,7 +61,7 @@ impl_choice([$Divide(), $Diagonal()]). impl_choice([$Divide(), $Lookup()]).
 
     .decl cell(key: Key, p: Position, col: Color)  // input
 
-    // --- Separator ---
+    // --- $Separator ---
 
     // The one color a line across the split axis holds.
     .init line_color = Unanimous<Line, Color>
@@ -81,7 +81,7 @@ impl_choice([$Divide(), $Diagonal()]). impl_choice([$Divide(), $Lookup()]).
         frame.tile_of(K, P, P_tile),
         panel_box.box([K, $Separator(), P_tile], B), crop(P, B, P_intile).
 
-    // --- Divide ---
+    // --- $Divide ---
     panel(K, $Divide(), P, P_tile, P_intile) :-
         cell(K, P, _), params.axis(A), params.panels(N), params.gap(G),
         divide_slab(P, A, N, G, P_tile, P_intile).
@@ -122,11 +122,11 @@ parse.cell($U(), P, Col) :- in(P, Col).
 
 .decl picked(p_intile: Position, col: Color, c: Choice)
 
-// --- Diagonal ---
+// --- $Diagonal ---
 picked(P_intile, Col, [Cut, $Diagonal()]) :-
     parse.place($U(), Cut, P_intile, Col, P_place, P_place).
 
-// --- Lookup ---
+// --- $Lookup ---
 picked(P_intile, Col, [Cut, $Lookup()]) :-
     parse.place($U(), Cut, P_intile, Col, P_panel, P_shape),
     params.pick(P_panel, P_shape).

@@ -68,14 +68,14 @@ content_in(B, P_inner) :- in(P, Col), params.content(Col), box(B), crop(P, B, P_
 // content across the midline perpendicular to it.
 .decl mirror_axis(b: Box, a: Axis, ch: Choice)
 
-// --- Long ---
+// --- $Long ---
 
 // The box is longer on axis a, so the content mirrors along the box's length.
 mirror_axis(B, A, $Long()) :-
     box(B), corner_at(B, _, P),                                     // a cell of the box's frame
     perp(A, A2), box_extent(B, P, A, N1), box_extent(B, P, A2, N2), N1 > N2.
 
-// --- Clear ---
+// --- $Clear ---
 
 // A content cell no nearer edge d than its opposite — the defect the clear
 // test negates.

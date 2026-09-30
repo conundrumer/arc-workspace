@@ -39,7 +39,7 @@ impl_choice($FloorColor()). impl_choice($Grounded()).
 // The bodies that fall.
 .decl mover(ch: Choice, id: Ident)
 
-// --- FloorColor ---
+// --- $FloorColor ---
 
 // The floor's color stands on the fall edge.
 .decl floor_color(col: Color)
@@ -49,7 +49,7 @@ body.node($FloorColor(), P) :- ink(P, Col), !floor_color(Col).
 
 mover($FloorColor(), Id) :- body.label($FloorColor(), _, Id).
 
-// --- Grounded ---
+// --- $Grounded ---
 
 body.node($Grounded(), P) :- ink(P, _).
 

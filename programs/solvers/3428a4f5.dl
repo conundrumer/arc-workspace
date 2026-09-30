@@ -45,7 +45,7 @@
         frame_dim(AXIS_V, Fv), frame_dim(AXIS_H, Fh), gap(G),
         helpers.tile_pos([Av, Ah], [Fv, Fh], [G, 0], P_grid, P_tile, P_intile).
 
-    // --- Count, Size decompose data ---
+    // --- $Count, Size decompose data ---
     .decl divide_axis(a: Axis)
     divide_axis(AXIS_V).
 
@@ -96,7 +96,7 @@ decompose(P_grid, P_tile, P_intile, $Size()) :-
     params.frame_dim(A, K),                                         // tile size = output frame extent
     divide_by_size_slab(P_grid, A, K, G, P_tile, P_intile).
 
-// --- Xor ---
+// --- $Xor ---
 
 .init filled = Tally<CombineKey, Position>
 filled.item([P_grid_out, Dc], P_grid_in) :-

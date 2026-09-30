@@ -14,11 +14,11 @@
 .comp Params {
     .init helpers = ParamsHelpers
 
-    // --- Lookup ---
+    // --- $Lookup ---
     .decl tile_d4(p: Position, d: D4)
     GRID_1x4(tile_d4, D4_LR, D4_ID, D4_LR, D4_ID)
 
-    // --- Unfold ---
+    // --- $Unfold ---
     .decl arr_dim(a: Axis, n: number)
     arr_dim(AXIS_V, 1). arr_dim(AXIS_H, 4).
     .decl arr_pos(p: Position)
@@ -30,13 +30,13 @@
 
 .init params = Params
 
-// --- Lookup ---
+// --- $Lookup ---
 out(P_grid, Col, $Lookup()) :-
     in(P_in, Col),                                            // input cell
     params.tile_d4(P_tile, D), apply(D, P_in, P_intile),      // d4 image at tile
     concat_2d(P_tile, P_intile, 0, P_grid).                   // recompose
 
-// --- Unfold ---
+// --- $Unfold ---
 // Tile contents: the input seeds the anchor-end tile; each neighbor
 // reflects across the shared boundary.
 .decl unfold_val(p_tile: Position, p_intile: Position, col: Color)

@@ -32,7 +32,7 @@
     .decl mark(col: Color) mark(9).
     .decl axis(a: Axis) axis(AXIS_V).
 
-    // --- Step ---
+    // --- $Step ---
     .decl step(k: number) step(2).
 }
 

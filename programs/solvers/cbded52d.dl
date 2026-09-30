@@ -27,10 +27,10 @@
     .decl gap(g: number) gap(1).
     .decl base(col: Color) base(1).
 
-    // --- Count ---
+    // --- $Count ---
     .decl arr(n: number) arr(3).
 
-    // --- Size ---
+    // --- $Size ---
     .decl tile_dim(k: number) tile_dim(2).
 }
 
@@ -65,10 +65,10 @@ btw.mark(M, P_tile) :- mark(M, P_tile).
 
 .decl fill(ch: Choice, p_tile: Position, m: Mark)
 
-// --- Span ---
+// --- $Span ---
 fill([Dc, $Span()], P_tile, [Dc, Col, P_intile]) :- btw.between([Dc, Col, P_intile], P_tile).
 
-// --- Line ---
+// --- $Line ---
 fill([Dc, $Line()], P_tile, [Dc, Col, P_intile]) :-
     tile(Dc, _, P_tile, _),
     mark([Dc, Col, P_intile], Q1), mark([Dc, Col, P_intile], Q2), Q1 != Q2,  // two distinct marks

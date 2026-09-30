@@ -16,7 +16,7 @@
 .decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    // --- LabeledGrids ---
+    // --- $LabeledGrids ---
     .decl in_label(p: Position, id: Ident)
     GRID_SPARSE_5x1(in_label,
         1,
@@ -36,14 +36,14 @@
     .decl map(p_in: Position, p_out: Position)
     map(P_in, P_out) :- in_label(P_in, Id), out_label(P_out, Id).
 
-    // --- Count, Size ---
+    // --- $Count, $Size ---
     .decl divide_axis(a: Axis) divide_axis(AXIS_V).
     .decl divide_gap(g: number) divide_gap(1).
 
-    // --- Count ---
+    // --- $Count ---
     .decl divisor(n: number) divisor(2).
 
-    // --- Size ---
+    // --- $Size ---
     .decl tile_size(k: number) tile_size(2).
 }
 

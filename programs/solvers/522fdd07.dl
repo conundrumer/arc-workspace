@@ -24,12 +24,12 @@
 .comp Params {
     .decl bg(col: Color) bg(7).
 
-    // --- Box, Erode ---
+    // --- $Box, $Erode ---
 
     // The extent a square that loses its last ring comes back at.
     .decl bloom(n: number) bloom(9).
 
-    // --- Lookup ---
+    // --- $Lookup ---
 
     // A square's extent, and the extent it is redrawn at.
     .decl next_extent(n: number, n2: number)
@@ -63,7 +63,7 @@ center(Id, P) :- bbox.cell(Id, P), bbox.box(Id, B), crop(P, B, P_inner), centere
 // The extent a case draws a fresh square at.
 .decl target_extent(ch: Choice, id: Ident, n: number)
 
-// --- Box, Erode ---
+// --- $Box, $Erode ---
 
 // The cases that redraw a square by taking a ring off it.
 .decl shrink_choice(ch: Choice)
@@ -73,18 +73,18 @@ target_extent(Ch, Id, N) :-
     shrink_choice(Ch), obj(Id, _), !shrunk(Ch, Id, _),  // nothing left of the square
     params.bloom(N).
 
-// --- Box ---
+// --- $Box ---
 
 shrunk($Box(), Id, P) :- bbox.box(Id, B), in(P, _), interior(P, B).
 
-// --- Erode ---
+// --- $Erode ---
 
 .init exposed = Rim<Color>
 exposed.cell(Col, P) :- comps.node(Col, P).
 
 shrunk($Erode(), Id, P) :- comps.label(Col, P, Id), !exposed.rim(Col, P).
 
-// --- Lookup ---
+// --- $Lookup ---
 
 target_extent($Lookup(), Id, N2) :-
     bbox.cell(Id, P), bbox.box(Id, B), perp(A, A2),

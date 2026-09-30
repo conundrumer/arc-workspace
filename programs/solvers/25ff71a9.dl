@@ -16,13 +16,13 @@
     .decl shift_dir(d: Dir) shift_dir(DIR_B).
     .decl shift_k(k: number) shift_k(1).
 
-    // --- Shift ---
+    // --- $Shift ---
     .decl bg(c: Color) bg(0).
 }
 
 .init params = Params
 
-// --- Shift ---
+// --- $Shift ---
 
 // Image of the input under the shift, restricted to in-frame positions.
 .decl shift_image(p_out: Position, col: Color)
@@ -34,7 +34,7 @@ shift_image(P_out, Col) :-
 out(P, Col, $Shift()) :- shift_image(P, Col).
 out(P, Col, $Shift()) :- in(P, _), !shift_image(P, _), params.bg(Col).
 
-// --- Cycle ---
+// --- $Cycle ---
 
 // Each row, indexed by its distance from the edge opposite the shift, is a
 // node of the cycle. Ascending index runs toward shift_dir, so the wrap

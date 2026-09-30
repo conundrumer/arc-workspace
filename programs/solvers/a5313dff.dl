@@ -1,0 +1,117 @@
+// a5313dff
+// @draft
+// @keywords: enclose objects
+// @scene walls: cells of one color other than params.background are drawn as
+//  lines and closed outlines, and some outlines close off regions of
+//  background cells from the grid edge.
+// @rule enclosed-fill: a params.background cell that has no 4-connected path
+//  of params.background cells to the grid edge takes params.fill
+// @rule rest-kept: every other cell keeps its input color
+
+// which cells stop a background path to the edge
+.type Barrier =
+    // @claim enclosed-fill
+    AnyInk {}
+    // @rule enclosed-fill: only cells of params.wall block the path
+    // @witness green-ring: borderline any
+    //     @relaxed walls
+  | WallColor {}
+
+// the neighbor relation of a background path to the edge
+.type Connectivity =
+    // @claim enclosed-fill
+    FourPath {e: Enclosure}
+    // @rule enclosed-fill: the path may also step diagonally
+    // @witness corner-gap: borderline concept
+  | DiagonalLeak {}
+
+// what closes a region off from the edge
+.type Enclosure =
+    // @claim enclosed-fill
+    AllWalls {}
+    // @rule enclosed-fill: each 4-connected component of blocking cells is
+    //  taken alone, and a background cell takes params.fill when one such
+    //  component alone closes it off from the edge
+    // @witness diagonal-join: borderline concept
+  | ComponentHoles {}
+
+.type Choice = [barrier: Barrier, conn: Connectivity]
+
+// One 4-connected component of blocking cells, under one barrier reading.
+.type Wall = [b: Barrier, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl background(c: Color) background(0).
+    .decl fill(c: Color) fill(1).
+
+    // --- $WallColor ---
+    // @derive RarestColor: variant derived
+    .decl wall(c: Color) wall(2).
+}
+
+.init params = Params
+
+.decl barrier_choice(b: Barrier)
+barrier_choice($AnyInk()). barrier_choice($WallColor()).
+
+.decl connectivity_choice(c: Connectivity)
+connectivity_choice($FourPath($AllWalls())). connectivity_choice($FourPath($ComponentHoles())).
+connectivity_choice($DiagonalLeak()).
+
+.decl bg_cell(p: Position)
+bg_cell(P) :- in(P, Col), params.background(Col).
+
+.decl on_edge(p: Position)
+on_edge(P) :- in(P, _), dir_elem(D), dist(P, D, 0).
+
+// The cells that stop a path to the edge.
+.decl blocks(b: Barrier, p: Position)
+
+// The cells a path to the edge may pass.
+.decl open(b: Barrier, p: Position)
+open(B, P) :- in(P, _), barrier_choice(B), !blocks(B, P).
+
+// The background cells a path to the edge does not reach.
+.decl enclosed(b: Barrier, c: Connectivity, p: Position)
+
+out(P, Col, [B, C]) :- enclosed(B, C, P), params.fill(Col).
+out(P, Col, [B, C]) :-
+    in(P, Col), barrier_choice(B), connectivity_choice(C), !enclosed(B, C, P).
+
+// --- $AnyInk ---
+blocks($AnyInk(), P) :- in(P, Col), !params.background(Col).
+
+// --- $WallColor ---
+blocks($WallColor(), P) :- in(P, Col), params.wall(Col).
+
+// --- $AllWalls ---
+// @claim enclosed-fill
+.init flood = Reach<Barrier>
+flood.node(B, P) :- open(B, P).
+flood.seed(B, P) :- open(B, P), on_edge(P).
+
+enclosed(B, $FourPath($AllWalls()), P) :- bg_cell(P), barrier_choice(B), !flood.reach(B, P).
+
+// --- $DiagonalLeak ---
+// @claim enclosed-fill
+.init leak = Reach<Barrier>
+leak.step(V) :- step_offset(_, V).  // a step to any of the eight neighbors
+leak.node(B, P) :- open(B, P).
+leak.seed(B, P) :- open(B, P), on_edge(P).
+
+enclosed(B, $DiagonalLeak(), P) :- bg_cell(P), barrier_choice(B), !leak.reach(B, P).
+
+// --- $ComponentHoles ---
+// @claim enclosed-fill
+.init walls = Components<Barrier>
+walls.node(B, P) :- blocks(B, P).
+
+// Each wall alone: every cell outside it is open.
+// @claim enclosed-fill
+.init holes = Closed<Wall>
+holes.cell([B, Id], P) :- walls.label(B, _, Id), in(P, _), !walls.label(B, P, Id).
+
+enclosed(B, $FourPath($ComponentHoles()), P) :- bg_cell(P), holes.region([B, _], P, _).

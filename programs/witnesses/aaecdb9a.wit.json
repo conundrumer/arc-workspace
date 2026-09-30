@@ -1,0 +1,92 @@
+{
+  "id": "aaecdb9a",
+  "witnesses": [{
+    "id": "height-all-colors",
+    "separates": "height from the ordered colors' counts, or from every non-background color's count",
+    "input": [
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,3,7,7,7,7,7,7,3,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,2,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,3,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7]
+    ],
+    "output": [{
+      "cases": ["$OrderedHeight"],
+      "grid": [
+        [7,2,7,7,7]
+      ]
+    }, {
+      "cases": ["$HeightAllColors"],
+      "grid": [
+        [7,7,7,7,7],
+        [7,7,7,7,7],
+        [7,2,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "object-pieces",
+    "separates": "pieces of one color, or multicolor objects counted once under each color they hold",
+    "input": [
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,2,8,8,8,2,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,7,7,7,7]
+    ],
+    "output": [{
+      "cases": ["$ColorPieces"],
+      "grid": [
+        [7,2,7,7,7],
+        [7,2,8,7,7]
+      ]
+    }, {
+      "cases": ["$ObjectPieces"],
+      "grid": [
+        [7,2,8,7,7]
+      ]
+    }]
+  }, {
+    "id": "background=DominantColor",
+    "separates": "the stored background 7, or the input's most frequent color",
+    "input": [
+      [7,7,7,7,7,7,7,7,7,7],
+      [7,7,2,7,7,7,7,7,7,7],
+      [7,7,7,7,7,7,2,7,7,7],
+      [7,7,7,7,7,7,7,7,6,7],
+      [7,7,7,7,7,7,7,7,7,7],
+      [8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["background=stored"],
+      "grid": [
+        [7,2,7,7,7],
+        [7,2,8,7,6]
+      ]
+    }, {
+      "cases": ["$ColorPieces & background=DominantColor"],
+      "grid": [
+        [8,2,8,8,8],
+        [8,2,8,8,6]
+      ]
+    }, {
+      "cases": ["$ObjectPieces & background=DominantColor"],
+      "grid": [
+        [8,2,8,8,6]
+      ]
+    }]
+  }]
+}

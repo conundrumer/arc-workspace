@@ -39,10 +39,10 @@
     // What ink outside the cone turns into.
     .decl fill(c: Color) fill(4).
 
-    // --- Fixed ---
+    // --- $Fixed ---
     .decl step(k: number) step(2).
 
-    // --- Stored ---
+    // --- $Stored ---
     .decl ink(c: Color) ink(8).
 }
 
@@ -86,10 +86,10 @@ ink_choice($Stored()). ink_choice($Derived()).
 
 .decl ink(col: Color, i: Ink)
 
-// --- Stored ---
+// --- $Stored ---
 ink(Col, $Stored()) :- params.ink(Col).
 
-// --- Derived ---
+// --- $Derived ---
 ink(Col, $Derived()) :- in(_, Col), !params.bg(Col), !params.mark(Col).
 
 // --- the step ---
@@ -99,10 +99,10 @@ step_choice($Fixed()). step_choice($Marker()). step_choice($Band()).
 
 .decl step(k: number, s: Step)
 
-// --- Fixed ---
+// --- $Fixed ---
 step(W, $Fixed()) :- params.step(W).
 
-// --- Marker, Band ---
+// --- $Marker, $Band ---
 // The step as an extent: the block's across the bands, or its band's
 // along them.
 .init unit = Bbox<Step>

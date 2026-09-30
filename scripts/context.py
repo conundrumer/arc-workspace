@@ -1,12 +1,12 @@
 """Print the handbook and the other contexts the repo's readers get.
-dl.context renders them, and `--help` prints HELP."""
+handbook.context renders them, and `--help` prints HELP."""
 
 import json
 import signal
 import sys
 
 from controlled_markdown import mctx
-from dl.context import (
+from handbook.context import (
     context_text,
     contexts_text,
     agent_names,
@@ -19,7 +19,7 @@ from dl.context import (
     write_codex,
     write_interfaces,
 )
-from dl.paths import REPO_ROOT
+from handbook.paths import REPO_ROOT
 
 HELP = mctx("""
     - Usage:

@@ -33,7 +33,7 @@ quad_mark(P, Diag, Q) :-
     empty(P), mark(Q), diag_dirs(Diag, _, D1, D2),
     nearer(D1, Q, P), nearer(D2, Q, P).
 
-// --- Rect ---
+// --- $Rect ---
 
 // Markers in opposite quadrants of the cell.
 .decl opp_pair(p: Position, a: Position, d: Position)
@@ -55,7 +55,7 @@ rect_interior(P) :- opp_pair(P, A, D), !open_pair(A, D).
 out(P, F, $Rect())   :- rect_interior(P), params.fill(F).
 out(P, Col, $Rect()) :- in(P, Col), !rect_interior(P).
 
-// --- Quad ---
+// --- $Quad ---
 
 // Some quadrant of the bg cell holds no marker.
 .decl open_quad(p: Position)

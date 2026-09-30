@@ -16,10 +16,10 @@
 .comp Params {
     .decl bg(col: Color) bg(0).
 
-    // --- Mirror ---
+    // --- $Mirror ---
     .decl axis(a: Axis) axis(AXIS_V).   // the axis the reflection inverts
 
-    // --- Seat ---
+    // --- $Seat ---
     .decl dir(d: Dir) dir(DIR_T).
 }
 
@@ -34,10 +34,10 @@ ink(P, Col) :- in(P, Col), !params.bg(Col).
 
 .decl img(p: Position, col: Color, ch: Choice)
 
-// --- Mirror ---
+// --- $Mirror ---
 img(P2, Col, $Mirror()) :- ink(P, Col), params.axis(A), flip_of(A, F), apply(F, P, P2).
 
-// --- Seat ---
+// --- $Seat ---
 .init block = Bbox<Unit>
 block.cell($U(), P) :- ink(P, _).
 

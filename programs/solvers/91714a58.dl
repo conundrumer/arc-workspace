@@ -35,7 +35,7 @@ out(P, Col, Ch) :-
     ( keep(P, Col, Ch)                     // the figure, in its own color
     ; !keep(P, _, Ch), params.bg(Col) ).   // the rest is bg
 
-// --- Rect ---
+// --- $Rect ---
 
 // The rectangles each color draws. An outline spans at least two cells on
 // each axis, so a run one cell wide draws none.
@@ -56,7 +56,7 @@ biggest.item($U(), B, P) :- rect_cell(B, _, P).
 
 keep(P, Col, $Rect()) :- biggest.mode($U(), B), rect_cell(B, Col, P).
 
-// --- Thick ---
+// --- $Thick ---
 
 .decl quad(p: Position, diag: DiagDir, q1: Position, q2: Position, q3: Position) inline
 quad(P, G, Q1, Q2, Q3) :-

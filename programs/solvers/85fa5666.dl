@@ -20,10 +20,10 @@
     .decl bg(c: Color) bg(0).
     .decl square(c: Color) square(2).
 
-    // --- Turn ---
+    // --- $Turn ---
     .decl turn(d: D4) turn(D4_CW).
 
-    // --- Table ---
+    // --- $Table ---
     // The corner each corner's mark comes from.
     .decl corner_from(d_to: DiagDir, d_from: DiagDir)
     corner_from(DIAG_TL, DIAG_BL).
@@ -62,11 +62,11 @@ parse.cell($U(), P, Col) :- in(P, Col).
 // The corner whose mark lands at corner D_to, per case.
 .decl source(d_to: DiagDir, d_from: DiagDir, ch: Choice)
 
-// --- Turn ---
+// --- $Turn ---
 source(D_to, D_from, $Turn()) :-
     params.turn(R), apply_diag_dir(R, D_from, D_to).
 
-// --- Table ---
+// --- $Table ---
 source(D_to, D_from, $Table()) :- params.corner_from(D_to, D_from).
 
 // --- shared ---

@@ -20,7 +20,7 @@
 .comp Params {
     .init helpers = ParamsHelpers
 
-    // --- Lookup ---
+    // --- $Lookup ---
     .decl lookup_grid(n: number, p: Position, col: Color)
     GRID_3x3(lookup_grid, 1,
         5, 5, 5,
@@ -35,7 +35,7 @@
         0, 5, 0,
         5, 0, 0)
 
-    // --- Figure ---
+    // --- $Figure ---
     .decl fig_edge(n: number, d: Dir)
     fig_edge(1, DIR_T).
     .decl fig_diag(n: number, da: DiagAxis)
@@ -44,7 +44,7 @@
     .decl mark(c: Color) mark(5).
     .decl bg(c: Color) bg(0).
 
-    // --- Figure, $Fixed canvas ---
+    // --- $Figure, $Fixed canvas ---
     .decl out_dim(n: number) out_dim(3).
     .decl out_pos(p: Position)
     out_pos(P) :- out_dim(N), helpers.frame_pos([N, N], P).
@@ -65,10 +65,10 @@
 .init parse = Parse<Unit>
 parse.cell($U(), P, Col) :- in(P, Col).
 
-// --- Lookup ---
+// --- $Lookup ---
 out(P, Col, $Lookup()) :- parse.ncolors($U(), N), params.lookup_grid(N, P, Col).
 
-// --- Figure ---
+// --- $Figure ---
 .decl canvas(p: Position, cv: Canvas)
 canvas(P, $Input()) :- in(P, _).
 canvas(P, $Fixed()) :- params.out_pos(P).

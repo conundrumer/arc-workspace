@@ -57,11 +57,11 @@ rim.cell($U(), P) :- open(P).
 // How deep each open cell sits, under each case's metric.
 .decl depth(p: Position, k: number, c: Choice)
 
-// --- Peel ---
+// --- $Peel ---
 
 depth(P, K, $Peel()) :- rim.depth($U(), P, K).
 
-// --- Sight ---
+// --- $Sight ---
 
 // A rim cell casts back over the cells that face the outside through it. The
 // key is the cast direction, so each instance casts only its own way.

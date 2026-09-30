@@ -51,7 +51,7 @@
     // @derive DominantColor: ordinary concept
     .decl bg(col: Color) bg(0).
 
-    // --- Frame, Drawn ---
+    // --- $Frame, $Drawn ---
 
     // The background line between neighboring blocks.
     // @derive SepThickness: foreign concept
@@ -73,14 +73,14 @@ ink(Col) :- in(_, Col), !params.bg(Col).
 // A cell's block, and its place in that block.
 .decl cell(p: Position, p_tile: Position, p_intile: Position, s: Size)
 
-// --- Frame ---
+// --- $Frame ---
 
 // The one division whose block holds as many cells as the grid holds blocks.
 cell(P, P_tile, P_intile, $Frame()) :-
     in(P, _), axis_elem(A), sub_extent(P, A, N), params.gap(G),
     divide_2d(P, N, G, P_tile, P_intile), axis_dim(P_intile, A, N).
 
-// --- Drawn ---
+// --- $Drawn ---
 
 // @claim blocks
 .init block = Components<Unit>
@@ -95,7 +95,7 @@ cell(P, P_tile, P_intile, $Drawn()) :-
     in(P, _), block_box.box(_, B), box_extent(B, P, _, K),
     params.gap(G), divide_by_size_2d(P, K, G, P_tile, P_intile).
 
-// --- Separator, Mirror ---
+// --- $Separator, $Mirror ---
 
 // A line of axis A holds ink.
 .decl line_ink(a: Axis, l: Position)
@@ -139,11 +139,11 @@ paint(P, Col, S) :-
 paint(P, Col, S) :-                          // the lines between the blocks
     in(P, _), size_choice(S), !cell(P, _, _, S), params.bg(Col).
 
-// --- Redraw ---
+// --- $Redraw ---
 
 out(P, Col, [S, $Redraw()]) :- paint(P, Col, S).
 
-// --- Complete ---
+// --- $Complete ---
 
 out(P, Col, [S, $Complete()]) :-
     in(P, C), size_choice(S),
@@ -151,7 +151,7 @@ out(P, Col, [S, $Complete()]) :-
     ; params.bg(C), paint(P, Col, S)   // a background cell takes the picture
     ).
 
-// --- Blank ---
+// --- $Blank ---
 
 // A block that holds ink.
 .decl drawn(p_tile: Position, s: Size)

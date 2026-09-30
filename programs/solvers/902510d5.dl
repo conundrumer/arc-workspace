@@ -35,12 +35,12 @@ marker(P, D) :- ink(P, _), corner_dist(P, D, 0).
 
 .decl grouped(p: Position, ch: Choice, id: Ident)
 
-// --- Object ---
+// --- $Object ---
 .init objects = Components8<Unit>
 objects.node($U(), P) :- ink(P, _).
 grouped(P, $Object(), Id) :- objects.label($U(), P, Id).
 
-// --- Piece, Dominant ---
+// --- $Piece, $Dominant ---
 .init pieces = Components8<Color>
 pieces.node(Col, P) :- ink(P, Col).
 grouped(P, $Piece(), Id) :- pieces.label(_, P, Id).

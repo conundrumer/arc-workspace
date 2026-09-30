@@ -122,7 +122,7 @@ state(Pan, Q, D2, Ch) :- state(Pan, P, D, Ch), hop(Pan, P, D, Q, D2, Ch).
 .decl rest(pan: Position, p: Position, d: Dir, ch: Choice)
 rest(Pan, P, D, Ch) :- state(Pan, P, D, Ch), !hop(Pan, P, D, _, _, Ch).
 
-// --- Momentum ---
+// --- $Momentum ---
 
 hop(Pan, P, D, Q, D, $Momentum()) :- reach(Pan, P, D, Q, _).
 hop(Pan, P, D, Q, D2, $Momentum()) :-
@@ -130,7 +130,7 @@ hop(Pan, P, D, Q, D2, $Momentum()) :-
     !reach(Pan, P, D, _, _),                    // the way ahead clear
     steps.low([Pan, P, D], K).                  // the fewest steps of any way
 
-// --- Nearest ---
+// --- $Nearest ---
 
 hop(Pan, P, D, Q, D2, $Nearest()) :-
     way(D, D2), reach(Pan, P, D2, Q, K), steps.low([Pan, P, D], K).

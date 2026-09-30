@@ -24,7 +24,7 @@
     .decl bg(c: Color) bg(0).
     .decl line(c: Color) line(1).
 
-    // --- Ringed ---
+    // --- $Ringed ---
     .decl ring(c: Color) ring(2).
 }
 
@@ -38,7 +38,7 @@ bg_cell(P) :- in(P, Col), params.bg(Col).
 
 .decl center(ch: Choice, p: Position)
 
-// --- Ringed ---
+// --- $Ringed ---
 
 .decl ring_cell(p: Position)
 ring_cell(P) :- in(P, Col), params.ring(Col).
@@ -49,7 +49,7 @@ ring_gap(P) :- in(P, _), dir_elem(D), neighbor(P, D, Q), !ring_cell(Q).
 
 center($Ringed(), P) :- bg_cell(P), !ring_gap(P).
 
-// --- Enclosed ---
+// --- $Enclosed ---
 
 .init outside = Reach<Unit>
 outside.node($U(), P) :- bg_cell(P).

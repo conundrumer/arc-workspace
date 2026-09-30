@@ -51,7 +51,7 @@ key.cell($U(), P_grid) :-
 
 out(P_grid, Col, Ch) :- in(P_grid, Col), !mark(P_grid), impl_choice(Ch).
 
-// --- Shrunk ---
+// --- $Shrunk ---
 
 // The canvas split into one part per key cell.
 .init part = Divide2D<Unit>
@@ -65,7 +65,7 @@ out(P_grid, Col, $Shrunk()) :-
     key.cell($U(), P_key), key.box($U(), B),
     crop(P_key, B, P_tile), in(P_key, Col).    // the color of the key cell at that place
 
-// --- Corner ---
+// --- $Corner ---
 
 .init place = DiagPlacement<Unit>
 place.cell($U(), P_inner) :- on_canvas(_, P_inner).

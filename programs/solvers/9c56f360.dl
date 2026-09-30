@@ -19,7 +19,7 @@
     .decl mover(c: Color) mover(3).
     .decl dir(d: Dir) dir(DIR_L).
 
-    // --- Wall ---
+    // --- $Wall ---
     .decl wall(c: Color) wall(8).
 }
 
@@ -43,9 +43,9 @@ mover(P) :- in(P, Col), params.mover(Col).
 slide.dir(Ch, D) :- impl_choice(Ch), params.dir(D2), ( D = D2 ; opposite(D2, D) ).
 slide.cell(Ch, P) :- impl_choice(Ch), in(P, _).
 slide.mark(Ch, P) :- impl_choice(Ch), mover(P).
-// --- Wall ---
+// --- $Wall ---
 slide.blocked($Wall(), P) :- in(P, Col), params.wall(Col).
-// --- Solid ---
+// --- $Solid ---
 slide.blocked($Solid(), P) :- in(P, Col), !params.bg(Col), !params.mover(Col).
 
 // A cell some mover's cast does not reach: a blocker sits between the two.

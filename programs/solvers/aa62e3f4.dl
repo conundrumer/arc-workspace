@@ -1,0 +1,316 @@
+// aa62e3f4
+// @draft
+// @keywords: objects count rank border enclose depth
+// @scene one-object: one 4-connected object of non-background cells sits on
+//  a field of params.background
+// @scene rare-color: one color of the object has fewer cells than every other
+//  color of the object
+// @rule erase: every cell of the object takes params.background
+// @rule halo: every background cell 4-adjacent to a cell of the object takes
+//  the object's rare color
+// @rule rest: every other cell keeps its input color
+
+// which color the halo takes
+.type HaloColor =
+    // @claim halo
+    RareColor {bg: BgCount, tie: Tiebreak}
+    // @scene rare-color: one color of the object is innermost. A color's
+    //  level is 1 more than the lowest level of a color its cells touch, the
+    //  background and the off-grid border are level 0, and the innermost
+    //  color is the one at the highest level
+    // @rule halo: every background cell 4-adjacent to a cell of the object
+    //  takes the object's innermost color; undefined when two colors share
+    //  the highest level
+    // @witness wide-core: variant $InnermostColor
+  | InnermostColor {}
+
+// whether the background's cells take part in the count under RareColor
+.type BgCount =
+    // @claim halo
+    ObjectCount {}
+    // @rule halo: the count also takes in the background's cells over the
+    //  whole grid, so when the background is the rarest color the halo takes
+    //  the background color; undefined when two colors tie for the fewest
+    //  cells
+    // @witness bg-rarest: borderline concept
+  | RarestWithBackground {}
+
+// the halo color when colors tie for the fewest cells under RareColor
+.type Tiebreak =
+    // @claim rare-color
+    TieUndefined {}
+    // @scene rare-color: several colors of the object may tie for the fewest
+    //  cells
+    // @rule halo: every background cell 4-adjacent to a cell of the object
+    //  takes, of the colors tied for the fewest cells, the color of the cell
+    //  that comes first in the scan order params.scan_order; undefined where
+    //  the open orders disagree
+    // @witness diagonal-tie: borderline $ScanOrder
+    //     @relaxed rare-color
+  | ScanOrder {}
+
+// which background cells join the halo
+.type HaloRegion =
+    // @claim halo
+    Touching {}
+    // @rule halo: a background cell 4-adjacent to a cell of the object joins
+    //  the halo only when it is 4-connected through background cells to the
+    //  grid edge
+    // @witness ring-hole: variant concept
+  | ExteriorHalo {}
+
+// over which cells the halo color is chosen
+.type ColorScope =
+    // @claim one-object
+    AllCells {}
+    // @scene one-object: 4-connected objects of non-background cells sit on
+    //  a field of params.background
+    // @rule halo: every background cell 4-adjacent to a cell of an object
+    //  takes that object's rare color; undefined where a cell touches two
+    //  objects that give different colors
+    // @witness two-objects: variant $PerObject
+    //     @relaxed one-object
+  | PerObject {conn: ObjectConnectivity}
+
+// how the cells of one object connect under PerObject
+.type ObjectConnectivity =
+    // @claim one-object
+    Conn4 {}
+    // @scene one-object: the objects are 8-connected
+    // @witness corner-touch: variant $PerObject & $ScanOrder
+    //     @relaxed one-object
+  | PerObject8 {}
+
+.type Choice = [color: HaloColor, region: HaloRegion, scope: ColorScope]
+
+// The cells whose halo takes one color, under a scope.
+.type Group = [s: ColorScope, id: Ident]
+
+// A group's colors competing for the rarest, under one count.
+.type Pool = [bg: BgCount, s: ColorScope, id: Ident]
+
+// A halo cell under one halo color and one scope.
+.type Tint = [h: HaloColor, s: ColorScope, p: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant concept
+    // @ignore: derive concept — wherever it is defined, it gives the output of
+    //  the ScanOrder copy
+    // @ignore: derive $RarestWithBackground & $ScanOrder — equivalent to the copy
+    //  with ObjectCount: the derived background is never the rarest color
+    .decl background(c: Color) background(8).
+
+    // --- $ScanOrder ---
+    // The scan order that breaks a tie for the fewest cells: the corner it
+    // starts from, and the axis it reads first. No pair holds a tie, so every
+    // order stays open.
+    .decl scan_order(d: DiagDir, a: Axis)
+    scan_order(DIAG_TL, AXIS_V). scan_order(DIAG_TL, AXIS_H).
+    scan_order(DIAG_TR, AXIS_V). scan_order(DIAG_TR, AXIS_H).
+    scan_order(DIAG_BL, AXIS_V). scan_order(DIAG_BL, AXIS_H).
+    scan_order(DIAG_BR, AXIS_V). scan_order(DIAG_BR, AXIS_H).
+}
+
+.init params = Params
+
+// The rare color of a set of cells, and the pick of each scan order among
+// the colors tied for the fewest cells.
+.comp Parse<Key> {
+    .type Hue = [k: Key, col: Color]
+    .type Scan = [k: Key, corner: DiagDir, a: Axis]
+
+    .decl cell(key: Key, p: Position, col: Color)  // @input
+
+    // The scan orders read.
+    .decl order(d: DiagDir, a: Axis)  // @input
+
+    // @claim rare-color
+    .init hue_count = Tally<Hue, Position>
+    hue_count.item([K, Col], P) :- cell(K, P, Col).
+
+    // @claim rare-color
+    .init fewest = ArgExtremes<Key, Color>
+    fewest.cand(K, Col, N) :- hue_count.tally([K, Col], N).
+
+    // @claim rare-color
+    .init rare = Unanimous<Key, Color>
+    rare.item(K, Col) :- fewest.low(K, Col, _).
+
+    // The cells of the colors tied for the fewest, under each scan order.
+    // @claim rare-color
+    .init scan = LexOrder<Scan>
+    scan.cell([K, Dg, A], P) :- fewest.low(K, Col, _), cell(K, P, Col), order(Dg, A).
+    scan.corner([K, Dg, A], Dg) :- scan.cell([K, Dg, A], _).
+    scan.axis([K, Dg, A], A) :- scan.cell([K, Dg, A], _).
+
+    // The color of the first tied cell.
+    .decl first_tied(key: Key, d: DiagDir, a: Axis, col: Color)
+    first_tied(K, Dg, A, Col) :- scan.first([K, Dg, A], P), cell(K, P, Col).
+}
+
+.init parse = Parse<Pool>
+
+// Fewest-hop distance from a seed set over a supplied edge relation.
+.comp MinHops<Key, Node> {
+    .decl edge(key: Key, a: Node, b: Node)  // @input
+    .decl seed(key: Key, n: Node)  // @input
+
+    // Hops from the nearest seed; subsumption keeps the minimum per node.
+    .decl dist(key: Key, n: Node, k: number)
+    dist(K, N, 0) :- seed(K, N).
+    dist(K, B, D + 1) :- dist(K, A, D), edge(K, A, B).
+    dist(K, N, D) <= dist(K, N, D2) :- D2 < D.
+}
+
+.decl bg_count_choice(c: BgCount)
+bg_count_choice($ObjectCount()). bg_count_choice($RarestWithBackground()).
+
+.decl tiebreak_choice(t: Tiebreak)
+tiebreak_choice($TieUndefined()). tiebreak_choice($ScanOrder()).
+
+.decl halo_color_choice(h: HaloColor)
+halo_color_choice($RareColor(C, T)) :- bg_count_choice(C), tiebreak_choice(T).
+halo_color_choice($InnermostColor()).
+
+.decl halo_region_choice(r: HaloRegion)
+halo_region_choice($Touching()). halo_region_choice($ExteriorHalo()).
+
+.decl color_scope_choice(s: ColorScope)
+color_scope_choice($AllCells()). color_scope_choice($PerObject($Conn4())).
+color_scope_choice($PerObject($PerObject8())).
+
+// A case with TieUndefined, other than the concept case, is subsumed by the
+// case with ScanOrder in its place.
+.decl subsumed(ch: Choice)
+subsumed(Ch) :-
+    bg_count_choice(C), halo_region_choice(R), color_scope_choice(S),
+    Ch = [$RareColor(C, $TieUndefined()), R, S],
+    Ch != [$RareColor($ObjectCount(), $TieUndefined()), $Touching(), $AllCells()].
+
+.decl impl_choice(ch: Choice)
+impl_choice([H, R, S]) :-
+    halo_color_choice(H), halo_region_choice(R), color_scope_choice(S),
+    !subsumed([H, R, S]).
+
+.decl object(p: Position)
+object(P) :- in(P, Col), !params.background(Col).
+
+.decl field(p: Position, col: Color)
+field(P, Col) :- in(P, Col), params.background(Col).
+
+.decl member(g: Group, p: Position)
+
+// The color each group's halo takes.
+.decl group_color(h: HaloColor, g: Group, col: Color)
+
+// Background cell p is 4-adjacent to object cell q.
+.decl beside(p: Position, q: Position)
+beside(P, Q) :- field(P, _), dir_elem(D), neighbor(P, D, Q), object(Q).
+
+// The background cells that join the halo.
+.decl halo(r: HaloRegion, p: Position)
+
+// The color of each halo cell; two groups that give one cell different
+// colors leave it none.
+// @claim halo
+.init paint = Unanimous<Tint, Color>
+paint.item([H, S, P], Col) :- beside(P, Q), member([S, Id], Q), group_color(H, [S, Id], Col).
+
+out(P, Col, [H, R, S]) :-
+    impl_choice([H, R, S]), in(P, Col0),
+    ( object(P), params.background(Col)                // erase
+    ; halo(R, P), paint.value([H, S, P], Col)          // halo
+    ; !object(P), !halo(R, P), Col = Col0 ).           // rest
+
+// --- $AllCells ---
+// Every object cell in one class.
+.init whole = Canon<Position>
+whole.equiv(P, Q) :- object(P), object(Q).
+
+member([$AllCells(), Id], P) :- whole.id(P, Id).
+
+// --- $Conn4 ---
+// @claim one-object
+.init piece4 = Components<Unit>
+piece4.node($U(), P) :- object(P).
+
+member([$PerObject($Conn4()), Id], P) :- piece4.label($U(), P, Id).
+
+// --- $PerObject8 ---
+// @claim one-object
+.init piece8 = Components8<Unit>
+piece8.node($U(), P) :- object(P).
+
+member([$PerObject($PerObject8()), Id], P) :- piece8.label($U(), P, Id).
+
+// --- $RareColor ---
+// The cells each pool counts.
+parse.cell([C, S, Id], P, Col) :- bg_count_choice(C), member([S, Id], P), in(P, Col).
+
+// --- $TieUndefined ---
+group_color($RareColor(C, $TieUndefined()), [S, Id], Col) :- parse.rare.value([C, S, Id], Col).
+
+// --- $ScanOrder ---
+parse.order(Dg, A) :- params.scan_order(Dg, A).
+
+// The pick every open order gives.
+// @claim rare-color
+.init first_tied = Unanimous<Pool, Color>
+first_tied.item(Pl, Col) :- parse.first_tied(Pl, _, _, Col).
+
+group_color($RareColor(C, $ScanOrder()), [S, Id], Col) :- first_tied.value([C, S, Id], Col).
+
+// --- $RarestWithBackground ---
+parse.cell([$RarestWithBackground(), S, Id], P, Bg) :- member([S, Id], _), field(P, Bg).
+
+// --- $InnermostColor ---
+// A color's level less one: its hops from the colors beside the background
+// or the off-grid border.
+// @claim rare-color
+.init hops = MinHops<Group, Color>
+hops.seed(G, Col) :-
+    member(G, P), in(P, Col), dir_elem(D),
+    ( dist(P, D, 0)                          // the off-grid border
+    ; neighbor(P, D, Q), field(Q, _) ).      // a background cell
+hops.edge(G, A, B) :-
+    member(G, P), in(P, A), dir_elem(D), neighbor(P, D, Q), member(G, Q), in(Q, B).
+
+// @claim rare-color
+.init deepest = ArgExtremes<Group, Color>
+deepest.cand(G, Col, K) :- hops.dist(G, Col, K).
+
+// @claim rare-color
+.init innermost = Unanimous<Group, Color>
+innermost.item(G, Col) :- deepest.high(G, Col, _).
+
+group_color($InnermostColor(), G, Col) :- innermost.value(G, Col).
+
+// --- $Touching ---
+halo($Touching(), P) :- beside(P, _).
+
+// --- $ExteriorHalo ---
+// The background cells that reach the grid edge through background.
+// @claim halo
+.init outside = Reach<Unit>
+outside.node($U(), P) :- field(P, _).
+outside.seed($U(), P) :- field(P, _), dir_elem(D), dist(P, D, 0).
+
+halo($ExteriorHalo(), P) :- beside(P, _), outside.reach($U(), P).
+
+.comp Determine {
+    // The whole object of each example's input.
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col), !params.background(Col).
+    parse.order(Dg, A) :- diag_dir_elem(Dg), axis_elem(A).
+
+    // An order that picks another color than an example's halo, the output's
+    // non-background color.
+    .decl order_contradicted(d: DiagDir, a: Axis)
+    order_contradicted(Dg, A) :-
+        parse.first_tied(E, Dg, A, Col), ex_out(E, _, C), !params.background(C), C != Col.
+
+    .decl scan_order(d: DiagDir, a: Axis)
+    scan_order(Dg, A) :- diag_dir_elem(Dg), axis_elem(A), !order_contradicted(Dg, A).
+}

@@ -25,11 +25,11 @@
     // Separator thickness.
     .decl gap(g: number) gap(1).
 
-    // --- Count ---
+    // --- $Count ---
     // The cells along an axis.
     .decl cell_count(n: number) cell_count(6).
 
-    // --- Size ---
+    // --- $Size ---
     // A cell's extent.
     .decl dim(k: number) dim(3).
 }
@@ -62,11 +62,11 @@ key_box.cell($U(), P) :- parse.key.reach($U(), P).
 // Which cell a position sits in, and where in that cell.
 .decl cell_at(p: Position, p_tile: Position, p_intile: Position, ch: Choice)
 
-// --- Count ---
+// --- $Count ---
 cell_at(P, P_tile, P_intile, $Count()) :-
     in(P, _), params.cell_count(N), params.gap(G), divide_2d(P, N, G, P_tile, P_intile).
 
-// --- Size ---
+// --- $Size ---
 cell_at(P, P_tile, P_intile, $Size()) :-
     in(P, _), params.dim(K), params.gap(G), divide_by_size_2d(P, K, G, P_tile, P_intile).
 

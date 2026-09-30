@@ -16,7 +16,7 @@
     // @rule beam: on each side of the ink that touches other ink, every line
     //  that ink spans takes its own color out to the grid edge, unless a lone
     //  ink cell lies on that line between it and that edge
-    // @witness sameink: variant Touch
+    // @witness sameink: variant $Touch
     //     @relaxed dots
   | Touch {}
 
@@ -27,7 +27,7 @@
     // @rule beam: from each cell of the rectangle, every line through it
     //  takes the rectangle's color out to the grid edge, unless a dot lies
     //  on that line between the cell and that edge
-    // @witness notch: variant Cells
+    // @witness notch: variant $Cells
     //     @relaxed rect
   | Cells {}
 
@@ -40,7 +40,7 @@
     // @derive DominantColor: variant derived
     .decl bg(col: Color) bg(0).
 
-    // --- Hue ---
+    // --- $Hue ---
     // the rectangle's color, which its beams also take
     .decl beam(col: Color) beam(2).
 }
@@ -69,12 +69,12 @@ dot(P, F) :- find_choice(F), ink(P), !rect(P, F).
 // The color the beams take.
 .decl paint(col: Color, f: Find)
 
-// --- Hue ---
+// --- $Hue ---
 
 rect(P, $Hue()) :- in(P, Col), params.beam(Col).
 paint(Col, $Hue()) :- params.beam(Col).
 
-// --- Touch ---
+// --- $Touch ---
 
 // A rectangle cell: ink that touches other ink.
 rect(P, $Touch()) :- ink(P), dir_elem(D), neighbor(P, D, Q), ink(Q).
@@ -83,7 +83,7 @@ paint(Col, $Touch()) :- rect(P, $Touch()), in(P, Col).
 // The region the beams start from.
 .decl body(p: Position, ch: Choice)
 
-// --- Box ---
+// --- $Box ---
 
 // @claim rect beam
 .init bx = Bbox<Find>
@@ -91,7 +91,7 @@ bx.cell(F, P) :- rect(P, F).
 
 body(P, [F, $Box()]) :- in(P, _), bx.box(F, B), crop(P, B, _).
 
-// --- Cells ---
+// --- $Cells ---
 
 body(P, [F, $Cells()]) :- rect(P, F).
 

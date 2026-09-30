@@ -25,11 +25,11 @@
     .decl ring(p: Box)
     ring(P) :- line_width(K), uniform_inset(K, P).
 
-    // --- Layout ---
+    // --- $Layout ---
     .decl tiles(a: Axis, n: number)
     tiles(AXIS_V, 2). tiles(AXIS_H, 1).
 
-    // --- Count ---
+    // --- $Count ---
     .decl stack_axis(a: Axis) stack_axis(AXIS_V).
 }
 
@@ -42,7 +42,7 @@ content(P_intile, Col) :- in(P_grid_in, Col), params.xform(D), apply(D, P_grid_i
 // A copy's cell, in the output frame less the ring.
 .decl placed(ch: Choice, p_inner: Position, p_intile: Position)
 
-// --- Layout ---
+// --- $Layout ---
 .init layout = Frame2D<Unit>
 layout.extent($U(), A, N) :- params.tiles(A, N).
 
@@ -50,7 +50,7 @@ placed($Layout(), P_inner, P_intile) :-
     layout.cell($U(), P_tile), content(P_intile, _),                // tile, and the cell in it
     params.line_width(W), concat_2d(P_tile, P_intile, W, P_inner).  // laid out, gapped by the line
 
-// --- Count ---
+// --- $Count ---
 .init blocks = Components<Unit>
 blocks.node($U(), P) :- in(P, Col), !params.bg(Col).
 

@@ -26,10 +26,10 @@
     // Time runs toward this edge, so the last frame sits on it.
     .decl time_dir(d: Dir) time_dir(DIR_B).
 
-    // --- Count ---
+    // --- $Count ---
     .decl panel_count(n: number) panel_count(4).
 
-    // --- Size ---
+    // --- $Size ---
     .decl panel_size(k: number) panel_size(3).
 }
 
@@ -39,14 +39,14 @@
 
 .decl panel(ch: Choice, p_tile: Position, p_intile: Position, col: Color)
 
-// --- Count ---
+// --- $Count ---
 panel($Count(), P_tile, P_intile, Col) :-
     in(P_grid, Col),
     params.time_dir(D), axis_of(D, A),                  // frames run along this axis
     params.panel_count(N), params.panel_gap(G),
     divide_slab(P_grid, A, N, G, P_tile, P_intile).
 
-// --- Size ---
+// --- $Size ---
 panel($Size(), P_tile, P_intile, Col) :-
     in(P_grid, Col),
     params.time_dir(D), axis_of(D, A),                  // frames run along this axis

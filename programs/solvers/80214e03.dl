@@ -43,7 +43,7 @@ adjacent([A, L], [A, L2]) :-
 // A boundary runs between the two lines.
 .decl separated(c: Choice, l: Line, l2: Line)
 
-// --- Content ---
+// --- $Content ---
 
 .init content = KeyedSetCompare<Line, Line, Color>
 content.pattern_member(L, Col) :- line_color(L, Col).
@@ -51,7 +51,7 @@ content.observed_member(L, Col) :- line_color(L, Col).
 
 separated($Content(), L, L2) :- adjacent(L, L2), !content.equals(L, L2).
 
-// --- Contrast ---
+// --- $Contrast ---
 
 separated($Contrast(), [A, L], [A, L2]) :-
     in(P, Col), in(Q, Col2), !params.bg(Col), !params.bg(Col2), Col != Col2,  // two colors

@@ -47,11 +47,11 @@ over_span(P) :- span(P, _, A), params.over_axis(A).
 top_span(P, Col) :- span(P, Col, A), params.over_axis(A).
 top_span(P, Col) :- span(P, Col, _), !over_span(P).
 
-// --- PaintAll ---
+// --- $PaintAll ---
 out(P, Col, $PaintAll()) :- top_span(P, Col).
 out(P, Col, $PaintAll()) :- in(P, Col), !top_span(P, _).
 
-// --- PaintBg ---
+// --- $PaintBg ---
 out(P, Col, $PaintBg()) :-
     in(P, Bg), params.bg(Bg),        // a bg cell
     ( top_span(P, Col)               // a span above paints it

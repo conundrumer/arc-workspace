@@ -50,7 +50,7 @@
 .comp Params {
     .decl bg(col: Color) bg(0).
 
-    // --- Derived(t=Clash), Stored ---
+    // --- $Clash, $Stored ---
     // the color the task fixes: the tie's under Derived(t=Clash), the
     // shape's under Stored
     .decl fixed(col: Color) fixed(8).
@@ -74,7 +74,7 @@ ink(Col, P) :- in(P, Col), !params.bg(Col).
 // A cell of a color that draws a side of the rectangle.
 .decl side_cell(col: Color, p: Position, s: ShapeFrom)
 
-// --- Derived ---
+// --- $Derived ---
 
 // same_line over a color's cells, so the universal below can negate it.
 .decl aligned(col: Color, a: Axis, p: Position, q: Position)
@@ -86,11 +86,11 @@ bent(Col, A) :- ink(Col, P), ink(Col, Q), axis_elem(A), !aligned(Col, A, P, Q).
 
 side_cell(Col, P, $Derived(T)) :- ink(Col, P), axis_elem(A), !bent(Col, A), tie_choice(T).
 
-// --- Stored ---
+// --- $Stored ---
 
 side_cell(Col, P, $Stored()) :- ink(Col, P), !params.fixed(Col).
 
-// --- Derived, Stored ---
+// --- $Derived, $Stored ---
 
 // The rest of the ink is the shape.
 .decl shape_cell(col: Color, p: Position, s: ShapeFrom)
@@ -139,21 +139,21 @@ near_side.item(P_inner, D) :- near.low(P_inner, D, _).
 // The color a tied cell takes.
 .decl tie_color(col: Color, s: ShapeFrom)
 
-// --- Derived(t=Own), Stored ---
+// --- $Own, $Stored ---
 tie_color(C, $Derived($Own())) :- shape_cell(C, _, $Derived($Own())).
 tie_color(C, $Stored()) :- shape_cell(C, _, $Stored()).
 
-// --- Derived(t=Clash) ---
+// --- $Clash ---
 tie_color(Col, $Derived($Clash())) :- params.fixed(Col).
 
 // What the output draws, the background aside.
 .decl draw(p: Position, col: Color, ch: Choice)
 
-// --- Cells ---
+// --- $Cells ---
 
 draw(P, Col, [S, $Cells()]) :- placed_side(P, Col, S).
 
-// --- Runs ---
+// --- $Runs ---
 
 // A cell at a corner of its frame.
 .decl at_corner(p: Position)
@@ -163,7 +163,7 @@ draw(P, Col, [S, $Runs()]) :-
     side(D, Col, S), box_cell(P, S), dist(P, D, 0),  // the side's whole edge
     !at_corner(P).                                   // corners left open
 
-// --- Cells, Runs ---
+// --- $Cells, $Runs ---
 
 draw(P, Col, [S, Bd]) :-
     shape_pos(P_inner, _, S), border_choice(Bd),              // a shape cell

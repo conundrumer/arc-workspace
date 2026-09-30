@@ -52,7 +52,7 @@ span_cell(Src, D, P) :- span(Src, D, _), cast.clear($U(), P, D, K, Src), K != 0.
 out(P, Col, Ch) :- fill(P, Ch), params.mark(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !fill(P, Ch).
 
-// --- Shortest ---
+// --- $Shortest ---
 
 .init closest = Extremes<Unit>
 closest.cand($U(), K) :- span(_, _, K).
@@ -61,7 +61,7 @@ fill(P, $Shortest()) :-
     span(Src, D, K), closest.low($U(), K),   // a pair at the least gap
     span_cell(Src, D, P).                    // fills across its span
 
-// --- Clear ---
+// --- $Clear ---
 
 // Another mark lies on a line the span crosses.
 .decl crossed(src: Position, d: Dir8)

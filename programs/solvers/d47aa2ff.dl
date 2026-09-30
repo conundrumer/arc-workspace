@@ -28,10 +28,10 @@
     only_fill([0, 0, 0, 1], 2).
     only_fill([0, 0, 1, 0], 1).
 
-    // --- Count ---
+    // --- $Count ---
     .decl panel_count(n: number) panel_count(2).
 
-    // --- Size ---
+    // --- $Size ---
     .decl panel_size(k: number) panel_size(10).
 }
 

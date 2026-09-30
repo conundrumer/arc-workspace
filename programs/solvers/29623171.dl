@@ -19,10 +19,10 @@
     .decl gap(g: number) gap(1).
     .decl bg(col: Color) bg(0).
 
-    // --- Count ---
+    // --- $Count ---
     .decl tile_count(n: number) tile_count(3).
 
-    // --- Size ---
+    // --- $Size ---
     .decl tile_dim(k: number) tile_dim(3).
 }
 
@@ -33,17 +33,17 @@ impl_choice($Count()). impl_choice($Size()).
 
 .decl tile(p_grid: Position, p_tile: Position, ch: Choice)
 
-// --- Count ---
+// --- $Count ---
 tile(P_grid, P_tile, $Count()) :-
     in(P_grid, _), params.tile_count(N), params.gap(G),
     divide_2d(P_grid, N, G, P_tile, _).
 
-// --- Size ---
+// --- $Size ---
 tile(P_grid, P_tile, $Size()) :-
     in(P_grid, _), params.tile_dim(K), params.gap(G),
     divide_by_size_2d(P_grid, K, G, P_tile, _).
 
-// --- Count, Size ---
+// --- $Count, $Size ---
 .decl mark(p_tile: Position, p_grid: Position, col: Color, ch: Choice)
 mark(T, P_grid, Col, Ch) :- tile(P_grid, T, Ch), in(P_grid, Col), !params.bg(Col).
 

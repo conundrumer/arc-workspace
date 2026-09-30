@@ -21,7 +21,7 @@
     .decl marker(c: Color)
     marker(1). marker(8).
 
-    // --- Sided ---
+    // --- $Sided ---
     .decl side(d: Dir, c: Color)
     side(DIR_L, 1). side(DIR_R, 8).
 }
@@ -30,7 +30,7 @@
 
 .decl seg(p: Position, ch: Choice)
 
-// --- Set ---
+// --- $Set ---
 .init set_spans = Between<Unit>
 set_spans.axis($U(), A) :- params.axis(A).
 set_spans.cell($U(), P) :- in(P, Col), !params.marker(Col).
@@ -38,7 +38,7 @@ set_spans.mark($U(), P) :- in(P, Col), params.marker(Col).
 
 seg(P, $Set()) :- set_spans.between($U(), P).
 
-// --- Sided ---
+// --- $Sided ---
 .init sided_rays = Ray<Color>
 sided_rays.dir(Cm, D)   :- params.marker(Cm), params.axis(A), axis_of(D, A).
 sided_rays.cell(Cm, P)  :- params.marker(Cm), in(P, Col), !params.marker(Col).

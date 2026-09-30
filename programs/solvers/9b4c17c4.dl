@@ -17,7 +17,7 @@
     Flush {}
     // @rule flush: in each line along a field's slide direction, the ink
     //  packs against the field's edge
-    // @witness shared-line: borderline Pack
+    // @witness shared-line: borderline $Pack
     //     @relaxed lane
   | Pack {}
 
@@ -70,7 +70,7 @@ region_box.cell(F, P) :- region(F, P).
 
 .decl moved(p: Position, ch: Choice)
 
-// --- Flush ---
+// --- $Flush ---
 
 // @claim shape
 .init shape_box = Bbox<Ident>
@@ -87,7 +87,7 @@ travel(X, V) :-
 
 moved(Q, $Flush()) :- shape.label($U(), P, X), travel(X, V), compose(P, V, Q).
 
-// --- Pack ---
+// --- $Pack ---
 
 // A field cell in the field's own frame: its lane across the slide
 // direction, and its distance to the slide edge.

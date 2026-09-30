@@ -30,14 +30,14 @@ ink(P, Col) :- in(P, Col), !params.bg(Col).
 // A shape cell, with the size of its shape.
 .decl shape_cell(p: Position, n: number, ch: Choice)
 
-// --- Hue ---
+// --- $Hue ---
 
 .init hue_size = Tally<Color, Position>
 hue_size.item(Col, P) :- ink(P, Col).
 
 shape_cell(P, N, $Hue()) :- ink(P, Col), hue_size.tally(Col, N).
 
-// --- Object ---
+// --- $Object ---
 
 .init objects = Components<Unit>
 objects.node($U(), P) :- ink(P, _).

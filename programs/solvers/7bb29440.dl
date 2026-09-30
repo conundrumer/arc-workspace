@@ -18,12 +18,12 @@
 .comp Params {
     .decl bg(c: Color) bg(0).
 
-    // --- Marks ---
+    // --- $Marks ---
     .decl mark(c: Color)
     mark(4).
     mark(6).
 
-    // --- Body ---
+    // --- $Body ---
     .decl body(c: Color) body(1).
 }
 
@@ -39,13 +39,13 @@ blocks.node($U(), P) :- in(P, Col), !params.bg(Col).
 // A cell that counts against its block.
 .decl marked(ch: Choice, p: Position)
 
-// --- Marks ---
+// --- $Marks ---
 marked($Marks(), P) :- in(P, Col), params.mark(Col).
 
-// --- Body ---
+// --- $Body ---
 marked($Body(), P) :- in(P, Col), !params.body(Col).
 
-// --- Marks, Body ---
+// --- $Marks, $Body ---
 
 // Marked cells per block; a clean block counts 0.
 .type BlockKey = [ch: Choice, id: Ident]

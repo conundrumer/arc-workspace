@@ -35,7 +35,7 @@
     .decl anchor(col: Color) anchor(1).
     .decl arrow(col: Color) arrow(2).
 
-    // --- Glyph ---
+    // --- $Glyph ---
 
     RIGID(chart,
         .decl glyph(p: Position)
@@ -84,14 +84,14 @@ arrow_box.cell($U(), P) :- in(P, Col), params.arrow(Col).
 
 .decl heading(a: Aim, d: Dir)
 
-// --- Widest ---
+// --- $Widest ---
 
 .init bar = Mode<Unit, Dir, Position>
 bar.item($U(), D, P) :- arrow_box.cell($U(), P), arrow_box.box($U(), B), box_edge(P, B, D).
 
 heading($Widest(), D) :- bar.mode($U(), D_bar), opposite(D_bar, D).
 
-// --- Glyph ---
+// --- $Glyph ---
 
 // The arrow's picture, read in its own box, against the chart in every pose.
 .init pose = KeyedSetCompare<Unit, D4, Position>
@@ -114,11 +114,11 @@ pay_box.cell($U(), P) :- payload(P, _).
 
 .decl target(p_intile: Position, t: Target)
 
-// --- Colored ---
+// --- $Colored ---
 
 target(P_intile, $Colored()) :- cell(P_intile, Col), params.anchor(Col).
 
-// --- Template ---
+// --- $Template ---
 
 .decl template(p: Position, col: Color)
 template(P, Col) :- legend(P), in(P, Col), params.anchor(Col).

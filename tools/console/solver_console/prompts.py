@@ -13,7 +13,7 @@ import threading
 from pathlib import Path
 
 import controlled_markdown as nm
-from dl.context import (
+from handbook.context import (
     AGENT_NAMES,
     AGENT_PATH,
     agent_meta,

@@ -16,12 +16,12 @@
 .comp Params {
     .decl mirror(d: D4) mirror(D4_TB).
 
-    // --- Direct ---
+    // --- $Direct ---
     .decl bg(c: Color) bg(0).
     .decl matched(c: Color) matched(2).
     .decl unmatched(c: Color) unmatched(5).
 
-    // --- Lookup ---
+    // --- $Lookup ---
     .decl recolor(c_self: Color, c_mirror: Color, c_out: Color)
     recolor(0, 0, 0).
     recolor(0, 8, 0).
@@ -31,7 +31,7 @@
 
 .init params = Params
 
-// --- Direct ---
+// --- $Direct ---
 
 .decl non_bg(p: Position)
 non_bg(P) :- in(P, Col), !params.bg(Col).
@@ -43,7 +43,7 @@ out(P, Col_out, $Direct()) :-
     ; !non_bg(P_m), params.unmatched(Col_out)        // image is bg
     ).
 
-// --- Lookup ---
+// --- $Lookup ---
 
 out(P, Col_out, $Lookup()) :-
     in(P, C_self),                                            // input cell color

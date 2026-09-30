@@ -22,10 +22,10 @@
     .decl shift_dir(d: Dir) shift_dir(DIR_B).          // rows rotate toward this edge
     .decl band_width(k: number) band_width(1).         // the band is one column
 
-    // --- Marked ---
+    // --- $Marked ---
     .decl marker_color(c: Color) marker_color(2).       // the marked cell's color
 
-    // --- Singleton ---
+    // --- $Singleton ---
     .decl marker_count(k: number) marker_count(1).      // occurrences of the marker color
 }
 
@@ -34,11 +34,11 @@
 // The marker cell in the band, under each model.
 .decl marker(p: Position, ch: Choice)
 
-// --- Marked ---
+// --- $Marked ---
 marker(P, $Marked()) :-
     in(P, Col), params.marker_edge(D), dist(P, D, 0), params.marker_color(Col).
 
-// --- Singleton ---
+// --- $Singleton ---
 .decl band_cell(p: Position, col: Color)
 band_cell(P, Col) :- in(P, Col), params.marker_edge(D), dist(P, D, 0).
 

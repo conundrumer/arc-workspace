@@ -72,12 +72,12 @@ group_design(Col, P_intile) :- box_color(T, Col), design(T, P_intile).
 .decl show(t: Position, p_intile: Position, ch: Choice)
 show(T, P_intile, Ch) :- ink(T, P_intile), impl_choice(Ch).
 
-// --- Fill ---
+// --- $Fill ---
 show(T, P_intile, $Fill()) :-
     box_color(T, Col), !design(T, _),   // a blank box of the group
     group_design(Col, P_intile).        // takes the group's design
 
-// --- Merge ---
+// --- $Merge ---
 show(T, P_intile, $Merge()) :- box_color(T, Col), group_design(Col, P_intile).
 
 out(P, Col, Ch) :-

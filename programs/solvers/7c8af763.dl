@@ -33,7 +33,7 @@ touch(P, Q, Col) :-
 
 out(P, Col, Ch) :- in(P, Col), !params.bg(Col), impl_choice(Ch).
 
-// --- Region ---
+// --- $Region ---
 
 .init regions = Components<Unit>
 regions.node($U(), P) :- in(P, Col), params.bg(Col).
@@ -43,7 +43,7 @@ region_vote.item(Id, Col, Q) :- regions.label($U(), P, Id), touch(P, Q, Col).
 
 out(P, Col, $Region()) :- regions.label($U(), P, Id), region_vote.mode(Id, Col).
 
-// --- Tile ---
+// --- $Tile ---
 
 .decl bg_line(l: Position)
 bg_line(L) :- in(P, Col), params.bg(Col), axis_elem(A), split(P, A, L, _).

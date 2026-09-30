@@ -61,13 +61,13 @@ anchor_line(Line) :- lines.first($U(), Line).
 // The lines that shift.
 .decl shifts(ch: Choice, p_line: Position)
 
-// --- Match ---
+// --- $Match ---
 shifts($Match(), Line) :-
     cell_split(_, Col, Line, Across),                         // a cell of the line
     anchor_line(L_anc), cell_split(_, Col2, L_anc, Across),   // the anchor's cell across from it
     Col != Col2.
 
-// --- Sequence, Stripes ---
+// --- $Sequence, $Stripes ---
 
 // L2 is one place further from the anchor edge than L, over the case's own
 // line set.

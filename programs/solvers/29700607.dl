@@ -62,7 +62,7 @@ wire(Col, P, Ch) :-
     params.head_dir(D_head), opposite(D_head, D),      // and runs off the far edge
     path.ray(Col, P, D, _, H), impl_choice(Ch).
 
-// --- ToEdge ---
+// --- $ToEdge ---
 
 // The direction the wire takes out of its elbow.
 .decl side(col: Color, d: Dir)

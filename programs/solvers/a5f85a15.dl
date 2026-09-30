@@ -24,7 +24,7 @@
     // @claim alternate-from-start
     ColorBlind {}
     // @rule alternate-from-start: a unit also ends where the color changes
-    // @witness two-colors: borderline ColorRuns
+    // @witness two-colors: borderline $ColorRuns
     //     @relaxed diagonal-lines
   | ColorRuns {}
 
@@ -54,12 +54,12 @@
     //  touch
     // @rule alternate-from-start: a line's count starts at its end nearer
     //  params.start_edge
-    // @witness anti-diagonal-odd: variant DerivedAxis
+    // @witness anti-diagonal-odd: variant $DerivedAxis
     //     @relaxed diagonal-lines
-    // @witness anti-diagonal-even: variant DerivedAxis
+    // @witness anti-diagonal-even: variant $DerivedAxis
     //     @relaxed diagonal-lines
     //     @reassigned start_edge
-    // @witness anti-diagonal-wide: variant DerivedAxis
+    // @witness anti-diagonal-wide: variant $DerivedAxis
     //     @relaxed diagonal-lines
   | DerivedAxis {}
 
@@ -75,6 +75,7 @@
 
 .comp Params {
     // @derive DominantColor: variant derived
+    //     @relaxed diagonal-lines
     .decl bg(c: Color) bg(0).
     .decl mark(c: Color) mark(4).
 
@@ -83,16 +84,16 @@
     .decl period(n: number) period(2).
     .decl mark_phase(k: number) mark_phase(1).
 
-    // --- StoredStep ---
+    // --- $StoredStep ---
     // The step from a line's first cell to its next.
     .decl line_dir(d: DiagDir) line_dir(DIAG_BR).
 
-    // --- DerivedAxis ---
+    // --- $DerivedAxis ---
     // A line's count starts at its end nearer this edge. The pairs leave the
     // top and the left edge open.
     .decl start_edge(d: Dir) start_edge(DIR_T). start_edge(DIR_L).
 
-    // --- ColumnParity ---
+    // --- $ColumnParity ---
     .decl parity_edge(d: Dir) parity_edge(DIR_L).
 }
 
@@ -112,8 +113,22 @@ origin_choice($GridDiagonal()). origin_choice($ColumnParity()).
 impl_choice([O, $StoredStep()]) :- origin_choice(O).
 impl_choice([O, $DerivedAxis()]) :- origin_choice(O), O != $ColumnParity().
 
-.decl ink(p: Position)
-ink(P) :- in(P, Col), !params.bg(Col).
+.comp Parse<Key> {
+    .decl grid(key: Key, p: Position, col: Color)
+
+    .decl ink(key: Key, p: Position)
+    ink(Ky, P) :- grid(Ky, P, Col), !params.bg(Col).
+
+    // The diagonal axes on which two ink cells touch.
+    // @ignore: store — the stored axis with params.start_edge gives the
+    //  StoredStep reading, which the concept case holds
+    // @claim diagonal-lines
+    .init touch = Unanimous<Key, DiagAxis>
+    touch.item(Ky, Da) :- ink(Ky, P), neighbor(P, D, Q), ink(Ky, Q), diag_axis_of(D, Da).
+}
+
+.init parse = Parse<Unit>
+parse.grid($U(), P, Col) :- in(P, Col).
 
 // The line direction under heading H.
 .decl heading(h: Heading, d: DiagDir)
@@ -133,46 +148,40 @@ out(P, Col, [O, H]) :-
     ( marked(O, D, P), params.mark(Col)
     ; in(P, Col), !marked(O, D, P) ).
 
-// --- StoredStep ---
+// --- $StoredStep ---
 heading($StoredStep(), D) :- params.line_dir(D).
 
-// --- DerivedAxis ---
-// The diagonal axes on which two ink cells touch.
-// @ignore: store — the stored axis with params.start_edge gives the
-//  StoredStep reading, which the concept case holds
-// @claim diagonal-lines
-.init touch = Unanimous<Unit, DiagAxis>
-touch.item($U(), Da) :- ink(P), neighbor(P, D, Q), ink(Q), diag_axis_of(D, Da).
-
+// --- $DerivedAxis ---
 heading($DerivedAxis(), D) :-
-    touch.value($U(), Da), diag_axis_of(D, Da),
+    parse.touch.value($U(), Da), diag_axis_of(D, Da),
     params.start_edge(E), opposite(E, E_far), dir_of(D, _, E_far).  // leads away from the start edge
 
-// --- ColorBlind ---
+// --- $ColorBlind ---
 // Q may share a unit with P under split S.
 .decl kin(s: ColorSplit, p: Position, q: Position)
-kin($ColorBlind(), P, Q) :- ink(P), ink(Q).
+kin($ColorBlind(), P, Q) :- parse.ink($U(), P), parse.ink($U(), Q).
 
-// --- ColorRuns ---
-kin($ColorRuns(), P, Q) :- ink(P), in(P, Col), in(Q, Col).
+// --- $ColorRuns ---
+kin($ColorRuns(), P, Q) :- parse.ink($U(), P), in(P, Col), in(Q, Col).
 
-// --- Run ---
+// --- $Run ---
 // The first cell of a unit: the cell behind it is not its kin.
 .decl start(l: Lane, p: Position)
-start([S, D], P) :- lane([S, D]), ink(P), diag_opposite(D, O), neighbor(P, O, Q), !kin(S, P, Q).
+start([S, D], P) :-
+    lane([S, D]), parse.ink($U(), P), diag_opposite(D, O), neighbor(P, O, Q), !kin(S, P, Q).
 
 // Each unit cast from its first cell; it stops at the background and at the
 // first cell of the next unit.
 // @claim alternate-from-start
 .init run = Ray<Lane>
 run.dir([S, D], D) :- lane([S, D]).
-run.cell(L, P) :- lane(L), ink(P).
+run.cell(L, P) :- lane(L), parse.ink($U(), P).
 run.mark(L, P) :- start(L, P).
-run.blocked(L, P) :- lane(L), in(P, _), ( !ink(P) ; start(L, P) ).
+run.blocked(L, P) :- lane(L), in(P, _), ( !parse.ink($U(), P) ; start(L, P) ).
 
 pos($LineStart($Run(), S), D, P, K) :- run.clear([S, D], P, D, K, _).
 
-// --- DiagonalClass, GridDiagonal ---
+// --- $DiagonalClass, $GridDiagonal ---
 // Each grid diagonal along D, cast from its cell on the grid edge.
 // @claim alternate-from-start
 .init diagonal = Ray<DiagDir>
@@ -180,40 +189,38 @@ diagonal.dir(D, D) :- heading(_, D).
 diagonal.cell(D, P) :- heading(_, D), in(P, _).
 diagonal.mark(D, P) :- in(P, _), diag_opposite(D, O), dir_of(O, _, E), dist(P, E, 0).
 
-// --- DiagonalClass ---
+// --- $DiagonalClass ---
 // The kin cells before each ink cell on its grid diagonal.
 // @claim alternate-from-start
 .init behind = Tally<LaneCell, Position>
-behind.domain([L, P]) :- lane(L), ink(P).
+behind.domain([L, P]) :- lane(L), parse.ink($U(), P).
 behind.item([[S, D], P], Q) :-
     diagonal.ray(D, P, D, K, E), diagonal.ray(D, Q, D, K2, E), K2 < K, kin(S, P, Q).
 
 pos($LineStart($DiagonalClass(), S), D, P, K) :- behind.tally([[S, D], P], K).
 
-// --- GridDiagonal ---
-pos($GridDiagonal(), D, P, K) :- diagonal.ray(D, P, D, K, _), ink(P).
+// --- $GridDiagonal ---
+pos($GridDiagonal(), D, P, K) :- diagonal.ray(D, P, D, K, _), parse.ink($U(), P).
 
-// --- ColumnParity ---
-pos($ColumnParity(), D, P, K) :- heading(_, D), ink(P), params.parity_edge(E), dist(P, E, K).
+// --- $ColumnParity ---
+pos($ColumnParity(), D, P, K) :-
+    heading(_, D), parse.ink($U(), P), params.parity_edge(E), dist(P, E, K).
 
 .comp Determine {
-    .decl ink(e: Example, p: Position)
-    ink(E, P) :- ex_in(E, P, Col), !params.bg(Col).
-
-    .init touch = Unanimous<Example, DiagAxis>
-    touch.item(E, Da) :- ink(E, P), neighbor(P, D, Q), ink(E, Q), diag_axis_of(D, Da).
+    .init parse = Parse<Example>
+    parse.grid(E, P, Col) :- ex_in(E, P, Col).
 
     // One example's lines, read from a candidate start edge.
     .type EdgeKey = [e: Example, edge: Dir]
 
     .init run = Ray<EdgeKey>
     run.dir([E, Edge], D) :-
-        touch.value(E, Da), diag_axis_of(D, Da),
+        parse.touch.value(E, Da), diag_axis_of(D, Da),
         opposite(Edge, E_far), dir_of(D, _, E_far).
-    run.cell([E, Edge], P) :- run.dir([E, Edge], _), ink(E, P).
+    run.cell([E, Edge], P) :- run.dir([E, Edge], _), parse.ink(E, P).
     run.mark([E, Edge], P) :-
-        run.dir([E, Edge], D), ink(E, P), diag_opposite(D, O), neighbor(P, O, Q), !ink(E, Q).
-    run.blocked([E, Edge], P) :- run.dir([E, Edge], _), ex_in(E, P, _), !ink(E, P).
+        run.dir([E, Edge], D), parse.ink(E, P), diag_opposite(D, O), neighbor(P, O, Q), !parse.ink(E, Q).
+    run.blocked([E, Edge], P) :- run.dir([E, Edge], _), ex_in(E, P, _), !parse.ink(E, P).
 
     // A train cell whose output disagrees with the count from start edge Edge.
     .decl contradicted(edge: Dir)

@@ -1,0 +1,160 @@
+// aba27056
+// @draft
+// @keywords: bbox enclose cast
+// @scene background: every cell outside the container is params.background
+// @scene container: one object of one color other than params.background is
+//  the outline of a rectangle, with one side broken by one opening: a run of
+//  background cells along that side's line, which does not include the
+//  corners of the rectangle
+// @scene interior: the cells strictly inside the rectangle are all
+//  params.background
+// @rule fill-interior: every cell strictly inside the rectangle becomes
+//  params.fill_color
+// @rule fill-opening: every cell of the opening becomes params.fill_color
+// @rule beam: from the opening, a band as wide as the opening goes straight
+//  out, perpendicular to the broken side and away from the interior, to the
+//  grid edge; every cell of that band becomes params.fill_color
+// @rule diagonal-rays: from each end cell of the opening, a diagonal ray goes
+//  out to the grid edge, each step one line farther from the interior and one
+//  line farther from the band; every cell of each ray becomes
+//  params.fill_color
+// @rule rest-kept: every other cell keeps its input color
+
+// what the box does when its outline has more than one opening
+.type Openings =
+    // @claim container
+    OneOpening {}
+    // @scene container: the outline may be broken by any number of openings,
+    //  each a maximal run of background cells on a side line, off the corners
+    // @rule fill-opening: every cell of each opening becomes params.fill_color
+    // @rule beam: each opening casts its own band
+    // @rule diagonal-rays: each opening casts its own two rays
+    // @witness two-openings: variant $EachOpening
+    //     @relaxed container
+  | EachOpening {}
+    // @scene container: the outline may be broken by any number of openings;
+    //  on each broken side, the stretch of the side line from its first to its
+    //  last background cell counts as one opening
+    // @rule beam: each stretch casts one band as wide as the stretch, and only
+    //  background cells of the band take params.fill_color
+    // @rule diagonal-rays: the two rays leave from the outer ends of each
+    //  stretch, and only background cells of a ray take params.fill_color
+    // @witness two-openings: variant $EachOpening
+  | SideSpan {}
+
+// what a cell of another color in the interior or in the light's path becomes
+.type Paint =
+    // @claim fill-interior beam diagonal-rays
+    PaintAll {}
+    // @rule fill-interior: only background cells of the interior take
+    //  params.fill_color
+    // @rule beam: only background cells of the band take params.fill_color
+    // @rule diagonal-rays: only background cells of a ray take
+    //  params.fill_color
+    // @witness stray-inside: foreign any
+    //     @relaxed interior
+  | PaintBackground {}
+
+.type Choice = [openings: Openings, paint: Paint]
+
+// A cast of light: the openings reading, and the direction it goes.
+.type Cast = [o: Openings, d: Dir8]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed background
+    // @ignore: derive concept — wherever it is defined, it gives the output of
+    //  the EachOpening copy
+    .decl background(c: Color) background(0).
+    .decl fill_color(c: Color) fill_color(4).
+}
+
+.init params = Params
+
+// OneOpening & PaintBackground is left out: wherever it is defined,
+// EachOpening & PaintBackground gives the same grid.
+.decl impl_choice(ch: Choice)
+impl_choice([$OneOpening(), $PaintAll()]).
+impl_choice([$EachOpening(), $PaintAll()]). impl_choice([$EachOpening(), $PaintBackground()]).
+impl_choice([$SideSpan(), $PaintAll()]). impl_choice([$SideSpan(), $PaintBackground()]).
+
+// @claim background container
+.init box = Bbox<Unit>
+box.cell($U(), P) :- in(P, Col), !params.background(Col).
+
+.decl corner(p: Position)
+corner(P) :- box.box($U(), B), in(P, _), box_corner(P, B, _).
+
+.decl box_interior(p: Position)
+box_interior(P) :- box.box($U(), B), in(P, _), interior(P, B).
+
+// A background cell of the outline's side D, off the corners.
+.decl opening(p: Position, d: Dir)
+opening(P, D) :-
+    box.box($U(), B), in(P, Col), params.background(Col),
+    box_edge(P, B, D), !corner(P).
+
+// The cells that cast the band toward D.
+.decl source(o: Openings, p: Position, d: Dir)
+
+// The cells the light can paint.
+.decl reach(o: Openings, p: Position)
+
+// The openings reading is undefined on the input.
+.decl undefined(o: Openings)
+
+// A source cell with no source of its side next to it toward E.
+.decl end(o: Openings, p: Position, d: Dir, e: Dir)
+end(O, P, D, E) :- source(O, P, D), perp_dir(D, E), neighbor(P, E, Q), !source(O, Q, D).
+
+// @claim fill-opening beam diagonal-rays
+.init light = Ray<Cast>
+light.mark([O, D], P) :- source(O, P, D).                                  // the band
+light.mark([O, Dg], P) :- end(O, P, D, E), diag_dirs(Dg, _, D, E).         // a ray
+light.dir([O, D], D) :- light.mark([O, D], _).
+light.cell([O, D], P) :- light.dir([O, D], _), reach(O, P).
+
+// A cell that the paint reading leaves in its input color.
+.decl kept(p: Position, pt: Paint)
+
+// The cells the case gives params.fill_color.
+.decl painted(p: Position, ch: Choice)
+painted(P, [O, Pt]) :-
+    impl_choice([O, Pt]), ( light.ray([O, _], P, _, _, _) ; box_interior(P) ), !kept(P, Pt).
+
+out(P, Col, [O, Pt]) :-
+    in(P, C_in), impl_choice([O, Pt]), !undefined(O),
+    ( painted(P, [O, Pt]), params.fill_color(Col)
+    ; !painted(P, [O, Pt]), Col = C_in
+    ).
+
+// --- $OneOpening ---
+// @claim container
+.init runs = Components<Unit>
+runs.node($U(), P) :- opening(P, _).
+
+// @claim container
+.init one_run = Unanimous<Unit, Ident>
+one_run.item($U(), Id) :- runs.label($U(), _, Id).
+
+undefined($OneOpening()) :- !one_run.value($U(), _).
+
+source($OneOpening(), P, D) :- opening(P, D).
+reach($OneOpening(), P) :- in(P, _).
+
+// --- $EachOpening ---
+source($EachOpening(), P, D) :- opening(P, D).
+reach($EachOpening(), P) :- in(P, _).
+
+// --- $SideSpan ---
+// A cell of side D between two openings of that side, the openings included.
+source($SideSpan(), P, D) :-
+    box.box($U(), B), in(P, _), box_edge(P, B, D),
+    opening(Q1, D), opening(Q2, D), perp_dir(D, E), opposite(E, F),
+    !nearer(E, P, Q1), !nearer(F, P, Q2).
+reach($SideSpan(), P) :- in(P, Col), params.background(Col).
+
+// --- $PaintBackground ---
+kept(P, $PaintBackground()) :- in(P, Col), !params.background(Col).

@@ -1,0 +1,366 @@
+// a1570a43
+// @draft
+// @keywords: markers color-class objects move bbox
+// @scene markers: four single cells of params.marker_color sit at the corners
+//  of an axis-aligned rectangle
+// @scene shape: one connected object of params.shape_color lies on the
+//  params.background field, off the marker cells
+// @scene fits: the shape's bounding box has the height and width of the
+//  rectangle's interior, the cells strictly between the marker rows and
+//  strictly between the marker columns
+// @rule keep-markers: the markers stay where they are
+// @rule place: the shape translates as one piece so that its bounding box is
+//  the interior of the marker rectangle; the cells it left take
+//  params.background
+
+// what shows where a moved cell lands on a marker, under Center
+.type Layer =
+    // @claim keep-markers
+    MarkerTop {}
+    // @rule keep-markers: a moved cell that lands on a marker covers it
+    // @witness big-shape: borderline $Center
+    //     @relaxed fits
+  | ShapeTop {}
+
+// how the shape's destination is fixed
+.type Anchor =
+    // @claim place
+    Fill {}
+    // @rule place: the shape translates so that the center of its bounding
+    //  box is the center of the marker rectangle, a half-cell offset rounding
+    //  toward params.round_toward on its axis; undefined when a moved cell
+    //  falls off the grid
+    // @witness smaller-shape: variant $Center
+    //     @relaxed fits
+  | Center {top: Layer}
+
+// what happens to the cells that are neither markers nor the shape color
+.type Others =
+    // @claim place
+    KeepRest {}
+    // @rule place: the output starts blank, and only the markers and the
+    //  moved shape are drawn on it
+    // @witness two-color-shape: borderline $Carry
+    //     @relaxed shape
+    // @witness stray-cell: borderline $PerObject
+    //     @relaxed shape
+  | EraseRest {}
+    // @rule place: the unit that moves is every cell that is neither
+    //  params.background nor the marker color, and its cells keep their
+    //  colors
+    // @witness two-color-shape: borderline $Carry
+  | Carry {}
+
+// which cells join into one piece under PerObject
+.type Connectivity =
+    // @claim place
+    Conn4 {}
+    // @rule place: diagonal neighbors also join into one piece
+    // @witness two-color-shape: borderline $Carry
+    // @witness diagonal-link: variant concept
+    // @witness diagonal-copies: borderline $PerObject
+    //     @relaxed shape
+  | Conn8 {}
+
+// what moves as one piece
+.type Grouping =
+    // @claim place
+    ColorClass {}
+    // @rule place: each piece of edge-adjacent moving cells is placed alone
+    //  by its own bounding box, and all of them are drawn; undefined where two
+    //  placed pieces give one cell different colors
+    // @witness split-shape: borderline concept
+    //     @relaxed shape
+    // @witness two-copies: borderline $PerObject
+    //     @relaxed shape
+  | PerObject {conn: Connectivity}
+
+// where the marker color comes from
+.type MarkerSource =
+    // @claim markers
+    StoredMarker {}
+    // @scene markers: the marker color is the one non-background color whose
+    //  cells are exactly the four corners of a rectangle; undefined when no
+    //  color or more than one color is
+    // @witness new-marker-color: variant $DeriveMarker
+    //     @relaxed markers
+    // @witness corner-cells: borderline $Carry
+    //     @relaxed shape
+    // @witness corner-rectangle: borderline concept
+    //     @relaxed shape
+  | DeriveMarker {}
+
+.type Choice = [anchor: Anchor, others: Others, grouping: Grouping, marker: MarkerSource]
+
+// The cells that move, read against one marker color.
+.type Load = [others: Others, k: Color]
+
+// One connected piece of a load.
+.type Piece = [others: Others, k: Color, g: Grouping, id: Ident]
+
+// A unit that moves as one piece, named by its bounding box.
+.type Mover = [others: Others, k: Color, g: Grouping, b: Box]
+
+// A cell of the output a plan draws.
+.type Spot = [a: Anchor, others: Others, k: Color, g: Grouping, q: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed shape
+    // @ignore: derive concept — wherever it is defined, Center with the
+    //  derived background gives its output
+    .decl background(c: Color) background(0).
+
+    // --- $KeepRest, $EraseRest ---
+    .decl shape_color(c: Color) shape_color(2).
+
+    // --- $StoredMarker ---
+    // @derive RarestColor: variant derived
+    //     @relaxed markers
+    .decl marker_color(c: Color) marker_color(3).
+
+    // --- $Center ---
+    // The edge a half-cell center offset rounds toward, one per axis. The
+    // pairs hold no half-cell offset, so every value stays open.
+    .decl round_toward(d: Dir)
+    round_toward(DIR_T). round_toward(DIR_B). round_toward(DIR_L). round_toward(DIR_R).
+}
+
+.init params = Params
+
+// Which way a box's center is off its frame's center.
+.comp Parse<Key> {
+    // Boxes, each in the frame of its marker rectangle.
+    .decl placed(ky: Key, t: Box)
+
+    // Box T sits no farther from edge D than from its opposite, and one step
+    // farther from D it would sit farther: its center is the frame's center,
+    // rounded toward D.
+    .decl rounds(ky: Key, t: Box, d: Dir)
+    rounds(Ky, T, D) :-
+        placed(Ky, T), dist_pair(T, D, K1, K2), K1 <= K2,
+        opposite(D, O), neighbor(T, O, T2), dist_pair(T2, D, J1, J2), J1 > J2.
+}
+
+.init parse = Parse<Unit>
+
+.decl anchor_choice(a: Anchor)
+anchor_choice($Fill()). anchor_choice($Center($MarkerTop())). anchor_choice($Center($ShapeTop())).
+
+.decl others_choice(o: Others)
+others_choice($KeepRest()). others_choice($EraseRest()). others_choice($Carry()).
+
+.decl grouping_choice(g: Grouping)
+grouping_choice($ColorClass()). grouping_choice($PerObject($Conn4())). grouping_choice($PerObject($Conn8())).
+
+.decl marker_source_choice(m: MarkerSource)
+marker_source_choice($StoredMarker()). marker_source_choice($DeriveMarker()).
+
+// The cases. Fill with a non-concept branch at another point is subsumed by
+// Center with that branch, so Fill takes the concept branch at every other
+// point.
+.decl impl_choice(ch: Choice)
+impl_choice([$Fill(), $KeepRest(), $ColorClass(), $StoredMarker()]).
+impl_choice([$Center(L), O, G, M]) :-
+    anchor_choice($Center(L)), others_choice(O), grouping_choice(G), marker_source_choice(M).
+
+// The bounding box of each non-background color; the marker rectangle is the
+// box of the marker color.
+// @claim markers
+.init color_box = Bbox<Color>
+color_box.cell(Col, P) :- in(P, Col), !params.background(Col).
+
+// The marker color each source gives.
+.decl marker_color(m: MarkerSource, k: Color)
+
+// The cells that move under each load.
+.decl cargo(l: Load, p: Position, col: Color)
+
+// The input cells that stay in place under each load.
+.decl stays(l: Load, p: Position, col: Color)
+
+// The cells of each unit.
+.decl unit(m: Mover, p: Position, col: Color)
+
+.decl mover(m: Mover)
+mover(M) :- unit(M, _, _).
+
+// Every translation from one grid cell to another.
+.decl shift(v: Offset)
+shift(V) :- in(P, _), in(Q, _), relative(P, Q, V).
+
+// The translation each anchor gives a unit.
+.decl place(a: Anchor, m: Mover, v: Offset)
+
+// Where each unit's cells land.
+// @ignore: store — the stored readings of the marker color and the moved
+//  color are StoredMarker and the params.shape_color of KeepRest
+.decl landed(a: Anchor, o: Others, k: Color, g: Grouping, q: Position, col: Color)
+landed(A, O, K, G, Q, Col) :-
+    place(A, [O, K, G, B], V), unit([O, K, G, B], P, Col), compose(P, V, Q).
+
+// The color each landed cell shows; two pieces that give one cell different
+// colors leave it none.
+// @claim place
+.init shows = Unanimous<Spot, Color>
+shows.item([A, O, K, G, Q], Col) :- landed(A, O, K, G, Q, Col), in(Q, C), C != K.
+
+// A reading of the load and units, under an anchor, that has a unit to move.
+.decl plan(a: Anchor, o: Others, k: Color, g: Grouping)
+plan(A, O, K, G) :- anchor_choice(A), mover([O, K, G, _]).
+
+// Some unit has no translation.
+.decl stranded(a: Anchor, o: Others, k: Color, g: Grouping)
+stranded(A, O, K, G) :- plan(A, O, K, G), mover([O, K, G, B]), !place(A, [O, K, G, B], _).
+
+// Some moved cell falls off the grid.
+.decl strays(a: Anchor, o: Others, k: Color, g: Grouping)
+strays(A, O, K, G) :- landed(A, O, K, G, Q, _), !in(Q, _).
+
+.decl painted(a: Anchor, o: Others, k: Color, g: Grouping, q: Position, col: Color)
+painted(A, O, K, G, Q, Col) :- shows.value([A, O, K, G, Q], Col).
+painted(A, O, K, G, Q, Col) :-
+    plan(A, O, K, G), in(Q, _), !landed(A, O, K, G, Q, _),
+    ( stays([O, K], Q, Col)
+    ; !stays([O, K], Q, _), params.background(Col) ).
+
+out(Q, Col, [A, O, G, M]) :-
+    impl_choice([A, O, G, M]), marker_color(M, K),
+    painted(A, O, K, G, Q, Col), !stranded(A, O, K, G), !strays(A, O, K, G).
+
+// --- $StoredMarker ---
+marker_color($StoredMarker(), K) :- params.marker_color(K).
+
+// --- $DeriveMarker ---
+// A cell of a color at a corner of that color's box.
+.decl at_corner(p: Position, col: Color)
+at_corner(P, Col) :- in(P, Col), color_box.box(Col, B), box_corner(P, B, _).
+
+// A color whose cells are not exactly the four distinct corners of its box.
+.decl off_corner(col: Color)
+off_corner(Col) :- in(P, Col), !at_corner(P, Col).
+off_corner(Col) :-
+    color_box.box(Col, B), in(P, _), box_corner(P, B, D),
+    ( !in(P, Col)                                  // an empty corner
+    ; box_corner(P, B, D2), D2 != D ).             // two corners on one cell
+
+// @claim markers
+.init corner_color = Unanimous<Unit, Color>
+corner_color.item($U(), Col) :- color_box.box(Col, _), !off_corner(Col).
+
+marker_color($DeriveMarker(), K) :- corner_color.value($U(), K).
+
+// --- $KeepRest, $EraseRest ---
+.decl shape_cell(p: Position, col: Color)
+shape_cell(P, Col) :- in(P, Col), params.shape_color(Col).
+
+// --- $KeepRest ---
+cargo([$KeepRest(), K], P, Col) :- marker_color(_, K), shape_cell(P, Col).
+stays([$KeepRest(), K], P, Col) :- marker_color(_, K), in(P, Col), !shape_cell(P, _).
+
+// --- $EraseRest ---
+cargo([$EraseRest(), K], P, Col) :- marker_color(_, K), shape_cell(P, Col).
+stays([$EraseRest(), K], P, K) :- marker_color(_, K), in(P, K).
+
+// --- $Carry ---
+cargo([$Carry(), K], P, Col) :- marker_color(_, K), in(P, Col), !params.background(Col), Col != K.
+stays([$Carry(), K], P, Col) :- marker_color(_, K), in(P, Col), !cargo([$Carry(), K], P, _).
+
+// --- $ColorClass ---
+// @claim place
+.init joint = Bbox<Load>
+joint.cell(L, P) :- cargo(L, P, _).
+
+unit([O, K, $ColorClass(), B], P, Col) :- cargo([O, K], P, Col), joint.box([O, K], B).
+
+// --- $PerObject ---
+// @claim place
+.init piece_box = Bbox<Piece>
+
+unit([O, K, G, B], P, Col) :-
+    piece_box.cell([O, K, G, Id], P), piece_box.box([O, K, G, Id], B), cargo([O, K], P, Col).
+
+// --- $Conn4 ---
+// @claim place
+.init piece4 = Components<Load>
+piece4.node(L, P) :- cargo(L, P, _).
+
+piece_box.cell([O, K, $PerObject($Conn4()), Id], P) :- piece4.label([O, K], P, Id).
+
+// --- $Conn8 ---
+// @claim place
+.init piece8 = Components8<Load>
+piece8.node(L, P) :- cargo(L, P, _).
+
+piece_box.cell([O, K, $PerObject($Conn8()), Id], P) :- piece8.label([O, K], P, Id).
+
+// --- $Fill ---
+// The interior of each marker rectangle.
+// @claim place
+.init inner = Bbox<Color>
+inner.cell(K, P) :- marker_color(_, K), color_box.box(K, R), in(P, _), interior(P, R).
+
+// The unit's box is a translate of the interior.
+place($Fill(), [O, K, G, B], V) :-
+    mover([O, K, G, B]), inner.box(K, I), relative(B, I, V), shift(V).
+
+// --- $Center ---
+// The rounding readings: one edge on each axis.
+.decl rounding(d1: Dir, d2: Dir)
+rounding(D1, D2) :- params.round_toward(D1), params.round_toward(D2), perp_dir(D1, D2).
+
+// Where each translation puts a unit's box, in its marker rectangle's frame.
+.decl lands(m: Mover, v: Offset, t: Box)
+lands([O, K, G, B], V, T) :-
+    mover([O, K, G, B]), color_box.box(K, R),
+    shift(V), compose(B, V, T_grid), relative(R, T_grid, T).
+
+parse.placed($U(), T) :- lands(_, _, T).
+
+// The translation each rounding reading gives a unit.
+// @ignore: store — the rounding columns range over the open values of
+//  params.round_toward
+.decl centered_at(m: Mover, d1: Dir, d2: Dir, v: Offset)
+centered_at(M, D1, D2, V) :-
+    rounding(D1, D2), lands(M, V, T), parse.rounds($U(), T, D1), parse.rounds($U(), T, D2).
+
+// Some rounding places the unit nowhere.
+.decl unrounded(m: Mover)
+unrounded(M) :- mover(M), rounding(D1, D2), !centered_at(M, D1, D2, _).
+
+// The translation every rounding gives.
+// @claim place
+.init center = Unanimous<Mover, Offset>
+center.item(M, V) :- centered_at(M, _, _, V).
+
+place($Center(L), M, V) :- anchor_choice($Center(L)), center.value(M, V), !unrounded(M).
+
+// --- $MarkerTop ---
+shows.item([$Center($MarkerTop()), O, K, G, Q], K) :-
+    landed($Center($MarkerTop()), O, K, G, Q, _), in(Q, K).
+
+// --- $ShapeTop ---
+shows.item([$Center($ShapeTop()), O, K, G, Q], Col) :-
+    landed($Center($ShapeTop()), O, K, G, Q, Col).
+
+.comp Determine {
+    // The marker rectangle of each example's input.
+    .init rect = Bbox<Example>
+    rect.cell(E, P) :- ex_in(E, P, Col), params.marker_color(Col).
+
+    // The shape's box in each example's output.
+    .init moved = Bbox<Example>
+    moved.cell(E, P) :- ex_out(E, P, Col), params.shape_color(Col).
+
+    .init parse = Parse<Example>
+    parse.placed(E, T) :- rect.box(E, R), moved.box(E, B), relative(R, B, T).
+
+    // An example's output box is not centered with rounding toward D.
+    .decl round_contradicted(d: Dir)
+    round_contradicted(D) :- parse.placed(E, T), dir_elem(D), !parse.rounds(E, T, D).
+
+    .decl round_toward(d: Dir)
+    round_toward(D) :- dir_elem(D), !round_contradicted(D).
+}

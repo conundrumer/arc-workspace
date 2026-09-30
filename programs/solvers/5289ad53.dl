@@ -31,10 +31,10 @@
     .decl corner(d: DiagDir) corner(DIAG_TL).
     .decl order_axis(a: Axis) order_axis(AXIS_V).
 
-    // --- Runs ---
+    // --- $Runs ---
     .decl run_axis(a: Axis) run_axis(AXIS_H).
 
-    // --- Lines ---
+    // --- $Lines ---
     .decl line_axis(a: Axis) line_axis(AXIS_H).
 }
 
@@ -49,14 +49,14 @@ mark_cell(Col, P) :- in(P, Col), params.color_rank(Col, _).
 // One id per mark, per case.
 .decl mark(ch: Choice, col: Color, id: Ident)
 
-// --- Blocks ---
+// --- $Blocks ---
 
 .init blocks = Components<Color>
 blocks.node(Col, P) :- mark_cell(Col, P).
 
 mark($Blocks(), Col, Id) :- blocks.label(Col, _, Id).
 
-// --- Runs ---
+// --- $Runs ---
 
 .type ColorLine = [col: Color, line: Position]
 
@@ -66,7 +66,7 @@ runs.node([Col, L], P) :- mark_cell(Col, P), params.run_axis(A), split(P, A, _, 
 
 mark($Runs(), Col, Id) :- runs.label([Col, _], _, Id).
 
-// --- Lines ---
+// --- $Lines ---
 
 .init lines = Canon<Position>
 lines.equiv(P, Q) :-

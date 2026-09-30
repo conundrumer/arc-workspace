@@ -29,18 +29,18 @@
     .decl bg(c: Color) bg(0).
     .decl tile_axis(a: Axis) tile_axis(AXIS_V).
 
-    // --- Count ---
+    // --- $Count ---
     .decl tile_count(n: number) tile_count(3).
 
-    // --- Size ---
+    // --- $Size ---
     .decl tile_size(k: number) tile_size(5).
 
-    // --- Palette ---
+    // --- $Palette ---
     // Ink priority ranks, highest first.
     .decl ink_rank(c: Color, r: number)
     ink_rank(6, 0). ink_rank(1, 1). ink_rank(8, 2).
 
-    // --- Stack ---
+    // --- $Stack ---
     // Slab priority ranks, highest first.
     .decl slab_rank(p_tile: Position, r: number)
     GRID_3x1(slab_rank,
@@ -76,7 +76,7 @@ cand(P_out, P_tile, Col, Dc) :-
 out(O, Bg, [Dc, C]) :-
     prio_choice(C), decompose(_, _, O, Dc), params.bg(Bg), !cand(O, _, _, Dc).
 
-// --- Palette ---
+// --- $Palette ---
 
 // The top-priority color competing at each output cell.
 .init front_ink = ArgExtremes<CellKey, Color>
@@ -84,7 +84,7 @@ front_ink.cand([O, Dc], Col, R) :- cand(O, _, Col, Dc), params.ink_rank(Col, R).
 
 out(O, Col, [Dc, $Palette()]) :- front_ink.low([O, Dc], Col, _).
 
-// --- Stack ---
+// --- $Stack ---
 
 // The top-priority slab competing at each output cell.
 .init front_slab = ArgExtremes<CellKey, Position>

@@ -1,0 +1,300 @@
+// a6f40cea
+// @draft
+// @keywords: crop objects color-class chain occlude bbox rank parity border
+// @scene background: one color fills most of the grid
+// @scene window: one rectangle has a one-cell frame of the frame color, and
+//  its interior is one uniform fill color, which may equal the background; it
+//  is the largest frame of the frame color, and smaller ones may stand
+//  elsewhere as decoys
+// @scene outlines: each other figure is the one-cell outline of an
+//  axis-aligned rectangle; part of the outline lies under the window and does
+//  not show, and the visible part spans the rectangle's full bounding box,
+//  possibly in several pieces
+// @scene outline-colors: an outline has one color, or two colors that
+//  alternate cell by cell along it, so that a cell's color depends only on
+//  its checkerboard class
+// @rule crop-interior: the output is the window interior, filled with the
+//  interior's fill color
+// @rule group-outline: each outline is one rectangle the generator drew in
+//  full before the window covered it
+//     @approximated: an outline is the set of non-background cells outside
+//      the window whose colors connect by adjacency; pieces that share a
+//      color belong to one outline
+//     @witness same-color: variant other
+// @rule complete-rectangle: the rectangle of an outline is the bounding box
+//  of its visible cells, and the outline is the perimeter of that box
+// @rule draw-hidden: each perimeter cell inside the window interior is
+//  painted at its place in the interior
+// @rule parity-color: a painted cell takes the color that the outline's
+//  visible cells have in its checkerboard class; undefined where one class
+//  holds two colors
+
+// where the frame color comes from
+.type FrameSource =
+    // @claim window
+    FrameColor {}
+    // @scene window: the window is the largest one-cell ring of any
+    //  non-background color whose interior is one color other than the
+    //  ring's
+    // @witness bigger-ring: borderline concept
+    //     @relaxed outlines
+    // @witness other-window: variant $DeriveFrameColor
+    //     @relaxed window
+    // @witness two-windows: borderline concept
+    //     @relaxed outlines
+  | DeriveFrameColor {}
+
+// which ring of the frame color is the window
+.type WindowPick =
+    // @claim window
+    Largest {}
+    // @scene window: the window is the largest ring of the frame color that
+    //  some outline cell touches; undefined where no outline cell touches one
+    // @witness bigger-decoy: borderline $OccludedWindow
+    //     @relaxed window
+    // @witness other-window: variant $DeriveFrameColor
+  | OccludedWindow {}
+
+// the color a hidden perimeter cell takes
+.type HiddenColor =
+    // @claim parity-color
+    Parity {}
+    // @rule parity-color: along the perimeter of the completed rectangle, a
+    //  hidden cell takes the color of its class under the smallest period
+    //  that the visible cells fit; undefined where its class holds no visible
+    //  cell
+    // @witness three-cycle: borderline $PerimeterPeriod
+    //     @relaxed outline-colors
+    // @witness plus-core: foreign concept
+    //     @relaxed outlines
+  | PerimeterPeriod {}
+
+// which hidden cells an outline paints
+.type HiddenPart =
+    // @claim complete-rectangle draw-hidden
+    Complete {color: HiddenColor}
+    // @rule complete-rectangle: no rectangle is completed; an outline is
+    //  read by its contacts and the window sides they lie on, where a
+    //  contact is a frame cell other than a corner that an outline cell
+    //  enters from outside
+    // @rule draw-hidden: an outline that touches two opposite sides alone
+    //  paints a full line across the interior at each contact; each pair of
+    //  perpendicular sides it touches gives an L, whose arm from each side
+    //  runs from that side's contact furthest from the other side to the
+    //  other arm; an outline that touches one side alone paints nothing
+    // @witness frame-hug: ordinary concept
+  | ContactCorner {}
+
+// which pieces form one outline
+.type Grouping =
+    // @claim group-outline
+    ByColor {}
+    // @rule group-outline: only one-color pieces join by a shared color, and
+    //  each piece of two or more colors stands alone
+    // @witness split-pattern: variant concept
+  | MonoMerge {}
+
+.type Choice = [src: FrameSource, pick: WindowPick, part: HiddenPart, group: Grouping]
+
+// A window reading: the frame color's source and the ring pick.
+.type Reading = [src: FrameSource, pick: WindowPick]
+
+// A piece or an outline around one window, under one grouping.
+.type Piece = [win: Box, g: Grouping, id: Ident]
+
+// An outline's perimeter, walked in one sense.
+.type Loop = [o: Piece, s: Sense]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $FrameColor ---
+    .decl frame_color(col: Color) frame_color(3).
+}
+
+.init params = Params
+
+.decl hidden_part_choice(h: HiddenPart)
+hidden_part_choice($Complete($Parity())).
+hidden_part_choice($Complete($PerimeterPeriod())).
+hidden_part_choice($ContactCorner()).
+
+.decl grouping_choice(g: Grouping)
+grouping_choice($ByColor()). grouping_choice($MonoMerge()).
+
+// @claim background
+.init commonest = Mode<Unit, Color, Position>
+commonest.item($U(), Col, P) :- in(P, Col).
+
+// The colors a ring of each source may have.
+.decl frame_src(src: FrameSource, col: Color)
+
+// @claim window
+.init rings = Outlines<Color>
+rings.node(Col, P) :- frame_src(_, Col), in(P, Col).
+
+// The cells inside each ring.
+.decl hole(b: Box, p: Position)
+hole(B, P) :- rings.box(_, B), in(P, _), interior(P, B).
+
+// @claim window crop-interior
+.init fill = Unanimous<Box, Color>
+fill.item(B, Col) :- hole(B, P), in(P, Col).
+
+// A ring whose interior is one color other than the ring's.
+.decl candidate(src: FrameSource, b: Box)
+candidate(Src, B) :- frame_src(Src, Col), rings.box(Col, B), fill.value(B, F), F != Col.
+
+// @claim window
+.init window = Mode<Reading, Box, Position>
+
+// @claim crop-interior
+.init interior_box = Bbox<Box>
+interior_box.cell(B, P) :- hole(B, P).
+
+// @claim group-outline
+.init pieces = Components<Box>
+pieces.node(B, P) :- window.mode(_, B), in(P, Col), !commonest.mode($U(), Col), !inside(P, B).
+
+.decl piece_color(b: Box, id: Ident, col: Color)
+piece_color(B, Id, Col) :- pieces.label(B, P, Id), in(P, Col).
+
+// Two pieces that one grouping joins directly.
+.decl joined(b: Box, g: Grouping, id: Ident, id2: Ident)
+
+.decl linked(b: Box, g: Grouping, id: Ident, id2: Ident)
+linked(B, G, Id, Id2) :- joined(B, G, Id, Id2).
+linked(B, G, Id, Id3) :- linked(B, G, Id, Id2), joined(B, G, Id2, Id3).
+
+.init outline_id = Canon<Piece>
+outline_id.equiv([B, G, Id], [B, G, Id2]) :- linked(B, G, Id, Id2).
+
+.decl outline(o: Piece, p: Position)
+outline([B, G, Oid], P) :- pieces.label(B, P, Id), outline_id.id([B, G, Id], Oid).
+
+// The cells each drawing paints.
+.decl paint(b: Box, g: Grouping, h: HiddenPart, p: Position, col: Color)
+
+out(P_out, Col, [Src, Pick, H, G]) :-
+    window.mode([Src, Pick], B), interior_box.box(B, B_int), hole(B, P), crop(P, B_int, P_out),
+    hidden_part_choice(H), grouping_choice(G),
+    ( paint(B, G, H, P, Col)
+    ; !paint(B, G, H, P, _), fill.value(B, Col) ).
+
+// --- $FrameColor ---
+frame_src($FrameColor(), Col) :- params.frame_color(Col).
+
+// --- $DeriveFrameColor ---
+frame_src($DeriveFrameColor(), Col) :- in(_, Col), !commonest.mode($U(), Col).
+
+// --- $Largest ---
+window.item([Src, $Largest()], B, P) :- candidate(Src, B), hole(B, P).
+
+// --- $OccludedWindow ---
+
+// Some non-background cell outside the ring touches it.
+.decl occluding(b: Box)
+occluding(B) :-
+    candidate(_, B), in(P, Col), !commonest.mode($U(), Col), !inside(P, B),
+    dir_elem(D), neighbor(P, D, Q), box_edge(Q, B, _).
+
+window.item([Src, $OccludedWindow()], B, P) :- candidate(Src, B), occluding(B), hole(B, P).
+
+// --- $ByColor ---
+joined(B, $ByColor(), Id, Id2) :- piece_color(B, Id, Col), piece_color(B, Id2, Col).
+
+// --- $MonoMerge ---
+
+.decl mixed(b: Box, id: Ident)
+mixed(B, Id) :- piece_color(B, Id, Col), piece_color(B, Id, Col2), Col != Col2.
+
+joined(B, $MonoMerge(), Id, Id) :- piece_color(B, Id, _).
+joined(B, $MonoMerge(), Id, Id2) :-
+    piece_color(B, Id, Col), !mixed(B, Id),
+    piece_color(B, Id2, Col), !mixed(B, Id2).
+
+// --- $Complete ---
+
+// @claim complete-rectangle
+.init outline_box = Bbox<Piece>
+outline_box.cell(O, P) :- outline(O, P).
+
+.decl perimeter(o: Piece, p: Position)
+perimeter(O, P) :- outline_box.box(O, B_o), in(P, _), box_edge(P, B_o, _).
+
+// --- $Parity, $ContactCorner ---
+
+// A checkerboard class: the cells an outline's visible cell reaches by
+// diagonal steps, in that cell's color.
+.decl phase(o: Piece, p: Position, col: Color)
+phase(O, P, Col) :- outline(O, P), in(P, Col).
+phase(O, Q, Col) :- phase(O, P, Col), diag_dir_elem(D), neighbor(P, D, Q), in(Q, _).
+
+// --- $Parity ---
+paint(B, G, $Complete($Parity()), P, Col) :- perimeter([B, G, Oid], P), phase([B, G, Oid], P, Col).
+
+// --- $PerimeterPeriod ---
+
+// @claim parity-color
+.init perimeter_len = Tally<Piece, Position>
+perimeter_len.item(O, P) :- perimeter(O, P).
+
+// The perimeter as a cycle: along each side, a quarter turn from the side's
+// edge.
+// @claim parity-color
+.init loop = CycleWalk<Loop, Position>
+loop.succ([O, S], P, Q) :-
+    outline_box.box(O, B_o), perimeter(O, P), box_edge(P, B_o, D),
+    turn(S, D, D2), neighbor(P, D2, Q), perimeter(O, Q).
+loop.step([O, S], N) :- perimeter_len.tally(O, N), sense_elem(S).
+
+// The class of a visible cell P0 under a period of n steps.
+.decl orbit(l: Loop, n: number, p0: Position, p: Position)
+orbit([O, S], N, P0, P0) :- outline(O, P0), loop.walk([O, S], P0, N, _), N > 0.
+orbit(L, N, P0, P2) :- orbit(L, N, P0, P1), loop.walk(L, P1, N, P2).
+
+// A class under period n holds two colors.
+.decl clash(o: Piece, n: number)
+clash(O, N) :- orbit([O, _], N, P0, P), outline(O, P), in(P0, Col), in(P, Col2), Col != Col2.
+
+// @claim parity-color
+.init period = Extremes<Piece>
+period.cand(O, N) :- orbit([O, _], N, _, _), !clash(O, N).
+
+paint(B, G, $Complete($PerimeterPeriod()), P, Col) :-
+    period.low([B, G, Oid], N),
+    orbit([[B, G, Oid], _], N, P0, P), in(P0, Col).
+
+// --- $ContactCorner ---
+
+// Frame cell q on the window's d side, entered from outside by an outline
+// cell and followed inward by an interior cell, so not a corner.
+.decl contact(o: Piece, d: Dir, q: Position)
+contact([B, G, Oid], D, Q) :-
+    outline([B, G, Oid], P), opposite(D, D_in),
+    neighbor(P, D_in, Q), box_edge(Q, B, D), neighbor(Q, D_in, Q_in), hole(B, Q_in).
+
+.decl touched(o: Piece, d: Dir)
+touched(O, D) :- contact(O, D, _).
+
+// The outline touches two perpendicular sides.
+.decl bent(o: Piece)
+bent(O) :- touched(O, D), perp_dir(D, D2), touched(O, D2).
+
+// A contact on side d nearer side d2 than another contact on d.
+.decl beaten(o: Piece, d: Dir, d2: Dir, q: Position)
+beaten(O, D, D2, Q) :- contact(O, D, Q), perp_dir(D, D2), contact(O, D, Q2), nearer(D2, Q, Q2).
+
+// The contact on side d furthest from the perpendicular side d2.
+.decl far(o: Piece, d: Dir, d2: Dir, q: Position)
+far(O, D, D2, Q) :- contact(O, D, Q), perp_dir(D, D2), !beaten(O, D, D2, Q).
+
+.decl contact_cell(o: Piece, p: Position)
+contact_cell([B, G, Oid], P) :-
+    ( contact([B, G, Oid], D, Q), opposite(D, D2), touched([B, G, Oid], D2),  // two opposite sides alone:
+      !bent([B, G, Oid])                                                     //  a full line at each contact
+    ; far([B, G, Oid], D, D2, Q), far([B, G, Oid], D2, D, Q2),                 // perpendicular sides: an arm
+      !nearer(D, Q2, P) ),                                                   //  up to the other side's contact
+    axis_of(D, A), hole(B, P), same_line(A, P, Q).
+
+paint(B, G, $ContactCorner(), P, Col) :- contact_cell([B, G, Oid], P), phase([B, G, Oid], P, Col).

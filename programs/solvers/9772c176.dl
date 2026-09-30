@@ -46,21 +46,21 @@ member(Id, P) :- obj.label($U(), P, Id).
 // The cells a side's wedge is cast from.
 .decl base(ch: Choice, id: Ident, d: Dir, p: Position)
 
-// --- Rim ---
+// --- $Rim ---
 
 .init edge = Rim<Ident>
 edge.cell(Id, P) :- member(Id, P).
 
 base($Rim(), Id, D, P) :- dir_elem(D), edge.rim_dir(Id, P, D).
 
-// --- Extreme ---
+// --- $Extreme ---
 
 .init hull = Bbox<Ident>
 hull.cell(Id, P) :- member(Id, P).
 
 base($Extreme(), Id, D, P) :- member(Id, P), hull.box(Id, B), box_edge(P, B, D).
 
-// --- Widest ---
+// --- $Widest ---
 
 // The object's lines along axis a, each keyed by its coordinate on the other axis.
 .init line = Bbox<Line>

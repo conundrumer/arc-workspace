@@ -46,7 +46,7 @@ view(P, P_inner) :- in(P, _), bbox.box($U(), B), crop(P, B, P_inner).
 .decl center(p: Position)
 center(P) :- view(P, P_inner), centered(P_inner).
 
-// --- Shrink ---
+// --- $Shrink ---
 
 mini(P, Col, $Shrink()) :-
     center(C),
@@ -56,7 +56,7 @@ mini(P, Col, $Shrink()) :-
       neighbor(C, Diag, P)
     ).
 
-// --- Converge ---
+// --- $Converge ---
 
 .init place = DiagPlacement<Unit>
 place.cell($U(), P_inner) :- view(_, P_inner).
@@ -69,7 +69,7 @@ mini(P, Col, $Converge()) :-
       neighbor(C, Diag, P)
     ).
 
-// --- Cross ---
+// --- $Cross ---
 
 .init dray = Ray<Unit>
 dray.dir($U(), D)  :- diag_dir_elem(D).

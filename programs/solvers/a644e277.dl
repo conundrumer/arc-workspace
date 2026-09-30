@@ -1,0 +1,287 @@
+// a644e277
+// @draft
+// @keywords: decompose markers bbox crop
+// @scene lattice: rows and columns of a line color, one cell wide, cut the
+//  grid into a lattice of cells wider than one cell, on a background color,
+//  the commonest color other than the line color; a separator line is a line
+//  along which two neighboring cells hold the line color, and some separator
+//  line holds the line color along its whole length; every band between two
+//  neighboring separator lines has one width
+// @scene gap-crossings: exactly four crossings of a separator row and a
+//  separator column hold the background color in place of the line color,
+//  and they are the corners of an axis-aligned rectangle; every other cell of
+//  a separator line holds the line color
+// @rule crop-gap-rectangle: the output is the input cropped to that
+//  rectangle, its corner rows and columns included, and every cell inside is
+//  copied unchanged
+
+// which color on a separator line marks a gap
+.type GapColor =
+    // @claim gap-crossings
+    Background {}
+    // @scene gap-crossings: a gap holds any color other than the line color;
+    //  undefined when those gaps are not the four corners of a rectangle
+    // @witness mark-on-crossing: borderline concept
+    //     @relaxed gap-crossings
+  | NonlineGap {}
+
+// which separator cells can be gaps
+.type GapSite =
+    // @claim gap-crossings
+    Crossing {}
+    // @scene gap-crossings: a gap is any separator cell in the gap color, at
+    //  a crossing or not; undefined when those gaps are not the four corners
+    //  of a rectangle
+    // @witness background-on-outer-line: borderline concept
+    //     @relaxed gap-crossings
+    // @witness sep-cell-on-column: borderline concept
+    //     @relaxed gap-crossings
+    // @witness off-crossing-gaps: foreign $SeparatorCell & $GapBbox
+    //     @relaxed gap-crossings
+  | SeparatorCell {}
+
+// how the gaps give the crop rectangle
+.type FrameLocator =
+    // @claim crop-gap-rectangle
+    GapCorners {}
+    // @rule crop-gap-rectangle: the rectangle is the bounding box of the
+    //  gaps, however many there are; undefined when there is none
+    // @witness two-diagonal-gaps: borderline $GapBbox
+    //     @relaxed gap-crossings
+  | GapBbox {}
+    // @rule crop-gap-rectangle: the rectangle runs from the first to the last
+    //  separator row, and from the first to the last separator column, that
+    //  hold a gap; undefined when no separator row or no separator column does
+    // @witness two-diagonal-gaps: borderline $GapBbox
+    // @witness sep-cell-on-column: borderline concept
+  | BrokenLines {}
+
+// which cells a redrawn lattice draws as lines
+.type BandSource =
+    // @claim crop-gap-rectangle
+    SeparatorLines {}
+    // @rule crop-gap-rectangle: on each axis, the lines drawn inside the
+    //  rectangle fall at every multiple of the first band's width plus one,
+    //  counted from the rectangle's side at edge params.first_edge; the first
+    //  band runs from that side to the next separator line; undefined where
+    //  the open edges of an axis draw different lines
+    // @witness uneven-bands: borderline concept
+    //     @relaxed lattice
+  | FirstBand {}
+
+// what fills the cropped rectangle
+.type Content =
+    // @claim crop-gap-rectangle
+    Copy {}
+    // @rule crop-gap-rectangle: inside the rectangle, every separator cell is
+    //  drawn in the line color and the four corners in the background color;
+    //  the other cells are copied
+    // @witness mark-on-inner-line: borderline concept
+    //     @relaxed gap-crossings
+  | RedrawLattice {bands: BandSource}
+
+.type Choice = [gap: GapColor, site: GapSite, frame: FrameLocator, content: Content]
+
+// The gaps of one reading.
+.type Gaps = [g: GapColor, s: GapSite]
+
+// The separator lines of one axis that hold a gap.
+.type Broken = [g: GapColor, s: GapSite, a: Axis]
+
+// A cell of one crop rectangle.
+.type Spot = [b: Box, p: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $FirstBand ---
+    // The edge each axis measures its first band from. The pairs have equal
+    // bands, so every edge stays open.
+    .decl first_edge(d: Dir)
+    first_edge(DIR_T). first_edge(DIR_B). first_edge(DIR_L). first_edge(DIR_R).
+}
+
+.init params = Params
+
+.decl gap_color_choice(g: GapColor)
+gap_color_choice($Background()). gap_color_choice($NonlineGap()).
+
+.decl gap_site_choice(s: GapSite)
+gap_site_choice($Crossing()). gap_site_choice($SeparatorCell()).
+
+.decl band_source_choice(bs: BandSource)
+band_source_choice($SeparatorLines()). band_source_choice($FirstBand()).
+
+.decl content_choice(c: Content)
+content_choice($Copy()).
+content_choice($RedrawLattice(Bs)) :- band_source_choice(Bs).
+
+// The cases. GapCorners with another non-concept branch is subsumed by
+// GapBbox with the same branches, and BrokenLines at Crossing gives the
+// rectangle GapBbox gives.
+.decl impl_choice(ch: Choice)
+impl_choice([$Background(), $Crossing(), $GapCorners(), $Copy()]).
+impl_choice([G, S, $GapBbox(), C]) :- gap_color_choice(G), gap_site_choice(S), content_choice(C).
+impl_choice([G, $SeparatorCell(), $BrokenLines(), C]) :- gap_color_choice(G), content_choice(C).
+
+// The lattice of a grid, and the lines at each multiple of a rectangle's
+// first band.
+.comp Parse<Key> {
+    // A row or column: the axis whose component names it, and that component.
+    .type Line = [ky: Key, a: Axis, p_line: Position]
+
+    // A rectangle, read from one of its edges.
+    .type Edge = [ky: Key, b: Box, d: Dir]
+
+    .decl cell(ky: Key, p: Position, col: Color)
+
+    // The color of each line that holds one color along its whole length.
+    // @claim lattice
+    .init uniform = Unanimous<Line, Color>
+    uniform.item([Ky, A, P_line], Col) :- cell(Ky, P, Col), axis_elem(A), split(P, A, P_line, _).
+
+    .decl line_color(ky: Key, col: Color)
+    line_color(Ky, Col) :- uniform.value([Ky, _, _], Col).
+
+    // A line along which two neighboring cells hold the line color.
+    .decl separator(ky: Key, a: Axis, p_line: Position)
+    separator(Ky, A, P_line) :-
+        line_color(Ky, Col), cell(Ky, P, Col), split(P, A, P_line, _),
+        perp(A, A2), axis_of(D, A2), neighbor(P, D, Q), cell(Ky, Q, Col).   // its neighbor along the line
+
+    // A cell on a separator line of axis A.
+    .decl on_separator(ky: Key, a: Axis, p: Position)
+    on_separator(Ky, A, P) :- cell(Ky, P, _), split(P, A, P_line, _), separator(Ky, A, P_line).
+
+    // The rectangles whose bands are read.
+    .decl frame(ky: Key, b: Box)
+
+    // The distance from edge D of the rectangle to each separator line of
+    // D's axis past it; the least is the first band's width plus one.
+    // @claim crop-gap-rectangle
+    .init first_band = Extremes<Edge>
+    first_band.cand([Ky, B, D], K) :-
+        frame(Ky, B), axis_of(D, A), on_separator(Ky, A, P),
+        crop(P, B, P_inner), dist(P_inner, D, K), K > 0.
+
+    // A cell at a multiple of the first band's period from edge D.
+    .decl periodic(ky: Key, b: Box, d: Dir, p: Position)
+    periodic(Ky, B, D, P) :-
+        first_band.low([Ky, B, D], N),
+        cell(Ky, P, _), crop(P, B, P_inner), dist(P_inner, D, K), stride(K, N, 0, _, 0).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+parse.frame($U(), B) :- frame(_, _, _, B).
+
+// @claim lattice
+.init bg = Mode<Unit, Color, Position>
+bg.item($U(), Col, P) :- in(P, Col), !parse.line_color($U(), Col).
+
+// A cell where a separator row and a separator column cross.
+.decl crossing(p: Position)
+crossing(P) :- parse.on_separator($U(), A, P), perp(A, A2), parse.on_separator($U(), A2, P).
+
+// A cell in the color that marks a gap.
+.decl gap_colored(g: GapColor, p: Position)
+
+.decl gap(g: GapColor, s: GapSite, p: Position)
+
+// The crop rectangle each reading gives.
+.decl frame(g: GapColor, s: GapSite, f: FrameLocator, b: Box)
+
+// @claim crop-gap-rectangle
+.init gap_box = Bbox<Gaps>
+gap_box.cell([G, S], P) :- gap(G, S, P).
+
+// --- $Background ---
+gap_colored($Background(), P) :- in(P, Col), bg.mode($U(), Col).
+
+// --- $NonlineGap ---
+gap_colored($NonlineGap(), P) :- in(P, Col), !parse.line_color($U(), Col).
+
+// --- $Crossing ---
+gap(G, $Crossing(), P) :- gap_colored(G, P), crossing(P).
+
+// --- $SeparatorCell ---
+gap(G, $SeparatorCell(), P) :- gap_colored(G, P), parse.on_separator($U(), _, P).
+
+// --- $GapCorners ---
+.decl box_corner_cell(g: GapColor, s: GapSite, p: Position)
+box_corner_cell(G, S, P) :- gap_box.box([G, S], B), in(P, _), box_corner(P, B, _).
+
+// The gaps are not the four distinct corners of their bounding box.
+.decl misplaced(g: GapColor, s: GapSite)
+misplaced(G, S) :- gap(G, S, P), !box_corner_cell(G, S, P).
+misplaced(G, S) :-
+    gap_box.box([G, S], B), box_corner_cell(G, S, P), box_corner(P, B, D),
+    ( !gap(G, S, P)                              // a corner that is no gap
+    ; box_corner(P, B, D2), D2 != D ).           // two corners on one cell
+
+frame(G, S, $GapCorners(), B) :- gap_box.box([G, S], B), !misplaced(G, S).
+
+// --- $GapBbox ---
+frame(G, S, $GapBbox(), B) :- gap_box.box([G, S], B).
+
+// --- $BrokenLines ---
+// @claim crop-gap-rectangle
+.init broken = Bbox<Broken>
+broken.cell([G, S, A], P_line) :-
+    gap(G, S, P), parse.on_separator($U(), A, P), split(P, A, P_line, _).
+
+frame(G, S, $BrokenLines(), B) :-
+    broken.box([G, S, A], B1), perp(A, A2), broken.box([G, S, A2], B2),   // the span on each axis
+    compose(B1, B2, B).                                                   // where they cross
+
+// --- $Copy ---
+out(P_inner, Col, [G, S, F, $Copy()]) :-
+    impl_choice([G, S, F, $Copy()]), frame(G, S, F, B), in(P, Col), crop(P, B, P_inner).
+
+// --- $RedrawLattice ---
+.decl frame_corner(b: Box, p: Position)
+frame_corner(B, P) :- frame(_, _, _, B), in(P, _), box_corner(P, B, _).
+
+// The color each band source gives a cell of a rectangle.
+.decl redrawn(bs: BandSource, b: Box, p: Position, col: Color)
+
+out(P_inner, Col, [G, S, F, $RedrawLattice(Bs)]) :-
+    impl_choice([G, S, F, $RedrawLattice(Bs)]), frame(G, S, F, B), crop(P, B, P_inner),
+    ( frame_corner(B, P), bg.mode($U(), Col)
+    ; !frame_corner(B, P), redrawn(Bs, B, P, Col) ).
+
+// --- $SeparatorLines ---
+redrawn($SeparatorLines(), B, P, Col) :-
+    frame(_, _, _, B), in(P, C), inside(P, B),
+    ( parse.on_separator($U(), _, P), parse.line_color($U(), Col)   // a separator cell
+    ; !parse.on_separator($U(), _, P), Col = C ).                   // a lattice cell's content
+
+// --- $FirstBand ---
+// The cell's color under each open pair of edges, one per axis.
+// @claim crop-gap-rectangle
+.init banded = Unanimous<Spot, Color>
+banded.item([B, P], Col) :-
+    frame(_, _, _, B), in(P, C), inside(P, B),
+    params.first_edge(D1), params.first_edge(D2), perp_dir(D1, D2),
+    ( (parse.periodic($U(), B, D1, P) ; parse.periodic($U(), B, D2, P)),   // on a drawn line
+      parse.line_color($U(), Col)
+    ; !parse.periodic($U(), B, D1, P), !parse.periodic($U(), B, D2, P), Col = C ).
+
+redrawn($FirstBand(), B, P, Col) :- banded.value([B, P], Col).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_out(E, P, Col).
+    parse.frame(E, ZERO) :- ex_out(E, _, _).
+
+    // An output line on D's axis where being a separator line and lying at a
+    // multiple of the first band's period from edge D part ways.
+    .decl edge_contradicted(d: Dir)
+    edge_contradicted(D) :-
+        ex_out(E, P, _), axis_of(D, A), split(P, A, P_line, _),
+        ( parse.periodic(E, ZERO, D, P), !parse.separator(E, A, P_line)
+        ; !parse.periodic(E, ZERO, D, P), parse.separator(E, A, P_line) ).
+
+    .decl first_edge(d: Dir)
+    first_edge(D) :- dir_elem(D), !edge_contradicted(D).
+}

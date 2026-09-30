@@ -140,10 +140,10 @@ out(P_grid, Col, Ch) :- lat(P_grid, P_lat), draw(Ch, P_lat, Col).
 out(P_grid, Col, Ch) :-
     in(P_grid, _), impl_choice(Ch), !drawn(Ch, P_grid), params.bg(Col).
 
-// --- Own ---
+// --- $Own ---
 seat($Own(), Src, K, K) :- source(Src, K).
 
-// --- Nest ---
+// --- $Nest ---
 
 // @claim seat
 .init order = Ordinal<Source>
@@ -151,12 +151,12 @@ order.idx_set(Src, K) :- source(Src, K).
 
 seat($Nest(), Src, K, R) :- order.rank(Src, K, R).
 
-// --- Full ---
+// --- $Full ---
 
 // The side ink reaches every place of the ring but its corners.
 copy($Full(), J_out, J_src) :- ring_place(J_out), J_out > 0, ring_place(J_src), J_src > 0.
 
-// --- Span ---
+// --- $Span ---
 
 // The side ink reaches the places no nearer a corner than the ink itself.
 copy($Span(), J_out, J_src) :- ring_place(J_out), ring_place(J_src), J_src > 0, J_out >= J_src.

@@ -2,7 +2,7 @@
   "id": "9b4c17c4",
   "witnesses": [{
     "id": "shared-line",
-    "separates": "Flush from Pack: two shapes on one field share their rows, and the whole shape flush to the edge overlaps the nearer shape while the packed rows keep every cell",
+    "separates": "$Flush from $Pack: two shapes on one field share their rows, and the whole shape flush to the edge overlaps the nearer shape while the packed rows keep every cell",
     "input": [
       [1,1,1,1,1,1,1,1,8,8,8,8],
       [1,2,2,1,2,2,1,1,8,8,2,8],
@@ -11,7 +11,7 @@
       [1,1,1,1,1,1,1,1,8,8,8,8]
     ],
     "output": [{
-      "cases": ["Flush"],
+      "cases": ["concept"],
       "grid": [
         [1,1,1,1,1,1,1,1,8,8,8,8],
         [1,1,1,1,1,1,2,2,2,8,8,8],
@@ -20,7 +20,7 @@
         [1,1,1,1,1,1,1,1,8,8,8,8]
       ]
     }, {
-      "cases": ["Pack"],
+      "cases": ["$Pack"],
       "grid": [
         [1,1,1,1,1,1,1,1,8,8,8,8],
         [1,1,1,1,2,2,2,2,2,8,8,8],

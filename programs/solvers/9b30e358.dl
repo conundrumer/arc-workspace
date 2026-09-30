@@ -36,7 +36,7 @@
     Majority {}
     // @scene ink: the line on the edge toward params.dir is one color, the
     //  background, and the rest is the ink
-    // @witness dense-ink: borderline EdgeLine
+    // @witness dense-ink: borderline $EdgeLine
     //     @relaxed ink
   | EdgeLine {}
 
@@ -48,12 +48,12 @@
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- Toward ---
+    // --- $Toward ---
     // the direction the unit repeats toward, and the edge the background is
     // read from
     .decl dir(d: Dir) dir(DIR_T).
 
-    // --- Both ---
+    // --- $Both ---
     // the axis the unit repeats along
     .decl axis(a: Axis) axis(AXIS_V).
 }
@@ -67,21 +67,21 @@ impl_choice([$Ink(), $Toward(), $EdgeLine()]). impl_choice([$Edge(), $Toward(), 
 
 .decl bg(g: Ground, col: Color)
 
-// --- Majority ---
+// --- $Majority ---
 // @claim ink
 .init palette = Mode<Unit, Color, Position>
 palette.item($U(), Col, P) :- in(P, Col).
 
 bg($Majority(), Col) :- palette.mode($U(), Col).
 
-// --- EdgeLine ---
+// --- $EdgeLine ---
 // @claim ink
 .init edge_line = Unanimous<Unit, Color>
 edge_line.item($U(), Col) :- params.dir(D), in(P, Col), dist(P, D, 0).
 
 bg($EdgeLine(), Col) :- edge_line.value($U(), Col).
 
-// --- Majority, EdgeLine ---
+// --- $Majority, $EdgeLine ---
 
 // The ink's extent.
 // @claim repeat
@@ -91,10 +91,10 @@ ink_box.cell(G, P) :- bg(G, _), in(P, Col), !bg(G, Col).
 // The directions the copies step in.
 .decl step_dir(ch: Choice, d: Dir)
 
-// --- Toward ---
+// --- $Toward ---
 step_dir([S, $Toward(), G], D) :- impl_choice([S, $Toward(), G]), params.dir(D).
 
-// --- Both ---
+// --- $Both ---
 step_dir([S, $Both(), G], D) :- impl_choice([S, $Both(), G]), params.axis(A), axis_of(D, A).
 
 // The axis the unit repeats along.
@@ -104,18 +104,18 @@ case_axis(Ch, A) :- step_dir(Ch, D), axis_of(D, A).
 // The unit: a band of lines across the axis.
 .decl unit_box(ch: Choice, b: Box)
 
-// --- Ink ---
+// --- $Ink ---
 // The ink's extent along the axis.
 unit_box([$Ink(), Sp, G], B) :-
     case_axis([$Ink(), Sp, G], A), ink_box.box(G, B_ink), split(B_ink, A, B, _).
 
-// --- Edge ---
+// --- $Edge ---
 // From the ink's nearest line toward params.dir to the opposite edge.
 unit_box([$Edge(), Sp, G], B) :-
     impl_choice([$Edge(), Sp, G]), params.dir(D),
     ink_box.box(G, B_ink), dist(B_ink, D, K), edge_inset(D, K, B).
 
-// --- Ink, Edge ---
+// --- $Ink, $Edge ---
 
 // The copies of the unit: the unit itself, then each cell repeating the one
 // a unit's extent back.

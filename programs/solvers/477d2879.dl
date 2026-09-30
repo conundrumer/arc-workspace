@@ -44,7 +44,7 @@ touches(P, K, R) :- mark(P, _), dir_elem(D), neighbor(P, D, Q), part.label(K, Q,
 // The color part R takes, per case.
 .decl paint(r: Ident, col: Color, ch: Choice)
 
-// --- Line ---
+// --- $Line ---
 
 .decl line_cell(p: Position)
 line_cell(P) :- in(P, Col), params.line(Col).
@@ -73,7 +73,7 @@ paint(R, Col, $Line()) :-
     ; !on_line(P), params.bg(K)      // otherwise it names the open ground
     ).
 
-// --- Cover ---
+// --- $Cover ---
 
 // A mark's claim: the parts of one color it touches. Two claims rule each
 // other out when they share a part.

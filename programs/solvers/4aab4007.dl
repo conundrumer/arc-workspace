@@ -36,7 +36,7 @@
     .decl legend(k1: number, k2: number)
         legend(3, 3). legend(3, 4). legend(3, 5).
 
-    // --- Stored ---
+    // --- $Stored ---
     .decl band_color(k: number, col: Color)
         band_color(0, 1). band_color(1, 1). band_color(2, 4).
 }
@@ -84,12 +84,12 @@ out(P, Col, Ch) :-
     stripe(Q), parse.intact($U(), Q, Col),      // an intact stripe cell
     params.stripe_axis(A), same_line(A, P, Q).  // on the same stripe
 
-// --- Stored ---
+// --- $Stored ---
 
 out(P, Col, $Stored()) :-
     damaged(P), parse.band_cell($U(), P, K), params.band_color(K, Col).
 
-// --- Uniform ---
+// --- $Uniform ---
 
 out(P, Col, $Uniform()) :-
     damaged(P), parse.band_cell($U(), P, K),                  // damaged band cell

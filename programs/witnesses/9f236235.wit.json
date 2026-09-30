@@ -11,13 +11,13 @@
       [0,0,5,4,4,4,4]
     ],
     "output": [{
-      "cases": ["Cut"],
+      "cases": ["concept"],
       "grid": [
         [0,3],
         [4,0]
       ]
     }, {
-      "cases": ["Lattice"],
+      "cases": ["$Lattice"],
       "grid": [
         [0,0,5,3],
         [4,4,5,0],

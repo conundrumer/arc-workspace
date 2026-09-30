@@ -20,7 +20,7 @@
 .comp Params {
     .init helpers = ParamsHelpers
 
-    // --- Rot ---
+    // --- $Rot ---
     .decl arr_dim(k: number) arr_dim(2).
     .decl arr_pos(p: Position)
     arr_pos(P) :- arr_dim(K), helpers.frame_pos([K, K], P).
@@ -28,7 +28,7 @@
     .decl anchor(d: DiagDir)
     anchor(DIAG_TL).
 
-    // --- Lookup ---
+    // --- $Lookup ---
     .decl tile_d4(p: Position, d: D4)
     GRID_2x2(tile_d4,
         D4_ID, D4_CW,
@@ -37,13 +37,13 @@
 
 .init params = Params
 
-// --- Lookup ---
+// --- $Lookup ---
 out(P_grid, Col, $Lookup()) :-
     in(P_in, Col),                                            // input cell
     params.tile_d4(P_tile, D), apply(D, P_in, P_intile),      // d4 image at tile
     concat_2d(P_tile, P_intile, 0, P_grid).                   // recompose
 
-// --- Rot ---
+// --- $Rot ---
 .decl anchor_tile(p: Position)
 anchor_tile(T) :- params.arr_pos(T), params.anchor(Diag), corner_anchor(Diag, T, ZERO).
 

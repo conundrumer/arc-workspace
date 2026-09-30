@@ -23,7 +23,7 @@
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- Chain ---
+    // --- $Chain ---
 
     // Distance from a trail dot to the next.
     .decl spacing(k: number) spacing(2).
@@ -73,7 +73,7 @@ beside(P, C) :- dot(P, _), dir_elem(D), neighbor(P, D, Q), square_cell(C, Q).
 // The framed square the source's trail reaches.
 .decl target(c: Position, ch: Choice)
 
-// --- Chain ---
+// --- $Chain ---
 
 // The trail leaving the source: dots of one color, one spacing apart, reached
 // from the dot beside the source. The lib's unit steps stay in the set; dots
@@ -86,7 +86,7 @@ trail.seed(Col, P) :- source(C), beside(P, C), dot(P, Col).
 
 target(C, $Chain()) :- framed(C), beside(P, C), trail.reach(_, P).
 
-// --- Hue ---
+// --- $Hue ---
 
 // The color of the dots beside the source.
 .decl lead_color(col: Color)
@@ -94,7 +94,7 @@ lead_color(Col) :- source(C), beside(P, C), dot(P, Col).
 
 target(C, $Hue()) :- framed(C), beside(P, C), dot(P, Col), lead_color(Col).
 
-// --- Chain, Hue ---
+// --- $Chain, $Hue ---
 
 // @claim squares
 .init square = Bbox<Position>

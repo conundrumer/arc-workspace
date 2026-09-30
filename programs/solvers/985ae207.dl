@@ -21,7 +21,7 @@
     // here, fixes this value.
     .decl bg(col: Color) bg(8).
 
-    // --- Stride ---
+    // --- $Stride ---
     .decl pitch(k: number) pitch(3).
 }
 
@@ -72,7 +72,7 @@ at_block(Pm, Q) :-
 // The step from one copy to the next.
 .decl march(p_mark: Position, d: Dir, v: Offset, ch: Choice)
 
-// --- Abut ---
+// --- $Abut ---
 
 .init mbox = Bbox<Position>
 mbox.cell(Pm, P) :- mark_cell(Pm, P).
@@ -82,7 +82,7 @@ march(Pm, D, V, $Abut()) :-
     mbox.box(Pm, B), box_extent(B, Pm, A, N),   // the mark's extent along the march
     jump_offset(D, N, V).
 
-// --- Stride ---
+// --- $Stride ---
 
 march(Pm, D, V, $Stride()) :-
     mark(Pm, _), dir_elem(D),

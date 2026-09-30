@@ -87,11 +87,11 @@ enterable(Q, S, K) :-
 out(P, Col, K) :- stream(P, K), params.flow(Col).
 out(P, Col, K) :- in(P, Col), impl_choice(K), !stream(P, K).
 
-// --- Enter ---
+// --- $Enter ---
 
 open(Q, S, $Enter()) :- path(Q, S, $Enter()), enterable(Q, S, $Enter()).
 
-// --- Complete ---
+// --- $Complete ---
 
 // The stream passes cell P of a detour: P holds no marker, or the detour
 // around P is traversable.

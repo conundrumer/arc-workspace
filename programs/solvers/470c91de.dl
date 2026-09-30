@@ -17,7 +17,7 @@
 .comp Params {
     .decl bg(col: Color) bg(7).
 
-    // --- Mark ---
+    // --- $Mark ---
     .decl marker(col: Color) marker(8).
 }
 
@@ -38,12 +38,12 @@ corner_cell(Col, D, P) :- bx.box(Col, B), in(P, _), box_corner(P, B, D).
 // The corner each color slides toward.
 .decl slide(col: Color, d: DiagDir, ch: Choice)
 
-// --- Mark ---
+// --- $Mark ---
 slide(Col, D, $Mark()) :-
     corner_cell(Col, D, P),                           // a corner of the color's box
     in(P, M), params.marker(M), !params.marker(Col).  // holding a marker
 
-// --- Gap ---
+// --- $Gap ---
 // The bitten corner. Two bites name no single direction, so `value` drops them.
 .init gap = Unanimous<Color, DiagDir>
 gap.item(Col, D) :- corner_cell(Col, D, P), !bx.cell(Col, P).

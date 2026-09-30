@@ -35,12 +35,12 @@ impl_choice($ByColor()). impl_choice($ByObject()).
 .decl ink(p: Position, col: Color)
 ink(P, Col) :- in(P, Col), !params.bg(Col).
 
-// --- ByColor ---
+// --- $ByColor ---
 
 .init hue = Canon<Position>
 hue.equiv(P, Q) :- ink(P, Col), ink(Q, Col).
 
-// --- ByObject ---
+// --- $ByObject ---
 
 .init piece = Components8<Unit>
 piece.node($U(), P) :- ink(P, _).

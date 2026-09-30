@@ -17,14 +17,14 @@
 .decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    // --- Dup ---
+    // --- $Dup ---
     .decl copies(n: number)
     copies(2).
 }
 
 .init params = Params
 
-// --- Dup ---
+// --- $Dup ---
 
 // The grid as params.copies slabs along A: what each within-slab cell holds.
 .init dup_cell = Unanimous<SlabCell, Color>
@@ -38,7 +38,7 @@ dup_mismatch(A) :- dup_cell.clash([A, _]).
 
 out(P_inner, Col, $Dup()) :- dup_cell.value([A, P_inner], Col), !dup_mismatch(A).
 
-// --- Tile ---
+// --- $Tile ---
 
 // The grid as K-sized slabs along A, for every proper K: what each
 // within-slab cell holds.

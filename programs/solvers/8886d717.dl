@@ -34,7 +34,7 @@
     // Marks in this region copy themselves toward the edge line.
     .decl extend(col: Color) extend(7).
 
-    // --- Stored ---
+    // --- $Stored ---
     .decl border(col: Color) border(9).
 }
 
@@ -59,13 +59,13 @@ around(P, Col) :- mark(P), dir_elem(D), neighbor(P, D, Q), in(Q, Col), !params.m
 // The region a mark sits in.
 .decl region(p: Position, col: Color, r: Region)
 
-// --- Cell ---
+// --- $Cell ---
 .init cell_region = Unanimous<Position, Color>
 cell_region.item(P, Col) :- around(P, Col).
 
 region(P, Col, $Cell()) :- cell_region.value(P, Col).
 
-// --- Cluster ---
+// --- $Cluster ---
 .init clusters = Components<Unit>
 clusters.node($U(), P) :- mark(P).
 
@@ -81,10 +81,10 @@ edge_color.item(D, Col) :- in(P, Col), dir_elem(D), dist(P, D, 0).
 // The edge the line runs along.
 .decl border_dir(d: Dir, b: Border)
 
-// --- Stored ---
+// --- $Stored ---
 border_dir(D, $Stored()) :- edge_color.value(D, Col), params.border(Col).
 
-// --- Uniform ---
+// --- $Uniform ---
 border_dir(D, $Uniform()) :- edge_color.value(D, _).
 
 // The cell a mark copies itself onto.

@@ -21,7 +21,7 @@
     // The axis the two halves stack along.
     .decl axis(a: Axis) axis(AXIS_V).
 
-    // --- StoredLine ---
+    // --- $StoredLine ---
     // The line's distance from the half's outer edge.
     .decl line_dist(k: number) line_dist(2).
 }
@@ -49,12 +49,12 @@ ink(P, Col, Ch) :-
     half(P, D), mark(D, Col, _),                // the half's color
     dir_elem(D2), dist(P, D2, 0).               // on the border
 
-// --- StoredLine ---
+// --- $StoredLine ---
 ink(P, Col, $StoredLine()) :-
     half(P, D), mark(D, Col, _),                     // the half's color
     params.line_dist(K), dist(P, D, K).              // the stored line
 
-// --- MarkLine ---
+// --- $MarkLine ---
 ink(P, Col, $MarkLine()) :-
     half(P, D), mark(D, Col, P_mark),           // the half's color
     same_dist(D, P, P_mark).                    // the mark's line

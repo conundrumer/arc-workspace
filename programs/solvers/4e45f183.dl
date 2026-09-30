@@ -34,10 +34,10 @@
 .comp Params {
     .decl line_width(k: number) line_width(1).
 
-    // --- Count ---
+    // --- $Count ---
     .decl tile_count(n: number) tile_count(3).
 
-    // --- Size ---
+    // --- $Size ---
     .decl tile_side(k: number) tile_side(5).
 }
 
@@ -52,19 +52,19 @@ field_cell(P_grid, P_field) :-
 
 .decl tile(p_grid: Position, p_tile: Position, p_intile: Position, dc: DecChoice)
 
-// --- Count ---
+// --- $Count ---
 tile(P_grid, P_tile, P_intile, $Count()) :-
     field_cell(P_grid, P_field),
     params.tile_count(N), params.line_width(G),
     divide_2d(P_field, N, G, P_tile, P_intile).          // the tile it sits in
 
-// --- Size ---
+// --- $Size ---
 tile(P_grid, P_tile, P_intile, $Size()) :-
     field_cell(P_grid, P_field),
     params.tile_side(K), params.line_width(G),
     divide_by_size_2d(P_field, K, G, P_tile, P_intile).  // the tile it sits in
 
-// --- Count, Size ---
+// --- $Count, $Size ---
 
 // The field is one color everywhere but the marks.
 .init field = Mode<DecChoice, Color, Position>
@@ -97,7 +97,7 @@ balanced(P_tile, A, [Dc, L]) :-
     axis_of(D, A), opposite(D, D2),
     !lean(P_tile, D, [Dc, L]), !lean(P_tile, D2, [Dc, L]).
 
-// --- Reach ---
+// --- $Reach ---
 
 .init mark_box = Bbox<TileCase>
 mark_box.cell([P_tile, Dc], P_intile) :- mark(P_tile, P_intile, Dc).
@@ -106,7 +106,7 @@ lean(P_tile, D, [Dc, $Reach()]) :-
     mark_box.box([P_tile, Dc], B),             // the box the marks span
     dir_elem(D), dist_pair(B, D, K, K2), K < K2.  // nearer edge D than its opposite
 
-// --- Bulk ---
+// --- $Bulk ---
 
 .decl mark_side(p_tile: Position, p_intile: Position, d: Dir, dc: DecChoice)
 mark_side(P_tile, P_intile, D, Dc) :-

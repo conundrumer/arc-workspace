@@ -21,14 +21,14 @@
 .comp Params {
     .init helpers = ParamsHelpers
 
-    // --- Lookup ---
+    // --- $Lookup ---
     .decl tile_d4(p: Position, d: D4)
     GRID_3x3(tile_d4,
         D4_ID, D4_ID, D4_ID,
         D4_LR, D4_LR, D4_LR,
         D4_ID, D4_ID, D4_ID)
 
-    // --- Alt, Mid ---
+    // --- $Alt, $Mid ---
     .decl arr_dim(k: number) arr_dim(3).
     .decl arr_pos(p: Position)
     arr_pos(P) :- arr_dim(K), helpers.frame_pos([K, K], P).
@@ -44,13 +44,13 @@
 
 .init params = Params
 
-// --- Lookup ---
+// --- $Lookup ---
 out(P_grid, Col, $Lookup()) :-
     in(P_in, Col),                                            // input cell
     params.tile_d4(P_tile, D), apply(D, P_in, P_intile),      // d4 image at tile
     concat_2d(P_tile, P_intile, 0, P_grid).                   // recompose
 
-// --- Alt ---
+// --- $Alt ---
 .decl band_step(p_tile: Position, p_tile2: Position)
 band_step(T, T2) :-
     params.anchor(D), opposite(D, O),
@@ -70,7 +70,7 @@ out(P_grid, Col, $Alt()) :-
     ),
     concat_2d(T, P_intile, 0, P_grid).
 
-// --- Mid ---
+// --- $Mid ---
 out(P_grid, Col, $Mid()) :-
     in(P_in, Col), params.arr_pos(T), params.anchor(D),        // input cell, its tile
     ( dist_pair(T, D, K, K),                                   // centered band — transformed

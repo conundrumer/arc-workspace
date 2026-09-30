@@ -1,0 +1,427 @@
+// a48eeaf7
+// @draft
+// @keywords: move bbox rank walk
+// @scene block: one solid 2×2 block of params.block_color on a
+//  params.background field
+// @scene markers: single cells of params.marker_color, each apart from the
+//  block. Each marker lies in the block's rows, in its columns, or on a
+//  diagonal line through a corner of the block.
+// @rule slide: each marker moves straight toward the block, in the one of
+//  the eight directions that points at the block from the marker, and stops
+//  at the first cell that touches the block by side or by corner. Undefined
+//  when that line never reaches such a cell.
+// @rule keep-block: the block stays in place, and the marker's original cell
+//  becomes params.background
+
+// how a marker reaches its final cell
+.type Approach =
+    // @claim slide
+    Walk {path: PathShape, collide: Collide}
+    // @rule slide: each marker moves to the nearest cell of the ring around
+    //  the block: each coordinate is clamped to the block's bounding box
+    //  grown by one cell
+    // @witness off-line: variant $Clamp
+    //     @relaxed markers
+  | Clamp {}
+
+// the line the marker walks
+.type PathShape =
+    // @claim slide
+    Line {heading: Heading, stop: Stop}
+    // @rule slide: the marker steps diagonally toward the block until it is
+    //  level with the block's rows or columns, then goes straight. It stops at
+    //  the first cell that touches the block, and is defined on every input.
+    // @witness off-line: variant $Clamp
+  | KingPath {}
+
+// which of the eight directions the line takes
+.type Heading =
+    // @claim slide
+    PointsAt {}
+    // @rule slide: the line takes the one of the eight directions nearest in
+    //  angle to the direction from the marker to the block's center
+    // @witness wide-block: variant concept
+    //     @relaxed block
+    // @witness off-angle: variant $Clamp
+    //     @relaxed markers
+    // @witness graze: variant $Clamp
+    //     @relaxed markers
+  | NearestAngle {}
+
+// where the line stops
+.type Stop =
+    // @claim slide
+    Touch {}
+    // @rule slide: the marker stops only when its next step would enter the
+    //  block or leave the grid, so a marker off the block's lines passes the
+    //  block. Defined on every input.
+    // @witness off-line: variant $Clamp
+  | PassBy {}
+
+// what two markers that reach one cell do
+.type Collide =
+    // @claim slide
+    Merge {}
+    // @rule slide: the markers that reach one cell settle in order of path
+    //  length. Each stops as many cells back along its own path as there are
+    //  markers there with shorter paths.
+    // @witness same-line: variant $Stack
+  | Stack {}
+
+// which cells are the block
+.type BlockParse =
+    // @claim block
+    ColorCells {}
+    // @scene block: the block is the last 2×2 square of params.block_color in
+    //  the scan order from params.scan_corner along params.scan_axis.
+    //  Undefined when there is no such square, or when the open scan orders
+    //  pick different squares.
+    // @witness big-block: variant concept
+    //     @relaxed block
+    // @witness l-block: variant concept
+    //     @relaxed block
+  | Last2x2 {}
+
+// how the block color and the markers are found
+.type Roles =
+    // @claim markers
+    StoredRoles {}
+    // @scene block: the block color is the one color whose cells have a
+    //  same-colored neighbor by side. Undefined when there is not exactly
+    //  one such color.
+    // @scene markers: every other cell that is not params.background is a
+    //  marker, and keeps its own color
+    // @witness third-color: borderline concept
+  | DeriveRoles {}
+
+.type Choice = [approach: Approach, block: BlockParse, roles: Roles]
+
+// The block and the markers under one block parse and one role reading.
+.type Scene = [block: BlockParse, roles: Roles]
+
+// A cell under one scene and one path shape.
+.type Track = [s: Scene, ps: PathShape, p: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed block
+    .decl background(c: Color) background(0).
+
+    // --- $StoredRoles ---
+    .decl block_color(c: Color) block_color(2).
+    .decl marker_color(c: Color) marker_color(5).
+
+    // --- $Last2x2 ---
+    .decl scan_corner(d: DiagDir)
+    scan_corner(DIAG_TL). scan_corner(DIAG_TR). scan_corner(DIAG_BL). scan_corner(DIAG_BR).
+    .decl scan_axis(a: Axis)
+    scan_axis(AXIS_V). scan_axis(AXIS_H).
+}
+
+.init params = Params
+
+.decl heading_choice(h: Heading)
+heading_choice($PointsAt()). heading_choice($NearestAngle()).
+
+.decl stop_choice(s: Stop)
+stop_choice($Touch()). stop_choice($PassBy()).
+
+.decl path_shape_choice(ps: PathShape)
+path_shape_choice($Line(H, St)) :- heading_choice(H), stop_choice(St).
+path_shape_choice($KingPath()).
+
+.decl collide_choice(c: Collide)
+collide_choice($Merge()). collide_choice($Stack()).
+
+.decl approach_choice(a: Approach)
+approach_choice($Walk(Ps, C)) :- path_shape_choice(Ps), collide_choice(C).
+approach_choice($Clamp()).
+
+.decl roles_choice(r: Roles)
+roles_choice($StoredRoles()). roles_choice($DeriveRoles()).
+
+.decl block_parse_choice(b: BlockParse)
+block_parse_choice($ColorCells()). block_parse_choice($Last2x2()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([A, Bp, R]) :- approach_choice(A), block_parse_choice(Bp), roles_choice(R).
+
+.comp Parse<Key> {
+    // The cells of the block color.
+    .decl cell(key: Key, p: Position)
+
+    // The scan orders: the corner each runs from, and its primary axis.
+    .decl order(c: DiagDir, a: Axis)
+
+    .type Scan = [k: Key, c: DiagDir, a: Axis]
+
+    // The 2×2 square that has P as its corner-C cell holds Q.
+    .decl square_cell(key: Key, c: DiagDir, p: Position, q: Position)
+    square_cell(Ky, C, P, Q) :-
+        cell(Ky, P), order(C, _), diag_opposite(C, D), diag_dirs(D, _, E1, E2),
+        ( Q = P ; neighbor(P, E1, Q) ; neighbor(P, E2, Q) ; neighbor(P, D, Q) ).
+
+    // Some cell of that square is not of the block color.
+    .decl patchy(key: Key, c: DiagDir, p: Position)
+    patchy(Ky, C, P) :- square_cell(Ky, C, P, Q), !cell(Ky, Q).
+
+    // @claim block
+    .init scan = LexOrder<Scan>
+    scan.cell([Ky, C, A], P) :- cell(Ky, P), order(C, A), !patchy(Ky, C, P).
+    scan.corner([Ky, C, A], C) :- scan.cell([Ky, C, A], _).
+    scan.axis([Ky, C, A], A) :- scan.cell([Ky, C, A], _).
+
+    // The box of the last square in each scan order.
+    // @claim block
+    .init last_square = Bbox<Scan>
+    last_square.cell([Ky, C, A], Q) :- scan.last([Ky, C, A], P), square_cell(Ky, C, P, Q).
+}
+
+.init parse = Parse<Roles>
+
+// --- the scene ---
+
+.decl block_color(r: Roles, col: Color)
+
+.decl marker(r: Roles, p: Position, col: Color)
+
+.decl block(s: Scene, p: Position)
+
+// @claim slide
+.init bbox = Bbox<Scene>
+bbox.cell(S, P) :- block(S, P).
+
+// P lies nearer edge D than the block does.
+.decl beyond(s: Scene, p: Position, d: Dir)
+beyond(S, P, D) :-
+    bbox.box(S, B), in(P, _), dir_elem(D), dist(P, D, K), dist(B, D, K_box), K < K_box.
+
+.decl beyond_axis(s: Scene, p: Position, a: Axis)
+beyond_axis(S, P, A) :- beyond(S, P, D), axis_of(D, A).
+
+// The one of the eight directions that points at the block from P.
+.decl toward(s: Scene, p: Position, d: Dir8)
+toward(S, P, D_to) :-
+    beyond(S, P, D), opposite(D, E), axis_of(D, A), perp(A, A2),
+    ( !beyond_axis(S, P, A2), D_to = E                  // level with the block on the other axis
+    ; beyond(S, P, D2), opposite(D2, E2), diag_dirs(D_to, A, E, E2)
+    ).
+
+// A cell that touches the block by side or by corner.
+.decl touch(s: Scene, p: Position)
+touch(S, P) :- block(S, Q), neighbor(Q, _, P), in(P, _), !block(S, P).
+
+// The grid with the markers lifted off.
+.decl cleared(r: Roles, p: Position, col: Color)
+cleared(R, P, Col) :- in(P, Col), roles_choice(R), !marker(R, P, _).
+cleared(R, P, Col) :- marker(R, P, _), params.background(Col).
+
+// Marker M ends at P.
+.decl landed(ch: Choice, m: Position, p: Position)
+
+// Some marker has no end.
+.decl unlanded(ch: Choice)
+unlanded([A, Bp, R]) :-
+    impl_choice([A, Bp, R]), marker(R, M, _), !landed([A, Bp, R], M, _).
+
+.decl settled(ch: Choice)
+settled([A, Bp, R]) :- impl_choice([A, Bp, R]), bbox.box([Bp, R], _), !unlanded([A, Bp, R]).
+
+out(P, Col, [A, Bp, R]) :-
+    settled([A, Bp, R]),
+    ( landed([A, Bp, R], M, P), marker(R, M, Col)
+    ; cleared(R, P, Col), !landed([A, Bp, R], _, P)
+    ).
+
+// --- $StoredRoles ---
+block_color($StoredRoles(), Col) :- params.block_color(Col).
+
+marker($StoredRoles(), P, Col) :- in(P, Col), params.marker_color(Col).
+
+// --- $DeriveRoles ---
+// The colors whose cells have a same-colored neighbor by side.
+// @claim block
+.init clumped = Unanimous<Unit, Color>
+clumped.item($U(), Col) :-
+    in(P, Col), !params.background(Col), dir_elem(D), neighbor(P, D, Q), in(Q, Col).
+
+block_color($DeriveRoles(), Col) :- clumped.value($U(), Col).
+
+marker($DeriveRoles(), P, Col) :-
+    in(P, Col), !params.background(Col), clumped.value($U(), Col2), Col != Col2.
+
+// --- $ColorCells ---
+block([$ColorCells(), R], P) :- block_color(R, Col), in(P, Col).
+
+// --- $Last2x2 ---
+parse.cell(R, P) :- block_color(R, Col), in(P, Col).
+parse.order(C, A) :- params.scan_corner(C), params.scan_axis(A).
+
+// The square every scan order picks.
+// @claim block
+.init picked = Unanimous<Roles, Box>
+picked.item(R, B) :- parse.last_square.box([R, _, _], B).
+
+block([$Last2x2(), R], Q) :- picked.value(R, B), in(Q, _), inside(Q, B).
+
+// --- $Walk ---
+// Marker M walks through P.
+.decl on_path(s: Scene, ps: PathShape, m: Position, p: Position)
+on_path(S, Ps, M, M) :- bbox.box(S, _), S = [_, R], marker(R, M, _), path_shape_choice(Ps).
+on_path(S, Ps, M, Q) :- next(S, Ps, M, _, Q).
+
+// M's walk steps from P to Q.
+.decl next(s: Scene, ps: PathShape, m: Position, p: Position, q: Position)
+
+// The walk's last cell.
+.decl end(s: Scene, ps: PathShape, m: Position, p: Position)
+end(S, Ps, M, P) :- on_path(S, Ps, M, P), !next(S, Ps, M, P, _).
+
+// The cell the marker stops at.
+.decl arrive(s: Scene, ps: PathShape, m: Position, p: Position)
+
+// --- $Line ---
+// The direction of the line from marker M.
+.decl aim(s: Scene, h: Heading, m: Position, d: Dir8)
+
+// --- $PointsAt ---
+aim(S, $PointsAt(), M, D) :- S = [_, R], marker(R, M, _), toward(S, M, D).
+
+// --- $NearestAngle ---
+// Twice the translation from marker M to the block's center: the sum of its
+// translations to two opposite corners of the block's box.
+.decl twice(s: Scene, m: Position, v: Offset)
+twice(S, M, V) :-
+    bbox.box(S, B), S = [_, R], marker(R, M, _),
+    in(Q1, _), box_corner(Q1, B, C), diag_opposite(C, C2), in(Q2, _), box_corner(Q2, B, C2),
+    relative(M, Q1, V1), relative(M, Q2, V2), compose(V1, V2, V).
+
+// @claim slide
+.init compass = Compass<Scene>
+compass.vec(S, V) :- twice(S, _, V).
+
+aim(S, $NearestAngle(), M, D) :- twice(S, M, V), compass.nearest(S, V, D).
+
+// --- $Touch ---
+next(S, $Line(H, $Touch()), M, P, Q) :-
+    on_path(S, $Line(H, $Touch()), M, P), !touch(S, P),
+    aim(S, H, M, D), neighbor(P, D, Q), in(Q, _).
+
+arrive(S, $Line(H, $Touch()), M, P) :- end(S, $Line(H, $Touch()), M, P), touch(S, P).
+
+// --- $PassBy ---
+next(S, $Line(H, $PassBy()), M, P, Q) :-
+    on_path(S, $Line(H, $PassBy()), M, P),
+    aim(S, H, M, D), neighbor(P, D, Q), in(Q, _), !block(S, Q).
+
+arrive(S, $Line(H, $PassBy()), M, P) :- end(S, $Line(H, $PassBy()), M, P).
+
+// --- $KingPath ---
+next(S, $KingPath(), M, P, Q) :-
+    on_path(S, $KingPath(), M, P), !touch(S, P),
+    toward(S, P, D), neighbor(P, D, Q).               // the direction from here
+
+arrive(S, $KingPath(), M, P) :- end(S, $KingPath(), M, P).
+
+// --- $Merge ---
+landed([$Walk(Ps, $Merge()), Bp, R], M, P) :- arrive([Bp, R], Ps, M, P).
+
+// --- $Stack ---
+// Q comes later than P on M's walk.
+.decl ahead(s: Scene, ps: PathShape, m: Position, p: Position, q: Position)
+ahead(S, Ps, M, P, Q) :- next(S, Ps, M, P, Q).
+ahead(S, Ps, M, P, Q2) :- ahead(S, Ps, M, P, Q), next(S, Ps, M, Q, Q2).
+
+// Each walk's cells in walking order.
+// @claim slide
+.init trail = Order<Track, Position>
+trail.elem([S, Ps, M], P) :- on_path(S, Ps, M, P).
+trail.before([S, Ps, M], P, Q) :- ahead(S, Ps, M, P, Q).
+
+// The markers that stop at one cell, by path length.
+// @claim slide
+.init pile = Order<Track, Position>
+pile.elem([S, Ps, Q], M) :- arrive(S, Ps, M, Q).
+pile.before([S, Ps, Q], M1, M2) :-
+    arrive(S, Ps, M1, Q), trail.rank([S, Ps, M1], Q, N1),
+    arrive(S, Ps, M2, Q), trail.rank([S, Ps, M2], Q, N2), N1 < N2.
+
+// The marker with K shorter paths before it stops K cells back on its path.
+landed([$Walk(Ps, $Stack()), Bp, R], M, P) :-
+    pile.rank([[Bp, R], Ps, _], M, K), trail.rank_desc([[Bp, R], Ps, M], P, K).
+
+// --- $Clamp ---
+// The ring of cells that touch the block, as a box.
+// @claim slide
+.init ring = Bbox<Scene>
+ring.cell(S, P) :- touch(S, P).
+
+// On axis A, Q is on the ring's edge where M lies beyond the block, and
+// level with M elsewhere.
+.decl clamped(s: Scene, m: Position, q: Position, a: Axis)
+clamped(S, M, Q, A) :-
+    ring.box(S, B), S = [_, R], marker(R, M, _), in(Q, _), axis_of(D, A),
+    ( beyond(S, M, D), dist(B, D, K), dist(Q, D, K)
+    ; !beyond_axis(S, M, A), same_dist(D, Q, M)
+    ).
+
+landed([$Clamp(), Bp, R], M, Q) :-
+    clamped([Bp, R], M, Q, A), perp(A, A2), clamped([Bp, R], M, Q, A2).
+
+// The nearest of the eight compass directions to a translation's angle:
+// the eight directions split the turn into equal sectors. A zero
+// translation has none.
+.comp Compass<Key> {
+    .decl vec(key: Key, v: Offset)  // @input
+
+    .decl nearest(key: Key, v: Offset, d: Dir8)
+
+    // The component on axis a: its size and the edge it heads toward.
+    .decl _part(key: Key, v: Offset, a: Axis, n: number, d: Dir)
+    _part(Ky, V, AXIS_V, N, DIR_B) :- vec(Ky, V), V = [T, _, _, _], T > 0, N = T.
+    _part(Ky, V, AXIS_V, N, DIR_T) :- vec(Ky, V), V = [T, _, _, _], T < 0, N = -T.
+    _part(Ky, V, AXIS_H, N, DIR_R) :- vec(Ky, V), V = [_, _, L, _], L > 0, N = L.
+    _part(Ky, V, AXIS_H, N, DIR_L) :- vec(Ky, V), V = [_, _, L, _], L < 0, N = -L.
+
+    .decl _size(key: Key, v: Offset, a: Axis, n: number)
+    _size(Ky, V, A, N) :- _part(Ky, V, A, N, _).
+    _size(Ky, V, AXIS_V, 0) :- vec(Ky, V), V = [0, _, _, _].
+    _size(Ky, V, AXIS_H, 0) :- vec(Ky, V), V = [_, _, 0, _].
+
+    // Within 22.5 degrees of the axis: tan(22.5°) = √2 − 1, so the minor
+    // component m and the major n satisfy (n − m)² > 2m².
+    nearest(Ky, V, D) :-
+        _part(Ky, V, A, N, D), perp(A, A2), _size(Ky, V, A2, M),
+        N > M, (N - M) * (N - M) > 2 * M * M.
+    nearest(Ky, V, D) :-
+        _part(Ky, V, AXIS_V, N, D1), _part(Ky, V, AXIS_H, M, D2),
+        (N - M) * (N - M) < 2 * min(N, M) * min(N, M),
+        diag_dirs(D, AXIS_V, D1, D2).
+}
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.cell(E, P) :- ex_in(E, P, Col), params.block_color(Col).
+    ex.order(C, A) :- diag_dir_elem(C), axis_elem(A).
+
+    // Output marker P touches the square that scan order (C, A) picks, by
+    // side or by corner.
+    .decl touching(e: Example, c: DiagDir, a: Axis, p: Position)
+    touching(E, C, A, P) :-
+        ex.last_square.box([E, C, A], B), ex_out(E, P, Col), params.marker_color(Col),
+        !inside(P, B), neighbor(P, _, Q), inside(Q, B).
+
+    // Some output marker does not touch that square.
+    .decl astray(c: DiagDir, a: Axis)
+    astray(C, A) :-
+        ex.last_square.box([E, C, A], _), ex_out(E, P, Col), params.marker_color(Col),
+        !touching(E, C, A, P).
+
+    .decl scan_corner(d: DiagDir)
+    scan_corner(C) :- ex.order(C, A), !astray(C, A).
+
+    .decl scan_axis(a: Axis)
+    scan_axis(A) :- ex.order(C, A), !astray(C, A).
+}

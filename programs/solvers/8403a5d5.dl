@@ -43,7 +43,7 @@
     .decl side(s: Sense, d: Dir)
     side(S, E) :- dir(D), turn(S, D, E).
 
-    // --- $Walk($Stored) ---
+    // --- $Stored ---
     .decl first_side(s: Sense) first_side(SENSE_CC).   // the first dot's side
     .decl first_edge(d: Dir)
     first_edge(E) :- first_side(S), side(S, E).

@@ -39,19 +39,19 @@ part(P, Col) :- in(P, Col), !params.bg(Col), !params.anchor(Col).
 // The grouping each case finds.
 .decl group(ch: Choice, p: Position, id: Ident)
 
-// --- ByColor ---
+// --- $ByColor ---
 
 .init hue = Canon<Position>
 hue.equiv(P, Q) :- part(P, Col), part(Q, Col).
 group($ByColor(), P, Id) :- hue.id(P, Id).
 
-// --- ByRun ---
+// --- $ByRun ---
 
 .init run = Components<Color>
 run.node(Col, P) :- part(P, Col).
 group($ByRun(), P, Id) :- run.label(_, P, Id).
 
-// --- ByLayer ---
+// --- $ByLayer ---
 
 // The anchors glue the assembly, so they join the region they hold together.
 .init assembly = Components<Unit>

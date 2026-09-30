@@ -61,10 +61,10 @@ out(P_frame, Col, Ch) :-
     impl_choice(Ch), panel_cell(_, P_frame),                // a cell of the frame
     !overlay(P_frame, _, Ch), panel_mode.mode($U(), Col).   // unpainted: bare panel
 
-// --- Layer ---
+// --- $Layer ---
 
 overlay(P_frame, Col, $Layer()) :- paint(P_frame, Col).
 
-// --- Inside ---
+// --- $Inside ---
 
 overlay(P_frame, Col, $Inside()) :- paint(P_frame, Col), interior(P_frame, ZERO).

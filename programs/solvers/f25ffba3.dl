@@ -21,22 +21,22 @@
 .decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    // --- Stamp, TileCount, TileSize ---
+    // --- $Stamp, $TileCount, $TileSize ---
     .decl data_dir(d: Dir) data_dir(DIR_B).
 
-    // --- Stamp, Augment ---
+    // --- $Stamp, $Augment ---
     .decl stamps(d: D4)
     stamps(D4_ID).
     stamps(D4_TB).
 
-    // --- Stamp, TileSize ---
+    // --- $Stamp, $TileSize ---
     // The data slab's depth from the data edge.
     .decl slab_depth(n: number) slab_depth(5).
 
-    // --- Augment ---
+    // --- $Augment ---
     .decl bg(c: Color) bg(0).
 
-    // --- TileCount, TileSize ---
+    // --- $TileCount, $TileSize ---
     // The tiles run along the data edge's axis.
     .decl tile_axis(a: Axis)
     tile_axis(A) :- data_dir(D), axis_of(D, A).
@@ -46,20 +46,20 @@
         D4_TB,
         D4_ID)
 
-    // --- TileCount ---
+    // --- $TileCount ---
     .decl n_tiles(n: number) n_tiles(2).
 }
 
 .init params = Params
 
-// --- Stamp ---
+// --- $Stamp ---
 out(P_grid_out, Col, $Stamp()) :-
     in(P_grid_in, Col),                                        // input cell
     params.data_dir(D_data), dist(P_grid_in, D_data, K),       // distance from data edge
     params.slab_depth(Depth), K < Depth,                       // within the data slab
     params.stamps(D), apply(D, P_grid_in, P_grid_out).         // stamp under D4
 
-// --- Augment ---
+// --- $Augment ---
 .decl augment_ink(p: Position, col: Color)
 augment_ink(P_out, Col) :-
     in(P_in, Col), !params.bg(Col),                            // non-bg input cell
@@ -69,7 +69,7 @@ out(P, Col, $Augment()) :- augment_ink(P, Col).
 out(P, Bg, $Augment()) :-
     in(P, _), params.bg(Bg), !augment_ink(P, _).               // bg-fill unstamped positions
 
-// --- TileCount, TileSize ---
+// --- $TileCount, $TileSize ---
 // The data tile's cells: the tile at the data edge, under each split.
 .decl data_cell(p_intile: Position, col: Color, c: Choice)
 data_cell(P_intile, Col, $TileCount()) :-

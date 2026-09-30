@@ -54,11 +54,11 @@ parse.cell($U(), P) :- in(P, Col), !params.bg(Col).
 // The mark that leaves corner d.
 .decl mark(d: DiagDir, p: Position, col: Color, ch: Choice)
 
-// --- Corner ---
+// --- $Corner ---
 
 mark(D, P, Col, $Corner()) :- parse.inner($U(), D, P), in(P, Col), !params.bg(Col).
 
-// --- Quadrant ---
+// --- $Quadrant ---
 
 // A drawn cell inside the rectangle, with its place in the rectangle's frame.
 .decl enclosed(p: Position, col: Color, p_rel: Position)
@@ -71,7 +71,7 @@ quad.cell($U(), P_rel) :- enclosed(_, _, P_rel).
 
 mark(D, P, Col, $Quadrant()) :- enclosed(P, Col, P_rel), quad.quadrant($U(), P_rel, D).
 
-// --- Corner, Quadrant ---
+// --- $Corner, $Quadrant ---
 
 // Where a mark lands: the cell outside the corner it ejects to.
 .decl landing(p: Position, col: Color, ch: Choice)

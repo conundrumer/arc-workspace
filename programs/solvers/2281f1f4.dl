@@ -20,7 +20,7 @@
     .decl fill(c: Color) fill(2).
     .decl header(d: DiagDir) header(DIAG_TR).
 
-    // --- Stamp ---
+    // --- $Stamp ---
     .decl bg(c: Color) bg(0).
 }
 
@@ -33,7 +33,7 @@ marked(P, D) :-
     params.marker(M), in(Q, M), dist(Q, D, 0),   // marker on edge d
     same_line(A, P, Q).
 
-// --- Cross ---
+// --- $Cross ---
 
 .decl cross(p: Position)
 cross(P) :- params.header(Diag), diag_dirs(Diag, _, D1, D2), marked(P, D1), marked(P, D2).
@@ -41,7 +41,7 @@ cross(P) :- params.header(Diag), diag_dirs(Diag, _, D1, D2), marked(P, D1), mark
 out(P, F, $Cross())   :- cross(P), params.fill(F).
 out(P, Col, $Cross()) :- in(P, Col), !cross(P).
 
-// --- Stamp ---
+// --- $Stamp ---
 
 // Cells of selected lines, keyed by the pattern edge whose partner
 // selected them. The marker pattern is symmetric across the header

@@ -18,10 +18,10 @@
 .comp Params {
     .decl corner(d: DiagDir) corner(DIAG_TL).   // the border bands meet here
 
-    // --- Marked ---
+    // --- $Marked ---
     .decl marker_col(c: Color) marker_col(2).
 
-    // --- Singleton ---
+    // --- $Singleton ---
     .decl marker_count(k: number) marker_count(1).
 }
 
@@ -56,10 +56,10 @@ band_cell(A, P, Col) :-
 // The marker cell in each band, under each model.
 .decl marker(a: Axis, p: Position, ch: Choice)
 
-// --- Marked ---
+// --- $Marked ---
 marker(A, P, $Marked()) :- band_cell(A, P, Col), params.marker_col(Col).
 
-// --- Singleton ---
+// --- $Singleton ---
 .type BandColor = [a: Axis, col: Color]
 
 .init band_count = Tally<BandColor, Position>

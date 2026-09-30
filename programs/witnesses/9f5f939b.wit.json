@@ -2,7 +2,7 @@
   "id": "9f5f939b",
   "witnesses": [{
     "id": "wide",
-    "separates": "Centered and Midpoint from Near: the four dominoes of one cross stand two cells from its centre, and a one-cell cross sits beside it",
+    "separates": "$Centered and $Midpoint from $Near: the four dominoes of one cross stand two cells from its centre, and a one-cell cross sits beside it",
     "input": [
       [8,8,8,8,1,8,8,8,8,8,8,8,8],
       [8,8,8,8,1,8,8,8,8,8,8,8,8],
@@ -19,24 +19,7 @@
       [8,8,8,8,8,8,8,8,8,1,8,8,8]
     ],
     "output": [{
-      "cases": ["[Centered, Any]","[Centered, Clear]","[Midpoint, Any]","[Midpoint, Clear]"],
-      "grid": [
-        [8,8,8,8,1,8,8,8,8,8,8,8,8],
-        [8,8,8,8,1,8,8,8,8,8,8,8,8],
-        [8,8,8,8,8,8,8,8,8,8,8,8,8],
-        [8,8,8,8,8,8,8,8,8,8,8,8,8],
-        [1,1,8,8,4,8,8,1,1,8,8,8,8],
-        [8,8,8,8,8,8,8,8,8,8,8,8,8],
-        [8,8,8,8,8,8,8,8,8,1,8,8,8],
-        [8,8,8,8,1,8,8,8,8,1,8,8,8],
-        [8,8,8,8,1,8,8,8,8,8,8,8,8],
-        [8,8,8,8,8,8,1,1,8,4,8,1,1],
-        [8,8,8,8,8,8,8,8,8,8,8,8,8],
-        [8,8,8,8,8,8,8,8,8,1,8,8,8],
-        [8,8,8,8,8,8,8,8,8,1,8,8,8]
-      ]
-    }, {
-      "cases": ["[Near, Any]","[Near, Clear]"],
+      "cases": ["$Near"],
       "grid": [
         [8,8,8,8,1,8,8,8,8,8,8,8,8],
         [8,8,8,8,1,8,8,8,8,8,8,8,8],
@@ -52,10 +35,27 @@
         [8,8,8,8,8,8,8,8,8,1,8,8,8],
         [8,8,8,8,8,8,8,8,8,1,8,8,8]
       ]
+    }, {
+      "cases": ["$Centered","$Midpoint"],
+      "grid": [
+        [8,8,8,8,1,8,8,8,8,8,8,8,8],
+        [8,8,8,8,1,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8,8,8,8],
+        [1,1,8,8,4,8,8,1,1,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,1,8,8,8],
+        [8,8,8,8,1,8,8,8,8,1,8,8,8],
+        [8,8,8,8,1,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,1,1,8,4,8,1,1],
+        [8,8,8,8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,1,8,8,8],
+        [8,8,8,8,8,8,8,8,8,1,8,8,8]
+      ]
     }]
   }, {
     "id": "oblong",
-    "separates": "Midpoint from Near and Centered: the dominoes stand one cell away on the V axis and two cells away on the H axis",
+    "separates": "$Midpoint from $Near and $Centered: the dominoes stand one cell away on the V axis and two cells away on the H axis",
     "input": [
       [8,8,8,8,8,8,8,8,8,8,8],
       [8,8,8,8,8,8,8,8,8,8,8],
@@ -70,7 +70,7 @@
       [8,8,8,8,8,8,8,8,8,8,8]
     ],
     "output": [{
-      "cases": ["[Centered, Any]","[Centered, Clear]","[Near, Any]","[Near, Clear]"],
+      "cases": ["$Centered","$Near"],
       "grid": [
         [8,8,8,8,8,8,8,8,8,8,8],
         [8,8,8,8,8,8,8,8,8,8,8],
@@ -85,7 +85,7 @@
         [8,8,8,8,8,8,8,8,8,8,8]
       ]
     }, {
-      "cases": ["[Midpoint, Any]","[Midpoint, Clear]"],
+      "cases": ["$Midpoint"],
       "grid": [
         [8,8,8,8,8,8,8,8,8,8,8],
         [8,8,8,8,8,8,8,8,8,8,8],
@@ -102,7 +102,7 @@
     }]
   }, {
     "id": "plugged",
-    "separates": "Clear from Any: the top piece is a three-cell bar, so it fills the gap cell above the centre",
+    "separates": "$Clear from $Any: the top piece is a three-cell bar, so it fills the gap cell above the centre",
     "input": [
       [8,8,8,8,8,8,8,8,8],
       [8,8,8,8,1,8,8,8,8],
@@ -115,7 +115,7 @@
       [8,8,8,8,8,8,8,8,8]
     ],
     "output": [{
-      "cases": ["[Centered, Any]","[Midpoint, Any]","[Near, Any]"],
+      "cases": ["$Any"],
       "grid": [
         [8,8,8,8,8,8,8,8,8],
         [8,8,8,8,1,8,8,8,8],
@@ -128,7 +128,7 @@
         [8,8,8,8,8,8,8,8,8]
       ]
     }, {
-      "cases": ["[Centered, Clear]","[Midpoint, Clear]","[Near, Clear]"],
+      "cases": ["$Clear"],
       "grid": [
         [8,8,8,8,8,8,8,8,8],
         [8,8,8,8,1,8,8,8,8],

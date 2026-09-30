@@ -51,7 +51,7 @@ orbit(Delta, Q) :- turn_step(Delta, _, Q).
 // A cell the turn adds that the input does not hold.
 .decl restored(p: Position, ch: Choice)
 
-// --- Complete ---
+// --- $Complete ---
 
 // The completed figure is the smallest orbit, so a placement that pushes the
 // figure off the grid pays for the cells it puts there.
@@ -65,7 +65,7 @@ restored(P, $Complete()) :-
     smallest.low($U(), Delta, _), orbit(Delta, P),   // the completed figure
     in(P, _), !ink_cell(P).                          // empty in the input
 
-// --- Copy ---
+// --- $Copy ---
 
 .decl copy_cell(delta: Offset, p: Position)
 copy_cell(Delta, Q) :- turn_step(Delta, P, Q), ink_cell(P).

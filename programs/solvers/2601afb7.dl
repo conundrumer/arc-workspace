@@ -23,7 +23,7 @@
     // their sizes travel the other way.
     .decl color_dir(d: Dir) color_dir(DIR_R).
 
-    // --- Length ---
+    // --- $Length ---
 
     // The quarter turn from color_dir to the edge the bars stand on.
     .decl anchor_sense(s: Sense) anchor_sense(SENSE_CW).
@@ -90,7 +90,7 @@ out(P, Col, Ch) :-
 
 out(P, Col, Ch) :- in(P, _), params.bg(Col), impl_choice(Ch), !ink(_, P, Ch).
 
-// --- Move ---
+// --- $Move ---
 
 ink(L, P, $Move()) :-
     parse.next_bar($U(), L, L_next),
@@ -98,7 +98,7 @@ ink(L, P, $Move()) :-
     parse.axis($U(), A), split(P_src, A, _, Across),        // its place across the row
     compose(L, Across, P).                                  // carried onto this line
 
-// --- Length ---
+// --- $Length ---
 
 .init bar_len = Tally<Position, Position>
 bar_len.item(L, P) :- parse.bar_cell($U(), L, P).

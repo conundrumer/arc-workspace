@@ -78,7 +78,7 @@ paint(P, K) :- nearest.low(P, K).
 
 .init area = Components<Choice>
 
-// --- Sector ---
+// --- $Sector ---
 
 // The anchor's own diagonals, which the sectors lie between.
 .decl cross(p: Position)
@@ -86,7 +86,7 @@ cross(P) :- seq(_, _, A), seq_idx(A, K), arm.ray(K, P, _, _, _).
 
 area.node($Sector(), P) :- in(P, _), !cross(P).
 
-// --- Flood ---
+// --- $Flood ---
 
 area.node($Flood(), P) :- in(P, _), !paint(P, _).
 

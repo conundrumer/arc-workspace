@@ -18,7 +18,7 @@
     .decl bg(c: Color) bg(0).
     .decl paint(c: Color) paint(2).
 
-    // --- Period ---
+    // --- $Period ---
     .decl sep_w(k: number) sep_w(1).
     .decl tile_w(k: number) tile_w(3).
 }
@@ -33,14 +33,14 @@ ink(P) :- in(P, Col), !params.bg(Col).
 
 .decl sep(p: Position, ch: Choice)
 
-// --- Period ---
+// --- $Period ---
 // On a lattice line: the seps divide as sep_w-wide tiles with tile_w gaps.
 sep(P, $Period()) :-
     in(P, _), axis_elem(A),                     // each axis
     params.sep_w(K), params.tile_w(G),          // lattice dims
     divide_by_size(P, A, K, G, _, _).           // in a sep band of axis A
 
-// --- Blank ---
+// --- $Blank ---
 // Line along axis a at across-position p_across carries ink.
 .decl ink_line(a: Axis, p_across: Position)
 ink_line(A, Ac) :- ink(P), axis_elem(A), split(P, A, _, Ac).

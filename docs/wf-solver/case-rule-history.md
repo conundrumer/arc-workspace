@@ -950,40 +950,6 @@ The user cancelled that refactor (19:20Z):
 
 Then (19:22Z): "Pause on further fixes."
 
-## 2026-09-25 — the decisions the session made on its own
-
-The user asked (19:23Z): "What were some of the least defensible decisions you made on your own?" The first on the session's list was a change it made earlier on 2026-09-25 without a ruling: the runner held a derived case for each case that reads the parameter, where on 2026-09-22 it had held one for the concept case only. The session had then edited solver-file.md to describe the new runner. Four of the seven sweep defects were in that code, and three committed solvers failed `witness` because of it.
-
-The user (19:28Z):
-
-> "Ultrathink about those decisions, send agents to gather more info and evidence to help judge them, and then write into the decisions doc whatever actually needs my judgement, keeping in mind nonreasons like amount of code or text to change, bc it’s not a factor and it is a strict requirement for docs and tooling and new solvers to be consistent and principled"
-
-And (19:29Z):
-
-> "And be sure to think thru all the options and reasons and consequences wrt the point of this project
->
-> And to ensure the writing serves me. The reader"
-
-The decisions document, `.scratch/decisions.md`, held six items.
-
-### How the decisions document is written
-
-- 20:56Z: "somethings not right. you dumped a lot of detail. i dont judge based on detail. i judge based on consequences"
-- 20:57Z: "also its burdensome to read dense paragraphs. prefer nested lists"
-- 21:03Z: "i'm reading #1. it's not making sense to me. i need concrete examples/previews of what the consequence looks like"
-- 21:05Z: "and it seems like there's not enough to infer from case history about what i prefer?"
-- 21:08Z: "the agents that went to look for evidence was supposed to look at the case history doc?? concerned"
-
-Three of the six evidence agents had been sent to this document, and their reports had quoted the rulings that bear on items 1 and 2. The session had cut those quotes when it rewrote the document around consequences. Item 1 then gained a list of what the rulings settle, and a real solver under each option.
-
-On terms:
-
-- 21:11Z, on "reading", the word for a parameter's value stored or derived: "i still dont know what a reading is", then "use a self-explanatory term". The document now says "stored" or "derived".
-- 21:19Z: "I'm confused by "copy". it's not a copy? so use a self-explanatory term". The runner's names, such as `field=DominantColor & Maximal`, are not copies of anything. The document now says "runner-added case": a case the runner holds for a `@derive` or `@store` line and the solver text does not list.
-- 21:32Z: "i rmemeber adding the ignore (dont call it drop) line in case no witness could be made for it". The document now says "ignore line" for the line, and "leaves" for a case that fails a case condition.
-
-On why the items closed so easily once asked (21:57Z): "how is it that things end up being easily decided". The session's answer: it had written each item from the state of the code and the docs, and had not first applied the user's rulings to it. The history agents had already reported that the history supports option 1 of items 1 and 2.
-
 ## 2026-09-25 — `@derive` and `@store` lines are branches
 
 Item 1 asked who adds the case in which a parameter's value is derived instead of stored, or stored instead of derived. The example was 9caba7c3, which has a choice point with three branches and two `@derive` lines, on `field` and `mark`. Its text lists three cases. The runner held nine: those three, each with `field` derived, and each with `mark` derived. It never combined the two lines.
@@ -1115,3 +1081,201 @@ After "lgtm do all" (22:05Z), the user added (22:06Z):
 The work was ordered docs, then tooling, then solvers. The tooling dispatcher's rules carry the user's words: a fix whose corpus run shows a change the fix does not explain is reverted. The pyright fix runs first and alone.
 
 One more doc edit followed from the `@derive` and `@store` branches. `derive` and `store` record their witness into the witness file, so the file must exist when they run. The copy of the Analyze witness file moved from the Witness step to Write step 2: "Write the solver (`programs/solvers/<task_id>.dl`), and copy the Analyze file to the witness file: `cp .scratch/<task_id>/witnesses.json programs/witnesses/<task_id>.wit.json`."
+
+## 2026-09-26 to 2026-09-27 — the user's rulings
+
+Each ruling is given in the user's words, with what it settled.
+
+### A named `@ignore` line is a pattern
+
+The session asked whether `// @ignore: derive <name>` excludes every case that takes the branches `<name>` contains, or exactly one case. Under the first reading, the lines of four solvers would exclude more cases than they were written for. The user (2026-09-26T14:48Z):
+
+> "Why not 1?"
+
+And (2026-09-26T14:56Z):
+
+> "Ideas about other options? Seems parallel to enum cases vs using dl rules"
+
+The session gave three options. The first kept the pattern and gave the stored value at a `@derive` point the name `<param>=stored`. The user (2026-09-26T15:04Z):
+
+> "1 ok"
+
+This settled that a named `@ignore` line excludes every held case that takes its branches, and that the stored value at a `@derive` point is named `<param>=stored`.
+
+### The case enumeration is exempt from program style
+
+A pass had written the exclusion in `impl_choice` as a relation of its own, because lint's Disjunction rule rejected it written inside the clause. The user (2026-09-26T15:04Z):
+
+> "2 ok so clauses over choice things are not under the same strict standards as program code so generally avoid unnecessary strictness , like avoid verbosity"
+
+This settled that the clauses that enumerate the cases are not held to the program's style rules.
+
+### A witness group holds one grid per tiebreak resolution
+
+A conformance audit of the runner raised the question of what a witness file group holds for a case that gives two grids, one per tiebreak resolution. The session's default was that the group's grid takes a list of grids for such a case. The user (2026-09-26T19:25Z):
+
+> "2.1 i tihnk there's a backlog.md item about the tiebreak thing, but unresolved. approve"
+
+This settled that a group's grid is a list of grids, one per tiebreak resolution, when the cases give more than one.
+
+### `assign` may name a stored relation
+
+The same audit read Subsumption's "every assignment of the parameters either reads" as covering the value a `@store` branch stores. The session first answered that `assign` names Params relations only. The user (2026-09-26T19:27Z):
+
+> "what about under the goals"
+
+The session then found that the definitions make a stored relation a parameter of the branch that stores it, and recommended that `assign` may name it. The user (2026-09-26T19:33Z):
+
+> "right that sounds most consistent. any reason not to? if not, approve"
+
+This settled that a witness's `assign` may name a `@store` line's relation, and that a case taking that branch reads the assigned value.
+
+### The typed-order lint is not narrowed to colors
+
+The principles line on unordered types names only colors. The session had ruled that the typed-order lint therefore narrows to colors. The user (2026-09-27T12:13Z):
+
+> "Wait, it is inferrable the intention of things. Eg. The lint on ordering, there’s no defense to narrow to only colors. Common sense should be prioritized over the letter"
+
+This settled that the typed-order lint stays on every type with identity and no order, and that a handbook line is read for its intent over its letter.
+
+### `@ignore` records a judgment
+
+The session had ruled that the runner stops honoring `@ignore` on a lint hint. It then reversed that on its own: the runner keeps honoring it, and the `@ignore` directive would gain "or a hint". The user (2026-09-27T12:16Z):
+
+> "What’s the difference between hints and findings? Send agent to determine how it’s actually used. Bc point of ignore is to silence what was already judged to be false flag, not to just bypass lint"
+
+This settled the purpose of an `@ignore` line: it silences a flag that was already judged, and it does not bypass lint.
+
+### Approved solvers outside the loop
+
+The audits of approved solvers that have no Analyze files now reported missing `@derive` and `@store` lines, and the session planned to ask how such solvers are brought to the current standard. The user (2026-09-27T14:20Z):
+
+> "4 out of scope"
+
+This settled that approved solvers with no Analyze files are not brought to the current standard.
+
+### One finding per unseparated pair of bases
+
+A base is a `Choice` case without the `@derive` and `@store` branches it takes. The session had ruled that `witness` does not report a pair of cases that take the same `@derive` or `@store` branches while it reports the pair of their bases as unseparated. An audit of the session's rulings against this history reversed that, so that every unseparated pair would be reported. The user (2026-09-27T23:50Z):
+
+> "i suppose that's following the letter. benefit of consistency > cost of noise? or is that the right cost/benefit analysis"
+
+The session answered that the history's lines settle what is compared and what leaves, and do not settle how a finding is shown. It proposed one finding per unseparated pair of bases, naming the branch choices under which the pair is unseparated. The user (2026-09-27T23:53Z):
+
+> "approve
+>
+> also update case history rule. ensure provenance is being tracked bc i dont want your unaddressed decisions to, you know"
+
+This settled that `witness` reports one finding per unseparated pair of bases, naming the branch choices under which it holds, whatever kind of branch those choices are.
+
+## 2026-09-28 — the user's rulings
+
+Each ruling is given in the user's words, with what it settled.
+
+### A parameter stored by a RIGID call is compared up to pose
+
+The tool printed an undecided line for a determined parameter that a RIGID call stores, because no handbook line said whether the pose counts. The user (2026-09-28T17:51Z):
+
+> "so the decision was to say it's undecided?"
+
+The session then gave three options, that the pose does not count, that it counts, or that the line stays undecided, each with its consequence for the nine solvers affected. The user (2026-09-28T17:55Z):
+
+> "re. RIGID: infer what i want and why i would want it. and next time, do this instead of just giving options and consequwnces (and also the consequences you gave are not helpful for  deciding anyway)"
+
+This settled that the tool compares a parameter stored by a RIGID call up to pose, since a RIGID block makes the stored pose unobservable, and that a decision the documents leave open comes to the user as the session's inference of what the user wants, with its basis, rather than as a list of options.
+
+### The cases the tool runs are the solver's cases
+
+The user had objected to ordinary words that had become private terms. The session answered that "held", as in the cases the runner holds, was the handbook's own word and so counted as defined. The user (2026-09-28T18:05Z):
+
+> "we don't have to keep it that way. choose the best term"
+
+This settled that the cases the tool runs are called the solver's cases, in the handbook and in the tool, and that "held" is no longer used for them.
+
+### A slow check is made faster before its semantics change
+
+The user asked whether a solver run of about twenty-five minutes was connected to a decision the session had reversed. The session answered that the derive survey had taken that long, and that reversing a filter which hid candidate derivations from the agent would bring part of that cost back. The user (2026-09-28T18:47Z):
+
+> "ok right we need to try perf improvements before reconsidering semantics"
+
+This settled that when a check is slow, the way its runs are done is made faster first, and what the check computes is reconsidered only after that.
+
+### A group lists the fewest names that give exactly its cases
+
+The session described a one-time rewrite of the witness files in which each group would list every case of the solver that gives its output. The user (2026-09-28T19:26Z):
+
+> "2. prefer to avoid verbosity, if applicable"
+
+The session measured one group on 9ddd00f0 at thirty names, where the old file's largest had nine, and proposed that a group list each base that gives its output and a case that takes a branch only where its output differs from its base's. The user (2026-09-28T19:29Z):
+
+> "is the solution you designed the best solution? there's a math thing going on"
+
+This settled that a group lists the fewest names whose cases together are exactly the cases that give its output.
+
+### Solvers are kept in their current form
+
+The tool, under a new reading of verdict names, reported forty-nine verdict lines in eighteen solvers as failing. The session planned a migration that would rewrite each such verdict to the case it had meant under the old reading, so that the files kept the meaning they were written with. The user (2026-09-28T21:19Z):
+
+> "wait no. solvers should be consistent and be in their best form. we shouldn't deal with backwards compatiblitily or whatever. im ok w churn"
+
+This settled that a solver and its witness file are kept in the current form and in their best form, that the tool keeps no reading for an older form, and that the corpus is rewritten into the current form once, whatever churn that costs.
+
+### A name means the same thing in every place
+
+The session had read the name in a `@witness` verdict as denoting every case that takes the branch, where the principles define a branch's model as one case, and it withdrew the findings built on that reading. The user (2026-09-28T21:50Z):
+
+> "could the docs have been written better such that you wouldnt have misread it"
+
+The session answered that the documents used one name syntax with two readings and did not say so. The user (2026-09-28T21:52Z):
+
+> "ok. is there a Better Writing way to resolve it?"
+
+The session proposed that a name mean the same thing in every place, that a branch's model and a branch's cases each be defined once, and that each place say which of the two it takes. It left the principles line for the user to write. The user (2026-09-28T21:54Z):
+
+> "i don't write text. make this update happen and ensure the semantics are correct and anything it touches"
+
+This settled that a name has one meaning in every place, that a `@witness` verdict names the name's model while a case marker, an `@ignore: derive` or `@ignore: store` line and a group name its cases, and that the session writes such handbook text itself.
+
+### A name fixes the branch at some choice points
+
+An audit of the handbook text on names found lines that no reading fits, such as `concept` beside another name naming no case. The user (2026-09-28T22:16Z):
+
+> "curious if there's any reframing or renaming that could make resolve some of these things and make things simpler. like did we contort ourselves bc we modeled it wrong?"
+
+The session proposed that a name fix the branch at some choice points and leave the others open, that the `@derive` and `@store` points be taken by each case whose base reads the parameter, and that `concept` be the concept base. The user (2026-09-28T22:22Z):
+
+> "ok"
+
+This settled that a name fixes the branch at some choice points; that its model takes the fixed branches and the concept branch at every other point it takes; that its cases are the cases of the solver that take the fixed branches; that a case's base is its `Choice` value; and that `concept` is the concept base.
+
+### Create compares a branch's model against the Analyze file
+
+The same audit found that the Create step's comparison against the Analyze file read two ways, as covering every case that takes a branch or the branch's model alone, and the session could not infer which the user meant. In the same message as the previous ruling, the user (2026-09-28T22:22Z):
+
+> "6. i don't think i made a decision here. you know the point of the analyze pass right? think of a bunch of cases bc what is thought of is what is plausibly "someone woudl tihnk of it". and then create encodes whatever passes."
+
+This settled that the Analyze file's groups give branches' models, and that Create treats a branch whose model's output differs from the output the Analyze file gives that branch as an error in the solver to fix.
+
+### A nested branch is named by its constructor
+
+The corpus wrote a nested branch in several forms, such as `Derive(g=Iso)` and names joined by `&` without spaces. The session proposed one form: constructor names joined by ` & `, a nested branch named by its constructor alone, and a parent written only to pick one of two points at which the constructor stands. The user (2026-09-28T22:41Z):
+
+> "i dont fully agree but i accept it bc the & chains can get lengthy"
+
+This settled that a nested branch is named by its constructor, that a parent is written only to pick a point where the constructor stands at two points, and that the other forms are faults.
+
+### Every constructor name carries `$`
+
+The user (2026-09-28T22:47Z):
+
+> "thoughts on actually enforcing the $ prefix everywhere? to make it clear it's specifically branch?"
+
+The session recommended the prefix, and then found that a slug from the Analyze pass would give a second spelling of the same branch. The user (2026-09-28T22:52Z):
+
+> "should we just make the analyzer use the $ form? or just keep slug"
+
+The session recommended that the Analyze pass write the constructor form. The user (2026-09-28T22:54Z):
+
+> "go"
+
+This settled that every constructor name carries `$` in markers, verdicts, groups, ignore lines and the tool's output; that `concept`, `any`, `other` and the `=` forms stay bare; and that the slug form is gone, with the Analyze pass naming each branch by its constructor name.

@@ -46,7 +46,7 @@ mark(P, Col) :- in(P, Col), !params.bg(Col), !params.wall(Col).
 // The box each color's marks delimit.
 .decl span_box(ch: Choice, col: Color, b: Box)
 
-// --- Touch, Nearest ---
+// --- $Touch, $Nearest ---
 
 // A cell whose lines on both axes are streets.
 .decl crossing(p: Position)
@@ -63,12 +63,12 @@ span.cell([Ch, Col], P) :- anchor(Ch, Col, P).
 
 span_box(Ch, Col, B) :- span.box([Ch, Col], B).
 
-// --- Touch ---
+// --- $Touch ---
 
 anchor($Touch(), Col, P) :-
     mark(M, Col), crossing(P), ( P = M ; dir_elem(D), neighbor(M, D, P) ).
 
-// --- Nearest ---
+// --- $Nearest ---
 
 // Each mark casts along its four directions, reaching the crossings of its
 // street at their distances.
@@ -82,7 +82,7 @@ closest.cand(M, P, K) :- reach.ray($U(), P, _, K, M).
 
 anchor($Nearest(), Col, P) :- mark(M, Col), closest.low(M, P, _).
 
-// --- Contain ---
+// --- $Contain ---
 
 // A mark of the color lies beyond street l, toward d.
 .decl beyond(col: Color, d: Dir, l: Position)

@@ -1,0 +1,321 @@
+// a8d7556c
+// @draft
+// @keywords: objects noise rank
+// @scene speckle-field: params.hole cells lie in no pattern among cells of
+//  another color, and some of them form solid rectangles with each side at
+//  least params.min_side
+// @rule greedy-rect-fill: from the params.hole cells not yet claimed, take the
+//  all-params.hole rectangle of largest area with each side at least
+//  params.min_side, and paint its cells params.fill; repeat until no such
+//  rectangle is left. Among overlapping rectangles of equal area, the one
+//  first in a scan of params.tie_order claims first.
+// @rule keep-rest: every other cell keeps its input color
+
+// which cells stay claimed when rectangles share cells
+.type Overlap =
+    // @claim greedy-rect-fill
+    LargestFirst {}
+    // @rule greedy-rect-fill: each rectangle that no other rectangle contains
+    //  fills, unless such a rectangle of larger area overlaps it
+    // @witness cross-remnant: ordinary concept
+    // @witness equal-overlap: ordinary $DropDominated
+  | DropDominated {}
+    // @rule greedy-rect-fill: rectangles claim in order of their extent along
+    //  params.first_axis, then of their area
+    // @witness transposed-train2: ordinary concept
+  | AxisFirst {}
+
+// which rectangles count
+.type Qualify =
+    // @claim greedy-rect-fill
+    AnyRect {}
+    // @rule greedy-rect-fill: a rectangle counts only when its extent along
+    //  one axis is params.min_side and no line of params.hole cells beside it
+    //  extends it along that axis
+    // @witness square3: variant concept
+  | ThicknessTwo {}
+
+.type Choice = [overlap: Overlap, qualify: Qualify]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive RarestColor: variant derived
+    //     @relaxed speckle-field
+    .decl hole(c: Color) hole(0).
+    .decl fill(c: Color) fill(2).
+    .decl min_side(k: number) min_side(2).
+
+    // --- concept, $ThicknessTwo, $AxisFirst ---
+    // No pair holds a tie, so every scan stays open.
+    .decl tie_order(c: DiagDir, a: Axis)
+    tie_order(DIAG_TL, AXIS_V). tie_order(DIAG_TL, AXIS_H).
+    tie_order(DIAG_TR, AXIS_V). tie_order(DIAG_TR, AXIS_H).
+    tie_order(DIAG_BL, AXIS_V). tie_order(DIAG_BL, AXIS_H).
+    tie_order(DIAG_BR, AXIS_V). tie_order(DIAG_BR, AXIS_H).
+
+    // --- $AxisFirst, $AxisFirst & $ThicknessTwo ---
+    .decl first_axis(a: Axis) first_axis(AXIS_V).
+
+    // --- $AxisFirst & $ThicknessTwo ---
+    // The corner at which a strip across the first axis starts.
+    .decl start_corner(d: DiagDir) start_corner(DIAG_TL). start_corner(DIAG_BL).
+}
+
+.init params = Params
+
+// The rectangles of each reading, and the claims made along a claim order
+// under every scan.
+.comp Parse<Key> {
+    .type Span = [ky: Key, p: Position, q: Position]
+    .type Rect = [ky: Key, b: Box]
+    .type KeyScan = [ky: Key, c: DiagDir, a: Axis]
+    .type Run = [ky: Key, ch: Choice, c: DiagDir, a: Axis]
+    .type Step = [run: Run, b: Box]
+
+    .decl cell(ky: Key, p: Position, c: Color)
+
+    .decl hole_cell(ky: Key, p: Position)
+    hole_cell(Ky, P) :- cell(Ky, P, Col), params.hole(Col).
+
+    // The box two hole cells span.
+    // @claim greedy-rect-fill
+    .init span = Bbox<Span>
+    span.cell([Ky, P, Q], P2) :- hole_cell(Ky, P), hole_cell(Ky, Q), ( P2 = P ; P2 = Q ).
+
+    .decl spoiled(ky: Key, b: Box)
+    spoiled(Ky, B) :- span.box([Ky, _, _], B), cell(Ky, P, Col), !params.hole(Col), inside(P, B).
+
+    .decl short(ky: Key, b: Box)
+    short(Ky, B) :-
+        span.box([Ky, P, _], B), box_extent(B, P, _, N), params.min_side(K), N < K.
+
+    .decl rect(ky: Key, b: Box)
+    rect(Ky, B) :- span.box([Ky, _, _], B), !spoiled(Ky, B), !short(Ky, B).
+
+    .decl rect_cell(ky: Key, b: Box, p: Position)
+    rect_cell(Ky, B, P) :- rect(Ky, B), hole_cell(Ky, P), inside(P, B).
+
+    .decl overlap(ky: Key, b: Box, b2: Box)
+    overlap(Ky, B, B2) :- rect_cell(Ky, B, P), rect_cell(Ky, B2, P).
+
+    // @claim greedy-rect-fill
+    .init area = Tally<Rect, Position>
+    area.item([Ky, B], P) :- rect_cell(Ky, B, P).
+
+    .decl corner_cell(ky: Key, b: Box, d: DiagDir, p: Position)
+    corner_cell(Ky, B, D, P) :- rect_cell(Ky, B, P), box_corner(P, B, D).
+
+    // --- $ThicknessTwo, $DropDominated & $ThicknessTwo, $AxisFirst & $ThicknessTwo ---
+
+    // Another rectangle holds b and is longer than b only along axis a.
+    .decl thicker(ky: Key, b: Box, a: Axis)
+    thicker(Ky, B, A) :-
+        rect(Ky, B), rect(Ky, B2), B != B2, inside(B, B2),
+        perp(A, A2), axis_of(D, A2), opposite(D, D2),
+        same_dist(D, B, B2), same_dist(D2, B, B2).
+
+    // A rectangle whose extent along axis a is params.min_side, and that no
+    // rectangle extends along a.
+    .decl strip(ky: Key, b: Box, a: Axis)
+    strip(Ky, B, A) :-
+        rect_cell(Ky, B, P), box_extent(B, P, A, K), params.min_side(K),
+        !thicker(Ky, B, A).
+
+    // --- concept, $ThicknessTwo, $AxisFirst, $DropDominated, $DropDominated & $ThicknessTwo ---
+
+    .decl cand(ky: Key, q: Qualify, b: Box)
+    cand(Ky, $AnyRect(), B) :- rect(Ky, B).
+    cand(Ky, $ThicknessTwo(), B) :- strip(Ky, B, _).
+
+    // --- concept, $ThicknessTwo, $AxisFirst, $AxisFirst & $ThicknessTwo ---
+
+    // The scans: from corner c along primary axis a.
+    .decl scan(ky: Key, c: DiagDir, a: Axis)
+    scan(Ky, C, A) :- cell(Ky, _, _), diag_dir_elem(C), axis_elem(A).
+
+    // @claim greedy-rect-fill
+    .init lex = LexOrder<KeyScan>
+    lex.corner([Ky, C, A], C) :- scan(Ky, C, A).
+    lex.axis([Ky, C, A], A) :- scan(Ky, C, A).
+    lex.cell([Ky, C, A], P) :- scan(Ky, C, A), corner_cell(Ky, _, _, P).
+
+    // b claims before b2 whatever the scan.
+    .decl prior(ky: Key, ov: Overlap, b: Box, b2: Box)
+    prior(Ky, $LargestFirst(), B, B2) :- area.tally([Ky, B], N), area.tally([Ky, B2], N2), N > N2.
+
+    // @claim greedy-rect-fill
+    .init claim_order = Order<Run, Box>
+
+    // A claim of b_last takes b out of the running.
+    .decl blocks(run: Run, b_last: Box, b: Box)
+
+    // The rectangles no claim up to b_last takes out.
+    .decl free(run: Run, b_last: Box, b: Box)
+    free(Ru, B_last, B) :-
+        claim_order.first(Ru, B_last), claim_order.elem(Ru, B), !blocks(Ru, B_last, B).
+    free(Ru, B_next, B) :-
+        advance(Ru, B_last, B_next), free(Ru, B_last, B), !blocks(Ru, B_next, B).
+
+    // The next claim: the free rectangle first in the claim order.
+    // @claim greedy-rect-fill
+    .init next_claim = ArgExtremes<Step, Box>
+    next_claim.cand([Ru, B_last], B, K) :- free(Ru, B_last, B), claim_order.rank(Ru, B, K).
+
+    .decl advance(run: Run, b_last: Box, b_next: Box)
+    advance(Ru, B_last, B_next) :- next_claim.low([Ru, B_last], B_next, _).
+
+    .decl claimed_cell(ky: Key, ch: Choice, c: DiagDir, a: Axis, p: Position)
+    claimed_cell(Ky, Ch, C, A, P) :-
+        ( claim_order.first([Ky, Ch, C, A], B) ; advance([Ky, Ch, C, A], _, B) ),
+        rect_cell(Ky, B, P).
+
+    // --- concept, $ThicknessTwo, $AxisFirst ---
+
+    // The cases whose claim takes out every rectangle it overlaps.
+    .decl greedy(ch: Choice)
+    greedy([$LargestFirst(), $AnyRect()]).
+    greedy([$LargestFirst(), $ThicknessTwo()]).
+    greedy([$AxisFirst(), $AnyRect()]).
+
+    // b scans before b2: its cell at the scan's corner comes first, or the
+    // two share that cell and its cell at the opposite corner comes first.
+    .decl scan_before(ky: Key, c: DiagDir, a: Axis, b: Box, b2: Box)
+    scan_before(Ky, C, A, B, B2) :-
+        corner_cell(Ky, B, C, P), corner_cell(Ky, B2, C, P2),
+        ( lex.before([Ky, C, A], P, P2)
+        ; P = P2, diag_opposite(C, C2), corner_cell(Ky, B, C2, Q), corner_cell(Ky, B2, C2, Q2),
+          lex.before([Ky, C, A], Q, Q2)
+        ).
+
+    // b and b2 claim in the scan's order.
+    .decl level(ky: Key, ov: Overlap, b: Box, b2: Box)
+    level(Ky, $LargestFirst(), B, B2) :- area.tally([Ky, B], N), area.tally([Ky, B2], N).
+
+    claim_order.elem([Ky, [Ov, Q], C, A], B) :- greedy([Ov, Q]), scan(Ky, C, A), cand(Ky, Q, B).
+    claim_order.before([Ky, [Ov, Q], C, A], B, B2) :-
+        greedy([Ov, Q]), scan(Ky, C, A),
+        ( prior(Ky, Ov, B, B2)
+        ; level(Ky, Ov, B, B2), scan_before(Ky, C, A, B, B2)
+        ).
+
+    blocks([Ky, Ch, C, A], B, B2) :-
+        greedy(Ch), claim_order.elem([Ky, Ch, C, A], B), overlap(Ky, B, B2).
+
+    // --- $AxisFirst ---
+
+    .decl axis_len(ky: Key, b: Box, n: number)
+    axis_len(Ky, B, N) :- params.first_axis(A), rect_cell(Ky, B, P), box_extent(B, P, A, N).
+
+    // The longer rectangle along the first axis claims first, and area
+    // decides between two of one length.
+    prior(Ky, $AxisFirst(), B, B2) :-
+        axis_len(Ky, B, N), axis_len(Ky, B2, N2),
+        ( N > N2
+        ; N = N2, prior(Ky, $LargestFirst(), B, B2)
+        ).
+    level(Ky, $AxisFirst(), B, B2) :-
+        axis_len(Ky, B, N), axis_len(Ky, B2, N), level(Ky, $LargestFirst(), B, B2).
+
+    // --- $AxisFirst & $ThicknessTwo ---
+
+    // The cells of the strips that run along the first axis.
+    .decl along_cell(ky: Key, p: Position)
+    along_cell(Ky, P) :-
+        params.first_axis(A), perp(A, A2), strip(Ky, B, A2), rect_cell(Ky, B, P).
+
+    // The strips across the first axis claim in the order of their cell at
+    // corner c, the longer first at a shared cell. A strip whose cell at c the
+    // first pass fills takes no part, and a claim takes out each strip whose
+    // cell at c it fills.
+    claim_order.elem([Ky, [$AxisFirst(), $ThicknessTwo()], C, A], B) :-
+        params.first_axis(A), strip(Ky, B, A), corner_cell(Ky, B, C, P), !along_cell(Ky, P).
+    claim_order.before([Ky, [$AxisFirst(), $ThicknessTwo()], C, A], B, B2) :-
+        params.first_axis(A), strip(Ky, B, A), strip(Ky, B2, A),
+        corner_cell(Ky, B, C, P), corner_cell(Ky, B2, C, P2),
+        ( lex.before([Ky, C, A], P, P2)
+        ; P = P2, prior(Ky, $LargestFirst(), B, B2)
+        ).
+    blocks([Ky, [$AxisFirst(), $ThicknessTwo()], C, A], B, B2) :-
+        claim_order.elem([Ky, [$AxisFirst(), $ThicknessTwo()], C, A], B), rect_cell(Ky, B, P),
+        corner_cell(Ky, B2, C, P).
+
+    // The cells the strip reading fills under start corner c.
+    .decl strip_fill(ky: Key, c: DiagDir, p: Position)
+    strip_fill(Ky, C, P) :- diag_dir_elem(C), along_cell(Ky, P).
+    strip_fill(Ky, C, P) :- claimed_cell(Ky, [$AxisFirst(), $ThicknessTwo()], C, _, P).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// --- concept, $ThicknessTwo, $AxisFirst ---
+
+out(P, Col, Ch) :-
+    in(P, C), parse.greedy(Ch), params.tie_order(D, A),
+    ( parse.claimed_cell($U(), Ch, D, A, P), params.fill(Col)
+    ; !parse.claimed_cell($U(), Ch, D, A, P), Col = C
+    ).
+
+// --- $DropDominated, $DropDominated & $ThicknessTwo ---
+
+.decl qualify_choice(q: Qualify)
+qualify_choice($AnyRect()). qualify_choice($ThicknessTwo()).
+
+.decl contained(q: Qualify, b: Box)
+contained(Q, B) :- parse.cand($U(), Q, B), parse.cand($U(), Q, B2), B != B2, inside(B, B2).
+
+.decl maximal(q: Qualify, b: Box)
+maximal(Q, B) :- parse.cand($U(), Q, B), !contained(Q, B).
+
+.decl dominated(q: Qualify, b: Box)
+dominated(Q, B) :-
+    maximal(Q, B), maximal(Q, B2), parse.overlap($U(), B, B2),
+    parse.area.tally([$U(), B], N), parse.area.tally([$U(), B2], N2), N2 > N.
+
+.decl kept_cell(q: Qualify, p: Position)
+kept_cell(Q, P) :- maximal(Q, B), !dominated(Q, B), parse.rect_cell($U(), B, P).
+
+out(P, Col, [$DropDominated(), Q]) :-
+    in(P, C), qualify_choice(Q),
+    ( kept_cell(Q, P), params.fill(Col)
+    ; !kept_cell(Q, P), Col = C
+    ).
+
+// --- $AxisFirst & $ThicknessTwo ---
+
+out(P, Col, [$AxisFirst(), $ThicknessTwo()]) :-
+    in(P, C), params.start_corner(D),
+    ( parse.strip_fill($U(), D, P), params.fill(Col)
+    ; !parse.strip_fill($U(), D, P), Col = C
+    ).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    .decl changed(e: Example, p: Position)
+    changed(E, P) :- ex_in(E, P, Col_in), ex_out(E, P, Col), Col != Col_in.
+
+    // Under scan (c, a), the concept fills a cell the example does not, or
+    // leaves a changed cell unfilled.
+    .decl tie_contradicted(c: DiagDir, a: Axis)
+    tie_contradicted(C, A) :-
+        parse.claimed_cell(E, [$LargestFirst(), $AnyRect()], C, A, P),
+        ex_out(E, P, Col), !params.fill(Col).
+    tie_contradicted(C, A) :-
+        changed(E, P), parse.scan(E, C, A),
+        !parse.claimed_cell(E, [$LargestFirst(), $AnyRect()], C, A, P).
+
+    .decl tie_order(c: DiagDir, a: Axis)
+    tie_order(C, A) :- parse.scan(_, C, A), !tie_contradicted(C, A).
+
+    // Under start corner c, the strip reading fills a cell the example does
+    // not, or leaves a changed cell unfilled.
+    .decl start_contradicted(c: DiagDir)
+    start_contradicted(C) :- parse.strip_fill(E, C, P), ex_out(E, P, Col), !params.fill(Col).
+    start_contradicted(C) :- changed(E, P), diag_dir_elem(C), !parse.strip_fill(E, C, P).
+
+    .decl start_corner(c: DiagDir)
+    start_corner(C) :- diag_dir_elem(C), !start_contradicted(C).
+}

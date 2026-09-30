@@ -43,7 +43,7 @@ beyond(Q) :- mark(P), !trailing(P), params.dir(D), neighbor(P, D, Q).
 
 .decl drawn(p: Position, ch: Choice)
 
-// --- Turn ---
+// --- $Turn ---
 
 // The segment grown by the cell beyond it.
 .decl grown(p: Position)
@@ -54,7 +54,7 @@ drawn(Q, $Turn()) :-
     beyond(B), grown(P),
     relative(P, B, V), compose(B, V, Q).   // as far past B as P is short of it
 
-// --- Count ---
+// --- $Count ---
 
 .init line = Ray<Unit>
 line.dir($U(), D) :- params.dir(D).

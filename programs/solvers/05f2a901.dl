@@ -62,13 +62,13 @@ move_dir(D) :- dir_elem(D), cast.ray($U(), _, D, _, _).
 // covering one.
 .decl blocked(ch: Choice, p: Position)
 
-// --- Block ---
+// --- $Block ---
 
 shape($Block(), P) :- mover_cell(P).
 
 blocked($Block(), P) :- anchor_cell(P).
 
-// --- Touch ---
+// --- $Touch ---
 
 shape($Touch(), P) :- mover_cell(P).
 
@@ -77,7 +77,7 @@ blocked($Touch(), P2) :-
     anchor_cell(P), dir_elem(D), neighbor(P, D, P1),  // beside the anchor
     move_dir(D_move), neighbor(P1, D_move, P2).       // one step on
 
-// --- Extent ---
+// --- $Extent ---
 
 shape($Extent(), P) :- params.mover(Col), box_cell(Col, P).
 

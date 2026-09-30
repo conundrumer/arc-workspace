@@ -24,7 +24,7 @@
     // how the panel arrangement lands in the output
     .decl pose(d: D4) pose(D4_LR).
 
-    // --- Lattice ---
+    // --- $Lattice ---
     // width of a cutting line
     // @ignore: derive — the concept case never reads gap, so no input
     // separates the derived width from the stored one
@@ -48,7 +48,7 @@ divider(A, L) :- line_color.value([A, L], _).
 // Where a cell's panel sits in the panel arrangement.
 .decl panel(p: Position, p_tile: Position, ch: Choice)
 
-// --- Cut ---
+// --- $Cut ---
 
 // @claim cut
 .init panels = DividerTiles<Unit>
@@ -57,7 +57,7 @@ panels.divider($U(), A, L) :- divider(A, L).
 
 panel(P, P_tile, $Cut()) :- panels.tile_of($U(), P, P_tile).
 
-// --- Lattice ---
+// --- $Lattice ---
 
 // The panel size: the shortest run from a grid edge to a cutting line.
 // @claim even
@@ -68,7 +68,7 @@ panel(P, P_tile, $Lattice()) :-
     in(P, _), panel_size.low($U(), K), params.gap(G),
     divide_by_size_2d(P, K, G, P_tile, _).
 
-// --- Cut, Lattice ---
+// --- $Cut, $Lattice ---
 
 out(P_grid_out, Col, Ch) :-
     panel(P, P_tile, Ch), in(P, Col),              // a panel's color

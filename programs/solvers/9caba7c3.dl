@@ -68,14 +68,14 @@ overlap(P, P2) :- window(P, Q), window(P2, Q), P != P2.
 
 .decl dominated(p_center: Position, ch: Choice)
 
-// --- Count ---
+// --- $Count ---
 // @claim square
 .init marks = Tally<Position, Position>
 marks.item(P, Q) :- cand_mark(P, Q).
 
 dominated(P, $Count()) :- overlap(P, P2), marks.tally(P, N), marks.tally(P2, N2), N2 > N.
 
-// --- Maximal ---
+// --- $Maximal ---
 // The candidates' mark sets on both sides, so candidates compare with each other.
 // @claim square
 .init maximal = KeyedSetCompare<Position, Position, Position>
@@ -86,7 +86,7 @@ dominated(P, $Maximal()) :-
     maximal.covers(P2, P),      // P2's marks hold all of P's
     !maximal.equals(P2, P).     // and more besides
 
-// --- Complete ---
+// --- $Complete ---
 dominated(P, $Complete()) :- overlap(P, P2), cand_mark(P2, Q), !window(P, Q).
 
 // --- output ---

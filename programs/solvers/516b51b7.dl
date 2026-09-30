@@ -32,12 +32,12 @@
 .comp Params {
     .decl bg(col: Color) bg(0).
 
-    // --- Cycle ---
+    // --- $Cycle ---
     // Ring color by the depth's place in the repeat.
     .decl ring(k: number, col: Color)
         ring(0, 3). ring(1, 2).
 
-    // --- Table ---
+    // --- $Table ---
     .decl ring_at(k: number, col: Color)
         ring_at(1, 2). ring_at(2, 3). ring_at(3, 2).
 }
@@ -55,14 +55,14 @@ ink(P) :- in(P, Col), !params.bg(Col).
 // How deep each object cell lies, under each metric.
 .decl depth(p: Position, k: number, m: Metric)
 
-// --- Peel ---
+// --- $Peel ---
 
 .init rim = Rim<Unit>
 rim.cell($U(), P) :- ink(P).
 
 depth(P, K, $Peel()) :- rim.depth($U(), P, K).
 
-// --- Box ---
+// --- $Box ---
 
 .init objs = Components<Unit>
 objs.node($U(), P) :- ink(P).
@@ -86,7 +86,7 @@ out(P, Col, [M, Pal]) :-
     ; depth(P, 0, M)   // outline
     ).
 
-// --- Cycle ---
+// --- $Cycle ---
 
 // The length of params.ring's repeat.
 .init period = Tally<Unit, number>
@@ -98,7 +98,7 @@ out(P, Col, [M, $Cycle()]) :-
     period.tally($U(), W),
     stride(K, W, 0, _, Idx), params.ring(Idx, Col).
 
-// --- Table ---
+// --- $Table ---
 
 out(P, Col, [M, $Table()]) :- depth(P, K, M), params.ring_at(K, Col).
 

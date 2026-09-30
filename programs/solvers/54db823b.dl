@@ -51,11 +51,11 @@ impl_choice($Cells()). impl_choice($Box()).
 out(P, Col, Ch) :- erased_cell(P, Ch), params.bg(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !erased_cell(P, Ch).
 
-// --- Cells ---
+// --- $Cells ---
 
 erased_cell(P, $Cells()) :- erased_object(_, P).
 
-// --- Box ---
+// --- $Box ---
 
 .init ebox = Bbox<Ident>
 ebox.cell(O, P) :- erased_object(O, P).

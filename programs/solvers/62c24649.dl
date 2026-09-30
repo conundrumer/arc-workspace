@@ -15,7 +15,7 @@
 .comp Params {
     .init helpers = ParamsHelpers
 
-    // --- Mirror, Unfold ---
+    // --- $Mirror, $Unfold ---
     .decl arr_dim(k: number) arr_dim(2).
     .decl arr_pos(p: Position)
     arr_pos(P) :- arr_dim(K), helpers.frame_pos([K, K], P).
@@ -23,7 +23,7 @@
     .decl anchor(d: DiagDir)
     anchor(DIAG_TL).
 
-    // --- Lookup ---
+    // --- $Lookup ---
     .decl tile_d4(p: Position, d: D4)
     GRID_2x2(tile_d4,
         D4_ID, D4_LR,
@@ -32,13 +32,13 @@
 
 .init params = Params
 
-// --- Lookup ---
+// --- $Lookup ---
 out(P_grid, Col, $Lookup()) :-
     in(P_in, Col),                                            // input cell
     params.tile_d4(P_tile, D), apply(D, P_in, P_intile),      // d4 image at tile
     concat_2d(P_tile, P_intile, 0, P_grid).                   // recompose
 
-// --- Mirror ---
+// --- $Mirror ---
 // Per-axis within-tile image.
 .decl mirror(a: Axis, p_tile: Position, p: Position, p_img: Position)
 mirror(A, T, P, P_img) :-
@@ -55,7 +55,7 @@ out(P_grid, Col, $Mirror()) :-
     mirror(A1, T, P_in, P1), mirror(A2, T, P1, P_intile),   // image through both axes
     concat_2d(T, P_intile, 0, P_grid).                      // recompose
 
-// --- Unfold ---
+// --- $Unfold ---
 .decl anchor_tile(p: Position)
 anchor_tile(T) :- params.arr_pos(T), params.anchor(Diag), corner_anchor(Diag, T, ZERO).
 

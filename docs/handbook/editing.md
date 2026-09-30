@@ -32,7 +32,7 @@
     - Its context: `context role <name>`.
     - A role's brief comes from the script or the session that spawns it, and the `context role` output gives that file's path.
 - The audit's deletion report: [Deletion report](prompts/run_dl.md).
-- The other sentences a runner tool prints: the `mctx` strings of the modules under [dl](src/dl), and the help text in [cli.py](src/dl/cli.py) and [context.py](scripts/context.py).
+- The other sentences a runner tool prints: the `mctx` strings of the modules under [dl](src), and the help text in [cli.py](src/cli/parser.py) and [context.py](scripts/context.py).
 - What the callout-rate classifier reads: [Classification rubric](tools/console/recal/RUBRIC.md).
 - The classifier: [Callout rate recalibration](tools/console/recal/README.md).
 - The workflow briefs and the schema descriptions: the scripts under [workflows](.claude/workflows).

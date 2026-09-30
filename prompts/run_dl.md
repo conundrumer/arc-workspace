@@ -14,7 +14,7 @@
 
 ## noop
 - {{count}}/{{judged}} deletions change nothing:
-    - The removal changed no pair's output and no determined value.
+    - The removal changed no pair's output{{determined}}.
     - The pairs never instantiate the structure it removed, or another atom already implies that structure.
     - Judge which.
     * comment:
@@ -46,6 +46,9 @@
 ## unexercised
 - the pairs do not separate the case's model from the concept case's:
     * inline: #cases-settle-nothing
+
+## timed-out
+- the runs below timed out:
 
 ## Partials
 

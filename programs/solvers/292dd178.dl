@@ -43,7 +43,7 @@ hole(P) :- bbox.box(_, B), in(P, _), interior(P, B).
 // The cells the fill covers.
 .decl painted(p: Position, ch: Choice)
 
-// --- Flow ---
+// --- $Flow ---
 
 .init flow = Ray<Unit>
 flow.dir($U(), D) :- dir_elem(D).
@@ -53,7 +53,7 @@ flow.blocked($U(), P) :- wall_cell(P).
 
 painted(P, $Flow()) :- flow.clear($U(), P, _, _, _).
 
-// --- Cast ---
+// --- $Cast ---
 
 .init cast = Ray<Dir>
 cast.dir(D, D) :- dir_elem(D).

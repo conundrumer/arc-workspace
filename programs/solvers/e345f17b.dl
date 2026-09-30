@@ -27,7 +27,7 @@
 .comp Params {
     .init helpers = ParamsHelpers
 
-    // --- Table, Size decompose data ---
+    // --- $Table, Size decompose data ---
     // the tile's extent on both axes
     .decl frame_dim(k: number) frame_dim(4).
 
@@ -43,7 +43,7 @@
     .decl divisor(n: number)
     divisor(2).
 
-    // --- Count, Size decompose data ---
+    // --- $Count, Size decompose data ---
     .decl divide_axis(a: Axis)
     divide_axis(AXIS_H).
 

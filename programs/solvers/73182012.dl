@@ -13,11 +13,11 @@
 .comp Params {
     .decl bg(c: Color) bg(0).
 
-    // --- Half ---
+    // --- $Half ---
     .decl divisor(n: number) divisor(2).
     .decl out_tile(p_tile: Position) out_tile([0, 1, 0, 1]).
 
-    // --- Window ---
+    // --- $Window ---
     .decl win_dim(k: number) win_dim(4).
     .decl corner(d: DiagDir) corner(DIAG_TL).
 }
@@ -33,13 +33,13 @@ bbox.cell($U(), P) :- ink(P).
 .decl box_cell(p_box: Position, col: Color)
 box_cell(P_box, Col) :- bbox.box($U(), B), in(P, Col), crop(P, B, P_box).
 
-// --- Half ---
+// --- $Half ---
 out(P_out, Col, $Half()) :-
     box_cell(P_box, Col),
     params.divisor(N), divide_2d(P_box, N, 0, P_tile, P_out),    // box divided NxN
     params.out_tile(P_tile).                                     // the output tile
 
-// --- Window ---
+// --- $Window ---
 .init win = Frame2D<Unit>
 win.extent($U(), A, K) :- params.win_dim(K), axis_elem(A).
 

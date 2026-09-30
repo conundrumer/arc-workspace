@@ -47,7 +47,7 @@
     mark_rank(3, 0).
     mark_rank(4, 1).
 
-    // --- Rotate ---
+    // --- $Rotate ---
     // The rotation carrying a piece's open corner to its step direction.
     // Reflections are outside the domain: each piece is symmetric about the
     // diagonal of its own open corner, so a reflection only repeats a
@@ -56,7 +56,7 @@
     rot(5, D4_ID).
     rot(2, D4_HT).
 
-    // --- Lookup ---
+    // --- $Lookup ---
     .decl step(src: Color, open: DiagDir, dir: DiagDir)
     step(5, DIAG_TR, DIAG_TR).
     step(5, DIAG_BL, DIAG_BL).
@@ -98,12 +98,12 @@ parse.cell(O, P) :- piece_cell(O, P).
 
 .decl step_dir(o: Obj, dir: DiagDir, s: Step)
 
-// --- Rotate ---
+// --- $Rotate ---
 step_dir([Col, Id], D, $Rotate()) :-
     parse.open_diag([Col, Id], Diag),                   // the piece's open corner
     params.rot(Col, Rot), apply_diag_dir(Rot, Diag, D). // turned by the piece color's rotation
 
-// --- Lookup ---
+// --- $Lookup ---
 step_dir([Col, Id], D, $Lookup()) :- parse.open_diag([Col, Id], Diag), params.step(Col, Diag, D).
 
 // --- shared ---
@@ -118,7 +118,7 @@ mark_cell(Q, M, S) :-
 .init win = ArgExtremes<MarkKey, Color>
 win.cand([P, S], M, R) :- mark_cell(P, M, S), params.mark_rank(M, R).
 
-// --- Keep ---
+// --- $Keep ---
 out(P, Col, [S, $Keep()]) :- in(P, Col), !params.bg(Col), step_choice(S).
 out(P, Col, [S, $Keep()]) :-
     in(P, Bg), params.bg(Bg), step_choice(S),  // background cell
@@ -126,7 +126,7 @@ out(P, Col, [S, $Keep()]) :-
     ; !mark_cell(P, _, S), Col = Bg            // no copy reaches it
     ).
 
-// --- Cover ---
+// --- $Cover ---
 out(P, Col, [S, $Cover()]) :-
     in(P, Col_in), step_choice(S),       // input cell
     ( win.low([P, S], Col, _)            // the winning copy lands on it

@@ -47,11 +47,11 @@ paint(Q, Col, Ch) :- rays.stop(Ch, Q, _, _, P), marker(P, Col).
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !paint(P, _, Ch).
 
-// --- Block ---
+// --- $Block ---
 
 rays.blocked($Block(), P) :- block_cell(P).
 
-// --- Box ---
+// --- $Box ---
 
 .init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- block_cell(P).

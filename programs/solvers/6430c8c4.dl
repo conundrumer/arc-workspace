@@ -31,7 +31,7 @@
     // the tile's extent on both axes, which is the output frame's extent
     .decl frame_dim(k: number) frame_dim(4).
 
-    // --- Table ---
+    // --- $Table ---
     .decl arr_dim(a: Axis, n: number)
     arr_dim(AXIS_V, 2). arr_dim(AXIS_H, 1).
     .decl gap(g: number) gap(1).
@@ -40,18 +40,18 @@
         arr_dim(AXIS_V, Av), arr_dim(AXIS_H, Ah), frame_dim(K), gap(G),
         helpers.tile_pos([Av, Ah], [K, K], [G, 0], P_grid, P_tile, P_intile).
 
-    // --- Count, Size ---
+    // --- $Count, $Size ---
     .decl divide_axis(a: Axis)
     divide_axis(AXIS_V).
 
     .decl divide_gap(g: number)
     divide_gap(1).
 
-    // --- Count ---
+    // --- $Count ---
     .decl divisor(n: number)
     divisor(2).
 
-    // --- Lookup ---
+    // --- $Lookup ---
     .decl combine_member(id: Ident, p_outer: Position, c: Color)
     .decl combine_out(id: Ident, c_out: Color)
 
@@ -60,7 +60,7 @@
     combine_member(2, [0,1,0,0], 0). combine_member(2, [1,0,0,0], 2). combine_out(2, 0).
     combine_member(3, [0,1,0,0], 7). combine_member(3, [1,0,0,0], 2). combine_out(3, 0).
 
-    // --- Nor ---
+    // --- $Nor ---
     .decl frame(p: Position)
     frame(P) :- frame_dim(K), helpers.frame_pos([K, K], P).
     .decl bg(c: Color) bg(0).
@@ -92,7 +92,7 @@ decompose(P_grid, P_tile, P_intile, $Size()) :-
     params.divide_axis(A), params.frame_dim(K), params.divide_gap(G),
     divide_by_size_slab(P_grid, A, K, G, P_tile, P_intile).
 
-// --- Nor ---
+// --- $Nor ---
 
 .decl filled(o: Position, dc: DecChoice)
 filled(P_grid_out, Dc) :-

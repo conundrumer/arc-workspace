@@ -37,7 +37,7 @@ empty(P) :- in(P, Col), params.bg(Col).
 // An arm's relative from its center and its color, by center color.
 .decl template(c: Choice, c_center: Color, v: Offset, c_arm: Color)
 
-// --- Line ---
+// --- $Line ---
 
 template($Line(), Cc, V, Ca) :-
     in(P, Cc), !params.bg(Cc),                                   // the center
@@ -46,7 +46,7 @@ template($Line(), Cc, V, Ca) :-
     neighbor(P, D2, Q2), in(Q2, Ca),                             // and at the other
     step_offset(D, V).
 
-// --- Figure ---
+// --- $Figure ---
 
 .init figure = Components8<Unit>
 figure.node($U(), P) :- in(P, Col), !params.bg(Col).

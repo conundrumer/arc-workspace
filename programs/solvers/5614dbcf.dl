@@ -27,13 +27,13 @@
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- Count ---
+    // --- $Count ---
     .decl divisor(n: number) divisor(3).
 
-    // --- Size ---
+    // --- $Size ---
     .decl tile_size(k: number) tile_size(3).
 
-    // --- Solid ---
+    // --- $Solid ---
     .decl noise(c: Color) noise(5).
 }
 
@@ -41,22 +41,22 @@
 
 .decl tile(p_grid: Position, p_tile: Position, dc: DecChoice)
 
-// --- Count ---
+// --- $Count ---
 tile(P_grid, P_tile, $Count()) :-
     in(P_grid, _), params.divisor(N), divide_2d(P_grid, N, 0, P_tile, _).
 
-// --- Size ---
+// --- $Size ---
 tile(P_grid, P_tile, $Size()) :-
     in(P_grid, _), params.tile_size(K), divide_by_size_2d(P_grid, K, 0, P_tile, _).
 
-// --- Vote ---
+// --- $Vote ---
 
 .init vote = Mode<TileKey, Color, Position>
 vote.item([Dc, P_tile], Col, P_grid) :- tile(P_grid, P_tile, Dc), in(P_grid, Col).
 
 out(P_tile, Col, [$Vote(), Dc]) :- vote.mode([Dc, P_tile], Col).
 
-// --- Solid ---
+// --- $Solid ---
 
 .init solid = Unanimous<TileKey, Color>
 solid.item([Dc, P_tile], Col) :- tile(P_grid, P_tile, Dc), in(P_grid, Col), !params.noise(Col).

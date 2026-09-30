@@ -65,11 +65,11 @@ mirror(Id, P, P_out) :-
 // The source side is the side holding most of the case's cells.
 .init side_pick = Mode<ObjCase, Dir, Position>
 
-// --- Mark ---
+// --- $Mark ---
 
 side_pick.item([Id, $Mark()], D, P) :- side(Id, D, P), obj_mark(Id, P).
 
-// --- Count ---
+// --- $Count ---
 
 side_pick.item([Id, $Count()], D, P) :- side(Id, D, P), obj(Id, P).
 

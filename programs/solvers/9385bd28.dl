@@ -73,7 +73,7 @@ pieces.node(C, P) :- drawn(C, P).
 
 .decl mark(ch: Choice, c: Color, p: Position)
 
-// --- Open ---
+// --- $Open ---
 
 .init piece_box = Bbox<Ident>
 piece_box.cell(Id, P) :- pieces.label(_, P, Id).
@@ -83,7 +83,7 @@ open_box(Id) :- piece_box.box(Id, B), in(P, _), crop(P, B, _), !pieces.label(_, 
 
 mark($Open(), C, P) :- pieces.label(C, P, Id), open_box(Id).
 
-// --- Paired ---
+// --- $Paired ---
 
 mark($Paired(), C, P) :- pieces.label(C, P, Id), pieces.label(C, _, Id2), Id != Id2.
 

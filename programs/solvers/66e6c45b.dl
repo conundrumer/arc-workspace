@@ -19,7 +19,7 @@
 .comp Params {
     .decl bg(c: Color) bg(0).
 
-    // --- Table ---
+    // --- $Table ---
     .decl in_label(p: Position, id: Ident)
     GRID_SPARSE_4x4(in_label,
         _, _, _, _,
@@ -48,30 +48,30 @@ gdp.cell($U(), P) :- in(P, _).
 
 .decl target(p: Position, col: Color, ch: Choice)
 
-// --- Quad ---
+// --- $Quad ---
 
 target(P_corner, Col, $Quad()) :-
     shape(P, Col), gdp.quadrant($U(), P, Diag),
     gdp.diag_cell($U(), P_corner, Diag, 0).    // grid corner at that diagonal
 
-// --- Stretch, Explode: the shape's own corner cells ---
+// --- $Stretch, $Explode: the shape's own corner cells ---
 
 .init bb = Bbox<Unit>
 bb.cell($U(), P) :- shape(P, _).
 
-// --- Stretch ---
+// --- $Stretch ---
 
 target(P_corner, Col, $Stretch()) :-
     shape(P, Col), bb.box($U(), B), box_corner(P, B, Diag),
     gdp.diag_cell($U(), P_corner, Diag, 0).    // grid corner at that diagonal
 
-// --- Explode ---
+// --- $Explode ---
 
 target(P_out, Col, $Explode()) :-
     shape(P, Col), bb.box($U(), B), box_corner(P, B, Diag),
     neighbor(P, Diag, P_out).
 
-// --- Table ---
+// --- $Table ---
 
 target(P_out, Col, $Table()) :- in(P_in, Col), params.map(P_in, P_out).
 

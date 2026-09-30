@@ -1,0 +1,122 @@
+// a2fd1cf0
+// @draft
+// @keywords: markers span
+// @scene two-markers: a background of 0 holds exactly one params.start_color
+//  cell and one params.end_color cell, in different rows and different columns
+// @rule corner: the corner cell lies on the params.start_axis line of the
+//  params.start_color cell and on the other axis's line of the params.end_color
+//  cell
+// @rule l-path: the output paints params.path_color on every cell strictly
+//  between the params.start_color cell and the corner, on the corner, and on
+//  every cell strictly between the corner and the params.end_color cell
+// @rule keep: every other cell keeps its input color
+
+// where the background color comes from
+.type BgSource =
+    // @claim l-path
+    StoredBg {}
+    // @rule l-path: the background the path paints over is the input's most
+    //  frequent color
+    // @witness field-of-one: variant $DominantBg
+    //     @relaxed two-markers
+  | DominantBg {}
+
+// what the path does to a path cell that is not background
+.type Choice =
+    // @claim l-path
+    PaintAll {}
+    // @rule l-path: the path paints the same cells, except that the
+    //  params.start_color and params.end_color cells keep their color
+    // @witness same-row: borderline $KeepMarkers
+    //     @relaxed two-markers
+  | KeepMarkers {}
+    // @rule l-path: the path paints params.path_color only on its cells that
+    //  hold params.bg
+    // @witness same-row: borderline $KeepMarkers
+    // @witness ink-on-path: foreign any
+    //     @relaxed two-markers
+  | BackgroundOnly {bg: BgSource}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl start_color(c: Color) start_color(2).
+    .decl end_color(c: Color) end_color(3).
+    .decl path_color(c: Color) path_color(8).
+    // The axis of the leg through the start_color cell; the leg through the
+    // end_color cell runs on the other axis.
+    .decl start_axis(a: Axis) start_axis(AXIS_H).
+
+    // --- $StoredBg ---
+    .decl bg(c: Color) bg(0).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($PaintAll()). impl_choice($KeepMarkers()).
+impl_choice($BackgroundOnly($StoredBg())). impl_choice($BackgroundOnly($DominantBg())).
+
+// The one cell of each color.
+// @claim two-markers
+.init mark = Unanimous<Color, Position>
+mark.item(Col, P) :- in(P, Col).
+
+// The marker of color Col at P, and the axis of its leg.
+.decl leg(col: Color, p: Position, a: Axis)
+leg(Col, P, A_leg) :-
+    mark.value(Col, P), params.start_axis(A),
+    ( params.start_color(Col), A_leg = A
+    ; params.end_color(Col), perp(A, A_leg)
+    ).
+
+// The cell on both legs' lines.
+.decl corner(p: Position)
+corner(K) :-
+    in(K, _),
+    leg(_, P1, A1), same_line(A1, K, P1),
+    leg(_, P2, A2), perp(A1, A2), same_line(A2, K, P2).
+
+// Each leg runs from its marker to the corner.
+// @ignore cell: store — the keys are the marker colors, which Params stores
+//  as start_color and end_color
+// @claim l-path
+.init span = Between<Color>
+span.axis(Col, A) :- leg(Col, _, A).
+span.cell(Col, P) :- leg(Col, _, _), in(P, _).
+span.mark(Col, P) :- leg(Col, P, _).
+span.mark(Col, K) :- leg(Col, _, _), corner(K).
+
+// The legs without their markers; the corner is on one of them.
+.decl path(p: Position)
+path(P) :- span.between(Col, P), leg(Col, M, _), P != M.
+
+// The path cells case Ch paints.
+.decl painted(ch: Choice, p: Position)
+
+out(P, Col, Ch) :-
+    impl_choice(Ch), corner(_), in(P, C_in),    // defined only where the corner exists
+    ( painted(Ch, P), params.path_color(Col)
+    ; !painted(Ch, P), Col = C_in
+    ).
+
+// --- $PaintAll ---
+painted($PaintAll(), P) :- path(P).
+
+// --- $KeepMarkers ---
+painted($KeepMarkers(), P) :- path(P), !leg(_, P, _).
+
+// --- $BackgroundOnly ---
+.decl background(s: BgSource, c: Color)
+
+painted($BackgroundOnly(S), P) :- path(P), in(P, Bg), background(S, Bg).
+
+// --- $StoredBg ---
+background($StoredBg(), Bg) :- params.bg(Bg).
+
+// --- $DominantBg ---
+// @claim l-path
+.init field = Mode<Unit, Color, Position>
+field.item($U(), Col, P) :- in(P, Col).
+
+background($DominantBg(), Bg) :- field.mode($U(), Bg).

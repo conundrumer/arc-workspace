@@ -35,7 +35,7 @@
 
 .init params = Params
 
-// --- lattice ---
+// --- $Lattice ---
 
 // A line carrying a bg cell. A line with none is a cutting line.
 .decl gapped_line(l: Position)
@@ -70,7 +70,7 @@ tiles.divider($Lattice(), A, Ln) :- on_line(P, A), split(P, A, Ln, _).
 // $Marked — the cutting lines a mark sits on.
 tiles.divider($Marked(), A, Ln) :- mark(P, _), axis_elem(A), split(P, A, Ln, _).
 
-// --- blocks ---
+// --- $Blocks ---
 
 // The mark at corner d of a tile.
 .decl corner_mark(l: Lines, p_tile: Position, d: DiagDir, col: Color)

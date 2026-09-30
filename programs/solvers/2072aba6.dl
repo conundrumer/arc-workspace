@@ -24,13 +24,13 @@
     .decl intile(p: Position)
     intile(P) :- scale(K), helpers.frame_pos([K, K], P).
 
-    // --- Table ---
+    // --- $Table ---
     .decl template(p: Position, col: Color)
     GRID_2x2(template,
         1, 2,
         2, 1)
 
-    // --- Checker ---
+    // --- $Checker ---
     // Even frame dims: both corners of seed_diag seed the same phase.
     .decl seed_diag(da: DiagAxis) seed_diag(DAXIS_DG).
     .decl corner(d: DiagDir)
@@ -64,11 +64,11 @@ out(P_grid_out, Bg, Ch) :-
     impl_choice(Ch), cell(P_grid_out, _, _),
     !inked(P_grid_out, _), params.bg(Bg).
 
-// --- Table ---
+// --- $Table ---
 out(P_grid_out, Col, $Table()) :-
     inked(P_grid_out, P_intile), params.template(P_intile, Col).
 
-// --- Checker ---
+// --- $Checker ---
 // Grid-global 2-coloring: seeded at a corner, each unit step swaps color.
 .decl checker(p: Position, col: Color)
 checker(P, Col) :-

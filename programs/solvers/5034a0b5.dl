@@ -59,11 +59,11 @@ move(P, Q, Col, Ch) :-
     heading(P, D, Col), neighbor(P, D, Q),  // the mark's step
     impl_choice(Ch), !blocked(P, Ch).       // that nothing holds back
 
-// --- Cell ---
+// --- $Cell ---
 
 blocked(P, $Cell()) :- faces_frame(P).
 
-// --- Object ---
+// --- $Object ---
 
 .init obj = Components8<Color>
 obj.node(Col, P) :- heading(P, _, Col).

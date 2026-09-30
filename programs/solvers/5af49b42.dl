@@ -51,14 +51,14 @@ out(P, Col, Ch) :-
     ; !stamp(P, _, Ch), Col = Col_in       // untouched
     ).
 
-// --- Object ---
+// --- $Object ---
 
 .decl multi_cell(id: Ident)
 multi_cell(Id) :- piece(Id, P, _), piece(Id, Q, _), P != Q.
 
 bar(Id, P, Col, $Object()) :- piece(Id, P, Col), multi_cell(Id).
 
-// --- Edge ---
+// --- $Edge ---
 
 .decl on_edge(id: Ident)
 on_edge(Id) :- piece(Id, P, _), dir_elem(D), dist(P, D, 0).

@@ -2,7 +2,7 @@
   "id": "9b30e358",
   "witnesses": [{
     "id": "gap-below",
-    "separates": "Ink, Edge, and Both units when a blank line lies between the ink and the edge opposite params.dir",
+    "separates": "$Ink, $Edge, and $Both units when a blank line lies between the ink and the edge opposite params.dir",
     "input": [
       [3,3,3,3,3,3,3],
       [3,3,3,3,3,3,3],
@@ -16,7 +16,7 @@
       [3,3,3,3,3,3,3]
     ],
     "output": [{
-      "cases": ["concept","EdgeLine"],
+      "cases": ["$Ink & $Toward"],
       "grid": [
         [3,3,3,3,9,3,3],
         [3,3,3,9,2,9,3],
@@ -30,7 +30,7 @@
         [3,3,3,3,3,3,3]
       ]
     }, {
-      "cases": ["Edge"],
+      "cases": ["$Edge"],
       "grid": [
         [3,3,3,9,2,9,3],
         [3,3,3,2,9,2,3],
@@ -44,7 +44,7 @@
         [3,3,3,3,3,3,3]
       ]
     }, {
-      "cases": ["Both"],
+      "cases": ["$Both"],
       "grid": [
         [3,3,3,3,9,3,3],
         [3,3,3,9,2,9,3],
@@ -60,7 +60,7 @@
     }]
   }, {
     "id": "dense-ink",
-    "separates": "the majority and the edge-line background readings when the ink outnumbers the background",
+    "separates": "the majority and the $EdgeLine background readings when the ink outnumbers the background",
     "input": [
       [5,5,5,5,5],
       [5,5,5,5,5],
@@ -74,7 +74,7 @@
       [2,2,2,2,2]
     ],
     "output": [{
-      "cases": ["concept","Edge"],
+      "cases": ["$Toward & $Majority"],
       "grid": [
         [5,5,5,5,5],
         [5,5,5,5,5],
@@ -88,7 +88,7 @@
         [2,2,2,2,2]
       ]
     }, {
-      "cases": ["Both"],
+      "cases": ["$Both"],
       "grid": [
         [5,5,5,5,5],
         [5,5,5,5,5],
@@ -102,7 +102,7 @@
         [5,5,5,5,5]
       ]
     }, {
-      "cases": ["EdgeLine"],
+      "cases": ["$EdgeLine"],
       "grid": [
         [2,2,2,2,2],
         [2,5,2,5,2],

@@ -27,10 +27,10 @@
     .decl bg(c: Color) bg(0).
     .decl out_fill(c: Color) out_fill(1).
 
-    // --- Tile(Count), Center(Count) ---
+    // --- $Count ---
     .decl tile_count(n: number) tile_count(3).
 
-    // --- Tile(Size), Center(Size) ---
+    // --- $Size ---
     .decl tile_dim(k: number) tile_dim(3).
 }
 
@@ -39,7 +39,7 @@
 .decl mark(p: Position)
 mark(P) :- in(P, Col), !params.bg(Col).
 
-// --- Tile, Center ---
+// --- $Tile, $Center ---
 
 .decl decomp(dc: DecChoice, p: Position, p_tile: Position, p_intile: Position)
 decomp($Count(), P_grid, P_tile, P_intile) :-
@@ -49,7 +49,7 @@ decomp($Size(), P_grid, P_tile, P_intile) :-
     in(P_grid, _), params.tile_dim(K),              // input position, tile size
     divide_by_size_2d(P_grid, K, 0, P_tile, P_intile).
 
-// --- Tile ---
+// --- $Tile ---
 
 .decl mark_tile(dc: DecChoice, p_tile: Position)
 mark_tile(Dc, P_tile) :- mark(P_grid), decomp(Dc, P_grid, P_tile, _).
@@ -60,7 +60,7 @@ out(P, Col, $Tile(Dc)) :-
     ; !mark_tile(Dc, P_tile), params.bg(Col)             // any other tile — bg
     ).
 
-// --- Center ---
+// --- $Center ---
 
 .decl center_tile(dc: DecChoice, p_tile: Position)
 center_tile(Dc, P_tile) :-
@@ -73,7 +73,7 @@ out(P, Col, $Center(Dc)) :-
     ; !center_tile(Dc, P_tile), params.bg(Col)           // any other tile — bg
     ).
 
-// --- Grow ---
+// --- $Grow ---
 
 .decl grown(p: Position)
 grown(P) :- mark(P).

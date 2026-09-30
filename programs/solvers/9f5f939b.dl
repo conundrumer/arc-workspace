@@ -32,7 +32,7 @@
     //  it, one from each cardinal direction, each lying along the direction
     //  it stands in, its near end one cell away and the first ink the cell
     //  meets toward it
-    // @witness plugged: variant Clear
+    // @witness plugged: variant $Clear
     //     @relaxed dominoes
   | Clear {}
 
@@ -66,7 +66,7 @@ ink(P) :- in(P, Col), !params.bg(Col).
 .decl domino_end(e: Position, d: Dir)
 domino_end(E, D) :- ink(E), dir_elem(D), neighbor(E, D, F), ink(F).
 
-// --- Near ---
+// --- $Near ---
 
 // A domino points at P from direction D, one cell away.
 .decl near_arm(s: Sight, p: Position, d: Dir)
@@ -80,7 +80,7 @@ near_arm($Clear(), P, D) :- near_arm($Any(), P, D), neighbor(P, D, G), !ink(G).
 near_pair(S, P, A) :-
     near_arm(S, P, D), axis_of(D, A), opposite(D, O), near_arm(S, P, O).
 
-// --- Centered, Midpoint ---
+// --- $Centered, $Midpoint ---
 
 // @claim cross
 .init see = Ray<Unit>

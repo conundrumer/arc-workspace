@@ -53,10 +53,10 @@ link(Col, D, P1, K) :-
 
 .decl paint(p: Position, col: Color, ch: Choice)
 
-// --- Cast ---
+// --- $Cast ---
 paint(P, Col, $Cast()) :- link(Col, D, P1, _), shot.clear($U(), P, D, _, P1).
 
-// --- Span ---
+// --- $Span ---
 paint(P, Col, $Span()) :-
     link(Col, D, P1, K_end),                  // the pair's facing corners, K_end apart
     shot.ray($U(), P, D, K, P1), K < K_end.   // every field cell short of the far one

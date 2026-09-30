@@ -61,7 +61,7 @@ impl_choice($Core()). impl_choice($Corner()).
 .decl ink(p: Position, ch: Choice)
 ink(P, Ch) :- moved_box(P), impl_choice(Ch).
 
-// --- Core ---
+// --- $Core ---
 
 // The moved core casts a diagonal each way.
 .init diag = Ray<Unit>
@@ -71,7 +71,7 @@ diag.mark($U(), P2) :- core(P), travel(V), compose(P, V, P2).
 
 ink(P, $Core()) :- diag.ray($U(), P, _, K, _), K != 0.  // the core itself stays free
 
-// --- Corner ---
+// --- $Corner ---
 
 .init bx = Bbox<Unit>
 bx.cell($U(), P) :- moved_box(P).

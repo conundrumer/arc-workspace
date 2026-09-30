@@ -20,10 +20,14 @@
     .decl plus(key: Key, m: Member)  // @input
     .decl minus(key: Key, m: Member)  // @input
 
+    // The keys of the plus set, so each count runs once per key.
+    .decl _key(key: Key)
+    _key(Ky) :- plus(Ky, _).
+
     /// The count of the plus set minus the count of the minus set.
     .decl excess(key: Key, n: number)
     excess(Ky, N) :-
-        plus(Ky, _),
+        _key(Ky),
         Np = count : { plus(Ky, M1) }, Nn = count : { minus(Ky, M2) },
         Np > Nn, N = Np - Nn.
 }

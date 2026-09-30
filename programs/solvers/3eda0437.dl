@@ -21,7 +21,7 @@
     .decl bg(col: Color) bg(0).
     .decl paint(col: Color) paint(6).
 
-    // --- Block ---
+    // --- $Block ---
     // The block's side.
     .decl block(k: number) block(2).
 }
@@ -87,7 +87,7 @@ filled(P, Ch) :- best.high(Ch, B, _), parse.hole_cell($U(), B, P).
 .decl impl_choice(ch: Choice)
 impl_choice($Area()). impl_choice($Block()).
 
-// --- Area ---
+// --- $Area ---
 
 // A box holding two cells a diagonal step apart is a region, not a line.
 .decl region(b: Box)
@@ -101,7 +101,7 @@ size.item(B, P) :- region(B), parse.hole_cell($U(), B, P).
 
 score(B, N, $Area()) :- size.tally(B, N).
 
-// --- Block ---
+// --- $Block ---
 
 score(B, N, $Block()) :- params.block(K), parse.seats($U(), B, K, N).
 

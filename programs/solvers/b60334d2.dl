@@ -20,11 +20,11 @@
     .decl bg(c: Color) bg(0).
     .decl marker(c: Color) marker(5).
 
-    // --- Halo ---
+    // --- $Halo ---
     .decl side_col(c: Color) side_col(1).
     .decl corner_col(c: Color) corner_col(5).
 
-    // --- Stamp ---
+    // --- $Stamp ---
     .decl template(off: Offset, col: Color)
     GRID_STAMP_SPARSE_3x3(template,
         5,  1, 5,
@@ -39,7 +39,7 @@ marker_at(P, Col) :- in(P, Col), params.marker(Col).
 
 .decl halo(p: Position, col: Color, ch: Choice)
 
-// --- Halo ---
+// --- $Halo ---
 .decl impl_corner(cr: Corner)
 impl_corner($Fixed()). impl_corner($Prop()).
 
@@ -57,7 +57,7 @@ halo(P, Col, $Halo($Prop())) :-
     marker_at(Q, Col),                               // marker supplies the color
     diag_dir_elem(Dg), neighbor(Q, Dg, P), in(P, _). // a corner neighbor, on-grid
 
-// --- Stamp ---
+// --- $Stamp ---
 halo(P, Col, $Stamp()) :-
     marker_at(Q, _), params.template(Off, Col),      // a marker, a template offset
     compose(Q, Off, P), in(P, _).                    // seated on the marker, on-grid

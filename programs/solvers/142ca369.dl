@@ -21,7 +21,7 @@
     .decl bg(col: Color)
     bg(0).
 
-    // --- Glyph ---
+    // --- $Glyph ---
     // The marker: its shape, the cell a ray leaves from, and where it heads.
     RIGID(marker,
         .decl glyph(p: Position)
@@ -44,7 +44,7 @@ impl_choice($Gap()). impl_choice($Glyph()).
 // The ray reaches p heading d with color col, before reflecting there.
 .decl enter(p: Position, d: DiagDir, col: Color, ch: Choice)
 
-// --- Gap ---
+// --- $Gap ---
 
 .init exposed = Rim<Color>
 exposed.cell(Col, P) :- in(P, Col), !params.bg(Col).
@@ -68,7 +68,7 @@ mark(P_cell, $Gap()) :-
 
 enter(P, D, Col, $Gap()) :- elbow(P, Col, G), diag_opposite(G, D).
 
-// --- Glyph ---
+// --- $Glyph ---
 
 // One key per orientation and color: occurrences are monochrome.
 .type OC = [d: D4, col: Color]

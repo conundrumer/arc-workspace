@@ -1,0 +1,233 @@
+// a78176bb
+// @draft
+// @keywords: lines objects markers rank bbox
+// @scene diagonal-line: one straight diagonal line of one color runs from
+//  grid edge to grid edge; its color is not params.bg and not
+//  params.wedge_color, and it changes from input to input
+// @scene wedges: one or two right-triangle wedges of params.wedge_color touch
+//  the line, each with its hypotenuse along the line and filling a staircase
+//  that grows away from it; no two wedges are on one side of the line
+// @rule erase-wedges: every params.wedge_color cell becomes params.bg
+// @rule keep-line: the line stays in the output unchanged
+// @rule offset-line: for each wedge, a new line of the line's color is drawn
+//  parallel to the line, on the wedge's side, at diagonal offset
+//  k + 1 + params.gap from it, where k is the wedge's largest diagonal offset
+//  from the line; the new line runs from grid edge to grid edge
+// @rule rest-background: every other output cell is params.bg
+
+// where the line's axis comes from
+.type AxisSource =
+    // @claim diagonal-line
+    ReadAxis {}
+    // @scene diagonal-line: the line runs along the diagonal axis
+    //  params.axis; undefined where it runs along the other diagonal
+    // @witness anti-diagonal: variant concept
+    // @witness one-cell-line: borderline $StoredAxis
+  | StoredAxis {}
+
+// which cells are the wedges
+.type WedgeSource =
+    // @claim diagonal-line wedges
+    StoredWedgeColor {}
+    // @scene diagonal-line: the line's color is the one color whose cells
+    //  all lie on one diagonal; undefined where no color, or more than one,
+    //  does
+    // @scene wedges: the wedges are every non-params.bg cell not of the
+    //  line's color
+    // @witness wedge-color-3: variant $DerivedWedgeColor
+    //     @relaxed wedges
+    // @witness facing-wedges: ordinary concept
+    // @witness leg-one-wedge: ordinary concept
+  | DerivedWedgeColor {}
+
+// how far out a wedge's new line goes
+.type Spacing =
+    // @claim offset-line
+    LegPlusGap {}
+    // @rule offset-line: the new line passes through the wedge's farthest
+    //  in-grid 8-neighbor outside the wedges, with no params.gap
+    // @witness corner-on-edge: variant concept
+  | NeighborLine {}
+    // @rule offset-line: k is the side of the wedge's bounding box
+    // @witness truncated-wedge: foreign any
+    //     @relaxed wedges
+  | LegByExtent {}
+
+// how many new lines a side of the line gets
+.type LineCount =
+    // @claim offset-line
+    PerWedge {}
+    // @rule offset-line: each side of the line with a wedge gets one new
+    //  line, placed for the wedge whose line goes farthest out
+    // @witness two-wedges-one-side: variant concept
+    //     @relaxed wedges
+  | PerSide {}
+
+.type Choice = [axis: AxisSource, wedge: WedgeSource, spacing: Spacing, lines: LineCount]
+
+// the readings that find the line and the wedges
+.type Scene = [axis: AxisSource, wedge: WedgeSource]
+
+// one wedge under one scene reading
+.type Piece = [scene: Scene, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    .decl bg(c: Color) bg(0).
+
+    // --- $StoredAxis ---
+    .decl axis(da: DiagAxis) axis(DAXIS_DG).
+
+    // --- $StoredWedgeColor ---
+    .decl wedge_color(c: Color) wedge_color(5).
+
+    // --- $LegPlusGap, $LegByExtent ---
+    // the empty diagonals between a wedge's far corner and its new line
+    .decl gap(k: number) gap(1).
+}
+
+.init params = Params
+
+.decl axis_source_choice(a: AxisSource)
+axis_source_choice($ReadAxis()). axis_source_choice($StoredAxis()).
+
+.decl wedge_source_choice(w: WedgeSource)
+wedge_source_choice($StoredWedgeColor()). wedge_source_choice($DerivedWedgeColor()).
+
+.decl spacing_choice(sp: Spacing)
+spacing_choice($LegPlusGap()). spacing_choice($NeighborLine()). spacing_choice($LegByExtent()).
+
+.decl line_count_choice(n: LineCount)
+line_count_choice($PerWedge()). line_count_choice($PerSide()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([A, W, Sp, N]) :-
+    axis_source_choice(A), wedge_source_choice(W), spacing_choice(Sp), line_count_choice(N).
+
+.decl ink(col: Color)
+ink(Col) :- in(_, Col), !params.bg(Col).
+
+// Two cells of one color lie on one line of axis da.
+.decl aligned(da: DiagAxis, p: Position, q: Position)
+aligned(DA, P, Q) :- ink(Col), in(P, Col), in(Q, Col), diag_axis_elem(DA), same_line(DA, P, Q).
+
+// Some two cells of the color lie on different lines of axis da.
+.decl off_line(col: Color, da: DiagAxis)
+off_line(Col, DA) :- ink(Col), in(P, Col), in(Q, Col), diag_axis_elem(DA), !aligned(DA, P, Q).
+
+.decl collinear(col: Color, da: DiagAxis)
+collinear(Col, DA) :- ink(Col), diag_axis_elem(DA), !off_line(Col, DA).
+
+// The color's cells form a line along axis da.
+.decl line_axis(a: AxisSource, col: Color, da: DiagAxis)
+
+// --- $ReadAxis ---
+line_axis($ReadAxis(), Col, DA) :- collinear(Col, DA), diag_perp(DA, DA2), !collinear(Col, DA2).
+
+// --- $StoredAxis ---
+line_axis($StoredAxis(), Col, DA) :- collinear(Col, DA), params.axis(DA).
+
+// @claim diagonal-line
+.init line_color = Unanimous<Scene, Color>
+
+// --- $StoredWedgeColor ---
+line_color.item([A, $StoredWedgeColor()], Col) :-
+    axis_source_choice(A), ink(Col), !params.wedge_color(Col).
+
+// --- $DerivedWedgeColor ---
+line_color.item([A, $DerivedWedgeColor()], Col) :- line_axis(A, Col, _).
+
+// --- shared ---
+
+.decl line(s: Scene, col: Color, da: DiagAxis)
+line([A, W], Col, DA) :- line_color.value([A, W], Col), line_axis(A, Col, DA).
+
+.decl wedge(s: Scene, p: Position)
+
+// --- $StoredWedgeColor ---
+wedge([A, $StoredWedgeColor()], P) :-
+    axis_source_choice(A), in(P, Col), params.wedge_color(Col).
+
+// --- $DerivedWedgeColor ---
+wedge([A, $DerivedWedgeColor()], P) :-
+    line([A, $DerivedWedgeColor()], Col_line, _), in(P, Col), ink(Col), Col != Col_line.
+
+// --- shared ---
+
+// @claim wedges
+.init wedges = Components<Scene>
+wedges.node(S, P) :- wedge(S, P).
+
+// The wedge lies on the side of the line toward corner diag.
+.decl side(pc: Piece, diag: DiagDir)
+side([S, Id], Diag) :-
+    wedges.label(S, P, Id), line(S, Col, DA), in(Q, Col),
+    diag_perp(DA, DA2), diag_axis_of(Diag, DA2), nearer(Diag, P, Q).
+
+// A cell the wedge's new line may pass through.
+.decl reach(pc: Piece, sp: Spacing, diag: DiagDir, p: Position)
+
+// --- $LegPlusGap, $LegByExtent ---
+
+// q is 1 + params.gap diagonals past p, toward corner diag.
+.decl beyond(diag: DiagDir, p: Position, q: Position)
+beyond(Diag, P, Q) :-
+    in(P, _), params.gap(K), dir_of(Diag, _, D), neighbor(P, D, P1), jump(P1, D, K, Q).
+
+// --- $LegPlusGap ---
+reach([S, Id], $LegPlusGap(), Diag, Q) :-
+    side([S, Id], Diag), wedges.label(S, P, Id), beyond(Diag, P, Q).
+
+// --- $NeighborLine ---
+reach([S, Id], $NeighborLine(), Diag, Q) :-
+    side([S, Id], Diag), wedges.label(S, P, Id), neighbor(P, _, Q), in(Q, _), !wedge(S, Q).
+
+// --- $LegByExtent ---
+
+// @claim offset-line
+.init wedge_box = Bbox<Piece>
+wedge_box.cell([S, Id], P) :- wedges.label(S, P, Id).
+
+reach(Pc, $LegByExtent(), Diag, Q) :-
+    side(Pc, Diag), wedge_box.box(Pc, B), box_corner(P, B, Diag), beyond(Diag, P, Q).
+
+// --- shared ---
+
+// Another reached cell of the wedge is farther out.
+.decl passed(pc: Piece, sp: Spacing, p: Position)
+passed(Pc, Sp, P) :- reach(Pc, Sp, Diag, P), reach(Pc, Sp, Diag, Q), nearer(Diag, Q, P).
+
+// A cell on the wedge's new line.
+.decl far(pc: Piece, sp: Spacing, diag: DiagDir, p: Position)
+far(Pc, Sp, Diag, P) :- reach(Pc, Sp, Diag, P), !passed(Pc, Sp, P).
+
+// A cell on a new line.
+.decl anchor(ch: Choice, p: Position)
+
+// --- $PerWedge ---
+anchor([A, W, Sp, $PerWedge()], P) :- far([[A, W], _], Sp, _, P).
+
+// --- $PerSide ---
+
+// Another wedge on the same side places its line farther out.
+.decl outdone(s: Scene, sp: Spacing, p: Position)
+outdone(S, Sp, P) :- far([S, _], Sp, Diag, P), far([S, _], Sp, Diag, Q), nearer(Diag, Q, P).
+
+anchor([A, W, Sp, $PerSide()], P) :- far([[A, W], _], Sp, _, P), !outdone([A, W], Sp, P).
+
+// --- shared ---
+
+.decl lit(ch: Choice, p: Position, col: Color)
+lit([A, W, Sp, N], P, Col) :- impl_choice([A, W, Sp, N]), line([A, W], Col, _), in(P, Col).
+lit([A, W, Sp, N], P, Col) :-
+    anchor([A, W, Sp, N], Q), line([A, W], Col, DA), in(P, _), same_line(DA, P, Q).
+
+out(P, Col, Ch) :- lit(Ch, P, Col).
+out(P, Col, Ch) :-
+    impl_choice(Ch), Ch = [A, W, _, _], params.bg(Col),
+    ( in(P, Col)             // background cell
+    ; wedge([A, W], P)       // erased wedge cell
+    ),
+    !lit(Ch, P, _).

@@ -59,14 +59,14 @@ out(P, Col, Ch) :-
 
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !held(P, Ch).
 
-// --- Rect ---
+// --- $Rect ---
 
 .init outline = Outlines<Unit>
 outline.node($U(), P) :- frame_cell(P).
 
 held(P, $Rect()) :- outline.box($U(), B), in(P, _), interior(P, B).
 
-// --- Enclose ---
+// --- $Enclose ---
 
 .init closed = Closed<Unit>
 closed.cell($U(), P) :- in(P, _), !frame_cell(P).

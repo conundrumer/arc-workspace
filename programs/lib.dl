@@ -11,12 +11,13 @@
 //!
 //! Using a component:
 //!
-//! - `ord`, `count`, and `match` are Souffle reserved words, so an instance
-//!   cannot take them as its name.
+//! - `ord`, `count`, and `match` are Souffle reserved words, so no name can
+//!   be one of them.
 //! - A caller populates the inputs that the outputs it reads derive from.
 //! - An `inline` relation sits under negation only when its clauses
-//!   introduce no variable and the use binds every column. No inline
-//!   relation can appear inside an aggregate; a non-inline relation wraps it.
+//!   introduce no variable and the use binds every column. A record literal
+//!   under negation binds every field. No inline relation can appear inside
+//!   an aggregate; a non-inline relation wraps it.
 //! - The anchor relations (`same_dist`, `corner_anchor`, `slab_anchor`, and
 //!   relations built from them) require every position argument to be bound.
 //!

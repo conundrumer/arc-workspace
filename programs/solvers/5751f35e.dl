@@ -22,7 +22,7 @@
     // What the damage leaves behind.
     .decl bg(c: Color) bg(0).
 
-    // --- Symmetry ---
+    // --- $Symmetry ---
     // The nest's symmetry group.
     .decl sym(s: Sym) sym(SYM_D4).
 }
@@ -36,7 +36,7 @@ peel.cell($U(), P) :- in(P, _).
 .decl ink(p: Position, col: Color)
 ink(P, Col) :- in(P, Col), !params.bg(Col).
 
-// --- Layers ---
+// --- $Layers ---
 
 // A color's box is the ring its shallowest cell sits on.
 .init reach = Extremes<Color>
@@ -55,7 +55,7 @@ shadowed(P, Col) :- layer(Col, B), covered(P, Col2), layer(Col2, B2), interior(B
 out(P, Col, $Layers()) :- covered(P, Col), !shadowed(P, Col).
 out(P, Col, $Layers()) :- in(P, _), !covered(P, _), params.bg(Col).  // outside every box
 
-// --- Rings ---
+// --- $Rings ---
 
 .init ring_color = Unanimous<number, Color>
 ring_color.item(K, Col) :- ink(P, Col), peel.depth($U(), P, K).
@@ -63,7 +63,7 @@ ring_color.item(K, Col) :- ink(P, Col), peel.depth($U(), P, K).
 out(P, Col, $Rings()) :- peel.depth($U(), P, K), ring_color.value(K, Col).
 out(P, Col, $Rings()) :- peel.depth($U(), P, K), !ring_color.item(K, _), params.bg(Col).  // a ring with nothing left in it
 
-// --- Symmetry ---
+// --- $Symmetry ---
 
 // The colors surviving in a cell's orbit. The group holds the identity, so a
 // surviving cell is its own counterpart.

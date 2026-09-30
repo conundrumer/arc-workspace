@@ -69,12 +69,12 @@ out(P, Col, Ch) :-
     layout.pos([Ch, A], Bd, P_line), layout.pos([Ch, A2], Bd2, P_line2),  // the bands' output lines
     compose(P_line, P_line2, P).                                          // where the two lines cross
 
-// --- Box ---
+// --- $Box ---
 .init region_box = Bbox<Unit>
 region_box.cell($U(), P) :- in(P, Col), !params.bg(Col).
 
 // The bounding box, read in its own frame, with the bg cells inside it.
 region(P_inner, Col, $Box()) :- in(P, Col), region_box.box($U(), B), crop(P, B, P_inner).
 
-// --- Cells ---
+// --- $Cells ---
 region(P, Col, $Cells()) :- in(P, Col), !params.bg(Col).

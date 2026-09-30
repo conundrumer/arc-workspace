@@ -21,7 +21,7 @@
     // Carries a block corner onto the corner its color fills.
     .decl transform(d: D4) transform(D4_HT).
 
-    // --- Stride ---
+    // --- $Stride ---
     .decl stride(k: number) stride(2).
 }
 
@@ -56,11 +56,11 @@ impl_choice($Abut()). impl_choice($Stride()).
 out(P, Col, Ch) :- painted(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, _, Ch).
 
-// --- Abut ---
+// --- $Abut ---
 
 // The copy clears the block's own extent, so it touches the block at the corner.
 reach(D, N, $Abut()) :-
     block.box($U(), B), in(P, _), axis_of(D, A), box_extent(B, P, A, N).
 
-// --- Stride ---
+// --- $Stride ---
 reach(D, K, $Stride()) :- dir_elem(D), params.stride(K).

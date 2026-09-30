@@ -17,7 +17,7 @@
     .decl target_offset(off: number) target_offset(1).
     .decl bg(c: Color) bg(0).
 
-    // --- Bbox ---
+    // --- $Bbox ---
     .decl mask_color(c: Color) mask_color(5).
 }
 
@@ -44,11 +44,11 @@ out(P, Col_out, Ch) :-
     ; target_color(Col), !kept(P, Ch), params.bg(Col_out)   // target elsewhere — erased
     ).
 
-// --- Marker ---
+// --- $Marker ---
 
 kept(P, $Marker()) :- target_pos(P).
 
-// --- Bbox ---
+// --- $Bbox ---
 
 .decl mask(p: Position)
 mask(P) :- in(P, MaskCol), params.mask_color(MaskCol).

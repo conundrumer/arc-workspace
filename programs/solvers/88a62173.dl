@@ -18,13 +18,13 @@
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- Count, Size ---
+    // --- $Count, $Size ---
     .decl gap(g: number) gap(1).
 
-    // --- Count ---
+    // --- $Count ---
     .decl tile_count(n: number) tile_count(2).
 
-    // --- Size ---
+    // --- $Size ---
     .decl tile_size(k: number) tile_size(2).
 }
 
@@ -34,17 +34,17 @@
 
 .decl tile_val(p_tile: Position, p_intile: Position, col: Color, ch: Choice)
 
-// --- Count ---
+// --- $Count ---
 tile_val(T, P_intile, Col, $Count()) :-
     in(P_grid, Col), params.tile_count(N), params.gap(G),
     divide_2d(P_grid, N, G, T, P_intile).
 
-// --- Size ---
+// --- $Size ---
 tile_val(T, P_intile, Col, $Size()) :-
     in(P_grid, Col), params.tile_size(K), params.gap(G),
     divide_by_size_2d(P_grid, K, G, T, P_intile).
 
-// --- Cross ---
+// --- $Cross ---
 .type Line = [a: Axis, l: Position]
 .init line_color = Unanimous<Line, Color>
 line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).

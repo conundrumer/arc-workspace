@@ -21,7 +21,7 @@
     .decl frame(col: Color) frame(8).
     .decl ink(col: Color) ink(2).
 
-    // --- Group ---
+    // --- $Group ---
     .decl sym(s: Sym) sym(SYM_BOX).
 }
 
@@ -64,11 +64,11 @@ paint(P_grid_out, Ch) :-
     flip(Id, D, Ch), apply(D, P_inner, P_inner2),  // its mirror image
     parse.inner($U(), Id, P_grid_out, P_inner2).   // back on the grid
 
-// --- Group ---
+// --- $Group ---
 
 flip(Id, D, $Group()) :- ink_cell(Id, _), params.sym(S), sym_member(S, D).
 
-// --- OneSided ---
+// --- $OneSided ---
 
 // An ink cell at least as far from edge D as from its opposite.
 .decl far_cell(id: Ident, d: Dir)
@@ -82,7 +82,7 @@ one_sided(Id, D) :- ink_cell(Id, _), dir_elem(D), !far_cell(Id, D).
 
 flip(Id, D_flip, $OneSided()) :- one_sided(Id, D), axis_of(D, A), flip_of(A, D_flip).
 
-// --- Doorway ---
+// --- $Doorway ---
 
 // An interior cell pinched between two walls opens the interior along the
 // perpendicular axis.

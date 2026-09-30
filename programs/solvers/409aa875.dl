@@ -27,7 +27,7 @@
     // How far a shot travels.
     .decl reach(k: number) reach(5).
 
-    // --- Glyph ---
+    // --- $Glyph ---
     // The arrowhead catalog: each footprint, the cell its shot leaves from,
     // and where that shot heads.
     RIGID(glyph,
@@ -60,7 +60,7 @@ ink(P) :- in(P, Col), !params.bg(Col).
 // A cell of that arrowhead.
 .decl arrow_cell(p_apex: Position, p: Position, ch: Choice)
 
-// --- Local ---
+// --- $Local ---
 
 // The two Dir8 straddling d: a corner's cardinals, or the corners holding a
 // cardinal.
@@ -86,7 +86,7 @@ arrow_cell(A, P, $Local()) :-
     ( P = A                                    // the apex
     ; dir8_flank(G, E), neighbor(A, E, P) ).   // its two arms
 
-// --- Glyph ---
+// --- $Glyph ---
 
 // A footprint in one of its orientations.
 .type Pose = [id: Ident, d: D4]

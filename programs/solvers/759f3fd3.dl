@@ -19,7 +19,7 @@
 .comp Params {
     .decl cross(c: Color) cross(3).
 
-    // --- Cycle ---
+    // --- $Cycle ---
     // The ring beside the center.
     .decl first_ring(c: Color) first_ring(0).
 
@@ -34,7 +34,7 @@
     ring_succ(C, C2) :- ring_cycle(C, C2).
     ring_succ(C, C1) :- cross(C), first_ring(C1).
 
-    // --- Period ---
+    // --- $Period ---
     .decl bg(c: Color) bg(0).
     .decl fill(c: Color) fill(4).
     .decl period(k: number) period(2).
@@ -88,7 +88,7 @@ impl_choice($Cycle()). impl_choice($Period()).
 
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), params.cross(Col).
 
-// --- Cycle ---
+// --- $Cycle ---
 // Ring colors: the cross color advanced one step per ring.
 .init colors = CycleWalk<Unit, Color>
 colors.succ($U(), C, C2) :- params.ring_succ(C, C2).
@@ -97,7 +97,7 @@ colors.step($U(), K) :- parse.ring($U(), _, K).
 out(P, Col, $Cycle()) :-
     parse.ring($U(), P, K), params.cross(C), colors.walk($U(), C, K, Col).
 
-// --- Period ---
+// --- $Period ---
 // A ring a whole number of periods out from the center is filled.
 .decl filled(p: Position)
 filled(P) :- parse.ring($U(), P, K), params.period(W), stride(K, W, 0, _, 0).

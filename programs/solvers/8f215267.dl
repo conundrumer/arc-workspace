@@ -44,7 +44,7 @@ comps.node(Col, P) :- ink(P, Col).
 // Object id of color col is a frame occupying box b.
 .decl frame(col: Color, id: Ident, b: Box, ch: Choice)
 
-// --- Rect ---
+// --- $Rect ---
 
 .init drect = Outlines<Color>
 drect.node(Col, P) :- ink(P, Col).
@@ -58,7 +58,7 @@ frame(Col, Id, B, $Rect()) :-
     comps.label(Col, P, Id), box_edge(P, B, _),   // the object that draws it
     !in_hole(B, Id).                              // and leaves the hole empty
 
-// --- Enclose ---
+// --- $Enclose ---
 
 // What each object closes off, over the cells that are not its own.
 .init closed = Closed<Ident>

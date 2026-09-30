@@ -27,14 +27,14 @@
 .comp Params {
     .decl bg(c: Color) bg(0).
 
-    // --- Named ---
+    // --- $Named ---
     .decl mark_col(c: Color) mark_col(5).
 
-    // --- Markers ---
+    // --- $Markers ---
     // How far the rectangle stands inside the markers' box.
     .decl mark_inset(k: number) mark_inset(1).
 
-    // --- Content ---
+    // --- $Content ---
     // How far the rectangle stands inside the content's box.
     .decl content_inset(k: number) content_inset(1).
 }
@@ -52,12 +52,12 @@ mark_choice($Named()). mark_choice($Lone()).
 .decl mark(p: Position, m: Mark)
 .decl ink(col: Color, m: Mark)
 
-// --- Named ---
+// --- $Named ---
 
 mark(P, $Named())  :- fg(P, Col), params.mark_col(Col).
 ink(Col, $Named()) :- fg(_, Col), !params.mark_col(Col).
 
-// --- Lone ---
+// --- $Lone ---
 
 // A foreground cell with another beside it.
 .decl touching(p: Position)
@@ -74,12 +74,12 @@ span_choice($Markers()). span_choice($Content()).
 .decl spanned(p: Position, ch: Choice)
 .decl inset(k: number, s: Span)
 
-// --- Markers ---
+// --- $Markers ---
 
 spanned(P, [M, $Markers()]) :- mark(P, M).
 inset(K, $Markers()) :- params.mark_inset(K).
 
-// --- Content ---
+// --- $Content ---
 
 spanned(P, [M, $Content()]) :- fg(P, _), mark_choice(M).
 inset(K, $Content()) :- params.content_inset(K).

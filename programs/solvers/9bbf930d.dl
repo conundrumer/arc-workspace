@@ -43,7 +43,7 @@
     Stored {}
     // @scene wall: the wall is the edge that is a solid line of one ink, and
     //  the line inside it is blank
-    // @witness relocated: variant Derived
+    // @witness relocated: variant $Derived
     //     @relaxed wall
   | Derived {}
 
@@ -54,7 +54,7 @@
 .comp Params {
     .decl bg(c: Color) bg(7).
 
-    // --- Stored ---
+    // --- $Stored ---
     // The edge the wall lies on.
     .decl wall_dir(d: Dir) wall_dir(DIR_L).
 }

@@ -22,19 +22,19 @@
 .comp Params {
     .decl bg(col: Color) bg(0).
 
-    // --- Order, Ink(Count) ---
+    // --- $Order, $Count ---
     .decl tiles(n: number) tiles(2).
 
-    // --- Ink(Size) ---
+    // --- $Size ---
     .decl tile_dim(k: number) tile_dim(4).
 
-    // --- Order ---
+    // --- $Order ---
     .decl prio(p: Position, r: number)
     GRID_2x2(prio,
         3, 0,
         1, 2)
 
-    // --- Ink ---
+    // --- $Ink ---
     .decl ink_rank(c: Color, r: number)
     ink_rank(5, 0). ink_rank(6, 1). ink_rank(9, 2). ink_rank(4, 3).
 }
@@ -63,7 +63,7 @@ ink_at(Dc, P, Col) :- tile_ink(Dc, _, P, Col).
 
 out(P, Col, Ch) :- tiling(Ch, Dc), tile_cell(Dc, _, P, _), !ink_at(Dc, P, _), params.bg(Col).
 
-// --- Order ---
+// --- $Order ---
 
 // The foremost tile inking each cell.
 .init front_tile = ArgExtremes<Position, Position>
@@ -71,7 +71,7 @@ front_tile.cand(P, T, R) :- tile_ink($Count(), T, P, _), params.prio(T, R).
 
 out(P, Col, $Order()) :- front_tile.low(P, T, _), tile_ink($Count(), T, P, Col).
 
-// --- Ink ---
+// --- $Ink ---
 
 // The foremost ink at each cell, per division.
 .init front_ink = ArgExtremes<InkKey, Color>

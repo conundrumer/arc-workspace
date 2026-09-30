@@ -29,12 +29,12 @@
     .decl count_color(n: number, col: Color)
     count_color(2, 3). count_color(3, 2). count_color(4, 1).
 
-    // --- $Rank($Big) ---
+    // --- $Big ---
 
     .decl big_color(r: number, col: Color)
     big_color(0, 1). big_color(1, 2). big_color(2, 3).
 
-    // --- $Rank($Small) ---
+    // --- $Small ---
 
     .decl small_color(r: number, col: Color)
     small_color(0, 3). small_color(1, 2). small_color(2, 1).

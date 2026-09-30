@@ -58,11 +58,11 @@ out(P_inner, Col, Ch) :-
     ; !differs(P_shared, Ch), params.bg(Col)       // the rest of the crop
     ).
 
-// --- Xor ---
+// --- $Xor ---
 
 differs(P, $Xor()) :- only_in(_, P).
 
-// --- Damage ---
+// --- $Damage ---
 
 .init fullest = Mode<Unit, Ident, Position>
 fullest.item($U(), Id, P) :- filled(Id, P).

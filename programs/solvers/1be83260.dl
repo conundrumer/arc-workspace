@@ -21,7 +21,7 @@
 .comp Params {
     .decl bg(col: Color) bg(0).
 
-    // --- Assemble ---
+    // --- $Assemble ---
     .decl gap(g: number) gap(1).   // border cells left between stamped blocks
 }
 
@@ -89,7 +89,7 @@ palette(P_tile, Col) :-
     compose(P1, P2, P_tile), compose(L1, L2, P_intile),     // their places, their crossing
     key_cell(P_intile, Col).                                // the color the key block holds
 
-// --- Repaint ---
+// --- $Repaint ---
 
 .decl painted(p: Position, col: Color)
 painted(P_region, Col) :-
@@ -103,7 +103,7 @@ out(P_region, Col, $Repaint()) :-
     ; !painted(P_region, _), border(Col)         // holes and separators
     ).
 
-// --- Assemble ---
+// --- $Assemble ---
 
 .decl assembled(p: Position, col: Color)
 assembled(P_grid_out, Col) :-

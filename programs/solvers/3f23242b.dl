@@ -25,7 +25,7 @@
     .decl ground_dir(d: Dir) ground_dir(DIR_B).
     .decl ground_paint(col: Color) ground_paint(2).
 
-    // --- Lookup ---
+    // --- $Lookup ---
     .decl shape(p: Position, col: Color)
     GRID_SPARSE_5x5(shape,
         5, 5, 5, 5, 5,
@@ -34,7 +34,7 @@
         2, _, _, _, 2,
         8, 8, 8, 8, 8)
 
-    // --- Frame ---
+    // --- $Frame ---
     .decl edge_paint(d: Dir, col: Color)
     edge_paint(DIR_T, 5). edge_paint(DIR_B, 8). edge_paint(DIR_L, 2). edge_paint(DIR_R, 2).
 
@@ -73,10 +73,10 @@ line_cell(P) :-
 .decl paint(p: Position, col: Color, ch: Choice)
 paint(P, Col, Ch) :- line_cell(P), params.ground_paint(Col), impl_choice(Ch).
 
-// --- Lookup ---
+// --- $Lookup ---
 paint(P_grid, Col, $Lookup()) :- placed(P_box, P_grid), params.shape(P_box, Col).
 
-// --- Frame ---
+// --- $Frame ---
 // The stalk the mark casts, which the bracket's edges halt.
 .init stalk = Ray<Unit>
 stalk.cell($U(), P) :- box.cell($U(), P).

@@ -74,7 +74,7 @@ out(P_inner, Col, Ch) :-
     ),
     crop(P, B, P_inner).
 
-// --- Shape ---
+// --- $Shape ---
 
 .init shape = KeyedSetCompare<Hole, Ident, Position>
 shape.pattern_member(O, P_inner) :- obj_cell(O, _, P), bbox.box(O, B), crop(P, B, P_inner).
@@ -82,7 +82,7 @@ shape.observed_member(H, P_inner) :- hole_cell(H, P), hole_box.box(H, B), crop(P
 
 fits(H, O, $Shape()) :- shape.equals(H, O).
 
-// --- Dims ---
+// --- $Dims ---
 
 fits(H, O, $Dims()) :-
     in(P, _), hole_box.box(H, B_h), bbox.box(O, B_o),      // the two boxes, in the grid frame
@@ -90,7 +90,7 @@ fits(H, O, $Dims()) :-
     perp(A, A2),
     box_extent(B_h, P, A2, N2), box_extent(B_o, P, A2, N2).
 
-// --- Size ---
+// --- $Size ---
 
 .init hole_size = Tally<Hole, Position>
 hole_size.item(H, P) :- hole_cell(H, P).

@@ -19,7 +19,7 @@
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- Corners, Contact ---
+    // --- $Corners, $Contact ---
     .decl bg(col: Color) bg(0).
 
     // The color a seat takes, by the corner it sits at.
@@ -29,7 +29,7 @@
     corner_paint(DIAG_BL, 3).
     corner_paint(DIAG_BR, 4).
 
-    // --- Stamp ---
+    // --- $Stamp ---
     // The square that is looked for.
     .decl square(p: Position, col: Color)
     GRID_SPARSE_4x4(square,
@@ -81,11 +81,11 @@ impl_choice($Corners()). impl_choice($Contact()). impl_choice($Stamp()).
 
 .decl painted(p: Position, col: Color, ch: Choice)
 
-// --- Corners ---
+// --- $Corners ---
 
 painted(Q, Col, $Corners()) :- parse.seat($U(), _, Q, D), params.corner_paint(D, Col).
 
-// --- Contact ---
+// --- $Contact ---
 
 // A background cell with ink one step toward D.
 .decl beside(p: Position, d: Dir8)
@@ -104,7 +104,7 @@ painted(Q, Col, $Contact()) :-
     corner_only(Q, D_back), diag_opposite(D_back, D),   // the square lies back that way
     params.corner_paint(D, Col).
 
-// --- Stamp ---
+// --- $Stamp ---
 
 .init occ = Occurrences<Unit, Color>
 occ.cell($U(), P, Col)  :- in(P, Col).

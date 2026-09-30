@@ -18,11 +18,11 @@
     .decl growth(d: DiagDir) growth(DIAG_BR).
     .decl period(n: number) period(3).
 
-    // --- Scale ---
+    // --- $Scale ---
     .decl scale(s: number) scale(2).
     .decl in_tile(p_tile: Position) in_tile([0, 1, 0, 1]).
 
-    // --- Canvas ---
+    // --- $Canvas ---
     .decl out_dim(k: number) out_dim(10).
     .decl anchor(d: DiagDir) anchor(DIAG_TL).
 }
@@ -33,7 +33,7 @@
 .decl frame_cell(c: Choice, p_grid: Position)
 .decl placed(c: Choice, p_grid: Position, p_in: Position)
 
-// --- Scale ---
+// --- $Scale ---
 // The frame is a scale x scale arrangement of input-sized tiles; the
 // input occupies its tile.
 .init tiles = Frame2D<Unit>
@@ -47,7 +47,7 @@ tile_cell(P_grid, P_tile, P_in) :-
 frame_cell($Scale(), P_grid) :- tile_cell(P_grid, _, _).
 placed($Scale(), P_grid, P_in) :- params.in_tile(P_tile), tile_cell(P_grid, P_tile, P_in).
 
-// --- Canvas ---
+// --- $Canvas ---
 // The frame is a stored canvas; the input sits at the anchor corner.
 .init canvas = Frame2D<Unit>
 canvas.extent($U(), A, K) :- params.out_dim(K), axis_elem(A).

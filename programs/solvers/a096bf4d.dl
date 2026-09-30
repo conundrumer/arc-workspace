@@ -47,7 +47,7 @@
     //  position, in tiles of the same tile row or tile column, each tile from
     //  one of those tiles to the other whose cell at that position is not a
     //  mark takes that color at that position
-    // @witness lone-between: borderline KeepMarks
+    // @witness lone-between: borderline $KeepMarks
     //     @relaxed every-mark-paired
   | KeepMarks {}
 
@@ -59,7 +59,7 @@
     //  grid's border ring cut the grid into a lattice of equal tiles, with a
     //  separator line along each grid edge; the branch is undefined where the
     //  border ring is not one color
-    // @witness separator-1: variant DerivedSeparator
+    // @witness separator-1: variant $DerivedSeparator
     //     @relaxed tile-lattice
   | DerivedSeparator {}
 
@@ -82,7 +82,7 @@
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- StoredSeparator ---
+    // --- $StoredSeparator ---
     .decl separator(c: Color) separator(0).
 }
 
@@ -109,10 +109,10 @@ impl_choice([S, B, T, X]) :-
 
 .decl separator(x: SeparatorSource, col: Color)
 
-// --- StoredSeparator ---
+// --- $StoredSeparator ---
 separator($StoredSeparator(), Col) :- params.separator(Col).
 
-// --- DerivedSeparator ---
+// --- $DerivedSeparator ---
 
 // @claim tile-lattice
 .init border = Unanimous<Unit, Color>
@@ -155,21 +155,21 @@ common.item([X, P_intile], Col, P_tile) :- tile_cell(X, P_tile, P_intile, _, Col
 // The tile positions where a mark can stand.
 .decl in_scope(x: SeparatorSource, s: MarkScope, p_intile: Position)
 
-// --- WholeTile ---
+// --- $WholeTile ---
 in_scope(X, $WholeTile(), P_intile) :- common.mode([X, P_intile], _).
 
-// --- Interior ---
+// --- $Interior ---
 in_scope(X, $Interior(), P_intile) :-
     common.mode([X, P_intile], _), interior(P_intile, ZERO).
 
-// --- PatternPositions, OffPalette ---
+// --- $PatternPositions, $OffPalette ---
 
 // The number of tile positions where the common tile holds each color.
 // @claim marks
 .init palette = Tally<Hue, Position>
 palette.item([X, Col], P_intile) :- common.mode([X, P_intile], Col).
 
-// --- PatternPositions ---
+// --- $PatternPositions ---
 
 // @claim marks
 .init pattern = ArgExtremes<SeparatorSource, Color>
@@ -181,12 +181,12 @@ in_scope(X, $PatternPositions(), P_intile) :-
 .decl mark(x: SeparatorSource, s: MarkScope, b: MarkBase,
            p_tile: Position, p_intile: Position, col: Color)
 
-// --- CommonColor ---
+// --- $CommonColor ---
 mark(X, S, $CommonColor(), P_tile, P_intile, Col) :-
     in_scope(X, S, P_intile), tile_cell(X, P_tile, P_intile, _, Col),
     !common.mode([X, P_intile], Col).
 
-// --- OffPalette ---
+// --- $OffPalette ---
 mark(X, S, $OffPalette(), P_tile, P_intile, Col) :-
     in_scope(X, S, P_intile), tile_cell(X, P_tile, P_intile, _, Col),
     !palette.tally([X, Col], _).
@@ -211,11 +211,11 @@ span_cell(X, S, B, P_tile, P_intile, Col) :-
 // output grid.
 .decl paint(ch: Choice, p: Position, col: Color)
 
-// --- EveryTile ---
+// --- $EveryTile ---
 paint([S, B, $EveryTile(), X], P_grid, Col) :-
     span_cell(X, S, B, P_tile, P_intile, Col), tile_cell(X, P_tile, P_intile, P_grid, _).
 
-// --- KeepMarks ---
+// --- $KeepMarks ---
 paint([S, B, $KeepMarks(), X], P_grid, Col) :-
     span_cell(X, S, B, P_tile, P_intile, Col), !mark(X, S, B, P_tile, P_intile, _),
     tile_cell(X, P_tile, P_intile, P_grid, _).

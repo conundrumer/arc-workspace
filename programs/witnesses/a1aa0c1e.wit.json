@@ -1,0 +1,877 @@
+{
+  "id": "a1aa0c1e",
+  "witnesses": [{
+    "id": "descending-rungs",
+    "separates": "$FewestRungs from the concept: every ladder reaches, and the rung counts fall 3, 2, 1 from top to bottom. The concept climbs to the top level; $FewestRungs marks the bottom level, which has the fewest rungs.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0],
+      [4,4,4,4,4,4,4,4,4],
+      [0,4,0,4,0,0,0,0,0],
+      [0,4,4,4,0,0,0,0,0],
+      [0,4,0,4,0,0,0,0,0],
+      [0,4,4,4,0,0,0,0,0],
+      [0,4,0,4,0,0,0,0,0],
+      [0,4,4,4,0,0,0,0,0],
+      [0,4,0,4,0,0,0,0,0],
+      [7,7,7,7,7,7,7,7,7],
+      [0,0,0,0,0,7,0,7,0],
+      [0,0,0,0,0,7,7,7,0],
+      [0,0,0,0,0,7,0,7,0],
+      [0,0,0,0,0,7,7,7,0],
+      [0,0,0,0,0,7,0,7,0],
+      [1,1,1,1,1,1,1,1,1],
+      [0,0,1,0,1,0,0,0,0],
+      [0,0,1,1,1,0,0,0,0],
+      [0,0,1,0,1,0,0,5,0],
+      [9,9,9,9,9,9,9,9,9]
+    ],
+    "output": [{
+      "cases": ["$GapReading"],
+      "grid": [
+        [4,4,4,9,5],
+        [7,7,0,9,0],
+        [1,0,0,9,0]
+      ]
+    }, {
+      "cases": ["$FewestRungs"],
+      "grid": [
+        [4,4,4,9,0],
+        [7,7,0,9,0],
+        [1,0,0,9,5]
+      ]
+    }]
+  }, {
+    "id": "bottom-short",
+    "separates": "$DefaultTop and $TopGap from the concept: the bottom ladder stops short of the floor, and the top ladder stops short too. The concept reaches no level and marks none; $DefaultTop marks the top level; $TopGap marks the level under the topmost short ladder.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0],
+      [4,4,4,4,4,4,4,4,4],
+      [0,4,0,4,0,0,0,0,0],
+      [0,4,4,4,0,0,0,0,0],
+      [0,4,0,4,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0],
+      [7,7,7,7,7,7,7,7,7],
+      [0,0,0,0,0,7,0,7,0],
+      [0,0,0,0,0,7,7,7,0],
+      [0,0,0,0,0,7,0,7,0],
+      [0,0,0,0,0,7,7,7,0],
+      [0,0,0,0,0,7,0,7,0],
+      [1,1,1,1,1,1,1,1,1],
+      [0,0,1,0,1,0,0,0,0],
+      [0,0,1,1,1,0,0,0,0],
+      [0,0,1,0,1,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,5,0],
+      [9,9,9,9,9,9,9,9,9]
+    ],
+    "output": [{
+      "cases": ["$Climb & $BlankColumn"],
+      "grid": [
+        [4,0,0,9,0],
+        [7,7,0,9,0],
+        [1,0,0,9,0]
+      ]
+    }, {
+      "cases": ["$Climb & $DefaultTop"],
+      "grid": [
+        [4,0,0,9,5],
+        [7,7,0,9,0],
+        [1,0,0,9,0]
+      ]
+    }, {
+      "cases": ["$TopGap"],
+      "grid": [
+        [4,0,0,9,0],
+        [7,7,0,9,5],
+        [1,0,0,9,0]
+      ]
+    }, {
+      "cases": ["$FewestRungs"],
+      "grid": [
+        [4,0,0,9,0],
+        [7,7,0,9,0],
+        [1,0,0,9,5]
+      ]
+    }]
+  }, {
+    "id": "floating-ladder",
+    "separates": "$BothEnds from the concept: the middle ladder stands on the level below and leaves two empty rows under its own level. The concept climbs it by its bottom end and reaches the top level; $BothEnds stops at the bottom level.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0],
+      [4,4,4,4,4,4,4,4,4],
+      [0,4,0,4,0,0,0,0,0],
+      [0,4,4,4,0,0,0,0,0],
+      [0,4,0,4,0,0,0,0,0],
+      [0,4,4,4,0,0,0,0,0],
+      [0,4,0,4,0,0,0,0,0],
+      [7,7,7,7,7,7,7,7,7],
+      [0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,7,0,7,0],
+      [0,0,0,0,0,7,7,7,0],
+      [0,0,0,0,0,7,0,7,0],
+      [1,1,1,1,1,1,1,1,1],
+      [0,0,1,0,1,0,0,0,0],
+      [0,0,1,1,1,0,0,0,0],
+      [0,0,1,0,1,0,0,0,0],
+      [0,0,1,1,1,0,0,0,0],
+      [0,0,1,0,1,0,0,5,0],
+      [9,9,9,9,9,9,9,9,9]
+    ],
+    "output": [{
+      "cases": ["$AbutsNext"],
+      "grid": [
+        [4,4,0,9,5],
+        [7,0,0,9,0],
+        [1,1,0,9,0]
+      ]
+    }, {
+      "cases": ["$BothEnds"],
+      "grid": [
+        [4,4,0,9,0],
+        [7,0,0,9,0],
+        [1,1,0,9,5]
+      ]
+    }, {
+      "cases": ["$FewestRungs"],
+      "grid": [
+        [4,4,0,9,0],
+        [7,0,0,9,5],
+        [1,1,0,9,0]
+      ]
+    }]
+  }, {
+    "id": "four-levels",
+    "separates": "$ThreeLevels and $WidthFromLevels from the concept: the input has four levels. The concept gives four rows with three bar cells; $WidthFromLevels gives four bar cells; $ThreeLevels reads the fourth level as the floor.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0],
+      [4,4,4,4,4,4,4,4,4],
+      [0,4,0,4,0,0,0,0,0],
+      [0,4,4,4,0,0,0,0,0],
+      [0,4,0,4,0,0,0,0,0],
+      [7,7,7,7,7,7,7,7,7],
+      [0,0,0,0,0,7,0,7,0],
+      [0,0,0,0,0,7,7,7,0],
+      [0,0,0,0,0,7,0,7,0],
+      [1,1,1,1,1,1,1,1,1],
+      [0,0,1,0,1,0,0,0,0],
+      [0,0,1,1,1,0,0,0,0],
+      [0,0,1,0,1,0,0,0,0],
+      [6,6,6,6,6,6,6,6,6],
+      [0,0,0,0,6,0,6,0,0],
+      [0,0,0,0,6,6,6,0,0],
+      [5,0,0,0,6,0,6,0,0],
+      [9,9,9,9,9,9,9,9,9]
+    ],
+    "output": [{
+      "cases": ["$StoredWidth & $GapReading"],
+      "grid": [
+        [4,0,0,9,5],
+        [7,0,0,9,0],
+        [1,0,0,9,0],
+        [6,0,0,9,0]
+      ]
+    }, {
+      "cases": ["$StoredWidth & $FewestRungs"],
+      "grid": [
+        [4,0,0,9,0],
+        [7,0,0,9,0],
+        [1,0,0,9,0],
+        [6,0,0,9,5]
+      ]
+    }, {
+      "cases": ["$WidthFromLevels & $GapReading"],
+      "grid": [
+        [4,0,0,0,9,5],
+        [7,0,0,0,9,0],
+        [1,0,0,0,9,0],
+        [6,0,0,0,9,0]
+      ]
+    }, {
+      "cases": ["$WidthFromLevels & $FewestRungs"],
+      "grid": [
+        [4,0,0,0,9,0],
+        [7,0,0,0,9,0],
+        [1,0,0,0,9,0],
+        [6,0,0,0,9,5]
+      ]
+    }, {
+      "cases": ["$ThreeLevels & $GapReading"],
+      "grid": [
+        [4,0,0,6,5],
+        [7,0,0,6,0],
+        [1,0,0,6,0]
+      ]
+    }, {
+      "cases": ["$ThreeLevels & $FewestRungs"],
+      "grid": [
+        [4,0,0,6,0],
+        [7,0,0,6,0],
+        [1,0,0,6,5]
+      ]
+    }]
+  }, {
+    "id": "four-rungs",
+    "separates": "$ClipBar from the concept: the top ladder has four rungs. The concept widens the bar area to four cells; $ClipBar keeps three and draws three.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0],
+      [4,4,4,4,4,4,4,4,4],
+      [0,4,0,4,0,0,0,0,0],
+      [0,4,4,4,0,0,0,0,0],
+      [0,4,0,4,0,0,0,0,0],
+      [0,4,4,4,0,0,0,0,0],
+      [0,4,0,4,0,0,0,0,0],
+      [0,4,4,4,0,0,0,0,0],
+      [0,4,0,4,0,0,0,0,0],
+      [0,4,4,4,0,0,0,0,0],
+      [0,4,0,4,0,0,0,0,0],
+      [7,7,7,7,7,7,7,7,7],
+      [0,0,0,0,0,7,0,7,0],
+      [0,0,0,0,0,7,7,7,0],
+      [0,0,0,0,0,7,0,7,0],
+      [1,1,1,1,1,1,1,1,1],
+      [0,0,1,0,1,0,0,0,0],
+      [0,0,1,1,1,0,0,0,0],
+      [0,0,1,0,1,0,0,5,0],
+      [9,9,9,9,9,9,9,9,9]
+    ],
+    "output": [{
+      "cases": ["$Widen & $GapReading"],
+      "grid": [
+        [4,4,4,4,9,5],
+        [7,0,0,0,9,0],
+        [1,0,0,0,9,0]
+      ]
+    }, {
+      "cases": ["$Widen & $FewestRungs"],
+      "grid": [
+        [4,4,4,4,9,0],
+        [7,0,0,0,9,0],
+        [1,0,0,0,9,5]
+      ]
+    }, {
+      "cases": ["$ClipBar & $GapReading"],
+      "grid": [
+        [4,4,4,9,5],
+        [7,0,0,9,0],
+        [1,0,0,9,0]
+      ]
+    }, {
+      "cases": ["$ClipBar & $FewestRungs"],
+      "grid": [
+        [4,4,4,9,0],
+        [7,0,0,9,0],
+        [1,0,0,9,5]
+      ]
+    }]
+  }, {
+    "id": "solid-ends",
+    "separates": "$LadderHeight and $OpenRows from the concept: the middle ladder starts and ends with a full row. The concept counts two rungs; $LadderHeight counts one from its height of three; $OpenRows counts zero from its one open row.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0],
+      [4,4,4,4,4,4,4,4,4],
+      [0,4,0,4,0,0,0,0,0],
+      [0,4,4,4,0,0,0,0,0],
+      [0,4,0,4,0,0,0,0,0],
+      [7,7,7,7,7,7,7,7,7],
+      [0,0,0,0,0,7,7,7,0],
+      [0,0,0,0,0,7,0,7,0],
+      [0,0,0,0,0,7,7,7,0],
+      [1,1,1,1,1,1,1,1,1],
+      [0,0,1,0,1,0,0,0,0],
+      [0,0,1,1,1,0,0,0,0],
+      [0,0,1,0,1,0,0,0,0],
+      [0,0,1,1,1,0,0,0,0],
+      [0,0,1,0,1,0,0,5,0],
+      [9,9,9,9,9,9,9,9,9]
+    ],
+    "output": [{
+      "cases": ["$FullRungs"],
+      "grid": [
+        [4,0,0,9,5],
+        [7,7,0,9,0],
+        [1,1,0,9,0]
+      ]
+    }, {
+      "cases": ["$LadderHeight & $GapReading"],
+      "grid": [
+        [4,0,0,9,5],
+        [7,0,0,9,0],
+        [1,1,0,9,0]
+      ]
+    }, {
+      "cases": ["$LadderHeight & $FewestRungs"],
+      "grid": [
+        [4,0,0,9,0],
+        [7,0,0,9,5],
+        [1,1,0,9,0]
+      ]
+    }, {
+      "cases": ["$OpenRows"],
+      "grid": [
+        [4,0,0,9,5],
+        [0,0,0,9,0],
+        [1,1,0,9,0]
+      ]
+    }]
+  }, {
+    "id": "floor-six",
+    "separates": "$DerivedFloor from the concept: the floor row is color 6 and no row is 9. The concept finds no floor and is undefined; $DerivedFloor takes the lowest full row as the floor and draws its color.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0],
+      [4,4,4,4,4,4,4,4,4],
+      [0,4,0,4,0,0,0,0,0],
+      [0,4,4,4,0,0,0,0,0],
+      [0,4,0,4,0,0,0,0,0],
+      [7,7,7,7,7,7,7,7,7],
+      [0,0,0,0,0,7,0,7,0],
+      [0,0,0,0,0,7,7,7,0],
+      [0,0,0,0,0,7,0,7,0],
+      [0,0,0,0,0,7,7,7,0],
+      [0,0,0,0,0,7,0,7,0],
+      [1,1,1,1,1,1,1,1,1],
+      [0,0,1,0,1,0,0,0,0],
+      [0,0,1,1,1,0,0,0,0],
+      [0,0,1,0,1,0,0,5,0],
+      [6,6,6,6,6,6,6,6,6]
+    ],
+    "output": [{
+      "cases": ["$ByColor"],
+      "grid": null
+    }, {
+      "cases": ["$DerivedFloor & $GapReading","$ThreeLevels & $GapReading"],
+      "grid": [
+        [4,0,0,6,5],
+        [7,7,0,6,0],
+        [1,0,0,6,0]
+      ]
+    }, {
+      "cases": ["$DerivedFloor & $FewestRungs","$ThreeLevels & $FewestRungs"],
+      "grid": [
+        [4,0,0,6,0],
+        [7,7,0,6,0],
+        [1,0,0,6,5]
+      ]
+    }]
+  }, {
+    "id": "bottom-only-short",
+    "separates": "$DefaultTop from the concept, also under $TopGap: only the bottom ladder stops short of the floor. The concept and $TopGap reach no level and mark none; $DefaultTop marks the top level.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0],
+      [4,4,4,4,4,4,4,4,4],
+      [0,4,0,4,0,0,0,0,0],
+      [0,4,4,4,0,0,0,0,0],
+      [0,4,0,4,0,0,0,0,0],
+      [7,7,7,7,7,7,7,7,7],
+      [0,0,0,0,0,7,0,7,0],
+      [0,0,0,0,0,7,7,7,0],
+      [0,0,0,0,0,7,0,7,0],
+      [0,0,0,0,0,7,7,7,0],
+      [0,0,0,0,0,7,0,7,0],
+      [1,1,1,1,1,1,1,1,1],
+      [0,0,1,0,1,0,0,0,0],
+      [0,0,1,1,1,0,0,0,0],
+      [0,0,1,0,1,0,0,0,0],
+      [0,0,0,0,0,0,0,5,0],
+      [9,9,9,9,9,9,9,9,9]
+    ],
+    "output": [{
+      "cases": ["$BlankColumn"],
+      "grid": [
+        [4,0,0,9,0],
+        [7,7,0,9,0],
+        [1,0,0,9,0]
+      ]
+    }, {
+      "cases": ["$DefaultTop"],
+      "grid": [
+        [4,0,0,9,5],
+        [7,7,0,9,0],
+        [1,0,0,9,0]
+      ]
+    }, {
+      "cases": ["$FewestRungs"],
+      "grid": [
+        [4,0,0,9,0],
+        [7,7,0,9,0],
+        [1,0,0,9,5]
+      ]
+    }]
+  }, {
+    "id": "two-levels",
+    "separates": "$ThreeLevels and $WidthFromLevels from the concept: the input has two levels. The concept gives two rows with three bar cells; $WidthFromLevels gives two bar cells; $ThreeLevels finds no fourth full row and is undefined.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0],
+      [4,4,4,4,4,4,4,4,4],
+      [0,4,0,4,0,0,0,0,0],
+      [0,4,4,4,0,0,0,0,0],
+      [0,4,0,4,0,0,0,0,0],
+      [7,7,7,7,7,7,7,7,7],
+      [0,0,0,0,0,7,0,7,0],
+      [0,0,0,0,0,7,7,7,0],
+      [0,5,0,0,0,7,0,7,0],
+      [9,9,9,9,9,9,9,9,9]
+    ],
+    "output": [{
+      "cases": ["$StoredWidth & $GapReading"],
+      "grid": [
+        [4,0,0,9,5],
+        [7,0,0,9,0]
+      ]
+    }, {
+      "cases": ["$StoredWidth & $FewestRungs"],
+      "grid": [
+        [4,0,0,9,0],
+        [7,0,0,9,5]
+      ]
+    }, {
+      "cases": ["$WidthFromLevels & $GapReading"],
+      "grid": [
+        [4,0,9,5],
+        [7,0,9,0]
+      ]
+    }, {
+      "cases": ["$WidthFromLevels & $FewestRungs"],
+      "grid": [
+        [4,0,9,0],
+        [7,0,9,5]
+      ]
+    }, {
+      "cases": ["$ThreeLevels"],
+      "grid": null
+    }]
+  }, {
+    "id": "floor-below",
+    "separates": "$DerivedFloor from the concept: a full row of 2 lies below the 9 floor. The concept keeps the 9 row as the floor; $DerivedFloor takes the 2 row as the floor, reads the 9 row as a fourth level with no ladder, and marks no level.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0],
+      [4,4,4,4,4,4,4,4,4],
+      [0,4,0,4,0,0,0,0,0],
+      [0,4,4,4,0,0,0,0,0],
+      [0,4,0,4,0,0,0,0,0],
+      [7,7,7,7,7,7,7,7,7],
+      [0,0,0,0,0,7,0,7,0],
+      [0,0,0,0,0,7,7,7,0],
+      [0,0,0,0,0,7,0,7,0],
+      [1,1,1,1,1,1,1,1,1],
+      [0,0,1,0,1,0,0,0,0],
+      [0,0,1,1,1,0,0,0,0],
+      [0,0,1,0,1,0,5,0,0],
+      [9,9,9,9,9,9,9,9,9],
+      [0,0,0,0,0,0,0,0,0],
+      [2,2,2,2,2,2,2,2,2]
+    ],
+    "output": [{
+      "cases": ["$ByColor & $GapReading","$ThreeLevels & $GapReading"],
+      "grid": [
+        [4,0,0,9,5],
+        [7,0,0,9,0],
+        [1,0,0,9,0]
+      ]
+    }, {
+      "cases": ["$ByColor & $FewestRungs","$ThreeLevels & $FewestRungs"],
+      "grid": [
+        [4,0,0,9,0],
+        [7,0,0,9,0],
+        [1,0,0,9,5]
+      ]
+    }, {
+      "cases": ["$DerivedFloor & $StoredWidth & $BlankColumn"],
+      "grid": [
+        [4,0,0,2,0],
+        [7,0,0,2,0],
+        [1,0,0,2,0],
+        [0,0,0,2,0]
+      ]
+    }, {
+      "cases": ["$DerivedFloor & $StoredWidth & $DefaultTop"],
+      "grid": [
+        [4,0,0,2,5],
+        [7,0,0,2,0],
+        [1,0,0,2,0],
+        [0,0,0,2,0]
+      ]
+    }, {
+      "cases": ["$DerivedFloor & $StoredWidth & $FewestRungs"],
+      "grid": [
+        [4,0,0,2,0],
+        [7,0,0,2,0],
+        [1,0,0,2,5],
+        [0,0,0,2,0]
+      ]
+    }, {
+      "cases": ["$DerivedFloor & $WidthFromLevels & $BlankColumn"],
+      "grid": [
+        [4,0,0,0,2,0],
+        [7,0,0,0,2,0],
+        [1,0,0,0,2,0],
+        [0,0,0,0,2,0]
+      ]
+    }, {
+      "cases": ["$DerivedFloor & $WidthFromLevels & $DefaultTop"],
+      "grid": [
+        [4,0,0,0,2,5],
+        [7,0,0,0,2,0],
+        [1,0,0,0,2,0],
+        [0,0,0,0,2,0]
+      ]
+    }, {
+      "cases": ["$DerivedFloor & $WidthFromLevels & $FewestRungs"],
+      "grid": [
+        [4,0,0,0,2,0],
+        [7,0,0,0,2,0],
+        [1,0,0,0,2,5],
+        [0,0,0,0,2,0]
+      ]
+    }]
+  }, {
+    "id": "background=DominantColor",
+    "separates": "`background=DominantColor` from the stored value: train 0 with 0 and 1 swapped",
+    "input": [
+      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
+      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+      [8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8],
+      [1,1,1,1,1,1,1,1,1,1,1,1,8,1,8,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1,1,1,1,1,8,8,8,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1,1,1,1,1,8,1,8,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1,1,1,1,1,8,8,8,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1,1,1,1,1,8,1,8,1,1,1,1,1,1],
+      [3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3],
+      [1,1,1,3,1,3,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+      [1,1,1,3,3,3,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+      [1,1,1,3,1,3,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+      [1,1,1,3,3,3,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+      [1,1,1,3,1,3,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+      [1,1,1,3,3,3,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+      [1,1,1,3,1,3,1,1,1,1,1,1,1,5,1,1,1,1,1,1,1],
+      [9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9],
+      [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+    ],
+    "output": [{
+      "cases": [
+        "$ByColor & $StoredWidth & $Climb & background=stored",
+        "$ByColor & $StoredWidth & $FewestRungs & background=stored"
+      ],
+      "grid": [
+        [0,0,0,9,0],
+        [0,0,0,9,0],
+        [0,0,0,9,0],
+        [0,0,0,9,0],
+        [0,0,0,9,0],
+        [8,8,0,9,5],
+        [3,3,3,9,0]
+      ]
+    }, {
+      "cases": ["background=DominantColor"],
+      "grid": [
+        [1,1,1,9,1],
+        [8,8,1,9,5],
+        [3,3,3,9,1]
+      ]
+    }, {
+      "cases": ["$ByColor & $StoredWidth & $TopGap & background=stored"],
+      "grid": [
+        [0,0,0,9,0],
+        [0,0,0,9,5],
+        [0,0,0,9,0],
+        [0,0,0,9,0],
+        [0,0,0,9,0],
+        [8,8,0,9,0],
+        [3,3,3,9,0]
+      ]
+    }, {
+      "cases": [
+        "$ByColor & $WidthFromLevels & $Climb & background=stored",
+        "$ByColor & $WidthFromLevels & $FewestRungs & background=stored"
+      ],
+      "grid": [
+        [0,0,0,0,0,0,0,9,0],
+        [0,0,0,0,0,0,0,9,0],
+        [0,0,0,0,0,0,0,9,0],
+        [0,0,0,0,0,0,0,9,0],
+        [0,0,0,0,0,0,0,9,0],
+        [8,8,0,0,0,0,0,9,5],
+        [3,3,3,0,0,0,0,9,0]
+      ]
+    }, {
+      "cases": ["$ByColor & $WidthFromLevels & $TopGap & background=stored"],
+      "grid": [
+        [0,0,0,0,0,0,0,9,0],
+        [0,0,0,0,0,0,0,9,5],
+        [0,0,0,0,0,0,0,9,0],
+        [0,0,0,0,0,0,0,9,0],
+        [0,0,0,0,0,0,0,9,0],
+        [8,8,0,0,0,0,0,9,0],
+        [3,3,3,0,0,0,0,9,0]
+      ]
+    }, {
+      "cases": ["$DerivedFloor & $StoredWidth & $Climb & $BlankColumn & background=stored"],
+      "grid": [
+        [0,0,0,1,0],
+        [0,0,0,1,0],
+        [0,0,0,1,0],
+        [0,0,0,1,0],
+        [0,0,0,1,0],
+        [8,8,0,1,0],
+        [3,3,3,1,0],
+        [0,0,0,1,0]
+      ]
+    }, {
+      "cases": ["$DerivedFloor & $StoredWidth & $Climb & $DefaultTop & background=stored"],
+      "grid": [
+        [0,0,0,1,5],
+        [0,0,0,1,0],
+        [0,0,0,1,0],
+        [0,0,0,1,0],
+        [0,0,0,1,0],
+        [8,8,0,1,0],
+        [3,3,3,1,0],
+        [0,0,0,1,0]
+      ]
+    }, {
+      "cases": ["$DerivedFloor & $StoredWidth & $TopGap & background=stored"],
+      "grid": [
+        [0,0,0,1,0],
+        [0,0,0,1,5],
+        [0,0,0,1,0],
+        [0,0,0,1,0],
+        [0,0,0,1,0],
+        [8,8,0,1,0],
+        [3,3,3,1,0],
+        [0,0,0,1,0]
+      ]
+    }, {
+      "cases": ["$DerivedFloor & $StoredWidth & $FewestRungs & background=stored"],
+      "grid": [
+        [0,0,0,1,0],
+        [0,0,0,1,0],
+        [0,0,0,1,0],
+        [0,0,0,1,0],
+        [0,0,0,1,0],
+        [8,8,0,1,5],
+        [3,3,3,1,0],
+        [0,0,0,1,0]
+      ]
+    }, {
+      "cases": ["$DerivedFloor & $WidthFromLevels & $Climb & $BlankColumn & background=stored"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,1,0],
+        [0,0,0,0,0,0,0,0,1,0],
+        [0,0,0,0,0,0,0,0,1,0],
+        [0,0,0,0,0,0,0,0,1,0],
+        [0,0,0,0,0,0,0,0,1,0],
+        [8,8,0,0,0,0,0,0,1,0],
+        [3,3,3,0,0,0,0,0,1,0],
+        [0,0,0,0,0,0,0,0,1,0]
+      ]
+    }, {
+      "cases": ["$DerivedFloor & $WidthFromLevels & $Climb & $DefaultTop & background=stored"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,1,5],
+        [0,0,0,0,0,0,0,0,1,0],
+        [0,0,0,0,0,0,0,0,1,0],
+        [0,0,0,0,0,0,0,0,1,0],
+        [0,0,0,0,0,0,0,0,1,0],
+        [8,8,0,0,0,0,0,0,1,0],
+        [3,3,3,0,0,0,0,0,1,0],
+        [0,0,0,0,0,0,0,0,1,0]
+      ]
+    }, {
+      "cases": ["$DerivedFloor & $WidthFromLevels & $TopGap & background=stored"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,1,0],
+        [0,0,0,0,0,0,0,0,1,5],
+        [0,0,0,0,0,0,0,0,1,0],
+        [0,0,0,0,0,0,0,0,1,0],
+        [0,0,0,0,0,0,0,0,1,0],
+        [8,8,0,0,0,0,0,0,1,0],
+        [3,3,3,0,0,0,0,0,1,0],
+        [0,0,0,0,0,0,0,0,1,0]
+      ]
+    }, {
+      "cases": ["$DerivedFloor & $WidthFromLevels & $FewestRungs & background=stored"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,1,0],
+        [0,0,0,0,0,0,0,0,1,0],
+        [0,0,0,0,0,0,0,0,1,0],
+        [0,0,0,0,0,0,0,0,1,0],
+        [0,0,0,0,0,0,0,0,1,0],
+        [8,8,0,0,0,0,0,0,1,5],
+        [3,3,3,0,0,0,0,0,1,0],
+        [0,0,0,0,0,0,0,0,1,0]
+      ]
+    }, {
+      "cases": ["$ThreeLevels & $Climb & $BlankColumn & background=stored"],
+      "grid": [
+        [0,0,0,1,0],
+        [0,0,0,1,0],
+        [0,0,0,1,0]
+      ]
+    }, {
+      "cases": ["$ThreeLevels & $Climb & $DefaultTop & background=stored"],
+      "grid": [
+        [0,0,0,1,5],
+        [0,0,0,1,0],
+        [0,0,0,1,0]
+      ]
+    }, {
+      "cases": ["$ThreeLevels & $TopGap & background=stored"],
+      "grid": [
+        [0,0,0,1,0],
+        [0,0,0,1,5],
+        [0,0,0,1,0]
+      ]
+    }, {
+      "cases": ["$ThreeLevels & $FewestRungs & background=stored"],
+      "grid": null
+    }]
+  }, {
+    "id": "marker_color=RarestColor",
+    "separates": "`marker_color=RarestColor` from the stored value: train 0 with 5 and 1 swapped",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8],
+      [0,0,0,0,0,0,0,0,0,0,0,0,8,0,8,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,8,8,8,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,8,0,8,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,8,8,8,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,8,0,8,0,0,0,0,0,0],
+      [3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3],
+      [0,0,0,3,0,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,3,3,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,3,0,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,3,3,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,3,0,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,3,3,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,3,0,3,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0],
+      [9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["marker_color=stored"],
+      "grid": null
+    }, {
+      "cases": ["marker_color=RarestColor"],
+      "grid": [
+        [0,0,0,9,0],
+        [8,8,0,9,1],
+        [3,3,3,9,0]
+      ]
+    }]
+  }, {
+    "id": "stray-cell",
+    "separates": "marker_color=RarestColor from the stored marker color: one stray 6 cell stands above the top level. The stored color 5 still finds the climber, so every case without marker_color=RarestColor is defined; 5 and 6 tie as the rarest color, and every case with marker_color=RarestColor is undefined.",
+    "input": [
+      [0,0,0,0,0,0,0,0,6],
+      [4,4,4,4,4,4,4,4,4],
+      [0,4,0,4,0,0,0,0,0],
+      [0,4,4,4,0,0,0,0,0],
+      [0,4,0,4,0,0,0,0,0],
+      [0,4,4,4,0,0,0,0,0],
+      [0,4,0,4,0,0,0,0,0],
+      [0,4,4,4,0,0,0,0,0],
+      [0,4,0,4,0,0,0,0,0],
+      [7,7,7,7,7,7,7,7,7],
+      [0,0,0,0,0,7,0,7,0],
+      [0,0,0,0,0,7,7,7,0],
+      [0,0,0,0,0,7,0,7,0],
+      [0,0,0,0,0,7,7,7,0],
+      [0,0,0,0,0,7,0,7,0],
+      [1,1,1,1,1,1,1,1,1],
+      [0,0,1,0,1,0,0,0,0],
+      [0,0,1,1,1,0,0,0,0],
+      [0,0,1,0,1,0,0,5,0],
+      [9,9,9,9,9,9,9,9,9]
+    ],
+    "output": [{
+      "cases": ["$GapReading & marker_color=stored"],
+      "grid": [
+        [4,4,4,9,5],
+        [7,7,0,9,0],
+        [1,0,0,9,0]
+      ]
+    }, {
+      "cases": ["marker_color=RarestColor"],
+      "grid": null
+    }, {
+      "cases": ["$FewestRungs & marker_color=stored"],
+      "grid": [
+        [4,4,4,9,0],
+        [7,7,0,9,0],
+        [1,0,0,9,5]
+      ]
+    }]
+  }, {
+    "id": "narrow-grid",
+    "separates": "background=DominantColor from the stored background: the grid is four columns wide and the top ladder has three rungs, so 4 outnumbers 0. Every case with the stored background 0 is defined. With background 4, the top full row is background, the cases that stay defined give two rows, and the $ThreeLevels cases find no fourth full row.",
+    "input": [
+      [4,4,4,4],
+      [4,0,4,0],
+      [4,4,4,0],
+      [4,0,4,0],
+      [4,4,4,0],
+      [4,0,4,0],
+      [4,4,4,0],
+      [4,0,4,0],
+      [7,7,7,7],
+      [0,7,0,7],
+      [0,7,7,7],
+      [0,7,0,7],
+      [1,1,1,1],
+      [1,0,1,0],
+      [1,1,1,0],
+      [1,0,1,5],
+      [9,9,9,9]
+    ],
+    "output": [{
+      "cases": ["$GapReading & background=stored"],
+      "grid": [
+        [4,4,4,9,5],
+        [7,0,0,9,0],
+        [1,0,0,9,0]
+      ]
+    }, {
+      "cases": ["$StoredWidth & $GapReading & background=DominantColor"],
+      "grid": [
+        [7,4,4,9,5],
+        [1,4,4,9,4]
+      ]
+    }, {
+      "cases": ["$FewestRungs & background=stored"],
+      "grid": [
+        [4,4,4,9,0],
+        [7,0,0,9,0],
+        [1,0,0,9,5]
+      ]
+    }, {
+      "cases": ["$StoredWidth & $FewestRungs & background=DominantColor"],
+      "grid": [
+        [7,4,4,9,4],
+        [1,4,4,9,5]
+      ]
+    }, {
+      "cases": ["$WidthFromLevels & $GapReading & background=DominantColor"],
+      "grid": [
+        [7,4,9,5],
+        [1,4,9,4]
+      ]
+    }, {
+      "cases": ["$WidthFromLevels & $FewestRungs & background=DominantColor"],
+      "grid": [
+        [7,4,9,4],
+        [1,4,9,5]
+      ]
+    }, {
+      "cases": ["$ThreeLevels & background=DominantColor"],
+      "grid": null
+    }]
+  }]
+}

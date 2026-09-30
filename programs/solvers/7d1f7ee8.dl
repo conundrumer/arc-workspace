@@ -37,7 +37,7 @@ impl_choice($Rect()). impl_choice($Enclose()).
 out(P, Col, Ch) :- enclosed(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !enclosed(P, _, Ch).
 
-// --- Rect ---
+// --- $Rect ---
 
 .init drect = Outlines<Color>
 drect.node(Col, P) :- ink(Col), in(P, Col).
@@ -50,7 +50,7 @@ enclosed(P, Col, $Rect()) :-
     ink(C), in(P, C),                               // ink cell
     drect.box(Col, B), !nested_rect(B), inside(P, B). // in an outermost rectangle's box
 
-// --- Enclose ---
+// --- $Enclose ---
 
 // Each ink color walls the rest of the grid off; a cell some color cuts off
 // is nested.

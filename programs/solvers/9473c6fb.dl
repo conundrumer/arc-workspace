@@ -81,10 +81,10 @@ impl_choice($Span()).
 // The direction the rank counts from.
 .decl order_dir(d: Dir, ch: Choice)
 
-// --- Separate ---
+// --- $Separate ---
 order_dir(D, $Separate()) :- parse.cand($U(), D), !parse.tie($U(), D).
 
-// --- Span ---
+// --- $Span ---
 order_dir(D, $Span()) :- parse.spans($U(), D).
 
 out(P, Col, Ch) :-

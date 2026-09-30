@@ -38,14 +38,14 @@ slab_cell(P) :- in(P, _), slab_box.box($U(), B), inside(P, B).
 
 .decl paint(p: Position, col: Color, ch: Choice)
 
-// --- Span ---
+// --- $Span ---
 
 .init mark_box = Bbox<Color>
 mark_box.cell(Col, P) :- mark(Col, P).
 
 paint(P, Col, $Span()) :- slab_cell(P), mark_box.box(Col, B), inside(P, B).
 
-// --- Cut ---
+// --- $Cut ---
 
 // A like mark's line runs between the anchor and p. Every Dir is ranged over,
 // which covers both senses of each axis; a mark's line parallel to the edge it

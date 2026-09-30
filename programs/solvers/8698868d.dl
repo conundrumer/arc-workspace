@@ -76,12 +76,12 @@ region_count.domain(Id) :- square(Id, _).
 // The piece that goes into a block.
 .decl pair(id_block: Ident, id_piece: Ident, ch: Choice)
 
-// --- Count ---
+// --- $Count ---
 pair(Id_b, Id_p, $Count()) :-
     block(Id_b), piece(Id_p),
     region_count.tally(Id_b, N), region_count.tally(Id_p, N).
 
-// --- Rank ---
+// --- $Rank ---
 .decl fewer(id: Ident, id2: Ident)
 fewer(Id, Id2) :- region_count.tally(Id, N), region_count.tally(Id2, N2), N < N2.
 

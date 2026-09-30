@@ -73,8 +73,8 @@ impl_choice($Repaint()). impl_choice($Overlay()).
 out(P, Col, Ch) :- stamp(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !stamp(P, _, Ch).
 
-// --- Repaint ---
+// --- $Repaint ---
 stamp(P, Col, $Repaint()) :- paint(P, Col).
 
-// --- Overlay ---
+// --- $Overlay ---
 stamp(P, Col, $Overlay()) :- paint(P, Col), nested(Col, _).

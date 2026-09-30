@@ -58,21 +58,21 @@ impl_choice($Shape()). impl_choice($Hue()). impl_choice($Region()).
 
 .decl obj(k: Key, p: Position)
 
-// --- Shape ---
+// --- $Shape ---
 
 .init shapes = Components<Color>
 shapes.node(Col, P) :- in(P, Col), !params.bg(Col).
 
 obj([$Shape(), Col, Id], P) :- shapes.label(Col, P, Id).
 
-// --- Hue ---
+// --- $Hue ---
 
 .init hues = Canon<Position>
 hues.equiv(P, Q) :- in(P, Col), in(Q, Col), !params.bg(Col).
 
 obj([$Hue(), Col, Id], P) :- in(P, Col), hues.id(P, Id).
 
-// --- Region ---
+// --- $Region ---
 
 .init regions = Components<Unit>
 regions.node($U(), P) :- in(P, Col), !params.bg(Col).

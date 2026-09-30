@@ -26,7 +26,7 @@
     .decl mark(col: Color) mark(2).
     .decl fill(col: Color) fill(8).
 
-    // --- Backed, Packed ---
+    // --- $Backed, $Packed ---
     .decl bg(col: Color) bg(0).
 }
 
@@ -59,7 +59,7 @@ covers(K, C, M) :- plus(K, C, M), mark(M).
 .decl place(ch: Choice, k: number, c: Position)    // a plus the case admits
 .decl cross(ch: Choice, k: number, c: Position)    // a placement the case reads as a cross
 
-// --- Backed, Free: the maximal placements ---
+// --- $Backed, $Free: the maximal placements ---
 
 // Two placements that share a mark — the only ones a mark set can order.
 .decl rival(ch: Choice, k: number, c: Position, c2: Position)
@@ -74,7 +74,7 @@ unmatched(Ch, K, C, C2) :- rival(Ch, K, C, C2), covers(K, C, M), !covers(K, C2, 
 .decl dominated(ch: Choice, k: number, c: Position)
 dominated(Ch, K, C) :- rival(Ch, K, C, C2), !unmatched(Ch, K, C, C2), unmatched(Ch, K, C2, C).
 
-// --- Backed, Packed: the backing ---
+// --- $Backed, $Packed: the backing ---
 
 .decl off(k: number, c: Position)                  // a bg cell inside the plus
 off(K, C) :- plus(K, C, P), in(P, Col), params.bg(Col).
@@ -101,7 +101,7 @@ completed(Ch, P) :-
 out(P, Col, Ch) :- in(P, Col), span(Ch, _), !completed(Ch, P).
 out(P, Col, Ch) :- completed(Ch, P), params.fill(Col).
 
-// --- Backed ---
+// --- $Backed ---
 
 place($Backed(), K, C) :- covers(K, C, _), !off(K, C).
 
@@ -109,7 +109,7 @@ cross($Backed(), K, C) :- place($Backed(), K, C), !dominated($Backed(), K, C).
 
 span($Backed(), K) :- arm(K), !orphan($Backed(), K).
 
-// --- Packed ---
+// --- $Packed ---
 
 place($Packed(), K, C) :- covers(K, C, _), !off(K, C).
 
@@ -121,7 +121,7 @@ cross($Packed(), K, C) :- packing.forced(K, C).
 
 span($Packed(), K) :- arm(K), !orphan($Packed(), K).
 
-// --- Free ---
+// --- $Free ---
 
 place($Free(), K, C) :- covers(K, C, _).
 

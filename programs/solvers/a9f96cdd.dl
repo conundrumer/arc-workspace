@@ -17,11 +17,11 @@
     .decl bg(c: Color) bg(0).
     .decl marker(c: Color) marker(2).
 
-    // --- Arms ---
+    // --- $Arms ---
     .decl arm(d: DiagDir, col: Color)
     arm(DIAG_TL, 3). arm(DIAG_TR, 6). arm(DIAG_BL, 8). arm(DIAG_BR, 7).
 
-    // --- Stamp ---
+    // --- $Stamp ---
     .decl template(off: Offset, col: Color)
     GRID_STAMP_SPARSE_3x3(template,
         3,  _, 6,
@@ -36,12 +36,12 @@ marker_at(P) :- in(P, Col), params.marker(Col).
 
 .decl halo(p: Position, col: Color, ch: Choice)
 
-// --- Arms ---
+// --- $Arms ---
 halo(P, Col, $Arms()) :-
     marker_at(Q), params.arm(Diag, Col),      // marker, arm color
     neighbor(Q, Diag, P), in(P, _).           // on-grid
 
-// --- Stamp ---
+// --- $Stamp ---
 halo(P, Col, $Stamp()) :-
     marker_at(Q), params.template(Off, Col),   // a marker, a template offset
     compose(Q, Off, P), in(P, _).              // seated on the marker, on-grid

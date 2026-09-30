@@ -71,10 +71,10 @@ impl_choice($Cycle()).
 
 .decl perm(p_in: Position, p_out: Position, c: Choice)
 
-// --- LabeledGrids ---
+// --- $LabeledGrids ---
 perm(P_grid_in, P_grid_out, $LabeledGrids()) :- params.map(P_grid_in, P_grid_out).
 
-// --- Cycle ---
+// --- $Cycle ---
 // Cells across both frames, so one diagonal/ring geometry serves input arms and
 // output ring corners alike.
 .decl cell(p: Position)

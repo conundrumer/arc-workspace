@@ -48,7 +48,7 @@ window_bbox.cell(Ch, P) :- window(P, Ch).
 
 out(P_inner, Col, Ch) :- window_bbox.box(Ch, B), in(P, Col), crop(P, B, P_inner).
 
-// --- Rect ---
+// --- $Rect ---
 
 // The color's cells are not exactly the edges of its box: a gap in the edges,
 // or a cell in the hole.
@@ -58,7 +58,7 @@ misdrawn(Col) :- cbox.box(Col, B), in(P, Col), interior(P, B).
 
 marker(Col, $Rect()) :- color(Col), !misdrawn(Col).
 
-// --- Solo ---
+// --- $Solo ---
 
 .init parts = Components<Color>
 parts.node(Col, P) :- in(P, Col).
@@ -68,7 +68,7 @@ color_part.item(Col, Id) :- parts.label(Col, _, Id).
 
 marker(Col, $Solo()) :- color(Col), !color_part.clash(Col).
 
-// --- Drawn ---
+// --- $Drawn ---
 
 .init drect = Outlines<Color>
 drect.node(Col, P) :- in(P, Col).
@@ -78,7 +78,7 @@ biggest_hole.item($U(), B, P) :- drect.box(_, B), in(P, _), interior(P, B).
 
 outline_box(B, $Drawn()) :- biggest_hole.mode($U(), B).
 
-// --- Enclose ---
+// --- $Enclose ---
 
 // Each color walls the rest of the grid off.
 .init closed = Closed<Color>

@@ -16,13 +16,13 @@
 .comp Params {
     .decl axis(a: Axis) axis(AXIS_H).   // lines run along this axis
 
-    // --- Span ---
+    // --- $Span ---
     .decl bg(c: Color) bg(0).
 }
 
 .init params = Params
 
-// --- Flood ---
+// --- $Flood ---
 
 // Line, keyed by its across component, whose two edge cells hold one color.
 .decl edge_match(ac: Position, col: Color)
@@ -37,7 +37,7 @@ out(P, Col_out, $Flood()) :-
     ; !edge_match(Ac, _), Col_out = Col              // no match — as-is
     ).
 
-// --- Span ---
+// --- $Span ---
 
 .init spans = Between<Color>
 spans.axis(Col, A) :- spans.mark(Col, _), params.axis(A).

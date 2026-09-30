@@ -22,7 +22,7 @@
     .decl bg(c: Color) bg(8).
     .decl canvas(c: Color) canvas(0).
 
-    // --- Ink ---
+    // --- $Ink ---
     .decl ink(c: Color) ink(4).
 }
 
@@ -53,18 +53,18 @@ lone_mark(Id, P, Col) :- alone.value(Id, P), mark(Id, P, Col).
 
 .decl handle(p: Position, ch: Choice)
 
-// --- Match ---
+// --- $Match ---
 
 handle(P, $Match()) :- glyph_mark(P, Col), lone_mark(_, _, Col).
 
-// --- Odd ---
+// --- $Odd ---
 
 .init glyph_color = Mode<Unit, Color, Position>
 glyph_color.item($U(), Col, P) :- glyph_mark(P, Col).
 
 handle(P, $Odd()) :- glyph_mark(P, Col), !glyph_color.mode($U(), Col).
 
-// --- Ink ---
+// --- $Ink ---
 
 handle(P, $Ink()) :- glyph_mark(P, Col), !params.ink(Col).
 

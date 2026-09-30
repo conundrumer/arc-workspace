@@ -15,11 +15,11 @@
 .comp Params {
     .decl marker(c: Color) marker(1).
 
-    // --- Arms ---
+    // --- $Arms ---
     .decl arm(d: Dir, col: Color)
     arm(DIR_T, 2). arm(DIR_B, 8). arm(DIR_L, 7). arm(DIR_R, 6).
 
-    // --- Stamp ---
+    // --- $Stamp ---
     // Halo cells as offsets from the marker, `@` on the marker cell.
     .decl template(delta: Offset, col: Color)
     GRID_STAMP_SPARSE_3x3(template,
@@ -33,7 +33,7 @@
 .decl marker_at(p: Position)
 marker_at(P) :- in(P, Col), params.marker(Col).
 
-// --- Arms ---
+// --- $Arms ---
 .decl arm_halo(p: Position, col: Color)
 arm_halo(P, Col) :-
     marker_at(Q), params.arm(D, Col),        // marker, arm color
@@ -42,7 +42,7 @@ arm_halo(P, Col) :-
 out(P, Col, $Arms()) :- arm_halo(P, Col).
 out(P, Col, $Arms()) :- in(P, Col), !arm_halo(P, _).
 
-// --- Stamp ---
+// --- $Stamp ---
 .decl stamp_halo(p: Position, col: Color)
 stamp_halo(P, Col) :-
     marker_at(Q), params.template(Off, Col),   // a marker, a template offset

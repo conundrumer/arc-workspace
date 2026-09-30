@@ -81,7 +81,7 @@ copy(W, P_out, Col) :-
     shape(P_in), shape_box.box($U(), B_s), crop(P_in, B_s, P_rel),  // a shape cell
     in(P_out, _), crop(P_out, B, P_rel).                            // at its place in the slot
 
-// --- Line ---
+// --- $Line ---
 
 // same_line over the markers, so the universal below can negate it.
 .decl aligned(a: Axis, p: Position, q: Position)
@@ -98,17 +98,17 @@ line_axis(A) :- axis_elem(A), !bent(A).
 
 slot($Line(), D, P, B) :- own_marker(P), line_axis(A), axis_of(D, A), shape_box.box($U(), B).
 
-// --- FourDir ---
+// --- $FourDir ---
 
 slot($FourDir(), D, P, B) :- own_marker(P), dir_elem(D), shape_box.box($U(), B).
 
-// --- Stamp ---
+// --- $Stamp ---
 
 // A copy paints over the input.
 out(P, Col, [W, $Stamp()]) :- copy(W, P, Col).
 out(P, Col, [W, $Stamp()]) :- in(P, Col), walk_choice(W), !copy(W, P, _).
 
-// --- Fill ---
+// --- $Fill ---
 
 // Input ink keeps its color; a copy paints only background.
 out(P, Col, [W, $Fill()]) :- copy(W, P, Col), in(P, C0), params.bg(C0).

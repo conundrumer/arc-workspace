@@ -60,14 +60,14 @@ blocks.cell(P_inner) :- box_view(_, P_inner).
 blocks.dim($U(), A, N) :- tile_col(P_tile, _), axis_elem(A), axis_dim(P_tile, A, N).
 blocks.gap(0).
 
-// --- Recolor ---
+// --- $Recolor ---
 
 out(P_grid, Col, $Recolor()) :-
     shape_cell(K, P_grid), box_view(P_grid, P_inner),           // shape cell in the box
     blocks.tile(K, P_inner, P_tile, _), tile_col(P_tile, Col).  // its block's key color
 out(P, Col, $Recolor()) :- in(P, Col), !params.shape_col(Col).
 
-// --- Stamp ---
+// --- $Stamp ---
 
 out(P_grid, Col, $Stamp()) :-
     box_view(P_grid, P_inner),              // box cell

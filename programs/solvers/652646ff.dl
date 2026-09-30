@@ -99,11 +99,11 @@ out(P_grid, Col, Ch) :-
     ; !params.shape(P_intile), bg(Col)        // its ground
     ).
 
-// --- Existence ---
+// --- $Existence ---
 
 front(Col, Col2, $Existence()) :- shared(Col, Col2, P_grid), in(P_grid, Col).  // Col shows there
 
-// --- Majority ---
+// --- $Majority ---
 
 // The two figures of a shared cell, as the key of the count.
 .type Pair = [col: Color, col2: Color]

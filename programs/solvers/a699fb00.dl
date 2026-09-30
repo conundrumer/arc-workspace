@@ -22,7 +22,7 @@
 
 .init params = Params
 
-// --- Flank ---
+// --- $Flank ---
 
 .decl flanked(p: Position)
 flanked(P) :-
@@ -34,7 +34,7 @@ flanked(P) :-
 out(P, F, $Flank())   :- flanked(P), params.fill(F).
 out(P, Col, $Flank()) :- in(P, Col), !flanked(P).
 
-// --- Span ---
+// --- $Span ---
 
 .init spans = Between<Unit>
 spans.axis($U(), A) :- params.axis(A).

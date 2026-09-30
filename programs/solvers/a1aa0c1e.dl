@@ -1,0 +1,447 @@
+// a1aa0c1e
+// @draft
+// @keywords: decompose lines count rank walk
+// @scene floor: a full row of params.floor_color lies at or near the
+//  params.floor_side edge
+// @scene levels: between the opposite edge and the floor, several full rows
+//  each of one other color divide the grid into bands. Each such row is a
+//  level, and its band is the rows between it and the next full row toward
+//  the floor.
+// @scene ladders: a level may hang one ladder into its band, from the row
+//  just past the level. A ladder is 3 cells wide, in the level's color, with
+//  rows that alternate between `c 0 c` and `c c c`, and it starts and ends
+//  with a `c 0 c` row. A full rung is a `c c c` row.
+// @scene reach: a ladder either reaches the row just before the next full
+//  row, or stops short and leaves an empty gap row
+// @scene climber: one cell of params.marker_color stands in the row just
+//  above the floor
+// @rule frame: the output has one row per level, in the levels' order from
+//  the edge opposite params.floor_side. Counted from params.bar_edge, its bar
+//  cells number params.bar_width, or the largest count of full rungs on one
+//  ladder when that is larger, and two more columns follow them.
+// @rule bar: in a level's row, the first N bar cells take the level's color,
+//  where N is the count of full rungs on its ladder, 0 when it has none. The
+//  rest of the bar cells take params.background.
+// @rule floor-column: the next column takes params.floor_color in every row
+// @rule climb: the climber climbs from the floor. It climbs to a level when
+//  that level's ladder reaches down, and it climbs again from that level. It
+//  stops at the first level whose ladder does not reach down, or at the top
+//  level.
+// @rule climber-column: the last column holds the marker color in the row of
+//  the highest level the climber reaches. Every other cell in it takes
+//  params.background.
+
+// which full rows are the levels, and which is the floor
+.type LevelSet =
+    // @claim levels
+    AllAbove {floor: FloorIdentity, width: BarWidth}
+    // @scene levels: the first params.level_count full rows from the edge
+    //  opposite params.floor_side are the levels
+    // @scene floor: the next full row is the floor, of any color. Undefined
+    //  with fewer full rows.
+    // @rule floor-column: the next column takes the floor row's color
+    // @witness four-levels: variant concept
+  | ThreeLevels {}
+
+// how the floor row is found
+.type FloorIdentity =
+    // @claim floor
+    ByColor {}
+    // @scene floor: the floor is the full row nearest params.floor_side.
+    //  Undefined when no row is full.
+    // @rule floor-column: the next column takes the floor row's color
+    // @witness floor-six: variant $DerivedFloor
+    //     @relaxed floor
+    // @witness floor-below: borderline concept
+  | DerivedFloor {}
+
+// how many bar cells each output row has
+.type BarWidth =
+    // @claim frame
+    StoredWidth {}
+    // @rule frame: the count of levels takes the place of params.bar_width
+    // @witness four-levels: variant concept
+  | WidthFromLevels {}
+
+// what a ladder with more full rungs than params.bar_width gives
+.type Overflow =
+    // @claim frame
+    Widen {}
+    // @rule frame: the bar cells number params.bar_width
+    // @rule bar: a ladder with more full rungs than bar cells fills every bar
+    //  cell of its row
+    // @witness four-rungs: variant concept
+  | ClipBar {}
+
+// which count of a ladder's rows gives the bar length
+.type RungCount =
+    // @claim bar
+    FullRungs {}
+    // @rule bar: the bar length is half the ladder's row count, rounded down
+    // @witness solid-ends: borderline concept
+    //     @relaxed ladders
+  | LadderHeight {}
+    // @rule bar: the bar length is the count of the ladder's `c 0 c` rows
+    //  less one, and 0 when it has none
+    // @witness solid-ends: borderline concept
+  | OpenRows {}
+
+// which level the climber column marks
+.type MarkerLevel =
+    // @claim climb
+    GapReading {scan: GapScan, reach: ReachTest, stuck: Stuck}
+    // @rule climb: the climber stands at the level with the fewest bar cells
+    //  among the levels with a ladder, and at the one nearest the floor on a
+    //  tie. Undefined when no level has a ladder.
+    // @witness descending-rungs: ordinary concept
+  | FewestRungs {}
+
+// how the ladders that stop short place the climber
+.type GapScan =
+    // @claim climb
+    Climb {}
+    // @rule climb: the climber stands at the level under the ladder nearest
+    //  the top that does not reach down, and reaches no level when that level
+    //  is the floor. It stands at the top level when every ladder reaches
+    //  down.
+    // @witness bottom-short: variant concept
+  | TopGap {}
+
+// when a ladder reaches down
+.type ReachTest =
+    // @claim reach
+    AbutsNext {}
+    // @scene reach: a ladder reaches down when it also starts in the row just
+    //  past its level
+    // @witness floating-ladder: borderline $BothEnds
+    //     @relaxed ladders
+  | BothEnds {}
+
+// what the climber column holds when the climber reaches no level
+.type Stuck =
+    // @claim climber-column
+    BlankColumn {}
+    // @rule climber-column: when the climber reaches no level, the top
+    //  level's row holds the marker color
+    // @witness bottom-short: variant concept
+    // @witness bottom-only-short: variant concept
+  | DefaultTop {}
+
+.type Choice = [level: LevelSet, overflow: Overflow, rung: RungCount, marker: MarkerLevel]
+
+// A level's ladder under one count reading.
+.type Ladder = [rc: RungCount, l: Position]
+
+// The output under one floor row and one bar width.
+.type Chart = [f: Position, w: number]
+
+// The levels under one floor row, ranked under one count reading.
+.type Standing = [f: Position, rc: RungCount]
+
+// One level reading under one count reading.
+.type Span = [ls: LevelSet, rc: RungCount]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed ladders
+    .decl background(c: Color) background(0).
+
+    // The edge the floor lies along.
+    .decl floor_side(d: Dir) floor_side(DIR_B).
+
+    // The edge the bars start from.
+    .decl bar_edge(d: Dir) bar_edge(DIR_L).
+
+    // @derive RarestColor: variant derived
+    //     @relaxed climber
+    .decl marker_color(c: Color) marker_color(5).
+
+    // --- $StoredWidth, $ThreeLevels ---
+    .decl bar_width(n: number) bar_width(3).
+
+    // --- $ByColor ---
+    .decl floor_color(c: Color) floor_color(9).
+
+    // --- $ThreeLevels ---
+    .decl level_count(n: number) level_count(3).
+}
+
+.init params = Params
+
+.decl floor_identity_choice(fi: FloorIdentity)
+floor_identity_choice($ByColor()). floor_identity_choice($DerivedFloor()).
+
+.decl bar_width_choice(w: BarWidth)
+bar_width_choice($StoredWidth()). bar_width_choice($WidthFromLevels()).
+
+.decl rung_count_choice(rc: RungCount)
+rung_count_choice($FullRungs()). rung_count_choice($LadderHeight()). rung_count_choice($OpenRows()).
+
+.decl gap_scan_choice(s: GapScan)
+gap_scan_choice($Climb()). gap_scan_choice($TopGap()).
+
+.decl reach_test_choice(re: ReachTest)
+reach_test_choice($AbutsNext()). reach_test_choice($BothEnds()).
+
+.decl stuck_choice(st: Stuck)
+stuck_choice($BlankColumn()). stuck_choice($DefaultTop()).
+
+// Each cell's row across the floor axis.
+.decl row_of(p: Position, r: Position)
+row_of(P, R) :- in(P, _), params.floor_side(D), axis_of(D, A), split(P, A, R, _).
+
+// @claim floor levels
+.init row_color = Unanimous<Position, Color>
+row_color.item(R, Col) :- row_of(P, R), in(P, Col).
+
+// A full row: every cell has the one color, and it is not the background.
+.decl full(l: Position, col: Color)
+full(L, Col) :- row_color.value(L, Col), !params.background(Col).
+
+// The full rows in order from the edge opposite the floor.
+// @claim levels
+.init lines = Order<Unit, Position>
+lines.elem($U(), L) :- full(L, _).
+lines.before($U(), L, L2) :- full(L, _), full(L2, _), params.floor_side(D), nearer(D, L2, L).
+
+// The floor row each level reading gives.
+// @claim floor
+.init floor = Unanimous<LevelSet, Position>
+
+// The levels under each floor row: the full rows before it.
+.decl level(f: Position, l: Position)
+level(F, L) :- floor.value(_, F), lines.before($U(), L, F).
+
+// The rows of a level's band: those between it and the next full row.
+.decl band_row(l: Position, r: Position)
+band_row(L, R) :-
+    lines.next($U(), L, L2), row_color.item(R, _),
+    params.floor_side(D), nearer(D, R, L), nearer(D, L2, R).
+
+// A ladder cell: a band cell of its level's color.
+.decl ladder(l: Position, r: Position, p: Position)
+ladder(L, R, P) :- band_row(L, R), full(L, Col), row_of(P, R), in(P, Col).
+
+.decl ladder_row(l: Position, r: Position)
+ladder_row(L, R) :- ladder(L, R, _).
+
+// A full rung: a ladder row with a ladder cell between two ladder cells.
+.decl rung(l: Position, r: Position)
+rung(L, R) :-
+    ladder(L, R, P), params.floor_side(D), perp_dir(D, E), opposite(E, E2),
+    neighbor(P, E, Q), ladder(L, R, Q), neighbor(P, E2, Q2), ladder(L, R, Q2).
+
+// The bar length of each level's ladder.
+// @claim bar
+.init bar_len = Tally<Ladder, Position>
+bar_len.domain([Rc, L]) :- rung_count_choice(Rc), full(L, _).
+
+// The count of levels above each floor row.
+.decl level_total(f: Position, n: number)
+level_total(F, N) :- floor.value(_, F), lines.rank($U(), F, N).
+
+// The bar width under each level reading, before a longer bar widens it.
+.decl width(ls: LevelSet, n: number)
+
+// The chart each case draws.
+.decl chart_key(ls: LevelSet, ov: Overflow, rc: RungCount, c: Chart)
+
+// The chart: one row per level, one column per bar cell.
+.init chart = Frame2D<Chart>
+chart.extent([F, W], A2, N) :-
+    chart_key(_, _, _, [F, W]), params.floor_side(D), axis_of(D, A),
+    ( A2 = A, level_total(F, N)
+    ; perp(A, A2), N = W
+    ).
+
+// The level each chart cell's row stands for.
+.decl chart_row(c: Chart, p: Position, l: Position)
+chart_row([F, W], P, L) :-
+    chart.cell([F, W], P), params.floor_side(D), opposite(D, U), dist(P, U, K),
+    lines.rank($U(), L, K), level(F, L).
+
+.decl bar(c: Chart, rc: RungCount, p: Position, col: Color)
+bar(C, Rc, P, Col) :-
+    chart_row(C, P, L), params.bar_edge(E), dist(P, E, K), bar_len.tally([Rc, L], N),
+    ( K < N, full(L, Col)
+    ; K >= N, params.background(Col)
+    ).
+
+// Past each chart row's last bar cell, its floor column cell and then its
+// climber column cell.
+.decl tail(c: Chart, q_floor: Position, q_climb: Position, l: Position)
+tail(C, Q, Q2, L) :-
+    chart_row(C, P, L), params.bar_edge(E), opposite(E, E2), dist(P, E2, 0),
+    neighbor(P, E2, Q), neighbor(Q, E2, Q2).
+
+// The output frame: the box of the chart and its climber column.
+// @claim frame
+.init sheet = Bbox<Chart>
+sheet.cell(C, P) :- chart.cell(C, P).
+sheet.cell(C, Q) :- tail(C, _, Q, _).
+
+// The level whose row the climber column marks.
+.decl marked(f: Position, ml: MarkerLevel, rc: RungCount, l: Position)
+
+// The marker reading gives an output under the floor row.
+.decl settled(f: Position, ml: MarkerLevel, rc: RungCount)
+settled(F, Ml, Rc) :- marked(F, Ml, Rc, _).
+
+// The climber: the one cell of the marker color.
+// @claim climber
+.init climber = Unanimous<Unit, Position>
+climber.item($U(), P) :- in(P, Col), params.marker_color(Col).
+
+out(P_inner, Col, [Ls, Ov, Rc, Ml]) :-
+    chart_key(Ls, Ov, Rc, [F, W]), settled(F, Ml, Rc),
+    climber.value($U(), Q), in(Q, K),                                      // the marker color
+    sheet.box([F, W], B),
+    ( bar([F, W], Rc, P, Col)
+    ; tail([F, W], P, _, _), full(F, Col)                                  // the floor column
+    ; tail([F, W], _, P, L), marked(F, Ml, Rc, L), Col = K                 // the climber's row
+    ; tail([F, W], _, P, L), !marked(F, Ml, Rc, L), params.background(Col)
+    ),
+    crop(P, B, P_inner).
+
+// --- $ByColor ---
+floor.item($AllAbove($ByColor(), W), L) :-
+    bar_width_choice(W), full(L, Col), params.floor_color(Col).
+
+// --- $DerivedFloor ---
+floor.item($AllAbove($DerivedFloor(), W), L) :- bar_width_choice(W), lines.last($U(), L).
+
+// --- $StoredWidth, $ThreeLevels ---
+width($AllAbove(Fi, $StoredWidth()), N) :- floor_identity_choice(Fi), params.bar_width(N).
+width($ThreeLevels(), N) :- params.bar_width(N).
+
+// --- $WidthFromLevels ---
+width($AllAbove(Fi, $WidthFromLevels()), N) :-
+    floor.value($AllAbove(Fi, $WidthFromLevels()), F), level_total(F, N).
+
+// --- $ThreeLevels ---
+floor.item($ThreeLevels(), L) :- params.level_count(N), lines.rank($U(), L, N).
+
+// --- $Widen ---
+// The larger of the level reading's width and its longest bar.
+// @claim frame
+.init widest = Extremes<Span>
+widest.cand([Ls, Rc], N) :- width(Ls, N), rung_count_choice(Rc).
+widest.cand([Ls, Rc], N) :- floor.value(Ls, F), level(F, L), bar_len.tally([Rc, L], N).
+
+chart_key(Ls, $Widen(), Rc, [F, W]) :- floor.value(Ls, F), widest.high([Ls, Rc], W).
+
+// --- $ClipBar ---
+chart_key(Ls, $ClipBar(), Rc, [F, W]) :- floor.value(Ls, F), width(Ls, W), rung_count_choice(Rc).
+
+// --- $FullRungs ---
+bar_len.item([$FullRungs(), L], R) :- rung(L, R).
+
+// --- $LadderHeight ---
+// The ladder rows in order from the level.
+// @claim bar
+.init ladder_order = Order<Position, Position>
+ladder_order.elem(L, R) :- ladder_row(L, R).
+ladder_order.before(L, R, R2) :-
+    ladder_row(L, R), ladder_row(L, R2), params.floor_side(D), nearer(D, R2, R).
+
+// The rows of the ladder's upper half: fewer rows before them than after.
+bar_len.item([$LadderHeight(), L], R) :-
+    ladder_order.rank(L, R, K), ladder_order.rank_desc(L, R, K2), K < K2.
+
+// --- $OpenRows ---
+.decl open_row(l: Position, r: Position)
+open_row(L, R) :- ladder_row(L, R), !rung(L, R).
+
+// Each open row under another open row.
+bar_len.item([$OpenRows(), L], R) :-
+    open_row(L, R), open_row(L, R2), params.floor_side(D), nearer(D, R, R2).
+
+// --- $GapReading ---
+// The level's ladder reaches down.
+.decl reaches(re: ReachTest, l: Position)
+
+// A level whose ladder does not reach down.
+.decl short(f: Position, re: ReachTest, l: Position)
+short(F, Re, L) :- level(F, L), reach_test_choice(Re), !reaches(Re, L).
+
+// A short level lies nearer D than level L.
+.decl short_toward(f: Position, re: ReachTest, l: Position, d: Dir)
+short_toward(F, Re, L, D) :- short(F, Re, L2), level(F, L), dir_elem(D), nearer(D, L2, L).
+
+// The level each scan marks.
+.decl gap_mark(f: Position, s: GapScan, re: ReachTest, l: Position)
+
+marked(F, $GapReading(S, Re, St), Rc, L) :-
+    gap_mark(F, S, Re, L), stuck_choice(St), rung_count_choice(Rc).
+
+// --- $BlankColumn ---
+settled(F, $GapReading(S, Re, $BlankColumn()), Rc) :-
+    floor.value(_, F), gap_scan_choice(S), reach_test_choice(Re), rung_count_choice(Rc).
+
+// --- $DefaultTop ---
+marked(F, $GapReading(S, Re, $DefaultTop()), Rc, L) :-
+    level(F, L), lines.first($U(), L), gap_scan_choice(S), reach_test_choice(Re),
+    !gap_mark(F, S, Re, _), rung_count_choice(Rc).
+
+// --- $Climb ---
+// The highest level every ladder from it down to the floor reaches.
+gap_mark(F, $Climb(), Re, L) :-
+    level(F, L), reach_test_choice(Re), !short(F, Re, L),
+    params.floor_side(D), !short_toward(F, Re, L, D),
+    ( lines.first($U(), L)
+    ; lines.next($U(), L0, L), short(F, Re, L0)
+    ).
+
+// --- $TopGap ---
+// The level under the topmost short level.
+gap_mark(F, $TopGap(), Re, L) :-
+    short(F, Re, L0), params.floor_side(D), opposite(D, U), !short_toward(F, Re, L0, U),
+    lines.next($U(), L0, L), level(F, L).
+
+// The top level, when no level is short.
+gap_mark(F, $TopGap(), Re, L) :-
+    level(F, L), lines.first($U(), L), reach_test_choice(Re), !short(F, Re, _).
+
+// --- $AbutsNext ---
+// The ladder's last row lies just before the next full row.
+reaches($AbutsNext(), L) :-
+    lines.next($U(), L, L2), params.floor_side(D), opposite(D, U), neighbor(L2, U, R),
+    ladder_row(L, R).
+
+// --- $BothEnds ---
+// The ladder also starts in the row just past its level.
+reaches($BothEnds(), L) :-
+    reaches($AbutsNext(), L), params.floor_side(D), neighbor(L, D, R), ladder_row(L, R).
+
+// --- $FewestRungs ---
+// @claim climb
+.init fewest = ArgExtremes<Standing, Position>
+fewest.cand([F, Rc], L, N) :- level(F, L), bar_len.tally([Rc, L], N), N > 0.
+
+// A level with the fewest lies nearer the floor than L.
+.decl lower_tie(f: Position, rc: RungCount, l: Position)
+lower_tie(F, Rc, L) :-
+    fewest.low([F, Rc], L, _), fewest.low([F, Rc], L2, _), params.floor_side(D), nearer(D, L2, L).
+
+marked(F, $FewestRungs(), Rc, L) :- fewest.low([F, Rc], L, _), !lower_tie(F, Rc, L).
+
+.comp Determine {
+    // A line of an example output.
+    .type OutLine = [e: Example, a: Axis, l: Position]
+
+    .init out_line = Unanimous<OutLine, Color>
+    out_line.item([E, A, L], Col) :- ex_out(E, P, Col), axis_elem(A), split(P, A, L, _).
+
+    // A color other than the background fills a whole line of the output.
+    .decl fills(e: Example, col: Color)
+    fills(E, Col) :- out_line.value([E, _, _], Col), !params.background(Col).
+
+    // Some output has no line the color fills.
+    .decl unfilled(col: Color)
+    unfilled(Col) :- fills(_, Col), ex_out(E, _, _), !fills(E, Col).
+
+    .decl floor_color(c: Color)
+    floor_color(Col) :- fills(_, Col), !unfilled(Col).
+}

@@ -56,7 +56,7 @@ bbox.cell(B, P) :- wall(B, P).
 // The side the holder stands open on.
 .decl mouth(b: Ident, d: Dir, ch: Choice)
 
-// --- Pour ---
+// --- $Pour ---
 
 // The cavity: what the held cells reach inside the box without crossing a wall.
 .init cavity = Reach<Ident>
@@ -67,7 +67,7 @@ cavity.seed(B, P) :- held(B, P).
 mouth(B, D, $Pour()) :-
     bbox.box(B, B_hold), cavity.reach(B, P), box_edge(P, B_hold, D).
 
-// --- Sight ---
+// --- $Sight ---
 
 .init sight = Ray<Ident>
 sight.dir(B, D) :- wall(B, _), dir_elem(D).

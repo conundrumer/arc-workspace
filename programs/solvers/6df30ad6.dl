@@ -84,7 +84,7 @@ first.cand(G, P, K) :- dot(P, _), rings.depth(G, P, K).
 // The color the shape takes.
 .decl fill(col: Color, c: Choice)
 
-// --- Nearer ---
+// --- $Nearer ---
 
 // The nearest of the first ring's dots, by the other growth's rings.
 .init nearest = ArgExtremes<Grow, Position>
@@ -94,7 +94,7 @@ nearest.cand(G, P, K) :-
 
 fill(Col, [G, $Nearer()]) :- nearest.low(G, P, _), dot(P, Col).
 
-// --- Most ---
+// --- $Most ---
 
 // The color with the most dots in the first ring.
 .init most = Mode<Grow, Color, Position>

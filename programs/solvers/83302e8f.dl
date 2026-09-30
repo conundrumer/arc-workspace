@@ -29,7 +29,7 @@ impl_choice($Flood()). impl_choice($Tile()). impl_choice($Solid()).
 // Walls stay.
 out(P, Col, Ch) :- in(P, Col), !params.bg(Col), impl_choice(Ch).
 
-// --- Flood, Tile ---
+// --- $Flood, $Tile ---
 
 .type Line = [a: Axis, l: Position]
 
@@ -45,12 +45,12 @@ lattice.divider($U(), A, L) :- line_color.mode([A, L], Col), !params.bg(Col).
 .decl gap(p: Position)
 gap(P) :- lattice.on_divider($U(), P, _), in(P, Col), params.bg(Col).
 
-// --- Flood, Solid ---
+// --- $Flood, $Solid ---
 
 .init region = Reach<Unit>
 region.node($U(), P) :- in(P, Col), params.bg(Col).
 
-// --- Flood ---
+// --- $Flood ---
 
 region.seed($U(), P) :- gap(P).
 
@@ -60,7 +60,7 @@ out(P, Col, $Flood()) :-
     ; !region.reach($U(), P), params.sealed(Col)   // walled in
     ).
 
-// --- Tile ---
+// --- $Tile ---
 
 // A tile with a gap in its wall.
 .decl leaky_tile(p_tile: Position)
@@ -77,7 +77,7 @@ out(P, Col, $Tile()) :-
       )
     ).
 
-// --- Solid ---
+// --- $Solid ---
 
 .init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- region.label($U(), P, Id).

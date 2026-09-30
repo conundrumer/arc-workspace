@@ -65,16 +65,16 @@ fill_choice($Excluded()). fill_choice($Included()).
 // The colors the chart counts.
 .decl counted(f: Fill, col: Color)
 
-// --- Excluded ---
+// --- $Excluded ---
 counted($Excluded(), Col) :- in(_, Col), !params.bg(Col).
 
-// --- Included ---
+// --- $Included ---
 counted($Included(), Col) :- in(_, Col).
 
 // A bar: its rank from the rank edge, its color, and its length.
 .decl bars(ch: Choice, r: number, col: Color, n: number)
 
-// --- PerColor ---
+// --- $PerColor ---
 
 // How many cells each color covers.
 // @claim chart
@@ -89,12 +89,12 @@ colors.before(F, A, B) :- fill_choice(F), cover.tally(A, N1), cover.tally(B, N2)
 
 bars([$PerColor(), F], R, Col, N) :- colors.rank(F, Col, R), cover.tally(Col, N).
 
-// --- PerRegion ---
+// --- $PerRegion ---
 
 // A region's cells, under each adjacency.
 .decl region(adj: Adjacency, col: Color, p: Position, id: Ident)
 
-// --- PerRegion(adj=Edge) ---
+// --- $Edge ---
 
 // The connected regions of each color, cells joined along edges.
 // @claim chart
@@ -103,7 +103,7 @@ regions.node(Col, P) :- in(P, Col).
 
 region($Edge(), Col, P, Id) :- regions.label(Col, P, Id).
 
-// --- PerRegion(adj=Corner) ---
+// --- $Corner ---
 
 // The regions with corner touches joined as well.
 // @claim chart
@@ -112,7 +112,7 @@ regions8.node(Col, P) :- in(P, Col).
 
 region($Corner(), Col, P, Id) :- regions8.label(Col, P, Id).
 
-// --- PerRegion ---
+// --- $PerRegion ---
 
 // A region under its adjacency, as one key: ids from the two component
 // instances are independent.
@@ -133,7 +133,7 @@ pieces.before([$PerRegion(A), F], Id1, Id2) :-
 bars([$PerRegion(A), F], R, Col, N) :-
     pieces.rank([$PerRegion(A), F], Id, R), size.tally([A, Id], N), region(A, Col, _, Id).
 
-// --- PerColor, PerRegion ---
+// --- $PerColor, $PerRegion ---
 
 // How many bars there are.
 // @claim frame

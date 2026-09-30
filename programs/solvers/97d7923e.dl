@@ -75,7 +75,7 @@ bar_cell(Col, P_cap, P) :-
 .init bar_ord = Order<CaseColor, Position>
 bar_ord.elem([Col, Ch], P_cap) :- bar(Col, P_cap, _, _), impl_choice(Ch).
 
-// --- Size ---
+// --- $Size ---
 
 // A bar: its cap color and the cap nearer the header edge.
 .type Bar = [col: Color, p_cap: Position]
@@ -86,7 +86,7 @@ bar_size.item([Col, P_cap], P) :- bar_cell(Col, P_cap, P).
 bar_ord.before([Col, $Size()], P_cap, P_cap2) :-
     bar_size.tally([Col, P_cap], N), bar_size.tally([Col, P_cap2], N2), N > N2.
 
-// --- Head ---
+// --- $Head ---
 
 bar_ord.before([Col, $Head()], P_cap, P_cap2) :-
     bar(Col, P_cap, _, _), bar(Col, P_cap2, _, _),

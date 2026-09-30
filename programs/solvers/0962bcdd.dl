@@ -16,10 +16,10 @@
 .comp Params {
     .decl bg(col: Color) bg(0).
 
-    // --- Ray ---
+    // --- $Ray ---
     .decl radius(k: number) radius(2).
 
-    // --- Lookup ---
+    // --- $Lookup ---
     // Role masks as offsets from the marker, `@` on the marker cell.
     .decl template_arm(delta: Offset)
     GRID_STAMP_5x5(template_arm,
@@ -68,7 +68,7 @@ impl_choice($Ray()). impl_choice($Lookup()).
 
 .decl paint(p: Position, col: Color, ch: Choice)
 
-// --- Ray ---
+// --- $Ray ---
 // One cast per kind, keyed by the marker cell.
 .init arm = Ray<Position>
 arm.dir(Pm, D) :- parse.marker($U(), Pm, _, _), dir_elem(D).
@@ -87,7 +87,7 @@ paint(P2, Col, $Ray()) :-
     ),
     K != 0, K <= R.                                                // within reach, not the marker
 
-// --- Lookup ---
+// --- $Lookup ---
 
 paint(P_grid, Col, $Lookup()) :-
     parse.marker($U(), C, Cc, Ca),

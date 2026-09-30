@@ -77,11 +77,11 @@ rect_of(Id, P_tile, Col) :- rect.label([P_tile, Col], _, Id).
 .decl anchor(id: Ident, d: Dir, ch: Choice)
 anchor(Id, D, Ch) :- attached(Id, D, Ch), opposite(D, D2), !attached(Id, D2, Ch).
 
-// --- Nearer ---
+// --- $Nearer ---
 
 attached(Id, D, $Nearer()) :- rect_box.box(Id, B), dist_pair(B, D, K1, K2), K1 <= K2.
 
-// --- Extreme ---
+// --- $Extreme ---
 
 // how deep each rectangle of a panel lies from each side of that panel
 .init depth = ArgExtremes<PanelDir, Ident>

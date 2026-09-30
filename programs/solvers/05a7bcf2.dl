@@ -72,7 +72,7 @@ gap(P) :- cast.ray($U(), P, D, _, _), !reach.ray($U(), P, D, _, _), !shape_cell(
 .decl through(p: Position)
 through(P) :- reach.ray($U(), P, D, _, _), cast.ray($U(), P, D, _, _).
 
-// --- Slide: the push structure moves as one body ---
+// --- $Slide: the push structure moves as one body ---
 
 .init push_box = Bbox<Unit>
 push_box.cell($U(), P) :- push_cell(P).
@@ -85,7 +85,7 @@ push_shift(Delta) :-
 .decl placed(p: Position, c: Choice)
 placed(P2, $Slide()) :- push_cell(P), push_shift(Delta), compose(P, Delta, P2).
 
-// --- Pack: each line's push cells fall and stack ---
+// --- $Pack: each line's push cells fall and stack ---
 
 // Cell split on the model's axis: p_line names its line, k places it within
 // the line as dist to the far edge.

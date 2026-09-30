@@ -20,14 +20,14 @@
 .comp Params {
     .decl hole(col: Color) hole(0).
 
-    // --- stripe ---
+    // --- $Stripe ---
     // The fault diagonal runs from this corner.
     .decl corner(d: DiagDir) corner(DIAG_TL).
 
     // Stripes run along this axis.
     .decl axis(a: Axis) axis(AXIS_V).
 
-    // --- cycle ---
+    // --- $Cycle ---
     // The cycle advances along this diagonal.
     .decl diag_axis(da: DiagAxis) diag_axis(DAXIS_DG).
 }
@@ -46,7 +46,7 @@ damaged(P) :- in(P, Col), params.hole(Col).
 
 out(P, Col, Ch) :- intact(P, Col), impl_choice(Ch).
 
-// --- stripe ---
+// --- $Stripe ---
 
 // The fault: the corner diagonal the stripes jog across.
 .init diag = Diagonal<Unit>
@@ -81,7 +81,7 @@ stripe_color(Q, Col) :- stripe_step(P, Q), stripe_color(P, Col).
 
 out(P, Col, $Stripe()) :- damaged(P), stripe_color(P, Col).
 
-// --- cycle ---
+// --- $Cycle ---
 
 // The color cycle, read off the intact diagonal neighbor pairs — one reading
 // per direction, each the other's reverse.

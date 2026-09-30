@@ -43,13 +43,13 @@ blocks.divider($U(), A, L) :-
 // The cells the mark color reaches.
 .decl painted(p: Position, ch: Choice)
 
-// --- Cell ---
+// --- $Cell ---
 painted(P, $Cell()) :-
     in(P, Col), params.base(Col),           // base cell
     mark(P_mark, _),                        // the mark
     axis_elem(A), same_line(A, P, P_mark).  // in line with it
 
-// --- Block ---
+// --- $Block ---
 painted(P, $Block()) :-
     blocks.tile_of($U(), P, P_tile),                                 // any block's cell
     mark(P_mark, _), blocks.tile_of($U(), P_mark, P_tile_mark),      // the mark's block

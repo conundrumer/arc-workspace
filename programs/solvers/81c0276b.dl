@@ -48,7 +48,7 @@ ink(P, Col) :- in(P, Col), !params.bg(Col), !line_color.value(_, Col).
 // The bar of each color: its length is the color's count.
 .decl bar(ch: Choice, col: Color, n: number)
 
-// --- Tiles ---
+// --- $Tiles ---
 
 .init lattice = DividerTiles<Unit>
 lattice.cell($U(), P) :- in(P, _).
@@ -59,7 +59,7 @@ slots.item(Col, T) :- lattice.tile_of($U(), P, T), ink(P, Col).
 
 bar($Tiles(), Col, N) :- slots.tally(Col, N).
 
-// --- Objects ---
+// --- $Objects ---
 
 .init blob = Components<Color>
 blob.node(Col, P) :- ink(P, Col).

@@ -18,14 +18,14 @@
 .comp Params {
     .init helpers = ParamsHelpers
 
-    // --- Lookup ---
+    // --- $Lookup ---
     .decl tile_d4(p: Position, d: D4)
     GRID_3x3(tile_d4,
         D4_HT, D4_TB, D4_HT,
         D4_LR, D4_ID, D4_LR,
         D4_HT, D4_TB, D4_HT)
 
-    // --- Mirror, Unfold ---
+    // --- $Mirror, $Unfold ---
     .decl arr_dim(k: number) arr_dim(3).
     .decl arr_pos(p: Position)
     arr_pos(P) :- arr_dim(K), helpers.frame_pos([K, K], P).
@@ -33,13 +33,13 @@
 
 .init params = Params
 
-// --- Lookup ---
+// --- $Lookup ---
 out(P_grid, Col, $Lookup()) :-
     in(P_in, Col),                                            // input cell
     params.tile_d4(P_tile, D), apply(D, P_in, P_intile),      // d4 image at tile
     concat_2d(P_tile, P_intile, 0, P_grid).                   // recompose
 
-// --- Mirror ---
+// --- $Mirror ---
 .decl axis_centered(p_tile: Position, a: Axis)
 axis_centered(T, A) :- params.arr_pos(T), axis_of(D, A), dist_pair(T, D, K, K).
 
@@ -57,7 +57,7 @@ out(P_grid, Col, $Mirror()) :-
     mirror(A1, T, P_in, P1), mirror(A2, T, P1, P_intile),   // image through both axes
     concat_2d(T, P_intile, 0, P_grid).                      // recompose
 
-// --- Unfold ---
+// --- $Unfold ---
 // The input seeds the center tile.
 .decl unfold_val(p_tile: Position, p_intile: Position, col: Color)
 unfold_val(T, P, Col) :- in(P, Col), params.arr_pos(T), centered(T).

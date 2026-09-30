@@ -33,7 +33,7 @@ line_of(P, A, L) :- in(P, _), axis_elem(A), split(P, A, L, _).
 
 .decl painted(p: Position, ch: Choice)
 
-// --- Clear ---
+// --- $Clear ---
 
 .init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- open_cell(P).
@@ -48,7 +48,7 @@ blocked(L) :- boxed_line(P, L), !open_cell(P).
 
 painted(P, $Clear()) :- boxed_line(P, L), !blocked(L).
 
-// --- Widest ---
+// --- $Widest ---
 
 .init widest = Mode<Axis, Position, Position>
 widest.item(A, L, P) :- open_cell(P), line_of(P, A, L).

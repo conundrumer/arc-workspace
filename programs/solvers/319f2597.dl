@@ -20,7 +20,7 @@
     // The color that resists the cast.
     .decl spare(col: Color) spare(2).
 
-    // --- Paint ---
+    // --- $Paint ---
     // The color the cast lays down.
     .decl paint(col: Color) paint(0).
 }
@@ -42,8 +42,8 @@ painted(P) :- cross(P), in(P, Col), !params.spare(Col).
 
 out(P, Col, Ch) :- in(P, Col), !painted(P), impl_choice(Ch).
 
-// --- Spread ---
+// --- $Spread ---
 out(P, Col, $Spread()) :- painted(P), params.mark(Col).
 
-// --- Paint ---
+// --- $Paint ---
 out(P, Col, $Paint()) :- painted(P), params.paint(Col).

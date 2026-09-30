@@ -117,10 +117,10 @@ hidden(P, Col) :- paint(P, Col), paint(P, Col2), occludes(Col2, Col).
 // Shape cells the legend loses.
 .decl erased(p: Position, ch: Choice)
 
-// --- Stamped ---
+// --- $Stamped ---
 erased(P, $Stamped()) :- shape_cell(Col, P), cross(Col, _).
 
-// --- Marked ---
+// --- $Marked ---
 erased(P, $Marked()) :- shape_cell(Col, P), header(_, _, Col).
 
 // --- output ---

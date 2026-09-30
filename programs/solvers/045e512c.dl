@@ -19,10 +19,10 @@
 .comp Params {
     .decl bg(col: Color) bg(0).
 
-    // --- Stride ---
+    // --- $Stride ---
     .decl stride(k: number) stride(4).
 
-    // --- Abut ---
+    // --- $Abut ---
     .decl gap(g: number) gap(1).
 }
 
@@ -67,18 +67,18 @@ fits(Id, Delta, K) :-
 
 .decl step(id: Ident, delta: Offset, ch: Choice)
 
-// --- Reach ---
+// --- $Reach ---
 
 .init reach = ArgExtremes<Ident, Offset>
 reach.cand(Id, Delta, K) :- fits(Id, Delta, K).
 
 step(Id, Delta, $Reach()) :- reach.high(Id, Delta, _).
 
-// --- Stride ---
+// --- $Stride ---
 
 step(Id, Delta, $Stride()) :- fits(Id, Delta, K), params.stride(K).
 
-// --- Abut ---
+// --- $Abut ---
 
 .init sbox = Bbox<Unit>
 sbox.cell($U(), P) :- shape(P).

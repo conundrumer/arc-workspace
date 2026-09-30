@@ -63,12 +63,12 @@ odd_panel(Q) :- color_panel.value(_, Q).
 
 out(P_inner, Col, Ch) :- viewed(Ch, P), view.box(Ch, B), crop(P, B, P_inner), in(P, Col).
 
-// --- Panel ---
+// --- $Panel ---
 
 view.cell($Panel(), P) :- odd_panel(Q), panel(P, Q).
 viewed($Panel(), P) :- view.cell($Panel(), P).
 
-// --- Ink ---
+// --- $Ink ---
 
 view.cell($Ink(), P) :- odd_panel(Q), panel(P, Q), ink(P, _).
 viewed($Ink(), P) :- in(P, _).                                     // bg cells inside the box

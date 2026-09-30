@@ -32,11 +32,11 @@ patch_cell(P, Col) :- in(P, Col), !params.bg(Col).
 // One id per patch.
 .init patch = Canon<Cell>
 
-// --- ByColor ---
+// --- $ByColor ---
 
 patch.equiv([$ByColor(), P], [$ByColor(), Q]) :- patch_cell(P, Col), patch_cell(Q, Col).
 
-// --- ByObject ---
+// --- $ByObject ---
 
 .init blob = Components<Color>
 blob.node(Col, P) :- patch_cell(P, Col).

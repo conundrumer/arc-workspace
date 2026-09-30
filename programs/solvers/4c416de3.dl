@@ -80,12 +80,12 @@ painted(P, Col) :-
     stamp(P_site, P),               // a cell of the stamp at a site
     stamp(P_site, Q), ink(Q, Col).  // in the color of the part already drawn
 
-// --- Cover ---
+// --- $Cover ---
 
 out(P, Col, $Cover()) :- in(P, _), painted(P, Col).
 out(P, Col, $Cover()) :- in(P, Col), !painted(P, _).
 
-// --- Fill ---
+// --- $Fill ---
 
 // A cell a stamp may fill: background, or the outline it is drawn over.
 .decl open(p: Position)

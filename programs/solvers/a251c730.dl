@@ -1,0 +1,387 @@
+// a251c730
+// @draft
+// @keywords: crop objects markers stamp match
+// @scene striped-field: the grid is covered by a pattern of one-cell-wide
+//  stripes that repeats along one axis
+// @scene two-boxes: two rectangles sit on that field, and they do not overlap.
+//  Each rectangle is a one-cell-wide frame of one color around an interior
+//  filled with one background color, its commonest color.
+// @scene template-box: one box holds figures. Each figure is a group of
+//  non-background cells joined through edge and corner neighbors, in which
+//  exactly one cell, the anchor, has a color that occurs once in the figure.
+//  Figures with the same anchor color have the same shape and colors.
+//  Undefined when a figure has no such cell or more than one, or when two
+//  figures of one anchor color differ.
+// @scene anchor-box: the other box holds only lone cells, and each lone cell
+//  has the anchor color of some figure in the template box.
+// @rule crop-anchor-box: the output is the anchor box, frame included, with
+//  its interior background kept.
+// @rule stamp-at-anchor: at each lone cell of the anchor box, the output
+//  stamps the figure whose anchor color is that cell's color, translated so
+//  that the figure's anchor lands on the lone cell. The stamp writes the
+//  figure's non-background cells onto the crop, the frame included, and drops
+//  those outside it. Undefined where two writes to one cell disagree, a lone
+//  cell counting as a write of its own color, and at a lone cell whose color
+//  is no figure's anchor color.
+
+// how a figure's anchor cell is found
+.type AnchorCell =
+    // @claim template-box
+    OnceColor {}
+    // @scene template-box: the anchor colors are the non-background colors
+    //  found in both box interiors. A figure is a group with exactly one
+    //  anchor-colored cell, its anchor, and at least one other cell; other
+    //  groups are skipped. Undefined when no figure results.
+    // @witness two-single-colors: variant $AnchorBySharedColor & $UnmatchedStays & $FirstWins
+    //     @relaxed template-box
+    // @witness anchor-reused-as-decoration: variant concept
+  | AnchorBySharedColor {}
+
+// which cells of the anchor box a stamp writes
+.type StampReach =
+    // @claim stamp-at-anchor
+    CropReach {}
+    // @rule stamp-at-anchor: a stamp writes only onto interior cells that hold
+    //  the background color, so the frame and the lone cells keep their
+    //  colors. Undefined where two stamps write different colors to one cell.
+    // @witness stamp-over-frame: borderline $FillOnly & $UnmatchedStays & $FirstWins
+  | FillOnly {}
+
+// what a lone cell whose color is no figure's anchor color gets
+.type UnmatchedLoneCell =
+    // @claim stamp-at-anchor
+    MatchRequired {}
+    // @rule stamp-at-anchor: such a lone cell keeps its color and gets no stamp
+    // @witness unmatched-lone-cell: borderline $UnmatchedStays & $FirstWins
+    //     @relaxed anchor-box
+  | UnmatchedStays {}
+
+// what figures of one anchor color that differ give
+.type SameColorFigures =
+    // @claim template-box
+    ClashUndefined {}
+    // @scene template-box: figures with the same anchor color may differ. A
+    //  lone cell takes the figure of its color whose anchor comes first in the
+    //  scan order, from a corner along an axis. Undefined where the open scan
+    //  orders give different grids.
+    // @witness unused-clash: borderline $UnmatchedStays & $FirstWins
+    //     @relaxed template-box
+  | FirstWins {}
+
+// which cells of the anchor box take a stamp, under RoleBySize
+.type StampSites =
+    // @claim stamp-at-anchor
+    LoneSites {}
+    // @rule stamp-at-anchor: every anchor box cell of a figure's anchor color
+    //  takes a stamp, in a group of more than one cell too
+    // @witness figures-in-both: foreign any
+    //     @relaxed anchor-box
+  | EveryAnchorColored {}
+
+// which box gives the figures and which box the output crops
+.type BoxRole =
+    // @claim template-box
+    RoleByContent {}
+    // @scene template-box: the box with the larger area holds the figures,
+    //  and the other box is the anchor box, whose groups of more than one cell
+    //  keep their colors. Undefined when the areas are equal.
+    // @witness template-box-smaller: variant concept
+  | RoleBySize {sites: StampSites}
+
+// which neighbors join the cells of a group
+.type Adjacency =
+    // @claim template-box
+    Conn8 {}
+    // @scene template-box: only edge neighbors join the cells of a group
+    // @witness corner-decoration: variant concept
+  | Conn4 {}
+
+.type Choice = [anchor: AnchorCell, reach: StampReach, unmatched: UnmatchedLoneCell,
+                same: SameColorFigures, role: BoxRole, adj: Adjacency]
+
+// One role reading and one adjacency: the parse's key.
+.type Reading = [role: BoxRole, adj: Adjacency]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $FirstWins ---
+    // The scan order that picks among the figures of one anchor color: from a
+    // corner, along an axis. The pairs fix no order, so every order is open.
+    .decl scan(d: DiagDir, ax: Axis)
+    scan(DIAG_TL, AXIS_V). scan(DIAG_TL, AXIS_H). scan(DIAG_TR, AXIS_V). scan(DIAG_TR, AXIS_H).
+    scan(DIAG_BL, AXIS_V). scan(DIAG_BL, AXIS_H). scan(DIAG_BR, AXIS_V). scan(DIAG_BR, AXIS_H).
+}
+
+.init params = Params
+
+.decl anchor_cell_choice(a: AnchorCell)
+anchor_cell_choice($OnceColor()). anchor_cell_choice($AnchorBySharedColor()).
+
+.decl stamp_reach_choice(s: StampReach)
+stamp_reach_choice($CropReach()). stamp_reach_choice($FillOnly()).
+
+.decl stamp_sites_choice(si: StampSites)
+stamp_sites_choice($LoneSites()). stamp_sites_choice($EveryAnchorColored()).
+
+.decl box_role_choice(role: BoxRole)
+box_role_choice($RoleByContent()). box_role_choice($RoleBySize(Si)) :- stamp_sites_choice(Si).
+
+.decl adjacency_choice(j: Adjacency)
+adjacency_choice($Conn8()). adjacency_choice($Conn4()).
+
+// The concept case, and the cases that take UnmatchedStays and FirstWins.
+// Another case with MatchRequired or ClashUndefined is subsumed: wherever it
+// is defined, the case with UnmatchedStays and FirstWins in their place gives
+// the same grid.
+.decl impl_choice(ch: Choice)
+impl_choice([$OnceColor(), $CropReach(), $MatchRequired(), $ClashUndefined(), $RoleByContent(), $Conn8()]).
+impl_choice([A, S, $UnmatchedStays(), $FirstWins(), Role, J]) :-
+    anchor_cell_choice(A), stamp_reach_choice(S), box_role_choice(Role), adjacency_choice(J).
+
+.comp Parse<Key> {
+    .type Tint = [ky: Key, col: Color]
+    .type Sheet = [ky: Key, b: Box]
+    .type Roles = [ky: Key, r: Reading]
+    // One group of the template box under one anchor reading.
+    .type Figure = [ky: Key, anchor: AnchorCell, r: Reading, id: Ident]
+    // The anchors of one color's figures, ordered by one scan.
+    .type Queue = [ky: Key, d: DiagDir, ax: Axis, anchor: AnchorCell, r: Reading, k: Color]
+
+    .decl cell(ky: Key, p: Position, col: Color)
+
+    // The rectangle outlines of one color.
+    // @claim striped-field two-boxes
+    .init outline = Outlines<Tint>
+    outline.node([Ky, Col], P) :- cell(Ky, P, Col).
+
+    // An outline inside another.
+    .decl nested(ky: Key, b: Box)
+    nested(Ky, B) :- outline.box([Ky, _], B), outline.box([Ky, _], B2), B != B2, inside(B, B2).
+
+    // A box: an outline inside no other.
+    .decl box(ky: Key, b: Box)
+    box(Ky, B) :- outline.box([Ky, _], B), !nested(Ky, B).
+
+    // The interior's background: its commonest color.
+    // @claim two-boxes
+    .init interior_mode = Mode<Sheet, Color, Position>
+    interior_mode.item([Ky, B], Col, P) :- box(Ky, B), cell(Ky, P, Col), interior(P, B).
+
+    // A non-background cell of a box's interior.
+    .decl ink(ky: Key, b: Box, p: Position, col: Color)
+    ink(Ky, B, P, Col) :- interior_mode.item([Ky, B], Col, P), !interior_mode.mode([Ky, B], Col).
+
+    // The groups of each box's non-background cells.
+    .decl part(ky: Key, j: Adjacency, b: Box, p: Position, id: Ident)
+
+    // A group of more than one cell.
+    .decl multi(ky: Key, j: Adjacency, b: Box, id: Ident)
+    multi(Ky, J, B, Id) :- part(Ky, J, B, P, Id), part(Ky, J, B, Q, Id), P != Q.
+
+    // The box that holds the figures.
+    // @claim template-box
+    .init template = Unanimous<Roles, Box>
+
+    // The box the output crops.
+    // @claim two-boxes
+    .init target = Unanimous<Roles, Box>
+    target.item([Ky, R], B) :- template.value([Ky, R], B_t), box(Ky, B), B != B_t.
+
+    .decl fig_cell(ky: Key, r: Reading, id: Ident, p: Position, col: Color)
+    fig_cell(Ky, [Role, J], Id, P, Col) :-
+        template.value([Ky, [Role, J]], B), part(Ky, J, B, P, Id), cell(Ky, P, Col).
+
+    // A lone cell of the anchor box: a group of one cell.
+    .decl lone(ky: Key, r: Reading, p: Position, col: Color)
+    lone(Ky, [Role, J], P, Col) :-
+        target.value([Ky, [Role, J]], B), part(Ky, J, B, P, Id), !multi(Ky, J, B, Id),
+        cell(Ky, P, Col).
+
+    // The anchor of each figure.
+    // @claim template-box
+    .init anchor = Unanimous<Figure, Position>
+
+    // A figure's anchor color.
+    .decl fig_key(ky: Key, a: AnchorCell, r: Reading, id: Ident, k: Color)
+    fig_key(Ky, A, R, Id, K) :- anchor.value([Ky, A, R, Id], P), cell(Ky, P, K).
+
+    // A figure's cells relative to its anchor.
+    .decl fig_rel(ky: Key, a: AnchorCell, r: Reading, id: Ident, v: Offset, col: Color)
+    fig_rel(Ky, A, R, Id, V, Col) :-
+        anchor.value([Ky, A, R, Id], P_a), fig_cell(Ky, R, Id, P, Col), relative(P_a, P, V).
+
+    // Each scan order over the anchors of one color's figures.
+    // @claim template-box
+    .init scan = LexOrder<Queue>
+    scan.corner([Ky, D, Ax, A, R, K], D) :- scan.cell([Ky, D, Ax, A, R, K], _).
+    scan.axis([Ky, D, Ax, A, R, K], Ax) :- scan.cell([Ky, D, Ax, A, R, K], _).
+    scan.cell([Ky, D, Ax, A, R, K], P) :-
+        diag_dir_elem(D), axis_elem(Ax), anchor.value([Ky, A, R, Id], P), fig_key(Ky, A, R, Id, K).
+
+    // The figure each scan picks for its anchor color.
+    .decl picked(ky: Key, d: DiagDir, ax: Axis, a: AnchorCell, r: Reading, id: Ident)
+    picked(Ky, D, Ax, A, R, Id) :-
+        scan.first([Ky, D, Ax, A, R, _], P), anchor.value([Ky, A, R, Id], P).
+
+    // --- $OnceColor ---
+    // A color that occurs more than once in a figure.
+    .decl repeated(ky: Key, r: Reading, id: Ident, col: Color)
+    repeated(Ky, R, Id, Col) :- fig_cell(Ky, R, Id, P, Col), fig_cell(Ky, R, Id, Q, Col), P != Q.
+
+    anchor.item([Ky, $OnceColor(), R, Id], P) :-
+        fig_cell(Ky, R, Id, P, Col), !repeated(Ky, R, Id, Col).
+
+    // --- $AnchorBySharedColor ---
+    // A non-background color of the anchor box; on a figure cell, an anchor
+    // color.
+    .decl shared(ky: Key, r: Reading, col: Color)
+    shared(Ky, R, Col) :- target.value([Ky, R], B), ink(Ky, B, _, Col).
+
+    anchor.item([Ky, $AnchorBySharedColor(), R, Id], P) :-
+        fig_cell(Ky, R, Id, P, Col), shared(Ky, R, Col),
+        fig_cell(Ky, R, Id, _, Col2), !shared(Ky, R, Col2).    // and a cell of another color
+
+    // --- $RoleByContent ---
+    template.item([Ky, [$RoleByContent(), J]], B) :- multi(Ky, J, B, _).
+
+    // --- $RoleBySize ---
+    // @claim template-box
+    .init area = Tally<Sheet, Position>
+    area.item([Ky, B], P) :- box(Ky, B), cell(Ky, P, _), inside(P, B).
+
+    // @claim template-box
+    .init larger = ArgExtremes<Key, Box>
+    larger.cand(Ky, B, N) :- area.tally([Ky, B], N).
+
+    template.item([Ky, [$RoleBySize(Si), J]], B) :-
+        stamp_sites_choice(Si), adjacency_choice(J), larger.high(Ky, B, _).
+
+    // --- $Conn8 ---
+    // @claim template-box
+    .init part8 = Components8<Sheet>
+    part8.node([Ky, B], P) :- ink(Ky, B, P, _).
+
+    part(Ky, $Conn8(), B, P, Id) :- part8.label([Ky, B], P, Id).
+
+    // --- $Conn4 ---
+    // @claim template-box
+    .init part4 = Components<Sheet>
+    part4.node([Ky, B], P) :- ink(Ky, B, P, _).
+
+    part(Ky, $Conn4(), B, P, Id) :- part4.label([Ky, B], P, Id).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// The cells that take a stamp of their color.
+.decl site(a: AnchorCell, r: Reading, p: Position, k: Color)
+site(A, R, P, K) :- anchor_cell_choice(A), parse.lone($U(), R, P, K).
+
+// A cell of a figure placed with its anchor on a site of its anchor color.
+.decl placed(a: AnchorCell, r: Reading, id: Ident, p: Position, col: Color)
+placed(A, R, Id, P, Col) :-
+    site(A, R, L, K), parse.fig_key($U(), A, R, Id, K), parse.fig_rel($U(), A, R, Id, V, Col),
+    compose(L, V, P).
+
+// The cells a stamp reading lets a stamp write.
+.decl writable(s: StampReach, r: Reading, p: Position)
+
+// A write of a placed figure that the stamp reading keeps.
+.decl paint(a: AnchorCell, s: StampReach, r: Reading, id: Ident, p: Position, col: Color)
+paint(A, S, R, Id, P, Col) :- placed(A, R, Id, P, Col), writable(S, R, P).
+
+// A reading under which the output is undefined.
+.decl defect(a: AnchorCell, r: Reading)
+
+// A lone cell whose color is no figure's anchor color.
+.decl unmatched(a: AnchorCell, r: Reading)
+unmatched(A, R) :-
+    anchor_cell_choice(A), parse.lone($U(), R, _, K), !parse.fig_key($U(), A, R, _, K).
+
+// The readings that give an output.
+.decl settled(a: AnchorCell, u: UnmatchedLoneCell, r: Reading)
+
+// A cell of the output frame, with its input color.
+.decl sheet(r: Reading, p: Position, p_inner: Position, col: Color)
+sheet(R, P, P_inner, Col) :- parse.target.value([$U(), R], B), in(P, Col), crop(P, B, P_inner).
+
+// --- $OnceColor ---
+// A figure with no anchor, or with more than one.
+defect($OnceColor(), R) :-
+    parse.fig_cell($U(), R, Id, _, _), !parse.anchor.value([$U(), $OnceColor(), R, Id], _).
+
+// --- $AnchorBySharedColor ---
+// No figure results.
+defect($AnchorBySharedColor(), R) :-
+    parse.template.value([$U(), R], _), !parse.fig_key($U(), $AnchorBySharedColor(), R, _, _).
+
+// --- $CropReach ---
+writable($CropReach(), R, P) :- sheet(R, P, _, _).
+
+// --- $FillOnly ---
+writable($FillOnly(), R, P) :-
+    parse.target.value([$U(), R], B), interior(P, B), in(P, Bg),
+    parse.interior_mode.mode([$U(), B], Bg).
+
+// --- $MatchRequired ---
+settled(A, $MatchRequired(), R) :-
+    parse.template.value([$U(), R], _), anchor_cell_choice(A), !defect(A, R), !unmatched(A, R).
+
+// --- $UnmatchedStays ---
+settled(A, $UnmatchedStays(), R) :-
+    parse.template.value([$U(), R], _), anchor_cell_choice(A), !defect(A, R).
+
+// --- $ClashUndefined ---
+// Two figures of one anchor color differ.
+.decl clash(a: AnchorCell, r: Reading)
+clash(A, R) :-
+    parse.fig_key($U(), A, R, Id, K), parse.fig_key($U(), A, R, Id2, K),
+    parse.fig_rel($U(), A, R, Id, V, Col), !parse.fig_rel($U(), A, R, Id2, V, Col).
+
+out(P_inner, Col, [A, S, U, $ClashUndefined(), Role, J]) :-
+    impl_choice([A, S, U, $ClashUndefined(), Role, J]), settled(A, U, [Role, J]), !clash(A, [Role, J]),
+    sheet([Role, J], P, P_inner, C),
+    ( paint(A, S, [Role, J], _, P, Col)
+    ; site(A, [Role, J], P, Col)                      // a site writes its own color
+    ; !paint(A, S, [Role, J], _, P, _), Col = C
+    ).
+
+// --- $FirstWins ---
+// A cell a scan's picked figures write.
+// @ignore: store — the scan columns range over the open scan orders
+.decl scan_painted(d: DiagDir, ax: Axis, a: AnchorCell, s: StampReach, r: Reading, p: Position)
+scan_painted(D, Ax, A, S, R, P) :- parse.picked($U(), D, Ax, A, R, Id), paint(A, S, R, Id, P, _).
+
+// Each open scan gives a grid; a cell the scans settle differently gets both
+// colors.
+out(P_inner, Col, [A, S, U, $FirstWins(), Role, J]) :-
+    impl_choice([A, S, U, $FirstWins(), Role, J]), settled(A, U, [Role, J]), params.scan(D, Ax),
+    sheet([Role, J], P, P_inner, C),
+    ( parse.picked($U(), D, Ax, A, [Role, J], Id), paint(A, S, [Role, J], Id, P, Col)
+    ; site(A, [Role, J], P, Col)                      // a site writes its own color
+    ; !scan_painted(D, Ax, A, S, [Role, J], P), Col = C
+    ).
+
+// --- $EveryAnchorColored ---
+site(A, [$RoleBySize($EveryAnchorColored()), J], P, K) :-
+    parse.target.value([$U(), [$RoleBySize($EveryAnchorColored()), J]], B), parse.ink($U(), B, P, K),
+    parse.fig_key($U(), A, [$RoleBySize($EveryAnchorColored()), J], _, K).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // Under the concept reading, the figure a scan picks, placed at a lone
+    // cell of its anchor color, writes a color the output does not show.
+    .decl scan_contradicted(d: DiagDir, ax: Axis)
+    scan_contradicted(D, Ax) :-
+        R = [$RoleByContent(), $Conn8()],
+        parse.picked(E, D, Ax, $OnceColor(), R, Id), parse.fig_key(E, $OnceColor(), R, Id, K),
+        parse.lone(E, R, L, K), parse.fig_rel(E, $OnceColor(), R, Id, V, Col), compose(L, V, P),
+        parse.target.value([E, R], B), crop(P, B, P_inner), ex_out(E, P_inner, C), C != Col.
+
+    .decl scan(d: DiagDir, ax: Axis)
+    scan(D, Ax) :- diag_dir_elem(D), axis_elem(Ax), !scan_contradicted(D, Ax).
+}

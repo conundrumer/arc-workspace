@@ -1,0 +1,68 @@
+"""The lint categories, as the annotation syntax names them."""
+
+from enum import StrEnum
+
+
+class Category(StrEnum):
+    """A lint category: what an `@ignore: <category>` line may name
+    (solver-file.md:134)."""
+
+    RESERVED_NAME = "reserved name"
+    SHADOWED_TYPE = "shadowed type"
+    LIB_NAME = "lib name"
+    LIB_INTERNAL = "lib internal"
+    COMP_WITHOUT_ENTRY = "comp without entry"
+    PARSE_UNSHARED_WITH_DETERMINE = "parse unshared with determine"
+    FAMILY_CASE = "family case"
+    HEADER = "header"
+    CLAIM = "claim"
+    KEYWORD = "keyword"
+    UNREAD_FIELD = "unread-field"
+    CASE_SECTION = "case section"
+    CASE_MARKER = "case marker"
+    GLOSS = "gloss"
+    WITNESS = "witness"
+    ONE_CASE = "one case"
+    INCLUDE = "include"
+    RIGID_CHART = "rigid chart"
+    ORIENTATION_LITERAL = "orientation literal"
+    NONZERO_LITERAL = "nonzero literal"
+    ARITHMETIC = "arithmetic"
+    RANGE = "range"
+    BANNED_TYPE = "banned type"
+    PARAMS_DATA = "params data"
+    DEAD = "dead"
+    ALIAS_INLINE = "alias-inline"
+    NEGATED_USE = "negated-use"
+    CHOICE_DOMAIN = "choice-domain"
+    SHARED_READ = "shared-read"
+    CHOICE_TAG = "choice-tag"
+    TYPED_ORDER = "typed-order"
+    CROSS_CHOICE = "cross-choice"
+    RAW_AGGREGATE = "raw-aggregate"
+    SUBSUMED_ATOM = "subsumed-atom"
+    LIB_IDIOM = "lib-idiom"
+    NAMED_COMPLEMENT = "named-complement"
+    NEGATED_VALUE = "negated-value"
+    LONG_CLAUSE = "long-clause"
+    DECL_PLACEMENT = "decl-placement"
+    PASS_THROUGH = "pass-through"
+    CHAIN_JOIN = "chain-join"
+    SINGLE_CONSUMER = "single-consumer"
+    DOMAIN_ENUMERATOR = "domain-enumerator"
+    ARGMAX = "argmax"
+    CONST_JOIN = "const-join"
+    COMP_IDIOM = "comp-idiom"
+    COMMON_SUBEXPR = "common-subexpr"
+    HELD_INPUT = "held input"
+    IGNORE = "ignore"
+
+
+HINTS = frozenset({
+    Category.KEYWORD, Category.COMP_WITHOUT_ENTRY, Category.UNREAD_FIELD,
+    Category.CASE_SECTION, Category.PASS_THROUGH, Category.CHAIN_JOIN,
+    Category.SINGLE_CONSUMER, Category.DOMAIN_ENUMERATOR, Category.ARGMAX,
+    Category.COMMON_SUBEXPR, Category.CONST_JOIN, Category.COMP_IDIOM,
+})
+"""The categories whose findings are hints: a hint changes neither the
+verdict nor the exit code."""

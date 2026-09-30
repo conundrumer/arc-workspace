@@ -1,0 +1,241 @@
+// a61f2674
+// @draft
+// @keywords: objects lines rank select
+// @scene bar-color: the bars are drawn in params.bar_color on a
+//  params.background field
+// @scene bars: vertical bars stand on the params.gravity_side edge, each one
+//  column wide, with an empty column between neighbors; a bar is a 4-connected
+//  component of the bar-color cells
+// @scene distinct-heights: the bars have pairwise different heights
+// @rule height: a bar's height is the number of lines it spans along the axis
+//  of params.gravity_side
+// @rule tallest-recolor: the tallest bar keeps its cells and takes
+//  params.tallest_color; undefined where two bars tie for the tallest
+// @rule shortest-recolor: the shortest bar keeps its cells and takes
+//  params.shortest_color; undefined where two bars tie for the shortest; a
+//  bar that is both the tallest and the shortest takes each color of
+//  params.role_priority, so the output is undefined there
+// @rule erase-rest: every other bar takes params.background
+
+// the unit that is ranked, and how its height is measured
+.type Reading =
+    // @claim bars height
+    ComponentSpan {}
+    // @scene bars: vertical bars stand on the params.gravity_side edge; a bar
+    //  is the set of bar-color cells on one line along the axis of
+    //  params.gravity_side, whether or not they touch
+    // @rule height: a bar's height is its number of cells
+    // @witness floating-cell: foreign $ColumnCount
+    //     @relaxed bars
+  | ColumnCount {}
+    // @scene bars: vertical bars stand on the params.gravity_side edge; a bar
+    //  is the set of bar-color cells on one line along the axis of
+    //  params.gravity_side, whether or not they touch
+    // @rule height: a bar's height is the distance of its farthest cell from
+    //  the params.gravity_side edge
+    // @witness floating-cell: foreign $ColumnCount
+  | TopExtent {}
+    // @rule height: a bar's height is its number of cells
+    // @witness wide-bar: borderline concept
+    //     @relaxed bars
+  | Area {}
+    // @scene bars: vertical bars stand on the params.gravity_side edge, each
+    //  one column wide, with an empty column between neighbors; a bar is an
+    //  8-connected component of the bar-color cells
+    // @witness diagonal-cell: foreign $EightConnected
+    //     @relaxed bars
+  | EightConnected {}
+
+// what happens when several bars share an extreme height
+.type Tie =
+    // @claim tallest-recolor shortest-recolor
+    Unique {}
+    // @rule tallest-recolor: every bar at the greatest height keeps its cells
+    //  and takes params.tallest_color
+    // @rule shortest-recolor: every bar at the least height keeps its cells
+    //  and takes params.shortest_color; a bar at both extremes, as when all
+    //  bars have one height, takes each color of params.role_priority, so the
+    //  output is undefined there
+    // @witness tied-tallest: borderline $TieAll
+    //     @relaxed distinct-heights
+  | TieAll {}
+
+// where the bar color comes from
+.type Source =
+    // @claim bar-color
+    StoredBarColor {}
+    // @scene bar-color: the bars are drawn in the one color other than
+    //  params.background that the input holds; undefined where the input holds
+    //  no such color or more than one
+    // @witness other-bar-color: variant $DeriveBarColor
+    //     @relaxed bar-color
+  | DeriveBarColor {}
+
+.type Choice = [reading: Reading, tie: Tie, source: Source]
+
+// A unit reading together with a bar-color source.
+.type View = [r: Reading, s: Source]
+
+// One ranked unit under a view.
+.type Bar = [v: View, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed bar-color
+    // @ignore: derive concept — wherever it is defined, it gives the output of
+    //  the TieAll copy
+    // @ignore: derive $TieAll & $DeriveBarColor — subsumed by the
+    //  bar_color=RarestColor copy: where it is defined, the input holds the
+    //  dominant color and one other color, which is then the rarest
+    .decl background(col: Color) background(0).
+    .decl tallest_color(col: Color) tallest_color(1).
+    .decl shortest_color(col: Color) shortest_color(2).
+
+    // The role color a bar at both extremes takes. The pairs leave the
+    // tallest role and the shortest role open.
+    .decl role_priority(col: Color)
+    role_priority(1).
+    role_priority(2).
+
+    // --- $ComponentSpan, $ColumnCount, $TopExtent, $EightConnected ---
+    // The edge the bars stand on.
+    .decl gravity_side(d: Dir) gravity_side(DIR_B).
+
+    // --- $StoredBarColor ---
+    // @derive RarestColor: variant derived
+    //     @relaxed bar-color
+    // @ignore: derive concept — wherever it is defined, it gives the output of
+    //  the TieAll copy
+    .decl bar_color(col: Color) bar_color(5).
+}
+
+.init params = Params
+
+.decl reading_choice(r: Reading)
+reading_choice($ComponentSpan()). reading_choice($ColumnCount()).
+reading_choice($TopExtent()). reading_choice($Area()). reading_choice($EightConnected()).
+
+.decl tie_choice(t: Tie)
+tie_choice($Unique()). tie_choice($TieAll()).
+
+.decl source_choice(s: Source)
+source_choice($StoredBarColor()). source_choice($DeriveBarColor()).
+
+// Unique is a case only with the concept's reading and source.
+.decl impl_choice(ch: Choice)
+impl_choice([R, T, S]) :-
+    reading_choice(R), tie_choice(T), source_choice(S),
+    ( T = $TieAll() ; R = $ComponentSpan(), S = $StoredBarColor() ).
+
+// The color the bars are drawn in, under each source.
+.decl bar_color(s: Source, col: Color)
+
+// The bar-color cells under each source.
+.decl ink(s: Source, p: Position)
+ink(S, P) :- in(P, Col), bar_color(S, Col).
+
+// The cells of each unit.
+.decl member(b: Bar, p: Position)
+
+// The height of each unit.
+.decl height(b: Bar, n: number)
+
+// @claim tallest-recolor shortest-recolor
+.init rank = ArgExtremes<View, Ident>
+rank.cand(V, Id, N) :- height([V, Id], N).
+
+// The units at each extreme under each tie reading.
+.decl tallest(t: Tie, b: Bar)
+.decl shortest(t: Tie, b: Bar)
+
+// The color a unit takes under a tie reading.
+.decl paint(t: Tie, b: Bar, col: Color)
+paint(T, X, Col) :- tallest(T, X), !shortest(T, X), params.tallest_color(Col).
+paint(T, X, Col) :- shortest(T, X), !tallest(T, X), params.shortest_color(Col).
+paint(T, X, Col) :- tallest(T, X), shortest(T, X), params.role_priority(Col).
+
+out(P, Col, [R, T, S]) :-
+    impl_choice([R, T, S]), member([[R, S], Id], P),
+    ( paint(T, [[R, S], Id], Col)
+    ; !rank.high([R, S], Id, _), !rank.low([R, S], Id, _), params.background(Col)  // neither extreme
+    ).
+out(P, Col, [R, T, S]) :- impl_choice([R, T, S]), bar_color(S, _), in(P, Col), !ink(S, P).
+
+// --- $StoredBarColor ---
+bar_color($StoredBarColor(), Col) :- params.bar_color(Col).
+
+// --- $DeriveBarColor ---
+// @claim bar-color
+.init sole = Unanimous<Unit, Color>
+sole.item($U(), Col) :- in(_, Col), !params.background(Col).
+
+bar_color($DeriveBarColor(), Col) :- sole.value($U(), Col).
+
+// --- $ComponentSpan, $Area ---
+// @claim bars
+.init bars = Components<Source>
+bars.node(S, P) :- ink(S, P).
+
+member([[$ComponentSpan(), S], Id], P) :- bars.label(S, P, Id).
+member([[$Area(), S], Id], P) :- bars.label(S, P, Id).
+
+// --- $EightConnected ---
+// @claim bars
+.init bars8 = Components8<Source>
+bars8.node(S, P) :- ink(S, P).
+
+member([[$EightConnected(), S], Id], P) :- bars8.label(S, P, Id).
+
+// --- $ComponentSpan, $EightConnected ---
+// @claim height
+.init span = Bbox<Bar>
+span.cell([[$ComponentSpan(), S], Id], P) :- member([[$ComponentSpan(), S], Id], P).
+span.cell([[$EightConnected(), S], Id], P) :- member([[$EightConnected(), S], Id], P).
+
+height(X, N) :-
+    span.box(X, B), member(X, P),
+    params.gravity_side(D), axis_of(D, A), box_extent(B, P, A, N).
+
+// --- $ColumnCount, $TopExtent ---
+// The lines along the gravity axis, each as one unit.
+.init lines = Canon<Position>
+lines.equiv(P, Q) :-
+    in(P, _), in(Q, _), params.gravity_side(D), axis_of(D, A), same_line(A, P, Q).
+
+member([[$ColumnCount(), S], Id], P) :- ink(S, P), lines.id(P, Id).
+member([[$TopExtent(), S], Id], P) :- ink(S, P), lines.id(P, Id).
+
+// --- $ColumnCount, $Area ---
+// @claim height
+.init size = Tally<Bar, Position>
+size.item([[$ColumnCount(), S], Id], P) :- member([[$ColumnCount(), S], Id], P).
+size.item([[$Area(), S], Id], P) :- member([[$Area(), S], Id], P).
+
+height(X, N) :- size.tally(X, N).
+
+// --- $TopExtent ---
+// The distance of each line's farthest cell from the params.gravity_side edge.
+// @claim height
+.init reach = Extremes<Bar>
+reach.cand([[$TopExtent(), S], Id], K) :-
+    member([[$TopExtent(), S], Id], P), params.gravity_side(D), dist(P, D, K).
+
+height(X, K) :- reach.high(X, K).
+
+// --- $Unique ---
+// @claim tallest-recolor
+.init top = Unanimous<View, Ident>
+top.item(V, Id) :- rank.high(V, Id, _).
+
+// @claim shortest-recolor
+.init bottom = Unanimous<View, Ident>
+bottom.item(V, Id) :- rank.low(V, Id, _).
+
+tallest($Unique(), [V, Id]) :- top.value(V, Id).
+shortest($Unique(), [V, Id]) :- bottom.value(V, Id).
+
+// --- $TieAll ---
+tallest($TieAll(), [V, Id]) :- rank.high(V, Id, _).
+shortest($TieAll(), [V, Id]) :- rank.low(V, Id, _).

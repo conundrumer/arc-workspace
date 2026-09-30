@@ -18,12 +18,12 @@
 .comp Params {
     .decl bg(col: Color) bg(0).
 
-    // --- Threshold ---
+    // --- $Threshold ---
 
     .decl max_size(n: number) max_size(2).
     .decl paint(col: Color) paint(3).
 
-    // --- Lookup ---
+    // --- $Lookup ---
 
     .decl size_paint(n: number, col: Color)
     size_paint(1, 3). size_paint(2, 3).
@@ -62,14 +62,14 @@ impl_choice($Threshold()). impl_choice($Lookup()).
 out(P, Col, Ch) :- repaint(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !repaint(P, _, Ch).
 
-// --- Threshold ---
+// --- $Threshold ---
 
 repaint(P, Col, $Threshold()) :-
     parse.comp_cell(K, P), parse.comp_size.tally(K, N),   // component cell with its size
     params.max_size(Max), N <= Max,                       // small enough to act
     params.paint(Col).
 
-// --- Lookup ---
+// --- $Lookup ---
 
 repaint(P, Col, $Lookup()) :-
     parse.comp_cell(K, P), parse.comp_size.tally(K, N),   // component cell with its size

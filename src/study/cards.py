@@ -11,19 +11,25 @@ palette and the grid CSS are copied from the console's UI into the page.
 """
 
 import html
-import re
-import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from arc.task import Example
+from arc.task import Example, pair_name
 from arc.task import load as load_task
-from dl import solve
-from dl.dlparse import TypeDecl, parse
-from dl.facts import Candidate, parse_grid
-from dl.paths import REPO_ROOT, SOLVERS_DIR
-from dl.source import _param_facts, comp_decls
-from study.card_spec import Card, CodeSlice, LineRange, Table
+from cli.common import LIMITS, parse_grid
+from cli.common import engine as _engine
+from engine import AdtValue, Grid, RecordValue, Value, checkout, value_text
+from solver.model import (
+    Case,
+    Solver,
+    cases as cases_of,
+    load,
+)
+from solver.solve import Assignment, Grids, examples, outcomes
+from study.card_spec import Card, CodeSlice, Table
+
+REPO_ROOT = checkout.ROOT
 
 CARDS_DIR = REPO_ROOT / ".scratch" / "cards"
 
@@ -37,21 +43,19 @@ ARC = [
 # --- corpus scan ---
 
 
-def equal_literal_params(source: str) -> list[tuple[int, list[str]]]:
-    """Groups of the source's Params relations that hold one single-number
-    fact each and state the same literal, as (literal, relation names).
-    A relation read by no group is left out; so is a group of one."""
+def equal_literal_params(solver: Solver) -> list[tuple[int, list[str]]]:
+    """Groups of the solver's Params parameters that hold one single-number
+    row each and state the same number, as (number, parameter names).
+    A parameter read by no group is left out; so is a group of one."""
     values: dict[str, int] = {}
-    for name, types in comp_decls(source, "Params").items():
-        if types != ["number"]:
+    for param in solver.params.parameters:
+        if [c.type for c in param.columns] != ["number"]:
             continue
-        facts = _param_facts(source, name)
-        if len(facts) != 1 or len(facts[0]) != 1:
+        rows = param.stored
+        if not isinstance(rows, tuple) or len(rows) != 1 \
+                or len(rows[0]) != 1 or not isinstance(rows[0][0], int):
             continue
-        try:
-            values[name] = int(facts[0][0].strip())
-        except ValueError:
-            continue
+        values[param.name] = rows[0][0]
     groups: dict[int, list[str]] = {}
     for name, value in values.items():
         groups.setdefault(value, []).append(name)
@@ -62,10 +66,11 @@ def equal_literal_corpus() -> list[tuple[str, int, list[str]]]:
     """(stem, literal, relation names) for every solver under
     programs/solvers/ carrying such a group, sorted by stem."""
     found = []
-    for path in sorted(SOLVERS_DIR.glob("*.dl")):
+    engine = _engine()
+    for path in sorted(checkout.solvers().glob("*.dl")):
         if path.name.startswith("."):
             continue
-        for value, names in equal_literal_params(path.read_text()):
+        for value, names in equal_literal_params(load(path.stem, engine)):
             found.append((path.stem, value, names))
     return found
 
@@ -120,7 +125,7 @@ def _cell_px(w: int, h: int) -> int:
     return 16 if m <= 10 else 12 if m <= 15 else 9 if m <= 22 else 7
 
 
-def render_grid(grid: list[list[int]], label: str) -> str:
+def render_grid(grid: Sequence[Sequence[int]], label: str) -> str:
     """One grid as colored cells. A cell of -1 is missing, and is hatched."""
     h = len(grid)
     w = len(grid[0]) if h else 0
@@ -152,11 +157,9 @@ def render_pair(label: str, example: Example) -> str:
 
 def render_task(task_id: str) -> str:
     """Every train pair of the task, then every test pair."""
-    task = load_task(task_id)
-    pairs = [(f"train[{i}]", e) for i, e in enumerate(task.train)]
-    pairs += [(f"test[{i}]", e) for i, e in enumerate(task.test)]
     return '<div class="grids">' + "".join(
-        render_pair(label, e) for label, e in pairs
+        render_pair(pair_name(pair.section, pair.index), example)
+        for pair, example in examples(load_task(task_id))
     ) + "</div>"
 
 
@@ -195,14 +198,87 @@ def render_table(table: Table) -> str:
     )
 
 
+@dataclass(frozen=True)
+class Candidate:
+    """One case's output on a witness input: its case, and its grid, or
+    the reason it gives none."""
+
+    case: Case
+    grid: Grid
+    error: str | None = None
+
+    @property
+    def label(self) -> str:
+        """The case as Souffle prints the `out` column; `''` where `out`
+        has none."""
+        return "" if self.case.base is None else value_text(self.case.base)
+
+
+def souffle_order(value: Value) -> tuple[object, ...]:
+    """A value's place in the order Souffle prints `out` in: an ADT by its
+    constructor's name, then its arguments; a record by its fields."""
+    match value:
+        case AdtValue(constructor=c, args=args):
+            return (c, *(souffle_order(a) for a in args))
+        case RecordValue(fields=fields):
+            return tuple(souffle_order(f) for f in fields)
+        case _:
+            return (value,)
+
+
+def solver_file(card: Card) -> Path:
+    """The card's solver file: its `solver` as a path from the repository
+    root where a file stands there, else the file of that name under
+    `programs/solvers/`; the task's solver where the card names none."""
+    arg = card.solver or card.task_id
+    name = arg if arg.endswith(".dl") else f"{arg}.dl"
+    path = Path(name)
+    if not path.is_absolute():
+        path = REPO_ROOT / path
+    return path if path.exists() else checkout.solvers() / Path(name).name
+
+
+def outside_solvers(path: Path) -> bool:
+    """The file stands outside `programs/solvers/`, which
+    `solver.model.load` reads alone."""
+    return path.resolve().parent != checkout.solvers().resolve()
+
+
+def run_solver(path: Path, grid: Grid) -> list[Candidate]:
+    """Each case of the solver without a `@derive` or `@store` branch of the solver
+    at `path`, a file under `programs/solvers/`, run on `grid` at the
+    stored assignment, in the order Souffle prints the cases' values
+    in."""
+    engine = _engine()
+    solver = load(path.stem, engine)
+    cases = cases_of(solver, engine, LIMITS)
+    if not isinstance(cases, tuple):
+        raise RuntimeError(str(cases))
+    bases = sorted((c for c in cases if not c.branches),
+                   key=lambda c: () if c.base is None
+                   else souffle_order(c.base))
+    got = outcomes(engine, solver, bases, grid, Assignment(()), LIMITS)
+    out: list[Candidate] = []
+    for case in bases:
+        outcome = got[case]
+        if isinstance(outcome, Grids):
+            out += [Candidate(case, g) for g in outcome.grids]
+        else:
+            out.append(Candidate(case, (), "undefined"))
+    return out
+
+
 def case_of(cand: Candidate) -> str:
-    """The case a candidate carries, without its `$`."""
-    return cand.case.strip("$").split("(")[0]
+    """The constructor of a candidate's `Choice` value, as a card's
+    `dropped` names it; the value as Souffle prints it where it is a
+    record, and `''` where `out` has no case column."""
+    base = cand.case.base
+    return base.constructor if isinstance(base, AdtValue) else cand.label
 
 
 def _candidate_html(cand: Candidate, card: Card) -> str:
     case = case_of(cand)
-    label = cand.case or "out"
+    label = cand.label or "out"
     if card.dropped:
         label += " · dropped" if case in card.dropped else " · kept"
     if cand.error:
@@ -213,12 +289,6 @@ def _candidate_html(cand: Candidate, card: Card) -> str:
             "</div>"
         )
     parts = [render_grid(cand.grid, label)]
-    if cand.missing:
-        parts.append(f'<div class="cap">undefined: {len(cand.missing)} missing</div>')
-    if cand.conflicts:
-        parts.append(
-            f'<div class="cap">undefined: {len(cand.conflicts)} conflicting</div>'
-        )
     return '<div class="gwrap">' + "".join(parts) + "</div>"
 
 
@@ -227,33 +297,37 @@ class Run:
     """One witness input with what the card's solver made of it."""
 
     label: str
-    grid: list[list[int]]
+    grid: Grid
     candidates: list[Candidate] = field(default_factory=list[Candidate])
     error: str = ""
 
 
-def witness_grids(card: Card) -> list[tuple[str, list[list[int]]]]:
+def witness_grids(card: Card) -> list[tuple[str, Grid]]:
     """(label, grid) per witness. With no witness file listed, the task's
     first train input is the witness."""
     if not card.witnesses:
-        task = load_task(card.task_id)
-        return [("train[0] input", task.train[0].input)]
+        pair, example = next(examples(load_task(card.task_id)))
+        return [(f"{pair_name(pair.section, pair.index)} input",
+                 tuple(tuple(r) for r in example.input))]
     grids = []
     for spec_path in card.witnesses:
         path = Path(spec_path)
         if not path.is_absolute():
             path = REPO_ROOT / path
-        grids.append((path.name, parse_grid(path.read_text())))
+        grid = parse_grid(path.read_text())
+        if grid is None:
+            raise ValueError(f"{path} holds no grid")
+        grids.append((path.name, grid))
     return grids
 
 
 def run_witnesses(card: Card) -> list[Run]:
     """The card's solver run on each witness input."""
-    stem = card.solver or card.task_id
+    path = solver_file(card)
     runs = []
     for label, grid in witness_grids(card):
         try:
-            candidates = solve.run_dl(card.task_id, grid, stem=stem)
+            candidates = run_solver(path, grid)
         except Exception as e:  # the solver may not compile; the card still renders
             runs.append(Run(label, grid, error=f"{type(e).__name__}: {e}"))
         else:
@@ -349,7 +423,7 @@ def theta_card() -> Card:
     ]
     table = Table(
         title=f"Solvers with equal-literal Params numbers: {len(corpus)} of "
-              f"{len(list(SOLVERS_DIR.glob('*.dl')))}",
+              f"{len(list(checkout.solvers().glob('*.dl')))}",
         headers=["stem", "relations", "literal"],
         rows=rows,
     )
@@ -375,176 +449,3 @@ def theta_card() -> Card:
         ],
         tables=[table],
     )
-
-
-# --- the calibration card ---
-
-REPORTS_DIR = REPO_ROOT / "tools" / "console" / "state" / "reports"
-MARKER_RE = re.compile(r"^\s*//\s*---\s*(.+?)\s*---\s*$")
-FEATURE_COLUMNS = [
-    "case", "atoms", "shared_atoms", "reach_atoms", "facts", "negations",
-    "disjunctions", "lib_instances", "reach_atoms_ratio_min",
-]
-
-
-def case_names(source: str) -> list[str]:
-    """The branches of the `Choice` type, in the order the file states them."""
-    for item in parse(source).items:
-        if isinstance(item, TypeDecl) and item.name == "Choice":
-            return item.branches
-    return []
-
-
-def case_sections(source: str, case: str) -> list[LineRange]:
-    """1-based [start, end] line ranges the case's `// --- <Case> ---`
-    markers open. With no marker, the ranges of the rules whose head carries
-    `$<Case>()`, one line each."""
-    lines = source.splitlines()
-    marks = [(i, m.group(1)) for i, line in enumerate(lines)
-             if (m := MARKER_RE.match(line))]
-    spans = []
-    for k, (i, name) in enumerate(marks):
-        if name != case:
-            continue
-        end = marks[k + 1][0] - 1 if k + 1 < len(marks) else len(lines) - 1
-        for j in range(i + 1, end + 1):  # a section stops at the comp's close
-            if lines[j].startswith("}"):
-                end = j - 1
-                break
-        while end > i and not lines[end].strip():
-            end -= 1
-        spans.append((i + 1, end + 1))
-    if spans:
-        return spans
-    hit = re.compile(rf"^out\(.*\${case}\(\)")
-    return [(i + 1, i + 1) for i, line in enumerate(lines) if hit.match(line)]
-
-
-def case_slices(peer_path: str, source: str, dropped: list[str]) -> list[CodeSlice]:
-    """One slice per case section, labeled kept or dropped."""
-    slices = []
-    for case in case_names(source):
-        state = "dropped" if case in dropped else "kept"
-        for span in case_sections(source, case):
-            slices.append(CodeSlice(f"{case} — {state}", peer_path, span))
-    return slices
-
-
-def features_table(peer_path: str) -> Table:
-    """The cases' features, from `scripts/run_dl.py features <peer file>`."""
-    run = subprocess.run(
-        ["uv", "run", "python", "scripts/run_dl.py", "features", peer_path],
-        cwd=REPO_ROOT, capture_output=True, text=True,
-    )
-    lines = [ln for ln in run.stdout.splitlines() if "\t" in ln]
-    if not lines:
-        return Table("Case features", ["case"], [[run.stderr.strip() or "no output"]])
-    header = lines[0].split("\t")
-    idx = [header.index(c) for c in FEATURE_COLUMNS]
-    rows = [[ln.split("\t")[i] for i in idx] for ln in lines[1:]]
-    return Table("Case features", FEATURE_COLUMNS, rows)
-
-
-def report_paragraph(task_id: str, case: str) -> tuple[str, str]:
-    """The paragraph of the task's reports that drops the case, with the file
-    and line it sits at. A paragraph that opens on the case and states a drop
-    is preferred; with none, the first paragraph naming the case."""
-    best = None
-    for name in ("retro.md", "refine.md", "create.md"):
-        path = REPORTS_DIR / task_id / name
-        if not path.exists():
-            continue
-        line_no = 1
-        for para in path.read_text().split("\n\n"):
-            text = para.strip()
-            if case in text:
-                score = (case in text[:40], "drop" in text.lower())
-                if best is None or score > best[0]:
-                    best = (score, text, f"{path.relative_to(REPO_ROOT)}:{line_no}")
-            line_no += para.count("\n") + 2
-    return (best[1], best[2]) if best else ("", "")
-
-
-def calibration_card(task_id: str, peer_path: str, dropped: list[str]) -> Card:
-    """The card for one peer file: its dropped cases beside its kept ones."""
-    path = Path(peer_path)
-    if not path.is_absolute():
-        path = REPO_ROOT / path
-    source = path.read_text()
-    quote, source_ref = report_paragraph(task_id, dropped[0])
-    names = " and ".join([", ".join(dropped[:-1]), dropped[-1]] if len(dropped) > 1
-                         else dropped)
-    heading = "the cases" if len(dropped) > 1 else "the case"
-    verb, parse = ("They fit", "parse") if len(dropped) > 1 else ("It fits", "parses")
-    return Card(
-        name=f"calibration-{task_id}-{dropped[0]}",
-        kind="calibration",
-        task_id=task_id,
-        solver=peer_path,
-        dropped=dropped,
-        question=(
-            f"Task {task_id} dropped {heading} {names} under peer-priors. "
-            f"{verb} every pair and {parse} the task as the shipped cases do."
-        ),
-        codes=case_slices(peer_path, source, dropped),
-        witnesses=sorted(str(p.relative_to(REPO_ROOT)) for p in path.parent.glob("w*.txt")),
-        quote=quote,
-        quote_source=source_ref,
-        tables=[features_table(peer_path)],
-        options=[
-            "Keep: a person could form this reading of the task.",
-            "Drop: no person forms this reading; it is a construction.",
-            "Restatement: it is the same model as a kept case.",
-        ],
-    )
-
-
-def parse_candidates(text: str) -> list[tuple[str, str, str, str]]:
-    """The rows of the "Calibration candidates" table of a compare.md, as
-    (task_id, path, case, stratum). A (task_id, case) seen before is left
-    out, so the first path listed for it wins."""
-    rows: list[tuple[str, str, str, str]] = []
-    seen: set[tuple[str, str]] = set()
-    in_table = False
-    for line in text.splitlines():
-        if line.strip().startswith("#"):
-            in_table = "Calibration candidates" in line
-            continue
-        if not in_table:
-            continue
-        if not line.strip().startswith("|"):
-            continue
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) != 4 or cells[0] in ("task_id", "") or set(cells[0]) <= set(":-"):
-            continue
-        key = (cells[0], cells[2])
-        if key in seen:
-            continue
-        seen.add(key)
-        rows.append((cells[0], cells[1], cells[2], cells[3]))
-    return rows
-
-
-def calibration_cards(compare_md: str | Path) -> list[Path]:
-    """Render one card per candidate of a compare.md. A task's other dropped
-    cases, named by no row, ride along on the card of the first."""
-    rows = parse_candidates(Path(compare_md).read_text())
-    by_task: dict[str, list[tuple[str, str]]] = {}
-    for task_id, path, case, _ in rows:
-        by_task.setdefault(task_id, []).append((path, case))
-    written = []
-    for task_id, entries in by_task.items():
-        peer_path = entries[0][0]
-        source = (REPO_ROOT / peer_path).read_text()
-        named = [case for _, case in entries]
-        shipped = shipped_cases(task_id)
-        dropped = named + [c for c in case_names(source)
-                           if c not in named and c not in shipped]
-        written.append(write(calibration_card(task_id, peer_path, dropped)))
-    return written
-
-
-def shipped_cases(task_id: str) -> list[str]:
-    """The cases of the solver that ships for the task."""
-    path = SOLVERS_DIR / f"{task_id}.dl"
-    return case_names(path.read_text()) if path.exists() else []

@@ -24,7 +24,7 @@
 .comp Params {
     .decl bg(c: Color) bg(0).
 
-    // --- Fixed ---
+    // --- $Fixed ---
     // How many colors the picked block has.
     .decl palette(n: number) palette(3).
 }
@@ -49,7 +49,7 @@ out(P_inner, Col, Ch) :-
     picked(Id, Ch), bbox.box(Id, B),
     in(P, Col), crop(P, B, P_inner).
 
-// --- Most ---
+// --- $Most ---
 
 // @claim most
 .init most = ArgExtremes<Unit, Ident>
@@ -57,11 +57,11 @@ most.cand($U(), Id, N) :- colors.tally(Id, N).
 
 picked(Id, $Most()) :- most.high($U(), Id, _).
 
-// --- Fixed ---
+// --- $Fixed ---
 
 picked(Id, $Fixed()) :- colors.tally(Id, N), params.palette(N).
 
-// --- Odd ---
+// --- $Odd ---
 
 // Some other block has the same color count.
 .decl shared(id: Ident)

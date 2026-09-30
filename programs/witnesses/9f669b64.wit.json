@@ -2,7 +2,7 @@
   "id": "9f669b64",
   "witnesses": [{
     "id": "target-off-edge",
-    "separates": "stop-per-axis from the concept: the target stands one cell short of the grid edge. The concept runs the projectile to the grid edge; stop-per-axis stops it with its trailing side on the target's near side.",
+    "separates": "$StopPerAxis & $OddFloor from the concept: the target stands one column short of the grid edge. The concept runs the projectile to the grid edge; the $StopPerAxis cases stop it with its trailing side on the target's near side.",
     "input": [
       [2,7,7,7,7,7,7,7,7,7],
       [2,2,7,7,7,7,7,8,8,7],
@@ -16,17 +16,7 @@
       [7,7,7,7,7,7,7,7,7,7]
     ],
     "output": [{
-      "cases": [
-        "concept",
-        "ProjectileBetween",
-        "TowardTarget",
-        "WedgeTip",
-        "ShiftOne",
-        "OddFloor",
-        "PushOut",
-        "SplitTargetCenter",
-        "bg=DominantColor"
-      ],
+      "cases": ["$ToEdge"],
       "grid": [
         [2,7,7,7,7,7,7,8,8,7],
         [2,2,7,7,7,7,7,8,8,7],
@@ -40,7 +30,7 @@
         [7,7,7,7,7,7,7,7,7,7]
       ]
     }, {
-      "cases": ["StopPerAxis"],
+      "cases": ["$StopPerAxis"],
       "grid": [
         [2,7,7,7,7,7,7,8,8,7],
         [2,2,7,7,7,7,7,8,8,7],
@@ -56,7 +46,7 @@
     }]
   }, {
     "id": "wide-projectile",
-    "separates": "shift-one from the concept: the projectile is four cells wide. The concept moves each target half out by two cells; shift-one moves them by one, and the projectile covers the rest.",
+    "separates": "$ShiftOne from the concept: the projectile is four cells wide. The concept moves each target half out by two cells; $ShiftOne moves them by one, and the projectile covers the rest.",
     "input": [
       [7,7,6,6,6,6,6,6,7,7],
       [7,7,6,6,6,6,6,6,7,7],
@@ -70,17 +60,7 @@
       [7,7,8,8,8,8,8,8,7,7]
     ],
     "output": [{
-      "cases": [
-        "concept",
-        "ProjectileBetween",
-        "TowardTarget",
-        "WedgeTip",
-        "StopPerAxis",
-        "OddFloor",
-        "PushOut",
-        "SplitTargetCenter",
-        "bg=DominantColor"
-      ],
+      "cases": ["$OddFloor","$HalfWidth","$PushOut"],
       "grid": [
         [7,7,6,6,6,6,6,6,7,7],
         [7,7,6,6,6,6,6,6,7,7],
@@ -94,7 +74,7 @@
         [8,8,8,1,1,1,1,8,8,8]
       ]
     }, {
-      "cases": ["ShiftOne"],
+      "cases": ["$ShiftOne"],
       "grid": [
         [7,7,6,6,6,6,6,6,7,7],
         [7,7,6,6,6,6,6,6,7,7],
@@ -110,7 +90,7 @@
     }]
   }, {
     "id": "off-center",
-    "separates": "split-target-center from the concept: the target extends one cell above the projectile and five cells below it. The concept cuts the target on the projectile's center line; split-target-center cuts it on its own center line and leaves background cells beside the projectile.",
+    "separates": "$SplitTargetCenter & $OddFloor from the concept: the target extends one cell above the projectile and five cells below it. The concept cuts the target on the projectile's center line; the $SplitTargetCenter cases cut it on its own center line and leave background cells beside the projectile.",
     "input": [
       [2,7,7,7,7,7,7,7,7,7],
       [2,2,7,7,7,7,7,7,8,8],
@@ -124,17 +104,7 @@
       [7,7,7,7,7,7,7,7,7,7]
     ],
     "output": [{
-      "cases": [
-        "concept",
-        "ProjectileBetween",
-        "TowardTarget",
-        "WedgeTip",
-        "StopPerAxis",
-        "ShiftOne",
-        "OddFloor",
-        "PushOut",
-        "bg=DominantColor"
-      ],
+      "cases": ["$PathCenter"],
       "grid": [
         [2,7,7,7,7,7,7,7,8,8],
         [2,2,7,7,7,7,7,7,8,8],
@@ -148,7 +118,7 @@
         [7,7,7,7,7,7,7,7,8,8]
       ]
     }, {
-      "cases": ["SplitTargetCenter"],
+      "cases": ["$OddFloor & $SplitTargetCenter","$ShiftOne & $SplitTargetCenter"],
       "grid": [
         [2,7,7,7,7,7,7,7,8,8],
         [2,2,7,7,7,7,7,7,8,8],
@@ -161,10 +131,24 @@
         [7,7,7,7,7,7,7,7,8,8],
         [7,7,7,7,7,7,7,7,8,8]
       ]
+    }, {
+      "cases": ["$PushOut & $SplitTargetCenter"],
+      "grid": [
+        [2,7,7,7,7,7,7,7,8,8],
+        [2,2,7,7,7,7,7,7,8,8],
+        [2,2,2,2,7,7,7,7,9,9],
+        [2,2,2,2,7,7,7,7,9,9],
+        [2,2,7,7,7,7,7,7,7,7],
+        [2,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,7,7]
+      ]
     }]
   }, {
     "id": "wedge-apart",
-    "separates": "projectile-between from the concept: one background column lies between the wedge and the projectile. The concept finds no rectangle that touches the wedge and is undefined; projectile-between takes the object between the other two.",
+    "separates": "$ProjectileBetween & $TowardTarget from the concept: one background column lies between the wedge and the projectile. The concept finds no rectangle that touches the wedge and is undefined; the $ProjectileBetween cases take the object between the other two.",
     "input": [
       [7,7,7,7,7,7,7,7,7,7],
       [7,7,7,7,7,7,7,7,7,7],
@@ -178,20 +162,10 @@
       [7,7,7,7,7,7,7,7,7,7]
     ],
     "output": [{
-      "cases": [
-        "concept",
-        "TowardTarget",
-        "WedgeTip",
-        "StopPerAxis",
-        "ShiftOne",
-        "OddFloor",
-        "PushOut",
-        "SplitTargetCenter",
-        "bg=DominantColor"
-      ],
+      "cases": ["$Touch"],
       "grid": null
     }, {
-      "cases": ["ProjectileBetween"],
+      "cases": ["$ProjectileBetween"],
       "grid": [
         [7,7,7,7,7,7,7,7,7,7],
         [7,7,7,7,7,7,7,7,7,7],
@@ -207,7 +181,7 @@
     }]
   }, {
     "id": "target-aside",
-    "separates": "push-out and toward-target from the concept: the wedge sits above the projectile and the target sits to its right. The concept sends the projectile down and shifts the whole target right; push-out leaves the target in place, since it covers no path line; toward-target sends the projectile right through the target.",
+    "separates": "$PushOut and $TowardTarget & $OddFloor from the concept: the wedge sits above the projectile and the target sits to its right. The concept sends the projectile down and shifts the whole target right; $PushOut leaves the target in place, since it covers no path line; the $TowardTarget cases send the projectile right through the target.",
     "input": [
       [7,7,7,6,6,6,6,7,7,7],
       [7,7,7,6,6,6,6,7,7,7],
@@ -221,7 +195,13 @@
       [7,7,7,7,7,7,7,7,7,7]
     ],
     "output": [{
-      "cases": ["concept","WedgeTip","ShiftOne","OddFloor","bg=DominantColor"],
+      "cases": [
+        "$Touch & $WedgeTip & $ToEdge & $OddFloor & $PathCenter",
+        "concept",
+        "$FromWedge & $ToEdge & $OddFloor & $PathCenter",
+        "$FromWedge & $ToEdge & $ShiftOne & $PathCenter",
+        "$Touch & $WedgeTip & $ToEdge & $ShiftOne & $PathCenter"
+      ],
       "grid": [
         [7,7,7,6,6,6,6,7,7,7],
         [7,7,7,6,6,6,6,7,7,7],
@@ -235,10 +215,10 @@
         [7,7,7,7,1,1,7,7,7,7]
       ]
     }, {
-      "cases": ["ProjectileBetween","StopPerAxis"],
+      "cases": ["$ProjectileBetween","$WedgeTip & $StopPerAxis","$FromWedge & $StopPerAxis"],
       "grid": null
     }, {
-      "cases": ["TowardTarget"],
+      "cases": ["$Touch & $TowardTarget"],
       "grid": [
         [7,7,7,6,6,6,6,7,7,7],
         [7,7,7,6,6,6,6,7,8,8],
@@ -252,21 +232,12 @@
         [7,7,7,7,7,7,7,7,7,7]
       ]
     }, {
-      "cases": ["PushOut"],
-      "grid": [
-        [7,7,7,6,6,6,6,7,7,7],
-        [7,7,7,6,6,6,6,7,7,7],
-        [7,7,7,7,6,6,7,7,8,8],
-        [7,7,7,7,7,7,7,7,8,8],
-        [7,7,7,7,7,7,7,7,8,8],
-        [7,7,7,7,7,7,7,7,8,8],
-        [7,7,7,7,7,7,7,7,7,7],
-        [7,7,7,7,7,7,7,7,7,7],
-        [7,7,7,7,1,1,7,7,7,7],
-        [7,7,7,7,1,1,7,7,7,7]
-      ]
-    }, {
-      "cases": ["SplitTargetCenter"],
+      "cases": [
+        "$Touch & $WedgeTip & $ToEdge & $OddFloor & $SplitTargetCenter",
+        "$FromWedge & $ToEdge & $OddFloor & $SplitTargetCenter",
+        "$FromWedge & $ToEdge & $ShiftOne & $SplitTargetCenter",
+        "$Touch & $WedgeTip & $ToEdge & $ShiftOne & $SplitTargetCenter"
+      ],
       "grid": [
         [7,7,7,6,6,6,6,7,7,7],
         [7,7,7,6,6,6,6,7,7,7],
@@ -279,10 +250,24 @@
         [7,7,7,7,1,1,7,7,7,7],
         [7,7,7,7,1,1,7,7,7,7]
       ]
+    }, {
+      "cases": ["$FromWedge & $ToEdge & $PushOut","$Touch & $WedgeTip & $ToEdge & $PushOut"],
+      "grid": [
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,7,6,6,7,7,8,8],
+        [7,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,1,1,7,7,7,7],
+        [7,7,7,7,1,1,7,7,7,7]
+      ]
     }]
   }, {
     "id": "tip-down",
-    "separates": "wedge-tip from the concept: the wedge touches the projectile with its left side and narrows downward. The concept sends the projectile right through the target; wedge-tip sends it down.",
+    "separates": "$WedgeTip & $OddFloor from the concept: the wedge touches the projectile with its left side and narrows downward. The concept sends the projectile right through the target; the $WedgeTip cases send it down.",
     "input": [
       [7,7,7,7,7,7,7,7,8,8],
       [2,2,2,2,9,9,7,7,8,8],
@@ -296,17 +281,7 @@
       [7,7,7,7,7,7,7,7,7,7]
     ],
     "output": [{
-      "cases": [
-        "concept",
-        "ProjectileBetween",
-        "TowardTarget",
-        "StopPerAxis",
-        "ShiftOne",
-        "OddFloor",
-        "PushOut",
-        "SplitTargetCenter",
-        "bg=DominantColor"
-      ],
+      "cases": ["$TowardTarget","$FromWedge"],
       "grid": [
         [7,7,7,7,7,7,7,7,8,8],
         [2,2,2,2,7,7,7,7,9,9],
@@ -320,7 +295,13 @@
         [7,7,7,7,7,7,7,7,7,7]
       ]
     }, {
-      "cases": ["WedgeTip"],
+      "cases": ["$WedgeTip & $StopPerAxis"],
+      "grid": null
+    }, {
+      "cases": [
+        "$WedgeTip & $ToEdge & $OddFloor & $PathCenter",
+        "$WedgeTip & $ToEdge & $ShiftOne & $PathCenter"
+      ],
       "grid": [
         [7,7,7,7,7,7,7,7,7,8],
         [2,2,2,2,7,7,7,7,7,8],
@@ -333,10 +314,41 @@
         [7,7,7,7,9,9,7,7,7,7],
         [7,7,7,7,9,9,7,7,7,7]
       ]
+    }, {
+      "cases": [
+        "$WedgeTip & $ToEdge & $OddFloor & $SplitTargetCenter",
+        "$WedgeTip & $ToEdge & $ShiftOne & $SplitTargetCenter"
+      ],
+      "grid": [
+        [7,7,7,7,7,7,7,8,7,7],
+        [2,2,2,2,7,7,7,8,7,7],
+        [2,2,2,2,7,7,7,8,7,7],
+        [7,2,2,7,7,7,7,8,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,9,9,7,7,7,7],
+        [7,7,7,7,9,9,7,7,7,7]
+      ]
+    }, {
+      "cases": ["$WedgeTip & $ToEdge & $PushOut"],
+      "grid": [
+        [7,7,7,7,7,7,7,7,8,8],
+        [2,2,2,2,7,7,7,7,8,8],
+        [2,2,2,2,7,7,7,7,8,8],
+        [7,2,2,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,9,9,7,7,7,7],
+        [7,7,7,7,9,9,7,7,7,7]
+      ]
     }]
   }, {
     "id": "bar-launcher",
-    "separates": "projectile-between from the concept: the upstream pair this variant drops, whose launcher is a rectangle. The concept finds no wedge and is undefined; projectile-between takes the middle object and runs it up through the other rectangle.",
+    "separates": "$ProjectileBetween & $TowardTarget from the concept: the upstream pair this variant drops, whose launcher is a rectangle. The concept finds no wedge and is undefined; the $ProjectileBetween cases take the middle object and run it up through the other rectangle.",
     "input": [
       [7,7,7,7,7,7,7,7,7,7],
       [7,7,7,7,7,7,7,7,7,7],
@@ -350,20 +362,24 @@
       [7,7,7,7,8,8,7,7,7,7]
     ],
     "output": [{
-      "cases": [
-        "concept",
-        "TowardTarget",
-        "WedgeTip",
-        "StopPerAxis",
-        "ShiftOne",
-        "OddFloor",
-        "PushOut",
-        "SplitTargetCenter",
-        "bg=DominantColor"
-      ],
+      "cases": ["$WedgeTip","$Touch"],
       "grid": null
     }, {
-      "cases": ["ProjectileBetween"],
+      "cases": ["$ProjectileBetween & $TowardTarget & $StopPerAxis"],
+      "grid": [
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,9,9,3,3,9,9,7,7],
+        [7,7,9,9,3,3,9,9,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,8,8,7,7,7,7],
+        [7,7,7,7,8,8,7,7,7,7],
+        [7,7,7,7,8,8,7,7,7,7],
+        [7,7,7,7,8,8,7,7,7,7]
+      ]
+    }, {
+      "cases": ["$ProjectileBetween & $TowardTarget & $ToEdge"],
       "grid": [
         [7,7,7,7,3,3,7,7,7,7],
         [7,7,7,7,3,3,7,7,7,7],
@@ -379,7 +395,7 @@
     }]
   }, {
     "id": "odd-aside",
-    "separates": "odd-floor from the concept: the projectile is three cells wide and the target sits beside its path. The concept has no half width and is undefined; odd-floor and shift-one shift the target right by one cell; push-out leaves it in place.",
+    "separates": "$OddFloor from the concept: the projectile is three cells wide and the target sits beside its path. The concept has no half width and is undefined; $OddFloor and $ShiftOne shift the target right by one cell; $PushOut leaves it in place.",
     "input": [
       [7,7,6,6,6,6,6,7,7,7],
       [7,7,6,6,6,6,6,7,7,7],
@@ -394,16 +410,28 @@
     ],
     "output": [{
       "cases": [
-        "concept",
-        "ProjectileBetween",
-        "WedgeTip",
-        "StopPerAxis",
-        "SplitTargetCenter",
-        "bg=DominantColor"
+        "$ProjectileBetween",
+        "$WedgeTip & $StopPerAxis",
+        "$FromWedge & $StopPerAxis",
+        "$HalfWidth"
       ],
       "grid": null
     }, {
-      "cases": ["TowardTarget"],
+      "cases": ["$Touch & $TowardTarget & $StopPerAxis"],
+      "grid": [
+        [7,7,6,6,6,6,6,7,7,7],
+        [7,7,6,6,6,6,6,7,8,8],
+        [7,7,7,6,6,6,7,7,8,8],
+        [7,7,7,7,7,7,7,7,1,1],
+        [7,7,7,7,7,7,7,7,1,1],
+        [7,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7]
+      ]
+    }, {
+      "cases": ["$Touch & $TowardTarget & $ToEdge"],
       "grid": [
         [7,7,6,6,6,6,6,7,7,7],
         [7,7,6,6,6,6,6,7,8,8],
@@ -417,7 +445,12 @@
         [7,7,7,7,7,7,7,7,7,7]
       ]
     }, {
-      "cases": ["ShiftOne","OddFloor"],
+      "cases": [
+        "$Touch & $WedgeTip & $ToEdge & $OddFloor & $PathCenter",
+        "$FromWedge & $ToEdge & $OddFloor & $PathCenter",
+        "$FromWedge & $ToEdge & $ShiftOne & $PathCenter",
+        "$Touch & $WedgeTip & $ToEdge & $ShiftOne & $PathCenter"
+      ],
       "grid": [
         [7,7,6,6,6,6,6,7,7,7],
         [7,7,6,6,6,6,6,7,7,7],
@@ -431,7 +464,26 @@
         [7,7,7,1,1,1,7,7,7,7]
       ]
     }, {
-      "cases": ["PushOut"],
+      "cases": [
+        "$Touch & $WedgeTip & $ToEdge & $OddFloor & $SplitTargetCenter",
+        "$FromWedge & $ToEdge & $OddFloor & $SplitTargetCenter",
+        "$FromWedge & $ToEdge & $ShiftOne & $SplitTargetCenter",
+        "$Touch & $WedgeTip & $ToEdge & $ShiftOne & $SplitTargetCenter"
+      ],
+      "grid": [
+        [7,7,6,6,6,6,6,7,7,7],
+        [7,7,6,6,6,6,6,7,7,7],
+        [7,7,7,6,6,6,7,8,7,7],
+        [7,7,7,7,7,7,7,8,7,7],
+        [7,7,7,7,7,7,7,8,7,7],
+        [7,7,7,7,7,7,7,8,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,1,1,1,7,7,7,7],
+        [7,7,7,1,1,1,7,7,7,7]
+      ]
+    }, {
+      "cases": ["$FromWedge & $ToEdge & $PushOut","$Touch & $WedgeTip & $ToEdge & $PushOut"],
       "grid": [
         [7,7,6,6,6,6,6,7,7,7],
         [7,7,6,6,6,6,6,7,7,7],
@@ -447,7 +499,7 @@
     }]
   }, {
     "id": "partial-path",
-    "separates": "push-out from the concept: the target's left end lies inside the projectile's path. The concept shifts the left half by half the projectile's width; push-out shifts it by the one projectile line it covers.",
+    "separates": "$PushOut from the concept: the target's left end lies inside the projectile's path. The concept shifts the left half by half the projectile's width; $PushOut shifts it by the one projectile line it covers.",
     "input": [
       [7,7,6,6,6,6,6,6,7,7],
       [7,7,6,6,6,6,6,6,7,7],
@@ -461,14 +513,7 @@
       [7,7,7,7,8,8,8,8,8,7]
     ],
     "output": [{
-      "cases": [
-        "concept",
-        "TowardTarget",
-        "WedgeTip",
-        "StopPerAxis",
-        "OddFloor",
-        "bg=DominantColor"
-      ],
+      "cases": ["$Touch & $OddFloor & $PathCenter","concept"],
       "grid": [
         [7,7,6,6,6,6,6,6,7,7],
         [7,7,6,6,6,6,6,6,7,7],
@@ -482,24 +527,10 @@
         [7,7,8,1,1,1,1,8,8,8]
       ]
     }, {
-      "cases": ["ProjectileBetween","SplitTargetCenter"],
+      "cases": ["$ProjectileBetween","$SplitTargetCenter"],
       "grid": null
     }, {
-      "cases": ["ShiftOne"],
-      "grid": [
-        [7,7,6,6,6,6,6,6,7,7],
-        [7,7,6,6,6,6,6,6,7,7],
-        [7,7,7,6,6,6,6,7,7,7],
-        [7,7,7,7,7,7,7,7,7,7],
-        [7,7,7,7,7,7,7,7,7,7],
-        [7,7,7,7,7,7,7,7,7,7],
-        [7,7,7,8,7,7,8,8,8,8],
-        [7,7,7,1,1,1,1,8,8,8],
-        [7,7,7,1,1,1,1,8,8,8],
-        [7,7,7,1,1,1,1,8,8,8]
-      ]
-    }, {
-      "cases": ["PushOut"],
+      "cases": ["$Touch & $PushOut & $PathCenter"],
       "grid": [
         [7,7,6,6,6,6,6,6,7,7],
         [7,7,6,6,6,6,6,6,7,7],
@@ -512,10 +543,24 @@
         [7,7,7,1,1,1,1,8,8,8],
         [7,7,7,1,1,1,1,8,8,8]
       ]
+    }, {
+      "cases": ["$Touch & $ShiftOne & $PathCenter"],
+      "grid": [
+        [7,7,6,6,6,6,6,6,7,7],
+        [7,7,6,6,6,6,6,6,7,7],
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,8,7,7,8,8,8,8],
+        [7,7,7,1,1,1,1,8,8,8],
+        [7,7,7,1,1,1,1,8,8,8],
+        [7,7,7,1,1,1,1,8,8,8]
+      ]
     }]
   }, {
     "id": "reversed-wedge",
-    "separates": "wedge-tip from the concept under stop-per-axis: the wedge narrows away from the projectile, and the target is longer along the launch than the projectile. wedge-tip launches the projectile up and stop-per-axis lines up its top with the target's top; the concept launches it down.",
+    "separates": "$WedgeTip & $StopPerAxis & $OddFloor from the concept: the wedge narrows away from the projectile, and the target is longer along the launch than the projectile. The $WedgeTip cases launch the projectile up, and with $StopPerAxis they line up its top with the target's top; the concept launches it down.",
     "input": [
       [7,7,7,7,6,6,7,7,7,7],
       [7,7,7,6,6,6,6,7,7,7],
@@ -529,17 +574,7 @@
       [7,7,8,8,8,8,8,8,7,7]
     ],
     "output": [{
-      "cases": [
-        "concept",
-        "ProjectileBetween",
-        "TowardTarget",
-        "StopPerAxis",
-        "ShiftOne",
-        "OddFloor",
-        "PushOut",
-        "SplitTargetCenter",
-        "bg=DominantColor"
-      ],
+      "cases": ["$TowardTarget","$FromWedge"],
       "grid": [
         [7,7,7,7,6,6,7,7,7,7],
         [7,7,7,6,6,6,6,7,7,7],
@@ -553,7 +588,25 @@
         [7,8,8,8,1,1,8,8,8,7]
       ]
     }, {
-      "cases": ["WedgeTip"],
+      "cases": [
+        "$WedgeTip & $StopPerAxis & $OddFloor",
+        "$WedgeTip & $HalfWidth",
+        "$WedgeTip & $StopPerAxis & $ShiftOne"
+      ],
+      "grid": [
+        [7,7,7,7,6,6,7,7,7,7],
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,8,8,8,1,1,8,8,8,7],
+        [7,8,8,8,1,1,8,8,8,7],
+        [7,8,8,8,1,1,8,8,8,7],
+        [7,8,8,8,7,7,8,8,8,7]
+      ]
+    }, {
+      "cases": ["$WedgeTip & $ToEdge & $OddFloor","$WedgeTip & $ToEdge & $ShiftOne"],
       "grid": [
         [7,7,7,7,1,1,7,7,7,7],
         [7,7,7,6,1,1,6,7,7,7],
@@ -566,10 +619,38 @@
         [7,8,8,8,7,7,8,8,8,7],
         [7,8,8,8,7,7,8,8,8,7]
       ]
+    }, {
+      "cases": ["$WedgeTip & $StopPerAxis & $PushOut"],
+      "grid": [
+        [7,7,7,7,6,6,7,7,7,7],
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,8,8,1,1,8,8,7,7],
+        [7,7,8,8,1,1,8,8,7,7],
+        [7,7,8,8,1,1,8,8,7,7],
+        [7,7,8,8,8,8,8,8,7,7]
+      ]
+    }, {
+      "cases": ["$WedgeTip & $ToEdge & $PushOut"],
+      "grid": [
+        [7,7,7,7,1,1,7,7,7,7],
+        [7,7,7,6,1,1,6,7,7,7],
+        [7,7,7,6,1,1,6,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,8,8,8,8,8,8,7,7],
+        [7,7,8,8,8,8,8,8,7,7],
+        [7,7,8,8,8,8,8,8,7,7],
+        [7,7,8,8,8,8,8,8,7,7]
+      ]
     }]
   }, {
     "id": "target-behind",
-    "separates": "toward-target and push-out from the concept: the target lies beyond the wedge, behind the projectile. The concept launches the projectile away from the wedge and still splits the target; push-out leaves the target in place, since it covers no projectile line ahead of the projectile; toward-target launches the projectile toward the target, through the wedge.",
+    "separates": "$TowardTarget & $OddFloor and $PushOut from the concept: the target lies beyond the wedge, behind the projectile. The concept launches the projectile away from the wedge and still splits the target; $PushOut leaves the target in place, since it covers no projectile line ahead of the projectile; the $TowardTarget cases launch the projectile toward the target, through the wedge.",
     "input": [
       [7,7,8,8,8,8,8,8,7,7],
       [7,7,8,8,8,8,8,8,7,7],
@@ -584,12 +665,11 @@
     ],
     "output": [{
       "cases": [
+        "$Touch & $WedgeTip & $ToEdge & $OddFloor",
+        "$FromWedge & $ToEdge & $OddFloor",
         "concept",
-        "WedgeTip",
-        "ShiftOne",
-        "OddFloor",
-        "SplitTargetCenter",
-        "bg=DominantColor"
+        "$FromWedge & $ToEdge & $ShiftOne",
+        "$Touch & $WedgeTip & $ToEdge & $ShiftOne"
       ],
       "grid": [
         [7,8,8,8,7,7,8,8,8,7],
@@ -604,7 +684,11 @@
         [7,7,7,7,1,1,7,7,7,7]
       ]
     }, {
-      "cases": ["ProjectileBetween"],
+      "cases": [
+        "$ProjectileBetween & $TowardTarget & $OddFloor",
+        "$TowardTarget & $HalfWidth",
+        "$ProjectileBetween & $TowardTarget & $PushOut"
+      ],
       "grid": [
         [8,8,8,6,6,6,6,8,8,8],
         [8,8,8,6,6,6,6,8,8,8],
@@ -618,7 +702,10 @@
         [7,7,7,7,7,7,7,7,7,7]
       ]
     }, {
-      "cases": ["TowardTarget"],
+      "cases": ["$ProjectileBetween & $WedgeTip"],
+      "grid": null
+    }, {
+      "cases": ["$Touch & $TowardTarget"],
       "grid": [
         [7,8,8,8,1,1,8,8,8,7],
         [7,8,8,8,1,1,8,8,8,7],
@@ -632,7 +719,12 @@
         [7,7,7,7,7,7,7,7,7,7]
       ]
     }, {
-      "cases": ["StopPerAxis"],
+      "cases": [
+        "$Touch & $WedgeTip & $StopPerAxis & $OddFloor",
+        "$FromWedge & $StopPerAxis & $OddFloor",
+        "$FromWedge & $StopPerAxis & $ShiftOne",
+        "$Touch & $WedgeTip & $StopPerAxis & $ShiftOne"
+      ],
       "grid": [
         [7,8,8,8,7,7,8,8,8,7],
         [7,8,8,8,1,1,8,8,8,7],
@@ -646,7 +738,38 @@
         [7,7,7,7,7,7,7,7,7,7]
       ]
     }, {
-      "cases": ["PushOut"],
+      "cases": ["$ProjectileBetween & $TowardTarget & $ShiftOne"],
+      "grid": [
+        [7,8,8,6,6,6,6,8,8,7],
+        [7,8,8,6,6,6,6,8,8,7],
+        [7,8,8,8,6,6,8,8,8,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,1,1,7,7,7,7],
+        [7,7,7,7,1,1,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7]
+      ]
+    }, {
+      "cases": [
+        "$FromWedge & $StopPerAxis & $PushOut",
+        "$Touch & $WedgeTip & $StopPerAxis & $PushOut"
+      ],
+      "grid": [
+        [7,7,8,8,8,8,8,8,7,7],
+        [7,7,8,8,1,1,8,8,7,7],
+        [7,7,8,8,1,1,8,8,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,7,6,6,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7]
+      ]
+    }, {
+      "cases": ["$FromWedge & $ToEdge & $PushOut","$Touch & $WedgeTip & $ToEdge & $PushOut"],
       "grid": [
         [7,7,8,8,8,8,8,8,7,7],
         [7,7,8,8,8,8,8,8,7,7],
@@ -662,7 +785,7 @@
     }]
   }, {
     "id": "odd-even",
-    "separates": "odd-floor from the concept under split-target-center: the projectile is three cells wide and the target six. The concept has no half width and is undefined; odd-floor cuts the target on its own center line and moves each half out by one cell.",
+    "separates": "$SplitTargetCenter & $OddFloor from $SplitTargetCenter: the projectile is three cells wide and the target six. The $HalfWidth cases have no half width and are undefined; the $OddFloor & $SplitTargetCenter cases cut the target on its own center line and move each half out by one cell.",
     "input": [
       [7,7,6,6,6,6,6,7,7,7],
       [7,7,6,6,6,6,6,7,7,7],
@@ -676,23 +799,40 @@
       [7,8,8,8,8,8,8,7,7,7]
     ],
     "output": [{
-      "cases": [
-        "concept",
-        "ProjectileBetween",
-        "TowardTarget",
-        "WedgeTip",
-        "StopPerAxis",
-        "ShiftOne",
-        "OddFloor",
-        "PushOut",
-        "SplitTargetCenter",
-        "bg=DominantColor"
-      ],
+      "cases": ["$PathCenter"],
       "grid": null
+    }, {
+      "cases": ["$OddFloor & $SplitTargetCenter","$ShiftOne & $SplitTargetCenter"],
+      "grid": [
+        [7,7,6,6,6,6,6,7,7,7],
+        [7,7,6,6,6,6,6,7,7,7],
+        [7,7,7,6,6,6,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [8,8,8,1,1,1,8,8,7,7],
+        [8,8,8,1,1,1,8,8,7,7],
+        [8,8,8,1,1,1,8,8,7,7]
+      ]
+    }, {
+      "cases": ["$PushOut & $SplitTargetCenter"],
+      "grid": [
+        [7,7,6,6,6,6,6,7,7,7],
+        [7,7,6,6,6,6,6,7,7,7],
+        [7,7,7,6,6,6,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [8,8,8,1,1,1,8,8,8,7],
+        [8,8,8,1,1,1,8,8,8,7],
+        [8,8,8,1,1,1,8,8,8,7]
+      ]
     }]
   }, {
     "id": "odd-offset",
-    "separates": "odd-floor from the concept: the projectile is three cells wide, and the target below it reaches only its right column. The concept has no half width and is undefined; odd-floor takes the whole target as the right half and moves it right by one cell.",
+    "separates": "$OddFloor from the concept: the projectile is three cells wide, and the target below it reaches only its right column. The concept has no half width and is undefined; $OddFloor takes the whole target as the right half and moves it right by one cell.",
     "input": [
       [7,7,7,6,6,6,6,6,7,7],
       [7,7,7,6,6,6,6,6,7,7],
@@ -706,18 +846,14 @@
       [7,7,7,7,7,7,8,8,8,8]
     ],
     "output": [{
-      "cases": [
-        "concept",
-        "ProjectileBetween",
-        "TowardTarget",
-        "WedgeTip",
-        "StopPerAxis",
-        "SplitTargetCenter",
-        "bg=DominantColor"
-      ],
+      "cases": ["$ProjectileBetween","$HalfWidth"],
       "grid": null
     }, {
-      "cases": ["ShiftOne","OddFloor","PushOut"],
+      "cases": [
+        "$Touch & $OddFloor & $PathCenter",
+        "$Touch & $PushOut & $PathCenter",
+        "$Touch & $ShiftOne & $PathCenter"
+      ],
       "grid": [
         [7,7,7,6,6,6,6,6,7,7],
         [7,7,7,6,6,6,6,6,7,7],
@@ -730,10 +866,41 @@
         [7,7,7,7,1,1,1,8,8,8],
         [7,7,7,7,1,1,1,8,8,8]
       ]
+    }, {
+      "cases": [
+        "$Touch & $OddFloor & $SplitTargetCenter",
+        "$Touch & $ShiftOne & $SplitTargetCenter"
+      ],
+      "grid": [
+        [7,7,7,6,6,6,6,6,7,7],
+        [7,7,7,6,6,6,6,6,7,7],
+        [7,7,7,7,6,6,6,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,1,1,1,7,7,8],
+        [7,7,7,7,1,1,1,7,7,8],
+        [7,7,7,7,1,1,1,7,7,8]
+      ]
+    }, {
+      "cases": ["$Touch & $PushOut & $SplitTargetCenter"],
+      "grid": [
+        [7,7,7,6,6,6,6,6,7,7],
+        [7,7,7,6,6,6,6,6,7,7],
+        [7,7,7,7,6,6,6,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,1,1,1,7,8,8],
+        [7,7,7,7,1,1,1,7,8,8],
+        [7,7,7,7,1,1,1,7,8,8]
+      ]
     }]
   }, {
     "id": "wedge-corner",
-    "separates": "toward-target from from-wedge under projectile-between: the wedge lies above and to the left of the projectile, apart from it. from-wedge finds two launch directions and is undefined; toward-target sends the projectile down through the target.",
+    "separates": "$ProjectileBetween & $TowardTarget from $ProjectileBetween & $FromWedge: the wedge lies above and to the left of the projectile, apart from it. $ProjectileBetween & $FromWedge finds two launch directions and is undefined; the $ProjectileBetween & $TowardTarget cases send the projectile down through the target.",
     "input": [
       [6,6,6,6,7,7,7,7,7,7],
       [6,6,6,6,7,7,7,7,7,7],
@@ -747,23 +914,26 @@
       [7,7,8,8,8,8,8,8,7,7]
     ],
     "output": [{
-      "cases": [
-        "concept",
-        "ProjectileBetween",
-        "TowardTarget",
-        "WedgeTip",
-        "StopPerAxis",
-        "ShiftOne",
-        "OddFloor",
-        "PushOut",
-        "SplitTargetCenter",
-        "bg=DominantColor"
-      ],
+      "cases": ["$Touch"],
       "grid": null
+    }, {
+      "cases": ["$ProjectileBetween"],
+      "grid": [
+        [6,6,6,6,7,7,7,7,7,7],
+        [6,6,6,6,7,7,7,7,7,7],
+        [7,6,6,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,8,8,8,1,1,8,8,8,7],
+        [7,8,8,8,1,1,8,8,8,7],
+        [7,8,8,8,1,1,8,8,8,7]
+      ]
     }]
   }, {
     "id": "odd-side-tip",
-    "separates": "odd-floor from the concept under projectile-between and wedge-tip: the wedge lies left of the projectile and narrows down, and the target lies to the right. The projectile is three cells wide across the downward launch, so the concept's half width is undefined; odd-floor moves the whole target right by one cell.",
+    "separates": "$ProjectileBetween & $WedgeTip & $OddFloor from $ProjectileBetween & $WedgeTip: the wedge lies left of the projectile and narrows down, and the target lies to the right. The projectile is three cells wide across the downward launch, so $ProjectileBetween & $WedgeTip is undefined; the $ProjectileBetween & $WedgeTip & $OddFloor cases move the whole target right by one cell.",
     "input": [
       [7,7,7,7,7,7,7,7,7,7],
       [6,6,6,7,7,7,7,8,8,7],
@@ -777,17 +947,7 @@
       [7,7,7,7,7,7,7,7,7,7]
     ],
     "output": [{
-      "cases": [
-        "concept",
-        "ProjectileBetween",
-        "TowardTarget",
-        "StopPerAxis",
-        "ShiftOne",
-        "OddFloor",
-        "PushOut",
-        "SplitTargetCenter",
-        "bg=DominantColor"
-      ],
+      "cases": ["$TowardTarget","$FromWedge"],
       "grid": [
         [7,7,7,7,7,7,7,8,8,7],
         [6,6,6,7,7,7,7,8,8,7],
@@ -801,7 +961,139 @@
         [7,7,7,7,7,7,7,7,7,7]
       ]
     }, {
-      "cases": ["WedgeTip"],
+      "cases": ["$WedgeTip & $StopPerAxis"],
+      "grid": null
+    }, {
+      "cases": [
+        "$WedgeTip & $ToEdge & $OddFloor & $PathCenter",
+        "$WedgeTip & $ToEdge & $ShiftOne & $PathCenter"
+      ],
+      "grid": [
+        [7,7,7,7,7,7,7,7,7,7],
+        [6,6,6,7,7,7,7,7,8,8],
+        [6,6,6,7,7,7,7,7,8,8],
+        [7,6,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,8,8],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,1,1,1,7,7,7,7],
+        [7,7,7,1,1,1,7,7,7,7]
+      ]
+    }, {
+      "cases": [
+        "$WedgeTip & $ToEdge & $OddFloor & $SplitTargetCenter",
+        "$WedgeTip & $ToEdge & $ShiftOne & $SplitTargetCenter"
+      ],
+      "grid": [
+        [7,7,7,7,7,7,7,7,7,7],
+        [6,6,6,7,7,7,8,7,7,8],
+        [6,6,6,7,7,7,8,7,7,8],
+        [7,6,7,7,7,7,8,7,7,8],
+        [7,7,7,7,7,7,8,7,7,8],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,1,1,1,7,7,7,7],
+        [7,7,7,1,1,1,7,7,7,7]
+      ]
+    }, {
+      "cases": ["$WedgeTip & $ToEdge & $PushOut"],
+      "grid": [
+        [7,7,7,7,7,7,7,7,7,7],
+        [6,6,6,7,7,7,7,8,8,7],
+        [6,6,6,7,7,7,7,8,8,7],
+        [7,6,7,7,7,7,7,8,8,7],
+        [7,7,7,7,7,7,7,8,8,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,1,1,1,7,7,7,7],
+        [7,7,7,1,1,1,7,7,7,7]
+      ]
+    }]
+  }, {
+    "id": "bg=DominantColor",
+    "separates": "`bg=DominantColor` from the stored value: train 0 with 7 and 0 swapped",
+    "input": [
+      [0,0,0,6,6,6,6,0,0,0],
+      [0,0,0,6,6,6,6,0,0,0],
+      [0,0,0,0,6,6,0,0,0,0],
+      [0,0,0,0,1,1,0,0,0,0],
+      [0,0,0,0,1,1,0,0,0,0],
+      [0,0,0,0,1,1,0,0,0,0],
+      [0,0,8,8,8,8,8,8,0,0],
+      [0,0,8,8,8,8,8,8,0,0],
+      [0,0,8,8,8,8,8,8,0,0],
+      [0,0,8,8,8,8,8,8,0,0]
+    ],
+    "output": [{
+      "cases": ["$Touch & bg=stored"],
+      "grid": null
+    }, {
+      "cases": ["$ProjectileBetween & bg=stored"],
+      "grid": [
+        [0,0,0,6,6,6,6,0,0,0],
+        [0,0,0,6,6,6,6,0,0,0],
+        [0,0,0,0,6,6,0,0,0,0],
+        [0,0,0,0,7,7,0,0,0,0],
+        [0,0,0,0,7,7,0,0,0,0],
+        [0,0,0,0,7,7,0,0,0,0],
+        [0,8,8,8,7,7,8,8,8,0],
+        [0,8,8,8,1,1,8,8,8,0],
+        [0,8,8,8,1,1,8,8,8,0],
+        [0,8,8,8,1,1,8,8,8,0]
+      ]
+    }, {
+      "cases": ["bg=DominantColor"],
+      "grid": [
+        [0,0,0,6,6,6,6,0,0,0],
+        [0,0,0,6,6,6,6,0,0,0],
+        [0,0,0,0,6,6,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,8,8,8,0,0,8,8,8,0],
+        [0,8,8,8,1,1,8,8,8,0],
+        [0,8,8,8,1,1,8,8,8,0],
+        [0,8,8,8,1,1,8,8,8,0]
+      ]
+    }]
+  }, {
+    "id": "big-target",
+    "separates": "the stored background from bg=DominantColor: the target covers 64 of the 120 cells, so 8 is the commonest color. At the stored background 7, every case gives the concept's grid. The bg=DominantColor copies read 8 as the background and the 7 cells as one object, find no second rectangle, and are undefined.",
+    "input": [
+      [7,7,7,6,6,6,6,7,7,7],
+      [7,7,7,7,6,6,7,7,7,7],
+      [7,7,7,7,1,1,7,7,7,7],
+      [7,7,7,7,1,1,7,7,7,7],
+      [7,8,8,8,8,8,8,8,8,7],
+      [7,8,8,8,8,8,8,8,8,7],
+      [7,8,8,8,8,8,8,8,8,7],
+      [7,8,8,8,8,8,8,8,8,7],
+      [7,8,8,8,8,8,8,8,8,7],
+      [7,8,8,8,8,8,8,8,8,7],
+      [7,8,8,8,8,8,8,8,8,7],
+      [7,8,8,8,8,8,8,8,8,7]
+    ],
+    "output": [{
+      "cases": ["bg=stored"],
+      "grid": [
+        [7,7,7,6,6,6,6,7,7,7],
+        [7,7,7,7,6,6,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,7,7,7],
+        [8,8,8,8,7,7,8,8,8,8],
+        [8,8,8,8,7,7,8,8,8,8],
+        [8,8,8,8,7,7,8,8,8,8],
+        [8,8,8,8,7,7,8,8,8,8],
+        [8,8,8,8,7,7,8,8,8,8],
+        [8,8,8,8,7,7,8,8,8,8],
+        [8,8,8,8,1,1,8,8,8,8],
+        [8,8,8,8,1,1,8,8,8,8]
+      ]
+    }, {
+      "cases": ["bg=DominantColor"],
       "grid": null
     }]
   }]

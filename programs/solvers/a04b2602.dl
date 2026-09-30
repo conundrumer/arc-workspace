@@ -11,10 +11,10 @@
 //  stray mark and triggers nothing
 //     @approximated: a params.mark_color cell is an inside mark when it lies
 //      in the bounding box of a 4-connected component of params.block_color
-//     @witness split-narrow: borderline NonzeroBox
+//     @witness split-narrow: borderline $NonzeroBox
 // @rule halo: each inside mark paints params.halo_color on the eight cells
 //  around it, clipped to the grid; the halo covers block, field, and stray
-//  mark cells alike, and it reaches outside the rectangle
+//  mark cells alike
 // @rule marks-kept: inside marks keep params.mark_color, also where the halo
 //  of a neighboring inside mark covers them
 // @rule rest-kept: every other cell keeps its input color
@@ -32,7 +32,7 @@
     //  smallest box that holds it and the bounding box of a 4-connected
     //  component of params.block_color holds no params.background cell
     //  outside that component's box
-    // @witness split-narrow: borderline NonzeroBox
+    // @witness split-narrow: borderline $NonzeroBox
     // @witness flush-strays: borderline concept
   | NonzeroBox {}
 
@@ -53,7 +53,7 @@
     //  the more frequent is the block color and the other the mark color; a
     //  grid with another count of such colors, or with two equally frequent,
     //  has no reading
-    // @witness yellow-blocks: variant DerivedRoles
+    // @witness yellow-blocks: variant $DerivedRoles
     //     @relaxed blocks
   | DerivedRoles {}
 
@@ -70,10 +70,10 @@
 .comp Params {
     .decl halo_color(c: Color) halo_color(1).
 
-    // --- NonzeroBox, DerivedRoles ---
+    // --- $NonzeroBox, $DerivedRoles ---
     .decl background(c: Color) background(0).
 
-    // --- StoredRoles ---
+    // --- $StoredRoles ---
     .decl block_color(c: Color) block_color(3).
     // @derive RarestColor: variant derived
     //     @relaxed blocks
@@ -105,10 +105,10 @@ halo(Q, Ch) :- inside_mark(P, Ch), neighbor(P, _, Q), in(Q, _), !inside_mark(Q, 
 out(P, Col, Ch) :- halo(P, Ch), params.halo_color(Col).
 out(P, Col, [T, R]) :- in(P, Col), trigger_choice(T), roles(R, _, _), !halo(P, [T, R]).
 
-// --- StoredRoles ---
+// --- $StoredRoles ---
 roles($StoredRoles(), C1, C2) :- params.block_color(C1), params.mark_color(C2).
 
-// --- DerivedRoles ---
+// --- $DerivedRoles ---
 .decl ink(p: Position, col: Color)
 ink(P, Col) :- in(P, Col), !params.background(Col).
 
@@ -126,7 +126,7 @@ mark_ink.item($U(), Col) :- ink(_, Col), !block_ink.value($U(), Col).
 
 roles($DerivedRoles(), C1, C2) :- block_ink.value($U(), C1), mark_ink.value($U(), C2).
 
-// --- FourConnected, NonzeroBox ---
+// --- $FourConnected, $NonzeroBox ---
 // @claim inside-mark
 .init block4 = Components<Roles>
 block4.node(R, P) :- block(R, P).
@@ -135,10 +135,10 @@ block4.node(R, P) :- block(R, P).
 .init box4 = Bbox<Block>
 box4.cell([R, Id], P) :- block4.label(R, P, Id).
 
-// --- FourConnected ---
+// --- $FourConnected ---
 inside_mark(P, [$InBox($FourConnected()), R]) :- mark(R, P), box4.box([R, _], B), inside(P, B).
 
-// --- EightConnected ---
+// --- $EightConnected ---
 // @claim inside-mark
 .init block8 = Components8<Roles>
 block8.node(R, P) :- block(R, P).
@@ -149,12 +149,11 @@ box8.cell([R, Id], P) :- block8.label(R, P, Id).
 
 inside_mark(P, [$InBox($EightConnected()), R]) :- mark(R, P), box8.box([R, _], B), inside(P, B).
 
-// --- NonzeroBox ---
+// --- $NonzeroBox ---
 // The smallest box that holds a block's box and a mark.
 // @claim inside-mark
 .init hull = Bbox<Hull>
-hull.cell([R, Id, P], B) :- box4.box([R, Id], B), mark(R, P).
-hull.cell([R, Id, P], P) :- box4.box([R, Id], _), mark(R, P).
+hull.cell([R, Id, P], B_part) :- box4.box([R, Id], B), mark(R, P), (B_part = B ; B_part = P).
 
 // The hull holds a field cell outside the block's box.
 .decl hull_field(h: Hull)
@@ -164,7 +163,7 @@ hull_field([R, Id, P]) :-
 
 inside_mark(P, [$InBox($NonzeroBox()), R]) :- hull.box([R, Id, P], _), !hull_field([R, Id, P]).
 
-// --- ThreeNeighbours ---
+// --- $ThreeNeighbours ---
 inside_mark(P, [$ThreeNeighbours(), R]) :-
     mark(R, P),
     dir_elem(D1), neighbor(P, D1, Q1), block(R, Q1),

@@ -18,7 +18,7 @@
     .decl bg(col: Color) bg(0).
     .decl fill(col: Color) fill(1).
 
-    // --- Ink ---
+    // --- $Ink ---
     .decl line(col: Color) line(2).
 }
 
@@ -46,8 +46,8 @@ out(P, Col, Ch) :-
     ( spanned(P), params.fill(Col)
     ; !spanned(P), params.bg(Col) ).
 
-// --- Ink ---
+// --- $Ink ---
 out(P, Col, $Ink()) :- on_line(P, _), params.line(Col).
 
-// --- Mark ---
+// --- $Mark ---
 out(P, Col, $Mark()) :- on_line(P, M), in(M, Col).

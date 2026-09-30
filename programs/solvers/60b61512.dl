@@ -19,7 +19,7 @@
     .decl bg(col: Color) bg(0).
     .decl fill(col: Color) fill(7).
 
-    // --- Stamp ---
+    // --- $Stamp ---
     .decl footprint(p: Position)
     GRID_MASK_3x3(footprint,
         1, 1, 1,
@@ -42,11 +42,11 @@ impl_choice($Box()). impl_choice($Stamp()).
 
 .decl region(p: Position, ch: Choice)
 
-// --- Box ---
+// --- $Box ---
 
 region(P, $Box()) :- in(P, _), bx.box(_, B), inside(P, B).
 
-// --- Stamp ---
+// --- $Stamp ---
 
 region(P, $Stamp()) :-
     in(P, _), bx.box(_, B), crop(P, B, P_inner), params.footprint(P_inner).

@@ -24,7 +24,7 @@
     // The group under which a shape and a legend shape are the same shape.
     .decl shape_sym(s: Sym) shape_sym(SYM_D4).
 
-    // --- Marked ---
+    // --- $Marked ---
     .decl query(c: Color) query(3).
 }
 
@@ -42,7 +42,7 @@ obj.node(Col, P) :- in(P, Col), !params.bg(Col), !params.frame(Col).
 .decl legend(ch: Choice, id: Ident)
 .decl query(ch: Choice, id: Ident)
 
-// --- Boxed ---
+// --- $Boxed ---
 
 .init border = Bbox<Unit>
 border.cell($U(), P) :- in(P, Col), params.frame(Col).
@@ -53,7 +53,7 @@ boxed(P) :- in(P, _), border.box($U(), B), inside(P, B).
 legend($Boxed(), Id) :- obj.label(_, P, Id), boxed(P).
 query($Boxed(), Id) :- obj.label(_, P, Id), !boxed(P).
 
-// --- Marked ---
+// --- $Marked ---
 
 legend($Marked(), Id) :- obj.label(Col, _, Id), !params.query(Col).
 query($Marked(), Id) :- obj.label(Col, _, Id), params.query(Col).

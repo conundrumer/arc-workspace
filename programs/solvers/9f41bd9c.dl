@@ -30,7 +30,7 @@
     Solid {}
     // @scene teeth: the comb's head is the lines above its topmost gapped
     //  line, and every line from that one down is one of the teeth
-    // @witness braced-comb: borderline Below
+    // @witness braced-comb: borderline $Below
     //     @relaxed teeth
   | Below {}
     // @scene teeth: the comb's head is its top lines, as many as
@@ -78,7 +78,7 @@
     // the edge the ground lies against
     .decl ground_dir(d: Dir) ground_dir(DIR_B).
 
-    // --- Fixed ---
+    // --- $Fixed ---
     .decl head_lines(n: number) head_lines(2).
 }
 
@@ -142,14 +142,14 @@ gapped_line(L) :- cbox.box($U(), B), line_of(P, L), crop(P, B, _), !comb(P).
 // each comb cell's place on the far side, before the teeth drag back
 .decl crossed(c: Cross, p: Position, p_far: Position)
 
-// --- Slide ---
+// --- $Slide ---
 
 crossed($Slide(), P, P2) :-
     comb(P), crossing(_, D_to),
     cbox.box($U(), B), dist(B, D_to, K),   // the room ahead of the comb
     jump(P, D_to, K, P2).
 
-// --- Mirror ---
+// --- $Mirror ---
 
 crossed($Mirror(), P, P2) :-
     comb(P), travel_axis(A), flip_of(A, F), apply(F, P, P2).
@@ -158,18 +158,18 @@ crossed($Mirror(), P, P2) :-
 
 .decl teeth_line(h: Head, l: Position)
 
-// --- Solid ---
+// --- $Solid ---
 
 teeth_line($Solid(), L) :- gapped_line(L).
 
-// --- Below ---
+// --- $Below ---
 
 // a comb line at or below a gapped one
 teeth_line($Below(), L) :-
     comb_line(L), gapped_line(L0),
     params.ground_dir(D), opposite(D, D_up), !nearer(D_up, L, L0).
 
-// --- Fixed ---
+// --- $Fixed ---
 
 // a comb line the head does not reach down to
 teeth_line($Fixed(), L) :-
@@ -191,13 +191,13 @@ lag.before(H, L1, L2) :-
 // where the comb comes to rest
 .decl moved(c: Cross, h: Head, dg: Drag, p: Position)
 
-// --- Lag ---
+// --- $Lag ---
 
 moved(C, H, $Lag(), P2) :-
     crossed(C, P, P1), line_of(P, L), lag.rank(H, L, K),
     crossing(D_from, _), jump(P1, D_from, K, P2), in(P2, _).
 
-// --- Cast ---
+// --- $Cast ---
 
 // the corner the teeth trail toward: the ground, and back the way the comb came
 .decl trail_dir(d: DiagDir)
@@ -224,12 +224,12 @@ moved(C, H, $Cast(), P) :- trail.clear_cast([C, H], P, _, _, _).
 
 .decl tip(ch: Choice, p: Position)
 
-// --- Ground ---
+// --- $Ground ---
 
 tip([C, H, Dg, $Ground()], P) :-
     moved(C, H, Dg, P), params.ground_dir(D), neighbor(P, D, Q), ground(Q).
 
-// --- Lowest ---
+// --- $Lowest ---
 
 .decl bottom_line(l: Position)
 bottom_line(L) :-

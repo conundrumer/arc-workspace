@@ -27,7 +27,7 @@
     .decl arm_paint(d: Dir, col: Color)
     arm_paint(DIR_T, 2). arm_paint(DIR_B, 1). arm_paint(DIR_L, 4). arm_paint(DIR_R, 3).
 
-    // --- Lookup ---
+    // --- $Lookup ---
     .decl tile_paint(p_tile: Position, col: Color)
     tile_paint([0, 2, 1, 1], 2). tile_paint([2, 0, 1, 1], 1). tile_paint([1, 1, 0, 2], 4).
     tile_paint([1, 1, 2, 0], 3). tile_paint([1, 1, 1, 1], 6).
@@ -69,14 +69,14 @@ impl_choice($Plus()). impl_choice($Cast()). impl_choice($Lookup()).
 out(P, Col, C) :- paint(P, Col, C).
 out(P, Col, C) :- in(P, Col), impl_choice(C), !paint(P, _, C).
 
-// --- Plus ---
+// --- $Plus ---
 
 tile_ink(P_tile, Col, $Plus()) :- parse.center_tile($U(), P_tile), params.center_paint(Col).
 tile_ink(P_arm, Col, $Plus()) :-
     parse.center_tile($U(), P_tile), neighbor(P_tile, D, P_arm),  // one tile out toward D
     params.arm_paint(D, Col).                                     // that arm's color
 
-// --- Cast ---
+// --- $Cast ---
 
 .init cast = Ray<Unit>
 cast.dir($U(), D) :- dir_elem(D).
@@ -88,7 +88,7 @@ tile_ink(P_tile, Col, $Cast()) :-
     cast.ray($U(), P_tile, D, K, _), K != 0,  // downrange of the center toward D
     params.arm_paint(D, Col).                 // that arm's color
 
-// --- Lookup ---
+// --- $Lookup ---
 
 tile_ink(P_tile, Col, $Lookup()) :- params.tile_paint(P_tile, Col).
 

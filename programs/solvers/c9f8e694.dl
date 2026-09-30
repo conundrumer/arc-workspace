@@ -14,10 +14,10 @@
     .decl targets(c: Color) targets(5).
     .decl axis(a: Axis) axis(AXIS_H).
 
-    // --- Anchor ---
+    // --- $Anchor ---
     .decl anchor(d: Dir) anchor(DIR_L).
 
-    // --- Unique ---
+    // --- $Unique ---
     .decl bg(c: Color) bg(0).
 }
 

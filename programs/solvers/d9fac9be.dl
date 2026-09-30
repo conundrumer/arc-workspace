@@ -18,7 +18,7 @@
     .decl bg(c: Color)
     bg(0).
 
-    // --- Box ---
+    // --- $Box ---
     .decl dim(k: number)
     dim(3).
 }
@@ -29,7 +29,7 @@
 .decl ink(c: Color)
 ink(Col) :- in(_, Col), !params.bg(Col).
 
-// --- Box ---
+// --- $Box ---
 .init box = Frame2D<Unit>
 box.extent($U(), A, K) :- axis_elem(A), params.dim(K).
 
@@ -46,7 +46,7 @@ out(ZERO, Col_hole, $Box()) :-
     compose(M, P_ctr, P_grid),                 // its hole on the grid
     in(P_grid, Col_hole), Col_hole != Col.     // the boxed cell's color
 
-// --- Ring ---
+// --- $Ring ---
 // Some surrounding cell of p does not carry ink a.
 .decl defect(p: Position, a: Color)
 defect(P, A) :-
@@ -59,7 +59,7 @@ out(ZERO, Col, $Ring()) :-
     ink(A), A != Col,                        // an ink not its own
     !defect(P, A).                           // surround solid in it
 
-// --- Full ---
+// --- $Full ---
 .decl inked(p: Position)
 inked(P) :- in(P, Col), !params.bg(Col).
 

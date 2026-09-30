@@ -59,7 +59,7 @@ impl_choice($Join()). impl_choice($Medial()).
 // Inside cells drawn in the marker color, in the inside's frame.
 .decl drawn(id: Ident, p_inner: Position, ch: Choice)
 
-// --- Join ---
+// --- $Join ---
 
 // An arm cell: on corner Diag's diagonal, and no nearer either opposite
 // edge than the corner's.
@@ -84,7 +84,7 @@ join.axis(Id, A) :- hole_view(Id, _, _), axis_elem(A).
 drawn(Id, P_inner, $Join()) :- arm(Id, P_inner, _).
 drawn(Id, P_inner, $Join()) :- join.between(Id, P_inner).
 
-// --- Medial ---
+// --- $Medial ---
 
 // The nearest edges of each inside cell.
 .init nearest = ArgExtremes<Position, Dir>

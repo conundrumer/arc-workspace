@@ -40,11 +40,11 @@
     // The output square's side, and the divisor of the $Count() split.
     .decl tile_count(n: number) tile_count(3).
 
-    // --- Size ---
+    // --- $Size ---
 
     .decl tile_size(k: number) tile_size(4).
 
-    // --- Lookup ---
+    // --- $Lookup ---
 
     .decl mapping_member(id: Ident, p_intile: Position, c: Color)
     .decl mapping_out(id: Ident, c_out: Color)
@@ -77,7 +77,7 @@
         5, 0, 0, 5)
     mapping_out(3, 4).
 
-    // --- HoleBox ---
+    // --- $HoleBox ---
 
     .decl bg(c: Color) bg(0).
 
@@ -111,7 +111,7 @@ row_tile(P_out, P_tile, Dc) :-
     frame.cell($U(), P_out), params.row_dir(D_row), dist(P_out, D_row, K),
     tile_cell(P_tile, _, _, Dc), params.tile_dir(D_tile), dist(P_tile, D_tile, K).
 
-// --- Lookup ---
+// --- $Lookup ---
 
 .init tile_match = KeyedSetCompare<Position, Ident, TileMember>
 tile_match.pattern_member(Id, [P_intile, C]) :- params.mapping_member(Id, P_intile, C).
@@ -125,7 +125,7 @@ out(P_out, Col, [$Lookup(), $Size()]) :-
     params.mapping_out(Id, Col),                 // entry's color
     tile_match.equals(P_tile, Id).               // tile content == entry
 
-// --- HoleBox ---
+// --- $HoleBox ---
 
 .decl has_hole(p_tile: Position, dc: DecChoice)
 has_hole(P_tile, Dc) :- tile_cell(P_tile, _, C, Dc), params.bg(C).

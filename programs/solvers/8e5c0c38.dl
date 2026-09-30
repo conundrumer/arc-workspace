@@ -45,14 +45,14 @@ ink(P, Col) :- in(P, Col), !bg(Col).
 // A shape's cells, per hypothesis of what a shape is.
 .decl shape(ky: Grp, p: Position)
 
-// --- ByColor ---
+// --- $ByColor ---
 
 .init hue = Canon<Position>
 hue.equiv(P, Q) :- ink(P, Col), ink(Q, Col).
 
 shape([$ByColor(), Id], P) :- hue.id(P, Id).
 
-// --- ByObject ---
+// --- $ByObject ---
 
 .init piece = Components8<Unit>
 piece.node($U(), P) :- ink(P, _).

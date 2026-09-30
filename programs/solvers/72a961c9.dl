@@ -24,7 +24,7 @@
     .decl reach(col: Color, k: number)
     reach(2, 4). reach(8, 3).
 
-    // --- Stored ---
+    // --- $Stored ---
     .decl line(col: Color) line(1).
 }
 
@@ -51,10 +51,10 @@ impl_choice($Stored()). impl_choice($Dominant()).
 .init parse = Parse<Choice>
 parse.cell(Ch, P, Col) :- impl_choice(Ch), in(P, Col).
 
-// --- Stored ---
+// --- $Stored ---
 parse.line($Stored(), Col) :- params.line(Col).
 
-// --- Dominant ---
+// --- $Dominant ---
 .init tally = Mode<Unit, Color, Position>
 tally.item($U(), Col, P) :- in(P, Col), !params.bg(Col).
 

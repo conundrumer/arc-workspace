@@ -107,7 +107,7 @@ out(P_grid_out, Col, [K, Pa]) :-
     ; !pattern_cell(S, P_tile), params.bg(Col)   // else bg
     ).
 
-// --- Rect ---
+// --- $Rect ---
 
 // The rectangles each color draws.
 .init drect = Outlines<Color>
@@ -121,7 +121,7 @@ frame($Rect(), B, Col) :-
 wall_cell($Rect(), P) :- frame($Rect(), B, _), in(P, _), box_edge(P, B, _).
 inside_cell($Rect(), P) :- frame($Rect(), B, _), in(P, _), interior(P, B).
 
-// --- Enclose ---
+// --- $Enclose ---
 
 // Each ink color walls the rest of the grid off.
 .init closed = Closed<Color>
@@ -147,7 +147,7 @@ frame($Enclose(), B, Col) :- frame_ring([Col, Id]), ring_box.box([Col, Id], B).
 wall_cell($Enclose(), P) :- frame_ring(R), ring_wall(R, P).
 inside_cell($Enclose(), P) :- frame_ring([Col, Id]), closed.region(Col, P, Id).
 
-// --- Color ---
+// --- $Color ---
 
 .type ParseCell = [pa: Parse, p: Position]
 
@@ -156,7 +156,7 @@ color_class.equiv([Pa, P], [Pa, Q]) :- outside(Pa, P, Col), outside(Pa, Q, Col).
 
 shape_cell([[$Color(), Pa], Id], P) :- color_class.id([Pa, P], Id).
 
-// --- Piece ---
+// --- $Piece ---
 
 .type ParseColor = [pa: Parse, col: Color]
 
@@ -165,7 +165,7 @@ pieces.node([Pa, Col], P) :- outside(Pa, P, Col).
 
 shape_cell([[$Piece(), Pa], Id], P) :- pieces.label([Pa, _], P, Id).
 
-// --- Object ---
+// --- $Object ---
 
 .init parts = Components8<Parse>
 parts.node(Pa, P) :- outside(Pa, P, _).

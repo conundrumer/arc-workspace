@@ -40,10 +40,10 @@
     .decl panel_axis(a: Axis) panel_axis(AXIS_H).
     .decl sep_width(g: number) sep_width(1).
 
-    // --- Count ---
+    // --- $Count ---
     .decl panel_count(n: number) panel_count(3).
 
-    // --- Size ---
+    // --- $Size ---
     .decl panel_size(k: number) panel_size(5).
 }
 
@@ -64,13 +64,13 @@ impl_choice([Dc, Mv]) :- dec_choice(Dc), move_choice(Mv).
 // fall in the gap and decompose to nothing.
 .decl panel_cell(dc: DecChoice, p_grid: Position, p_panel: Position, p_frame: Position)
 
-// --- Count ---
+// --- $Count ---
 panel_cell($Count(), P_grid, P_panel, P_frame) :-
     in(P_grid, _),                                                          // input cell
     params.panel_axis(A), params.panel_count(N), params.sep_width(G),       // panel layout
     divide_slab(P_grid, A, N, G, P_panel, P_frame).                         // panel and frame cell
 
-// --- Size ---
+// --- $Size ---
 panel_cell($Size(), P_grid, P_panel, P_frame) :-
     in(P_grid, _),                                                          // input cell
     params.panel_axis(A), params.panel_size(K), params.sep_width(G),        // panel layout
@@ -144,14 +144,14 @@ least_slide.cand([Dc, M], K) :- fits(Dc, M, _, K).
 chosen(Dc, M, D, K, Mv) :-
     mover(Dc, M, Mv), least_slide.low([Dc, M], K), fits(Dc, M, D, K).
 
-// --- Least ---
+// --- $Least ---
 
 .init shortest = ArgExtremes<DecChoice, Ident>
 shortest.cand(Dc, M, K) :- least_slide.low([Dc, M], K).
 
 mover(Dc, M, $Least()) :- shortest.low(Dc, M, _).   // the shortest clearing slide
 
-// --- Yield ---
+// --- $Yield ---
 
 .init smallest = ArgExtremes<DecChoice, Ident>
 smallest.cand(Dc, M, N) :- least_slide.low([Dc, M], _), size.tally([Dc, M], N).

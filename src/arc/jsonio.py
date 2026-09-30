@@ -156,7 +156,10 @@ def _is_list(v: Any) -> TypeGuard[list[Any]]:
 
 
 def _is_int_list(v: Any) -> TypeGuard[list[int]]:
-    return _is_list(v) and all(isinstance(x, int) for x in v)
+    """A list of plain ints, which the writer prints with `str`. A bool is
+    an int to `isinstance` and is no plain int here, so `json.dumps` writes
+    it."""
+    return _is_list(v) and all(type(x) is int for x in v)
 
 
 def _is_int_grid(v: Any) -> TypeGuard[list[list[int]]]:

@@ -19,7 +19,7 @@
 .comp Params {
     .decl bg(col: Color)  bg(0).
 
-    // --- Stored ---
+    // --- $Stored ---
     .decl frame(col: Color)  frame(2).
 }
 
@@ -32,10 +32,10 @@ impl_choice($Stored()). impl_choice($Drawn()).
 
 .decl frame_col(col: Color, ch: Choice)
 
-// --- Stored ---
+// --- $Stored ---
 frame_col(Col, $Stored()) :- params.frame(Col).
 
-// --- Drawn ---
+// --- $Drawn ---
 .init drect = Outlines<Color>
 drect.node(Col, P) :- in(P, Col), !params.bg(Col).
 

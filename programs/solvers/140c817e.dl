@@ -45,7 +45,7 @@ crossed(P) :- in(P, _), mark(M), axis_elem(A), same_line(A, P, M).
 .decl corner_cell(p: Position)
 corner_cell(P) :- mark(M), diag_dir_elem(D), neighbor(M, D, P), in(P, _).
 
-// --- CornerOver ---
+// --- $CornerOver ---
 
 // The decoration as one layer.
 .decl decor(p: Position, col: Color)
@@ -59,7 +59,7 @@ out(P, Col, $CornerOver()) :-
     ; !decor(P, _), !crossed(P), Col = Col_in      // untouched field
     ).
 
-// --- CornerUnder ---
+// --- $CornerUnder ---
 
 // !crossed excludes marks: every mark is crossed by its own lines.
 out(P, Col, $CornerUnder()) :-

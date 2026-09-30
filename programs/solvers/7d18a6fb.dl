@@ -27,7 +27,7 @@
     // The legend's color.
     .decl frame(col: Color) frame(1).
 
-    // --- Legend, Concat ---
+    // --- $Legend, $Concat ---
 
     // Quadrants per axis, and the gap between them.
     .decl tiles(n: number) tiles(2).
@@ -36,7 +36,7 @@
 
 .init params = Params
 
-// --- legend ---
+// --- $Legend ---
 
 .init legend = Bbox<Unit>
 legend.cell($U(), P) :- in(P, Col), params.frame(Col).
@@ -55,7 +55,7 @@ marker(P_inner, Col) :- legend_cell(P, P_inner), in(P, Col), !params.frame(Col).
 .init shape = Bbox<Color>
 shape.cell(Col, P) :- in(P, Col), !params.bg(Col), !legend_cell(P, _).
 
-// --- Legend, Concat ---
+// --- $Legend, $Concat ---
 
 // A marker names its quadrant's color.
 .decl quadrant_color(p_tile: Position, col: Color)
@@ -79,19 +79,19 @@ out(P, Col, Ch) :-
     ; !ink(Ch, P, _), params.bg(Col)
     ).
 
-// --- Legend, Stamp ---
+// --- $Legend, $Stamp ---
 
 canvas($Legend(), P_grid_out) :- legend_cell(_, P_grid_out).
 canvas($Stamp(), P_grid_out) :- legend_cell(_, P_grid_out).
 
-// --- Legend ---
+// --- $Legend ---
 
 ink($Legend(), P_grid_out, Col) :-
     canvas($Legend(), P_grid_out),
     params.tiles(N), params.gap(G), divide_2d(P_grid_out, N, G, P_tile, P_intile),  // its quadrant
     quadrant_ink(P_tile, P_intile, Col).
 
-// --- Concat ---
+// --- $Concat ---
 
 ink($Concat(), P_grid_out, Col) :-
     quadrant_ink(P_tile, P_intile, Col),
@@ -103,7 +103,7 @@ assembled.extent($U(), A, N) :- ink($Concat(), P, _), axis_elem(A), axis_dim(P, 
 
 canvas($Concat(), P) :- assembled.cell($U(), P).
 
-// --- Stamp ---
+// --- $Stamp ---
 
 ink($Stamp(), P_grid_out, Col) :-
     canvas($Stamp(), P_grid_out), marker(M, Col),                  // a canvas cell and a marker

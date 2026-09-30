@@ -90,7 +90,7 @@ paint(P, Col, Ch) :-
       in(P, Bg), params.bg(Bg)                               // into the line's empty cells
     ).
 
-// --- Cast ---
+// --- $Cast ---
 
 // The intruder's own cells on the line.
 .decl stopper(ln: Line, p: Position)
@@ -104,7 +104,7 @@ cast(Ln, Q) :- cast(Ln, P), !stopper(Ln, P), advance(Ln, P, Q).
 
 fill(Ln, P, $Cast()) :- cast(Ln, P).
 
-// --- Span ---
+// --- $Span ---
 
 .init span = Between<Line>
 span.axis(Ln, A) :- lattice(Ln, _), Ln = [A, _].

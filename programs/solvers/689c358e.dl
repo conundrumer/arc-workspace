@@ -43,13 +43,13 @@ center(C, P) :- cross_cell(C, P), !rim.rim(C, P).
 // The side the cross's color goes to.
 .decl points(c: Color, d: Dir, ch: Choice)
 
-// --- Nearer ---
+// --- $Nearer ---
 points(C, D, $Nearer()) :-
     bbox.cell(C, P), bbox.box(C, B),
     box_extent(B, P, A, N1), perp(A, A2), box_extent(B, P, A2, N2), N1 > N2,  // long axis
     axis_of(D, A), dist_pair(B, D, K1, K2), K1 < K2.       // the grid edge the box is nearer
 
-// --- Pointer ---
+// --- $Pointer ---
 points(C, D, $Pointer()) :-
     center(C, P), bbox.box(C, B), crop(P, B, P_inner),
     dir_elem(D), dist_pair(P_inner, D, K1, K2), K1 < K2.

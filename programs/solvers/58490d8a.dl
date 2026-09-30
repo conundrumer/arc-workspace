@@ -75,11 +75,11 @@ copy(P_inner, Col, Ch) :-
     marker(Src, Col),
     shape_count.tally(Col, N), I < N.                            // one copy per shape
 
-// --- FromMark ---
+// --- $FromMark ---
 
 spread.dir($FromMark(), D) :- params.spread_dir(D).
 
-// --- FromEdge ---
+// --- $FromEdge ---
 
 spread.dir($FromEdge(), D) :- params.spread_dir(D0), ( D = D0 ; opposite(D0, D) ).
 

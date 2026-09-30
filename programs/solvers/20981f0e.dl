@@ -21,7 +21,7 @@
 
     .decl dot(col: Color) dot(2).
 
-    // --- Slot ---
+    // --- $Slot ---
 
     // Where a piece's box lands in its tile — margin from each edge.
     .decl slot(b: Box) slot([1, 1, 1, 1]).
@@ -67,15 +67,15 @@ landing(P_tile, Delta, B) :-
 // The offset each case picks.
 .decl place(p_tile: Position, delta: Offset, ch: Choice)
 
-// --- Center ---
+// --- $Center ---
 
 place(P_tile, Delta, $Center()) :- landing(P_tile, Delta, B), centered(B).
 
-// --- Slot ---
+// --- $Slot ---
 
 place(P_tile, Delta, $Slot()) :- landing(P_tile, Delta, B), params.slot(B).
 
-// --- Clear ---
+// --- $Clear ---
 
 // The step off the walls on one axis: a box against a wall steps once away
 // from it, a box touching neither wall stands.

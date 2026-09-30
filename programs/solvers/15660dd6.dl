@@ -31,7 +31,7 @@
     // Panel columns run along this axis; bands and their labels run across it.
     .decl layout_axis(a: Axis) layout_axis(AXIS_H).
 
-    // --- Map ---
+    // --- $Map ---
     .decl ink(col: Color) ink(2).
 }
 
@@ -150,7 +150,7 @@ out(P, Col, [D, R]) :-
     out_frame.cell($U(), P), !out_pos(_, _, P),  // between panels
     params.bg(Col), donor_elem(D), render_elem(R).
 
-// --- Map ---
+// --- $Map ---
 out(P, Col_out, [D, $Map()]) :-
     out_pos(P_col, P_intile, P),
     stencil(D, P_col, P_intile, Col),
@@ -158,7 +158,7 @@ out(P, Col_out, [D, $Map()]) :-
     ; !params.ink(Col), Col_out = Col           // the rest passes through
     ).
 
-// --- Mask ---
+// --- $Mask ---
 out(P, Col_out, [D, $Mask()]) :-
     out_pos(P_col, P_intile, P),
     stencil(D, P_col, P_intile, Col),

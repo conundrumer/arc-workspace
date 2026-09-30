@@ -20,33 +20,33 @@
     .decl diag(d: DiagDir)
     diag(DIAG_TR).
 
-    // --- Corner ---
+    // --- $Corner ---
     .decl window_dim(k: number) window_dim(3).
     .decl window(p: Position)
     window(P) :- window_dim(K), helpers.frame_pos([K, K], P).
 
-    // --- Count ---
+    // --- $Count ---
     .decl divisor(n: number) divisor(3).
 
-    // --- Block ---
+    // --- $Block ---
     .decl tile_dim(k: number) tile_dim(3).
 }
 
 .init params = Params
 
-// --- Corner ---
+// --- $Corner ---
 out(P_out, Col, $Corner()) :-
     in(P_in, Col),                                     // input cell
     params.window(P_out),                              // output position
     params.diag(D), corner_anchor(D, P_out, P_in).     // corner-anchor match
 
-// --- Count ---
+// --- $Count ---
 out(P_intile, Col, $Count()) :-
     in(P_in, Col),                                                     // input cell
     params.divisor(N), divide_2d(P_in, N, 0, P_tile, P_intile),        // arrangement
     params.diag(D), corner_anchor(D, P_tile, ZERO).                  // corner tile
 
-// --- Block ---
+// --- $Block ---
 out(P_intile, Col, $Block()) :-
     in(P_in, Col),                                                             // input cell
     params.tile_dim(K), divide_by_size_2d(P_in, K, 0, P_tile, P_intile),       // tiling

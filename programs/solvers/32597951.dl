@@ -17,7 +17,7 @@
     .decl marker(c: Color) marker(8).
     .decl to(c: Color) to(3).
 
-    // --- From ---
+    // --- $From ---
     .decl from(c: Color) from(1).
 }
 
@@ -31,11 +31,11 @@ impl_choice($From()). impl_choice($Ink()).
 
 .decl recolor(p: Position, ch: Choice)
 
-// --- From ---
+// --- $From ---
 recolor(P, $From()) :-
     in(P, Col), params.from(Col), bbox.box($U(), B), inside(P, B).
 
-// --- Ink ---
+// --- $Ink ---
 recolor(P, $Ink()) :-
     in(P, Col), !params.marker(Col), bbox.box($U(), B), inside(P, B).
 

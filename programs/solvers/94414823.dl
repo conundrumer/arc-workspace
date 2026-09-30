@@ -31,21 +31,21 @@ wall_cell(P) :- in(P, Col), params.wall(Col).
 // The cells inside the wall.
 .decl inner(p: Position, ch: Choice)
 
-// --- Rect ---
+// --- $Rect ---
 
 .init outline = Outlines<Unit>
 outline.node($U(), P) :- wall_cell(P).
 
 inner(P, $Rect()) :- outline.box($U(), B), in(P, _), interior(P, B).
 
-// --- Enclose ---
+// --- $Enclose ---
 
 .init closed = Closed<Unit>
 closed.cell($U(), P) :- in(P, _), !wall_cell(P).
 
 inner(P, $Enclose()) :- closed.region($U(), P, _).
 
-// --- Rect, Enclose ---
+// --- $Rect, $Enclose ---
 
 .init inner_box = Bbox<Choice>
 inner_box.cell(Ch, P) :- inner(P, Ch).

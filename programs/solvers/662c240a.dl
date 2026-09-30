@@ -29,13 +29,13 @@
 .comp Params {
     .decl tile_axis(a: Axis) tile_axis(AXIS_V).
 
-    // --- Count ---
+    // --- $Count ---
     .decl tile_count(n: number) tile_count(3).
 
-    // --- Size ---
+    // --- $Size ---
     .decl tile_size(k: number) tile_size(3).
 
-    // --- Shared ---
+    // --- $Shared ---
     .decl sym(d: D4) sym(D4_DG).
 }
 
@@ -55,9 +55,9 @@ tile_val(T, P, Col, $Size()) :-
 inv.src([T, Dc], P, Col) :- tile_val(T, P, Col, Dc).
 inv.dst([T, Dc], P, Col) :- tile_val(T, P, Col, Dc).
 
-// --- Shared ---
+// --- $Shared ---
 out(P, Col, [Dc, $Shared()]) :-
     tile_val(T, P, Col, Dc), params.sym(F), inv.mismatch([T, Dc], F).
 
-// --- Asym ---
+// --- $Asym ---
 out(P, Col, [Dc, $Asym()]) :- tile_val(T, P, Col, Dc), !inv.has_sym([T, Dc]).

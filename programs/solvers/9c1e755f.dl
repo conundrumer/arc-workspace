@@ -86,10 +86,10 @@ copy(Ch, Y, Q, Col) :-
 out(P, Col, Ch) :- copy(Ch, _, P, Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !copy(Ch, _, P, _).
 
-// --- Swatch ---
+// --- $Swatch ---
 copy($Swatch(), Y, P, Col) :- swatch(Y, P, Col).
 
-// --- FarEnd ---
+// --- $FarEnd ---
 
 // The end of the rail the swatch does not reach, and the swatch's gap to it.
 .decl far_end(y: Ident, d: Dir, k: number)

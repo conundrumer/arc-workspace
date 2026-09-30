@@ -2,7 +2,7 @@
   "id": "9ba4a9aa",
   "witnesses": [{
     "id": "stray-dots",
-    "separates": "Chain from Hue: a second trail of the lead color, unconnected to the source's trail, ends beside another framed square",
+    "separates": "$Chain from $Hue: a second trail of the lead color, unconnected to the source's trail, ends beside another framed square",
     "input": [
       [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
       [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,4,4,4,1],
@@ -28,14 +28,14 @@
       [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
     ],
     "output": [{
-      "cases": ["Chain"],
+      "cases": ["concept"],
       "grid": [
         [4,4,4],
         [4,6,4],
         [4,4,4]
       ]
     }, {
-      "cases": ["Hue"],
+      "cases": ["$Hue"],
       "grid": null
     }]
   }]

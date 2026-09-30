@@ -38,24 +38,24 @@
     .decl panel_axis(a: Axis) panel_axis(AXIS_H).
     .decl gap(g: number) gap(1).
 
-    // --- Count ---
+    // --- $Count ---
     .decl panels(n: number) panels(4).
 
-    // --- Size ---
+    // --- $Size ---
     .decl panel_size(k: number) panel_size(4).
 
-    // --- Order, Ink ---
+    // --- $Order, $Ink ---
     .decl bg(col: Color) bg(0).
 
-    // --- Order ---
+    // --- $Order ---
     .decl prio(p: Position, r: number)
     GRID_1x4(prio, 2, 3, 0, 1)
 
-    // --- Ink ---
+    // --- $Ink ---
     .decl ink_rank(col: Color, r: number)
     ink_rank(9, 0). ink_rank(4, 1). ink_rank(8, 2). ink_rank(5, 3).
 
-    // --- Lookup ---
+    // --- $Lookup ---
     .decl combine_member(id: Ident, p: Position, col: Color)
     .decl combine_out(id: Ident, col: Color)
 
@@ -118,16 +118,16 @@ out(P, Col, [Dc, C]) :-
 
 out(P, Col, Ch) :- best.low([Ch, P], Col, _).
 
-// --- Order ---
+// --- $Order ---
 
 best.cand([[Dc, $Order()], P], Col, R) :-
     parse.tile_ink($U(), T, P, Col, Dc), params.prio(T, R).
 
-// --- Ink ---
+// --- $Ink ---
 
 best.cand([[Dc, $Ink()], P], Col, R) :- ink_at(P, Col, Dc), params.ink_rank(Col, R).
 
-// --- Lookup ---
+// --- $Lookup ---
 
 .init combine = KeyedSetCompare<CombineKey, Ident, CombineMember>
 combine.pattern_member(Id, [P_tile, Col]) :- params.combine_member(Id, P_tile, Col).

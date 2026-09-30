@@ -23,7 +23,7 @@
     .decl bg(col: Color) bg(0).
     .decl fill(col: Color) fill(2).
 
-    // --- Threshold ---
+    // --- $Threshold ---
     .decl min_marks(n: number) min_marks(4).
 }
 
@@ -49,20 +49,20 @@ line_gap(A, L, P) :- line_cell(A, L, P), !mark(P).
 
 .decl line(ch: Choice, a: Axis, l: Position)
 
-// --- Threshold ---
+// --- $Threshold ---
 .init marks = Tally<LineKey, Position>
 marks.item([A, L], P) :- line_mark(A, L, P).
 
 line($Threshold(), A, L) :- marks.tally([A, L], N), params.min_marks(K), N >= K.
 
-// --- Majority ---
+// --- $Majority ---
 .init lead = Excess<LineKey, Position>
 lead.plus([A, L], P) :- line_mark(A, L, P).
 lead.minus([A, L], P) :- line_gap(A, L, P).
 
 line($Majority(), A, L) :- lead.excess([A, L], _).
 
-// --- Segment ---
+// --- $Segment ---
 line($Segment(), A, L) :-
     line_mark(A, L, P), line_mark(A, L, Q),   // two of the line's marks
     axis_of(D, A), neighbor(P, D, Q).         // one step apart along it

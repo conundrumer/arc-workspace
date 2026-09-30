@@ -17,12 +17,12 @@
 .comp Params {
     .decl bg(c: Color) bg(7).
 
-    // --- Sym ---
+    // --- $Sym ---
     // Stabilizer of the completed grid.
     .decl sym(d: D4)
     sym(D4_ID). sym(D4_HT).
 
-    // --- Marker ---
+    // --- $Marker ---
     .decl line(c: Color) line(4).
     .decl marker(c: Color) marker(8).
     // The transform taken about the crossing.
@@ -37,12 +37,12 @@ impl_choice($Sym()). impl_choice($Marker()).
 // The color of each cell's counterpart, per case.
 .decl image(p: Position, col: Color, ch: Choice)
 
-// --- Sym ---
+// --- $Sym ---
 image(P2, Col, $Sym()) :-
     in(P, Col), !params.bg(Col),         // ink cell
     params.sym(D), apply(D, P, P2).      // its symmetric counterpart
 
-// --- Marker ---
+// --- $Marker ---
 // The crossing: the marker with line cells on both sides of it.
 .init crossing = Between<Unit>
 crossing.axis($U(), A) :- axis_elem(A).

@@ -168,7 +168,7 @@ recolor(Col, Col) :- content(_, _, Col), !turned.value(Col, _).
 .decl run_match(ch: Choice, pan: Position, d: Dir,
                 sn: Position, sf: Position, tn: Position, tf: Position)
 
-// --- Rank ---
+// --- $Rank ---
 
 // Runs of a line in order from edge d, so the same run carries the same rank
 // in every frame.
@@ -184,7 +184,7 @@ run_match($Rank(), Pan2, D, Sn, Sf, Tn, Tf) :-
     last_step(Pan, Pan2),
     run_rank(Pan, D, L, R, Sn, Sf), run_rank(Pan2, D, L, R, Tn, Tf).
 
-// --- Hue ---
+// --- $Hue ---
 
 .type RunEnd = [d: Dir, s: Position]
 

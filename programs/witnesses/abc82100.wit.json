@@ -1,0 +1,385 @@
+{
+  "id": "abc82100",
+  "witnesses": [{
+    "id": "wide-mouth",
+    "separates": "$AnchorTouch from the concept: a U-shaped key shape opens upward three cells wide, and its domino points into the middle of the mouth. The anchor is a background cell of the box with no shape cell among its eight neighbors. The concept keys the U and stamps it in 2 at the 3 cell; $AnchorTouch finds no key and keeps the input.",
+    "input": [
+      [0,0,0,0,0,0,3,0,0,0],
+      [0,0,0,0,0,0,2,0,0,0],
+      [0,0,0,0,8,0,0,0,8,0],
+      [0,0,0,0,8,0,0,0,8,0],
+      [0,0,0,0,8,8,8,8,8,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,3,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$BoxSide","$CenterLine"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [2,0,0,0,2,0,0,0,0,0],
+        [2,0,0,0,2,0,0,0,0,0],
+        [2,2,2,2,2,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$AnchorTouch & $EraseKeyColor"],
+      "grid": [
+        [0,0,0,0,0,0,3,0,0,0],
+        [0,0,0,0,0,0,2,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,3,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$AnchorTouch & $KeepKeyless"],
+      "grid": [
+        [0,0,0,0,0,0,3,0,0,0],
+        [0,0,0,0,0,0,2,0,0,0],
+        [0,0,0,0,8,0,0,0,8,0],
+        [0,0,0,0,8,0,0,0,8,0],
+        [0,0,0,0,8,8,8,8,8,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,3,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "two-keys",
+    "separates": "$FirstKey from the concept: one vertical key line carries two dominoes, 4 1 on its left and 7 5 on its right. The concept uses both, so the 4 cell stamps the line in 1 and the 5 cell stamps it in 7. In reading order, $FirstKey uses only the left domino and keeps the right domino and the 5 cell.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,4,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,8,0,0,0,0],
+      [0,0,0,4,1,8,7,5,0,0],
+      [0,0,0,0,0,8,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,5,0],
+      [0,0,0,0,0,0,0,0,0,0]
+    ],
+    "assign": {
+      "key_order": [
+        ["DIAG_TL","AXIS_V"]
+      ]
+    },
+    "output": [{
+      "cases": ["$EveryKey"],
+      "grid": [
+        [0,1,0,0,0,0,0,0,0,0],
+        [0,1,0,0,0,0,0,0,0,0],
+        [0,1,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,7,0],
+        [0,0,0,0,0,0,0,0,7,0],
+        [0,0,0,0,0,0,0,0,7,0]
+      ]
+    }, {
+      "cases": ["$FirstKey"],
+      "grid": [
+        [0,1,0,0,0,0,0,0,0,0],
+        [0,1,0,0,0,0,0,0,0,0],
+        [0,1,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,7,5,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,5,0],
+        [0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "stamp-clash",
+    "separates": "$ScanOrder from the concept: the stamps of a 1 cell (in 2) and a 3 cell (in 4) overlap on two cells. The concept writes two colors there and is undefined. In reading order, $ScanOrder lets the legend of the later shape, the 3 4 legend, cover.",
+    "input": [
+      [1,2,8,8,8,0,0],
+      [0,0,0,0,0,0,0],
+      [3,4,8,8,8,0,0],
+      [0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0],
+      [0,0,1,3,0,0,0],
+      [0,0,0,0,0,0,0]
+    ],
+    "assign": {
+      "layer_order": [
+        ["DIAG_TL","AXIS_V"]
+      ]
+    },
+    "output": [{
+      "cases": ["concept"],
+      "grid": null
+    }, {
+      "cases": ["$ScanOrder"],
+      "grid": [
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,2,4,4,4,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "stamp-on-ink",
+    "separates": "$KeepOnTop from the concept: the stamp of the 1 cell reaches an unkeyed 6 cell. The concept draws the stamp over the 6; $KeepOnTop keeps the 6.",
+    "input": [
+      [1,2,8,8,8,0,0],
+      [0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0],
+      [0,0,0,1,6,0,0],
+      [0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$StampOver"],
+      "grid": [
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,2,2,2,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$KeepOnTop"],
+      "grid": [
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,2,6,2,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "keyless-shape",
+    "separates": "$EraseKeyColor from the concept: a second key-colored shape has no domino. The concept keeps that shape as other ink; $EraseKeyColor erases every key-colored cell.",
+    "input": [
+      [1,2,8,8,8,0,0],
+      [0,0,0,0,0,0,0],
+      [0,0,0,0,0,8,0],
+      [0,0,0,0,8,8,8],
+      [0,0,0,0,0,8,0],
+      [0,1,0,0,0,0,0],
+      [0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$KeepKeyless"],
+      "grid": [
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,8,0],
+        [0,0,0,0,8,8,8],
+        [0,0,0,0,0,8,0],
+        [0,2,2,2,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$EraseKeyColor"],
+      "grid": [
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,2,2,2,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "off-center",
+    "separates": "$CenterLine from the concept: the domino 3 2 meets a five-cell vertical key line one cell above the line's middle. The concept keys the line with its anchor on the second cell and stamps it in 2 at the 3 cell; $CenterLine finds no key and keeps the input.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,8,0,0,0,0],
+      [0,0,3,2,8,0,0,0,0],
+      [0,0,0,0,8,0,0,0,0],
+      [0,0,0,0,8,0,0,0,0],
+      [0,0,0,0,8,0,0,0,0],
+      [0,0,0,0,0,0,0,3,0],
+      [0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$BoxSide","$AnchorTouch"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,2,0],
+        [0,0,0,0,0,0,0,2,0],
+        [0,0,0,0,0,0,0,2,0]
+      ]
+    }, {
+      "cases": ["$CenterLine & $EraseKeyColor"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,3,2,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,3,0],
+        [0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$CenterLine & $KeepKeyless"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,8,0,0,0,0],
+        [0,0,3,2,8,0,0,0,0],
+        [0,0,0,0,8,0,0,0,0],
+        [0,0,0,0,8,0,0,0,0],
+        [0,0,0,0,8,0,0,0,0],
+        [0,0,0,0,0,0,0,3,0],
+        [0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "same-color",
+    "separates": "$SameColorDomino from the concept: a 3 3 pair touches the left end of a key line. The concept finds no key and keeps the input; $SameColorDomino reads the pair as a legend from 3 to 3, erases it with the line, and stamps the line in 3 at the lone 3 cell.",
+    "input": [
+      [0,0,0,0,0,0,0],
+      [3,3,8,8,8,0,0],
+      [0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0],
+      [0,0,0,3,0,0,0],
+      [0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$TwoColors & $KeepKeyless"],
+      "grid": [
+        [0,0,0,0,0,0,0],
+        [3,3,8,8,8,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,3,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$TwoColors & $EraseKeyColor"],
+      "grid": [
+        [0,0,0,0,0,0,0],
+        [3,3,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,3,0,0,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$SameColorDomino"],
+      "grid": [
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0],
+        [0,0,0,3,3,3,0],
+        [0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "bg=DominantColor",
+    "separates": "`bg=DominantColor` from the stored value: train 0 with 0 and 3 swapped",
+    "input": [
+      [1,2,8,8,8],
+      [3,3,3,3,1],
+      [3,3,3,1,3],
+      [3,3,3,1,3],
+      [3,3,3,3,1]
+    ],
+    "output": [{
+      "cases": [
+        "$TwoColors & $BoxSide & $EveryKey & bg=stored",
+        "$AnchorTouch & $EveryKey & bg=stored"
+      ],
+      "grid": null
+    }, {
+      "cases": ["bg=DominantColor"],
+      "grid": [
+        [3,3,3,3,3],
+        [3,3,3,3,2],
+        [3,3,3,2,2],
+        [3,3,3,2,2],
+        [3,3,3,3,2]
+      ]
+    }, {
+      "cases": ["$FirstKey & bg=stored"],
+      "grid": null
+    }, {
+      "cases": ["$CenterLine & $EveryKey & $KeepOnTop & bg=stored"],
+      "grid": null
+    }, {
+      "cases": ["$CenterLine & $EveryKey & $StampOver & bg=stored"],
+      "grid": null
+    }, {
+      "cases": ["$SameColorDomino & $BoxSide & $EveryKey & bg=stored"],
+      "grid": null
+    }]
+  }, {
+    "id": "ink-dominant",
+    "separates": "bg=DominantColor from the stored background: source cells of color 1 outnumber the 0 cells. The stored background 0 keys the 1 2 domino and stamps every 1 cell; the derived background is 1, so 1 2 is no domino and the input is kept.",
+    "input": [
+      [1,2,8,8,8],
+      [1,0,1,0,1],
+      [0,1,0,1,0],
+      [1,0,1,0,1],
+      [0,1,1,1,0]
+    ],
+    "output": [{
+      "cases": ["bg=stored"],
+      "grid": [
+        [0,0,0,0,0],
+        [2,2,2,2,2],
+        [0,2,2,2,2],
+        [2,2,2,2,2],
+        [0,2,2,2,2]
+      ]
+    }, {
+      "cases": ["$EraseKeyColor & bg=DominantColor"],
+      "grid": [
+        [1,2,1,1,1],
+        [1,0,1,0,1],
+        [0,1,0,1,0],
+        [1,0,1,0,1],
+        [0,1,1,1,0]
+      ]
+    }, {
+      "cases": ["$KeepKeyless & bg=DominantColor"],
+      "grid": [
+        [1,2,8,8,8],
+        [1,0,1,0,1],
+        [0,1,0,1,0],
+        [1,0,1,0,1],
+        [0,1,1,1,0]
+      ]
+    }]
+  }]
+}

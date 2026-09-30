@@ -30,7 +30,7 @@
     .decl read_corner(d: DiagDir) read_corner(DIAG_TL).
     .decl read_axis(a: Axis) read_axis(AXIS_V).
 
-    // --- Span ---
+    // --- $Span ---
     .decl span_axis(a: Axis) span_axis(AXIS_H).
 }
 
@@ -105,14 +105,14 @@ filled(Ch, P) :-
 out(P, Col, Ch) :- filled(Ch, P), mark(_, Col).
 out(P, Col, Ch) :- canvas.cell(Ch, P), !filled(Ch, P), params.bg(Col).
 
-// --- Count ---
+// --- $Count ---
 
 .init mark_tally = Tally<Unit, Position>
 mark_tally.item($U(), P) :- mark(P, _).
 
 square.extent($Count(), A, N) :- axis_elem(A), mark_tally.tally($U(), N).
 
-// --- Span ---
+// --- $Span ---
 
 .init span = Bbox<Unit>
 span.cell($U(), P) :- mark(P, _).

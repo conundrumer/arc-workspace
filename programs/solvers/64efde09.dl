@@ -78,11 +78,11 @@ reach(P_tip, Col, M, S, D) :-
 // The bar cell a tip's beam issues from, with the heading it runs in.
 .decl source(id: Ident, p: Position, d: Dir, col: Color, ch: Choice)
 
-// --- Edge ---
+// --- $Edge ---
 
 source(M, S, D, Col, $Edge()) :- reach(P_tip, Col, M, S, D), dist(P_tip, D, 0).  // the tip on the far edge
 
-// --- Lane ---
+// --- $Lane ---
 
 // A bar's two lanes run along its long axis, one at each edge of its box on
 // the short one.

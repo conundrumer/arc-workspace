@@ -17,10 +17,10 @@
     .decl bg(c: Color) bg(0).
     .decl scale(s: number) scale(2).
 
-    // --- Count ---
+    // --- $Count ---
     .decl tile_count(n: number) tile_count(5).
 
-    // --- Size ---
+    // --- $Size ---
     .decl tile_dim(k: number) tile_dim(2).
 }
 
@@ -28,15 +28,15 @@
 
 .decl tile(p: Position, p_tile: Position, ch: Choice)
 
-// --- Count ---
+// --- $Count ---
 tile(P, P_tile, $Count()) :-
     in(P, _), params.tile_count(N), divide_2d(P, N, 0, P_tile, _).
 
-// --- Size ---
+// --- $Size ---
 tile(P, P_tile, $Size()) :-
     in(P, _), params.tile_dim(K), divide_by_size_2d(P, K, 0, P_tile, _).
 
-// --- Count, Size ---
+// --- $Count, $Size ---
 .decl tile_ink(p_tile: Position, col: Color, ch: Choice)
 tile_ink(P_tile, Col, Ch) :- tile(P, P_tile, Ch), in(P, Col), !params.bg(Col).
 

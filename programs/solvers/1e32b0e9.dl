@@ -31,13 +31,13 @@
     .decl bg(col: Color) bg(0).
     .decl gap(g: number) gap(1).
 
-    // --- Count ---
+    // --- $Count ---
     .decl tile_count(n: number) tile_count(3).
 
-    // --- Size ---
+    // --- $Size ---
     .decl tile_dim(k: number) tile_dim(5).
 
-    // --- Corner ---
+    // --- $Corner ---
     .decl corner(d: DiagDir) corner(DIAG_TL).
 }
 
@@ -72,16 +72,16 @@ shape(P_tile, P_intile, Dc) :-
 // The footprint stamped into every tile.
 .decl stamp(p_intile: Position, ch: Choice)
 
-// --- Union ---
+// --- $Union ---
 stamp(P_intile, [Dc, $Union()]) :- shape(_, P_intile, Dc).
 
-// --- Largest ---
+// --- $Largest ---
 .init biggest = Mode<DecChoice, Position, Position>
 biggest.item(Dc, T, P_intile) :- shape(T, P_intile, Dc).
 
 stamp(P_intile, [Dc, $Largest()]) :- biggest.mode(Dc, T), shape(T, P_intile, Dc).
 
-// --- Corner ---
+// --- $Corner ---
 stamp(P_intile, [Dc, $Corner()]) :-
     params.corner(Dg), shape(T, P_intile, Dc), corner_dist(T, Dg, 0).
 

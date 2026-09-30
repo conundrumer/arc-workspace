@@ -19,7 +19,7 @@
     .decl diag(d: DiagDir) diag(DIAG_BR).     // advance along the line, stack across
     .decl divisor(n: number) divisor(2).      // stacked rows = line length / divisor
 
-    // --- Grow ---
+    // --- $Grow ---
 
     .decl bg(col: Color) bg(0).
 }
@@ -46,7 +46,7 @@ seated(P_out, Col) :-
     same_dist(D_adv, P_in, P_out),                       // aligned along the line
     opposite(D_stack, D_seed), dist(P_out, D_seed, 0).   // on the seed edge
 
-// --- Grow ---
+// --- $Grow ---
 
 .decl grown(p: Position, col: Color)
 grown(P, Col) :- seated(P, Col), !params.bg(Col).
@@ -61,7 +61,7 @@ grown(P2, Col) :-
 out(P, Col, $Grow()) :- grown(P, Col).
 out(P, Col, $Grow()) :- frame.cell($U(), P), !grown(P, _), params.bg(Col).
 
-// --- Slide ---
+// --- $Slide ---
 
 .init rays = Ray<Unit>
 rays.dir($U(), D)  :- params.diag(D).

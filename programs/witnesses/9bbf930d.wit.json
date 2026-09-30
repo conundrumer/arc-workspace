@@ -2,7 +2,7 @@
   "id": "9bbf930d",
   "witnesses": [{
     "id": "twoopen",
-    "separates": "Channel from Pipe: the outer bar is missing beside the corner",
+    "separates": "$Channel from $Pipe: the outer bar is missing beside the corner",
     "input": [
       [6,7,7,7,7,7,7,7,7],
       [6,7,3,3,3,3,7,7,7],
@@ -12,31 +12,7 @@
       [6,7,7,7,7,7,7,7,7]
     ],
     "output": [{
-      "cases": [
-        "[Channel, Mouth, Derived]",
-        "[Channel, Mouth, Stored]",
-        "[Channel, Reach, Derived]",
-        "[Channel, Reach, Stored]"
-      ],
-      "grid": [
-        [6,7,7,7,7,7,7,7,7],
-        [6,7,3,3,3,3,7,7,7],
-        [7,7,7,7,7,7,7,3,7],
-        [6,7,3,3,3,3,7,3,7],
-        [6,7,7,7,7,7,7,7,7],
-        [6,7,7,7,7,7,6,7,7]
-      ]
-    }, {
-      "cases": [
-        "[Exit, Mouth, Derived]",
-        "[Exit, Mouth, Stored]",
-        "[Exit, Reach, Derived]",
-        "[Exit, Reach, Stored]",
-        "[Pipe, Mouth, Derived]",
-        "[Pipe, Mouth, Stored]",
-        "[Pipe, Reach, Derived]",
-        "[Pipe, Reach, Stored]"
-      ],
+      "cases": ["$Exit","$Pipe"],
       "grid": [
         [6,7,7,7,7,7,7,7,7],
         [6,7,3,3,3,3,7,7,7],
@@ -45,10 +21,20 @@
         [6,7,7,7,7,7,7,7,7],
         [6,7,7,7,7,7,7,7,7]
       ]
+    }, {
+      "cases": ["$Channel"],
+      "grid": [
+        [6,7,7,7,7,7,7,7,7],
+        [6,7,3,3,3,3,7,7,7],
+        [7,7,7,7,7,7,7,3,7],
+        [6,7,3,3,3,3,7,3,7],
+        [6,7,7,7,7,7,7,7,7],
+        [6,7,7,7,7,7,6,7,7]
+      ]
     }]
   }, {
     "id": "hook",
-    "separates": "Exit from Pipe: the inner bar ends at the corner, so the channel past it is walled one side only",
+    "separates": "$Exit from $Pipe: the inner bar ends at the corner, so the channel past it is walled one side only",
     "input": [
       [6,7,7,7,7,7,7,7,7],
       [6,7,3,3,3,3,3,3,7],
@@ -58,16 +44,7 @@
       [6,7,7,7,7,7,7,7,7]
     ],
     "output": [{
-      "cases": [
-        "[Channel, Mouth, Derived]",
-        "[Channel, Mouth, Stored]",
-        "[Channel, Reach, Derived]",
-        "[Channel, Reach, Stored]",
-        "[Pipe, Mouth, Derived]",
-        "[Pipe, Mouth, Stored]",
-        "[Pipe, Reach, Derived]",
-        "[Pipe, Reach, Stored]"
-      ],
+      "cases": ["$Channel","$Pipe"],
       "grid": [
         [6,7,7,7,7,7,7,7,7],
         [6,7,3,3,3,3,3,3,7],
@@ -77,12 +54,7 @@
         [6,7,7,7,7,7,7,7,7]
       ]
     }, {
-      "cases": [
-        "[Exit, Mouth, Derived]",
-        "[Exit, Mouth, Stored]",
-        "[Exit, Reach, Derived]",
-        "[Exit, Reach, Stored]"
-      ],
+      "cases": ["$Exit"],
       "grid": [
         [6,7,7,7,7,7,7,7,7],
         [6,7,3,3,3,3,3,3,7],
@@ -94,7 +66,7 @@
     }]
   }, {
     "id": "stagger",
-    "separates": "Mouth from Reach: the pipe bars start at different columns, so ink lies beside the lane before the channel",
+    "separates": "$Mouth from $Reach: the pipe bars start at different columns, so ink lies beside the lane before the channel",
     "input": [
       [6,7,7,7,7,7,7,7],
       [6,7,3,3,3,3,3,7],
@@ -103,30 +75,7 @@
       [6,7,7,7,7,7,7,7]
     ],
     "output": [{
-      "cases": [
-        "[Channel, Mouth, Derived]",
-        "[Channel, Mouth, Stored]",
-        "[Exit, Mouth, Derived]",
-        "[Exit, Mouth, Stored]",
-        "[Pipe, Mouth, Derived]",
-        "[Pipe, Mouth, Stored]"
-      ],
-      "grid": [
-        [6,7,7,7,7,7,7,7],
-        [6,7,3,3,3,3,3,7],
-        [6,7,7,7,7,7,7,7],
-        [6,7,7,7,3,3,3,7],
-        [6,7,7,7,7,7,7,7]
-      ]
-    }, {
-      "cases": [
-        "[Channel, Reach, Derived]",
-        "[Channel, Reach, Stored]",
-        "[Exit, Reach, Derived]",
-        "[Exit, Reach, Stored]",
-        "[Pipe, Reach, Derived]",
-        "[Pipe, Reach, Stored]"
-      ],
+      "cases": ["$Reach"],
       "grid": [
         [6,7,7,7,7,7,7,7],
         [6,7,3,3,3,3,3,7],
@@ -134,10 +83,19 @@
         [6,7,7,7,3,3,3,7],
         [6,7,7,7,7,7,7,7]
       ]
+    }, {
+      "cases": ["$Mouth"],
+      "grid": [
+        [6,7,7,7,7,7,7,7],
+        [6,7,3,3,3,3,3,7],
+        [6,7,7,7,7,7,7,7],
+        [6,7,7,7,3,3,3,7],
+        [6,7,7,7,7,7,7,7]
+      ]
     }]
   }, {
     "id": "relocated",
-    "separates": "Derived from Stored: the wall is the solid ink edge on the right, not the left",
+    "separates": "$Derived from $Stored: the wall is the solid ink edge on the right, not the left",
     "input": [
       [7,7,7,7,7,7,7,6],
       [7,1,1,1,1,7,7,6],
@@ -146,34 +104,20 @@
       [7,7,7,7,7,7,7,6]
     ],
     "output": [{
-      "cases": [
-        "[Channel, Mouth, Derived]",
-        "[Channel, Reach, Derived]",
-        "[Exit, Mouth, Derived]",
-        "[Exit, Reach, Derived]",
-        "[Pipe, Mouth, Derived]",
-        "[Pipe, Reach, Derived]"
-      ],
+      "cases": ["$Stored"],
       "grid": [
         [7,7,7,7,7,7,7,6],
         [7,1,1,1,1,7,7,6],
-        [6,7,7,7,7,7,7,7],
+        [7,7,7,7,7,7,7,6],
         [7,1,1,1,1,7,7,6],
         [7,7,7,7,7,7,7,6]
       ]
     }, {
-      "cases": [
-        "[Channel, Mouth, Stored]",
-        "[Channel, Reach, Stored]",
-        "[Exit, Mouth, Stored]",
-        "[Exit, Reach, Stored]",
-        "[Pipe, Mouth, Stored]",
-        "[Pipe, Reach, Stored]"
-      ],
+      "cases": ["$Derived"],
       "grid": [
         [7,7,7,7,7,7,7,6],
         [7,1,1,1,1,7,7,6],
-        [7,7,7,7,7,7,7,6],
+        [6,7,7,7,7,7,7,7],
         [7,1,1,1,1,7,7,6],
         [7,7,7,7,7,7,7,6]
       ]

@@ -26,22 +26,22 @@
     .decl gap(g: number)
     gap(1).
 
-    // --- StepCount, Lookup ---
+    // --- $StepCount, $Lookup ---
     .decl tile_n(n: number)
     tile_n(3).
 
-    // --- StepSize ---
+    // --- $StepSize ---
     .decl tile_size(k: number)
     tile_size(3).
 
-    // --- StepCount, StepSize ---
+    // --- $StepCount, $StepSize ---
     .decl flow_dir(d: Dir)
     flow_dir(DIR_R).
 
     .decl rot(d: D4)
     rot(D4_CW).
 
-    // --- Lookup ---
+    // --- $Lookup ---
     .decl tile_d4(p: Position, d: D4)
     GRID_1x3(tile_d4, D4_ID, D4_CW, D4_HT)
 }
@@ -93,7 +93,7 @@ src(P_tile, P_intile, Col, C) :-
 // Separator passthrough — cells the divide leaves undecomposed.
 out(P, Col, C) :- in(P, Col), impl_choice(C), !tile_cell(P, _, _, C).
 
-// --- StepCount, StepSize ---
+// --- $StepCount, $StepSize ---
 // The pattern seeds its own tile; each neighbor toward flow_dir carries
 // the rotated image.
 .decl content(p_tile: Position, p_intile: Position, col: Color, c: Choice)
@@ -106,7 +106,7 @@ content(T2, P2, Col, C) :-
 
 out(P_grid, Col, C) :- content(T, P_intile, Col, C), tile_cell(P_grid, T, P_intile, C).
 
-// --- Lookup ---
+// --- $Lookup ---
 out(P_grid, Col, $Lookup()) :-
     src(_, P_src, Col, $Lookup()),                            // pattern cell
     params.tile_d4(P_tile, D), apply(D, P_src, P_intile),     // d4 image at tile

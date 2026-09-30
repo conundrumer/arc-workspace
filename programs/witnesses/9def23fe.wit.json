@@ -2,7 +2,7 @@
   "id": "9def23fe",
   "witnesses": [{
     "id": "notch",
-    "separates": "Box from Cells: a notched block, whose box holds background cells that a beam crosses",
+    "separates": "$Box from $Cells: a notched block, whose box holds background cells that a beam crosses",
     "input": [
       [0,0,0,0,8,0,0,0,0,0,0,0],
       [0,0,0,0,0,0,0,0,0,0,0,0],
@@ -18,7 +18,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,8]
     ],
     "output": [{
-      "cases": ["[Hue, Box]","[Touch, Box]"],
+      "cases": ["$Box"],
       "grid": [
         [0,0,0,2,8,2,2,2,0,0,0,0],
         [0,0,0,2,0,2,2,2,0,0,0,0],
@@ -34,7 +34,7 @@
         [0,0,0,2,2,2,0,2,0,0,0,8]
       ]
     }, {
-      "cases": ["[Hue, Cells]","[Touch, Cells]"],
+      "cases": ["$Cells"],
       "grid": [
         [0,0,0,2,8,2,2,2,0,0,0,0],
         [0,0,0,2,0,2,2,2,0,0,0,0],
@@ -52,7 +52,7 @@
     }]
   }, {
     "id": "sameink",
-    "separates": "Hue from Touch: lone dots in the rectangle's own color, which Hue reads as part of the rectangle",
+    "separates": "$Hue from $Touch: lone dots in the rectangle's own color, which $Hue reads as part of the rectangle",
     "input": [
       [0,0,0,0,0,0,0,0,2,0,0,0],
       [0,0,0,0,0,0,0,0,0,0,0,0],
@@ -68,7 +68,7 @@
       [0,0,0,0,0,0,0,0,0,0,2,0]
     ],
     "output": [{
-      "cases": ["[Hue, Box]"],
+      "cases": ["concept"],
       "grid": [
         [0,0,0,0,0,0,0,0,2,0,0,2],
         [0,0,0,0,0,0,0,0,0,0,0,2],
@@ -84,7 +84,7 @@
         [0,0,0,0,0,0,0,0,0,0,2,2]
       ]
     }, {
-      "cases": ["[Hue, Cells]"],
+      "cases": ["$Hue & $Cells"],
       "grid": [
         [2,2,2,2,2,2,2,2,2,2,2,2],
         [2,0,0,2,2,2,2,0,2,0,2,0],
@@ -100,7 +100,7 @@
         [2,2,2,2,2,2,2,2,2,2,2,2]
       ]
     }, {
-      "cases": ["[Touch, Box]","[Touch, Cells]"],
+      "cases": ["$Touch"],
       "grid": [
         [0,0,0,2,2,2,2,0,2,0,0,0],
         [0,0,0,2,2,2,2,0,0,0,0,0],

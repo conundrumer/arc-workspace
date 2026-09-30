@@ -69,11 +69,11 @@ ring_color(P, Col) :-
 
 out(P, Col, Ch) :- in(P, Col), !canvas(P), impl_choice(Ch).
 
-// --- Paint ---
+// --- $Paint ---
 
 out(P, Col, $Paint()) :- ring_color(P, Col).
 
-// --- Skip ---
+// --- $Skip ---
 
 .decl inked(p: Position, col: Color)
 inked(P, Col) :- ring_color(P, Col), !params.bg(Col).

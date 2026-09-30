@@ -1,0 +1,113 @@
+// aaecdb9a
+// @draft
+// @keywords: objects count rank lookup
+// @scene pieces: on a field of params.background lie pieces of the colors of
+//  params.column_order. A piece is a set of same-colored cells joined by
+//  8-adjacency.
+// @rule count: each color of params.column_order counts its pieces
+// @rule frame: the output has one column per cell of params.column_order.
+//  Its extent away from params.base is the largest count.
+// @rule bars: each color's column holds a bar of that color. The bar rises
+//  from params.base, and its length is that color's count. A color with no
+//  piece gives an empty column.
+// @rule fill: every cell that no bar covers is params.background
+
+// which counts set the frame's height
+.type Height =
+    // @claim frame
+    OrderedHeight {}
+    // @rule frame: the output has one column per cell of
+    //  params.column_order. Its extent away from params.base is the largest
+    //  count over every color other than params.background, a color with no
+    //  column included. Undefined on an input with no piece.
+    // @witness height-all-colors: borderline concept
+    //     @relaxed pieces
+  | HeightAllColors {}
+
+// what joins cells into one counted piece
+.type Piece =
+    // @claim pieces
+    ColorPieces {}
+    // @scene pieces: on a field of params.background lie pieces. A piece is
+    //  a set of cells of any other color, joined by 8-adjacency.
+    // @rule count: each color of params.column_order counts the pieces that
+    //  hold it. Undefined on an input with no piece.
+    // @witness object-pieces: borderline concept
+  | ObjectPieces {}
+
+.type Choice = [height: Height, piece: Piece]
+
+// The tally key: a reading of a piece, and a color.
+.type PieceColor = [pc: Piece, col: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline concept
+    .decl background(c: Color) background(7).
+
+    // the edge the bars rise from
+    .decl base(d: Dir) base(DIR_B).
+
+    // the color of each output column, in a one-row frame of the columns
+    .decl column_order(p: Position, col: Color)
+    GRID_1x5(column_order, 5, 2, 8, 9, 6)
+}
+
+.init params = Params
+
+// The color counts, under each reading of a piece.
+// @claim count
+.init pieces = Tally<PieceColor, Ident>
+
+// The counts whose largest is the frame's height.
+// @claim frame
+.init height = Extremes<Choice>
+
+.init frame = Frame2D<Choice>
+frame.extent(Ch, A_frame, N) :-
+    height.high(Ch, H), params.base(D), axis_of(D, A),
+    ( A_frame = A, N = H                             // the height
+    ; perp(A, A_frame),                              // the width:
+      params.column_order(Q, _), axis_dim(Q, A_frame, N) ).  // one column per cell
+
+// The cells the bars cover, each with its bar's color.
+.decl bar(p: Position, col: Color, ch: Choice)
+bar(P, Col, [H, Pc]) :-
+    frame.cell([H, Pc], P), params.base(D), axis_of(D, A),
+    split(P, A, _, Q), params.column_order(Q, Col),    // the cell's column
+    dist(P, D, J), pieces.tally([Pc, Col], N), J < N.  // within the bar
+
+out(P, Col, Ch) :-
+    frame.cell(Ch, P),
+    ( bar(P, Col, Ch)
+    ; !bar(P, _, Ch), params.background(Col) ).
+
+// --- $ColorPieces ---
+// @claim pieces
+.init same_color = Components8<Color>
+same_color.node(Col, P) :- in(P, Col), !params.background(Col).
+
+pieces.item([$ColorPieces(), Col], Id) :- same_color.label(Col, _, Id).
+
+// --- $ObjectPieces ---
+// @claim pieces
+.init objects = Components8<Unit>
+objects.node($U(), P) :- in(P, Col), !params.background(Col).
+
+pieces.item([$ObjectPieces(), Col], Id) :- objects.label($U(), P, Id), in(P, Col).
+
+// --- $OrderedHeight ---
+height.cand([$OrderedHeight(), Pc], N) :-
+    pieces.tally([Pc, Col], N), params.column_order(_, Col).
+
+// --- $HeightAllColors ---
+height.cand([$HeightAllColors(), Pc], N) :- pieces.tally([Pc, _], N).
+
+.comp Determine {
+    // A bar cell's color, in the column the cell stands in.
+    .decl column_order(p: Position, col: Color)
+    column_order(Q, Col) :-
+        ex_out(_, P, Col), !params.background(Col),
+        params.base(D), axis_of(D, A), split(P, A, _, Q).
+}

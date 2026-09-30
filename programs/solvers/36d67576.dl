@@ -65,11 +65,11 @@ carried(P, Col) :-
 // every carried mark lands on an empty cell.
 .decl applied(p: Position, col: Color, ch: Choice)
 
-// --- Fill ---
+// --- $Fill ---
 
 applied(P, Col, $Fill()) :- carried(P, Col), in(P, Col_cell), params.bg(Col_cell).
 
-// --- Stamp ---
+// --- $Stamp ---
 
 applied(P, Col, $Stamp()) :- carried(P, Col).
 

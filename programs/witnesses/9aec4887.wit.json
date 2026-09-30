@@ -2,7 +2,7 @@
   "id": "9aec4887",
   "witnesses": [{
     "id": "recolored-shape",
-    "separates": "Derived (the shape is the color on no one line) from Stored (the shape is params.fixed), and Own (a tied cell keeps the shape's color) from Clash (a tied cell takes params.fixed): the shape drawn in a color other than the stored ones",
+    "separates": "$Derived (the shape is the color on no one line) from $Stored (the shape is params.fixed), and $Own (a tied cell keeps the shape's color) from $Clash (a tied cell takes params.fixed): the shape drawn in a color other than the stored ones",
     "input": [
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
       [0,5,0,0,5,0,0,0,0,0,0,0,0,0,0,0],
@@ -21,7 +21,17 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["[Derived, Cells]","[Derived, Runs]"],
+      "cases": ["$Own"],
+      "grid": [
+        [0,4,4,4,4,0],
+        [2,5,0,0,5,1],
+        [2,0,5,0,1,1],
+        [2,2,5,5,1,1],
+        [2,0,3,0,5,1],
+        [0,3,3,3,3,0]
+      ]
+    }, {
+      "cases": ["$Clash"],
       "grid": [
         [0,4,4,4,4,0],
         [2,8,0,0,8,1],
@@ -31,7 +41,7 @@
         [0,3,3,3,3,0]
       ]
     }, {
-      "cases": ["[Stored, Cells]"],
+      "cases": ["$Stored & $Cells"],
       "grid": [
         [5,0,0,5,0,0,0,0,0,0,0],
         [0,5,0,5,0,0,0,0,0,0,0],
@@ -47,7 +57,7 @@
         [0,0,0,0,0,0,3,3,3,3,0]
       ]
     }, {
-      "cases": ["[Stored, Runs]"],
+      "cases": ["$Stored & $Runs"],
       "grid": [
         [0,5,5,5,5,5,5,5,5,5,0],
         [5,0,0,0,0,0,0,0,0,0,1],
@@ -65,7 +75,7 @@
     }]
   }, {
     "id": "side-gap",
-    "separates": "Cells (the border keeps the side cells as drawn) from Runs (each side redrawn as a full run along its edge): a side with a missing cell",
+    "separates": "$Cells (the border keeps the side cells as drawn) from $Runs (each side redrawn as a full run along its edge): a side with a missing cell",
     "input": [
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
       [0,8,0,0,8,0,0,0,0,0,0,0,0,0,0,0],
@@ -84,7 +94,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["[Derived, Cells]","[Stored, Cells]"],
+      "cases": ["$Cells"],
       "grid": [
         [0,4,0,4,4,0],
         [2,8,0,0,8,1],
@@ -94,7 +104,7 @@
         [0,3,3,3,3,0]
       ]
     }, {
-      "cases": ["[Derived, Runs]","[Stored, Runs]"],
+      "cases": ["$Runs"],
       "grid": [
         [0,4,4,4,4,0],
         [2,8,0,0,8,1],

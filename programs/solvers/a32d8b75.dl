@@ -1,0 +1,739 @@
+// a32d8b75
+// @draft
+// @keywords: decompose crop markers objects scale d4 stamp mapping overlay
+// @scene separator: one or more full lines of params.sep split the grid into
+//  panels. One panel is the field, and each other panel is a legend.
+// @scene field: the field is the one panel that holds no params.sep cell
+// @scene legend: a legend holds four parts on a params.bg ground. A framed box
+//  is a square of params.box_side cells on a side, closed off by params.sep or
+//  by the grid edge.
+//  - a pattern: a rectangle filled with exactly two colors
+//  - a mask: a shape of one color, apart from the pattern
+//  - an anchor box: a framed box with one params.anchor cell at a corner and
+//    params.bg elsewhere
+//  - an arrow box: a framed box with params.arrow at its center and at one
+//    edge-neighbor of the center, and params.bg elsewhere
+// @scene order: in each legend the pattern stands above the mask, and the
+//  anchor box above the arrow box
+// @scene legend-left: a legend stands left of the field
+// @scene mask-color: the mask color is not a pattern color
+// @scene fits: the scaled mask fits in the field
+// @rule crop: the output is the field, with its size and content, before the
+//  stamps
+// @rule orient: the mask's bounding box, read as a set of cells, turns by the
+//  rotation that takes params.ref_dir onto the arrow direction, from the
+//  center arrow cell to the other one
+// @rule scale: each cell of the turned mask becomes a block the size of the
+//  pattern
+// @rule anchor: the blocks are placed flush with the field corner that is the
+//  corner of the anchor cell in its box, and cut at the field edge
+// @rule swap: the stamp is the pattern with its two colors exchanged. The
+//  stamp does not turn.
+// @rule stamp: each block at a mask cell takes the stamp, and every other
+//  field cell keeps its color. Each legend stamps its own mask on the same
+//  field. Where two stamps overlap, the later one in params.stamp_order
+//  shows.
+
+// how the arrow box is found
+.type ArrowFind =
+    // @claim legend
+    ArrowColor {}
+    // @scene legend: the arrow box is the framed box with two cells of one
+    //  color, any color, at its center and at one edge-neighbor of the
+    //  center. Undefined where no framed box has that shape.
+    // @witness arrow-recolored: borderline $ArrowByShape
+    //     @relaxed legend
+    // @witness decoy-arrow: foreign concept
+    //     @relaxed legend
+  | ArrowByShape {}
+
+// how the pattern is found
+.type PatternFind =
+    // @claim legend
+    PatternRect {}
+    // @scene legend: the pattern is the bounding-box subgrid of the first
+    //  piece in reading order, and the mask is every other piece outside the
+    //  framed boxes
+    // @rule swap: a stamp with exactly two colors other than params.bg is
+    //  swapped, and any other stamp is kept as it is
+    // @witness mask-above: variant concept
+    //     @relaxed order
+    //     @reassigned reading_corner
+    // @witness hole-pattern: foreign $StampFirst
+    //     @relaxed legend
+  | StampFirst {}
+
+// how the mask is found
+.type MaskFind =
+    // @claim legend
+    MaskShape {}
+    // @scene legend: the mask is every cell outside the framed boxes of the
+    //  most common color that is not a pattern color. With no such color, the
+    //  legend stamps nothing.
+    // @witness mask-shares-color: variant concept
+    //     @relaxed mask-color
+  | MaskByColor {}
+
+// how the anchor box is found
+.type AnchorFind =
+    // @claim legend
+    AnchorColor {}
+    // @scene legend: the anchor box is the first framed box in reading order.
+    //  Its first non-params.bg cell in reading order, of any color, gives the
+    //  corner when it is at a corner, and the corner the reading starts from
+    //  otherwise. Undefined where the legend has no framed box.
+    // @witness boxes-swapped: variant concept
+    //     @relaxed order
+    //     @reassigned reading_corner
+  | AnchorByPosition {}
+    // @scene legend: the anchor box is the framed box with one
+    //  non-params.bg cell, of any color, at a corner. Undefined where no
+    //  framed box has that shape.
+    // @witness anchor-recolored: borderline $AnchorByShape
+    //     @relaxed legend
+    // @witness decoy-anchor: foreign concept
+    //     @relaxed legend
+  | AnchorByShape {}
+
+// how the field and the legends are found
+.type FieldFind =
+    // @claim field
+    NoSepPanel {}
+    // @scene field: with one separator, the legend is the panel on the
+    //  params.legend_side of it and the field is the panel past it. With two
+    //  or more, the two end panels are legends and the field lies between
+    //  them. Undefined where a panel taken as a legend holds no legend.
+    // @witness legend-right: variant concept
+    //     @relaxed legend-left
+    // @witness sep-in-field: borderline $FieldByPosition
+    //     @relaxed field
+  | FieldByPosition {}
+
+// a scaled mask larger than the field
+.type Overflow =
+    // @claim anchor
+    CutAtEdge {}
+    // @rule anchor: along an axis where the scaled mask is longer than the
+    //  field, the blocks are placed flush with the side of
+    //  params.clamp_origin instead
+    // @rule stamp: a block that does not fit whole in the field is skipped
+    // @witness oversize-mask: borderline concept
+    //     @relaxed fits
+    //     @reassigned clamp_origin
+  | ClampWholeBlocks {}
+
+.type Choice = [arrow: ArrowFind, pattern: PatternFind, mask: MaskFind,
+                anchor: AnchorFind, field: FieldFind, overflow: Overflow]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl sep(c: Color) sep(6).
+    .decl bg(c: Color) bg(0).
+    .decl box_side(k: number) box_side(3).
+
+    // The arrow direction at which the mask does not turn.
+    .decl ref_dir(d: Dir) ref_dir(DIR_T).
+
+    // The side whose legend stamps first, so that the later stamp shows where
+    // two stamps overlap. No pair has overlapping stamps, so both sides stay
+    // open.
+    .decl stamp_order(d: Dir)
+    stamp_order(DIR_L). stamp_order(DIR_R).
+
+    // --- $ArrowColor ---
+    .decl arrow(c: Color) arrow(7).
+
+    // --- $AnchorColor ---
+    .decl anchor(c: Color) anchor(4).
+
+    // --- $StampFirst, $AnchorByPosition ---
+    // The reading order: the corner it starts from, and the axis it runs
+    // along first. The pairs leave the corner open between the two top
+    // corners.
+    .decl reading_corner(d: DiagDir)
+    reading_corner(DIAG_TL). reading_corner(DIAG_TR).
+    .decl reading_axis(a: Axis) reading_axis(AXIS_V).
+
+    // --- $FieldByPosition ---
+    .decl legend_side(d: Dir) legend_side(DIR_L).
+
+    // --- $ClampWholeBlocks ---
+    // The corner that an overflowing mask is kept flush with. No pair
+    // overflows, so every corner stays open.
+    .decl clamp_origin(d: DiagDir)
+    clamp_origin(DIAG_TL). clamp_origin(DIAG_TR). clamp_origin(DIAG_BL). clamp_origin(DIAG_BR).
+}
+
+.init params = Params
+
+// Each case's output grid on each input, read with each stamp order.
+.comp Parse<Key> {
+    .type Panel = [ky: Key, pl: Position]
+    .type Part = [ky: Key, id: Ident]
+    .type Scan = [ky: Key, pl: Position, corner: DiagDir]
+    .type BoxScan = [ky: Key, b: Box, corner: DiagDir]
+    .type FieldKey = [ky: Key, f: FieldFind]
+    .type PatternKey = [ky: Key, pa: PatternFind, pl: Position]
+    .type MaskKey = [ky: Key, pa: PatternFind, mk: MaskFind, pl: Position]
+    .type Spot = [ky: Key, ch: Choice, pl: Position, a: Axis]
+
+    .decl cell(ky: Key, p: Position, col: Color)
+    .decl case(ky: Key, ch: Choice)
+
+    // The open values each input is read with.
+    .decl reading_corner(ky: Key, c: DiagDir)
+    .decl clamp_origin(ky: Key, d: DiagDir)
+
+    // A line of axis A that holds a cell other than params.sep.
+    .decl line_break(ky: Key, a: Axis, l: Position)
+    line_break(Ky, A, L) :- cell(Ky, P, Col), !params.sep(Col), axis_elem(A), split(P, A, L, _).
+
+    // @ignore: store — the case that stores the axis is undefined wherever the
+    //  derived axis differs, since a full line of params.sep on the other axis
+    //  crosses the field; the concept case subsumes it
+    .decl separator(ky: Key, a: Axis, l: Position)
+    separator(Ky, A, L) :- cell(Ky, P, _), axis_elem(A), split(P, A, L, _), !line_break(Ky, A, L).
+
+    // @ignore divider: store — its axis is the separator axis, whose stored
+    //  reading the concept case subsumes
+    // @claim separator
+    .init panels = DividerTiles<Key>
+    panels.cell(Ky, P) :- cell(Ky, P, _).
+    panels.divider(Ky, A, L) :- separator(Ky, A, L).
+
+    .decl panel_cell(ky: Key, pl: Position, p: Position, col: Color)
+    panel_cell(Ky, Pl, P, Col) :- panels.tile_of(Ky, P, Pl), cell(Ky, P, Col).
+
+    .decl legend(ky: Key, f: FieldFind, pl: Position)
+    .decl field_cell(ky: Key, f: FieldFind, p: Position)
+
+    // --- $NoSepPanel ---
+
+    .decl sep_panel(ky: Key, pl: Position)
+    sep_panel(Ky, Pl) :- panel_cell(Ky, Pl, _, Col), params.sep(Col).
+
+    legend(Ky, $NoSepPanel(), Pl) :- sep_panel(Ky, Pl).
+    field_cell(Ky, $NoSepPanel(), P) :- panel_cell(Ky, Pl, P, _), !sep_panel(Ky, Pl).
+
+    // --- $FieldByPosition ---
+
+    .decl two_separators(ky: Key, a: Axis)
+    two_separators(Ky, A) :- separator(Ky, A, L1), separator(Ky, A, L2), L1 != L2.
+
+    legend(Ky, $FieldByPosition(), Pl) :-
+        params.legend_side(D), panel_cell(Ky, Pl, P, _),
+        ( panels.part_idx(Ky, P, D, 0)                  // the end panel on the legend side
+        ; axis_of(D, A), two_separators(Ky, A), opposite(D, D2),
+          panels.part_idx(Ky, P, D2, 0)                 // and the far end panel
+        ).
+
+    // A separator lies strictly between cell P and edge D.
+    .decl separator_toward(ky: Key, p: Position, d: Dir)
+    separator_toward(Ky, P, D) :-
+        cell(Ky, P, _), axis_of(D, A), separator(Ky, A, L), nearer(D, L, P).
+
+    field_cell(Ky, $FieldByPosition(), P) :-
+        params.legend_side(D), axis_of(D, A), opposite(D, D2),
+        separator_toward(Ky, P, D),                             // past the first separator
+        ( !two_separators(Ky, A)
+        ; two_separators(Ky, A), separator_toward(Ky, P, D2)    // short of the last
+        ).
+
+    // --- shared ---
+
+    // @claim crop
+    .init field_box = Bbox<FieldKey>
+    field_box.cell([Ky, F], P) :- field_cell(Ky, F, P).
+
+    // A field cell in the field's own frame, the output frame.
+    .decl field_at(ky: Key, f: FieldFind, p_inner: Position, col: Color)
+    field_at(Ky, F, P_inner, Col) :-
+        field_cell(Ky, F, P), cell(Ky, P, Col), field_box.box([Ky, F], B), crop(P, B, P_inner).
+
+    // A field cell by its distances to the two edges of each corner.
+    .decl field_pos(ky: Key, f: FieldFind, diag: DiagDir, a: Axis, k1: number, k2: number,
+                    p_inner: Position)
+    field_pos(Ky, F, Diag, A, K1, K2, P_inner) :-
+        field_at(Ky, F, P_inner, _), diag_dist(P_inner, Diag, A, K1, K2).
+
+    .decl legend_cell(ky: Key, pl: Position, p: Position, col: Color)
+    legend_cell(Ky, Pl, P, Col) :- legend(Ky, _, Pl), panel_cell(Ky, Pl, P, Col), !params.sep(Col).
+
+    // The regions of a legend that params.sep closes off.
+    // @claim legend
+    .init region = Components<Panel>
+    region.node([Ky, Pl], P) :- legend_cell(Ky, Pl, P, _).
+
+    // @claim legend
+    .init region_box = Bbox<Part>
+    region_box.cell([Ky, Id], P) :- region.label([Ky, _], P, Id).
+
+    // A region that does not fill its bounding box.
+    .decl region_gap(ky: Key, id: Ident)
+    region_gap(Ky, Id) :-
+        region.label([Ky, Pl], _, Id), region_box.box([Ky, Id], B),
+        panel_cell(Ky, Pl, P, _), inside(P, B), !region.label([Ky, Pl], P, Id).
+
+    // A region whose bounding box is not params.box_side on some axis.
+    .decl off_side(ky: Key, id: Ident)
+    off_side(Ky, Id) :-
+        region.label([Ky, _], P, Id), region_box.box([Ky, Id], B),
+        box_extent(B, P, A, N), !params.box_side(N).
+
+    .decl framed(ky: Key, pl: Position, b: Box)
+    framed(Ky, Pl, B) :-
+        region.label([Ky, Pl], _, Id), region_box.box([Ky, Id], B),
+        !region_gap(Ky, Id), !off_side(Ky, Id).
+
+    .decl box_ink(ky: Key, b: Box, p: Position, col: Color)
+    box_ink(Ky, B, P, Col) :-
+        framed(Ky, Pl, B), panel_cell(Ky, Pl, P, Col), inside(P, B), !params.bg(Col).
+
+    .decl in_box(ky: Key, p: Position)
+    in_box(Ky, P) :- framed(Ky, Pl, B), panel_cell(Ky, Pl, P, _), inside(P, B).
+
+    // A cell of the legend ground that is not params.bg.
+    .decl ground_ink(ky: Key, pl: Position, p: Position, col: Color)
+    ground_ink(Ky, Pl, P, Col) :- legend_cell(Ky, Pl, P, Col), !params.bg(Col), !in_box(Ky, P).
+
+    // @claim legend
+    .init piece = Components<Panel>
+    piece.node([Ky, Pl], P) :- ground_ink(Ky, Pl, P, _).
+
+    // @claim legend
+    .init piece_box = Bbox<Part>
+    piece_box.cell([Ky, Id], P) :- piece.label([Ky, _], P, Id).
+
+    .decl piece_color(ky: Key, id: Ident, col: Color)
+    piece_color(Ky, Id, Col) :- piece.label([Ky, Pl], P, Id), ground_ink(Ky, Pl, P, Col).
+
+    .decl box_other_ink(ky: Key, b: Box, p: Position)
+    box_other_ink(Ky, B, P) :- box_ink(Ky, B, P, _), box_ink(Ky, B, Q, _), P != Q.
+
+    // A framed box's center ink cell P, and an ink cell Q one step from it
+    // toward D.
+    .decl arrow_cand(ky: Key, b: Box, p: Position, d: Dir, q: Position)
+    arrow_cand(Ky, B, P, D, Q) :-
+        box_ink(Ky, B, P, _), crop(P, B, S), centered(S),
+        dir_elem(D), neighbor(P, D, Q), box_ink(Ky, B, Q, _).
+
+    // The box holds a third ink cell.
+    .decl arrow_extra(ky: Key, b: Box, p: Position, q: Position)
+    arrow_extra(Ky, B, P, Q) :- arrow_cand(Ky, B, P, _, Q), box_ink(Ky, B, R, _), R != P, R != Q.
+
+    // The direction from a framed box's center ink cell to its one other ink
+    // cell, of the same color.
+    .decl arrow_pair(ky: Key, pl: Position, d: Dir, col: Color)
+    arrow_pair(Ky, Pl, D, Col) :-
+        framed(Ky, Pl, B), arrow_cand(Ky, B, P, D, Q),
+        box_ink(Ky, B, P, Col), box_ink(Ky, B, Q, Col), !arrow_extra(Ky, B, P, Q).
+
+    .decl arrow_dir(ky: Key, af: ArrowFind, pl: Position, d: Dir)
+
+    // --- $ArrowColor ---
+
+    arrow_dir(Ky, $ArrowColor(), Pl, D) :- arrow_pair(Ky, Pl, D, Col), params.arrow(Col).
+
+    // --- $ArrowByShape ---
+
+    arrow_dir(Ky, $ArrowByShape(), Pl, D) :- arrow_pair(Ky, Pl, D, _).
+
+    // --- shared ---
+
+    .decl mask_turn(ky: Key, af: ArrowFind, pl: Position, g: D4)
+    mask_turn(Ky, Af, Pl, G) :-
+        arrow_dir(Ky, Af, Pl, D), params.ref_dir(D0), c4_elem(G), apply_dir(G, D0, D).
+
+    // A framed box's one ink cell, at corner Diag.
+    .decl anchor_cand(ky: Key, pl: Position, diag: DiagDir, col: Color)
+    anchor_cand(Ky, Pl, Diag, Col) :-
+        framed(Ky, Pl, B), box_ink(Ky, B, P, Col), box_corner(P, B, Diag),
+        !box_other_ink(Ky, B, P).
+
+    .decl anchor_corner(ky: Key, a: AnchorFind, pl: Position, diag: DiagDir)
+
+    // --- $AnchorColor ---
+
+    anchor_corner(Ky, $AnchorColor(), Pl, Diag) :-
+        anchor_cand(Ky, Pl, Diag, Col), params.anchor(Col).
+
+    // --- $AnchorByShape ---
+
+    anchor_corner(Ky, $AnchorByShape(), Pl, Diag) :- anchor_cand(Ky, Pl, Diag, _).
+
+    // --- $StampFirst, $AnchorByPosition ---
+
+    // The cell where box B starts, in the reading order from corner C.
+    .decl start(ky: Key, pl: Position, b: Box, c: DiagDir, p: Position) inline
+    start(Ky, Pl, B, C, P) :-
+        reading_corner(Ky, C), panel_cell(Ky, Pl, P, _), box_corner(P, B, C).
+
+    // --- $AnchorByPosition ---
+
+    .decl box_start(ky: Key, pl: Position, b: Box, c: DiagDir, p: Position)
+    box_start(Ky, Pl, B, C, P) :- framed(Ky, Pl, B), start(Ky, Pl, B, C, P).
+
+    // @claim legend
+    .init box_order = LexOrder<Scan>
+    box_order.corner([Ky, Pl, C], C) :- box_start(Ky, Pl, _, C, _).
+    box_order.axis([Ky, Pl, C], A) :- box_start(Ky, Pl, _, C, _), params.reading_axis(A).
+    box_order.cell([Ky, Pl, C], P) :- box_start(Ky, Pl, _, C, P).
+
+    .decl first_box(ky: Key, pl: Position, c: DiagDir, b: Box)
+    first_box(Ky, Pl, C, B) :- box_order.first([Ky, Pl, C], P), box_start(Ky, Pl, B, C, P).
+
+    // @claim legend
+    .init ink_order = LexOrder<BoxScan>
+    ink_order.corner([Ky, B, C], C) :- first_box(Ky, _, C, B).
+    ink_order.axis([Ky, B, C], A) :- first_box(Ky, _, C, B), params.reading_axis(A).
+    ink_order.cell([Ky, B, C], P) :- first_box(Ky, _, C, B), box_ink(Ky, B, P, _).
+
+    .decl first_at_corner(ky: Key, b: Box, c: DiagDir, diag: DiagDir)
+    first_at_corner(Ky, B, C, Diag) :- ink_order.first([Ky, B, C], P), box_corner(P, B, Diag).
+
+    // The anchor corner under each open reading corner, kept where they agree.
+    // @claim legend
+    .init position_anchor = Unanimous<Panel, DiagDir>
+    position_anchor.item([Ky, Pl], Diag) :-
+        first_box(Ky, Pl, C, B), first_at_corner(Ky, B, C, Diag).
+    position_anchor.item([Ky, Pl], C) :- first_box(Ky, Pl, C, B), !first_at_corner(Ky, B, C, _).
+
+    anchor_corner(Ky, $AnchorByPosition(), Pl, Diag) :- position_anchor.value([Ky, Pl], Diag).
+
+    // --- shared ---
+
+    // The piece the stamp is read from.
+    .decl source_piece(ky: Key, pa: PatternFind, pl: Position, id: Ident)
+
+    // The stamp's cells in its own frame, and the color each is read with.
+    .decl source(ky: Key, pa: PatternFind, pl: Position, t: Position, col: Color)
+
+    // --- $PatternRect ---
+
+    source_piece(Ky, $PatternRect(), Pl, Id) :-
+        piece.label([Ky, Pl], _, Id),
+        piece_color(Ky, Id, C1), piece_color(Ky, Id, C2), C1 != C2.
+
+    source(Ky, $PatternRect(), Pl, T, Col) :-
+        source_piece(Ky, $PatternRect(), Pl, Id), piece_box.box([Ky, Id], B),
+        piece.label([Ky, Pl], P, Id), ground_ink(Ky, Pl, P, Col), crop(P, B, T).
+
+    // --- $StampFirst ---
+
+    // The cell where a piece's bounding box starts, in the reading order from
+    // corner C.
+    .decl piece_start(ky: Key, pl: Position, id: Ident, c: DiagDir, p: Position)
+    piece_start(Ky, Pl, Id, C, P) :-
+        piece_box.box([Ky, Id], B), start(Ky, Pl, B, C, P).
+
+    // @claim legend
+    .init piece_order = LexOrder<Scan>
+    piece_order.corner([Ky, Pl, C], C) :- piece_start(Ky, Pl, _, C, _).
+    piece_order.axis([Ky, Pl, C], A) :- piece_start(Ky, Pl, _, C, _), params.reading_axis(A).
+    piece_order.cell([Ky, Pl, C], P) :- piece_start(Ky, Pl, _, C, P).
+
+    // The first piece under each open reading corner, kept where they agree.
+    // @claim legend
+    .init first_piece = Unanimous<Panel, Ident>
+    first_piece.item([Ky, Pl], Id) :-
+        piece_order.first([Ky, Pl, C], P), piece_start(Ky, Pl, Id, C, P).
+
+    source_piece(Ky, $StampFirst(), Pl, Id) :- first_piece.value([Ky, Pl], Id).
+
+    source(Ky, $StampFirst(), Pl, T, Col) :-
+        source_piece(Ky, $StampFirst(), Pl, Id), piece_box.box([Ky, Id], B),
+        panel_cell(Ky, Pl, P, Col), crop(P, B, T).
+
+    // --- shared ---
+
+    .decl stamp_frame(ky: Key, pa: PatternFind, pl: Position, t: Position)
+    stamp_frame(Ky, Pa, Pl, T) :-
+        source_piece(Ky, Pa, Pl, Id), piece_box.box([Ky, Id], B),
+        panel_cell(Ky, Pl, P, _), crop(P, B, T).
+
+    .decl pattern_color(ky: Key, pa: PatternFind, pl: Position, col: Color)
+    pattern_color(Ky, Pa, Pl, Col) :- source(Ky, Pa, Pl, _, Col), !params.bg(Col).
+
+    .decl pattern_many(ky: Key, pa: PatternFind, pl: Position)
+    pattern_many(Ky, Pa, Pl) :-
+        pattern_color(Ky, Pa, Pl, C1), pattern_color(Ky, Pa, Pl, C2),
+        pattern_color(Ky, Pa, Pl, C3), C1 != C2, C1 != C3, C2 != C3.
+
+    // The pattern's two colors, each to the other.
+    .decl swapped(ky: Key, pa: PatternFind, pl: Position, col: Color, col2: Color)
+    swapped(Ky, Pa, Pl, C1, C2) :-
+        pattern_color(Ky, Pa, Pl, C1), pattern_color(Ky, Pa, Pl, C2), C1 != C2,
+        !pattern_many(Ky, Pa, Pl).
+
+    .decl stamp_color(ky: Key, pa: PatternFind, pl: Position, t: Position, col: Color)
+    stamp_color(Ky, Pa, Pl, T, Col) :- source(Ky, Pa, Pl, T, C), swapped(Ky, Pa, Pl, C, Col).
+    stamp_color(Ky, Pa, Pl, T, Col) :- source(Ky, Pa, Pl, T, Col), params.bg(Col).
+
+    // --- $StampFirst ---
+
+    stamp_color(Ky, $StampFirst(), Pl, T, Col) :-
+        source(Ky, $StampFirst(), Pl, T, Col), !params.bg(Col),
+        !swapped(Ky, $StampFirst(), Pl, _, _).
+
+    // --- shared ---
+
+    .decl mask_cell(ky: Key, pa: PatternFind, mk: MaskFind, pl: Position, p: Position)
+
+    // --- $MaskShape ---
+
+    mask_cell(Ky, Pa, $MaskShape(), Pl, P) :-
+        source_piece(Ky, Pa, Pl, Id), ground_ink(Ky, Pl, P, _), !piece.label([Ky, Pl], P, Id).
+
+    // --- $MaskByColor ---
+
+    // @claim legend
+    .init mask_color = Mode<PatternKey, Color, Position>
+    mask_color.item([Ky, Pa, Pl], Col, P) :-
+        source_piece(Ky, Pa, Pl, _), ground_ink(Ky, Pl, P, Col), !pattern_color(Ky, Pa, Pl, Col).
+
+    mask_cell(Ky, Pa, $MaskByColor(), Pl, P) :-
+        mask_color.mode([Ky, Pa, Pl], Col), ground_ink(Ky, Pl, P, Col).
+
+    // --- shared ---
+
+    // @claim orient
+    .init mask_box = Bbox<MaskKey>
+    mask_box.cell([Ky, Pa, Mk, Pl], P) :- mask_cell(Ky, Pa, Mk, Pl, P).
+
+    // A turned mask cell Q, and the stamp cell T its block holds at P_s in the
+    // frame of the scaled mask.
+    .decl scaled(ky: Key, ch: Choice, pl: Position, q: Position, t: Position, p_s: Position)
+    scaled(Ky, [Af, Pa, Mk, A, F, O], Pl, Q, T, P_s) :-
+        case(Ky, [Af, Pa, Mk, A, F, O]), legend(Ky, F, Pl),
+        mask_cell(Ky, Pa, Mk, Pl, P), mask_box.box([Ky, Pa, Mk, Pl], B), crop(P, B, S),
+        mask_turn(Ky, Af, Pl, G), apply(G, S, Q),                   // turned
+        stamp_frame(Ky, Pa, Pl, T), concat_2d(Q, T, 0, P_s).        // scaled
+
+    // Legend Pl lays stamp cell T on field cell P_inner.
+    .decl cover(ky: Key, ch: Choice, pl: Position, t: Position, p_inner: Position)
+
+    // --- $CutAtEdge ---
+
+    cover(Ky, [Af, Pa, Mk, A, F, $CutAtEdge()], Pl, T, P_inner) :-
+        scaled(Ky, [Af, Pa, Mk, A, F, $CutAtEdge()], Pl, _, T, P_s),
+        anchor_corner(Ky, A, Pl, Diag),
+        diag_dist(P_s, Diag, Ax, K1, K2), field_pos(Ky, F, Diag, Ax, K1, K2, P_inner).
+
+    // --- $ClampWholeBlocks ---
+
+    .decl scaled_dim(ky: Key, ch: Choice, pl: Position, a: Axis, n: number)
+    scaled_dim(Ky, [Af, Pa, Mk, A, F, $ClampWholeBlocks()], Pl, Ax, N) :-
+        scaled(Ky, [Af, Pa, Mk, A, F, $ClampWholeBlocks()], Pl, _, _, P_s),
+        axis_elem(Ax), axis_dim(P_s, Ax, N).
+
+    .decl field_dim(ky: Key, f: FieldFind, a: Axis, n: number)
+    field_dim(Ky, F, A, N) :-
+        field_at(Ky, F, P_inner, _), axis_elem(A), axis_dim(P_inner, A, N).
+
+    .decl overflows(ky: Key, ch: Choice, pl: Position, a: Axis)
+    overflows(Ky, [Af, Pa, Mk, A, F, O], Pl, Ax) :-
+        scaled_dim(Ky, [Af, Pa, Mk, A, F, O], Pl, Ax, N), field_dim(Ky, F, Ax, N_f), N > N_f.
+
+    // The side the blocks are flush with along axis Ax, under each open
+    // origin, kept where they agree.
+    // @claim anchor
+    .init clamp_dir = Unanimous<Spot, Dir>
+    clamp_dir.item([Ky, [Af, Pa, Mk, A, F, $ClampWholeBlocks()], Pl, Ax], D) :-
+        scaled_dim(Ky, [Af, Pa, Mk, A, F, $ClampWholeBlocks()], Pl, Ax, _),
+        anchor_corner(Ky, A, Pl, Diag), dir_of(Diag, Ax, D),
+        !overflows(Ky, [Af, Pa, Mk, A, F, $ClampWholeBlocks()], Pl, Ax).
+    clamp_dir.item([Ky, Ch, Pl, Ax], D) :-
+        overflows(Ky, Ch, Pl, Ax), clamp_origin(Ky, Diag), dir_of(Diag, Ax, D).
+
+    .decl clamp_corner(ky: Key, ch: Choice, pl: Position, diag: DiagDir)
+    clamp_corner(Ky, Ch, Pl, Diag) :-
+        clamp_dir.value([Ky, Ch, Pl, Ax], D1), perp(Ax, Ax2),
+        clamp_dir.value([Ky, Ch, Pl, Ax2], D2), diag_dirs(Diag, Ax, D1, D2).
+
+    .decl clamp_land(ky: Key, ch: Choice, pl: Position, q: Position, t: Position, p_inner: Position)
+    clamp_land(Ky, [Af, Pa, Mk, A, F, O], Pl, Q, T, P_inner) :-
+        clamp_corner(Ky, [Af, Pa, Mk, A, F, O], Pl, Diag),
+        scaled(Ky, [Af, Pa, Mk, A, F, O], Pl, Q, T, P_s),
+        diag_dist(P_s, Diag, Ax, K1, K2), field_pos(Ky, F, Diag, Ax, K1, K2, P_inner).
+
+    // A block that does not fit whole in the field.
+    .decl block_cut(ky: Key, ch: Choice, pl: Position, q: Position)
+    block_cut(Ky, Ch, Pl, Q) :-
+        clamp_corner(Ky, Ch, Pl, _), scaled(Ky, Ch, Pl, Q, T, _), !clamp_land(Ky, Ch, Pl, Q, T, _).
+
+    cover(Ky, Ch, Pl, T, P_inner) :-
+        clamp_land(Ky, Ch, Pl, Q, T, P_inner), !block_cut(Ky, Ch, Pl, Q).
+
+    // --- shared ---
+
+    // Legend Pl is stamped over at P_inner by a legend stamped after it, when
+    // the legend on side D stamps first.
+    .decl hidden(ky: Key, ch: Choice, d: Dir, pl: Position, p_inner: Position)
+    hidden(Ky, Ch, D, Pl, P_inner) :-
+        cover(Ky, Ch, Pl, _, P_inner), opposite(D, D2),
+        cover(Ky, Ch, Pl2, _, P_inner), nearer(D2, Pl2, Pl).
+
+    // Every legend of the case has an anchor, a turn, and a stamp.
+    .decl ready(ky: Key, ch: Choice, pl: Position)
+    ready(Ky, [Af, Pa, Mk, A, F, O], Pl) :-
+        case(Ky, [Af, Pa, Mk, A, F, O]), legend(Ky, F, Pl),
+        mask_turn(Ky, Af, Pl, _), anchor_corner(Ky, A, Pl, _), stamp_frame(Ky, Pa, Pl, _).
+
+    .decl unready(ky: Key, ch: Choice)
+    unready(Ky, [Af, Pa, Mk, A, F, O]) :-
+        case(Ky, [Af, Pa, Mk, A, F, O]), legend(Ky, F, Pl),
+        !ready(Ky, [Af, Pa, Mk, A, F, O], Pl).
+    unready(Ky, Ch) :- clamp_dir.clash([Ky, Ch, _, _]).
+
+    // A side a legend can stand on: across the separators.
+    .decl side(ky: Key, d: Dir)
+    side(Ky, D) :- separator(Ky, A, _), axis_of(D, A).
+
+    // The case's output when the legend on side D stamps first.
+    .decl shown(ky: Key, ch: Choice, d: Dir, p_inner: Position, col: Color)
+    shown(Ky, [Af, Pa, Mk, A, F, O], D, P_inner, Col) :-
+        side(Ky, D), cover(Ky, [Af, Pa, Mk, A, F, O], Pl, T, P_inner),
+        !hidden(Ky, [Af, Pa, Mk, A, F, O], D, Pl, P_inner),
+        stamp_color(Ky, Pa, Pl, T, Col), !unready(Ky, [Af, Pa, Mk, A, F, O]).
+    shown(Ky, [Af, Pa, Mk, A, F, O], D, P_inner, Col) :-
+        side(Ky, D), case(Ky, [Af, Pa, Mk, A, F, O]), field_at(Ky, F, P_inner, Col),
+        !cover(Ky, [Af, Pa, Mk, A, F, O], _, _, P_inner), !unready(Ky, [Af, Pa, Mk, A, F, O]).
+}
+
+.decl arrow_find_choice(af: ArrowFind)
+arrow_find_choice($ArrowColor()). arrow_find_choice($ArrowByShape()).
+
+.decl pattern_find_choice(pa: PatternFind)
+pattern_find_choice($PatternRect()). pattern_find_choice($StampFirst()).
+
+.decl mask_find_choice(mk: MaskFind)
+mask_find_choice($MaskShape()). mask_find_choice($MaskByColor()).
+
+.decl anchor_find_choice(a: AnchorFind)
+anchor_find_choice($AnchorColor()). anchor_find_choice($AnchorByPosition()).
+anchor_find_choice($AnchorByShape()).
+
+.decl field_find_choice(f: FieldFind)
+field_find_choice($NoSepPanel()). field_find_choice($FieldByPosition()).
+
+.decl overflow_choice(o: Overflow)
+overflow_choice($CutAtEdge()). overflow_choice($ClampWholeBlocks()).
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+parse.reading_corner($U(), C) :- params.reading_corner(C).
+parse.clamp_origin($U(), D) :- params.clamp_origin(D).
+parse.case($U(), [Af, Pa, Mk, A, F, O]) :-
+    arrow_find_choice(Af), pattern_find_choice(Pa), mask_find_choice(Mk),
+    anchor_find_choice(A), field_find_choice(F), overflow_choice(O).
+
+out(P, Col, Ch) :- params.stamp_order(D), parse.shown($U(), Ch, D, P, Col).
+
+.comp Determine {
+    // A trained example, read with one reading corner and one clamp origin.
+    .type Probe = [e: Example, c: DiagDir, o: DiagDir]
+
+    .decl trained(e: Example)
+    trained(E) :- ex_out(E, _, _).
+
+    .decl probe_key(k: Probe)
+    probe_key([E, C, O]) :- trained(E), diag_dir_elem(C), diag_dir_elem(O).
+
+    .init probe = Parse<Probe>
+    probe.cell([E, C, O], P, Col) :- probe_key([E, C, O]), ex_in(E, P, Col).
+    probe.reading_corner([E, C, O], C) :- probe_key([E, C, O]).
+    probe.clamp_origin([E, C, O], O) :- probe_key([E, C, O]).
+    probe.case(K, Ch) :- probe_key(K), probe_case(Ch).
+
+    // The concept case, and one case of each branch that reads an open value.
+    .decl probe_case(ch: Choice)
+    probe_case(Ch) :- concept(Ch).
+    probe_case(Ch) :- reads_corner(Ch).
+    probe_case(Ch) :- reads_origin(Ch).
+
+    .decl concept(ch: Choice)
+    concept([$ArrowColor(), $PatternRect(), $MaskShape(), $AnchorColor(), $NoSepPanel(),
+             $CutAtEdge()]).
+
+    .decl reads_corner(ch: Choice)
+    reads_corner([$ArrowColor(), $StampFirst(), $MaskShape(), $AnchorColor(), $NoSepPanel(),
+                  $CutAtEdge()]).
+    reads_corner([$ArrowColor(), $PatternRect(), $MaskShape(), $AnchorByPosition(),
+                  $NoSepPanel(), $CutAtEdge()]).
+
+    .decl reads_origin(ch: Choice)
+    reads_origin([$ArrowColor(), $PatternRect(), $MaskShape(), $AnchorColor(), $NoSepPanel(),
+                  $ClampWholeBlocks()]).
+
+    // Case Ch on probe K, read with stamp order D, misses the example's output.
+    .decl wrong(k: Probe, ch: Choice, d: Dir)
+    wrong([E, C, O], Ch, D) :-
+        probe.case([E, C, O], Ch), dir_elem(D), ex_out(E, P, Col),
+        ( probe.shown([E, C, O], Ch, D, P, Col2), Col != Col2
+        ; !probe.shown([E, C, O], Ch, D, P, _)
+        ).
+    wrong([E, C, O], Ch, D) :- probe.shown([E, C, O], Ch, D, P, _), !ex_out(E, P, _).
+
+    .decl stamp_contradicted(d: Dir)
+    stamp_contradicted(D) :- concept(Ch), wrong(_, Ch, D).
+
+    .decl stamp_order(d: Dir)
+    stamp_order(D) :- dir_elem(D), !stamp_contradicted(D).
+
+    .decl corner_contradicted(c: DiagDir)
+    corner_contradicted(C) :- reads_corner(Ch), stamp_order(D), wrong([_, C, _], Ch, D).
+
+    .decl reading_corner(c: DiagDir)
+    reading_corner(C) :- diag_dir_elem(C), !corner_contradicted(C).
+
+    .decl origin_contradicted(o: DiagDir)
+    origin_contradicted(O) :- reads_origin(Ch), stamp_order(D), wrong([_, _, O], Ch, D).
+
+    .decl clamp_origin(o: DiagDir)
+    clamp_origin(O) :- diag_dir_elem(O), !origin_contradicted(O).
+
+    // The side of a filled square region that params.sep closes off in
+    // example E.
+    .decl square(e: Example, n: number)
+    square(E, N) :-
+        probe.region.label([[E, C, O], _], P, Id), probe.region_box.box([[E, C, O], Id], B),
+        !probe.region_gap([E, C, O], Id),
+        box_extent(B, P, A, N), perp(A, A2), box_extent(B, P, A2, N).
+
+    .decl box_side_missing(n: number)
+    box_side_missing(N) :- square(_, N), trained(E), !square(E, N).
+
+    .decl box_side(n: number)
+    box_side(N) :- square(_, N), !box_side_missing(N).
+
+    .decl anchor_in(e: Example, col: Color)
+    anchor_in(E, Col) :- probe.anchor_cand([E, _, _], _, _, Col).
+
+    .decl anchor_missing(col: Color)
+    anchor_missing(Col) :- anchor_in(_, Col), trained(E), !anchor_in(E, Col).
+
+    .decl anchor(col: Color)
+    anchor(Col) :- anchor_in(_, Col), !anchor_missing(Col).
+
+    .decl arrow_in(e: Example, col: Color)
+    arrow_in(E, Col) :- probe.arrow_pair([E, _, _], _, _, Col).
+
+    .decl arrow_missing(col: Color)
+    arrow_missing(Col) :- arrow_in(_, Col), trained(E), !arrow_in(E, Col).
+
+    .decl arrow(col: Color)
+    arrow(Col) :- arrow_in(_, Col), !arrow_missing(Col).
+
+    // The end panel on side D of example E's input holds params.sep.
+    .decl legend_end(e: Example, d: Dir)
+    legend_end(E, D) :-
+        probe.side([E, C, O], D), probe.panels.part_idx([E, C, O], P, D, 0),
+        probe.panels.tile_of([E, C, O], P, Pl), probe.sep_panel([E, C, O], Pl).
+
+    .decl legend_side_missing(d: Dir)
+    legend_side_missing(D) :- legend_end(_, D), trained(E), !legend_end(E, D).
+
+    .decl legend_side(d: Dir)
+    legend_side(D) :- legend_end(_, D), !legend_side_missing(D).
+}

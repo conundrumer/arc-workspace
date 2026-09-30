@@ -92,19 +92,19 @@
 - A witness under an `@approximated:` line is not `foreign`.
 - Each case that runs the approximation has a witness on which its output is not the verdict's.
 * comment
-    - Precise reading: a case's output is not the verdict's when its output on the grid differs from the output the verdict denotes: the concept case's for `concept`, the output of the case that takes the verdict's branch and the concept branch elsewhere for a branch's name, every case's for `other`, no case's for `any`.
+    - Precise reading: a case's output is not the verdict's when its output on the grid differs from the output the verdict denotes: the output of the name's model for a name in one of the [Witness file](docs/handbook/solver-file.md#witness-file) forms, every case's for `other`, no case's for `any`.
 
 ### Cases
 - A case's model reads its output grids from `out` at that case, one grid per tiebreak resolution, and is undefined on an input where a grid's facts give two frame sizes.
+- A case's base is its `Choice` value, its branch at each point the `Choice` encodes; a case is a base with a branch at each `@derive` and `@store` point its base reads.
 - A branch's clauses are the clauses shared by its cases and absent from the other cases.
-- A constructor denotes only its branch's reading, not a reading another branch shares, and is named for its branch, the branch's slug in CamelCase: `bbox-region` gives `BboxRegion`.
+- A constructor stands for its branch alone, not for what another branch shares with it, and is named as the Analyze report names the branch.
 - `@claim` under the concept branch's constructor denotes the header claim the choice point turns on, which each other branch's `@scene` or `@rule` line changes.
     - A case's reading of a claim is the header's claim with each of its branches' changes made.
 - A solver with one case has no `Choice`, case markers, or case column on `out`.
 - **Case markers.** Cases do not interleave: each case's Params and clauses are under its marker.
-    - Cases that share facts or clauses are under one marker listing their names in the forms the [Witness file](docs/handbook/solver-file.md#witness-file) gives, `// --- Box, Erode ---`.
-    - A marker may fix a constructor's fields, `// --- Derive(g=Iso) ---`, for the part of that case where the field is that branch.
-    - The comma still separates cases.
+    - Cases that share facts or clauses are under one marker listing names whose cases they are, in the forms the [Witness file](docs/handbook/solver-file.md#witness-file) gives, `// --- $Box, $Erode ---`.
+    - The comma separates names.
 - **`impl_choice`.** The relation that enumerates the cases is `impl_choice`, and its column is `ch`.
     - A record-typed `Choice` gets one enumerator per field a clause enumerates, named for the field's type, as in `.decl locate_choice(l: Locate)`.
     - `impl_choice` contains whole `Choice` values, for a record, as a clause over the enumerators that excludes each combination that is not a case, and it appears when a clause reads one or when the cases are not every combination of the fields.
@@ -117,9 +117,9 @@
 - **Empty parameterization.** A task with an empty parameterization keeps the comp empty and the `.init` unchanged: `.comp Params {}`.
 - **`@singleton-axis` literal.** A structure that extends along one axis is written in a two-axis type, and the other axis takes a literal `1`.
     - The clause containing that literal ends with `// @singleton-axis: <what the structure is>`.
-- **`@derive` directive.** The line is a branch of a choice point on the parameter, which stands under the branches that read it, with the parameter's value derived by the built-in derivation the line's `<Proposer>` selects; lines on one parameter are branches of one point, and the runner holds the cases that take one of them.
+- **`@derive` directive.** The line is a branch of a choice point on the parameter, at which each case whose base reads the parameter takes a branch and whose concept branch is the stored parameter, with the parameter's value derived by the built-in derivation the line's `<Proposer>` selects; lines on one parameter are branches of one point, and the cases that take one of them are cases of the solver.
     - The verdict `derived` denotes that branch, beside the verdicts a `@witness` line takes, and its witness's id is the branch's name; a further witness of the branch is in the witness file, and the solver has no `@witness` line for it.
-    - `// @ignore: derive — <reason>` in its place records that the branch failed Equivalence or Subsumption, and the runner then holds no case that takes it; `// @ignore: derive <name> — <reason>` under the `@derive` line records that for each case that takes the branch and every branch whose name `<name>` contains.
+    - `// @ignore: derive — <reason>` in its place records that the branch failed Equivalence or Subsumption, and no case that takes it is then a case of the solver; `// @ignore: derive <name> — <reason>` under the `@derive` line records that for the cases of `<name>` that take the line's branch.
 
 ## Types
 - A solver may define:
@@ -134,7 +134,7 @@
 - **`@ignore` directive.** A relation kept despite a finding has `// @ignore: <category> — <reason>` on the line immediately above its declaration, with the category the finding gives.
     - The finding does not fire on the relation.
     - Above a `.init`, `// @ignore <relation>: <category> — <reason>` dismisses that one relation of the instance, and the bare form dismisses every relation of it.
-- **`@store` directive.** The relation, or the instance's relation the line names, has one value on every input, and the line is a branch of a choice point on it, which stands under the branches that read it, with the relation's value stored per case; the runner holds the cases that take that branch.
+- **`@store` directive.** The relation, or the instance's relation the line names, has one value on every input, and the line is a branch of a choice point on it, at which each case whose base reads the relation takes a branch and whose concept branch is the derived relation, with the relation's value stored per case; the cases that take that branch are cases of the solver.
     - The verdict `stored` denotes that branch, beside the verdicts a `@witness` line takes, with the branch's witnesses named and placed as a `@derive` branch's are; `// @ignore: store — <reason>` and `// @ignore: store <name> — <reason>` record what the `@ignore: derive` forms record.
 - **`@workaround` directive.** A temporary workaround is under a `// @workaround: <the principled form it stands in for>` line.
 - **`@claim` directive.** At program scope or inside `Parse`, an instance of a component without an `@construction` mark has the directive, one line per instance, listing the claims the instance serves.
@@ -177,23 +177,21 @@
         "id": string,                            // unique within this file
         "separates": string,                     // models separated by this input
         "input": Grid,
-        "assign": {<parameter>: Fact[] | Grid},  // the parameters the witness reassigns
+        "assign": {<parameter>: Fact[] | Grid},  // the parameters the witness reassigns, which may include a `@store` line's relation
         "output": Group[]                        // when the verdict is not other: one group per distinct output
                 | Grid                           // when the verdict is other: the annotator's judged output
       }] }
 
-    Group: { "cases": <name>[],           // the solver's cases that give this output
-             "grid": Grid | null }        // null for undefined
+    Group: { "cases": <name>[],           // the fewest names whose cases together are exactly the cases that give this output
+             "grid": Grid | Grid[] | null }  // null for undefined; a list of the grids the cases give, one per tiebreak resolution, when they give more than one
     Grid: number[][]                      // rows of colors
     Fact: Arg[]                           // the arguments of one fact
     Arg: number | string | Arg[]
     ```
 - Use a string for a lib constant and a list for a record.
 - [`GRID_HxW` for grid data](docs/handbook/patterns.md#grid_hxw-for-grid-data) states the form of a stored grid.
-- A `<name>` denotes one model, in one of these forms:
-    - `concept`: the concept case
-    - a constructor's name, such as `Alt`: that branch's model, for a nested constructor too, whether or not `impl_choice` contains its case
-        - A constructor that stands at more than one place denotes its first, and `<parent> & <name>` denotes it at another.
-    - a branch's slug, such as `bbox-region`: the constructor named for it, as [Cases](docs/handbook/solver-file.md#cases) states
-    - `<name> & <name>`: the case with those branches
-    - `<param>=<Proposer>`, `<rel>=stored` and `<param>=stored`, each read as a constructor's name: the branch that the `@derive` line on `<param>` with that `<Proposer>` is; the branch that the `@store` line on `<rel>` is; and the branch of `<param>`'s choice point in which its value is stored per case
+- A `<name>` fixes the branch at some choice points, in one of these forms. Its model takes the fixed branches and the concept branch at every other point it takes; its cases are the cases of the solver that take the fixed branches ([Choice points and open parameters](docs/handbook/principles.md#choice-points-and-open-parameters) states both for one branch). A `@witness` verdict names its model; a case marker, an `@ignore: derive` or `@ignore: store` line and a group name its cases.
+    - `concept`: the concept branch at every point the `Choice` encodes, the concept base; alone, its model and its one case are the concept case
+    - a constructor's name with its prefix, such as `$Alt`: that branch at each point where the constructor stands, for a nested constructor too, whether or not `impl_choice` contains its model
+    - `<name> & <name>`: what each fixes
+    - `<param>=<Proposer>`, `<rel>=stored`, `<rel>=derived` and `<param>=stored`, each read as a constructor's name: the branch that the `@derive` line on `<param>` with that `<Proposer>` is; the branch that the `@store` line on `<rel>` is; the branch of `<rel>`'s point in which the solver's clauses derive its value; and the branch of `<param>`'s choice point in which its value is stored per case

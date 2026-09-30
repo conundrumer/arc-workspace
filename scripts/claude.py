@@ -13,7 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools" / "console"))
 
-from dl.context import render, sweep_digests, write_agent  # noqa: E402
+from handbook.context import render, sweep_digests, write_agent  # noqa: E402
 from solver_console import config  # noqa: E402
 
 

@@ -15,14 +15,14 @@
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- Ring ---
+    // --- $Ring ---
     // The dot colors, and what each one paints around itself.
     .decl border(mark: Color, col: Color)
     border(2, 1).
     border(3, 6).
     border(8, 4).
 
-    // --- Stamp ---
+    // --- $Stamp ---
     // The picture each dot color paints, as offsets from the dot.
     .decl template(mark: Color, off: Offset, col: Color)
     GRID_STAMP_SPARSE_3x3(template, 2,
@@ -49,12 +49,12 @@ impl_choice($Ring()). impl_choice($Stamp()).
 out(P, Col, Ch) :- painted(P, Col, Ch).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !painted(P, _, Ch).
 
-// --- Ring ---
+// --- $Ring ---
 painted(P, Col, $Ring()) :-
     in(Q, M), params.border(M, Col),               // a dot, and its border color
     dir8_elem(D), neighbor(Q, D, P), in(P, _).     // each cell beside it, on-grid
 
-// --- Stamp ---
+// --- $Stamp ---
 painted(P, Col, $Stamp()) :-
     in(Q, M), params.template(M, Off, Col),        // a dot, and a cell of its picture
     compose(Q, Off, P), in(P, _).                  // seated on the dot, on-grid

@@ -73,14 +73,14 @@ out(P_crop, Col, Ch) :-
     ; !fill(P, _, Ch), in(P, Col)
     ).
 
-// --- EndMatch ---
+// --- $EndMatch ---
 
 mark(P, D, $EndMatch()) :-
     inner(P), in(P, Col),
     axis_of(D, A), border(Q, D), same_line(A, P, Q),   // where its line meets the border
     in(Q, Col).                                        // the border carries the cell's color
 
-// --- LineMatch ---
+// --- $LineMatch ---
 
 // A box corner lies on two border lines, so it states no one line's color.
 .decl crossing(p: Position)

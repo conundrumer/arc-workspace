@@ -42,14 +42,14 @@ impl_choice($Size()). impl_choice($Shape()).
 // The blob has a partner.
 .decl paired(id: Ident, ch: Choice)
 
-// --- Size ---
+// --- $Size ---
 
 .init size = Tally<Ident, Position>
 size.item(Id, P) :- blobs.label(_, P, Id).
 
 paired(Id, $Size()) :- size.tally(Id, N), size.tally(Id2, N), Id != Id2.
 
-// --- Shape ---
+// --- $Shape ---
 
 .type Pair = [a: Ident, b: Ident]
 

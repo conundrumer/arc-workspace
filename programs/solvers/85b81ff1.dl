@@ -35,7 +35,7 @@
     .decl axis(a: Axis)
     axis(A) :- least_dir(D), axis_of(D, A).
 
-    // --- Tile ---
+    // --- $Tile ---
     .decl gap(g: number) gap(1).
 
     // --- Tile Count ---
@@ -50,7 +50,7 @@
 .decl ink(p: Position)
 ink(P) :- in(P, Col), !params.bg(Col).
 
-// --- Tile ---
+// --- $Tile ---
 
 .decl dec_choice(dc: DecChoice)
 dec_choice($Count()).
@@ -79,7 +79,7 @@ out(P_grid_out, Col, $Tile(Dc)) :-
     concat_slab(P_tile_in, P_intile, A, G, P_grid_in), in(P_grid_in, Col).   // same cell of that tile
 out(P, Col, $Tile(Dc)) :- in(P, Col), dec_choice(Dc), !decompose(P, _, _, Dc).   // gap cells stay
 
-// --- Lines ---
+// --- $Lines ---
 
 .decl line_ink(l: Position, p: Position)
 line_ink(L, P) :- ink(P), params.axis(A), split(P, A, L, _).
@@ -107,7 +107,7 @@ out(P_grid_out, Col, $Lines()) :-
     compose(L_in, Across, P_grid_in), in(P_grid_in, Col).                        // same cell of that line
 out(P, Col, $Lines()) :- in(P, Col), params.axis(A), split(P, A, L, _), !sortable(L).   // other lines stay
 
-// --- Objects ---
+// --- $Objects ---
 
 .init obj = Components<Unit>
 obj.node($U(), P) :- ink(P).

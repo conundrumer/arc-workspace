@@ -72,12 +72,12 @@ across(Id, D) :- segment(Id, Da), diag_perp(Da, Da2), diag_axis_of(D, Da2).
 rays.cell([P_end, Ch], P) :- end(_, P_end), impl_choice(Ch), in(P, Col), params.bg(Col).
 rays.mark([P_end, Ch], P_end) :- end(_, P_end), impl_choice(Ch).
 
-// --- Halt ---
+// --- $Halt ---
 
 rays.dir([P_end, $Halt()], D) :- end(Id, P_end), across(Id, D).
 rays.blocked([P_end, $Halt()], P) :- end(_, P_end), object(_, P, _).
 
-// --- Away ---
+// --- $Away ---
 
 rays.dir([P_end, $Away()], D) :-
     end(Id, P_end), across(Id, D),

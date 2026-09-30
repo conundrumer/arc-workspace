@@ -29,13 +29,13 @@
     .decl bg(col: Color) bg(0).
     .decl axis(a: Axis) axis(AXIS_V).
 
-    // --- Count ---
+    // --- $Count ---
     .decl tiles(n: number) tiles(4).
 
-    // --- Size ---
+    // --- $Size ---
     .decl tile_size(k: number) tile_size(3).
 
-    // --- Order ---
+    // --- $Order ---
     .decl prio(p: Position, r: number)
     GRID_4x1(prio,
         0,
@@ -43,7 +43,7 @@
         3,
         2)
 
-    // --- Ink ---
+    // --- $Ink ---
     .decl ink_rank(c: Color, r: number)
     ink_rank(5, 0). ink_rank(4, 1). ink_rank(8, 2). ink_rank(2, 3).
 }
@@ -76,7 +76,7 @@ prec_choice($Order()). prec_choice($Ink()).
 out(P, Col, [Dc, C]) :-
     prec_choice(C), tile_cell(_, P, _, Dc), !ink_at(P, _, Dc), params.bg(Col).
 
-// --- Order ---
+// --- $Order ---
 
 // The foremost tile inking each cell.
 .init front_tile = ArgExtremes<CellKey, Position>
@@ -84,7 +84,7 @@ front_tile.cand([P, Dc], T, R) :- tile_ink(T, P, _, Dc), params.prio(T, R).
 
 out(P, Col, [Dc, $Order()]) :- front_tile.low([P, Dc], T, _), tile_ink(T, P, Col, Dc).
 
-// --- Ink ---
+// --- $Ink ---
 
 // The foremost ink at each cell.
 .init front_ink = ArgExtremes<CellKey, Color>

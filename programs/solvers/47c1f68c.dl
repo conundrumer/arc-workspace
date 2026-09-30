@@ -28,13 +28,13 @@
     .decl divisor(n: number) divisor(2).
     .decl gap(g: number) gap(1).
 
-    // --- Complete ---
+    // --- $Complete ---
     .decl sym(s: Sym) sym(SYM_BOX).
 
-    // --- Lookup, Mirror, Unfold ---
+    // --- $Lookup, $Mirror, $Unfold ---
     .decl anchor(d: DiagDir) anchor(DIAG_TL).
 
-    // --- Lookup ---
+    // --- $Lookup ---
     .decl tile_d4(p_tile: Position, d: D4)
     GRID_2x2(tile_d4,
         D4_ID, D4_LR,
@@ -63,12 +63,12 @@ ink(P_grid) :- in(P_grid, Col), !params.bg(Col).
 
 .decl paint(p_grid_out: Position, ch: Choice)
 
-// --- Complete ---
+// --- $Complete ---
 paint(P_img, $Complete()) :-
     ink(P_grid), cell(P_grid, _, _, P_grid_out),                    // ink, in the output frame
     params.sym(S), sym_member(S, D), apply(D, P_grid_out, P_img).   // its images
 
-// --- Lookup, Mirror, Unfold ---
+// --- $Lookup, $Mirror, $Unfold ---
 
 .decl anchor_tile(p_tile: Position)
 anchor_tile(P_tile) :-
@@ -78,13 +78,13 @@ anchor_tile(P_tile) :-
 .decl pattern(p_intile: Position)
 pattern(P_intile) :- ink(P_grid), cell(P_grid, P_tile, P_intile, _), anchor_tile(P_tile).
 
-// --- Lookup ---
+// --- $Lookup ---
 paint(P_grid_out, $Lookup()) :-
     pattern(P_intile), params.tile_d4(P_tile, D),        // the table's image at a tile
     apply(D, P_intile, P_intile2),
     concat_2d(P_tile, P_intile2, 0, P_grid_out).    // recompose
 
-// --- Mirror ---
+// --- $Mirror ---
 
 // Per-axis within-tile image.
 .decl mirror(a: Axis, p_tile: Position, p_intile: Position, p_img: Position)
@@ -101,7 +101,7 @@ paint(P_grid_out, $Mirror()) :-
     mirror(A2, P_tile, P1, P_intile2),               // image through both axes
     concat_2d(P_tile, P_intile2, 0, P_grid_out).     // recompose
 
-// --- Unfold ---
+// --- $Unfold ---
 
 // Tile contents: the pattern seeds the anchor tile; each neighbor
 // reflects across the shared boundary.

@@ -21,11 +21,11 @@
 .comp Params {
     .decl bg(col: Color) bg(0).
 
-    // --- Relative ---
+    // --- $Relative ---
     .decl toward(col: Color) toward(2).
     .decl away(col: Color) away(1).
 
-    // --- Table ---
+    // --- $Table ---
     // A mark of color col, with the divider toward side, casts toward d.
     .decl cast_dir(col: Color, side: Dir, d: Dir)
     cast_dir(2, DIR_B, DIR_B).
@@ -64,14 +64,14 @@ parse.cell($U(), P, Col) :- in(P, Col).
 
 .decl casts(p: Position, d: Dir, ch: Choice)
 
-// --- Relative ---
+// --- $Relative ---
 casts(P, D, $Relative()) :-
     parse.mark($U(), P, Col), parse.side($U(), P, D_side),
     ( params.toward(Col), D = D_side
     ; params.away(Col), opposite(D_side, D)
     ).
 
-// --- Table ---
+// --- $Table ---
 casts(P, D, $Table()) :-
     parse.mark($U(), P, Col), parse.side($U(), P, D_side),
     params.cast_dir(Col, D_side, D).

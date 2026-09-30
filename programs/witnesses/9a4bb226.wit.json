@@ -2,7 +2,7 @@
   "id": "9a4bb226",
   "witnesses": [{
     "id": "four-colors",
-    "separates": "One block has four colors and the others two. Most and Odd pick the four-color block; Fixed finds no block with three colors.",
+    "separates": "One block has four colors and the others two. $Most and $Odd pick the four-color block; $Fixed finds no block with three colors.",
     "input": [
       [0,0,0,0,0,0,0,0,0,0],
       [0,1,2,3,0,0,5,5,6,0],
@@ -15,19 +15,19 @@
       [0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["Most","Odd"],
+      "cases": ["concept","$Odd"],
       "grid": [
         [1,2,3],
         [4,1,2],
         [3,4,1]
       ]
     }, {
-      "cases": ["Fixed"],
+      "cases": ["$Fixed"],
       "grid": null
     }]
   }, {
     "id": "two-odd",
-    "separates": "The blocks have two, two, three, and four colors. Most picks the four-color block; Fixed picks the three-color block; Odd finds two blocks with an unshared count.",
+    "separates": "The blocks have two, two, three, and four colors. $Most picks the four-color block; $Fixed picks the three-color block; $Odd finds two blocks with an unshared count.",
     "input": [
       [0,0,0,0,0,0,0,0,0,0],
       [0,1,2,3,0,0,5,5,6,0],
@@ -40,21 +40,21 @@
       [0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["Most"],
+      "cases": ["concept"],
       "grid": [
         [1,2,3],
         [4,1,2],
         [3,4,1]
       ]
     }, {
-      "cases": ["Fixed"],
+      "cases": ["$Fixed"],
       "grid": [
         [7,8,8],
         [7,3,8],
         [8,7,8]
       ]
     }, {
-      "cases": ["Odd"],
+      "cases": ["$Odd"],
       "grid": null
     }]
   }]

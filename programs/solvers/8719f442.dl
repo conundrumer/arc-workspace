@@ -29,7 +29,7 @@
     .decl seat_delta(p: Box)
     seat_delta(P) :- ring_width(K), uniform_inset(K, P).
 
-    // --- Stored, Hub ---
+    // --- $Stored, $Hub ---
     .decl fill(c: Color) fill(5).
 }
 

@@ -92,7 +92,7 @@ partial(Id, D, Sh) :-
     seated(Id, D, Sh, _, P, Col), params.core(Col), target_cell(T, P),  // the target hit
     target_cell(T, Q), !seated(Id, D, Sh, _, Q, Col).                  // a cell of it left
 
-// --- Backed ---
+// --- $Backed ---
 
 // A wall-colored cell of a seating faces its wall when an object cell backs
 // it, away from the wall.
@@ -102,7 +102,7 @@ faces($Backed(), Id, D, Sh, P) :-
     opposite(Dir, Opp), neighbor(P, Opp, Q),                 // the cell behind it
     seated(Id, D, Sh, _, Q, _).                              // is the object's
 
-// --- Edge ---
+// --- $Edge ---
 
 .init obj_box = Bbox<Ident>
 obj_box.cell(Id, P) :- object_cell(Id, P, _).
@@ -114,7 +114,7 @@ faces($Edge(), Id, D, Sh, P_out) :-
     obj_box.box(Id, B), box_edge(P, B, Dir_in),                      // on an edge of the object's box
     apply_dir(D, Dir_in, Dir).                                       // that the transform turns to the wall
 
-// --- Backed, Edge ---
+// --- $Backed, $Edge ---
 
 .decl impl_choice(ch: Choice)
 impl_choice($Backed()). impl_choice($Edge()).

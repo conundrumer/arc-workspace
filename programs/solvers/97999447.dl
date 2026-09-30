@@ -19,10 +19,10 @@
     .decl bg(c: Color) bg(0).
     .decl ray_dir(d: Dir) ray_dir(DIR_R).
 
-    // --- Toggle ---
+    // --- $Toggle ---
     .decl alt_color(c: Color) alt_color(5).
 
-    // --- Mask ---
+    // --- $Mask ---
     // Coincides with Toggle when the mask holds one override on period 2.
     .decl slot(k: number)
     slot(0). slot(1).
@@ -49,7 +49,7 @@ impl_choice($Toggle()). impl_choice($Mask()).
 
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !on_ray(P, _, _).   // off every ray
 
-// --- Toggle ---
+// --- $Toggle ---
 
 // Each dot color's two-color cycle, one advance per ray step.
 .init colors = CycleWalk<Color, Color>
@@ -59,7 +59,7 @@ colors.step(M, K)      :- on_ray(_, M, K).
 
 out(P, Col, $Toggle()) :- on_ray(P, M, K), colors.walk(M, M, K, Col).   // K steps on from the dot color
 
-// --- Mask ---
+// --- $Mask ---
 
 .init slots = IndexCycle<Unit>
 slots.idx($U(), K) :- params.slot(K).

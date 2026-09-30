@@ -121,7 +121,7 @@ route_cell(Ch, P, Col) :-
 out(P, Col, Ch) :- route_cell(Ch, P, Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !route_cell(Ch, P, _).
 
-// --- Filled ---
+// --- $Filled ---
 
 // Some cell of the piece's box is off the piece.
 .decl gap(id: Ident)
@@ -129,6 +129,6 @@ gap(Id) :- bbox.box(Id, B), in(P, _), inside(P, B), !piece_cell(Id, P).
 
 square($Filled(), Id) :- square_box(Id), !gap(Id).
 
-// --- Extents ---
+// --- $Extents ---
 
 square($Extents(), Id) :- square_box(Id).

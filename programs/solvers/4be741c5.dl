@@ -59,11 +59,11 @@ lead.cand([Ch, D, Col], K) :-
 .init place = Ordinal<CaseDir>
 place.idx_set([Ch, D], K) :- lead.low([Ch, D, _], K).
 
-// --- Present ---
+// --- $Present ---
 
 band_line($Present(), Col, L) :- in(P, Col), line(P, L).
 
-// --- Majority ---
+// --- $Majority ---
 
 .init commonest = Mode<Position, Color, Position>
 commonest.item(L, Col, P) :- in(P, Col), line(P, L).

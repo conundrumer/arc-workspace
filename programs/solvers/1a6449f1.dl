@@ -33,7 +33,7 @@ window_bbox.cell(Ch, P) :- window(P, Ch).
 
 out(P_inner, Col, Ch) :- window_bbox.box(Ch, B), in(P, Col), crop(P, B, P_inner).
 
-// --- Rect ---
+// --- $Rect ---
 
 .init drect = Outlines<Color>
 drect.node(Col, P) :- ink(Col), in(P, Col).
@@ -47,7 +47,7 @@ biggest_hole.item($U(), B, P) :- hole(B, P).
 
 window(P, $Rect()) :- biggest_hole.mode($U(), B), hole(B, P).
 
-// --- Enclose ---
+// --- $Enclose ---
 
 // Each ink color walls the rest of the grid off; a region it closes is a ring's
 // inside.

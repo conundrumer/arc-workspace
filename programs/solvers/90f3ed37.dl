@@ -80,14 +80,14 @@ parse_choice($Objects()).
 
 .decl shape(pa: Parse, id: Ident, p: Position)
 
-// --- Lines ---
+// --- $Lines ---
 
 .init runs = Components<Unit>
 runs.node($U(), L) :- fg(P), line_of(P, L).
 
 shape($Lines(), Id, P) :- fg(P), line_of(P, L), runs.label($U(), L, Id).
 
-// --- Objects ---
+// --- $Objects ---
 
 .init blobs = Components8<Unit>
 blobs.node($U(), P) :- fg(P).
@@ -105,13 +105,13 @@ anchor_choice($Ink()).
 
 .decl anchor(pa: Parse, id: Ident, p: Position, an: Anchor)
 
-// --- Extent ---
+// --- $Extent ---
 
 anchor(Pa, Id, P, $Extent()) :-
     bb.box([Pa, Id], B), params.anchor_corner(Diag),
     in(P, _), box_corner(P, B, Diag).
 
-// --- Ink ---
+// --- $Ink ---
 
 .init corner_cell = ArgExtremes<Shape, Position>
 corner_cell.cand([Pa, Id], P, K) :-
@@ -132,11 +132,11 @@ select_choice($Furthest()).
 // The full shape, which the others are completed from.
 .decl template(pa: Parse, id: Ident, s: Select)
 
-// --- Edge ---
+// --- $Edge ---
 
 template(Pa, Id, $Edge()) :- shortfall(Pa, Id, 0).
 
-// --- Furthest ---
+// --- $Furthest ---
 
 .init nearest = ArgExtremes<Parse, Ident>
 nearest.cand(Pa, Id, K) :- shortfall(Pa, Id, K).
@@ -158,13 +158,13 @@ place_choice($Across()).
 // Where a full-shape cell lands on a shape.
 .decl seat(pa: Parse, id: Ident, p: Position, ch: Choice)
 
-// --- Corner ---
+// --- $Corner ---
 
 seat(Pa, Id, P_out, [Pa, S, An, $Corner()]) :-
     shift(Pa, Id_full, Id, V, S, An), shape(Pa, Id_full, P_full),
     compose(P_full, V, P_out).
 
-// --- Across ---
+// --- $Across ---
 
 seat(Pa, Id, P_out, [Pa, S, An, $Across()]) :-
     shift(Pa, Id_full, Id, V, S, An), shape(Pa, Id_full, P_full),

@@ -23,7 +23,7 @@
     // The edge the ground row lies along.
     .decl ground_dir(d: Dir) ground_dir(DIR_B).
 
-    // --- Fixed ---
+    // --- $Fixed ---
     .decl height(n: number) height(2).
 }
 
@@ -90,10 +90,10 @@ forcing.covers($U(), [Pc, Sl], P) :-
 // How high the dropped piece stands in its slot.
 .decl stand(pc: Ident, sl: Ident, h: number, ch: Choice)
 
-// --- Turn ---
+// --- $Turn ---
 stand(Pc, Sl, H, $Turn()) :- forcing.forced($U(), [Pc, Sl]), fits(Pc, Sl, H).
 
-// --- Fixed ---
+// --- $Fixed ---
 stand(Pc, Sl, H, $Fixed()) :- forcing.forced($U(), [Pc, Sl]), params.height(H).
 
 // --- render ---

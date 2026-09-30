@@ -2,7 +2,7 @@
   "id": "3a25b0d8",
   "witnesses": [{
     "id": "top-bottom-fold",
-    "separates": "Stored against Mirror: each figure folds top to bottom and holds four rooms in its left half, the painted figure's rooms at the plain figure's rows with the columns exchanged. Mirror reads the fold axis off the figures, so it classes the rooms above and below the midline and ranks them across it. Stored keeps the stored axis, classes all four rooms on the left, and ranks them down the figure. Both pairings are complete, and they pair different rooms.",
+    "separates": "$Stored against $Mirror: each figure folds top to bottom and holds four rooms in its left half, the painted figure's rooms at the plain figure's rows with the columns exchanged. $Mirror reads the fold axis off the figures, so it classes the rooms above and below the midline and ranks them across it. $Stored keeps the stored axis, classes all four rooms on the left, and ranks them down the figure. Both pairings are complete, and they pair different rooms.",
     "input": [
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -26,39 +26,39 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["Mirror"],
+      "cases": ["concept"],
       "grid": [
         [5,5,5,5,5,5,5,5,5],
-        [5,4,5,5,5,5,5,5,5],
-        [5,4,5,5,5,5,5,5,5],
-        [5,5,3,3,5,5,5,5,5],
-        [5,5,3,3,5,5,5,5,5],
+        [5,3,5,5,5,5,5,5,5],
+        [5,3,5,5,5,5,5,5,5],
+        [5,5,4,4,5,5,5,5,5],
+        [5,5,4,4,5,5,5,5,5],
         [5,5,5,5,5,5,5,5,5],
-        [5,5,3,3,5,5,5,5,5],
-        [5,5,3,3,5,5,5,5,5],
-        [5,4,5,5,5,5,5,5,5],
-        [5,4,5,5,5,5,5,5,5],
+        [5,5,4,4,5,5,5,5,5],
+        [5,5,4,4,5,5,5,5,5],
+        [5,3,5,5,5,5,5,5,5],
+        [5,3,5,5,5,5,5,5,5],
         [5,5,5,5,5,5,5,5,5]
       ]
     }, {
-      "cases": ["Stored"],
+      "cases": ["$Mirror"],
       "grid": [
         [5,5,5,5,5,5,5,5,5],
-        [5,3,5,5,5,5,5,5,5],
-        [5,3,5,5,5,5,5,5,5],
-        [5,5,4,4,5,5,5,5,5],
-        [5,5,4,4,5,5,5,5,5],
+        [5,4,5,5,5,5,5,5,5],
+        [5,4,5,5,5,5,5,5,5],
+        [5,5,3,3,5,5,5,5,5],
+        [5,5,3,3,5,5,5,5,5],
         [5,5,5,5,5,5,5,5,5],
-        [5,5,4,4,5,5,5,5,5],
-        [5,5,4,4,5,5,5,5,5],
-        [5,3,5,5,5,5,5,5,5],
-        [5,3,5,5,5,5,5,5,5],
+        [5,5,3,3,5,5,5,5,5],
+        [5,5,3,3,5,5,5,5,5],
+        [5,4,5,5,5,5,5,5,5],
+        [5,4,5,5,5,5,5,5,5],
         [5,5,5,5,5,5,5,5,5]
       ]
     }]
   }, {
     "id": "no-mirror",
-    "separates": "Stored against Mirror: neither figure folds onto itself across either axis, though the holes still answer to each other left to right. Stored keeps the stored axis and paints both holes; Mirror finds no axis and emits no grid.",
+    "separates": "$Stored against $Mirror: neither figure folds onto itself across either axis, though the holes still answer to each other left to right. $Stored keeps the stored axis and paints both holes; $Mirror finds no axis and emits no grid.",
     "input": [
       [8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8],
       [8,1,1,1,1,1,1,1,1,8,8,1,1,1,1,1,1,8],
@@ -70,7 +70,7 @@
       [8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8]
     ],
     "output": [{
-      "cases": ["Stored"],
+      "cases": ["concept"],
       "grid": [
         [1,1,1,1,1,1,1,1],
         [1,3,3,1,4,4,4,1],
@@ -79,7 +79,7 @@
         [1,1,1,1,8,8,8,8]
       ]
     }, {
-      "cases": ["Mirror"],
+      "cases": ["$Mirror"],
       "grid": null
     }]
   }, {

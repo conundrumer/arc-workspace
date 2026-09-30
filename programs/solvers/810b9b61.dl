@@ -37,14 +37,14 @@ ink(Col, P) :- in(P, Col), params.recolor(Col, _).
 out(P, Fill, Ch) :- painted(P, Ch), in(P, Col), params.recolor(Col, Fill).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, Ch).
 
-// --- Rect ---
+// --- $Rect ---
 
 .init drect = Outlines<Color>
 drect.node(Col, P) :- ink(Col, P).
 
 painted(P, $Rect()) :- drect.box(_, B), in(P, _), box_edge(P, B, _).
 
-// --- Object, Enclose ---
+// --- $Object, $Enclose ---
 
 .init objs = Components<Color>
 objs.node(Col, P) :- ink(Col, P).
@@ -54,7 +54,7 @@ objs.node(Col, P) :- ink(Col, P).
 .decl obj(k: Obj, p: Position)
 obj([Col, Id], P) :- objs.label(Col, P, Id).
 
-// --- Object ---
+// --- $Object ---
 
 .init bbox = Bbox<Obj>
 bbox.cell(K, P) :- obj(K, P).
@@ -67,7 +67,7 @@ painted(P, $Object()) :-
     obj(K, P), bbox.box(K, B), !edge_gap(K),   // the component draws its whole box outline
     in(Q, _), interior(Q, B).                  // the box has an inside
 
-// --- Enclose ---
+// --- $Enclose ---
 
 // Each ink color walls the rest of the grid off.
 .init closed = Closed<Color>

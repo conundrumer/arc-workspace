@@ -17,7 +17,7 @@
 .comp Params {
     .decl bg(col: Color) bg(0).
 
-    // --- Place ---
+    // --- $Place ---
     // Box each quadrant's crop occupies in the output canvas.
     .decl tile_box(p_tile: Position, b: Box)
     tile_box([0, 1, 0, 1], [0, 3, 0, 3]).
@@ -57,12 +57,12 @@ crop_cell(P_tile, P_intile, Col) :-
     parse.frame.tile_of($U(), P, P_tile), in(P, Col),   // quadrant cell
     hull.box(P_tile, B), crop(P, B, P_intile).          // in the shape's box
 
-// --- Concat ---
+// --- $Concat ---
 out(P_grid_out, Col, $Concat()) :-
     crop_cell(P_tile, P_intile, Col),
     concat_2d(P_tile, P_intile, 0, P_grid_out).   // crops abut
 
-// --- Place ---
+// --- $Place ---
 out(P_grid_out, Col, $Place()) :-
     crop_cell(P_tile, P_intile, Col),
     params.tile_box(P_tile, B),              // the quadrant's stored box

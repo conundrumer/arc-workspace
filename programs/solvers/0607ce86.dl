@@ -57,14 +57,14 @@ copy_color(Id, P_intile, Col) :- copy_view(Id, P, P_intile), in(P, Col).
 
 out(P, Col, Ch) :- impl_choice(Ch), in(P, _), !solid(P), params.bg(Col).
 
-// --- Vote ---
+// --- $Vote ---
 
 .init template = Mode<Position, Color, Ident>
 template.item(P_intile, Col, Id) :- copy_color(Id, P_intile, Col).
 
 out(P, Col, $Vote()) :- copy_view(_, P, P_intile), template.mode(P_intile, Col).
 
-// --- Copy ---
+// --- $Copy ---
 
 .type Agreement = [id2: Ident, p_intile: Position]
 

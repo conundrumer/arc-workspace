@@ -44,11 +44,11 @@ bbox.cell(Id, P) :- obj.label($U(), P, Id).
 .type IdCh = [id: Ident, ch: Choice]
 .init quad = DiagPlacement<IdCh>
 
-// --- Grid ---
+// --- $Grid ---
 
 quad.cell([Id, $Grid()], B) :- bbox.box(Id, B).
 
-// --- Span ---
+// --- $Span ---
 
 // The four boxes' joint span, and each box's margins inside it.
 .init span = Bbox<Unit>

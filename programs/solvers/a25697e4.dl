@@ -1,0 +1,310 @@
+// a25697e4
+// @draft
+// @keywords: objects congruent d4 move match
+// @scene background: the most common color fills the rest of the grid
+// @scene hosts: each host is a solid rectangle of one color with a notch cut
+//  into it from one side. The notch is the set of background cells inside the
+//  rectangle, and it may cut the rectangle into separate components of the
+//  host color.
+// @scene pieces: each piece is a 4-connected object of exactly two colors, and
+//  each color forms one part of it. Pieces do not touch hosts.
+// @scene one-plug: for each host, one piece has a part with the shape of the
+//  host's notch up to a D4 transform, and that part is the piece's plug. Hosts
+//  and pieces pair one to one.
+// @rule lift: each piece that plug places is erased from its place in the
+//  input
+// @rule plug: each piece is placed, under a D4 transform and a translation, so
+//  that its plug covers exactly the notch of its host, and its other part lies
+//  in the grid, outside the host's rectangle, on background cells. A piece
+//  whose plug fits no notch stays. Undefined when a piece's plug fits a notch
+//  only with the other part elsewhere, or when two placements of a piece meet
+//  this and draw it differently.
+// @rule mirror-swap: when the transform is a reflection, the piece's two colors
+//  swap; when it is a rotation, they stay
+// @rule keep: hosts and every other cell stay as in the input
+
+// which transform carries a plug onto its notch
+.type Transform =
+    // @claim plug
+    RestOutside {}
+    // @rule plug: the transform is a rotation when a rotation carries the plug
+    //  onto the notch, and a reflection only when none does. The other part is
+    //  drawn where it lands, except on the host's rectangle or off the grid.
+    //  Undefined when two placements of the kind taken draw the piece
+    //  differently.
+    // @witness rotation-overlaps: ordinary concept
+  | PreferRotation {}
+
+// what counts as a host
+.type HostParse =
+    // @claim hosts
+    NotchRect {}
+    // @scene hosts: a host is exactly two components of one color, whose joint
+    //  bounding box holds only that color and the notch
+    // @witness one-part-host: variant concept
+  | TwoPartHost {}
+
+// how the cells of a host component join
+.type HostJoin =
+    // @claim hosts
+    FourHost {}
+    // @scene hosts: a host component is an 8-connected one-color object
+    // @witness diagonal-host: borderline concept
+    //     @relaxed pieces
+    // @witness corner-stray: borderline concept
+    //     @relaxed pieces
+  | DiagHost {}
+
+// what a one-color object with a notch's shape is
+.type LoneShape =
+    // @claim pieces
+    TwoColor {}
+    // @scene pieces: a one-color object whose shape matches a notch under a D4
+    //  transform, in a color other than the host's, is also a piece. All of it
+    //  is plug, and a reflection leaves its color as it is.
+    // @witness lone-shape: variant $BarePlug
+    //     @relaxed pieces
+  | BarePlug {}
+
+// how the parts of a piece join
+.type Connect =
+    // @claim pieces
+    FourConn {}
+    // @scene pieces: a piece is an 8-connected object of exactly two colors
+    // @witness diagonal-join: borderline $DiagPiece
+    //     @relaxed pieces
+  | DiagPiece {}
+
+.type Choice = [transform: Transform, host: HostParse, host_join: HostJoin, lone: LoneShape,
+               connect: Connect]
+
+// An object under one host reading.
+.type HostObject = [hj: HostJoin, h: Ident]
+
+// One part of an object under one D4 transform: the object, the part's color,
+// and the transform.
+.type Pose = [cn: Connect, id: Ident, k: Color, d: D4]
+
+// A pose at one placement, beside host components of color c joined under hj.
+.type Seat = [hj: HostJoin, pose: Pose, sh: Box, c: Color]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {}
+
+.init params = Params
+
+.decl transform_choice(t: Transform)
+transform_choice($RestOutside()). transform_choice($PreferRotation()).
+
+.decl host_parse_choice(h: HostParse)
+host_parse_choice($NotchRect()). host_parse_choice($TwoPartHost()).
+
+.decl host_join_choice(hj: HostJoin)
+host_join_choice($FourHost()). host_join_choice($DiagHost()).
+
+.decl lone_shape_choice(l: LoneShape)
+lone_shape_choice($TwoColor()). lone_shape_choice($BarePlug()).
+
+.decl connect_choice(cn: Connect)
+connect_choice($FourConn()). connect_choice($DiagPiece()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([T, H, Hj, L, Cn]) :-
+    transform_choice(T), host_parse_choice(H), host_join_choice(Hj), lone_shape_choice(L),
+    connect_choice(Cn).
+
+// @claim background
+.init background = Mode<Unit, Color, Position>
+background.item($U(), Col, P) :- in(P, Col).
+
+.decl bg(col: Color)
+bg(Col) :- background.mode($U(), Col).
+
+// An object's cells, under each piece connectivity.
+.decl object(cn: Connect, id: Ident, p: Position, col: Color)
+
+.decl object_color(cn: Connect, id: Ident, k: Color)
+object_color(Cn, Id, K) :- object(Cn, Id, _, K).
+
+.decl other_color(cn: Connect, id: Ident, k: Color, k2: Color)
+other_color(Cn, Id, K, K2) :- object_color(Cn, Id, K), object_color(Cn, Id, K2), K != K2.
+
+// An object of three colors or more.
+.decl many(cn: Connect, id: Ident)
+many(Cn, Id) :- other_color(Cn, Id, K, K2), object_color(Cn, Id, K3), K3 != K, K3 != K2.
+
+.decl piece(cn: Connect, id: Ident)
+piece(Cn, Id) :- other_color(Cn, Id, _, _), !many(Cn, Id).
+
+// An object's cells, under each host reading.
+.decl host_object(hj: HostJoin, h: Ident, p: Position)
+
+// A host component is a one-color object.
+// @claim hosts
+.init host_color = Unanimous<HostObject, Color>
+host_color.item([Hj, H], C) :- host_object(Hj, H, P), in(P, C).
+
+.decl host_cell(hj: HostJoin, h: Ident, p: Position, c: Color)
+host_cell(Hj, H, P, C) :- host_color.value([Hj, H], C), host_object(Hj, H, P).
+
+.decl pose(ps: Pose)
+pose([Cn, Id, K, D]) :- piece(Cn, Id), object_color(Cn, Id, K), d4_elem(D).
+
+// Each pose's part laid on background cells.
+// @claim one-plug plug
+.init seat = Occurrences<Pose, Unit>
+seat.shape([Cn, Id, K, D], P_img, $U()) :-
+    pose([Cn, Id, K, D]), object(Cn, Id, P, K), apply(D, P, P_img).
+seat.cell(Ps, P, $U()) :- pose(Ps), in(P, Col), bg(Col).
+
+.decl image(ps: Pose, sh: Box, p: Position)
+image(Ps, Sh, P) :- seat.occurrence(Ps, Sh), seat.shape(Ps, S, _), compose(Sh, S, P).
+
+// A host component beside a laid part.
+.decl touch(s: Seat, h: Ident)
+touch([Hj, Ps, Sh, C], H) :-
+    image(Ps, Sh, P), dir_elem(D), neighbor(P, D, Q), host_cell(Hj, H, Q, C).
+
+// The host's rectangle: the box of the components beside the laid part.
+// @claim hosts plug
+.init rect = Bbox<Seat>
+rect.cell([Hj, Ps, Sh, C], P) :- touch([Hj, Ps, Sh, C], H), host_cell(Hj, H, P, _).
+
+// A cell of the rectangle outside both the part and the host color, or a cell
+// of the part outside the rectangle.
+.decl gap(s: Seat)
+gap([Hj, Ps, Sh, C]) :-
+    rect.box([Hj, Ps, Sh, C], B),
+    ( in(P, _), inside(P, B), !image(Ps, Sh, P), !host_cell(Hj, _, P, C)
+    ; image(Ps, Sh, P), !inside(P, B)
+    ).
+
+// The part covers exactly the notch of the host.
+.decl filled(s: Seat, b: Box)
+filled(S, B) :- rect.box(S, B), !gap(S).
+
+.decl fit(h: HostParse, s: Seat, b: Box)
+
+// A fit of a piece's part, under a reading of which objects are pieces.
+.decl piece_fit(l: LoneShape, h: HostParse, s: Seat, b: Box)
+piece_fit(L, H, [Hj, [Cn, Id, K, D], Sh, C], B) :-
+    lone_shape_choice(L), fit(H, [Hj, [Cn, Id, K, D], Sh, C], B), piece(Cn, Id).
+
+// Where each cell of the object lands at a fit, with its color.
+.decl landing(s: Seat, p: Position, col: Color)
+landing([Hj, [Cn, Id, K, D], Sh, C], P, Col) :-
+    filled([Hj, [Cn, Id, K, D], Sh, C], _), object(Cn, Id, Q, Col), apply(D, Q, Q_img),
+    compose(Sh, Q_img, P).
+
+// The placements taken.
+.decl take(ch: Choice, s: Seat, b: Box)
+
+.decl taken(ch: Choice, cn: Connect, id: Ident)
+taken(Ch, Cn, Id) :- take(Ch, [_, [Cn, Id, _, _], _, _], _).
+
+// Some piece fits a notch, and no placement of it is taken, or two of its
+// placements taken draw it differently.
+.decl unsettled(ch: Choice)
+unsettled([T, H, Hj, L, Cn]) :-
+    piece_fit(L, H, [Hj, [Cn, Id, _, _], _, _], _), transform_choice(T),
+    !taken([T, H, Hj, L, Cn], Cn, Id).
+unsettled(Ch) :-
+    draw(Ch, [_, [Cn, Id, _, _], _, _], P, Col), take(Ch, [Hj, [Cn, Id, K, D], Sh, C], _),
+    !draw(Ch, [Hj, [Cn, Id, K, D], Sh, C], P, Col).
+
+// The color a cell takes: its own under a rotation, the piece's other color
+// under a reflection.
+.decl recolor(cn: Connect, id: Ident, d: D4, k: Color, k2: Color)
+recolor(Cn, Id, D, K, K2) :-
+    object_color(Cn, Id, K), d4_elem(D),
+    ( c4_elem(D), K2 = K
+    ; !c4_elem(D), other_color(Cn, Id, K, K2)
+    ).
+
+// The cells a taken placement draws.
+.decl draw(ch: Choice, s: Seat, p: Position, col: Color)
+draw(Ch, [Hj, [Cn, Id, K, D], Sh, C], P, Col) :-
+    take(Ch, [Hj, [Cn, Id, K, D], Sh, C], B), landing([Hj, [Cn, Id, K, D], Sh, C], P, K0),
+    ( K0 = K ; !inside(P, B) ),         // other-part cells on the host's rectangle drop
+    recolor(Cn, Id, D, K0, Col).
+
+.decl lifted(ch: Choice, p: Position)
+lifted(Ch, P) :- taken(Ch, Cn, Id), object(Cn, Id, P, _).
+
+out(P, Col, Ch) :-
+    impl_choice(Ch), !unsettled(Ch), in(P, C_in),
+    ( draw(Ch, _, P, Col)
+    ; !draw(Ch, _, P, _), lifted(Ch, P), bg(Col)
+    ; !draw(Ch, _, P, _), !lifted(Ch, P), Col = C_in
+    ).
+
+// --- $RestOutside ---
+.decl piece_cell(cn: Connect, p: Position)
+piece_cell(Cn, P) :- piece(Cn, Id), object(Cn, Id, P, _).
+
+// The other part lands off the grid, on the host's rectangle, or on a cell
+// that lifting leaves filled.
+.decl misplaced(s: Seat)
+misplaced([Hj, [Cn, Id, K, D], Sh, C]) :-
+    landing([Hj, [Cn, Id, K, D], Sh, C], P, Col), Col != K,
+    filled([Hj, [Cn, Id, K, D], Sh, C], B),
+    ( !in(P, _)
+    ; inside(P, B)
+    ; in(P, C_in), !bg(C_in), !piece_cell(Cn, P)
+    ).
+
+take([$RestOutside(), H, Hj, L, Cn], [Hj, [Cn, Id, K, D], Sh, C], B) :-
+    piece_fit(L, H, [Hj, [Cn, Id, K, D], Sh, C], B), !misplaced([Hj, [Cn, Id, K, D], Sh, C]).
+
+// --- $PreferRotation ---
+.decl rotation_fits(l: LoneShape, h: HostParse, hj: HostJoin, cn: Connect, id: Ident)
+rotation_fits(L, H, Hj, Cn, Id) :- piece_fit(L, H, [Hj, [Cn, Id, _, D], _, _], _), c4_elem(D).
+
+take([$PreferRotation(), H, Hj, L, Cn], [Hj, [Cn, Id, K, D], Sh, C], B) :-
+    piece_fit(L, H, [Hj, [Cn, Id, K, D], Sh, C], B),
+    ( c4_elem(D) ; !rotation_fits(L, H, Hj, Cn, Id) ).
+
+// --- $NotchRect ---
+fit($NotchRect(), S, B) :- filled(S, B).
+
+// --- $TwoPartHost ---
+.decl third_part(s: Seat)
+third_part(S) :- touch(S, H), touch(S, H2), touch(S, H3), H != H2, H != H3, H2 != H3.
+
+fit($TwoPartHost(), S, B) :-
+    filled(S, B), touch(S, H), touch(S, H2), H != H2, !third_part(S).
+
+// --- $BarePlug ---
+// A one-color object.
+.decl mono(cn: Connect, id: Ident)
+mono(Cn, Id) :- object_color(Cn, Id, _), !other_color(Cn, Id, _, _).
+
+pose([Cn, Id, K, D]) :- mono(Cn, Id), object_color(Cn, Id, K), d4_elem(D).
+
+piece_fit($BarePlug(), H, [Hj, [Cn, Id, K, D], Sh, C], B) :-
+    fit(H, [Hj, [Cn, Id, K, D], Sh, C], B), mono(Cn, Id), C != K.
+
+recolor(Cn, Id, D, K, K) :- pose([Cn, Id, K, D]), mono(Cn, Id).
+
+// --- $FourConn, $FourHost ---
+// @claim hosts pieces
+.init objs = Components<Unit>
+objs.node($U(), P) :- in(P, Col), !bg(Col).
+
+// --- $FourConn ---
+object($FourConn(), Id, P, Col) :- objs.label($U(), P, Id), in(P, Col).
+
+// --- $FourHost ---
+host_object($FourHost(), H, P) :- objs.label($U(), P, H).
+
+// --- $DiagPiece, $DiagHost ---
+// @claim pieces hosts
+.init objs8 = Components8<Unit>
+objs8.node($U(), P) :- in(P, Col), !bg(Col).
+
+// --- $DiagPiece ---
+object($DiagPiece(), Id, P, Col) :- objs8.label($U(), P, Id), in(P, Col).
+
+// --- $DiagHost ---
+host_object($DiagHost(), H, P) :- objs8.label($U(), P, H).

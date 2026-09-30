@@ -36,21 +36,21 @@ tile(P_tile) :- tile_cell(P_tile, _, _).
 
 .decl special(p_tile: Position, ch: Choice)
 
-// --- Clash ---
+// --- $Clash ---
 
 .init tile_color = Unanimous<Position, Color>
 tile_color.item(P_tile, Col) :- tile_cell(P_tile, _, Col).
 
 special(P_tile, $Clash()) :- tile_color.clash(P_tile).
 
-// --- Ink ---
+// --- $Ink ---
 
 .init common = Mode<Unit, Color, Position>
 common.item($U(), Col, P_grid) :- in(P_grid, Col).
 
 special(P_tile, $Ink()) :- tile_cell(P_tile, _, Col), !common.mode($U(), Col).
 
-// --- Odd ---
+// --- $Odd ---
 
 .decl differs(p_tile: Position, p_tile2: Position)
 differs(P_tile, P_tile2) :-

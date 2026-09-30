@@ -21,11 +21,11 @@
     .decl marker(col: Color) marker(4).
     .decl tile_dim(k: number) tile_dim(3).
 
-    // --- Corner ---
+    // --- $Corner ---
     // The axis the marker's corner points along.
     .decl axis(a: Axis) axis(AXIS_H).
 
-    // --- Lean ---
+    // --- $Lean ---
     // The direction from the marker tile toward the pattern tile.
     .decl facing(d: Dir) facing(DIR_T).
 }
@@ -57,12 +57,12 @@ parse.cell($U(), P, Col) :- in(P, Col).
 
 .decl dir(ch: Choice, d: Dir)
 
-// --- Corner ---
+// --- $Corner ---
 dir($Corner(), D) :-
     parse.marker_cell($U(), _, P_intile), corner_dist(P_intile, Diag, 0),  // marker cell at a tile corner
     params.axis(A), dir_of(Diag, A, D).                                    // that corner's side on the axis
 
-// --- Lean ---
+// --- $Lean ---
 dir($Lean(), D) :-
     params.facing(D_near), dist(P_near, D_near, 0), parse.marker_cell($U(), _, P_near),  // on the facing edge
     opposite(D_near, D_far), dist(P_far, D_far, 0), parse.marker_cell($U(), _, P_far),   // on the far edge

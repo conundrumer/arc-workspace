@@ -5,20 +5,25 @@ relation names vary per solver, and the operation lives in rule
 structure. Grep misses those sites; a survey matches them with a script
 under its scratch path, over the parsed corpus:
 
-    from dl.corpus import each_solver
+    from cli.common import all_stems
+    from solver.model import load
+    from souffle import SouffleEngine
 
-    for path, program, idx in each_solver():
+    engine = SouffleEngine()
+    for stem in all_stems():
+        program = load(stem, engine).program
         ...
 
-`idx.refs` holds every atom reference: its role (head/pos/neg/agg), its
-resolved relation key, its rule index into `idx.rules`, and its line.
-A read through a comp instance (`wall.ray(...)`) resolves to the key
-`('!ext', 'wall.ray')`, so a matcher for a lib comp's relation tests
-`ref.atom.name` and `ref.atom.qual`, not `ref.key`.
-Start there; reach for `body_literals` when the shape involves
-comparisons, disjunctions, or aggregate bodies. For the node types,
-read the `# --- AST ---` and `# --- reference index ---` sections of
-`src/dl/dlparse.py`; the lexer and parser sections are not needed.
+`program.units` holds every rule and fact of the solver and of the lib it
+includes: a unit's `head` atom and its `body` literals (None for a fact),
+each an `AtomLiteral` (an `atom` and whether it is `negated`), a
+`Comparison`, a `Disjunction` of conjunctions, or a `BoolLiteral`. An
+atom's `relation` is the name as the statement writes it: a read through
+a comp instance (`wall.ray(...)`) is `RelationName(("wall",), "ray")`, so
+a matcher for a lib comp's relation tests `relation.name` and
+`relation.instances`. A unit's `span` gives its lines and its file: None
+for the solver's own units, the included file's path for the lib's. For
+the node types, read `src/engine/program.py`.
 
 The test below matches the Unanimous shape: one relation twice positive
 in a rule, with a disequality between the two bindings of one argument.
@@ -27,33 +32,44 @@ the survey procedure.
 """
 
 from itertools import combinations
+from pathlib import Path
 
-from dl.dlparse import TOP, Cmp, Index, Var, body_literals, parse
+from engine import Program
+from engine.program import (
+    AtomLiteral,
+    Comparison,
+    ComparisonOperator,
+    RelationName,
+    Unit,
+    Variable,
+)
+from souffle import SouffleEngine
 
 
-def unanimous_sites(idx: Index) -> list[tuple[int, tuple[str, str]]]:
-    """(line, relation key) of each rule holding the Unanimous shape."""
+def unanimous_sites(units: tuple[Unit, ...]) -> list[tuple[int, str]]:
+    """(line, relation) of each rule holding the Unanimous shape."""
     hits = []
-    by_rule: dict[int, dict] = {}
-    for ref in idx.refs:
-        if ref.role == "pos":
-            by_rule.setdefault(ref.rule, {}).setdefault(ref.key, []).append(ref.atom)
-    for n, by_key in by_rule.items():
-        rule = idx.rules[n].rule
+    for unit in units:
+        if unit.body is None:
+            continue
         diseq = {
             frozenset((c.lhs.name, c.rhs.name))
-            for c in body_literals(rule)
-            if isinstance(c, Cmp) and c.op == "!="
-            and isinstance(c.lhs, Var) and isinstance(c.rhs, Var)
+            for c in unit.body
+            if isinstance(c, Comparison) and c.op == ComparisonOperator.NE
+            and isinstance(c.lhs, Variable) and isinstance(c.rhs, Variable)
         }
-        for key, atoms in by_key.items():
+        by_relation: dict[RelationName, list] = {}
+        for lit in unit.body:
+            if isinstance(lit, AtomLiteral) and not lit.negated:
+                by_relation.setdefault(lit.atom.relation, []).append(lit.atom)
+        for relation, atoms in by_relation.items():
             for a1, a2 in combinations(atoms, 2):
                 if len(a1.args) == len(a2.args) and any(
-                    isinstance(x, Var) and isinstance(y, Var)
+                    isinstance(x, Variable) and isinstance(y, Variable)
                     and frozenset((x.name, y.name)) in diseq
                     for x, y in zip(a1.args, a2.args)
                 ):
-                    hits.append((rule.line, key))
+                    hits.append((unit.head.line, relation.text))
     return hits
 
 
@@ -69,8 +85,10 @@ diff(A, B) :- item(_, A), other(_, B), A != B.
 """
 
 
-def test_unanimous_shape_match():
+def test_unanimous_shape_match(tmp_path: Path):
     """The planted site is the only hit: `pair` repeats the relation with
     no disequality, and `diff`'s disequality spans two relations."""
-    idx = Index(parse(FIXTURE))
-    assert unanimous_sites(idx) == [(4, (TOP, "item"))]
+    program = SouffleEngine(functor_dir=None, cache_dir=None).parse(
+        FIXTURE, tmp_path)
+    assert isinstance(program, Program), program
+    assert unanimous_sites(program.units) == [(4, "item")]

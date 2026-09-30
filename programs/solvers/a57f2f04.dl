@@ -19,7 +19,8 @@
     StoredField {}
     // @scene panels: several solid rectangles of params.blank stand apart on
     //  a field whose color is the one color of the grid's border ring
-    // @witness field-5: variant DeriveField
+    // @witness field-5: variant $DeriveField
+    // @witness edge-panel: variant concept
   | DeriveField {}
 
 // which non-field cells join into one panel
@@ -41,7 +42,9 @@
     StoredBlank {}
     // @scene panels: several solid rectangles stand apart on a field of
     //  params.field; each panel's blank is its one most frequent color
-    // @witness blank-6: variant DeriveBlank
+    // @witness blank-6: variant $DeriveBlank
+    // @witness solid-motif: borderline concept
+    //     @relaxed tile
   | DeriveBlank {}
 
 // which marks the tile bounds
@@ -66,9 +69,11 @@
     //  marks' bounding box to that box's far edges; a marks' box equally far
     //  from two opposite sides of the panel gives no tile; the tile's height
     //  divides the panel's height, and its width divides the panel's width
-    // @witness inset-marks: variant CornerBox
+    // @witness inset-marks: variant $CornerBox
     //     @relaxed motif
     //     @relaxed tile
+    // @witness inset-even: variant $CornerBox
+    //     @relaxed motif
   | CornerBox {}
 
 // where the lattice of copies is laid from
@@ -82,6 +87,7 @@
     // @witness off-lattice: borderline concept
     //     @relaxed tile
     //     @reassigned anchor
+    // @witness inset-even: variant $CornerBox
   | CornerAnchor {}
 
 // which cells the copies fill
@@ -102,26 +108,20 @@
 // A panel under one case.
 .type Panel = [ch: Choice, x: Ident]
 
-// A panel's marks in one scan order.
-.type Scan = [pn: Panel, d: DiagDir, a: Axis]
-
 // A panel of one example.
 .type ExPanel = [e: Example, x: Ident]
-
-// An example panel's marks in one scan order.
-.type ExScan = [pn: ExPanel, d: DiagDir, a: Axis]
 
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- StoredField ---
+    // --- $StoredField ---
     // @derive DominantColor: variant derived
     .decl field(c: Color) field(8).
 
-    // --- StoredBlank ---
+    // --- $StoredBlank ---
     .decl blank(c: Color) blank(0).
 
-    // --- ColorBox ---
+    // --- $ColorBox ---
     // The scan orders that find a panel's first mark: from corner d, along
     // axis a first. The pairs leave all eight open.
     .decl scan(d: DiagDir, a: Axis)
@@ -130,13 +130,76 @@
     scan(DIAG_BL, AXIS_V). scan(DIAG_BL, AXIS_H).
     scan(DIAG_BR, AXIS_V). scan(DIAG_BR, AXIS_H).
 
-    // --- CornerAnchor ---
+    // --- $CornerAnchor ---
     // The pairs leave all four corners open.
     .decl anchor(d: DiagDir)
     anchor(DIAG_TL). anchor(DIAG_TR). anchor(DIAG_BL). anchor(DIAG_BR).
 }
 
 .init params = Params
+
+// A panel's marks, its tile's corner placements, and the copies of its
+// tile, for the program's panels and for the examples' panels.
+.comp Parse<Key> {
+    .type Scan = [k: Key, d: DiagDir, a: Axis]
+
+    .decl panel(k: Key, p: Position)
+
+    // The colors of the cells of the panel's box.
+    .decl color(k: Key, p: Position, col: Color)
+
+    .decl blank(k: Key, col: Color)
+
+    // The tiles whose corner placements are wanted.
+    .decl tile(k: Key, b: Box)
+
+    // The scan orders to find the first mark in: from corner d, along axis a
+    // first.
+    .decl scan(k: Key, d: DiagDir, a: Axis)
+
+    // The tiles to lay: box b's cells moved by v.
+    .decl lay(k: Key, b: Box, v: Offset)
+
+    // @claim tile-panel
+    .init box = Bbox<Key>
+    box.cell(K, P) :- panel(K, P).
+
+    .decl mark(k: Key, p: Position)
+    mark(K, P) :- panel(K, P), color(K, P, Col), !blank(K, Col).
+
+    // @claim tile
+    .init marks_box = Bbox<Key>
+    marks_box.cell(K, P) :- mark(K, P).
+
+    // @claim tile
+    .init scan_order = LexOrder<Scan>
+    scan_order.corner([K, D, A], D) :- scan(K, D, A).
+    scan_order.axis([K, D, A], A) :- scan(K, D, A).
+    scan_order.cell([K, D, A], P) :- scan(K, D, A), mark(K, P).
+
+    // The box of the cells of the first mark's color, in each scan order.
+    // @claim tile
+    .init first_color = Bbox<Scan>
+    first_color.cell([K, D, A], Q) :-
+        scan_order.first([K, D, A], P), color(K, P, Col), mark(K, Q), color(K, Q, Col).
+
+    // The translation that moves tile b into the panel box's corner d.
+    .decl corner_lay(k: Key, b: Box, d: DiagDir, v: Offset)
+    corner_lay(K, B, D, V) :-
+        tile(K, B), box.box(K, B_p), relative(B_p, B, B_rel),   // the tile in the panel box's frame
+        diag_dirs(D, _, D1, D2),
+        dist(B_rel, D1, K1), jump_offset(D1, K1, V1),
+        dist(B_rel, D2, K2), jump_offset(D2, K2, V2), compose(V1, V2, V).
+
+    // The copies: the tile's cells moved by v, then repeated by the tile's
+    // extent along both axes inside the panel's box.
+    .decl copy(k: Key, b: Box, v: Offset, p: Position, col: Color)
+    copy(K, B, V, Q, Col) :- lay(K, B, V), color(K, P, Col), inside(P, B), compose(P, V, Q).
+    copy(K, B, V, Q, Col) :-
+        copy(K, B, V, P, Col),
+        axis_of(D, A), box_extent(B, P, A, N), jump(P, D, N, Q),  // one tile on
+        box.box(K, B_p), inside(Q, B_p).
+}
 
 .decl field_color_choice(f: FieldColor)
 field_color_choice($StoredField()). field_color_choice($DeriveField()).
@@ -178,41 +241,18 @@ orth.node(F, P) :- panel_cell(F, P).
 .decl panel(pn: Panel, p: Position)
 panel([Ch, X], P) :- impl_choice(Ch), Ch = [F, $Orthogonal(), _, _, _, _, _], orth.label(F, P, X).
 
-// @claim tile-panel
-.init panel_box = Bbox<Panel>
-panel_box.cell(Pn, P) :- panel(Pn, P).
-
-// The blank color of each panel.
-.decl blank(pn: Panel, col: Color)
-
-.decl mark(pn: Panel, p: Position)
-mark(Pn, P) :- panel(Pn, P), in(P, Col), !blank(Pn, Col).
+.init parse = Parse<Panel>
+parse.panel(Pn, P) :- panel(Pn, P).
+parse.color(Pn, P, Col) :- parse.box.box(Pn, B), in(P, Col), inside(P, B).
 
 // The marks that bound the tile, and their box.
 .decl marks_box(pn: Panel, b: Box)
-
-// The motif tile.
-.decl tile_box(pn: Panel, b: Box)
-
-// The translations that lay the tile.
-.decl shift(pn: Panel, v: Offset)
-
-// The copies: the tile's cells moved by the shift, then repeated by the
-// tile's extent along both axes inside the panel's box.
-// @claim tile-panel
-.decl copy(pn: Panel, v: Offset, p: Position, col: Color)
-copy(Pn, V, Q, Col) :-
-    shift(Pn, V), tile_box(Pn, B), in(P, Col), inside(P, B), compose(P, V, Q).
-copy(Pn, V, Q, Col) :-
-    copy(Pn, V, P, Col),
-    tile_box(Pn, B), axis_of(D, A), box_extent(B, P, A, N),  // one tile on
-    jump(P, D, N, Q), panel_box.box(Pn, B_p), inside(Q, B_p).
 
 // The cells the copies fill.
 .decl fill(pn: Panel, p: Position)
 
 .decl paint(ch: Choice, p: Position, col: Color)
-paint(Ch, P, Col) :- copy([Ch, X], _, P, Col), fill([Ch, X], P).
+paint(Ch, P, Col) :- parse.copy([Ch, X], _, _, P, Col), fill([Ch, X], P).
 
 // The case is undefined on the input.
 .decl broken(ch: Choice)
@@ -224,28 +264,28 @@ live(Ch) :- impl_choice(Ch), Ch = [F, _, _, _, _, _, _], field(F, _), !broken(Ch
 out(P, Col, Ch) :- live(Ch), paint(Ch, P, Col).
 out(P, Col, Ch) :- live(Ch), in(P, Col), !paint(Ch, P, _).
 
-// --- StoredField ---
+// --- $StoredField ---
 field($StoredField(), Col) :- params.field(Col).
 
-// --- DeriveField ---
+// --- $DeriveField ---
 // @claim panels
 .init border = Unanimous<Unit, Color>
 border.item($U(), Col) :- in(P, Col), dir_elem(D), dist(P, D, 0).
 
 field($DeriveField(), Col) :- border.value($U(), Col).
 
-// --- DiagPanel ---
+// --- $DiagPanel ---
 // @claim panels
 .init diag = Components8<FieldColor>
 diag.node(F, P) :- panel_cell(F, P).
 
 panel([Ch, X], P) :- impl_choice(Ch), Ch = [F, $DiagPanel(), _, _, _, _, _], diag.label(F, P, X).
 
-// --- StoredBlank ---
-blank([Ch, X], Col) :-
-    panel([Ch, X], _), Ch = [_, _, $StoredBlank(), _, _, _, _], params.blank(Col).
+// --- $StoredBlank ---
+parse.blank([Ch, X], Col) :-
+    parse.box.box([Ch, X], _), Ch = [_, _, $StoredBlank(), _, _, _, _], params.blank(Col).
 
-// --- DeriveBlank ---
+// --- $DeriveBlank ---
 // @claim panels
 .init commonest = Mode<Panel, Color, Position>
 commonest.item([Ch, X], Col, P) :-
@@ -255,76 +295,58 @@ commonest.item([Ch, X], Col, P) :-
 .init top = Unanimous<Panel, Color>
 top.item(Pn, Col) :- commonest.mode(Pn, Col).
 
-blank(Pn, Col) :- top.value(Pn, Col).
+parse.blank(Pn, Col) :- top.value(Pn, Col).
 broken(Ch) :- top.clash([Ch, _]).
 
-// --- AllMarks ---
-// @claim tile
-.init all_marks = Bbox<Panel>
-all_marks.cell([Ch, X], P) :- mark([Ch, X], P), Ch = [_, _, _, $AllMarks(), _, _, _].
+// --- $AllMarks ---
+marks_box([Ch, X], B) :- parse.marks_box.box([Ch, X], B), Ch = [_, _, _, $AllMarks(), _, _, _].
 
-marks_box(Pn, B) :- all_marks.box(Pn, B).
-
-// --- ColorBox ---
-// @claim tile
-.init scan_order = LexOrder<Scan>
-scan_order.corner([Pn, D, A], D) :- scan_order.cell([Pn, D, A], _).
-scan_order.axis([Pn, D, A], A) :- scan_order.cell([Pn, D, A], _).
-scan_order.cell([[Ch, X], D, A], P) :-
-    mark([Ch, X], P), Ch = [_, _, _, $ColorBox(), _, _, _], params.scan(D, A).
-
-// The box of the cells of the first mark's color, in each scan order.
-// @claim tile
-.init first_color = Bbox<Scan>
-first_color.cell([Pn, D, A], Q) :-
-    scan_order.first([Pn, D, A], P), in(P, Col), mark(Pn, Q), in(Q, Col).
+// --- $ColorBox ---
+parse.scan([Ch, X], D, A) :-
+    parse.box.box([Ch, X], _), Ch = [_, _, _, $ColorBox(), _, _, _], params.scan(D, A).
 
 // @claim tile
 .init color_box = Unanimous<Panel, Box>
-color_box.item(Pn, B) :- first_color.box([Pn, _, _], B).
+color_box.item(Pn, B) :- parse.first_color.box([Pn, _, _], B).
 
 marks_box(Pn, B) :- color_box.value(Pn, B).
 broken(Ch) :- color_box.clash([Ch, _]).
 
-// --- MarkBox ---
-tile_box([Ch, X], B) :- marks_box([Ch, X], B), Ch = [_, _, _, _, $MarkBox(), _, _].
+// --- $MarkBox ---
+parse.tile([Ch, X], B) :- marks_box([Ch, X], B), Ch = [_, _, _, _, $MarkBox(), _, _].
 
-// --- CornerBox ---
+// --- $CornerBox ---
 // The marks' box's distance to the panel box's side d, and to the opposite.
 .decl gap(pn: Panel, d: Dir, k: number, k2: number)
 gap([Ch, X], D, K, K2) :-
     marks_box([Ch, X], B), Ch = [_, _, _, _, $CornerBox(), _, _],
-    panel_box.box([Ch, X], B_p), relative(B_p, B, B_rel), dist_pair(B_rel, D, K, K2).
+    parse.box.box([Ch, X], B_p), relative(B_p, B, B_rel), dist_pair(B_rel, D, K, K2).
 
 // The side of each axis that the marks' box lies nearer.
 .decl near(pn: Panel, d: Dir, k: number)
 near(Pn, D, K) :- gap(Pn, D, K, K2), K < K2.
 
-tile_box(Pn, B) :-
+parse.tile(Pn, B) :-
     marks_box(Pn, B_m),
     near(Pn, D1, K1), near(Pn, D2, K2), diag_dirs(_, _, D1, D2),  // a corner's two sides
     edge_outset(D1, K1, O1), compose(B_m, O1, B1),     // out to the near side on one axis
     edge_outset(D2, K2, O2), compose(B1, O2, B).       // and on the other
 broken(Ch) :- gap([Ch, _], _, K, K).
 
-// --- TileLattice ---
-shift([Ch, X], ZERO) :- tile_box([Ch, X], _), Ch = [_, _, _, _, _, $TileLattice(), _].
+// --- $TileLattice ---
+parse.lay([Ch, X], B, ZERO) :- parse.tile([Ch, X], B), Ch = [_, _, _, _, _, $TileLattice(), _].
 
-// --- CornerAnchor ---
-// The tile moved into the panel box's corner at each anchor.
-shift([Ch, X], V) :-
-    tile_box([Ch, X], B), Ch = [_, _, _, _, _, $CornerAnchor(), _],
-    panel_box.box([Ch, X], B_p), relative(B_p, B, B_rel),      // the tile in the panel box's frame
-    params.anchor(D), diag_dirs(D, _, D1, D2),
-    dist(B_rel, D1, K1), jump_offset(D1, K1, V1),
-    dist(B_rel, D2, K2), jump_offset(D2, K2, V2), compose(V1, V2, V).
+// --- $CornerAnchor ---
+parse.lay([Ch, X], B, V) :-
+    parse.corner_lay([Ch, X], B, D, V), Ch = [_, _, _, _, _, $CornerAnchor(), _],
+    params.anchor(D).
 
-// --- PanelCells ---
+// --- $PanelCells ---
 fill([Ch, X], P) :- panel([Ch, X], P), Ch = [_, _, _, _, _, _, $PanelCells()].
 
-// --- ComponentBbox ---
+// --- $ComponentBbox ---
 fill([Ch, X], P) :-
-    panel_box.box([Ch, X], B), Ch = [_, _, _, _, _, _, $ComponentBbox()],
+    parse.box.box([Ch, X], B), Ch = [_, _, _, _, _, _, $ComponentBbox()],
     in(P, _), inside(P, B).
 
 .comp Determine {
@@ -332,65 +354,30 @@ fill([Ch, X], P) :-
     .init pieces = Components<Example>
     pieces.node(E, P) :- ex_in(E, P, Col), !params.field(Col).
 
-    .decl panel(pn: ExPanel, p: Position)
-    panel([E, X], P) :- pieces.label(E, P, X).
+    .init parse = Parse<ExPanel>
+    parse.panel([E, X], P) :- pieces.label(E, P, X).
+    parse.color([E, X], P, Col) :- parse.box.box([E, X], B), ex_in(E, P, Col), inside(P, B).
+    parse.blank(Pn, Col) :- parse.box.box(Pn, _), params.blank(Col).
+    parse.tile(Pn, B) :- parse.marks_box.box(Pn, B).
+    parse.scan(Pn, D, A) :- parse.box.box(Pn, _), diag_dir_elem(D), axis_elem(A).
 
-    .init panel_box = Bbox<ExPanel>
-    panel_box.cell(Pn, P) :- panel(Pn, P).
-
-    .decl mark(pn: ExPanel, p: Position, col: Color)
-    mark([E, X], P, Col) :- panel([E, X], P), ex_in(E, P, Col), !params.blank(Col).
-
-    .init marks_box = Bbox<ExPanel>
-    marks_box.cell(Pn, P) :- mark(Pn, P, _).
-
-    // The tiles a parameter value lays: box b's cells moved by v.
-    .decl lay(pn: ExPanel, b: Box, v: Offset)
-
-    .decl copy(pn: ExPanel, b: Box, v: Offset, p: Position, col: Color)
-    copy([E, X], B, V, Q, Col) :-
-        lay([E, X], B, V), ex_in(E, P, Col), inside(P, B), compose(P, V, Q).
-    copy(Pn, B, V, Q, Col) :-
-        copy(Pn, B, V, P, Col),
-        axis_of(D, A), box_extent(B, P, A, N), jump(P, D, N, Q),  // one tile on
-        panel_box.box(Pn, B_p), inside(Q, B_p).
+    parse.lay(Pn, B, V) :- parse.corner_lay(Pn, B, _, V).
+    parse.lay(Pn, B, ZERO) :- parse.first_color.box([Pn, _, _], B).
 
     // A laid tile whose copies a train output contradicts.
     .decl wrong(pn: ExPanel, b: Box, v: Offset)
     wrong([E, X], B, V) :-
-        copy([E, X], B, V, P, Col), panel([E, X], P), ex_out(E, P, Col2), Col != Col2.
-
-    // The marks' box moved into the panel box's corner d.
-    .decl corner_lay(pn: ExPanel, d: DiagDir, b: Box, v: Offset)
-    corner_lay(Pn, D, B, V) :-
-        marks_box.box(Pn, B), panel_box.box(Pn, B_p), relative(B_p, B, B_rel),
-        diag_dirs(D, _, D1, D2),
-        dist(B_rel, D1, K1), jump_offset(D1, K1, V1),
-        dist(B_rel, D2, K2), jump_offset(D2, K2, V2), compose(V1, V2, V).
-
-    lay(Pn, B, V) :- corner_lay(Pn, _, B, V).
+        parse.copy([E, X], B, V, P, Col), parse.panel([E, X], P), ex_out(E, P, Col2), Col != Col2.
 
     .decl anchor(d: DiagDir)
     anchor(D) :- diag_dir_elem(D), !contradicted_anchor(D).
 
     .decl contradicted_anchor(d: DiagDir)
-    contradicted_anchor(D) :- corner_lay(Pn, D, B, V), wrong(Pn, B, V).
-
-    // The box of the cells of the first mark's color, in each scan order.
-    .init scan_order = LexOrder<ExScan>
-    scan_order.corner([Pn, D, A], D) :- scan_order.cell([Pn, D, A], _).
-    scan_order.axis([Pn, D, A], A) :- scan_order.cell([Pn, D, A], _).
-    scan_order.cell([Pn, D, A], P) :- mark(Pn, P, _), diag_dir_elem(D), axis_elem(A).
-
-    .init first_color = Bbox<ExScan>
-    first_color.cell([Pn, D, A], Q) :-
-        scan_order.first([Pn, D, A], P), mark(Pn, P, Col), mark(Pn, Q, Col).
-
-    lay(Pn, B, ZERO) :- first_color.box([Pn, _, _], B).
+    contradicted_anchor(D) :- parse.corner_lay(Pn, B, D, V), wrong(Pn, B, V).
 
     .decl scan(d: DiagDir, a: Axis)
     scan(D, A) :- diag_dir_elem(D), axis_elem(A), !contradicted_scan(D, A).
 
     .decl contradicted_scan(d: DiagDir, a: Axis)
-    contradicted_scan(D, A) :- first_color.box([Pn, D, A], B), wrong(Pn, B, ZERO).
+    contradicted_scan(D, A) :- parse.first_color.box([Pn, D, A], B), wrong(Pn, B, ZERO).
 }

@@ -26,7 +26,7 @@
     .decl base(d: Dir) base(DIR_L).   // side kept; the fold axis is its axis
     .decl bg(c: Color) bg(0).
 
-    // --- Table ---
+    // --- $Table ---
     .decl arr_dim(a: Axis, n: number)
     arr_dim(AXIS_V, 1). arr_dim(AXIS_H, 2).
     .decl gap(g: number) gap(1).
@@ -36,11 +36,11 @@
         frame_dim(AXIS_V, Fv), frame_dim(AXIS_H, Fh), gap(G),
         helpers.tile_pos([Av, Ah], [Fv, Fh], [0, G], P_grid, P_tile, P_intile).
 
-    // --- Count, Size ---
+    // --- $Count, $Size ---
     .decl divide_gap(g: number)
     divide_gap(1).
 
-    // --- Count ---
+    // --- $Count ---
     .decl divisor(n: number)
     divisor(2).
 }

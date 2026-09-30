@@ -32,14 +32,14 @@ ink(P, Col) :- in(P, Col), !params.bg(Col).
 
 .decl rect(col: Color, ch: Choice)
 
-// --- Sparse ---
+// --- $Sparse ---
 
 .init tally = Mode<Unit, Color, Position>
 tally.item($U(), Col, P) :- ink(P, Col).
 
 rect(Col, $Sparse()) :- tally.mode($U(), Col).
 
-// --- Isolated ---
+// --- $Isolated ---
 
 .init rim = Rim<Color>
 rim.cell(Col, P) :- ink(P, Col).
@@ -53,7 +53,7 @@ sprinkle_color(Col) :- ink(P, Col), !touching(P).
 
 rect(Col, $Isolated()) :- ink(_, Col), !sprinkle_color(Col).
 
-// --- Sparse, Isolated ---
+// --- $Sparse, $Isolated ---
 
 .decl sprinkle(p: Position, ch: Choice)
 sprinkle(P, Ch) :- ink(P, Col), impl_choice(Ch), !rect(Col, Ch).

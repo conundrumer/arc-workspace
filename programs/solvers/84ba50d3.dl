@@ -69,7 +69,7 @@ wide(Id, R) :- shape_row_cell(Id, R, P), shape_row_cell(Id, R, Q), P != Q.
 // The rows the divider stops.
 .decl stopped(id: Ident, row: Position, ch: Choice)
 
-// --- Widest ---
+// --- $Widest ---
 
 .type ShapeRow = [id: Ident, row: Position]
 
@@ -85,7 +85,7 @@ unique_widest.item(Id, R) :- widest.high(Id, R, _).
 
 stopped(Id, R, $Widest()) :- unique_widest.value(Id, R), wide(Id, R).
 
-// --- Sieve ---
+// --- $Sieve ---
 
 stopped(Id, R, $Sieve()) :- wide(Id, R).
 

@@ -39,7 +39,7 @@ block.cell($U(), P) :- in(P, Col), params.marker(Col).
 
 .decl img(p: Position, col: Color, ch: Choice)
 
-// --- Mirror ---
+// --- $Mirror ---
 
 img(P_out, Col, $Mirror()) :-
     ink(P, Col), block.box($U(), B),                    // an ink cell and the block
@@ -47,7 +47,7 @@ img(P_out, Col, $Mirror()) :-
     params.sym(S), sym_member(S, D), apply(D, V, V2),   // the offset transformed
     compose(B, V2, P_out).
 
-// --- Seat, SeatCell ---
+// --- $Seat, $SeatCell ---
 
 .init obj = Components8<Unit>
 obj.node($U(), P) :- ink(P, _).
@@ -73,13 +73,13 @@ img(P_out, Col, Ch) :-
     box_corner(P_c, B_block, Q2), neighbor(P_c, Q2, P_seat),    // the seat one step out of it
     compose(P_seat, V2, P_out).
 
-// --- Seat ---
+// --- $Seat ---
 
 anchor(Id, P0, $Seat()) :-
     obj_quad(Id, Q), diag_opposite(Q, Q_face),                          // the corner facing the block
     obj_box.box(Id, B_obj), in(P0, _), box_corner(P0, B_obj, Q_face).   // the box cell there
 
-// --- SeatCell ---
+// --- $SeatCell ---
 
 anchor(Id, P0, $SeatCell()) :-
     obj_quad(Id, Q), diag_opposite(Q, Q_face),                    // the corner facing the block

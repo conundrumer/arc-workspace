@@ -75,7 +75,7 @@ canvas_bg(P) :- canvas(P, Col), params.bg(Col).
 
 .decl gap(ch: Choice, p: Position)
 
-// --- Between ---
+// --- $Between ---
 
 .init flank = Between<Unit>
 flank.axis($U(), A) :- params.slide_axis(A).
@@ -84,7 +84,7 @@ flank.mark($U(), P) :- slid(P).
 
 gap($Between(), P) :- flank.between($U(), P).
 
-// --- Enclosed ---
+// --- $Enclosed ---
 
 // The regions the shapes close off from the grid edge.
 .init closed = Closed<Unit>

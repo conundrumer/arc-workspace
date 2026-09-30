@@ -47,7 +47,7 @@
         arr_dim(AXIS_V, Av), arr_dim(AXIS_H, Ah), frame_dim(K), gap(G),
         helpers.tile_pos([Av, Ah], [K, K], [0, G], P_grid, P_tile, P_intile).
 
-    // --- Count, Size decompose data ---
+    // --- $Count, Size decompose data ---
     .decl divide_axis(a: Axis)
     divide_axis(AXIS_H).
 
@@ -111,7 +111,7 @@ out(O, Bg, [Dc, B]) :-
     dec_choice(Dc), body_choice(B), params.frame(O),   // choice × cell
     params.bg(Bg), !cand(O, _, _, Dc).
 
-// --- Spatial ---
+// --- $Spatial ---
 
 // The competing pane nearest the stack edge.
 .init nearest_pane = ArgExtremes<Cell, Position>
@@ -119,7 +119,7 @@ nearest_pane.cand([O, Dc], T, K) :- cand(O, T, _, Dc), params.stack_dir(D), dist
 
 out(O, Col, [Dc, $Spatial()]) :- nearest_pane.low([O, Dc], T, _), cand(O, T, Col, Dc).
 
-// --- Palette ---
+// --- $Palette ---
 
 // The top-priority color competing at the cell.
 .init front_ink = ArgExtremes<Cell, Color>
@@ -127,7 +127,7 @@ front_ink.cand([O, Dc], Col, R) :- cand(O, _, Col, Dc), params.ink_rank(Col, R).
 
 out(O, Col, [Dc, $Palette()]) :- front_ink.low([O, Dc], Col, _).
 
-// --- Stack ---
+// --- $Stack ---
 
 // The top-priority pane competing at the cell.
 .init front_pane = ArgExtremes<Cell, Position>

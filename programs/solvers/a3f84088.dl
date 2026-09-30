@@ -1,0 +1,385 @@
+// a3f84088
+// @draft
+// @keywords: enclose depth rings lookup bbox
+// @scene square-frame: each input holds one square, one-cell-thick outline of
+//  params.frame_color on a field of params.background
+// @scene empty-inside: every cell inside that outline is params.background
+// @rule ring-depth: the cells that an outline of params.frame_color closes off
+//  from the grid edge, where a cell escapes by side-by-side steps through
+//  cells of other colors, form a region, one per closed-off component; a
+//  region cell's depth is the count of the region's rings outside it: its
+//  Chebyshev distance to the nearest cell outside the region, less one
+// @rule cycle-color: a region cell takes the params.cycle entry at its depth
+//  modulo the number of entries
+// @rule outside-kept: every cell outside the regions keeps its input color
+
+// how a cell escapes to the grid edge
+.type Step =
+    // @claim ring-depth
+    SideStep {}
+    // @rule ring-depth: a cell also escapes by diagonal steps, so an outline
+    //  that closes only at a corner closes nothing off
+    // @witness corner-gap: borderline concept
+    //     @relaxed square-frame
+  | DiagonalLeak {}
+
+// the distance that sets depth
+.type Metric =
+    // @claim ring-depth
+    Chebyshev {}
+    // @rule ring-depth: depth is the city-block distance to the nearest cell
+    //  outside the region, less one
+    // @witness l-frame: borderline concept
+    //     @relaxed square-frame
+  | ManhattanDepth {}
+
+// which cells take the cycle
+.type Region =
+    // @claim ring-depth
+    Enclosed {step: Step, metric: Metric}
+    // @rule ring-depth: the region is the inside of the bounding box of all
+    //  params.frame_color cells, and depth is a cell's distance to the nearest
+    //  side of that inside
+    // @rule outside-kept: the box's own border takes params.frame_color
+    // @witness two-frames: variant concept
+    //     @relaxed square-frame
+    // @witness corner-gap: borderline concept
+  | BboxRegion {}
+
+// the color at the cycle entries that repeat the outline, under FrameAnyColor
+.type Ring2 =
+    // @claim cycle-color
+    OutlineRing2 {}
+    // @rule cycle-color: only the last cycle entry takes the outline's color,
+    //  and every other entry keeps its stored color
+    // @witness frame-green: borderline $FrameAnyColor
+    //     @relaxed square-frame
+  | InnerFrameStored {}
+
+// which color draws the outline
+.type FrameSource =
+    // @claim ring-depth
+    StoredFrame {}
+    // @rule ring-depth: every color other than the background is tried as an
+    //  outline; under BboxRegion the box bounds all cells of other colors than
+    //  the background, and is undefined when they hold two colors
+    // @rule cycle-color: the cycle entries of params.frame_color take the
+    //  color of the region's outline
+    // @witness frame-green: borderline $FrameAnyColor
+  | FrameAnyColor {ring2: Ring2}
+
+// which region cells the cycle writes
+.type Write =
+    // @claim cycle-color
+    WriteAll {}
+    // @rule cycle-color: a cell at the entry of params.background keeps its
+    //  input color
+    // @witness stray-inside: foreign any
+    //     @relaxed empty-inside
+  | GapKept {}
+    // @rule cycle-color: only cells of the background color are written, and
+    //  every other cell keeps its input color
+    // @witness stray-inside: foreign any
+  | InteriorKept {}
+
+// the background color
+.type BgSource =
+    // @claim cycle-color
+    StoredBackground {}
+    // @rule cycle-color: the background is the input's commonest color, and
+    //  it replaces params.background at that color's cycle entry
+    // @witness field-blue: borderline $DerivedBackground
+    //     @relaxed square-frame
+  | DerivedBackground {}
+
+// the color of a region's center cell
+.type CenterRule =
+    // @claim cycle-color
+    RingCenter {}
+    // @rule cycle-color: the center cell of a region whose bounding box has
+    //  an odd number of rows and of columns takes the outline's color,
+    //  whatever its depth
+    // @witness frame-7x7: ordinary concept
+  | CenterDot {}
+
+.type Choice = [region: Region, frame: FrameSource, write: Write, bg: BgSource, center: CenterRule]
+
+// The closed-off cells of one outline color under one step.
+.type Wall = [s: Step, c: Color]
+
+// One closed-off component.
+.type Area = [s: Step, c: Color, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // The ring colors by depth, repeating.
+    .decl cycle(k: number, c: Color)
+    cycle(0, 2). cycle(1, 5). cycle(2, 0). cycle(3, 5).
+
+    // --- $StoredFrame, $OutlineRing2 ---
+    .decl frame_color(c: Color) frame_color(5).
+
+    // --- $GapKept, $InteriorKept, $FrameAnyColor, $DerivedBackground ---
+    .decl background(c: Color) background(0).
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    // The cells an outline does not block.
+    .decl open(ky: Key, p: Position)
+
+    // @claim ring-depth
+    .init closed = Closed<Key>
+    closed.cell(Ky, P) :- open(Ky, P).
+
+    // One instance serves every component of a key: two components meet at
+    // most at a corner, where both cells lie on the rim.
+    // @claim ring-depth
+    .init cheb = Rim8<Key>
+    cheb.cell(Ky, P) :- closed.region(Ky, P, _).
+}
+
+.init parse = Parse<Color>
+
+.decl region_choice(r: Region)
+region_choice($Enclosed($SideStep(), $Chebyshev())).
+region_choice($Enclosed($SideStep(), $ManhattanDepth())).
+region_choice($Enclosed($DiagonalLeak(), $Chebyshev())).
+region_choice($Enclosed($DiagonalLeak(), $ManhattanDepth())).
+region_choice($BboxRegion()).
+
+.decl frame_source_choice(f: FrameSource)
+frame_source_choice($StoredFrame()).
+frame_source_choice($FrameAnyColor($OutlineRing2())).
+frame_source_choice($FrameAnyColor($InnerFrameStored())).
+
+.decl write_choice(w: Write)
+write_choice($WriteAll()). write_choice($GapKept()). write_choice($InteriorKept()).
+
+.decl bg_source_choice(b: BgSource)
+bg_source_choice($StoredBackground()). bg_source_choice($DerivedBackground()).
+
+.decl center_rule_choice(c: CenterRule)
+center_rule_choice($RingCenter()). center_rule_choice($CenterDot()).
+
+// Train1's commonest color is 5, so DerivedBackground fits only beside
+// StoredFrame and WriteAll or GapKept; beside GapKept it changes nothing, since
+// GapKept never writes the background.
+.decl impl_choice(ch: Choice)
+impl_choice([R, F, W, $StoredBackground(), Ct]) :-
+    region_choice(R), frame_source_choice(F), write_choice(W), center_rule_choice(Ct).
+impl_choice([R, $StoredFrame(), $WriteAll(), $DerivedBackground(), Ct]) :-
+    region_choice(R), center_rule_choice(Ct).
+
+// The background color each source gives.
+.decl bg_color(b: BgSource, c: Color)
+
+// The outline colors each reading tries.
+.decl wall(r: Region, f: FrameSource, b: BgSource, c: Color)
+
+parse.open(C, P) :- wall(_, _, _, C), in(P, Col), Col != C.
+
+// The cells of each closed-off component.
+.decl area(a: Area, p: Position)
+
+// A region cell under each reading, with its outline color and depth.
+.decl ring(r: Region, c: Color, p: Position, k: number)
+
+// @claim cycle-color
+.init period = Tally<Unit, number>
+period.item($U(), K) :- params.cycle(K, _).
+period.domain($U()).
+
+// The cycle entry of each depth.
+.decl phase(k: number, idx: number)
+phase(K, Idx) :- ring(_, _, _, K), period.tally($U(), W), stride(K, W, 0, _, Idx).
+
+// The cycle entries that take the outline's color.
+.decl outline_phase(f: FrameSource, idx: number)
+
+// The cycle entry of params.background.
+.decl bg_phase(idx: number)
+bg_phase(Idx) :- params.cycle(Idx, Col), params.background(Col).
+
+// A cycle entry whose stored color a background source replaces, and the color
+// it takes.
+.decl swap(b: BgSource, idx: number, col: Color)
+
+// The color each reading gives a cycle entry in a region of outline color c.
+.decl hue(f: FrameSource, b: BgSource, c: Color, idx: number, col: Color)
+hue(F, B, C, Idx, Col) :-
+    wall(_, F, B, C), params.cycle(Idx, Col0),
+    ( outline_phase(F, Idx), Col = C
+    ; !outline_phase(F, Idx), swap(B, Idx, Col)
+    ; !outline_phase(F, Idx), !swap(B, Idx, _), Col = Col0
+    ).
+
+// The color the cycle gives a region cell, at cycle entry idx.
+.decl tint(r: Region, f: FrameSource, b: BgSource, c: Color, p: Position, idx: number, col: Color)
+tint(R, F, B, C, P, Idx, Col) :-
+    wall(R, F, B, C), ring(R, C, P, K), phase(K, Idx), hue(F, B, C, Idx, Col).
+
+// The center cell of a region whose bounding box is odd on both axes, which
+// CenterDot paints.
+.decl dot(ct: CenterRule, r: Region, c: Color, p: Position)
+
+// The cells each case writes.
+.decl paint(ch: Choice, p: Position, col: Color)
+
+// A case with no output on this input.
+.decl void(ch: Choice)
+
+out(P, Col, Ch) :-
+    impl_choice(Ch), !void(Ch),
+    ( paint(Ch, P, Col)
+    ; in(P, Col), !paint(Ch, P, _) ).
+
+// --- $StoredBackground ---
+bg_color($StoredBackground(), C) :- params.background(C).
+
+// --- $DerivedBackground ---
+// @claim cycle-color
+.init commonest = Mode<Unit, Color, Position>
+commonest.item($U(), Col, P) :- in(P, Col).
+
+bg_color($DerivedBackground(), C) :- commonest.mode($U(), C).
+
+swap($DerivedBackground(), Idx, Col) :- bg_phase(Idx), bg_color($DerivedBackground(), Col).
+
+// --- $StoredFrame ---
+wall(R, $StoredFrame(), B, C) :- region_choice(R), bg_source_choice(B), params.frame_color(C).
+
+// --- $FrameAnyColor ---
+// The input's colors other than the background.
+.decl ink_color(b: BgSource, c: Color)
+ink_color(B, C) :- bg_color(B, Bg), in(_, C), C != Bg.
+
+wall($Enclosed(S, M), $FrameAnyColor(G), B, C) :-
+    region_choice($Enclosed(S, M)), frame_source_choice($FrameAnyColor(G)), ink_color(B, C).
+
+// The one color of the cells other than the background.
+// @claim ring-depth
+.init ink = Unanimous<BgSource, Color>
+ink.item(B, C) :- ink_color(B, C).
+
+wall($BboxRegion(), $FrameAnyColor(G), B, C) :-
+    frame_source_choice($FrameAnyColor(G)), ink.value(B, C).
+
+void([$BboxRegion(), $FrameAnyColor(G), W, B, Ct]) :-
+    impl_choice([$BboxRegion(), $FrameAnyColor(G), W, B, Ct]), ink.clash(B).
+
+// --- $OutlineRing2 ---
+outline_phase($FrameAnyColor($OutlineRing2()), Idx) :-
+    params.cycle(Idx, Col), params.frame_color(Col).
+
+// --- $InnerFrameStored ---
+// The last entry, which the outline itself would take.
+// @claim cycle-color
+.init entries = Ordinal<Unit>
+entries.idx_set($U(), K) :- params.cycle(K, _).
+
+outline_phase($FrameAnyColor($InnerFrameStored()), Idx) :- entries.rank_desc($U(), Idx, 0).
+
+// --- $SideStep ---
+area([$SideStep(), C, Id], P) :- parse.closed.region(C, P, Id).
+
+// --- Enclosed(step=SideStep, metric=Chebyshev) ---
+ring($Enclosed($SideStep(), $Chebyshev()), C, P, K) :- parse.cheb.depth(C, P, K).
+
+// --- $DiagonalLeak ---
+// The open cells the grid edge reaches by side or diagonal steps.
+// @claim ring-depth
+.init leak = Reach<Color>
+leak.node(C, P) :- parse.open(C, P).
+leak.seed(C, P) :- parse.open(C, P), dir_elem(D), dist(P, D, 0).
+leak.step(V) :- diag_dir_elem(D), step_offset(D, V).
+
+// @claim ring-depth
+.init leak_regions = Components<Color>
+leak_regions.node(C, P) :- parse.open(C, P), !leak.reach(C, P).
+
+area([$DiagonalLeak(), C, Id], P) :- leak_regions.label(C, P, Id).
+
+// --- Enclosed(step=DiagonalLeak, metric=Chebyshev) ---
+// @claim ring-depth
+.init leak_cheb = Rim8<Color>
+leak_cheb.cell(C, P) :- leak_regions.label(C, P, _).
+
+ring($Enclosed($DiagonalLeak(), $Chebyshev()), C, P, K) :- leak_cheb.depth(C, P, K).
+
+// --- $ManhattanDepth ---
+// @claim ring-depth
+.init manh = Rim<Wall>
+manh.cell([S, C], P) :- area([S, C, _], P).
+
+ring($Enclosed(S, $ManhattanDepth()), C, P, K) :- manh.depth([S, C], P, K).
+
+// --- $BboxRegion ---
+// @claim ring-depth
+.init frame_box = Bbox<Color>
+frame_box.cell(C, P) :- wall($BboxRegion(), _, _, C), in(P, C).
+
+// The inside of the box.
+// @claim ring-depth
+.init box_depth = Rim8<Color>
+box_depth.cell(C, P) :- frame_box.box(C, B), in(P, _), interior(P, B).
+
+ring($BboxRegion(), C, P, K) :- box_depth.depth(C, P, K).
+
+paint([$BboxRegion(), F, W, B, Ct], P, C) :-
+    impl_choice([$BboxRegion(), F, W, B, Ct]), wall($BboxRegion(), F, B, C),
+    frame_box.box(C, B_box), in(P, _), inside(P, B_box), !interior(P, B_box).
+
+// --- $WriteAll ---
+paint([R, F, $WriteAll(), B, Ct], P, Col) :-
+    impl_choice([R, F, $WriteAll(), B, Ct]), tint(R, F, B, C, P, _, Col), !dot(Ct, R, C, P).
+
+// --- $GapKept ---
+paint([R, F, $GapKept(), B, Ct], P, Col) :-
+    impl_choice([R, F, $GapKept(), B, Ct]), tint(R, F, B, C, P, Idx, Col),
+    !bg_phase(Idx), !dot(Ct, R, C, P).
+
+// --- $InteriorKept ---
+paint([R, F, $InteriorKept(), B, Ct], P, Col) :-
+    impl_choice([R, F, $InteriorKept(), B, Ct]), tint(R, F, B, C, P, _, Col),
+    in(P, Col_in), bg_color(B, Col_in), !dot(Ct, R, C, P).
+
+// --- $CenterDot ---
+// @claim cycle-color
+.init area_box = Bbox<Area>
+area_box.cell(A, P) :- area(A, P).
+
+dot($CenterDot(), $Enclosed(S, M), C, P) :-
+    region_choice($Enclosed(S, M)), area_box.box([S, C, Id], B), area([S, C, Id], P),
+    crop(P, B, P_rel), centered(P_rel).
+
+dot($CenterDot(), $BboxRegion(), C, P) :-
+    frame_box.box(C, B), in(P, _), crop(P, B, P_rel), centered(P_rel).
+
+paint([R, F, W, B, $CenterDot()], P, C) :-
+    impl_choice([R, F, W, B, $CenterDot()]), wall(R, F, B, C), dot($CenterDot(), R, C, P).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.open(E, P) :- ex_in(E, P, Col), !params.frame_color(Col).
+
+    // A depth of a region cell in some train pair, and its output color.
+    .decl seen(k: number, col: Color)
+    seen(K, Col) :- ex.cheb.depth(E, P, K), ex_out(E, P, Col).
+
+    // A period under which two depths of one entry take different colors.
+    .decl clash(w: number)
+    clash(W) :-
+        seen(W, _), W > 0,
+        seen(K1, C1), stride(K1, W, 0, _, Idx),
+        seen(K2, C2), stride(K2, W, 0, _, Idx), C1 != C2.
+
+    // The shortest period no pair contradicts.
+    .init shortest = Extremes<Unit>
+    shortest.cand($U(), W) :- seen(W, _), W > 0, !clash(W).
+
+    .decl cycle(k: number, c: Color)
+    cycle(Idx, Col) :- shortest.low($U(), W), seen(K, Col), stride(K, W, 0, _, Idx).
+}

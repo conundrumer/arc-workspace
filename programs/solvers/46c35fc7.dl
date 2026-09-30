@@ -21,16 +21,16 @@
 .comp Params {
     .decl bg(col: Color) bg(7).
 
-    // --- Rotate ---
+    // --- $Rotate ---
     .decl corner_sense(s: Sense) corner_sense(SENSE_CC).
     .decl edge_sense(s: Sense) edge_sense(SENSE_CW).
 
-    // --- Cycle ---
+    // --- $Cycle ---
     .decl cycle_sense(s: Sense) cycle_sense(SENSE_CC).
     .decl corner_step(n: number) corner_step(2).
     .decl edge_step(n: number) edge_step(6).
 
-    // --- Table ---
+    // --- $Table ---
     .decl move(d: Dir8, d_out: Dir8)
     move(DIAG_TL, DIAG_BL). move(DIAG_BL, DIAG_BR).
     move(DIAG_BR, DIAG_TR). move(DIAG_TR, DIAG_TL).
@@ -74,7 +74,7 @@ out(P_out, Col, Ch) :-
     moved(D, D_out, Ch),
     neighbor(P_hole, D_out, P_out).                 // the seat it moves onto
 
-// --- Rotate ---
+// --- $Rotate ---
 
 moved(D, D_out, $Rotate()) :-
     ( diag_dir_elem(D), params.corner_sense(S)           // corners turn one way
@@ -82,7 +82,7 @@ moved(D, D_out, $Rotate()) :-
     ),
     rotation(S, R), apply_dir8(R, D, D_out).
 
-// --- Cycle ---
+// --- $Cycle ---
 
 .init cycle = CycleWalk<Unit, Dir8>
 cycle.succ($U(), D_from, D_to) :-
@@ -99,7 +99,7 @@ moved(D, D_out, $Cycle()) :-
     ),
     cycle.walk($U(), D, N, D_out).
 
-// --- Table ---
+// --- $Table ---
 
 moved(D, D_out, $Table()) :- params.move(D, D_out).
 

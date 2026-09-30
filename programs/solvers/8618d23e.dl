@@ -32,21 +32,21 @@
     .decl axis(a: Axis) axis(AXIS_V).      // stack axis
     .decl filler(c: Color) filler(9).
 
-    // --- Derive(g=Iso) ---
+    // --- $Iso ---
     .decl sep(g: number) sep(1).
 
-    // --- Derive(g=Aniso) ---
+    // --- $Aniso ---
     .decl sep_dim(a: Axis, n: number)
     sep_dim(AXIS_V, 1). sep_dim(AXIS_H, 1).
 
-    // --- Derive(s=Derived) ---
+    // --- $Derived ---
     .decl diag(da: DiagAxis) diag(DAXIS_DG).      // seating diagonal
 
-    // --- Derive(s=Table) ---
+    // --- $Table ---
     .decl seat_of(d: Dir, diag: DiagDir)
     seat_of(DIR_T, DIAG_TL). seat_of(DIR_B, DIAG_BR).
 
-    // --- Disp ---
+    // --- $Disp ---
     .decl arr(n: number) arr(2).              // slabs along the stack axis
     .decl disp(p_tile: Position, delta: Position)
     disp([0, 1, 0, 0], [0, 1, 0, 1]).
@@ -64,22 +64,22 @@ side(P, D) :- params.axis(A), axis_of(D, A), dp.nearer($U(), P, D).
 
 .decl seat(p: Position, diag: DiagDir, s: Seats)
 
-// --- Derive(s=Derived) ---
+// --- $Derived ---
 seat(P, Diag, $Derived()) :-
     side(P, D),                                       // cell's side of the stack
     params.diag(DA), diag_axis_of(Diag, DA),          // corner on the seating diag
     dir_of(Diag, _, D).                               // matching that side
 
-// --- Derive(s=Table) ---
+// --- $Table ---
 seat(P, Diag, $Table()) :- side(P, D), params.seat_of(D, Diag).
 
 // Growth extents, the wide axis-tagged pair: n1 along a, n2 across.
 .decl growth(a: Axis, n1: number, n2: number, gr: Growth)
 
-// --- Derive(g=Iso) ---
+// --- $Iso ---
 growth(A, G, G, $Iso()) :- axis_elem(A), params.sep(G).
 
-// --- Derive(g=Aniso) ---
+// --- $Aniso ---
 growth(A, N1, N2, $Aniso()) :- params.sep_dim(A, N1), perp(A, A2), params.sep_dim(A2, N2).
 
 // Grow delta toward a corner: the growth extents at its two edges.
@@ -91,7 +91,7 @@ grow_delta(Diag, Gr, E) :-
 
 .decl seated(p_out: Position, col: Color, ch: Choice)
 
-// --- Derive ---
+// --- $Derive ---
 // Displaced by the growth extents at both edges of the opposite corner —
 // the frame grows away from the seat.
 seated(P_out, Col, $Derive(Gr, S)) :-
@@ -100,7 +100,7 @@ seated(P_out, Col, $Derive(Gr, S)) :-
     grow_delta(Diag2, Gr, E),        // grow delta toward it
     compose(P, E, P_out).            // displace
 
-// --- Disp ---
+// --- $Disp ---
 seated(P_out, Col, $Disp()) :-
     in(P, Col),                                                         // slab cell
     params.axis(A), params.arr(N), divide_slab(P, A, N, 0, P_tile, _),  // its slab in the stack

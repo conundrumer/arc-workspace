@@ -2,13 +2,13 @@
   "id": "9af7a82c",
   "witnesses": [{
     "id": "fill-in-input",
-    "separates": "Excluded (the fill color's cells are not counted) from Included (every cell counts): the fill color present in the input",
+    "separates": "$Excluded (the fill color's cells are not counted) from $Included (every cell counts): the fill color present in the input",
     "input": [
       [0,0,1],
       [1,1,1]
     ],
     "output": [{
-      "cases": ["[PerColor, Excluded]","[PerRegion, Excluded]"],
+      "cases": ["$Excluded"],
       "grid": [
         [1],
         [1],
@@ -16,7 +16,7 @@
         [1]
       ]
     }, {
-      "cases": ["[PerColor, Included]","[PerRegion, Included]"],
+      "cases": ["$Included"],
       "grid": [
         [1,0],
         [1,0],
@@ -26,13 +26,13 @@
     }]
   }, {
     "id": "split-color",
-    "separates": "PerColor (one bar per color) from PerRegion (one bar per connected region): a color in two regions of different sizes",
+    "separates": "$PerColor (one bar per color) from $PerRegion (one bar per connected region): a color in two regions of different sizes",
     "input": [
       [2,1,2,2],
       [1,1,1,1]
     ],
     "output": [{
-      "cases": ["[PerColor, Excluded]","[PerColor, Included]"],
+      "cases": ["$PerColor"],
       "grid": [
         [1,2],
         [1,2],
@@ -41,7 +41,7 @@
         [1,0]
       ]
     }, {
-      "cases": ["[PerRegion, Excluded]","[PerRegion, Included]"],
+      "cases": ["$PerRegion"],
       "grid": [
         [1,2,2],
         [1,2,0],
@@ -52,19 +52,14 @@
     }]
   }, {
     "id": "diagonal-split",
-    "separates": "PerRegion(Edge) (a region joins along edges alone) from PerRegion(Corner) (a corner touch also joins): a color whose regions touch at a corner",
+    "separates": "$Edge (a region joins along edges alone) from $Corner (a corner touch also joins): a color whose regions touch at a corner",
     "input": [
       [2,1,1,1],
       [2,2,1,1],
       [1,1,2,1]
     ],
     "output": [{
-      "cases": [
-        "[PerColor, Excluded]",
-        "[PerColor, Included]",
-        "[PerRegion, Excluded]",
-        "[PerRegion, Included]"
-      ],
+      "cases": ["$PerColor","$Corner"],
       "grid": [
         [1,2],
         [1,2],
@@ -74,6 +69,16 @@
         [1,0],
         [1,0],
         [1,0]
+      ]
+    }, {
+      "cases": ["$Edge"],
+      "grid": [
+        [1,2,1,2],
+        [1,2,1,0],
+        [1,2,0,0],
+        [1,0,0,0],
+        [1,0,0,0],
+        [1,0,0,0]
       ]
     }]
   }]

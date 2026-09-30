@@ -54,7 +54,7 @@ fits.observed_member(S, P_inner) :- shape(S, P), sbox.box(S, B), crop(P, B, P_in
 // The shape each hole draws in.
 .decl taken(h: Ident, s: Shape, ch: Choice)
 
-// --- Unique ---
+// --- $Unique ---
 
 // The shape a color carries.
 .init color_shape = Unanimous<Color, Ident>
@@ -62,7 +62,7 @@ color_shape.item(Col, Id) :- shapes.label(Col, _, Id).
 
 taken(H, [Col, Id], $Unique()) :- fits.equals([Col, Id], H), !color_shape.clash(Col).
 
-// --- AllFit ---
+// --- $AllFit ---
 
 .decl stray(col: Color)
 stray(Col) :- shapes.label(Col, _, Id), !fits.equals([Col, Id], _).

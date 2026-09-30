@@ -17,13 +17,13 @@
     .decl bg(c: Color) bg(0).
     .decl fill(c: Color) fill(2).
 
-    // --- Axis ---
+    // --- $Axis ---
     .decl axis(a: Axis) axis(AXIS_H).   // fill lines run along this axis
 }
 
 .init params = Params
 
-// --- Axis ---
+// --- $Axis ---
 
 .init axis_spans = Between<Unit>
 axis_spans.axis($U(), A) :- params.axis(A).
@@ -33,7 +33,7 @@ axis_spans.mark($U(), Q) :- in(Q, Col), !params.bg(Col).
 out(P, F, $Axis())   :- axis_spans.between($U(), P), params.fill(F).
 out(P, Col, $Axis()) :- in(P, Col), !axis_spans.between($U(), P).
 
-// --- Iso ---
+// --- $Iso ---
 
 .init iso_spans = Between<Unit>
 iso_spans.axis($U(), A) :- axis_elem(A).

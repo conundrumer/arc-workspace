@@ -56,7 +56,7 @@ block(Id) :- side.tally([Id, _], _), !hole(Id), !short(Id).
 // The band a rectangle belongs to on each axis.
 .decl block_band(c: Choice, a: Axis, id: Ident, b: Ident)
 
-// --- Runs ---
+// --- $Runs ---
 
 // A band is a run of adjacent occupied lines.
 .init runs = Components<Axis>
@@ -64,7 +64,7 @@ runs.node(A, P_line) :- block(Id), region_line(Id, A, P_line).
 
 block_band($Runs(), A, Id, B) :- block(Id), region_line(Id, A, P_line), runs.label(A, P_line, B).
 
-// --- Overlap ---
+// --- $Overlap ---
 
 // Two rectangles align when their spans share a line; a band is a class
 // of the alignment's transitive closure.

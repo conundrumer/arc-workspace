@@ -113,7 +113,8 @@
                 + draft
                 - A scaled copy of a marked drawing stamps at each block; the stamp's content and which cells of a block's box it reaches combine, so each is its own point.
                     + gloss
-        - A branch's model is the model of a case with that branch, with every other choice point fixed to its concept branch.
+        - A branch's model takes that branch, and the concept branch at every other choice point it takes.
+        - A branch's cases are the cases that take it.
 - **open parameter**: a parameter whose value the pairs leave unresolved.
     - **open values**: two or more values of a parameter that the pairs leave unresolved.
     - A sibling task containing an input on which the open values disagree fixes the parameter to one of those values.
@@ -125,7 +126,7 @@
     - a model's output at some assignment differs from the output the generator pairs with the input.
     - A branch's witnesses are divergence witnesses between its model and the concept branch's model.
     - A witness stands at this task's stored assignment when the model it is for is defined there and differs there from what it is separated from. Otherwise it stands at the assignment that changes the fewest of that model's parameters and at which that holds, and at the stored assignment when there is none.
-        - The model a witness is for is the branch's model for a branch's witness, and the concept case's model for a witness of the concept case.
+        - The model a witness is for is the branch's model for a branch's witness, the concept case's model for a witness of the concept case, and the case's model for a witness without which a case fails Equivalence or Subsumption.
     - A witness breaks a scene claim when the concept case's claim, read at the assignment the witness stands at, is false of it.
     - An output identical to the input is still defined, so a divergence at such an output is valid.
         - 41e4d17e
@@ -148,7 +149,7 @@
                 + gloss
 - **verdict**: the annotator's judgment of the output that the generator would pair with the witness.
     - `concept`: the concept case's output.
-    - the branch's name: that branch's output.
+    - the branch's name: the output of that branch's model.
     - `any`: the output of any case defined on the witness.
     - `other`: an output that no case produces.
 

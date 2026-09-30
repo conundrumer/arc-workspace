@@ -48,14 +48,14 @@ painted(P, Col, Ch) :- cast.clear([Ch, D], P, _, _, P_src), source(P_src, D, Col
 out(P, Col, Ch) :- painted(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !painted(P, _, Ch).
 
-// --- Enclose ---
+// --- $Enclose ---
 
 .init closed = Closed<Unit>
 closed.cell($U(), P) :- in(P, Col), !params.wall(Col).
 
 cast.cell([$Enclose(), D], P) :- dir_elem(D), closed.region($U(), P, _).
 
-// --- Span ---
+// --- $Span ---
 
 .init span = Between<Axis>
 span.axis(A, A) :- axis_elem(A).

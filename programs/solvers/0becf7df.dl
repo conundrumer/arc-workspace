@@ -23,12 +23,12 @@
     key_dim(AXIS_V, 2).
     key_dim(AXIS_H, 2).
 
-    // --- Line ---
+    // --- $Line ---
     // Axis along which a pair's two members lie.
     .decl axis(a: Axis)
     axis(AXIS_H).
 
-    // --- Map ---
+    // --- $Map ---
     // Pairing as an id join over the key frame: src labels the key cells,
     // dst gives each cell the id of its partner.
     .decl src(p: Position, id: Ident)
@@ -60,14 +60,14 @@ key_cell(P) :-
 
 .decl mapping(c1: Color, c2: Color, ch: Choice)
 
-// --- Line ---
+// --- $Line ---
 // Two key cells on one line along the pair axis pair up, in both orders.
 mapping(C1, C2, $Line()) :-
     key_cell(P1), in(P1, C1),            // one key cell
     key_cell(P2), in(P2, C2), P1 != P2,  // a distinct one
     params.axis(A), same_line(A, P1, P2).
 
-// --- Map ---
+// --- $Map ---
 // The stored pairing, anchored at the key's corner.
 mapping(C1, C2, $Map()) :-
     params.corner(Diag), params.pair(I1, I2),

@@ -21,7 +21,7 @@
     .decl bg(col: Color) bg(0).
     .decl mark(col: Color) mark(8).
 
-    // --- Window ---
+    // --- $Window ---
     .decl win_dim(n: number) win_dim(3).
 }
 
@@ -33,7 +33,7 @@ mark_cell(P) :- in(P, Col), params.mark(Col).
 // The region the output crops, per case.
 .decl region(ch: Choice, p: Position)
 
-// --- Object ---
+// --- $Object ---
 
 .init figures = Components<Unit>
 figures.node($U(), P) :- in(P, Col), !params.bg(Col).
@@ -42,12 +42,12 @@ region($Object(), P) :-
     mark_cell(M), figures.label($U(), M, Id),   // the figure holding the mark
     figures.label($U(), P, Id).
 
-// --- Touch ---
+// --- $Touch ---
 
 // The ring's box covers the mark, so the mark needs no rule of its own.
 region($Touch(), P) :- mark_cell(M), dir8_elem(D), neighbor(M, D, P), in(P, _).
 
-// --- Window ---
+// --- $Window ---
 
 .init win = Frame2D<Unit>
 win.extent($U(), A, N) :- params.win_dim(N), axis_elem(A).

@@ -74,11 +74,11 @@ look(D) :-
 // Where the gaze lands.
 .decl dest(p: Position, ch: Choice)
 
-// --- Step ---
+// --- $Step ---
 
 dest(Q, $Step()) :- gaze_cell(P, _), look(D), neighbor(P, D, Q).
 
-// --- Slide ---
+// --- $Slide ---
 
 // The gaze slides across its own tile, the way it looks.
 .init slide = Slide<Unit>
@@ -87,7 +87,7 @@ slide.dir($U(), D) :- look(D).
 
 dest(Q, $Slide()) :- gaze_cell(P, _), slide.rest($U(), P, _, Q).
 
-// --- Map ---
+// --- $Map ---
 
 // The gaze's tile viewed from its own extent, so a tile position of the
 // arrangement names a cell inside it.

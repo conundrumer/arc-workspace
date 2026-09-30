@@ -60,7 +60,7 @@ rank(Id, N, F) :-
 
 .decl paint(p: Position, col: Color, ch: Choice)
 
-// --- Spans ---
+// --- $Spans ---
 
 .init size = Tally<Ident, Position>
 size.item(Id, Across) :- reach(Id, Across).
@@ -79,7 +79,7 @@ paint(P, Col, $Spans()) :-
     by_reach.rank_desc($U(), Id2, F2), F2 <= F,     // and few enough over it
     reach(Id2, Across), compose(Along, Across, P).  // the bar's foot over that reach
 
-// --- Profile ---
+// --- $Profile ---
 
 // How many bars cover each line.
 .init covers = Tally<Position, Ident>

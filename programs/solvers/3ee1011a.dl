@@ -38,7 +38,7 @@ canvas.extent($U(), A, N) :- axis_elem(A), longest.high($U(), N).
 .init rim = Rim<Unit>
 rim.cell($U(), P) :- canvas.cell($U(), P).
 
-// --- Rank ---
+// --- $Rank ---
 
 .init size_rank = Ordinal<Unit>
 size_rank.idx_set($U(), N) :- bar.tally(_, N).
@@ -47,7 +47,7 @@ out(P, Col, $Rank()) :-
     rim.depth($U(), P, K),                                // the frame the cell sits on
     bar.tally(Col, N), size_rank.rank_desc($U(), N, K).   // the Kth longest bar
 
-// --- Stamp ---
+// --- $Stamp ---
 
 // The centered square left after peeling K frames.
 .init core = Bbox<number>

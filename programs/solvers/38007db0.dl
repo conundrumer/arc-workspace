@@ -62,7 +62,7 @@ same.observed_member(T, [P_intile, Col]) :- tile_content(T, P_intile, Col).
 
 .decl odd(t: Position, ch: Choice)
 
-// --- BandUnique ---
+// --- $BandUnique ---
 
 .decl band_peer(t: Position)
 band_peer(T) :-
@@ -71,14 +71,14 @@ band_peer(T) :-
 
 odd(T, $BandUnique()) :- tile(T), !band_peer(T).
 
-// --- GridUnique ---
+// --- $GridUnique ---
 
 .decl grid_peer(t: Position)
 grid_peer(T) :- same.equals(T, T2), T != T2.
 
 odd(T, $GridUnique()) :- tile(T), !grid_peer(T).
 
-// --- GridDeviant ---
+// --- $GridDeviant ---
 
 // The grid's norm: the tiles in a largest class of equals.
 .init norm = Mode<Unit, Position, Position>

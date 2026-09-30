@@ -93,7 +93,7 @@
         mark_row(C, L), relative(L, P_row, V),                 // its row off the marker's
         compose(V, P_col, G).
 
-    // --- Drawn ---
+    // --- $Drawn ---
 
     // Each figure's line, across the canvas.
     .decl line(c: Color, p: Position)
@@ -109,7 +109,7 @@
     GRID_MASK_1x18(line, 7,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1)
 
-    // --- Stored ---
+    // --- $Stored ---
 
     // The cells each figure's line misses.
     .decl gap(c: Color, p: Position)
@@ -178,21 +178,21 @@ impl_choice($Across($Halted())).
 .decl figure(p: Position, col: Color, ch: Choice)
 figure(P, Col, Ch) :- impl_choice(Ch), shape_cell(Col, P).
 
-// --- Drawn ---
+// --- $Drawn ---
 
 figure(P, Col, $Drawn()) :- row_cell(Col, P, P_col), params.line(Col, P_col).
 
-// --- Across ---
+// --- $Across ---
 
 // The line crosses the canvas, less the gaps its case finds.
 .decl lit(col: Color, p: Position, g: Gap)
 figure(P, Col, $Across(G)) :- lit(Col, P, G).
 
-// --- Stored ---
+// --- $Stored ---
 
 lit(Col, P, $Stored()) :- row_cell(Col, P, P_col), !params.gap(Col, P_col).
 
-// --- Sealed ---
+// --- $Sealed ---
 
 // What the shape closes off from the frame edge.
 .init seal = Closed<Color>
@@ -200,7 +200,7 @@ seal.cell(Col, P) :- pair_row(Col, _), in(P, _), !shape_cell(Col, P).
 
 lit(Col, P, $Sealed()) :- row_cell(Col, P, _), !seal.region(Col, P, _).
 
-// --- Halted ---
+// --- $Halted ---
 
 // The line's run inward from each marker, stopped by the shape.
 .init inward = Ray<Color>

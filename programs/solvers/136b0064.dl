@@ -46,20 +46,20 @@
 
     .decl advance(d: Dir) advance(DIR_B).
 
-    // --- TileCount ---
+    // --- $TileCount ---
     .decl divisor(n: number) divisor(2).
 
-    // --- Size ---
+    // --- $Size ---
     .decl panel_size(k: number) panel_size(7).
 
-    // --- Count ---
+    // --- $Count ---
     .decl count_move(n: number, d: Dir, k: number)
     count_move(4, DIR_B, 1).
     count_move(5, DIR_R, 2).
     count_move(6, DIR_L, 3).
     count_move(7, DIR_L, 1).
 
-    // --- Glyph ---
+    // --- $Glyph ---
     .decl glyph_member(id: Ident, p: Position)
     .decl glyph_move(id: Ident, d: Dir, k: number)
 
@@ -87,7 +87,7 @@
         1, _, 1)
     glyph_move(3, DIR_L, 3).
 
-    // --- Color ---
+    // --- $Color ---
     .decl color_move(col: Color, d: Dir, k: number)
     color_move(1, DIR_R, 2).
     color_move(2, DIR_L, 1).
@@ -159,14 +159,14 @@ impl_choice([M, Dc]) :- move_choice(M), dec_choice(Dc).
 .init parse = Parse<DecChoice>
 parse.cell(Dc, P, Col) :- in(P, Col), dec_choice(Dc).
 
-// --- TileCount ---
+// --- $TileCount ---
 parse.panel($TileCount(), P, P_outer, P_panel) :-
     in(P, _),                                             // input cell
     params.legend_dir(D), axis_of(D, A),                  // the panels lie along this axis
     params.divisor(N), params.divide_gap(G),              // panel count, divider width
     divide_slab(P, A, N, G, P_outer, P_panel).
 
-// --- Size ---
+// --- $Size ---
 parse.panel($Size(), P, P_outer, P_panel) :-
     in(P, _),                                             // input cell
     params.legend_dir(D), axis_of(D, A),                  // the panels lie along this axis
@@ -179,11 +179,11 @@ parse.panel($Size(), P, P_outer, P_panel) :-
 
 .decl move(t: Position, d: Dir, k: number, ch: Choice)
 
-// --- Count ---
+// --- $Count ---
 
 move(T, D, K, [$Count(), Dc]) :- parse.glyph_count(Dc, T, N), params.count_move(N, D, K).
 
-// --- Glyph ---
+// --- $Glyph ---
 
 .init glyph_match = KeyedSetCompare<DecTile, Ident, Position>
 glyph_match.pattern_member(Id, P_intile) :- params.glyph_member(Id, P_intile).
@@ -191,7 +191,7 @@ glyph_match.observed_member([Dc, T], P_intile) :- parse.glyph_cell(Dc, T, P_inti
 
 move(T, D, K, [$Glyph(), Dc]) :- glyph_match.equals([Dc, T], Id), params.glyph_move(Id, D, K).
 
-// --- Color ---
+// --- $Color ---
 
 move(T, D, K, [$Color(), Dc]) :- parse.glyph_color(Dc, T, Col), params.color_move(Col, D, K).
 
@@ -315,7 +315,7 @@ out(P, Col, [M, Dc]) :-
     .decl occurrence(e: Example, t: Position)
     occurrence(E, T) :- drawn(E), parse.glyph(E, T).
 
-    // --- Count ---
+    // --- $Count ---
 
     .decl count_cand(n: number, d: Dir, k: number)
     count_cand(N, D, K) :- parse.glyph_count(E, T, N), drew(E, T, D, K, _).
@@ -328,7 +328,7 @@ out(P, Col, [M, Dc]) :-
     .decl count_move(n: number, d: Dir, k: number)
     count_move(N, D, K) :- count_cand(N, D, K), !count_defect(N, D, K).
 
-    // --- Glyph ---
+    // --- $Glyph ---
 
     .decl footprint(g: GT, p: Position)
     footprint([E, T], P) :- occurrence(E, T), parse.glyph_cell(E, T, P, _).
@@ -354,7 +354,7 @@ out(P, Col, [M, Dc]) :-
     .decl glyph_move(id: Ident, d: Dir, k: number)
     glyph_move(Id, D, K) :- glyph_cand(Id, D, K), !glyph_defect(Id, D, K).
 
-    // --- Color ---
+    // --- $Color ---
 
     .decl color_cand(col: Color, d: Dir, k: number)
     color_cand(Col, D, K) :- parse.glyph_color(E, T, Col), drew(E, T, D, K, _).

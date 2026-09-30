@@ -1,0 +1,372 @@
+// a65b410d
+// @draft
+// @keywords: lines count
+// @scene background: the grid is params.bg except for one bar
+// @scene bar: the bar is one run of params.bar_color in one line along the
+//  axis of params.anchor_side. It starts at the params.anchor_side edge and
+//  has length L of at least 2.
+// @rule keep-bar: the bar's line is unchanged
+// @rule grow-above: the line k lines from the bar toward params.grow_side
+//  gets a run of params.above_color from the params.anchor_side edge, of
+//  length L + k. The rest of that line is params.bg.
+// @rule shrink-below: the line k lines from the bar away from
+//  params.grow_side gets a run of params.below_color from the
+//  params.anchor_side edge, of length L - k, when L - k > 0. The rest of that
+//  line, and every line where L - k <= 0, is params.bg.
+// @rule staircase: together the runs form a staircase whose far ends lie on
+//  one diagonal through the bar's far end
+
+// where the bar color comes from
+.type BarColor =
+    // @claim bar
+    StoredBarColor {}
+    // @scene bar: the bar color is the most frequent color other than
+    //  params.bg. Undefined when two colors tie for most frequent.
+    // @witness bar-color-4: variant $DerivedBarColor
+    //     @relaxed bar
+  | DerivedBarColor {}
+
+// where the anchor edge comes from
+.type AnchorSide =
+    // @claim bar
+    StoredAnchor {placement: Placement}
+    // @scene bar: the bar is one run of params.bar_color in one line across
+    //  params.grow_side's axis. The anchor edge is the side edge the bar
+    //  touches. Undefined when the bar touches neither side edge or both.
+    // @witness bar-at-right-edge: variant $AnchorDerived
+    //     @relaxed bar
+  | AnchorDerived {}
+    // @scene bar: the bar is one run of params.bar_color in one line of
+    //  either axis. The anchor edge is the edge on that axis that the bar
+    //  touches, and the grow side is a quarter turn from it in the sense
+    //  params.grow_sense. Undefined when the bar touches neither edge of its
+    //  axis or both, or lies in one line of each axis.
+    // @witness bar-at-right-edge: variant $AnchorDerived
+    // @witness vertical-bar: variant $AnyEdgeAnchor & $PerBar & $NoBarIdentity
+    //     @relaxed bar
+  | AnyEdgeAnchor {}
+
+// where each run starts and ends
+.type Placement =
+    // @claim grow-above
+    EdgeLength {}
+    // @rule grow-above: each run starts level with the bar's end nearer the
+    //  anchor edge
+    // @rule shrink-below: each run starts level with the bar's end nearer the
+    //  anchor edge
+    // @witness bar-off-edge: variant $BarAnchor
+    //     @relaxed bar
+  | BarAnchor {}
+    // @rule grow-above: each run starts at the anchor edge and ends on the
+    //  diagonal through the bar's far end
+    // @rule shrink-below: each run starts at the anchor edge and ends on the
+    //  diagonal through the bar's far end
+    // @witness bar-off-edge: variant $BarAnchor
+  | RightDiagonal {}
+
+// what the cells outside the runs take
+.type Canvas =
+    // @claim grow-above
+    BlankCanvas {}
+    // @rule grow-above: the rest of that line keeps its input color
+    // @rule shrink-below: the rest of that line, and every line with no run,
+    //  keeps its input color
+    // @witness stray-cell: borderline $KeepRest
+    //     @relaxed background
+    // @witness stray-run: borderline $KeepRest
+    //     @relaxed background
+  | KeepRest {}
+
+// how the bar is read
+.type BarReading =
+    // @claim bar
+    OneRun {}
+    // @scene bar: the bar's line is the line nearest params.grow_side that
+    //  holds params.bar_color. L is the count of params.bar_color cells in
+    //  that line, and the bar's ends are the first and the last of them.
+    //  Cells of params.bar_color in other lines are ignored. Undefined only
+    //  when no cell holds params.bar_color.
+    // @witness gapped-bar: foreign $CountCells
+    //     @relaxed bar
+  | CountCells {}
+    // @scene bar: each piece of params.bar_color is a bar
+    // @rule keep-bar: each bar keeps its line and draws its own runs.
+    //  Undefined when two bars give one cell different colors.
+    // @witness two-bars: foreign $PerBar
+    //     @relaxed bar
+    // @witness bars-at-both-edges: foreign $AnchorDerived & $PerBar & $NoBarIdentity
+    //     @relaxed bar
+  | PerBar {}
+
+// what an input with no bar gives
+.type NoBar =
+    // @claim bar
+    NeedsBar {}
+    // @rule no-bar: an input with no cell of params.bar_color is returned
+    //  unchanged
+    // @witness no-bar: foreign $NoBarIdentity
+    //     @relaxed bar
+  | NoBarIdentity {}
+
+.type Choice = [bar_color: BarColor, anchor: AnchorSide, canvas: Canvas, reading: BarReading, no_bar: NoBar]
+
+// A bar under one bar color and reading.
+.type Bar = [bc: BarColor, r: BarReading, id: Ident]
+
+// A cell of the bar color under one bar color and reading.
+.type BarCell = [bc: BarColor, r: BarReading, p: Position]
+
+// A cell under one anchor, bar color and reading.
+.type CaseCell = [an: AnchorSide, bc: BarColor, r: BarReading, p: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl above_color(c: Color) above_color(3).
+    .decl below_color(c: Color) below_color(1).
+
+    // --- $StoredBarColor ---
+    // @derive RarestColor: variant derived
+    //     @relaxed bar
+    // @ignore: derive concept — wherever it is defined, it gives the output of
+    //  the CountCells & NoBarIdentity copy
+    .decl bar_color(c: Color) bar_color(2).
+
+    // --- $BlankCanvas, $DerivedBarColor ---
+    // @derive DominantColor: variant derived
+    //     @relaxed background
+    // @ignore: derive concept — wherever it is defined, it gives the output of
+    //  the CountCells & NoBarIdentity copy
+    .decl bg(c: Color) bg(0).
+
+    // --- $StoredAnchor, $AnchorDerived, $CountCells ---
+    // the side of the bar where the runs grow
+    .decl grow_side(d: Dir) grow_side(DIR_T).
+
+    // --- $StoredAnchor ---
+    // the edge every run starts from
+    .decl anchor_side(d: Dir) anchor_side(DIR_L).
+
+    // --- $AnyEdgeAnchor ---
+    // the grow side is a quarter turn in this sense from the anchor edge
+    .decl grow_sense(s: Sense) grow_sense(SENSE_CW).
+}
+
+.init params = Params
+
+.decl bar_color_choice(bc: BarColor)
+bar_color_choice($StoredBarColor()). bar_color_choice($DerivedBarColor()).
+
+.decl placement_choice(pl: Placement)
+placement_choice($EdgeLength()). placement_choice($BarAnchor()). placement_choice($RightDiagonal()).
+
+.decl anchor_side_choice(an: AnchorSide)
+anchor_side_choice($StoredAnchor(Pl)) :- placement_choice(Pl).
+anchor_side_choice($AnchorDerived()). anchor_side_choice($AnyEdgeAnchor()).
+
+.decl canvas_choice(cv: Canvas)
+canvas_choice($BlankCanvas()). canvas_choice($KeepRest()).
+
+// The concept case, and the combinations no other case subsumes. Every other
+// case with NeedsBar gives its twin's output with NoBarIdentity wherever it
+// is defined, and every other case with OneRun its twin's with CountCells or
+// PerBar. With RightDiagonal, PerBar is defined only where the bars share one
+// line, and there it gives CountCells' output.
+.decl impl_choice(ch: Choice)
+impl_choice([$StoredBarColor(), $StoredAnchor($EdgeLength()), $BlankCanvas(), $OneRun(), $NeedsBar()]).
+impl_choice([Bc, An, Cv, $CountCells(), $NoBarIdentity()]) :-
+    bar_color_choice(Bc), anchor_side_choice(An), canvas_choice(Cv).
+impl_choice([Bc, An, Cv, $PerBar(), $NoBarIdentity()]) :-
+    bar_color_choice(Bc), anchor_side_choice(An), An != $StoredAnchor($RightDiagonal()),
+    canvas_choice(Cv).
+
+// The bar color under Bc.
+.decl bar_color_of(bc: BarColor, col: Color)
+
+// The input has no bar under Bc: no cell of params.bar_color, or no cell
+// other than params.bg.
+.decl no_bar(bc: BarColor)
+
+// --- $StoredBarColor ---
+bar_color_of($StoredBarColor(), Col) :- params.bar_color(Col).
+no_bar($StoredBarColor()) :- !ink($StoredBarColor(), _).
+
+// --- $DerivedBarColor ---
+// @claim bar
+.init freq = Mode<Unit, Color, Position>
+freq.item($U(), Col, P) :- in(P, Col), !params.bg(Col).
+
+// The most frequent color other than params.bg, absent on a tie.
+// @claim bar
+.init common = Unanimous<Unit, Color>
+common.item(U, Col) :- freq.mode(U, Col).
+
+bar_color_of($DerivedBarColor(), Col) :- common.value(_, Col).
+no_bar($DerivedBarColor()) :- !freq.item(_, _, _).
+
+// --- shared ---
+.decl ink(bc: BarColor, p: Position)
+ink(Bc, P) :- in(P, Col), bar_color_of(Bc, Col).
+
+// @claim bar
+.init piece = Components<BarColor>
+piece.node(Bc, P) :- ink(Bc, P).
+
+// Two cells of the bar color share one bar under reading R.
+.decl same_bar(bc: BarColor, r: BarReading, p: Position, q: Position)
+
+// --- $PerBar ---
+same_bar(Bc, $PerBar(), P, Q) :- piece.label(Bc, P, I), piece.label(Bc, Q, I).
+
+// --- $OneRun ---
+.decl several(bc: BarColor)
+several(Bc) :- piece.label(Bc, _, I), piece.label(Bc, _, J), I != J.
+
+same_bar(Bc, $OneRun(), P, Q) :- piece.label(Bc, P, I), piece.label(Bc, Q, I), !several(Bc).
+
+// --- $CountCells ---
+// A cell with a cell of the bar color nearer the grow side.
+.decl lower(bc: BarColor, p: Position)
+lower(Bc, P) :- ink(Bc, P), ink(Bc, Q), params.grow_side(G), nearer(G, Q, P).
+
+same_bar(Bc, $CountCells(), P, Q) :- ink(Bc, P), !lower(Bc, P), ink(Bc, Q), !lower(Bc, Q).
+
+// --- shared ---
+.init bars = Canon<BarCell>
+bars.equiv([Bc, R, P], [Bc, R, Q]) :- same_bar(Bc, R, P, Q).
+
+.decl bar(b: Bar, p: Position)
+bar([Bc, R, Id], P) :- bars.id([Bc, R, P], Id).
+
+// @claim bar
+.init bar_len = Tally<Bar, Position>
+bar_len.item(B, P) :- bar(B, P).
+
+// Two cells of the bar differ in their distance to edge G.
+// @ignore: store — a test of the bar's cells: a stored set drops the test and
+//  keeps no reading of the bar
+.decl bent(b: Bar, g: Dir)
+bent(B, G) :- bar(B, P), bar(B, Q), dir_elem(G), !same_dist(G, P, Q).
+
+// The bar touches edge A.
+.decl touch(b: Bar, a: Dir)
+touch(B, A) :- bar(B, X), dir_elem(A), dist(X, A, 0).
+
+// The bar touches edge A and not its opposite.
+.decl one_end(b: Bar, a: Dir)
+one_end(B, A) :- touch(B, A), opposite(A, A2), !touch(B, A2).
+
+// The anchor edge A and the grow side G of bar B under An.
+.decl orient(an: AnchorSide, b: Bar, a: Dir, g: Dir)
+
+// --- $StoredAnchor ---
+orient($StoredAnchor(Pl), B, A, G) :-
+    placement_choice(Pl), bar(B, _), params.anchor_side(A), params.grow_side(G), !bent(B, G).
+
+// --- $AnchorDerived ---
+orient($AnchorDerived(), B, A, G) :-
+    params.grow_side(G), !bent(B, G), perp_dir(G, A), one_end(B, A).
+
+// --- $AnyEdgeAnchor ---
+// The bar lies in one line along A's axis and touches A alone of that axis.
+.decl axis_end(b: Bar, a: Dir)
+axis_end(B, A) :- one_end(B, A), perp_dir(A, G), !bent(B, G).
+
+// The bar is an axis end on both axes.
+.decl two_axes(b: Bar)
+two_axes(B) :- axis_end(B, A), axis_end(B, A2), A != A2.
+
+orient($AnyEdgeAnchor(), B, A, G) :-
+    axis_end(B, A), !two_axes(B), params.grow_sense(S), turn(S, A, G).
+
+// --- shared ---
+// The cells of the bar's line.
+.decl line(b: Bar, g: Dir, p: Position)
+line(B, G, P) :- orient(_, B, _, G), bar(B, X), in(P, _), same_dist(G, P, X).
+
+// X lies among the L cells of the bar's line that start at S and run away
+// from the anchor edge.
+.decl within(an: AnchorSide, b: Bar, s: Position, x: Position)
+within(An, B, S, X) :-
+    orient(An, B, A, G), line(B, G, S), line(B, G, X), bar_len.tally(B, L),
+    relative(S, X, X_rel), dist(X_rel, A, K), K >= 0, K < L.   // K cells past S
+
+// The cell of the bar's line on the anchor edge.
+.decl edge_start(an: AnchorSide, b: Bar, s: Position)
+edge_start(An, B, S) :- orient(An, B, A, G), line(B, G, S), dist(S, A, 0).
+
+// The runs of bar B start level with S. Each run cell is as near the corner
+// of the anchor edge and the grow side as some X, so the diagonal through the
+// farthest X bounds the staircase.
+.decl stair(an: AnchorSide, b: Bar, s: Position, x: Position)
+
+// --- $EdgeLength, $AnchorDerived, $AnyEdgeAnchor ---
+// The cases whose runs start at the anchor edge with length L + k or L - k.
+.decl edge_length(an: AnchorSide)
+edge_length($StoredAnchor($EdgeLength())). edge_length($AnchorDerived()). edge_length($AnyEdgeAnchor()).
+
+stair(An, B, S, X) :- edge_length(An), edge_start(An, B, S), within(An, B, S, X).
+
+// --- $BarAnchor ---
+// A cell of the bar with another cell of it nearer the anchor edge.
+.decl inner_bar(b: Bar, p: Position)
+inner_bar(B, P) :- bar(B, P), bar(B, Q), params.anchor_side(A), nearer(A, Q, P).
+
+stair(An, B, S, X) :-
+    An = $StoredAnchor($BarAnchor()), bar(B, S), !inner_bar(B, S), within(An, B, S, X).
+
+// --- $RightDiagonal ---
+stair(An, B, S, X) :- An = $StoredAnchor($RightDiagonal()), edge_start(An, B, S), bar(B, X).
+
+// --- shared ---
+// What bar B draws: its runs, and its own line as it is.
+.decl draw(an: AnchorSide, b: Bar, p: Position, col: Color)
+draw(An, B, P, Col) :-
+    stair(An, B, S, X), orient(An, B, A, G), in(P, _),
+    !nearer(A, P, S),                                    // not before the start
+    dir_of(C, _, A), dir_of(C, _, G), !nearer(C, X, P),  // not past the diagonal through X
+    ( nearer(G, P, S), params.above_color(Col)
+    ; nearer(G, S, P), params.below_color(Col) ).
+draw(An, B, P, Col) :- orient(An, B, _, G), line(B, G, P), in(P, Col).
+
+// The color the bars of one reading draw at a cell.
+// @claim keep-bar
+.init shown = Unanimous<CaseCell, Color>
+shown.item([An, Bc, R, P], Col) :- draw(An, [Bc, R, _], P, Col).
+
+// Some bar has no anchor edge, or two bars draw one cell in different colors.
+.decl failed(an: AnchorSide, bc: BarColor, r: BarReading)
+failed(An, Bc, R) :- anchor_side_choice(An), bar([Bc, R, Id], _), !orient(An, [Bc, R, Id], _, _).
+failed(An, Bc, R) :- shown.clash([An, Bc, R, _]).
+
+// The cells outside the drawings, per canvas.
+.decl rest(cv: Canvas, p: Position, col: Color)
+
+// --- $BlankCanvas ---
+rest($BlankCanvas(), P, Col) :- in(P, _), params.bg(Col).
+
+// --- $KeepRest ---
+rest($KeepRest(), P, Col) :- in(P, Col).
+
+// --- shared ---
+out(P, Col, [Bc, An, Cv, R, E]) :-
+    impl_choice([Bc, An, Cv, R, E]), orient(An, [Bc, R, _], _, _), !failed(An, Bc, R),
+    ( shown.value([An, Bc, R, P], Col)
+    ; rest(Cv, P, Col), !shown.value([An, Bc, R, P], _) ).
+
+// --- $NoBarIdentity ---
+out(P, Col, [Bc, An, Cv, R, $NoBarIdentity()]) :-
+    impl_choice([Bc, An, Cv, R, $NoBarIdentity()]), no_bar(Bc), in(P, Col).
+
+.comp Determine {
+    // Some cell of params.bar_color in example E lies on edge A.
+    .decl touches(e: Example, a: Dir)
+    touches(E, A) :- ex_in(E, P, Col), params.bar_color(Col), dir_elem(A), dist(P, A, 0).
+
+    // An edge that some example's bar does not touch.
+    .decl untouched(a: Dir)
+    untouched(A) :- dir_elem(A), ex_in(E, _, _), !touches(E, A).
+
+    .decl anchor_side(a: Dir)
+    anchor_side(A) :- dir_elem(A), !untouched(A).
+}

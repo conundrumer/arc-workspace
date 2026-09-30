@@ -33,7 +33,7 @@
 .comp Params {
     .decl arrow_color(col: Color) arrow_color(1).
 
-    // --- AGlyph ---
+    // --- $AGlyph ---
 
     // The arrow charts: each one's picture, its center, and where it
     // points. Chart 0's center is a hole that reads a payload; chart 1 is
@@ -51,11 +51,11 @@
         .decl tip(id: Ident, d: Dir) tip(0, DIR_B). tip(1, DIR_B).
     )
 
-    // --- BArms ---
+    // --- $BArms ---
 
     .decl sweep_axis(a: Axis) sweep_axis(AXIS_H).
 
-    // --- BGlyph ---
+    // --- $BGlyph ---
 
     // The bracket charts: each shape's picture, stored as drawn, and the
     // turn it stands for. Ids keep clear of the arrow charts': one renaming
@@ -146,7 +146,7 @@ arrow_choice($ATee()). arrow_choice($AGlyph()).
 .type AP = [a: ArrowChoice, p: Position]
 .init arrow_host = Unanimous<AP, Color>
 
-// --- ATee ---
+// --- $ATee ---
 
 arrow_at($ATee(), P, D) :- parse.arrow($U(), P, D).
 arrow_cell($ATee(), K, P) :-
@@ -158,7 +158,7 @@ arrow_host.item([$ATee(), P], Col) :-
     perp_dir(D, B), neighbor(S, B, Q),           // the stem's flanks
     in(Q, Col).                                  // the color they show
 
-// --- AGlyph ---
+// --- $AGlyph ---
 
 // The arrow charts, matched in every pose.
 .type ChartPose = [id: Ident, d: D4]
@@ -206,7 +206,7 @@ bracket_choice($BArms()). bracket_choice($BGlyph()).
 .type BK = [b: BracketChoice, k: Ident]
 .init bracket_host = Unanimous<BK, Color>
 
-// --- BArms ---
+// --- $BArms ---
 
 bracket_at($BArms(), K) :- parse.bracket($U(), K, _).
 
@@ -216,7 +216,7 @@ bracket_host.item([$BArms(), K], Col) :-
     in(P, Col), inside(P, B),                                 // a cell of that box
     !parse.patch_cell($U(), K, P).                            // it leaves free
 
-// --- BGlyph ---
+// --- $BGlyph ---
 
 // A patch viewed from its own box, its picture compared to each chart. A
 // box of another size puts the cells in another frame, so only an exact

@@ -20,14 +20,14 @@
     .decl bg(col: Color) bg(0).
     .decl mark(col: Color) mark(3).
 
-    // --- Shape ---
+    // --- $Shape ---
     .decl shape(p: Position)
     GRID_MASK_3x3(shape,
         _, 1, _,
         1, 1, 1,
         _, 1, _)
 
-    // --- Size ---
+    // --- $Size ---
     .decl piece_size(n: number) piece_size(5).
 }
 
@@ -59,14 +59,14 @@ cross_count.item([Id, Ch], Inst) :- cross(Id, Inst, Ch).
 .init most = ArgExtremes<Choice, Ident>
 most.cand(Ch, Id, N) :- cross_count.tally([Id, Ch], N).
 
-// --- Plus ---
+// --- $Plus ---
 
 .init mark_rim = Rim<Unit>
 mark_rim.cell($U(), P) :- mark_cell(P).
 
 cross(Id, P, $Plus()) :- mark_cell(P), !mark_rim.rim($U(), P), panel(Id, P).
 
-// --- Shape ---
+// --- $Shape ---
 
 .init occ = Occurrences<Unit, Unit>
 occ.cell($U(), P, $U()) :- mark_cell(P).
@@ -77,7 +77,7 @@ cross(Id, M, $Shape()) :-
     params.shape(S), compose(M, S, P),     // a cell it covers
     panel(Id, P).                          // the panel holding it
 
-// --- Size ---
+// --- $Size ---
 
 .init marks = Components<Unit>
 marks.node($U(), P) :- mark_cell(P).

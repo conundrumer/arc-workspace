@@ -36,13 +36,13 @@ bbox.cell(Col, P) :- obj_cell(Col, P).
 // The cell's layer, counted in from the object's peel edge.
 .decl layer(ch: Choice, p: Position, k: number)
 
-// --- Strip ---
+// --- $Strip ---
 
 layer($Strip(), P, K) :-
     bbox.cell(Col, P), bbox.box(Col, B), crop(P, B, P_inner),  // the cell in its object's box
     params.peel_dir(D), dist(P_inner, D, K).                   // counted in from the peel edge
 
-// --- Occupied ---
+// --- $Occupied ---
 
 // A cell beside its line of the peel axis.
 .decl obj_line(col: Color, p: Position, l: Position)

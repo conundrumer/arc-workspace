@@ -29,7 +29,7 @@
     // The edge the loose pieces are anchored at.
     .decl piece_dir(d: Dir) piece_dir(DIR_R).
 
-    // --- Given ---
+    // --- $Given ---
     // The block's margin from the piece edge.
     .decl block_margin(k: number) block_margin(6).
 }
@@ -98,10 +98,10 @@ fits(P_band, P_band2, K) :- exact.equals([P_band, K], [P_band2, K]).
 
 .decl pair(p_band: Position, piece_band: Position, k: number, ch: Choice)
 
-// --- Given ---
+// --- $Given ---
 pair(P_band, P_band2, K, $Given()) :- fits(P_band, P_band2, K), params.block_margin(K).
 
-// --- Common ---
+// --- $Common ---
 // A margin some band admits no piece at.
 .decl unmatched(k: number)
 unmatched(K) :- margin_cand(K), band_cell(P_band, _), !fits(P_band, _, K).

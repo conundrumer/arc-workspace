@@ -20,11 +20,18 @@ from typing import Any
 
 from .apply import apply_patch
 from .patch import parse
-from .task import Example
+from .task import PAIR_SECTIONS, Example, pair_json
 from .upstream import UpstreamSource, find_all, load_at
 
 PATCHES_DIR = Path(__file__).resolve().parents[2] / "data" / "patches"
 VARIANT_LABELS = ("A", "B", "C")
+
+# The keys of a task file, in the order `materialize_default` writes them:
+# `DESCRIPTION_KEYS` describe the task, and each of `arc.task.PAIR_SECTIONS`
+# holds the task's pairs of that name, each in its JSON form
+# (`arc.task.pair_json`).
+ID, SOURCE, PATCHES, VARIANT = "id", "source", "patches", "variant"
+DESCRIPTION_KEYS = (ID, SOURCE, PATCHES, VARIANT)
 
 
 def materialize_default(task_id: str) -> dict[str, Any]:
@@ -56,26 +63,17 @@ def materialize_default(task_id: str) -> dict[str, Any]:
         applied_variants.append(label)
 
     file_dict: dict[str, Any] = {
-        "id": task_id,
-        "source": _build_source_records(task_id, sources),
+        ID: task_id,
+        SOURCE: _build_source_records(task_id, sources),
     }
     if patches:
-        file_dict["patches"] = patches
+        file_dict[PATCHES] = patches
     if applied_variants:
-        file_dict["variant"] = applied_variants[-1]
-    file_dict["train"] = _examples_to_dicts(task.train)
-    file_dict["test"] = _examples_to_dicts(task.test)
+        file_dict[VARIANT] = applied_variants[-1]
+    for section in PAIR_SECTIONS:
+        file_dict[section] = [pair_json(ex, i) for i, ex
+                              in enumerate(getattr(task, section))]
     return file_dict
-
-
-def _examples_to_dicts(examples: list[Example]) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    for i, ex in enumerate(examples):
-        d: dict[str, Any] = {"index": i, "input": ex.input, "output": ex.output}
-        if ex.alt is not None:
-            d["alt"] = {"kind": ex.alt.kind, "grid": ex.alt.grid}
-        out.append(d)
-    return out
 
 
 def _build_source_records(task_id: str, sources: list[UpstreamSource]) -> list[dict[str, Any]]:

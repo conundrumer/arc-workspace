@@ -68,7 +68,7 @@ enter(Q, D, Ch) :-
     leave(P, D, Ch), neighbor(P, D, Q),
     in(Q, Col), params.passable(Col).
 
-// --- Contact ---
+// --- $Contact ---
 
 .comp Bounce<Key> {
     // The cells a beam may stand at, per key.
@@ -98,7 +98,7 @@ bounce.side($U(), P, D) :- in(P, _), dir_elem(D), neighbor(P, D, Q), wall(Q).
 
 leave(P, D_out, $Contact()) :- enter(P, D, $Contact()), bounce.bounce($U(), P, D, D_out).
 
-// --- WallAxis ---
+// --- $WallAxis ---
 
 // The wall runs along axis a at p: another wall cell lies beside p on that axis.
 .decl wall_axis(p: Position, a: Axis)

@@ -113,12 +113,12 @@ impl_choice($Size()). impl_choice($Rank()).
 // The ring each depth of the nest carries.
 .decl depth_ring(r: number, col: Color, ch: Choice)
 
-// --- Size ---
+// --- $Size ---
 
 depth_ring(R, Col, $Size()) :-
     nest.cell(R, P), nest.box(R, B), box_extent(B, P, _, N), ring_size(Col, N).
 
-// --- Rank ---
+// --- $Rank ---
 
 .init order = Ordinal<Unit>
 order.idx_set($U(), N) :- ring_size(_, N).

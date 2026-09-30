@@ -38,7 +38,7 @@
     // The color the mesh is drawn in.
     .decl mesh(c: Color) mesh(5).
 
-    // --- Lattice ---
+    // --- $Lattice ---
     // The corner the lattice runs from.
     .decl anchor(d: DiagDir) anchor(DIAG_TL).
     // How many lines separate two tiles of the lattice.
@@ -89,7 +89,7 @@ out(P, Col, Ch) :-
     ; !on_mesh(P, _, Ch), params.bg(Col)                       // off the mesh
     ).
 
-// --- Whole ---
+// --- $Whole ---
 
 // A line holding a bg cell.
 .decl gapped(a: Axis, p_across: Position)
@@ -97,7 +97,7 @@ gapped(A, P_across) :- cell_split(A, _, Col, P_across), params.bg(Col).
 
 located(A, P_across, $Whole()) :- line(A, P_across), !gapped(A, P_across).
 
-// --- Predominant ---
+// --- $Predominant ---
 
 .init line_mode = Mode<Line, Color, Position>
 line_mode.item([A, P_across], Col, P) :- cell_split(A, P, Col, P_across).
@@ -105,11 +105,11 @@ line_mode.item([A, P_across], Col, P) :- cell_split(A, P, Col, P_across).
 located(A, P_across, $Predominant()) :-
     line_mode.mode([A, P_across], Col), params.mesh(Col).
 
-// --- AsFound ---
+// --- $AsFound ---
 
 mesh_line(A, P_across, [L, $AsFound()]) :- located(A, P_across, L).
 
-// --- Lattice ---
+// --- $Lattice ---
 
 // A line's distance from the edge the lattice runs from.
 .decl anchor_dist(a: Axis, p_across: Position, k: number)

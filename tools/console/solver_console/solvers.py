@@ -7,17 +7,12 @@ import re
 from pathlib import Path
 
 import controlled_markdown as nm
-from dl.annotations import (
-    Witness,
-    derive_blocks,
-    derive_param,
-    merged_blocks,
-    witness_blocks,
-)
-from dl.annotations import read as read_annotations
-from dl.corpus import literal_count
-from dl.dlparse import ParseError, parse
-from dl.witness import load_witnesses, witness_path
+from cli.common import engine
+from cli.survey import literal_count
+from engine import Engine, ParseFailure, Program
+from solver import witness
+from solver.annotations import Annotations, NamedVerdict, Verdict
+from solver.annotations import read as read_annotations
 
 from . import config
 
@@ -90,7 +85,7 @@ def is_draft(item_id: str) -> bool:
     hit = DRAFT_CACHE.get(path)
     if hit is not None and hit[0] == key:
         return hit[1]
-    answer = read_annotations(solver_text(item_id)).is_draft()
+    answer = any(w == "draft" for w, *_ in _fields(solver_text(item_id)))
     DRAFT_CACHE[path] = (key, answer)
     return answer
 
@@ -128,11 +123,50 @@ def header_end(lines: list[str]) -> int:
     return n
 
 
+_ENGINE: list[Engine] = []
+
+
+def _parsed(text: str) -> Program | ParseFailure:
+    if not _ENGINE:
+        _ENGINE.append(engine())
+    return _ENGINE[0].parse(text, config.SOLVERS)
+
+
+def _annotations(text: str) -> Annotations:
+    """The annotations of a solver text; where the text does not parse,
+    those of its leading comment block, which holds the header."""
+    program = _parsed(text)
+    if isinstance(program, ParseFailure):
+        lines = text.splitlines(True)
+        program = _parsed("".join(lines[:header_end(lines)]))
+    assert isinstance(program, Program), program
+    return read_annotations(program)[0]
+
+
+_CONTINUATION = re.compile(r"^\s*//\s{2,}[^\s@]")
+
+
+def _fields(text: str) -> list[tuple[str, str | None, str, int, int]]:
+    """The header's fields as (word, kind, value, line, end), the review
+    lines among them as `review` with their kind, in line order. `end` is
+    the last line of the value, which continues on lines of `//` and two
+    spaces."""
+    a = _annotations(text)
+    lines = text.splitlines()
+    out: list[tuple[str, str | None, str, int, int]] = [
+        (str(f.word), None, f.value, f.line, f.end) for f in a.header]
+    for r in a.reviews:
+        end = r.line
+        while end < len(lines) and _CONTINUATION.match(lines[end]):
+            end += 1
+        out.append(("review", r.kind, r.text, r.line, end))
+    return sorted(out, key=lambda f: f[3])
+
+
 def header_fields(text: str) -> list[tuple[str, str | None, str]]:
     """The header's fields as (word, kind, value), continuation lines joined
     into the value."""
-    return [(f.word, f.kind, f.value)
-            for f in read_annotations(text).fields]
+    return [(w, k, v) for w, k, v, _line, _end in _fields(text)]
 
 
 def header_of(item_id: str) -> dict:
@@ -156,9 +190,8 @@ def needs_of(item_id: str) -> dict[str, list[str]]:
 
 def _review_span(lines: list[str]) -> list[int]:
     """The indices of the header's review lines, continuations included."""
-    fields = read_annotations("".join(lines)).fields
-    return [n for f in fields if f.word == "review"
-            for n in range(f.line - 1, f.end)]
+    return [n for w, _k, _v, line, end in _fields("".join(lines))
+            if w == "review" for n in range(line - 1, end)]
 
 
 def _cleared() -> dict[str, list[str]]:
@@ -185,8 +218,8 @@ def _retag(item_id: str, mark: bool) -> bool:
         lines = p.read_text().splitlines(True)
     except OSError:
         return False
-    at = [f.line - 1 for f in read_annotations("".join(lines)).fields
-          if f.word == "draft"]
+    at = [line - 1 for w, _k, _v, line, _end in _fields("".join(lines))
+          if w == "draft"]
     if mark == bool(at):
         return False
     held = _cleared()
@@ -353,44 +386,66 @@ def witness_view(item_id: str) -> dict | None:
     An entry the solver names in no block keeps the file's fields alone. A
     block that names no entry follows the entries, as an entry that holds
     the block's fields and no grid."""
-    path = witness_path(item_id)
+    path = witness.path(item_id)
     if not path.exists():
         return None
-    try:
-        load_witnesses(item_id)
-        entries = json.loads(path.read_text())["witnesses"]
-    except (ValueError, KeyError, TypeError) as exc:
-        return {"error": str(exc)}
-    source = solver_text(item_id)
-    blocks = {a.id: a for a in merged_blocks(witness_blocks(source))}
-    blocks.update({a.id: a for a in _derive_blocks(source)})
+    text = path.read_text()
+    _file, problems = witness.read(text)
+    if problems:
+        return {"error": "; ".join(str(p) for p in problems)}
+    entries = json.loads(text)["witnesses"]
+    program = _parsed(solver_text(item_id))
+    if isinstance(program, ParseFailure):
+        return {"error": f"{program.line}:{program.column}: {program.message}"}
+    a = read_annotations(program)[0]
+    blocks = _witness_blocks(a)
+    blocks.update(_derive_blocks(program, a))
     for entry in entries:
         block = blocks.pop(entry.get("id"), None)
         if block is not None:
             entry.update(_block_fields(block))
-    entries += [{"id": a.id, **_block_fields(a)} for a in blocks.values()]
+    entries += [{"id": i, **_block_fields(b)} for i, b in blocks.items()]
     return {"entries": entries}
 
 
-def _derive_blocks(source: str) -> list[Witness]:
-    """Each `@derive` line as a block of its case id."""
-    return [
-        Witness(f"{param}={b.proposer}", b.plausibility, b.verdict, b.line)
-        for b in derive_blocks(source)
-        if (param := derive_param(source, b))
-    ]
+def _verdict(v: Verdict) -> str:
+    return v.text if isinstance(v, NamedVerdict) else str(v)
 
 
-def _block_fields(block) -> dict:
+def _witness_blocks(a: Annotations) -> dict[str, dict]:
+    """The `@witness` lines of one id as one block, by id: the nested
+    lines of each line of the id, in the order they stand."""
+    out: dict[str, dict] = {}
+    for w in a.witnesses:
+        held = out.get(w.id)
+        if held is None:
+            out[w.id] = {"plausibility": str(w.plausibility),
+                         "verdict": _verdict(w.verdict),
+                         "approximates": w.approximates or None,
+                         "relaxed": list(w.relaxed),
+                         "reassigned": list(w.reassigned)}
+            continue
+        held["relaxed"] += [s for s in w.relaxed if s not in held["relaxed"]]
+        held["reassigned"] += [s for s in w.reassigned
+                               if s not in held["reassigned"]]
+    return out
+
+
+def _derive_blocks(program: Program, a: Annotations) -> dict[str, dict]:
+    """Each `@derive` line as a block of its case id, `<param>=<Proposer>`,
+    the parameter being the relation declared under it."""
+    names = {r.id: r.name for r in program.relations}
+    return {f"{names[d.above]}={d.proposer}": {
+                "plausibility": str(d.plausibility),
+                "verdict": _verdict(d.verdict), "approximates": None,
+                "relaxed": list(d.relaxed), "reassigned": []}
+            for d in a.derives if d.above in names}
+
+
+def _block_fields(block: dict) -> dict:
     """The fields of one `@witness` block, as an entry's view carries
     them."""
-    return {
-        "plausibility": block.plausibility,
-        "verdict": block.verdict,
-        "approximates": block.approximates or None,
-        "relaxed": list(block.relaxed),
-        "reassigned": list(block.reassigned),
-    }
+    return dict(block)
 
 
 def prop_path(rel: str) -> Path:
@@ -630,9 +685,9 @@ def title_of(item_id: str) -> str:
     p = solver_path(item_id)
     if not p.exists():
         return ""
-    for f in read_annotations(p.read_text()).fields:
-        if f.word in ("keywords", "representative"):
-            return f"{f.word}: {f.value}"
+    for w, _k, v, _line, _end in _fields(p.read_text()):
+        if w in ("keywords", "representative"):
+            return f"{w}: {v}"
     return ""
 
 
@@ -657,7 +712,7 @@ _DL_SIZE: dict[str, tuple[float, int | None]] = {}
 
 
 def dl_size(item_id: str) -> int | None:
-    """Solver complexity by task id: `dl.corpus.literal_count` of the
+    """Solver complexity by task id: `cli.survey.literal_count` of the
     parsed file, cached per mtime. None for a missing file or one outside
     the parser's dialect."""
     p = solver_path(item_id)
@@ -668,8 +723,10 @@ def dl_size(item_id: str) -> int | None:
     hit = _DL_SIZE.get(item_id)
     if hit is None or hit[0] != mtime:
         try:
-            hit = (mtime, literal_count(parse(p.read_text())))
-        except (OSError, ParseError):
-            hit = (mtime, None)
+            program = _parsed(p.read_text())
+        except OSError:
+            program = None
+        hit = (mtime, literal_count(program)
+               if isinstance(program, Program) else None)
         _DL_SIZE[item_id] = hit
     return hit[1]

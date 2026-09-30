@@ -31,13 +31,13 @@
 
     .decl divide_gap(g: number) divide_gap(1).
 
-    // --- TileCount ---
+    // --- $TileCount ---
     .decl divisor(n: number) divisor(3).
 
-    // --- Size ---
+    // --- $Size ---
     .decl tile_size(k: number) tile_size(3).
 
-    // --- Count ---
+    // --- $Count ---
     .decl pair_count(n: number) pair_count(2).
 }
 
@@ -45,13 +45,13 @@
 
 .decl tile_cell(p_tile: Position, p_intile: Position, col: Color, dc: DecChoice)
 
-// --- TileCount ---
+// --- $TileCount ---
 tile_cell(P_tile, P_intile, Col, $TileCount()) :-
     in(P_grid, Col),
     params.divisor(N), params.divide_gap(G),
     divide_2d(P_grid, N, G, P_tile, P_intile).
 
-// --- Size ---
+// --- $Size ---
 tile_cell(P_tile, P_intile, Col, $Size()) :-
     in(P_grid, Col),
     params.tile_size(K), params.divide_gap(G),
@@ -63,14 +63,14 @@ tile(P_tile, Dc) :- tile_cell(P_tile, _, _, Dc).
 .decl tile_marker(p_tile: Position, p_intile: Position, dc: DecChoice)
 tile_marker(P_tile, P_intile, Dc) :- tile_cell(P_tile, P_intile, Col, Dc), params.marker(Col).
 
-// --- Pair ---
+// --- $Pair ---
 .decl paired(p_tile: Position, dc: DecChoice)
 paired(P_tile, Dc) :- tile_marker(P_tile, P1, Dc), tile_marker(P_tile, P2, Dc), P1 != P2.
 
 out(P_tile, Col, [$Pair(), Dc]) :- paired(P_tile, Dc), params.mark(Col).
 out(P_tile, Col, [$Pair(), Dc]) :- tile(P_tile, Dc), !paired(P_tile, Dc), params.bg(Col).
 
-// --- Count ---
+// --- $Count ---
 // A count→value table is defeated: the test exhibits a zero-marker tile,
 // absent from train.
 .init markers = Tally<TileKey, Position>

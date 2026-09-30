@@ -23,15 +23,15 @@
     .decl floor_color(c: Color) floor_color(4).
     .decl diag_color(c: Color) diag_color(2).
 
-    // --- Anchored, Foot ---
+    // --- $Anchored, $Foot ---
     .decl floor_dir(d: Dir) floor_dir(DIR_B).
 
-    // --- Anchored ---
+    // --- $Anchored ---
     // Square grids: both corners give the diagonal.
     .decl corner(d: DiagDir)
     corner(DIAG_BL). corner(DIAG_TR).
 
-    // --- WallEnd ---
+    // --- $WallEnd ---
     .decl sense(s: Sense) sense(SENSE_CW).
 }
 
@@ -52,12 +52,12 @@ impl_choice($Anchored()). impl_choice($Foot()). impl_choice($WallEnd()).
 .init diag = Diagonal<Choice>
 diag.cell(Ch, P) :- impl_choice(Ch), bg_cell(P).
 
-// --- Anchored, Foot ---
+// --- $Anchored, $Foot ---
 
 .decl floor_paint(p: Position)
 floor_paint(P) :- bg_cell(P), params.floor_dir(D), dist(P, D, 0).
 
-// --- Anchored ---
+// --- $Anchored ---
 
 diag.corner($Anchored(), Diag) :- params.corner(Diag).
 
@@ -70,7 +70,7 @@ paint_anch(P, Col) :-
 out(P, Col, $Anchored()) :- paint_anch(P, Col).
 out(P, Col, $Anchored()) :- in(P, Col), !paint_anch(P, _).
 
-// --- Foot ---
+// --- $Foot ---
 
 // The wall cell on the floor row.
 .decl foot(p: Position)
@@ -92,7 +92,7 @@ paint_foot(P, Col) :- diag.diagonal($Foot(), P, _), params.diag_color(Col).
 out(P, Col, $Foot()) :- paint_foot(P, Col).
 out(P, Col, $Foot()) :- in(P, Col), !paint_foot(P, _).
 
-// --- WallEnd ---
+// --- $WallEnd ---
 
 // The edge the wall sits against: the one no wall cell stands off.
 .decl off_edge(d: Dir)

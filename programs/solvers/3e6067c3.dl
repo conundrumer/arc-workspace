@@ -120,7 +120,7 @@ fill(P, Col, Ch) :-
 out(P, Col, Ch) :- fill(P, Col, Ch).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !fill(P, _, Ch).
 
-// --- Route ---
+// --- $Route ---
 
 // The rest of the sequence is still walkable from the box.
 cand(L, Id, $Route()) :-
@@ -129,7 +129,7 @@ cand(L, Id, $Route()) :-
     ; seq.next($U(), L, L2), cand(L2, Id2, $Route()), joined(Id, Id2)     // a corridor carries on
     ).
 
-// --- Walk ---
+// --- $Walk ---
 
 // Any box the slot names.
 cand(L, Id, $Walk()) :- names(L, Id).

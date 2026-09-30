@@ -1,0 +1,3129 @@
+{
+  "id": "aa300dc3",
+  "witnesses": [{
+    "id": "gap-line",
+    "separates": "The anti-diagonal line r+c=9 holds a run of 6, (1,8)-(6,3), and, past a 5 at (7,2), one more 0 at (8,1): the concept paints the run, and $LineCount paints every 0 on the line.",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,5,5,0,5,0,0,0,0,5],
+      [5,0,0,0,0,0,0,0,0,5],
+      [5,0,0,0,0,5,0,0,5,5],
+      [5,0,0,0,0,0,5,0,5,5],
+      [5,0,5,0,0,0,0,0,0,5],
+      [5,0,0,0,0,0,5,0,5,5],
+      [5,5,5,0,0,0,5,5,5,5],
+      [5,0,0,0,0,5,5,5,5,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "output": [{
+      "cases": ["$Run"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,5,0,0,0,8,5],
+        [5,0,0,0,0,0,0,8,0,5],
+        [5,0,0,0,0,5,8,0,5,5],
+        [5,0,0,0,0,8,5,0,5,5],
+        [5,0,5,0,8,0,0,0,0,5],
+        [5,0,0,8,0,0,5,0,5,5],
+        [5,5,5,0,0,0,5,5,5,5],
+        [5,0,0,0,0,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$LineCount"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,5,0,0,0,8,5],
+        [5,0,0,0,0,0,0,8,0,5],
+        [5,0,0,0,0,5,8,0,5,5],
+        [5,0,0,0,0,8,5,0,5,5],
+        [5,0,5,0,8,0,0,0,0,5],
+        [5,0,0,8,0,0,5,0,5,5],
+        [5,5,5,0,0,0,5,5,5,5],
+        [5,8,0,0,0,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $EveryRun & $TieCenter",
+        "$NoPinch & $EveryRun & $TieDirection",
+        "$NoPinch & $EveryRun & $TieMiddle",
+        "$NoPinch & $CornerRun & $TieCenter",
+        "$NoPinch & $CornerRun & $TieDirection",
+        "$NoPinch & $CornerRun & $TieMiddle",
+        "$NoPinch & $EveryCorner & $TieCenter",
+        "$NoPinch & $EveryCorner & $TieDirection",
+        "$NoPinch & $EveryCorner & $TieMiddle"
+      ],
+      "grid": null
+    }, {
+      "cases": ["$NoPinch & $TieCorner","$NoPinch & $EdgeCorners"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,5,0,0,0,0,5],
+        [5,8,0,0,0,0,0,0,0,5],
+        [5,0,8,0,0,5,0,0,5,5],
+        [5,0,0,8,0,0,5,0,5,5],
+        [5,0,5,0,8,0,0,0,0,5],
+        [5,0,0,0,0,8,5,0,5,5],
+        [5,5,5,0,0,0,5,5,5,5],
+        [5,0,0,0,0,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "pinch",
+    "separates": "The longest run (1,2)-(7,8) steps from (6,7) to (7,8) between two 5 cells at (6,8) and (7,7): the concept paints all 7 cells, and $NoPinch ends the run at (6,7).",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,5,0,0,0,0,0,5,5,5],
+      [5,0,0,0,0,0,0,0,5,5],
+      [5,0,5,0,0,0,0,0,5,5],
+      [5,5,0,0,0,0,0,5,0,5],
+      [5,0,0,0,5,0,0,0,0,5],
+      [5,5,0,0,0,0,5,0,5,5],
+      [5,5,0,0,5,0,0,5,0,5],
+      [5,5,5,5,0,0,0,0,0,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "output": [{
+      "cases": [
+        "$LineCount & $EveryRun",
+        "$LineCount & $CornerRun",
+        "$LineCount & $EveryCornerCell",
+        "$Run & $EveryRun",
+        "$Run & $CornerRun",
+        "$Run & $EveryCornerCell"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,8,0,0,0,0,5,5,5],
+        [5,0,0,8,0,0,0,0,5,5],
+        [5,0,5,0,8,0,0,0,5,5],
+        [5,5,0,0,0,8,0,5,0,5],
+        [5,0,0,0,5,0,8,0,0,5],
+        [5,5,0,0,0,0,5,8,5,5],
+        [5,5,0,0,5,0,0,5,8,5],
+        [5,5,5,5,0,0,0,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$AnchorFirst"],
+      "grid": null
+    }, {
+      "cases": ["$NoPinch & $EveryRun","$NoPinch & $CornerRun","$NoPinch & $EveryCornerCell"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,8,0,0,0,0,5,5,5],
+        [5,0,0,8,0,0,0,0,5,5],
+        [5,0,5,0,8,0,0,0,5,5],
+        [5,5,0,0,0,8,0,5,0,5],
+        [5,0,0,0,5,0,8,0,0,5],
+        [5,5,0,0,0,0,5,8,5,5],
+        [5,5,0,0,5,0,0,5,0,5],
+        [5,5,5,5,0,0,0,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "inner-longest",
+    "separates": "The longest run (3,2)-(8,7) holds no corner cell of the hole: the concept paints it, and $CornerRun paints the longest run through a corner, (5,4)-(8,1).",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,5,0,0,0,5,0,5,0,5],
+      [5,5,0,0,0,0,0,0,0,5],
+      [5,5,0,0,0,0,0,5,5,5],
+      [5,0,0,0,5,5,0,0,0,5],
+      [5,5,5,0,0,0,0,0,5,5],
+      [5,5,0,0,0,0,0,0,5,5],
+      [5,0,0,5,0,0,0,5,0,5],
+      [5,0,5,0,0,5,0,0,0,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "output": [{
+      "cases": ["$NoPinch & $EveryRun","$Run & $EveryRun"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,0,0,5,0,5,0,5],
+        [5,5,0,0,0,0,0,0,0,5],
+        [5,5,8,0,0,0,0,5,5,5],
+        [5,0,0,8,5,5,0,0,0,5],
+        [5,5,5,0,8,0,0,0,5,5],
+        [5,5,0,0,0,8,0,0,5,5],
+        [5,0,0,5,0,0,8,5,0,5],
+        [5,0,5,0,0,5,0,8,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$LineCount"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,0,0,5,0,5,8,5],
+        [5,5,0,0,0,0,0,8,0,5],
+        [5,5,0,0,0,0,8,5,5,5],
+        [5,0,0,0,5,5,0,0,0,5],
+        [5,5,5,0,8,0,0,0,5,5],
+        [5,5,0,8,0,0,0,0,5,5],
+        [5,0,8,5,0,0,0,5,0,5],
+        [5,8,5,0,0,5,0,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $CornerRun",
+        "$NoPinch & $EveryCorner",
+        "$Run & $CornerRun",
+        "$Run & $EveryCorner"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,0,0,5,0,5,0,5],
+        [5,5,0,0,0,0,0,0,0,5],
+        [5,5,0,0,0,0,0,5,5,5],
+        [5,0,0,0,5,5,0,0,0,5],
+        [5,5,5,0,8,0,0,0,5,5],
+        [5,5,0,8,0,0,0,0,5,5],
+        [5,0,8,5,0,0,0,5,0,5],
+        [5,8,5,0,0,5,0,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$NoPinch & $EdgeCorners & $TieCenter","$Run & $EdgeCorners & $TieCenter"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,0,0,5,0,5,8,5],
+        [5,5,0,0,0,0,0,8,0,5],
+        [5,5,0,0,0,0,8,5,5,5],
+        [5,0,0,0,5,5,0,0,0,5],
+        [5,5,5,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,5,5],
+        [5,0,0,5,0,0,0,5,0,5],
+        [5,0,5,0,0,5,0,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $EdgeCorners & $TieCorner",
+        "$NoPinch & $EdgeCorners & $TieDirection",
+        "$NoPinch & $EdgeCorners & $TieMiddle",
+        "$Run & $EdgeCorners & $TieCorner",
+        "$Run & $EdgeCorners & $TieDirection",
+        "$Run & $EdgeCorners & $TieMiddle"
+      ],
+      "grid": null
+    }]
+  }, {
+    "id": "cross-tie",
+    "separates": "Six runs of 5 tie on both diagonals, and one of them, the anti-diagonal run (1,8)-(5,4), lies on a line through the grid center: the concept paints it, and $TieDirection at tie_dir = main diagonal paints the main-diagonal run nearest the center, (4,3)-(8,7).",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,5,5,0,0,0,0,0,0,5],
+      [5,5,0,0,0,0,5,0,0,5],
+      [5,5,5,0,0,0,0,0,5,5],
+      [5,5,0,0,0,0,0,0,5,5],
+      [5,5,0,0,0,0,0,0,5,5],
+      [5,5,0,5,0,0,5,5,5,5],
+      [5,0,0,5,5,0,0,0,0,5],
+      [5,0,0,0,5,0,5,0,0,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "assign": {
+      "tie_dir": [
+        ["DAXIS_DG"]
+      ]
+    },
+    "output": [{
+      "cases": [
+        "$NoPinch & $TieCenter",
+        "$NoPinch & $TieCorner",
+        "$Run & $TieCenter",
+        "$Run & $TieCorner"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,0,0,0,0,8,5],
+        [5,5,0,0,0,0,5,8,0,5],
+        [5,5,5,0,0,0,8,0,5,5],
+        [5,5,0,0,0,8,0,0,5,5],
+        [5,5,0,0,8,0,0,0,5,5],
+        [5,5,0,5,0,0,5,5,5,5],
+        [5,0,0,5,5,0,0,0,0,5],
+        [5,0,0,0,5,0,5,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$LineCount"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,0,0,0,0,8,5],
+        [5,5,0,0,0,0,5,8,0,5],
+        [5,5,5,0,0,0,8,0,5,5],
+        [5,5,0,0,0,8,0,0,5,5],
+        [5,5,0,0,8,0,0,0,5,5],
+        [5,5,0,5,0,0,5,5,5,5],
+        [5,0,8,5,5,0,0,0,0,5],
+        [5,8,0,0,5,0,5,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$NoPinch & $EveryRun & $TieDirection","$Run & $EveryRun & $TieDirection"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,0,0,0,0,0,5],
+        [5,5,0,0,0,0,5,0,0,5],
+        [5,5,5,0,0,0,0,0,5,5],
+        [5,5,0,8,0,0,0,0,5,5],
+        [5,5,0,0,8,0,0,0,5,5],
+        [5,5,0,5,0,8,5,5,5,5],
+        [5,0,0,5,5,0,8,0,0,5],
+        [5,0,0,0,5,0,5,8,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $TieMiddle",
+        "$NoPinch & $AnchorFirst & $TieDirection",
+        "$Run & $TieMiddle",
+        "$Run & $AnchorFirst & $TieDirection"
+      ],
+      "grid": null
+    }, {
+      "cases": [
+        "$NoPinch & $CornerRun & $TieDirection",
+        "$NoPinch & $EveryCornerCell & $TieDirection",
+        "$Run & $CornerRun & $TieDirection",
+        "$Run & $EveryCornerCell & $TieDirection"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,8,0,0,0,0,0,5],
+        [5,5,0,0,8,0,5,0,0,5],
+        [5,5,5,0,0,8,0,0,5,5],
+        [5,5,0,0,0,0,8,0,5,5],
+        [5,5,0,0,0,0,0,8,5,5],
+        [5,5,0,5,0,0,5,5,5,5],
+        [5,0,0,5,5,0,0,0,0,5],
+        [5,0,0,0,5,0,5,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "offcenter-tie",
+    "separates": "Three anti-diagonal runs of 6 tie, on the lines r+c=7, 8 and 9: the concept paints the run on r+c=9, which passes through the grid center, and $TieMiddle paints the middle run, on r+c=8.",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,5,0,0,5,0,0,0,5,5],
+      [5,0,0,0,0,0,0,0,0,5],
+      [5,5,0,5,0,0,0,0,5,5],
+      [5,5,5,0,0,0,0,0,5,5],
+      [5,0,0,0,0,0,0,0,5,5],
+      [5,0,0,0,5,5,0,5,5,5],
+      [5,5,0,0,5,0,0,0,0,5],
+      [5,5,0,0,0,0,0,5,0,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "output": [{
+      "cases": [
+        "$NoPinch & $EveryRun & $TieCenter",
+        "$NoPinch & $EveryRun & $TieDirection",
+        "$Run & $EveryRun & $TieCenter",
+        "$Run & $EveryRun & $TieDirection"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,0,5,0,0,0,5,5],
+        [5,0,0,0,0,0,0,8,0,5],
+        [5,5,0,5,0,0,8,0,5,5],
+        [5,5,5,0,0,8,0,0,5,5],
+        [5,0,0,0,8,0,0,0,5,5],
+        [5,0,0,8,5,5,0,5,5,5],
+        [5,5,8,0,5,0,0,0,0,5],
+        [5,5,0,0,0,0,0,5,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$LineCount & $EveryRun",
+        "$EveryRun & $TieCorner",
+        "$LineCount & $TieDirection",
+        "$LineCount & $TieMiddle",
+        "$LineCount & $CornerRun & $TieCorner",
+        "$LineCount & $EdgeCorners & $TieCenter",
+        "$AnchorFirst & $TieCorner",
+        "$LineCount & $EveryCorner & $TieCorner",
+        "$NoPinch & $AnchorFirst",
+        "$Run & $AnchorFirst"
+      ],
+      "grid": null
+    }, {
+      "cases": [
+        "$LineCount & $CornerRun & $TieCenter",
+        "$LineCount & $EveryCorner & $TieCenter"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,0,5,0,0,0,5,5],
+        [5,0,8,0,0,0,0,0,0,5],
+        [5,5,0,5,0,0,0,0,5,5],
+        [5,5,5,0,8,0,0,0,5,5],
+        [5,0,0,0,0,8,0,0,5,5],
+        [5,0,0,0,5,5,8,5,5,5],
+        [5,5,0,0,5,0,0,8,0,5],
+        [5,5,0,0,0,0,0,5,8,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$LineCount & $EdgeCorners & $EveryCornerCell & $TieCorner"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,0,5,0,0,0,5,5],
+        [5,0,0,0,0,0,0,0,8,5],
+        [5,5,0,5,0,0,0,8,5,5],
+        [5,5,5,0,0,0,8,0,5,5],
+        [5,0,0,0,0,8,0,0,5,5],
+        [5,0,0,0,5,5,0,5,5,5],
+        [5,5,0,8,5,0,0,0,0,5],
+        [5,5,8,0,0,0,0,5,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $TieMiddle",
+        "$NoPinch & $CornerRun",
+        "$NoPinch & $EveryCornerCell",
+        "$Run & $TieMiddle",
+        "$Run & $CornerRun",
+        "$Run & $EveryCornerCell"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,0,5,0,0,8,5,5],
+        [5,0,0,0,0,0,8,0,0,5],
+        [5,5,0,5,0,8,0,0,5,5],
+        [5,5,5,0,8,0,0,0,5,5],
+        [5,0,0,8,0,0,0,0,5,5],
+        [5,0,8,0,5,5,0,5,5,5],
+        [5,5,0,0,5,0,0,0,0,5],
+        [5,5,0,0,0,0,0,5,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "corner-tie",
+    "separates": "Three runs of 6 tie: the concept paints the anti-diagonal run on r+c=9, which passes through the grid center, and $TieCorner paints the main-diagonal run (1,2)-(6,7), the only tied run that holds a corner cell the hole has no second of.",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,5,0,5,5,0,0,5,5,5],
+      [5,5,0,0,0,0,0,0,5,5],
+      [5,5,0,5,0,0,0,0,5,5],
+      [5,0,0,0,0,0,0,0,0,5],
+      [5,5,5,0,0,0,0,0,0,5],
+      [5,5,5,0,0,5,0,0,5,5],
+      [5,0,0,0,5,0,0,0,5,5],
+      [5,5,0,0,0,5,5,5,5,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "output": [{
+      "cases": [
+        "$EveryRun & $TieCenter",
+        "$CornerRun & $TieCenter",
+        "$EveryCornerCell & $TieCenter"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,5,5,0,0,5,5,5],
+        [5,5,0,0,0,0,0,8,5,5],
+        [5,5,0,5,0,0,8,0,5,5],
+        [5,0,0,0,0,8,0,0,0,5],
+        [5,5,5,0,8,0,0,0,0,5],
+        [5,5,5,8,0,5,0,0,5,5],
+        [5,0,8,0,5,0,0,0,5,5],
+        [5,5,0,0,0,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$TieCorner"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,8,5,5,0,0,5,5,5],
+        [5,5,0,8,0,0,0,0,5,5],
+        [5,5,0,5,8,0,0,0,5,5],
+        [5,0,0,0,0,8,0,0,0,5],
+        [5,5,5,0,0,0,8,0,0,5],
+        [5,5,5,0,0,5,0,8,5,5],
+        [5,0,0,0,5,0,0,0,5,5],
+        [5,5,0,0,0,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$TieDirection","$TieMiddle","$AnchorFirst & $TieCenter"],
+      "grid": null
+    }]
+  }, {
+    "id": "two-chambers",
+    "separates": "A 5 wall at col 4 splits the hole into two chambers: the concept paints the one longest run, in the right chamber, and $PerRegion also paints the longest run of the left chamber.",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,5,0,0,5,5,0,0,5,5],
+      [5,0,5,0,5,0,0,0,5,5],
+      [5,0,0,0,5,0,0,0,0,5],
+      [5,0,5,0,5,0,0,0,5,5],
+      [5,0,0,0,5,0,0,5,5,5],
+      [5,0,0,0,5,0,0,0,0,5],
+      [5,0,0,0,5,0,0,0,5,5],
+      [5,0,0,0,5,0,5,0,5,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "output": [{
+      "cases": ["$NoPinch & $EveryRun & $WholeGrid","$Run & $EveryRun & $WholeGrid"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,0,5,5,0,0,5,5],
+        [5,0,5,0,5,0,0,0,5,5],
+        [5,0,0,0,5,0,0,0,8,5],
+        [5,0,5,0,5,0,0,8,5,5],
+        [5,0,0,0,5,0,8,5,5,5],
+        [5,0,0,0,5,8,0,0,0,5],
+        [5,0,0,0,5,0,0,0,5,5],
+        [5,0,0,0,5,0,5,0,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$EveryRun & $PerRegion & $TieCenter"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,0,5,5,0,0,5,5],
+        [5,0,5,0,5,0,0,0,5,5],
+        [5,0,0,0,5,0,0,0,8,5],
+        [5,0,5,0,5,0,0,8,5,5],
+        [5,0,0,0,5,0,8,5,5,5],
+        [5,0,0,8,5,8,0,0,0,5],
+        [5,0,8,0,5,0,0,0,5,5],
+        [5,8,0,0,5,0,5,0,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$EveryRun & $PerRegion & $TieCorner",
+        "$LineCount & $TieDirection",
+        "$PerRegion & $TieDirection",
+        "$LineCount & $TieMiddle",
+        "$PerRegion & $TieMiddle",
+        "$LineCount & $WholeGrid & $TieCorner",
+        "$CornerRun & $PerRegion",
+        "$CornerRun & $TieCorner",
+        "$CornerRun & $TieDirection",
+        "$CornerRun & $TieMiddle",
+        "$AnchorCorner & $TieDirection",
+        "$AnchorCorner & $TieMiddle",
+        "$EdgeCorners & $WholeGrid & $TieCenter",
+        "$AnchorFirst & $PerRegion",
+        "$EveryCorner & $PerRegion",
+        "$EveryCorner & $TieCorner"
+      ],
+      "grid": null
+    }, {
+      "cases": [
+        "$LineCount & $EveryRun & $WholeGrid & $TieCenter",
+        "$LineCount & $CornerRun & $WholeGrid & $TieCenter",
+        "$LineCount & $EveryCorner & $WholeGrid & $TieCenter"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,0,5,5,0,0,5,5],
+        [5,0,5,0,5,0,0,8,5,5],
+        [5,0,0,0,5,0,8,0,0,5],
+        [5,0,5,0,5,8,0,0,5,5],
+        [5,0,0,0,5,0,0,5,5,5],
+        [5,0,0,8,5,0,0,0,0,5],
+        [5,0,8,0,5,0,0,0,5,5],
+        [5,8,0,0,5,0,5,0,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$EdgeCorners & $EveryCornerCell & $PerRegion & $TieCenter",
+        "$EdgeCorners & $EveryCornerCell & $PerRegion & $TieCorner"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,0,5,5,0,8,5,5],
+        [5,8,5,0,5,0,8,0,5,5],
+        [5,0,8,0,5,8,0,0,0,5],
+        [5,0,5,8,5,0,0,0,5,5],
+        [5,0,0,0,5,0,0,5,5,5],
+        [5,0,0,0,5,0,0,0,0,5],
+        [5,0,0,0,5,0,0,0,5,5],
+        [5,0,0,0,5,0,5,0,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $CornerRun & $WholeGrid & $TieCenter",
+        "$NoPinch & $EveryCorner & $WholeGrid & $TieCenter",
+        "$Run & $CornerRun & $WholeGrid & $TieCenter",
+        "$Run & $EveryCorner & $WholeGrid & $TieCenter"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,0,5,5,0,0,5,5],
+        [5,0,5,0,5,0,0,0,5,5],
+        [5,0,0,0,5,0,0,0,0,5],
+        [5,0,5,0,5,0,0,0,5,5],
+        [5,0,0,0,5,0,0,5,5,5],
+        [5,0,0,8,5,0,0,0,0,5],
+        [5,0,8,0,5,0,0,0,5,5],
+        [5,8,0,0,5,0,5,0,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $EdgeCorners & $WholeGrid & $TieCorner",
+        "$Run & $EdgeCorners & $WholeGrid & $TieCorner"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,0,5,5,0,8,5,5],
+        [5,0,5,0,5,0,8,0,5,5],
+        [5,0,0,0,5,8,0,0,0,5],
+        [5,0,5,0,5,0,0,0,5,5],
+        [5,0,0,0,5,0,0,5,5,5],
+        [5,0,0,0,5,0,0,0,0,5],
+        [5,0,0,0,5,0,0,0,5,5],
+        [5,0,0,0,5,0,5,0,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "hole-2",
+    "separates": "The train0 input with the hole in 2: the stored hole_color 0 finds no cell, so the concept is undefined, and $HoleDerived reads 2 as the hole color and paints the main diagonal.",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,2,2,2,5,5,2,2,5,5],
+      [5,5,2,2,2,5,2,2,2,5],
+      [5,5,5,2,2,2,2,2,5,5],
+      [5,5,2,2,2,2,2,2,2,5],
+      [5,2,2,2,2,2,2,2,5,5],
+      [5,5,2,2,2,5,2,2,2,5],
+      [5,2,2,5,2,5,2,2,2,5],
+      [5,5,2,5,5,5,2,5,2,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "output": [{
+      "cases": ["$HoleStored & hole_color=stored"],
+      "grid": null
+    }, {
+      "cases": ["$HoleDerived","hole_color=RarestColor"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,8,2,2,5,5,2,2,5,5],
+        [5,5,8,2,2,5,2,2,2,5],
+        [5,5,5,8,2,2,2,2,5,5],
+        [5,5,2,2,8,2,2,2,2,5],
+        [5,2,2,2,2,8,2,2,5,5],
+        [5,5,2,2,2,5,8,2,2,5],
+        [5,2,2,5,2,5,2,8,2,5],
+        [5,5,2,5,5,5,2,5,8,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "tied-anchor",
+    "separates": "Three cells tie for the top-left corner of the hole, (3,1), (2,2) and (1,3), and the middle one starts the longest run, (2,2)-(8,8): the concept and $AnchorCorner paint that run, and $AnchorFirst, whose reading orders pick only an end cell of the three, paints the run from the top-right corner cell, (1,8)-(4,5).",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,5,5,0,0,5,0,0,0,5],
+      [5,5,0,0,5,0,0,0,0,5],
+      [5,0,0,0,0,0,0,5,5,5],
+      [5,5,5,0,0,0,5,0,5,5],
+      [5,5,0,0,5,0,0,0,5,5],
+      [5,5,5,5,0,0,0,5,5,5],
+      [5,5,0,0,0,5,0,0,5,5],
+      [5,5,5,0,0,0,5,0,0,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "output": [{
+      "cases": ["$EveryRun","$CornerRun","$EveryCornerCell","$EveryCorner"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,0,5,0,0,0,5],
+        [5,5,8,0,5,0,0,0,0,5],
+        [5,0,0,8,0,0,0,5,5,5],
+        [5,5,5,0,8,0,5,0,5,5],
+        [5,5,0,0,5,8,0,0,5,5],
+        [5,5,5,5,0,0,8,5,5,5],
+        [5,5,0,0,0,5,0,8,5,5],
+        [5,5,5,0,0,0,5,0,8,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$LineCount & $EdgeCorners & $AnchorFirst"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,0,5,0,0,8,5],
+        [5,5,0,0,5,0,0,8,0,5],
+        [5,0,0,0,0,0,8,5,5,5],
+        [5,5,5,0,0,8,5,0,5,5],
+        [5,5,0,0,5,0,0,0,5,5],
+        [5,5,5,5,0,0,0,5,5,5],
+        [5,5,8,0,0,5,0,0,5,5],
+        [5,5,5,0,0,0,5,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$NoPinch & $EdgeCorners & $AnchorFirst","$Run & $EdgeCorners & $AnchorFirst"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,0,5,0,0,8,5],
+        [5,5,0,0,5,0,0,8,0,5],
+        [5,0,0,0,0,0,8,5,5,5],
+        [5,5,5,0,0,8,5,0,5,5],
+        [5,5,0,0,5,0,0,0,5,5],
+        [5,5,5,5,0,0,0,5,5,5],
+        [5,5,0,0,0,5,0,0,5,5],
+        [5,5,5,0,0,0,5,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "combo-01",
+    "separates": "1 region of 0; one longest run of 7: $AnchorCorner, $AnchorFirst, hole_color=RarestColor differ from the concept, and the cases that combine them differ from one another.",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,0,0,0,0,0,0,5,5,5],
+      [5,0,0,0,0,0,0,5,5,5],
+      [5,0,0,0,0,0,0,0,0,5],
+      [5,0,0,0,0,5,0,0,0,5],
+      [5,0,0,0,0,0,0,0,0,5],
+      [5,0,0,0,0,0,0,5,0,5],
+      [5,5,0,0,0,5,0,5,0,5],
+      [5,5,0,0,5,5,0,0,5,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "assign": {
+      "tie_dir": [
+        ["DAXIS_DG"]
+      ]
+    },
+    "output": [{
+      "cases": [
+        "$EveryRun & hole_color=stored",
+        "$CornerRun & hole_color=stored",
+        "$EveryCorner & $EveryCornerCell & hole_color=stored"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,0,0,0,0,0,0,5,5,5],
+        [5,8,0,0,0,0,0,5,5,5],
+        [5,0,8,0,0,0,0,0,0,5],
+        [5,0,0,8,0,5,0,0,0,5],
+        [5,0,0,0,8,0,0,0,0,5],
+        [5,0,0,0,0,8,0,5,0,5],
+        [5,5,0,0,0,5,8,5,0,5],
+        [5,5,0,0,5,5,0,8,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$LineCount & $EveryRun & $PerRegion & $TieCenter & hole_color=RarestColor",
+        "$LineCount & $EveryRun & $PerRegion & $TieDirection & hole_color=RarestColor",
+        "$LineCount & $CornerRun & $PerRegion & $TieCenter & hole_color=RarestColor",
+        "$LineCount & $CornerRun & $PerRegion & $TieDirection & hole_color=RarestColor",
+        "$LineCount & $EveryCorner & $PerRegion & $TieCenter & hole_color=RarestColor",
+        "$LineCount & $EveryCorner & $PerRegion & $TieDirection & hole_color=RarestColor"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,8],
+        [5,0,0,0,0,0,0,5,8,5],
+        [5,0,0,0,0,0,0,8,5,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,8,0,0,0,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,0,0,5,0,5],
+        [5,5,0,0,0,5,0,8,0,5],
+        [5,8,0,0,5,5,0,0,5,5],
+        [8,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$PerRegion & $TieCorner & hole_color=RarestColor",
+        "$PerRegion & $TieMiddle & hole_color=RarestColor",
+        "$EdgeCorners & $TieMiddle & hole_color=stored",
+        "$EveryCorner & $AnchorFirst & hole_color=stored",
+        "$Run & $CornerRun & $TieCorner & hole_color=RarestColor",
+        "$Run & $CornerRun & $TieMiddle & hole_color=RarestColor",
+        "$Run & $CornerRun & $WholeGrid & $TieCenter & hole_color=RarestColor",
+        "$Run & $EveryCorner & $TieCorner & hole_color=RarestColor",
+        "$Run & $EveryCorner & $TieMiddle & hole_color=RarestColor",
+        "$Run & $EveryCorner & $WholeGrid & $TieCenter & hole_color=RarestColor"
+      ],
+      "grid": null
+    }, {
+      "cases": ["$LineCount & $WholeGrid & hole_color=RarestColor"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,8],
+        [5,0,0,0,0,0,0,5,8,5],
+        [5,0,0,0,0,0,0,8,5,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,8,0,0,0,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,0,0,5,0,5],
+        [5,5,0,0,0,5,0,5,0,5],
+        [5,8,0,0,5,5,0,0,5,5],
+        [8,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$EdgeCorners & $TieCenter & hole_color=stored",
+        "$EdgeCorners & $TieCorner & hole_color=stored",
+        "$EdgeCorners & $TieDirection & hole_color=stored"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,8,0,0,0,0,0,5,5,5],
+        [5,0,8,0,0,0,0,5,5,5],
+        [5,0,0,8,0,0,0,0,0,5],
+        [5,0,0,0,8,5,0,0,0,5],
+        [5,0,0,0,0,8,0,0,0,5],
+        [5,0,0,0,0,0,8,5,0,5],
+        [5,5,0,0,0,5,0,5,0,5],
+        [5,5,0,0,5,5,0,0,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$LineCount & $EdgeCorners & $PerRegion & $TieCenter & hole_color=RarestColor",
+        "$LineCount & $EdgeCorners & $PerRegion & $TieDirection & hole_color=RarestColor"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,8],
+        [5,0,0,0,0,0,0,5,8,5],
+        [5,0,0,0,0,0,0,8,5,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,8,0,0,0,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,0,0,8,0,5],
+        [5,5,0,0,0,5,0,5,0,5],
+        [5,8,0,0,5,5,0,0,5,5],
+        [8,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $EveryRun & $PerRegion & $TieCenter & hole_color=RarestColor",
+        "$NoPinch & $EveryRun & $PerRegion & $TieDirection & hole_color=RarestColor",
+        "$Run & $EveryRun & $PerRegion & $TieCenter & hole_color=RarestColor",
+        "$Run & $EveryRun & $PerRegion & $TieDirection & hole_color=RarestColor"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,8,5,5,5],
+        [5,0,0,0,0,0,0,8,5,5],
+        [5,0,0,0,0,0,0,5,8,5],
+        [5,0,0,0,0,0,0,0,0,8],
+        [5,0,0,0,0,8,0,0,0,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,0,0,5,0,5],
+        [5,5,0,0,0,5,0,8,0,5],
+        [5,5,0,0,5,5,0,0,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $EveryRun & $WholeGrid & hole_color=RarestColor",
+        "$Run & $EveryRun & $WholeGrid & hole_color=RarestColor"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,8,5,5,5],
+        [5,0,0,0,0,0,0,8,5,5],
+        [5,0,0,0,0,0,0,5,8,5],
+        [5,0,0,0,0,0,0,0,0,8],
+        [5,0,0,0,0,5,0,0,0,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,0,0,5,0,5],
+        [5,5,0,0,0,5,0,5,0,5],
+        [5,5,0,0,5,5,0,0,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $CornerRun & $PerRegion & $TieCenter & hole_color=RarestColor",
+        "$NoPinch & $CornerRun & $PerRegion & $TieDirection & hole_color=RarestColor",
+        "$NoPinch & $EveryCorner & $PerRegion & $TieCenter & hole_color=RarestColor",
+        "$NoPinch & $EveryCorner & $PerRegion & $TieDirection & hole_color=RarestColor",
+        "$Run & $CornerRun & $PerRegion & $TieCenter & hole_color=RarestColor",
+        "$Run & $CornerRun & $PerRegion & $TieDirection & hole_color=RarestColor",
+        "$Run & $EveryCorner & $PerRegion & $TieCenter & hole_color=RarestColor",
+        "$Run & $EveryCorner & $PerRegion & $TieDirection & hole_color=RarestColor"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,8],
+        [5,0,0,0,0,0,0,5,8,5],
+        [5,0,0,0,0,0,0,8,5,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,8,0,0,0,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,0,0,5,0,5],
+        [5,5,0,0,0,5,0,8,0,5],
+        [5,5,0,0,5,5,0,0,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $CornerRun & $WholeGrid & hole_color=RarestColor",
+        "$NoPinch & $AnchorCorner & $WholeGrid & hole_color=RarestColor",
+        "$Run & $EdgeCorners & $WholeGrid & hole_color=RarestColor"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,8],
+        [5,0,0,0,0,0,0,5,8,5],
+        [5,0,0,0,0,0,0,8,5,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,5,0,0,0,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,0,0,5,0,5],
+        [5,5,0,0,0,5,0,5,0,5],
+        [5,5,0,0,5,5,0,0,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $EdgeCorners & $PerRegion & $TieCenter & hole_color=RarestColor",
+        "$NoPinch & $EdgeCorners & $PerRegion & $TieDirection & hole_color=RarestColor",
+        "$Run & $EdgeCorners & $PerRegion & $TieCenter & hole_color=RarestColor",
+        "$Run & $EdgeCorners & $PerRegion & $TieDirection & hole_color=RarestColor"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,8],
+        [5,0,0,0,0,0,0,5,8,5],
+        [5,0,0,0,0,0,0,8,5,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,8,0,0,0,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,0,0,8,0,5],
+        [5,5,0,0,0,5,0,5,0,5],
+        [5,5,0,0,5,5,0,0,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$Run & $CornerRun & $WholeGrid & $TieDirection & hole_color=RarestColor",
+        "$Run & $EveryCorner & $WholeGrid & $TieDirection & hole_color=RarestColor"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,0,0,0,0,0,0,5,5,5],
+        [5,0,0,0,0,0,0,5,5,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,5,0,0,0,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,0,0,5,0,5],
+        [5,5,0,0,0,5,0,8,0,5],
+        [5,5,0,0,5,5,0,0,8,5],
+        [5,5,5,5,5,5,5,5,5,8]
+      ]
+    }]
+  }, {
+    "id": "combo-02",
+    "separates": "2 regions of 0; a wall of 5 splits the hole; 2 runs of 4 tie for longest: $LineCount, $AnchorCorner, $AnchorFirst, $PerRegion, $TieDirection, $TieMiddle differ from the concept, and the cases that combine them differ from one another.",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,5,0,0,5,5,5,5,5,5],
+      [5,5,0,0,5,5,5,0,0,5],
+      [5,5,0,0,0,5,0,0,5,5],
+      [5,0,5,0,0,5,0,5,0,5],
+      [5,0,0,0,0,5,0,0,0,5],
+      [5,5,0,0,0,5,0,0,0,5],
+      [5,5,0,5,0,5,0,5,0,5],
+      [5,0,0,5,0,5,0,0,0,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "assign": {
+      "tie_dir": [
+        ["DAXIS_DG"]
+      ]
+    },
+    "output": [{
+      "cases": [
+        "$NoPinch & $EveryRun & $WholeGrid & $TieCenter",
+        "$NoPinch & $EveryRun & $WholeGrid & $TieCorner",
+        "$NoPinch & $CornerRun & $WholeGrid",
+        "$NoPinch & $EveryCorner & $WholeGrid",
+        "$Run & $EveryRun & $WholeGrid & $TieCenter",
+        "$Run & $EveryRun & $WholeGrid & $TieCorner",
+        "$Run & $CornerRun & $WholeGrid",
+        "$Run & $EveryCorner & $WholeGrid"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,0,5,5,5,5,5,5],
+        [5,5,0,0,5,5,5,0,0,5],
+        [5,5,0,0,0,5,0,0,5,5],
+        [5,0,5,0,0,5,0,5,0,5],
+        [5,0,0,0,8,5,0,0,0,5],
+        [5,5,0,8,0,5,0,0,0,5],
+        [5,5,8,5,0,5,0,5,0,5],
+        [5,8,0,5,0,5,0,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$EveryRun & $PerRegion & $TieCenter",
+        "$EveryRun & $TieMiddle",
+        "$LineCount & $EveryRun & $WholeGrid & $TieCorner",
+        "$LineCount & $CornerRun & $WholeGrid & $TieCorner",
+        "$LineCount & $CornerRun & $WholeGrid & $TieMiddle",
+        "$LineCount & $EveryCorner & $WholeGrid & $TieCorner",
+        "$LineCount & $EveryCorner & $WholeGrid & $TieMiddle",
+        "$NoPinch & $EdgeCorners & $WholeGrid & $TieCenter",
+        "$NoPinch & $EdgeCorners & $WholeGrid & $TieCorner",
+        "$NoPinch & $EdgeCorners & $WholeGrid & $TieMiddle",
+        "$Run & $EdgeCorners & $WholeGrid & $TieCenter",
+        "$Run & $EdgeCorners & $WholeGrid & $TieCorner",
+        "$Run & $EdgeCorners & $WholeGrid & $TieMiddle"
+      ],
+      "grid": null
+    }, {
+      "cases": [
+        "$EveryRun & $PerRegion & $TieCorner",
+        "$CornerRun & $PerRegion",
+        "$EveryCorner & $PerRegion"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,0,5,5,5,5,5,5],
+        [5,5,0,0,5,5,5,0,8,5],
+        [5,5,0,0,0,5,0,8,5,5],
+        [5,0,5,0,0,5,8,5,0,5],
+        [5,0,0,0,8,5,0,0,0,5],
+        [5,5,0,8,0,5,0,0,0,5],
+        [5,5,8,5,0,5,0,5,0,5],
+        [5,8,0,5,0,5,0,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$EveryRun & $PerRegion & $TieDirection"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,0,5,5,5,5,5,5],
+        [5,5,0,0,5,5,5,0,0,5],
+        [5,5,0,0,0,5,0,0,5,5],
+        [5,8,5,0,0,5,0,5,0,5],
+        [5,0,8,0,0,5,8,0,0,5],
+        [5,5,0,8,0,5,0,8,0,5],
+        [5,5,0,5,8,5,0,5,8,5],
+        [5,0,0,5,0,5,0,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$LineCount & $EveryRun & $WholeGrid & $TieCenter",
+        "$LineCount & $CornerRun & $WholeGrid & $TieCenter",
+        "$LineCount & $EveryCorner & $WholeGrid & $TieCenter"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,0,5,5,5,5,5,5],
+        [5,5,0,0,5,5,5,8,0,5],
+        [5,5,0,0,0,5,8,0,5,5],
+        [5,0,5,0,0,5,0,5,0,5],
+        [5,0,0,0,8,5,0,0,0,5],
+        [5,5,0,8,0,5,0,0,0,5],
+        [5,5,8,5,0,5,0,5,0,5],
+        [5,8,0,5,0,5,0,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$LineCount & $WholeGrid & $TieDirection",
+        "$LineCount & $EdgeCorners & $WholeGrid"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,8,0,5,5,5,5,5,5],
+        [5,5,0,8,5,5,5,0,0,5],
+        [5,5,0,0,8,5,0,0,5,5],
+        [5,0,5,0,0,5,0,5,0,5],
+        [5,0,0,0,0,5,8,0,0,5],
+        [5,5,0,0,0,5,0,8,0,5],
+        [5,5,0,5,0,5,0,5,8,5],
+        [5,0,0,5,0,5,0,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$EdgeCorners & $PerRegion"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,8,0,5,5,5,5,5,5],
+        [5,5,0,8,5,5,5,0,8,5],
+        [5,5,0,0,8,5,0,8,5,5],
+        [5,0,5,0,0,5,8,5,0,5],
+        [5,0,0,0,0,5,0,0,0,5],
+        [5,5,0,0,0,5,0,0,0,5],
+        [5,5,0,5,0,5,0,5,0,5],
+        [5,0,0,5,0,5,0,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $EveryRun & $WholeGrid & $TieDirection",
+        "$Run & $EveryRun & $WholeGrid & $TieDirection"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,0,5,5,5,5,5,5],
+        [5,5,0,0,5,5,5,0,0,5],
+        [5,5,0,0,0,5,0,0,5,5],
+        [5,8,5,0,0,5,0,5,0,5],
+        [5,0,8,0,0,5,0,0,0,5],
+        [5,5,0,8,0,5,0,0,0,5],
+        [5,5,0,5,8,5,0,5,0,5],
+        [5,0,0,5,0,5,0,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $EdgeCorners & $WholeGrid & $TieDirection",
+        "$Run & $EdgeCorners & $WholeGrid & $TieDirection"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,8,0,5,5,5,5,5,5],
+        [5,5,0,8,5,5,5,0,0,5],
+        [5,5,0,0,8,5,0,0,5,5],
+        [5,0,5,0,0,5,0,5,0,5],
+        [5,0,0,0,0,5,0,0,0,5],
+        [5,5,0,0,0,5,0,0,0,5],
+        [5,5,0,5,0,5,0,5,0,5],
+        [5,0,0,5,0,5,0,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "combo-03",
+    "separates": "1 region of 0; one longest run of 7: $CornerRun, $AnchorCorner, $AnchorFirst differ from the concept, and the cases that combine them differ from one another.",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,5,5,0,5,0,5,0,0,5],
+      [5,0,0,0,0,0,5,0,0,5],
+      [5,5,0,0,0,5,0,0,5,5],
+      [5,5,5,5,0,0,0,5,0,5],
+      [5,0,0,0,0,0,0,0,0,5],
+      [5,5,0,5,0,0,0,0,0,5],
+      [5,0,5,0,0,0,0,0,0,5],
+      [5,0,0,0,5,0,0,0,5,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "assign": {
+      "tie_dir": [
+        ["DAXIS_DG"]
+      ]
+    },
+    "output": [{
+      "cases": ["$EveryRun"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,5,0,5,0,0,5],
+        [5,0,0,0,0,0,5,0,8,5],
+        [5,5,0,0,0,5,0,8,5,5],
+        [5,5,5,5,0,0,8,5,0,5],
+        [5,0,0,0,0,8,0,0,0,5],
+        [5,5,0,5,8,0,0,0,0,5],
+        [5,0,5,8,0,0,0,0,0,5],
+        [5,0,8,0,5,0,0,0,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$LineCount & $CornerRun & $TieCenter",
+        "$LineCount & $AnchorCorner & $TieCenter"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,5,0,5,0,8,5],
+        [5,0,0,0,0,0,5,8,0,5],
+        [5,5,0,0,0,5,8,0,5,5],
+        [5,5,5,5,0,8,0,5,0,5],
+        [5,0,0,0,8,0,0,0,0,5],
+        [5,5,0,5,0,0,0,0,0,5],
+        [5,0,5,0,0,0,0,0,0,5],
+        [5,8,0,0,5,0,0,0,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$LineCount & $CornerRun & $TieCorner",
+        "$LineCount & $CornerRun & $TieDirection",
+        "$LineCount & $CornerRun & $TieMiddle",
+        "$LineCount & $AnchorCorner & $TieCorner",
+        "$LineCount & $AnchorCorner & $TieMiddle",
+        "$LineCount & $EveryCorner & $TieDirection",
+        "$NoPinch & $EveryCorner & $AnchorFirst",
+        "$Run & $EveryCorner & $AnchorFirst"
+      ],
+      "grid": null
+    }, {
+      "cases": ["$LineCount & $EdgeCorners & $TieDirection"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,5,0,5,0,0,5],
+        [5,8,0,0,0,0,5,0,0,5],
+        [5,5,8,0,0,5,0,0,5,5],
+        [5,5,5,5,0,0,0,5,0,5],
+        [5,0,0,0,8,0,0,0,0,5],
+        [5,5,0,5,0,8,0,0,0,5],
+        [5,0,5,0,0,0,8,0,0,5],
+        [5,0,0,0,5,0,0,8,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $CornerRun",
+        "$NoPinch & $EveryCorner & $EveryCornerCell",
+        "$Run & $CornerRun",
+        "$Run & $EveryCorner & $EveryCornerCell"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,5,0,5,0,0,5],
+        [5,0,0,8,0,0,5,0,0,5],
+        [5,5,0,0,8,5,0,0,5,5],
+        [5,5,5,5,0,8,0,5,0,5],
+        [5,0,0,0,0,0,8,0,0,5],
+        [5,5,0,5,0,0,0,8,0,5],
+        [5,0,5,0,0,0,0,0,8,5],
+        [5,0,0,0,5,0,0,0,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$NoPinch & $EdgeCorners","$Run & $EdgeCorners"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,5,0,5,0,8,5],
+        [5,0,0,0,0,0,5,8,0,5],
+        [5,5,0,0,0,5,8,0,5,5],
+        [5,5,5,5,0,8,0,5,0,5],
+        [5,0,0,0,8,0,0,0,0,5],
+        [5,5,0,5,0,0,0,0,0,5],
+        [5,0,5,0,0,0,0,0,0,5],
+        [5,0,0,0,5,0,0,0,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "combo-04",
+    "separates": "2 regions of 0; a stray 2 sits in the field; one longest run of 8: $PerRegion, $HoleDerived, hole_color=RarestColor differ from the concept, and the cases that combine them differ from one another.",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,0,0,5,0,5,0,0,0,5],
+      [5,0,5,0,0,0,0,0,0,5],
+      [5,5,0,0,0,0,0,0,0,5],
+      [5,0,0,0,0,0,2,0,0,5],
+      [5,0,0,0,0,5,0,0,5,5],
+      [5,0,0,0,0,0,0,0,0,5],
+      [5,0,0,0,0,0,0,0,0,5],
+      [5,0,5,5,0,5,0,0,0,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "assign": {
+      "tie_dir": [
+        ["DAXIS_DG"]
+      ]
+    },
+    "output": [{
+      "cases": ["$WholeGrid & $HoleStored & hole_color=stored"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,0,0,5,0,5,0,0,8,5],
+        [5,0,5,0,0,0,0,8,0,5],
+        [5,5,0,0,0,0,8,0,0,5],
+        [5,0,0,0,0,8,2,0,0,5],
+        [5,0,0,0,8,5,0,0,5,5],
+        [5,0,0,8,0,0,0,0,0,5],
+        [5,0,8,0,0,0,0,0,0,5],
+        [5,8,5,5,0,5,0,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$HoleDerived",
+        "$TieCorner & hole_color=RarestColor",
+        "$TieMiddle & hole_color=RarestColor"
+      ],
+      "grid": null
+    }, {
+      "cases": ["$PerRegion & $HoleStored & hole_color=stored"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,0,8,5,0,5,0,0,8,5],
+        [5,8,5,0,0,0,0,8,0,5],
+        [5,5,0,0,0,0,8,0,0,5],
+        [5,0,0,0,0,8,2,0,0,5],
+        [5,0,0,0,8,5,0,0,5,5],
+        [5,0,0,8,0,0,0,0,0,5],
+        [5,0,8,0,0,0,0,0,0,5],
+        [5,8,5,5,0,5,0,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$TieCenter & hole_color=RarestColor","$TieDirection & hole_color=RarestColor"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,0,0,5,0,5,0,0,0,5],
+        [5,0,5,0,0,0,0,0,0,5],
+        [5,5,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,0,8,0,0,5],
+        [5,0,0,0,0,5,0,0,5,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,5,5,0,5,0,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "combo-05",
+    "separates": "1 region of 0; one longest run of 8: hole_color=RarestColor differ from the concept, and the cases that combine them differ from one another.",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,0,0,5,0,0,0,5,5,5],
+      [5,0,0,0,0,0,0,0,0,5],
+      [5,5,0,0,0,0,0,0,0,5],
+      [5,0,0,0,0,0,0,0,0,5],
+      [5,5,0,0,0,0,0,0,5,5],
+      [5,0,0,0,0,0,0,0,0,5],
+      [5,0,0,0,0,0,0,0,0,5],
+      [5,0,0,5,0,0,0,0,0,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "output": [{
+      "cases": ["hole_color=stored"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,8,0,5,0,0,0,5,5,5],
+        [5,0,8,0,0,0,0,0,0,5],
+        [5,5,0,8,0,0,0,0,0,5],
+        [5,0,0,0,8,0,0,0,0,5],
+        [5,5,0,0,0,8,0,0,5,5],
+        [5,0,0,0,0,0,8,0,0,5],
+        [5,0,0,0,0,0,0,8,0,5],
+        [5,0,0,5,0,0,0,0,8,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$LineCount & $EveryRun & hole_color=RarestColor"],
+      "grid": [
+        [5,5,5,5,8,5,5,5,5,5],
+        [5,0,0,8,0,0,0,5,5,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,8,0,0,0,0,0,0,0,5],
+        [8,0,0,0,0,0,0,0,0,5],
+        [5,5,0,0,0,0,0,0,5,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,5,0,0,0,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$LineCount & $CornerRun & hole_color=RarestColor",
+        "$LineCount & $AnchorCorner & hole_color=RarestColor"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,8],
+        [5,0,0,5,0,0,0,5,8,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,5,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,5,0,0,0,0,0,0,5,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,5,0,0,0,0,0,5],
+        [8,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $EveryRun & hole_color=RarestColor",
+        "$Run & $EveryRun & hole_color=RarestColor"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,8,5,5],
+        [5,0,0,5,0,0,0,5,8,5],
+        [5,0,0,0,0,0,0,0,0,8],
+        [5,5,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,5,0,0,0,0,0,0,5,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,5,0,0,0,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $CornerRun & hole_color=RarestColor",
+        "$NoPinch & $AnchorCorner & hole_color=RarestColor",
+        "$Run & $CornerRun & hole_color=RarestColor",
+        "$Run & $AnchorCorner & hole_color=RarestColor"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,8],
+        [5,0,0,5,0,0,0,5,8,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,5,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,5,0,0,0,0,0,0,5,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,5,0,0,0,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "combo-06",
+    "separates": "1 region of 0; 2 runs of 7 tie for longest; the tie leaves the concept undefined: $AnchorFirst, $TieDirection differ from the concept, and the cases that combine them differ from one another.",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,5,5,0,0,5,5,5,5,5],
+      [5,5,0,0,0,0,5,0,5,5],
+      [5,0,0,0,0,0,0,0,5,5],
+      [5,0,5,0,0,0,0,0,5,5],
+      [5,5,0,0,0,0,0,5,0,5],
+      [5,0,0,0,0,0,0,0,0,5],
+      [5,5,0,0,0,5,0,0,5,5],
+      [5,0,0,5,0,0,5,0,0,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "assign": {
+      "tie_dir": [
+        ["DAXIS_DG"]
+      ]
+    },
+    "output": [{
+      "cases": [
+        "$EveryRun & $TieCenter",
+        "$EveryRun & $TieCorner",
+        "$TieMiddle",
+        "$CornerRun & $TieCenter",
+        "$CornerRun & $TieCorner",
+        "$EveryCornerCell & $TieCenter",
+        "$EveryCornerCell & $TieCorner",
+        "$EveryCorner & $TieCenter",
+        "$EveryCorner & $TieCorner"
+      ],
+      "grid": null
+    }, {
+      "cases": [
+        "$EveryRun & $TieDirection",
+        "$CornerRun & $TieDirection",
+        "$EveryCornerCell & $TieDirection",
+        "$EveryCorner & $TieDirection"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,0,5,5,5,5,5],
+        [5,5,8,0,0,0,5,0,5,5],
+        [5,0,0,8,0,0,0,0,5,5],
+        [5,0,5,0,8,0,0,0,5,5],
+        [5,5,0,0,0,8,0,5,0,5],
+        [5,0,0,0,0,0,8,0,0,5],
+        [5,5,0,0,0,5,0,8,5,5],
+        [5,0,0,5,0,0,5,0,8,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$EdgeCorners & $AnchorFirst"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,0,5,5,5,5,5],
+        [5,5,0,0,0,0,5,8,5,5],
+        [5,0,0,0,0,0,8,0,5,5],
+        [5,0,5,0,0,8,0,0,5,5],
+        [5,5,0,0,8,0,0,5,0,5],
+        [5,0,0,8,0,0,0,0,0,5],
+        [5,5,8,0,0,5,0,0,5,5],
+        [5,8,0,5,0,0,5,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "combo-07",
+    "separates": "1 region of 0; 5 runs of 6 tie for longest: $LineCount, $AnchorFirst, $TieDirection, $TieMiddle, $TieCorner differ from the concept, and the cases that combine them differ from one another.",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,5,0,0,5,0,0,5,5,5],
+      [5,5,0,5,0,0,5,0,5,5],
+      [5,5,0,0,0,0,0,0,0,5],
+      [5,0,0,0,0,0,0,0,5,5],
+      [5,0,0,0,0,0,0,0,5,5],
+      [5,5,5,0,0,0,5,5,0,5],
+      [5,0,0,0,0,0,0,0,0,5],
+      [5,5,0,0,5,5,0,0,0,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "assign": {
+      "tie_dir": [
+        ["DAXIS_DG"]
+      ]
+    },
+    "output": [{
+      "cases": [
+        "$EdgeCorners & $EveryCornerCell & $TieCenter",
+        "$EdgeCorners & $EveryCornerCell & $TieDirection",
+        "$NoPinch & $EveryRun & $TieCenter",
+        "$NoPinch & $CornerRun & $TieCenter",
+        "$NoPinch & $CornerRun & $TieDirection",
+        "$NoPinch & $EveryCornerCell & $TieCenter",
+        "$NoPinch & $EveryCornerCell & $TieDirection",
+        "$Run & $EveryRun & $TieCenter",
+        "$Run & $CornerRun & $TieCenter",
+        "$Run & $CornerRun & $TieDirection",
+        "$Run & $EveryCornerCell & $TieCenter",
+        "$Run & $EveryCornerCell & $TieDirection"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,0,5,0,0,5,5,5],
+        [5,5,0,5,0,0,5,8,5,5],
+        [5,5,0,0,0,0,8,0,0,5],
+        [5,0,0,0,0,8,0,0,5,5],
+        [5,0,0,0,8,0,0,0,5,5],
+        [5,5,5,8,0,0,5,5,0,5],
+        [5,0,8,0,0,0,0,0,0,5],
+        [5,5,0,0,5,5,0,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$LineCount & $EveryRun & $TieCenter",
+        "$EveryRun & $TieMiddle",
+        "$LineCount & $TieMiddle",
+        "$LineCount & $CornerRun & $TieCenter",
+        "$EdgeCorners & $TieCorner",
+        "$EdgeCorners & $TieMiddle",
+        "$EdgeCorners & $AnchorFirst",
+        "$LineCount & $EveryCorner & $EveryCornerCell & $TieCenter",
+        "$NoPinch & $TieCorner",
+        "$NoPinch & $AnchorFirst",
+        "$Run & $TieCorner",
+        "$Run & $AnchorFirst"
+      ],
+      "grid": null
+    }, {
+      "cases": [
+        "$LineCount & $EveryRun & $TieCorner",
+        "$LineCount & $EveryRun & $TieDirection",
+        "$LineCount & $CornerRun & $TieCorner",
+        "$LineCount & $CornerRun & $TieDirection",
+        "$LineCount & $EveryCorner & $TieCorner",
+        "$LineCount & $EveryCorner & $TieDirection",
+        "$LineCount & $EveryCorner & $AnchorFirst"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,0,5,0,0,5,5,5],
+        [5,5,8,5,0,0,5,0,5,5],
+        [5,5,0,8,0,0,0,0,0,5],
+        [5,0,0,0,8,0,0,0,5,5],
+        [5,0,0,0,0,8,0,0,5,5],
+        [5,5,5,0,0,0,5,5,0,5],
+        [5,0,0,0,0,0,0,8,0,5],
+        [5,5,0,0,5,5,0,0,8,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$NoPinch & $EveryRun & $TieDirection","$Run & $EveryRun & $TieDirection"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,0,5,0,0,5,5,5],
+        [5,5,0,5,0,0,5,0,5,5],
+        [5,5,8,0,0,0,0,0,0,5],
+        [5,0,0,8,0,0,0,0,5,5],
+        [5,0,0,0,8,0,0,0,5,5],
+        [5,5,5,0,0,8,5,5,0,5],
+        [5,0,0,0,0,0,8,0,0,5],
+        [5,5,0,0,5,5,0,8,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $CornerRun & $TieMiddle",
+        "$NoPinch & $EveryCorner & $TieMiddle",
+        "$Run & $CornerRun & $TieMiddle",
+        "$Run & $EveryCorner & $TieMiddle"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,0,5,0,0,5,5,5],
+        [5,5,0,5,0,0,5,0,5,5],
+        [5,5,0,0,0,0,0,8,0,5],
+        [5,0,0,0,0,0,8,0,5,5],
+        [5,0,0,0,0,8,0,0,5,5],
+        [5,5,5,0,8,0,5,5,0,5],
+        [5,0,0,8,0,0,0,0,0,5],
+        [5,5,8,0,5,5,0,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "combo-08",
+    "separates": "4 regions of 0; one longest run of 7: $NoPinch, $CornerRun, $AnchorCorner, $AnchorFirst, $PerRegion differ from the concept, and the cases that combine them differ from one another.",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,0,0,5,0,5,5,0,0,5],
+      [5,5,5,0,0,0,0,0,0,5],
+      [5,5,0,0,0,5,0,0,0,5],
+      [5,5,5,0,5,0,0,0,5,5],
+      [5,5,5,0,0,0,0,0,0,5],
+      [5,0,0,0,0,0,0,0,5,5],
+      [5,5,5,0,5,0,0,5,0,5],
+      [5,5,5,5,0,5,0,5,0,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "assign": {
+      "tie_dir": [
+        ["DAXIS_AD"]
+      ]
+    },
+    "output": [{
+      "cases": ["$LineCount & $EveryRun & $WholeGrid","$Run & $EveryRun & $WholeGrid"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,0,8,5,0,5,5,0,0,5],
+        [5,5,5,8,0,0,0,0,0,5],
+        [5,5,0,0,8,5,0,0,0,5],
+        [5,5,5,0,5,8,0,0,5,5],
+        [5,5,5,0,0,0,8,0,0,5],
+        [5,0,0,0,0,0,0,8,5,5],
+        [5,5,5,0,5,0,0,5,8,5],
+        [5,5,5,5,0,5,0,5,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$EveryRun & $PerRegion & $TieCenter",
+        "$CornerRun & $PerRegion & $TieCenter",
+        "$EveryCorner & $PerRegion & $TieCenter"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,8,0,5,0,5,5,0,8,5],
+        [5,5,5,0,0,0,0,8,0,5],
+        [5,5,0,0,0,5,8,0,0,5],
+        [5,5,5,0,5,8,0,0,5,5],
+        [5,5,5,0,8,0,0,0,0,5],
+        [5,0,0,8,0,0,0,0,5,5],
+        [5,5,5,0,5,0,0,5,0,5],
+        [5,5,5,5,8,5,0,5,8,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$PerRegion & $TieCorner",
+        "$PerRegion & $TieMiddle",
+        "$NoPinch & $EveryRun & $TieMiddle"
+      ],
+      "grid": null
+    }, {
+      "cases": ["$PerRegion & $TieDirection"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,0,8,5,0,5,5,0,8,5],
+        [5,5,5,0,0,0,0,8,0,5],
+        [5,5,0,0,0,5,8,0,0,5],
+        [5,5,5,0,5,8,0,0,5,5],
+        [5,5,5,0,8,0,0,0,0,5],
+        [5,0,0,8,0,0,0,0,5,5],
+        [5,5,5,0,5,0,0,5,8,5],
+        [5,5,5,5,8,5,0,5,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$CornerRun & $WholeGrid",
+        "$AnchorCorner & $WholeGrid",
+        "$NoPinch & $WholeGrid & $TieCenter",
+        "$NoPinch & $WholeGrid & $TieCorner",
+        "$NoPinch & $WholeGrid & $TieDirection"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,0,0,5,0,5,5,0,8,5],
+        [5,5,5,0,0,0,0,8,0,5],
+        [5,5,0,0,0,5,8,0,0,5],
+        [5,5,5,0,5,8,0,0,5,5],
+        [5,5,5,0,8,0,0,0,0,5],
+        [5,0,0,8,0,0,0,0,5,5],
+        [5,5,5,0,5,0,0,5,0,5],
+        [5,5,5,5,0,5,0,5,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$EdgeCorners & $PerRegion & $TieCenter"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,8,0,5,0,5,5,0,8,5],
+        [5,5,5,0,0,0,0,8,0,5],
+        [5,5,0,0,0,5,8,0,0,5],
+        [5,5,5,0,5,8,0,0,5,5],
+        [5,5,5,0,8,0,0,0,0,5],
+        [5,0,0,8,0,0,0,0,5,5],
+        [5,5,5,0,5,0,0,5,8,5],
+        [5,5,5,5,8,5,0,5,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "combo-09",
+    "separates": "1 region of 0; the field and border are 2; 2 runs of 6 tie for longest: $LineCount, $CornerRun, $AnchorCorner, $AnchorFirst, $TieMiddle, $TieCorner differ from the concept, and the cases that combine them differ from one another.",
+    "input": [
+      [2,2,2,2,2,2,2,2,2,2],
+      [2,2,2,2,2,2,2,2,0,2],
+      [2,2,2,0,0,0,0,2,0,2],
+      [2,2,2,0,0,0,0,0,0,2],
+      [2,2,0,0,0,0,0,0,2,2],
+      [2,0,0,2,0,0,0,0,2,2],
+      [2,2,0,0,0,0,0,0,0,2],
+      [2,0,0,0,0,0,0,0,2,2],
+      [2,2,2,0,2,2,0,2,2,2],
+      [2,2,2,2,2,2,2,2,2,2]
+    ],
+    "output": [{
+      "cases": [
+        "$LineCount & $EveryRun & $TieMiddle & ring.value=derived",
+        "$NoPinch & $EveryRun & $TieCenter & ring.value=derived",
+        "$NoPinch & $EveryRun & $TieDirection & ring.value=derived",
+        "$Run & $EveryRun & $TieCenter & ring.value=derived",
+        "$Run & $EveryRun & $TieDirection & ring.value=derived"
+      ],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2,2,0,2],
+        [2,2,2,0,0,0,0,2,8,2],
+        [2,2,2,0,0,0,0,8,0,2],
+        [2,2,0,0,0,0,8,0,2,2],
+        [2,0,0,2,0,8,0,0,2,2],
+        [2,2,0,0,8,0,0,0,0,2],
+        [2,0,0,8,0,0,0,0,2,2],
+        [2,2,2,0,2,2,0,2,2,2],
+        [2,2,2,2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": [
+        "$LineCount & $TieCenter & ring.value=derived",
+        "$LineCount & $TieCorner & ring.value=derived",
+        "$LineCount & $TieDirection & ring.value=derived",
+        "$LineCount & $CornerRun & ring.value=derived",
+        "$LineCount & $AnchorCorner & ring.value=derived"
+      ],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2,2,8,2],
+        [2,2,2,0,0,0,0,2,0,2],
+        [2,2,2,0,0,0,8,0,0,2],
+        [2,2,0,0,0,8,0,0,2,2],
+        [2,0,0,2,8,0,0,0,2,2],
+        [2,2,0,8,0,0,0,0,0,2],
+        [2,0,8,0,0,0,0,0,2,2],
+        [2,2,2,0,2,2,0,2,2,2],
+        [2,2,2,2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": [
+        "ring.value=stored",
+        "$NoPinch & $EveryRun & $TieCorner",
+        "$NoPinch & $EveryRun & $TieMiddle",
+        "$Run & $EveryRun & $TieCorner",
+        "$Run & $EveryRun & $TieMiddle"
+      ],
+      "grid": null
+    }, {
+      "cases": [
+        "$NoPinch & $CornerRun & $TieCenter & ring.value=derived",
+        "$NoPinch & $CornerRun & $TieDirection & ring.value=derived",
+        "$NoPinch & $EveryCorner & $EveryCornerCell & $TieCenter & ring.value=derived",
+        "$NoPinch & $EveryCorner & $EveryCornerCell & $TieDirection & ring.value=derived",
+        "$Run & $CornerRun & $TieCenter & ring.value=derived",
+        "$Run & $CornerRun & $TieDirection & ring.value=derived",
+        "$Run & $EveryCorner & $EveryCornerCell & $TieCenter & ring.value=derived",
+        "$Run & $EveryCorner & $EveryCornerCell & $TieDirection & ring.value=derived"
+      ],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2,2,0,2],
+        [2,2,2,0,0,0,0,2,0,2],
+        [2,2,2,8,0,0,0,0,0,2],
+        [2,2,0,0,8,0,0,0,2,2],
+        [2,0,0,2,0,8,0,0,2,2],
+        [2,2,0,0,0,0,8,0,0,2],
+        [2,0,0,0,0,0,0,8,2,2],
+        [2,2,2,0,2,2,0,2,2,2],
+        [2,2,2,2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $CornerRun & $TieCorner & ring.value=derived",
+        "$NoPinch & $CornerRun & $TieMiddle & ring.value=derived",
+        "$NoPinch & $EdgeCorners & ring.value=derived",
+        "$NoPinch & $AnchorCorner & $TieCorner & ring.value=derived",
+        "$NoPinch & $AnchorCorner & $TieMiddle & ring.value=derived",
+        "$NoPinch & $AnchorFirst & ring.value=derived",
+        "$Run & $CornerRun & $TieCorner & ring.value=derived",
+        "$Run & $CornerRun & $TieMiddle & ring.value=derived",
+        "$Run & $EdgeCorners & ring.value=derived",
+        "$Run & $AnchorCorner & $TieCorner & ring.value=derived",
+        "$Run & $AnchorCorner & $TieMiddle & ring.value=derived",
+        "$Run & $AnchorFirst & ring.value=derived"
+      ],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2,2,0,2],
+        [2,2,2,8,0,0,0,2,0,2],
+        [2,2,2,0,8,0,0,0,0,2],
+        [2,2,0,0,0,8,0,0,2,2],
+        [2,0,0,2,0,0,8,0,2,2],
+        [2,2,0,0,0,0,0,8,0,2],
+        [2,0,0,0,0,0,0,0,2,2],
+        [2,2,2,0,2,2,0,2,2,2],
+        [2,2,2,2,2,2,2,2,2,2]
+      ]
+    }]
+  }, {
+    "id": "combo-10",
+    "separates": "1 region of 0; one longest run of 7: $AnchorCorner, $AnchorFirst differ from the concept, and the cases that combine them differ from one another.",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,5,5,0,0,5,5,0,5,5],
+      [5,5,0,0,0,0,5,0,5,5],
+      [5,5,5,0,5,0,0,0,5,5],
+      [5,5,0,0,0,0,5,0,0,5],
+      [5,5,0,5,0,0,0,0,5,5],
+      [5,0,0,0,0,0,0,0,0,5],
+      [5,5,0,0,0,0,0,0,0,5],
+      [5,0,0,0,0,5,5,0,5,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "output": [{
+      "cases": ["$EveryRun","$CornerRun","$EveryCorner"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,0,5,5,0,5,5],
+        [5,5,0,0,0,0,5,8,5,5],
+        [5,5,5,0,5,0,8,0,5,5],
+        [5,5,0,0,0,8,5,0,0,5],
+        [5,5,0,5,8,0,0,0,5,5],
+        [5,0,0,8,0,0,0,0,0,5],
+        [5,5,8,0,0,0,0,0,0,5],
+        [5,8,0,0,0,5,5,0,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$EdgeCorners & $EveryCornerCell"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,0,5,5,0,5,5],
+        [5,5,8,0,0,0,5,0,5,5],
+        [5,5,5,8,5,0,0,0,5,5],
+        [5,5,0,0,8,0,5,0,0,5],
+        [5,5,0,5,0,8,0,0,5,5],
+        [5,0,0,0,0,0,8,0,0,5],
+        [5,5,0,0,0,0,0,8,0,5],
+        [5,0,0,0,0,5,5,0,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$EdgeCorners & $AnchorFirst"],
+      "grid": null
+    }]
+  }, {
+    "id": "combo-11",
+    "separates": "1 region of 0; 2 runs of 6 tie for longest: $CornerRun, $AnchorCorner, $AnchorFirst, $TieMiddle, $TieCorner differ from the concept, and the cases that combine them differ from one another.",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,5,5,0,0,0,5,0,5,5],
+      [5,0,0,0,0,0,0,0,0,5],
+      [5,0,5,0,0,0,0,5,5,5],
+      [5,0,5,0,0,0,5,0,5,5],
+      [5,0,0,0,0,0,0,0,5,5],
+      [5,5,0,0,0,0,0,0,5,5],
+      [5,5,0,0,5,0,5,5,5,5],
+      [5,5,0,0,0,5,5,5,5,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "output": [{
+      "cases": ["$EveryRun & $TieCenter","$EveryRun & $TieDirection"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,0,0,5,0,5,5],
+        [5,0,0,0,0,0,0,8,0,5],
+        [5,0,5,0,0,0,8,5,5,5],
+        [5,0,5,0,0,8,5,0,5,5],
+        [5,0,0,0,8,0,0,0,5,5],
+        [5,5,0,8,0,0,0,0,5,5],
+        [5,5,8,0,5,0,5,5,5,5],
+        [5,5,0,0,0,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$EveryRun & $TieCorner","$EveryRun & $TieMiddle","$AnchorFirst"],
+      "grid": null
+    }, {
+      "cases": ["$CornerRun","$EveryCornerCell"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,0,0,5,8,5,5],
+        [5,0,0,0,0,0,8,0,0,5],
+        [5,0,5,0,0,8,0,5,5,5],
+        [5,0,5,0,8,0,5,0,5,5],
+        [5,0,0,8,0,0,0,0,5,5],
+        [5,5,8,0,0,0,0,0,5,5],
+        [5,5,0,0,5,0,5,5,5,5],
+        [5,5,0,0,0,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "combo-12",
+    "separates": "2 regions of 0; 2 runs of 7 tie for longest: $PerRegion, $TieDirection, $TieMiddle differ from the concept, and the cases that combine them differ from one another.",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,0,0,5,0,0,5,5,0,5],
+      [5,0,5,0,0,0,0,0,0,5],
+      [5,5,0,0,5,0,0,0,5,5],
+      [5,0,0,0,5,0,0,0,5,5],
+      [5,0,0,0,0,0,0,5,0,5],
+      [5,5,0,0,0,0,0,0,0,5],
+      [5,0,0,5,0,0,0,0,0,5],
+      [5,5,0,0,5,5,5,0,5,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "output": [{
+      "cases": [
+        "$WholeGrid & $TieCenter",
+        "$WholeGrid & $TieCorner",
+        "$EdgeCorners & $WholeGrid",
+        "$NoPinch & $WholeGrid"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,0,0,5,0,0,5,5,8,5],
+        [5,0,5,0,0,0,0,8,0,5],
+        [5,5,0,0,5,0,8,0,5,5],
+        [5,0,0,0,5,8,0,0,5,5],
+        [5,0,0,0,8,0,0,5,0,5],
+        [5,5,0,8,0,0,0,0,0,5],
+        [5,0,8,5,0,0,0,0,0,5],
+        [5,5,0,0,5,5,5,0,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$PerRegion"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,0,8,5,0,0,5,5,8,5],
+        [5,8,5,0,0,0,0,8,0,5],
+        [5,5,0,0,5,0,8,0,5,5],
+        [5,0,0,0,5,8,0,0,5,5],
+        [5,0,0,0,8,0,0,5,0,5],
+        [5,5,0,8,0,0,0,0,0,5],
+        [5,0,8,5,0,0,0,0,0,5],
+        [5,5,0,0,5,5,5,0,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$LineCount & $EveryRun & $WholeGrid & $TieDirection",
+        "$LineCount & $EveryRun & $WholeGrid & $TieMiddle",
+        "$LineCount & $CornerRun & $WholeGrid & $TieDirection",
+        "$LineCount & $CornerRun & $WholeGrid & $TieMiddle",
+        "$LineCount & $EveryCorner & $WholeGrid & $TieDirection",
+        "$LineCount & $EveryCorner & $WholeGrid & $TieMiddle",
+        "$Run & $EveryRun & $WholeGrid & $TieDirection",
+        "$Run & $EveryRun & $WholeGrid & $TieMiddle",
+        "$Run & $CornerRun & $WholeGrid & $TieDirection",
+        "$Run & $CornerRun & $WholeGrid & $TieMiddle",
+        "$Run & $EveryCorner & $WholeGrid & $TieDirection",
+        "$Run & $EveryCorner & $WholeGrid & $TieMiddle"
+      ],
+      "grid": null
+    }]
+  }, {
+    "id": "combo-13",
+    "separates": "2 regions of 0; 3 runs of 6 tie for longest: $AnchorFirst, $PerRegion, $TieMiddle, $TieCorner differ from the concept, and the cases that combine them differ from one another.",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,5,5,0,0,0,0,5,5,5],
+      [5,5,0,0,0,0,0,5,0,5],
+      [5,5,5,0,0,0,0,5,0,5],
+      [5,0,0,0,0,0,0,0,5,5],
+      [5,0,0,0,0,0,0,0,5,5],
+      [5,5,0,0,0,0,0,0,0,5],
+      [5,5,5,0,0,0,0,0,0,5],
+      [5,5,5,5,0,5,0,5,5,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "output": [{
+      "cases": [
+        "$EveryRun & $WholeGrid & $TieCenter",
+        "$EveryRun & $WholeGrid & $TieDirection",
+        "$CornerRun & $WholeGrid & $TieCenter",
+        "$CornerRun & $WholeGrid & $TieDirection",
+        "$EveryCornerCell & $WholeGrid & $TieCenter",
+        "$EveryCornerCell & $WholeGrid & $TieDirection"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,0,0,0,5,5,5],
+        [5,5,8,0,0,0,0,5,0,5],
+        [5,5,5,8,0,0,0,5,0,5],
+        [5,0,0,0,8,0,0,0,5,5],
+        [5,0,0,0,0,8,0,0,5,5],
+        [5,5,0,0,0,0,8,0,0,5],
+        [5,5,5,0,0,0,0,8,0,5],
+        [5,5,5,5,0,5,0,5,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$EveryRun & $PerRegion & $TieCenter",
+        "$CornerRun & $PerRegion & $TieCenter",
+        "$EveryCornerCell & $PerRegion & $TieCenter"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,0,0,0,5,5,5],
+        [5,5,8,0,0,0,0,5,8,5],
+        [5,5,5,8,0,0,0,5,0,5],
+        [5,0,0,0,8,0,0,0,5,5],
+        [5,0,0,0,0,8,0,0,5,5],
+        [5,5,0,0,0,0,8,0,0,5],
+        [5,5,5,0,0,0,0,8,0,5],
+        [5,5,5,5,0,5,0,5,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$PerRegion & $TieCorner",
+        "$PerRegion & $TieDirection",
+        "$PerRegion & $TieMiddle",
+        "$EdgeCorners & $TieCorner",
+        "$EdgeCorners & $TieMiddle",
+        "$AnchorFirst & $TieCenter",
+        "$AnchorFirst & $TieDirection"
+      ],
+      "grid": null
+    }, {
+      "cases": [
+        "$EveryRun & $WholeGrid & $TieCorner",
+        "$EveryRun & $WholeGrid & $TieMiddle",
+        "$CornerRun & $WholeGrid & $TieCorner",
+        "$CornerRun & $WholeGrid & $TieMiddle",
+        "$EveryCorner & $WholeGrid & $TieCorner",
+        "$EveryCorner & $WholeGrid & $TieMiddle"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,0,0,0,5,5,5],
+        [5,5,0,8,0,0,0,5,0,5],
+        [5,5,5,0,8,0,0,5,0,5],
+        [5,0,0,0,0,8,0,0,5,5],
+        [5,0,0,0,0,0,8,0,5,5],
+        [5,5,0,0,0,0,0,8,0,5],
+        [5,5,5,0,0,0,0,0,8,5],
+        [5,5,5,5,0,5,0,5,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "combo-14",
+    "separates": "3 regions of 0; 2 runs of 6 tie for longest: $LineCount, $AnchorCorner, $AnchorFirst, $PerRegion, $TieMiddle differ from the concept, and the cases that combine them differ from one another.",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,0,5,5,0,0,0,5,5,5],
+      [5,0,5,0,0,0,0,0,5,5],
+      [5,5,5,0,0,5,0,0,0,5],
+      [5,0,0,0,0,0,0,0,0,5],
+      [5,0,0,0,0,0,0,0,5,5],
+      [5,5,0,0,0,0,0,0,0,5],
+      [5,0,5,5,0,0,0,0,0,5],
+      [5,0,5,5,0,5,5,0,0,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "output": [{
+      "cases": [
+        "$NoPinch & $EveryRun & $WholeGrid & $TieCenter",
+        "$NoPinch & $EveryRun & $WholeGrid & $TieCorner",
+        "$NoPinch & $EveryRun & $WholeGrid & $TieDirection",
+        "$NoPinch & $CornerRun & $WholeGrid",
+        "$NoPinch & $EveryCorner & $WholeGrid",
+        "$Run & $EveryRun & $WholeGrid & $TieCenter",
+        "$Run & $EveryRun & $WholeGrid & $TieCorner",
+        "$Run & $EveryRun & $WholeGrid & $TieDirection",
+        "$Run & $CornerRun & $WholeGrid",
+        "$Run & $EveryCorner & $WholeGrid"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,0,5,5,0,0,0,5,5,5],
+        [5,0,5,0,0,0,0,0,5,5],
+        [5,5,5,8,0,5,0,0,0,5],
+        [5,0,0,0,8,0,0,0,0,5],
+        [5,0,0,0,0,8,0,0,5,5],
+        [5,5,0,0,0,0,8,0,0,5],
+        [5,0,5,5,0,0,0,8,0,5],
+        [5,0,5,5,0,5,5,0,8,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$EveryRun & $PerRegion & $TieCenter",
+        "$CornerRun & $PerRegion & $TieCenter",
+        "$EveryCorner & $PerRegion & $TieCenter"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,8,5,5,0,0,0,5,5,5],
+        [5,0,5,0,0,0,0,0,5,5],
+        [5,5,5,8,0,5,0,0,0,5],
+        [5,0,0,0,8,0,0,0,0,5],
+        [5,0,0,0,0,8,0,0,5,5],
+        [5,5,0,0,0,0,8,0,0,5],
+        [5,0,5,5,0,0,0,8,0,5],
+        [5,8,5,5,0,5,5,0,8,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$PerRegion & $TieCorner",
+        "$PerRegion & $TieDirection",
+        "$PerRegion & $TieMiddle",
+        "$EdgeCorners & $AnchorFirst & $PerRegion",
+        "$NoPinch & $EveryRun & $TieMiddle",
+        "$NoPinch & $EdgeCorners & $TieCorner",
+        "$NoPinch & $EdgeCorners & $AnchorFirst",
+        "$Run & $EveryRun & $TieMiddle",
+        "$Run & $EdgeCorners & $TieCorner",
+        "$Run & $EdgeCorners & $AnchorFirst"
+      ],
+      "grid": null
+    }, {
+      "cases": ["$LineCount & $WholeGrid"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,8,5,5,0,0,0,5,5,5],
+        [5,0,5,0,0,0,0,0,5,5],
+        [5,5,5,8,0,5,0,0,0,5],
+        [5,0,0,0,8,0,0,0,0,5],
+        [5,0,0,0,0,8,0,0,5,5],
+        [5,5,0,0,0,0,8,0,0,5],
+        [5,0,5,5,0,0,0,8,0,5],
+        [5,0,5,5,0,5,5,0,8,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$EdgeCorners & $EveryCornerCell & $PerRegion & $TieCenter"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,8,5,5,0,0,0,5,5,5],
+        [5,0,5,8,0,0,0,0,5,5],
+        [5,5,5,0,8,5,0,0,0,5],
+        [5,0,0,0,0,8,0,0,0,5],
+        [5,0,0,0,0,0,8,0,5,5],
+        [5,5,0,0,0,0,0,8,0,5],
+        [5,8,5,5,0,0,0,0,8,5],
+        [5,0,5,5,0,5,5,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $EdgeCorners & $EveryCornerCell & $WholeGrid & $TieCenter",
+        "$NoPinch & $EdgeCorners & $EveryCornerCell & $WholeGrid & $TieDirection",
+        "$NoPinch & $EdgeCorners & $WholeGrid & $TieMiddle",
+        "$Run & $EdgeCorners & $EveryCornerCell & $WholeGrid & $TieCenter",
+        "$Run & $EdgeCorners & $EveryCornerCell & $WholeGrid & $TieDirection",
+        "$Run & $EdgeCorners & $WholeGrid & $TieMiddle"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,0,5,5,0,0,0,5,5,5],
+        [5,0,5,0,0,0,0,8,5,5],
+        [5,5,5,0,0,5,8,0,0,5],
+        [5,0,0,0,0,8,0,0,0,5],
+        [5,0,0,0,8,0,0,0,5,5],
+        [5,5,0,8,0,0,0,0,0,5],
+        [5,0,5,5,0,0,0,0,0,5],
+        [5,0,5,5,0,5,5,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "combo-15",
+    "separates": "2 regions of 0; 4 runs of 6 tie for longest: $AnchorFirst, $PerRegion, $TieDirection, $TieMiddle, $TieCorner differ from the concept, and the cases that combine them differ from one another.",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,5,5,0,0,5,5,0,0,5],
+      [5,5,0,0,0,0,0,5,0,5],
+      [5,0,0,0,0,0,0,0,0,5],
+      [5,5,5,0,0,0,0,5,5,5],
+      [5,5,0,0,0,0,0,0,5,5],
+      [5,0,0,0,0,0,0,0,0,5],
+      [5,5,5,5,0,5,0,0,5,5],
+      [5,5,5,0,5,5,5,0,5,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "output": [{
+      "cases": [
+        "$EveryRun & $WholeGrid & $TieCenter",
+        "$CornerRun & $WholeGrid & $TieCenter",
+        "$CornerRun & $WholeGrid & $TieDirection",
+        "$CornerRun & $WholeGrid & $TieMiddle",
+        "$EveryCornerCell & $WholeGrid & $TieCenter",
+        "$EveryCornerCell & $WholeGrid & $TieDirection",
+        "$EveryCorner & $WholeGrid & $TieMiddle",
+        "$NoPinch & $EveryRun & $WholeGrid & $TieDirection",
+        "$NoPinch & $EveryRun & $WholeGrid & $TieMiddle"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,0,5,5,0,0,5],
+        [5,5,8,0,0,0,0,5,0,5],
+        [5,0,0,8,0,0,0,0,0,5],
+        [5,5,5,0,8,0,0,5,5,5],
+        [5,5,0,0,0,8,0,0,5,5],
+        [5,0,0,0,0,0,8,0,0,5],
+        [5,5,5,5,0,5,0,8,5,5],
+        [5,5,5,0,5,5,5,0,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$EveryRun & $PerRegion & $TieCenter",
+        "$CornerRun & $PerRegion & $TieCenter",
+        "$EveryCornerCell & $PerRegion & $TieCenter"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,0,5,5,0,0,5],
+        [5,5,8,0,0,0,0,5,0,5],
+        [5,0,0,8,0,0,0,0,0,5],
+        [5,5,5,0,8,0,0,5,5,5],
+        [5,5,0,0,0,8,0,0,5,5],
+        [5,0,0,0,0,0,8,0,0,5],
+        [5,5,5,5,0,5,0,8,5,5],
+        [5,5,5,8,5,5,5,0,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$PerRegion & $TieCorner",
+        "$PerRegion & $TieDirection",
+        "$LineCount & $EveryRun & $TieDirection",
+        "$PerRegion & $TieMiddle",
+        "$LineCount & $EveryRun & $TieMiddle",
+        "$EdgeCorners & $TieCorner",
+        "$EdgeCorners & $TieMiddle",
+        "$EdgeCorners & $AnchorFirst",
+        "$Run & $EveryRun & $TieDirection",
+        "$Run & $EveryRun & $TieMiddle"
+      ],
+      "grid": null
+    }, {
+      "cases": [
+        "$EveryRun & $WholeGrid & $TieCorner",
+        "$CornerRun & $WholeGrid & $TieCorner",
+        "$EveryCorner & $WholeGrid & $TieCorner",
+        "$EveryCorner & $AnchorFirst & $WholeGrid"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,0,5,5,0,0,5],
+        [5,5,0,0,0,0,0,5,0,5],
+        [5,0,8,0,0,0,0,0,0,5],
+        [5,5,5,8,0,0,0,5,5,5],
+        [5,5,0,0,8,0,0,0,5,5],
+        [5,0,0,0,0,8,0,0,0,5],
+        [5,5,5,5,0,5,8,0,5,5],
+        [5,5,5,0,5,5,5,8,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$EveryCorner & $AnchorFirst & $PerRegion & $TieCenter"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,0,5,5,0,0,5],
+        [5,5,0,0,0,0,0,5,0,5],
+        [5,0,8,0,0,0,0,0,0,5],
+        [5,5,5,8,0,0,0,5,5,5],
+        [5,5,0,0,8,0,0,0,5,5],
+        [5,0,0,0,0,8,0,0,0,5],
+        [5,5,5,5,0,5,8,0,5,5],
+        [5,5,5,8,5,5,5,8,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "combo-16",
+    "separates": "5 regions of 0; the border ring is 2 around a field of 5; one longest run of 7: $AnchorCorner, $AnchorFirst, $PerRegion, $HoleDerived, hole_color=RarestColor differ from the concept, and the cases that combine them differ from one another.",
+    "input": [
+      [2,2,2,2,2,2,2,2,2,2],
+      [2,5,5,0,0,5,5,5,0,2],
+      [2,5,0,5,0,0,0,0,0,2],
+      [2,0,5,0,5,5,5,0,0,2],
+      [2,0,0,0,0,0,0,0,5,2],
+      [2,5,5,0,5,0,5,0,5,2],
+      [2,5,0,5,0,0,5,5,0,2],
+      [2,0,5,0,0,5,0,0,0,2],
+      [2,5,0,0,0,5,0,5,5,2],
+      [2,2,2,2,2,2,2,2,2,2]
+    ],
+    "assign": {
+      "tie_dir": [
+        ["DAXIS_DG"]
+      ]
+    },
+    "output": [{
+      "cases": [
+        "$EveryRun & $WholeGrid & $HoleStored & hole_color=stored",
+        "$CornerRun & $WholeGrid & $HoleStored & hole_color=stored",
+        "$EveryCorner & $EveryCornerCell & $WholeGrid & $HoleStored & hole_color=stored"
+      ],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,5,5,0,0,5,5,5,0,2],
+        [2,5,0,5,0,0,0,0,8,2],
+        [2,0,5,0,5,5,5,8,0,2],
+        [2,0,0,0,0,0,8,0,5,2],
+        [2,5,5,0,5,8,5,0,5,2],
+        [2,5,0,5,8,0,5,5,0,2],
+        [2,0,5,8,0,5,0,0,0,2],
+        [2,5,8,0,0,5,0,5,5,2],
+        [2,2,2,2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": [
+        "$HoleDerived",
+        "$EveryRun & $PerRegion & $TieCenter & hole_color=RarestColor",
+        "$PerRegion & $TieCorner",
+        "$PerRegion & $TieMiddle",
+        "$LineCount & $EveryRun & $TieMiddle & hole_color=RarestColor",
+        "$CornerRun & $PerRegion & $TieCenter & hole_color=RarestColor",
+        "$LineCount & $EdgeCorners & $PerRegion & hole_color=stored",
+        "$LineCount & $EdgeCorners & $TieCorner & hole_color=stored",
+        "$EdgeCorners & $AnchorFirst & hole_color=stored",
+        "$AnchorFirst & $WholeGrid & hole_color=stored",
+        "$EveryCorner & $PerRegion & $TieCenter & hole_color=RarestColor",
+        "$NoPinch & $TieCorner & hole_color=RarestColor",
+        "$NoPinch & $TieMiddle & hole_color=RarestColor",
+        "$NoPinch & $CornerRun & $WholeGrid & hole_color=RarestColor",
+        "$NoPinch & $EveryCorner & $WholeGrid & hole_color=RarestColor",
+        "$Run & $EdgeCorners & $TieCorner",
+        "$Run & $EdgeCorners & $TieMiddle"
+      ],
+      "grid": null
+    }, {
+      "cases": [
+        "$EveryRun & $PerRegion & $TieCenter & $HoleStored & hole_color=stored",
+        "$EveryRun & $PerRegion & $TieDirection & $HoleStored & hole_color=stored",
+        "$CornerRun & $PerRegion & $TieCenter & $HoleStored & hole_color=stored",
+        "$CornerRun & $PerRegion & $TieDirection & $HoleStored & hole_color=stored",
+        "$EveryCorner & $PerRegion & $TieCenter & $HoleStored & hole_color=stored",
+        "$EveryCorner & $PerRegion & $TieDirection & $HoleStored & hole_color=stored"
+      ],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,5,5,0,0,5,5,5,0,2],
+        [2,5,8,5,0,0,0,0,8,2],
+        [2,0,5,0,5,5,5,8,0,2],
+        [2,0,0,0,0,0,8,0,5,2],
+        [2,5,5,0,5,8,5,0,5,2],
+        [2,5,8,5,8,0,5,5,8,2],
+        [2,8,5,8,0,5,0,8,0,2],
+        [2,5,8,0,0,5,8,5,5,2],
+        [2,2,2,2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": [
+        "$EveryRun & $PerRegion & $TieDirection & hole_color=RarestColor",
+        "$CornerRun & $PerRegion & $TieDirection & hole_color=RarestColor",
+        "$EveryCorner & $PerRegion & $TieDirection & hole_color=RarestColor"
+      ],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,5,8,0,0,8,5,5,0,2],
+        [2,8,0,8,0,0,0,0,0,2],
+        [2,0,8,0,8,5,5,0,0,2],
+        [2,0,0,0,0,0,0,0,5,2],
+        [2,5,8,0,8,0,8,0,8,2],
+        [2,8,0,8,0,0,5,8,0,2],
+        [2,0,8,0,0,8,0,0,0,2],
+        [2,8,0,0,0,5,0,5,8,2],
+        [2,2,2,2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": [
+        "$LineCount & $EveryRun & $WholeGrid & $TieCenter & hole_color=RarestColor",
+        "$LineCount & $EveryRun & $WholeGrid & $TieCorner & hole_color=RarestColor",
+        "$LineCount & $CornerRun & $WholeGrid & hole_color=RarestColor",
+        "$LineCount & $EveryCorner & $WholeGrid & hole_color=RarestColor"
+      ],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,5,5,0,0,5,5,5,0,2],
+        [2,5,0,5,0,0,0,0,0,2],
+        [2,0,5,0,5,5,8,0,0,2],
+        [2,0,0,0,0,0,0,0,5,2],
+        [2,5,5,0,8,0,5,0,5,2],
+        [2,5,0,8,0,0,5,5,0,2],
+        [2,0,8,0,0,5,0,0,0,2],
+        [2,8,0,0,0,5,0,5,5,2],
+        [2,2,2,2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": ["$LineCount & $EveryRun & $WholeGrid & $TieDirection & hole_color=RarestColor"],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,5,8,0,0,5,5,5,0,2],
+        [2,5,0,8,0,0,0,0,0,2],
+        [2,0,5,0,8,5,5,0,0,2],
+        [2,0,0,0,0,0,0,0,5,2],
+        [2,5,5,0,5,0,8,0,5,2],
+        [2,5,0,5,0,0,5,8,0,2],
+        [2,0,5,0,0,5,0,0,0,2],
+        [2,5,0,0,0,5,0,5,5,2],
+        [2,2,2,2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": ["$EdgeCorners & $PerRegion & $TieCenter & hole_color=RarestColor"],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,5,8,0,0,5,5,8,0,2],
+        [2,8,0,8,0,0,0,0,0,2],
+        [2,0,8,0,5,5,8,0,0,2],
+        [2,0,0,0,0,0,0,0,8,2],
+        [2,5,8,0,8,0,8,0,5,2],
+        [2,8,0,8,0,0,5,8,0,2],
+        [2,0,8,0,0,8,0,0,0,2],
+        [2,8,0,0,0,5,0,8,5,2],
+        [2,2,2,2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": ["$EdgeCorners & $PerRegion & $TieDirection & hole_color=RarestColor"],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,5,8,0,0,8,5,5,0,2],
+        [2,8,0,8,0,0,0,0,0,2],
+        [2,0,8,0,8,5,5,0,0,2],
+        [2,0,0,0,0,0,0,0,8,2],
+        [2,5,8,0,8,0,8,0,5,2],
+        [2,8,0,8,0,0,5,8,0,2],
+        [2,0,8,0,0,8,0,0,0,2],
+        [2,8,0,0,0,5,0,8,5,2],
+        [2,2,2,2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": [
+        "$LineCount & $EdgeCorners & $EveryCornerCell & $WholeGrid & $TieCenter & $HoleStored & hole_color=stored",
+        "$LineCount & $EdgeCorners & $EveryCornerCell & $WholeGrid & $TieDirection & $HoleStored & hole_color=stored",
+        "$LineCount & $EdgeCorners & $WholeGrid & $TieMiddle & $HoleStored & hole_color=stored"
+      ],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,5,5,0,0,5,5,5,0,2],
+        [2,5,8,5,0,0,0,0,0,2],
+        [2,0,5,8,5,5,5,0,0,2],
+        [2,0,0,0,8,0,0,0,5,2],
+        [2,5,5,0,5,8,5,0,5,2],
+        [2,5,0,5,0,0,5,5,0,2],
+        [2,0,5,0,0,5,0,8,0,2],
+        [2,5,0,0,0,5,0,5,5,2],
+        [2,2,2,2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": ["$LineCount & $EdgeCorners & $WholeGrid & hole_color=RarestColor"],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,8,5,0,0,5,5,5,0,2],
+        [2,5,0,5,0,0,0,0,0,2],
+        [2,0,5,0,5,5,5,0,0,2],
+        [2,0,0,0,0,0,0,0,5,2],
+        [2,5,5,0,5,0,5,0,5,2],
+        [2,5,0,5,0,0,8,5,0,2],
+        [2,0,5,0,0,5,0,0,0,2],
+        [2,5,0,0,0,5,0,5,8,2],
+        [2,2,2,2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $EveryRun & $WholeGrid & $TieCenter & hole_color=RarestColor",
+        "$NoPinch & $EveryRun & $WholeGrid & $TieDirection & hole_color=RarestColor"
+      ],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,5,5,0,0,5,5,5,0,2],
+        [2,5,0,5,0,0,0,0,0,2],
+        [2,0,5,0,5,5,5,0,0,2],
+        [2,0,0,0,0,0,0,0,5,2],
+        [2,5,5,0,5,0,8,0,5,2],
+        [2,5,0,5,0,0,5,8,0,2],
+        [2,0,5,0,0,5,0,0,0,2],
+        [2,5,0,0,0,5,0,5,5,2],
+        [2,2,2,2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $EdgeCorners & $EveryCornerCell & $PerRegion & $TieCenter & $HoleStored & hole_color=stored",
+        "$NoPinch & $EdgeCorners & $EveryCornerCell & $PerRegion & $TieDirection & $HoleStored & hole_color=stored"
+      ],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,5,5,0,0,5,5,5,0,2],
+        [2,5,8,5,0,0,0,0,0,2],
+        [2,8,5,0,5,5,5,0,0,2],
+        [2,0,8,0,0,0,0,0,5,2],
+        [2,5,5,8,5,0,5,0,5,2],
+        [2,5,8,5,0,0,5,5,8,2],
+        [2,8,5,0,0,5,0,8,0,2],
+        [2,5,0,0,0,5,8,5,5,2],
+        [2,2,2,2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $EdgeCorners & $EveryCornerCell & $WholeGrid & $HoleStored & hole_color=stored"
+      ],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,5,5,0,0,5,5,5,0,2],
+        [2,5,0,5,0,0,0,0,0,2],
+        [2,8,5,0,5,5,5,0,0,2],
+        [2,0,8,0,0,0,0,0,5,2],
+        [2,5,5,8,5,0,5,0,5,2],
+        [2,5,0,5,0,0,5,5,0,2],
+        [2,0,5,0,0,5,0,0,0,2],
+        [2,5,0,0,0,5,0,5,5,2],
+        [2,2,2,2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $EdgeCorners & $WholeGrid & $TieCenter & hole_color=RarestColor",
+        "$NoPinch & $EdgeCorners & $WholeGrid & $TieDirection & hole_color=RarestColor",
+        "$Run & $EdgeCorners & $WholeGrid & $TieCenter & hole_color=RarestColor",
+        "$Run & $EdgeCorners & $WholeGrid & $TieDirection & hole_color=RarestColor"
+      ],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,8,5,0,0,5,5,5,0,2],
+        [2,5,0,5,0,0,0,0,0,2],
+        [2,0,5,0,5,5,5,0,0,2],
+        [2,0,0,0,0,0,0,0,5,2],
+        [2,5,5,0,5,0,5,0,5,2],
+        [2,5,0,5,0,0,5,5,0,2],
+        [2,0,5,0,0,5,0,0,0,2],
+        [2,5,0,0,0,5,0,5,5,2],
+        [2,2,2,2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": [
+        "$Run & $EveryRun & $WholeGrid & hole_color=RarestColor",
+        "$Run & $CornerRun & $WholeGrid & hole_color=RarestColor",
+        "$Run & $EveryCorner & $WholeGrid & hole_color=RarestColor"
+      ],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,5,5,0,0,5,5,5,0,2],
+        [2,5,0,5,0,0,0,0,0,2],
+        [2,0,5,0,5,5,5,0,0,2],
+        [2,0,0,0,0,0,0,0,5,2],
+        [2,5,5,0,8,0,5,0,5,2],
+        [2,5,0,8,0,0,5,5,0,2],
+        [2,0,8,0,0,5,0,0,0,2],
+        [2,8,0,0,0,5,0,5,5,2],
+        [2,2,2,2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": [
+        "$Run & $EdgeCorners & $EveryCornerCell & $PerRegion & $TieCenter & $HoleStored & hole_color=stored",
+        "$Run & $EdgeCorners & $EveryCornerCell & $PerRegion & $TieDirection & $HoleStored & hole_color=stored"
+      ],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,5,5,0,0,5,5,5,0,2],
+        [2,5,8,5,0,0,0,0,0,2],
+        [2,8,5,0,5,5,5,0,0,2],
+        [2,0,8,0,0,0,0,0,5,2],
+        [2,5,5,8,5,0,5,0,5,2],
+        [2,5,8,5,8,0,5,5,8,2],
+        [2,8,5,0,0,5,0,8,0,2],
+        [2,5,0,0,0,5,8,5,5,2],
+        [2,2,2,2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": [
+        "$Run & $EdgeCorners & $EveryCornerCell & $WholeGrid & $TieCenter & $HoleStored & hole_color=stored",
+        "$Run & $EdgeCorners & $EveryCornerCell & $WholeGrid & $TieDirection & $HoleStored & hole_color=stored"
+      ],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,5,5,0,0,5,5,5,0,2],
+        [2,5,8,5,0,0,0,0,0,2],
+        [2,0,5,8,5,5,5,0,0,2],
+        [2,0,0,0,8,0,0,0,5,2],
+        [2,5,5,0,5,8,5,0,5,2],
+        [2,5,0,5,0,0,5,5,0,2],
+        [2,0,5,0,0,5,0,0,0,2],
+        [2,5,0,0,0,5,0,5,5,2],
+        [2,2,2,2,2,2,2,2,2,2]
+      ]
+    }]
+  }, {
+    "id": "combo-17",
+    "separates": "1 region of 0; 2 runs of 7 tie for longest; the tie leaves the concept undefined: $NoPinch, $AnchorCorner differ from the concept, and the cases that combine them differ from one another.",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,5,5,5,5,5,5,0,0,5],
+      [5,5,5,5,5,0,0,5,0,5],
+      [5,5,5,0,0,0,5,0,0,5],
+      [5,5,0,0,0,5,0,0,0,5],
+      [5,0,0,0,0,0,0,0,0,5],
+      [5,0,0,0,0,0,0,0,0,5],
+      [5,0,5,0,0,0,0,5,0,5],
+      [5,5,0,0,0,0,5,5,5,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "output": [{
+      "cases": [
+        "$LineCount & $EveryRun",
+        "$LineCount & $CornerRun",
+        "$EdgeCorners & $TieCorner",
+        "$AnchorFirst",
+        "$LineCount & $EveryCorner",
+        "$Run & $EveryRun",
+        "$Run & $CornerRun",
+        "$Run & $EveryCorner"
+      ],
+      "grid": null
+    }, {
+      "cases": [
+        "$EdgeCorners & $EveryCornerCell & $TieCenter",
+        "$EdgeCorners & $EveryCornerCell & $TieDirection"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,5,5,5,5,0,0,5],
+        [5,5,5,5,5,0,0,5,0,5],
+        [5,5,5,8,0,0,5,0,0,5],
+        [5,5,0,0,8,5,0,0,0,5],
+        [5,0,0,0,0,8,0,0,0,5],
+        [5,0,0,0,0,0,8,0,0,5],
+        [5,0,5,0,0,0,0,5,0,5],
+        [5,5,0,0,0,0,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$EdgeCorners & $TieMiddle"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,5,5,5,5,0,0,5],
+        [5,5,5,5,5,0,0,5,0,5],
+        [5,5,5,0,0,0,5,0,0,5],
+        [5,5,8,0,0,5,0,0,0,5],
+        [5,0,0,8,0,0,0,0,0,5],
+        [5,0,0,0,8,0,0,0,0,5],
+        [5,0,5,0,0,8,0,5,0,5],
+        [5,5,0,0,0,0,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $EveryRun",
+        "$NoPinch & $CornerRun",
+        "$NoPinch & $EveryCorner & $EveryCornerCell"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,5,5,5,5,0,0,5],
+        [5,5,5,5,5,0,0,5,8,5],
+        [5,5,5,0,0,0,5,8,0,5],
+        [5,5,0,0,0,5,8,0,0,5],
+        [5,0,0,0,0,8,0,0,0,5],
+        [5,0,0,0,8,0,0,0,0,5],
+        [5,0,5,8,0,0,0,5,0,5],
+        [5,5,8,0,0,0,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "combo-18",
+    "separates": "1 region of 0; one longest run of 5: $LineCount, $AnchorFirst differ from the concept, and the cases that combine them differ from one another.",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,5,5,5,5,0,0,0,5,5],
+      [5,0,0,0,5,5,0,0,0,5],
+      [5,5,5,0,5,0,0,0,5,5],
+      [5,0,0,0,0,0,0,5,5,5],
+      [5,0,5,0,5,5,0,0,0,5],
+      [5,0,5,0,0,0,5,0,0,5],
+      [5,5,0,0,0,0,0,5,5,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "output": [{
+      "cases": [
+        "$EdgeCorners & $EveryCornerCell & $TieCenter",
+        "$EdgeCorners & $EveryCornerCell & $TieDirection",
+        "$NoPinch & $EveryRun",
+        "$NoPinch & $CornerRun",
+        "$NoPinch & $EveryCornerCell",
+        "$Run & $EveryRun",
+        "$Run & $CornerRun",
+        "$Run & $EveryCornerCell"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,5,5,0,0,8,5,5],
+        [5,0,0,0,5,5,8,0,0,5],
+        [5,5,5,0,5,8,0,0,5,5],
+        [5,0,0,0,8,0,0,5,5,5],
+        [5,0,5,8,5,5,0,0,0,5],
+        [5,0,5,0,0,0,5,0,0,5],
+        [5,5,0,0,0,0,0,5,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$LineCount & $EveryRun & $TieCenter",
+        "$LineCount & $TieCorner",
+        "$LineCount & $EveryRun & $TieDirection",
+        "$LineCount & $CornerRun & $TieCenter",
+        "$LineCount & $CornerRun & $TieDirection",
+        "$LineCount & $EdgeCorners & $TieMiddle",
+        "$AnchorFirst",
+        "$LineCount & $EveryCorner & $TieCenter",
+        "$LineCount & $EveryCorner & $TieDirection"
+      ],
+      "grid": null
+    }, {
+      "cases": [
+        "$LineCount & $EveryRun & $TieMiddle",
+        "$LineCount & $CornerRun & $TieMiddle",
+        "$LineCount & $EveryCorner & $TieMiddle"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,5,5,0,0,0,5,5],
+        [5,0,0,0,5,5,0,8,0,5],
+        [5,5,5,0,5,0,8,0,5,5],
+        [5,0,0,0,0,8,0,5,5,5],
+        [5,0,5,0,5,5,0,0,0,5],
+        [5,0,5,8,0,0,5,0,0,5],
+        [5,5,8,0,0,0,0,5,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "ring.value=stored",
+    "separates": "1 region of 0 that reaches the border ring at (6,9); a run of 8 is longest: the border ring holds two colors, so $HoleDerived is undefined, and the stored ring color 5 leaves 0 as the one other color, so the ring.value=stored cases paint as the $HoleStored cases do.",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,5,0,0,0,5,0,0,0,5],
+      [5,0,0,0,0,0,0,0,5,5],
+      [5,0,0,0,0,0,0,0,0,5],
+      [5,5,0,0,0,0,0,0,0,5],
+      [5,0,0,0,0,0,0,0,0,5],
+      [5,0,0,0,0,0,0,0,0,0],
+      [5,0,0,0,0,0,0,0,0,5],
+      [5,0,5,0,5,0,0,5,0,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "output": [{
+      "cases": ["ring.value=stored","$HoleStored & hole_color=stored"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,0,0,5,0,0,8,5],
+        [5,0,0,0,0,0,0,8,5,5],
+        [5,0,0,0,0,0,8,0,0,5],
+        [5,5,0,0,0,8,0,0,0,5],
+        [5,0,0,0,8,0,0,0,0,5],
+        [5,0,0,8,0,0,0,0,0,0],
+        [5,0,8,0,0,0,0,0,0,5],
+        [5,8,5,0,5,0,0,5,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$HoleDerived & ring.value=derived"],
+      "grid": null
+    }, {
+      "cases": ["$LineCount & $EveryRun & hole_color=RarestColor"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,0,0,5,0,0,0,8],
+        [5,0,0,0,0,0,0,0,8,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,5,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,0,0,0,0,0],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,8,0,5,0,0,5,0,5],
+        [5,8,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$LineCount & $CornerRun & hole_color=RarestColor",
+        "$LineCount & $AnchorCorner & hole_color=RarestColor"
+      ],
+      "grid": [
+        [8,5,5,5,5,5,5,5,5,5],
+        [5,8,0,0,0,5,0,0,0,5],
+        [5,0,0,0,0,0,0,0,5,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,5,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,0,0,0,0,0],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,5,0,5,0,0,5,0,5],
+        [5,5,5,5,5,5,5,5,5,8]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $EveryRun & hole_color=RarestColor",
+        "$Run & $EveryRun & hole_color=RarestColor"
+      ],
+      "grid": [
+        [5,5,8,5,5,5,5,5,5,5],
+        [5,8,0,0,0,5,0,0,0,5],
+        [8,0,0,0,0,0,0,0,5,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,5,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,0,0,0,0,0],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,5,0,5,0,0,5,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $CornerRun & hole_color=RarestColor",
+        "$NoPinch & $AnchorCorner & hole_color=RarestColor",
+        "$Run & $CornerRun & hole_color=RarestColor",
+        "$Run & $AnchorCorner & hole_color=RarestColor"
+      ],
+      "grid": [
+        [8,5,5,5,5,5,5,5,5,5],
+        [5,8,0,0,0,5,0,0,0,5],
+        [5,0,0,0,0,0,0,0,5,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,5,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,0,0,0,0,0,0,0,0],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,0,5,0,5,0,0,5,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "combo-20",
+    "separates": "1 region of 0 in a field and border of 2, with one longest run of 7: $HoleDerived reads 2 as the ring color and 0 as the hole, and the ring.value=stored cases, with 2 and 0 both off the stored 5, are undefined.",
+    "input": [
+      [2,2,2,2,2,2,2,2,2,2],
+      [2,2,0,2,2,2,0,2,2,2],
+      [2,0,0,0,0,0,0,2,2,2],
+      [2,2,2,0,0,0,0,0,0,2],
+      [2,2,0,0,0,2,0,0,0,2],
+      [2,0,2,0,0,0,2,0,2,2],
+      [2,0,0,0,0,0,0,0,0,2],
+      [2,0,0,0,2,0,0,0,0,2],
+      [2,0,2,0,2,2,0,0,0,2],
+      [2,2,2,2,2,2,2,2,2,2]
+    ],
+    "output": [{
+      "cases": [
+        "$EveryRun & ring.value=derived",
+        "$CornerRun & ring.value=derived",
+        "$EveryCorner & ring.value=derived"
+      ],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,2,0,2,2,2,0,2,2,2],
+        [2,0,8,0,0,0,0,2,2,2],
+        [2,2,2,8,0,0,0,0,0,2],
+        [2,2,0,0,8,2,0,0,0,2],
+        [2,0,2,0,0,8,2,0,2,2],
+        [2,0,0,0,0,0,8,0,0,2],
+        [2,0,0,0,2,0,0,8,0,2],
+        [2,0,2,0,2,2,0,0,8,2],
+        [2,2,2,2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": ["ring.value=stored","$EdgeCorners & $AnchorFirst"],
+      "grid": null
+    }, {
+      "cases": ["$LineCount & $EdgeCorners & $EveryCornerCell & ring.value=derived"],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,2,0,2,2,2,0,2,2,2],
+        [2,8,0,0,0,0,0,2,2,2],
+        [2,2,2,0,0,0,0,0,0,2],
+        [2,2,0,8,0,2,0,0,0,2],
+        [2,0,2,0,8,0,2,0,2,2],
+        [2,0,0,0,0,8,0,0,0,2],
+        [2,0,0,0,2,0,8,0,0,2],
+        [2,0,2,0,2,2,0,8,0,2],
+        [2,2,2,2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": [
+        "$NoPinch & $EdgeCorners & $EveryCornerCell & ring.value=derived",
+        "$Run & $EdgeCorners & $EveryCornerCell & ring.value=derived"
+      ],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2,2],
+        [2,2,0,2,2,2,8,2,2,2],
+        [2,0,0,0,0,8,0,2,2,2],
+        [2,2,2,0,8,0,0,0,0,2],
+        [2,2,0,8,0,2,0,0,0,2],
+        [2,0,2,0,0,0,2,0,2,2],
+        [2,0,0,0,0,0,0,0,0,2],
+        [2,0,0,0,2,0,0,0,0,2],
+        [2,0,2,0,2,2,0,0,0,2],
+        [2,2,2,2,2,2,2,2,2,2]
+      ]
+    }]
+  }, {
+    "id": "all-corners",
+    "separates": "The longest run, (2,2)-(8,8), holds the one cell nearest the bottom-right corner, (8,8), and no cell nearest a top corner: the concept and $EveryCorner paint it, and $AnchorCorner at the top edge paints the run from the top-left corner cell (1,2), (1,2)-(6,7).",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,5,0,0,5,0,5,5,0,5],
+      [5,0,0,0,0,0,0,0,0,5],
+      [5,0,5,0,0,0,5,5,5,5],
+      [5,5,0,0,0,0,0,0,0,5],
+      [5,0,0,0,0,0,0,5,5,5],
+      [5,5,0,5,0,0,0,0,5,5],
+      [5,0,0,0,5,5,0,0,5,5],
+      [5,0,0,0,0,0,0,0,0,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "output": [{
+      "cases": ["$EveryRun","$CornerRun","$EveryCorner"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,0,5,0,5,5,0,5],
+        [5,0,8,0,0,0,0,0,0,5],
+        [5,0,5,8,0,0,5,5,5,5],
+        [5,5,0,0,8,0,0,0,0,5],
+        [5,0,0,0,0,8,0,5,5,5],
+        [5,5,0,5,0,0,8,0,5,5],
+        [5,0,0,0,5,5,0,8,5,5],
+        [5,0,0,0,0,0,0,0,8,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$LineCount & $EdgeCorners & $TieCenter",
+        "$LineCount & $EdgeCorners & $TieCorner"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,0,0,5,0,5,5,8,5],
+        [5,0,0,0,0,0,0,8,0,5],
+        [5,0,5,0,0,0,5,5,5,5],
+        [5,5,0,0,0,8,0,0,0,5],
+        [5,0,0,0,8,0,0,5,5,5],
+        [5,5,0,5,0,0,0,0,5,5],
+        [5,0,8,0,5,5,0,0,5,5],
+        [5,8,0,0,0,0,0,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": [
+        "$LineCount & $EdgeCorners & $TieDirection",
+        "$LineCount & $EdgeCorners & $TieMiddle",
+        "$NoPinch & $EdgeCorners & $AnchorFirst",
+        "$Run & $EdgeCorners & $AnchorFirst"
+      ],
+      "grid": null
+    }, {
+      "cases": [
+        "$NoPinch & $EdgeCorners & $EveryCornerCell",
+        "$Run & $EdgeCorners & $EveryCornerCell"
+      ],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,8,0,5,0,5,5,0,5],
+        [5,0,0,8,0,0,0,0,0,5],
+        [5,0,5,0,8,0,5,5,5,5],
+        [5,5,0,0,0,8,0,0,0,5],
+        [5,0,0,0,0,0,8,5,5,5],
+        [5,5,0,5,0,0,0,8,5,5],
+        [5,0,0,0,5,5,0,0,5,5],
+        [5,0,0,0,0,0,0,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "combo-21",
+    "separates": "A thin hole whose longest line, the anti-diagonal (1,5)-(5,1), holds every cell nearest the top-left corner and no cell nearest another corner: the cases that let any run or any line through a corner cell compete paint it, and $EveryCorner, which reads a corner along its own diagonal only, paints another line.",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,5,5,5,5,0,5,5,5,5],
+      [5,5,5,5,0,0,0,0,5,5],
+      [5,5,5,0,0,5,5,0,5,5],
+      [5,5,0,0,5,5,5,0,5,5],
+      [5,0,0,5,5,5,5,5,5,5],
+      [5,5,0,5,5,5,5,5,5,5],
+      [5,5,0,5,5,5,5,5,5,5],
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "output": [{
+      "cases": ["$EveryRun","$CornerRun"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,5,5,8,5,5,5,5],
+        [5,5,5,5,8,0,0,0,5,5],
+        [5,5,5,8,0,5,5,0,5,5],
+        [5,5,8,0,5,5,5,0,5,5],
+        [5,8,0,5,5,5,5,5,5,5],
+        [5,5,0,5,5,5,5,5,5,5],
+        [5,5,0,5,5,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$EveryCornerCell"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,5,5,8,5,5,5,5],
+        [5,5,5,5,0,0,8,0,5,5],
+        [5,5,5,0,0,5,5,8,5,5],
+        [5,5,0,0,5,5,5,0,5,5],
+        [5,0,0,5,5,5,5,5,5,5],
+        [5,5,0,5,5,5,5,5,5,5],
+        [5,5,0,5,5,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$AnchorFirst"],
+      "grid": null
+    }]
+  }, {
+    "id": "combo-22",
+    "separates": "Three cells tie nearest the top-left corner, (1,3), (2,2) and (3,1), and the longest run, (2,2)-(7,7), starts at the middle one: $EveryCornerCell paints it, and $AnchorFirst under $EveryCorner, whose reading orders each pick an end cell, paints another line; under $LineCount, the line through the one cell nearest the bottom-right corner, (7,8).",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,5,5,0,5,5,5,5,5,5],
+      [5,5,0,0,5,5,5,5,5,5],
+      [5,0,0,0,5,5,5,5,5,5],
+      [5,5,5,0,0,0,5,5,5,5],
+      [5,5,5,5,5,0,5,5,5,5],
+      [5,5,5,5,5,0,0,0,5,5],
+      [5,5,5,5,5,5,5,0,0,5],
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "output": [{
+      "cases": ["$EveryRun","$CornerRun","$EveryCornerCell"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,5,5,5,5,5,5],
+        [5,5,8,0,5,5,5,5,5,5],
+        [5,0,0,8,5,5,5,5,5,5],
+        [5,5,5,0,8,0,5,5,5,5],
+        [5,5,5,5,5,8,5,5,5,5],
+        [5,5,5,5,5,0,8,0,5,5],
+        [5,5,5,5,5,5,5,8,0,5],
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$EdgeCorners & $AnchorFirst","$NoPinch & $AnchorFirst","$Run & $AnchorFirst"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,8,5,5,5,5,5,5],
+        [5,5,8,0,5,5,5,5,5,5],
+        [5,8,0,0,5,5,5,5,5,5],
+        [5,5,5,0,0,0,5,5,5,5],
+        [5,5,5,5,5,0,5,5,5,5],
+        [5,5,5,5,5,0,0,0,5,5],
+        [5,5,5,5,5,5,5,0,0,5],
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }, {
+      "cases": ["$LineCount & $EveryCorner & $AnchorFirst"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,0,5,5,5,5,5,5],
+        [5,5,0,8,5,5,5,5,5,5],
+        [5,0,0,0,5,5,5,5,5,5],
+        [5,5,5,0,0,8,5,5,5,5],
+        [5,5,5,5,5,0,5,5,5,5],
+        [5,5,5,5,5,0,0,8,5,5],
+        [5,5,5,5,5,5,5,0,8,5],
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "combo-23",
+    "separates": "Two runs of 8 tie, (1,1)-(8,8) and (1,8)-(8,1), and both lines pass through the grid center: the concept is undefined, and the cases whose candidates or tie rule leave one run are defined.",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,0,5,5,0,0,0,0,0,5],
+      [5,0,0,0,0,0,0,0,5,5],
+      [5,5,0,0,5,0,0,0,5,5],
+      [5,0,0,5,0,0,0,5,5,5],
+      [5,0,0,0,0,0,0,0,0,5],
+      [5,5,0,0,0,0,0,0,5,5],
+      [5,5,0,0,0,0,0,0,0,5],
+      [5,0,0,0,5,0,5,5,0,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "output": [{
+      "cases": ["$LineCount","$Run"],
+      "grid": null
+    }, {
+      "cases": ["$NoPinch"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,0,5,5,0,0,0,0,8,5],
+        [5,0,0,0,0,0,0,8,5,5],
+        [5,5,0,0,5,0,8,0,5,5],
+        [5,0,0,5,0,8,0,5,5,5],
+        [5,0,0,0,8,0,0,0,0,5],
+        [5,5,0,8,0,0,0,0,5,5],
+        [5,5,8,0,0,0,0,0,0,5],
+        [5,8,0,0,5,0,5,5,0,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }]
+  }, {
+    "id": "hole_color=RarestColor",
+    "separates": "`hole_color=RarestColor` from the stored value: train 0 with 0 and 1 swapped",
+    "input": [
+      [5,5,5,5,5,5,5,5,5,5],
+      [5,1,1,1,5,5,1,1,5,5],
+      [5,5,1,1,1,5,1,1,1,5],
+      [5,5,5,1,1,1,1,1,5,5],
+      [5,5,1,1,1,1,1,1,1,5],
+      [5,1,1,1,1,1,1,1,5,5],
+      [5,5,1,1,1,5,1,1,1,5],
+      [5,1,1,5,1,5,1,1,1,5],
+      [5,5,1,5,5,5,1,5,1,5],
+      [5,5,5,5,5,5,5,5,5,5]
+    ],
+    "output": [{
+      "cases": ["$HoleStored & hole_color=stored"],
+      "grid": null
+    }, {
+      "cases": ["$HoleDerived","hole_color=RarestColor"],
+      "grid": [
+        [5,5,5,5,5,5,5,5,5,5],
+        [5,8,1,1,5,5,1,1,5,5],
+        [5,5,8,1,1,5,1,1,1,5],
+        [5,5,5,8,1,1,1,1,5,5],
+        [5,5,1,1,8,1,1,1,1,5],
+        [5,1,1,1,1,8,1,1,5,5],
+        [5,5,1,1,1,5,8,1,1,5],
+        [5,1,1,5,1,5,1,8,1,5],
+        [5,5,1,5,5,5,1,5,8,5],
+        [5,5,5,5,5,5,5,5,5,5]
+      ]
+    }]
+  }]
+}

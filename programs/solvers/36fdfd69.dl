@@ -21,7 +21,7 @@
     .decl mark(col: Color) mark(2).
     .decl fill(col: Color) fill(4).
 
-    // --- Recolor ---
+    // --- $Recolor ---
     .decl bg(col: Color) bg(0).
 }
 
@@ -51,10 +51,10 @@ unmarked(P, Col) :-
 // The box cells the fill takes.
 .decl repaint(p: Position, c: Choice)
 
-// --- Solid ---
+// --- $Solid ---
 repaint(P, $Solid()) :- unmarked(P, _).
 
-// --- Recolor ---
+// --- $Recolor ---
 repaint(P, $Recolor()) :- unmarked(P, Col), !params.bg(Col).
 
 out(P, Col, C) :- repaint(P, C), params.fill(Col).

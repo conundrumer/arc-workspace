@@ -14,7 +14,7 @@
     // @claim blank
     Stored {}
     // @scene sole: the blank is the one color whose cells fill their own box
-    // @witness recolored: variant Solid
+    // @witness recolored: variant $Solid
   | Solid {}
 
 // what fixes the reflection
@@ -43,11 +43,11 @@
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- Stored ---
+    // --- $Stored ---
 
     .decl blank(col: Color) blank(0).
 
-    // --- Fixed ---
+    // --- $Fixed ---
 
     .decl mirror(d: D4) mirror(D4_LR).
 }
@@ -105,11 +105,11 @@ out(P, Col, [H, M, F]) :- target(H, F, P), source(H, M, P, P_src), in(P_src, Col
 out(P, Col, [H, M, F]) :-
     in(P, Col), hue_choice(H), mirror_choice(M), fill_choice(F), !target(H, F, P).
 
-// --- Stored ---
+// --- $Stored ---
 
 blank_color($Stored(), Col) :- params.blank(Col).
 
-// --- Solid ---
+// --- $Solid ---
 
 // @claim sole
 .init color_box = Bbox<Color>
@@ -121,11 +121,11 @@ mixed(Col) :- color_box.box(Col, B), in(P, _), inside(P, B), !in(P, Col).
 
 blank_color($Solid(), Col) :- in(_, Col), !mixed(Col).
 
-// --- Fixed ---
+// --- $Fixed ---
 
 mirror(H, $Fixed(), D) :- hue_choice(H), params.mirror(D).
 
-// --- Stacked ---
+// --- $Stacked ---
 
 // A line of family a holds a cell of each rectangle.
 // @ignore: store — the reflection's consumer takes a D4, so storing this axis
@@ -136,10 +136,10 @@ together(H, A) :- axis_elem(A), blank(H, P), block(H, Q), same_line(A, P, Q).
 // The reflection inverts the axis whose lines the two never share.
 mirror(H, $Stacked(), D) :- hue_choice(H), flip_of(A, D), !together(H, A).
 
-// --- Cells ---
+// --- $Cells ---
 
 target(H, $Cells(), P) :- blank(H, P).
 
-// --- Box ---
+// --- $Box ---
 
 target(H, $Box(), P) :- in(P, _), blank_box.box(H, B), inside(P, B).

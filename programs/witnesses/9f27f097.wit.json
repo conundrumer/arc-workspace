@@ -2,7 +2,7 @@
   "id": "9f27f097",
   "witnesses": [{
     "id": "beside",
-    "separates": "the Fixed mirror from the Stacked mirror: the blank sits beside the block in the same rows, so the Fixed cases mirror the block left to right and the Stacked cases mirror it top to bottom",
+    "separates": "the $Fixed mirror from the $Stacked mirror: the blank sits beside the block in the same rows, so the $Fixed cases mirror the block left to right and the $Stacked cases mirror it top to bottom",
     "input": [
       [2,2,2,2,2,2,2,2,2,2,2,2],
       [2,1,3,3,1,2,2,0,0,0,0,2],
@@ -18,12 +18,7 @@
       [2,2,2,2,2,2,2,2,2,2,2,2]
     ],
     "output": [{
-      "cases": [
-        "[Solid, Fixed, Box]",
-        "[Solid, Fixed, Cells]",
-        "[Stored, Fixed, Box]",
-        "[Stored, Fixed, Cells]"
-      ],
+      "cases": ["$Fixed"],
       "grid": [
         [2,2,2,2,2,2,2,2,2,2,2,2],
         [2,1,3,3,1,2,2,1,3,3,1,2],
@@ -39,12 +34,7 @@
         [2,2,2,2,2,2,2,2,2,2,2,2]
       ]
     }, {
-      "cases": [
-        "[Solid, Stacked, Box]",
-        "[Solid, Stacked, Cells]",
-        "[Stored, Stacked, Box]",
-        "[Stored, Stacked, Cells]"
-      ],
+      "cases": ["$Stacked"],
       "grid": [
         [2,2,2,2,2,2,2,2,2,2,2,2],
         [2,1,3,3,1,2,2,1,1,1,1,2],
@@ -62,7 +52,7 @@
     }]
   }, {
     "id": "notch",
-    "separates": "the Cells fill from the Box fill: one corner cell of the blank carries the background color, so the Cells cases leave (7,7) as background and the Box cases fill the whole box at rows 7-10, cols 4-7. No color's cells fill their own box, so the Solid cases leave the input unchanged",
+    "separates": "the $Cells fill from the $Box fill: one corner cell of the blank carries the background color, so the $Cells cases leave (7,7) as background and the $Box cases fill the whole box at rows 7-10, cols 4-7. No color's cells fill their own box, so the $Solid cases leave the input unchanged",
     "input": [
       [2,2,2,2,2,2,2,2,2,2,2,2],
       [2,1,3,3,1,2,2,2,2,2,2,2],
@@ -78,12 +68,7 @@
       [2,2,2,2,2,2,2,2,2,2,2,2]
     ],
     "output": [{
-      "cases": [
-        "[Solid, Fixed, Box]",
-        "[Solid, Fixed, Cells]",
-        "[Solid, Stacked, Box]",
-        "[Solid, Stacked, Cells]"
-      ],
+      "cases": ["$Stored & $Cells"],
       "grid": [
         [2,2,2,2,2,2,2,2,2,2,2,2],
         [2,1,3,3,1,2,2,2,2,2,2,2],
@@ -92,14 +77,14 @@
         [2,1,1,1,1,2,2,2,2,2,2,2],
         [2,2,2,2,2,2,2,2,2,2,2,2],
         [2,2,2,2,2,2,2,2,2,2,2,2],
-        [2,2,2,2,0,0,0,2,2,2,2,2],
-        [2,2,2,2,0,0,0,0,2,2,2,2],
-        [2,2,2,2,0,0,0,0,2,2,2,2],
-        [2,2,2,2,0,0,0,0,2,2,2,2],
+        [2,2,2,2,1,3,3,2,2,2,2,2],
+        [2,2,2,2,1,3,1,1,2,2,2,2],
+        [2,2,2,2,3,3,3,1,2,2,2,2],
+        [2,2,2,2,1,1,1,1,2,2,2,2],
         [2,2,2,2,2,2,2,2,2,2,2,2]
       ]
     }, {
-      "cases": ["[Stored, Fixed, Box]","[Stored, Stacked, Box]"],
+      "cases": ["$Stored & $Box"],
       "grid": [
         [2,2,2,2,2,2,2,2,2,2,2,2],
         [2,1,3,3,1,2,2,2,2,2,2,2],
@@ -115,7 +100,7 @@
         [2,2,2,2,2,2,2,2,2,2,2,2]
       ]
     }, {
-      "cases": ["[Stored, Fixed, Cells]","[Stored, Stacked, Cells]"],
+      "cases": ["$Solid"],
       "grid": [
         [2,2,2,2,2,2,2,2,2,2,2,2],
         [2,1,3,3,1,2,2,2,2,2,2,2],
@@ -124,16 +109,16 @@
         [2,1,1,1,1,2,2,2,2,2,2,2],
         [2,2,2,2,2,2,2,2,2,2,2,2],
         [2,2,2,2,2,2,2,2,2,2,2,2],
-        [2,2,2,2,1,3,3,2,2,2,2,2],
-        [2,2,2,2,1,3,1,1,2,2,2,2],
-        [2,2,2,2,3,3,3,1,2,2,2,2],
-        [2,2,2,2,1,1,1,1,2,2,2,2],
+        [2,2,2,2,0,0,0,2,2,2,2,2],
+        [2,2,2,2,0,0,0,0,2,2,2,2],
+        [2,2,2,2,0,0,0,0,2,2,2,2],
+        [2,2,2,2,0,0,0,0,2,2,2,2],
         [2,2,2,2,2,2,2,2,2,2,2,2]
       ]
     }]
   }, {
     "id": "recolored",
-    "separates": "the Stored hue from the Solid hue: the blank is drawn in a color the parameter does not name, so the Stored cases leave the input unchanged and the Solid cases fill the blank",
+    "separates": "the $Stored hue from the $Solid hue: the blank is drawn in a color the parameter does not name, so the $Stored cases leave the input unchanged and the $Solid cases fill the blank",
     "input": [
       [2,2,2,2,2,2,2,2,2,2,2,2],
       [2,1,3,3,1,2,2,2,2,2,2,2],
@@ -149,12 +134,23 @@
       [2,2,2,2,2,2,2,2,2,2,2,2]
     ],
     "output": [{
-      "cases": [
-        "[Solid, Fixed, Box]",
-        "[Solid, Fixed, Cells]",
-        "[Solid, Stacked, Box]",
-        "[Solid, Stacked, Cells]"
-      ],
+      "cases": ["$Stored"],
+      "grid": [
+        [2,2,2,2,2,2,2,2,2,2,2,2],
+        [2,1,3,3,1,2,2,2,2,2,2,2],
+        [2,1,1,3,1,2,2,2,2,2,2,2],
+        [2,1,3,3,3,2,2,2,2,2,2,2],
+        [2,1,1,1,1,2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2,2,2,2,2,2],
+        [2,2,2,2,2,2,2,2,2,2,2,2],
+        [2,2,2,2,4,4,4,4,2,2,2,2],
+        [2,2,2,2,4,4,4,4,2,2,2,2],
+        [2,2,2,2,4,4,4,4,2,2,2,2],
+        [2,2,2,2,4,4,4,4,2,2,2,2],
+        [2,2,2,2,2,2,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": ["$Solid"],
       "grid": [
         [2,2,2,2,2,2,2,2,2,2,2,2],
         [2,1,3,3,1,2,2,2,2,2,2,2],
@@ -167,27 +163,6 @@
         [2,2,2,2,1,3,1,1,2,2,2,2],
         [2,2,2,2,3,3,3,1,2,2,2,2],
         [2,2,2,2,1,1,1,1,2,2,2,2],
-        [2,2,2,2,2,2,2,2,2,2,2,2]
-      ]
-    }, {
-      "cases": [
-        "[Stored, Fixed, Box]",
-        "[Stored, Fixed, Cells]",
-        "[Stored, Stacked, Box]",
-        "[Stored, Stacked, Cells]"
-      ],
-      "grid": [
-        [2,2,2,2,2,2,2,2,2,2,2,2],
-        [2,1,3,3,1,2,2,2,2,2,2,2],
-        [2,1,1,3,1,2,2,2,2,2,2,2],
-        [2,1,3,3,3,2,2,2,2,2,2,2],
-        [2,1,1,1,1,2,2,2,2,2,2,2],
-        [2,2,2,2,2,2,2,2,2,2,2,2],
-        [2,2,2,2,2,2,2,2,2,2,2,2],
-        [2,2,2,2,4,4,4,4,2,2,2,2],
-        [2,2,2,2,4,4,4,4,2,2,2,2],
-        [2,2,2,2,4,4,4,4,2,2,2,2],
-        [2,2,2,2,4,4,4,4,2,2,2,2],
         [2,2,2,2,2,2,2,2,2,2,2,2]
       ]
     }]

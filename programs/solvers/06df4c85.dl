@@ -44,13 +44,13 @@ bet.mark(Col, T) :- mark(T, Col).
 
 .decl fill(ch: Choice, p_tile: Position, col: Color)
 
-// --- Over ---
+// --- $Over ---
 fill($Over(), T, Col) :- bet.between(Col, T), !mark(T, Col).
 
-// --- Around ---
+// --- $Around ---
 fill($Around(), T, Col) :- bet.between(Col, T), !mark(T, _).
 
-// --- Block ---
+// --- $Block ---
 // Each bg tile runs through bg tiles, halting at the first mark.
 .init run = Ray<Unit>
 run.dir($U(), D) :- dir_elem(D).

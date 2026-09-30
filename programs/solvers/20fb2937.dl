@@ -45,19 +45,19 @@
     // The gap between bands; layers abut, so they have none.
     .decl band_gap(g: number) band_gap(1).
 
-    // --- Count ---
+    // --- $Count ---
     // The tiles the header holds along each axis.
     .decl tile_count(a: Axis, n: number)
     tile_count(AXIS_V, 2).
     tile_count(AXIS_H, 3).
 
-    // --- Size ---
+    // --- $Size ---
     // The header tile's extent on each axis.
     .decl tile_dim(a: Axis, k: number)
     tile_dim(AXIS_V, 3).
     tile_dim(AXIS_H, 3).
 
-    // --- Stamp ---
+    // --- $Stamp ---
     // The shape laid at a mark, as offsets from the cell on the mark.
     .decl shape(delta: Offset)
     GRID_STAMP_3x3(shape,
@@ -107,7 +107,7 @@
     .decl header_cell(key: Key, dc: DecChoice, p_layer: Position, p_band: Position,
                       p_intile: Position, col: Color)
 
-    // --- Count ---
+    // --- $Count ---
     header_cell(Ky, $Count(), P_layer, P_band, P_intile, Col) :-
         header(Ky, P_hdr, Col),
         params.band_axis(A), params.tile_count(A, N), params.band_gap(G),
@@ -116,7 +116,7 @@
         divide(P_hdr, A2, N2, 0, P_layer, P_inner_layer),            // layers abut along
         compose(P_inner_band, P_inner_layer, P_intile).
 
-    // --- Size ---
+    // --- $Size ---
     header_cell(Ky, $Size(), P_layer, P_band, P_intile, Col) :-
         header(Ky, P_hdr, Col),
         params.band_axis(A), params.tile_dim(A, K), params.band_gap(G),
@@ -152,7 +152,7 @@ parse.cell($U(), P, Col) :- in(P, Col).
 
 .decl paint(p_fld: Position, col: Color, ch: Choice)
 
-// --- Neighbor ---
+// --- $Neighbor ---
 
 paint(Q, Col, [Dc, $Neighbor()]) :-
     parse.mark($U(), Dc, P, P_band), parse.swatch_color($U(), Dc, P_band, Col),
@@ -161,13 +161,13 @@ paint(Q, Col, [Dc, $Neighbor()]) :-
     ; dir8_elem(D), neighbor(P, D, Q)  // and each cell around it
     ).
 
-// --- Stamp ---
+// --- $Stamp ---
 
 paint(Q, Col, [Dc, $Stamp()]) :-
     parse.mark($U(), Dc, P, P_band), parse.swatch_color($U(), Dc, P_band, Col),
     params.shape(Delta), compose(P, Delta, Q), parse.field($U(), Q, _).
 
-// --- Blit ---
+// --- $Blit ---
 
 paint(Q, Col, [Dc, $Blit()]) :-
     parse.mark($U(), Dc, P, P_band),

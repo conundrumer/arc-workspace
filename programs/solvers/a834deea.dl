@@ -1,0 +1,229 @@
+// a834deea
+// @draft
+// @keywords: objects lookup border bbox
+// @scene boxes: one or more 5×5 boxes stand apart from each other. Each box
+//  has a solid outline of params.frame_color, and no side neighbor of the
+//  outline outside the box has that color.
+// @rule keyed-fill: in each box, an interior cell of params.frame_color takes
+//  the color params.position_color gives for its place in the 3×3 interior.
+// @rule center-kept: the center of the interior has no entry in
+//  params.position_color and keeps its color.
+// @rule rest-kept: every other cell keeps its input color.
+
+// which cells form a box
+.type BoxFind =
+    // @claim boxes
+    Outline { iso: Isolation }
+    // @scene boxes: a box is the bounding box of a connected component of
+    //  params.frame_color. Its outline need not be solid.
+    // @witness broken-outline: foreign $ComponentBbox
+    //     @relaxed boxes
+  | ComponentBbox { conn: Connectivity }
+
+// which neighbors of the outline outside the box must not be frame-colored
+.type Isolation =
+    // @claim boxes
+    SideIsolation {}
+    // @scene boxes: no diagonal neighbor of the outline outside the box has
+    //  params.frame_color either.
+    // @witness corner-touch: borderline $ComponentBbox
+    //     @relaxed boxes
+  | DiagonalIsolation {}
+
+// which neighbors join a component
+.type Connectivity =
+    // @claim boxes
+    FourConn {}
+    // @scene boxes: diagonal neighbors join a component too.
+    // @witness corner-touch: borderline $ComponentBbox
+  | EightConn {}
+
+// which key a recolored cell reads
+.type PositionKey =
+    // @claim keyed-fill center-kept
+    Place {}
+    // @rule keyed-fill: a box is any size. A cell of the interior
+    //  takes params.side_color at the corner or side whose outline
+    //  sides it touches. A cell that touches no side, or two opposite sides,
+    //  keeps its color.
+    // @witness big-box: variant $RingBySide
+    //     @relaxed boxes
+  | RingBySide {}
+    // @rule keyed-fill: a box is any size. A cell of the interior takes
+    //  params.side_color at the direction of its row and column offsets from
+    //  the interior's center. The center keeps its color.
+    // @witness big-box: variant $RingBySide
+  | SignOfOffset {}
+
+.type Choice = [find: BoxFind, key: PositionKey]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive RarestColor: variant derived
+    //     @relaxed boxes
+    .decl frame_color(c: Color) frame_color(0).
+
+    // --- $Place ---
+    .decl position_color(p: Position, col: Color)
+    GRID_SPARSE_3x3(position_color,
+        1, 7, 6,
+        4, _, 5,
+        2, 9, 3)
+
+    // --- $RingBySide, $SignOfOffset ---
+    .decl side_color(d: Dir8, col: Color)
+    side_color(DIAG_TL, 1). side_color(DIR_T, 7). side_color(DIAG_TR, 6).
+    side_color(DIR_L, 4). side_color(DIR_R, 5).
+    side_color(DIAG_BL, 2). side_color(DIR_B, 9). side_color(DIAG_BR, 3).
+}
+
+.init params = Params
+
+.decl box_find_choice(f: BoxFind)
+box_find_choice($Outline($SideIsolation())).
+box_find_choice($Outline($DiagonalIsolation())).
+box_find_choice($ComponentBbox($FourConn())).
+box_find_choice($ComponentBbox($EightConn())).
+
+.decl position_key_choice(k: PositionKey)
+position_key_choice($Place()). position_key_choice($RingBySide()). position_key_choice($SignOfOffset()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([F, K]) :- box_find_choice(F), position_key_choice(K).
+
+.comp Parse<Key> {
+    .type KeyBox = [k: Key, b: Box]
+    .type KeyComp = [k: Key, c: Connectivity, id: Ident]
+
+    .decl pixel(k: Key, p: Position, col: Color)
+
+    // The cells of params.frame_color.
+    .decl frame_cell(k: Key, p: Position)
+    frame_cell(K, P) :- pixel(K, P, Col), params.frame_color(Col).
+
+    .decl box(k: Key, b: Box, f: BoxFind)
+
+    // --- $Outline ---
+    // @claim boxes
+    .init outline = Outlines<Key>
+    outline.node(K, P) :- frame_cell(K, P).
+
+    // The directions in which the outline's neighbors outside the box are
+    // checked.
+    .decl iso_dir(iso: Isolation, d: Dir8)
+
+    // An outline with a frame-colored neighbor outside it.
+    .decl attached(k: Key, b: Box, iso: Isolation)
+    attached(K, B, Iso) :-
+        outline.box(K, B), frame_cell(K, P), box_edge(P, B, _),  // an outline cell
+        iso_dir(Iso, D), neighbor(P, D, Q), frame_cell(K, Q), !inside(Q, B).
+
+    box(K, B, $Outline(Iso)) :- outline.box(K, B), iso_dir(Iso, _), !attached(K, B, Iso).
+
+    // --- $SideIsolation ---
+    iso_dir($SideIsolation(), D) :- dir_elem(D).
+
+    // --- $DiagonalIsolation ---
+    iso_dir($DiagonalIsolation(), D) :- dir8_elem(D).
+
+    // --- $ComponentBbox ---
+    // @claim boxes
+    .init comp_box = Bbox<KeyComp>
+
+    box(K, B, $ComponentBbox(C)) :- comp_box.box([K, C, _], B).
+
+    // --- $FourConn ---
+    // @claim boxes
+    .init comps4 = Components<Key>
+    comps4.node(K, P) :- frame_cell(K, P).
+
+    comp_box.cell([K, $FourConn(), Id], P) :- comps4.label(K, P, Id).
+
+    // --- $EightConn ---
+    // @claim boxes
+    .init comps8 = Components8<Key>
+    comps8.node(K, P) :- frame_cell(K, P).
+
+    comp_box.cell([K, $EightConn(), Id], P) :- comps8.label(K, P, Id).
+
+    // --- shared ---
+    // The interior of each box.
+    // @claim boxes
+    .init inner = Bbox<KeyBox>
+    inner.cell([K, B], P) :- box(K, B, _), pixel(K, P, _), interior(P, B).
+
+    // A frame-colored cell of interior I, of a box found by f.
+    .decl inner_cell(k: Key, p: Position, i: Box, f: BoxFind)
+    inner_cell(K, P, I, F) :-
+        box(K, B, F), inner.box([K, B], I), frame_cell(K, P), inside(P, I).
+}
+
+.init parse = Parse<Unit>
+parse.pixel($U(), P, Col) :- in(P, Col).
+
+.decl keyed(p: Position, col: Color, ch: Choice)
+
+// --- $Place ---
+keyed(P_grid, Col, [F, $Place()]) :-
+    parse.inner_cell($U(), P_grid, I, F), crop(P_grid, I, P_inner),
+    params.position_color(P_inner, Col).
+
+// --- $RingBySide ---
+.type CellIn = [p: Position, i: Box]
+
+// The sides of the interior a key names: a side names itself, a corner its
+// two sides.
+.decl key_side(k: Dir8, d: Dir)
+key_side(D, D) :- dir_elem(D).
+key_side(Dg, D) :- dir_of(Dg, _, D).
+
+// @claim keyed-fill
+.init touch = KeyedSetCompare<CellIn, Dir8, Dir>
+touch.pattern_member(K, D) :- key_side(K, D).
+touch.observed_member([P, I], D) :- parse.inner_cell($U(), P, I, _), box_edge(P, I, D).
+
+keyed(P, Col, [F, $RingBySide()]) :-
+    parse.inner_cell($U(), P, I, F), touch.equals([P, I], D), params.side_color(D, Col).
+
+// --- $SignOfOffset ---
+// @claim keyed-fill
+.init place = DiagPlacement<Unit>
+place.cell($U(), P_inner) :- parse.inner_cell($U(), P_grid, I, _), crop(P_grid, I, P_inner).
+
+// Off the interior's midline on axis a.
+.decl off_mid(p_inner: Position, a: Axis)
+off_mid(P, A) :- place.nearer(_, P, D), axis_of(D, A).
+
+.decl sign_key(p_inner: Position, d: Dir8)
+sign_key(P, D) :- place.quadrant(_, P, D).
+sign_key(P, D) :- place.nearer(_, P, D), axis_of(D, A), perp(A, A2), !off_mid(P, A2).
+
+keyed(P_grid, Col, [F, $SignOfOffset()]) :-
+    parse.inner_cell($U(), P_grid, I, F), crop(P_grid, I, P_inner), sign_key(P_inner, D),
+    params.side_color(D, Col).
+
+// --- output ---
+out(P, Col, Ch) :- keyed(P, Col, Ch).
+out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !keyed(P, _, Ch).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.pixel(E, P, Col) :- ex_in(E, P, Col).
+
+    // A cell of a box's interior that the output recolors, with its color.
+    .decl filled(e: Example, p: Position, i: Box, col: Color)
+    filled(E, P, I, Col) :-
+        parse.inner_cell(E, P, I, $Outline($SideIsolation())),
+        ex_in(E, P, C_in), ex_out(E, P, Col), Col != C_in.
+
+    .decl position_color(p: Position, col: Color)
+    position_color(P_inner, Col) :- filled(_, P_grid, I, Col), crop(P_grid, I, P_inner).
+
+    // The direction from the interior's center to the cell.
+    .decl side_color(d: Dir8, col: Color)
+    side_color(D, Col) :-
+        filled(E, P_grid, I, Col),
+        parse.pixel(E, Q_grid, _), crop(Q_grid, I, Q_inner), centered(Q_inner),  // the center
+        neighbor(Q_grid, D, P_grid).
+}

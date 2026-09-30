@@ -53,7 +53,7 @@ cut_axis(Id, A) :- shape(Id, _), axis_elem(A), !uncut_cell(Id, A).
 // Where an ordinary cell lands: one step out past the cut it lies behind.
 .decl moved(p: Position, col: Color, ch: Choice)
 
-// --- Marks ---
+// --- $Marks ---
 
 moved(Q, Col, $Marks()) :-
     cut_axis(Id, A), cut_cell(Id, A, P, M),                   // the mark cutting the cell's line
@@ -61,7 +61,7 @@ moved(Q, Col, $Marks()) :-
     axis_of(D, A), nearer(D, P, M),                           // the cell lies past that mark toward D
     neighbor(P, D, Q).                                        // and steps one further
 
-// --- Midline ---
+// --- $Midline ---
 
 .init bbox = Bbox<Ident>
 bbox.cell(Id, P) :- shape(Id, P).

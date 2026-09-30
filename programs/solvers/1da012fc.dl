@@ -92,7 +92,7 @@ out(P, Col, Ch) :-
     comps.label($U(), P_marker, Id2), in(P_marker, Col).
 out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !shape_cell(P).
 
-// --- Separated ---
+// --- $Separated ---
 
 // The two dirs of the reading order — D1 along the reading axis, D2 across.
 .decl read_dirs(d1: Dir, d2: Dir)
@@ -116,7 +116,7 @@ reading.before($Separated(), A, B) :-
       ahead(D2, A, B)                                       // and wholly ahead across
     ).
 
-// --- Anchor ---
+// --- $Anchor ---
 
 // @claim read
 .init obox = Bbox<Ident>

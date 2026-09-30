@@ -54,7 +54,7 @@
         0, 5, 0)
     key_color(2, 1).
 
-    // --- Table ---
+    // --- $Table ---
     .decl tile_dim(n: number) tile_dim(3).
 
     .decl decompose(p_grid: Position, p_tile: Position, p_intile: Position)
@@ -73,11 +73,11 @@
 
 .decl decompose(ch: Choice, p_grid: Position, p_tile: Position, p_intile: Position)
 
-// --- Table ---
+// --- $Table ---
 
 decompose($Table(), P_grid, P_tile, P_intile) :- params.decompose(P_grid, P_tile, P_intile).
 
-// --- Count ---
+// --- $Count ---
 
 // A grid cell in the frame inside the border, which the division cuts.
 .decl inner_cell(p_grid: Position, p_inner: Position)

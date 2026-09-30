@@ -9,7 +9,7 @@
 //     @approximated: a cell lies inside a container when the
 //      container's cells are on both sides of it along one axis, and one
 //      is to a side of the other axis
-//     @witness far-marks: variant Shape
+//     @witness far-marks: variant $Shape
 //     @witness open-chevron: variant other
 // @rule pass: every other cell passes through unchanged
 
@@ -39,10 +39,10 @@ ink(P, Col) :- in(P, Col), !params.bg(Col).
 // Two cells of one container.
 .decl together(ch: Choice, p: Position, q: Position)
 
-// --- ColorClass ---
+// --- $ColorClass ---
 together($ColorClass(), P, Q) :- ink(P, Col), ink(Q, Col).
 
-// --- Shape ---
+// --- $Shape ---
 // @claim container
 .init shapes = Components8<Color>
 shapes.node(Col, P) :- ink(P, Col).

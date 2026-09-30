@@ -13,7 +13,7 @@
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- Count ---
+    // --- $Count ---
     .decl target(n: number) target(3).
 }
 
@@ -22,8 +22,8 @@
 .init tally = Mode<Unit, Color, Position>
 tally.item($U(), Col, P) :- in(P, Col).
 
-// --- Mode ---
+// --- $Mode ---
 out(P, Col, $Mode()) :- in(P, _), tally.mode($U(), Col).
 
-// --- Count ---
+// --- $Count ---
 out(P, Col, $Count()) :- in(P, _), tally.tally($U(), Col, N), params.target(N).

@@ -2,7 +2,7 @@
   "id": "9caba7c3",
   "witnesses": [{
     "id": "gap",
-    "separates": "Count from Maximal and Complete: two squares one field row apart in the same columns, with the window across the gap holding a mark of each",
+    "separates": "$Count from $Maximal and $Complete: two squares one field row apart in the same columns, with the window across the gap holding a mark of each",
     "input": [
       [0,0,0,0,0],
       [0,2,5,2,0],
@@ -15,20 +15,7 @@
       [0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["Complete"],
-      "grid": [
-        [0,0,0,0,0],
-        [0,2,5,2,0],
-        [0,5,5,5,0],
-        [0,2,5,5,0],
-        [0,5,5,5,0],
-        [0,5,5,2,0],
-        [0,5,5,5,0],
-        [0,5,2,5,0],
-        [0,0,0,0,0]
-      ]
-    }, {
-      "cases": ["Count"],
+      "cases": ["$Count & field=stored"],
       "grid": [
         [0,0,0,0,0],
         [0,2,7,2,0],
@@ -41,7 +28,20 @@
         [0,0,0,0,0]
       ]
     }, {
-      "cases": ["Maximal"],
+      "cases": ["$Complete","field=DominantColor"],
+      "grid": [
+        [0,0,0,0,0],
+        [0,2,5,2,0],
+        [0,5,5,5,0],
+        [0,2,5,5,0],
+        [0,5,5,5,0],
+        [0,5,5,2,0],
+        [0,5,5,5,0],
+        [0,5,2,5,0],
+        [0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$Maximal & field=stored"],
       "grid": [
         [0,0,0,0,0],
         [0,2,7,2,0],

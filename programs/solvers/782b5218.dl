@@ -21,7 +21,7 @@
     .decl barrier(c: Color) barrier(2).
     .decl fill_dir(d: Dir) fill_dir(DIR_B).
 
-    // --- Region ---
+    // --- $Region ---
     // The edge whose reachable region is cleared.
     .decl clear_dir(d: Dir)
     clear_dir(D) :- fill_dir(F), opposite(F, D).
@@ -44,14 +44,14 @@ impl_choice($Region()). impl_choice($Cast()).
 
 .decl fill_cell(p: Position, ch: Choice)
 
-// --- Region ---
+// --- $Region ---
 .init cleared = Reach<Unit>
 cleared.node($U(), P) :- field_cell(P).
 cleared.seed($U(), P) :- field_cell(P), params.clear_dir(D), dist(P, D, 0).   // on the cleared edge
 
 fill_cell(P, $Region()) :- field_cell(P), !cleared.reach($U(), P).
 
-// --- Cast ---
+// --- $Cast ---
 .init flow = Ray<Unit>
 flow.dir($U(), D) :- params.fill_dir(D).
 flow.cell($U(), P) :- field_cell(P).

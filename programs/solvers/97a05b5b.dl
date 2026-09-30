@@ -73,7 +73,7 @@ patch_cell(O, D, P_turn) :- piece_cell(O, D, P_turn, Col), params.board_color(Co
 // Where a piece turned by D lands: the box its patch box takes in the grid.
 .decl place(o: Ident, d: C4, b: Box, ch: Choice)
 
-// --- Pack ---
+// --- $Pack ---
 
 // Every spot at which a turned patch falls on holes alone.
 .init occ = Occurrences<Turn, Unit>
@@ -93,7 +93,7 @@ pruning.conflict($U(), Cd, Cd2) :- fills(Cd, P), fills(Cd2, P).
 
 place(O, D, B, $Pack()) :- pruning.alive($U(), [O, D, B], O).
 
-// --- Match ---
+// --- $Match ---
 
 // The holes grouped into regions. A hole joins its neighbors at a corner as
 // well as at a side, as the cells of a patch do.

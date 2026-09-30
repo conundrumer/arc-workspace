@@ -2,7 +2,7 @@
   "id": "9f8de559",
   "witnesses": [{
     "id": "gap-head",
-    "separates": "nearest-body from the concept: one field cell lies between the head and the body. The concept finds no body cell next to the head and is undefined; nearest-body casts from the head away from the nearest body cell.",
+    "separates": "$NearestBody from the concept: one field cell lies between the head and the body. The concept finds no body cell next to the head and is undefined; $NearestBody casts from the head away from the nearest body cell.",
     "input": [
       [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
       [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
@@ -20,20 +20,10 @@
       [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
     ],
     "output": [{
-      "cases": [
-        "concept",
-        "ScanHead",
-        "FirstNonfield",
-        "StoredPaint",
-        "DominantPaint",
-        "DerivedField",
-        "DerivedPointer",
-        "field_color=DominantColor",
-        "head_color=RarestColor"
-      ],
+      "cases": ["$Adjacent"],
       "grid": null
     }, {
-      "cases": ["NearestBody","BodyAxis"],
+      "cases": ["$NearestBody","$BodyAxis"],
       "grid": [
         [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
         [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
@@ -53,7 +43,7 @@
     }]
   }, {
     "id": "speck-on-ray",
-    "separates": "first-nonfield from the concept: a frame-colored cell lies inside the field on the ray. The concept paints the first cell outside the field rectangle; first-nonfield paints the speck.",
+    "separates": "$FirstNonfield from the concept: a frame-colored cell lies inside the field on the ray. The concept paints the first cell outside the field rectangle; $FirstNonfield paints the speck.",
     "input": [
       [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
       [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
@@ -71,17 +61,7 @@
       [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
     ],
     "output": [{
-      "cases": [
-        "concept",
-        "NearestBody",
-        "BodyAxis",
-        "ScanHead",
-        "StoredPaint",
-        "DominantPaint",
-        "DerivedField",
-        "field_color=DominantColor",
-        "head_color=RarestColor"
-      ],
+      "cases": ["$FieldExit & $StoredPointer"],
       "grid": [
         [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
         [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
@@ -99,7 +79,10 @@
         [5,5,8,5,5,8,8,8,8,7,8,8,8,8]
       ]
     }, {
-      "cases": ["FirstNonfield"],
+      "cases": ["$DerivedPointer"],
+      "grid": null
+    }, {
+      "cases": ["$FirstNonfield & $StoredPointer"],
       "grid": [
         [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
         [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
@@ -116,13 +99,10 @@
         [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
         [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
       ]
-    }, {
-      "cases": ["DerivedPointer"],
-      "grid": null
     }]
   }, {
     "id": "other-paint",
-    "separates": "stored-paint from the concept: the stored paint color is reassigned to 3. The concept paints the exit cell with the field color; stored-paint paints it 3.",
+    "separates": "$StoredPaint from the concept: the stored paint color is reassigned to 3. The concept paints the exit cell with the field color; $StoredPaint paints it 3.",
     "input": [
       [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
       [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
@@ -145,18 +125,7 @@
       ]
     },
     "output": [{
-      "cases": [
-        "concept",
-        "NearestBody",
-        "BodyAxis",
-        "ScanHead",
-        "FirstNonfield",
-        "DominantPaint",
-        "DerivedField",
-        "DerivedPointer",
-        "field_color=DominantColor",
-        "head_color=RarestColor"
-      ],
+      "cases": ["$FieldPaint","paint_color=DominantColor"],
       "grid": [
         [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
         [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
@@ -174,7 +143,7 @@
         [5,5,8,5,5,8,8,8,8,7,8,8,8,8]
       ]
     }, {
-      "cases": ["StoredPaint"],
+      "cases": ["$StoredPaint & paint_color=stored"],
       "grid": [
         [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
         [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
@@ -194,7 +163,7 @@
     }]
   }, {
     "id": "field-3",
-    "separates": "derived-field from the concept: the field is color 3 in place of 7. The stored field color finds no field and the concept is undefined; derived-field reads the field as 3 and paints the exit cell 3; first-nonfield paints the cell after the head 7.",
+    "separates": "$DerivedField from the concept: the field is color 3 in place of 7. The stored field color finds no field and the concept is undefined; $DerivedField reads the field as 3 and paints the exit cell 3; $FirstNonfield paints the cell after the head 7.",
     "input": [
       [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
       [5,5,3,3,3,3,3,3,3,3,3,3,5,5],
@@ -213,18 +182,57 @@
     ],
     "output": [{
       "cases": [
-        "concept",
-        "NearestBody",
-        "BodyAxis",
-        "ScanHead",
-        "StoredPaint",
-        "DominantPaint",
-        "DerivedPointer",
-        "head_color=RarestColor"
+        "$FieldExit & $StoredField & field_color=stored",
+        "$StoredField & $DerivedPointer & field_color=stored"
       ],
       "grid": null
     }, {
-      "cases": ["FirstNonfield"],
+      "cases": [
+        "$FieldPaint & field_color=DominantColor",
+        "$FieldPaint & $DerivedField",
+        "$DerivedField & paint_color=DominantColor"
+      ],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [5,5,3,3,3,3,3,3,3,3,3,3,5,5],
+        [5,5,3,3,3,3,3,3,3,6,3,3,5,5],
+        [9,9,3,3,3,3,3,3,3,6,3,3,5,5],
+        [9,9,3,3,3,3,3,3,3,6,3,3,5,5],
+        [5,5,3,3,3,3,3,3,3,6,3,3,5,5],
+        [5,5,3,3,3,3,3,3,3,2,3,3,5,5],
+        [5,5,3,3,3,3,3,3,3,3,3,3,5,5],
+        [5,5,3,3,3,3,3,3,3,3,3,3,5,5],
+        [5,5,3,3,3,3,3,3,3,3,3,3,5,5],
+        [5,5,3,3,3,3,3,3,3,3,3,3,5,5],
+        [5,5,3,3,3,3,3,3,3,3,3,3,5,5],
+        [5,5,3,3,3,3,3,3,3,3,3,3,5,5],
+        [5,5,8,5,5,8,8,8,8,3,8,8,8,8]
+      ]
+    }, {
+      "cases": [
+        "$StoredPaint & field_color=DominantColor",
+        "$StoredPaint & $DerivedField & paint_color=stored"
+      ],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [5,5,3,3,3,3,3,3,3,3,3,3,5,5],
+        [5,5,3,3,3,3,3,3,3,6,3,3,5,5],
+        [9,9,3,3,3,3,3,3,3,6,3,3,5,5],
+        [9,9,3,3,3,3,3,3,3,6,3,3,5,5],
+        [5,5,3,3,3,3,3,3,3,6,3,3,5,5],
+        [5,5,3,3,3,3,3,3,3,2,3,3,5,5],
+        [5,5,3,3,3,3,3,3,3,3,3,3,5,5],
+        [5,5,3,3,3,3,3,3,3,3,3,3,5,5],
+        [5,5,3,3,3,3,3,3,3,3,3,3,5,5],
+        [5,5,3,3,3,3,3,3,3,3,3,3,5,5],
+        [5,5,3,3,3,3,3,3,3,3,3,3,5,5],
+        [5,5,3,3,3,3,3,3,3,3,3,3,5,5],
+        [5,5,8,5,5,8,8,8,8,7,8,8,8,8]
+      ]
+    }, {
+      "cases": [
+        "$FirstNonfield & $StoredField & $StoredPointer & field_color=stored & paint_color=stored"
+      ],
       "grid": [
         [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
         [5,5,3,3,3,3,3,3,3,3,3,3,5,5],
@@ -242,7 +250,7 @@
         [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
       ]
     }, {
-      "cases": ["DerivedField","field_color=DominantColor"],
+      "cases": ["$FirstNonfield & $StoredField & $StoredPointer & paint_color=DominantColor"],
       "grid": [
         [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
         [5,5,3,3,3,3,3,3,3,3,3,3,5,5],
@@ -257,12 +265,12 @@
         [5,5,3,3,3,3,3,3,3,3,3,3,5,5],
         [5,5,3,3,3,3,3,3,3,3,3,3,5,5],
         [5,5,3,3,3,3,3,3,3,3,3,3,5,5],
-        [5,5,8,5,5,8,8,8,8,3,8,8,8,8]
+        [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
       ]
     }]
   }, {
     "id": "swap-pointer",
-    "separates": "derived-pointer from the concept: the body is color 2 and the head is color 6. The concept finds head-colored cells with no adjacent body cell and is undefined; derived-pointer reads the single 6 as the head and casts down; nearest-body casts up from every 2.",
+    "separates": "$DerivedPointer from the concept: the body is color 2 and the head is color 6. The concept finds head-colored cells with no adjacent body cell and is undefined; $DerivedPointer reads the single 6 as the head and casts down; $NearestBody casts up from every 2.",
     "input": [
       [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
       [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
@@ -281,19 +289,31 @@
     ],
     "output": [{
       "cases": [
-        "concept",
-        "BodyAxis",
-        "ScanHead",
-        "FirstNonfield",
-        "StoredPaint",
-        "DominantPaint",
-        "DerivedField",
-        "field_color=DominantColor",
-        "head_color=RarestColor"
+        "$Adjacent & $StoredPointer",
+        "head_color=RarestColor",
+        "$BodyAxis & $StoredPointer"
       ],
       "grid": null
     }, {
-      "cases": ["NearestBody"],
+      "cases": ["$DerivedPointer"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,2,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,2,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,2,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,2,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,5,8,8,8,8,7,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$NearestBody & $FieldExit & $StoredPointer & head_color=stored"],
       "grid": [
         [9,9,9,9,9,9,9,9,9,7,9,9,5,5],
         [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
@@ -311,13 +331,15 @@
         [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
       ]
     }, {
-      "cases": ["DerivedPointer"],
+      "cases": [
+        "$NearestBody & $EveryHead & $FirstNonfield & $StoredPointer & head_color=stored"
+      ],
       "grid": [
-        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [9,9,9,9,9,9,9,9,9,7,9,9,5,5],
         [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
-        [5,5,7,7,7,7,7,7,7,2,7,7,5,5],
-        [9,9,7,7,7,7,7,7,7,2,7,7,5,5],
-        [9,9,7,7,7,7,7,7,7,2,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
         [5,5,7,7,7,7,7,7,7,2,7,7,5,5],
         [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
         [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
@@ -326,12 +348,17 @@
         [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
         [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
         [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
-        [5,5,8,5,5,8,8,8,8,7,8,8,8,8]
+        [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
       ]
+    }, {
+      "cases": [
+        "$NearestBody & $ScanHead & $FirstNonfield & $StoredPointer & head_color=stored"
+      ],
+      "grid": null
     }]
   }, {
     "id": "bent-head",
-    "separates": "BodyAxis from the concept: the head sits diagonally past the end of a vertical body. The concept casts diagonally away from the body cell it touches; BodyAxis casts down along the body's axis.",
+    "separates": "$BodyAxis from the concept: the head sits diagonally past the end of a vertical body. The concept casts diagonally away from the body cell it touches; $BodyAxis casts down along the body's axis.",
     "input": [
       [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
       [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
@@ -349,18 +376,7 @@
       [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
     ],
     "output": [{
-      "cases": [
-        "concept",
-        "NearestBody",
-        "ScanHead",
-        "FirstNonfield",
-        "StoredPaint",
-        "DominantPaint",
-        "DerivedField",
-        "DerivedPointer",
-        "field_color=DominantColor",
-        "head_color=RarestColor"
-      ],
+      "cases": ["$Adjacent","$NearestBody"],
       "grid": [
         [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
         [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
@@ -378,7 +394,7 @@
         [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
       ]
     }, {
-      "cases": ["BodyAxis"],
+      "cases": ["$BodyAxis"],
       "grid": [
         [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
         [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
@@ -398,7 +414,7 @@
     }]
   }, {
     "id": "two-heads",
-    "separates": "ScanHead from the concept: a second pointer points up from (8,4). The concept extends both pointers; ScanHead, at the order from the bottom-right corner with rows first, extends only the lower head.",
+    "separates": "$ScanHead from the concept: a second pointer points up from (8,4). The concept extends both pointers; $ScanHead, at the order from the bottom-right corner with rows first, extends only the lower head.",
     "input": [
       [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
       [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
@@ -416,23 +432,14 @@
       [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
     ],
     "assign": {
-      "head_corner": [
-        ["DIAG_BR"]
-      ],
-      "head_axis": [
-        ["AXIS_V"]
+      "head_order": [
+        ["DIAG_BR","AXIS_V"]
       ]
     },
     "output": [{
       "cases": [
-        "concept",
-        "NearestBody",
-        "FirstNonfield",
-        "StoredPaint",
-        "DominantPaint",
-        "DerivedField",
-        "field_color=DominantColor",
-        "head_color=RarestColor"
+        "$Adjacent & $EveryHead & $StoredPointer",
+        "$NearestBody & $EveryHead & $StoredPointer"
       ],
       "grid": [
         [9,9,9,9,7,9,9,9,9,9,9,9,5,5],
@@ -451,10 +458,13 @@
         [5,5,8,5,5,8,8,8,8,7,8,8,8,8]
       ]
     }, {
-      "cases": ["BodyAxis","DerivedPointer"],
+      "cases": ["$DerivedPointer","$BodyAxis"],
       "grid": null
     }, {
-      "cases": ["ScanHead"],
+      "cases": [
+        "$Adjacent & $ScanHead & $StoredPointer",
+        "$NearestBody & $ScanHead & $StoredPointer"
+      ],
       "grid": [
         [9,9,9,9,7,9,9,9,9,9,9,9,5,5],
         [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
@@ -474,7 +484,7 @@
     }]
   }, {
     "id": "stray-head",
-    "separates": "ScanHead from EveryHead: a frame cell at (5,12) takes the head color. ScanHead, at the order from the bottom-right corner with rows first, casts from the head in the field alone; EveryHead also casts from (5,12), or is undefined where that cell has no step.",
+    "separates": "$ScanHead from $EveryHead: a frame cell at (5,12) takes the head color. $ScanHead, at the order from the bottom-right corner with rows first, casts from the head in the field alone; $EveryHead also casts from (5,12), or is undefined where that cell has no step.",
     "input": [
       [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
       [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
@@ -492,27 +502,33 @@
       [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
     ],
     "assign": {
-      "head_corner": [
-        ["DIAG_BR"]
-      ],
-      "head_axis": [
-        ["AXIS_V"]
+      "head_order": [
+        ["DIAG_BR","AXIS_V"]
       ]
     },
     "output": [{
-      "cases": [
-        "concept",
-        "FirstNonfield",
-        "StoredPaint",
-        "DominantPaint",
-        "DerivedField",
-        "DerivedPointer",
-        "field_color=DominantColor",
-        "head_color=RarestColor"
-      ],
+      "cases": ["$Adjacent & $EveryHead"],
       "grid": null
     }, {
-      "cases": ["NearestBody"],
+      "cases": ["$ScanHead"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,6,7,7,2,5],
+        [5,5,7,7,7,7,7,7,7,2,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,5,8,8,8,8,7,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$NearestBody & $EveryHead"],
       "grid": [
         [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
         [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
@@ -530,7 +546,7 @@
         [5,5,8,5,5,8,8,8,8,7,8,8,8,8]
       ]
     }, {
-      "cases": ["BodyAxis"],
+      "cases": ["$BodyAxis & $EveryHead"],
       "grid": [
         [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
         [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
@@ -547,28 +563,10 @@
         [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
         [5,5,8,5,5,8,8,8,8,7,8,8,8,8]
       ]
-    }, {
-      "cases": ["ScanHead"],
-      "grid": [
-        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
-        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
-        [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
-        [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
-        [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
-        [5,5,7,7,7,7,7,7,7,6,7,7,2,5],
-        [5,5,7,7,7,7,7,7,7,2,7,7,5,5],
-        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
-        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
-        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
-        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
-        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
-        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
-        [5,5,8,5,5,8,8,8,8,7,8,8,8,8]
-      ]
     }]
   }, {
     "id": "body-speck",
-    "separates": "FirstNonfield from the concept where the pointer colors are derived: a body-colored cell lies in the field on the ray at (10,9). The concept paints the first cell outside the field rectangle; FirstNonfield paints the body-colored cell.",
+    "separates": "$FirstNonfield from the concept where the pointer colors are derived: a body-colored cell lies in the field on the ray at (10,9). The concept paints the first cell outside the field rectangle; $FirstNonfield paints the body-colored cell.",
     "input": [
       [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
       [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
@@ -586,17 +584,7 @@
       [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
     ],
     "output": [{
-      "cases": [
-        "concept",
-        "NearestBody",
-        "ScanHead",
-        "StoredPaint",
-        "DominantPaint",
-        "DerivedField",
-        "DerivedPointer",
-        "field_color=DominantColor",
-        "head_color=RarestColor"
-      ],
+      "cases": ["$Adjacent & $FieldExit","$NearestBody & $FieldExit"],
       "grid": [
         [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
         [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
@@ -614,10 +602,7 @@
         [5,5,8,5,5,8,8,8,8,7,8,8,8,8]
       ]
     }, {
-      "cases": ["BodyAxis"],
-      "grid": null
-    }, {
-      "cases": ["FirstNonfield"],
+      "cases": ["$Adjacent & $FirstNonfield","$NearestBody & $FirstNonfield"],
       "grid": [
         [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
         [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
@@ -634,10 +619,13 @@
         [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
         [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
       ]
+    }, {
+      "cases": ["$BodyAxis"],
+      "grid": null
     }]
   }, {
     "id": "small-field",
-    "separates": "DerivedField from field_color=DominantColor, and DominantPaint from the concept: the field is rows 1-7, the frame color 5 is the commonest color, and the exit cell (8,9) is 8. DerivedField reads the field as 7 and paints (8,9) 7, as the concept does; DominantColor reads the field as 5 and paints nothing; DominantPaint paints (8,9) 5.",
+    "separates": "$DerivedField from field_color=DominantColor, and paint_color=DominantColor & StoredPaint from the concept: the field is rows 1-7, the frame color 5 is the commonest color, and the exit cell (8,9) is 8. $DerivedField reads the field as 7 and paints (8,9) 7, as the concept does; field_color=DominantColor reads the field as 5 and paints nothing; paint_color=DominantColor & StoredPaint paints (8,9) 5.",
     "input": [
       [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
       [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
@@ -655,17 +643,7 @@
       [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
     ],
     "output": [{
-      "cases": [
-        "concept",
-        "NearestBody",
-        "BodyAxis",
-        "ScanHead",
-        "FirstNonfield",
-        "StoredPaint",
-        "DerivedField",
-        "DerivedPointer",
-        "head_color=RarestColor"
-      ],
+      "cases": ["field_color=stored & paint_color=stored"],
       "grid": [
         [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
         [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
@@ -683,7 +661,31 @@
         [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
       ]
     }, {
-      "cases": ["DominantPaint"],
+      "cases": [
+        "$FieldExit & $StoredPointer & field_color=DominantColor",
+        "$StoredPaint & $StoredPointer & field_color=DominantColor"
+      ],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,2,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,5,5,5,5,5,5,5,8,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+        [5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+        [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$DerivedPointer & field_color=DominantColor"],
+      "grid": null
+    }, {
+      "cases": ["paint_color=DominantColor"],
       "grid": [
         [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
         [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
@@ -701,7 +703,7 @@
         [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
       ]
     }, {
-      "cases": ["field_color=DominantColor"],
+      "cases": ["$FirstNonfield & $FieldPaint & $StoredPointer & field_color=DominantColor"],
       "grid": [
         [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
         [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
@@ -710,12 +712,1014 @@
         [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
         [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
         [5,5,7,7,7,7,7,7,7,2,7,7,5,5],
-        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,5,7,7,5,5],
         [5,5,5,5,5,5,5,5,5,8,5,5,5,5],
         [5,5,5,5,5,5,5,5,5,5,5,5,5,5],
         [5,5,5,5,5,5,5,5,5,5,5,5,5,5],
         [5,5,5,5,5,5,5,5,5,5,5,5,5,5],
         [5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+        [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+      ]
+    }]
+  }, {
+    "id": "tied-body",
+    "separates": "$Adjacent from $NearestBody: the head at (6,10) touches the body cell (5,9) diagonally, and a stray body cell at (8,10) lies at the same taxicab distance. $Adjacent casts down-right from the one touching body cell and paints (8,12); $NearestBody finds two nearest body cells whose steps differ, and the open tie orders disagree, so it is undefined.",
+    "input": [
+      [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+      [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+      [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,2,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,6,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$Adjacent"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,2,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,6,7,7,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$NearestBody"],
+      "grid": null
+    }, {
+      "cases": ["$BodyAxis"],
+      "grid": null
+    }]
+  }, {
+    "id": "frame-pointer",
+    "separates": "$EveryHead from $ScanHead where the pointer colors are derived: a second pointer stands in the frame, head (8,0) and body (9,0). The field's box holds one head cell, so the derived pointer is found. $EveryHead casts from both heads and also paints (7,0); $ScanHead finds that the open head orders pick different heads, and is undefined.",
+    "input": [
+      [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+      [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+      [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,2,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [2,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [6,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$Adjacent & $EveryHead","$NearestBody & $EveryHead"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,2,7,7,5,5],
+        [7,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [2,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [6,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,5,8,8,8,8,7,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$Adjacent & $ScanHead","$NearestBody & $ScanHead"],
+      "grid": null
+    }, {
+      "cases": ["$BodyAxis"],
+      "grid": null
+    }]
+  }, {
+    "id": "edge-pointer",
+    "separates": "$StoredField from $DerivedField: the pointer runs along the field's top row, with the head at the field's corner (1,2), and the frame cells next to it are 9. The stored field 7 paints (1,1); the cells next to the pointer are mostly 9, so $DerivedField reads the field as 9, whose box holds the ray to the grid edge, and changes nothing; with derived pointer colors, $DerivedField finds no field color and is undefined, while field_color=DominantColor reads 7 and paints (1,1).",
+    "input": [
+      [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+      [5,9,2,6,6,6,6,7,7,7,7,7,5,5],
+      [5,9,7,7,7,7,7,7,7,7,7,7,5,5],
+      [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+      [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$StoredField"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [5,7,2,6,6,6,6,7,7,7,7,7,5,5],
+        [5,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$FieldExit & $DerivedField & $StoredPointer"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [5,9,2,6,6,6,6,7,7,7,7,7,5,5],
+        [5,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$DerivedField & $DerivedPointer"],
+      "grid": null
+    }, {
+      "cases": ["$FirstNonfield & $FieldPaint & $DerivedField & $StoredPointer"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [9,9,2,6,6,6,6,7,7,7,7,7,5,5],
+        [5,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$FirstNonfield & $StoredPaint & $DerivedField & $StoredPointer"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [7,9,2,6,6,6,6,7,7,7,7,7,5,5],
+        [5,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+      ]
+    }]
+  }, {
+    "id": "frame-head",
+    "separates": "$FirstNonfield from $FieldExit under $BodyAxis with derived pointer colors: the body is (1,5), (2,6), the head in the field is (11,2), and a second head cell in the frame at (10,1) casts down-right onto it. $FieldExit passes over the head in the field and paints (13,4); $FirstNonfield stops at that head and also paints (11,2).",
+    "input": [
+      [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+      [5,5,7,7,7,6,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,6,7,7,7,7,7,5,5],
+      [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+      [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,2,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,2,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$Adjacent & head_color=stored"],
+      "grid": null
+    }, {
+      "cases": ["$Adjacent & $EveryHead & head_color=RarestColor"],
+      "grid": [
+        [9,9,9,9,7,9,9,9,9,9,9,9,5,5],
+        [5,5,7,7,7,6,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,6,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,7,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,2,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,2,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": [
+        "$Adjacent & $ScanHead & head_color=RarestColor",
+        "$BodyAxis & $ScanHead & $FieldExit & head_color=RarestColor"
+      ],
+      "grid": null
+    }, {
+      "cases": ["$NearestBody & $EveryHead"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [5,5,7,7,7,6,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,6,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,2,7,7,7,7,7,7,7,7,7,7,5,5],
+        [7,5,2,7,7,7,7,7,7,7,7,7,5,5],
+        [5,7,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$NearestBody & $ScanHead"],
+      "grid": null
+    }, {
+      "cases": ["$BodyAxis & $FieldExit & head_color=stored"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [5,5,7,7,7,6,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,6,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,2,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,2,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,7,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$BodyAxis & $EveryHead & $FieldExit & head_color=RarestColor"],
+      "grid": [
+        [9,9,9,9,7,9,9,9,9,9,9,9,5,5],
+        [5,5,7,7,7,6,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,6,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,7,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,2,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,2,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,7,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$BodyAxis & $EveryHead & $FirstNonfield & head_color=stored"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [5,5,7,7,7,6,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,6,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,2,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,7,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$BodyAxis & $EveryHead & $FirstNonfield & head_color=RarestColor"],
+      "grid": [
+        [9,9,9,9,7,9,9,9,9,9,9,9,5,5],
+        [5,5,7,7,7,6,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,6,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,7,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,2,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,7,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$BodyAxis & $ScanHead & $FirstNonfield & head_color=stored"],
+      "grid": null
+    }, {
+      "cases": ["$BodyAxis & $ScanHead & $FirstNonfield & head_color=RarestColor"],
+      "grid": null
+    }]
+  }, {
+    "id": "field_color=DominantColor",
+    "separates": "`field_color=DominantColor` from the stored value: train 0 with 7 and 0 swapped",
+    "input": [
+      [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+      [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+      [5,5,0,0,0,0,0,0,0,6,0,0,5,5],
+      [9,9,0,0,0,0,0,0,0,6,0,0,5,5],
+      [9,9,0,0,0,0,0,0,0,6,0,0,5,5],
+      [5,5,0,0,0,0,0,0,0,6,0,0,5,5],
+      [5,5,0,0,0,0,0,0,0,2,0,0,5,5],
+      [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+      [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+      [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+      [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+      [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+      [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+      [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": [
+        "$FieldExit & $StoredField & field_color=stored",
+        "$StoredField & $DerivedPointer & field_color=stored"
+      ],
+      "grid": null
+    }, {
+      "cases": [
+        "$FieldPaint & field_color=DominantColor",
+        "$FieldPaint & $DerivedField",
+        "$DerivedField & paint_color=DominantColor"
+      ],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,6,0,0,5,5],
+        [9,9,0,0,0,0,0,0,0,6,0,0,5,5],
+        [9,9,0,0,0,0,0,0,0,6,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,6,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,2,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,8,5,5,8,8,8,8,0,8,8,8,8]
+      ]
+    }, {
+      "cases": [
+        "$StoredPaint & field_color=DominantColor",
+        "$StoredPaint & $DerivedField & paint_color=stored"
+      ],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,6,0,0,5,5],
+        [9,9,0,0,0,0,0,0,0,6,0,0,5,5],
+        [9,9,0,0,0,0,0,0,0,6,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,6,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,2,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,8,5,5,8,8,8,8,7,8,8,8,8]
+      ]
+    }, {
+      "cases": [
+        "$FirstNonfield & $StoredField & $StoredPointer & field_color=stored & paint_color=stored"
+      ],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,6,0,0,5,5],
+        [9,9,0,0,0,0,0,0,0,6,0,0,5,5],
+        [9,9,0,0,0,0,0,0,0,6,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,6,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,2,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,7,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$FirstNonfield & $StoredField & $StoredPointer & paint_color=DominantColor"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,6,0,0,5,5],
+        [9,9,0,0,0,0,0,0,0,6,0,0,5,5],
+        [9,9,0,0,0,0,0,0,0,6,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,6,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,2,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+      ]
+    }]
+  }, {
+    "id": "head_color=RarestColor",
+    "separates": "`head_color=RarestColor` from the stored value: train 0 with 2 and 0 swapped",
+    "input": [
+      [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+      [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+      [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,0,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$StoredPointer & head_color=stored"],
+      "grid": null
+    }, {
+      "cases": ["head_color=RarestColor","$DerivedPointer"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,0,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,5,8,8,8,8,7,8,8,8,8]
+      ]
+    }]
+  }, {
+    "id": "paint_color=DominantColor",
+    "separates": "`paint_color=DominantColor` from the stored value: train 0 with 7 and 0 swapped",
+    "input": [
+      [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+      [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+      [5,5,0,0,0,0,0,0,0,6,0,0,5,5],
+      [9,9,0,0,0,0,0,0,0,6,0,0,5,5],
+      [9,9,0,0,0,0,0,0,0,6,0,0,5,5],
+      [5,5,0,0,0,0,0,0,0,6,0,0,5,5],
+      [5,5,0,0,0,0,0,0,0,2,0,0,5,5],
+      [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+      [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+      [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+      [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+      [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+      [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+      [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": [
+        "$FieldExit & $StoredField & field_color=stored",
+        "$StoredField & $DerivedPointer & field_color=stored"
+      ],
+      "grid": null
+    }, {
+      "cases": [
+        "$FieldPaint & field_color=DominantColor",
+        "$FieldPaint & $DerivedField",
+        "$DerivedField & paint_color=DominantColor"
+      ],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,6,0,0,5,5],
+        [9,9,0,0,0,0,0,0,0,6,0,0,5,5],
+        [9,9,0,0,0,0,0,0,0,6,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,6,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,2,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,8,5,5,8,8,8,8,0,8,8,8,8]
+      ]
+    }, {
+      "cases": [
+        "$StoredPaint & field_color=DominantColor",
+        "$StoredPaint & $DerivedField & paint_color=stored"
+      ],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,6,0,0,5,5],
+        [9,9,0,0,0,0,0,0,0,6,0,0,5,5],
+        [9,9,0,0,0,0,0,0,0,6,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,6,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,2,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,8,5,5,8,8,8,8,7,8,8,8,8]
+      ]
+    }, {
+      "cases": [
+        "$FirstNonfield & $StoredField & $StoredPointer & field_color=stored & paint_color=stored"
+      ],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,6,0,0,5,5],
+        [9,9,0,0,0,0,0,0,0,6,0,0,5,5],
+        [9,9,0,0,0,0,0,0,0,6,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,6,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,2,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,7,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$FirstNonfield & $StoredField & $StoredPointer & paint_color=DominantColor"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,6,0,0,5,5],
+        [9,9,0,0,0,0,0,0,0,6,0,0,5,5],
+        [9,9,0,0,0,0,0,0,0,6,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,6,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,2,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,0,0,0,0,0,0,0,0,0,0,5,5],
+        [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+      ]
+    }]
+  }, {
+    "id": "rare-frame",
+    "separates": "the stored head color from head_color=RarestColor: two-heads with a frame cell at (0,13) of color 3. The stored head color gives the two-heads outputs, and every head_color=RarestColor copy takes 3 as the head color, whose one cell has no body cell next to it, and is undefined.",
+    "input": [
+      [9,9,9,9,9,9,9,9,9,9,9,9,5,3],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+      [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+      [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,2,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,2,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,6,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,6,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,6,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+    ],
+    "assign": {
+      "head_order": [
+        ["DIAG_BR","AXIS_V"]
+      ]
+    },
+    "output": [{
+      "cases": [
+        "$Adjacent & $EveryHead & $StoredPointer & head_color=stored",
+        "$NearestBody & $EveryHead & $StoredPointer & head_color=stored"
+      ],
+      "grid": [
+        [9,9,9,9,7,9,9,9,9,9,9,9,5,3],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,2,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,2,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,6,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,6,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,6,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,5,8,8,8,8,7,8,8,8,8]
+      ]
+    }, {
+      "cases": [
+        "$Adjacent & head_color=RarestColor",
+        "$DerivedPointer",
+        "$BodyAxis & head_color=stored"
+      ],
+      "grid": null
+    }, {
+      "cases": [
+        "$Adjacent & $ScanHead & $StoredPointer & head_color=stored",
+        "$NearestBody & $ScanHead & $StoredPointer & head_color=stored"
+      ],
+      "grid": [
+        [9,9,9,9,7,9,9,9,9,9,9,9,5,3],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,2,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,2,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,6,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,6,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,6,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$NearestBody & head_color=RarestColor","$BodyAxis & head_color=RarestColor"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,3],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,2,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,2,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,6,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,6,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,6,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+      ]
+    }]
+  }, {
+    "id": "stray-rare",
+    "separates": "the stored head color from head_color=RarestColor under $BodyAxis and $ScanHead: stray-head with a frame cell at (0,13) of color 3. The stored head color casts from the head in the field and paints (13,9). Every head_color=RarestColor copy takes 3 as the head color; under $BodyAxis its one cell steps up off the grid and paints nothing.",
+    "input": [
+      [9,9,9,9,9,9,9,9,9,9,9,9,5,3],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+      [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+      [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,6,7,7,2,5],
+      [5,5,7,7,7,7,7,7,7,2,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+    ],
+    "assign": {
+      "head_order": [
+        ["DIAG_BR","AXIS_V"]
+      ]
+    },
+    "output": [{
+      "cases": ["$Adjacent & $EveryHead","$Adjacent & head_color=RarestColor"],
+      "grid": null
+    }, {
+      "cases": ["$ScanHead & head_color=stored"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,3],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,6,7,7,2,5],
+        [5,5,7,7,7,7,7,7,7,2,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,5,8,8,8,8,7,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$NearestBody & $EveryHead & head_color=stored"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,3],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,6,7,7,2,7],
+        [5,5,7,7,7,7,7,7,7,2,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,5,8,8,8,8,7,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$NearestBody & head_color=RarestColor","$BodyAxis & head_color=RarestColor"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,3],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,6,7,7,2,5],
+        [5,5,7,7,7,7,7,7,7,2,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$BodyAxis & $EveryHead & head_color=stored"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,3],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,6,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,6,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,6,7,7,2,5],
+        [5,5,7,7,7,7,7,7,7,2,7,7,7,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,5,8,8,8,8,7,8,8,8,8]
+      ]
+    }]
+  }, {
+    "id": "frame-head-scan",
+    "separates": "$FirstNonfield from $FieldExit under $BodyAxis and $ScanHead with derived pointer colors: the frame-head input, at the order from the top-left corner with rows first. $ScanHead picks the frame head at (10,1), which casts down-right onto the head in the field at (11,2). $FieldExit passes over that head and paints (13,4); $FirstNonfield stops at it and paints (11,2).",
+    "input": [
+      [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+      [5,5,7,7,7,6,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,6,7,7,7,7,7,5,5],
+      [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+      [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,2,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,2,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+      [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+    ],
+    "assign": {
+      "head_order": [
+        ["DIAG_TL","AXIS_V"]
+      ]
+    },
+    "output": [{
+      "cases": ["$Adjacent & head_color=stored"],
+      "grid": null
+    }, {
+      "cases": ["$Adjacent & $EveryHead & head_color=RarestColor"],
+      "grid": [
+        [9,9,9,9,7,9,9,9,9,9,9,9,5,5],
+        [5,5,7,7,7,6,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,6,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,7,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,2,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,2,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$Adjacent & $ScanHead & head_color=RarestColor"],
+      "grid": [
+        [9,9,9,9,7,9,9,9,9,9,9,9,5,5],
+        [5,5,7,7,7,6,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,6,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,2,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,2,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$NearestBody & $EveryHead"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [5,5,7,7,7,6,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,6,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,2,7,7,7,7,7,7,7,7,7,7,5,5],
+        [7,5,2,7,7,7,7,7,7,7,7,7,5,5],
+        [5,7,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$NearestBody & $ScanHead"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [5,5,7,7,7,6,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,6,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,2,7,7,7,7,7,7,7,7,7,7,5,5],
+        [7,5,2,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$BodyAxis & $FieldExit & head_color=stored"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [5,5,7,7,7,6,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,6,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,2,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,2,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,7,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$BodyAxis & $EveryHead & $FieldExit & head_color=RarestColor"],
+      "grid": [
+        [9,9,9,9,7,9,9,9,9,9,9,9,5,5],
+        [5,5,7,7,7,6,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,6,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,7,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,2,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,2,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,7,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$BodyAxis & $EveryHead & $FirstNonfield & head_color=stored"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [5,5,7,7,7,6,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,6,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,2,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,7,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$BodyAxis & $EveryHead & $FirstNonfield & head_color=RarestColor"],
+      "grid": [
+        [9,9,9,9,7,9,9,9,9,9,9,9,5,5],
+        [5,5,7,7,7,6,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,6,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,7,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,2,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,7,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$BodyAxis & $ScanHead & $FieldExit & head_color=RarestColor"],
+      "grid": [
+        [9,9,9,9,7,9,9,9,9,9,9,9,5,5],
+        [5,5,7,7,7,6,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,6,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,2,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,2,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,7,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$BodyAxis & $ScanHead & $FirstNonfield & head_color=stored"],
+      "grid": [
+        [9,9,9,9,9,9,9,9,9,9,9,9,5,5],
+        [5,5,7,7,7,6,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,6,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,2,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$BodyAxis & $ScanHead & $FirstNonfield & head_color=RarestColor"],
+      "grid": [
+        [9,9,9,9,7,9,9,9,9,9,9,9,5,5],
+        [5,5,7,7,7,6,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,6,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [9,9,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,2,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
+        [5,5,7,7,7,7,7,7,7,7,7,7,5,5],
         [5,5,8,5,5,8,8,8,8,8,8,8,8,8]
       ]
     }]

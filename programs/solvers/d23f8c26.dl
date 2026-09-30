@@ -19,7 +19,7 @@
     .decl axis(a: Axis)
     axis(AXIS_H).
 
-    // --- Gap ---
+    // --- $Gap ---
     .decl divisor(n: number)
     divisor(2).
 
@@ -29,7 +29,7 @@
 
 .init params = Params
 
-// --- Center ---
+// --- $Center ---
 .decl on_center(p: Position)
 on_center(P) :-
     in(P, _),                                                // grid cell
@@ -39,7 +39,7 @@ on_center(P) :-
 out(P, Col, $Center()) :- in(P, Col), on_center(P).
 out(P, Col, $Center()) :- in(P, _), !on_center(P), params.bg(Col).
 
-// --- Gap ---
+// --- $Gap ---
 .decl tile_cell(p: Position)
 tile_cell(P) :-
     in(P, _),                                                          // grid cell

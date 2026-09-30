@@ -38,10 +38,10 @@
     .decl order_corner(d: DiagDir) order_corner(DIAG_BL).
     .decl order_axis(a: Axis) order_axis(AXIS_H).
 
-    // --- Count ---
+    // --- $Count ---
     .decl divisor(n: number) divisor(3).
 
-    // --- Size ---
+    // --- $Size ---
     .decl panel_size(k: number) panel_size(5).
 }
 
@@ -90,11 +90,11 @@ out_cell(P_intile, Dc) :- cell_slab(_, P_intile, _, Dc).
 // The slabs the stack is built from.
 .decl stacked(p_slab: Position, ch: Choice)
 
-// --- Rows ---
+// --- $Rows ---
 
 stacked(P_slab, [Dc, $Rows()]) :- ink_slab(P_slab, Dc).
 
-// --- Bands ---
+// --- $Bands ---
 
 .init span = Between<DecChoice>
 span.axis(Dc, A_st) :- dec_choice(Dc), stack_axis(A_st).

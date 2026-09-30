@@ -21,12 +21,12 @@
     .decl axis(a: Axis) axis(AXIS_H).
     .decl n_tiles(n: number) n_tiles(2).
 
-    // --- Table ---
+    // --- $Table ---
     .decl mirror(c_in: Color, c_out: Color)
     mirror(0, 8).
     mirror(2, 0).
 
-    // --- Negative ---
+    // --- $Negative ---
     .decl shade(c: Color) shade(8).
 }
 
@@ -79,10 +79,10 @@ out(P_grid, Col_out, Ch) :-
     ; P_grid = P_mirror, recolor(Col, Col_out, Ch)      // the reflection, recolored
     ).
 
-// --- Table ---
+// --- $Table ---
 recolor(C_in, C_out, $Table()) :- params.mirror(C_in, C_out).
 
-// --- Negative ---
+// --- $Negative ---
 recolor(C_in, C_out, $Negative()) :-
     in(_, C_in),
     ( params.bg(C_in), params.shade(C_out)    // bg takes the shade

@@ -87,7 +87,7 @@ path_cell(P, Ch) :- on_path(A, D, Ch), run(A, D, P).
 out(P, Col, Ch) :- path_cell(P, Ch), params.source(Col).
 out(P, Col, Ch) :- in(P, Col), impl_choice(Ch), !path_cell(P, Ch).
 
-// --- Toward ---
+// --- $Toward ---
 
 // The target lies to p's d side.
 .decl target_side(p: Position, d: Dir)
@@ -111,7 +111,7 @@ toward_arrives(A, D) :- toward_edge(A, D, A2, D2), toward_arrives(A2, D2).
 
 on_path(A, D, $Toward()) :- toward_reach(A, D), toward_arrives(A, D).
 
-// --- Jog ---
+// --- $Jog ---
 
 on_path(A, D, $Jog()) :-
     leg_start(A1, D1),                                        // out

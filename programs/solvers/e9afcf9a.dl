@@ -15,7 +15,7 @@
 .decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    // --- LabeledGrids ---
+    // --- $LabeledGrids ---
     .decl in_label(p: Position, id: Ident)
     GRID_2x6(in_label,
         1, 2, 3,  4,  5,  6,
@@ -30,7 +30,7 @@
     .decl label_pair(p_in: Position, p_out: Position)
     label_pair(P_in, P_out) :- in_label(P_in, Id), out_label(P_out, Id).
 
-    // --- Size ---
+    // --- $Size ---
     .decl divide_axis(a: Axis) divide_axis(AXIS_H).
 
     // The transform each inner column applies, laid out as a grid.
@@ -47,10 +47,10 @@
 
 .decl perm(p_in: Position, p_out: Position, c: Choice)
 
-// --- LabeledGrids ---
+// --- $LabeledGrids ---
 perm(P_grid_in, P_grid_out, $LabeledGrids()) :- params.label_pair(P_grid_in, P_grid_out).
 
-// --- Size ---
+// --- $Size ---
 perm(P_grid_in, P_grid_out, $Size()) :-
     in(P_grid_in, _),                                          // input cell
     params.divide_axis(A), params.tile_size(K),

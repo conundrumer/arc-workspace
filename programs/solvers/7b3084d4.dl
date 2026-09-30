@@ -37,7 +37,7 @@ content(P, Col) :- in(P, Col), !params.bg(Col).
 
 .decl piece_cell(ch: Choice, o: Ident, p: Position, col: Color)
 
-// --- ByColor ---
+// --- $ByColor ---
 
 // Cells of one color are one piece, and the marker joins the color it
 // touches.
@@ -52,7 +52,7 @@ by_color.equiv(Q, P) :- by_color.equiv(P, Q).
 
 piece_cell($ByColor(), O, P, Col) :- by_color.id(P, O), content(P, Col).
 
-// --- ByComponent ---
+// --- $ByComponent ---
 
 .init by_comp = Components8<Unit>
 by_comp.node($U(), P) :- content(P, _).

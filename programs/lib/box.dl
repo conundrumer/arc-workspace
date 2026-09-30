@@ -57,10 +57,11 @@ interior(A, B) :- @box_interior(A, B) = 1.
 .decl crop(p: Position, b: Box, p_rel: Position) inline
 crop(P, B, P_rel) :- inside(P, B), relative(B, P, P_rel).
 
+/// Distance to edge d; needs d bound.
 .decl dist(p: Box, d: Dir, k: number) inline
 dist(P, D, K) :- K = @box_dist(P, D).
 
-/// Distances to edge d and its opposite.
+/// Distances to edge d and its opposite; d need not be bound.
 .decl dist_pair(p: Box, d: Dir, k: number, k2: number) inline
 dist_pair(P, D, K, K2) :- dist(P, D, K), opposite(D, O), dist(P, O, K2).
 

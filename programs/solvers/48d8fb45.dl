@@ -20,7 +20,7 @@
     .decl bg(col: Color) bg(0).
     .decl mark(col: Color) mark(5).
 
-    // --- Window ---
+    // --- $Window ---
     // The window's box, as margins from the mark's cell.
     .decl win_box(b: Box) win_box([1, -3, -1, -1]).
 }
@@ -44,16 +44,16 @@ marked(P, Col) :-
 .init bbox = Bbox<Unit>
 bbox.cell($U(), P) :- marked(P, _).
 
-// --- Object ---
+// --- $Object ---
 out(P_inner, Col, $Object()) :-
     bbox.box($U(), B), in(P, _), crop(P, B, P_inner),
     ( marked(P, Col)                     // the shape
     ; !marked(P, _), params.bg(Col) ).   // the rest of the box
 
-// --- Interior ---
+// --- $Interior ---
 out(P_inner, Col, $Interior()) :- bbox.box($U(), B), in(P, Col), crop(P, B, P_inner).
 
-// --- Window ---
+// --- $Window ---
 
 .decl window(b: Box)
 window(B) :- mark(M), params.win_box(B_mark), compose(M, B_mark, B).

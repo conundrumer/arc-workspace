@@ -17,12 +17,12 @@
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- Header ---
+    // --- $Header ---
     // The edge the marks sit on.
     .decl mark_dir(d: Dir)
     mark_dir(DIR_T).
 
-    // --- Isolated ---
+    // --- $Isolated ---
     // The axis the marks' lines run along.
     .decl axis(a: Axis)
     axis(AXIS_V).
@@ -44,12 +44,12 @@ ink(P, Col) :- in(P, Col), !field.mode($U(), Col).
 
 .decl line_axis(ch: Choice, a: Axis)
 
-// --- Header ---
+// --- $Header ---
 mark($Header(), P, Col) :- ink(P, Col), params.mark_dir(D), dist(P, D, 0).
 
 line_axis($Header(), A) :- params.mark_dir(D), axis_of(D, A).
 
-// --- Isolated ---
+// --- $Isolated ---
 
 // An ink cell beside one of its own color belongs to a block.
 .decl block_cell(p: Position)

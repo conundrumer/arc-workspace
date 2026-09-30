@@ -41,14 +41,14 @@ trapped(Id, R, P, Col) :- closed.region(Id, P, R), in(P, Col), !params.bg(Col).
 
 .decl fill(p: Position, col: Color, ch: Choice)
 
-// --- Shape ---
+// --- $Shape ---
 
 .init shape_specks = Mode<Ident, Color, Position>
 shape_specks.item(Id, Col, P) :- trapped(Id, _, P, Col).
 
 fill(P, Col, $Shape()) :- closed.region(Id, P, _), shape_specks.mode(Id, Col).
 
-// --- Region ---
+// --- $Region ---
 
 .init region_specks = Mode<Cavity, Color, Position>
 region_specks.item([Id, R], Col, P) :- trapped(Id, R, P, Col).

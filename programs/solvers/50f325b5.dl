@@ -20,7 +20,7 @@
 .comp Params {
     .decl field(col: Color) field(3).
 
-    // --- Stored ---
+    // --- $Stored ---
     .decl mark(col: Color) mark(8).
 }
 
@@ -31,11 +31,11 @@ impl_choice($Stored()). impl_choice($Minority()).
 
 .decl mark(ch: Choice, col: Color)
 
-// --- Stored ---
+// --- $Stored ---
 
 mark($Stored(), Col) :- params.mark(Col).
 
-// --- Minority ---
+// --- $Minority ---
 
 .init size = Tally<Color, Position>
 size.item(Col, P) :- in(P, Col).

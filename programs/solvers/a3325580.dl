@@ -1,0 +1,272 @@
+// a3325580
+// @draft
+// @keywords: objects color-class count rank
+// @scene objects: a field of params.bg holds one-color objects, each a
+//  connected group of cells, cells that touch at a corner included, and no
+//  two objects share a color
+// @scene apart: the objects with the largest cell count occupy disjoint
+//  ranges along the axis of params.lead
+// @rule largest: the output keeps each object whose cell count equals the
+//  largest cell count in the input
+// @rule order: the kept objects are ordered from params.lead by a key, the
+//  distance from params.lead to the object's nearest cell, and objects with
+//  the same key may take either order
+// @rule columns: the output has one line per kept object, laid out in that
+//  order from params.lead, each filled with that object's color
+// @rule height: each line is as long as the largest cell count
+
+// what the cell count and the order are taken over
+.type Piece =
+    // @claim largest
+    Objects {conn: Connect}
+    // @rule largest: each color's cells form one unit wherever they lie, and
+    //  the colors with the largest total cell count are kept
+    // @witness split-color: variant concept
+    //     @relaxed objects
+  | ColorClass {}
+
+// which cells join one object
+.type Connect =
+    // @claim objects
+    Conn8 {}
+    // @scene objects: only cells that share a side join one object
+    // @witness diagonal-link: borderline concept
+  | Conn4 {}
+
+// which distance to params.lead orders the kept units
+.type Rank =
+    // @claim order
+    NearEdge {}
+    // @rule order: the key is the center of the unit's bounding box
+    // @witness top-right-arm: borderline $BboxCenter
+    //     @relaxed apart
+    // @witness corner-vs-block: borderline $MeanCol
+    //     @relaxed apart
+    // @witness long-bar: borderline other
+    //     @relaxed apart
+  | BboxCenter {}
+    // @rule order: the key is the mean distance of the unit's cells
+    // @witness skewed-mass: borderline concept
+    //     @relaxed apart
+    // @witness top-right-arm: borderline $BboxCenter
+    // @witness corner-vs-block: borderline $MeanCol
+    // @witness long-bar: borderline other
+  | MeanCol {}
+    // @rule order: the key is read over the unit's line nearest
+    //  params.scan_from alone
+    // @witness narrow-ends: borderline concept
+    //     @relaxed apart
+  | FirstScan {}
+
+.type Choice = [piece: Piece, rank: Rank]
+
+.type TiebreakResolution =
+    End {} | Sit {line: Position, id: Ident, rest: TiebreakResolution}
+
+.decl out(p: Position, col: Color, ch: Choice, res: TiebreakResolution)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed objects
+    .decl bg(col: Color) bg(0).
+
+    // The edge the kept units are ordered from and laid out from. Both ends
+    // of the row axis fit the pairs.
+    .decl lead(d: Dir)
+    lead(DIR_L).
+    lead(DIR_R).
+
+    // --- $FirstScan ---
+    // The edge the scan takes lines from. Both ends fit the pairs.
+    .decl scan_from(d: Dir)
+    scan_from(DIR_T).
+    scan_from(DIR_B).
+}
+
+.init params = Params
+
+// A unit, under the piece reading that finds it.
+.type Part = [pc: Piece, id: Ident]
+
+// A unit, read toward an edge.
+.type Lean = [part: Part, d: Dir]
+
+// A cell with a cell between it and an edge.
+.type CellPair = [p: Position, q: Position]
+
+// A case's order under one open value: the lead edge, or for FirstScan the
+// corner the scan starts from.
+.type View = [ch: Choice, from: Dir8]
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+.decl piece_choice(pc: Piece)
+piece_choice($Objects($Conn8())). piece_choice($Objects($Conn4())). piece_choice($ColorClass()).
+
+.decl cell(pc: Piece, id: Ident, p: Position)
+
+// @claim largest height
+.init size = Tally<Part, Position>
+size.item([Pc, Id], P) :- cell(Pc, Id, P).
+
+// @claim largest height
+.init largest = Extremes<Piece>
+largest.cand(Pc, N) :- size.tally([Pc, _], N).
+
+.decl kept(pc: Piece, id: Ident)
+kept(Pc, Id) :- size.tally([Pc, Id], N), largest.high(Pc, N).
+
+// @claim columns
+.init kept_count = Tally<Piece, Ident>
+kept_count.item(Pc, Id) :- kept(Pc, Id).
+
+.decl layout_axis(a: Axis)
+layout_axis(A) :- params.lead(D), axis_of(D, A).
+
+.init chart = Frame2D<Piece>
+chart.extent(Pc, A, K) :- layout_axis(A), kept_count.tally(Pc, K).
+chart.extent(Pc, A2, N) :- layout_axis(A), perp(A, A2), largest.high(Pc, N).
+
+// The chart's line each output cell lies on.
+.decl line_of(pc: Piece, p: Position, p_line: Position)
+line_of(Pc, P, P_line) :- chart.cell(Pc, P), layout_axis(A), split(P, A, P_line, _).
+
+// @claim order
+.init obox = Bbox<Part>
+obox.cell([Pc, Id], P) :- cell(Pc, Id, P).
+
+// The keys read toward the lead edge alone.
+.decl lead_rank(k: Rank)
+lead_rank($NearEdge()). lead_rank($BboxCenter()). lead_rank($MeanCol()).
+
+.decl view(w: View, lead: Dir)
+view([[Pc, K], L], L) :- piece_choice(Pc), lead_rank(K), params.lead(L).
+
+// @claim order
+.init order = Order<View, Ident>
+order.elem([[Pc, K], D8], Id) :- view([[Pc, K], D8], _), kept(Pc, Id).
+
+// A unit sits no nearer the lead edge than the count of units before it;
+// seating them all leaves each the lines of its own tie.
+.init ties = TiebreakResolutions<View, Position, Ident>
+ties.cand([[Pc, K], D8], P_line, Id) :-
+    view([[Pc, K], D8], L), line_of(Pc, _, P_line), dist(P_line, L, N),
+    order.rank([[Pc, K], D8], Id, R), R <= N.
+
+// The color of a unit.
+.decl hue(pc: Piece, id: Ident, col: Color)
+hue(Pc, Id, Col) :- cell(Pc, Id, P), in(P, Col).
+
+// Resolutions under two open values of a case that draw some line in
+// different colors.
+.decl differ(w: View, res: TiebreakResolution, w2: View, res2: TiebreakResolution)
+differ([[Pc, K], D8], Res, [[Pc, K], D8_2], Res2) :-
+    ties.assign([[Pc, K], D8], Res, P_line, Id), hue(Pc, Id, Col),
+    ties.assign([[Pc, K], D8_2], Res2, P_line, Id2), hue(Pc, Id2, Col2),
+    D8 != D8_2, Col != Col2.
+
+// Another open value of the case draws the resolution's grid.
+.decl drawn(w: View, res: TiebreakResolution, w2: View)
+drawn([Ch, D8], Res, [Ch, D8_2]) :-
+    ties.resolution([Ch, D8], Res), ties.resolution([Ch, D8_2], Res2), D8 != D8_2,
+    !differ([Ch, D8], Res, [Ch, D8_2], Res2).
+
+// A resolution whose grid some other open value of the case does not draw.
+.decl lacks(w: View, res: TiebreakResolution)
+lacks([Ch, D8], Res) :-
+    ties.resolution([Ch, D8], Res), view([Ch, D8_2], _), D8 != D8_2,
+    !drawn([Ch, D8], Res, [Ch, D8_2]).
+
+out(P, Col, [Pc, K], Res) :-
+    line_of(Pc, P, P_line), ties.assign([[Pc, K], D8], Res, P_line, Id),
+    !lacks([[Pc, K], D8], Res), hue(Pc, Id, Col).
+
+// --- $Conn8 ---
+
+// @claim objects
+.init objs8 = Components8<Color>
+objs8.node(Col, P) :- ink(P, Col).
+
+cell($Objects($Conn8()), Id, P) :- objs8.label(_, P, Id).
+
+// --- $Conn4 ---
+
+// @claim objects
+.init objs4 = Components<Color>
+objs4.node(Col, P) :- ink(P, Col).
+
+cell($Objects($Conn4()), Id, P) :- objs4.label(_, P, Id).
+
+// --- $ColorClass ---
+
+.init classes = Canon<Position>
+classes.equiv(P, Q) :- ink(P, Col), ink(Q, Col).
+
+cell($ColorClass(), Id, P) :- classes.id(P, Id).
+
+// --- $NearEdge ---
+
+order.before([[Pc, $NearEdge()], L], A, B) :-
+    params.lead(L),
+    obox.box([Pc, A], B1), dist(B1, L, K1),
+    obox.box([Pc, B], B2), dist(B2, L, K2), K1 < K2.
+
+// --- $BboxCenter ---
+
+// B's box is farther than A's from the lead edge by more than it is farther
+// from the opposite edge, so its center is farther from the lead edge.
+order.before([[Pc, $BboxCenter()], L], A, B) :-
+    params.lead(L), opposite(L, O),
+    obox.box([Pc, A], B1), obox.box([Pc, B], B2), relative(B1, B2, B_shift),
+    dist(B_shift, L, K1), dist(B_shift, O, K2), K1 > K2.
+
+// --- $MeanCol ---
+
+// The sum of a unit's cell distances to an edge: one member per cell and per
+// cell between it and that edge on its line.
+// @claim order
+.init reach = Tally<Lean, CellPair>
+reach.item([[Pc, Id], L], [P, Q]) :-
+    cell(Pc, Id, P), params.lead(L), axis_of(L, A),
+    in(Q, _), same_line(A, P, Q), nearer(L, Q, P).
+reach.domain([[Pc, Id], L]) :- cell(Pc, Id, _), params.lead(L).
+
+// The kept units share one size, so the lower sum is the lower mean.
+order.before([[Pc, $MeanCol()], L], A, B) :-
+    reach.tally([[Pc, A], L], N1), reach.tally([[Pc, B], L], N2), N1 < N2.
+
+// --- $FirstScan ---
+
+// The corner a scan starts from, with its lead edge and its scan edge.
+.decl scan_corner(c: DiagDir, l: Dir, s: Dir)
+scan_corner(C, L, S) :- params.lead(L), params.scan_from(S), diag_dirs(C, _, L, S).
+
+view([[Pc, $FirstScan()], C], L) :- piece_choice(Pc), scan_corner(C, L, _).
+
+// A unit's line nearest the scan edge.
+// @claim order
+.init head = Bbox<Lean>
+head.cell([[Pc, Id], S], P) :-
+    params.scan_from(S), obox.box([Pc, Id], B), dist(B, S, K),
+    cell(Pc, Id, P), dist(P, S, K).
+
+order.before([[Pc, $FirstScan()], C], A, B) :-
+    scan_corner(C, L, S),
+    head.box([[Pc, A], S], B1), dist(B1, L, K1),
+    head.box([[Pc, B], S], B2), dist(B2, L, K2), K1 < K2.
+
+.comp Determine {
+    // An edge some output contradicts: a line across its axis holds two colors.
+    .decl clash(d: Dir)
+    clash(D) :-
+        ex_out(E, P, C1), ex_out(E, Q, C2), C1 != C2, dir_elem(D), same_dist(D, P, Q).
+
+    // The kept units lie apart along the lead's axis, so either end of it
+    // orders them alike, and so does every scan edge across it.
+    .decl lead(d: Dir)
+    lead(D) :- dir_elem(D), !clash(D).
+
+    .decl scan_from(d: Dir)
+    scan_from(S) :- lead(D), perp_dir(D, S).
+}

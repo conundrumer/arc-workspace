@@ -22,7 +22,7 @@
     .decl bg(c: Color) bg(0).
     .decl marker(c: Color) marker(4).
 
-    // --- Stored ---
+    // --- $Stored ---
     .decl head(c: Color) head(2).
 }
 
@@ -48,11 +48,11 @@ legend_cell(C, P, Col) :-
 
 .decl head_of(c: Color, col: Color, ch: Choice)
 
-// --- Stored ---
+// --- $Stored ---
 
 head_of(C, Col, $Stored()) :- wall_color(C), params.head(Col).
 
-// --- Minority ---
+// --- $Minority ---
 
 .type LegendInk = [c: Color, col: Color]
 

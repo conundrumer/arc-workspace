@@ -42,14 +42,14 @@ box_size(Id, A, N) :- boxes.cell(Id, P), boxes.box(Id, B), box_extent(B, P, A, N
 
 .decl square_id(ch: Choice, id: Ident)
 
-// --- Multicolor ---
+// --- $Multicolor ---
 
 .init obj_col = Unanimous<Ident, Color>
 obj_col.item(Id, Col) :- objs.label($U(), P, Id), in(P, Col).
 
 square_id($Multicolor(), Id) :- obj_col.clash(Id).
 
-// --- Smallest ---
+// --- $Smallest ---
 
 .init by_extent = ArgExtremes<Unit, Ident>
 by_extent.cand($U(), Id, N) :- box_size(Id, _, N).

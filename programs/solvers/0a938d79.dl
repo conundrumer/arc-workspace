@@ -21,7 +21,7 @@
 .comp Params {
     .decl bg(col: Color) bg(0).
 
-    // --- Corner ---
+    // --- $Corner ---
     .decl origin(d: DiagDir) origin(DIAG_TL).   // the corner the walk starts from
 }
 
@@ -51,13 +51,13 @@ mark_line(P_line, Col) :- mark(P, Col), cell_line(P, P_line).
 // The line the walk starts from.
 .decl lead(p: Position, ch: Choice)
 
-// --- Corner ---
+// --- $Corner ---
 lead(P_line, $Corner()) :-
     mark_line(P_line, _), mark_line(Q, _),                    // the two mark lines
     params.origin(Dg), step_axis(A2), dir_of(Dg, A2, D),      // the origin side
     nearer(D, P_line, Q).
 
-// --- Margin ---
+// --- $Margin ---
 lead(P_line, $Margin()) :-
     mark_line(P_line, _), mark_line(Q, _),               // the two mark lines
     step_axis(A2), dir_elem(D), axis_of(D, A2),          // a side

@@ -22,7 +22,7 @@
     .decl piece(col: Color) piece(0).
     .decl corridor(col: Color) corridor(1).
 
-    // --- Goal ---
+    // --- $Goal ---
     .decl marker(col: Color) marker(2).
 }
 
@@ -58,7 +58,7 @@ covered(Delta, P2) :- stop(Delta), piece_cell(P), compose(P, Delta, P2).
 // Where the piece comes to rest.
 .decl rest(delta: Offset, ch: Choice)
 
-// --- Corridor ---
+// --- $Corridor ---
 
 // A stop with one way on has the corridor ending at it: that one way is the
 // way the piece came.
@@ -67,7 +67,7 @@ onward.item(Delta, D) :- slide.halt($U(), Delta, D, _).
 
 rest(Delta, $Corridor()) :- stop(Delta), Delta != ZERO, onward.value(Delta, _).
 
-// --- Goal ---
+// --- $Goal ---
 
 // What the marker still reaches with the piece standing at a stop.
 .init ahead = Reach<Offset>

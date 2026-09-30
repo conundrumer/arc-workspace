@@ -1,6 +1,6 @@
 """The solver docs and the lib as a session reads them."""
 
-from dl.context import write_agent
+from handbook.context import write_agent
 
 
 def test_the_agent_file_is_written_whole_and_left_alone_when_unchanged(tmp_path):

@@ -19,7 +19,7 @@
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
-    // --- Empty ---
+    // --- $Empty ---
     .decl bg(col: Color) bg(0).
 }
 
@@ -51,10 +51,10 @@ hole(B, P) :- frame(_, B), in(P, _), interior(P, B).
 .init occ = Occurrences<FrameKey, Color>
 occ.cell([Ch, B], P, Col) :- impl_choice(Ch), frame(_, B), in(P, Col).
 
-// --- Content ---
+// --- $Content ---
 occ.shape([$Content(), B], S, Col) :- hole(B, S), in(S, Col).
 
-// --- Empty ---
+// --- $Empty ---
 occ.shape([$Empty(), B], S, Col) :- hole(B, S), params.bg(Col).
 
 .decl twin(ch: Choice, b: Box, p: Position)

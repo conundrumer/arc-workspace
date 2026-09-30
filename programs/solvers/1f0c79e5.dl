@@ -57,13 +57,13 @@ out(P, Col, Ch) :-
     ; !ray.ray(Ch, P, _, _, _), params.bg(Col)   // untouched
     ).
 
-// --- Corner ---
+// --- $Corner ---
 
 heading(D, $Corner()) :-
     marker(P), block(P),                      // a mark of the block
     bbox.box($U(), B), box_corner(P, B, D).   // at a corner of the block's box
 
-// --- Quadrant ---
+// --- $Quadrant ---
 
 // A block cell in the block's frame.
 .decl block_inner(p: Position, p_inner: Position)

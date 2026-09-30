@@ -61,12 +61,12 @@ obj.node(Col, P) :- in(P, Col), !field.mode($U(), Col).
 
 .decl stencil(id: Ident, s: Stencil)
 
-// --- Bordering ---
+// --- $Bordering ---
 stencil(Id, $Bordering()) :-
     closed.region($U(), P, _), dir_elem(D), neighbor(P, D, Q),   // beside a closed cell
     obj.label(_, Q, Id).
 
-// --- Largest ---
+// --- $Largest ---
 .init biggest = Mode<Unit, Ident, Position>
 biggest.item($U(), Id, P) :- obj.label(_, P, Id).
 
@@ -79,13 +79,13 @@ stencil_box.cell(S, P) :- stencil(Id, S), obj.label(_, P, Id).
 
 .decl cutout(ch: Choice, p: Position, id: Ident)
 
-// --- Box ---
+// --- $Box ---
 .init boxed = Components<Stencil>
 boxed.node(S, P) :- stencil_box.box(S, B), field_cell(P), inside(P, B).
 
 cutout([S, $Box()], P, Id) :- boxed.label(S, P, Id).
 
-// --- Closed ---
+// --- $Closed ---
 cutout([S, $Closed()], P, Id) :- stencil_choice(S), closed.region($U(), P, Id).
 
 // --- shapes ---

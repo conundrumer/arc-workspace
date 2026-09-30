@@ -30,10 +30,10 @@
     .decl base_dir(d: Dir) base_dir(DIR_L).   // edge the base tile sits toward
     .decl gap(g: number) gap(1).            // separator width
 
-    // --- Count ---
+    // --- $Count ---
     .decl tile_count(n: number) tile_count(2).
 
-    // --- Size ---
+    // --- $Size ---
     .decl tile_size(k: number) tile_size(4).
 }
 
@@ -76,7 +76,7 @@ hole(P, Dc) :- base(P, Col, Dc), params.bg(Col).
 .decl unfit(ch: Choice)
 unfit([Cr, Dc]) :- impl_choice([Cr, Dc]), piece(P, _, Dc), !hole(P, Dc).
 
-// --- Exact ---
+// --- $Exact ---
 unfit([$Exact(), Dc]) :- dec_choice(Dc), hole(P, Dc), !piece(P, _, Dc).
 
 out(P, Col, [Cr, Dc]) :-

@@ -30,9 +30,9 @@
     //  wholly on opposite sides of it along one axis. The target is the one
     //  of those two that is a solid rectangle spanning the projectile across
     //  that axis, and the wedge is the other.
-    // @witness wedge-apart: variant projectile-between
+    // @witness wedge-apart: variant $ProjectileBetween
     //     @relaxed wedge
-    // @witness bar-launcher: variant projectile-between
+    // @witness bar-launcher: variant $ProjectileBetween
     //     @relaxed wedge
   | ProjectileBetween {}
 
@@ -42,9 +42,9 @@
     FromWedge {}
     // @rule launch-direction: the projectile moves toward the side on which
     //  the target lies wholly beyond it
-    // @witness target-aside: foreign push-out
+    // @witness target-aside: foreign $PushOut
     //     @relaxed target
-    // @witness target-behind: foreign push-out
+    // @witness target-behind: foreign $PushOut
     //     @relaxed target
     // @witness wedge-corner: foreign any
     //     @relaxed wedge
@@ -79,12 +79,12 @@
     // @rule target-split: each half shifts by the count of projectile lines
     //  strictly on its side of the projectile's center line. A cell on the
     //  cut line is in neither half, and the model is undefined.
-    // @witness odd-aside: foreign push-out
+    // @witness odd-aside: foreign $PushOut
     //     @relaxed projectile
     //     @relaxed target
     // @witness odd-even: borderline any
     //     @relaxed projectile
-    // @witness odd-offset: foreign odd-floor
+    // @witness odd-offset: foreign $OddFloor
     //     @relaxed projectile
     //     @relaxed target
     // @witness odd-side-tip: foreign concept
@@ -93,8 +93,8 @@
     // @rule target-split: each half shifts by the count of the projectile's
     //  lines it covers ahead of the projectile. A cell on the cut line is in
     //  neither half, and the model is undefined.
-    // @witness target-aside: foreign push-out
-    // @witness target-behind: foreign push-out
+    // @witness target-aside: foreign $PushOut
+    // @witness target-behind: foreign $PushOut
     // @witness partial-path: borderline concept
     //     @relaxed target
   | PushOut {}
@@ -115,9 +115,11 @@
 
 .comp Params {
     // @derive DominantColor: variant derived
+    // @ignore: derive concept — wherever it is defined, it gives the output of
+    //  the OddFloor copy
     .decl bg(c: Color) bg(7).
 
-    // --- StopPerAxis ---
+    // --- $StopPerAxis ---
     // The axis on which the projectile stops by its leading side.
     .decl far_axis(a: Axis) far_axis(AXIS_V).
 
@@ -127,18 +129,18 @@
     anchor(D, D) :- far_axis(A), axis_of(D, A).
     anchor(D, D_a) :- axis_of(D, A), !far_axis(A), opposite(D, D_a).
 
-    // --- ShiftOne ---
+    // --- $ShiftOne ---
     .decl shift(k: number) shift(1).
 }
 
 .init params = Params
 
-// Every combination of the branches, less each case that gives the output
-// of the case with HalfWidth in its place on every input.
+// Every combination of the branches, less each case that gives another
+// case's output on every input, and each case that another case subsumes.
 .decl impl_choice(ch: Choice)
 impl_choice([R, L, St, Sh, C]) :-
     roles_choice(R), launch_choice(L), stop_choice(St), shift_choice(Sh), split_line_choice(C),
-    !as_half_width([R, L, St, Sh, C]).
+    !as_half_width([R, L, St, Sh, C]), !subsumed([R, L, St, Sh, C]).
 
 // Under ProjectileBetween, the target spans the projectile, so a cut on the
 // path's center line strands a target cell when the width is odd. OddFloor
@@ -152,6 +154,22 @@ as_half_width([$ProjectileBetween(), L, St, $OddFloor(), $PathCenter()]) :-
 as_half_width([$ProjectileBetween(), L, St, $PushOut(), $PathCenter()]) :-
     launch_choice(L), L != $WedgeTip(), stop_choice(St).
 as_half_width([$ProjectileBetween(), $WedgeTip(), $StopPerAxis(), $OddFloor(), $PathCenter()]).
+
+// The cases whose output another case gives wherever they are defined, and
+// that case is defined on more inputs.
+.decl subsumed(ch: Choice)
+// Under ProjectileBetween, the wedge lies opposite the target, so FromWedge
+// launches toward the target. A wedge that also lies wholly off to one side
+// gives FromWedge two launch directions, and TowardTarget still has one.
+subsumed([$ProjectileBetween(), $FromWedge(), St, Sh, C]) :-
+    stop_choice(St), shift_choice(Sh), split_line_choice(C).
+// OddFloor gives HalfWidth's shift on an even width, and it has one on an odd
+// width too. Where the OddFloor case gives the HalfWidth case's output on
+// every input, the HalfWidth case stays.
+subsumed([R, L, St, $HalfWidth(), C]) :-
+    roles_choice(R), launch_choice(L), stop_choice(St), split_line_choice(C),
+    [R, L, St, $HalfWidth(), C] != [$Touch(), $FromWedge(), $ToEdge(), $HalfWidth(), $PathCenter()],
+    !as_half_width([R, L, St, $OddFloor(), C]).
 
 .decl roles_choice(r: Roles)
 roles_choice($Touch()). roles_choice($ProjectileBetween()).
@@ -204,12 +222,12 @@ short_side(Id, Id2, D) :-
 
 .decl roles(r: Roles, w: Ident, p: Ident, t: Ident)
 
-// --- Touch ---
+// --- $Touch ---
 roles($Touch(), W, P, T) :-
     touch(W, P), !rect(W),                    // the wedge is the one non-rectangle
     rect(P), rect(T), T != P.
 
-// --- ProjectileBetween ---
+// --- $ProjectileBetween ---
 roles($ProjectileBetween(), W, P, T) :-
     beyond(T, P, D), opposite(D, D2), beyond(W, P, D2),
     rect(T), !short_side(P, T, D).            // the target spans the projectile
@@ -217,14 +235,14 @@ roles($ProjectileBetween(), W, P, T) :-
 // The roles with the launch direction.
 .decl shot(r: Roles, l: Launch, p: Ident, t: Ident, d: Dir)
 
-// --- FromWedge ---
+// --- $FromWedge ---
 shot(R, $FromWedge(), P, T, D) :-
     roles(R, W, P, T), beyond(W, P, D_back), opposite(D_back, D).
 
-// --- TowardTarget ---
+// --- $TowardTarget ---
 shot(R, $TowardTarget(), P, T, D) :- roles(R, _, P, T), beyond(T, P, D).
 
-// --- WedgeTip ---
+// --- $WedgeTip ---
 // A cell off the object's back side from D with no object cell behind it.
 .decl unbacked(id: Ident, d: Dir)
 unbacked(Id, D) :-
@@ -243,11 +261,11 @@ shot(R, $WedgeTip(), P, T, D) :-
 // The projectile's translation.
 .decl travel(st: Stop, p: Ident, t: Ident, d: Dir, v: Offset)
 
-// --- ToEdge ---
+// --- $ToEdge ---
 travel($ToEdge(), P, T, D, V) :-
     shot(_, _, P, T, D), hull.box(P, B), dist(B, D, K), jump_offset(D, K, V).
 
-// --- StopPerAxis ---
+// --- $StopPerAxis ---
 travel($StopPerAxis(), P, T, D, V) :-
     shot(_, _, P, T, D), params.anchor(D, D_a), axis_of(D, A),
     hull.box(P, B), obj(P, Q), box_edge(Q, B, D_a),
@@ -279,10 +297,10 @@ center_line(Id, D) :- lines.rank([Id, D], K, R), lines.rank_desc([Id, D], K, R).
 // The object whose center line cuts the target.
 .decl cut_owner(c: SplitLine, p: Ident, t: Ident, o: Ident)
 
-// --- PathCenter ---
+// --- $PathCenter ---
 cut_owner($PathCenter(), P, T, P) :- shot(_, _, P, T, _).
 
-// --- SplitTargetCenter ---
+// --- $SplitTargetCenter ---
 cut_owner($SplitTargetCenter(), P, T, T) :- shot(_, _, P, T, _).
 
 // The halves of target T, launched toward D, under the cut on O's center
@@ -305,19 +323,19 @@ half_width.domain([Id, D]) :- hull.box(Id, _), dir_elem(D).
 // How far each half of the target moves.
 .decl amount(sh: Shift, p: Ident, t: Ident, o: Ident, d: Dir, e: Dir, k: number)
 
-// --- HalfWidth ---
+// --- $HalfWidth ---
 amount($HalfWidth(), P, T, O, D, E, K) :-
     halves(P, T, O, D, E), half_width.tally([P, E], K),
     !center_line(P, E).                      // the projectile's width is even
 
-// --- ShiftOne ---
+// --- $ShiftOne ---
 amount($ShiftOne(), P, T, O, D, E, K) :- halves(P, T, O, D, E), params.shift(K).
 
-// --- OddFloor ---
+// --- $OddFloor ---
 amount($OddFloor(), P, T, O, D, E, K) :-
     halves(P, T, O, D, E), half_width.tally([P, E], K).
 
-// --- PushOut ---
+// --- $PushOut ---
 .type Half = [p: Ident, t: Ident, o: Ident, d: Dir, e: Dir]
 
 // The projectile's lines each half covers ahead of the projectile.

@@ -1,0 +1,136 @@
+// aaef0977
+// @draft
+// @keywords: markers rings walk lookup
+// @scene field: a field of the background color params.bg.
+// @scene seed: exactly one cell is not background; its color is on the cycle.
+// @rule diamond-rings: each cell's ring is its Manhattan distance to the seed cell.
+// @rule cycle-color: a cell at ring k takes the color k steps after the seed's
+//  color along params.cycle_succ.
+// @rule total: every cell is painted this way, and the output has the input's size.
+
+// how many seeds the input holds, and how a cell picks its seed
+.type Choice =
+    // @claim seed
+    OneSeed {}
+    // @scene seed: one or more non-background cells, each a seed.
+    // @rule diamond-rings: each cell's ring is its Manhattan distance to the
+    //  nearest seed, and the ring's colors start from that seed's color;
+    //  undefined where two nearest seeds give different colors.
+    // @witness two-seeds: variant $NearestSeed
+    //     @relaxed seed
+  | NearestSeed {}
+    // @scene seed: one or more non-background cells, each a seed.
+    // @rule diamond-rings: each cell's ring is its Manhattan distance to the
+    //  last seed in the scan order params.scan_corner, params.scan_axis.
+    // @witness two-seeds-scan: variant $NearestSeed
+    //     @relaxed seed
+    //     @reassigned scan_corner
+  | LastSeed {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: borderline derived
+    //     @relaxed field
+    .decl bg(c: Color) bg(7).
+
+    // The colors as a cycle: each color and the next.
+    .decl cycle_succ(c: Color, c_next: Color)
+    cycle_succ(3, 4).
+    cycle_succ(4, 0).
+    cycle_succ(0, 5).
+    cycle_succ(5, 2).
+    cycle_succ(2, 8).
+    cycle_succ(8, 9).
+    cycle_succ(9, 6).
+    cycle_succ(6, 1).
+    cycle_succ(1, 3).
+
+    // --- $LastSeed ---
+    // The scan order whose last seed rings the grid. The pairs hold one seed
+    // each, so every value stays open.
+    .decl scan_corner(d: DiagDir)
+    scan_corner(DIAG_TL). scan_corner(DIAG_TR). scan_corner(DIAG_BL). scan_corner(DIAG_BR).
+    .decl scan_axis(a: Axis) scan_axis(AXIS_V). scan_axis(AXIS_H).
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    .type Scan = [ky: Key, corner: DiagDir, axis: Axis]
+
+    .decl cell(key: Key, p: Position, col: Color)  // @input
+
+    .decl seed(key: Key, p: Position, col: Color)
+    seed(Ky, P, Col) :- cell(Ky, P, Col), !params.bg(Col).
+
+    // The Manhattan distance from each cell to each seed.
+    .decl taxicab(key: Key, p: Position, s: Position, k: number)
+    taxicab(Ky, P, S, K) :-
+        cell(Ky, P, _), seed(Ky, S, _), relative(S, P, V),
+        diag_dist(V, Diag, _, K1, K2), K1 >= 0, K2 >= 0,   // the corner facing away from P
+        corner_dist(V, Diag, K).
+
+    // The seeds in each scan order: from a corner, along a primary axis.
+    // @claim diamond-rings
+    .init scan = LexOrder<Scan>
+    scan.corner([Ky, C, A], C) :- scan.cell([Ky, C, A], _).
+    scan.axis([Ky, C, A], A) :- scan.cell([Ky, C, A], _).
+    scan.cell([Ky, C, A], S) :- seed(Ky, S, _), diag_dir_elem(C), axis_elem(A).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+// @claim cycle-color
+.init cycle = CycleWalk<Unit, Color>
+cycle.succ($U(), C, C2) :- params.cycle_succ(C, C2).
+cycle.step($U(), K) :- parse.taxicab($U(), _, _, K).
+
+// The color seed S gives cell P: the seed's color advanced by P's ring.
+.decl hue(p: Position, s: Position, col: Color)
+hue(P, S, Col) :-
+    parse.taxicab($U(), P, S, K), parse.seed($U(), S, C0), cycle.walk($U(), C0, K, Col).
+
+// --- $OneSeed ---
+out(P, Col, $OneSeed()) :- hue(P, _, Col).
+
+// --- $NearestSeed ---
+
+// @claim diamond-rings
+.init nearest = ArgExtremes<Position, Position>
+nearest.cand(P, S, K) :- parse.taxicab($U(), P, S, K).
+
+out(P, Col, $NearestSeed()) :- nearest.low(P, S, _), hue(P, S, Col).
+
+// --- $LastSeed ---
+// Each open scan order's last seed; seeds that differ give a cell two colors.
+out(P, Col, $LastSeed()) :-
+    params.scan_corner(C), params.scan_axis(A), parse.scan.last([$U(), C, A], S),
+    hue(P, S, Col).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // The colors of two neighboring cells, the second one ring farther out.
+    .decl cycle_succ(c: Color, c_next: Color)
+    cycle_succ(C, C2) :-
+        parse.taxicab(E, P, S, K), dir_elem(D), neighbor(P, D, Q),
+        parse.taxicab(E, Q, S, K2), K2 > K,
+        ex_out(E, P, C), ex_out(E, Q, C2).
+
+    // A scan order whose last seed is not the rings' center: two cells at one
+    // distance from it differ in color.
+    .decl scan_contradicted(d: DiagDir, a: Axis)
+    scan_contradicted(D, A) :-
+        parse.scan.last([E, D, A], S),
+        parse.taxicab(E, P, S, K), parse.taxicab(E, Q, S, K),
+        ex_out(E, P, C), ex_out(E, Q, C2), C != C2.
+
+    .decl scan_kept(d: DiagDir, a: Axis)
+    scan_kept(D, A) :- diag_dir_elem(D), axis_elem(A), !scan_contradicted(D, A).
+
+    .decl scan_corner(d: DiagDir) scan_corner(D) :- scan_kept(D, _).
+    .decl scan_axis(a: Axis) scan_axis(A) :- scan_kept(_, A).
+}

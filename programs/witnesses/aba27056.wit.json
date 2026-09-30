@@ -1,0 +1,135 @@
+{
+  "id": "aba27056",
+  "witnesses": [{
+    "id": "two-openings",
+    "separates": "The top wall of the box has two openings, one cell each, split by two wall cells. $EachOpening casts a band and two diagonal rays from each opening, so the inner rays cross above the wall. $SideSpan reads the side from the first to the last opening cell as one opening, casts one band four cells wide over it, and sends rays only from its two outer ends. The concept reads exactly one opening and is undefined here.",
+    "input": [
+      [0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0],
+      [0,6,0,6,6,0,6,6,0],
+      [0,6,0,0,0,0,0,6,0],
+      [0,6,0,0,0,0,0,6,0],
+      [0,6,0,0,0,0,0,6,0],
+      [0,6,6,6,6,6,6,6,0]
+    ],
+    "output": [{
+      "cases": ["concept"],
+      "grid": null
+    }, {
+      "cases": ["$EachOpening"],
+      "grid": [
+        [0,4,4,0,0,4,4,0,0],
+        [0,0,4,0,0,4,0,0,4],
+        [4,0,4,4,4,4,0,4,0],
+        [0,4,4,4,4,4,4,0,0],
+        [0,6,4,6,6,4,6,6,0],
+        [0,6,4,4,4,4,4,6,0],
+        [0,6,4,4,4,4,4,6,0],
+        [0,6,4,4,4,4,4,6,0],
+        [0,6,6,6,6,6,6,6,0]
+      ]
+    }, {
+      "cases": ["$SideSpan"],
+      "grid": [
+        [0,0,4,4,4,4,0,0,0],
+        [0,0,4,4,4,4,0,0,4],
+        [4,0,4,4,4,4,0,4,0],
+        [0,4,4,4,4,4,4,0,0],
+        [0,6,4,6,6,4,6,6,0],
+        [0,6,4,4,4,4,4,6,0],
+        [0,6,4,4,4,4,4,6,0],
+        [0,6,4,4,4,4,4,6,0],
+        [0,6,6,6,6,6,6,6,0]
+      ]
+    }]
+  }, {
+    "id": "stray-inside",
+    "separates": "A cell of color 5 sits inside the box, which has one opening on its top side. $PaintAll paints that cell with the rest of the interior; $PaintBackground paints only background cells and keeps the 5.",
+    "input": [
+      [0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0],
+      [0,6,6,0,6,6,0],
+      [0,6,0,0,0,6,0],
+      [0,6,0,5,0,6,0],
+      [0,6,6,6,6,6,0]
+    ],
+    "output": [{
+      "cases": ["$PaintAll"],
+      "grid": [
+        [4,0,0,4,0,0,4],
+        [0,4,0,4,0,4,0],
+        [0,0,4,4,4,0,0],
+        [0,6,6,4,6,6,0],
+        [0,6,4,4,4,6,0],
+        [0,6,4,4,4,6,0],
+        [0,6,6,6,6,6,0]
+      ]
+    }, {
+      "cases": ["$PaintBackground"],
+      "grid": [
+        [4,0,0,4,0,0,4],
+        [0,4,0,4,0,4,0],
+        [0,0,4,4,4,0,0],
+        [0,6,6,4,6,6,0],
+        [0,6,4,4,4,6,0],
+        [0,6,4,5,4,6,0],
+        [0,6,6,6,6,6,0]
+      ]
+    }]
+  }, {
+    "id": "background=DominantColor",
+    "separates": "The background derived as the dominant color from the stored background: train 0 with 0 and 1 swapped",
+    "input": [
+      [1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1],
+      [1,6,6,1,6,6,1],
+      [1,6,1,1,1,6,1],
+      [1,6,6,6,6,6,1]
+    ],
+    "output": [{
+      "cases": ["concept"],
+      "grid": null
+    }, {
+      "cases": [
+        "$EachOpening & $PaintAll & background=stored",
+        "$SideSpan & $PaintAll & background=stored"
+      ],
+      "grid": [
+        [1,1,1,1,1,1,1],
+        [1,4,4,4,4,4,1],
+        [1,4,4,4,4,4,1],
+        [1,4,4,4,4,4,1],
+        [1,4,4,4,4,4,1],
+        [1,4,4,4,4,4,1],
+        [1,6,6,6,6,6,1]
+      ]
+    }, {
+      "cases": ["background=DominantColor"],
+      "grid": [
+        [1,1,1,4,1,1,1],
+        [4,1,1,4,1,1,4],
+        [1,4,1,4,1,4,1],
+        [1,1,4,4,4,1,1],
+        [1,6,6,4,6,6,1],
+        [1,6,4,4,4,6,1],
+        [1,6,6,6,6,6,1]
+      ]
+    }, {
+      "cases": ["$PaintBackground & background=stored"],
+      "grid": [
+        [1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1],
+        [1,6,6,1,6,6,1],
+        [1,6,1,1,1,6,1],
+        [1,6,6,6,6,6,1]
+      ]
+    }]
+  }]
+}

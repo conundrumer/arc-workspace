@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from dl.context import DOCS_DIR, EDITING_DOC
+from handbook.context import DOCS_DIR, EDITING_DOC
 
 ROOT = Path(__file__).resolve().parents[2]
 SERVER_PY = ROOT / "tools" / "console" / "server.py"

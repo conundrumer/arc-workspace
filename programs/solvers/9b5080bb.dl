@@ -26,7 +26,7 @@
     //  cell the figure lacks; a bump is the one figure cell on a line of the
     //  figure's box, and the rectangle is the box with those lines pulled in
     // @witness two-bumps: ordinary concept
-    // @witness crowded-side: borderline Lone
+    // @witness crowded-side: borderline $Lone
     //     @relaxed figure
   | Lone {}
 
@@ -70,7 +70,7 @@ mark_color(Id, Col2) :- panel_of.value(Id, H), panel(H, Col), panel(_, Col2), Co
 // The figure's rectangle.
 .decl rect(id: Ident, b: Box, ch: Choice)
 
-// --- Majority ---
+// --- $Majority ---
 
 .type Line = [id: Ident, a: Axis, l: Position]
 
@@ -89,7 +89,7 @@ majority_rect.edge(Id, D, K) :- side_end.mode([Id, D], K).
 
 rect(Id, B, $Majority()) :- majority_rect.box(Id, B).
 
-// --- Body ---
+// --- $Body ---
 
 // The three cells that complete P's 2×2 square on corner Diag's side.
 .decl quad(p: Position, diag: DiagDir, q1: Position, q2: Position, q3: Position) inline
@@ -109,7 +109,7 @@ body_box.cell(Id, P) :- body(Id, P).
 
 rect(Id, B, $Body()) :- body_box.box(Id, B).
 
-// --- Lone ---
+// --- $Lone ---
 
 // @claim figure
 .init figure_box = Bbox<Ident>
@@ -131,7 +131,7 @@ lone_rect.edge(Id, D, K) :-
 
 rect(Id, B, $Lone()) :- lone_rect.box(Id, B).
 
-// --- Majority, Body, Lone ---
+// --- $Majority, $Body, $Lone ---
 
 // A side cell where the figure crosses the side: a dent, or the foot of a
 // bump.

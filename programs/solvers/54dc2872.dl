@@ -88,11 +88,11 @@ out(P, Col, Ch) :-
     ; !render(P, _, Ch), params.bg(Col)
     ).
 
-// --- Translate ---
+// --- $Translate ---
 
 moves(Id, $Translate()) :- shift(Id, _).
 
-// --- Slide ---
+// --- $Slide ---
 
 moves(Id, $Slide()) :-
     bend(Id, B, G), diag_opposite(G, D), diag_axis_of(D, A),  // the way the L points

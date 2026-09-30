@@ -2,17 +2,21 @@
   "id": "a57f2f04",
   "witnesses": [{
     "id": "off-lattice",
-    "separates": "A 7x6 panel with a 3x3 motif at its top-left: the motif's height does not divide the panel's. The concept lays the lattice through the motif and cuts the last row short; corner-anchor, with its open corners narrowed to the bottom two, lays the lattice from the panel's bottom and puts the cut row at the top.",
+    "separates": "A 7x6 panel with a 3x3 motif at its top-left: the motif's height does not divide the panel's. The concept lays the lattice through the motif and cuts the last row short; $CornerAnchor, with its open corners narrowed to the bottom two, lays the lattice from the panel's bottom and puts the cut row at the top.",
     "input": [
-      [8,8,8,8,8,8,8,8],
-      [8,2,2,0,0,0,0,8],
-      [8,0,2,2,0,0,0,8],
-      [8,2,0,2,0,0,0,8],
-      [8,0,0,0,0,0,0,8],
-      [8,0,0,0,0,0,0,8],
-      [8,0,0,0,0,0,0,8],
-      [8,0,0,0,0,0,0,8],
-      [8,8,8,8,8,8,8,8]
+      [8,8,8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,2,2,0,0,0,0,8,8,8],
+      [8,8,8,0,2,2,0,0,0,8,8,8],
+      [8,8,8,2,0,2,0,0,0,8,8,8],
+      [8,8,8,0,0,0,0,0,0,8,8,8],
+      [8,8,8,0,0,0,0,0,0,8,8,8],
+      [8,8,8,0,0,0,0,0,0,8,8,8],
+      [8,8,8,0,0,0,0,0,0,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8,8,8]
     ],
     "assign": {
       "anchor": [
@@ -21,56 +25,43 @@
       ]
     },
     "output": [{
-      "cases": [
-        "concept",
-        "DeriveField",
-        "DiagPanel",
-        "DeriveBlank",
-        "ColorBox",
-        "CornerBox",
-        "ComponentBbox"
-      ],
+      "cases": ["$TileLattice"],
       "grid": [
-        [8,8,8,8,8,8,8,8],
-        [8,2,2,0,2,2,0,8],
-        [8,0,2,2,0,2,2,8],
-        [8,2,0,2,2,0,2,8],
-        [8,2,2,0,2,2,0,8],
-        [8,0,2,2,0,2,2,8],
-        [8,2,0,2,2,0,2,8],
-        [8,2,2,0,2,2,0,8],
-        [8,8,8,8,8,8,8,8]
+        [8,8,8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,2,2,0,2,2,0,8,8,8],
+        [8,8,8,0,2,2,0,2,2,8,8,8],
+        [8,8,8,2,0,2,2,0,2,8,8,8],
+        [8,8,8,2,2,0,2,2,0,8,8,8],
+        [8,8,8,0,2,2,0,2,2,8,8,8],
+        [8,8,8,2,0,2,2,0,2,8,8,8],
+        [8,8,8,2,2,0,2,2,0,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8,8,8]
       ]
     }, {
-      "cases": ["CornerAnchor"],
+      "cases": ["$CornerAnchor"],
       "grid": [
-        [8,8,8,8,8,8,8,8],
-        [8,2,0,2,2,0,2,8],
-        [8,2,2,0,2,2,0,8],
-        [8,0,2,2,0,2,2,8],
-        [8,2,0,2,2,0,2,8],
-        [8,2,2,0,2,2,0,8],
-        [8,0,2,2,0,2,2,8],
-        [8,2,0,2,2,0,2,8],
-        [8,8,8,8,8,8,8,8]
-      ]
-    }, {
-      "cases": ["field=DominantColor"],
-      "grid": [
-        [8,8,8,8,8,8,8,8],
-        [8,2,2,0,0,0,0,8],
-        [8,0,2,2,0,0,0,8],
-        [8,2,0,2,0,0,0,8],
-        [8,0,0,0,0,0,0,8],
-        [8,0,0,0,0,0,0,8],
-        [8,0,0,0,0,0,0,8],
-        [8,0,0,0,0,0,0,8],
-        [8,8,8,8,8,8,8,8]
+        [8,8,8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,2,0,2,2,0,2,8,8,8],
+        [8,8,8,2,2,0,2,2,0,8,8,8],
+        [8,8,8,0,2,2,0,2,2,8,8,8],
+        [8,8,8,2,0,2,2,0,2,8,8,8],
+        [8,8,8,2,2,0,2,2,0,8,8,8],
+        [8,8,8,0,2,2,0,2,2,8,8,8],
+        [8,8,8,2,0,2,2,0,2,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8,8,8]
       ]
     }]
   }, {
     "id": "inset-marks",
-    "separates": "A 9x6 panel whose 3x3 motif at the top-left has a blank top row. The concept tiles the 2x3 box of the marks; corner-box tiles the 3x3 box from the panel corner, blank row included.",
+    "separates": "A 9x6 panel whose 3x3 motif at the top-left has a blank top row. The concept tiles the 2x3 box of the marks; $CornerBox tiles the 3x3 box from the panel corner, blank row included.",
     "input": [
       [8,8,8,8,8,8,8,8],
       [8,0,0,0,0,0,0,8],
@@ -85,44 +76,108 @@
       [8,8,8,8,8,8,8,8]
     ],
     "output": [{
+      "cases": ["$MarkBox & $TileLattice & field=stored"],
+      "grid": [
+        [8,8,8,8,8,8,8,8],
+        [8,2,2,2,2,2,2,8],
+        [8,2,0,2,2,0,2,8],
+        [8,2,2,2,2,2,2,8],
+        [8,2,0,2,2,0,2,8],
+        [8,2,2,2,2,2,2,8],
+        [8,2,0,2,2,0,2,8],
+        [8,2,2,2,2,2,2,8],
+        [8,2,0,2,2,0,2,8],
+        [8,2,2,2,2,2,2,8],
+        [8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$CornerBox & field=stored"],
+      "grid": [
+        [8,8,8,8,8,8,8,8],
+        [8,0,0,0,0,0,0,8],
+        [8,2,0,2,2,0,2,8],
+        [8,2,2,2,2,2,2,8],
+        [8,0,0,0,0,0,0,8],
+        [8,2,0,2,2,0,2,8],
+        [8,2,2,2,2,2,2,8],
+        [8,0,0,0,0,0,0,8],
+        [8,2,0,2,2,0,2,8],
+        [8,2,2,2,2,2,2,8],
+        [8,8,8,8,8,8,8,8]
+      ]
+    }, {
       "cases": [
-        "concept",
-        "derive-field",
-        "diag-panel",
-        "derive-blank",
-        "color-box",
-        "component-bbox"
+        "$MarkBox & $CornerAnchor & field=stored",
+        "$DeriveBlank & $CornerAnchor & field=DominantColor",
+        "$StoredBlank & $CornerBox & field=DominantColor"
+      ],
+      "grid": null
+    }, {
+      "cases": [
+        "$DeriveBlank & $CornerBox & $TileLattice & $ComponentBbox & field=DominantColor"
       ],
       "grid": [
         [8,8,8,8,8,8,8,8],
-        [8,2,2,2,2,2,2,8],
-        [8,2,0,2,2,0,2,8],
-        [8,2,2,2,2,2,2,8],
-        [8,2,0,2,2,0,2,8],
-        [8,2,2,2,2,2,2,8],
-        [8,2,0,2,2,0,2,8],
-        [8,2,2,2,2,2,2,8],
-        [8,2,0,2,2,0,2,8],
-        [8,2,2,2,2,2,2,8],
-        [8,8,8,8,8,8,8,8]
+        [8,0,0,0,8,0,0,0],
+        [8,2,0,2,8,2,0,2],
+        [8,2,2,2,8,2,2,2],
+        [8,8,8,8,8,8,8,8],
+        [8,0,0,0,8,0,0,0],
+        [8,2,0,2,8,2,0,2],
+        [8,2,2,2,8,2,2,2],
+        [8,8,8,8,8,8,8,8],
+        [8,0,0,0,8,0,0,0],
+        [8,2,0,2,8,2,0,2]
       ]
     }, {
-      "cases": ["corner-box"],
+      "cases": ["$DeriveBlank & $CornerBox & $TileLattice & $PanelCells & field=DominantColor"],
       "grid": [
         [8,8,8,8,8,8,8,8],
+        [8,0,0,0,0,0,0,0],
+        [8,2,0,2,0,0,0,2],
+        [8,2,2,2,0,0,0,2],
         [8,0,0,0,0,0,0,8],
-        [8,2,0,2,2,0,2,8],
-        [8,2,2,2,2,2,2,8],
+        [8,0,0,0,0,0,0,0],
+        [8,0,0,0,0,0,0,2],
+        [8,0,0,0,0,0,0,2],
         [8,0,0,0,0,0,0,8],
-        [8,2,0,2,2,0,2,8],
-        [8,2,2,2,2,2,2,8],
-        [8,0,0,0,0,0,0,8],
-        [8,2,0,2,2,0,2,8],
-        [8,2,2,2,2,2,2,8],
-        [8,8,8,8,8,8,8,8]
+        [8,0,0,0,0,0,0,0],
+        [8,2,0,2,8,2,0,2]
       ]
     }, {
-      "cases": ["field=DominantColor"],
+      "cases": [
+        "$DeriveBlank & $MarkBox & $TileLattice & $ComponentBbox & field=DominantColor"
+      ],
+      "grid": [
+        [2,2,0,2,2,0,2,2],
+        [2,2,2,2,2,2,2,2],
+        [2,2,0,2,2,0,2,2],
+        [2,2,2,2,2,2,2,2],
+        [2,2,0,2,2,0,2,2],
+        [2,2,2,2,2,2,2,2],
+        [2,2,0,2,2,0,2,2],
+        [2,2,2,2,2,2,2,2],
+        [2,2,0,2,2,0,2,2],
+        [2,2,2,2,2,2,2,2],
+        [2,2,0,2,2,0,2,2]
+      ]
+    }, {
+      "cases": ["$DeriveBlank & $MarkBox & $TileLattice & $PanelCells & field=DominantColor"],
+      "grid": [
+        [2,2,0,2,2,0,2,2],
+        [2,0,0,0,0,0,0,2],
+        [2,2,0,2,0,0,0,2],
+        [2,2,2,2,0,0,0,2],
+        [2,0,0,0,0,0,0,2],
+        [2,0,0,0,0,0,0,2],
+        [2,0,0,0,0,0,0,2],
+        [2,0,0,0,0,0,0,2],
+        [2,0,0,0,0,0,0,2],
+        [2,0,0,0,0,0,0,2],
+        [2,2,0,2,2,0,2,2]
+      ]
+    }, {
+      "cases": ["$StoredBlank & $MarkBox & field=DominantColor"],
       "grid": [
         [8,8,8,8,8,8,8,8],
         [8,0,0,0,0,0,0,8],
@@ -136,22 +191,23 @@
         [8,0,0,0,0,0,0,8],
         [8,8,8,8,8,8,8,8]
       ]
-    }, {
-      "cases": ["corner-anchor"],
-      "grid": null
     }]
   }, {
     "id": "two-colors",
-    "separates": "A 6x6 panel whose 3x3 motif holds a 4 at its top-left corner and 2s elsewhere. The concept tiles the box of all marks; color-box, with its scan orders narrowed to the two from the top-left corner, takes the 4's one-cell box as the tile and fills the panel with 4.",
+    "separates": "A 6x6 panel whose 3x3 motif holds a 4 at its top-left corner and 2s elsewhere. The concept tiles the box of all marks; $ColorBox, with its scan orders narrowed to the two from the top-left corner, takes the 4's one-cell box as the tile and fills the panel with 4.",
     "input": [
-      [8,8,8,8,8,8,8,8],
-      [8,4,2,0,0,0,0,8],
-      [8,2,0,2,0,0,0,8],
-      [8,0,2,2,0,0,0,8],
-      [8,0,0,0,0,0,0,8],
-      [8,0,0,0,0,0,0,8],
-      [8,0,0,0,0,0,0,8],
-      [8,8,8,8,8,8,8,8]
+      [8,8,8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,4,2,0,0,0,0,8,8,8],
+      [8,8,8,2,0,2,0,0,0,8,8,8],
+      [8,8,8,0,2,2,0,0,0,8,8,8],
+      [8,8,8,0,0,0,0,0,0,8,8,8],
+      [8,8,8,0,0,0,0,0,0,8,8,8],
+      [8,8,8,0,0,0,0,0,0,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8,8,8]
     ],
     "assign": {
       "scan": [
@@ -160,53 +216,41 @@
       ]
     },
     "output": [{
-      "cases": [
-        "concept",
-        "DeriveField",
-        "DiagPanel",
-        "DeriveBlank",
-        "CornerBox",
-        "CornerAnchor",
-        "ComponentBbox"
-      ],
+      "cases": ["$AllMarks"],
       "grid": [
-        [8,8,8,8,8,8,8,8],
-        [8,4,2,0,4,2,0,8],
-        [8,2,0,2,2,0,2,8],
-        [8,0,2,2,0,2,2,8],
-        [8,4,2,0,4,2,0,8],
-        [8,2,0,2,2,0,2,8],
-        [8,0,2,2,0,2,2,8],
-        [8,8,8,8,8,8,8,8]
+        [8,8,8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,4,2,0,4,2,0,8,8,8],
+        [8,8,8,2,0,2,2,0,2,8,8,8],
+        [8,8,8,0,2,2,0,2,2,8,8,8],
+        [8,8,8,4,2,0,4,2,0,8,8,8],
+        [8,8,8,2,0,2,2,0,2,8,8,8],
+        [8,8,8,0,2,2,0,2,2,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8,8,8]
       ]
     }, {
-      "cases": ["ColorBox"],
+      "cases": ["$ColorBox"],
       "grid": [
-        [8,8,8,8,8,8,8,8],
-        [8,4,4,4,4,4,4,8],
-        [8,4,4,4,4,4,4,8],
-        [8,4,4,4,4,4,4,8],
-        [8,4,4,4,4,4,4,8],
-        [8,4,4,4,4,4,4,8],
-        [8,4,4,4,4,4,4,8],
-        [8,8,8,8,8,8,8,8]
-      ]
-    }, {
-      "cases": ["field=DominantColor"],
-      "grid": [
-        [8,8,8,8,8,8,8,8],
-        [8,4,2,0,0,0,0,8],
-        [8,2,0,2,0,0,0,8],
-        [8,0,2,2,0,0,0,8],
-        [8,0,0,0,0,0,0,8],
-        [8,0,0,0,0,0,0,8],
-        [8,0,0,0,0,0,0,8],
-        [8,8,8,8,8,8,8,8]
+        [8,8,8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,4,4,4,4,4,4,8,8,8],
+        [8,8,8,4,4,4,4,4,4,8,8,8],
+        [8,8,8,4,4,4,4,4,4,8,8,8],
+        [8,8,8,4,4,4,4,4,4,8,8,8],
+        [8,8,8,4,4,4,4,4,4,8,8,8],
+        [8,8,8,4,4,4,4,4,4,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8,8,8]
       ]
     }]
   }, {
     "id": "l-panel",
-    "separates": "An L-shaped panel whose box has a 3x3 corner of field. The concept tiles the panel cells only; component-bbox tiles the whole box and writes over the field corner.",
+    "separates": "An L-shaped panel whose box has a 3x3 corner of field. The concept tiles the panel cells only; $ComponentBbox tiles the whole box and writes over the field corner.",
     "input": [
       [8,8,8,8,8,8,8,8,8],
       [8,2,2,0,0,0,0,8,8],
@@ -219,16 +263,7 @@
       [8,8,8,8,8,8,8,8,8]
     ],
     "output": [{
-      "cases": [
-        "concept",
-        "derive-field",
-        "diag-panel",
-        "derive-blank",
-        "color-box",
-        "corner-box",
-        "corner-anchor",
-        "field=DominantColor"
-      ],
+      "cases": ["$PanelCells"],
       "grid": [
         [8,8,8,8,8,8,8,8,8],
         [8,2,2,0,2,2,0,8,8],
@@ -241,7 +276,7 @@
         [8,8,8,8,8,8,8,8,8]
       ]
     }, {
-      "cases": ["component-bbox"],
+      "cases": ["$ComponentBbox"],
       "grid": [
         [8,8,8,8,8,8,8,8,8],
         [8,2,2,0,2,2,0,8,8],
@@ -256,7 +291,7 @@
     }]
   }, {
     "id": "diagonal-touch",
-    "separates": "Two 6x6 panels meet at one corner. The concept tiles each panel from its own motif; diag-panel joins them into one piece whose mark box holds both motifs, and returns the input.",
+    "separates": "Two 6x6 panels meet at one corner. The concept tiles each panel from its own motif; $DiagPanel joins them into one piece whose mark box holds both motifs, and returns the input.",
     "input": [
       [8,8,8,8,8,8,8,8,8,8,8,8,8,8],
       [8,2,2,0,0,0,0,8,8,8,8,8,8,8],
@@ -274,16 +309,7 @@
       [8,8,8,8,8,8,8,8,8,8,8,8,8,8]
     ],
     "output": [{
-      "cases": [
-        "concept",
-        "derive-field",
-        "derive-blank",
-        "color-box",
-        "corner-box",
-        "corner-anchor",
-        "component-bbox",
-        "field=DominantColor"
-      ],
+      "cases": ["$Orthogonal"],
       "grid": [
         [8,8,8,8,8,8,8,8,8,8,8,8,8,8],
         [8,2,2,0,2,2,0,8,8,8,8,8,8,8],
@@ -301,7 +327,10 @@
         [8,8,8,8,8,8,8,8,8,8,8,8,8,8]
       ]
     }, {
-      "cases": ["diag-panel"],
+      "cases": ["$DiagPanel & $CornerBox","$DiagPanel & $ColorBox"],
+      "grid": null
+    }, {
+      "cases": ["$DiagPanel & $AllMarks & $MarkBox"],
       "grid": [
         [8,8,8,8,8,8,8,8,8,8,8,8,8,8],
         [8,2,2,0,0,0,0,8,8,8,8,8,8,8],
@@ -321,7 +350,7 @@
     }]
   }, {
     "id": "field-5",
-    "separates": "The field is 5. At the stored field 8 the concept takes the whole grid as one panel whose marks span it, and returns the input; derive-field reads 5 from the border and tiles the panel.",
+    "separates": "The field is 5. At the stored field 8 the concept takes the whole grid as one panel whose marks span it, and returns the input; $DeriveField reads 5 from the border and tiles the panel.",
     "input": [
       [5,5,5,5,5,5,5,5],
       [5,2,2,0,0,0,0,5],
@@ -334,13 +363,8 @@
     ],
     "output": [{
       "cases": [
-        "concept",
-        "diag-panel",
-        "derive-blank",
-        "color-box",
-        "corner-anchor",
-        "component-bbox",
-        "field=DominantColor"
+        "$StoredField & $MarkBox & field=stored",
+        "$StoredField & $StoredBlank & $MarkBox"
       ],
       "grid": [
         [5,5,5,5,5,5,5,5],
@@ -353,7 +377,7 @@
         [5,5,5,5,5,5,5,5]
       ]
     }, {
-      "cases": ["derive-field"],
+      "cases": ["$DeriveField"],
       "grid": [
         [5,5,5,5,5,5,5,5],
         [5,2,2,0,2,2,0,5],
@@ -365,12 +389,66 @@
         [5,5,5,5,5,5,5,5]
       ]
     }, {
-      "cases": ["corner-box"],
+      "cases": [
+        "$StoredField & $CornerBox & field=stored",
+        "$DeriveBlank & $MarkBox & $CornerAnchor & field=DominantColor",
+        "$StoredField & $StoredBlank & $CornerBox"
+      ],
       "grid": null
+    }, {
+      "cases": ["$DeriveBlank & $CornerBox & $ComponentBbox & field=DominantColor"],
+      "grid": [
+        [5,5,5,5,5,5,5,5],
+        [5,2,2,0,5,2,2,0],
+        [5,0,2,2,5,0,2,2],
+        [5,2,0,2,5,2,0,2],
+        [5,5,5,5,5,5,5,5],
+        [5,2,2,0,5,2,2,0],
+        [5,0,2,2,5,0,2,2],
+        [5,2,0,2,5,2,0,2]
+      ]
+    }, {
+      "cases": ["$DeriveBlank & $CornerBox & $PanelCells & field=DominantColor"],
+      "grid": [
+        [5,5,5,5,5,5,5,5],
+        [5,2,2,0,0,0,0,0],
+        [5,0,2,2,0,0,0,2],
+        [5,2,0,2,0,0,0,2],
+        [5,0,0,0,0,0,0,5],
+        [5,0,0,0,0,0,0,0],
+        [5,0,0,0,0,0,0,2],
+        [5,2,0,2,5,2,0,2]
+      ]
+    }, {
+      "cases": [
+        "$DeriveBlank & $MarkBox & $TileLattice & $ComponentBbox & field=DominantColor"
+      ],
+      "grid": [
+        [2,2,0,2,2,0,2,2],
+        [0,2,2,0,2,2,0,2],
+        [2,0,2,2,0,2,2,0],
+        [2,2,0,2,2,0,2,2],
+        [0,2,2,0,2,2,0,2],
+        [2,0,2,2,0,2,2,0],
+        [2,2,0,2,2,0,2,2],
+        [0,2,2,0,2,2,0,2]
+      ]
+    }, {
+      "cases": ["$DeriveBlank & $MarkBox & $TileLattice & $PanelCells & field=DominantColor"],
+      "grid": [
+        [2,2,0,2,2,0,2,2],
+        [0,2,2,0,0,0,0,2],
+        [2,0,2,2,0,0,0,0],
+        [2,2,0,2,0,0,0,2],
+        [0,0,0,0,0,0,0,2],
+        [2,0,0,0,0,0,0,0],
+        [2,0,0,0,0,0,0,2],
+        [0,2,2,0,2,2,0,2]
+      ]
     }]
   }, {
     "id": "blank-6",
-    "separates": "The panel's blank is 6. At the stored blank 0 the concept takes every panel cell as a mark, and returns the input; derive-blank reads 6 as the panel's most frequent color and tiles the motif.",
+    "separates": "The panel's blank is 6. At the stored blank 0 the concept takes every panel cell as a mark, and returns the input; $DeriveBlank reads 6 as the panel's most frequent color and tiles the motif.",
     "input": [
       [8,8,8,8,8,8,8,8],
       [8,2,2,6,6,6,6,8],
@@ -383,12 +461,8 @@
     ],
     "output": [{
       "cases": [
-        "concept",
-        "derive-field",
-        "diag-panel",
-        "corner-anchor",
-        "component-bbox",
-        "field=DominantColor"
+        "$StoredBlank & $AllMarks & $MarkBox",
+        "$StoredBlank & $MarkBox & field=DominantColor"
       ],
       "grid": [
         [8,8,8,8,8,8,8,8],
@@ -401,7 +475,7 @@
         [8,8,8,8,8,8,8,8]
       ]
     }, {
-      "cases": ["derive-blank"],
+      "cases": ["$DeriveBlank & field=stored"],
       "grid": [
         [8,8,8,8,8,8,8,8],
         [8,2,2,6,2,2,6,8],
@@ -413,12 +487,66 @@
         [8,8,8,8,8,8,8,8]
       ]
     }, {
-      "cases": ["color-box","corner-box"],
+      "cases": [
+        "$StoredBlank & $CornerBox",
+        "$StoredBlank & $ColorBox & field=stored",
+        "$DeriveBlank & $MarkBox & $CornerAnchor & field=DominantColor"
+      ],
       "grid": null
+    }, {
+      "cases": ["$DeriveBlank & $CornerBox & $ComponentBbox & field=DominantColor"],
+      "grid": [
+        [8,8,8,8,8,8,8,8],
+        [8,2,2,6,8,2,2,6],
+        [8,6,2,2,8,6,2,2],
+        [8,2,6,2,8,2,6,2],
+        [8,8,8,8,8,8,8,8],
+        [8,2,2,6,8,2,2,6],
+        [8,6,2,2,8,6,2,2],
+        [8,2,6,2,8,2,6,2]
+      ]
+    }, {
+      "cases": ["$DeriveBlank & $CornerBox & $PanelCells & field=DominantColor"],
+      "grid": [
+        [8,8,8,8,8,8,8,8],
+        [8,2,2,6,6,6,6,6],
+        [8,6,2,2,6,6,6,2],
+        [8,2,6,2,6,6,6,2],
+        [8,6,6,6,6,6,6,8],
+        [8,6,6,6,6,6,6,6],
+        [8,6,6,6,6,6,6,2],
+        [8,2,6,2,8,2,6,2]
+      ]
+    }, {
+      "cases": [
+        "$DeriveBlank & $MarkBox & $TileLattice & $ComponentBbox & field=DominantColor"
+      ],
+      "grid": [
+        [2,2,6,2,2,6,2,2],
+        [6,2,2,6,2,2,6,2],
+        [2,6,2,2,6,2,2,6],
+        [2,2,6,2,2,6,2,2],
+        [6,2,2,6,2,2,6,2],
+        [2,6,2,2,6,2,2,6],
+        [2,2,6,2,2,6,2,2],
+        [6,2,2,6,2,2,6,2]
+      ]
+    }, {
+      "cases": ["$DeriveBlank & $MarkBox & $TileLattice & $PanelCells & field=DominantColor"],
+      "grid": [
+        [2,2,6,2,2,6,2,2],
+        [6,2,2,6,6,6,6,2],
+        [2,6,2,2,6,6,6,6],
+        [2,2,6,2,6,6,6,2],
+        [6,6,6,6,6,6,6,2],
+        [2,6,6,6,6,6,6,6],
+        [2,6,6,6,6,6,6,2],
+        [6,2,2,6,2,2,6,2]
+      ]
     }]
   }, {
     "id": "diag-blank",
-    "separates": "A 6x6 panel with a 3x3 motif at its top-left meets a blank 6x6 panel at one corner. The concept tiles the first panel and leaves the blank one unchanged; diag-panel joins them into one piece and tiles the motif across both, so it stays defined under color-box, corner-box, and corner-anchor.",
+    "separates": "A 6x6 panel with a 3x3 motif at its top-left meets a blank 6x6 panel at one corner. The concept tiles the first panel and leaves the blank one unchanged; $DiagPanel joins them into one piece and tiles the motif across both, so it stays defined under $ColorBox, $CornerBox, and $CornerAnchor.",
     "input": [
       [8,8,8,8,8,8,8,8,8,8,8,8,8,8],
       [8,2,2,0,0,0,0,8,8,8,8,8,8,8],
@@ -436,16 +564,7 @@
       [8,8,8,8,8,8,8,8,8,8,8,8,8,8]
     ],
     "output": [{
-      "cases": [
-        "concept",
-        "DeriveField",
-        "DeriveBlank",
-        "ColorBox",
-        "CornerBox",
-        "CornerAnchor",
-        "ComponentBbox",
-        "field=DominantColor"
-      ],
+      "cases": ["$Orthogonal"],
       "grid": [
         [8,8,8,8,8,8,8,8,8,8,8,8,8,8],
         [8,2,2,0,2,2,0,8,8,8,8,8,8,8],
@@ -463,7 +582,25 @@
         [8,8,8,8,8,8,8,8,8,8,8,8,8,8]
       ]
     }, {
-      "cases": ["DiagPanel"],
+      "cases": ["$DiagPanel & $ComponentBbox"],
+      "grid": [
+        [8,8,8,8,8,8,8,8,8,8,8,8,8,8],
+        [8,2,2,0,2,2,0,2,2,0,2,2,0,8],
+        [8,0,2,2,0,2,2,0,2,2,0,2,2,8],
+        [8,2,0,2,2,0,2,2,0,2,2,0,2,8],
+        [8,2,2,0,2,2,0,2,2,0,2,2,0,8],
+        [8,0,2,2,0,2,2,0,2,2,0,2,2,8],
+        [8,2,0,2,2,0,2,2,0,2,2,0,2,8],
+        [8,2,2,0,2,2,0,2,2,0,2,2,0,8],
+        [8,0,2,2,0,2,2,0,2,2,0,2,2,8],
+        [8,2,0,2,2,0,2,2,0,2,2,0,2,8],
+        [8,2,2,0,2,2,0,2,2,0,2,2,0,8],
+        [8,0,2,2,0,2,2,0,2,2,0,2,2,8],
+        [8,2,0,2,2,0,2,2,0,2,2,0,2,8],
+        [8,8,8,8,8,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$DiagPanel & $PanelCells"],
       "grid": [
         [8,8,8,8,8,8,8,8,8,8,8,8,8,8],
         [8,2,2,0,2,2,0,8,8,8,8,8,8,8],
@@ -479,6 +616,266 @@
         [8,8,8,8,8,8,8,0,2,2,0,2,2,8],
         [8,8,8,8,8,8,8,2,0,2,2,0,2,8],
         [8,8,8,8,8,8,8,8,8,8,8,8,8,8]
+      ]
+    }]
+  }, {
+    "id": "edge-panel",
+    "separates": "A 6x6 panel with a 3x3 motif touches the grid's top and left edges, so the border ring holds panel colors. The concept tiles the panel; $DeriveField finds no one border color and is undefined.",
+    "input": [
+      [2,2,0,0,0,0,8,8,8,8],
+      [0,2,2,0,0,0,8,8,8,8],
+      [2,0,2,0,0,0,8,8,8,8],
+      [0,0,0,0,0,0,8,8,8,8],
+      [0,0,0,0,0,0,8,8,8,8],
+      [0,0,0,0,0,0,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$StoredField"],
+      "grid": [
+        [2,2,0,2,2,0,8,8,8,8],
+        [0,2,2,0,2,2,8,8,8,8],
+        [2,0,2,2,0,2,8,8,8,8],
+        [2,2,0,2,2,0,8,8,8,8],
+        [0,2,2,0,2,2,8,8,8,8],
+        [2,0,2,2,0,2,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$DeriveField"],
+      "grid": null
+    }]
+  }, {
+    "id": "solid-motif",
+    "separates": "A 4x4 panel with a solid 3x3 motif of 2 at its top-left: the 2s outnumber the blanks, and the motif's height does not divide the panel's. The concept fills the panel with 2; $DeriveBlank reads 2 as the blank and the blank cells as the marks, and returns the input, or is undefined under $CornerBox.",
+    "input": [
+      [8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8],
+      [8,8,2,2,2,0,8,8],
+      [8,8,2,2,2,0,8,8],
+      [8,8,2,2,2,0,8,8],
+      [8,8,0,0,0,0,8,8],
+      [8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$StoredBlank"],
+      "grid": [
+        [8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8],
+        [8,8,2,2,2,2,8,8],
+        [8,8,2,2,2,2,8,8],
+        [8,8,2,2,2,2,8,8],
+        [8,8,2,2,2,2,8,8],
+        [8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$DeriveBlank & $CornerBox"],
+      "grid": null
+    }, {
+      "cases": ["$DeriveBlank & $MarkBox"],
+      "grid": [
+        [8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8],
+        [8,8,2,2,2,0,8,8],
+        [8,8,2,2,2,0,8,8],
+        [8,8,2,2,2,0,8,8],
+        [8,8,0,0,0,0,8,8],
+        [8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8]
+      ]
+    }]
+  }, {
+    "id": "inset-even",
+    "separates": "A 6x6 panel whose 2x2 motif sits one row and one column in from the top-left corner. The concept tiles the 2x2 box on the lattice through its own position; $CornerAnchor lays it from the panel's corners, a phase off; $CornerBox tiles the 3x3 box from the panel corner, blank row and column included.",
+    "input": [
+      [8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8],
+      [8,8,0,0,0,0,0,0,8,8],
+      [8,8,0,2,0,0,0,0,8,8],
+      [8,8,0,2,2,0,0,0,8,8],
+      [8,8,0,0,0,0,0,0,8,8],
+      [8,8,0,0,0,0,0,0,8,8],
+      [8,8,0,0,0,0,0,0,8,8],
+      [8,8,8,8,8,8,8,8,8,8],
+      [8,8,8,8,8,8,8,8,8,8]
+    ],
+    "output": [{
+      "cases": ["$MarkBox & $TileLattice"],
+      "grid": [
+        [8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8],
+        [8,8,2,2,2,2,2,2,8,8],
+        [8,8,0,2,0,2,0,2,8,8],
+        [8,8,2,2,2,2,2,2,8,8],
+        [8,8,0,2,0,2,0,2,8,8],
+        [8,8,2,2,2,2,2,2,8,8],
+        [8,8,0,2,0,2,0,2,8,8],
+        [8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$CornerBox"],
+      "grid": [
+        [8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8],
+        [8,8,0,0,0,0,0,0,8,8],
+        [8,8,0,2,0,0,2,0,8,8],
+        [8,8,0,2,2,0,2,2,8,8],
+        [8,8,0,0,0,0,0,0,8,8],
+        [8,8,0,2,0,0,2,0,8,8],
+        [8,8,0,2,2,0,2,2,8,8],
+        [8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8]
+      ]
+    }, {
+      "cases": ["$MarkBox & $CornerAnchor"],
+      "grid": [
+        [8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8],
+        [8,8,2,0,2,0,2,0,8,8],
+        [8,8,2,2,2,2,2,2,8,8],
+        [8,8,2,0,2,0,2,0,8,8],
+        [8,8,2,2,2,2,2,2,8,8],
+        [8,8,2,0,2,0,2,0,8,8],
+        [8,8,2,2,2,2,2,2,8,8],
+        [8,8,8,8,8,8,8,8,8,8],
+        [8,8,8,8,8,8,8,8,8,8]
+      ]
+    }]
+  }, {
+    "id": "field=DominantColor",
+    "separates": "`field=DominantColor` from the stored value: train 0 with 8 and 1 swapped",
+    "input": [
+      [1,1,1,1,1,1,1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1,1,1,1,1,1],
+      [1,1,2,2,2,0,0,0,1,1,1,1,1],
+      [1,1,0,2,2,0,0,0,1,1,1,1,1],
+      [1,1,2,0,2,0,0,0,1,1,1,1,1],
+      [1,1,0,0,0,0,0,0,1,1,1,1,1],
+      [1,1,0,0,0,0,0,0,1,1,1,1,1],
+      [1,1,0,0,0,0,0,0,1,1,1,1,1],
+      [1,1,0,0,0,0,0,0,1,1,1,1,1],
+      [1,1,0,0,0,0,0,0,1,1,1,1,1],
+      [1,1,0,0,0,0,0,0,1,1,1,1,1],
+      [1,1,0,0,0,0,0,0,1,1,1,1,1],
+      [1,1,0,0,0,0,0,0,1,1,1,1,1],
+      [1,1,0,0,0,0,0,0,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1,1,1,1,1,1],
+      [1,1,1,1,1,1,1,1,1,1,1,1,1]
+    ],
+    "output": [{
+      "cases": ["$StoredField & $StoredBlank & $MarkBox & field=stored"],
+      "grid": [
+        [1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,2,2,2,0,0,0,1,1,1,1,1],
+        [1,1,0,2,2,0,0,0,1,1,1,1,1],
+        [1,1,2,0,2,0,0,0,1,1,1,1,1],
+        [1,1,0,0,0,0,0,0,1,1,1,1,1],
+        [1,1,0,0,0,0,0,0,1,1,1,1,1],
+        [1,1,0,0,0,0,0,0,1,1,1,1,1],
+        [1,1,0,0,0,0,0,0,1,1,1,1,1],
+        [1,1,0,0,0,0,0,0,1,1,1,1,1],
+        [1,1,0,0,0,0,0,0,1,1,1,1,1],
+        [1,1,0,0,0,0,0,0,1,1,1,1,1],
+        [1,1,0,0,0,0,0,0,1,1,1,1,1],
+        [1,1,0,0,0,0,0,0,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1]
+      ]
+    }, {
+      "cases": ["$DeriveField","field=DominantColor"],
+      "grid": [
+        [1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,2,2,2,2,2,2,1,1,1,1,1],
+        [1,1,0,2,2,0,2,2,1,1,1,1,1],
+        [1,1,2,0,2,2,0,2,1,1,1,1,1],
+        [1,1,2,2,2,2,2,2,1,1,1,1,1],
+        [1,1,0,2,2,0,2,2,1,1,1,1,1],
+        [1,1,2,0,2,2,0,2,1,1,1,1,1],
+        [1,1,2,2,2,2,2,2,1,1,1,1,1],
+        [1,1,0,2,2,0,2,2,1,1,1,1,1],
+        [1,1,2,0,2,2,0,2,1,1,1,1,1],
+        [1,1,2,2,2,2,2,2,1,1,1,1,1],
+        [1,1,0,2,2,0,2,2,1,1,1,1,1],
+        [1,1,2,0,2,2,0,2,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1]
+      ]
+    }, {
+      "cases": [
+        "$StoredField & $DeriveBlank & $CornerAnchor & field=stored",
+        "$StoredField & $DeriveBlank & $ColorBox & field=stored",
+        "$StoredField & $StoredBlank & $CornerBox & field=stored"
+      ],
+      "grid": null
+    }, {
+      "cases": [
+        "$StoredField & $DeriveBlank & $AllMarks & $CornerBox & $TileLattice & field=stored"
+      ],
+      "grid": [
+        [1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,2,2,2,0,0,0,1,1,2,2,2],
+        [1,1,0,2,2,0,0,0,1,1,0,2,2],
+        [1,1,2,0,2,0,0,0,1,1,2,0,2],
+        [1,1,0,0,0,0,0,0,1,1,0,0,0],
+        [1,1,0,0,0,0,0,0,1,1,0,0,0],
+        [1,1,0,0,0,0,0,0,1,1,0,0,0],
+        [1,1,0,0,0,0,0,0,1,1,0,0,0],
+        [1,1,0,0,0,0,0,0,1,1,0,0,0],
+        [1,1,0,0,0,0,0,0,1,1,0,0,0],
+        [1,1,0,0,0,0,0,0,1,1,0,0,0],
+        [1,1,0,0,0,0,0,0,1,1,0,0,0],
+        [1,1,0,0,0,0,0,0,1,1,0,0,0],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,2,2,2,0,0,0,1,1,2,2,2]
+      ]
+    }, {
+      "cases": [
+        "$StoredField & $DeriveBlank & $AllMarks & $MarkBox & $TileLattice & field=stored"
+      ],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,2,2,2,0,0,0,2,2,2,0,0],
+        [0,0,0,2,2,0,0,0,0,2,2,0,0],
+        [0,0,2,0,2,0,0,0,2,0,2,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,2,2,2,0,0,0,2,2,2,0,0],
+        [0,0,0,2,2,0,0,0,0,2,2,0,0],
+        [0,0,2,0,2,0,0,0,2,0,2,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }]
   }]

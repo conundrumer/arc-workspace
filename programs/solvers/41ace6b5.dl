@@ -79,14 +79,14 @@ cast.cell(Col, P) :- ruler(Col, _), bar_cell(_, P).
 // The one height every cap is drawn to.
 .decl cap_height(n: number, ch: Choice)
 
-// --- Tallest ---
+// --- $Tallest ---
 
 .init tallest = Extremes<Unit>
 tallest.cand($U(), N) :- cap_len.tally(_, N).
 
 cap_height(N, $Tallest()) :- tallest.high($U(), N).
 
-// --- Common ---
+// --- $Common ---
 
 .init common = Mode<Unit, number, Position>
 common.item($U(), N, B) :- cap_len.tally(B, N).

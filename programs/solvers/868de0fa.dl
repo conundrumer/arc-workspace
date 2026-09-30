@@ -32,7 +32,7 @@ impl_choice($Rect()). impl_choice($Enclose()).
 // The fill each hole cell takes.
 .decl fill(p: Position, col: Color, ch: Choice)
 
-// --- Rect ---
+// --- $Rect ---
 
 .init drect = Outlines<Unit>
 drect.node($U(), P) :- in(P, Col), params.ink(Col).
@@ -55,7 +55,7 @@ fill(P, Col, $Rect()) :-
     ; !rect_odd(B), params.even_fill(Col)
     ).
 
-// --- Enclose ---
+// --- $Enclose ---
 
 // The ink walls the rest of the grid off; a region it closes is a hole.
 .init closed = Closed<Unit>

@@ -90,10 +90,10 @@ mirror(Col, P_src, P_dst) :-
 
 .decl paint(p: Position, col: Color, ch: Choice)
 
-// --- Shape ---
+// --- $Shape ---
 paint(P_dst, Col, $Shape()) :- mirror(Col, P_src, P_dst), in(P_src, Col).
 
-// --- Tile ---
+// --- $Tile ---
 paint(P_dst, Col, $Tile()) :- mirror(_, P_src, P_dst), in(P_src, Col).
 
 out(P, Col, Ch) :- paint(P, Col, Ch).

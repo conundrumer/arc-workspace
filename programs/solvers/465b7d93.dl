@@ -44,7 +44,7 @@ field.cell($U(), P) :- bbox.box($U(), B), in(P, _), inside(P, B), !frame_cell(P)
 
 .decl paint(p: Position, c: Choice)
 
-// --- Corner ---
+// --- $Corner ---
 
 // The corner the L names: its corner cell's two arms run away from it.
 .decl corner(d: DiagDir)
@@ -57,7 +57,7 @@ corner(Diag) :-
 paint(P, $Corner()) :-
     corner(Diag), dir_of(Diag, _, D), field.rim_dir($U(), P, D).
 
-// --- Stretch ---
+// --- $Stretch ---
 
 .init shape_box = Bbox<Unit>
 shape_box.cell($U(), P) :- mark(P, _).

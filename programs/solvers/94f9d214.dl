@@ -27,11 +27,11 @@
 .comp Params {
     .init helpers = ParamsHelpers
 
-    // --- Table, Size ---
+    // --- $Table, $Size ---
     // a tile's extent on both axes
     .decl tile_dim(k: number) tile_dim(4).
 
-    // --- Table ---
+    // --- $Table ---
     .decl arr_dim(a: Axis, n: number)
     arr_dim(AXIS_V, 2). arr_dim(AXIS_H, 1).
     .decl tile_decompose(p: Position, p_outer: Position, p_inner: Position)
@@ -39,15 +39,15 @@
         arr_dim(AXIS_V, Av), arr_dim(AXIS_H, Ah), tile_dim(K),
         helpers.tile_pos([Av, Ah], [K, K], [0, 0], P_grid, P_tile, P_intile).
 
-    // --- Count, Size ---
+    // --- $Count, $Size ---
     .decl divide_axis(a: Axis)
     divide_axis(AXIS_V).
 
-    // --- Count ---
+    // --- $Count ---
     .decl divisor(n: number)
     divisor(2).
 
-    // --- Lookup ---
+    // --- $Lookup ---
     .decl combine_member(id: Ident, p_outer: Position, c: Color)
     .decl combine_out(id: Ident, c_out: Color)
 
@@ -56,14 +56,14 @@
     combine_member(2, [0,1,0,0], 0). combine_member(2, [1,0,0,0], 1). combine_out(2, 0).
     combine_member(3, [0,1,0,0], 3). combine_member(3, [1,0,0,0], 1). combine_out(3, 0).
 
-    // --- Nor ---
+    // --- $Nor ---
     .decl bg(c: Color) bg(0).
     .decl out_fill(c: Color) out_fill(2).
 }
 
 .init params = Params
 
-// --- Table, Count, Size ---
+// --- $Table, $Count, $Size ---
 
 .decl decompose(p: Position, p_outer: Position, p_inner: Position, dc: DecChoice)
 decompose(P_grid, P_tile, P_intile, $Table()) :- params.tile_decompose(P_grid, P_tile, P_intile).
@@ -74,7 +74,7 @@ decompose(P_grid, P_tile, P_intile, $Size()) :-
     in(P_grid, _), params.divide_axis(A), params.tile_dim(K),
     divide_by_size_slab(P_grid, A, K, 0, P_tile, P_intile).
 
-// --- Lookup ---
+// --- $Lookup ---
 
 .init combine_match = KeyedSetCompare<CombineKey, Ident, CombineMember>
 combine_match.pattern_member(Id, [P_outer, C]) :- params.combine_member(Id, P_outer, C).
@@ -85,7 +85,7 @@ out(P_grid_out, Col_out, [Dc, $Lookup()]) :-
     combine_match.equals([P_grid_out, Dc], Id),    // the cell's tiles are the entry's members
     params.combine_out(Id, Col_out).
 
-// --- Nor ---
+// --- $Nor ---
 
 .decl filled(p: Position, dc: DecChoice)
 filled(P_grid_out, Dc) :-

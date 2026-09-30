@@ -17,7 +17,7 @@
 .comp Params {
     .decl bg(col: Color) bg(0).
 
-    // --- Alternate ---
+    // --- $Alternate ---
 
     // Tiles from one copy to the next.
     .decl tile_period(k: number) tile_period(2).
@@ -25,7 +25,7 @@
     // The corner of its tile a copy aligns to.
     .decl anchor(dg: DiagDir) anchor(DIAG_TL).
 
-    // --- Wallpaper ---
+    // --- $Wallpaper ---
 
     // Grid cells from one copy to the next, per axis.
     .decl period(a: Axis, k: number)
@@ -46,7 +46,7 @@ ink(P, Col) :- in(P, Col), !params.bg(Col).
 // The cells a copy paints.
 .decl paint(p: Position, col: Color, ch: Choice)
 
-// --- Alternate ---
+// --- $Alternate ---
 
 .init line_color = Unanimous<Line, Color>
 line_color.item([A, L], Col) :- in(P, Col), axis_elem(A), split(P, A, L, _).
@@ -77,7 +77,7 @@ paint(Q, Col, $Alternate()) :-
     copy_tile(P_tile), tile_cell(P_tile, Q, Q_intile),         // a cell of a copy's tile
     params.anchor(Dg), corner_anchor(Dg, P_intile, Q_intile).  // the same place from the anchor corner
 
-// --- Wallpaper ---
+// --- $Wallpaper ---
 
 paint(P, Col, $Wallpaper()) :- ink(P, Col).
 paint(Q, Col, $Wallpaper()) :-

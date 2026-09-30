@@ -74,7 +74,7 @@ seat(L, P_seat) :- comb_end.low(L, P_top, _), params.rise(D), neighbor(P_top, D,
 // Where the contents come to rest.
 .decl placed(p: Position, col: Color, ch: Choice)
 
-// --- Rigid ---
+// --- $Rigid ---
 
 // The contents' low end, per line: `high` is the greatest depth.
 .init content_end = ArgExtremes<Position, Position>
@@ -86,7 +86,7 @@ placed(Q, Col, $Rigid()) :-
     relative(P_bot, P_seat, V), compose(P, V, Q),      // carried as one body
     within(Q).                                         // what the container still holds
 
-// --- Stack ---
+// --- $Stack ---
 
 // The run of cells rising from the seat, indexed by the step that reaches it.
 // Its domain stops at the interior, so what rises past that is lost.

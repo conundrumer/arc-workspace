@@ -1,0 +1,469 @@
+// a416fc5b
+// @draft
+// @keywords: decompose markers walk stamp
+// @scene panels: full lines of params.separator cut the grid into a 3×3 array
+//  of 3×3 panels of params.bg
+// @scene two-shapes: two panels hold the same shape in params.shape_color; one
+//  of them is the center panel, and the other is one of the eight panels
+//  around it
+// @scene rest-empty: every other panel holds no shape
+// @rule direction: d is the step from the center panel to the other shape
+//  panel, one of the eight places on the ring of panels around the center
+// @rule turn: two target panels sit on that ring, params.turn steps from d
+//  in each sense
+// @rule stamp: each target panel receives a copy of the center panel's
+//  shape, in the color params.turn_color gives the sense of its turn
+// @rule keep: every other cell keeps its input color
+
+// where the separator color comes from
+.type Separator =
+    // @claim panels
+    StoredSeparator {}
+    // @scene panels: full lines of the one color that fills whole lines cut
+    //  the grid into a 3×3 array of 3×3 panels; undefined when no single
+    //  color does
+    // @witness recolored-separator: variant $DeriveSeparator
+    //     @relaxed panels
+    // @witness rows-only: foreign concept
+    //     @relaxed panels
+  | DeriveSeparator {}
+
+// which panels receive the copies
+.type Targets =
+    // @claim turn
+    Turn {}
+    // @rule turn: the targets are the panels at taxicab distance params.turn
+    //  from the other shape panel, each colored by its side of the line
+    //  through the center along d; undefined when a target lies on that line
+    // @witness five-by-five: variant concept
+    //     @relaxed panels
+  | ManhattanTargets {}
+
+// how the panels are found
+.type Geometry =
+    // @claim panels
+    Lines {sep: Separator, targets: Targets}
+    // @scene panels: the lines params.fixed_divider cut the grid into a 3×3
+    //  array of 3×3 panels of params.bg, whatever their color
+    // @witness five-by-five: variant concept
+    // @witness recolored-separator: variant $DeriveSeparator
+    // @witness hidden-cross: foreign $FixedPanels
+    //     @relaxed panels
+  | FixedPanels {}
+
+// where the shape color comes from
+.type ShapeColor =
+    // @claim two-shapes
+    StoredShapeColor {}
+    // @scene two-shapes: two panels hold the same shape in the one color of
+    //  the center panel other than params.bg; undefined when the center panel
+    //  has no such color or several
+    // @witness recolored-shapes: variant $DeriveShapeColor
+    //     @relaxed two-shapes
+    // @witness stray-in-center: borderline concept
+    //     @relaxed two-shapes
+    // @witness separator-in-center: borderline concept
+    //     @relaxed two-shapes
+  | DeriveShapeColor {}
+
+// what each copy holds
+.type Stamp =
+    // @claim stamp
+    CenterShape {}
+    // @rule stamp: each copy holds the shape of the other shape panel
+    // @witness other-shape-differs: borderline any
+    //     @relaxed two-shapes
+  | CopyOther {}
+    // @rule stamp: each copy is the stored shape params.stored_shape
+    // @witness tee-shape: variant concept
+  | StoredShape {}
+
+// which panel is the other shape panel
+.type Detect =
+    // @claim direction
+    OnePanel {}
+    // @scene two-shapes: the center panel is not read
+    // @rule direction: the other panel is the last ring panel, in the order
+    //  from params.probe_corner along params.order_axis, whose cell at
+    //  params.probe_corner, or a cell beside it, holds the shape color; with
+    //  no such panel, the ring panel toward params.probe_corner
+    // @witness dot-shape: variant concept
+    // @witness extra-dot: borderline $CornerProbe
+    //     @relaxed rest-empty
+  | CornerProbe {}
+
+// how a copy meets its target panel
+.type Combine =
+    // @claim stamp
+    ShapeOnly {}
+    // @rule stamp: each target panel is first reset to params.bg
+    // @witness stray-in-target: borderline any
+    //     @relaxed rest-empty
+    // @witness separator-in-target: borderline any
+    //     @relaxed rest-empty
+  | ClearTarget {}
+
+.type Choice = [geometry: Geometry, shape_color: ShapeColor, stamp: Stamp, detect: Detect,
+                combine: Combine]
+
+// The panels and the shape color under one reading.
+.type Reading = [g: Geometry, sc: ShapeColor]
+
+// A lex order over the probed panels, per probe corner and order axis.
+.type ProbeKey = [r: Reading, c: DiagDir, a: Axis]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // The ring steps from d to each target.
+    // @derive SepTileCount: variant concept
+    //     @relaxed panels
+    // @derive SepTileDim: variant concept
+    //     @relaxed panels
+    // @ignore: derive $StoredShape & $ShapeOnly & $Turn — subsumed by its stored-turn case: the stored shape stamps only in 3×3 panels, where the size is 3
+    .decl turn(n: number) turn(3).
+    // The color of the target in each sense.
+    .decl turn_color(s: Sense, c: Color) turn_color(SENSE_CW, 5). turn_color(SENSE_CC, 8).
+
+    // --- $StoredSeparator ---
+    .decl separator(c: Color) separator(6).
+
+    // --- $FixedPanels ---
+    // The lines that cut the panels, as margins from the two edges across
+    // them.
+    .decl fixed_divider(a: Axis, l: Position)
+    fixed_divider(AXIS_V, [3, 7, 0, 0]). fixed_divider(AXIS_V, [7, 3, 0, 0]).
+    fixed_divider(AXIS_H, [0, 0, 3, 7]). fixed_divider(AXIS_H, [0, 0, 7, 3]).
+
+    // --- $StoredShapeColor ---
+    // @derive RarestColor: variant derived
+    //     @relaxed two-shapes
+    .decl shape_color(c: Color) shape_color(2).
+
+    // --- $DeriveShapeColor, $ClearTarget ---
+    // @derive DominantColor: variant derived
+    //     @relaxed panels
+    .decl bg(c: Color) bg(7).
+
+    // --- $StoredShape ---
+    .decl stored_shape(p: Position)
+    GRID_MASK_3x3(stored_shape,
+        _, 1, _,
+        1, _, 1,
+        _, 1, _)
+
+    // --- $CornerProbe ---
+    // The corner whose cells the probe reads, which the order starts from,
+    // and toward which the fallback panel lies. No pair has two probed panels
+    // or none, so every corner and axis stays open.
+    .decl probe_corner(d: DiagDir)
+    probe_corner(DIAG_TL). probe_corner(DIAG_TR). probe_corner(DIAG_BL). probe_corner(DIAG_BR).
+    .decl order_axis(a: Axis) order_axis(AXIS_V). order_axis(AXIS_H).
+}
+
+.init params = Params
+
+// The panels the dividing lines cut, under each panel reading.
+.comp Parse<Key> {
+    .type Cut = [k: Key, g: Geometry]
+    .type Tile = [k: Key, g: Geometry, t: Position]
+    .type Line = [k: Key, a: Axis, l: Position]
+
+    .decl cell(key: Key, p: Position, col: Color)  // @input
+
+    // @claim panels
+    // @ignore tile_of: store — the stored map is defined only on grids of the
+    //  pairs' size, and there it gives the panels FixedPanels cuts, so
+    //  FixedPanels subsumes it
+    .init cut = DividerTiles<Cut>
+    cut.cell([K, G], P) :- cell(K, P, _), geometry_choice(G).
+
+    // @claim panels
+    .init tile_box = Bbox<Tile>
+    tile_box.cell([K, G, P_tile], P) :- cut.tile_of([K, G], P, P_tile).
+
+    // Each cell's panel and its place in the panel.
+    // @ignore: store — the stored map is defined only on grids of the pairs'
+    //  size, and there it gives the panels FixedPanels cuts, so FixedPanels
+    //  subsumes it
+    .decl panel(key: Key, g: Geometry, p: Position, p_tile: Position, p_intile: Position)
+    panel(K, G, P, P_tile, P_intile) :-
+        cut.tile_of([K, G], P, P_tile), tile_box.box([K, G, P_tile], B), crop(P, B, P_intile).
+
+    // The center panel.
+    // @ignore: store — the stored center is defined only on 3×3 panel arrays,
+    //  and there it is the centered panel, so the concept subsumes it
+    .decl center(key: Key, g: Geometry, c: Position)
+    center(K, G, C) :- panel(K, G, _, C, _), centered(C).
+
+    // Each ring panel, with its step d from the center.
+    .decl ring(key: Key, g: Geometry, q: Position, d: Dir8)
+    ring(K, G, Q, D) :- center(K, G, C), neighbor(C, D, Q), panel(K, G, _, Q, _).
+
+    // --- $Lines ---
+    // The color of a line all of one color.
+    // @claim panels
+    .init line_color = Unanimous<Line, Color>
+    line_color.item([K, A, L], Col) :- cell(K, P, Col), axis_elem(A), split(P, A, L, _).
+
+    // --- $StoredSeparator ---
+    cut.divider([K, $Lines($StoredSeparator(), T)], A, L) :-
+        targets_choice(T), line_color.value([K, A, L], Col), params.separator(Col).
+
+    // --- $DeriveSeparator ---
+    // @claim panels
+    .init sep_color = Unanimous<Key, Color>
+    sep_color.item(K, Col) :- line_color.value([K, _, _], Col).
+
+    cut.divider([K, $Lines($DeriveSeparator(), T)], A, L) :-
+        targets_choice(T), line_color.value([K, A, L], Col), sep_color.value(K, Col).
+
+    // --- $FixedPanels ---
+    cut.divider([K, $FixedPanels()], A, L) :-
+        cut.cell([K, $FixedPanels()], _), params.fixed_divider(A, L).
+
+    // --- $CornerProbe ---
+    // A place in a panel at corner c, or beside it.
+    // @ignore: store — in 3×3 panels the stored places are the ones this
+    //  clause finds; in other panels none matches, CornerProbe falls back at
+    //  every corner and is undefined, so CornerProbe subsumes the stored
+    //  reading
+    .decl probe_place(key: Key, g: Geometry, p_intile: Position, c: DiagDir)
+    probe_place(K, G, P_intile, Dc) :-
+        panel(K, G, _, _, P_intile),
+        ( box_corner(P_intile, ZERO, Dc)
+        ; dir_elem(D), neighbor(P_intile, D, P0), box_corner(P0, ZERO, Dc) ).
+}
+
+.decl separator_choice(s: Separator)
+separator_choice($StoredSeparator()). separator_choice($DeriveSeparator()).
+
+.decl targets_choice(t: Targets)
+targets_choice($Turn()). targets_choice($ManhattanTargets()).
+
+.decl geometry_choice(g: Geometry)
+geometry_choice($Lines(S, T)) :- separator_choice(S), targets_choice(T).
+geometry_choice($FixedPanels()).
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+.decl combine_choice(c: Combine)
+combine_choice($ShapeOnly()). combine_choice($ClearTarget()).
+
+.decl stamp_choice(s: Stamp)
+stamp_choice($CenterShape()). stamp_choice($CopyOther()). stamp_choice($StoredShape()).
+
+.decl shape_color(r: Reading, col: Color)
+
+// A shape cell of a panel, at its place in the panel.
+.decl shape_cell(r: Reading, q: Position, p_intile: Position)
+shape_cell([G, Sc], Q, P_intile) :-
+    shape_color([G, Sc], Col), parse.panel($U(), G, P, Q, P_intile), in(P, Col).
+
+// The other shape panel.
+.decl other(r: Reading, dt: Detect, q: Position)
+
+// Each target panel and its color.
+.decl target(r: Reading, dt: Detect, t: Position, col: Color)
+
+// A target panel on neither side of the line along d.
+.decl unsided(r: Reading, dt: Detect)
+
+// The input has an other shape panel, and every target has a side.
+.decl ready(r: Reading, dt: Detect)
+ready(R, Dt) :- other(R, Dt, _), !unsided(R, Dt).
+
+// A place in a panel that a copy writes.
+.decl copy(r: Reading, st: Stamp, dt: Detect, p_intile: Position)
+
+.decl stamped(r: Reading, st: Stamp, dt: Detect, p: Position, col: Color)
+stamped([G, Sc], St, Dt, P, Col) :-
+    copy([G, Sc], St, Dt, P_intile), target([G, Sc], Dt, T, Col),
+    parse.panel($U(), G, P, T, P_intile).
+
+out(P, Col, [G, Sc, St, Dt, Cb]) :-
+    stamped([G, Sc], St, Dt, P, Col), ready([G, Sc], Dt), combine_choice(Cb).
+
+// --- $Turn, $FixedPanels ---
+
+// The ring's step in each sense: to the ring panel beside it on that sense's
+// side of the line from the center through it.
+// @claim turn
+.init ring_walk = CycleWalk<Sense, Position>
+ring_walk.succ(S, Q, Q2) :-
+    parse.ring($U(), G, Q, D), parse.center($U(), G, C),
+    dir_elem(D2), neighbor(Q, D2, Q2), parse.ring($U(), G, Q2, _),   // a ring panel beside it
+    rotation(S, R), apply_dir8(R, D, D_side), nearer(D_side, Q2, C). // on the sense's side
+ring_walk.step(S, N) :- sense_elem(S), params.turn(N).
+
+.decl turn_geometry(g: Geometry)
+turn_geometry($Lines(S, $Turn())) :- separator_choice(S).
+turn_geometry($FixedPanels()).
+
+target([G, Sc], Dt, T, Col) :-
+    turn_geometry(G), other([G, Sc], Dt, Q),
+    params.turn(N), ring_walk.walk(S, Q, N, T), params.turn_color(S, Col).
+
+// --- $ManhattanTargets ---
+
+// A panel params.turn steps from the other shape panel.
+.decl manhattan(r: Reading, dt: Detect, t: Position)
+manhattan([G, Sc], Dt, T) :-
+    G = $Lines(_, $ManhattanTargets()), other([G, Sc], Dt, Q), parse.panel($U(), G, _, T, _),
+    relative(Q, T, V),
+    diag_dist(V, Diag, _, K1, K2), K1 >= 0, K2 >= 0,   // the corner facing away from Q
+    corner_dist(V, Diag, N), params.turn(N).
+
+target([G, Sc], Dt, T, Col) :-
+    manhattan([G, Sc], Dt, T), other([G, Sc], Dt, Q),
+    parse.ring($U(), G, Q, D), parse.center($U(), G, C),
+    rotation(S, R), apply_dir8(R, D, D_side), nearer(D_side, T, C),       // on the sense's side
+    params.turn_color(S, Col).
+
+unsided(R, Dt) :- manhattan(R, Dt, T), !target(R, Dt, T, _).
+
+// --- $StoredShapeColor ---
+shape_color([G, $StoredShapeColor()], Col) :- geometry_choice(G), params.shape_color(Col).
+
+// --- $DeriveShapeColor ---
+// @claim two-shapes
+.init center_color = Unanimous<Geometry, Color>
+center_color.item(G, Col) :-
+    parse.center($U(), G, C), parse.panel($U(), G, P, C, _), in(P, Col), !params.bg(Col).
+
+shape_color([G, $DeriveShapeColor()], Col) :- center_color.value(G, Col).
+
+// --- $OnePanel ---
+// @claim direction
+.init shape_panel = Unanimous<Reading, Position>
+shape_panel.item([G, Sc], Q) :- shape_cell([G, Sc], Q, _), !parse.center($U(), G, Q).
+
+other([G, Sc], $OnePanel(), Q) :-
+    shape_panel.value([G, Sc], Q), parse.ring($U(), G, Q, _),
+    parse.center($U(), G, C), shape_cell([G, Sc], C, _).                 // the center holds a shape
+
+// --- $CornerProbe ---
+
+// A ring panel whose cell at the corner, or a cell beside it, holds the
+// shape color.
+.decl probed(r: Reading, c: DiagDir, q: Position)
+probed([G, Sc], Dc, Q) :-
+    parse.ring($U(), G, Q, _), shape_cell([G, Sc], Q, P_intile),
+    params.probe_corner(Dc), parse.probe_place($U(), G, P_intile, Dc).
+
+// @claim direction
+.init probe_order = LexOrder<ProbeKey>
+probe_order.cell([R, Dc, A], Q) :- probed(R, Dc, Q), params.order_axis(A).
+probe_order.corner([R, Dc, A], Dc) :- probe_order.cell([R, Dc, A], _).
+probe_order.axis([R, Dc, A], A) :- probe_order.cell([R, Dc, A], _).
+
+// The pick under each open corner and axis: the last probed panel, or the
+// ring panel toward the corner when none is probed. Defined where they all
+// agree.
+// @claim direction
+.init probe_pick = Unanimous<Reading, Position>
+probe_pick.item(R, Q) :- probe_order.last([R, _, _], Q).
+probe_pick.item([G, Sc], Q) :-
+    shape_color([G, Sc], _), params.probe_corner(Dc),
+    parse.ring($U(), G, Q, Dc), !probed([G, Sc], Dc, _).
+
+other(R, $CornerProbe(), Q) :- probe_pick.value(R, Q).
+
+// --- $CenterShape ---
+copy([G, Sc], $CenterShape(), Dt, P_intile) :-
+    other([G, Sc], Dt, _), parse.center($U(), G, C), shape_cell([G, Sc], C, P_intile).
+
+// --- $CopyOther ---
+copy(R, $CopyOther(), Dt, P_intile) :- other(R, Dt, Q), shape_cell(R, Q, P_intile).
+
+// --- $StoredShape ---
+copy(R, $StoredShape(), Dt, P_intile) :- other(R, Dt, _), params.stored_shape(P_intile).
+
+// --- $ShapeOnly ---
+out(P, Col, [G, Sc, St, Dt, $ShapeOnly()]) :-
+    ready([G, Sc], Dt), stamp_choice(St), in(P, Col), !stamped([G, Sc], St, Dt, P, _).
+
+// --- $ClearTarget ---
+
+// A cell of a target panel.
+.decl in_target(r: Reading, dt: Detect, p: Position)
+in_target([G, Sc], Dt, P) :- target([G, Sc], Dt, T, _), parse.panel($U(), G, P, T, _).
+
+out(P, Col, [G, Sc, St, Dt, $ClearTarget()]) :-
+    ready([G, Sc], Dt), stamp_choice(St), in(P, Col_in), !stamped([G, Sc], St, Dt, P, _),
+    ( in_target([G, Sc], Dt, P), params.bg(Col)
+    ; !in_target([G, Sc], Dt, P), Col = Col_in ).
+
+.comp Determine {
+    .type ProbeEx = [e: Example, c: DiagDir, a: Axis]
+
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // An example with an output.
+    .decl pair(e: Example)
+    pair(E) :- ex_out(E, _, _).
+
+    // A line with two colors in some pair's input.
+    .decl broken_line(a: Axis, l: Position)
+    broken_line(A, L) :- pair(E), parse.line_color.clash([E, A, L]).
+
+    .decl fixed_divider(a: Axis, l: Position)
+    fixed_divider(A, L) :- pair(E), parse.line_color.value([E, A, L], _), !broken_line(A, L).
+
+    // The concept's panel reading.
+    .decl concept(g: Geometry)
+    concept($Lines($StoredSeparator(), $Turn())).
+
+    // The concept's panels in each pair.
+    .decl panel(e: Example, p: Position, p_tile: Position, p_intile: Position)
+    panel(E, P, P_tile, P_intile) :- pair(E), concept(G), parse.panel(E, G, P, P_tile, P_intile).
+
+    .decl shape_cell(e: Example, q: Position, p_intile: Position)
+    shape_cell(E, Q, P_intile) :-
+        panel(E, P, Q, P_intile), ex_in(E, P, Col), params.shape_color(Col).
+
+    .decl other(e: Example, q: Position, d: Dir8)
+    other(E, Q, D) :- parse.ring(E, G, Q, D), concept(G), shape_cell(E, Q, _).
+
+    // A cell the output changes, in its panel, with its output color.
+    .decl changed(e: Example, t: Position, p_intile: Position, col: Color)
+    changed(E, T, P_intile, Col) :-
+        panel(E, P, T, P_intile), ex_in(E, P, Col_in), ex_out(E, P, Col), Col != Col_in.
+
+    .decl stored_shape(p: Position)
+    stored_shape(P_intile) :- changed(_, _, P_intile, _).
+
+    // Each target's color, by the side of the line along d it lies on.
+    .decl turn_color(s: Sense, c: Color)
+    turn_color(S, Col) :-
+        changed(E, T, _, Col), other(E, _, D), parse.center(E, G, C), concept(G),
+        rotation(S, R), apply_dir8(R, D, D_side), nearer(D_side, T, C).
+
+    // A ring panel whose cell at corner c, or a cell beside it, holds the
+    // shape color.
+    .decl probed(e: Example, c: DiagDir, q: Position)
+    probed(E, Dc, Q) :-
+        parse.ring(E, G, Q, _), concept(G), shape_cell(E, Q, P_intile),
+        parse.probe_place(E, G, P_intile, Dc).
+
+    // A corner at which the other shape panel fails the probe.
+    .decl corner_contradicted(c: DiagDir)
+    corner_contradicted(Dc) :- other(E, Q, _), diag_dir_elem(Dc), !probed(E, Dc, Q).
+
+    .decl probe_corner(c: DiagDir)
+    probe_corner(Dc) :- diag_dir_elem(Dc), !corner_contradicted(Dc).
+
+    .init order = LexOrder<ProbeEx>
+    order.cell([E, Dc, A], Q) :- probed(E, Dc, Q), probe_corner(Dc), axis_elem(A).
+    order.corner([E, Dc, A], Dc) :- order.cell([E, Dc, A], _).
+    order.axis([E, Dc, A], A) :- order.cell([E, Dc, A], _).
+
+    // An axis whose order puts another probed panel last.
+    .decl axis_contradicted(a: Axis)
+    axis_contradicted(A) :- order.last([E, _, A], Q), other(E, Q2, _), Q != Q2.
+
+    .decl order_axis(a: Axis)
+    order_axis(A) :- axis_elem(A), !axis_contradicted(A).
+}

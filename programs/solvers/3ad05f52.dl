@@ -63,14 +63,14 @@ outward_door(P, D) :- door(P), dir_elem(D), neighbor(P, D, Q), outside(Q).
 // The ground the outward doorways carry paint over.
 .decl crossing(p: Position, ch: Choice)
 
-// --- Span ---
+// --- $Span ---
 
 .init span_box = Bbox<Unit>
 span_box.cell($U(), P) :- outward_door(P, _).
 
 crossing(P, $Span()) :- span_box.box($U(), B), outside(P), inside(P, B).
 
-// --- Duct ---
+// --- $Duct ---
 
 .type Pair = [a: Position, b: Position]
 

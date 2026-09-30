@@ -1,0 +1,325 @@
+// aa4ec2a5
+// @draft
+// @keywords: objects enclose border lookup count
+// @scene field: the background is params.bg, and it covers the grid border
+// @scene shapes: several shapes of params.shape_color sit on the field; each
+//  shape is a 4-connected component of params.shape_color, and no two shapes
+//  touch, not even at a corner
+// @scene holes: some shapes each enclose one region of params.bg cells that
+//  is cut off from the grid border
+// @rule hole-fill: a params.bg cell with no 4-connected path of params.bg
+//  cells to the grid border is a hole cell, and becomes params.hole_color
+// @rule holed-shape: every cell of a shape that alone encloses a hole cell
+//  becomes params.holed_color; a shape alone encloses a cell when the cell
+//  has no 4-connected path to the grid border that avoids that shape's cells
+// @rule plain-shape: a shape that alone encloses no hole cell keeps
+//  params.shape_color
+// @rule outline: a params.bg cell that is not a hole cell and has a shape
+//  cell among its 8 neighbors becomes params.outline_color
+// @rule rest: every other cell keeps its input color
+
+// which cells are hole cells, which shapes turn params.holed_color, and
+// which cells take the outline
+.type HoleOwner =
+    // @claim hole-fill holed-shape outline
+    SoleEncloser {}
+    // @rule hole-fill: a cell that a shape alone encloses is a hole cell,
+    //  whatever its color, and becomes params.hole_color unless it is a cell
+    //  of a holed shape
+    // @rule holed-shape: every cell of a shape that alone encloses some cell
+    //  becomes params.holed_color
+    // @witness nested-shape: borderline $PerShapeOutline
+    //     @relaxed holes
+  | BboxHole {}
+    // @rule holed-shape: every cell of a shape with a hole cell among the 8
+    //  neighbors of one of its cells becomes params.holed_color
+    // @witness nested-shape: borderline $PerShapeOutline
+  | AdjacentHoled {}
+    // @rule outline: a params.bg cell becomes params.outline_color when it
+    //  has a cell of some shape among its 8 neighbors and that shape does not
+    //  alone enclose it; the outline takes priority over params.hole_color
+    // @witness nested-shape: borderline $PerShapeOutline
+  | PerShapeOutline {}
+
+// the path that keeps a cell from being enclosed
+.type HoleConn =
+    // @claim hole-fill holed-shape
+    Hole4conn {}
+    // @rule hole-fill: a params.bg cell with no 8-connected path of
+    //  params.bg cells to the grid border is a hole cell, and becomes
+    //  params.hole_color
+    // @rule holed-shape: every cell of a shape that alone encloses a hole
+    //  cell becomes params.holed_color; a shape alone encloses a cell when the
+    //  cell has no 8-connected path to the grid border that avoids that
+    //  shape's cells
+    // @witness diagonal-pocket: borderline concept
+  | Hole8conn {}
+
+// how shape cells join into one shape
+.type ShapeConn =
+    // @claim shapes
+    Shape4conn {}
+    // @scene shapes: several shapes of params.shape_color sit on the field;
+    //  each shape is an 8-connected component of params.shape_color
+    // @witness corner-ring: borderline $Shape8conn
+    //     @relaxed shapes
+    // @witness corner-blob: borderline concept
+    //     @relaxed shapes
+  | Shape8conn {}
+
+// where a hole cell's color comes from
+.type HoleColor =
+    // @claim hole-fill
+    OneHoleColor {}
+    // @rule hole-fill: a hole cell becomes the color params.hole_size_color
+    //  gives the cell count of its hole, and is undefined when no color is
+    //  stored for that count; a hole is a region of hole cells, connected as
+    //  the path to the grid border is, and under BboxHole it is every cell
+    //  that one shape alone encloses
+    // @witness size-color: ordinary concept
+    //     @reassigned hole_size_color
+  | SizeLookup {}
+
+.type Choice = [owner: HoleOwner, leak: HoleConn, shape: ShapeConn, fill: HoleColor]
+
+// A shape under one reading of shape connectivity.
+.type Wall = [s: ShapeConn, o: Ident]
+
+// The cells a shape alone encloses, under one reading of hole connectivity.
+.type OwnHole = [h: HoleConn, w: Wall]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    //     @relaxed field
+    .decl bg(c: Color) bg(4).
+    // @derive RarestColor: variant derived
+    //     @relaxed shapes
+    .decl shape_color(c: Color) shape_color(1).
+    .decl outline_color(c: Color) outline_color(2).
+    .decl holed_color(c: Color) holed_color(8).
+
+    // --- $OneHoleColor ---
+    .decl hole_color(c: Color) hole_color(6).
+
+    // --- $SizeLookup ---
+    // The color of a hole cell, by the cell count of its hole.
+    .decl hole_size_color(n: number, c: Color)
+    hole_size_color(2, 6). hole_size_color(4, 6). hole_size_color(9, 6). hole_size_color(16, 6).
+}
+
+.init params = Params
+
+.comp Parse<Key> {
+    .type KHole = [k: Key, id: Ident]
+
+    .decl cell(key: Key, p: Position, col: Color)  // input
+
+    // --- $Hole4conn ---
+    // @claim hole-fill
+    .init holes4 = Closed<Key>
+    holes4.cell(K, P) :- cell(K, P, Col), params.bg(Col).
+
+    // --- $SizeLookup ---
+    // @claim hole-fill
+    .init hole_cells = Tally<KHole, Position>
+    hole_cells.item([K, Id], P) :- holes4.region(K, P, Id).
+
+    // A hole cell with the cell count of its hole.
+    .decl hole_size(key: Key, p: Position, n: number)
+    hole_size(K, P, N) :- holes4.region(K, P, Id), hole_cells.tally([K, Id], N).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+
+.decl hole_owner_choice(ow: HoleOwner)
+hole_owner_choice($SoleEncloser()). hole_owner_choice($BboxHole()).
+hole_owner_choice($AdjacentHoled()). hole_owner_choice($PerShapeOutline()).
+
+.decl hole_conn_choice(h: HoleConn)
+hole_conn_choice($Hole4conn()). hole_conn_choice($Hole8conn()).
+
+.decl shape_conn_choice(s: ShapeConn)
+shape_conn_choice($Shape4conn()). shape_conn_choice($Shape8conn()).
+
+.decl hole_color_choice(f: HoleColor)
+hole_color_choice($OneHoleColor()). hole_color_choice($SizeLookup()).
+
+.decl impl_choice(ch: Choice)
+impl_choice([Ow, H, S, F]) :-
+    hole_owner_choice(Ow), hole_conn_choice(H), shape_conn_choice(S), hole_color_choice(F).
+
+.decl bg_cell(p: Position)
+bg_cell(P) :- in(P, Col), params.bg(Col).
+
+.decl shape_cell(p: Position)
+shape_cell(P) :- in(P, Col), params.shape_color(Col).
+
+// A params.bg cell with a shape cell among its 8 neighbors.
+.decl shape_near(p: Position)
+shape_near(P) :- bg_cell(P), neighbor(P, _, Q), shape_cell(Q).
+
+// The shapes, each cell labeled with its shape.
+.decl shape(s: ShapeConn, p: Position, o: Ident)
+
+// Each shape once.
+// @ignore: single-consumer — off_wall binds each shape once, and not once per shape cell
+.decl wall(w: Wall)
+wall([S, O]) :- shape(S, _, O).
+
+// The cells other than the shape's own.
+.decl off_wall(w: Wall, p: Position)
+off_wall([S, O], P) :- wall([S, O]), in(P, _), !shape(S, P, O).
+
+// A params.bg cell with no path of params.bg cells to the grid border.
+.decl enclosed(h: HoleConn, p: Position)
+
+// A cell that the shape alone encloses.
+.decl own_hole(h: HoleConn, w: Wall, p: Position)
+
+// A shape that turns params.holed_color, and its cells.
+.decl holed(ch: Choice, o: Ident)
+.decl holed_cell(ch: Choice, p: Position)
+holed_cell([Ow, H, S, F], P) :- holed([Ow, H, S, F], O), shape(S, P, O).
+
+.decl hole_cell(ch: Choice, p: Position)
+.decl outline_cell(ch: Choice, p: Position)
+
+out(P, Col, Ch) :- holed_cell(Ch, P), params.holed_color(Col).
+out(P, Col, Ch) :- outline_cell(Ch, P), params.outline_color(Col).
+out(P, Col, Ch) :-
+    in(P, Col), impl_choice(Ch),
+    !holed_cell(Ch, P), !hole_cell(Ch, P), !outline_cell(Ch, P).
+
+// --- $Shape4conn ---
+// @claim shapes
+.init shapes4 = Components<Unit>
+shapes4.node($U(), P) :- shape_cell(P).
+shape($Shape4conn(), P, O) :- shapes4.label($U(), P, O).
+
+// --- $Shape8conn ---
+// @claim shapes
+.init shapes8 = Components8<Unit>
+shapes8.node($U(), P) :- shape_cell(P).
+shape($Shape8conn(), P, O) :- shapes8.label($U(), P, O).
+
+// --- $Hole4conn ---
+enclosed($Hole4conn(), P) :- parse.holes4.region($U(), P, _).
+
+// @claim holed-shape
+.init own_holes4 = Closed<Wall>
+own_holes4.cell(W, P) :- off_wall(W, P).
+own_hole($Hole4conn(), W, P) :- own_holes4.region(W, P, _).
+
+// --- $Hole8conn ---
+// @claim hole-fill
+.init open8 = Reach<Unit>
+open8.step(V) :- step_offset(_, V).
+open8.node($U(), P) :- bg_cell(P).
+open8.seed($U(), P) :- bg_cell(P), dir_elem(D), dist(P, D, 0).
+enclosed($Hole8conn(), P) :- bg_cell(P), !open8.reach($U(), P).
+
+// @claim holed-shape
+.init own_open8 = Reach<Wall>
+own_open8.step(V) :- step_offset(_, V).
+own_open8.node(W, P) :- off_wall(W, P).
+own_open8.seed(W, P) :- off_wall(W, P), dir_elem(D), dist(P, D, 0).
+own_hole($Hole8conn(), W, P) :- off_wall(W, P), !own_open8.reach(W, P).
+
+// --- $SoleEncloser, $PerShapeOutline ---
+// The shape alone encloses a hole cell.
+.decl sole_holed(h: HoleConn, w: Wall)
+sole_holed(H, W) :- own_hole(H, W, P), enclosed(H, P).
+
+// --- $SoleEncloser, $AdjacentHoled ---
+// A shape_near cell that is not a hole cell.
+.decl rim(h: HoleConn, p: Position)
+rim(H, P) :- hole_conn_choice(H), shape_near(P), !enclosed(H, P).
+
+// --- $SoleEncloser ---
+holed([$SoleEncloser(), H, S, F], O) :-
+    impl_choice([$SoleEncloser(), H, S, F]), sole_holed(H, [S, O]).
+hole_cell([$SoleEncloser(), H, S, F], P) :-
+    impl_choice([$SoleEncloser(), H, S, F]), enclosed(H, P).
+outline_cell([$SoleEncloser(), H, S, F], P) :-
+    impl_choice([$SoleEncloser(), H, S, F]), rim(H, P).
+
+// --- $BboxHole ---
+// A cell that some shape alone encloses.
+.decl in_own_hole(h: HoleConn, s: ShapeConn, p: Position)
+in_own_hole(H, S, P) :- own_hole(H, [S, _], P).
+
+holed([$BboxHole(), H, S, F], O) :-
+    impl_choice([$BboxHole(), H, S, F]), own_hole(H, [S, O], _).
+hole_cell([$BboxHole(), H, S, F], P) :-
+    impl_choice([$BboxHole(), H, S, F]), own_hole(H, [S, _], P),
+    !holed_cell([$BboxHole(), H, S, F], P).
+outline_cell([$BboxHole(), H, S, F], P) :-
+    impl_choice([$BboxHole(), H, S, F]), shape_near(P), !in_own_hole(H, S, P).
+
+// --- $AdjacentHoled ---
+holed([$AdjacentHoled(), H, S, F], O) :-
+    impl_choice([$AdjacentHoled(), H, S, F]),
+    enclosed(H, P), neighbor(P, _, Q), shape(S, Q, O).
+hole_cell([$AdjacentHoled(), H, S, F], P) :-
+    impl_choice([$AdjacentHoled(), H, S, F]), enclosed(H, P).
+outline_cell([$AdjacentHoled(), H, S, F], P) :-
+    impl_choice([$AdjacentHoled(), H, S, F]), rim(H, P).
+
+// --- $PerShapeOutline ---
+// A params.bg cell with a cell of some shape among its 8 neighbors, which
+// that shape does not alone enclose.
+.decl own_rim(h: HoleConn, s: ShapeConn, p: Position)
+own_rim(H, S, P) :-
+    hole_conn_choice(H), bg_cell(P), neighbor(P, _, Q), shape(S, Q, O),
+    !own_hole(H, [S, O], P).
+
+holed([$PerShapeOutline(), H, S, F], O) :-
+    impl_choice([$PerShapeOutline(), H, S, F]), sole_holed(H, [S, O]).
+outline_cell([$PerShapeOutline(), H, S, F], P) :-
+    impl_choice([$PerShapeOutline(), H, S, F]), own_rim(H, S, P).
+hole_cell([$PerShapeOutline(), H, S, F], P) :-
+    impl_choice([$PerShapeOutline(), H, S, F]), enclosed(H, P), !own_rim(H, S, P).
+
+// --- $OneHoleColor ---
+out(P, Col, [Ow, H, S, $OneHoleColor()]) :-
+    hole_cell([Ow, H, S, $OneHoleColor()], P), params.hole_color(Col).
+
+// --- $SizeLookup ---
+// The cell count of the hole a hole cell belongs to.
+.decl hole_count(ch: Choice, p: Position, n: number)
+out(P, Col, Ch) :- hole_cell(Ch, P), hole_count(Ch, P, N), params.hole_size_color(N, Col).
+
+// A params.bg hole cell with the cell count of its region of hole cells.
+.decl hole_size(h: HoleConn, p: Position, n: number)
+hole_size($Hole4conn(), P, N) :- parse.hole_size($U(), P, N).
+
+// --- $SizeLookup & $Hole8conn ---
+// @claim hole-fill
+.init holes8 = Components8<Unit>
+holes8.node($U(), P) :- enclosed($Hole8conn(), P).
+// @claim hole-fill
+.init hole8_cells = Tally<Ident, Position>
+hole8_cells.item(Id, P) :- holes8.label($U(), P, Id).
+hole_size($Hole8conn(), P, N) :- holes8.label($U(), P, Id), hole8_cells.tally(Id, N).
+
+// --- $SizeLookup, $AdjacentHoled & $SizeLookup, $PerShapeOutline & $SizeLookup ---
+hole_count([Ow, H, S, $SizeLookup()], P, N) :-
+    impl_choice([Ow, H, S, $SizeLookup()]), Ow != $BboxHole(), hole_size(H, P, N).
+
+// --- $BboxHole & $SizeLookup ---
+// @claim hole-fill
+.init own_hole_cells = Tally<OwnHole, Position>
+own_hole_cells.item([H, W], P) :- own_hole(H, W, P).
+hole_count([$BboxHole(), H, S, $SizeLookup()], P, N) :-
+    own_hole(H, [S, O], P), own_hole_cells.tally([H, [S, O]], N).
+
+.comp Determine {
+    .init ex = Parse<Example>
+    ex.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    .decl hole_size_color(n: number, c: Color)
+    hole_size_color(N, Col) :- ex.hole_size(E, P, N), ex_out(E, P, Col).
+}
