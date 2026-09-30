@@ -224,7 +224,10 @@ def survey_cmd(path: Path, plan: dict, run_dir: Path) -> list[str]:
     brief = prompts.role_text("survey") + "\n\n" + prompts.survey_brief(
         entry=str(path.relative_to(config.ROOT)), scope=scope,
         scratch=str(run_dir.relative_to(config.ROOT)))
-    return [config.CLAUDE, "-p", brief, *config.SURVEY_FLAGS, *survey_session()]
+    # The brief opens with a list item, and the CLI takes an argument that
+    # starts with "-" for an option unless it follows "--".
+    return [config.CLAUDE, "-p", *config.SURVEY_FLAGS, *survey_session(),
+            "--", brief]
 
 
 def run_survey(cmd: list[str], run_dir: Path) -> str:

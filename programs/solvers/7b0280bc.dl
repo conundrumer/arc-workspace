@@ -26,26 +26,6 @@
 .decl impl_choice(ch: Choice)
 impl_choice($Filled()). impl_choice($Extents()).
 
-// Fewest-hop distance from a seed set over a supplied edge relation, with
-// the edges a fewest-hop walk uses. Proposal comp: see
-// docs/wf-solver/proposals/MinHops.md.
-.comp MinHops<Key, Node> {
-    .decl edge(key: Key, a: Node, b: Node)  // input
-    .decl seed(key: Key, n: Node)  // input
-
-    // Hops from the nearest seed; subsumption keeps the minimum per node.
-    .decl dist(key: Key, n: Node, k: number)
-    dist(K, N, 0) :- seed(K, N).
-    dist(K, B, D + 1) :- dist(K, A, D), edge(K, A, B).
-    dist(K, N, D) <= dist(K, N, D2) :- D2 < D.
-
-    // a is a fewest-hop predecessor of b — an edge some fewest-hop walk uses.
-    // Tied walks all appear, so a consumer tracing it backward gets their
-    // union.
-    .decl pred(key: Key, b: Node, a: Node)
-    pred(K, B, A) :- edge(K, A, B), dist(K, A, D), dist(K, B, D2), D2 = D + 1.
-}
-
 // The background is the commonest color.
 .init ground = Mode<Unit, Color, Position>
 ground.item($U(), Col, P) :- in(P, Col).
@@ -101,7 +81,7 @@ touch(A, B) :- piece_cell(A, P), dir8_elem(D), neighbor(P, D, Q), piece_cell(B, 
 .type EndKey = [ch: Choice, e: Ident]
 
 // Hops over the touch graph from each end.
-.init hops = MinHops<EndKey, Ident>
+.init hops = GraphDistance<EndKey, Ident>
 hops.edge([Ch, E], A, B) :- end_piece(Ch, E), touch(A, B).
 hops.seed([Ch, E], E) :- end_piece(Ch, E).
 

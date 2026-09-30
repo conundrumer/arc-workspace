@@ -128,7 +128,7 @@ crossing(D_from, D_to) :-
     comb(P), travel_axis(A), axis_of(D_from, A),
     dist(P, D_from, 0), opposite(D_from, D_to).
 
-// @claim teeth cross scrape
+// @claim teeth scrape
 .init cbox = Bbox<Unit>
 cbox.cell($U(), P) :- comb(P).
 
@@ -144,10 +144,12 @@ gapped_line(L) :- cbox.box($U(), B), line_of(P, L), crop(P, B, _), !comb(P).
 
 // --- $Slide ---
 
-crossed($Slide(), P, P2) :-
-    comb(P), crossing(_, D_to),
-    cbox.box($U(), B), dist(B, D_to, K),   // the room ahead of the comb
-    jump(P, D_to, K, P2).
+// @claim cross
+.init slide = Gravity<Unit, Unit>
+slide.cell($U(), $U(), P) :- comb(P).
+slide.dir($U(), D_to) :- crossing(_, D_to).
+
+crossed($Slide(), P, P2) :- comb(P), slide.travel($U(), $U(), V), compose(P, V, P2).
 
 // --- $Mirror ---
 

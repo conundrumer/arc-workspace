@@ -70,16 +70,17 @@ move_dir(Pc, D) :-
     in(Q, Col_a), params.anchor(Col_a),                  // an anchor
     opposite(D, D_anchor).                               // the heading points away from it
 
-.init bbox = Bbox<Piece>
-bbox.cell(Pc, P) :- piece_cell(Pc, P).
+// Each piece travels until it reaches the edge ahead.
+.init slide = Gravity<Piece, Unit>
+slide.cell(Pc, $U(), P) :- piece_cell(Pc, P).
+slide.dir(Pc, D) :- move_dir(Pc, D).
 
 // --- output ---
 
 .decl ink(p: Position, col: Color, ch: Choice)
 ink(P, Col, Ch) :- in(P, Col), params.anchor(Col), impl_choice(Ch).
 ink(Q, Col, Ch) :-
-    Pc = [Ch, _, Col], piece_cell(Pc, P), move_dir(Pc, D),  // the piece and its heading
-    bbox.box(Pc, B), dist(B, D, K), jump(P, D, K, Q).       // jumped flush to the edge ahead
+    Pc = [Ch, _, Col], piece_cell(Pc, P), slide.travel(Pc, $U(), V), compose(P, V, Q).
 
 out(P, Col, Ch) :- ink(P, Col, Ch).
 out(P, Col, Ch) :- in(P, _), !ink(P, _, Ch), params.bg(Col), impl_choice(Ch).

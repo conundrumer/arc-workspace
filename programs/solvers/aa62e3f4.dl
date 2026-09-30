@@ -152,18 +152,6 @@
 
 .init parse = Parse<Pool>
 
-// Fewest-hop distance from a seed set over a supplied edge relation.
-.comp MinHops<Key, Node> {
-    .decl edge(key: Key, a: Node, b: Node)  // @input
-    .decl seed(key: Key, n: Node)  // @input
-
-    // Hops from the nearest seed; subsumption keeps the minimum per node.
-    .decl dist(key: Key, n: Node, k: number)
-    dist(K, N, 0) :- seed(K, N).
-    dist(K, B, D + 1) :- dist(K, A, D), edge(K, A, B).
-    dist(K, N, D) <= dist(K, N, D2) :- D2 < D.
-}
-
 .decl bg_count_choice(c: BgCount)
 bg_count_choice($ObjectCount()). bg_count_choice($RarestWithBackground()).
 
@@ -269,7 +257,7 @@ parse.cell([$RarestWithBackground(), S, Id], P, Bg) :- member([S, Id], _), field
 // A color's level less one: its hops from the colors beside the background
 // or the off-grid border.
 // @claim rare-color
-.init hops = MinHops<Group, Color>
+.init hops = GraphDistance<Group, Color>
 hops.seed(G, Col) :-
     member(G, P), in(P, Col), dir_elem(D),
     ( dist(P, D, 0)                          // the off-grid border
@@ -279,7 +267,7 @@ hops.edge(G, A, B) :-
 
 // @claim rare-color
 .init deepest = ArgExtremes<Group, Color>
-deepest.cand(G, Col, K) :- hops.dist(G, Col, K).
+deepest.cand(G, Col, K) :- hops.distance(G, Col, K).
 
 // @claim rare-color
 .init innermost = Unanimous<Group, Color>

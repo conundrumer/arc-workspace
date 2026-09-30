@@ -24,7 +24,7 @@
 /// Ranking over members of any type: the caller supplies the strict order,
 /// and the rank of t counts the members before it, ascending from 0.
 /// `before` is read over `elem`, and a row with an endpoint outside `elem`
-/// is ignored.
+/// is ignored. `elem` and `before` may be recursive with `first` and `last`.
 ///
 /// Requires: `before` is transitive; it is never closed, so a `before` that
 /// holds direct comparisons alone yields predecessor counts, not ranks.
@@ -45,11 +45,13 @@
 
     /// The element nothing precedes.
     .decl first(key: Key, t: T)
-    first(Ky, T) :- elem(Ky, T), !_edge(Ky, _, T).
+    first(Ky, T) :- elem(Ky, T).
+    first(Ky, T) <= first(Ky, T2) :- before(Ky, T2, T).
 
     /// The element nothing follows.
     .decl last(key: Key, t: T)
-    last(Ky, T) :- elem(Ky, T), !_edge(Ky, T, _).
+    last(Ky, T) :- elem(Ky, T).
+    last(Ky, T) <= last(Ky, T2) :- before(Ky, T, T2).
 
     // Some element lies between a and b.
     .decl _skipped(key: Key, a: T, b: T)
@@ -58,6 +60,35 @@
     /// b directly follows a: before, with nothing between.
     .decl next(key: Key, a: T, b: T)
     next(Ky, A, B) :- _edge(Ky, A, B), !_skipped(Ky, A, B).
+}
+
+/// The fewest-hop distance from a seed set over a supplied edge relation,
+/// with the edges a fewest-hop walk uses.
+.comp GraphDistance<Key, Node> {
+    /// The directed edges.
+    .decl edge(key: Key, a: Node, b: Node)  // @input
+
+    /// The nodes at distance 0.
+    .decl seed(key: Key, n: Node)  // @input
+
+    // A hop count some walk from a seed reaches n with.
+    .decl _hops(key: Key, n: Node, k: number)
+    _hops(Ky, N, 0) :- seed(Ky, N).
+    _hops(Ky, B, K + 1) :- _least.low([Ky, A], K), edge(Ky, A, B).
+
+    .type _KN = [key: Key, n: Node]
+
+    .init _least = Extremes<_KN>
+    _least.cand([Ky, N], K) :- _hops(Ky, N, K).
+
+    /// The fewest edges from a seed to n.
+    .decl distance(key: Key, n: Node, k: number)
+    distance(Ky, N, K) :- _least.low([Ky, N], K).
+
+    /// a is a fewest-hop predecessor of b: an edge some fewest-hop walk uses.
+    /// Tied walks all appear.
+    .decl pred(key: Key, b: Node, a: Node)
+    pred(Ky, B, A) :- edge(Ky, A, B), distance(Ky, A, K), distance(Ky, B, K + 1).
 }
 
 /// Z/N successor over a dense 0-based index set: increment, with the max

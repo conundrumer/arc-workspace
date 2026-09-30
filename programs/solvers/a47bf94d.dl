@@ -180,18 +180,6 @@ impl_choice([Pr, Ro, Lo, Pa, La, Xs]) :-
     pairing_choice(Pr), Pr != $Trace($OneLeft()), roles_choice(Ro), lone_choice(Lo),
     paint_choice(Pa), layout_choice(La), xshape_choice(Xs).
 
-// Fewest-hop distance from a seed set over a supplied edge relation.
-.comp MinHops<Key, Node> {
-    .decl edge(key: Key, a: Node, b: Node)  // @input
-    .decl seed(key: Key, n: Node)  // @input
-
-    // Hops from the nearest seed; subsumption keeps the minimum per node.
-    .decl dist(key: Key, n: Node, k: number)
-    dist(K, N, 0) :- seed(K, N).
-    dist(K, B, D + 1) :- dist(K, A, D), edge(K, A, B).
-    dist(K, N, D) <= dist(K, N, D2) :- D2 < D.
-}
-
 // The pairs of a bipartite matching that pairs the most members and, among
 // those matchings, has the lowest total cost. Every tied matching appears.
 .comp MinCostMatching<Key, T> {
@@ -203,14 +191,17 @@ impl_choice([Pr, Ro, Lo, Pa, La, Xs]) :-
 
     .decl paired(key: Key, a: T, b: T)
 
-    .decl left_rank(key: Key, a: T, i: number)
-    left_rank(K, A, I) :- left(K, A), I = count : { left(K, A2), as(A2, number) < as(A, number) }.
+    .init left_order = Order<Key, T>
+    left_order.elem(K, A) :- left(K, A).
+    left_order.before(K, A, A2) :- left(K, A), left(K, A2), as(A, number) < as(A2, number).
 
-    .decl right_rank(key: Key, b: T, j: number)
-    right_rank(K, B, J) :- right(K, B), J = count : { right(K, B2), as(B2, number) < as(B, number) }.
+    .init right_order = Order<Key, T>
+    right_order.elem(K, B) :- right(K, B).
+    right_order.before(K, B, B2) :- right(K, B), right(K, B2), as(B, number) < as(B2, number).
 
-    .decl left_size(key: Key, n: number)
-    left_size(K, N) :- left(K, _), N = count : { left(K, _) }.
+    .init left_count = Tally<Key, T>
+    left_count.item(K, A) :- left(K, A).
+    left_count.domain(K) :- left(K, _).
 
     // The radix of a code: one digit per left member, 0 for unpaired and
     // j + 1 for the right member of rank j.
@@ -220,25 +211,25 @@ impl_choice([Pr, Ro, Lo, Pa, La, Xs]) :-
     // A partial matching of the left members of rank below i: the right
     // members it uses as a bit set, its code, its pair count, its total cost.
     .decl state(key: Key, i: number, used: number, code: number, n: number, s: number)
-    state(K, 0, 0, 1, 0, 0) :- left_size(K, _).
+    state(K, 0, 0, 1, 0, 0) :- left_count.tally(K, _).
     state(K, I + 1, U, C * R, N, S) :-
-        state(K, I, U, C, N, S), left_size(K, L), I < L, radix(K, R).
+        state(K, I, U, C, N, S), left_count.tally(K, L), I < L, radix(K, R).
     state(K, I + 1, U bor (1 bshl J), C2, N + 1, S + X) :-
-        state(K, I, U, C, N, S), pick(K, C2, C, A, B), cost(K, A, B, X), right_rank(K, B, J).
+        state(K, I, U, C, N, S), pick(K, C2, C, A, B), cost(K, A, B, X), right_order.rank(K, B, J).
 
     // Code c2 extends code c by pairing a with b.
     .decl pick(key: Key, code: number, code0: number, a: T, b: T)
     pick(K, C * R + J + 1, C, A, B) :-
-        state(K, I, U, C, _, _), left_rank(K, A, I), cost(K, A, B, _), right_rank(K, B, J),
+        state(K, I, U, C, _, _), left_order.rank(K, A, I), cost(K, A, B, _), right_order.rank(K, B, J),
         (U band (1 bshl J)) = 0, radix(K, R).
 
     // Code c2 extends code c.
     .decl parent(key: Key, code: number, code0: number)
-    parent(K, C * R, C) :- state(K, I, _, C, _, _), left_size(K, L), I < L, radix(K, R).
+    parent(K, C * R, C) :- state(K, I, _, C, _, _), left_count.tally(K, L), I < L, radix(K, R).
     parent(K, C2, C) :- pick(K, C2, C, _, _).
 
     .decl complete(key: Key, code: number, n: number, s: number)
-    complete(K, C, N, S) :- state(K, L, _, C, N, S), left_size(K, L).
+    complete(K, C, N, S) :- state(K, L, _, C, N, S), left_count.tally(K, L).
 
     .decl most(key: Key, n: number)
     most(K, N) :- complete(K, _, _, _), N = max N2 : { complete(K, _, N2, _) }.
@@ -446,7 +437,7 @@ hidden($OneLeft(), P, Q) :- unfaced(P, Id), unfaced(Q, Id), P != Q, !crowded(Id)
 // --- $NearestEnd ---
 // Steps from unfaced end e through its block.
 // @claim trace
-.init through = MinHops<Position, Position>
+.init through = GraphDistance<Position, Position>
 through.seed(E, E) :- unfaced(E, _).
 through.edge(E, P, Q) :-
     unfaced(E, Id), ( P = E ; blocks.label($U(), P, Id) ),
@@ -454,7 +445,7 @@ through.edge(E, P, Q) :-
 
 // @claim trace
 .init nearest = ArgExtremes<Position, Position>
-nearest.cand(E, F, K) :- through.dist(E, F, K), unfaced(F, _), E != F.
+nearest.cand(E, F, K) :- through.distance(E, F, K), unfaced(F, _), E != F.
 
 // Two unfaced ends are equally near e.
 .decl tied(e: Position)
@@ -475,13 +466,13 @@ step([P, D], [Q, D2]) :-
     ( D2 = D ; unhemmed(P) ).
 
 // @claim trace
-.init search = MinHops<Position, Heading>
+.init search = GraphDistance<Position, Heading>
 search.seed(E, [E, D]) :- slot_end(E, D2), opposite(D2, D).
 search.edge(E, A, B) :- slot_end(E, _), step(A, B).
 
 // @claim trace
 .init route = Extremes<Link>
-route.cand([E, F], K) :- search.dist(E, [F, _], K), slot_end(F, _), E != F.
+route.cand([E, F], K) :- search.distance(E, [F, _], K), slot_end(F, _), E != F.
 
 // The slot ends of each row against the slot ends of the facing row.
 // @claim trace

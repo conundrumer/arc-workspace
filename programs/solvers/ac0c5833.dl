@@ -161,13 +161,14 @@
     .decl member_dist(key: Key, p: Position, d: Dir, k: number)
     member_dist(K, P, D, N) :- member(K, P), dir_elem(D), dist(P, D, N).
 
-    .decl size(key: Key, n: number)
-    size(K, N) :- member(K, _), N = count : { member(K, _) }.
+    .init size = Tally<Key, Position>
+    size.item(K, P) :- member(K, P).
+    size.domain(K) :- member(K, _).
 
     // The members' summed distance to edge d, less the anchor's per member.
     .decl surplus(key: Key, q: Position, d: Dir, s: number)
     surplus(K, Q, D, S) :-
-        anchor(K, Q), size(K, N), dir_elem(D), dist(Q, D, KQ),
+        anchor(K, Q), size.tally(K, N), dir_elem(D), dist(Q, D, KQ),
         S0 = sum KP : { member_dist(K, _, D, KP) }, S = S0 - N * KQ.
 
     .decl axis_mag(key: Key, q: Position, a: Axis, s: number)

@@ -28,33 +28,20 @@ sight.cell($U(), P) :- in(P, Col), params.mirror_color(Col).
 .decl move_dir(d: Dir)
 move_dir(D) :- dir_elem(D), sight.ray($U(), _, D, _, _).
 
-// Displacements toward the block the frame admits.
-.decl shift(delta: Offset)
-shift(Delta) :-
-    in(P, _), move_dir(D),
-    axis_of(D, A), sub_extent(P, A, K), jump_offset(D, K, Delta).
-
-// The displacements at which the shape's box would lie over the block's box.
-.decl covering(delta: Offset)
-covering(Delta) :-
-    shift(Delta), in(P, _),
-    params.shape_color(Col), bbox.box(Col, B), inside(P, B),        // a shape-box cell
-    compose(P, Delta, P2), in(P2, _),                               // carried there
-    params.mirror_color(Col2), bbox.box(Col2, B2), inside(P2, B2).  // on a block-box cell
-
-// The shape stands where it is, and travels through the displacements that
-// keep its box clear of the block's.
-.init slide = Slide<Unit>
-slide.dir($U(), D) :- move_dir(D).
-slide.node($U(), ZERO).
-slide.node($U(), Delta) :- shift(Delta), !covering(Delta).
+// The shape's box travels toward the block's box until the two meet.
+.init gravity = Gravity<Unit, Unit>
+gravity.dir($U(), D) :- move_dir(D).
+gravity.cell($U(), $U(), P) :-
+    in(P, _), params.shape_color(Col), bbox.box(Col, B), inside(P, B).   // a shape-box cell
+gravity.blocked($U(), P) :-
+    in(P, _), params.mirror_color(Col), bbox.box(Col, B), inside(P, B).  // a block-box cell
 
 // The shape's box, docked: flush against the block's box.
 .decl home(b: Box)
 home(B_home) :-
     params.shape_color(Col), bbox.box(Col, B),      // the shape's box
-    slide.rest($U(), ZERO, _, Delta),               // at rest
-    compose(B, Delta, B_home).
+    gravity.travel($U(), $U(), V),                  // at rest
+    compose(B, V, B_home).
 
 // The reflection's box: one shape-length on from home, so the two boxes
 // meet at the mirror.

@@ -60,17 +60,16 @@ parse.cell($U(), P, Col) :- in(P, Col).
 
 // --- $PerCell ---
 
-.decl marker_line(p_across: Position)
-marker_line(P_across) :- parse.cell_split($U(), _, Col, _, P_across), params.marker(Col).
-
 .decl cleared(p: Position)
 cleared(P) :- parse.cell_split($U(), P, Col, _, _), params.marker(Col).
 
+// Each marker cell falls on its own to the fall edge of its slice.
+.init fall = Gravity<Position, Unit>
+fall.cell(P, $U(), P) :- cleared(P).
+fall.dir(P, D) :- cleared(P), params.fall_to(D).
+
 .decl landed(p: Position)
-landed(P) :-
-    parse.cell_split($U(), P, _, _, P_across),
-    params.fall_to(D), dist(P, D, 0),   // on the fall edge
-    marker_line(P_across).
+landed(Q) :- fall.travel(P, $U(), V), compose(P, V, Q).
 
 out(P, Col, $PerCell()) :-
     parse.cell_split($U(), P, Col_in, _, _),

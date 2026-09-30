@@ -42,23 +42,6 @@
 
 .init params = Params
 
-// Proposal comp (docs/wf-solver/proposals/Dilate.md): the depth of each
-// domain cell outward from a keyed seed set, stepping toward the key's
-// directions.
-.comp Dilate<Key> {
-    .decl seed(key: Key, p: Position)  // input
-    .decl cell(key: Key, p: Position)  // input
-    .decl dir(key: Key, d: Dir8)  // input
-
-    // The shortest outward walk from the seeds.
-    .decl depth(key: Key, p: Position, k: number)
-    depth(Ky, P, 0) :- seed(Ky, P).
-    depth(Ky, P, K2) :-
-        depth(Ky, Q, K), K2 = K + 1,
-        dir(Ky, D), neighbor(Q, D, P), cell(Ky, P).
-    depth(Ky, P, K) <= depth(Ky, P, K2) :- K2 < K.
-}
-
 .comp Parse<Key> {
     .decl grid(key: Key, p: Position, col: Color)
 
@@ -68,14 +51,13 @@
     cross.cell(Ky, P) :- grid(Ky, P, C), params.cross(C).
 
     // Square rings growing out from the crossing.
-    .init rings = Dilate<Key>
+    .init rings = GraphDistance<Key, Position>
     rings.seed(Ky, P) :- cross.cell(Ky, P), !cross.rim(Ky, P).
-    rings.cell(Ky, P) :- grid(Ky, P, _).
-    rings.dir(Ky, D) :- grid(Ky, _, _), dir8_elem(D).
+    rings.edge(Ky, Q, P) :- grid(Ky, Q, _), dir8_elem(D), neighbor(Q, D, P), grid(Ky, P, _).
 
     // The ring index of each cell off the cross.
     .decl ring(key: Key, p: Position, k: number)
-    ring(Ky, P, K) :- grid(Ky, P, Col), !params.cross(Col), rings.depth(Ky, P, K).
+    ring(Ky, P, K) :- grid(Ky, P, Col), !params.cross(Col), rings.distance(Ky, P, K).
 }
 
 .init parse = Parse<Unit>

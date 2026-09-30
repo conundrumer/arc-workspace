@@ -72,16 +72,15 @@ fill_color(Col, $Parity()) :- in(P, Col), !block_cell(P, $Parity()).
 
 // --- the fall ---
 
-.type LineKey = [ch: Choice, l: Position]
+// Each cell of the falling class falls toward the edge and stacks on the
+// cells ahead of it.
+.init fall_cells = Gravity<Choice, Position>
+fall_cells.cell(Ch, P, P) :- block_cell(P, Ch).
+fall_cells.dir(Ch, D) :- impl_choice(Ch), fall(D).
 
-.init block_len = Tally<LineKey, Position>
-block_len.item([Ch, L], P) :- block_cell(P, Ch), line(P, L).
-
-// The block packed against the edge: the N cells of the line nearest it.
+// The block packed against the edge.
 .decl packed(p: Position, ch: Choice)
-packed(P, Ch) :-
-    line(P, L), block_len.tally([Ch, L], N),
-    fall(D), dist(P, D, K), K < N.
+packed(Q, Ch) :- fall_cells.travel(Ch, P, V), compose(P, V, Q).
 
 .init block_rim = Rim<Choice>
 block_rim.cell(Ch, P) :- packed(P, Ch).

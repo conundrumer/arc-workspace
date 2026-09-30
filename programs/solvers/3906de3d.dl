@@ -14,40 +14,19 @@
 
 .init params = Params
 
-// Cell split on the gravity axis: across names its line, k places it
-// within the line as dist to the gravity edge.
-.decl place(p: Position, p_across: Position, k: number)
-place(P, P_across, K) :-
-    in(P, _), params.grav(D),
-    axis_of(D, A), split(P, A, _, P_across), dist(P, D, K).
+.decl mover(p: Position)
+mover(P) :- in(P, Col), params.mover(Col).
 
-.decl mover(p_across: Position, k: number)
-mover(P_across, K) :- in(P, Col), params.mover(Col), place(P, P_across, K).
+// Each mover cell travels toward the gravity edge and stops against the
+// structure or against the movers already packed ahead of it.
+.init pack = Gravity<Unit, Position>
+pack.dir($U(), D) :- params.grav(D).
+pack.cell($U(), P, P) :- mover(P).
+pack.blocked($U(), P) :- in(P, Col), !params.bg(Col), !params.mover(Col).
 
-.decl block(p_across: Position, k: number)
-block(P_across, K) :- in(P, Col), !params.bg(Col), !params.mover(Col), place(P, P_across, K).
-
-// A blocker sits at k or beyond it, away from the gravity edge.
-.decl block_beyond(p_across: Position, k: number)
-block_beyond(P_across, K) :- place(_, P_across, K), block(P_across, K2), K2 >= K.
-
-// Landing zone: the line's cells past its last blocker.
-.decl zone(p_across: Position, k: number)
-zone(P_across, K) :- place(_, P_across, K), !block_beyond(P_across, K).
-
-.init movers = Ordinal<Position>
-movers.idx_set(P_across, K) :- mover(P_across, K).
-
-.init slots = Ordinal<Position>
-slots.idx_set(P_across, K) :- zone(P_across, K).
-
-// The mover at rank r among its line's movers lands at the zone cell at
-// rank r from the structure.
 .decl landed(p: Position)
-landed(Q) :-
-    movers.rank(P_across, K, R), slots.rank(P_across, K2, R),
-    place(Q, P_across, K2).
+landed(Q) :- pack.travel($U(), P, V), compose(P, V, Q).
 
 out(P, Col) :- landed(P), params.mover(Col).
-out(P, Col) :- in(P, Col), !params.mover(Col), !landed(P).
-out(P, Bg)  :- in(P, M), params.mover(M), !landed(P), params.bg(Bg).
+out(P, Col) :- in(P, Col), !mover(P), !landed(P).
+out(P, Bg)  :- mover(P), !landed(P), params.bg(Bg).

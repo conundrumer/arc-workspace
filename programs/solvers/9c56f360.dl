@@ -10,8 +10,6 @@
     // any other ink blocks
   | Solid {}
 
-.type StripKey = [ch: Choice, p_across: Position]
-
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
@@ -28,56 +26,23 @@
 .decl impl_choice(ch: Choice)
 impl_choice($Wall()). impl_choice($Solid()).
 
-// Cell split on the slide axis: across names its line, k places it
-// within the line as dist to the dir edge.
-.decl place(p: Position, p_across: Position, k: number)
-place(P, P_across, K) :-
-    in(P, _), params.dir(D),
-    axis_of(D, A), split(P, A, _, P_across), dist(P, D, K).
-
 .decl mover(p: Position)
 mover(P) :- in(P, Col), params.mover(Col).
 
-// Movers cast along the slide axis, both ways, halting at what blocks the pack.
-.init slide = Ray<Choice>
-slide.dir(Ch, D) :- impl_choice(Ch), params.dir(D2), ( D = D2 ; opposite(D2, D) ).
-slide.cell(Ch, P) :- impl_choice(Ch), in(P, _).
-slide.mark(Ch, P) :- impl_choice(Ch), mover(P).
+// Each mover cell travels toward the dir edge and stops against what blocks
+// the pack or against the movers already packed ahead of it.
+.init pack = Gravity<Choice, Position>
+pack.dir(Ch, D) :- impl_choice(Ch), params.dir(D).
+pack.cell(Ch, P, P) :- impl_choice(Ch), mover(P).
 // --- $Wall ---
-slide.blocked($Wall(), P) :- in(P, Col), params.wall(Col).
+pack.blocked($Wall(), P) :- in(P, Col), params.wall(Col).
 // --- $Solid ---
-slide.blocked($Solid(), P) :- in(P, Col), !params.bg(Col), !params.mover(Col).
+pack.blocked($Solid(), P) :- in(P, Col), !params.bg(Col), !params.mover(Col).
 
-// A cell some mover's cast does not reach: a blocker sits between the two.
-.decl cut_off(ch: Choice, p: Position)
-cut_off(Ch, P) :-
-    params.dir(D), slide.ray(Ch, P, D, _, Src),   // on a mover's cast
-    !slide.clear(Ch, P, D, _, Src).               // past where that cast halted
-
-// The landing strip: the free run ahead of the whole group, plus the
-// group itself.
-.decl strip(ch: Choice, p_across: Position, p: Position)
-strip(Ch, P_across, P) :-
-    impl_choice(Ch), place(P, P_across, _),         // a cell, keyed by its line
-    ( mover(P)                                      // the group itself
-    ; params.dir(D), slide.ray(Ch, P, D, _, _),     // at or ahead of a mover
-      opposite(D, O), !slide.ray(Ch, P, O, _, _),   // ahead of every mover
-      !cut_off(Ch, P)                               // clear from every one of them
-    ).
-
-// Movers and strip cells ranked from the dir edge; movers re-seat onto
-// the strip by rank.
-.init order = Ordinal<Position>
-order.idx_set(P_across, K) :- mover(P), place(P, P_across, K).
-
-.init seat = Ordinal<StripKey>
-seat.idx_set([Ch, P_across], K) :- strip(Ch, P_across, P), place(P, P_across, K).
+// --- $Wall, $Solid ---
 
 .decl moved(ch: Choice, p: Position)
-moved(Ch, P2) :-
-    order.rank(P_across, _, R),                  // mover rank in its line
-    seat.rank([Ch, P_across], K2, R),            // strip cell at that rank
-    place(P2, P_across, K2).                     // its position
+moved(Ch, P2) :- pack.travel(Ch, P, V), compose(P, V, P2).
 
 out(P, Col, Ch) :- params.mover(Col), moved(Ch, P).
 out(P, Col, Ch) :- params.bg(Col), impl_choice(Ch), mover(P), !moved(Ch, P).

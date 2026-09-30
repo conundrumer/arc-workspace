@@ -55,51 +55,47 @@ cavity.cell(Id, P) :- anchor(Id, _), in(P, _).
 
 // --- the slide ---
 
-// A mover fits at a relative when its every cell lands on background or
-// on its own cells.
-.init fits = Occurrences<Ident, Unit>
-fits.cell(Id, P, $U())  :- mover(Id, _), in(P, Col), ( bg(Col) ; mover(Id, P) ).
-fits.shape(Id, P, $U()) :- mover(Id, P).
+.type Heading = [id: Ident, d: Dir]
 
-// Each mover slides through its fitting displacements.
-.init slide = Slide<Ident>
-slide.node(Id, Delta) :- fits.occurrence(Id, Delta).
-slide.dir(Id, D) :- mover(Id, _), dir_elem(D).
+// Each mover slides toward each direction until it meets the frame edge or
+// a cell that is neither background nor its own.
+.init slide = Gravity<Heading, Unit>
+slide.cell([Id, D], $U(), P) :- mover(Id, P), dir_elem(D).
+slide.dir([Id, D], D) :- mover(Id, _), dir_elem(D).
+slide.blocked([Id, D], P) :-
+    mover(Id, _), dir_elem(D), in(P, Col), !bg(Col), !mover(Id, P).
 
-// The mover's cells carried to a fitting relative.
-.decl carried(id: Ident, delta: Offset, p: Position)
-carried(Id, Delta, P2) :- slide.node(Id, Delta), mover(Id, P), compose(P, Delta, P2).
+// The mover's cells at rest toward D.
+.decl rest(id: Ident, d: Dir, p: Position)
+rest(Id, D, P2) :- slide.travel([Id, D], _, Delta), mover(Id, P), compose(P, Delta, P2).
 
 // A mover at rest toward D, with the anchor its next step would hit.
-.decl docked(id: Ident, d: Dir, delta: Offset, a: Ident)
-docked(Id, D, Delta, A) :-
-    dir_elem(D), slide.rest(Id, ZERO, D, Delta),  // at rest toward D
-    carried(Id, Delta, P), neighbor(P, D, P2),      // one step on from a rest cell
-    anchor(A, P2).                                  // is an anchor cell
+.decl docked(id: Ident, d: Dir, a: Ident)
+docked(Id, D, A) :- rest(Id, D, P), neighbor(P, D, P2), anchor(A, P2).
 
 // A docked mover with a rest cell outside that anchor's cavity.
-.decl outside(id: Ident, d: Dir, delta: Offset, a: Ident)
-outside(Id, D, Delta, A) :-
-    docked(Id, D, Delta, A), carried(Id, Delta, P), !cavity.between(A, P).
+.decl outside(id: Ident, d: Dir, a: Ident)
+outside(Id, D, A) :- docked(Id, D, A), rest(Id, D, P), !cavity.between(A, P).
 
 // A mover seated in a cavity.
-.decl seated(id: Ident, d: Dir, delta: Offset)
-seated(Id, D, Delta) :- docked(Id, D, Delta, A), !outside(Id, D, Delta, A).
+.decl seated(id: Ident, d: Dir)
+seated(Id, D) :- docked(Id, D, A), !outside(Id, D, A).
 
 // --- output ---
 
 .decl landed(p: Position)
-landed(P) :- seated(Id, _, Delta), carried(Id, Delta, P).
+landed(P) :- seated(Id, D), rest(Id, D, P).
 
 // The cells a seated mover passed over short of its rest, its start
 // included.
 .decl trail(p: Position)
 trail(P) :-
-    seated(Id, D, Delta),
-    ( Delta2 = ZERO                                    // the start
-    ; slide.run(Id, ZERO, D, Delta2), Delta2 != Delta  // a step short of the rest
-    ),
-    carried(Id, Delta2, P), !landed(P).
+    seated(Id, D), slide.travel([Id, D], _, Delta),
+    mover(Id, P0), compose(P0, Delta, P1),        // a mover cell and its rest cell
+    in(P, _), axis_of(D, A), same_line(A, P0, P), // a cell on their line
+    ( P = P0 ; nearer(D, P, P0) ),                // the start, or a cell ahead of it
+    nearer(D, P1, P),                             // short of the rest
+    !landed(P).
 
 // The grid with the movers lifted off.
 .decl cleared(p: Position, col: Color)

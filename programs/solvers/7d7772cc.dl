@@ -53,16 +53,27 @@ free_bg.item($U(), Col, P) :- free_cell(P), in(P, Col).
 .decl mark(p: Position, col: Color)
 mark(P, Col) :- free_cell(P), in(P, Col), !free_bg.mode($U(), Col).
 
-// Where each mark comes to rest.
-.decl rest(p: Position, col: Color)
-rest(Q, Col) :-
+// Each mark's heading: toward the fence when the gate facing it has its
+// color, else toward the open side.
+.decl heading(p: Position, d: Dir)
+heading(P, D_mark) :-
     mark(P, Col), open_dir(D), axis_of(D, A),                    // a mark and its line across the fence
     fence(S), pen.box($U(), B), box_edge(S, B, D),               // the fence cell toward D
     same_line(A, P, S),                                          // on the mark's line
     opposite(D, D_in), neighbor(S, D_in, G),                     // the gate behind it
-    ( in(G, Col), neighbor(S, D, Q)                              // gate matches: beside the fence
-    ; !in(G, Col), same_line(A, P, Q), in(Q, _), dist(Q, D, 0)   // gate differs: the far edge
+    ( in(G, Col), D_mark = D_in                                  // gate matches: toward the fence
+    ; !in(G, Col), D_mark = D                                    // gate differs: toward the open side
     ).
+
+// Each mark slides along its heading until the fence or the grid edge.
+.init slide = Gravity<Dir, Position>
+slide.cell(D, P, P) :- heading(P, D).
+slide.dir(D, D) :- heading(_, D).
+slide.blocked(D, S) :- heading(_, D), fence(S).
+
+// Where each mark comes to rest.
+.decl rest(p: Position, col: Color)
+rest(Q, Col) :- mark(P, Col), heading(P, D), slide.travel(D, P, V), compose(P, V, Q).
 
 out(P, Col) :-
     in(P, Col_in),

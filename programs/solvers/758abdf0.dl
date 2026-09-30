@@ -40,19 +40,25 @@ run(Id, P) :- runs.label(_, P, Id).
 .init len = Tally<Ident, Position>
 len.item(Id, P) :- run(Id, P).
 
+// A full run slides away from the wall until it lands against the far edge.
+.init landing = Gravity<Ident, Unit>
+landing.cell(Id, $U(), P) :- run(Id, P), len.tally(Id, N), params.full(N).
+landing.dir(Id, A) :- landing.cell(Id, _, _), away(A).
+
 // What the move paints: a short run grows one cell away from the wall, and a
-// full run lands against the far edge, as many cells as it has.
+// full run lands against the far edge.
 .decl placed(p: Position, col: Color)
 placed(Q, Col) :-
-    len.tally(Id, N), run(Id, P), away(A), params.full(F),  // a run's cell
-    ( N < F, neighbor(P, A, Q), params.mark(Col)            // short run: the cell beyond it
-    ; N = F, axis_of(A, Ax), same_line(Ax, Q, P),           // full run: on its line,
-      in(Q, _), dist(Q, A, K), K < N, params.wall(Col)      // N cells against the far edge
-    ).
+    len.tally(Id, N), params.full(F), N < F,         // a short run
+    run(Id, P), away(A), neighbor(P, A, Q),          // the cell beyond it
+    params.mark(Col).
+placed(Q, Col) :-
+    landing.cell(Id, _, P), landing.travel(Id, _, V), compose(P, V, Q),  // where the full run lands
+    params.wall(Col).
 
 // The cells a full run leaves.
 .decl vacated(p: Position)
-vacated(P) :- run(Id, P), len.tally(Id, N), params.full(N).
+vacated(P) :- landing.cell(_, _, P).
 
 out(P, Col) :-
     in(P, Col_in),

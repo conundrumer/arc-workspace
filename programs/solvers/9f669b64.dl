@@ -262,8 +262,13 @@ shot(R, $WedgeTip(), P, T, D) :-
 .decl travel(st: Stop, p: Ident, t: Ident, d: Dir, v: Offset)
 
 // --- $ToEdge ---
-travel($ToEdge(), P, T, D, V) :-
-    shot(_, _, P, T, D), hull.box(P, B), dist(B, D, K), jump_offset(D, K, V).
+// The projectile moves toward D until it rests against the grid edge.
+// @claim projectile-to-edge
+.init fall = Gravity<Side, Unit>
+fall.cell([P, D], $U(), Q) :- shot(_, _, P, _, D), obj(P, Q).
+fall.dir([P, D], D) :- shot(_, _, P, _, D).
+
+travel($ToEdge(), P, T, D, V) :- shot(_, _, P, T, D), fall.travel([P, D], $U(), V).
 
 // --- $StopPerAxis ---
 travel($StopPerAxis(), P, T, D, V) :-

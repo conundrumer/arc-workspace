@@ -19,6 +19,9 @@
 
 .decl out(p: Position, col: Color, ch: Choice)
 
+// A shape under a claim, as a slide key.
+.type Move = [id: Ident, ch: Choice]
+
 .comp Params {
     .decl bg(col: Color) bg(4).
 
@@ -84,12 +87,14 @@ dest(Id, D, Col, Ch) :-
     ; open(Id, Ch), opposite(D_closed, D), params.open_paint(Col)    // open: the far edge
     ).
 
-// Each shape slides until its box touches the destination edge.
+// Each shape slides until it touches the destination edge.
+.init slide = Gravity<Move, Unit>
+slide.cell([Id, Ch], $U(), P) :- shape(Id, P), impl_choice(Ch).
+slide.dir([Id, Ch], D) :- dest(Id, D, _, Ch).
+
 .decl paint(p: Position, col: Color, ch: Choice)
 paint(Q, Col, Ch) :-
-    shape(Id, P), dest(Id, D, Col, Ch),  // shape cell with its destination
-    bbox.box(Id, B), dist(B, D, K),      // its box's margin from that edge
-    jump(P, D, K, Q).                    // slid flush
+    shape(Id, P), dest(Id, _, Col, Ch), slide.travel([Id, Ch], $U(), V), compose(P, V, Q).
 
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- in(P, _), params.bg(Col), impl_choice(Ch), !paint(P, _, Ch).

@@ -47,12 +47,16 @@ empty_dir(D, $Dir()) :- params.dir(D).
 // --- $Edge ---
 empty_dir(D, $Edge()) :- bbox.box($U(), B), dir_elem(D), !dist(B, D, 0).
 
+// --- $Dir, $Edge ---
+
+// The block slides to the empty edge; the copy lands where it comes to rest.
+.init slide = Gravity<DirCh, Unit>
+slide.cell(Dc, $U(), P) :- ink(P, _), empty_dir(_, Dc).
+slide.dir(Dc, D) :- empty_dir(D, Dc).
+
 // Copy of the block flush at the empty edge.
 .decl copy(p: Position, col: Color, dc: DirCh)
-copy(P2, Col, Dc) :-
-    ink(P, Col),                                  // block cell
-    empty_dir(D, Dc), bbox.box($U(), B), dist(B, D, M),   // empty edge, block margin
-    jump(P, D, M, P2).                            // jumped flush to it
+copy(P2, Col, Dc) :- ink(P, Col), slide.travel(Dc, $U(), V), compose(P, V, P2).
 
 // The block boundary the fill copies from.
 .decl fill_edge(e: Dir, dc: DirCh, fc: FillCh)
@@ -62,6 +66,8 @@ fill_edge(E, Dc, $Outer()) :- empty_dir(D, Dc), opposite(D, E).
 
 // --- $Inner ---
 fill_edge(D, Dc, $Inner()) :- empty_dir(D, Dc).
+
+// --- $Outer, $Inner ---
 
 // Between block and copy, each line takes its fill-boundary cell's color.
 .decl fill(p: Position, col: Color, dc: DirCh, fc: FillCh)

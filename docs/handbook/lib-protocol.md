@@ -4,8 +4,9 @@
 
 # Lib addition protocol
 - Qualify a new operation for the lib, `programs/lib.dl` and the modules under `programs/lib/`, by real use in the solvers and by generality.
-- **Trigger.**
-    - Apply this protocol to an encoding in the solver that needs a form banned in the program, and to one that states a general operation whose shape a grep over `programs/solvers/` finds in another solver.
+- **Trigger.** Apply this protocol to each kind of operation:
+    - A **primitive operation** needs a form the program bans, in any part of its encoding.
+    - A **derived operation** is stated in plain relations, and a grep over `programs/solvers/` finds its shape in another solver.
 - **Generality.** Treat a proposed operation as general when it states a concept-level relation over a caller-supplied domain and builds in no arrangement beyond the frame.
     - The operation should be as abstract as possible.
     - It involves geometric types only where there is no way to abstract the geometry away.

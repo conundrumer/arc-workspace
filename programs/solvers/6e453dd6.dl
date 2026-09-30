@@ -46,18 +46,15 @@ comps.node($U(), P) :- in(P, Col), params.shape(Col).
 
 // --- the slide ---
 
-// A shape fits where no cell of it lands on the separator.
-.init fits = Occurrences<Ident, Unit>
-fits.cell(Id, P, $U())  :- comps.label($U(), _, Id), in(P, _), !sep_cell(P).
-fits.shape(Id, P, $U()) :- comps.label($U(), P, Id).
-
-.init slide = Slide<Ident>
-slide.node(Id, Delta) :- fits.occurrence(Id, Delta).
+// Each shape slides on its own until it touches the separator.
+.init slide = Gravity<Ident, Unit>
+slide.cell(Id, $U(), P) :- comps.label($U(), P, Id).
 slide.dir(Id, D) :- comps.label($U(), _, Id), params.slide_dir(D).
+slide.blocked(Id, P) :- comps.label($U(), _, Id), sep_cell(P).
 
 // The shape cells after the slide.
 .decl slid(p: Position)
-slid(P2) :- comps.label($U(), P, Id), slide.rest(Id, ZERO, _, Delta), compose(P, Delta, P2).
+slid(P2) :- comps.label($U(), P, Id), slide.travel(Id, $U(), V), compose(P, V, P2).
 
 // The grid with the shapes moved, before the marks.
 .decl canvas(p: Position, col: Color)

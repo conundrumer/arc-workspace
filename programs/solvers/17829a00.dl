@@ -38,22 +38,18 @@ move_dir(Id, D) :-
     obj.label(Col, _, Id),          // the object's color
     border_cell(D, P), in(P, Col).  // the border wearing it
 
-// An object fits at a relative when its every cell lands off its border.
-.init fits = Occurrences<Ident, Unit>
-fits.cell(Id, P, $U())  :- move_dir(Id, D), in(P, _), !border_cell(D, P).
-fits.shape(Id, P, $U()) :- obj.label(_, P, Id).
-
-// Each object travels through the displacements at which it fits.
-.init slide = Slide<Ident>
-slide.dir(Id, D) :- move_dir(Id, D).
-slide.node(Id, Delta) :- fits.occurrence(Id, Delta).
+// Each object travels until it meets its border.
+.init gravity = Gravity<Ident, Unit>
+gravity.cell(Id, $U(), P) :- obj.label(_, P, Id).
+gravity.dir(Id, D) :- move_dir(Id, D).
+gravity.blocked(Id, P) :- move_dir(Id, D), border_cell(D, P).
 
 // --- output ---
 
 .decl landed(p: Position, col: Color)
 landed(P2, Col) :-
-    slide.rest(Id, ZERO, _, Delta),              // the object at rest
-    obj.label(Col, P, Id), compose(P, Delta, P2).  // its cells, carried there
+    gravity.travel(Id, $U(), V),               // the object at rest
+    obj.label(Col, P, Id), compose(P, V, P2).  // its cells, carried there
 
 out(P, Col) :- border_cell(_, P), in(P, Col).
 out(P, Col) :- landed(P, Col).

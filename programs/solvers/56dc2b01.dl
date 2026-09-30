@@ -36,20 +36,16 @@ move_dir(D) :- dir_elem(D), sight.ray($U(), _, D, _, _).
 
 // --- the slide ---
 
-// The mover fits at an offset when its every cell lands off the line.
-.init fits = Occurrences<Unit, Unit>
-fits.cell($U(), P, $U())  :- in(P, _), !anchor_cell(P).
-fits.shape($U(), P, $U()) :- mover_cell(P).
+// The mover travels until it meets the line.
+.init gravity = Gravity<Unit, Unit>
+gravity.cell($U(), $U(), P) :- mover_cell(P).
+gravity.dir($U(), D) :- move_dir(D).
+gravity.blocked($U(), P) :- anchor_cell(P).
 
-// The mover travels through the offsets at which it fits.
-.init slide = Slide<Unit>
-slide.dir($U(), D) :- move_dir(D).
-slide.node($U(), V) :- fits.occurrence($U(), V).
-
-// The mover at rest, at the last offset short of the line.
+// The mover at rest, against the line.
 .decl landed(p: Position)
 landed(P2) :-
-    slide.rest($U(), ZERO, _, V),
+    gravity.travel($U(), $U(), V),
     mover_cell(P), compose(P, V, P2).
 
 // --- the line behind ---

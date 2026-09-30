@@ -27,23 +27,20 @@ ink_at(Across, P) :-
     in(P, Col), !params.bg(Col),
     params.axis(A), split(P, A, _, Across).
 
-// The marker's sight along its line: the ink it reaches each way on the
-// packing axis, at its step count from the marker.
-.init sight = Ray<Position>
-sight.dir(Across, D) :- marker_at(Across, _), params.axis(A), axis_of(D, A).
-sight.cell(Across, P) :- ink_at(Across, P).
-sight.mark(Across, M) :- marker_at(Across, M).
-
-// Each side's sighted ink, ranked by step count. The marker is ink at step
-// 0, so it takes rank 0.
+// Each side of a line, keyed by the heading toward its marker.
 .type Side = [p_across: Position, d: Dir]
 
-.init seq = Ordinal<Side>
-seq.idx_set([Across, D], K) :- sight.ray(Across, _, D, K, _).
+// Each ink cell travels toward its line's marker and stops against the marker
+// or against the ink already packed ahead of it.
+.init pack = Gravity<Side, Position>
+pack.dir([Across, D], D) :- marker_at(Across, _), params.axis(A), axis_of(D, A).
+pack.cell([Across, D], P, P) :- ink_at(Across, P), marker_at(Across, M), nearer(D, M, P).
+pack.blocked([Across, D], M) :- marker_at(Across, M), params.axis(A), axis_of(D, A).
 
-// Ink at rank r from the marker packs r cells out from it toward edge d.
+// The marker stays put; the ink packs against it.
 .decl packed(p: Position)
-packed(P) :- seq.rank([Across, D], _, R), marker_at(Across, M), jump(M, D, R, P).
+packed(M) :- marker_at(_, M).
+packed(Q) :- pack.travel(_, P, V), compose(P, V, Q).
 
 out(P, Col) :- packed(P), params.fill(Col).
 out(P, Col) :- in(P, _), !packed(P), params.bg(Col).

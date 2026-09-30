@@ -18,40 +18,6 @@
 
 .init params = Params
 
-// Rigid bodies settling against one another under one heading: each body
-// travels until one of its cells meets the frame edge, a blocked cell, or a
-// cell of a body resting ahead of it. A body rests at the least room its
-// cells leave it, and that room reads the rest of the body ahead, so the
-// minimum sits inside the recursion. A subsumption clause settles it.
-.comp Settle<Key, Body> {
-    // The cells of each body, per key.
-    .decl cell(key: Key, b: Body, p: Position)  // input
-
-    // The heading every body travels, per key.
-    .decl dir(key: Key, d: Dir)  // input
-
-    // Cells no body may enter, per key: the static floor.
-    .decl blocked(key: Key, p: Position)  // input
-
-    // What one cell of a body leaves it room for.
-    .decl room(key: Key, b: Body, delta: Offset)
-    room(Ky, B, Delta) :-
-        cell(Ky, B, P), dir(Ky, D),
-        ( dist(P, D, K), jump_offset(D, K, Delta)                            // travel to the frame edge
-        ; axis_of(D, A), same_line(A, P, Q), nearer(D, Q, P),               // a cell ahead in the line
-          ( blocked(Ky, Q), Q2 = Q                                          // a static cell, in place
-          ; cell(Ky, B2, Q), B != B2,                                       // another body's cell
-            rest(Ky, B2, Delta2), compose(Q, Delta2, Q2)                    // where that cell rests
-          ),
-          opposite(D, D2), neighbor(Q2, D2, P2), relative(P, P2, Delta) // travel to just behind it
-        ).
-
-    // Where a body rests: the least room its cells leave it.
-    .decl rest(key: Key, b: Body, delta: Offset)
-    rest(Ky, B, Delta) :- room(Ky, B, Delta).
-    rest(Ky, B, Delta) <= rest(Ky, B, Delta2) :- dir(Ky, D), nearer(D, Delta, Delta2).
-}
-
 // --- setup ---
 
 .decl wall(p: Position)
@@ -64,14 +30,14 @@ off_wall_edge(D) :- dir_elem(D), wall(P), !dist(P, D, 0).
 .init obj = Components<Color>
 obj.node(Col, P) :- in(P, Col), !params.bg(Col), !params.wall(Col).
 
-.init settle = Settle<Unit, Ident>
+.init settle = Gravity<Unit, Ident>
 settle.cell($U(), Id, P) :- obj.label(_, P, Id).
 settle.dir($U(), D) :- dir_elem(D), !off_wall_edge(D).
 settle.blocked($U(), P) :- wall(P).
 
 .decl fallen(p: Position, col: Color)
 fallen(Q, Col) :-
-    obj.label(Col, P, Id), settle.rest($U(), Id, Delta), compose(P, Delta, Q).
+    obj.label(Col, P, Id), settle.travel($U(), Id, Delta), compose(P, Delta, Q).
 
 out(P, Col) :- fallen(P, Col).
 out(P, Col) :- wall(P), in(P, Col).

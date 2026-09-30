@@ -12,24 +12,14 @@
 
 .init params = Params
 
-// Cell split on the gravity axis: across names its line, k places it
-// within the line as dist to the gravity edge.
-.decl place(p: Position, p_across: Position, k: number)
-place(P, P_across, K) :-
-    in(P, _), params.grav(D),
-    axis_of(D, A), split(P, A, _, P_across), dist(P, D, K).
+// Each ink cell travels toward the gravity edge and stops against the ink
+// already packed ahead of it.
+.init pack = Gravity<Unit, Position>
+pack.dir($U(), D) :- params.grav(D).
+pack.cell($U(), P, P) :- in(P, Col), !params.bg(Col).
 
-.decl ink(p_across: Position, k: number, col: Color)
-ink(P_across, K, Col) :- in(P, Col), !params.bg(Col), place(P, P_across, K).
-
-.init pack = Ordinal<Position>
-pack.idx_set(P_across, K) :- ink(P_across, K, _).
-
-// Ink at rank R among its line's ink lands R from the gravity edge.
 .decl fallen(p: Position, col: Color)
-fallen(Q, Col) :-
-    ink(P_across, K, Col), pack.rank(P_across, K, R),
-    place(Q, P_across, R).
+fallen(Q, Col) :- in(P, Col), pack.travel($U(), P, V), compose(P, V, Q).
 
 out(P, Col) :- fallen(P, Col).
 out(P, Col) :- in(P, _), params.bg(Col), !fallen(P, _).

@@ -85,27 +85,16 @@ blocked($Extent(), P) :- params.anchor(Col), box_cell(Col, P).
 
 // --- the slide ---
 
-// Displacements toward the anchor the frame admits.
-.decl shift(delta: Offset)
-shift(Delta) :-
-    in(P, _), move_dir(D),
-    axis_of(D, A), sub_extent(P, A, K), jump_offset(D, K, Delta).
-
-// The displacements at which the footprint would lie over a blocked cell.
-.decl covering(ch: Choice, delta: Offset)
-covering(Ch, Delta) :- shift(Delta), shape(Ch, P), compose(P, Delta, P2), blocked(Ch, P2).
-
-// The mover stands where it is, and travels through the displacements that
-// keep it clear of the blocked cells.
-.init slide = Slide<Choice>
-slide.dir(Ch, D) :- impl_choice(Ch), move_dir(D).
-slide.node(Ch, ZERO) :- impl_choice(Ch).
-slide.node(Ch, Delta) :- impl_choice(Ch), shift(Delta), !covering(Ch, Delta).
+// The footprint travels toward the anchor until it would cover a blocked cell.
+.init gravity = Gravity<Choice, Unit>
+gravity.cell(Ch, $U(), P) :- shape(Ch, P).
+gravity.dir(Ch, D) :- impl_choice(Ch), move_dir(D).
+gravity.blocked(Ch, P) :- blocked(Ch, P).
 
 // --- output ---
 
 .decl landed(ch: Choice, p: Position)
-landed(Ch, P2) :- slide.rest(Ch, ZERO, _, Delta), mover_cell(P), compose(P, Delta, P2).
+landed(Ch, P2) :- gravity.travel(Ch, _, V), mover_cell(P), compose(P, V, P2).
 
 // The grid with the mover lifted off.
 .decl cleared(p: Position, col: Color)
@@ -113,4 +102,4 @@ cleared(P, Col) :- in(P, Col), !mover_cell(P).
 cleared(P, Col) :- mover_cell(P), params.bg(Col).
 
 out(P, Col, Ch) :- landed(Ch, P), params.mover(Col).
-out(P, Col, Ch) :- slide.rest(Ch, ZERO, _, _), cleared(P, Col), !landed(Ch, P).
+out(P, Col, Ch) :- gravity.travel(Ch, _, _), cleared(P, Col), !landed(Ch, P).

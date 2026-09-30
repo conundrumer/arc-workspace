@@ -14,6 +14,9 @@
 
 .decl out(p: Position, col: Color, ch: Choice)
 
+// A blob under a claim, as a slide key.
+.type Move = [id: Ident, ch: Choice]
+
 .comp Params {
     // Where a partnered blob goes.
     .decl paired_dir(d: Dir) paired_dir(DIR_T).
@@ -84,12 +87,14 @@ dest(Id, D, Ch) :-
     ; !paired(Id, Ch), opposite(D_paired, D)  // lone
     ).
 
-// The blob slid until its box touches the destination edge.
+// The blob slides until it touches the destination edge.
+.init slide = Gravity<Move, Unit>
+slide.cell([Id, Ch], $U(), P) :- blobs.label(_, P, Id), impl_choice(Ch).
+slide.dir([Id, Ch], D) :- dest(Id, D, Ch).
+
 .decl paint(p: Position, col: Color, ch: Choice)
 paint(Q, Col, Ch) :-
-    blobs.label(Col, P, Id), dest(Id, D, Ch),  // blob cell with its destination
-    bbox.box(Id, B), dist(B, D, K),            // its box's margin from that edge
-    jump(P, D, K, Q).                          // slid flush
+    blobs.label(Col, P, Id), slide.travel([Id, Ch], $U(), V), compose(P, V, Q).
 
 out(P, Col, Ch) :- paint(P, Col, Ch).
 out(P, Col, Ch) :- in(P, _), bg_mode.mode($U(), Col), impl_choice(Ch), !paint(P, _, Ch).

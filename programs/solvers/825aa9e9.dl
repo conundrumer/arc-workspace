@@ -61,15 +61,8 @@ mover($Grounded(), Id) :- body.label($Grounded(), _, Id), !standing(Id).
 
 // --- the fall ---
 
-.type Body = [ch: Choice, id: Ident]
-
 .decl mover_cell(ch: Choice, id: Ident, p: Position)
 mover_cell(Ch, Id, P) :- mover(Ch, Id), body.label(Ch, P, Id).
-
-// A cell a falling body may cover: background, or a cell a body vacates.
-.decl free(ch: Choice, p: Position)
-free(Ch, P) :- impl_choice(Ch), in(P, Col), params.bg(Col).
-free(Ch, P) :- mover_cell(Ch, _, P).
 
 // The body with its clearance: each cell, and the cell the gap beneath it.
 .decl foot(ch: Choice, id: Ident, p: Position)
@@ -77,27 +70,20 @@ foot(Ch, Id, P) :- mover_cell(Ch, Id, P).
 foot(Ch, Id, Q) :-
     mover_cell(Ch, Id, P), params.fall(D), params.gap(K), jump(P, D, K, Q).
 
-// The body fits at a relative when its footprint lands on free cells.
-.init fits = Occurrences<Body, Unit>
-fits.cell([Ch, Id], P, $U())  :- mover(Ch, Id), free(Ch, P).
-fits.shape([Ch, Id], P, $U()) :- foot(Ch, Id, P).
-
-// The body falls through the fitting displacements.
-.init slide = Slide<Body>
-slide.node(B, Delta) :- fits.occurrence(B, Delta).
-slide.dir([Ch, Id], D) :- mover(Ch, Id), params.fall(D).
-
-// Where each body comes to rest.
-.decl travel(ch: Choice, id: Ident, delta: Offset)
-travel(Ch, Id, Delta) :- slide.rest([Ch, Id], ZERO, _, Delta).
+// Each body falls with its clearance until that clearance meets what lies
+// beneath.
+.init fall = Gravity<Choice, Ident>
+fall.cell(Ch, Id, P) :- foot(Ch, Id, P).
+fall.dir(Ch, D) :- impl_choice(Ch), params.fall(D).
+fall.blocked(Ch, P) :- impl_choice(Ch), ink(P, _), !mover_cell(Ch, _, P).  // ink that does not fall
 
 .decl landed(ch: Choice, p: Position, col: Color)
 landed(Ch, P2, Col) :-
-    travel(Ch, Id, Delta), mover_cell(Ch, Id, P), in(P, Col), compose(P, Delta, P2).
+    fall.travel(Ch, Id, Delta), mover_cell(Ch, Id, P), in(P, Col), compose(P, Delta, P2).
 
 // The cells the bodies leave.
 .decl vacated(ch: Choice, p: Position)
-vacated(Ch, P) :- travel(Ch, Id, _), mover_cell(Ch, Id, P).
+vacated(Ch, P) :- fall.travel(Ch, Id, _), mover_cell(Ch, Id, P).
 
 out(P, Col, Ch) :- landed(Ch, P, Col).
 out(P, Col, Ch) :-

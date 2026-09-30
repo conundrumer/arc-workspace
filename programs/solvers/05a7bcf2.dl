@@ -74,31 +74,22 @@ through(P) :- reach.ray($U(), P, D, _, _), cast.ray($U(), P, D, _, _).
 
 // --- $Slide: the push structure moves as one body ---
 
-.init push_box = Bbox<Unit>
-push_box.cell($U(), P) :- push_cell(P).
-
-// It travels its own margin from the far edge.
-.decl push_shift(delta: Offset)
-push_shift(Delta) :-
-    dir(D), push_box.box($U(), B), dist(B, D, K), jump_offset(D, K, Delta).
+// It travels until it rests against the far edge.
+.init slide = Gravity<Unit, Unit>
+slide.cell($U(), $U(), P) :- push_cell(P).
+slide.dir($U(), D) :- dir(D).
 
 .decl placed(p: Position, c: Choice)
-placed(P2, $Slide()) :- push_cell(P), push_shift(Delta), compose(P, Delta, P2).
+placed(P2, $Slide()) :- slide.travel($U(), $U(), V), push_cell(P), compose(P, V, P2).
 
 // --- $Pack: each line's push cells fall and stack ---
 
-// Cell split on the model's axis: p_line names its line, k places it within
-// the line as dist to the far edge.
-.decl place(p: Position, p_line: Position, k: number)
-place(P, P_line, K) :-
-    in(P, _), dir(D),
-    axis_of(D, A), split(P, A, _, P_line), dist(P, D, K).
+// Each push cell falls toward the far edge and stacks on those ahead of it.
+.init fall = Gravity<Unit, Position>
+fall.cell($U(), P, P) :- push_cell(P).
+fall.dir($U(), D) :- dir(D).
 
-.init fall = Ordinal<Position>
-fall.idx_set(P_line, K) :- push_cell(P), place(P, P_line, K).
-
-// A push cell with R of its line's push cells nearer the edge lands R from it.
-placed(P2, $Pack()) :- fall.rank(P_line, K, R), place(P2, P_line, R).
+placed(P2, $Pack()) :- fall.travel($U(), P, V), compose(P, V, P2).
 
 out(P, Col, Ch) :- in(P, Col), short(P), impl_choice(Ch).
 out(P, Col, Ch) :- shape_cell(P), params.mark(Col), impl_choice(Ch).

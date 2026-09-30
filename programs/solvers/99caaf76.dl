@@ -44,12 +44,12 @@ fletching(Id, P) :- arrow(Id, P), !center(Id, P), !arm(Id, _, P).
 .decl stray(id: Ident, d: Dir)
 stray(Id, D) :- fletching(Id, P), center(Id, C), dir_elem(D), !nearer(D, C, P).
 
-// the flight: the arrow travels away from its fletching, and its leading arm
+// the flight: the arrow travels away from its fletching until its leading arm
 // comes to rest on the grid edge
-.decl flight(id: Ident, d: Dir, k: number)
-flight(Id, D, K) :-
-    fletching(Id, _), !stray(Id, D),   // the whole fletching trails a flight toward D
-    arm(Id, D, P), dist(P, D, K).      // that arm reaches the edge
+.init flight = Gravity<Ident, Unit>
+flight.cell(Id, $U(), P) :- arrow(Id, P).
+flight.dir(Id, D) :-
+    fletching(Id, _), dir_elem(D), !stray(Id, D).   // the whole fletching trails a flight toward D
 
 // the cell whose color P takes after the head's half turn
 .decl source(id: Ident, p: Position, p_src: Position)
@@ -60,7 +60,7 @@ source(Id, P, P) :- arrow(Id, P), !arm(Id, _, P).                            // 
 .decl landing(p: Position, col: Color)
 landing(Q, Col) :-
     source(Id, P, P_src), in(P_src, Col),   // the color after the turn
-    flight(Id, D, K), jump(P, D, K, Q).     // carried by the flight
+    flight.travel(Id, $U(), V), compose(P, V, Q).   // carried by the flight
 
 out(P, Col) :- landing(P, Col).
 out(P, Col) :- in(P, _), !landing(P, _), params.bg(Col).

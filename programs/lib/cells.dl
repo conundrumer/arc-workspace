@@ -203,6 +203,45 @@
     rest(Ky, P, D, P) :- rim_dir(Ky, P, D).
 }
 
+/// Rigid bodies traveling toward one heading until first contact: the frame
+/// edge, a blocked cell, or a body already at rest ahead.
+.comp Gravity<Key, Body> {
+    /// The cells of each body.
+    .decl cell(key: Key, b: Body, p: Position)  // @input
+
+    /// The heading every body travels, one per key.
+    .decl dir(key: Key, d: Dir)  // @input
+
+    /// Cells no body may enter. Requires: no body cell is blocked; a blocked
+    /// body cell stops its own body.
+    .decl blocked(key: Key, p: Position)  // @input
+
+    /// The travel one of the body's cells allows before contact.
+    .decl clearance(key: Key, b: Body, v: Offset)
+    clearance(Ky, B, V) :-
+        cell(Ky, B, P), dir(Ky, D),
+        ( dist(P, D, K), jump_offset(D, K, V)                   // travel to the frame edge
+        ; axis_of(D, A), same_line(A, P, Q), nearer(D, Q, P),   // a cell ahead in the line
+          ( blocked(Ky, Q), Q2 = Q                              // a blocked cell, in place
+          ; cell(Ky, B2, Q), B != B2,                           // another body's cell
+            _least.first([Ky, B2], V2), compose(Q, V2, Q2)      // where that cell rests
+          ),
+          opposite(D, D2), neighbor(Q2, D2, P2), relative(P, P2, V)  // travel to just behind it
+        ).
+
+    .type _KB = [key: Key, b: Body]
+
+    // Shorter travel first.
+    .init _least = Order<_KB, Offset>
+    _least.elem([Ky, B], V) :- clearance(Ky, B, V).
+    _least.before([Ky, B], V, V2) :-
+        _least.elem([Ky, B], V), _least.elem([Ky, B], V2), dir(Ky, D), nearer(D, V2, V).
+
+    /// The displacement each body takes: the least of its cells' clearances.
+    .decl travel(key: Key, b: Body, v: Offset)
+    travel(Ky, B, V) :- _least.first([Ky, B], V).
+}
+
 /// The dense frame a sparse member set induces along an axis, with each
 /// member's line in it. Members are opaque and may span several lines.
 ///

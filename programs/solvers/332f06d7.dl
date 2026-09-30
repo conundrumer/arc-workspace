@@ -15,6 +15,9 @@
     // stop with no other stop between it and the marker
   | Goal {}
 
+// A placement of the piece and a heading from it.
+.type Leg = [delta: Offset, d: Dir]
+
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
@@ -41,15 +44,23 @@ open(P) :- in(P, Col), !params.bg(Col).
 fits.cell($U(), P, $U())  :- open(P).
 fits.shape($U(), P, $U()) :- piece_cell(P).
 
-// The piece slides through the fitting placements.
-.init slide = Slide<Unit>
-slide.node($U(), Delta) :- fits.occurrence($U(), Delta).
-slide.dir($U(), D) :- dir_elem(D).
+// From each fitting placement, the piece slides toward each edge until it
+// meets the background.
+.init slide = Gravity<Leg, Unit>
+slide.dir([Delta, D], D) :- fits.occurrence($U(), Delta), dir_elem(D).
+slide.cell([Delta, D], $U(), P2) :-
+    slide.dir([Delta, D], D), piece_cell(P), compose(P, Delta, P2).
+slide.blocked([Delta, D], P) :- slide.dir([Delta, D], D), in(P, Col), params.bg(Col).
+
+// The leg's end: the placement the piece reaches toward d, when it moves.
+.decl halt(delta: Offset, d: Dir, delta2: Offset)
+halt(Delta, D, Delta2) :-
+    slide.travel([Delta, D], $U(), V), V != ZERO, compose(Delta, V, Delta2).
 
 // The stops of the journey: the piece starts where it stands and slides on.
 .decl stop(delta: Offset)
 stop(ZERO).
-stop(Delta2) :- stop(Delta), slide.halt($U(), Delta, _, Delta2).
+stop(Delta2) :- stop(Delta), halt(Delta, _, Delta2).
 
 // The cells the piece covers at a stop.
 .decl covered(delta: Offset, p: Position)
@@ -62,8 +73,8 @@ covered(Delta, P2) :- stop(Delta), piece_cell(P), compose(P, Delta, P2).
 
 // A stop with one way on has the corridor ending at it: that one way is the
 // way the piece came.
-.init onward = Unanimous<Offset, Dir8>
-onward.item(Delta, D) :- slide.halt($U(), Delta, D, _).
+.init onward = Unanimous<Offset, Dir>
+onward.item(Delta, D) :- halt(Delta, D, _).
 
 rest(Delta, $Corridor()) :- stop(Delta), Delta != ZERO, onward.value(Delta, _).
 

@@ -52,34 +52,22 @@ shape(P) :- in(P, Col), params.shape(Col).
 .decl dot(p: Position, col: Color)
 dot(P, Col) :- in(P, Col), !params.bg(Col), !params.shape(Col).
 
-// Outward depth from a keyed seed set through a cell set, stepping toward
-// the key's directions: the seeds at 0, and each further cell one more than
-// its nearest seed-side neighbor. The dilation peer of Rim.depth, which
-// erodes inward from the set's own rim.
-.comp Dilate<Key> {
-    .decl seed(key: Key, p: Position)  // input
-    .decl cell(key: Key, p: Position)  // input
-    .decl dir(key: Key, d: Dir8)  // input
-
-    // The shortest outward walk from the seeds.
-    .decl depth(key: Key, p: Position, k: number)
-    depth(Ky, P, 0) :- seed(Ky, P).
-    depth(Ky, P, K2) :-
-        depth(Ky, Q, K), K2 = K + 1,
-        dir(Ky, D), neighbor(Q, D, P), cell(Ky, P).
-    depth(Ky, P, K) <= depth(Ky, P, K2) :- K2 < K.
-}
-
-// The rings each growth adds around the shape.
-.init rings = Dilate<Grow>
+// The rings each growth adds around the shape: a cell's ring is its hop
+// count from the shape under that growth's steps.
+.init rings = GraphDistance<Grow, Position>
 rings.seed(G, P) :- grow_choice(G), shape(P).
-rings.cell(G, P) :- grow_choice(G), in(P, _).
-rings.dir($Square(), D) :- dir8_elem(D).
-rings.dir($Diamond(), D) :- dir_elem(D).
+rings.edge(G, Q, P) :-
+    in(Q, _), in(P, _),                   // two grid cells
+    grow_step(G, D), neighbor(Q, D, P).   // one step apart
+
+// The steps each growth takes.
+.decl grow_step(g: Grow, d: Dir8)
+grow_step($Square(), D) :- dir8_elem(D).
+grow_step($Diamond(), D) :- dir_elem(D).
 
 // The dots in the first ring that holds one.
 .init first = ArgExtremes<Grow, Position>
-first.cand(G, P, K) :- dot(P, _), rings.depth(G, P, K).
+first.cand(G, P, K) :- dot(P, _), rings.distance(G, P, K).
 
 // The color the shape takes.
 .decl fill(col: Color, c: Choice)
@@ -90,7 +78,7 @@ first.cand(G, P, K) :- dot(P, _), rings.depth(G, P, K).
 .init nearest = ArgExtremes<Grow, Position>
 nearest.cand(G, P, K) :-
     first.low(G, P, _),                   // a first-ring dot
-    rings.depth(G2, P, K), G2 != G.       // its ring under the other growth
+    rings.distance(G2, P, K), G2 != G.       // its ring under the other growth
 
 fill(Col, [G, $Nearer()]) :- nearest.low(G, P, _), dot(P, Col).
 
