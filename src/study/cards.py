@@ -15,23 +15,34 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from arc.task import Example, pair_name
+from arc.task import Example
 from arc.task import load as load_task
-from cli.common import LIMITS, parse_grid
-from cli.common import engine as _engine
-from engine import AdtValue, Grid, RecordValue, Value, checkout, value_text
-from solver.model import (
-    Case,
-    Solver,
-    cases as cases_of,
-    load,
+from cli.common import (
+    LIMITS,
+    all_stems,
+    failure_lines,
+    parse_fault,
+    parse_grid,
 )
-from solver.solve import Assignment, Grids, examples, outcomes
+from cli.common import engine as _engine
+from engine import Grid, RunFailure, checkout
+from engine.program import as_grid
+from solver.model import Case, Solver, load
+from solver.names import name
+from solver.problems import Fault, WitnessFileRole
+from solver.solve import Assignment, Grids, examples, outcomes, witnessed
+from solver.vocabulary import NUMBER
+from solver.witness import Undefined
 from study.card_spec import Card, CodeSlice, Table
 
 REPO_ROOT = checkout.ROOT
 
-CARDS_DIR = REPO_ROOT / ".scratch" / "cards"
+CARDS_DIR = checkout.scratch() / "cards"
+
+
+def from_root(path: str) -> Path:
+    """A path a card spec gives: from the repository root, or absolute."""
+    return REPO_ROOT / path
 
 # Copied from tools/console/ui/panels/grid.js.
 ARC = [
@@ -49,7 +60,7 @@ def equal_literal_params(solver: Solver) -> list[tuple[int, list[str]]]:
     A parameter read by no group is left out; so is a group of one."""
     values: dict[str, int] = {}
     for param in solver.params.parameters:
-        if [c.type for c in param.columns] != ["number"]:
+        if [c.type for c in param.columns] != [NUMBER]:
             continue
         rows = param.stored
         if not isinstance(rows, tuple) or len(rows) != 1 \
@@ -67,11 +78,9 @@ def equal_literal_corpus() -> list[tuple[str, int, list[str]]]:
     programs/solvers/ carrying such a group, sorted by stem."""
     found = []
     engine = _engine()
-    for path in sorted(checkout.solvers().glob("*.dl")):
-        if path.name.startswith("."):
-            continue
-        for value, names in equal_literal_params(load(path.stem, engine)):
-            found.append((path.stem, value, names))
+    for stem in all_stems():
+        for value, names in equal_literal_params(load(stem, engine)):
+            found.append((stem, value, names))
     return found
 
 
@@ -158,17 +167,14 @@ def render_pair(label: str, example: Example) -> str:
 def render_task(task_id: str) -> str:
     """Every train pair of the task, then every test pair."""
     return '<div class="grids">' + "".join(
-        render_pair(pair_name(pair.section, pair.index), example)
+        render_pair(pair.text, example)
         for pair, example in examples(load_task(task_id))
     ) + "</div>"
 
 
 def render_code(code: CodeSlice) -> str:
     start, end = code.lines
-    path = Path(code.path)
-    if not path.is_absolute():
-        path = REPO_ROOT / path
-    lines = path.read_text().splitlines()
+    lines = from_root(code.path).read_text().splitlines()
     marked = set(code.highlight)
     out = []
     for n in range(start, min(end, len(lines)) + 1):
@@ -200,30 +206,14 @@ def render_table(table: Table) -> str:
 
 @dataclass(frozen=True)
 class Candidate:
-    """One case's output on a witness input: its case, and its grid, or
-    the reason it gives none."""
+    """One case's output on a witness input: its case, its name as the
+    tool prints it (`solver.names.name`), and its grid, or the reason it
+    gives none."""
 
     case: Case
+    label: str
     grid: Grid
     error: str | None = None
-
-    @property
-    def label(self) -> str:
-        """The case as Souffle prints the `out` column; `''` where `out`
-        has none."""
-        return "" if self.case.base is None else value_text(self.case.base)
-
-
-def souffle_order(value: Value) -> tuple[object, ...]:
-    """A value's place in the order Souffle prints `out` in: an ADT by its
-    constructor's name, then its arguments; a record by its fields."""
-    match value:
-        case AdtValue(constructor=c, args=args):
-            return (c, *(souffle_order(a) for a in args))
-        case RecordValue(fields=fields):
-            return tuple(souffle_order(f) for f in fields)
-        case _:
-            return (value,)
 
 
 def solver_file(card: Card) -> Path:
@@ -232,9 +222,7 @@ def solver_file(card: Card) -> Path:
     `programs/solvers/`; the task's solver where the card names none."""
     arg = card.solver or card.task_id
     name = arg if arg.endswith(".dl") else f"{arg}.dl"
-    path = Path(name)
-    if not path.is_absolute():
-        path = REPO_ROOT / path
+    path = from_root(name)
     return path if path.exists() else checkout.solvers() / Path(name).name
 
 
@@ -244,43 +232,39 @@ def outside_solvers(path: Path) -> bool:
     return path.resolve().parent != checkout.solvers().resolve()
 
 
-def run_solver(path: Path, grid: Grid) -> list[Candidate]:
-    """Each case of the solver without a `@derive` or `@store` branch of the solver
-    at `path`, a file under `programs/solvers/`, run on `grid` at the
-    stored assignment, in the order Souffle prints the cases' values
-    in."""
+def run_solver(solver: Solver, grid: Grid) -> list[Candidate] | RunFailure:
+    """Each witnessed case of the solver (`solver.solve.witnessed`), run
+    on `grid` at the stored assignment, in the order of the cases; the
+    failure of the run that enumerates the cases where it fails. A case
+    whose run gives no result carries the failure's line."""
     engine = _engine()
-    solver = load(path.stem, engine)
-    cases = cases_of(solver, engine, LIMITS)
+    cases = witnessed(engine, solver, LIMITS, WitnessFileRole.TASK)
     if not isinstance(cases, tuple):
-        raise RuntimeError(str(cases))
-    bases = sorted((c for c in cases if not c.branches),
-                   key=lambda c: () if c.base is None
-                   else souffle_order(c.base))
-    got = outcomes(engine, solver, bases, grid, Assignment(()), LIMITS)
+        return cases
+    got = outcomes(engine, solver, cases, grid, Assignment(()), LIMITS)
     out: list[Candidate] = []
-    for case in bases:
-        outcome = got[case]
+    for case in cases:
+        outcome, label = got[case], name(solver, case)
         if isinstance(outcome, Grids):
-            out += [Candidate(case, g) for g in outcome.grids]
+            out += [Candidate(case, label, g) for g in outcome.grids]
+        elif isinstance(outcome, Undefined):
+            out.append(Candidate(case, label, (), "undefined"))
         else:
-            out.append(Candidate(case, (), "undefined"))
+            out.append(Candidate(case, label, (),
+                                 _failure_text(solver, outcome)))
     return out
 
 
-def case_of(cand: Candidate) -> str:
-    """The constructor of a candidate's `Choice` value, as a card's
-    `dropped` names it; the value as Souffle prints it where it is a
-    record, and `''` where `out` has no case column."""
-    base = cand.case.base
-    return base.constructor if isinstance(base, AdtValue) else cand.label
+def _failure_text(solver: Solver, failure: RunFailure | Fault) -> str:
+    """What the page prints for a run that gave no result, or for a solver
+    that does not parse."""
+    return "\n".join(failure_lines(solver, failure))
 
 
 def _candidate_html(cand: Candidate, card: Card) -> str:
-    case = case_of(cand)
-    label = cand.label or "out"
+    label = cand.label
     if card.dropped:
-        label += " · dropped" if case in card.dropped else " · kept"
+        label += " · dropped" if cand.label in card.dropped else " · kept"
     if cand.error:
         return (
             '<div class="gwrap">'
@@ -307,13 +291,10 @@ def witness_grids(card: Card) -> list[tuple[str, Grid]]:
     first train input is the witness."""
     if not card.witnesses:
         pair, example = next(examples(load_task(card.task_id)))
-        return [(f"{pair_name(pair.section, pair.index)} input",
-                 tuple(tuple(r) for r in example.input))]
+        return [(f"{pair.text} input", as_grid(example.input))]
     grids = []
     for spec_path in card.witnesses:
-        path = Path(spec_path)
-        if not path.is_absolute():
-            path = REPO_ROOT / path
+        path = from_root(spec_path)
         grid = parse_grid(path.read_text())
         if grid is None:
             raise ValueError(f"{path} holds no grid")
@@ -322,24 +303,26 @@ def witness_grids(card: Card) -> list[tuple[str, Grid]]:
 
 
 def run_witnesses(card: Card) -> list[Run]:
-    """The card's solver run on each witness input."""
-    path = solver_file(card)
+    """The card's solver run on each witness input. A solver that does not
+    parse, or whose cases no run enumerates, gives each input that
+    failure's line in place of its cases."""
+    solver = load(solver_file(card).stem, _engine())
+    fault = parse_fault(solver)
     runs = []
     for label, grid in witness_grids(card):
-        try:
-            candidates = run_solver(path, grid)
-        except Exception as e:  # the solver may not compile; the card still renders
-            runs.append(Run(label, grid, error=f"{type(e).__name__}: {e}"))
+        got = fault if fault is not None else run_solver(solver, grid)
+        if isinstance(got, list):
+            runs.append(Run(label, grid, got))
         else:
-            runs.append(Run(label, grid, candidates))
+            runs.append(Run(label, grid, error=_failure_text(solver, got)))
     return runs
 
 
 def diverges(run: Run, dropped: list[str]) -> bool:
     """Whether a dropped case's grid differs from every kept case's grid."""
-    kept = [c.grid for c in run.candidates if case_of(c) not in dropped]
+    kept = [c.grid for c in run.candidates if c.label not in dropped]
     return any(
-        c.grid not in kept for c in run.candidates if case_of(c) in dropped
+        c.grid not in kept for c in run.candidates if c.label in dropped
     )
 
 
@@ -423,7 +406,7 @@ def theta_card() -> Card:
     ]
     table = Table(
         title=f"Solvers with equal-literal Params numbers: {len(corpus)} of "
-              f"{len(list(checkout.solvers().glob('*.dl')))}",
+              f"{len(all_stems())}",
         headers=["stem", "relations", "literal"],
         rows=rows,
     )

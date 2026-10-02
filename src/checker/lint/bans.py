@@ -11,19 +11,19 @@ from checker.finding import (
     LintNamed,
     LintSentence,
 )
+from checker.lint.idioms import Columns
 from checker.lint.view import (
     TOP,
     View,
     aggregates,
     atoms_read,
     conjunctions,
+    lint,
     placed,
     subterms,
     term_vars,
     view,
-    lint,
 )
-from checker.lint.idioms import Columns
 from checker.runs import Runs
 from engine import Resolved
 from engine.program import (
@@ -36,24 +36,28 @@ from engine.program import (
     ComparisonOperator,
     DefinedName,
     GridCall,
-    Intrinsic,
     Instance,
+    Intrinsic,
     IntrinsicCall,
     NumberTerm,
     SubtypeType,
-    UnionType,
     Term,
     UnaryTerm,
+    UnionType,
     Unit,
+    UnitId,
+    own,
 )
+from engine.text import text as code_text
+from engine.quotes import quotes
+from solver.annotations import TrailingWord
+from solver.category import Category
+from solver.model import Solver
 from solver.vocabulary import (
     COLOR,
     IDENT,
     PARAMS,
 )
-from solver.annotations import TrailingWord
-from solver.category import Category
-from solver.model import Solver
 
 ZERO_MACROS = frozenset({"ZERO"})
 """The zero box: a box, not an orientation."""
@@ -73,40 +77,41 @@ def _clauses(units: list[Unit]) -> list[tuple[list[Unit], tuple[BodyLiteral, ...
     return out
 
 
-def linted_nodes(v: View) -> Iterator[tuple[int, BodyLiteral | Atom | Term]]:
+def linted_nodes(v: View) -> Iterator[tuple[int, BodyLiteral | Atom | Term,
+                                             tuple[UnitId, ...]]]:
     """Each literal and term of the clauses program style applies to, with
-    its line, in source order; a clause with several heads gives its body
-    once, and the cells of a `GRID` call stand on the call's first line."""
+    its line and the units it stands in, in source order; a clause with
+    several heads gives its body once, and the cells of a `GRID` call
+    stand on the call's first line."""
     for heads, body in _clauses(v.style_units()):
+        units = tuple(u.id for u in heads)
         for u in heads:
-            yield from placed(u.head, u.head.line)
+            yield from ((ln, n, (u.id,)) for ln, n in placed(u.head,
+                                                             u.head.line))
         for lit in body:
-            yield from placed(lit, heads[0].head.line)
+            yield from ((ln, n, units)
+                        for ln, n in placed(lit, heads[0].head.line))
     for m in v.program.macros:
         if not isinstance(m, GridCall) or m.span is None \
-                or m.span.file is not None or m.scope != TOP:
+                or not own(m.span) or m.scope != TOP:
             continue
         for row in m.cells:
             for cell in row:
                 for t in subterms(cell.term):
-                    yield m.span.first, t
-
-
-def _number(value: int | float) -> str:
-    return str(value)
+                    yield m.span.first, t, (m.id,)
 
 
 def _bans(solver: Solver, runs: Runs, category: Category) -> list[Finding]:
     """The findings of one ban over the clauses program style applies to
-    (style.md:71-77); the message is the fragment that fires."""
+    (style.md, under "Bans"); the message is the fragment that fires."""
     v = view(solver, runs)
     macros = frozenset(solver.lib.constants) - ZERO_MACROS
     out: list[Finding] = []
-    for line, node in linted_nodes(v):
+    for line, node, units in linted_nodes(v):
         hit: tuple[Category, str] | None = None
         match node:
             case NumberTerm(value=value) if value != 0:
-                hit = (Category.NONZERO_LITERAL, _number(value))
+                hit = (Category.NONZERO_LITERAL, code_text(node))
             case DefinedName(name=name) if name in macros:
                 hit = (Category.ORIENTATION_LITERAL, name)
             case BinaryTerm(op=op) | UnaryTerm(op=op):
@@ -116,44 +121,57 @@ def _bans(solver: Solver, runs: Runs, category: Category) -> list[Finding]:
             case _:
                 pass
         if hit is not None and hit[0] == category:
-            out.append(lint(line, LintFragment(category, hit[1])))
+            out.append(lint(line, LintFragment(category, hit[1]), units))
     return out
 
 
+@quotes("style.md", "Bans",
+        "**Literals.** Literals are banned.")
+@quotes("style.md", "Bans",
+        "It reads every other lib constant macro, all colors, and non-zero "
+        "task-shape lengths, offsets, and gaps from Params.")
+@quotes("principles.md", "Orientation",
+        "When a task does not distinguish an orientation, neither does the "
+        "program.")
 def check_orientation_literal(solver: Solver, runs: Runs) -> list[Finding]:
     """A lib constant macro other than `ZERO` in a clause program style
-    applies to. Serves the purest form: "Literals are banned", and the
-    program "reads every other lib constant macro … from Params"
-    (style.md:72, :74); principles.md:212, an orientation the task does
-    not distinguish."""
+    applies to. Serves the purest form."""
     return _bans(solver, runs, Category.ORIENTATION_LITERAL)
 
 
+@quotes("style.md", "Bans",
+        "**Literals.** Literals are banned.")
+@quotes("style.md", "Bans",
+        "The program may read `0` and `ZERO` directly.")
+@quotes("principles.md", "The generator",
+        "The program fixes no task data.")
 def check_nonzero_literal(solver: Solver, runs: Runs) -> list[Finding]:
-    """A number other than `0` in a clause program style applies to.
-    Serves the purest form: "Literals are banned" and "The program may
-    read `0` and `ZERO` directly" (style.md:72-73); principles.md:91, the
-    program fixes no task data."""
+    """A number other than `0` in a clause program style applies to. Serves
+    the purest form."""
     return _bans(solver, runs, Category.NONZERO_LITERAL)
 
 
+@quotes("style.md", "Bans",
+        "Arithmetic, raw aggregates, and `range` are banned.")
 def check_arithmetic(solver: Solver, runs: Runs) -> list[Finding]:
-    """An arithmetic operator in a clause program style applies to.
-    Serves the purest form: "Arithmetic, raw aggregates, and `range` are
-    banned" (style.md:77)."""
+    """An arithmetic operator in a clause program style applies to. Serves
+    the purest form."""
     return _bans(solver, runs, Category.ARITHMETIC)
 
 
+@quotes("style.md", "Bans",
+        "Arithmetic, raw aggregates, and `range` are banned.")
 def check_range(solver: Solver, runs: Runs) -> list[Finding]:
     """A `range` call in a clause program style applies to. Serves the
-    purest form, as `check_arithmetic` does (style.md:77)."""
+    purest form, as `check_arithmetic` does."""
     return _bans(solver, runs, Category.RANGE)
 
 
+@quotes("style.md", "Bans",
+        "Arithmetic, raw aggregates, and `range` are banned.")
 def check_raw_aggregate(solver: Solver, runs: Runs) -> list[Finding]:
     """An aggregate in a clause of a program scope: read it through a lib
-    component. Serves the purest form, as `check_arithmetic` does
-    (style.md:77)."""
+    component. Serves the purest form, as `check_arithmetic` does."""
     v = view(solver, runs)
     out: list[Finding] = []
     for u in v.program_units():
@@ -165,23 +183,30 @@ def check_raw_aggregate(solver: Solver, runs: Runs) -> list[Finding]:
                     if isinstance(side, Aggregate):
                         out.append(lint(lit.line, LintNamed(
                             Category.RAW_AGGREGATE,
-                            LintSentence.RAW_AGGREGATE, (side.op.value,))))
+                            LintSentence.RAW_AGGREGATE, (side.op.value,)),
+                            (u.id,)))
     return out
 
 
 def _singleton_axis(solver: Solver, unit: Unit) -> bool:
-    """The clause ends with `// @singleton-axis: …` (solver-file.md:119)."""
+    """The clause ends with `// @singleton-axis: …` (solver-file.md, under
+    "Params")."""
     return any(t.word == TrailingWord.SINGLETON_AXIS
                and (t.unit == unit.id
                     or (unit.span is not None and t.line == unit.span.last))
                for t in solver.annotations.trailing)
 
 
+@quotes("style.md", "Params",
+        "**Derived data.** A clause inside Params writes no value as a "
+        "literal.")
+@quotes("solver-file.md", "Params",
+        "**`@singleton-axis` literal.** A structure that extends along one "
+        "axis is written in a two-axis type, and the other axis takes a "
+        "literal `1`.")
 def check_params_data(solver: Solver, runs: Runs) -> list[Finding]:
-    """A literal in a rule of `Params` other than `0`, and other than `1`
-    in a clause marked `@singleton-axis`. Serves the purest form: "A
-    clause inside Params writes no value as a literal" (style.md:59;
-    solver-file.md:118-119)."""
+    """A literal in a rule of `Params` other than `0`, and other than `1` in
+    a clause marked `@singleton-axis`. Serves the purest form."""
     v = view(solver, runs)
     out: list[Finding] = []
     for u in v.own_units:
@@ -194,7 +219,8 @@ def check_params_data(solver: Solver, runs: Runs) -> list[Finding]:
                 if isinstance(node, NumberTerm) and node.value != 0 \
                         and not (axis and node.value == 1):
                     out.append(lint(line, LintFragment(
-                        Category.PARAMS_DATA, _number(node.value))))
+                        Category.PARAMS_DATA, code_text(node)),
+                        (u.id,)))
     return out
 
 
@@ -210,7 +236,7 @@ ranks."""
 def _unordered_types(solver: Solver, v: View) -> frozenset[str]:
     """The types an order may not read: `Color`, `Ident`, the lib's
     orientation types, the subtypes they reach, and the unions whose every
-    member is one (principles.md:241; history 1139)."""
+    member is one (principles.md, under "Color"; history 1139)."""
     out = {COLOR, IDENT} | set(solver.lib.orientation_types)
     changed = True
     while changed:
@@ -226,19 +252,20 @@ def _unordered_types(solver: Solver, v: View) -> frozenset[str]:
     return frozenset(out)
 
 
+@quotes("principles.md", "Color",
+        "Colors have identity and no other properties.")
 def check_typed_order(solver: Solver, runs: Runs) -> list[Finding]:
-    """An order read off a type that has none: a comparison `<`, `<=`,
-    `>`, `>=`, or a `min` or `max`, over a variable a column of such a
-    type binds, or such a variable fed to `Ordinal`. Serves the principle
-    "Colors have identity and no other properties" (principles.md:241),
-    on every type with identity and no order (history 1139)."""
+    """An order read off a type that has none: a comparison `<`, `<=`, `>`,
+    `>=`, or a `min` or `max`, over a variable a column of such a type
+    binds, or such a variable fed to `Ordinal`, on every type with identity
+    and no order."""
     v = view(solver, runs)
     unordered = _unordered_types(solver, v)
     cols = Columns(v)
     out: list[Finding] = []
     for u in v.program_units():
         types: dict[str, set[str]] = {}
-        for a in (u.head, *(x.atom for x in atoms_read(u))):
+        for a in (u.head, *atoms_read(u)):
             for name, ts in cols.var_types(u, a).items():
                 types.setdefault(name, set()).update(ts)
         seen: set[tuple[int, str]] = set()
@@ -266,7 +293,7 @@ def check_typed_order(solver: Solver, runs: Runs) -> list[Finding]:
                     if agg.op in ORDER_AGGREGATES and agg.expr is not None:
                         flag(lit.line, agg.expr,
                              LintSentence.TYPED_ORDER_ORDERS, agg.op.value)
-        for a in (u.head, *(x.atom for x in atoms_read(u))):
+        for a in (u.head, *atoms_read(u)):
             if a.relation.name != ORDINAL_SET or len(a.args) != 2 \
                     or not _in_ordinal(v, u, a):
                 continue
@@ -287,11 +314,13 @@ LINE_LIMIT = 100
 """The widest line a one-line clause takes."""
 
 
+@quotes("style.md", "Layout",
+        "**Single-line form.** The single-line form is fine for short clauses "
+        "(≤ ~80 chars).")
 def check_long_clause(solver: Solver, runs: Runs) -> list[Finding]:
-    """A clause whose whole body stands on one line wider than the limit
-    ([Layout](docs/handbook/style.md#layout)): the style's single-line
-    form is for short clauses. A clause with several heads is one
-    finding."""
+    """A clause whose whole body stands on one line wider than the limit:
+    the style's single-line form is for short clauses. A clause with several
+    heads is one finding. Serves readability."""
     v = view(solver, runs)
     out: list[Finding] = []
     seen: set[int] = set()

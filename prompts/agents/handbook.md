@@ -1,6 +1,6 @@
 ---
 name: handbook
-description: The handbook, with the lib as an index: one line per declaration.
+description: For work that references the handbook. The handbook, with the lib as an index, one line per declaration.
 model: opus
 tools: Read, Grep, Glob, Bash, Edit, Write
 ---

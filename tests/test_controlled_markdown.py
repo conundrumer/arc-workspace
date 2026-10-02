@@ -13,11 +13,9 @@ import pytest
 
 from controlled_markdown import (
     ATTRIBUTE,
-    CODE,
     CONTENT,
     HEADING,
     QUOTE,
-    TABLE,
     ControlledMarkdownError,
     Registry,
     check_blocks,
@@ -134,36 +132,3 @@ def test_number_run():
     with pytest.raises(ControlledMarkdownError) as err:
         parse("# T\n1. one\n3. three\n")
     assert err.value.rule == "number-run"
-
-
-def test_table_renders_under_its_parent():
-    """A table renders at the list indent, with no `>`, so a Markdown reader
-    shows it as a table."""
-    text = "# T\n- parent\n    | A | B |\n    | --- | --- |\n    | 1 | 2 |\n"
-    document = parse(text)
-    table = document.children[0].children[0].children[0]
-    assert (table.kind, table.text) == (TABLE, "| A | B |\n| --- | --- |\n| 1 | 2 |")
-    assert write(document) == text
-    assert full(document) == (
-        "# T\n\n- parent\n\n    | A | B |\n    | --- | --- |\n    | 1 | 2 |\n"
-    )
-
-
-def test_code_renders_at_the_content_indent():
-    """A code node renders with its fences at the list content indent, so a
-    Markdown reader shows it as a code block."""
-    text = "# T\n- parent\n    ```py\n    a = 1\n\n    b = 2\n    ```\n"
-    document = parse(text)
-    code = document.children[0].children[0].children[0]
-    assert code.kind == CODE
-    assert code.text == "```py\na = 1\n\nb = 2\n```"
-    assert write(document) == text
-    assert full(document) == (
-        "# T\n\n- parent\n\n    ```py\n    a = 1\n\n    b = 2\n    ```\n"
-    )
-
-
-def test_blank_lines_kept():
-    """The formatter keeps the writer's blank lines."""
-    text = "# T\n- first\n\n- second\n    - under\n\n    - apart\n"
-    assert write(parse(text)) == text

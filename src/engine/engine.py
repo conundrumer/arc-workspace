@@ -9,13 +9,16 @@ from typing import Protocol
 
 from engine.program import (
     Atom,
+    Component,
     DeclId,
     Grid,
+    GridLayout,
     Program,
     RelationName,
     Row,
     Rows,
     Scope,
+    TypeDecl,
     UnitId,
 )
 
@@ -89,6 +92,33 @@ class Index(Protocol):
         """The declaration `name` denotes when read in `scope`."""
         ...
 
+    def component(self, name: str, scope: Scope) -> Component | None:
+        """The component `name` denotes when read in `scope`: the one the
+        innermost scope around it declares; None where none does."""
+        ...
+
+    def chain(self, component: Component) -> tuple[Component, ...]:
+        """`component` and each component it extends in turn, nearest
+        first, as far as the bases resolve and until one comes again."""
+        ...
+
+    def type_decl(self, name: str, scope: Scope) -> TypeDecl | None:
+        """The type declaration `name` denotes when read in the text of
+        `scope`: declared there, in a component it extends, or in a text
+        around it; `o.T` reads `T` in the component of the instance `o`.
+        None for a primitive type, a component's type parameter, or a name
+        nothing declares."""
+        ...
+
+
+def resolved(index: Index, name: RelationName, scope: Scope) -> Resolved:
+    """`index.resolve` of a name the caller holds to be declared. Raises
+    `ValueError` where it resolves to no declaration."""
+    got = index.resolve(name, scope)
+    if not isinstance(got, Resolved):
+        raise ValueError(f"`{name.text}` resolves to no declaration")
+    return got
+
 
 # Remove
 
@@ -147,13 +177,41 @@ type RemovalTarget = (RemoveUnit | RemoveAtom | RemoveDisjunct | RemoveColumn
 @dataclass(frozen=True)
 class GridValue:
     """A relation's value as one grid of a GRID macro call: the call's
-    keys and the grid. The engine writes the cells."""
+    keys, the grid, and for a stamp the row and column of its anchor cell.
+    The engine writes the cells."""
 
     keys: Row
     grid: Grid
+    anchor: tuple[int, int] | None = None
 
 
 type RelationValue = Rows | GridValue
+
+
+@dataclass(frozen=True)
+class AnchorOffStamp:
+    """A grid given with an anchor for a call that is no stamp."""
+
+
+@dataclass(frozen=True)
+class CellOffForm:
+    """A grid for a layout that takes members alone, with a cell other than
+    0 and 1: the first such cell's row and column, and its value."""
+
+    cell: tuple[int, int]
+    value: int
+
+
+@dataclass(frozen=True)
+class SizeOffLayout:
+    """A grid given with no anchor for a stamp, whose height and width are
+    not the call's: the grid's height and width."""
+
+    given: tuple[int, int]
+
+
+type GridMisfit = AnchorOffStamp | CellOffForm | SizeOffLayout
+"""Why a grid is no value of a relation one GRID call stores."""
 
 
 # Run
@@ -252,6 +310,17 @@ class Rendered:
     lines: tuple[RenderedLine, ...]
 
 
+@dataclass(frozen=True)
+class Classed:
+    """A program with the rules `Engine.classify` adds: `rows` holds the
+    classified relation's rows at each class's representative alone, and
+    `classes` each value of the column with its class's representative."""
+
+    program: Program
+    rows: RelationName
+    classes: RelationName
+
+
 class Engine(Protocol):
     """The interface between a language and the rest. Every rewrite returns
     a new program; no caller touches program text."""
@@ -273,6 +342,17 @@ class Engine(Protocol):
         with that value."""
         ...
 
+    def place_grid(self, layout: GridLayout, mark: tuple[int, int] | None,
+                   value: GridValue) -> GridValue | GridMisfit:
+        """`value` as the value of a relation that one GRID call of `layout`
+        stores, the call's cell marked `@` at `mark`: with an anchor, a
+        stamp's grid of any size; with none, a stamp's grid of the call's
+        size, anchored at `mark`, or a grid of any other layout. A layout
+        that takes members alone takes 1 and 0 cells only. Where the grid
+        is placed by none of these, why. `fix_relation` places a grid by
+        this rule."""
+        ...
+
     def remove(self, program: Program, target: RemovalTarget) -> Program:
         """`program` without `target`."""
         ...
@@ -288,6 +368,17 @@ class Engine(Protocol):
         typed failure of the run. An output `caps` gives a cap holds at most
         cap plus one of its rows, all of them where it has at most cap; the
         engine prints no row of it past those."""
+        ...
+
+    def classify(self, program: Program, relation: RelationName,
+                 column: int) -> Classed:
+        """`program` with rules that class the values `relation`, a
+        top-level relation, holds in `column` by its rows at each: two
+        values are of one class where the relation holds the same rows at
+        both, the other columns' values. A run of the result then compares
+        the values in the run and prints one value's rows per class.
+        Raises `ValueError` where no top-level declaration answers
+        `relation`."""
         ...
 
     def expand(self, program: Program) -> Program:

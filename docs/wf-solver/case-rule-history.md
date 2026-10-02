@@ -4,8 +4,6 @@ What decided which models become cases in a `.dl` solver, from the first "Covera
 
 ## 2026-05-07 — Coverage enters (eefe6e0)
 
-`docs/wf-solver/3-principles.md` gains a third principle beside Fidelity and Invariance. The commit message says: "Add Coverage principle to 3-principles (multiple modeling forms via ADT Choice; data/op framing)."
-
 The rule on how many cases:
 
 > Useful coverage gives one model per plausible family. The prior becomes visible from each plausible angle.
@@ -22,11 +20,9 @@ A same-model test enters, so that a re-implementation gets no case.
 
 > Op compositions split the same way: re-decomposing the same property over the same Consts is an alt impl. Coverage extends within op-leaning territory only when an op composition commits to a different Consts shape.
 
-Worked examples cover 44f52bb0 `$Direct` against `$GroupMatch`, 34b99a2b `$SetMatch` against `$Xor`, and three same-model bodies for 44f52bb0 `$Direct`.
-
 ## 2026-07-03 — the failure Coverage guards, and the evidence gate (e7bb3ba)
 
-The doc moves to `docs/wf-solver/principles.md`. Coverage is named as a guard:
+Coverage is named as a guard:
 
 > - **Coverage** — the solver commits to one family where the train pairs support several.
 
@@ -59,16 +55,8 @@ The evidence gate also gains the unseen-key rule: "A test key absent from the tr
 1. **2026-08-22 (466cb65).** Closure removes no case. "Closure settles encoding, not coverage: it removes no case. A membership set some sibling refills is task data even when this task's fill coincides with a structural class." The commit message gives the ground: 14754a24, whose plus footprint a T-completing sibling would refill.
 2. **2026-08-22 (f1abd20).** Among setup variants, the one case goes to "the pin whose facts the body already reads (1190bc91)", and "The settled shape ranks below fidelity and reuse".
 3. **2026-08-29 (ae53bad).** Tabulation. "An ops claim whose inputs a co-chosen decision pins to stored data computes a function of Consts; its tabulation is a fill of the data rival, so it gets no case (21897d95)."
-4. **2026-09-03 (69d071f).** The evidence gate is restated as a separation. The commit message says the gate "was a list of admitted and refused claims with no statement of what separates them." The new lead: "A rival that reads the task differently gets a case. A rival whose added machinery no pair exercises gets no case." The same commit scopes subsumption to any fill of the parameterization, and adds "A variant that stands on different input structure is a different reading and gets a case; a variant that finds the same structure another way is a pin."
+4. **2026-09-03 (69d071f).** The evidence gate is restated as a separation. The new lead: "A rival that reads the task differently gets a case. A rival whose added machinery no pair exercises gets no case." The same commit scopes subsumption to any fill of the parameterization, and adds "A variant that stands on different input structure is a different reading and gets a case; a variant that finds the same structure another way is a pin."
 5. **2026-09-03 (69d071f).** No relational form. "A claim with no relational form gets no case: when its encoding rests on arithmetic and the lib addition protocol closes the primitive, the claim goes with it."
-
-## 2026-09-05 to 2026-09-08 — restructure and rename
-
-The prose paragraphs become rule lists with run-in titles, so a review can cite a rule by name (f5b168a, 06f2780, 27a1f81, dbf87b3, 647508d, b4b6088). `f42c17b` renames the vocabulary: claim becomes hypothesis, Consts becomes the parameters, body becomes the program. Coverage now reads:
-
-> A few train pairs underdetermine the family. Coverage is one case per model that the rules of this section admit.
-
-Its subsections are Same model, Table or rule, Subsumption, Prior or setup, Evidence, and Shared parameters.
 
 ## 2026-09-09 — cases go to every open divergence (d683be5)
 
@@ -91,20 +79,11 @@ Exercised is widened again: "A pair exercises a part of the peer when that pair'
 - **Exercised**, second widening: "even where the part's result matches the model at hand's on every pair. Exercised tests only the parts the peer adds; a peer that adds none passes it."
 - **Different parse** gets a cell-level test: "Two encodings parse the task differently when a rule of one reads an input cell that the other's structure omits."
 
-## 2026-09-13 — the Coverage rules are declared open (b3bedbd)
-
-`docs/wf-solver/open/` collects the open questions. Four of them are about case inclusion.
-
-- `coverage-rules.md` — three gaps in one section: whether an Exercised pass admits a case or only defers it; whether the first rule that removes a peer settles it; and what size a "part" has. It records that three approved solvers hold a case the narrow reading removes (8e5c0c38, 1a6449f1, 4c416de3), and lists drafts whose case count changes under each reading: 9720b24f gives 2 cases or 4, 8a6d367c gives six combinations or twelve.
-- `peer-priors.md` — "The rule gives a case to two candidates that parse the task alike only when they 'separate priors', and no rule says when two candidates do." It counts the approved corpus on both sides and lists about twenty drafts whose cases turn on the answer.
-- `different-parse.md` — whether the parse test ranges over structures or over input cells.
-- `unchanged-output.md` — whether an output equal to the input is a valid divergence.
-
 ## 2026-09-15 — the theory overhaul removes Coverage (fbd9023)
 
 The commit message states it: "Principles: the generator theory replaces coverage by subsumption. A case stands unless it fails Fit, Fidelity, or Equivalence."
 
-The whole Coverage section, `docs/wf-solver/open/coverage-rules.md`, and `peer-priors.md` are deleted. A `## Cases` section replaces them:
+The whole Coverage section is deleted. A Cases section replaces it:
 
 > **No other removal.** A case is included exactly when it passes all of these tests: Fit, Fidelity, Equivalence.
 
@@ -121,37 +100,14 @@ The whole Coverage section, `docs/wf-solver/open/coverage-rules.md`, and `peer-p
 
 6. 2026-09-17T00:08Z, user: "the purpose of all that annotation was to have data that could help with ranking the deviation of cases instead of binary inclusion/exclusion."
 
-So the judgment gates are replaced by a per-branch grading. The same commit adds a `Deviation` section with three counts — `relaxed`, `added`, `contradicted` — that a branch carries.
+So the judgment gates are replaced by a grading of each branch.
 
-## 2026-09-15 — the review's duty per dropped peer (bc8d4dd)
-
-> - The test a dropped peer fails decides what that peer owes.
->     - A peer dropped under Fidelity owes a witness.
->     - A peer dropped under Equivalence owes the statement that no witness exists.
->     - A peer that fails Fit stays out of the review.
-
-## 2026-09-17 — the counts become plausibility and verdict (89097b7)
-
-The three counts are cut. Two annotator judgments replace them: `plausibility`, an ordinal over `ordinary`, `variant`, `borderline`, `foreign`; and `verdict`, the output the annotator thinks the generator would pair with the witness. The user asked for the term audit that produced both names and ruled on each by agreeing (2026-09-16T13:52Z, 13:57Z, 13:59Z).
-
-## 2026-09-17 — the conditions are named, and a peer that meets them is not dropped (5eb0934)
-
-The commit message: "principles.md names Fit, Fidelity, and Equivalence the case conditions. procedure.md's review says not to drop a peer that meets them, for any reason."
-
-The sequence:
+## 2026-09-17 — a peer that meets the case conditions is not dropped (5eb0934)
 
 1. A create pass on 9aec4887 reported: "Two peers meet that letter and I left them out … because I judge that no person forms them from these pairs. If plausibility of the model is a gate, the section needs the sentence; if it is not, both are cases and the solver is short by two."
 2. The user ruled on the merits (02:04Z): "i saw StoredTies and FullRuns. they're out there but i would think of that when thinking of variations of the task. […] i wouldn't from these pairs, but i would if i thought more generally".
-3. A first fix added a **Variations** rule to principles.md Cases:
-
-    > - **Variations.** A branch that a person forms from a variant task alone is a case.
-    >     - A branch that changes a scene claim is formed from the pairs.
-    >     - A branch that changes rules alone is formed from a variant task: an input the pairs do not contain, on which the branch differs from the concept branch.
-    >     - That the pairs alone do not suggest a branch is no ground to leave it out.
-    >     - 2d0172a1
-
-4. The user asked whether the procedure line alone would do (02:28Z), then ruled (02:29Z): "do not drop a peer for any raeson if it passes". The Variations rule was reverted out of principles.md, and procedure.md kept one line.
-5. The user asked for a label (02:30Z, 02:31Z). The result: principles.md bolds "**case condition**", and procedure.md says "Do not drop a peer that meets the case conditions, for any reason."
+3. A first fix added a **Variations** rule: "A branch that a person forms from a variant task alone is a case. … That the pairs alone do not suggest a branch is no ground to leave it out."
+4. The user asked whether the procedure line alone would do (02:28Z), then ruled (02:29Z): "do not drop a peer for any raeson if it passes". The Variations rule was reverted, and procedure.md kept one line: "Do not drop a peer that meets the case conditions, for any reason."
 
 ## 2026-09-18 — a witness needs the concept case defined (2ba3d0b)
 
@@ -168,9 +124,7 @@ The session agreed and named the mechanism: any rule that is inert under the sce
 > - **divergence witness**: an input on which the concept case is defined and …
 > - Two models … are equivalent when they give the same output for every assignment and every input on which the concept case is defined.
 
-A source comment states the consequence: "A model that agrees with the concept case on every input on which the concept case is defined has no witness against it, whatever it gives elsewhere."
-
-This is the bound on the unbounded-peer construction as of 2026-09-18. It closes the construction when the base model is the concept case. A handbook agent checked it on 2026-09-18 (session 214e711f) and reported two residual holes: a peer built off a non-concept case, and a peer whose added rule brings its own parameter, since `EquivalentAcross` needs a bijection between the two parameterizations and none exists when they differ in size. In that second hole, style.md's rule that "Every other branch has at least one `@witness` line" is what stops the branch being written. The user did not rule on that finding.
+This is the bound on the unbounded-peer construction as of 2026-09-18. It closes the construction when the base model is the concept case.
 
 ## 2026-09-18 — "drop" becomes "omit from the solver"
 
@@ -178,17 +132,13 @@ A finalize agent read the Drops rule as a rule about the review, not about solve
 
 > "I read 'Drops' as a rule about what the review must list, not about solver membership."
 
-Its grounds were that the bullet sat under the Review question "Are there potential peer models?", beside a bullet about listing, and that procedure.md's review item "A case to keep or add" implies the user adds the case.
-
 The user (13:34Z): "what if we just chose a more precise/conventional word than 'drop'". Then the user wrote the line himself (13:37Z):
 
 > "- If a peer meets the case conditions, do not omit from the solver."
 
-The working tree carries it with "for any reason" restored:
+It was written with "for any reason" restored:
 
 > If a peer meets the case conditions, do not omit it from the solver for any reason.
-
-The case check also moved from Review into Create, as step 5: "Check that the cases are exactly the models that meet the case conditions."
 
 ## 2026-09-18 — the open-ended lattice of weaker readings
 
@@ -232,20 +182,15 @@ The Review question "Are there potential peer models?" is deleted. Its two bulle
 >     - For each input-derived value constant across pairs, try the model that stores it in a parameter.
 >     - Do not propose, and do not list in the review, a model equivalent to the model of a case the solver already has.
 
-The same commit creates a `Witness` operation and deletes the review's duty for a peer dropped under Equivalence ("requires the statement that no witness exists"). So the last trace of the 2026-09-15 per-condition duty (bc8d4dd) is the Fidelity one.
+## 2026-09-21 — the goal names Concept and Coverage (da30cfe)
 
-## 2026-09-19 to 2026-09-21 — the handbook overhaul
+The Principles goal is restated as two ordered aims:
 
-The solver docs move to `docs/handbook/` (e395e8a) and are rewritten in the controlled format, one claim per line (9cb6d5b, 7d91713, b3a61a4, 986202b, 99023df). The Cases rules are not changed in substance. Two edits touch case membership:
+> - The goal is for the corpus to take as much as it can from each task, in this order:
+>     - **Concept.** The solver expresses the task as a person sees it, as closely as possible.
+>     - **Coverage.** The solver also expresses alternative ways to see the task, for the diversity of ways of writing a solver.
 
-- **986202b.** The review loses "A model equivalent to the model of a case the solver already has stays out of the review", and the rule about what stays out of the review becomes "A model that fails Fit or Equivalence stays out of the review, including any note that it was considered."
-- **da30cfe, 2026-09-21.** The Principles goal is restated as two ordered aims:
-
-    > - The goal is for the corpus to take as much as it can from each task, in this order:
-    >     - **Concept.** The solver expresses the task as a person sees it, as closely as possible.
-    >     - **Coverage.** The solver also expresses alternative ways to see the task, for the diversity of ways of writing a solver.
-
-    This is the first time since fbd9023 that the word "Coverage" names a goal rather than a deleted section. The earlier wording, in place since before the overhaul, was "The goal is for a solver to express a task in a way that matches a person's understanding as closely as possible, and for the corpus to extract as much as possible from the tasks."
+This is the first time since fbd9023 that the word "Coverage" names a goal rather than a deleted section.
 
 ## 2026-09-22 — the working tree
 
@@ -281,7 +226,7 @@ Two consequences follow, and both remove cases:
 
 `G_C(θ)` survives the rewrite. The 2026-09-18 bound (2ba3d0b) is therefore intact: the comparison still ranges over the inputs on which the concept case is defined, and no further.
 
-### The two explicit lines added under Equivalence and under Terms
+### The scene-claim line added under Equivalence
 
 Four console passes argued that a peer whose divergence lies off the scene claims is not a separate claim.
 
@@ -290,25 +235,13 @@ Four console passes argued that a peer whose divergence lies off the scene claim
 3. **9f5f939b create**, callout 2: "The handbook gives no rule for a peer model whose divergence from the concept shows only on inputs that break a scene claim, and I spent most of the pass on it. The `Sight` choice point exists only because the Equivalence condition ranges over every input on which the concept case is defined, so a redundant-under-the-scene-claim test is formally a case; by that letter, the center-is-blank and arm-is-exactly-two tests are cases too, and I left them out."
 4. **9f5f939b refine**, callout 3: "By the letter of the Equivalence condition, `Clear` is a case and so are the centre-is-blank and arm-is-exactly-two tests; I included the first and excluded the others on the ground that a case must be a way of seeing the task, and the principles do not state that test."
 
-The user's rulings:
+The user's ruling (13:49Z): "i mean, i dont want agents arguing with the docs. yes the handbook answers it but can we make it more explicit?"
 
-- 13:49Z: "i mean, i dont want agents arguing with the docs. yes the handbook answers it but can we make it more explicit?"
-
-The first line, under Equivalence:
+The line added under Equivalence:
 
 > - Agreement on every input the generator produces does not establish equivalence either: the comparison ranges over every input on which the concept case is defined, whether or not the input breaks a scene claim.
 >     - 00dbd492
 >         - The two readings of an object's empty region part only where the outline is broken, an input the generator never produces, and each reading is a case.
->     * comment
->         - The 9f41bd9c create and refine sessions read a scene claim as narrowing the comparison, and dropped a peer that parts from the concept case only off the scene.
-
-The second, under Relational form's Terms rule:
-
-> - **Terms.** When two sets of clauses each have the relational form of a rule, the program takes the one stated in the rule's own terms.
->     * comment
->         - The program with the other set is a peer model, and the case conditions decide whether it is a case.
->             * comment
->                 - The 9f41bd9c refine session read Terms as excluding the other set from the cases.
 
 ### Judgment is not grounds for omitting a case
 
@@ -317,7 +250,7 @@ procedure.md Develop step 3 gains:
 > - If you find a model that meets the case conditions, add it.
 >     - Your own judgment or taste is not grounds for omitting it.
 
-This is the third statement of the 2026-09-17 ruling ("do not drop a peer for any raeson if it passes"), after principles.md's **case condition** label and procedure.md's "do not omit it from the solver for any reason".
+This restates the 2026-09-17 ruling ("do not drop a peer for any raeson if it passes").
 
 ### Fidelity as a case condition becomes Relational form
 
@@ -325,13 +258,13 @@ The third case condition was "**Fidelity.** The model has an encoding allowed by
 
 > - **Relational form.** Each claim the case's branches replace or add has a relational form.
 
-procedure.md follows: "A peer dropped under Relational form requires in the review why no set of clauses states its claim." The Necessity rule in lib-protocol.md loses "Remove the case whose hypothesis has no relational form without that comp."
+The Necessity rule in lib-protocol.md loses "Remove the case whose hypothesis has no relational form without that comp."
 
 This edit came from 9ddd00f0 refine, which used `@approximated` on a branch. The user (02:41Z): "i remember a past discussion where we decided to allow it bc it was theoretically possible that the approximation only applied to a branch and the solver could not do with out it. but wdyt", then (02:49Z) "not sure we're on same page. how about this: under your proposal, would this be possible?", then (02:50Z) "ok i agree with you. propose edits".
 
 ### The runner holds cases the solver does not write
 
-`@derive` and `@store` directives enter solver-file.md. The runner holds the derived or stored reading of a parameter as a case, and the solver writes no branch for it. `@ignore: derive` and `@ignore: store` dismiss one. The derive report holds a case only when the concept case reads the parameter.
+`@derive` and `@store` directives enter solver-file.md. The runner holds the derived or stored reading of a parameter as a case, and the solver writes no branch for it. `@ignore: derive` and `@ignore: store` dismiss one.
 
 This is the first machinery that adds a case without a session judging it.
 
@@ -361,101 +294,16 @@ And asked for the term to be found rather than illustrated (15:14Z):
 
 > "wait we don't have to call it 'things of ARC'. ultrathink on what im gesturing at. what is the 'thing'. and look for a way to avoid enumerating examples of thing (structure number ...). or at least ensure it is exhaustive, and to choose the highest level way to enumerating. lets establish idea first. dont propose wording until we get to that point"
 
-## Assessment of the 2026-09-22 proposal
-
-The proposal has four parts.
-
-- **Goal.** The corpus enumerates the things of ARC, grounded in task data. A case is signal toward that enumeration.
-- **Thing.** A reading of a task with two aspects: the claims the solver makes, and the encoding those claims are stated through.
-- **Signal.** A case differs from the concept case by a claim the concept case's claims do not already imply, or by an encoding the concept case does not use.
-- **Noise.** A guard — a branch whose clauses are the concept branch's with body atoms added or removed, each added atom over a relation the concept branch reads, and whose every witness carries `@relaxed` — gets no case.
-
-Equivalence is unchanged, and an audit computes the clause difference per branch and reads the `@relaxed` lines.
-
-### Rule by rule
-
-| Rule | Adopted / removed, with the recorded reason | Proposal |
-| --- | --- | --- |
-| Coverage, one model per plausible family (2026-05-07, eefe6e0) | Adopted: "Useful coverage gives one model per plausible family. The prior becomes visible from each plausible angle." Removed 2026-09-15 (fbd9023): "the generator theory replaces coverage by subsumption." | Restates. The goal clause is the same aim without the word "plausible", which the 2026-09-17 ruling had already stripped. |
-| Alt model against alt impl (2026-05-18, 849f681) | Adopted: "Op compositions split the same way: re-decomposing the same property over the same Consts is an alt impl. Coverage extends within op-leaning territory only when an op composition commits to a different Consts shape." Became the Equivalence condition (fbd9023). | **Reverses.** The encoding clause makes a re-decomposition over the same parameterization a case, which this rule named as exactly the thing that gets no case. |
-| Evidence gate (2026-07-03, e7bb3ba) | Adopted: "A claim the data barely instantiates doesn't earn a case." Removed 2026-09-15 with all of Coverage. | **Reverses in part.** "Grounded in task data" reads like the evidence gate, but the signal clause has no instantiation test, and the proposal keeps "do not say no to a new thing". The two pull opposite ways. |
-| Relabeled twin (2026-07-10, 9a222a5) | Adopted: "The relabeled twin adds no coverage; do not write one." Became Equivalence. | Restates, through Equivalence, which the proposal keeps. |
-| Subsumption by invalid divergence (2026-07-10, 9a222a5) | Adopted: "When every divergence of a claim from a sibling is ill-formed … the sibling subsumes it." Removed 2026-09-15; the text as of 2026-09-22 rejects it: "Fit considers only the pairs. Being undefined on another input does not prevent a model from fitting." The Agree clause of 2026-09-22 re-admits the undefined side, but only as agreement, not as subsumption. | Orthogonal. |
-| Concept against setup (2026-07-10, 9a222a5) | Adopted: "A same-model separation gets a case only when it separates priors. The boundary runs along consumption." Case-removing half removed 2026-09-15; the vocabulary survives as Parse priority, which decides an encoding, not a case. | **Reverses.** The proposal's encoding clause makes the encoding decide a case, which is the half that was cut on purpose. |
-| Closure removes no case (2026-08-22, 466cb65) | Adopted: "Closure settles encoding, not coverage: it removes no case." | **Reverses in direction.** That rule said encoding does not decide coverage. The proposal says encoding creates signal. It does not remove a case, so the conflict is one of principle rather than of outcome. |
-| Tabulation (2026-08-29, ae53bad) | Adopted: "its tabulation is a fill of the data rival, so it gets no case (21897d95)." Removed 2026-09-15; the nearest survivor is Redundant value. | Orthogonal. |
-| Peer priors (through 2026-09-03, 69d071f) | Adopted: "A rival that reads the task differently gets a case. A rival whose added machinery no pair exercises gets no case." Removed 2026-09-15. The 2026-09-13 open question (`peer-priors.md`) recorded that "no rule says when two candidates do" separate priors. | **Restates the first half, reverses the second.** The signal clause is "reads the task differently" with a stated test. The guard rule revives "added machinery no pair exercises" under a new test. |
-| No relational form (2026-09-03, 69d071f) | Adopted: "A claim with no relational form gets no case." Became the Fidelity case condition, and on 2026-09-22 became the **Relational form** condition, restated per claim. | Orthogonal. The proposal does not touch it. |
-| Reparameterizations (removed 2026-09-09, d683be5) | Removed: "Cases go to every model divergence the pairs leave open, so the reparameterization exception is gone." The deleted text had been "A setup has reparameterizations, and together they get one case." | **Reverses.** The guard rule is a new exception of the same shape: a family of branches that differ only in one dimension collapses to one case. |
-| Exercised (2026-07-10, widened 2026-09-10 and 2026-09-13, removed 2026-09-15) | Adopted: "A peer model has rules, parameters, or comps that the model at hand does not. If no pair exercises them, that peer gets no case." Removed with the note that "its final letter had been widened twice, so it counted almost every peer as exercised; sessions kept applying a narrower reading than the letter." | **Reverses.** This is the closest prior form of the guard rule. See below. |
-| Table entries (2026-07-03) | Adopted: "a mapping table wants multiple entries exercised." Removed 2026-09-15. | Orthogonal. |
-| Determinable and Unseen key (2026-07-10) | Kept, as Fit's Unseen key and the determination's held-out test outputs. | Orthogonal. |
-| Contradicted rule | Absorbed into Fit. | Orthogonal. |
-| Different parse (2026-09-13, f306e00) | Adopted as an admission: "Two encodings parse the task differently when a rule of one reads an input cell that the other's structure omits." The 2026-09-13 open question `different-parse.md` asked whether the test ranges over structures or over input cells and was never answered; it went with Coverage on 2026-09-15. | **Restates, and picks the unanswered side.** The proposal's encoding clause is the structure reading of that open question. That question was still open on 2026-09-22. |
-| Ordered application (2026-09-10, 966ea9c) | Adopted: "A peer that Evidence removes gets no case, even when it subsumes the model at hand." Moot since one rule set replaced three. | **Restates the need.** Signal and noise can both hold of one branch, and the proposal does not say which wins. |
-| Refused input (2026-09-11, dfafe6c) | Adopted: "A divergence at an input the hypothesis's premise excludes does not establish subsumption. A strict hypothesis and a tolerant peer that fold the same evidence differently are two families under Invariance scope, and each gets a case." | **Reverses.** A guard is exactly a strict hypothesis beside a tolerant peer. This rule ruled that both get a case. |
-| No other removal (2026-09-15, fbd9023) | Adopted: "A case is included exactly when it passes all of these tests: Fit, Fidelity, Equivalence." User's ground (2026-09-16T02:58Z): "i no longer want deliberation over keep/drop by judgment". | **Reverses.** The guard rule is a fourth removal test. Whether it needs judgment turns on whether the audit can compute it. |
-| Do not omit a peer that meets the conditions (2026-09-17, 5eb0934; restated 2026-09-18 and again 2026-09-22) | Adopted on the user's own words (2026-09-18T02:29Z): "do not drop a peer for any raeson if it passes". | **Restates the goal half, reverses the letter.** "We won't say no to a new thing" is this rule. A fourth removal test means some peers that meet the three conditions are omitted. |
-| Variations (added and reverted 2026-09-18, 5eb0934) | Proposed: "A branch that a person forms from a variant task alone is a case. … That the pairs alone do not suggest a branch is no ground to leave it out." Reverted after the user ruled that the procedure line alone would do. | Restates. The proposal's "out there is still signal" is the same claim. |
-| Witness and equivalence narrowed to `G_C` (2026-09-18, 2ba3d0b) | Adopted on the user's ground: "allowing that to be the case, i think makes it possible to make any case you want bc you can make any task you want as long as you can find two cases under that task that diverges". | Restates. The proposal keeps Equivalence over every input on which the concept case is defined. |
-| The unwritten weaker-claims rule (open since 2026-09-18) | Never written. The gap: "Weaker statements of one scene claim form an unbounded set of peers, and the handbook gives no rule that bounds them." | **Answers it.** The guard rule is the first written bound on that set. Note that the 9bbf930d case that raised it was a set of *weaker* readings, and the proposal's guard rule covers atoms added *or removed*, so it covers that case. |
-| The scene-claim comparison line (2026-09-22, uncommitted) | Adopted on 2026-09-22 against four passes that read a scene claim as narrowing the comparison: "the comparison ranges over every input on which the concept case is defined, whether or not the input breaks a scene claim." | **Reverses.** The noise rule uses `@relaxed`, which marks a witness that breaks a scene claim, to remove a case. That is the reading this line was written to refuse, earlier on 2026-09-22. |
-
-### The reversals, in one list
-
-1. **Alt impl (2026-05-18).** The encoding clause makes a re-decomposition over the same parameterization a case. The rule said that is an alt impl and gets no case. The Terms comment of 2026-09-22 moves partway, but routes the other clause set through the case conditions, and Equivalence still excludes it.
-2. **Closure removes no case (2026-08-22) and Concept against setup (2026-07-10).** Both said encoding does not decide a case. The encoding clause says it does.
-3. **Exercised (2026-07-10 to 2026-09-15) and Refused input (2026-09-11).** The guard rule is their subject matter with the verdicts inverted between them: Exercised removed such a peer, Refused input kept it, and the proposal removes it.
-4. **Reparameterizations (removed 2026-09-09).** The guard rule is a new collapse-a-family-into-one-case exception, whose removal was the stated reason for that commit.
-5. **No other removal (2026-09-15) and the do-not-omit ruling (2026-09-17, restated on 2026-09-22).** A fourth removal test.
-6. **The scene-claim line added on 2026-09-22.** `@relaxed` as a removal signal contradicts it directly.
-
-### The prior attempt at a guard-like rule
-
-**Exercised** is the one. Its history:
-
-1. 2026-07-10 (9a222a5), as part of the evidence gate: a claim the data barely instantiates gets no case.
-2. 2026-09-03 (69d071f), as a named rule: "A rival whose added machinery no pair exercises gets no case."
-3. 2026-09-09 (d683be5), first widening: "A pair exercises a part of the peer when that pair's output derives through it."
-4. 2026-09-10 (966ea9c), second widening: "even where a narrower rule would give the same output on every pair."
-5. 2026-09-13 (f306e00), third: "Exercised tests only the parts the peer adds; a peer that adds none passes it."
-6. 2026-09-13 (b3bedbd), declared open. `coverage-rules.md` recorded that three approved solvers hold a case the narrow reading removes (8e5c0c38, 1a6449f1, 4c416de3), and that 9720b24f gives 2 cases or 4 and 8a6d367c gives six combinations or twelve, depending on the reading.
-7. 2026-09-15 (fbd9023), removed. The audit's verdict: "Its final letter had been widened twice, so it counted almost every peer as exercised; sessions kept applying a narrower reading than the letter."
-
-So the rule was tried, widened three times to stop it removing cases the corpus already held, and removed because the letter and the practice had come apart. The proposal's guard rule differs in one way that matters: the old test asked whether a *pair* exercised the added part, and the new one asks whether a *witness* breaks a scene claim. The new test is mechanical, which is the failure mode the old one had. It is still a test about the same population of peers.
-
-### The goal, and whether it is recorded earlier
-
-"Enumerate the things of ARC" is not in the record before 2026-09-22 in those words. The nearest earlier statements, all the user's:
-
-- 2026-09-15T13:14Z: "i guess another less important reason for coverage is to cover whatever is possible and conceivable."
-- 2026-09-16T02:58Z: "i wanted coverage of possible generators of task" and "i might as well keep around implausible cases for the sake of more code diversity as that can help with ML things".
-- 2026-09-21 (da30cfe), in the doc: "**Coverage.** The solver also expresses alternative ways to see the task, for the diversity of ways of writing a solver."
-
-"Do not say no to a new thing" is recorded, three times: 2026-09-18T02:29Z ("do not drop a peer for any raeson if it passes"), the 2026-09-18 "do not omit it from the solver for any reason", and the 2026-09-22 "Your own judgment or taste is not grounds for omitting it."
-
-The new part is that the enumeration is the *primary* goal and the concept-fidelity aim is subordinate to it. In the doc, the order is the other way: Concept first, then Coverage.
-
-### What the proposal has not accounted for
-
-1. **The tension between Equivalence and the encoding clause.** Two models that differ only in encoding agree on every input, so Equivalence excludes one of them. The proposal keeps Equivalence and adds encoding as signal. Both cannot hold.
-2. **00dbd492 does not need the encoding clause.** `$Box` and `$Enclose` part on a broken outline. The bullet written on 2026-09-22 records that as a claim difference off the scene, not as an encoding difference. So the cited example does not support the clause it is cited for.
-3. **The signal clause's "claims the solver's claims do not already imply" has no stated test.** This is the same shape as the peer-priors gap, which `peer-priors.md` recorded on 2026-09-13 as "no rule says when two candidates do" separate priors, and which the 2026-09-15 overhaul removed rather than answered.
-4. **Signal and noise can both hold.** A guard whose added atom is over a relation the concept branch reads can still be a claim the concept case does not imply. The 2026-09-10 ordered-application rule existed for exactly this, and the proposal states no order.
-5. **`@relaxed` is a witness annotation, not a branch property.** Style.md ties `@scene` inclusion to `@claim` and `@relaxed`, and solver-file.md puts `@relaxed` under a `@witness` line. A branch's `@relaxed` set therefore depends on which witnesses a session chose to record. A session that records one extra witness changes the verdict.
-6. **The runner holds cases the solver does not write** (`@derive`, `@store`, added on 2026-09-22). The audit's clause-difference computation has no branch to read for those, so the guard rule cannot reach them.
-7. **The three open questions from 2026-09-13 that the overhaul deleted rather than answered** — `different-parse.md` (structures or input cells), `unchanged-output.md`, and the "what size is a part" gap in `coverage-rules.md` — all bear on the encoding clause and none has a ruling.
-
 ## 2026-09-22 — the guard rule is set aside for a bound on where cases come from
 
-The user said "go" to a check of the guard rule over the approved corpus, and added (15:35Z): "let's think if "Guard" is the most precise/conventional name".
+The session had proposed a guard rule: a branch whose clauses are the concept branch's with body atoms added or removed, each added atom over a relation the concept branch reads, and whose every witness carries `@relaxed`, gets no case. The user said "go" to a check of that rule over the approved corpus.
 
 The check applied the guard test to every non-concept branch of the approved solvers. It flagged four branches, and the user had kept each of them:
 
 - 2d0172a1's `Nest`, the branch behind the 2026-09-18 ruling "they're out there but i would think of that when thinking of variations of the task".
 - 9bbf930d's `Channel`, `Exit`, and `Mouth`, the weaker readings of `pipes` that raised the open-ended lattice on 2026-09-18.
 
-A test on the form of a branch thus failed the same test as Exercised: it removed cases that the corpus held. In the record, what separated the kept branches from the unwanted ones was their origin. `Nest`, 9f5f939b's `Clear`, and the three pipe readings came from the task, from a variation a person imagines, or from the reference solver. The blank-center and two-cell-arm tests of 9f5f939b came from a session that enumerated the tests of its own program: "an2.py runs all eight combinations of those tests". On the name, "guard" is the conventional word for the added literal, and the branch is a refinement of the concept branch.
+A test on the form of a branch thus failed the same test as Exercised: it removed cases that the corpus held. In the record, what separated the kept branches from the unwanted ones was their origin. `Nest`, 9f5f939b's `Clear`, and the three pipe readings came from the task, from a variation a person imagines, or from the reference solver. The blank-center and two-cell-arm tests of 9f5f939b came from a session that enumerated the tests of its own program: "an2.py runs all eight combinations of those tests".
 
 The session proposed a bound on where a case comes from, in place of the guard rule, with the user's N=1 cutoff as that bound. The user ruled (15:44Z):
 
@@ -479,8 +327,6 @@ The goal was written into principles.md at about 17:28Z, replacing the Concept a
 >         * comment
 >             - A model the pass forms is a case whether or not a person sees the task that way.
 
-The Terms line under Relational form, with its session-citing comments, was removed at 21:00Z, under the user's "13 ok" (20:42Z) on the item "remove the Terms line, consolidate the session comments".
-
 ### Where cases come from, in the record
 
 The user asked for evidence (16:32Z): "send agent to research how solver agents (all 3) actually come up with cases, we need grounding", and (16:34Z) "wait, how about historical too, like sample across time".
@@ -500,9 +346,9 @@ The rule that no model formed after Analyze is a case stayed out of the docs. De
 
 ### By brief, 17:28Z to 18:38Z
 
-A procedure section, `### Analyze`, was written for the trial. Seven `claude -p` sessions ran on 9f669b64, 9f8de559, a04b2602, and a096bf4d, on Opus 5 with effort high. The first three tasks each ran under two briefs: one that asked for the models as `@scene`, `@rule`, and `@claim` lines, and one that asked for no form. a096bf4d ran under the free brief with the reference TS solver left out.
+Seven Analyze sessions ran on 9f669b64, 9f8de559, a04b2602, and a096bf4d. The first three tasks each ran under two briefs: one that asked for the models as `@scene`, `@rule`, and `@claim` lines, and one that asked for no form. a096bf4d ran under the free brief with the reference TS solver left out.
 
-What bears on case membership:
+The results:
 
 1. The free brief found the wider list of models on all three tasks.
 2. The 9f669b64 free session ruled eject-versus-slide the same model "on every input the concept is defined on", which is the reading the scene-claim line under Equivalence had been written against.
@@ -517,12 +363,6 @@ The user ruled on the results (20:42Z):
 > 5 queue three more after we're done setting up"
 
 Items 1 and 2 adopted the free form, and two rules: a witness's outputs come from a probe, and the concept is stated before the reference solver is read.
-
-### The standalone analyze agent
-
-From 20:52Z the trial moved to an agent file.
-
-At 21:26Z, in a review of the agent file, a third standing was added to the Analyze step: "A model that fits every pair and has no such input: the model it is equivalent to, and why every assignment of one agrees with one of the other." The briefed trials had had two standings only: the pair a model fails, or a witness.
 
 ### a09f6c25 and a1570a43: the concept is declared undefined
 
@@ -543,13 +383,11 @@ The diagnosis at 23:07Z:
 
 ### The reach line and the gate
 
-Three edits were proposed at 23:07Z. The first put a line under the concept case:
+At 23:07Z the session proposed a line under the concept case, the reach line:
 
 > - **concept case**: the case whose model the concept statement describes.
 >     - At every assignment, its model is defined on every input the generator produces.
 >     - An output the concept statement leaves undetermined on such an input is a choice point or an open parameter.
-
-The second replaced the 44f52bb0 example under "Agreement on every input in the current task does not establish equivalence" with the 3b4c2228 one. Under the Agree clause, the 44f52bb0 pair is equivalent: its table gives no output on a third group, and no output counts as agreement. The third made the witness standing refer to the defined term.
 
 The user approved (23:37Z):
 
@@ -559,58 +397,15 @@ The user approved (23:37Z):
 >
 > here's my proposal: for the parts that should be "gated" away, defer it into a file the agent reads. then step 3 will be : Only after you have completed step 2, read X.md for the next steps"
 
-Procedure.md's Analyze became two sections, `### Analyze` and `### Analyze after the concept`. The second renders to `.claude/analyze-next.md`, which the agent reads only after it has written the concept. The reference solver read is behind the gate.
-
-### a1aa0c1e: the reach line is rewritten
-
-a1aa0c1e ran at 23:43Z on the revised context. Its concept was total, and it named its choice points. Eight models got a probed witness, six failed Fit, and one was equivalent. The agent read the reach line per assignment. It took a floor of another color as an input on which a stored floor color leaves the concept undefined, so it derived the floor, and reported "pole is always `9`" as a peer with a witness. Of the line's second sub-bullet it said: "Neither fits well here."
-
-The line was rewritten, and its second sub-bullet was removed because the Choice points section already states it:
-
-> - **concept case**: the case whose model the concept statement describes.
->     - At the assignment stored for this task or a sibling task, its model is defined on every input the generator produces in that task.
-
-### The reruns, and the scene-claim clause moves
-
-The a09f6c25 rerun (00:09Z) found six models with probed witnesses and five choice points. The concept was undefined on a shape with no axis or with two axis classes, and three models were equivalent on that ground. Its friction reply:
-
-> "The documents do not say whether the concept case gives an output for inputs that break a scene claim, such as a shape with no axis or a plus with two axis classes."
-
-At 00:17Z the phrase "whether or not the input breaks a scene claim" moved from the Equivalence line to the reach line, under the 23:37Z approval. The reach line became:
-
-> - At the assignment stored for this task or a sibling task, its model is defined on every input the generator produces in that task, whether or not the input breaks a scene claim.
-
-The Equivalence line kept "Agreement on every input the generator produces does not establish equivalence either: the comparison ranges over every input on which the concept case is defined."
-
-The a1570a43 rerun (00:18Z) made the concept center the shape, with the rounding as an open parameter. Exact fit became a peer, equivalent to the concept as a strengthening. Four models got probed witnesses.
+Analyze was split at a gate: the agent reads the later steps, including the reference solver, only after it has written the concept.
 
 ### a04b2602, and the concept slot
 
 a04b2602 ran at 00:28Z, and again cleanly at 00:59Z after a run that read an earlier run's files. Both reached the same three fitting models as the briefed free run of 18:07Z, with the concept written before the reference solver was read.
 
-For the create agent, the Analyze steps gained slugs on claims, a witness file at `.scratch/<task_id>/witnesses.json` in the witness-file shape, and per witness the scene claim it breaks and the assignment it stands at.
-
 The clean run found an input where the concept and every peer agree and a person reads another output, and the steps had no place for it. The user (01:44Z): "slot: wdyt, wrt create agent and overall analysis", then (01:50Z) "ok add the concept slot". The first bullet of the gated step 3 became:
 
 > - The concept case's model: each divergence witness against it, with the items below, where the second output is the judged output.
-
-### a251c730: two more lines in the Analyze step
-
-a251c730 ran at 01:55Z. It found three peers with probed witnesses. After it read the gated steps, the agent rewrote its concept to add "Where two stamps write different colors to one cell, the output is undefined", and called the reference solver's precedence rule equivalent. Its friction reply marked the choice "Interfered".
-
-A clause was added to the equivalence standing, the equivalence coverage clause:
-
-> - A model that fits every pair with no divergence witness: the model it is equivalent to, and why, including that the generator produces no input on which only one of them gives an output.
-
-The user (02:05Z): "i can't judge this, you settle and iterate".
-
-The second run (02:06Z) put the reference solver's fill-only rule in a note: "Those inputs break `room`, and the concept gives no output there when the colors conflict. For that reason I formed no case for it." So the equivalence standing did not apply.
-
-A clause was added to the concept slot, which asks the agent to grade the inputs on which the concept gives no output:
-
-> - The concept case's model: each divergence witness against it, with the items below, where the second output is the judged output; and the plausibility of each input on which it gives no output.
-
-The third run (02:11Z) graded overlapping stamps `borderline`, left the concept undefined there, and called a singleton-anchor model equivalent: "So no input exists on which both models give outputs that differ."
 
 ## 2026-09-22 — the diagnosis
 
@@ -618,7 +413,7 @@ The user, at 2026-09-23T02:12Z:
 
 > "are you in bug patch mode? is this a symptom of a deper problem? consider reframing or quetsioning the premise"
 
-The session's answer: the reach line, the scene-claim clause, the equivalence coverage clause, and the grading of undefined inputs were four edits aimed at one behavior. Each asked the agent to state a judgment, and none changed which models became cases. The third a251c730 run showed it: it graded the overlap and nothing followed from the grade.
+The session's answer: the reach line and the three clauses added after it were four edits aimed at one behavior. Each asked the agent to state a judgment, and none changed which models became cases. A run on a251c730 showed it: it graded overlapping stamps `borderline`, and nothing followed from the grade.
 
 The behavior:
 
@@ -650,9 +445,7 @@ At 2026-09-23T02:14Z the session proposed a reframe. The user did not rule on it
     > - **divergence witness**: an input on which either of these holds:
     >     - at some assignment, two models give different outputs, or one gives an output and the other none.
     >     - a model's output at some assignment differs from the output the generator pairs with the input.
-
-    The source comment "A model that agrees with the concept case on every input on which the concept case is defined has no witness against it" goes, because it becomes false.
-6. The reach line with its scene-claim clause goes, and so do the two clauses added to the Analyze step for a251c730. The concept slot, the broken-scene-claim item, the witness file, the concept template, and the gate stay.
+6. The reach line goes.
 
 Under the proposal, a strengthening is dominated by the concept and gets no case. An extension dominates the concept and is a case, with a witness on the input where the concept gives none. The reference solver's precedence rule in a251c730 would be a case, with the overlap witness at `borderline`.
 
@@ -673,23 +466,6 @@ The inputs the comparison ranges over had been set four ways, each to fix the di
 
 What separates a real alternative from a contrived one is whether an input off the concept is a variant or a contrivance. That is a judgment about the input, and the 2026-09-16 ruling ("i no longer want deliberation over keep/drop by judgment") had taken such judgments off the table. The session proposed no rule.
 
-### The case-membership edits at the end of 2026-09-22
-
-| Edit | Where | Cause | Status |
-| --- | --- | --- | --- |
-| Agree counts "or one of them gives none" as agreement | principles.md, Equivalence | `9f236235` create callout 3 (04:36Z) | Kept. The Domination proposal would replace it; no ruling. |
-| The goal: "for the solvers to enumerate the models that fit the tasks" | principles.md, The goal | the goal discussion, 15:10Z to 16:09Z | Kept. |
-| Terms line and its comments | principles.md, Relational form | ruled "13 ok" (20:42Z) | Removed at 21:00Z. |
-| The equivalence standing | procedure.md, Analyze step | agent-file review (21:26Z) | Kept, with the coverage clause below. |
-| 3b4c2228 in place of 44f52bb0 under Equivalence | principles.md, Equivalence | 44f52bb0 is equivalent under the Agree clause | Kept. |
-| The reach line, first form, with "An output the concept statement leaves undetermined … is a choice point or an open parameter" | principles.md, concept case | a09f6c25 and a1570a43 first runs | Rewritten at 00:01Z; the second sub-bullet removed. |
-| The reach line: "At the assignment stored for this task or a sibling task, its model is defined on every input the generator produces in that task" | principles.md, concept case | a1aa0c1e | Kept. The Domination proposal would remove it. |
-| "whether or not the input breaks a scene claim" | moved from the Equivalence line to the reach line | a09f6c25 rerun | Kept on the reach line. The Domination proposal would remove it with the reach line. |
-| The gate, `.claude/analyze-next.md` | procedure.md, Analyze | user's proposal (23:37Z) | Kept. |
-| The concept slot | procedure.md, Analyze after the concept | a04b2602 clean run | Kept. |
-| "including that the generator produces no input on which only one of them gives an output" | procedure.md, equivalence standing | a251c730 first run | Kept. The Domination proposal would remove it. |
-| "and the plausibility of each input on which it gives no output" | procedure.md, concept slot | a251c730 second run | Kept. The Domination proposal would remove it. |
-
 ## 2026-09-23 — every input, and branches in place of models
 
 The session had asked whether a witness input's plausibility may decide case membership, or whether any model that differs from another anywhere is a distinct reading, with the 2026-09-18 bound dropped. The user chose the second (02:33Z): "2". Then (02:38Z) "well double check your proposal. ultrathink", and (02:47Z) "go".
@@ -697,8 +473,8 @@ The session had asked whether a witness input's plausibility may decide case mem
 The edits:
 
 - Agree ranges over every input: "Two assignments agree when, on every input, the two models give the same output or neither is defined." `G_C` goes.
-- The divergence witness loses "on which the concept case is defined". Its first bullet becomes "at some assignment, two models give different outputs, or one is defined and the other is not." The 2026-09-18 source comment goes.
-- The reach line goes, and so do the two Analyze clauses added for a251c730.
+- The divergence witness loses "on which the concept case is defined". Its first bullet becomes "at some assignment, two models give different outputs, or one is defined and the other is not."
+- The reach line goes.
 
 No Domination condition was added. So a strengthening became a case again, as under Refused input (2026-09-11). The bound on contrived models moved from a case condition to where a model comes from: Analyze forms them before any program exists.
 
@@ -825,11 +601,9 @@ procedure.md's Witness step now reads:
 
 > - On a branch's witness on which no open values disagree, an `other` verdict identifies a problem with the concept case, and so does a non-concept verdict at `ordinary` plausibility; the concept case is fixed to give the judged output, the verdict becomes `concept`, and the fix goes in the review as a departure.
 
-### Open items, misnamed tags, and split orders
+### A constructor denotes only its branch's reading
 
-- 15:07Z: "also i accept open items that point towards something being wrong. dont leave out."
-- 15:07Z, on a solver that works but has a constructor named for a reading another branch shares (a25697e4): "opt1". solver-file.md now reads: "A constructor denotes only its branch's reading, not a reading another branch shares, and is named for its branch".
-- On a scan order stored as two parameters, a corner and an axis, whose product cannot express a sibling task's set of open orders (15:02Z): "conceptually, lexorder takes one Thing. we just split it into 2 bc that's the only primitive we have. so something feels like indirection?" Then (15:04Z): "ok there's no reason to split it into 2 and that seems to be causing problems too so lets think of ways to prevent that from happening". principles.md now reads "The solver stores every open value of an open parameter in one relation, keyed by value".
+On a solver that works but has a constructor named for a reading another branch shares (a25697e4), the user (15:07Z): "opt1". solver-file.md now reads: "A constructor denotes only its branch's reading, not a reading another branch shares, and is named for its branch".
 
 ## 2026-09-25 — Subsumption compares at the same assignment
 
@@ -872,7 +646,7 @@ The user (21:34Z):
 
 > "what was the problem in the first place? the fact that these @store @derive branches didn't actually combinatorially combine and the lack of docs explaining their behavior?"
 
-The session answered yes, and added a third cause: the runner's behavior had been changed twice on the session's judgment, and the docs had been edited to follow the runner.
+The session answered yes.
 
 ### The ignore line stays
 
@@ -894,18 +668,6 @@ The user (21:38Z): "think of more edge cases like this". The session listed elev
 - `derive` checks equivalence against the written branches before it proposes, so 2bcee788's `Minority` gets no proposal.
 - The one left was item 2.
 
-### The docs now
-
-solver-file.md's `@derive` directive reads:
-
-> - **`@derive` directive.** The line is a branch of a choice point on the parameter, which stands under the branches that read it, with the parameter's value derived by the built-in derivation the line's `<Proposer>` selects; lines on one parameter are branches of one point, and the runner holds the cases that take one of them.
->     - The verdict `derived` denotes that branch, beside the verdicts a `@witness` line takes, and its witness's id is the branch's name.
->     - `// @ignore: derive — <reason>` in its place records that the branch failed Equivalence or Subsumption, and the runner then holds no case that takes it; `// @ignore: derive <name> — <reason>` under the `@derive` line records that for only the case `<name>` with the branch.
-
-The `@store` directive reads the same way: "the line is a branch of a choice point on it, which stands under the branches that read it, with the relation's value stored per case; the runner holds the cases that take that branch." The Witness file's name form reads "`<param>=<Proposer>` and `<rel>=stored`: a `@derive` or `@store` line's branch, read as a constructor's name".
-
-procedure.md's Develop step 4 reads "Hold as a branch each built-in derivation that fits a parameter, and each stored reading of a value the program derives", and "A branch whose model is equivalent to that of a `@derive` or `@store` branch loses its constructor and gets no clauses of its own."
-
 ## 2026-09-25 — the cases as one clause over the enumerators
 
 A written combination that leaves is left out of `impl_choice`, and 305b1341 lists six of its eight combinations one per line. The user (21:40Z):
@@ -924,8 +686,6 @@ The user (22:05Z): "lgtm do all". solver-file.md now reads:
 
 > - `impl_choice` contains whole `Choice` values, for a record, as a clause over the enumerators that excludes each combination that is not a case, and it appears when a clause reads one or when the cases are not every combination of the fields.
 
-patterns.md follows: "When only some combinations are cases, the record remains, and `impl_choice` excludes the others".
-
 ## 2026-09-25 — Subsumption at the parameters either model reads
 
 Item 2 asked at what assignment Subsumption compares two models that read different parameters. The example was a09f6c25. Its `SizeBound` branch reads the open parameter `noise_size`, and `MinSizeNoise` computes the smallest size. `store` proposed `MinSizeNoise` with the size stored as 1. The solver's `@ignore low: store` line dismissed that model as `SizeBound` at the bound 1, and a Refine pass could not judge the line.
@@ -937,8 +697,6 @@ The user (21:55Z): "so item 2, it sounds like there's no good defense for opt2?"
 principles.md now reads:
 
 > - A model is subsumed by another when the two are not equivalent and, at every assignment of the parameters either reads, on every input where it is defined, its output is the other's.
-
-procedure.md's line on a case `witness` reports reads: "Some input, at some assignment of the parameters either case reads, shows the case defined and differing: build the witness that shows it, with `--assign` when it needs one, and the case meets Subsumption and stays."
 
 ## 2026-09-26 to 2026-09-27 — the user's rulings
 
@@ -960,14 +718,6 @@ The session gave three options. The first kept the pattern and gave the stored v
 
 This settled that a named `@ignore` line excludes every held case that takes its branches, and that the stored value at a `@derive` point is named `<param>=stored`.
 
-### The case enumeration is exempt from program style
-
-A pass had written the exclusion in `impl_choice` as a relation of its own, because lint's Disjunction rule rejected it written inside the clause. The user (2026-09-26T15:04Z):
-
-> "2 ok so clauses over choice things are not under the same strict standards as program code so generally avoid unnecessary strictness , like avoid verbosity"
-
-This settled that the clauses that enumerate the cases are not held to the program's style rules.
-
 ### A witness group holds one grid per tiebreak resolution
 
 A conformance audit of the runner raised the question of what a witness file group holds for a case that gives two grids, one per tiebreak resolution. The session's default was that the group's grid takes a list of grids for such a case. The user (2026-09-26T19:25Z):
@@ -988,14 +738,6 @@ The session then found that the definitions make a stored relation a parameter o
 
 This settled that a witness's `assign` may name a `@store` line's relation, and that a case taking that branch reads the assigned value.
 
-### The typed-order lint is not narrowed to colors
-
-The principles line on unordered types names only colors. The session had ruled that the typed-order lint therefore narrows to colors. The user (2026-09-27T12:13Z):
-
-> "Wait, it is inferrable the intention of things. Eg. The lint on ordering, there’s no defense to narrow to only colors. Common sense should be prioritized over the letter"
-
-This settled that the typed-order lint stays on every type with identity and no order, and that a handbook line is read for its intent over its letter.
-
 ### `@ignore` records a judgment
 
 The session had ruled that the runner stops honoring `@ignore` on a lint hint. It then reversed that on its own: the runner keeps honoring it, and the `@ignore` directive would gain "or a hint". The user (2026-09-27T12:16Z):
@@ -1012,39 +754,9 @@ The audits of approved solvers that have no Analyze files now reported missing `
 
 This settled that approved solvers with no Analyze files are not brought to the current standard.
 
-### One finding per unseparated pair of bases
-
-A base is a `Choice` case without the `@derive` and `@store` branches it takes. The session had ruled that `witness` does not report a pair of cases that take the same `@derive` or `@store` branches while it reports the pair of their bases as unseparated. An audit of the session's rulings against this history reversed that, so that every unseparated pair would be reported. The user (2026-09-27T23:50Z):
-
-> "i suppose that's following the letter. benefit of consistency > cost of noise? or is that the right cost/benefit analysis"
-
-The session answered that the history's lines settle what is compared and what leaves, and do not settle how a finding is shown. It proposed one finding per unseparated pair of bases, naming the branch choices under which the pair is unseparated. The user (2026-09-27T23:53Z):
-
-> "approve"
-
-This settled that `witness` reports one finding per unseparated pair of bases, naming the branch choices under which it holds, whatever kind of branch those choices are.
-
-On 2026-09-29 the first Create pass through the rewritten tool, on ac0c5833 with 80 bases, met hundreds of such findings and regrouped them by hand by the branches that differ. The session put the pair form to the user as a decision with the defense that no pair is folded away. The user:
-
-> "seems like a weak defense not in support of the goals?"
-
-The finding now groups the unseparated pairs by the branches on which they differ, naming their contexts by the fewest names that cover them; each pair stays reachable through its context.
-
 ## 2026-09-28 — the user's rulings
 
 Each ruling is given in the user's words, with what it settled.
-
-### A parameter stored by a RIGID call is compared up to pose
-
-The tool printed an undecided line for a determined parameter that a RIGID call stores, because no handbook line said whether the pose counts. The user (2026-09-28T17:51Z):
-
-> "so the decision was to say it's undecided?"
-
-The session then gave three options, that the pose does not count, that it counts, or that the line stays undecided, each with its consequence for the nine solvers affected. The user (2026-09-28T17:55Z):
-
-> "re. RIGID: infer what i want and why i would want it. and next time, do this instead of just giving options and consequwnces (and also the consequences you gave are not helpful for  deciding anyway)"
-
-This settled that the tool compares a parameter stored by a RIGID call up to pose, since a RIGID block makes the stored pose unobservable.
 
 ### The cases the tool runs are the solver's cases
 
@@ -1136,7 +848,7 @@ This settled that every constructor name carries `$` in markers, verdicts, group
 
 ## 2026-09-30 — a proposal comp is written only where the concept case reads it
 
-The first Create pass through the rewritten tool, on ac0c5833, wrote a proposal comp `CentroidDist` that served the branch `$NearestCentroid` alone; the concept case encodes the task without it. The Necessity rule ("A comp that serves one case while another case encodes the task without it is not needed") stood under the lib pass, which the loop does not send, and its clause on the case had been removed on 2026-09-23. The user:
+The first Create pass through the rewritten tool, on ac0c5833, wrote a proposal comp `CentroidDist` that served the branch `$NearestCentroid` alone; the concept case encodes the task without it. The user:
 
 > "the fact that a case forced the creation of a proposal comp when it wasn't the concpet case"
 
@@ -1144,8 +856,7 @@ The first Create pass through the rewritten tool, on ac0c5833, wrote a proposal 
 
 The session proposed the condition in the pass's own step and a clause under the Relational form condition. The user vetoed the principles edit ("veto principles edit. it's not a principle.") and approved one sentence in the lib protocol's proposal-comp step: a proposal comp is written only where the relations need a banned form and the concept case reads them. A branch whose claim needs the form then has no set of clauses and fails Relational form as the condition already reads.
 
-
-## 2026-09-30 — the cases the tool runs are the live ones
+## 2026-09-30 — the cases the tool runs are the witnessed ones
 
 The first Create pass on ac0c5833 met 616 cases, most of them combinations that no input showed defined and differing from a case with fewer branches, and the audit's deletion survey ran every one. The user asked for a bound, then for a distance from the concept with weights from the witness labels and a threshold. A study over the six solvers with the most cases showed that no label predicts such a repeat and that every weighted threshold drops a case some witness separates. The user:
 
@@ -1153,4 +864,18 @@ The first Create pass on ac0c5833 met 616 cases, most of them combinations that 
 
 > "approve"
 
-This settled that the tool computes the live cases from the inputs at hand, the pairs' and the witness entries', with no judgment and no number to set: the concept case, each branch's model, and each case that some input shows defined and giving a grid no case with fewer of its branches gives, less each case that takes two rejected branches, a rejected branch being one whose every verdict is `concept`. The checks, surveys and counts read the live cases; the others get no finding and no run. The rule is a tool parameter, not a principle.
+This settled that the tool computes the witnessed cases from the recorded inputs, the task's and the witness file's, with no judgment and no number to set: the concept case, each branch's model, and each case that some recorded input shows defined and giving a grid no case it extends gives, less each case that takes two rejected branches, a rejected branch being one whose every verdict is `concept`. The checks, surveys and counts read the witnessed cases; the others get no finding and no run. The rule is a tool parameter, not a principle.
+
+## 2026-10-01 — a number that counts nothing has no relational form
+
+The third Create pass on ac0c5833 wrote the branch `$NearestCentroid`, "the marker whose empty corner is nearest, in Manhattan distance, to the centroid of the template cells", through the lib's `Excess`, `Extremes`, `ArgExtremes` and `Unanimous`. A comment in the solver equated the greatest signed count of cell-and-line pairs with the Manhattan distance to the centroid times the cell count. The branch passed Relational form as agreement, and it passed the lint and the Refine pass. A test over eight solvers then showed the same pattern in a branch over a mean and in a branch over a median. The user:
+
+> "those centroid things are hacking in statistics as you said"
+
+> "i guess centroid is never the concept bc humans don't compute the centroid they just see blobs and that results in using @approximated"
+
+> "i see you didn't consider the nature of these quantities? that they're fractional?"
+
+> "approve"
+
+This settled that a claim that refers to a number that counts nothing the task has, such as a mean or a centroid, has no relational form, as the Relational form section of the principles now states. A branch whose claim refers to such a number fails Relational form and leaves the solver. A rule of the concept that refers to one runs under `@approximated:`. A count arranged to equal such a number is that number under another name, and it changes nothing. Picks and counts count things, and they stand: the largest, the fewest, the middle by rank, a size, a distance, a tile count, a half, a parity.

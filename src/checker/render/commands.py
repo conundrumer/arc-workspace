@@ -4,29 +4,40 @@ line, a count line), the pairs of `run`, the rows of `relation`, and the
 lines of `record`, `keywords`, `since` and `size`."""
 
 from collections.abc import Sequence
-from dataclasses import dataclass
 from pathlib import Path
 
-from arc.task import Example, pair_name
-from checker.finding import LINT_SHAPES, Finding
+from arc.task import Example
+from checker.finding import Finding
+from checker.judged import value_constructors
 from checker.render import (
+    GridRow,
     LineForm,
-    _ticked,
     Section,
+    _ticked,
     case_name,
+    cases_text,
+    counted,
+    derive_line_to_add,
+    detail_text,
     failure_text,
+    file_name,
     finding_lines,
-    in_line_order,
     grid_lines,
+    header_line,
+    in_line_order,
     joined,
     lint_line,
+    noun,
     pass_line,
     render,
+    shifted,
     solver_name,
 )
-from checker.render.branches import verdict_text
 from controlled_markdown import mctx
-from engine import AdtValue, Grid, ParseFailure, RecordValue, RunFailure, Value, value_text
+from engine import AdtValue, Grid, ParseFailure, RecordValue, RunFailure, Value
+from engine.program import RelationDecl
+from engine.text import text as code_text
+from solver.annotations import verdict_text
 from solver.model import Case, Solver
 from solver.problems import Fault
 from solver.solve import (
@@ -34,13 +45,23 @@ from solver.solve import (
     Candidate,
     CaseOnPair,
     Grids,
-    PairRuns,
+    Outcome,
     alt_kind,
     as_grid,
+    is_result,
     out_columns,
 )
 from solver.vocabulary import CHOICE
-from solver.witness import Undefined
+from solver.witness import (
+    GridChanged,
+    GroupsKept,
+    JudgedKept,
+    NamesRewritten,
+    PartitionChanged,
+    RecordChange,
+    Undefined,
+    output_key,
+)
 
 # Files and the stamp
 
@@ -58,12 +79,9 @@ NO_GRID = mctx("no case emitted a grid")
 undefined."""
 
 
-def _count(n: int, noun: str) -> str:
-    return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
-
-
 def resolved(solver: Solver) -> bool:
-    """Whether `out` has a resolution column (solver-file.md:168)."""
+    """Whether `out` has a resolution column (solver-file.md, under
+    "Alt outputs")."""
     return out_columns(solver.program)[1] is not None
 
 
@@ -75,15 +93,15 @@ def pass_suffix(solver: Solver, cases: Sequence[CaseOnPair]) -> str:
     given = [c for c in cases if isinstance(c.outcome, Grids)]
     parts: list[str] = []
     if len(given) > 1:
-        parts.append(_count(len(given), mctx("case")))
+        parts.append(counted(len(given), mctx("witnessed case")))
     if resolved(solver):
         n_res = max((len(c.outcome.grids) for c in given
                      if isinstance(c.outcome, Grids)), default=1)
         if n_res > 1:
-            parts.append(_count(n_res, mctx("resolution")))
+            parts.append(counted(n_res, mctx("resolution")))
             grids = {g for c in given if isinstance(c.outcome, Grids)
                      for g in c.outcome.grids}
-            parts.append(_count(len(grids), mctx("grid")))
+            parts.append(counted(len(grids), mctx("grid")))
     return f" ({', '.join(parts)})" if parts else ""
 
 
@@ -160,40 +178,47 @@ def _one_failure(cases: Sequence[CaseOnPair]) -> RunFailure | None:
     failures = {c.outcome for c in cases}
     if len(failures) == 1:
         (only,) = failures
-        if not isinstance(only, Grids | Undefined):
+        if not is_result(only):
             return only
     return None
 
 
 def pair_failure_lines(solver: Solver, name: str,
-                       cases: Sequence[CaseOnPair], ex: Example) -> list[str]:
+                       cases: Sequence[CaseOnPair], ex: Example,
+                       shown: set[Case] | None = None) -> list[str]:
     """A failing pair: what its run hit, or each case whose grids are
     none of the pair's candidates with why, the count of the cases that
     fit, fail and give no output, then each grid the pair does not
-    accept, against the stored output."""
+    accept, against the stored output; then, for each distinct output of
+    the cases the reasons name, its grids against the stored output, or
+    the cells at which it is undefined, under the fewest names of the
+    cases that give it (`solver.names.cover`). With `shown`, the cases whose output an
+    earlier pair drew, an output is drawn on the first pair where its
+    cases fail alone, and the cases drawn here join it."""
     lines = [mctx("{pair}: FAIL").format(pair=name)]
     whole = _one_failure(cases)
     if whole is not None:
-        return [*lines, f"  {failure_text(whole)}"]
+        return _failed_on(name, whole)
     if not any(isinstance(c.outcome, Grids) for c in cases):
         return [*lines, f"  {NO_GRID}"]
     accepted = {g for stored in _stored(ex) for _n, g in stored}
+    every = [c.case for c in cases]
     bad: list[CaseOnPair] = []
-    groups: dict[tuple[str, ...], list[str]] = {}
+    groups: dict[tuple[str, ...], list[Case]] = {}
     for c in cases:
         o = c.outcome
         if isinstance(o, Grids) and any(g not in accepted for g in o.grids):
             bad.append(c)
             continue
-        if not isinstance(o, Grids | Undefined):
-            groups.setdefault((failure_text(o),), []).append(
-                case_name(solver, c.case))
+        if not is_result(o):
+            groups.setdefault((failure_text(o),), []).append(c.case)
             continue
         grids = o.grids if isinstance(o, Grids) else ()
         if reasons := _reasons(grids, ex):
-            groups.setdefault(reasons, []).append(case_name(solver, c.case))
-    lines += [f"  {', '.join(names)}: {'; '.join(reasons)}"
-              for reasons, names in groups.items()]
+            groups.setdefault(reasons, []).append(c.case)
+    lines += [f"  {cases_text(solver, members, every)}: {'; '.join(reasons)}"
+              for reasons, members in groups.items()]
+    drawn = _drawn_outputs(solver, cases, ex, shown)
     empty = sum(not isinstance(c.outcome, Grids) for c in cases)
     many = len(cases) > 1 or resolved(solver)
     if many and (bad or empty):
@@ -202,51 +227,90 @@ def pair_failure_lines(solver: Solver, name: str,
             else mctx("cases: {p} pass / {f} fail")
         lines.append("  " + count.format(p=fit, f=len(bad), n=empty))
     if not bad:
-        return lines
+        return lines + drawn
     if many:
         lines.append("    " + mctx("fail: {cases}").format(
-            cases=", ".join(case_name(solver, c.case) for c in bad)))
-    by_grid: dict[Grid, list[str]] = {}
+            cases=cases_text(solver, [c.case for c in bad], every)))
+    by_grid: dict[Grid, list[Case]] = {}
     for c in bad:
         assert isinstance(c.outcome, Grids)
         for g in c.outcome.grids:
             if g not in accepted:
-                by_grid.setdefault(g, []).append(case_name(solver, c.case))
+                by_grid.setdefault(g, []).append(c.case)
     expected = as_grid(ex.output)
-    for grid, names in by_grid.items():
+    for grid, members in by_grid.items():
         lines.append("")
         if many:
-            lines.append(f"  {', '.join(dict.fromkeys(names))}:")
+            lines.append(f"  {cases_text(solver, members, every)}:")
         lines += [f"    {ln}" for ln in _diff(expected, grid)]
+    return lines + drawn
+
+
+def _drawn_outputs(solver: Solver, cases: Sequence[CaseOnPair],
+                   ex: Example, shown: set[Case] | None) -> list[str]:
+    """For each distinct output of the cases whose grids, all accepted
+    or none, are no candidate of the pair (`_reasons`), its grids against
+    the stored output, or why it is undefined (`undefined_lines`), under
+    the fewest names of the cases that give it (`pair_failure_lines`)."""
+    from checker.render.branches import undefined_lines
+
+    by: dict[object, tuple[Grids | Undefined, list[Case]]] = {}
+    for c in cases:
+        o = c.outcome
+        if not is_result(o) \
+                or (shown is not None and c.case in shown):
+            continue
+        if isinstance(o, Grids) and any(
+                g not in {g for stored in _stored(ex) for _n, g in stored}
+                for g in o.grids):
+            continue
+        grids = o.grids if isinstance(o, Grids) else ()
+        if not _reasons(grids, ex):
+            continue
+        by.setdefault(output_key(o), (o, []))[1].append(c.case)
+    expected = as_grid(ex.output)
+    every = [c.case for c in cases]
+    lines: list[str] = []
+    for out, members in by.values():
+        if isinstance(out, Grids):
+            body = [f"    {ln}" for grid in sorted(set(out.grids))
+                    for ln in _diff(expected, grid)]
+        else:
+            body = [f"    {ln}" for ln in undefined_lines(out.reason)]
+        if not body:
+            continue
+        lines += ["", f"  {cases_text(solver, members, every)}:", *body]
+        if shown is not None:
+            shown.update(members)
     return lines
 
 
 def pair_lines(solver: Solver, name: str, cases: Sequence[CaseOnPair],
-               ex: Example) -> list[str]:
-    """One pair of `run`: its pass line, or its failure."""
+               ex: Example, shown: set[Case] | None = None) -> list[str]:
+    """One pair of `run`: its pass line, or its failure
+    (`pair_failure_lines`, `shown` the cases an earlier pair drew)."""
     if passed(cases):
         return [mctx("{pair}: PASS{suffix}").format(
             pair=name, suffix=pass_suffix(solver, cases))]
-    return pair_failure_lines(solver, name, cases, ex)
-
-
-def name_of(pair: PairRuns) -> str:
-    return pair_name(pair.pair.section, pair.pair.index)
+    return pair_failure_lines(solver, name, cases, ex, shown)
 
 
 def enumeration_failed_lines(names: Sequence[str], failure: RunFailure
                              ) -> list[str]:
     """Pairs that fail on the failure of the run that enumerates the
     cases."""
-    return [ln for n in names
-            for ln in (mctx("{pair}: FAIL").format(pair=n),
-                       f"  {failure_text(failure)}")]
+    return [ln for n in names for ln in _failed_on(n, failure)]
 
 
 def shared_failure_lines(names: Sequence[str], failure: RunFailure
                          ) -> list[str]:
     """Pairs that all fail on one failure, in one line."""
-    return [mctx("{pairs}: FAIL").format(pairs=", ".join(names)),
+    return _failed_on(", ".join(names), failure)
+
+
+def _failed_on(pairs: str, failure: RunFailure) -> list[str]:
+    """The pairs `pairs` names failing on one run failure."""
+    return [mctx("{pairs}: FAIL").format(pairs=pairs),
             f"  {failure_text(failure)}"]
 
 
@@ -261,12 +325,13 @@ def stem_failure_lines(solver: Solver,
         (only,) = shared
         if only is not None:
             return shared_failure_lines([n for n, _c, _e in failing], only)
+    shown: set[Case] = set()
     return [ln for n, cases, ex in failing
-            for ln in pair_failure_lines(solver, n, cases, ex)]
+            for ln in pair_failure_lines(solver, n, cases, ex, shown)]
 
 
 def probe_lines(solver: Solver, name: str,
-                given: Sequence[tuple[Case, object]]) -> list[str]:
+                given: Sequence[tuple[Case, Outcome]]) -> list[str]:
     """A pair with no output: each case's grids under its name, or the
     line that says no case emitted one."""
     lines: list[str] = []
@@ -277,14 +342,13 @@ def probe_lines(solver: Solver, name: str,
         shown = True
         label = case_name(solver, case)
         if not isinstance(o, Grids):
-            assert not isinstance(o, Grids)
             lines.append(f"{name} {label}:")
-            lines.append(f"  {failure_text(o)}")  # type: ignore[arg-type]
+            lines.append(f"  {failure_text(o)}")
             continue
         for i, g in enumerate(o.grids):
             suffix = f" {i + 1}" if len(o.grids) > 1 else ""
             lines.append(f"{name} {label}{suffix}:")
-            lines += [f"  {ln}" for ln in grid_lines(g)]
+            lines += [shifted(ln, "  ") for ln in grid_lines(g)]
     if not shown:
         lines += [f"{name}:", f"  {NO_GRID}"]
     return lines
@@ -305,14 +369,16 @@ def verdict_line(stem: str, passes: int, total: int, fails: bool) -> str:
 
 
 def section_header(header: str) -> list[str]:
-    return ["", f"--- {header} ---"]
+    return ["", header_line(header)]
 
 
 FAILING_PAIRS = mctx("{n} solver(s) with a failing pair")
 LINT_FINDINGS = mctx("findings: {count} across {solvers} solver(s)")
 LINT_HINTS = mctx("hints: {count} across {solvers} solver(s)")
 DETERMINATION_CHECKS = mctx("determination checks: {ok}/{n} ok")
-TIMES = mctx("times: slowest 15 (wall seconds)")
+SLOWEST = 15
+"""How many solvers the `times` section of a run over several lists."""
+TIMES = mctx("times: slowest {n} (wall seconds)").format(n=SLOWEST)
 SUMMARY = mctx("summary: {passing}/{total} solvers")
 
 
@@ -328,24 +394,71 @@ def time_row(total: float, stem: str, pairs: float,
 NO_ROWS = mctx("{head}: no rows")
 JUDGED_OUTPUT = mctx("judged output:")
 WOULD_RECORD = mctx("would record witness `{id}`")
+def judgment_first(lines: Sequence[str]) -> list[str]:
+    """A section's lines with the blocks that draw no grid first, in
+    their order, then those that draw one, in theirs, so that the first
+    screen holds the section's findings, count and pass lines. A block is
+    a line and the lines below it that are indented further, the blank
+    lines between them included; it draws a grid where it holds a
+    `GridRow`."""
+    blocks: list[list[str]] = []
+    head = -1
+    pending: list[str] = []
+    for line in lines:
+        if not line.strip():
+            pending.append(line)
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if blocks and indent > head:
+            blocks[-1] += [*pending, line]
+        else:
+            blocks.append([*pending, line])
+            head = indent
+        pending = []
+    if pending:
+        if blocks:
+            blocks[-1] += pending
+        else:
+            blocks.append(pending)
+
+    def draws(block: list[str]) -> bool:
+        return any(isinstance(line, GridRow) for line in block)
+
+    return [line for b in (*(b for b in blocks if not draws(b)),
+                           *(b for b in blocks if draws(b)))
+            for line in b]
+
+
 WROTE = mctx("wrote witness `{id}` to {path}")
+REMOVED = mctx("removed witness `{id}` from {path}")
+RESEPARATED = mctx("rewrote the `separates` text of witness `{id}` in {path}")
 
 
-def not_written(id: str, names: Sequence[str], kind: str, lineless: bool
+def not_written(id: str, names: Sequence[str], kind: Section, lineless: bool
                 ) -> str:
     """The line of a witness a survey built and did not write, since its
     groups hold `names`, which denote no case of the solver; `lineless`
     where the survey built it with a `@derive` or `@store` line (`kind`)
     the solver does not hold."""
     if lineless:
-        return mctx("wrote no witness `{id}`: no `@{kind}` line holds "
-                    "`{id}`, so its groups name {names}, which denote no "
-                    "case of the solver; with the line written, `{kind}` "
-                    "writes it").format(id=id, kind=kind,
-                                        names=_ticked(names))
+        return mctx("wrote no witness `{id}`: the solver has no `@{kind}` "
+                    "line for `{id}`; once the line is written, `{kind}` "
+                    "writes the witness").format(id=id, kind=kind.value)
     return mctx("wrote no witness `{id}`: its groups name {names}, which "
                 "denote no case of the solver").format(
         id=id, names=_ticked(names))
+
+
+def wrote_lineless(id: str, path: object, proposer: str,
+                   decl: RelationDecl) -> str:
+    """The line of a witness the `derive` survey wrote for a derivation
+    with no `@derive` line: its groups name the branch, which the solver
+    denotes once the line stands above the parameter's declaration."""
+    return mctx("wrote witness `{id}` to {path}; its groups name `{id}`, so "
+                "add `{line}` above `{decl}`, its verdict read from this "
+                "witness").format(
+        id=id, path=path, decl=code_text(decl),
+        line=derive_line_to_add(proposer))
 
 
 FORMATTED = mctx("formatted {path}")
@@ -353,8 +466,7 @@ RERECORDED_ONE = mctx("re-recorded witness `{id}` in {path}: {change}")
 
 
 def _witnesses(n: int) -> str:
-    return mctx("{n} witness").format(n=n) if n == 1 \
-        else mctx("{n} witnesses").format(n=n)
+    return counted(n, mctx("witness"), mctx("witnesses"))
 
 
 def rerecorded_all(n: int, path: object, changed: int) -> str:
@@ -376,51 +488,16 @@ def unchanged_file(n: int, path: object) -> str:
 WROTE_NOTHING = mctx("wrote nothing to {path}: {failed} of {n} witnesses "
                      "could not be run")
 RUN_FAILED = mctx("run failed: {error}")
-WITNESS_HINT = mctx("when it is a branch's witness or a witness of the "
-                    "concept case, add: // @witness {id}: <plausibility> "
-                    "<verdict>")
-COUNT_LINE = mctx("{bases} bases, {cases} cases, {g} distinct grid(s)")
-"""The count line of a built witness: its cases' bases, its cases, and
-the distinct grids they give (solver-file.md:99)."""
+COUNT_LINE = mctx("{n} witnessed cases of {m}, {g} distinct grid(s)")
+"""The count line of a built witness: the witnessed cases its groups were
+built from, the solver's cases, and the distinct grids they give
+(solver-file.md, under "Cases")."""
 GROUPS_KEPT = mctx("groups unchanged")
 JUDGED_KEPT = mctx("judged output kept")
 GROUPS_CHANGED = mctx("groups changed: {newly} {cases} newly listed, {gone} "
                       "no longer listed")
+GRID_CHANGED = mctx("grid changed in {groups}: {names}")
 NAMES_REWRITTEN = mctx("names rewritten to the listed form")
-
-
-@dataclass(frozen=True)
-class JudgedKept:
-    """A judged output, which a run leaves as it is."""
-
-
-@dataclass(frozen=True)
-class GroupsKept:
-    """The groups a run gives list the cases the file's groups list, each
-    by the name the file gives it, with the same grids."""
-
-
-@dataclass(frozen=True)
-class NamesRewritten:
-    """The file's groups list, by other names, the cases the run's groups
-    list, with the same grids: the names of each file group denote
-    together (`solver.names.denoted_cases`) the cases of the run's group
-    (solver-file.md:185, :193-199), and the run's names replace them."""
-
-
-@dataclass(frozen=True)
-class GroupsChanged:
-    """The groups a run gives differ from the file's in which cases a group
-    lists or in a group's grid: `newly` cases of the solver the file lists
-    in no group, and `gone` names of the file that denote no case of the
-    solver."""
-
-    newly: int
-    gone: int
-
-
-type RecordChange = JudgedKept | GroupsKept | NamesRewritten | GroupsChanged
-"""What running a witness of the file again changes in its entry."""
 
 
 def rerecord_text(change: RecordChange) -> str:
@@ -433,18 +510,18 @@ def rerecord_text(change: RecordChange) -> str:
             return GROUPS_KEPT
         case NamesRewritten():
             return NAMES_REWRITTEN
-        case GroupsChanged(newly=newly, gone=gone):
+        case PartitionChanged(newly=newly, gone=gone):
             return GROUPS_CHANGED.format(
                 newly=newly, gone=gone,
-                cases="case" if newly == 1 else "cases")
-
-
-def input_lines(grid: Grid) -> list[str]:
-    return [mctx("input:"), *(f"  {r}" for r in grid_lines(grid))]
+                cases=noun(newly, "case"))
+        case GridChanged(groups=groups):
+            return GRID_CHANGED.format(
+                groups=counted(len(groups), mctx("group")),
+                names="; ".join(_ticked(g) for g in groups))
 
 
 def judged_lines(grid: Grid) -> list[str]:
-    return ["", JUDGED_OUTPUT, *(f"  {r}" for r in grid_lines(grid))]
+    return ["", JUDGED_OUTPUT, *(shifted(r, "  ") for r in grid_lines(grid))]
 
 
 def relation_lines(name: str, columns: Sequence[str],
@@ -462,14 +539,22 @@ WITNESS_LINES = mctx("`@witness` lines:")
 NO_WITNESS_LINES = mctx("no witness lines")
 GRIDS_RUN = mctx("{n} witness {grids} run")
 WITNESS_FILE_OK = mctx("witness file: ok")
-AUDIT_SECTION = mctx("--- {name} ---")
+AUDIT_SECTION = mctx("{name} ({seconds:.0f}s)")
+
+
+def audit_section(name: Section, seconds: float) -> str:
+    """An audit section's header line, with the seconds the section
+    took."""
+    return header_line(AUDIT_SECTION.format(name=name.value,
+                                            seconds=seconds))
+
 def grids_run(n: int) -> str:
-    return GRIDS_RUN.format(n=n, grids="grid" if n == 1 else "grids")
+    return GRIDS_RUN.format(n=n, grids=noun(n, "grid"))
 
 
 # `keywords`, `since` and `size`
 
-KEYWORDS_SECTION = mctx("--- {name} ---")
+
 KEYWORD_ROW = "  {n:4d}  {word}"
 UNKNOWN_KEYWORD = mctx("{stem}: {word} is not in keywords.md")
 UNKNOWN_KEYWORDS = mctx("unknown keywords: {n}")
@@ -519,20 +604,12 @@ def time_line(pairs: float, determination: float | None) -> list[str]:
     return ["", TIME_LINE.format(parts=", ".join(parts))]
 
 
-def lint_entry_lines(solver: Solver, f: Finding) -> list[str]:
-    """A lint finding in the report over several solvers: the lint line,
-    or a fault's lines with the file's name."""
-    if isinstance(f.payload, LINT_SHAPES):
-        return [lint_line(solver, f)]
-    return finding_lines(solver, f, LineForm.FILE)
-
-
 def gathered_lint(shown: Sequence[tuple[Solver, Sequence[Finding]]]
                   ) -> list[str]:
     """The lint findings of several solvers under one header, each
     solver's lines indented, each solver's in line order."""
     return [f"  {ln}" for s, fs in shown for f in in_line_order(fs)
-            for ln in lint_entry_lines(s, f)]
+            for ln in finding_lines(s, f, LineForm.FILE)]
 
 
 def failure_block(stem: str, lines: Sequence[str]) -> list[str]:
@@ -543,7 +620,7 @@ def failure_block(stem: str, lines: Sequence[str]) -> list[str]:
 def determination_block(stem: str, lines: Sequence[str]) -> list[str]:
     """A solver's determination lines in the report over several
     solvers."""
-    return [f"  {stem}.dl: {ln}" for ln in lines]
+    return [f"  {file_name(stem)}: {ln}" for ln in lines]
 
 
 def annotation_lines(solver: Solver) -> list[str]:
@@ -574,12 +651,13 @@ def indented(solver: Solver, section: Section,
     lines = render(solver, section, findings)
     ok = pass_line(section, findings)
     body = lines[:-1] if ok is not None else lines
-    return [f"  {ln}" for ln in body] + ([ok] if ok is not None else [])
+    return [shifted(ln, "  ") for ln in body] + ([ok] if ok is not None
+                                                 else [])
 
 
 def shape_problem_line(path: Path, problem: Fault) -> str:
     """A witness file's shape problem, checked with no solver."""
-    return f"{path}: {problem.kind.value}: {problem.detail}"
+    return f"{path}: {problem.kind.value}: {detail_text(problem.detail)}"
 
 
 def stem_head(stem: str) -> str:
@@ -594,20 +672,7 @@ def entry_line(entry_id: str, what: object) -> str:
 
 
 def size_unread(stem: str, failure: ParseFailure) -> str:
-    return SIZE_UNREAD.format(stem=stem, error=(
-        f"{failure.line}:{failure.column}: {failure.message}"))
-
-
-def _branch_names(value: Value) -> list[str]:
-    """The constructors of a value, outermost first; a field that is no
-    constructor and no record holds data, and no branch."""
-    match value:
-        case AdtValue(constructor=c, args=args):
-            return [c, *(b for a in args for b in _branch_names(a))]
-        case RecordValue(fields=fields):
-            return [b for f in fields for b in _branch_names(f)]
-        case _:
-            return []
+    return SIZE_UNREAD.format(stem=stem, error=detail_text(failure))
 
 
 def souffle_text(solver: Solver, value: Value, type_name: str) -> str:
@@ -620,5 +685,5 @@ def souffle_text(solver: Solver, value: Value, type_name: str) -> str:
     points = set() if solver.choice is None \
         else {p.type for p in solver.choice.points}
     if type_name in points and isinstance(value, AdtValue):
-        return joined(_branch_names(value))
-    return value_text(value)
+        return joined(value_constructors(value))
+    return code_text(value)

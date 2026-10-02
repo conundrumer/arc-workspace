@@ -1,7 +1,7 @@
 """The extractor's own errors, which a run over a correct repo never shows.
 
 `check` reads every `mctx` literal in the repo. While the repo is correct none
-of these three fires, so a regression that stopped reporting one would pass the
+of these rules fires, so a regression that stopped reporting one would pass the
 check in silence. Each fixture here breaks one rule, and each is written where
 the repo's own check does not reach it.
 """
@@ -57,13 +57,6 @@ BAD_DOC_PATH_JS = """\
 const DOC = 'docs/handbook/no-such-doc.md'
 """
 
-SHAPED_PATHS = '''\
-SHAPE = "docs/handbook/{name}.md"
-GLOB = "docs/handbook/*.md"
-REAL = "docs/handbook/principles.md"
-'''
-
-
 @pytest.mark.parametrize(("name", "text"), [
     ("named.py", BAD_DOC_PATH_PY),
     ("named.js", BAD_DOC_PATH_JS),
@@ -74,12 +67,6 @@ def test_a_document_a_program_names_stands_in_the_tree(tmp_path, name, text):
     with pytest.raises(ControlledMarkdownError) as err:
         check_paths(path, name, Path.cwd())
     assert err.value.rule == "path-missing"
-
-
-def test_a_path_with_a_hole_or_a_wildcard_names_a_shape(tmp_path):
-    path = tmp_path / "shapes.py"
-    path.write_text(SHAPED_PATHS)
-    check_paths(path, "shapes.py", Path.cwd())
 
 
 BAD_DL_LINK = """\

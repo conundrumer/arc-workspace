@@ -2,7 +2,15 @@
 collisions Souffle reports with a message that misleads, the lib's
 private names, and the charts only a `RIGID` expansion writes."""
 
-from checker.finding import Finding, LintFragment, LintNamed, LintSentence
+from enum import StrEnum
+
+from checker.finding import (
+    Finding,
+    LintFragment,
+    LintNamed,
+    LintSentence,
+    line_of,
+)
 from checker.lint.view import (
     TOP,
     View,
@@ -22,7 +30,9 @@ from engine.program import (
     RecordType,
     RelationDecl,
     TypeDecl,
+    own,
 )
+from engine.quotes import guard, quotes
 from solver.category import Category
 from solver.model import Solver
 
@@ -63,16 +73,20 @@ def _declared_names(d: RelationDecl | TypeDecl | Component | Instance
             return [d.name]
 
 
+@quotes("style.md", "Identifiers",
+        "Variables use a single letter with an optional digit suffix, or "
+        "leading-capital snake_case. Macros: SCREAMING. Types: PascalCase. "
+        "Relations: snake_case.")
 def check_reserved_name(solver: Solver, runs: Runs) -> list[Finding]:
     """A name the solver declares that Souffle reserves, in every position
     it reads: Souffle rejects the file with a message about the token class
     it read rather than the collision, so this finding stands in for it.
     Serves readability: the author reads the collision, not the parser's
-    symptom (no style line; Souffle's grammar)."""
+    symptom."""
     v = view(solver, runs)
     decls = [*v.written_relations, *v.own_types, *v.own_components,
              *v.own_instances,
-             *(f for f in v.program.functors if f.span.file is None)]
+             *(f for f in v.program.functors if own(f.span))]
     decls.sort(key=lambda d: d.span.first)
     return [lint(d.span.first, LintNamed(Category.RESERVED_NAME,
                                          LintSentence.RESERVED_WORD, (n,)))
@@ -80,25 +94,31 @@ def check_reserved_name(solver: Solver, runs: Runs) -> list[Finding]:
             if n in RESERVED_WORDS]
 
 
-def _inner_types(v: View, comp: str, seen: frozenset[str] = frozenset()
-                 ) -> set[str]:
-    """The type names visible inside a component: its own, its base's, and
-    those of the components it instantiates."""
-    c = v.components.get(comp)
-    if c is None or comp in seen:
+def _inner_types(v: View, comp: Component | None,
+                 seen: frozenset[Component] = frozenset()) -> set[str]:
+    """The type names visible inside a component: its own, its bases'
+    (`Index.chain`), and those of the components it instantiates."""
+    if comp is None:
         return set()
-    seen = seen | {comp}
-    inner = (*c.scope.components, comp)
-    names = {t.name for t in v.program.types
-             if t.scope.components == inner}
-    for i in v.program.instances:
-        if i.scope.components == inner:
-            names |= _inner_types(v, i.component, seen)
-    if c.base is not None:
-        names |= _inner_types(v, c.base, seen)
+    names: set[str] = set()
+    for c in v.index.chain(comp):
+        if c in seen:
+            continue
+        seen = seen | {c}
+        inner = (*c.scope.components, c.name)
+        names |= {t.name for t in v.program.types
+                  if t.scope.components == inner}
+        for i in v.program.instances:
+            if i.scope.components == inner:
+                names |= _inner_types(
+                    v, v.index.component(i.component, i.scope), seen)
     return names
 
 
+@quotes("style.md", "Identifiers",
+        "Variables use a single letter with an optional digit suffix, or "
+        "leading-capital snake_case. Macros: SCREAMING. Types: PascalCase. "
+        "Relations: snake_case.")
 def check_shadowed_type(solver: Solver, runs: Runs) -> list[Finding]:
     """A type argument that collides with a type name inside the component
     it is passed to: Souffle binds both to one name, so the instance's
@@ -109,7 +129,8 @@ def check_shadowed_type(solver: Solver, runs: Runs) -> list[Finding]:
                 Category.SHADOWED_TYPE, LintSentence.SHADOWED_TYPE,
                 (t, i.component)))
             for i in v.own_instances
-            for t in i.type_args if t in _inner_types(v, i.component)]
+            for t in i.type_args
+            if t in _inner_types(v, v.index.component(i.component, i.scope))]
 
 
 def _top(d: RelationDecl | TypeDecl | Component | Instance | FunctorDecl
@@ -118,43 +139,64 @@ def _top(d: RelationDecl | TypeDecl | Component | Instance | FunctorDecl
     return isinstance(d, FunctorDecl) or d.scope == TOP
 
 
-def _lib_names(v: View) -> dict[str, str]:
+class LibKind(StrEnum):
+    """The kind of a lib top-level name, as the `lib name` lint names
+    it."""
+
+    TYPE = "type"
+    COMPONENT = "component"
+    RELATION = "relation"
+    FUNCTOR = "functor"
+    MACRO = "macro"
+
+
+def _lib_names(v: View) -> dict[str, LibKind]:
     """The lib's top-level names, each with its kind."""
     lib = [(d, kind) for ds, kind in (
-        (v.program.types, "type"), (v.program.components, "component"),
-        (v.program.relations, "relation"), (v.program.functors, "functor"))
+        (v.program.types, LibKind.TYPE),
+        (v.program.components, LibKind.COMPONENT),
+        (v.program.relations, LibKind.RELATION),
+        (v.program.functors, LibKind.FUNCTOR))
         for d in ds]
     names = {d.name: kind for d, kind in lib
              if from_lib(d.span) and _top(d)}
-    names |= {n: "macro" for n in v.solver.lib.constants}
+    names |= {n: LibKind.MACRO for n in v.solver.lib.constants}
     return names
 
 
+@quotes("style.md", "Identifiers",
+        "Variables use a single letter with an optional digit suffix, or "
+        "leading-capital snake_case. Macros: SCREAMING. Types: PascalCase. "
+        "Relations: snake_case.")
 def check_lib_name(solver: Solver, runs: Runs) -> list[Finding]:
     """A solver declaration that takes a lib top-level name: Souffle keeps
     types, components, instances and relations in one top-level namespace
     and functors in another, and substitutes a macro wherever its name
-    stands; its message points at the lib's line for some of these.
-    Serves readability, as `check_reserved_name` does."""
+    stands; its message points at the lib's line for some of these. Serves
+    readability, as `check_reserved_name` does."""
     v = view(solver, runs)
     lib = _lib_names(v)
     decls = [*v.own_types, *v.written_relations, *v.own_components,
              *v.own_instances,
-             *(f for f in v.program.functors if f.span.file is None)]
+             *(f for f in v.program.functors if own(f.span))]
     out: list[Finding] = []
     for d in sorted(decls, key=lambda d: d.span.first):
         kind = lib.get(d.name)
         if kind is None:
             continue
         top = _top(d)
-        if kind != "macro" and (
-                not top or (kind == "functor") != isinstance(d, FunctorDecl)):
+        if kind != LibKind.MACRO and (
+                not top
+                or (kind == LibKind.FUNCTOR) != isinstance(d, FunctorDecl)):
             continue
         out.append(lint(d.span.first, LintNamed(
             Category.LIB_NAME, LintSentence.LIB_NAME, (d.name, kind))))
     return out
 
 
+@guard("A read of a `_`-prefixed lib name, which is private to the lib; "
+       "the solver reads a lib component through its public relations, "
+       "its interface.")
 def check_lib_internal(solver: Solver, runs: Runs) -> list[Finding]:
     """A read of a `_`-prefixed lib name: a relation or instance inside a
     lib component, or a lib component instantiated. Such a name is
@@ -163,7 +205,6 @@ def check_lib_internal(solver: Solver, runs: Runs) -> list[Finding]:
     interface (no style line)."""
     v = view(solver, runs)
     lib = v.lib_components
-    comp_of = {i.name: i.component for i in v.program.instances}
     out: list[Finding] = []
     for i in v.own_instances:
         if i.component.startswith("_") and i.component in lib:
@@ -171,30 +212,45 @@ def check_lib_internal(solver: Solver, runs: Runs) -> list[Finding]:
                 Category.LIB_INTERNAL, LintSentence.LIB_INTERNAL_COMP,
                 (i.component,))))
     for u in v.own_units:
-        for atom in (u.head, *(a.atom for a in atoms_read(u))):
+        for atom in (u.head, *atoms_read(u)):
+            r = v.index.resolve(atom.relation, u.scope)
+            if not isinstance(r, Resolved):
+                # A name nothing declares reads no lib name; the program
+                # does not compile, which `run` reports.
+                continue
             segs = (*atom.relation.instances, atom.relation.name)
-            for prev, seg in zip(segs, segs[1:]):
-                comp = comp_of.get(prev)
-                if seg.startswith("_") and comp is not None \
-                        and comp in lib:
+            for through, seg in zip(r.through, segs[1:]):
+                inst = v.program.declared(through)
+                if not isinstance(inst, Instance):
+                    raise ValueError(f"{through} is no instance")
+                # None for an instance of a component no file declares,
+                # the model's fault `INSTANCE_OF_NOTHING`.
+                of = v.index.component(inst.component, inst.scope)
+                if seg.startswith("_") and of is not None \
+                        and from_lib(of.span):
                     out.append(lint(atom.line, LintNamed(
                         Category.LIB_INTERNAL, LintSentence.LIB_PRIVATE,
-                        (seg, comp))))
+                        (seg, of.name))))
                     break
-    return sorted(out, key=lambda f: getattr(f.where, "line", 0))
+    return sorted(out, key=line_of)
 
 
+@quotes("patterns.md", "`RIGID` — parameter relations coupled as a rigid assembly",
+        "The block's generated names are unreadable outside the expansion "
+        "(lint category 'rigid chart').")
+@quotes("patterns.md", "`RIGID` — parameter relations coupled as a rigid assembly",
+        "exposes them only as D4 placements that transform them together, so "
+        "the stored pose is unobservable.")
 def check_rigid_chart(solver: Solver, runs: Runs) -> list[Finding]:
     """Each atom outside a `RIGID` block that names the chart a block
-    declares, which only the block's expansion reads and writes. The
-    model claims the stored pose unobservable (patterns.md:98), so a read
-    of it serves no concept; serves the purest form."""
+    declares, which only the block's expansion reads and writes. A read of
+    it serves no concept; serves the purest form."""
     v = view(solver, runs)
     out: list[Finding] = []
     for u in v.own_units:
-        if u.span is not None and v.in_rigid(u.span.first):
+        if v.program.in_rigid_body(u.id):
             continue
-        for atom in (u.head, *(a.atom for a in atoms_read(u))):
+        for atom in (u.head, *atoms_read(u)):
             r = v.index.resolve(atom.relation, u.scope)
             d = v.decls.get(r.declaration) if isinstance(r, Resolved) \
                 else None

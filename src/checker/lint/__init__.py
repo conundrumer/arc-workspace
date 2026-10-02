@@ -1,28 +1,46 @@
 """The lint: one check per lint category, each reading the parsed program,
 and their composition, which applies the solver's `@ignore` lines
-(solver-file.md:134-136)."""
+(solver-file.md, under "Program")."""
 
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 
 from checker.finding import (
+    LINT_SHAPES,
     AtLine,
     Finding,
     Kind,
-    LINT_SHAPES,
+    LintBranchForm,
+    LintFragment,
     LintIgnore,
+    LintNamed,
     LintPayload,
     LintSentence,
+    is_hint,
+    line_of,
+)
+from checker.judged import (
+    bases_of,
+    concept_among,
+    parse_failure,
+    reading_names,
 )
 from checker.lint import bans, form, idioms, names, rewrites
-from checker.lint.view import TOP, View, lint, owned, spanned, view
+from checker.lint.view import TOP, View, lint, spanned, view
 from checker.runs import Runs
 from engine import Resolved
-from engine.program import Instance, RelationDecl, RelationName, Scope
+from engine.program import (
+    Component,
+    Instance,
+    RelationDecl,
+    RelationName,
+    Scope,
+    own,
+)
+from engine.quotes import quotes
 from solver.annotations import IgnoreForm, IgnoreLine
-from solver.category import Category
-from solver.model import Solver
-from solver.problems import ProblemKind
+from solver.category import HINTS, Category
+from solver.model import Solver, dependence, readers
 
 type Check = Callable[[Solver, Runs], list[Finding]]
 
@@ -55,10 +73,6 @@ REWRITE_CHECKS: tuple[Check, ...] = (
 )
 """The checks on shapes the corpus's edits rewrite away."""
 
-def _line(f: Finding) -> int:
-    return f.where.line if isinstance(f.where, AtLine) else 0
-
-
 def _category(f: Finding) -> Category:
     p = f.payload
     assert isinstance(p, LINT_SHAPES)
@@ -66,33 +80,27 @@ def _category(f: Finding) -> Category:
 
 
 def _sorted(findings: list[Finding]) -> list[Finding]:
-    return sorted(findings, key=lambda f: (_line(f), _category(f).value))
+    return sorted(findings, key=lambda f: (line_of(f), _category(f).value))
 
 
 # `@ignore` lines
 
 
-type Site = tuple[int, str | None]
+type Site = tuple[int, RelationName | None]
 """A place an `@ignore` line on a relation stands above: the line of its
 `.decl` with no name, and for a relation of an instance, the line
 of the instance's `.init` with the relation's name in that instance."""
 
 
-def _extends(v: View, comp: str, base: str) -> bool:
-    seen: set[str] = set()
-    while comp not in seen:
-        if comp == base:
-            return True
-        seen.add(comp)
-        c = v.components.get(comp)
-        if c is None or c.base is None:
-            return False
-        comp = c.base
-    return False
+def _extends(v: View, inst: Instance, comp: Component | None) -> bool:
+    """Whether `inst` is an instance of `comp` or of a component that
+    extends it (`Index.chain`)."""
+    of = v.index.component(inst.component, inst.scope)
+    return comp is not None and of is not None and comp in v.index.chain(of)
 
 
-def _instance_sites(v: View, scope: Scope, rel: str, depth: int = 0
-                    ) -> list[Site]:
+def _instance_sites(v: View, scope: Scope, rel: RelationName,
+                    depth: int = 0) -> list[Site]:
     """The places an `@ignore` line above an `.init` stands on the
     relation `rel` of the component `scope` names: the `.init` of each
     instance of it, or of a component that extends it, and for an
@@ -100,12 +108,14 @@ def _instance_sites(v: View, scope: Scope, rel: str, depth: int = 0
     turn."""
     if scope == TOP or depth > len(v.own_instances):
         return []
-    comp = scope.components[-1]
+    comp = v.index.component(scope.components[-1],
+                             Scope(scope.components[:-1]))
     out: list[Site] = []
     for i in v.own_instances:
-        if _extends(v, i.component, comp):
+        if _extends(v, i, comp):
             out.append((spanned(i.span).first, rel))
-            out += _instance_sites(v, i.scope, f"{i.name}.{rel}", depth + 1)
+            out += _instance_sites(v, i.scope, RelationName(
+                (i.name, *rel.instances), rel.name), depth + 1)
     return out
 
 
@@ -114,20 +124,22 @@ def owners(v: View) -> dict[int, list[frozenset[Site]]]:
     belongs to, each as the places an `@ignore` line on it stands above.
     A line of a component's text belongs to the relation in each instance
     of the component; the `.init` line belongs to the instance."""
-    memo = v.memo.get("owners")
-    if isinstance(memo, dict):
-        return memo  # type: ignore[return-value]
+    return v.held(_owners)
+
+
+def _owners(v: View) -> dict[int, list[frozenset[Site]]]:
     out: dict[int, list[frozenset[Site]]] = {}
 
-    def own(first: int, last: int, sites: list[Site]) -> None:
+    def claim(first: int, last: int, sites: list[Site]) -> None:
         for n in range(first, last + 1):
             out.setdefault(n, []).append(frozenset(sites))
 
     for d in v.own_relations:
-        own(d.span.first, d.span.last, [(d.span.first, ""),
-                                        *_instance_sites(v, d.scope, d.name)])
+        claim(d.span.first, d.span.last, [(d.span.first, None), *_instance_sites(
+            v, d.scope, d.scoped_name)])
     for i in v.own_instances:
-        own(spanned(i.span).first, spanned(i.span).first, [(spanned(i.span).first, "")])
+        claim(spanned(i.span).first, spanned(i.span).first,
+              [(spanned(i.span).first, None)])
     for u in v.own_units:
         if u.span is None:
             continue
@@ -135,18 +147,17 @@ def owners(v: View) -> dict[int, list[frozenset[Site]]]:
         head = u.head.relation
         r = v.index.resolve(head, u.scope)
         d = v.decls.get(r.declaration) if isinstance(r, Resolved) else None
-        if isinstance(d, RelationDecl) and d.span.file is None:
+        if isinstance(d, RelationDecl) and own(d.span):
             sites.append((d.span.first, None))
             if not head.instances:
-                sites += _instance_sites(v, d.scope, d.name)
+                sites += _instance_sites(v, d.scope, d.scoped_name)
         if head.instances and isinstance(r, Resolved) and r.through:
             inst = v.decls.get(r.through[0])
-            if isinstance(inst, Instance) and owned(inst.span):
+            if isinstance(inst, Instance) and own(inst.span):
                 sites.append((spanned(inst.span).first,
-                              RelationName(head.instances[1:], head.name).text))
+                              RelationName(head.instances[1:], head.name)))
         if sites:
-            own(u.span.first, u.span.last, sites)
-    v.memo["owners"] = out
+            claim(u.span.first, u.span.last, sites)
     return out
 
 
@@ -168,7 +179,8 @@ def _matching(v: View, ignores: Sequence[IgnoreLine], category: Category,
               sites: frozenset[Site]) -> list[IgnoreLine]:
     return [ig for ig in ignores
             if ig.category == category and (at := _at(v, ig)) is not None
-            and any(at == s_at and ig.relation in (None, rel)
+            and any(at == s_at and (ig.relation is None or (
+                rel is not None and ig.relation == rel.text))
                     for s_at, rel in sites)]
 
 
@@ -179,12 +191,16 @@ def _site(v: View, ig: IgnoreLine) -> RelationName | None:
     if isinstance(d, Instance):
         return RelationName((d.name,), ig.relation) if ig.relation \
             else RelationName((), d.name)
-    return RelationName((), d.name) if isinstance(d, RelationDecl) else None
+    return d.scoped_name if isinstance(d, RelationDecl) else None
 
 
 def _idle(v: View, ig: IgnoreLine) -> Finding:
-    """The finding on an `@ignore` line that dismisses no finding."""
-    if _at(v, ig) is not None:
+    """The finding on an `@ignore` line that dismisses no finding: one
+    whose category gives lint findings, which no `@ignore` line dismisses,
+    or one that stands where no hint of its category fires."""
+    if ig.category not in HINTS:
+        sentence = LintSentence.IGNORE_ON_LINT
+    elif _at(v, ig) is not None:
         sentence = LintSentence.IDLE_IGNORE
     elif ig.above is not None and isinstance(v.decls.get(ig.above),
                                              RelationDecl):
@@ -195,6 +211,48 @@ def _idle(v: View, ig: IgnoreLine) -> Finding:
                                     _site(v, ig)))
 
 
+BANNED_FORMS = frozenset({
+    Category.ARITHMETIC, Category.RAW_AGGREGATE, Category.RANGE,
+    Category.NONZERO_LITERAL, Category.ORIENTATION_LITERAL,
+})
+"""The categories of the banned forms (style.md, under "Bans")."""
+
+
+def _branch_forms(solver: Solver, runs: Runs, findings: list[Finding]
+                  ) -> list[Finding]:
+    """Each banned-form finding whose units some case reads and
+    no derivation of the concept case reads (`solver.model.dependence`),
+    as a `LintBranchForm` naming the relations the line feeds and, through
+    `cover`, the cases that read them; the others as given. Nothing is
+    judged where the run that enumerates the solver's cases gives no
+    result."""
+    banned = [f for f in findings
+              if f.kind == Kind.LINT and _category(f) in BANNED_FORMS
+              and isinstance(f.payload, (LintFragment, LintNamed))]
+    every = runs.solver_cases
+    if not banned or not isinstance(every, tuple):
+        return findings
+    bases = bases_of(every)
+    rd = dependence(solver, bases)
+    by_id = {u.id: u for u in solver.program.units}
+    out: list[Finding] = []
+    for f in findings:
+        p = f.payload
+        if f not in banned or not isinstance(p, (LintFragment, LintNamed)) \
+                or not isinstance(f.where, AtLine):
+            out.append(f)
+            continue
+        units = [by_id[i] for i in f.where.units]
+        reading = readers(rd, (u.id for u in units))
+        if not reading or concept_among(solver, reading) is not None:
+            out.append(f)
+            continue
+        rels = tuple(dict.fromkeys(u.head.relation for u in units))
+        out.append(replace(f, payload=LintBranchForm(
+            p.category, p, rels, reading_names(solver, every, reading))))
+    return out
+
+
 def _with_relation(f: Finding, on: bool) -> Finding:
     p = f.payload
     assert isinstance(p, LINT_SHAPES)
@@ -202,44 +260,59 @@ def _with_relation(f: Finding, on: bool) -> Finding:
     return replace(f, payload=payload)
 
 
+@quotes("solver-file.md", "Program",
+        "A relation kept despite a hint has `// @ignore: <category> — "
+        "<reason>` on the line immediately above its declaration, with the "
+        "category the hint gives.")
+@quotes("solver-file.md", "Program",
+        "The hint does not fire on the relation.")
+@quotes("style.md", "Program",
+        "The gloss of a relation that carries an `@ignore` directive is in a "
+        "separate comment immediately above that directive.")
 def check_lint(solver: Solver, runs: Runs) -> list[Finding]:
-    """Every lint finding and hint of the solver, less those an `@ignore`
-    line of their category on their relation dismisses, with a finding
-    on each `@ignore` line that dismisses none (solver-file.md:134 "A
-    relation kept despite a finding has `// @ignore: <category> —
-    <reason>` on the line immediately above its declaration", :135 "The
-    finding does not fire on the relation", :136; history 1143, 1147). A
-    finding on a line of more than one relation stays unless each of them
-    carries such a line. The findings come in the old report's order:
+    """Every lint finding and hint of the solver, less the hints an
+    `@ignore` line of their category on their relation dismisses, with a
+    finding on each `@ignore` line that dismisses none. An
+    `@ignore` line of a category that gives lint findings dismisses
+    nothing, and is a lint finding at its line. A hint on a line of more
+    than one relation stays unless each of them carries such a line. A
+    banned-form finding on a line no derivation of the concept case reads
+    names the cases that read it (`_branch_forms`). The findings come in the old report's order:
     the form checks, the idle `@ignore` lines, the rewrite checks, then
-    the hints. A solver that does not parse gives none: `check_faults`
+    the hints. A solver that does not parse gives none: `fault_findings`
     reports the failure, and no line of it is known to belong to a
-    relation."""
-    if any(p.kind == ProblemKind.PARSE_FAILURE for p in solver.problems):
+    relation.
+    It is the composition of the lint checks, each of which names what it
+    serves."""
+    if parse_failure(solver) is not None:
         return []
     v = view(solver, runs)
-    program = _sorted([f for c in PROGRAM_CHECKS for f in c(solver, runs)])
-    rewrite = _sorted([f for c in REWRITE_CHECKS for f in c(solver, runs)])
+    program = _branch_forms(solver, runs, _sorted(
+        [f for c in PROGRAM_CHECKS for f in c(solver, runs)]))
+    rewrite = _branch_forms(solver, runs, _sorted(
+        [f for c in REWRITE_CHECKS for f in c(solver, runs)]))
     every = program + rewrite
     sites_at = owners(v)
-    ignores = [ig for ig in solver.annotations.ignores
-               if ig.form == IgnoreForm.LINT]
-    used = {ig.line for f in every for sites in sites_at.get(_line(f), [])
+    lines = [ig for ig in solver.annotations.ignores
+             if ig.form == IgnoreForm.LINT]
+    ignores = [ig for ig in lines
+               if ig.category is not None and ig.category in HINTS]
+    used = {ig.line for f in every for sites in sites_at.get(line_of(f), [])
             for ig in _matching(v, ignores, _category(f), sites)}
-    idle = [_idle(v, ig) for ig in ignores
-            if ig.line not in used]
+    idle = [_idle(v, ig) for ig in lines
+            if ig not in ignores or ig.line not in used]
 
     def dismissed(f: Finding) -> bool:
-        sites = sites_at.get(_line(f), [])
+        sites = sites_at.get(line_of(f), [])
         return bool(sites) and all(
             _matching(v, ignores, _category(f), s) for s in sites)
 
     def kept(fs: list[Finding]) -> list[Finding]:
-        return [_with_relation(f, bool(sites_at.get(_line(f))))
+        return [_with_relation(f, bool(sites_at.get(line_of(f))))
                 for f in fs if not dismissed(f)]
 
     lints = [f for f in program if f.kind == Kind.LINT] + idle \
         + [f for f in rewrite if f.kind == Kind.LINT]
-    hints = [f for f in program if f.kind == Kind.HINT] \
-        + [f for f in rewrite if f.kind == Kind.HINT]
+    hints = [f for f in program if is_hint(f)] \
+        + [f for f in rewrite if is_hint(f)]
     return kept(lints) + kept(hints)

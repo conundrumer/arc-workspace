@@ -8,10 +8,10 @@ pass through to claude.
 import hashlib
 import os
 import sys
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools" / "console"))
+from handbook.paths import console_importable
+
+console_importable()
 
 from handbook.context import render, sweep_digests, write_agent  # noqa: E402
 from solver_console import config  # noqa: E402

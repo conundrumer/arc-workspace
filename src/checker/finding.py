@@ -1,16 +1,9 @@
 """The one finding type: a kind from one closed Enum, a typed location, and
 a payload dataclass per kind."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
-from engine import Atom, ParseFailure, RelationName, RunFailure, Term
-from engine.program import AtomLiteral, Comparison
-from solver.annotations import CaseMarker, IgnoreLine
-from solver.category import Category
-from solver.model import Case
-from solver.problems import Fault, ProblemKind
-from solver.solve import PairId
 from checker.payloads.branches import BranchesPayload
 from checker.payloads.witness import (  # noqa: F401  (re-exported)
     ANNOTATION_SHAPES,
@@ -40,6 +33,14 @@ from checker.payloads.witness import (  # noqa: F401  (re-exported)
     WitnessEntryMissing,
     WitnessPayload,
 )
+from engine import Atom, ParseFailure, RelationName, RunFailure, Term
+from engine.program import AtomLiteral, Comparison, UnitId
+from engine.quotes import quotes
+from solver.annotations import CaseMarker, DirectiveWord, IgnoreLine
+from solver.category import Category
+from solver.model import Case
+from solver.problems import Fault, ProblemKind, WitnessFileRole
+from solver.solve import PairId
 
 
 class Kind(StrEnum):
@@ -47,7 +48,7 @@ class Kind(StrEnum):
     give, and each fault kind (`ProblemKind`) as a member of its own, so
     that `Kind(problem.kind)` is a fault's finding kind."""
 
-    # Witness kinds (procedure.md:169-181).
+    # Witness kinds (procedure.md, under "Witness").
     DRIFT = "drift"
     UNLISTED = "unlisted"
     ANNOTATION = "annotation"
@@ -65,26 +66,30 @@ class Kind(StrEnum):
     `FAILING`."""
     DROP_UNJUSTIFIED = "drop-unjustified"
     """A case `impl_choice` drops that fails no case condition
-    (procedure.md:210)."""
+    (procedure.md, under "Reconcile")."""
     CONCEPT_UNENUMERATED = "concept-unenumerated"
     """The concept case is not among the cases `impl_choice` enumerates
-    (solver-file.md:109)."""
+    (solver-file.md, under "Cases")."""
     ASSIGN = "assign"
     TASK_ASSIGN = "task-assign"
 
-    # Lint: the payload's category says which (solver-file.md:134).
+    # Lint: the payload's category says which (solver-file.md, under "Program").
     LINT = "lint"
     HINT = "hint"
 
-    # `@derive` and `@store` kinds (solver-file.md:120-122, :137-138).
+    # `@derive` and `@store` kinds (solver-file.md, under "Params" and "Program").
     IDLE_BRANCH_IGNORE = "idle-ignore"
     """An `@ignore: derive|store <name>` line that excludes no case
-    (solver-file.md:122)."""
+    (solver-file.md, under "Params" and "Program")."""
     MISSING_BRANCH_LINE = "missing-branch-line"
     DUPLICATE_BRANCH_LINE = "duplicate-branch-line"
     BRANCH_WITNESS_MISSING = "branch-witness-missing"
     BRANCH_ENTRY = "branch-entry"
     DERIVE_UNREAD = "derive-unread"
+    BRANCH_EXCLUDED = "branch-excluded"
+    """A `@derive` or `@store` line that no case of the solver takes, each
+    case of it excluded by a named `@ignore` line or by `impl_choice`; the
+    line's verdict is not judged (plan §D5 `FAILING`)."""
     DERIVE_FIT = "derive-fit"
     DERIVE_UNPLACED = "derive-unplaced"
     STORE_PARAMETER_NAME = "store-parameter-name"
@@ -101,10 +106,10 @@ class Kind(StrEnum):
     MARKER_UNOWNED = "marker-unowned"
     DETERMINATION_DIFF = "determination-diff"
     """A determined parameter whose determination differs from its stored
-    value (solver-file.md:158-161)."""
+    value (solver-file.md, under "Determination")."""
     DETERMINATION_OF_DERIVED = "determination-of-derived"
     """A `Determine` relation that mirrors a relation `Params` derives
-    (solver-file.md:160)."""
+    (solver-file.md, under "Determination")."""
     NO_TASK = "no-task"
     """A check that runs over the task's examples, on a solver whose task
     has no task file."""
@@ -117,7 +122,7 @@ class Kind(StrEnum):
     RUN_FAILED = "failed"
 
     # The fault kinds (plan §D4 `Fault`), each a member of its own under
-    # its `ProblemKind` name and value, through `check_faults`. Among them
+    # its `ProblemKind` name and value, through `fault_findings`. Among them
     # `UNDECIDED`, a case the principles do not decide (plan §G3), which
     # the checks give too; outside `FAILING`.
     locals().update({k.name: k.value for k in ProblemKind})
@@ -128,16 +133,11 @@ class Kind(StrEnum):
 
 @dataclass(frozen=True)
 class AtLine:
-    """A line of the solver file."""
+    """A line of the solver file; for a lint finding, the units it stands
+    on, which the place compares without."""
 
     line: int
-
-
-class WitnessFileRole(StrEnum):
-    TASK = "task"
-    """`programs/witnesses/<task_id>.wit.json`."""
-    GIVEN = "given"
-    """A file the command names in its place."""
+    units: tuple[UnitId, ...] = field(default=(), compare=False)
 
 
 @dataclass(frozen=True)
@@ -276,6 +276,7 @@ class LintSentence(StrEnum):
     IDLE_IGNORE = "idle ignore"
     IGNORE_ON_DECL = "ignore on decl"
     IGNORE_UNPLACED = "ignore unplaced"
+    IGNORE_ON_LINT = "ignore on lint"
 
 
 type Code = Atom | AtomLiteral | Comparison | Term
@@ -352,14 +353,6 @@ class LintMarked:
     them."""
 
 
-class LabelWord(StrEnum):
-    """The annotation a witness line opens with."""
-
-    WITNESS = "witness"
-    DERIVE = "derive"
-    STORE = "store"
-
-
 @dataclass(frozen=True)
 class LintLabeled:
     """A lint sentence over a `@witness`, `@derive` or `@store` line: its
@@ -368,7 +361,7 @@ class LintLabeled:
 
     category: Category
     sentence: LintSentence
-    word: LabelWord
+    word: DirectiveWord
     name: str | None
     relaxed: tuple[str, ...]
     on_relation: bool = False
@@ -411,13 +404,28 @@ class LintIgnore:
     on_relation: bool = False
 
 
+@dataclass(frozen=True)
+class LintBranchForm:
+    """A banned-form finding (`checker.lint.BANNED_FORMS`) on a line whose
+    relations no derivation of the concept case reads: the finding as its
+    check gives it, those relations, and the fewest names that cover the
+    cases whose derivations read them (`solver.names.cover`). A branch
+    whose claim needs the form fails Relational form."""
+
+    category: Category
+    finding: LintFragment | LintNamed
+    relations: tuple[RelationName, ...]
+    cases: tuple[str, ...]
+    on_relation: bool = False
+
+
 type LintPayload = (LintFragment | LintNamed | LintCounted | LintCode
                     | LintMarked | LintLabeled | LintRun | LintFamily
-                    | LintIgnore)
+                    | LintIgnore | LintBranchForm)
 """The payload of `LINT` and `HINT`: its category says which lint."""
 
 LINT_SHAPES = (LintFragment, LintNamed, LintCounted, LintCode, LintMarked,
-               LintLabeled, LintRun, LintFamily, LintIgnore)
+               LintLabeled, LintRun, LintFamily, LintIgnore, LintBranchForm)
 """The classes of `LintPayload`, for an `isinstance` test."""
 
 
@@ -447,11 +455,22 @@ class NoResultPayload:
     failure: RunFailure
 
 
+@quotes("principles.md", "Stored or derived",
+        "**Two parameterizations.** Storing a value and deriving that value "
+        "produce two different parameterizations.")
+@quotes("solver-file.md", "Program",
+        "**`@store` directive.** The relation, or the instance's relation the "
+        "line names, has one value on every input, and the line is a branch "
+        "of a choice point on it")
+@quotes("solver-file.md", "Cases",
+        "**Case markers.** Cases do not interleave: each case's Params and "
+        "clauses are under its marker.")
 @dataclass(frozen=True)
 class UndecidedPayload:
     """A `@store` line's relation that holds one set of rows on every
     input and gives no value the store survey reads: whether it is fixed
-    task data, which the principles do not decide."""
+    task data, which the principles do not decide. Its quotes are the
+    words the store check rests on, which the finding prints."""
 
     relation: RelationName
 
@@ -467,6 +486,19 @@ class Finding:
     kind: Kind
     where: Where
     payload: Payload
+
+
+def line_of(f: "Finding") -> int:
+    """The solver line a finding stands at; a finding at no line is a
+    caller's error."""
+    if not isinstance(f.where, AtLine):
+        raise ValueError(f"a {f.kind} finding stands at no line")
+    return f.where.line
+
+
+def is_hint(f: "Finding") -> bool:
+    """A finding of kind `HINT`: a lint hint, apart from the findings."""
+    return f.kind == Kind.HINT
 
 
 FAILING = frozenset(Kind) - {

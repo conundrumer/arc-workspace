@@ -1,22 +1,25 @@
 """The deletion survey: the structure of the solver whose removal changes
 no pair's output and no determined value."""
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, replace
 from enum import StrEnum
 
 from checker.finding import Finding
+from checker.judged import bases_of, enumeration_failed, is_timeout
 from checker.lint.idioms import Columns, enumerator_binder
 from checker.lint.view import view
-from checker.runs import Runs
+from checker.runs import Runs, holding
 from checker.variants import (
+    EVERY_SECTION,
     Fails,
     Profile,
     TimedOut,
     determines,
     pairs_of,
-    parallel,
     profile,
+    reproduces,
+    restricted,
     ungrounded,
     with_program,
 )
@@ -28,27 +31,37 @@ from engine import (
     RemoveColumn,
     RemoveDisjunct,
     RemoveUnit,
+    RunFailure,
     Scope,
+    UngroundedVariable,
 )
 from engine.program import (
-    Aggregate,
     AtomLiteral,
-    BinaryTerm,
     BodyLiteral,
-    Cast,
-    Comparison,
-    ConstructorTerm,
     Disjunction,
-    FunctorCall,
-    IntrinsicCall,
-    RecordTerm,
-    Term,
-    UnaryTerm,
     Unit,
+    literal_aggregates,
 )
-from solver.model import Solver
-from solver.solve import NoDetermine, Remove, variation
-from solver.vocabulary import CHOICE, DETERMINE, OUTPUT
+from engine.quotes import quotes
+from solver.model import (
+    choice_line,
+    Case,
+    Dependence,
+    Solver,
+    dependence,
+    enumerated,
+    enumerates,
+    own,
+)
+from solver.solve import (
+    NoDetermine,
+    Remove,
+    at_once,
+    case_columns,
+    case_groups,
+    variation,
+)
+from solver.vocabulary import DETERMINE, OUTPUT
 
 
 class DeletionKind(StrEnum):
@@ -131,13 +144,6 @@ class DeletionRow:
     quote: Quote
     determination: bool
 
-    @property
-    def label(self) -> str:
-        """The kind as the report prints it."""
-        if self.determination:
-            return f"determination {self.kind}"
-        return str(self.kind)
-
 
 @dataclass(frozen=True)
 class TimedOutDeletion:
@@ -167,41 +173,8 @@ class BaselineFails:
 type DeletionResult = DeletionReport | BaselineFails | TimedOut
 
 
-def _own(u: Unit) -> bool:
-    return u.span is not None and u.span.file is None
-
-
 def _in_determine(scope: Scope) -> bool:
     return scope.components[:1] == (DETERMINE,)
-
-
-def _term_aggregates(term: Term) -> list[Aggregate]:
-    """The aggregates a term holds, left to right, not those inside
-    another aggregate."""
-    match term:
-        case Aggregate():
-            return [term]
-        case ConstructorTerm(args=args) | RecordTerm(args=args) \
-                | IntrinsicCall(args=args) | FunctorCall(args=args):
-            return [a for x in args for a in _term_aggregates(x)]
-        case UnaryTerm(arg=arg) | Cast(term=arg):
-            return _term_aggregates(arg)
-        case BinaryTerm(lhs=lhs, rhs=rhs):
-            return _term_aggregates(lhs) + _term_aggregates(rhs)
-        case _:
-            return []
-
-
-def _aggregates(lit: BodyLiteral) -> list[Aggregate]:
-    """The aggregates a literal's terms hold, left to right, in the order
-    a removal path counts them."""
-    match lit:
-        case AtomLiteral(atom=atom):
-            return [a for t in atom.args for a in _term_aggregates(t)]
-        case Comparison(lhs=lhs, rhs=rhs):
-            return _term_aggregates(lhs) + _term_aggregates(rhs)
-        case _:
-            return []
 
 
 @dataclass(frozen=True)
@@ -231,20 +204,20 @@ def _parts(body: tuple[BodyLiteral, ...], path: tuple[int, ...],
             for b, branch in enumerate(lit.branches):
                 yield from _parts(branch, (*here, b), in_aggregate)
         else:
-            for k, agg in enumerate(_aggregates(lit)):
+            for k, agg in enumerate(literal_aggregates(lit)):
                 yield from _parts(agg.body, (*here, k), True)
 
 
 def _clauses(solver: Solver) -> list[tuple[Unit, tuple[Unit, ...]]]:
     """The solver's own rules, one per clause: a clause with several heads
     comes once, as its first unit, with every unit of it."""
-    groups: dict[tuple[object, ...], list[Unit]] = {}
+    groups: dict[tuple[int, int, object], list[Unit]] = {}
     for u in solver.program.units:
-        if not _own(u) or u.body is None or u.span is None:
+        if not own(u.span) or u.body is None or u.span is None:
             continue
         groups.setdefault((u.span.first, u.span.last, u.body), []).append(u)
-    return sorted(((us[0], tuple(us)) for us in groups.values()),
-                  key=lambda g: (g[0].span.first if g[0].span else 0))
+    return [(us[0], tuple(us)) for (_first, _last, _body), us in
+            sorted(groups.items(), key=lambda kv: kv[0][0])]
 
 
 def deletions(solver: Solver, runs: Runs) -> list[Deletion]:
@@ -294,14 +267,13 @@ def deletions(solver: Solver, runs: Runs) -> list[Deletion]:
                     out.append(Deletion(
                         line, DeletionKind.DISJUNCT, head(branch),
                         (RemoveDisjunct(first.id, (*p.path, b)),), det))
-    case_types = {CHOICE} | ({p.type for p in solver.choice.points}
-                             if solver.choice is not None else set())
     for decl in solver.program.relations:
-        if decl.scope.components or decl.span.file is not None \
+        if decl.scope.components or not own(decl.span) \
                 or decl.name == OUTPUT.name or len(decl.columns) < 2:
             continue
+        case = case_columns(solver, decl.scoped_name)
         for i, col in enumerate(decl.columns):
-            kind = DeletionKind.CASE_COLUMN if col.type in case_types \
+            kind = DeletionKind.CASE_COLUMN if i in case \
                 else DeletionKind.COLUMN
             out.append(Deletion(decl.span.first, kind,
                                 ColumnName(decl.name, col.name),
@@ -321,6 +293,27 @@ def _program(solver: Solver, runs: Runs, d: Deletion) -> Program | None:
     return s.program
 
 
+def _depending(solver: Solver, groups: Sequence[tuple[Case, ...]],
+               read: Dependence, d: Deletion) -> tuple[Case, ...]:
+    """The cases of each of `groups` that holds a case whose derivation of
+    `out` depends on a unit or a column the deletion removes (`read`,
+    `solver.model.dependence`): a unit it removes or removes a part of,
+    or the relation a column of which it removes."""
+    bases: set[object] = set()
+    for t in d.targets:
+        match t:
+            case RemoveUnit(unit=u) | RemoveAtom(unit=u) \
+                    | RemoveDisjunct(unit=u):
+                bases.update(read.units.get(u, ()))
+            case RemoveColumn(relation=decl):
+                rel = solver.program.declared_relation(decl)
+                bases.update(read.relations.get(
+                    rel.scoped_name, ()))
+            case _:
+                raise ValueError(f"a deletion removes {t}")
+    return tuple(holding(groups, lambda c: c.base in bases))
+
+
 def _cases_agree(reference: Profile) -> bool:
     """The pairs never part the `Choice` values, which a case column
     carries: on every pair, two or more cases that take no `@derive` or
@@ -332,38 +325,64 @@ def _cases_agree(reference: Profile) -> bool:
     return True
 
 
+@quotes("procedure.md", "Simplify",
+        "Run `uv run python scripts/run_dl.py deletions <task_id>`.")
 def survey_deletions(solver: Solver, runs: Runs) -> DeletionResult:
     """Structural deletions that change no pair's output and no determined
-    value (procedure.md:138, the audit's deletion section,
-    prompts/run_dl.md). A deletion outside the Determine comp holds when
-    the program without it gives the stored program's profile on every
-    pair and, where the stored program's determination reproduces the
-    stored values, the determination still does; a deletion inside the
-    Determine comp holds when the determination still does. Where the
-    solver has no Determine comp, the report says that no determination
-    was checked. A deletion
-    whose run fails for an ungrounded variable measured nothing, and a
-    run that reached a limit is no result. A case column's rows stand
-    apart; where the pairs part the cases, a case column reads as any
-    other column, and an unprobed one is left out. Where the solver has
-    two or more cases of the solver, no case column stood for them, and the pairs
-    never part them, the `Choice` reports as unexercised."""
+    value. A deletion outside the Determine comp holds when the program
+    without it gives the stored program's profile of the witnessed cases on
+    every pair, run on the groups of those cases that hold a case that
+    depends on what it removes (`_depending`), a deletion on which no
+    witnessed case depends holding on the pairs with no run, where its
+    `impl_choice` still enumerates every base of the solver's cases
+    (`_enumerates`), and, where the stored program's determination
+    reproduces the stored values, the determination still does; a deletion
+    inside the Determine comp holds when the determination still does. Where
+    the solver has no Determine comp, the report says that no determination
+    was checked. A deletion whose run fails for an ungrounded variable
+    measured nothing, and a run that reached a limit is no result. A case
+    column's rows stand apart; where the pairs part the cases, a case column
+    reads as any other column, and an unprobed one is left out. Where the
+    solver has two or more cases of the solver, no case column stood for
+    them, and the pairs never part them, the `Choice` reports as
+    unexercised."""
     engine, limits = runs.engine, runs.limits
     pairs = pairs_of(solver)
-    reference = profile(engine, solver, pairs, limits)
+    cases = runs.cases
+    reference = runs.profile(EVERY_SECTION)
     if isinstance(reference, Fails):
         return BaselineFails()
     if isinstance(reference, TimedOut):
         return reference
-    base = determines(engine, solver, limits)
+    base = reproduces(runs.determined)
     if isinstance(base, TimedOut):
         return base
-    reproduces = base is True
+    stored_holds = base is True
     dels = [d for d in deletions(solver, runs)
-            if not d.determine or reproduces]
+            if not d.determine or stored_holds]
     dels = [d for d in dels if d.determine] + [d for d in dels
                                               if not d.determine]
     ref: Profile = reference
+    assert isinstance(cases, tuple)
+    bases = frozenset(c.base for c in cases) \
+        if enumerates(solver.program) else frozenset()
+
+    def _enumerates(variant: Solver, bases: frozenset[object]
+                    ) -> bool | TimedOut | RunFailure:
+        """Whether the variant's `impl_choice` still enumerates each of
+        `bases`, the bases of the solver's cases, on the empty input; a
+        variant that loses a case changes something. The failure of that
+        run where it fails."""
+        if not bases:
+            return True
+        got = enumerated(engine, variant.program, limits)
+        if not isinstance(got, tuple):
+            return TimedOut(enumeration_failed(got)) \
+                if is_timeout(got) else got
+        return bases <= set(got)
+
+    groups = case_groups(solver, cases)
+    read = dependence(solver, bases_of(cases))
     built = [(d, p) for d in dels
              if (p := _program(solver, runs, d)) is not None]
 
@@ -375,24 +394,42 @@ def survey_deletions(solver: Solver, runs: Runs) -> DeletionResult:
         def row(kind: DeletionKind, determination: bool) -> DeletionRow:
             return DeletionRow(d.line, kind, d.quote, determination)
 
+        def timed(x: TimedOut) -> TimedOutDeletion:
+            return TimedOutDeletion(d.line, d.kind, d.quote, x.finding)
+
+        def ungrounded_row() -> DeletionRow:
+            """The row of a deletion whose run ungrounds a variable, so
+            that it measured nothing."""
+            return row(DeletionKind.UNPROBED_CASE
+                       if d.kind == DeletionKind.CASE_COLUMN
+                       else DeletionKind.UNGROUNDED, False)
+
         if not d.determine:
-            got = profile(engine, variant, pairs, limits, ref)
-            if isinstance(got, TimedOut):
-                return TimedOutDeletion(d.line, d.kind, d.quote, got.finding)
-            if got != ref:
-                if ungrounded(got):
-                    return row(DeletionKind.UNPROBED_CASE
-                               if d.kind == DeletionKind.CASE_COLUMN
-                               else DeletionKind.UNGROUNDED, False)
+            kept = _enumerates(variant, bases)
+            if isinstance(kept, TimedOut):
+                return timed(kept)
+            if isinstance(kept, UngroundedVariable):
+                return ungrounded_row()
+            if kept is not True:
                 return None
-            if not reproduces:
+            depending = _depending(solver, groups, read, d)
+            if depending:
+                sub = restricted(ref, depending)
+                got = profile(engine, variant, depending, pairs, limits, sub)
+                if isinstance(got, TimedOut):
+                    return timed(got)
+                if got != sub:
+                    if ungrounded(got):
+                        return ungrounded_row()
+                    return None
+            if not stored_holds:
                 return row(d.kind, False)
         holds = determines(engine, variant, limits)
         if isinstance(holds, TimedOut):
-            return TimedOutDeletion(d.line, d.kind, d.quote, holds.finding)
+            return timed(holds)
         return row(d.kind, d.determine) if holds is True else None
 
-    outcomes = parallel(judge, built)
+    outcomes = at_once(judge, built)
     rows = [r for r in outcomes if isinstance(r, DeletionRow)]
     timed = tuple(r for r in outcomes if isinstance(r, TimedOutDeletion))
     judged = (len(built) - len(timed)
@@ -418,10 +455,9 @@ def _case_rows(solver: Solver, rows: list[DeletionRow], agreed: bool
                 for r in rows if r.kind != DeletionKind.UNPROBED_CASE]
     choice = solver.choice
     if choice is not None and agreed:
-        decl = next((t for t in solver.program.types
-                     if t.id == choice.declaration), None)
-        if decl is not None:
-            return [*rows, DeletionRow(decl.span.first,
-                                       DeletionKind.UNEXERCISED_CASES,
-                                       TypeName(decl.name), False)]
+        return [*rows, DeletionRow(
+            choice_line(solver.program, choice),
+            DeletionKind.UNEXERCISED_CASES,
+            TypeName(solver.program.declared(choice.declaration).name),
+            False)]
     return rows

@@ -4,6 +4,9 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from engine.engine import (
+    Classed,
+    GridMisfit,
+    GridValue,
     Index,
     InputValue,
     Limits,
@@ -14,15 +17,15 @@ from engine.engine import (
     RunResult,
 )
 from engine import checkout
-from engine.program import Program, RelationName
-from souffle import expand, ops, parser, render
+from engine.program import GridLayout, Program, RelationName
+from souffle import classify, expand, ops, parser, render
 from souffle.index import index_of
 from souffle.run import Runner
 
 FUNCTOR_DIR = checkout.programs()
 """Where `libfunctors.dylib`, the lib's functors, stands, in the checkout
 at import."""
-CACHE_DIR = checkout.scratch() / "cache" / "engine-souffle"
+CACHE_DIR = checkout.cache() / "engine-souffle"
 """Where each run is stored under the hash of all it reads, in the
 checkout at import."""
 
@@ -45,8 +48,14 @@ class SouffleEngine:
     def fix_relation(self, program: Program, relation: RelationName,
                      value: RelationValue) -> Program:
         """Raises `ValueError` where no declaration answers `relation`, and
-        for a grid on a stamp or sparse GRID form (`souffle.ops`)."""
+        for a grid it cannot place in the relation's GRID form
+        (`souffle.ops`)."""
         return ops.fix_relation(program, relation, value)
+
+    def place_grid(self, layout: GridLayout, mark: tuple[int, int] | None,
+                   value: GridValue) -> GridValue | GridMisfit:
+        """Raises `ValueError` for a stamp layout with no `mark`."""
+        return ops.place_grid(layout, mark, value)
 
     def remove(self, program: Program, target: RemovalTarget) -> Program:
         """Raises `ValueError` where `program` lacks `target`."""
@@ -60,6 +69,10 @@ class SouffleEngine:
             outputs: Sequence[RelationName], limits: Limits,
             caps: Mapping[RelationName, int] | None = None) -> RunResult:
         return self.runner.run(program, inputs, outputs, limits, caps)
+
+    def classify(self, program: Program, relation: RelationName,
+                 column: int) -> Classed:
+        return classify.classify(program, relation, column)
 
     def expand(self, program: Program) -> Program:
         return expand.expand(program)

@@ -6,7 +6,13 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from solver import witness
-from solver.problems import Expected, InWitnessFile, ProblemKind, ShapeFault
+from solver.problems import (
+    Expected,
+    InWitnessFile,
+    ProblemKind,
+    ShapeFault,
+    WitnessFileRole,
+)
 from solver.witness import Entry, Group, Groups, RejectedOutput, Undefined
 from tests.solver.fake import grid
 
@@ -26,7 +32,7 @@ def test_writers_keep_each_others_entries(tmp_path: Path) -> None:
         got = list(pool.map(
             lambda i: witness.put(at, "0000aaaa", [entry(i)]), ids))
     assert got == [()] * len(ids)
-    file, problems = witness.read(at.read_text())
+    file, problems = witness.read(at.read_text(), WitnessFileRole.TASK)
     assert problems == ()
     assert file is not None
     assert sorted(e.id for e in file.entries) == sorted(ids)
@@ -37,7 +43,7 @@ def test_put_replaces_by_id_and_keeps_the_rest(tmp_path: Path) -> None:
     witness.put(at, "0000aaaa", [entry("a"), entry("b")])
     changed = Entry("a", "changed", G, (), RejectedOutput(G))
     witness.put(at, "0000aaaa", [changed])
-    file, _ = witness.read(at.read_text())
+    file, _ = witness.read(at.read_text(), WitnessFileRole.TASK)
     assert file is not None
     assert file.entries == (changed, entry("b"))
 
@@ -59,13 +65,13 @@ def test_reader_leaves_out_entries_off_the_shape() -> None:
        "output": [{"grid": [[1]]}]},
       {"id": "extra", "separates": "s", "input": [[1]], "output": [[2]],
        "note": "x"}]}"""
-    file, problems = witness.read(text)
+    file, problems = witness.read(text, WitnessFileRole.TASK)
     assert file is not None
     assert [e.id for e in file.entries] == ["ok", "extra"]
     assert {p.kind for p in problems} == {ProblemKind.WITNESS_FILE_SHAPE}
     assert {(p.place, p.detail) for p in problems} == {
-        (InWitnessFile("ragged"), ShapeFault(("input",), Expected.GRID)),
-        (InWitnessFile("no-cases"),
+        (InWitnessFile("ragged", WitnessFileRole.TASK), ShapeFault(("input",), Expected.GRID)),
+        (InWitnessFile("no-cases", WitnessFileRole.TASK),
          ShapeFault(("output", 0, "cases"), Expected.PRESENT)),
-        (InWitnessFile("extra"), ShapeFault(("note",), Expected.ABSENT)),
+        (InWitnessFile("extra", WitnessFileRole.TASK), ShapeFault(("note",), Expected.ABSENT)),
     }

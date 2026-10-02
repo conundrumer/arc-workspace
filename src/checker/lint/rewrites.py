@@ -17,24 +17,26 @@ from checker.finding import (
     LintSentence,
 )
 from checker.lint.view import (
-    bare,
     TOP,
     View,
     aggregates,
     atoms_read,
+    bare,
     conjunctions,
     disjunctions,
     flatten,
+    lint,
+    literal_terms,
     literal_vars,
+    positive_atoms,
     subterms,
     term_vars,
     view,
-    lint,
 )
 from checker.runs import Runs
 from engine import Resolved
 from engine.program import (
-    Cast,
+    Scope,
     AdtType,
     Aggregate,
     AggregateOperator,
@@ -43,6 +45,7 @@ from engine.program import (
     BinaryTerm,
     BodyLiteral,
     BoolLiteral,
+    Cast,
     Comparison,
     ComparisonOperator,
     ConstructorTerm,
@@ -63,8 +66,20 @@ from engine.program import (
     Unit,
     Variable,
     Wildcard,
+    own,
+)
+from engine.quotes import quotes
+from solver.category import Category
+from solver.model import (
+    Section,
+    Solver,
+    UnderMarker,
+    Unmarked,
+    lists_case,
+    section_at,
 )
 from solver.vocabulary import (
+    COMPOSE,
     DETERMINE,
     EX_IN,
     EX_OUT,
@@ -72,11 +87,6 @@ from solver.vocabulary import (
     OUTPUT,
     PARAMS,
 )
-from solver.category import Category
-from solver.annotations import CaseMarker
-from solver.model import Solver, UnderMarker, Unmarked
-from solver.names import denote
-from solver.problems import Fault
 
 EXAMPLE_SOURCES = frozenset({INPUT.name, EX_IN.name, EX_OUT.name})
 """The relations the runner fills per example."""
@@ -85,7 +95,7 @@ COMMON_SUBEXPR_MIN = 2
 """The literals a shared window must span."""
 
 IMAGE_COMPS = {"apply": "D4Map.conflict",
-               "compose": "OffsetInvariance.mismatch"}
+               COMPOSE: "OffsetInvariance.mismatch"}
 """The lib component whose defining rule reads one valued cell set at a
 cell and at its image, by the lib relation that takes the cell onto the
 image."""
@@ -95,12 +105,12 @@ image."""
 
 
 def _determined(v: View) -> set[str]:
-    """The parameters a `Determine` relation mirrors (solver-file.md:158)."""
-    det = {r.name for r in v.own_relations
-           if r.scope.components == (DETERMINE,)}
-    par = {r.name for r in v.own_relations
-           if r.scope.components == (PARAMS,)}
-    return det & par
+    """The relations of `Params` a `Determine` relation mirrors
+    (solver-file.md, under "Determination"): `Parameter.determined` and
+    `DerivedRelation.mirrored`."""
+    params = v.solver.params
+    return {p.name for p in params.parameters if p.determined} \
+        | {d.name for d in params.derived if d.mirrored}
 
 
 def _style_relations(v: View) -> list[RelationDecl]:
@@ -154,17 +164,17 @@ def _drops_columns(unit: Unit) -> bool:
     if any(literal_vars(lit) - head for lit in unit.body):
         return True
     return any(isinstance(a, Wildcard) for x in atoms_read(unit)
-               for a in x.atom.args)
+               for a in x.args)
 
 
-def _relation_claims(v: View) -> dict[DeclId, Category]:
+def _relation_claims(v: View
+                     ) -> tuple[dict[DeclId, Category],
+                                dict[Category, list[Finding]]]:
     """The relation-level rules in order, strongest claim first: a
     relation one rule flags, a later one does not (`dead`, then
     `alias-inline`, `negated-use`, `pass-through`, `chain-join`,
-    `single-consumer`)."""
-    memo = v.memo.get("claims")
-    if isinstance(memo, dict):
-        return memo  # type: ignore[return-value]
+    `single-consumer`); each relation's claim, and each rule's findings.
+    Computed once per view (`View.held`)."""
     claims: dict[DeclId, Category] = {}
     found: dict[Category, list[Finding]] = {}
 
@@ -186,17 +196,13 @@ def _relation_claims(v: View) -> dict[DeclId, Category]:
     run(Category.PASS_THROUGH, style, _pass_through)
     run(Category.CHAIN_JOIN, style, _chain_join)
     run(Category.SINGLE_CONSUMER, v.program_relations(), _single_consumer)
-    v.memo["claims"] = claims
-    v.memo["found"] = found
-    return claims
+    return claims, found
 
 
 def _claimed(solver: Solver, runs: Runs, category: Category) -> list[Finding]:
     v = view(solver, runs)
-    _relation_claims(v)
-    found = v.memo["found"]
-    assert isinstance(found, dict)
-    return list(found.get(category, []))  # type: ignore[arg-type]
+    _claims, found = v.held(_relation_claims)
+    return list(found[category])
 
 
 # Relation-level rules
@@ -228,6 +234,8 @@ def _dead(v: View, claims: dict[DeclId, Category]) -> list[Finding]:
     return out
 
 
+@quotes("procedure.md", "Simplify",
+        "Express what the code claims with less code.")
 def check_dead(solver: Solver, runs: Runs) -> list[Finding]:
     """A relation no clause reads, to a fixpoint: removing a dead
     relation's rules can orphan the relations those rules read. Serves the
@@ -239,15 +247,12 @@ def _lib_inline(v: View) -> tuple[frozenset[str], frozenset[str]]:
     """The lib's top-level inline relations, and those among them whose
     expansion introduces no variable, which Souffle negates when the use
     binds every column."""
-    memo = v.memo.get("inline")
-    if isinstance(memo, tuple):
-        return memo  # type: ignore[return-value]
     inline = frozenset(r.name for r in v.program.relations
-                       if r.span.file is not None and r.scope == TOP
+                       if not own(r.span) and r.scope == TOP
                        and Qualifier.INLINE in r.qualifiers)
     clauses: dict[str, list[Unit]] = {}
     for u in v.program.units:
-        if u.span is not None and u.span.file is not None and u.body is not None \
+        if u.span is not None and not own(u.span) and u.body is not None \
                 and u.scope == TOP and not u.head.relation.instances \
                 and u.head.relation.name in inline:
             clauses.setdefault(u.head.relation.name, []).append(u)
@@ -287,9 +292,7 @@ def _lib_inline(v: View) -> tuple[frozenset[str], frozenset[str]]:
                         negatable.discard(n)
                         changed = True
                         break
-    out = (inline, frozenset(negatable))
-    v.memo["inline"] = out
-    return out
+    return inline, frozenset(negatable)
 
 
 def _has_wild(t: Term) -> bool:
@@ -325,7 +328,7 @@ def _alias_inline(v: View, decl: RelationDecl) -> Finding | None:
         return None
     if len(set(head_vars)) != len(head_vars) or set(head_vars) != set(atom_vars):
         return None
-    inline, negatable = _lib_inline(v)
+    inline, negatable = v.held(_lib_inline)
     if v.is_lib(v.relation(d, atom)) and atom.relation.name in inline \
             and atom.relation.name not in negatable \
             and any(n for _u, _a, n in v.uses(decl)):
@@ -334,6 +337,8 @@ def _alias_inline(v: View, decl: RelationDecl) -> Finding | None:
         Category.ALIAS_INLINE, LintSentence.ALIAS, (d.head, atom), ()))
 
 
+@quotes("procedure.md", "Simplify",
+        "Has unusual or needless indirection.")
 def check_alias_inline(solver: Solver, runs: Runs) -> list[Finding]:
     """A relation that renames another: one rule, one positive atom, every
     column carried through. Serves the purest form: a rewrite family the
@@ -347,7 +352,7 @@ def _projection(v: View, d: Unit) -> bool:
     atom = _single_atom(d)
     if atom is None:
         return False
-    inline, negatable = _lib_inline(v)
+    inline, negatable = v.held(_lib_inline)
     head_vars = {a.name for a in d.head.args if isinstance(a, Variable)}
     if v.is_lib(v.relation(d, atom)) and not atom.relation.instances \
             and atom.relation.name in inline:
@@ -433,12 +438,15 @@ def _negated_use(v: View, decl: RelationDecl) -> Finding | None:
         assert atom is not None
         terms: dict[str, Term] = {name: carried.get(name, Wildcard())
                                   for name in literal_vars(atom)}
-        parts.append(_substituted_atom(atom, terms))
+        parts.append(AtomLiteral(_substituted_atom(atom, terms), True))
+    use = Atom(decl.scoped_name, canon, decl.span.first)
     return lint(decl.span.first, LintCode(
-        Category.NEGATED_USE, LintSentence.NEGATED_USE, tuple(canon),
-        tuple(parts), (decl.name,)))
+        Category.NEGATED_USE, LintSentence.NEGATED_USE,
+        (AtomLiteral(use, True),), tuple(parts), (decl.name,)))
 
 
+@quotes("procedure.md", "Simplify",
+        "Has unusual or needless indirection.")
 def check_negated_use(solver: Solver, runs: Runs) -> list[Finding]:
     """A relation read only under negation whose every rule projects one
     atom: the negation reads the atom directly. Serves the purest form, as
@@ -474,6 +482,8 @@ def _pass_through(v: View, decl: RelationDecl) -> Finding | None:
         (decl.name, consumer.name)))
 
 
+@quotes("procedure.md", "Simplify",
+        "Has unusual or needless indirection.")
 def check_pass_through(solver: Solver, runs: Runs) -> list[Finding]:
     """A relation consumed only by pure forwarding rules of one other
     relation, a hint: the corpus keeps this shape as a named union member,
@@ -505,11 +515,12 @@ def _single_consumer(v: View, decl: RelationDecl) -> Finding | None:
         (decl.name,), 1, atom.line))
 
 
+@quotes("style.md", "Program",
+        "The single-consumer hint also applies to relations in Params.")
 def check_single_consumer(solver: Solver, runs: Runs) -> list[Finding]:
     """A relation of one rule and one positive use, with a body of at most
-    two literals, a hint: the corpus both inlines and keeps this shape.
-    style.md:68 states it applies to the relations in Params too. Serves
-    the purest form."""
+    two literals, a hint: the corpus both inlines and keeps this shape. It
+    applies to the relations in Params too. Serves the purest form."""
     return _claimed(solver, runs, Category.SINGLE_CONSUMER)
 
 
@@ -581,6 +592,8 @@ def _chain_join(v: View, decl: RelationDecl) -> Finding | None:
     return None
 
 
+@quotes("procedure.md", "Simplify",
+        "Has unusual or needless indirection.")
 def check_chain_join(solver: Solver, runs: Runs) -> list[Finding]:
     """A column that, at every use, only keys a join against one other
     relation the join fully absorbs, a hint: fuse and project the column
@@ -588,11 +601,18 @@ def check_chain_join(solver: Solver, runs: Runs) -> list[Finding]:
     return _claimed(solver, runs, Category.CHAIN_JOIN)
 
 
+@quotes("principles.md", "Choice points and open parameters",
+        "**choice point**: an undetermined property whose possible answers "
+        "are models represented by cases.")
+@quotes("solver-file.md", "Alt outputs",
+        "The solver enumerates a tiebreak's resolutions through a trailing "
+        "`out` column of type `TiebreakResolution`.")
 def check_choice_domain(solver: Solver, runs: Runs) -> list[Finding]:
     """A `choice-domain` declaration in program code: the relation keeps
     one arbitrary tuple per key, so which one it keeps is a choice the
     program does not state. Serves the concept's form: every choice the
-    model makes is stated (principles.md:105-111)."""
+    model makes is stated (principles.md, under
+    "Choice points and open parameters")."""
     v = view(solver, runs)
     return [lint(d.span.first, LintNamed(
                 Category.CHOICE_DOMAIN, LintSentence.CHOICE_DOMAIN,
@@ -609,7 +629,7 @@ def _tags(solver: Solver, v: View) -> dict[str, int]:
     if solver.choice is None:
         return out
     for p in solver.choice.points:
-        td = v.type_names.get(p.type)
+        td = v.program.declaration(p.declaration)
         if isinstance(td, AdtType):
             for c in td.constructors:
                 out[c.name] = len(c.fields)
@@ -669,12 +689,17 @@ type Node = RelNode | InstanceNode | ExternNode
 
 
 def _node(v: View, unit: Unit, atom: Atom) -> Node:
-    """The dataflow node an atom reads or writes: its relation, or, for a
-    relation under an instance of a lib component, that instance, which
-    the walk reads as opaque."""
-    r = v.index.resolve(atom.relation, unit.scope)
+    """The dataflow node an atom reads or writes (`_named_node`)."""
+    return _named_node(v, atom.relation, unit.scope)
+
+
+def _named_node(v: View, name: RelationName, scope: Scope) -> Node:
+    """The dataflow node of a relation name read in `scope`: its relation,
+    or, for a relation under an instance of a lib component, that
+    instance, which the walk reads as opaque."""
+    r = v.index.resolve(name, scope)
     if not isinstance(r, Resolved):
-        return ExternNode(atom.relation)
+        return ExternNode(name)
     for inst_id in r.through:
         inst = v.decls.get(inst_id)
         if isinstance(inst, Instance) and inst.component in v.lib_components:
@@ -688,19 +713,19 @@ def _live(v: View, tags: set[str], cases: frozenset[str]
     walk when its head is reached and its tags admit the case; an untagged
     rule takes the tags of the relations it reads, to a fixpoint."""
     rules = [(_node(v, u, u.head),
-              {_node(v, u, a.atom) for a in atoms_read(u)},
+              {_node(v, u, a) for a in atoms_read(u)},
               head_ctors(u) & tags)
-             for u in v.program.units if u.span is None or u.span.file is None]
+             for u in v.program.units if u.span is None or own(u.span)]
     rules = [(h, b - {h}, t) for h, b, t in rules]
-    own = [t & cases for _, _, t in rules]
-    rule_tags = [set(t) for t in own]
+    tagged = [t & cases for _, _, t in rules]
+    rule_tags = [set(t) for t in tagged]
     rel_tags: dict[Node, set[str]] = {}
     changed = True
     while changed:
         changed = False
         for i, (head, body, _t) in enumerate(rules):
-            new = set(own[i])
-            if not own[i]:
+            new = set(tagged[i])
+            if not tagged[i]:
                 for n in body:
                     new |= rel_tags.get(n, set())
             if new != rule_tags[i]:
@@ -710,10 +735,7 @@ def _live(v: View, tags: set[str], cases: frozenset[str]
             if not new <= tags:
                 tags |= new
                 changed = True
-    out_decl = next((d for d in v.own_relations
-                     if d.scope == TOP and d.name == OUTPUT.name), None)
-    start: Node = RelNode(out_decl.id) if out_decl is not None \
-        else ExternNode(OUTPUT)
+    start = _named_node(v, OUTPUT, TOP)
     live: dict[str, set[Node]] = {}
     for case in cases:
         reached: set[Node] = {start}
@@ -733,25 +755,21 @@ def _live(v: View, tags: set[str], cases: frozenset[str]
     return live
 
 
-def _lists_case(solver: Solver, marker: CaseMarker) -> bool:
-    """Some name of the marker denotes a case; a prose part denotes
-    none."""
-    return any(not part.prose
-               and not isinstance(denote(solver, part.name), Fault)
-               for part in marker.parts)
-
-
+@quotes("solver-file.md", "Cases",
+        "**Case markers.** Cases do not interleave: each case's Params and "
+        "clauses are under its marker.")
+@quotes("style.md", "Params",
+        "A parameter that every case reads is above the case markers. A "
+        "parameter that some case never reads goes under the marker of the "
+        "cases that read it.")
 def check_shared_read(solver: Solver, runs: Runs) -> list[Finding]:
     """A parameter under a marker that lists no case, below a marker that
-    lists one (solver-file.md:104-105), and a shared parameter some case
-    never reads (style.md:57-58 "A parameter that every case reads is
-    above the case markers", "A parameter that some case never reads goes
-    under the marker of the cases that read it"). A marker that lists no
-    case above every marker that lists one leaves the parameters under it
-    shared. The reads come from a dataflow walk back from `out` under
-    each case, which reads a lib instance as opaque and so
-    over-approximates the reads. Every relation `Params` declares is read,
-    a derived one too, since the rule is about what cases share, whatever
+    lists one, and a shared parameter some case never reads. A marker that
+    lists no case above every marker that lists one leaves the parameters
+    under it shared. The reads come from a dataflow walk back from `out`
+    under each case, which reads a lib instance as opaque and so
+    over-approximates the reads. Every relation `Params` declares is read, a
+    derived one too, since the rule is about what cases share, whatever
     feeds the relation. Where one stands is `Parameter.section` or
     `DerivedRelation.section`. Serves the concept's form."""
     v = view(solver, runs)
@@ -768,7 +786,7 @@ def check_shared_read(solver: Solver, runs: Runs) -> list[Finding]:
         match p.section:
             case Unmarked():
                 shared.append(d)
-            case UnderMarker(marker=m) if not _lists_case(solver, m):
+            case UnderMarker(marker=m) if not lists_case(solver, m):
                 out.append(lint(d.span.first, LintMarked(
                     Category.SHARED_READ, LintSentence.MARKER_LISTS_NO_CASE,
                     d.name, m)))
@@ -787,7 +805,7 @@ def check_shared_read(solver: Solver, runs: Runs) -> list[Finding]:
             if missing:
                 out.append(lint(d.span.first, LintCode(
                     Category.SHARED_READ, LintSentence.SHARED_UNREAD,
-                    tuple(_tag(c, tags.get(c, 0)) for c in missing), (),
+                    tuple(_tag(c, tags[c]) for c in missing), (),
                     (d.name,))))
     return out
 
@@ -799,10 +817,12 @@ def _key(lits: Sequence[BodyLiteral]) -> tuple[BodyLiteral, ...]:
     return bare(tuple(lits))
 
 
+@quotes("style.md", "Disjunction",
+        "Clauses that share a head and a frame belong in one clause.")
 def check_choice_tag(solver: Solver, runs: Runs) -> list[Finding]:
-    """Clauses identical but for a distinct nullary constructor in one
-    head argument, where some relation's facts already enumerate both
-    tags: one clause ranges over the tags. Serves the purest form."""
+    """Clauses identical but for a distinct nullary constructor in one head
+    argument, where some relation's facts already enumerate both tags: one
+    clause ranges over the tags. Serves the purest form."""
     v = view(solver, runs)
     units = v.program_units()
     facts: list[set[str]] = []
@@ -822,7 +842,7 @@ def check_choice_tag(solver: Solver, runs: Runs) -> list[Finding]:
             continue
         for o in units[:i]:
             if o.body is None or o.scope != u.scope or o.span is None \
-                    or v.section(o) != v.section(u):
+                    or _section(v, o) != _section(v, u):
                 continue
             if o.head.relation != u.head.relation \
                     or len(o.head.args) != len(u.head.args):
@@ -844,17 +864,17 @@ def check_choice_tag(solver: Solver, runs: Runs) -> list[Finding]:
     return out
 
 
+@quotes("style.md", "Disjunction",
+        "A clause does not range over choice tags through a disjunction.")
 def check_cross_choice(solver: Solver, runs: Runs) -> list[Finding]:
-    """A disjunction whose branches bind different choice tags
-    (style.md:109 "A clause does not range over choice tags through a
-    disjunction"): choices stay separate rules. Serves the concept's
-    form."""
+    """A disjunction whose branches bind different choice tags: choices stay
+    separate rules. Serves the concept's form."""
     v = view(solver, runs)
     tags = _tags(solver, v)
     out: list[Finding] = []
     for u in v.program_units():
         for disj in disjunctions(u):
-            binds = [{t.name for lit in b for top in _terms(lit)
+            binds = [{t.name for lit in b for top in literal_terms(lit, True)
                       for t in subterms(top)
                       if isinstance(t, ConstructorTerm)} & set(tags)
                      for b in disj.branches]
@@ -867,19 +887,10 @@ def check_cross_choice(solver: Solver, runs: Runs) -> list[Finding]:
     return out
 
 
-def _terms(lit: BodyLiteral) -> tuple[Term, ...]:
-    """The terms of a literal, a disjunction's branches included."""
-    match lit:
-        case AtomLiteral(atom=atom):
-            return atom.args
-        case Comparison(lhs=lhs, rhs=rhs):
-            return (lhs, rhs)
-        case Disjunction(branches=branches):
-            return tuple(t for b in branches for x in b for t in _terms(x))
-        case _:
-            return ()
-
-
+@quotes("procedure.md", "Simplify",
+        "Express what the code claims with less code.")
+@quotes("procedure.md", "Simplify",
+        "Has repetition where a principled form exists.")
 def check_subsumed_atom(solver: Solver, runs: Runs) -> list[Finding]:
     """`R(X, _)` beside `R(X, Y)` in one body, or one atom twice: the
     wildcard atom adds nothing. Serves the purest form."""
@@ -909,15 +920,6 @@ def check_subsumed_atom(solver: Solver, runs: Runs) -> list[Finding]:
     return out
 
 
-def _unique_atoms(flats: list[list[BodyLiteral]]) -> list[Atom]:
-    seen: dict[int, Atom] = {}
-    for f in flats:
-        for x in f:
-            if isinstance(x, AtomLiteral) and not x.negated:
-                seen.setdefault(id(x.atom), x.atom)
-    return list(seen.values())
-
-
 def _holds(flat: list[BodyLiteral], atom: Atom) -> bool:
     return any(isinstance(x, AtomLiteral) and x.atom is atom for x in flat)
 
@@ -930,17 +932,19 @@ def _other_side(cmp: Comparison, name: str) -> Term | None:
     return None
 
 
+@quotes("style.md", "Idioms",
+        "**Complement tests.** The test negates the relation of the values it "
+        "excludes: `!params.bg(Col)` for non-bg.")
 def check_named_complement(solver: Solver, runs: Runs) -> list[Finding]:
     """`R(V), X != V` against a relation of one fact: `!R(X)` says it
-    directly (style.md:81 "The test negates the relation of the values it
-    excludes"). Serves the purest form."""
+    directly. Serves the purest form."""
     v = view(solver, runs)
     out: list[Finding] = []
     for u in v.program_units():
         if u.body is None:
             continue
         flats = list(flatten(u.body))
-        for atom in _unique_atoms(flats):
+        for atom in positive_atoms(flats):
             if len(atom.args) != 1 or not isinstance(atom.args[0], Variable):
                 continue
             d = v.relation(u, atom)
@@ -985,23 +989,27 @@ def check_named_complement(solver: Solver, runs: Runs) -> list[Finding]:
             cmp, other = found
             out.append(lint(atom.line, LintCode(
                 Category.NAMED_COMPLEMENT, LintSentence.NAMED_COMPLEMENT,
-                (atom, cmp), (replace(atom, args=(other,)),))))
+                (atom, cmp),
+                (AtomLiteral(replace(atom, args=(other,)), True),))))
     return out
 
 
+@quotes("style.md", "Idioms",
+        "**Complement tests.** The test negates the relation of the values it "
+        "excludes: `!params.bg(Col)` for non-bg.")
 def check_negated_value(solver: Solver, runs: Runs) -> list[Finding]:
     """`prim(..., K), K != c`, with `K` read nowhere else, at a lib inline
-    relation Souffle negates: `!prim(..., c)` says it directly
-    (style.md:81). Serves the purest form."""
+    relation Souffle negates: `!prim(..., c)` says it directly. Serves the
+    purest form."""
     v = view(solver, runs)
-    _inline, negatable = _lib_inline(v)
+    _inline, negatable = v.held(_lib_inline)
     out: list[Finding] = []
     for u in v.program_units():
         if u.body is None:
             continue
         head_vars = literal_vars(u.head)
         flats = list(flatten(u.body))
-        for atom in _unique_atoms(flats):
+        for atom in positive_atoms(flats):
             if atom.relation.instances \
                     or atom.relation.name not in negatable \
                     or not v.is_lib(v.relation(u, atom)) \
@@ -1027,7 +1035,7 @@ def check_negated_value(solver: Solver, runs: Runs) -> list[Finding]:
                     const if j == i else a for j, a in enumerate(atom.args)))
                 out.append(lint(atom.line, LintCode(
                     Category.NEGATED_VALUE, LintSentence.NEGATED_VALUE,
-                    (atom, cmp), (new,))))
+                    (atom, cmp), (AtomLiteral(new, True),))))
                 break
     return out
 
@@ -1069,20 +1077,21 @@ class InComp:
 
 @dataclass(frozen=True)
 class InSection:
-    """A top-level section: under a case marker, or above every marker."""
+    """A top-level section (`solver.model.section_at`)."""
 
-    marker: CaseMarker | None
+    section: Section
 
 
 type Spot = InComp | InSection
 """Where a relation's references stand."""
 
 
+@quotes("style.md", "Layout",
+        "a file takes its block order and layout from it.")
 def check_decl_placement(solver: Solver, runs: Runs) -> list[Finding]:
     """A top-level declaration whose every reference stands in one section
-    or comp it is not in: move it there (style.md:86 "a file takes its
-    block order and layout from" the template). `out` is the interface,
-    declared under `Choice`. Serves readability."""
+    or comp it is not in: move it there. `out` is the interface, declared
+    under `Choice`. Serves readability."""
     v = view(solver, runs)
     out: list[Finding] = []
     for d in v.written_relations:
@@ -1094,20 +1103,23 @@ def check_decl_placement(solver: Solver, runs: Runs) -> list[Finding]:
             if u.scope != TOP:
                 spots.add(InComp(u.scope.components[0]))
             else:
-                spots.add(InSection(v.section(u)))
+                spots.add(InSection(_section(v, u)))
         if len(spots) != 1:
             continue
         spot = spots.pop()
-        if spot == InSection(None) \
-                or spot == InSection(v.marker_at(d.span.first)):
+        if spot == InSection(Unmarked()) \
+                or spot == InSection(section_at(solver, TOP, d.span.first)):
             continue
         out.append(lint(d.span.first, LintMarked(
             Category.DECL_PLACEMENT, LintSentence.DECL_PLACEMENT, d.name,
-            spot.marker if isinstance(spot, InSection) else None,
+            spot.section.marker if isinstance(spot, InSection)
+            and isinstance(spot.section, UnderMarker) else None,
             spot.comp if isinstance(spot, InComp) else None)))
     return out
 
 
+@quotes("style.md", "Bans",
+        "Arithmetic, raw aggregates, and `range` are banned.")
 def check_argmax(solver: Solver, runs: Runs) -> list[Finding]:
     """`beaten(X) :- score(X, N), score(_, N2), N2 > N`, read only under
     negation, a hint: an aggregate in disguise; read it through a lib
@@ -1144,7 +1156,7 @@ def check_argmax(solver: Solver, runs: Runs) -> list[Finding]:
             continue
         uses = v.uses(d)
         if uses and all(n for _u, _a, n in uses):
-            out.append(lint(u.span.first if u.span else u.head.line,
+            out.append(lint(_line(u),
                             LintNamed(Category.ARGMAX, LintSentence.ARGMAX,
                                       (u.head.relation.name,))))
     return out
@@ -1207,7 +1219,7 @@ def _const_targets(v: View) -> set[Target]:
         for t, units in heads.items():
             if t in tainted:
                 continue
-            if any((b := _target(v, u, a.atom)) == EXAMPLE
+            if any((b := _target(v, u, a)) == EXAMPLE
                    or b in tainted
                    for u in units for a in atoms_read(u)):
                 tainted.add(t)
@@ -1215,6 +1227,11 @@ def _const_targets(v: View) -> set[Target]:
     return set(heads) - tainted
 
 
+@quotes("solver-file.md", "Params",
+        "Params contains the parameterization and what derives from it.")
+@quotes("principles.md", "Stored or derived",
+        "A value that follows from another parameter in every variant task "
+        "is derived data rather than a second parameter.")
 def check_const_join(solver: Solver, runs: Runs) -> list[Finding]:
     """A variable internal to a clause's Params reads, a hint: the join
     derives a task constant, which the corpus names in its own relation;
@@ -1294,19 +1311,20 @@ def _ordered_vars(x: BodyLiteral | Atom) -> Iterator[str]:
                 yield from _ordered_vars(y)
         return
     else:
-        terms = _terms(x)
+        terms = literal_terms(x, True)
     for t in terms:
         for s in subterms(t, into_aggregates=True):
             if isinstance(s, Variable):
                 yield s.name
 
 
+@quotes("style.md", "Disjunction",
+        "Clauses that share a head and a frame belong in one clause.")
 def check_common_subexpr(solver: Solver, runs: Runs) -> list[Finding]:
-    """The same run of literals, up to renaming, in two bodies of one
-    scope, a hint (style.md:108 "Clauses that share a head and a frame
-    belong in one clause"). A pair that spans choices, different sections
-    or heads bound to different choice tags, stays quiet, and so does a
-    later body that negates the earlier head. Serves the purest form."""
+    """The same run of literals, up to renaming, in two bodies of one scope,
+    a hint. A pair that spans choices, different sections or heads bound to
+    different choice tags, stays quiet, and so does a later body that
+    negates the earlier head. Serves the purest form."""
     v = view(solver, runs)
     tags = set(_tags(solver, v))
     seen: dict[tuple[object, ...], Unit] = {}
@@ -1338,9 +1356,14 @@ def _line(u: Unit) -> int:
     return u.span.first if u.span is not None else u.head.line
 
 
+def _section(v: View, u: Unit) -> Section:
+    """The section a unit stands in (`solver.model.section_at`)."""
+    return section_at(v.solver, u.scope, _line(u))
+
+
 def _subexpr(v: View, tags: set[str], width: int, prev: Unit, cur: Unit
              ) -> Finding | None:
-    if v.section(prev) != v.section(cur):
+    if _section(v, prev) != _section(v, cur):
         return None
     if head_ctors(prev) & tags != head_ctors(cur) & tags:
         return None
@@ -1372,7 +1395,7 @@ def _other_member(solver: Solver, v: View) -> dict[str, str]:
     facts: dict[str, set[tuple[str, ...]]] = {}
     other: set[str] = set()
     for u in v.program.units:
-        if u.span is None or u.span.file is None or u.scope != TOP \
+        if u.span is None or own(u.span) or u.scope != TOP \
                 or u.head.relation.instances:
             continue
         if u.body is None and all(isinstance(a, DefinedName)
@@ -1384,7 +1407,7 @@ def _other_member(solver: Solver, v: View) -> dict[str, str]:
             other.add(u.head.relation.name)
     out: dict[str, str] = {}
     for d in v.program.relations:
-        if d.span.file is None or d.scope != TOP or d.name in other \
+        if own(d.span) or d.scope != TOP or d.name in other \
                 or len(d.columns) != 2:
             continue
         t = d.columns[0].type
@@ -1396,23 +1419,12 @@ def _other_member(solver: Solver, v: View) -> dict[str, str]:
     return out
 
 
-def _columns(v: View, unit: Unit, atom: Atom) -> list[str] | None:
-    """The declared type of each column of an atom, a component's
-    parameter read as the type its instance gives it."""
-    r = v.index.resolve(atom.relation, unit.scope)
-    if not isinstance(r, Resolved):
-        return None
-    d = v.decls.get(r.declaration)
-    if not isinstance(d, RelationDecl) or len(d.columns) != len(atom.args):
-        return None
-    subst = dict(r.type_arguments)
-    return [subst.get(c.type, c.type) for c in d.columns]
-
-
+@quotes("procedure.md", "Simplify",
+        "Reimplements what the lib provides.")
 def check_comp_idiom(solver: Solver, runs: Runs) -> list[Finding]:
     """A lib component's defining rule, or a lib relation, written out by
-    hand: one relation read twice with a `!=` between the two reads, a
-    hint. Serves the purest form: the lib names the idiom."""
+    hand: one relation read twice with a `!=` between the two reads, a hint.
+    Serves the purest form: the lib names the idiom."""
     v = view(solver, runs)
     members = _other_member(solver, v)
     out: list[Finding] = []
@@ -1477,7 +1489,7 @@ def _comp_idiom(v: View, members: dict[str, str], unit: Unit, a: Atom,
         return None
     code: tuple[Code, ...] = (a, b, replace(cmp, lhs=x, rhs=y))
     if len(diff) == 1:
-        cols = _columns(v, unit, a)
+        cols = v.column_types(unit, a)
         if cols is None:
             return None
         rel = members.get(cols[k])
@@ -1510,7 +1522,7 @@ def _image_link(p: str, q: str, atoms: list[Atom]) -> str | None:
             continue
         names = [x.name if isinstance(x, Variable) else None
                  for x in atom.args]
-        src = names[:2] if name == "compose" else names[1:2]
+        src = names[:2] if name == COMPOSE else names[1:2]
         if names[2] in (p, q) and ({p, q} - {names[2]}) & set(src):
             return name
     return None

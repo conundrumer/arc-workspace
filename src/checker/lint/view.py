@@ -3,33 +3,29 @@ parts, the scopes program style applies to, the case enumeration, the
 units that feed and read each relation, and walks over terms and
 literals."""
 
-from collections.abc import Iterator, Sequence
-from dataclasses import dataclass, field, fields, is_dataclass, replace
-from typing import Any, cast
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from dataclasses import dataclass, fields, is_dataclass, replace
 from functools import cached_property
-from weakref import WeakKeyDictionary
+from typing import Any, cast
 
 from checker.finding import AtLine, Finding, Kind, LintPayload
 from checker.runs import Runs
 from engine import Index, Resolved, Role
+from engine.memo import ByIdentity
 from engine.program import (
-    Cast,
     AdtType,
     Aggregate,
     AliasType,
     Atom,
     AtomLiteral,
-    BinaryTerm,
     BodyLiteral,
     Comparison,
     Component,
     ConstructorTerm,
     DeclId,
     Disjunction,
-    FunctorCall,
     FunctorDecl,
     Instance,
-    IntrinsicCall,
     RecordTerm,
     RecordType,
     RelationDecl,
@@ -38,37 +34,40 @@ from engine.program import (
     SubtypeType,
     Term,
     TypeDecl,
-    UnaryTerm,
     UnionType,
     Unit,
     UnitId,
     Variable,
+    body_atoms,
+    literal_aggregates,
+    own,
+    term_aggregates,
 )
+from engine.program import literal_terms as top_terms
+from engine.program import subterms as direct_subterms
+from solver.annotations import CaseMarker
+from solver.category import HINTS
+from solver.model import TOP, Solver
 from solver.vocabulary import (
     DETERMINE,
     ENUMERATOR,
     PARAMS,
     PARSE,
 )
-from solver.annotations import CaseMarker
-from solver.category import HINTS
-from solver.model import Solver
-
 
 STOCK_COMPS = (PARAMS, DETERMINE, PARSE)
-"""The comps a solver holds as its own (solver-file.md:152)."""
+"""The comps a solver holds as its own (solver-file.md, under "Components")."""
 
 PROGRAM_COMPS = (DETERMINE, PARSE)
 """The comps whose clauses program style reads beside the top level."""
 
-TOP = Scope(())
 
-
-def lint(line: int, payload: LintPayload) -> Finding:
-    """A lint finding on a solver line: a hint where its category is one
-    (`solver.category.HINTS`)."""
+def lint(line: int, payload: LintPayload,
+         units: tuple[UnitId, ...] = ()) -> Finding:
+    """A lint finding on a solver line, standing on `units`: a hint where
+    its category is one (`solver.category.HINTS`)."""
     kind = Kind.HINT if payload.category in HINTS else Kind.LINT
-    return Finding(kind, AtLine(line), payload)
+    return Finding(kind, AtLine(line, units), payload)
 
 
 # Terms and literals
@@ -78,36 +77,27 @@ def subterms(term: Term, into_aggregates: bool = False) -> Iterator[Term]:
     """`term` and every term inside it, outermost first; an aggregate's
     target and body with `into_aggregates`."""
     yield term
-    match term:
-        case ConstructorTerm(args=args) | RecordTerm(args=args) \
-                | IntrinsicCall(args=args) | FunctorCall(args=args):
-            for a in args:
-                yield from subterms(a, into_aggregates)
-        case UnaryTerm(arg=arg) | Cast(term=arg):
-            yield from subterms(arg, into_aggregates)
-        case BinaryTerm(lhs=lhs, rhs=rhs):
-            yield from subterms(lhs, into_aggregates)
-            yield from subterms(rhs, into_aggregates)
-        case Aggregate(expr=expr, body=body) if into_aggregates:
-            if expr is not None:
-                yield from subterms(expr, into_aggregates)
-            for lit in body:
+    if isinstance(term, Aggregate):
+        if into_aggregates:
+            if term.expr is not None:
+                yield from subterms(term.expr, into_aggregates)
+            for lit in term.body:
                 for t in literal_terms(lit):
                     yield from subterms(t, into_aggregates)
-        case _:
-            pass
+        return
+    for t in direct_subterms(term):
+        yield from subterms(t, into_aggregates)
 
 
-def literal_terms(lit: BodyLiteral) -> tuple[Term, ...]:
-    """The top-level terms of one literal; a disjunction's are its
-    branches' and are read there."""
-    match lit:
-        case AtomLiteral(atom=atom):
-            return atom.args
-        case Comparison(lhs=lhs, rhs=rhs):
-            return (lhs, rhs)
-        case _:
-            return ()
+def literal_terms(lit: BodyLiteral, branches: bool = False
+                  ) -> tuple[Term, ...]:
+    """The top-level terms of one literal (`engine.program.literal_terms`);
+    a disjunction's are its branches', read here with `branches` and there
+    otherwise."""
+    if isinstance(lit, Disjunction) and branches:
+        return tuple(t for b in lit.branches for x in b
+                     for t in literal_terms(x, True))
+    return top_terms(lit)
 
 
 def term_vars(term: Term) -> set[str]:
@@ -120,36 +110,35 @@ def literal_vars(lit: BodyLiteral | Atom) -> set[str]:
     included, outside aggregates."""
     if isinstance(lit, Atom):
         return {v for a in lit.args for v in term_vars(a)}
-    if isinstance(lit, Disjunction):
-        return {v for b in lit.branches for x in b for v in literal_vars(x)}
-    return {v for t in literal_terms(lit) for v in term_vars(t)}
+    return {v for t in literal_terms(lit, True) for v in term_vars(t)}
 
 
 def aggregates(lit: BodyLiteral | Atom) -> Iterator[Aggregate]:
-    """The aggregates a literal holds, outermost first."""
-    terms = lit.args if isinstance(lit, Atom) else literal_terms(lit)
-    for t in terms:
-        for s in subterms(t):
-            if isinstance(s, Aggregate):
-                yield s
+    """The aggregates a literal or an atom holds, outermost first
+    (`engine.program.literal_aggregates`)."""
+    if isinstance(lit, Atom):
+        yield from (a for t in lit.args for a in term_aggregates(t))
+    else:
+        yield from literal_aggregates(lit)
 
 
-def atoms_read(unit: Unit) -> Iterator[AtomLiteral]:
-    """Every atom a clause reads: each body atom, negated or not,
-    disjunction branches and aggregate bodies included, and the atoms of
-    an aggregate in the head."""
-    def walk(lits: Sequence[BodyLiteral]) -> Iterator[AtomLiteral]:
-        for lit in lits:
-            if isinstance(lit, AtomLiteral):
-                yield lit
-            elif isinstance(lit, Disjunction):
-                for b in lit.branches:
-                    yield from walk(b)
-            for agg in aggregates(lit):
-                yield from walk(agg.body)
+def atoms_read(unit: Unit) -> Iterator[Atom]:
+    """Every atom a clause reads: the atoms of an aggregate in the head,
+    then each body atom, negated or not (`engine.program.body_atoms`)."""
     for agg in aggregates(unit.head):
-        yield from walk(agg.body)
-    yield from walk(unit.body or ())
+        yield from (a for a, _negated in body_atoms(agg.body))
+    yield from (a for a, _negated in body_atoms(unit.body or ()))
+
+
+def positive_atoms(flats: Iterable[list[BodyLiteral]]) -> list[Atom]:
+    """The distinct positive atoms of the conjunctions `flats`
+    (`flatten`), by identity, in the order they first stand."""
+    seen: dict[int, Atom] = {}
+    for f in flats:
+        for x in f:
+            if isinstance(x, AtomLiteral) and not x.negated:
+                seen.setdefault(id(x.atom), x.atom)
+    return list(seen.values())
 
 
 def flatten(body: Sequence[BodyLiteral]) -> Iterator[list[BodyLiteral]]:
@@ -244,20 +233,9 @@ def bare[T](node: T) -> T:
 # The program
 
 
-def own(span_file: str | None) -> bool:
-    """A part of the solver's own text, as opposed to the lib's."""
-    return span_file is None
-
-
-def owned(span: Span | None) -> bool:
-    """A part of the solver's own text; a part with no span is one an
-    operation wrote, in no text."""
-    return span is not None and own(span.file)
-
-
 def from_lib(span: Span | None) -> bool:
     """A part of the lib's text."""
-    return span is not None and not own(span.file)
+    return span is not None and not own(span)
 
 
 def spanned(span: Span | None) -> Span:
@@ -273,8 +251,11 @@ class View:
 
     solver: Solver
     index: Index
-    memo: dict[str, object] = field(default_factory=dict)
-    """What a check computes once for the checks after it."""
+    def held[T](self, compute: Callable[["View"], T]) -> T:
+        """`compute(self)`, computed once per view: what a check computes
+        once for the checks after it."""
+        got = _HELD.keyed(self, compute, lambda: compute(self))
+        return got  # type: ignore[return-value]
 
     @property
     def program(self):
@@ -288,7 +269,7 @@ class View:
     def own_units(self) -> list[Unit]:
         """The units of the solver's own text, in source order."""
         return sorted((u for u in self.program.units
-                       if u.span is not None and own(u.span.file)),
+                       if u.span is not None and own(u.span)),
                       key=lambda u: (u.span.first if u.span else 0,
                                      u.id.index))
 
@@ -301,19 +282,19 @@ class View:
 
     @cached_property
     def own_relations(self) -> list[RelationDecl]:
-        return [r for r in self.program.relations if own(r.span.file)]
+        return [r for r in self.program.relations if own(r.span)]
 
     @cached_property
     def own_types(self) -> list[TypeDecl]:
-        return [t for t in self.program.types if own(t.span.file)]
+        return [t for t in self.program.types if own(t.span)]
 
     @cached_property
     def own_components(self) -> list[Component]:
-        return [c for c in self.program.components if owned(c.span)]
+        return [c for c in self.program.components if own(c.span)]
 
     @cached_property
     def own_instances(self) -> list[Instance]:
-        return [i for i in self.program.instances if owned(i.span)]
+        return [i for i in self.program.instances if own(i.span)]
 
     @cached_property
     def lib_components(self) -> dict[str, Component]:
@@ -333,12 +314,25 @@ class View:
         d = self.decls.get(r.declaration)
         return d if isinstance(d, RelationDecl) else None
 
+    def column_types(self, unit: Unit, atom: Atom) -> list[str] | None:
+        """The declared type of each column of an atom of `unit`, a
+        component's type parameter read as the type its instance gives it;
+        None where the atom names no relation of its arity."""
+        r = self.index.resolve(atom.relation, unit.scope)
+        if not isinstance(r, Resolved):
+            return None
+        d = self.decls.get(r.declaration)
+        if not isinstance(d, RelationDecl) or len(d.columns) != len(atom.args):
+            return None
+        subst = dict(r.type_arguments)
+        return [subst.get(c.type, c.type) for c in d.columns]
+
     def head(self, unit: Unit) -> RelationDecl | None:
         return self.relation(unit, unit.head)
 
     def is_lib(self, decl: RelationDecl | None) -> bool:
         """A relation of the lib, or one the program does not declare."""
-        return decl is None or not own(decl.span.file)
+        return decl is None or not own(decl.span)
 
     def defs(self, decl: RelationDecl) -> list[Unit]:
         """The units whose head is `decl`, in unit order."""
@@ -383,17 +377,17 @@ class View:
             if head is not None:
                 heads.setdefault(head, []).append(u)
             for a in atoms_read(u):
-                if not a.atom.relation.instances:
-                    read_by.setdefault(a.atom.relation.name, set()).add(head)
+                if not a.relation.instances:
+                    read_by.setdefault(a.relation.name, set()).add(head)
         if ENUMERATOR not in heads:
             return frozenset()
         enums = self.enumerators
 
         def reads(names: set[str]) -> set[str]:
-            return {a.atom.relation.name for n in names
+            return {a.relation.name for n in names
                     for u in heads.get(n, [])
                     for a in atoms_read(u)
-                    if not a.atom.relation.instances}
+                    if not a.relation.instances}
 
         found = {ENUMERATOR} | (reads({ENUMERATOR}) & enums)
         group = set(heads) - found
@@ -418,9 +412,7 @@ class View:
         for u in self.own_units:
             if u.scope != TOP or u.head.relation.instances:
                 continue
-            one = (u.body is None and len(u.head.args) == 1
-                   and isinstance(u.head.args[0],
-                                  ConstructorTerm | RecordTerm))
+            one = tag_fact(u)
             name = u.head.relation.name
             shape[name] = shape.get(name, True) and one
         return {n for n, one in shape.items() if one} | {ENUMERATOR}
@@ -457,40 +449,16 @@ class View:
         return sorted(self.solver.annotations.markers, key=lambda m: m.line)
 
     @cached_property
-    def top_markers(self) -> list[CaseMarker]:
-        """The case markers outside every component: a marker inside a
-        component names no top-level section."""
-        spans = [(spanned(c.span).first, spanned(c.span).last)
-                 for c in self.own_components]
-        return [m for m in self.markers
-                if not any(a <= m.line <= b for a, b in spans)]
-
-    def marker_at(self, line: int) -> CaseMarker | None:
-        """The case marker whose section a top-level line stands in: the
-        last top-level one above it."""
-        found = None
-        for m in self.top_markers:
-            if m.line <= line:
-                found = m
-        return found
-
-    def section(self, unit: Unit) -> CaseMarker | None:
-        """The case marker whose section a unit stands in; None inside a
-        component and above the first marker."""
-        if unit.scope != TOP or unit.span is None:
-            return None
-        return self.marker_at(unit.span.first)
+    def marker_lines(self) -> frozenset[int]:
+        """The lines of the case markers."""
+        return frozenset(m.line for m in self.markers)
 
     @cached_property
-    def rigid_spans(self) -> list[tuple[int, int]]:
-        """The lines of each `RIGID` call of the solver's text."""
-        from engine.program import RigidCall
-        return [(m.span.first, m.span.last) for m in self.program.macros
-                if isinstance(m, RigidCall) and m.span is not None
-                and m.span.file is None]
-
-    def in_rigid(self, line: int) -> bool:
-        return any(a <= line <= b for a, b in self.rigid_spans)
+    def comment_lines(self) -> frozenset[int]:
+        """The lines of the solver's own comments that stand on a line of
+        their own."""
+        return frozenset(c.line for c in self.program.comments
+                         if c.own_line and own(c))
 
     @cached_property
     def written_relations(self) -> list[RelationDecl]:
@@ -498,12 +466,6 @@ class View:
         take the names only its expansion writes; its placed relations
         stay."""
         return [r for r in self.own_relations if r.chart_of is None]
-
-    # Types
-
-    @cached_property
-    def type_names(self) -> dict[str, TypeDecl]:
-        return {t.name: t for t in self.program.types}
 
 
 def type_refs(td: TypeDecl) -> list[str]:
@@ -521,19 +483,20 @@ def type_refs(td: TypeDecl) -> list[str]:
             return [target]
 
 
-def unqualified(name: str) -> str:
-    """A type name read through an instance, `o.Pt`, as the `Pt` the comp
-    declares."""
-    return name.rsplit(".", 1)[-1]
+def tag_fact(u: Unit) -> bool:
+    """The unit is a fact of one argument, a constructor or a record."""
+    return u.body is None and len(u.head.args) == 1 \
+        and isinstance(u.head.args[0], ConstructorTerm | RecordTerm)
 
 
-_VIEWS: WeakKeyDictionary[Runs, View] = WeakKeyDictionary()
+_HELD: ByIdentity[View, dict[Callable[[View], object], object]] = \
+    ByIdentity()
+_VIEWS: ByIdentity[Runs, View] = ByIdentity()
 
 
 def view(solver: Solver, runs: Runs) -> View:
     """The lint's view of the solver, made once per command's `Runs`."""
     v = _VIEWS.get(runs)
     if v is None or v.solver is not solver:
-        v = View(solver, runs.index)
-        _VIEWS[runs] = v
+        v = _VIEWS.put(runs, View(solver, runs.index))
     return v

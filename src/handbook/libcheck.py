@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from engine import ParseFailure
-from handbook import paths
+from engine import ParseFailure, checkout
+from engine.program import own
 from handbook.context import (FILE_DOC, INPUT_MARK_RE, ITEM_DOC, _doc_blocks,
                               _documented, lib_sources, parse)
 from handbook.items import Comp, Decl, Define, Functor, Item, TypeDecl
@@ -24,18 +24,18 @@ def input_marks(path: Path, text: str) -> list[str]:
     component derives it; facts under it are its default either way. A
     top-level `@input` has no rule."""
     program = SouffleEngine(functor_dir=None, cache_dir=None).parse(
-        text, paths.programs_dir())
+        text, checkout.programs())
     if isinstance(program, ParseFailure):
         return [f"{path.name}:{program.line}: {program.message}"]
     lines = text.splitlines()
     # A rule through an instance (`inst.rel(...) :- ...`) is not its scope's.
     derived = {(u.scope.components, u.head.relation.name)
                for u in program.units
-               if u.span is not None and u.span.file is None
+               if own(u.span)
                and u.body is not None and not u.head.relation.instances}
     out: list[str] = []
     for r in program.relations:
-        if r.span.file is not None:
+        if not own(r.span):
             continue
         scope = r.scope.components
         where = ".".join((*scope, r.name))

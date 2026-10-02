@@ -1,5 +1,5 @@
 # Deletion report
-- The parts of the audit's deletion section, one section per group the report prints.
+- The parts of the `deletions` report, one section per group the report prints.
 
 * comment: when editing this doc
     - A section's heading is the name `render_deletions` asks for.
@@ -29,7 +29,7 @@
 ## enumerator
 - {{count}}/{{judged}} deletions remove an enumerator over a bound variable:
     - The enumerator runs over a variable another atom of its clause binds.
-    - Its removal says nothing about the pairs.
+    - The enumerator stays.
     * comment:
         - It is the readable form of a per-member test.
 

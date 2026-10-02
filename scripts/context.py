@@ -9,7 +9,7 @@ from controlled_markdown import mctx
 from handbook.context import (
     context_text,
     contexts_text,
-    agent_names,
+    agent_paths,
     role_text,
     section_text,
     session_text,
@@ -63,8 +63,8 @@ if __name__ == "__main__":
             print("\n".join(findings))
             sys.exit(1)
         interfaces = write_interfaces()
-        path = write_agent()
-        agents = [path.with_name(f"{name}{path.suffix}") for name in agent_names()]
+        write_agent()
+        agents = [out for _name, out in agent_paths()]
         for out in (*interfaces, *agents, write_analyze_next(),
                     *write_codex()):
             print(out.relative_to(REPO_ROOT))

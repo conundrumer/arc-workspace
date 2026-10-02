@@ -4,12 +4,12 @@ reproduce every train pair, and what the test pairs say of the others."""
 import itertools
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum, auto
 
-from checker.domains import enumerable, param_domains, row_key
+from checker.domains import candidate_rows, enumerable, param_domains
 from checker.drop_one import stored_facts
 from checker.runs import Runs
 from checker.variants import (
@@ -20,14 +20,13 @@ from checker.variants import (
     TestVerdict,
     TimedOut,
     pairs_of,
-    parallel,
     profile,
-    test_reference,
     test_verdicts,
     with_program,
     workers,
 )
-from engine import Program, Row, RunFailure
+from engine import Grid, Program, Row, RunFailure
+from engine.quotes import quotes
 from solver.annotations import CaseMarker
 from solver.model import (
     Case,
@@ -36,15 +35,21 @@ from solver.model import (
     Solver,
     UnderMarker,
     Unmarked,
+    declaration_of,
     lists_case,
 )
-from solver.names import lists
+from solver.names import marker_lists
 from solver.names import name as case_label
 from solver.solve import (
+    Candidate,
     Determined,
     FixParam,
-    determine,
+    Grids,
+    TaskSection,
+    at_once,
+    matching,
     rigid_charts,
+    row_key,
     variation,
 )
 from solver.solve import candidates as pair_candidates
@@ -56,14 +61,14 @@ candidates one change from the stored facts."""
 TIME_LIMIT_SECONDS = 180.0
 
 
-class NotSwept(StrEnum):
+class NotSwept(Enum):
     """Why a parameter is not swept, where no run is the reason."""
 
-    DERIVED = "derived"
-    NO_FACTS = "0 facts"
-    NON_ENUMERABLE = "non-enumerable"
-    TIME_LIMIT = "time limit"
-    FAILS_TRAIN = "stored value fails train"
+    DERIVED = auto()
+    NO_FACTS = auto()
+    NON_ENUMERABLE = auto()
+    TIME_LIMIT = auto()
+    FAILS_TRAIN = auto()
 
 
 @dataclass(frozen=True)
@@ -152,8 +157,7 @@ class ValueSweep:
         return set(self.fitting) == set(self.stored)
 
     def settles(self) -> bool:
-        return (self.admits_stored_alone() and self.scope is None
-                and not self.timed and not self.extras.timed)
+        return _settles(self)
 
 
 @dataclass(frozen=True)
@@ -174,8 +178,14 @@ class SetSweep:
         return set(self.fitting) == {frozenset(self.stored)}
 
     def settles(self) -> bool:
-        return (self.admits_stored_alone() and self.scope is None
-                and not self.timed and not self.extras.timed)
+        return _settles(self)
+
+
+def _settles(sweep: ValueSweep | SetSweep) -> bool:
+    """The sweep settles the parameter: the pairs admit the stored value
+    alone, every candidate ran, and no run reached a limit."""
+    return (sweep.admits_stored_alone() and sweep.scope is None
+            and not sweep.timed and not sweep.extras.timed)
 
 
 @dataclass(frozen=True)
@@ -192,7 +202,7 @@ class CaseSets:
 @dataclass(frozen=True)
 class NoCaseMarker:
     """A marker in `Params` that lists no case, with the parameters under
-    it (solver-file.md:104-107)."""
+    it (solver-file.md, under "Cases")."""
 
     marker: CaseMarker
     parameters: tuple[str, ...]
@@ -225,11 +235,36 @@ class _Clock:
         return self.elapsed() >= self.seconds
 
 
-def _passing(entry: Entry, accepted: Sequence[frozenset[object]]
+def _passing(entry: Entry, cands: Sequence[tuple[Candidate, frozenset[Grid]]]
              ) -> frozenset[Case]:
-    """The branchless cases whose grids are a candidate of the pair."""
+    """The branchless cases whose grids are a candidate of the pair
+    (`solver.solve.matching`)."""
     return frozenset(c for c, g in entry
-                     if not c.branches and frozenset(g) in accepted)
+                     if not c.branches and matching(cands, Grids(g)))
+
+
+def _passing_every(got: Profile,
+                   cands: Sequence[Sequence[tuple[Candidate, frozenset[Grid]]]]
+                   ) -> frozenset[Case]:
+    """The branchless cases whose grids are a candidate of every pair of
+    the profile `got` (`_passing`)."""
+    per = [_passing(e, a) for e, a in zip(got, cands, strict=True)]
+    return frozenset.intersection(*per) if per else frozenset()
+
+
+def _split[V](values: Sequence[V], results: Sequence[object],
+              reference: Profile
+              ) -> tuple[list[V], list[tuple[V, TimedOut]]]:
+    """The values whose run gives the reference profile, and those whose
+    run reached a limit, each in the order of `values`."""
+    fitting: list[V] = []
+    timed: list[tuple[V, TimedOut]] = []
+    for v, r in zip(values, results):
+        if isinstance(r, TimedOut):
+            timed.append((v, r))
+        elif isinstance(r, tuple) and r == reference:
+            fitting.append(v)
+    return fitting, timed
 
 
 def _coordinate(stored: list[Row], domains: list[list[object]], limit: int
@@ -278,7 +313,7 @@ def _marked(solver: Solver, marker: CaseMarker, solver_cases: Sequence[Case]
     """The solver's cases a marker marks: those whose base a part of it
     lists (`solver.names.lists`)."""
     return frozenset(c for c in solver_cases
-                     if any(lists(solver, p, c.base) for p in marker.parts))
+                     if marker_lists(solver, marker, c.base))
 
 
 class _Sweeper:
@@ -288,16 +323,8 @@ class _Sweeper:
         self.engine = runs.engine
         self.limits = runs.limits
         self.clock = clock
-        self.train = pairs_of(solver, ("train",))
-        self.accepted = [[a for _, a in pair_candidates(ex)]
-                         for _, ex in self.train]
-        self._test_ref: Profile | Fails | TimedOut | None = None
-
-    def test_ref(self) -> Profile | Fails | TimedOut:
-        if self._test_ref is None:
-            self._test_ref = test_reference(self.engine, self.solver,
-                                            self.limits)
-        return self._test_ref
+        self.train = pairs_of(solver, (TaskSection.TRAIN,))
+        self.accepted = [pair_candidates(ex) for _, ex in self.train]
 
     def program(self, param: str, rows: Sequence[Row]) -> Program:
         return variation(self.engine, self.solver,
@@ -307,12 +334,12 @@ class _Sweeper:
             keep_all: bool) -> Profile | Fails | TimedOut:
         return profile(self.engine,
                        with_program(self.solver, self.program(param, rows)),
-                       self.train, self.limits,
+                       self.runs.cases, self.train, self.limits,
                        None if keep_all else reference, held=False)
 
     def chunks[V](self, values: list[V], fn: Callable[[V], object],
                   first: bool) -> tuple[list[object], int]:
-        """`fn` over `values` in order, as many at once as `parallel` runs,
+        """`fn` over `values` in order, as many at once as `workers()`,
         each value started only while the clock has time left, save the
         first `workers()` values where `first`; a value starts as soon as
         one before it ends, so no run waits on a slower one. The values
@@ -342,6 +369,22 @@ class _Sweeper:
                 f.result()
         return results[:started[0]], started[0]
 
+    def without_gaps[V](self, p: Parameter, fitting: list[V],
+                        beyond: list[V], program_of: Callable[[V], Program]
+                        ) -> tuple[list[V], "Gaps[V] | None"] | SkipReason:
+        """`fitting` less the values `gaps` finds among `beyond`, with
+        those gaps; where a run reached a limit or failed, why the
+        parameter is skipped."""
+        g = self.gaps(_marker_of(p), beyond, program_of)
+        if isinstance(g, TimedOut):
+            return g
+        if isinstance(g, Gaps):
+            gone = {v for v, _ in g.undefined}
+            return [v for v in fitting if v not in gone], g
+        if g is not None:
+            return RunFailed(g)
+        return fitting, None
+
     def gaps[V](self, marker: CaseMarker | None, extras: list[V],
                 program_of: Callable[[V], Program]
                 ) -> Gaps[V] | RunFailure | TimedOut | None:
@@ -356,20 +399,24 @@ class _Sweeper:
             return solver_cases
         marked = _marked(self.solver, marker, solver_cases)
 
-        def reading(program: Program) -> list[frozenset[Case]] | Fails \
-                | TimedOut:
-            got = profile(self.engine, with_program(self.solver, program),
-                          self.train, self.limits, held=False)
+        def marked_of(got: Profile | Fails | TimedOut
+                      ) -> list[frozenset[Case]] | Fails | TimedOut:
             if not isinstance(got, tuple):
                 return got
             return [frozenset(c for c, _ in e if c in marked) for e in got]
 
-        base = reading(self.solver.program)
+        def reading(program: Program) -> list[frozenset[Case]] | Fails \
+                | TimedOut:
+            return marked_of(profile(
+                self.engine, with_program(self.solver, program),
+                self.runs.cases, self.train, self.limits, held=False))
+
+        base = marked_of(self.runs.train_profile)
         if isinstance(base, TimedOut):
             return base
         if isinstance(base, Fails) or not frozenset.intersection(*base):
             return None
-        runs = parallel(lambda v: reading(program_of(v)), extras)
+        runs = at_once(lambda v: reading(program_of(v)), extras)
         undefined: list[tuple[V, bool]] = []
         for v, r in zip(extras, runs, strict=True):
             if isinstance(r, TimedOut):
@@ -387,37 +434,40 @@ def _marker_of(p: Parameter) -> CaseMarker | None:
     return p.section.marker if isinstance(p.section, UnderMarker) else None
 
 
+@quotes("procedure.md", "Determine",
+        "Run the sweep (`uv run python scripts/run_dl.py sweep <task_id>`), "
+        "and store each value it reports for a parameter beyond the stored "
+        "values")
 def survey_sweep(solver: Solver, runs: Runs,
                  max_candidates: int = MAX_CANDIDATES,
                  time_limit: float = TIME_LIMIT_SECONDS) -> SweepReport:
     """Each enumerable parameter swept one at a time, the others at their
     stored values: a value fits where it reproduces the stored program's
-    profile on every train pair (principles.md:54, a stored assignment
-    determined by the evidence; the audit's sweep section,
-    procedure.md:138). Fitting values beyond the stored ones run on the
-    test pairs. A parameter whose facts fit only together sweeps as one
-    set. Above the cap, the candidates one change from the stored facts.
+    profile on every train pair (principles.md, under "Models and tasks", a
+    stored assignment determined by the evidence). Fitting values beyond the
+    stored ones run on the test pairs. A parameter whose facts fit only
+    together sweeps as one set. Above the cap, the candidates one change from the stored facts.
     The parameters run cheapest first, and a spent time limit cuts the
     parameter in flight and leaves the rest unswept. A value the pairs
     reproduce only because the cases that read the parameter give nothing
     leaves the fitting values, and the result states it. A parameter
     every case reads also reports each case's admitted values, where they
-    differ."""
+    differ. A solver with no task file raises `ValueError`; the command
+    refuses it first."""
     clock = _Clock(time_limit)
-    got = determine(runs.engine, solver, runs.limits)
+    got = runs.determined
     determined = frozenset(got.reproduced) if isinstance(got, Determined) \
         else frozenset()
-    task = solver.task
+    task = solver.given_task
     lib = solver.lib
     entries: list[tuple[int, int, SweepEntry]] = []
     prepared: list[tuple[int, Parameter, str,
                          tuple[str, ...], list[Row], list[Row],
                          Near | None]] = []
     no_case: dict[CaseMarker, list[tuple[int, str]]] = {}
-    line = {r.id: r.span.first for r in solver.program.relations}
     declared: list[Parameter | DerivedRelation] = sorted(
         (*solver.params.parameters, *solver.params.derived),
-        key=lambda x: line.get(x.declaration, 0))
+        key=lambda x: declaration_of(solver.program, x).span.first)
     # A relation a RIGID call binds is swept through the facts of the
     # chart that holds them, under its own name; the chart, a relation
     # the engine names, is not swept on its own.
@@ -432,7 +482,8 @@ def survey_sweep(solver: Solver, runs: Runs,
             entries.append((rank, 0, Skipped(p.name, types,
                                              NotSwept.DERIVED)))
             continue
-        holder = by_name.get(charts.get(p.name, ""), p)
+        chart = charts.get(p.name)
+        holder = p if chart is None else by_name.get(chart, p)
         types = tuple(c.type for c in holder.columns)
         m = _marker_of(p)
         if m is not None and not lists_case(solver, m):
@@ -442,13 +493,12 @@ def survey_sweep(solver: Solver, runs: Runs,
             entries.append((rank, 0, Skipped(p.name, types,
                                              NotSwept.NO_FACTS)))
             continue
-        if not enumerable(types, lib) or task is None:
+        if not enumerable(types, lib):
             entries.append((rank, 0, Skipped(p.name, types,
                                              NotSwept.NON_ENUMERABLE)))
             continue
         domains = param_domains(types, stored, task, lib)
-        cands = sorted(set(itertools.product(*domains)) | set(stored),
-                       key=row_key)
+        cands = candidate_rows(domains, stored)
         scope: Near | None = None
         if len(cands) > max_candidates:
             whole = len(cands)
@@ -475,7 +525,7 @@ def survey_sweep(solver: Solver, runs: Runs,
                                              NotSwept.TIME_LIMIT)))
             continue
         if reference is None:
-            ref = profile(runs.engine, solver, sw.train, runs.limits)
+            ref = runs.train_profile
             ran = True
             if isinstance(ref, TimedOut):
                 entries.append((rank, 0, Skipped(name, types, ref)))
@@ -485,48 +535,29 @@ def survey_sweep(solver: Solver, runs: Runs,
                                                  NotSwept.FAILS_TRAIN)))
                 continue
             reference = ref
-            passing = [_passing(e, a) for e, a in zip(ref, sw.accepted,
-                                                      strict=True)]
-            base_cases = frozenset.intersection(*passing) if passing \
-                else frozenset()
+            base_cases = _passing_every(ref, sw.accepted)
         refp: Profile = reference
         cases_wanted = name in shared and len(base_cases) > 1 \
             and len(stored) == 1
         results, n_run = sw.chunks(
             cands, lambda v: sw.run(fix, (v,), refp, cases_wanted), True)
         ran = True
-        fitting: list[Row] = []
-        timed: list[tuple[Row, TimedOut]] = []
+        fitting, timed = _split(cands, results, refp)
         admits: dict[Row, frozenset[Case]] = {}
-        for v, r in zip(cands, results):
-            if isinstance(r, TimedOut):
-                timed.append((v, r))
-                continue
-            if isinstance(r, tuple) and r == refp:
-                fitting.append(v)
-            if cases_wanted:
-                if isinstance(r, tuple):
-                    per = [_passing(e, a) for e, a in zip(r, sw.accepted,
-                                                          strict=True)]
-                    admits[v] = frozenset.intersection(*per) if per \
-                        else frozenset()
-                else:
-                    admits[v] = frozenset()
+        if cases_wanted:
+            for v, r in zip(cands, results):
+                if not isinstance(r, TimedOut):
+                    admits[v] = _passing_every(r, sw.accepted) \
+                        if isinstance(r, tuple) else frozenset()
         gaps: Gaps[Row] | None = None
         if n_run < len(cands) or set(stored) <= set(fitting):
             beyond = sorted(set(fitting) - set(stored), key=row_key)
-            g = sw.gaps(_marker_of(p), beyond,
-                        lambda v, fix=fix: sw.program(fix, (v,)))
-            if isinstance(g, TimedOut):
-                entries.append((rank, 0, Skipped(name, types, g)))
+            got = sw.without_gaps(p, fitting, beyond,
+                                  lambda v, fix=fix: sw.program(fix, (v,)))
+            if not isinstance(got, tuple):
+                entries.append((rank, 0, Skipped(name, types, got)))
                 continue
-            if isinstance(g, Gaps):
-                gaps = g
-                gone = {v for v, _ in g.undefined}
-                fitting = [v for v in fitting if v not in gone]
-            elif g is not None:
-                entries.append((rank, 0, Skipped(name, types, RunFailed(g))))
-                continue
+            fitting, gaps = got
         extras = sorted(set(fitting) - set(stored), key=row_key)
         if n_run < len(cands):
             entries.append((rank, 0, ValueSweep(
@@ -549,9 +580,9 @@ def survey_sweep(solver: Solver, runs: Runs,
                 entries.append((rank, 1, case_sets))
             continue
         verdicts = test_verdicts(
-            runs.engine, solver, runs.limits, extras,
+            runs.engine, solver, runs.cases, runs.limits, extras,
             lambda v, fix=fix: sw.program(fix, (v,)),
-            sw.test_ref()) if extras else {}
+            runs.test_profile) if extras else {}
         entries.append((rank, 0, ValueSweep(
             name, types, tuple(fitting), tuple(stored),
             Extras(tuple((e, verdicts[e]) for e in extras)), scope, gaps,
@@ -592,13 +623,7 @@ def _set_sweep(sw: _Sweeper, p: Parameter, fix: str,
 
     results, n_run = sw.chunks(
         subsets, lambda v: sw.run(fix, ordered(v), reference, False), False)
-    fitting: list[SetValue] = []
-    timed: list[tuple[SetValue, TimedOut]] = []
-    for v, r in zip(subsets, results):
-        if isinstance(r, TimedOut):
-            timed.append((v, r))
-        elif isinstance(r, tuple) and r == reference:
-            fitting.append(v)
+    fitting, timed = _split(subsets, results, reference)
 
     def set_key(v: SetValue) -> list[tuple[object, ...]]:
         return [row_key(r) for r in ordered(v)]
@@ -606,16 +631,11 @@ def _set_sweep(sw: _Sweeper, p: Parameter, fix: str,
     gaps: Gaps[SetValue] | None = None
     if n_run < len(subsets) or stored_set in fitting:
         beyond = sorted(set(fitting) - {stored_set}, key=set_key)
-        g = sw.gaps(_marker_of(p), beyond,
-                    lambda v: sw.program(fix, ordered(v)))
-        if isinstance(g, TimedOut):
-            return Skipped(name, types, g)
-        if isinstance(g, Gaps):
-            gaps = g
-            gone = {v for v, _ in g.undefined}
-            fitting = [f for f in fitting if f not in gone]
-        elif g is not None:
-            return Skipped(name, types, RunFailed(g))
+        got = sw.without_gaps(p, fitting, beyond,
+                              lambda v: sw.program(fix, ordered(v)))
+        if not isinstance(got, tuple):
+            return Skipped(name, types, got)
+        fitting, gaps = got
     extras = sorted(set(fitting) - {stored_set}, key=set_key)
     if n_run < len(subsets):
         return SetSweep(name, types, tuple(fitting), tuple(stored),
@@ -623,9 +643,10 @@ def _set_sweep(sw: _Sweeper, p: Parameter, fix: str,
                         Cut(n_run, len(subsets)), gaps, tuple(timed))
     verdicts: dict[SetValue, TestVerdict] = {}
     if extras and stored_set in fitting:
-        verdicts = test_verdicts(sw.engine, sw.solver, sw.limits, extras,
+        verdicts = test_verdicts(sw.engine, sw.solver, sw.runs.cases,
+                                 sw.limits, extras,
                                  lambda v: sw.program(fix, ordered(v)),
-                                 sw.test_ref())
+                                 sw.runs.test_profile)
     elif extras:
         verdicts = dict.fromkeys(extras, OnTest.NOT_RUN)
     return SetSweep(name, types, tuple(fitting), tuple(stored),

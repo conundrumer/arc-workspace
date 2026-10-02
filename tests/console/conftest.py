@@ -103,8 +103,9 @@ def tmp_path(workdir, request):     # noqa: A002 — replaces pytest's own
 
 
 def handbook_stems():
-    """The docs the handbook's composition document includes."""
-    return sorted(p.stem for p in DOCS_DIR.glob("*.md") if p.name != "editing.md")
+    """The documents of the handbook's directory, each of which the stub
+    composition document includes."""
+    return sorted(p.stem for p in DOCS_DIR.glob("*.md"))
 
 
 def fake_queue(n, order, held=()):

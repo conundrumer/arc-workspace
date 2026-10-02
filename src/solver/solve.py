@@ -2,17 +2,21 @@
 the variations of a solver's program, the proposer probe and the Determine
 run, and the helpers of those runs that the checks read as well."""
 
+import hashlib
+import json
 import threading
-import weakref
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, is_dataclass, replace
 from enum import Enum
 from itertools import combinations
-from typing import Literal
+from typing import TYPE_CHECKING, Annotated
 
-from arc.task import Alt, Example, Task
+from pathlib import Path
+
+from arc.task import Alt, Example, Task, pair_name
 from engine import (
+    checkout,
     AdtValue,
     Engine,
     Grid,
@@ -27,62 +31,104 @@ from engine import (
     RelationName,
     RelationValue,
     RemovalTarget,
-    Resolved,
     Row,
     Rows,
     RunFailure,
     RunResult,
-    Scope,
     Tuples,
     UnitId,
     Value,
 )
-from engine.engine import CompileError
-from engine.program import Atom, RelationDecl, RigidCall, Unit
+from engine.engine import (
+    AnchorOffStamp,
+    CellOffForm,
+    Classed,
+    CompileError,
+    RemoveUnit,
+    SizeOffLayout,
+    resolved,
+)
+from engine.memo import ByIdentity, Once, write_whole
+from engine.program import (
+    POSE_COLUMN,
+    Atom,
+    DefinedName,
+    NumberTerm,
+    RecordTerm,
+    RelationDecl,
+    RigidCall,
+    Term,
+    Unit,
+)
+from solver.annotations import VerdictWord
+from engine.program import as_grid, body_atoms, grid_lists, grid_size, term_value
+from engine.quotes import quotes
 from solver.model import (
+    branch_witnesses,
+    is_concept_branch,
+    constructors_taken,
+    path_constructors,
     TOP,
     Base,
     Branch,
     Case,
+    Choice,
+    ChoicePoint,
+    ConstructorBranch,
     DeriveBranch,
+    assignable,
+    constructor_named,
+    is_concept_case,
+    other_branches,
     Solver,
     StoreBranch,
+    Parameter,
     StoredGrid,
-    atoms_of,
     enumerates,
+    every_base,
+    case_types,
     cases as cases_of,
+    dependence,
     has_determine,
     instance_of,
     own,
-    parse_with_lib,
     proposer_names,
-    proposers_path,
+    proposers_program,
     column_types,
 )
 from solver.problems import (
     InWitnessFile,
     Named,
     ProblemKind,
+    AnchorWithoutStamp,
     Fault,
+    GridCellOffForm,
+    GridOffLayout,
+    Storage,
     Undecided,
     UndecidedForm,
+    WitnessFileRole,
 )
 from solver.vocabulary import (
     CHOICE,
     DETERMINE,
-    ENUMERATOR,
+    DETERMINE_SCOPE,
+    IMPL,
     EX_IN,
     EX_OUT,
     IDENT,
     INPUT,
     OUTPUT,
     PARAMS,
+    PARAMS_SCOPE,
     PROPOSE,
     TIEBREAK_RESOLUTION,
 )
 from solver.witness import (
+    AnchoredGrid,
     AssignArg,
     AssignRows,
+    AssignValue,
     Cell,
     ConflictingCells,
     Entry,
@@ -95,10 +141,14 @@ from solver.witness import (
     Resolutions,
     Undefined,
     UndefinedReason,
+    same_output,
 )
 
-IMPL = RelationName((), ENUMERATOR)
-"""`impl_choice`, which holds the cases a run gives."""
+if TYPE_CHECKING:
+    from typing_extensions import TypeIs
+
+    from solver.names import Denoted
+
 
 
 @dataclass(frozen=True)
@@ -109,18 +159,37 @@ class Assignment:
     values: tuple[tuple[str, RelationValue], ...]
 
 
+@quotes("solver-file.md", "Cases",
+        "A case's model reads its output grids from `out` at that case, one "
+        "grid per tiebreak resolution")
+@quotes("solver-file.md", "Alt outputs",
+        "The solver enumerates a tiebreak's resolutions through a trailing "
+        "`out` column of type `TiebreakResolution`.")
 @dataclass(frozen=True)
 class Grids:
-    """The grids a case gives, one per tiebreak resolution
-    (solver-file.md:98), and the resolution value of each where `out` has
-    a resolution column, the grid's identity (solver-file.md:168)."""
+    """The grids a case gives, one per tiebreak resolution, and the
+    resolution value of each where `out` has a resolution column, the grid's
+    identity."""
 
     grids: tuple[Grid, ...]
     resolutions: tuple[Value, ...] = field(default=(), compare=False)
 
 
-type Outcome = Grids | Undefined | RunFailure
-"""principles.md:49 (defined), solver-file.md:98."""
+type Outcome = Annotated[Grids | Undefined | RunFailure,
+    quotes("principles.md", "Models and tasks",
+           "A model is defined at an assignment and input when its output is "
+           "nonempty and contains only total grids."),
+    quotes("solver-file.md", "Cases",
+           "and is undefined on an input where a grid's facts give two frame "
+           "sizes.")]
+"""What a case gives on an input: its grids, undefined, or the failure of
+its run."""
+
+
+def is_result(outcome: Outcome | Fault) -> "TypeIs[Grids | Undefined]":
+    """Whether a run gave a result: grids, or undefined; not a run's
+    failure, nor the fault that stopped the run."""
+    return isinstance(outcome, Grids | Undefined)
 
 
 def group_grid(outcome: Grids | Undefined) -> GroupGrid:
@@ -141,21 +210,21 @@ def outcomes(engine: Engine, solver: Solver, cases: Sequence[Case],
     undefined, or the failure of a run it needs, by case in the order
     given.
 
-    Cases that take the same `@derive` and `@store` branches share one
-    run, with `impl_choice` holding their bases, and each case reads its
-    grids from `out` at its case (solver-file.md:98); where `out` has no
-    case column, each base runs alone. In that run each parameter `assign`
-    names holds its value there, save one a `@derive` branch of the cases
-    derives: for that one the value reassigns its stored value, which the
-    cases do not read (history 826). Each `@derive` branch's parameter
-    holds the values its proposer gives with `input` as its example
-    (solver-file.md:120); where the proposer gives none, the cases are
-    undefined on `input`, and no run holds the parameter empty
-    (principles.md "Two parameterizations"). Each `@store` branch's
-    relation holds the value `assign` gives it, else the value it stores
-    at the cases' bases (`stored_value`, solver-file.md:137; history 1131).
-    A case with no cells in `out`, or a grid that is not total, is
-    undefined (principles.md:49).
+    Cases that take the same `@derive` and `@store` branches share one run,
+    with `impl_choice` holding their bases, and each case reads its grids from
+    `out` at its case (solver-file.md, under "Cases"); where `out` has no case
+    column, each base runs alone. In that run each parameter `assign` names
+    holds its value there, save one a `@derive` branch of the cases derives:
+    for that one the value reassigns its stored value, which the cases do not
+    read (history 826). Each `@derive` branch's parameter holds the values its
+    proposer gives with `input` as its example (solver-file.md, under
+    "Params"); where the proposer gives none, the cases are undefined on
+    `input`, and no run holds the parameter empty (principles.md, under
+    "Stored or derived"). Each `@store` branch's relation holds the value
+    `assign` gives it, else the value it stores at the cases' bases
+    (`stored_value`, solver-file.md, under "Program"; history 1131). A case
+    with no cells in `out`, or a grid that is not total, is undefined
+    (principles.md, under "Models and tasks").
 
     The solver's `program` is the one that runs, so a variation runs
     through here on the solver with its program replaced. `limits` are
@@ -172,6 +241,16 @@ class _Stored:
     def __init__(self) -> None:
         self.values: dict[tuple[tuple[Base, ...], RelationName],
                           StoredValue | RunFailure] = {}
+        self.once: Once[tuple[tuple[Base, ...], RelationName],
+                        StoredValue | RunFailure] = Once(self.values)
+
+    def get(self, key: tuple[tuple[Base, ...], RelationName],
+            compute: Callable[[], "StoredValue | RunFailure"]
+            ) -> "StoredValue | RunFailure":
+        """The value under `key`, computed once however many threads ask
+        for it."""
+        return self.once.get(
+            key, lambda: self.values.setdefault(key, compute()))
 
 
 def _outcomes(engine: Engine, solver: Solver, cases: Sequence[Case],
@@ -208,12 +287,24 @@ class GroupRun:
 
 
 @dataclass(frozen=True)
+class RunColumns:
+    """How a case reads its grids from a group's run: `out`'s case and
+    resolution columns (`out_columns`), and, where the run classes the
+    cases (`classed`), the relation of the representatives' rows and the
+    relation of the classes."""
+
+    case: int | None
+    resolution: int | None
+    classed: tuple[RelationName, RelationName] | None = None
+
+
+@dataclass(frozen=True)
 class GroupRuns:
     """The runs `outcomes` makes on one input, in its order, and `out`'s
     case and resolution columns (`out_columns`), by which each case reads
     its grids from its run."""
 
-    columns: tuple[int | None, int | None]
+    columns: RunColumns
     runs: tuple[GroupRun, ...]
 
 
@@ -235,76 +326,176 @@ def read_runs(runs: GroupRuns, cases: Sequence[Case]) -> dict[Case, Outcome]:
     return {c: got[c] for c in dict.fromkeys(cases)}
 
 
-def read_run(columns: tuple[int | None, int | None], run: GroupRun
-             ) -> dict[Case, Outcome]:
+def read_run(columns: RunColumns, run: GroupRun) -> dict[Case, Outcome]:
     """The outcome of each case of one run (`read_runs`)."""
     result = run.result
     if not isinstance(result, Tuples):
         return dict.fromkeys(run.cases, result)
-    case_col, res_col = columns
-    read = _read_of(result, case_col)
-    return {c: read.grids(res_col, c.base) for c in run.cases}
+    read = _read_of(result, columns)
+    return {c: read.grids(columns.resolution, c.base) for c in run.cases}
 
 
-def read_case(columns: tuple[int | None, int | None], run: GroupRun,
-              case: Case) -> Outcome:
+def read_case(columns: RunColumns, run: GroupRun, case: Case) -> Outcome:
     """The outcome of one case of a run (`read_run`)."""
     result = run.result
     if not isinstance(result, Tuples):
         return result
-    case_col, res_col = columns
-    return _read_of(result, case_col).grids(res_col, case.base)
+    return _read_of(result, columns).grids(columns.resolution, case.base)
 
 
 def _runs_on(engine: Engine, solver: Solver, cases: Sequence[Case],
              inputs: Sequence[tuple[Grid, Assignment]], limits: Limits,
              stored: _Stored) -> list[GroupRuns]:
     """The runs of `outcomes_on` on each input. The probes of the inputs
-    run at once, then each group's program is built in order, then the
-    groups' runs are made at once; each result is read by its place in
-    that order."""
-    program = solver.program
-    columns = out_columns(program)
-    case_col = columns[0]
-    shared = solver.choice is None or case_col is not None
-    groups: dict[tuple[tuple[Branch, ...], Base | None], list[Case]] = {}
-    for case in dict.fromkeys(cases):
-        groups.setdefault((case.branches, None if shared else case.base),
-                          []).append(case)
-    derives = any(isinstance(b, DeriveBranch) for branches, _ in groups
-                  for b in branches)
+    run at once, then each group's program is built and run on each
+    input, all at once, since building a `@store` branch's program runs
+    the program too; each result is read by its place in the order of
+    the inputs and the groups."""
+    case_col, res_col = out_columns(solver.program)
+    groups = case_groups(solver, cases)
+    unread = _unread_units(engine, solver, groups)
+    columns = RunColumns(case_col, res_col)
+    outputs = [OUTPUT]
+    if case_col is not None:
+        cls = classed(engine, solver.program)
+        solver = replace(solver, program=cls.program)
+        columns = RunColumns(case_col, res_col, (cls.rows, cls.classes))
+        outputs = [cls.rows, cls.classes]
+    derives = any(isinstance(b, DeriveBranch) for g in groups
+                  for b in g[0].branches)
     proposals: list[Proposals | RunFailure | None] = (
-        at_once(lambda i: probe(engine, _single(i[0]), limits), inputs)
+        at_once(lambda i: probe(engine, input_task(i[0]), limits), inputs)
         if derives else [None] * len(inputs))
-    built: list[tuple[int, list[Case], Grid, Program | Undefined | RunFailure]] = []
-    for k, (input, assign) in enumerate(inputs):
-        for (branches, _base), members in groups.items():
-            bases = tuple(dict.fromkeys(c.base for c in members
-                                        if c.base is not None))
-            built.append((k, members, input, _program(
-                engine, solver, bases, branches, input, assign, proposals[k],
-                limits, stored)))
+    tasks = [(k, members, drop) for k in range(len(inputs))
+             for members, drop in zip(groups, unread, strict=True)]
 
-    def ran(b: tuple[int, list[Case], Grid, Program | Undefined | RunFailure]
+    def ran(task: tuple[int, tuple[Case, ...], frozenset[UnitId]]
             ) -> RunResult | Undefined:
-        _k, _members, input, run = b
+        k, members, drop = task
+        input, assign = inputs[k]
+        bases = tuple(dict.fromkeys(c.base for c in members
+                                    if c.base is not None))
+        run = _program(engine, solver, bases, members[0].branches, input,
+                       assign, proposals[k], limits, stored, drop)
         return run if not isinstance(run, Program) else engine.run(
-            run, {INPUT: GridInput(input)}, [OUTPUT], limits)
+            run, {INPUT: GridInput(input)}, outputs, limits)
 
     got: list[list[GroupRun]] = [[] for _ in inputs]
-    for (k, members, _input, _run), result in zip(built, at_once(ran, built),
-                                                    strict=True):
+    for (k, members, _drop), result in zip(tasks, at_once(ran, tasks),
+                                           strict=True):
         got[k].append(GroupRun(tuple(members), result))
     return [GroupRuns(columns, tuple(g)) for g in got]
 
 
+def _unread_units(engine: Engine, solver: Solver,
+                  groups: Sequence[tuple[Case, ...]]
+                  ) -> list[frozenset[UnitId]]:
+    """For each group, the units of the solver's own text that no case of
+    the group depends on (`dependence`): its run leaves them out, so that
+    the run's text, which keys its stored result, holds the units its
+    cases depend on, and an edit to a unit reruns only the groups whose
+    cases depend on it."""
+    own_units = frozenset(u.id for u in solver.program.units if own(u.span))
+    read = _read_units(_enumerated(engine, solver),
+                       [c.base for g in groups for c in g])
+    return [own_units.difference(*(read[c.base] for c in g)) for g in groups]
+
+
+def _enumerated(engine: Engine, solver: Solver) -> Solver:
+    """The solver as its runs read it: with `impl_choice` holding every
+    value of `Choice`, so that the clauses that enumerate its cases, which
+    no group's run holds (`restricted`), are no unit a case depends on,
+    and the solver and the solver with every case restored leave the
+    same units out of the same group's run."""
+    choice = solver.choice
+    every = None if choice is None else every_base(choice)
+    if not every or not enumerates(solver.program):
+        return solver
+    return replace(solver, program=restricted(engine, solver, tuple(every)))
+
+
+_READ_UNITS: ByIdentity[Program, tuple[tuple[object, ...],
+                                      dict[Base | None, frozenset[UnitId]]]] \
+    = ByIdentity()
+"""`_read_units`'s units by base, for each program while it lives, with
+the parts of the solver the result also reads."""
+
+
+def _read_units(solver: Solver, bases: Sequence[Base | None]
+                ) -> dict[Base | None, frozenset[UnitId]]:
+    """The units each of `bases` depends on (`dependence`), computed once
+    per base for the solver's program."""
+    program = solver.program
+    parts = (solver.choice, solver.annotations.markers, solver.params)
+    memo = _READ_UNITS.guarded(program, parts, dict)
+    missing = [b for b in dict.fromkeys(bases) if b not in memo]
+    if missing:
+        found: dict[Base | None, set[UnitId]] = {b: set() for b in missing}
+        for uid, readers in dependence(solver, missing).units.items():
+            for b in readers:
+                if b in found:
+                    found[b].add(uid)
+        for b, units in found.items():
+            memo.setdefault(b, frozenset(units))
+    return {b: memo[b] for b in bases}
+
+
+def _without(engine: Engine, program: Program, drop: frozenset[UnitId]
+             ) -> Program:
+    """`program` without the units of `drop` it holds, kept while
+    `program` lives: a group's program runs on every input."""
+    drop = frozenset(u.id for u in program.units if u.id in drop)
+    if not drop:
+        return program
+
+    def make() -> Program:
+        got = program
+        for uid in sorted(drop, key=lambda u: u.index):
+            got = engine.remove(got, RemoveUnit(uid))
+        return got
+
+    return _WITHOUT.keyed(program, drop, make)
+
+
+_WITHOUT: ByIdentity[Program, dict[frozenset[UnitId], Program]] = ByIdentity()
+
+
+def case_groups(solver: Solver, cases: Sequence[Case]
+                ) -> list[tuple[Case, ...]]:
+    """The groups `outcomes` runs `cases` in, each in one run, in the order
+    of their first case: the cases that take the same `@derive` and
+    `@store` branches, and each base alone where `out` has no case
+    column."""
+    shared = solver.choice is None \
+        or out_columns(solver.program)[0] is not None
+    groups: dict[tuple[tuple[Branch, ...], Base | None], list[Case]] = {}
+    for case in dict.fromkeys(cases):
+        groups.setdefault((case.branches, None if shared else case.base),
+                          []).append(case)
+    return [tuple(g) for g in groups.values()]
+
+
+def classed(engine: Engine, program: Program) -> Classed:
+    """`program` with the rules that class a run's cases by equal `out`
+    rows (`Engine.classify` of `out`'s case column), so that a run outputs
+    `out` at each class's representative alone and the
+    case-to-representative table, and the cases are compared in the run."""
+    case_col = out_columns(program)[0]
+    assert case_col is not None
+    return engine.classify(program, OUTPUT, case_col)
+
+
 class _Read:
     """What one run's `out` gives: its rows by base, the margins of each
-    position value (`_grid_of`), and the grids already read, by base."""
+    position value (`_grid_of`), and the grids already read, by base.
+    `classes` gives each case's representative, whose rows `rows` holds,
+    for a run of `classed`."""
 
-    def __init__(self, rows: Rows, case_col: int | None) -> None:
+    def __init__(self, rows: Rows, case_col: int | None,
+                 classes: Mapping[Value, Value] | None = None) -> None:
         self.rows = rows
         self.case_col = case_col
+        self.classes = classes
         self.by_base = _rows_by_base(rows, case_col)
         self.margins: dict[int, _Place | None] = {}
         self.read: dict[tuple[int | None, Value | None], Grids | Undefined] = {}
@@ -313,6 +504,11 @@ class _Read:
     def grids(self, res_col: int | None, base: Base | None
               ) -> Grids | Undefined:
         mine = base if self.case_col is not None else None
+        if self.classes is not None and mine is not None:
+            rep = self.classes.get(mine)
+            if rep is None:
+                return Undefined(NoOutput())
+            mine = rep
         key = (res_col, mine)
         with self.lock:
             got = self.read.get(key)
@@ -323,24 +519,22 @@ class _Read:
             return got
 
 
-_READS: dict[int, tuple[weakref.ref[Tuples], int | None, _Read]] = {}
-_READS_LOCK = threading.Lock()
+_READS: ByIdentity[Tuples, dict[RunColumns, _Read]] = ByIdentity()
 
 
-def _read_of(result: Tuples, case_col: int | None) -> _Read:
+def _read_of(result: Tuples, columns: RunColumns) -> _Read:
     """The reading of `result`'s `out`, made once per result: the engine
     gives the same result for a run made again."""
-    key = id(result)
-    with _READS_LOCK:
-        held = _READS.get(key)
-        if held is not None and held[0]() is result and held[1] == case_col:
-            return held[2]
-    read = _Read(result.relations.get(OUTPUT, ()), case_col)
-    with _READS_LOCK:
-        _READS[key] = (weakref.ref(result,
-                                   lambda _r, key=key: _READS.pop(key, None)),
-                       case_col, read)
-    return read
+
+    def make() -> _Read:
+        rels = result.relations
+        if columns.classed is not None:
+            rows, classes = columns.classed
+            return _Read(rels[rows], columns.case,
+                         {r[0]: r[1] for r in rels[classes]})
+        return _Read(rels[OUTPUT], columns.case)
+
+    return _READS.keyed(result, columns, make)
 
 
 RUNS_AT_ONCE = 16
@@ -367,7 +561,7 @@ def outcome(engine: Engine, solver: Solver, case: Case, input: Grid,
 
 def relations_at(engine: Engine, solver: Solver, case: Case,
                  input: Grid | None, relations: Sequence[RelationName],
-                 assign: Assignment, limits: Limits
+                 assign: Assignment, limits: Limits, cap: int | None = None
                  ) -> Mapping[RelationName, Rows] | Undefined | RunFailure:
     """The rows each of `relations`, named from the top level, holds when
     `case` runs on `input` at `assign`, the empty input where `input` is
@@ -376,19 +570,17 @@ def relations_at(engine: Engine, solver: Solver, case: Case,
     in place. Undefined where a derivation of the case gives its parameter
     no value on the input; the run's failure, or that of a run the program
     needs, as the engine gives it. A relation with no rows maps to none.
+    With `cap`, a relation holds at most `cap` plus one of its rows, all of
+    them where it has at most `cap`, and the run prints none past those.
 
     The solver's `program` is the one that runs, so a variation runs
     through here on the solver with its program replaced. A relation the
     run does not output raises `ValueError` (`output_rows`)."""
-    proposals = None if not any(isinstance(b, DeriveBranch)
-                                for b in case.branches) \
-        else probe(engine, _single(() if input is None else input), limits)
-    bases = () if case.base is None else (case.base,)
-    run = _program(engine, solver, bases, case.branches, input, assign,
-                   proposals, limits, _Stored())
+    run = case_program(engine, solver, case, input, assign, limits)
     if not isinstance(run, Program):
         return run
-    got = engine.run(run, {INPUT: _input(input)}, list(relations), limits)
+    got = engine.run(run, {INPUT: _input(input)}, list(relations), limits,
+                     None if cap is None else dict.fromkeys(relations, cap))
     if not isinstance(got, Tuples):
         return got
     return output_rows(got, relations)
@@ -409,17 +601,17 @@ def _input(input: Grid | None) -> InputValue:
     return () if input is None else GridInput(input)
 
 
-def case_program(engine: Engine, solver: Solver, case: Case, input: Grid,
-                 assign: Assignment, limits: Limits
+def case_program(engine: Engine, solver: Solver, case: Case,
+                 input: Grid | None, assign: Assignment, limits: Limits
                  ) -> Program | Undefined | RunFailure:
-    """The program `case` runs on `input` at `assign`, as `outcomes`
-    builds it, with `impl_choice` holding the case's base, and as it
-    stands for a case with no base; undefined where a derivation gives its
-    parameter no value on `input`, and the failure of a run it needs where
-    that run fails."""
+    """The program `case` runs on `input`, the empty input where it is
+    None, at `assign`, as `outcomes` builds it, with `impl_choice` holding
+    the case's base, and as it stands for a case with no base; undefined
+    where a derivation gives its parameter no value on `input`, and the
+    failure of a run it needs where that run fails."""
     proposals = None if not any(isinstance(b, DeriveBranch)
                                 for b in case.branches) \
-        else probe(engine, _single(input), limits)
+        else probe(engine, input_task(() if input is None else input), limits)
     bases = () if case.base is None else (case.base,)
     return _program(engine, solver, bases, case.branches, input, assign,
                     proposals, limits, _Stored())
@@ -429,12 +621,14 @@ def _program(engine: Engine, solver: Solver, bases: tuple[Base, ...],
              branches: tuple[Branch, ...], input: Grid | None,
              assign: Assignment,
              proposals: "Proposals | RunFailure | None", limits: Limits,
-             stored: _Stored) -> Program | Undefined | RunFailure:
+             stored: _Stored, drop: frozenset[UnitId] = frozenset()
+             ) -> Program | Undefined | RunFailure:
     """The program the cases of `bases` that take `branches` run on
     `input`, the empty input where it is None, at `assign` (`outcomes`),
-    with `proposals` the proposer probe of the input."""
+    with `proposals` the proposer probe of the input, and without the
+    units of `drop`."""
     held_program = restricted(engine, solver, bases)
-    run = held_program
+    run = _without(engine, held_program, drop)
     derived = {b.parameter for b in branches if isinstance(b, DeriveBranch)}
     params = {p.name for p in solver.params.parameters}
     for name, value in assign.values:
@@ -455,38 +649,47 @@ def _program(engine: Engine, solver: Solver, bases: tuple[Base, ...],
         elif isinstance(b, StoreBranch):
             value = assigned.get(b.spelled)
             if value is None:
-                key = (bases, b.relation)
-                if key not in stored.values:
-                    stored.values[key] = stored_value(
-                        engine, solver, held_program, b, limits)
-                got = stored.values[key]
+                got = stored.get((bases, b.relation), lambda b=b: stored_value(
+                    engine, solver, held_program, b, limits))
                 if not isinstance(got, StoredValue):
                     return got
-                value = got.rows
-                if len(got.columns) < got.arity:
+                value = got.stored_rows()
+                if not got.keyed_by_case:
                     here = engine.run(run, {INPUT: _input(input)},
                                       [b.relation], limits)
                     if not isinstance(here, Tuples):
                         return here
-                    value = got.on(here.relations.get(b.relation, ()))
+                    value = got.on(here.relations[b.relation])
             run = engine.fix_relation(run, b.relation, value)
     return run
 
 
-def assignment(solver: Solver, entry: Entry) -> Assignment | Fault:
-    """The assignment a witness entry's `assign` states
-    (solver-file.md:180, :188-192): each parameter or `@store` relation it
-    names with its rows, a string read as the lib constant it names and a
-    list as a record, and a grid as the value of a parameter stored by one
-    GRID call, under that call's keys. A name, a constant or a grid it
-    cannot place is the problem in its place."""
-    where = InWitnessFile(entry.id)
+def assignment(engine: Engine, solver: Solver, entry: Entry,
+               file: WitnessFileRole) -> Assignment | Fault:
+    """The assignment a witness entry's `assign` states (solver-file.md, under
+    "Witness file"): each parameter or `@store` relation it names with its
+    rows, a string read as the lib constant it names and a list as a record,
+    and a grid as the value of a parameter stored by one GRID call, under that
+    call's keys and in its form, a sparse form reading every cell as a value:
+    for a `GRID_STAMP` call, a grid of the call's size anchored where the
+    call marks `@`, or a grid of any size at the anchor the entry gives. A
+    name, a constant or a grid it cannot place is the problem in its place,
+    at the entry of `file`."""
+    return assigned(engine, solver, entry.assign,
+                    InWitnessFile(entry.id, file))
+
+
+def assigned(engine: Engine, solver: Solver,
+             assign: tuple[tuple[str, AssignValue], ...],
+             where: InWitnessFile) -> Assignment | Fault:
+    """The assignment an `assign` value states (`assignment`), a problem
+    placed at `where`. A grid for a parameter one GRID call stores is
+    placed by the engine's `place_grid`; a name no parameter has is a
+    `@store` relation (`assignable`)."""
     params = {p.name: p for p in solver.params.parameters}
-    stored = {b.spelled for b in solver.branches
-              if isinstance(b, StoreBranch)}
     out: list[tuple[str, RelationValue]] = []
-    for name, value in entry.assign:
-        if name not in params and name not in stored:
+    for name, value in assign:
+        if not assignable(solver, name):
             return Fault(ProblemKind.ASSIGN_NAMES_NOTHING, where,
                                   Named(name))
         if isinstance(value, AssignRows):
@@ -500,26 +703,57 @@ def assignment(solver: Solver, entry: Entry) -> Assignment | Fault:
             out.append((name, tuple(rows)))
             continue
         param = params.get(name)
-        if param is None or not isinstance(param.stored, StoredGrid) \
-                or len(param.stored.grids) != 1:
-            return Fault(
-                ProblemKind.UNDECIDED, where,
-                Undecided(UndecidedForm.GRID_FOR_KEYED_PARAMETER, name))
-        out.append((name, GridValue(param.stored.grids[0].keys, value)))
+        grid, anchor = (value.grid, value.anchor) \
+            if isinstance(value, AnchoredGrid) else (value, None)
+        match param:
+            case Parameter(stored=StoredGrid(grids=(call,))):
+                pass
+            case None:
+                if anchor is not None:
+                    return Fault(ProblemKind.ANCHOR_WITHOUT_STAMP, where,
+                                 AnchorWithoutStamp(
+                                     name, Storage.STORED_RELATION))
+                return Fault(ProblemKind.GRID_OFF_LAYOUT, where,
+                             GridOffLayout(name, None, grid_size(grid)))
+            case Parameter(stored=stored):
+                if anchor is not None:
+                    return Fault(ProblemKind.ANCHOR_WITHOUT_STAMP, where,
+                                 AnchorWithoutStamp(name, Storage.GRID_CALLS
+                                                    if isinstance(stored, StoredGrid)
+                                                    else Storage.FACTS))
+                return Fault(ProblemKind.GRID_OFF_LAYOUT, where,
+                             GridOffLayout(name, None, grid_size(grid)))
+        match engine.place_grid(call.layout, call.anchor,
+                                GridValue(call.keys, grid, anchor)):
+            case GridValue() as placed:
+                out.append((name, placed))
+            case AnchorOffStamp():
+                return Fault(ProblemKind.ANCHOR_WITHOUT_STAMP, where,
+                             AnchorWithoutStamp(name, call.layout))
+            case CellOffForm(cell=cell, value=v):
+                return Fault(ProblemKind.GRID_CELL_OFF_FORM, where,
+                             GridCellOffForm(name, call.layout, cell, v))
+            case SizeOffLayout(given=given):
+                return Fault(ProblemKind.GRID_OFF_LAYOUT, where,
+                             GridOffLayout(name, call.layout, given))
     return Assignment(tuple(out))
 
 
 def _arg_value(arg: AssignArg, constants: Mapping[str, Value]) -> Value | None:
     """An `assign` argument as a value: a number, a lib constant, or a
-    record of such; None where a string names no constant."""
+    record of such; None where a string names no constant
+    (`term_value` of the term the argument writes)."""
+    return term_value(_arg_term(arg), constants.get)
+
+
+def _arg_term(arg: AssignArg) -> Term:
+    """The term an `assign` argument writes: a number, a constant's name,
+    or a record."""
     if isinstance(arg, str):
-        return constants.get(arg)
+        return DefinedName(arg)
     if isinstance(arg, tuple):
-        vals = [_arg_value(a, constants) for a in arg]
-        if any(v is None for v in vals):
-            return None
-        return RecordValue(tuple(v for v in vals if v is not None))
-    return arg
+        return RecordTerm(tuple(_arg_term(a) for a in arg))
+    return NumberTerm(arg)
 
 
 # The runs' parts
@@ -533,15 +767,14 @@ def scaled(limits: Limits, grids: int) -> Limits:
                   wall_seconds=limits.wall_seconds * n)
 
 
-def as_grid(grid: Sequence[Sequence[int]]) -> Grid:
-    """A task's grid, rows of lists, as the engine's grid, rows of
-    tuples."""
-    return tuple(tuple(r) for r in grid)
+def over_examples(limits: Limits, task: Task) -> Limits:
+    """The limits of a run over every example of `task` (`scaled`)."""
+    return scaled(limits, len(task.train) + len(task.test))
 
 
 def parameter(solver: Solver, name: str) -> RelationName:
     """A parameter as the program reads it, `params.<rel>`
-    (solver-file.md:114)."""
+    (solver-file.md, under "Params")."""
     inst = instance_of(solver.program, PARAMS)
     if inst is None:
         raise ValueError(f"{solver.stem}: no instance of `Params`")
@@ -555,55 +788,72 @@ def restricted(engine: Engine, solver: Solver, bases: tuple[Base, ...]
     program = solver.program
     if not bases or not enumerates(program):
         return program
-    key = id(program)
-    with _RESTRICTED_LOCK:
-        held = _RESTRICTED.get(key)
-        if held is not None and held[0]() is program and held[1]() is engine:
-            got = held[2].get(bases)
-            if got is not None:
-                return got
-    got = engine.fix_relation(program, IMPL, tuple((b,) for b in bases))
-    with _RESTRICTED_LOCK:
-        held = _RESTRICTED.get(key)
-        if held is None or held[0]() is not program or held[1]() is not engine:
-            held = _RESTRICTED[key] = (
-                weakref.ref(program,
-                            lambda _p, key=key: _RESTRICTED.pop(key, None)),
-                weakref.ref(engine), {})
-        held[2][bases] = got
-    return got
+    return _RESTRICTED.keyed(program, (engine, bases),
+                             lambda: _holding(engine, program, bases))
 
 
-_RESTRICTED: dict[int, tuple[weakref.ref[Program], weakref.ref[Engine],
-                             dict[tuple[Base, ...], Program]]] = {}
-"""`restricted`'s programs, by the identity of the program they restrict,
-while that program lives: a survey's variant runs on every pair and in
-every group of cases."""
-_RESTRICTED_LOCK = threading.Lock()
+def _holding(engine: Engine, program: Program, bases: Sequence[Base]
+             ) -> Program:
+    """`program` with `impl_choice` holding exactly `bases`."""
+    return engine.fix_relation(program, IMPL, tuple((b,) for b in bases))
 
 
+_RESTRICTED: ByIdentity[Program, dict[tuple[Engine, tuple[Base, ...]],
+                                      Program]] = ByIdentity()
+"""`restricted`'s programs, for each program they restrict while it
+lives, with the engine that built them: a survey's variant runs on every
+pair and in every group of cases."""
+
+
+@quotes("solver-file.md", "Program",
+        "**`@store` directive.** The relation, or the instance's relation the "
+        "line names, has one value on every input, and the line is a branch "
+        "of a choice point on it")
 @dataclass(frozen=True)
 class StoredValue:
-    """The value a `@store` branch stores: the columns of the relation
-    that hold one value on every input, and the rows of that value, each
-    row over those columns alone (solver-file.md:137: the relation "has
-    one value on every input"). The other columns are the value's keys,
-    which the relation's clauses give on each input."""
+    """The value a `@store` branch stores: the columns of the relation that
+    hold one value on every input, and the rows of that value, each row over
+    those columns alone, at each value of the columns that carry the case
+    (`case_columns`). The other columns are the value's keys, which the
+    relation's clauses give on each input."""
 
     arity: int
     columns: tuple[int, ...]
-    rows: Rows
+    case: tuple[int, ...]
+    rows: tuple[tuple[Row, Rows], ...]
+    """At each value of the case columns, the value's rows."""
+
+    @property
+    def keyed_by_case(self) -> bool:
+        """Whether every column outside the value carries the case, so
+        that the relation's rows are the stored rows at each case,
+        whatever the input."""
+        return all(i in self.columns or i in self.case
+                   for i in range(self.arity))
+
+    def stored_rows(self) -> Rows:
+        """The relation's rows where it is keyed by the case alone
+        (`keyed_by_case`): the value's rows at each value of the case
+        columns."""
+        out: dict[Row, None] = {}
+        for key, rows in self.rows:
+            for row in rows:
+                at = dict(zip(self.case, key, strict=True)) \
+                    | dict(zip(self.columns, row, strict=True))
+                out[tuple(at[i] for i in range(self.arity))] = None
+        return tuple(out)
 
     def on(self, derived: Rows) -> Rows:
         """The relation's rows on an input where its clauses give
-        `derived`: each key its clauses give, with each row of the
-        value."""
+        `derived`: each key its clauses give, with each row of the value
+        at the key's case columns."""
         keys = [i for i in range(self.arity) if i not in self.columns]
+        at_case = dict(self.rows)
         out: dict[Row, None] = {}
         for key in dict.fromkeys(tuple(r[i] for i in keys) for r in derived):
-            for row in self.rows:
-                at = dict(zip(keys, key, strict=True)) \
-                    | dict(zip(self.columns, row, strict=True))
+            held = dict(zip(keys, key, strict=True))
+            for row in at_case.get(tuple(held[i] for i in self.case), ()):
+                at = held | dict(zip(self.columns, row, strict=True))
                 out[tuple(at[i] for i in range(self.arity))] = None
         return tuple(out)
 
@@ -611,18 +861,19 @@ class StoredValue:
 def stored_value(engine: Engine, solver: Solver, program: Program,
                  branch: StoreBranch, limits: Limits
                  ) -> StoredValue | RunFailure:
-    """The value a `@store` branch stores (solver-file.md:137), from the
-    relation's rows in `program` on each input of the task's pairs. A
-    column that carries the case (`case_columns`) is a key, never a column
-    of the value (solver-file.md:104-110). The value's columns are every
-    other column where the rows are one set on every input. Else they are
-    the most such columns, the first in column order among
-    equals, whose rows are one set on every input and whose rows on each
-    input are the same at each key, a key being the rows' part over the
-    other columns: the relation is then its keys, which its clauses give
-    on each input, with the value at each, as the old tool stored it. Else
-    every column that carries no case. The value's rows are the relation's rows over its
-    columns on the first train input.
+    """The value a `@store` branch stores (solver-file.md, under "Program"),
+    from the relation's rows in `program` on each input of the task's pairs. A
+    column that carries the case (`case_columns`) is a key, never a column of
+    the value (solver-file.md, under "Program"). The value's columns are every
+    other column where the rows are one set on every input. Else they are the
+    most such columns, the first in column order among equals, whose rows are
+    one set on every input and whose rows on each input are the same at each
+    key, a key being the rows' part over the other columns: the relation is
+    then its keys, which its clauses give on each input, with the value at
+    each, as the old tool stored it. Else every column that carries no case.
+    The value's rows are the relation's rows over its columns on the first
+    train input. The relation's arity is the one its declaration gives, a
+    relation empty on every input included.
     `outcomes` passes the program with `impl_choice` holding the bases of
     the cases that take the branch, at the stored assignment."""
     if solver.task is None or not solver.task.train:
@@ -634,12 +885,14 @@ def stored_value(engine: Engine, solver: Solver, program: Program,
                          [branch.relation], limits)
         if not isinstance(got, Tuples):
             return got
-        per_input.append(got.relations.get(branch.relation, ()))
+        per_input.append(got.relations[branch.relation])
     first = per_input[0]
-    arity = next((len(r) for rows in per_input for r in rows), 0)
+    types = column_types(program, branch.relation)
+    arity = len(types)
+    case = case_columns(solver, types)
 
     def one_value(cols: tuple[int, ...]) -> bool:
-        sets = [{tuple(r[i] for i in cols) for r in rows}
+        sets = [{tuple(r[i] for i in (*case, *cols)) for r in rows}
                 for rows in per_input]
         return all(x == sets[0] for x in sets)
 
@@ -650,11 +903,15 @@ def stored_value(engine: Engine, solver: Solver, program: Program,
             for r in rows:
                 by_key.setdefault(tuple(r[i] for i in keys), set()).add(
                     tuple(r[i] for i in cols))
-            if len({frozenset(v) for v in by_key.values()}) > 1:
+            by_case: dict[Row, set[frozenset[Row]]] = {}
+            for k, v in by_key.items():
+                held = dict(zip(keys, k, strict=True))
+                by_case.setdefault(tuple(held[i] for i in case),
+                                   set()).add(frozenset(v))
+            if any(len(v) > 1 for v in by_case.values()):
                 return False
         return True
 
-    case = case_columns(solver, column_types(program, branch.relation))
     every = tuple(i for i in range(arity) if i not in case)
     cols = every
     if not one_value(every):
@@ -663,42 +920,53 @@ def stored_value(engine: Engine, solver: Solver, program: Program,
                    for c in combinations(constant, n)
                    if one_value(c) and product(c)]
         cols = subsets[0] if subsets else every
-    return StoredValue(arity, cols, tuple(dict.fromkeys(
-        tuple(r[i] for i in cols) for r in first)))
+    rows: dict[Row, dict[Row, None]] = {}
+    for r in first:
+        rows.setdefault(tuple(r[i] for i in case), {})[
+            tuple(r[i] for i in cols)] = None
+    return StoredValue(arity, cols, case, tuple(
+        (k, tuple(v)) for k, v in rows.items()))
 
 
-def relation_types(engine: Engine, program: Program,
-                   relation: RelationName) -> tuple[RelationDecl, tuple[str, ...]]:
-    """The declaration of `relation`, named from the top level, and the
-    type each of its columns reads as, each type parameter of its
-    components read through the instance's type arguments
-    (solver-file.md, "Components")."""
-    got = engine.index(program).resolve(relation, TOP)
-    if not isinstance(got, Resolved):
-        raise ValueError(f"`{relation.text}` resolves to no declaration")
-    decl = next(r for r in program.relations if r.id == got.declaration)
-    env: dict[str, str] = {}
-    for param, arg in got.type_arguments:
-        env[param] = env.get(arg, arg)
-    return decl, tuple(env.get(c.type, c.type) for c in decl.columns)
+def relation_decl(engine: Engine, program: Program,
+                  relation: RelationName) -> RelationDecl:
+    """The declaration of `relation`, named from the top level; its
+    columns' types are `solver.model.column_types`. Raises `ValueError`
+    where it resolves to no declaration."""
+    return program.declared_relation(
+        resolved(engine.index(program), relation, TOP).declaration)
 
 
-def case_columns(solver: Solver, types: Sequence[str]) -> tuple[int, ...]:
-    """The columns of a relation of column types `types`, as the model
-    resolves them (`solver.model.column_types`), that carry the case: of
-    type `Choice`, or of an ADT that stands in `Choice`
-    (solver-file.md:104-110). A case column is a key of a stored value,
-    never one of its columns."""
-    case = {CHOICE} | ({p.type for p in solver.choice.points}
-                       if solver.choice is not None else set[str]())
+def case_columns(solver: Solver, of: RelationName | Sequence[str]
+                 ) -> tuple[int, ...]:
+    """The columns of the relation `of` of the solver's program, or of a
+    relation of column types `of`, as the model resolves them
+    (`solver.model.column_types`), that carry the case: of type `Choice`, of an
+    ADT that stands in `Choice` (solver-file.md, under "Types"), or of a record
+    type with a field of such a type, a component's type parameter read through
+    the instance, which carries the case in that field and is a key in its
+    other fields (`solver.model.case_types`, as `dependence` reads them). A
+    case column is a key of a stored value, never one of its columns."""
+    if solver.choice is None:
+        return ()
+    types = column_types(solver.program, of) \
+        if isinstance(of, RelationName) else of
+    case = case_types(solver).types
     return tuple(i for i, t in enumerate(types) if t in case)
+
+
+def out_decl(program: Program) -> RelationDecl | None:
+    """`out`'s declaration in the solver's own text at the top level; None
+    where it declares none."""
+    return next((r for r in program.relations if r.name == OUTPUT.name
+                 and r.scope == TOP and own(r.span)), None)
 
 
 def out_columns(program: Program) -> tuple[int | None, int | None]:
     """The case column and the resolution column of `out`, by type
-    (solver-file.md:103, :168); None where `out` has none."""
-    decl = next((r for r in program.relations if r.name == OUTPUT.name
-                 and r.scope == TOP and r.span.file is None), None)
+    (solver-file.md, under "Cases" and "Alt outputs"); None where `out` has
+    none."""
+    decl = out_decl(program)
     if decl is None:
         return None, None
     types = [c.type for c in decl.columns]
@@ -800,10 +1068,10 @@ def _grid_of(cells: Sequence[Row], places: dict[int, _Place | None]
 
 
 def grids_of(program: Program, rows: Rows, case: Case) -> Grids | Undefined:
-    """The grids `out`'s rows hold at `case`, one per resolution in the
-    order of the resolution values (solver-file.md:98), or undefined, with
-    the reason of the first resolution that gives no total grid
-    (principles.md:49)."""
+    """The grids `out`'s rows hold at `case`, one per resolution in the order
+    of the resolution values (solver-file.md, under "Cases"), or undefined,
+    with the reason of the first resolution that gives no total grid
+    (principles.md, under "Models and tasks")."""
     case_col, res_col = out_columns(program)
     return _grids(res_col, [r for r in rows if case_col is None or case.base is None
                             or r[case_col] == case.base], {})
@@ -869,28 +1137,52 @@ def value_key(value: Value) -> tuple[object, ...]:
             return (3, c, tuple(value_key(a) for a in args))
 
 
-def _single(grid: Grid) -> Task:
+def row_key(row: Row) -> tuple[object, ...]:
+    """An order on rows built from their values' parts (`value_key`)."""
+    return tuple(value_key(v) for v in row)
+
+
+def input_task(grid: Grid) -> Task:
     """A task whose one example is `grid`, with no output, for the probe of
     one input."""
-    return Task(train=[], test=[Example(input=[list(r) for r in grid],
+    return Task(train=[], test=[Example(input=grid_lists(grid),
                                         output=[])])
 
 
 # Pairs
 
 
+class TaskSection(Enum):
+    """The section of the task a pair stands in."""
+
+    TRAIN = "train"
+    TEST = "test"
+
+
+@quotes("principles.md", "Models and tasks",
+        "**fit**: a model fits a split task at an assignment when its output "
+        "on each pair's input is that pair's candidate, including for the "
+        "test pairs.")
 @dataclass(frozen=True)
 class PairId:
-    """A pair of the task, by section and index (principles.md:74, fit)."""
+    """A pair of the task, by section and index."""
 
-    section: Literal["train", "test"]
+    section: TaskSection
     index: int
 
+    @property
+    def text(self) -> str:
+        """The pair as every command writes it (`arc.task.pair_name`)."""
+        return pair_name(self.section.value, self.index)
 
+
+@quotes("solver-file.md", "Alt outputs",
+        "An alt with kind `rule` gives the pair a second candidate. An alt "
+        "with kind `tiebreak` gives resolutions within one candidate.")
 class AltKind(Enum):
-    """How a pair's alt output differs from its output
-    (solver-file.md:164-167): a `rule` alt is a second candidate, a
-    `tiebreak` alt another resolution within the output's."""
+    """How a pair's alt output differs from its output: a `rule` alt is a
+    second candidate, a `tiebreak` alt another resolution within the
+    output's."""
 
     RULE = "rule"
     TIEBREAK = "tiebreak"
@@ -901,8 +1193,11 @@ def alt_kind(alt: Alt) -> AltKind:
     return AltKind(alt.kind)
 
 
+@quotes("principles.md", "Models and tasks",
+        "**candidate**: a set of a pair's accepted outputs that differ only "
+        "in a tiebreak.")
 class Candidate(Enum):
-    """A pair's candidate outputs: its output and its alt (principles.md:65)."""
+    """A pair's candidate outputs: its output and its alt."""
 
     OUTPUT = "output"
     ALT = "alt"
@@ -928,14 +1223,14 @@ class PairRuns:
 def examples(task: Task) -> Iterator[tuple[PairId, Example]]:
     """The task's pairs, train then test, each with its id."""
     for i, ex in enumerate(task.train):
-        yield PairId("train", i), ex
+        yield PairId(TaskSection.TRAIN, i), ex
     for i, ex in enumerate(task.test):
-        yield PairId("test", i), ex
+        yield PairId(TaskSection.TEST, i), ex
 
 
 def candidates(ex: Example) -> tuple[tuple[Candidate, frozenset[Grid]], ...]:
-    """A pair's candidates as sets of accepted outputs (principles.md:65;
-    solver-file.md:166-167)."""
+    """A pair's candidates as sets of accepted outputs (principles.md, under
+    "Models and tasks"; solver-file.md, under "Alt outputs")."""
     output = as_grid(ex.output)
     if ex.alt is None:
         return ((Candidate.OUTPUT, frozenset({output})),)
@@ -946,36 +1241,363 @@ def candidates(ex: Example) -> tuple[tuple[Candidate, frozenset[Grid]], ...]:
             (Candidate.ALT, frozenset({alt})))
 
 
-def pairs(engine: Engine, solver: Solver, limits: Limits
+def matching(cands: Sequence[tuple[Candidate, frozenset[Grid]]],
+             outcome: Outcome) -> tuple[Candidate, ...]:
+    """The candidates of `cands`, a pair's (`candidates`), that `outcome`
+    matches: the set of its grids is the candidate's set of accepted outputs
+    (principles.md, under "Models and tasks")."""
+    if not isinstance(outcome, Grids):
+        return ()
+    got = frozenset(outcome.grids)
+    return tuple(c for c, accepted in cands if got == accepted)
+
+
+type RunOn = Callable[[Sequence[Case], Sequence[tuple[Grid, Assignment]]],
+                      Sequence[Mapping[Case, Outcome]]]
+"""What each of the cases gives on each input at its assignment, in the
+order of the inputs, as `outcomes_on` gives it: a caller that holds runs
+gives its own, so that a run it holds is not made again."""
+
+
+def pairs(engine: Engine, solver: Solver, limits: Limits,
+          cases: Sequence[Case] | None = None, run: RunOn | None = None
           ) -> tuple[PairRuns, ...] | RunFailure:
-    """Per train and test pair, per case of the solver: the run and the judged
-    profile, the solver's cases of a pair from `outcomes`. A case matches a
-    candidate when the set of its grids is the candidate's set of accepted
-    outputs (principles.md:65, :74; a `tiebreak` alt joins the output's
-    candidate, a `rule` alt is a second one, solver-file.md:166-167).
-    Where the run that enumerates the cases fails, its failure; a solver
-    with no task has no pair."""
+    """Per train and test pair, per case: the run and the judged profile
+    (`pair_runs`), of `cases`, else of the solver's cases, from `run`,
+    else from `outcomes_on`. Where the run that enumerates the solver's
+    cases fails, its failure; a solver with no task has no pair."""
     if solver.task is None:
         return ()
-    cases = cases_of(solver, engine, limits)
-    if not isinstance(cases, tuple):
-        return cases
-    out: list[PairRuns] = []
-    exs = list(examples(solver.task))
-    every = outcomes_on(engine, solver, cases,
-                        [(as_grid(ex.input), Assignment(())) for _, ex in exs],
-                        limits)
-    for (pair, ex), got in zip(exs, every, strict=True):
-        cands = candidates(ex)
-        runs: list[CaseOnPair] = []
-        for case in cases:
-            result = got[case]
-            matches = () if not isinstance(result, Grids) else tuple(
-                c for c, accepted in cands
-                if frozenset(result.grids) == accepted)
-            runs.append(CaseOnPair(case, result, matches))
-        out.append(PairRuns(pair, tuple(runs)))
+    if cases is None:
+        every = cases_of(solver, engine, limits)
+        if not isinstance(every, tuple):
+            return every
+        cases = every
+    inputs = task_inputs(solver.task)
+    got = run(cases, inputs) if run is not None \
+        else outcomes_on(engine, solver, cases, inputs, limits)
+    return pair_runs(solver.task, cases, got)
+
+
+def pair_runs(task: Task, cases: Sequence[Case],
+              got: Sequence[Mapping[Case, Outcome]]) -> tuple[PairRuns, ...]:
+    """`pairs` of `cases`, from `got`, what each case gives on each pair's
+    input in the order of `examples`. A case matches a candidate when the set
+    of its grids is the candidate's set of accepted outputs (`matching`; a
+    `tiebreak` alt joins the output's candidate, a `rule` alt is a second one,
+    solver-file.md, under "Alt outputs")."""
+    return tuple(pair_on(pair, ex, cases, here)
+                 for (pair, ex), here in zip(examples(task), got, strict=True))
+
+
+def pair_on(pair: PairId, ex: Example, cases: Sequence[Case],
+            here: Mapping[Case, Outcome]) -> PairRuns:
+    """One pair's runs: each of `cases` with what it gives on the pair's
+    input, `here`, matched against the pair's candidates (`pair_runs`)."""
+    cands = candidates(ex)
+    return PairRuns(pair, tuple(
+        CaseOnPair(case, here[case], matching(cands, here[case]))
+        for case in cases))
+
+
+# Witnessed cases
+
+
+def recorded_inputs(engine: Engine, solver: Solver, entries: Sequence[Entry],
+                    file: WitnessFileRole
+                    ) -> list[tuple[Grid, Assignment]]:
+    """The recorded inputs: the task's inputs, train then test, at the
+    stored assignment, then each of `entries`', entries of `file`, inputs
+    at its entry's assignment, each once. An entry whose assignment the
+    model cannot place (`assignment`) gives none."""
+    out: list[tuple[Grid, Assignment]] = []
+    if solver.task is not None:
+        out += task_inputs(solver.task)
+    out += [(e.input, at)
+            for e, at in entry_assignments(engine, solver, entries, file)]
+    return list(dict.fromkeys(out))
+
+
+def task_inputs(task: Task) -> list[tuple[Grid, Assignment]]:
+    """The task's inputs, train then test (`examples`), each at the stored
+    assignment."""
+    return [(as_grid(ex.input), Assignment(())) for _pair, ex in examples(task)]
+
+
+def entry_assignments(engine: Engine, solver: Solver, entries: Sequence[Entry],
+                      file: WitnessFileRole
+                      ) -> list[tuple[Entry, Assignment]]:
+    """Each of `entries`, entries of `file`, at its assignment
+    (`assignment`), in order; an entry whose assignment the model cannot
+    place is left out."""
+    return [(e, at) for e in entries
+            if isinstance(at := assignment(engine, solver, e, file), Assignment)]
+
+
+type Taken = tuple[str, tuple[str, ...]] | Branch
+"""A non-concept branch a case takes: a constructor, by its name and its
+point's path, or a `@derive` or `@store` branch."""
+
+
+def taken(solver: Solver, case: Case) -> frozenset[Taken]:
+    """The non-concept branches `case` takes: each constructor of its base
+    other than its point's first, and its `@derive` and `@store`
+    branches."""
+    out: set[Taken] = set(case.branches)
+    choice = solver.choice
+    if choice is not None and case.base is not None:
+        out |= {(ctor, p.path)
+                for p, ctor in constructors_taken(choice, case.base)
+                if not is_concept_branch(p, ctor)}
+    return frozenset(out)
+
+
+def rejected(solver: Solver, branch: Taken) -> bool:
+    """Whether `branch` is rejected: it has a `@witness` line or a
+    `@derive` or `@store` line, and every verdict on it is `concept`."""
+    if isinstance(branch, tuple):
+        verdicts = [w.verdict for w in branch_witnesses(solver, branch[0])]
+    elif isinstance(branch, DeriveBranch | StoreBranch) \
+            and branch.line is not None:
+        verdicts = [branch.line.verdict]
+    else:
+        verdicts = []
+    return bool(verdicts) and all(v is VerdictWord.CONCEPT for v in verdicts)
+
+
+def constructor_denoted(choice: Choice, point: ChoicePoint,
+                        ctor: ConstructorBranch) -> "Denoted":
+    """The branches a model of `ctor` at `point` fixes: `ctor`, and the
+    constructor at each point above it through which it is reached."""
+    from solver.names import Denoted
+
+    parents: list[ConstructorBranch] = []
+    for name in path_constructors(choice, point.path):
+        parent = constructor_named(choice, name)
+        assert parent is not None, "a point's path names its constructors"
+        parents.append(parent)
+    return Denoted((*parents, ctor), ())
+
+
+def branch_models(solver: Solver, cases: Sequence[Case]) -> list[Case]:
+    """The model of each branch other than a point's concept branch, among
+    `cases` (`branch_model`): a constructor at its choice point, and each
+    `@derive` and `@store` branch."""
+    from solver.names import Denoted
+
+    denoted: list[Denoted] = []
+    choice = solver.choice
+    if choice is not None:
+        denoted += [constructor_denoted(choice, p, c)
+                    for p in choice.points for c in other_branches(p)]
+    denoted += [Denoted((), (b,)) for b in solver.branches
+                if isinstance(b, DeriveBranch | StoreBranch)]
+    return [m for d in denoted
+            if (m := branch_model(solver, cases, d)) is not None]
+
+
+def branch_model(solver: Solver, cases: Sequence[Case], d: "Denoted"
+                 ) -> Case | None:
+    """The case of `cases` that stands for the model of the branch `d`
+    names: its model (`solver.names.model_of`) where that is one of
+    `cases`; else the case of `cases` that takes the branch and differs
+    from the concept case at the fewest points, constructors and branches
+    counted alike (`taken`), ties by name order; None where no case of
+    `cases` takes it."""
+    from solver.names import name
+
+    tied = stand_ins(solver, cases, d)
+    return min(tied, key=lambda c: name(solver, c)) if tied else None
+
+
+def stand_ins(solver: Solver, cases: Sequence[Case], d: "Denoted"
+              ) -> list[Case]:
+    """The cases of `cases` that can stand for the model of the branch `d`
+    names: its model (`solver.names.model_of`) alone where that is one of
+    `cases`; else every case of `cases` that takes the branch and differs
+    from the concept case at the fewest points, constructors and branches
+    counted alike (`taken`), in the order of `cases`; none where no case
+    takes it."""
+    from solver.names import cases_of, model_of
+
+    model = model_of(solver, d, cases)
+    if model is not None and model in cases:
+        return [model]
+    taking = cases_of(solver, d, cases)
+    if not taking:
+        return []
+    away = {c: len(taken(solver, c)) for c in taking}
+    least = min(away.values())
+    return [c for c in taking if away[c] == least]
+
+
+def witnessed_among(solver: Solver, cases: Sequence[Case],
+                    got: Sequence[Mapping[Case, Outcome]]) -> tuple[Case, ...]:
+    """The witnessed cases of `cases`, in their order, from `got`, what
+    every case gives on each recorded input (`witnessed`): an output is
+    the grids over the tiebreak resolutions, or undefined with its reason
+    and cells."""
+    took = {c: taken(solver, c) for c in cases}
+    rejects = {b for t in took.values() for b in t if rejected(solver, b)}
+    requires: dict[Taken, frozenset[Taken]] = {}
+    for t in took.values():
+        for b in t:
+            requires[b] = requires[b] & t if b in requires else t
+
+    def stacked(t: frozenset[Taken]) -> bool:
+        mine = list(t & rejects)
+        return any(y not in requires[x] and x not in requires[y]
+                   for i, x in enumerate(mine) for y in mine[i + 1:])
+
+    kept = set(branch_models(solver, cases))
+    kept |= {c for c in cases if is_concept_case(solver, c)}
+    out: list[Case] = []
+    for c in cases:
+        if any(not is_result(o[c]) for o in got):
+            out.append(c)
+            continue
+        if stacked(took[c]):
+            continue
+        if c in kept:
+            out.append(c)
+            continue
+        extended = [d for d in cases if took[d] < took[c]]
+        if any(all(not same_output(o[d], o[c]) for d in extended)
+               for o in got):
+            out.append(c)
     return tuple(out)
+
+
+WITNESSED_DIR = "witnessed"
+"""The directory under the run cache that holds `witnessed`'s results."""
+
+
+def witnessed_key(solver: Solver, entries: Sequence[Entry], limits: Limits
+                  ) -> str:
+    """The key of the witnessed cases of the solver on `entries`' inputs:
+    the content of its program, of its annotations and of its branches,
+    a line a survey proposes among them, without where their parts stand
+    or the comments (`_placeless`), of the entries and of the task, the
+    limits, and the tool's sources."""
+    h = hashlib.sha256()
+    h.update(repr((_placeless(solver.program),
+                   _placeless(solver.annotations),
+                   _placeless(solver.branches), tuple(entries),
+                   solver.task, limits)).encode())
+    for path in sorted((checkout.ROOT / "src").rglob("*.py")):
+        h.update(b"\0" + path.read_bytes())
+    return h.hexdigest()
+
+
+_PLACES = frozenset({"span", "line", "comments", "layout"})
+"""The fields `_placeless` leaves out: where a part stands in the file,
+and the comments, whose annotations the solver's annotations hold."""
+
+
+def _placeless(x: object) -> object:
+    """A value that states `x` without where its parts stand in the file
+    and without its comments: what the witnessed cases read of a program
+    or of its annotations, so that an edit to a comment that is no
+    annotation, or a line moved, keeps their key."""
+    if isinstance(x, tuple | list):
+        return tuple(_placeless(y) for y in x)
+    if isinstance(x, Mapping):
+        return tuple((_placeless(k), _placeless(v)) for k, v in x.items())
+    if is_dataclass(x) and not isinstance(x, type):
+        return (type(x).__name__, tuple(
+            (f.name, _placeless(getattr(x, f.name))) for f in fields(x)
+            if f.name not in _PLACES))
+    return x
+
+
+def _witnessed_path(key: str) -> Path:
+    return checkout.cache() / WITNESSED_DIR / f"{key}.json"
+
+
+def held_witnessed(key: str, solver: Solver, cases: Sequence[Case]
+                   ) -> tuple[Case, ...] | None:
+    """The witnessed cases kept under `key` (`hold_witnessed`), of
+    `cases`, the solver's cases, in their order; None where none are kept,
+    or where a kept name is the name of none of `cases`."""
+    from solver.names import name
+    try:
+        got = json.loads(_witnessed_path(key).read_text())
+    except (OSError, ValueError):
+        return None
+    picked = got.get("witnessed") if isinstance(got, dict) else None
+    if not isinstance(picked, list):
+        return None
+    by_name = {name(solver, c): c for c in cases}
+    if not all(isinstance(n, str) and n in by_name for n in picked):
+        return None
+    kept = set(picked)
+    return tuple(c for n, c in by_name.items() if n in kept)
+
+
+def hold_witnessed(key: str, solver: Solver,
+                   witnessed: Sequence[Case]) -> None:
+    """Keeps `witnessed` under `key`, by the cases' names
+    (`solver.names.name`)."""
+    from solver.names import name
+    path = _witnessed_path(key)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_whole(path, json.dumps({
+        "witnessed": [name(solver, c) for c in witnessed]}).encode())
+
+
+def witnessed(engine: Engine, solver: Solver, limits: Limits,
+              file: WitnessFileRole,
+              entries: Sequence[Entry] | None = None, run: RunOn | None = None,
+              unlined: tuple[Sequence[Case], Sequence[Case]] | None = None
+              ) -> tuple[Case, ...] | RunFailure:
+    """The witnessed cases of the solver's cases, in their order, or the
+    failure of the run that enumerates them. A case
+    extends another when it takes that case's non-concept branches and
+    more (`taken`). A case is witnessed when it is the concept case or a
+    branch's model (`branch_models`), or when some recorded input
+    (`recorded_inputs`, the witness file's entries) shows it giving an
+    output, its grids over the tiebreak resolutions or undefined with its
+    reason and cells, that no case it extends gives, so that a case
+    undefined where a case it extends gives a grid is witnessed and its
+    Fit failure shown; and not when it takes two
+    rejected branches (`rejected`) of which neither requires the other, a
+    branch requiring another when every case of the solver that takes it
+    takes the other. A case whose run on some recorded input
+    fails or reaches a limit is witnessed, so that the failure is shown.
+    Where no run failed, the result is kept on disk under `witnessed_key`,
+    so that a command on an unchanged solver computes nothing.
+
+    The recorded inputs are those of `entries`, entries of `file`, else of
+    the solver's witness file; the runs on them come from `run`, else from
+    `outcomes_on`.
+
+    `unlined` is given for the solver with a line a survey proposes
+    added: the cases and the witnessed cases of the solver without it. A
+    case of both solvers keeps its standing there, unchanged by the line;
+    of the cases that take the new branch, the witnessed ones are judged
+    as above (plan §D5, the derive survey's paragraph)."""
+    every = cases_of(solver, engine, limits)
+    if not isinstance(every, tuple):
+        return every
+    if entries is None:
+        entries = () if solver.witness_file is None \
+            else solver.witness_file.entries
+        file = WitnessFileRole.TASK
+    key = witnessed_key(solver, entries, limits)
+    held = held_witnessed(key, solver, every)
+    if held is not None:
+        return held
+    inputs = recorded_inputs(engine, solver, entries, file)
+    got = run(every, inputs) if run is not None \
+        else outcomes_on(engine, solver, every, inputs, limits)
+    out = witnessed_among(solver, every, got)
+    if unlined is not None:
+        before, kept, among = set(unlined[0]), set(unlined[1]), set(out)
+        out = tuple(c for c in every
+                    if (c in kept if c in before else c in among))
+    if all(is_result(o) for g in got for o in g.values()):
+        hold_witnessed(key, solver, out)
+    return out
 
 
 # Variations
@@ -1041,10 +1663,8 @@ def variation(engine: Engine, solver: Solver, v: Variation) -> Program:
         case TakeDerive(parameter=p, values=values):
             return engine.fix_relation(program, parameter(solver, p), values)
         case Restrict(cases=cases):
-            bases = list(dict.fromkeys(
-                c.base for c in cases if c.base is not None))
-            return engine.fix_relation(program, IMPL,
-                                       tuple((b,) for b in bases))
+            return _holding(engine, program, list(dict.fromkeys(
+                c.base for c in cases if c.base is not None)))
         case Remove(target=target):
             return engine.remove(program, target)
 
@@ -1063,7 +1683,7 @@ class Proposals:
 def example_inputs(task: Task) -> dict[RelationName, InputValue]:
     """`ex_in` over every example's input, train first, and `ex_out` over
     the train outputs, each with the example's index (lib.dl's runner
-    contract; solver-file.md:162)."""
+    contract; solver-file.md, under "Determination")."""
     return {
         EX_IN: IndexedGrids(tuple(as_grid(e.input)
                                   for e in (*task.train, *task.test))),
@@ -1071,37 +1691,37 @@ def example_inputs(task: Task) -> dict[RelationName, InputValue]:
     }
 
 
-type _ProbeProgram = tuple[Program, dict[str, RelationName]] | ParseFailure
-_PROBE_PROGRAMS: dict[int, tuple[weakref.ref[Engine], str, _ProbeProgram]] = {}
-"""By the engine's identity, the engine, the proposers text last built and
-what `_probe_program` built from it."""
+type _ProbeProgram = tuple[Program, dict[str, RelationName]]
+_PROBE_PROGRAMS: ByIdentity[Program, _ProbeProgram] = ByIdentity()
+"""What `_probe_program` built, for each proposers program while it
+lives."""
 
 
-def _probe_program(engine: Engine) -> _ProbeProgram:
-    """The proposers program with an instance of each proposer, and each
-    proposer's `propose` in its instance, built once per engine and text
-    of `programs/proposers.dl`."""
-    text = proposers_path().read_text()
-    held = _PROBE_PROGRAMS.get(id(engine))
-    if held is not None and held[0]() is engine and held[1] == text:
-        return held[2]
-    parsed = parse_with_lib(engine, text)
-    built: _ProbeProgram
+def _probe_program(engine: Engine) -> _ProbeProgram | CompileError:
+    """The proposers program (`proposers_program`) with an instance of
+    each proposer, and each proposer's `propose` in its instance, built
+    once per proposers program; where the program does not parse, the
+    probe's failure (`probe_failure`)."""
+    parsed = proposers_program(engine)
     if isinstance(parsed, ParseFailure):
-        built = parsed
-    else:
+        return probe_failure(parsed)
+
+    def build() -> _ProbeProgram:
         program = parsed
         outputs: dict[str, RelationName] = {}
-        for name in proposer_names(program):
+        for name in proposer_names(parsed):
             inst = name.lower()
             program = engine.instantiate(program, name, inst)
             outputs[name] = RelationName((inst,), PROPOSE)
-        built = program, outputs
-    try:
-        _PROBE_PROGRAMS[id(engine)] = (weakref.ref(engine), text, built)
-    except TypeError:
-        pass
-    return built
+        return program, outputs
+
+    return _PROBE_PROGRAMS.compute(parsed, build)
+
+
+def probe_failure(parsed: ParseFailure) -> CompileError:
+    """A proposers program that does not parse, as the failure of the
+    probe that runs it."""
+    return CompileError(parsed.line, parsed.message)
 
 
 def probe(engine: Engine, task: Task, limits: Limits
@@ -1112,14 +1732,14 @@ def probe(engine: Engine, task: Task, limits: Limits
     the train outputs (proposers.dl's header). The run takes `limits`
     once per example."""
     built = _probe_program(engine)
-    if isinstance(built, ParseFailure):
-        return CompileError(built.line, built.message)
+    if isinstance(built, CompileError):
+        return built
     program, outputs = built
     got = engine.run(program, example_inputs(task), list(outputs.values()),
-                     scaled(limits, len(task.train) + len(task.test)))
+                     over_examples(limits, task))
     if not isinstance(got, Tuples):
         return got
-    return Proposals({name: got.relations.get(rel, ())
+    return Proposals({name: got.relations[rel]
                       for name, rel in outputs.items()})
 
 
@@ -1148,9 +1768,13 @@ class CycleRead:
     line: int
 
 
+@quotes("solver-file.md", "Determination",
+        "`Determine` contains the determination as one relation per "
+        "determined parameter, with the parameter's name and schema")
 @dataclass(frozen=True)
 class Determined:
-    """solver-file.md:157-162 ("Determination")."""
+    """The `Determine` component's run against the stored values: the diffs,
+    the parameters it reproduces, and its cycles."""
 
     diffs: tuple[ParamDiff, ...]
     reproduced: tuple[str, ...]
@@ -1170,23 +1794,29 @@ type DetermineResult = Determined | NoDetermine | RunFailure
 
 def determine(engine: Engine, solver: Solver, limits: Limits
               ) -> DetermineResult:
-    """The Determine comp over the examples, diffed against the stored
-    values (solver-file.md:157-162). The parameters with an `Ident` column
-    compare together modulo a renaming of ids (solver-file.md:161), one a
-    RIGID call stores by the orbit of its placed rows at each id
-    (`_signatures`). The other parameters a RIGID call stores compare
-    together per block, up to a D4 image of the stored assembly, since a
-    RIGID block exposes them only as D4 placements that transform them
-    together and the stored pose is unobservable (patterns.md:98): the
-    Determine relations stand in for the block's charts, the program
-    places them, and the parameters agree where some pose of one side
-    gives the rows of every parameter of the block that the other side
-    gives at some pose (`_same_pose_orbits`). A diff of such a parameter
-    holds its placed rows. The runs take `limits` once per example."""
+    """The Determine comp over the examples, diffed against the stored values
+    (solver-file.md, under "Determination"). The parameters with an `Ident`
+    column compare together modulo a renaming of ids (solver-file.md, under
+    "Determination"), one a RIGID call stores by the orbit of its placed rows
+    at each id (`_signatures`). The other parameters a RIGID call stores
+    compare together per block, up to a D4 image of the stored assembly, since
+    a RIGID block exposes them only as D4 placements that transform them
+    together and the stored pose is unobservable (patterns.md, under "`RIGID` —
+    parameter relations coupled as a rigid assembly"): the Determine relations
+    stand in for the block's charts, the program places them, and the
+    parameters agree where some pose of one side gives the rows of every
+    parameter of the block that the other side gives at some pose
+    (`_same_pose_orbits`). A diff of such a parameter holds its placed rows.
+    The runs take `limits` once per example. A solver whose task has no task
+    file is a caller's error:
+    `ValueError`."""
     program = solver.program
     if not has_determine(solver):
         return NoDetermine()
-    task = solver.task or Task()
+    task = solver.task
+    if task is None:
+        raise ValueError("a determination runs over the task's examples, "
+                         "and the solver's task has no task file")
     params_inst = instance_of(program, PARAMS)
     det_inst = instance_of(program, DETERMINE)
     det_name = "determine" if det_inst is None else det_inst.name
@@ -1198,18 +1828,16 @@ def determine(engine: Engine, solver: Solver, limits: Limits
     outputs: list[RelationName] = []
     for p in determined:
         outputs += [RelationName((det_name,), p.name),
-                    RelationName((params_inst.name,), p.name)]
+                    parameter(solver, p.name)]
     inputs: dict[RelationName, InputValue] = {INPUT: (),
                                               **example_inputs(task)}
     got = engine.run(program, inputs, outputs,
-                     scaled(limits, len(task.train) + len(task.test)))
+                     over_examples(limits, task))
     if not isinstance(got, Tuples):
         return got
-    stored = {p.name: got.relations.get(RelationName((params_inst.name,),
-                                                     p.name), ())
+    stored = {p.name: got.relations[parameter(solver, p.name)]
               for p in determined}
-    derived = {p.name: got.relations.get(RelationName((det_name,), p.name),
-                                         ())
+    derived = {p.name: got.relations[RelationName((det_name,), p.name)]
                for p in determined}
     rigid = rigid_parameters(solver)
     ident_cols = {p.name: [c.type for c in p.columns].index(IDENT)
@@ -1220,16 +1848,16 @@ def determine(engine: Engine, solver: Solver, limits: Limits
         placed = program
         for name, chart in charts.items():
             placed = engine.fix_relation(
-                placed, RelationName((params_inst.name,), chart),
+                placed, parameter(solver, chart),
                 derived[name])
         again = engine.run(placed, inputs, [
-            RelationName((params_inst.name,), n) for n in charts],
-            scaled(limits, len(task.train) + len(task.test)))
+            parameter(solver, n) for n in charts],
+            over_examples(limits, task))
         if not isinstance(again, Tuples):
             return again
         for name in charts:
-            derived[name] = again.relations.get(
-                RelationName((params_inst.name,), name), ())
+            derived[name] = again.relations[
+                parameter(solver, name)]
     placed_ids = frozenset(n for n in charts if n in ident_cols)
     ids_agree = _signatures(stored, ident_cols, placed_ids) \
         == _signatures(derived, ident_cols, placed_ids)
@@ -1257,13 +1885,12 @@ def rigid_parameters(solver: Solver) -> frozenset[str]:
     """The parameters a RIGID call in `Params` stores: the relations that
     are a RIGID chart, the names a call binds, and the relations its units
     feed."""
-    scope = Scope((PARAMS,))
+    scope = PARAMS_SCOPE
     heads = {u.id: u.head.relation for u in solver.program.units}
-    out = {r.name for r in solver.program.relations
-           if r.scope == scope and r.chart_of is not None}
+    out: set[str] = set()
     for m in solver.program.macros:
         if isinstance(m, RigidCall) and m.scope == scope:
-            out |= set(m.names)
+            out |= set(solver.program.bound_names(m))
             out |= {heads[u].name for u in m.body
                     if u in heads and not heads[u].instances}
     return frozenset(out)
@@ -1275,17 +1902,13 @@ def _blocks(solver: Solver) -> dict[str, tuple[str, str]]:
     order the call binds its relations. A call whose charts are not one
     per name is left out, and is a fault of `load`
     (`model.instance_faults`)."""
-    scope = Scope((PARAMS,))
+    scope = PARAMS_SCOPE
     out: dict[str, tuple[str, str]] = {}
     for m in solver.program.macros:
         if not isinstance(m, RigidCall) or m.scope != scope:
             continue
-        charts = [r.name for r in solver.program.relations
-                  if r.scope == scope and r.chart_of == m.block]
-        if len(charts) != len(m.names):
-            continue
-        for name, chart in zip(m.names, charts, strict=True):
-            out[name] = (m.block, chart)
+        for name, chart in solver.program.bound_charts(m) or ():
+            out[name] = (m.block, chart.name)
     return out
 
 
@@ -1317,11 +1940,10 @@ def _same_pose_orbits(solver: Solver, charts: Mapping[str, str],
         poses: dict[Value, list[set[Row]]] = {}
         for k, name in enumerate(names):
             for row in rows.get(name, ()):
-                poses.setdefault(row[0], [set() for _ in names])[k].add(
-                    row[1:])
+                poses.setdefault(row[POSE_COLUMN], [set() for _ in names])[k].add(
+                    tuple(v for i, v in enumerate(row) if i != POSE_COLUMN))
         return frozenset(
-            tuple(tuple(sorted(rs, key=lambda r: tuple(
-                value_key(v) for v in r))) for rs in sets)
+            tuple(tuple(sorted(rs, key=row_key)) for rs in sets)
             for sets in poses.values())
 
     out: set[str] = set()
@@ -1334,33 +1956,30 @@ def _same_pose_orbits(solver: Solver, charts: Mapping[str, str],
 type _Key = tuple[object, ...]
 
 
-def _row_key(row: Row) -> _Key:
-    """An order on rows built from their values' parts."""
-    return tuple(value_key(v) for v in row)
-
-
 def _signatures(rows_by_param: Mapping[str, Rows],
                 ident_cols: Mapping[str, int],
                 placed: frozenset[str]) -> list[tuple[_Key, ...]]:
     """Each id's rows across the parameters, the id left out, as a sorted
     multiset: two sides with equal signatures differ by a renaming of ids
-    alone. A parameter of `placed`, stored by a RIGID call, holds placed
-    rows, and each id's assembly is its own: its part of the id's
-    signature is the orbit of its placed rows at the id, the set over the
-    poses of its rows at the pose, so that the id's assembly in any pose
-    gives the same part (patterns.md:98)."""
+    alone. A parameter of `placed`, stored by a RIGID call, holds placed rows,
+    and each id's assembly is its own: its part of the id's signature is the
+    orbit of its placed rows at the id, the set over the poses of its rows at
+    the pose, so that the id's assembly in any pose gives the same part
+    (patterns.md, under "`RIGID` — parameter relations coupled as a rigid
+    assembly")."""
     by_id: dict[Value, list[_Key]] = {}
     for name, col in ident_cols.items():
         if name not in placed:
             for row in rows_by_param.get(name, ()):
                 rest = tuple(v for i, v in enumerate(row) if i != col)
-                by_id.setdefault(row[col], []).append((name, _row_key(rest)))
+                by_id.setdefault(row[col], []).append((name, row_key(rest)))
             continue
         poses: dict[Value, dict[Value, set[_Key]]] = {}
         for row in rows_by_param.get(name, ()):
-            rest = tuple(v for i, v in enumerate(row) if i not in (0, col))
-            poses.setdefault(row[col], {}).setdefault(row[0], set()).add(
-                _row_key(rest))
+            rest = tuple(v for i, v in enumerate(row)
+                         if i not in (POSE_COLUMN, col))
+            poses.setdefault(row[col], {}).setdefault(row[POSE_COLUMN], set()).add(
+                row_key(rest))
         for id_, at in poses.items():
             orbit = sorted({tuple(sorted(rows)) for rows in at.values()})
             by_id.setdefault(id_, []).append((name, tuple(orbit)))
@@ -1374,14 +1993,13 @@ def cycles(solver: Solver, params_instance: str,
     group of them that reads around, a parameter that reads its own stored
     value included, every read inside the group, each at the first atom by
     line where it happens, in name order."""
-    scope = Scope((DETERMINE,))
+    scope = DETERMINE_SCOPE
     feeds: dict[RelationName, list[tuple[Unit, Atom]]] = {}
     for u in solver.program.units:
         if u.scope != scope or u.body is None:
             continue
         reads = feeds.setdefault(u.head.relation, [])
-        for lit in u.body:
-            reads += [(u, a) for a in atoms_of(lit)]
+        reads += [(u, a) for a, _negated in body_atoms(u.body)]
 
     def local(rel: RelationName) -> list[RelationName]:
         if rel.instances and rel.instances[0] != params_instance:

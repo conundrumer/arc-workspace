@@ -4,28 +4,32 @@ the code a run loads."""
 
 import hashlib
 import json
-import re
 import sys
+from collections.abc import Sequence
 from pathlib import Path
+from typing import TextIO
 
-from arc.task import TASKS_DIR
-from arc.task import as_grid as checked_grid
+from arc.task import task_file
+from arc.task import GridFormError, read_grid
+from checker.judged import parse_fault
 from checker.readable import finding_of
-from checker.render import commands, finding_lines
+from checker.render import commands, failure_text, finding_lines
+from checker.runs import Runs
 from cli import text
-from engine import checkout
 from engine import (
     CompileError,
     Grid,
     Limits,
+    RunFailure,
     UngroundedVariable,
+    checkout,
 )
-from solver.model import Case, Solver, load
-from solver.problems import ProblemKind, Fault
-from solver.solve import Assignment, as_grid, relations_at
+from engine.program import as_grid
+from solver.model import Solver, load, solver_file
+from solver.problems import Fault
+from solver.solve import Assignment
 from solver.vocabulary import OUTPUT
-from solver.witness import AssignValue
-from solver.witness import read as read_witness_file
+from solver.witness import AssignValue, read_assign
 from souffle import SouffleEngine
 
 LIMITS = Limits(cpu_seconds=20.0, wall_seconds=40.0)
@@ -53,16 +57,17 @@ def solver_path(arg: str) -> Path:
     """The solver file an argument names: the path as given where a file
     stands there, else the file of that name under `programs/solvers/`."""
     path = Path(arg if arg.endswith(".dl") else f"{arg}.dl")
-    return path if path.exists() else checkout.solvers() / path
+    if path.exists():
+        return path
+    return solver_file(path.stem) if path.parent == Path(".") \
+        else checkout.solvers() / path
 
 
 def missing(arg: str) -> bool:
     """True, with its line on stderr, where no solver file stands at the
-    argument, or it stands outside `programs/solvers/`, which `load` does
-    not read."""
+    argument."""
     path = solver_path(arg)
-    if path.exists() \
-            and path.resolve().parent == checkout.solvers().resolve():
+    if path.is_file():
         return False
     print(text.NO_SOLVER.format(path=path), file=sys.stderr)
     return True
@@ -75,7 +80,23 @@ def all_stems() -> list[str]:
 
 
 def load_solver(arg: str, eng: SouffleEngine) -> Solver:
-    return load(stem_of(arg), eng)
+    """The solver an argument names (`solver_path`), its stem the file's
+    name: a path to a file anywhere, its name starting with the task id,
+    or a stem under `programs/solvers/`."""
+    return load(stem_of(arg), eng, solver_path(arg))
+
+
+def command_solver(arg: str, eng: SouffleEngine, task: bool = True
+                   ) -> Solver | None:
+    """The solver a command runs on (`load_solver`); None, with its line
+    on stderr, where no solver file stands at the argument (`missing`),
+    or, under `task`, where its task has no task file (`no_task`)."""
+    if missing(arg):
+        return None
+    solver = load_solver(arg, eng)
+    if task and no_task(solver):
+        return None
+    return solver
 
 
 def no_task(solver: Solver) -> bool:
@@ -85,7 +106,7 @@ def no_task(solver: Solver) -> bool:
         return False
     print(text.NO_TASK.format(
         stem=solver.stem,
-        path=shown_path(TASKS_DIR / f"{solver.task_id}.json")),
+        path=checkout.shown(task_file(solver.task_id))),
         file=sys.stderr)
     return True
 
@@ -93,36 +114,58 @@ def no_task(solver: Solver) -> bool:
 def compile_failure(eng: SouffleEngine, solver: Solver
                     ) -> Fault | CompileError | UngroundedVariable \
         | None:
-    """The fault of a solver that does not parse, or else the
-    engine's rejection of its program, from a run on the empty input; None
-    where the program compiles."""
-    parse = next((p for p in solver.problems
-                  if p.kind == ProblemKind.PARSE_FAILURE), None)
+    """The fault of a solver that does not parse (`parse_fault`), or else
+    the engine's rejection of its program, from a run on the empty input;
+    None where the program compiles."""
+    parse = parse_fault(solver)
     if parse is not None:
         return parse
-    got = relations_at(eng, solver, Case(None, ()), None, [OUTPUT],
-                       Assignment(()), LIMITS)
+    got = Runs(eng, solver, LIMITS).relations_on(None, [OUTPUT],
+                                                 Assignment(()))
     return got if isinstance(got, CompileError | UngroundedVariable) \
         else None
+
+
+def compiles(eng: SouffleEngine, solver: Solver) -> bool:
+    """True where the solver's program compiles; False, with the lines of
+    its `compile_failure` (`failed_lines`), where it does not."""
+    failure = compile_failure(eng, solver)
+    if failure is None:
+        return True
+    print("\n".join(failed_lines(solver, failure)))
+    return False
 
 
 def failed_lines(solver: Solver,
                  failure: Fault | CompileError | UngroundedVariable
                  ) -> list[str]:
-    """The lines a `compile_failure` prints, before anything runs."""
+    """The lines a `compile_failure` prints, before anything runs: the
+    fault's (`failure_lines`), or the engine's rejection under the
+    solver's name."""
     if isinstance(failure, Fault):
-        return finding_lines(solver, finding_of(failure))
+        return failure_lines(solver, failure)
     return [commands.failed_line(solver, failure)]
 
 
-def shown_path(path: Path) -> Path:
-    """A path as a line shows it: from the repository root where it
-    stands under it."""
-    repo = checkout.ROOT
-    for p, root in ((path.absolute(), repo), (path.resolve(), repo.resolve())):
-        if p.is_relative_to(root):
-            return p.relative_to(root)
-    return path.resolve()
+def failure_lines(solver: Solver, failure: RunFailure | Fault) -> list[str]:
+    """The lines of a fault, or of a run that gave no result, as a
+    command prints them once its runs began."""
+    if isinstance(failure, Fault):
+        return fault_lines(solver, [failure])
+    return [commands.RUN_FAILED.format(error=failure_text(failure))]
+
+
+def fault_lines(solver: Solver, faults: Sequence[Fault]) -> list[str]:
+    """The lines of each fault, as every command prints it."""
+    return [ln for f in faults for ln in finding_lines(solver, finding_of(f))]
+
+
+def print_faults(solver: Solver, faults: Sequence[Fault],
+                 file: TextIO = sys.stderr) -> None:
+    """The faults' lines (`fault_lines`), on stderr unless `file` says
+    otherwise."""
+    for line in fault_lines(solver, faults):
+        print(line, file=file)
 
 
 # The grid a caller writes
@@ -156,22 +199,35 @@ def sections(written: str) -> list[str]:
 
 
 def parse_grid(written: str) -> Grid | None:
-    """The grid the text writes: one line per row, one digit per cell,
-    spaces and commas between cells optional, blank lines and `#` lines
-    skipped, and text that starts with `[` read as JSON. None, with its
+    """The grid the text writes (`arc.task.read_grid`). None, with its
     line on stderr, where it writes none."""
-    stripped = written.strip()
     try:
-        if stripped.startswith("["):
-            rows = json.loads(stripped)
-        else:
-            rows = [[int(ch) for ch in re.sub(r"[\s,]", "", line)]
-                    for line in stripped.splitlines()
-                    if line.strip() and not line.lstrip().startswith("#")]
-        return as_grid(checked_grid(rows))
-    except (ValueError, json.JSONDecodeError, TypeError) as e:
+        return as_grid(read_grid(written))
+    except GridFormError as e:
         print(text.BAD_GRID.format(error=e), file=sys.stderr)
         return None
+
+
+def written_grids(path: str | None, most: int, too_many: str
+                  ) -> list[Grid] | None:
+    """The grids a caller writes at `path` (`grid_text`), one per section
+    (`sections`), at most `most` of them. None, with its line on stderr,
+    where no file stands there, where the text holds more sections, with
+    the line `too_many`, or where a section writes no grid."""
+    written = grid_text(path)
+    if written is None:
+        return None
+    parts = sections(written)
+    if len(parts) > most:
+        print(too_many, file=sys.stderr)
+        return None
+    grids: list[Grid] = []
+    for part in parts:
+        grid = parse_grid(part)
+        if grid is None:
+            return None
+        grids.append(grid)
+    return grids
 
 
 def assign_arg(written: str | None
@@ -186,17 +242,11 @@ def assign_arg(written: str | None
     except json.JSONDecodeError as e:
         print(text.BAD_ASSIGN_JSON.format(error=e), file=sys.stderr)
         return None
-    if not isinstance(data, dict):
+    got, problems = read_assign(data)
+    if got is None or problems:
         print(text.ASSIGN_NOT_OBJECT, file=sys.stderr)
         return None
-    file, problems = read_witness_file(json.dumps({
-        "id": "", "witnesses": [{"id": "assign", "separates": "",
-                                 "input": [[0]], "assign": data,
-                                 "output": [[0]]}]}))
-    if file is None or problems or not file.entries:
-        print(text.ASSIGN_NOT_OBJECT, file=sys.stderr)
-        return None
-    return file.entries[0].assign
+    return got
 
 
 # The stamp

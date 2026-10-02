@@ -7,6 +7,7 @@ from engine.engine import Rendered, RenderedLine
 from engine.program import (
     Component,
     DeclId,
+    FunctorDecl,
     GridCall,
     Program,
     RelationDecl,
@@ -34,10 +35,8 @@ from souffle.lexer import LINE_DIRECTIVE_RE
 def parts_of(program: Program) -> dict[Key, Part]:
     """Every part of `program` by its key."""
     out: dict[Key, Part] = {}
-    for group in (program.types, program.relations, program.components,
-                  program.instances, program.functors):
-        for d in group:
-            out[d.id] = d
+    for d in program.declarations:
+        out[d.id] = d
     for u in program.units:
         out[u.id] = u
     for m in program.macros:
@@ -46,7 +45,9 @@ def parts_of(program: Program) -> dict[Key, Part]:
 
 
 def scope_of(part: Part) -> Scope | None:
-    return getattr(part, "scope", None)
+    """The scope a part stands in; None for a functor declaration, which
+    stands at the top level and carries no scope."""
+    return None if isinstance(part, FunctorDecl) else part.scope
 
 
 @dataclass
@@ -85,10 +86,12 @@ class _Out:
 
 
 class _Renderer:
-    def __init__(self, program: Program, canonical: bool, absolute: bool = False):
+    def __init__(self, program: Program, canonical: bool, absolute: bool = False,
+                 bare: bool = False):
         self.program = program
         self.canonical = canonical
         self.absolute = absolute
+        self.bare = bare
         self.layout = layout_of(program)
         self.current = parts_of(program)
         placed = layout_keys(self.layout.segments)
@@ -104,8 +107,7 @@ class _Renderer:
         self.clean_cache: dict[int, bool] = {}
 
     def _in_rigid(self, key: Key) -> bool:
-        return any(isinstance(m, RigidCall) and isinstance(key, UnitId) and key in m.body
-                   for m in self.program.macros)
+        return isinstance(key, UnitId) and self.program.in_rigid_body(key)
 
     # cleanliness
 
@@ -148,7 +150,8 @@ class _Renderer:
         for s in segments:
             match s:
                 case Text(text, line):
-                    out.add(text, line if own else None, True)
+                    if not self.bare:
+                        out.add(text, line if own else None, True)
                 case Piece(text, line, parts):
                     if not parts and LINE_DIRECTIVE_RE.match(text):
                         # Never printed: each rendered line's origin
@@ -176,6 +179,8 @@ class _Renderer:
                     else:
                         out.add(printer.declaration(now), line if own else None, False)
                     inner = indent + printer.INDENT
+                    if self.bare:
+                        _end_line(out)
                     self.segments(body, out, own, inner)
                     new = self.new_parts((*now.scope.components, now.name), inner)
                     if new:
@@ -187,6 +192,8 @@ class _Renderer:
                         out.add(directive, line if own else None, True)
                     else:
                         self.segments(body, out, False, "")
+            if self.bare:
+                _end_line(out)
 
     def _rigid_piece(self, parts: tuple[tuple[Key, Part], ...]) -> bool:
         return isinstance(parts[0][1], RigidCall)
@@ -213,8 +220,7 @@ class _Renderer:
         return printer.declaration(p)
 
     def rigid(self, call: RigidCall, indent: str) -> str:
-        charts = [r for r in self.program.relations
-                  if r.chart_of == call.block and r.scope == call.scope]
+        charts = list(self.program.charts(call))
         body = [self.part(self.current[k], indent + printer.INDENT)
                 for k in call.body if k in self.current]
         return printer.rigid_call(call, charts, body, indent)
@@ -240,15 +246,19 @@ class _Renderer:
         return "\n".join(lines)
 
     def _rigid_decl(self, d: RelationDecl) -> bool:
-        return any(isinstance(m, RigidCall) and m.scope == d.scope
-                   and (d.chart_of == m.block or d.name in m.names)
-                   for m in self.program.macros)
+        return self.program.rigid_bound(d)
 
 
 def _order(p: Part) -> tuple[int, int]:
     """Declarations first, then units, each in the order of its id."""
     key = p.id
     return (0 if isinstance(key, DeclId) else 1, key.index)
+
+
+def _end_line(out: _Out) -> None:
+    """End the line the output ends in, where it ends in text."""
+    if out.chunks and not out.chunks[-1][0].endswith("\n"):
+        out.add("\n", None, False)
 
 
 def _indent_before(out: _Out) -> str:
@@ -267,9 +277,13 @@ def render(program: Program) -> Rendered:
 
 def rendered_for_run(program: Program) -> list[tuple[str, int | None]]:
     """`program` as Souffle reads it, each include naming its file by its
-    full path."""
+    full path: its statements alone, each from a line of its own, with no
+    comment or blank line between them, so that the text is the same
+    wherever the statements stand in the file and whatever comments stand
+    between them."""
     return [(line.text, line.origin)
-            for line in _Renderer(program, False, absolute=True).render()]
+            for line in _Renderer(program, False, absolute=True,
+                                  bare=True).render()]
 
 
 def format_program(program: Program) -> str:

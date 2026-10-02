@@ -3,6 +3,7 @@ determination check of one solver, or the report over several."""
 
 import argparse
 import json
+from enum import Enum
 import sys
 import time
 from collections.abc import Sequence
@@ -22,34 +23,34 @@ from arc.task import (
     read_pair,
     spelled,
 )
-from checker import Finding, Kind, Runs, check_lint, check_faults
+from checker import Finding, Kind, Runs, fault_findings, check_lint
 from checker.branches import check_stored_assignment
-from checker.finding import LINT_SHAPES
-from checker.render import Section, commands, pass_line, passes
+from checker.finding import LINT_SHAPES, is_hint
+from checker.render import Section, commands, exit_code, pass_line, passes
 from checker.render.branches import determination_lines
 from cli import text
 from cli.common import (
     LIMITS,
     all_stems,
+    command_solver,
     compile_failure,
-    failed_lines,
+    compiles,
     engine,
     load_solver,
     missing,
     no_task,
-    stem_of,
 )
+from engine.program import as_grid
 from solver.category import Category
 from solver.model import Case, Solver, has_determine
-from solver.problems import Fault, ProblemKind
+from solver.problems import Fault
 from solver.solve import (
     Assignment,
     CaseOnPair,
-    Grids,
     Outcome,
-    as_grid,
     candidates,
     examples,
+    matching,
     outcomes,
 )
 from souffle import SouffleEngine
@@ -78,9 +79,10 @@ def dispatch(args: argparse.Namespace) -> int:
 
 def lint_findings(solver: Solver, runs: Runs, hints: bool) -> list[Finding]:
     """The lint section's findings: the faults, then the lint's;
-    the hints only with `hints`."""
-    found = check_faults(solver, runs) + check_lint(solver, runs)
-    return found if hints else [f for f in found if f.kind != Kind.HINT]
+    the hints only with `hints`: the lint that procedure.md, under
+    "Develop", asks the solver to pass."""
+    found = fault_findings(solver, runs) + check_lint(solver, runs)
+    return found if hints else [f for f in found if not is_hint(f)]
 
 
 # One solver
@@ -106,8 +108,33 @@ class Checked:
     solver: Solver
 
     @property
+    def determined_secs(self) -> float | None:
+        """The seconds the determination took; None where the solver has
+        no Determine comp."""
+        return self.determine_secs if self.has_determine else None
+
+    @property
+    def total_secs(self) -> float:
+        """The seconds the pairs and the determination took."""
+        return self.pair_secs + (self.determined_secs or 0.0)
+
+    @property
+    def determination_fails(self) -> bool:
+        """A finding of the determination fails
+        (`checker.render.passes`)."""
+        return not passes(self.determination)
+
+    @property
     def fails(self) -> bool:
-        return not self.pairs_pass or not passes(self.determination)
+        """The pairs or the determination fail."""
+        return not self.pairs_pass or self.determination_fails
+
+    @property
+    def exit_code(self) -> int:
+        """The solver's exit code: 1 where its pairs or its determination
+        fail, else the exit code its lint gives
+        (`checker.render.exit_code`)."""
+        return 1 if self.fails else exit_code(self.lint)
 
 
 def _pairs(solver: Solver, runs: Runs
@@ -115,28 +142,30 @@ def _pairs(solver: Solver, runs: Runs
     """How many pairs pass, of how many, the pair lines, and the lines of
     the failing pairs alone, as a report over several solvers gives
     them."""
-    task = solver.task
-    if task is None:
-        return 0, 0, [], []
+    task = solver.given_task
     exs = list(examples(task))
     got = runs.pairs
     if not isinstance(got, tuple):
-        names = [pair_name(p.section, p.index) for p, _ex in exs]
+        names = [p.text for p, _ex in exs]
         return 0, len(exs), commands.enumeration_failed_lines(names, got), \
             commands.shared_failure_lines(names, got)
     lines: list[str] = []
     failing: list[tuple[str, tuple[CaseOnPair, ...], Example]] = []
+    shown: set[Case] = set()
     ok = 0
     for pr, (_pid, ex) in zip(got, exs, strict=True):
-        ok += commands.passed(pr.cases)
-        if not commands.passed(pr.cases):
-            failing.append((commands.name_of(pr), pr.cases, ex))
-        lines += commands.pair_lines(solver, commands.name_of(pr), pr.cases, ex)
+        passed = commands.passed(pr.cases)
+        ok += passed
+        if not passed:
+            failing.append((pr.pair.text, pr.cases, ex))
+        lines += commands.pair_lines(solver, pr.pair.text, pr.cases, ex,
+                                     shown)
     return ok, len(exs), lines, commands.stem_failure_lines(solver, failing)
 
 
 def check_one(eng: SouffleEngine, solver: Solver, hints: bool) -> Checked:
-    """The pairs, the lint and the determination of one solver."""
+    """The pairs, the lint and the determination of one solver: the run
+    procedure.md asks for under "Develop", "Run the solver"."""
     runs = Runs(eng, solver, LIMITS)
     t0 = time.perf_counter()
     ok, total, lines, failing = _pairs(solver, runs)
@@ -165,7 +194,7 @@ def _compile_lines(eng: SouffleEngine, solver: Solver, hints: bool
     lint = lint_findings(solver, runs, hints)
     if isinstance(failure, Fault):
         return commands.lint_section(
-            solver, [f for f in lint if f.kind == Kind(ProblemKind.PARSE_FAILURE)])
+            solver, [f for f in lint if f.kind == Kind(failure.kind)])
     collisions = [f for f in lint if f.kind == Kind.LINT
                   and isinstance(f.payload, LINT_SHAPES)
                   and f.payload.category in COLLISIONS]
@@ -175,11 +204,9 @@ def _compile_lines(eng: SouffleEngine, solver: Solver, hints: bool
 
 def cmd_one(arg: str, hints: bool = True, timed: bool = False) -> int:
     """One solver: its pairs, its lint and its determination check."""
-    if missing(arg):
-        return 2
     eng = engine()
-    solver = load_solver(arg, eng)
-    if no_task(solver):
+    solver = command_solver(arg, eng)
+    if solver is None:
         return 2
     failed = _compile_lines(eng, solver, hints)
     if failed is not None:
@@ -191,11 +218,21 @@ def cmd_one(arg: str, hints: bool = True, timed: bool = False) -> int:
         print(line)
     if timed:
         print("\n".join(commands.time_line(
-            c.pair_secs, c.determine_secs if c.has_determine else None)))
-    return 1 if c.fails or not passes(c.lint) else 0
+            c.pair_secs, c.determined_secs)))
+    return c.exit_code
 
 
 # Several solvers
+
+
+class ReportKind(Enum):
+    """What a section of the report over several solvers holds, as the
+    JSON report names it."""
+
+    FAILURES = "failures"
+    FINDINGS = "findings"
+    HINTS = "hints"
+    TIMES = "times"
 
 
 @dataclass(frozen=True)
@@ -203,7 +240,7 @@ class ReportSection:
     """One section of the report over several solvers: its kind, its
     header, and the lines of its entries."""
 
-    kind: str
+    kind: ReportKind
     header: str
     lines: tuple[str, ...]
 
@@ -211,26 +248,22 @@ class ReportSection:
         return [*commands.section_header(self.header), *self.lines]
 
 
-def _lint_sections(checked: Sequence[Checked]) -> list[ReportSection]:
+def lint_sections(found: Sequence[tuple[Solver, Sequence[Finding]]]
+                  ) -> list[ReportSection]:
     """The findings and hints sections over several solvers: each
-    solver's lines, gathered under one header per kind."""
+    solver's lines, in the order `found` gives the solvers, gathered under
+    one header per kind; a kind no solver has gets no section."""
     out: list[ReportSection] = []
     for kind, header, keep in (
-            ("findings", commands.LINT_FINDINGS, lambda f: f.kind != Kind.HINT),
-            ("hints", commands.LINT_HINTS, lambda f: f.kind == Kind.HINT)):
-        lines: list[str] = []
-        solvers = 0
-        count = 0
-        for c in sorted(checked, key=lambda c: c.stem):
-            shown = [f for f in c.lint if keep(f)]
-            if not shown:
-                continue
-            solvers += 1
-            count += len(shown)
-            lines += commands.gathered_lint([(c.solver, shown)])
-        if solvers:
+            (ReportKind.FINDINGS, commands.LINT_FINDINGS,
+             lambda f: not is_hint(f)),
+            (ReportKind.HINTS, commands.LINT_HINTS, is_hint)):
+        shown = [(s, [f for f in fs if keep(f)]) for s, fs in found]
+        shown = [(s, fs) for s, fs in shown if fs]
+        if shown:
             out.append(ReportSection(kind, header.format(
-                count=count, solvers=solvers), tuple(lines)))
+                count=sum(len(fs) for _s, fs in shown), solvers=len(shown)),
+                tuple(commands.gathered_lint(shown))))
     return out
 
 
@@ -241,27 +274,25 @@ def _report(checked: Sequence[Checked], timed: bool) -> list[ReportSection]:
         lines: list[str] = []
         for c in failed:
             lines += commands.failure_block(c.stem, c.failure_lines)
-        out.append(ReportSection("failures", commands.FAILING_PAIRS.format(
+        out.append(ReportSection(ReportKind.FAILURES, commands.FAILING_PAIRS.format(
             n=len(failed)), tuple(lines)))
-    out += _lint_sections(checked)
+    out += lint_sections([(c.solver, c.lint)
+                          for c in sorted(checked, key=lambda c: c.stem)])
     determined = [c for c in checked if c.has_determine]
     if determined:
-        problems = [c for c in determined if not passes(c.determination)]
+        problems = [c for c in determined if c.determination_fails]
         out.append(ReportSection(
-            "failures", commands.DETERMINATION_CHECKS.format(
+            ReportKind.FAILURES, commands.DETERMINATION_CHECKS.format(
                 ok=len(determined) - len(problems), n=len(determined)),
             tuple(ln for c in sorted(problems, key=lambda c: c.stem)
                   for ln in commands.determination_block(
                       c.stem, c.determination_lines))))
     if timed:
-        ranked = sorted(checked, key=lambda c: -(c.pair_secs + (
-            c.determine_secs if c.has_determine else 0.0)))
-        out.append(ReportSection("times", commands.TIMES, tuple(
-            commands.time_row(c.pair_secs + (c.determine_secs if c.has_determine
-                                         else 0.0),
-                          c.stem, c.pair_secs,
-                          c.determine_secs if c.has_determine else None)
-            for c in ranked[:15])))
+        ranked = sorted(checked, key=lambda c: -c.total_secs)
+        out.append(ReportSection(ReportKind.TIMES, commands.TIMES, tuple(
+            commands.time_row(c.total_secs, c.stem, c.pair_secs,
+                              c.determined_secs)
+            for c in ranked[:commands.SLOWEST])))
     return out
 
 
@@ -289,7 +320,7 @@ def cmd_all(hints: bool = True, timed: bool = False,
         print()
         print(commands.SUMMARY.format(passing=sum(not c.fails for c in checked),
                                   total=len(checked)))
-    return 1 if any(c.fails for c in checked) else 0
+    return max((c.exit_code for c in checked), default=0)
 
 
 def _json(checked: Sequence[Checked], sections: Sequence[ReportSection]
@@ -298,9 +329,9 @@ def _json(checked: Sequence[Checked], sections: Sequence[ReportSection]
         "verdicts": [{"stem": c.stem, "passes": c.passes, "total": c.total,
                       "pairs_pass": c.pairs_pass} for c in checked],
         "determination_checks": [{"stem": c.stem,
-                                  "problem": not passes(c.determination)}
+                                  "problem": c.determination_fails}
                                  for c in checked if c.has_determine],
-        "sections": [{"kind": s.kind, "header": s.header,
+        "sections": [{"kind": s.kind.value, "header": s.header,
                       "lines": list(s.lines)} for s in sections],
     }
 
@@ -315,34 +346,55 @@ def cmd_lint(arg: str | None, hints: bool = True) -> int:
         return 2
     eng = engine()
     found: list[tuple[Solver, list[Finding]]] = []
-    for stem in [stem_of(arg)] if arg is not None else all_stems():
+    for stem in [arg] if arg is not None else all_stems():
         solver = load_solver(stem, eng)
         found.append((solver, lint_findings(
             solver, Runs(eng, solver, LIMITS), hints)))
-    sections: list[str] = []
-    for header, keep in ((commands.LINT_FINDINGS, lambda f: f.kind != Kind.HINT),
-                         (commands.LINT_HINTS, lambda f: f.kind == Kind.HINT)):
-        shown = [(s, [f for f in fs if keep(f)]) for s, fs in found]
-        shown = [(s, fs) for s, fs in shown if fs]
-        if not shown:
-            continue
-        sections += commands.section_header(header.format(
-            count=sum(len(fs) for _s, fs in shown), solvers=len(shown)))
-        sections += commands.gathered_lint(shown)
+    sections = [ln for s in lint_sections(found) for ln in s.printed()]
     if sections:
         print("\n".join(sections))
-    ok = pass_line(Section.LINT, [f for _s, fs in found for f in fs])
-    if ok is None:
-        return 1
-    print(ok)
-    return 0
+    findings = [f for _s, fs in found for f in fs]
+    ok = pass_line(Section.LINT, findings)
+    if ok is not None:
+        print(ok)
+    return exit_code(findings)
 
 
 # `run --pairs`
 
 
+class PairsFault(Enum):
+    """How a pairs file is off its form, or that it holds no pair."""
+
+    NOT_JSON = "not json"
+    BAD_KEY = "bad key"
+    NO_FORM = "no form"
+    NO_LIST = "no list"
+    NONE = "none"
+
+
 class PairsFileError(Exception):
-    """A pairs file off its form, or one that holds no pair."""
+    """A pairs file off its form: the fault and its parts, which
+    `_pairs_text` writes."""
+
+    def __init__(self, fault: PairsFault, **parts: object) -> None:
+        super().__init__(fault.value)
+        self.fault = fault
+        self.parts = parts
+
+
+PAIRS_TEXT = {
+    PairsFault.NOT_JSON: text.PAIRS_NOT_JSON,
+    PairsFault.BAD_KEY: text.PAIRS_BAD_KEY,
+    PairsFault.NO_FORM: text.PAIRS_NO_FORM,
+    PairsFault.NO_LIST: text.PAIRS_NO_LIST,
+    PairsFault.NONE: text.PAIRS_NONE,
+}
+"""The sentence of each pairs-file fault, from its parts."""
+
+
+def _pairs_text(e: PairsFileError) -> str:
+    return PAIRS_TEXT[e.fault].format(**e.parts)
 
 
 def _pairs_file(path: Path) -> list[tuple[PairSection, list[Example | Probe]]]:
@@ -354,27 +406,26 @@ def _pairs_file(path: Path) -> list[tuple[PairSection, list[Example | Probe]]]:
     try:
         data = json.loads(path.read_text())
     except json.JSONDecodeError as e:
-        raise PairsFileError(text.PAIRS_NOT_JSON.format(
-            error=e)) from None
+        raise PairsFileError(PairsFault.NOT_JSON, error=e) from None
     if isinstance(data, list):
         found: list[tuple[PairSection, object]] = [(LIST_SECTION, data)]
     elif isinstance(data, dict):
         for key in data:
             if key not in PAIR_SECTIONS and key not in DESCRIPTION_KEYS:
-                raise PairsFileError(text.PAIRS_BAD_KEY.format(
-                        key=key, sections=spelled(PAIR_SECTIONS)))
+                raise PairsFileError(PairsFault.BAD_KEY, key=key,
+                                     sections=spelled(PAIR_SECTIONS))
         found = [(k, data[k]) for k in PAIR_SECTIONS if k in data]
     else:
-        raise PairsFileError(text.PAIRS_NO_FORM.format(sections=spelled(PAIR_SECTIONS)))
+        raise PairsFileError(PairsFault.NO_FORM,
+                             sections=spelled(PAIR_SECTIONS))
     out: list[tuple[PairSection, list[Example | Probe]]] = []
     for section, pairs in found:
         if not isinstance(pairs, list):
-            raise PairsFileError(text.PAIRS_NO_LIST
-                                 .format(section=section))
+            raise PairsFileError(PairsFault.NO_LIST, section=section)
         out.append((section, [read_pair(section, i, e)
                               for i, e in enumerate(pairs)]))
     if not any(pairs for _, pairs in out):
-        raise PairsFileError(text.PAIRS_NONE)
+        raise PairsFileError(PairsFault.NONE)
     return out
 
 
@@ -389,25 +440,28 @@ def cmd_pairs(arg: str, path: str) -> int:
         return 2
     try:
         sections = _pairs_file(p)
-    except (PairsFileError, PairFormError) as e:
+    except PairsFileError as e:
+        print(f"{p}: {_pairs_text(e)}", file=sys.stderr)
+        return 2
+    except PairFormError as e:
         print(f"{p}: {e}", file=sys.stderr)
         return 2
     eng = engine()
     solver = load_solver(arg, eng)
-    failure = compile_failure(eng, solver)
-    if failure is not None:
-        print("\n".join(failed_lines(solver, failure)))
+    if not compiles(eng, solver):
         return 1
     runs = Runs(eng, solver, LIMITS)
     solver_cases = runs.cases
+    if not isinstance(solver_cases, tuple):
+        print("\n".join(commands.enumeration_failed_lines(
+            [pair_name(kind, idx) for kind, pairs in sections
+             for idx in range(len(pairs))], solver_cases)))
+        return 1 if any(isinstance(e, Example)
+                        for _kind, pairs in sections for e in pairs) else 0
     failed = False
     for kind, pairs in sections:
         for idx, e in enumerate(pairs):
             name = pair_name(kind, idx)
-            if not isinstance(solver_cases, tuple):
-                failed = failed or isinstance(e, Example)
-                print("\n".join(commands.enumeration_failed_lines([name], solver_cases)))
-                continue
             got = outcomes(eng, solver, solver_cases, as_grid(e.input),
                            Assignment(()), LIMITS)
             if isinstance(e, Probe):
@@ -424,7 +478,4 @@ def cmd_pairs(arg: str, path: str) -> int:
 def _on_pair(case: Case, o: Outcome, ex: Example) -> CaseOnPair:
     """What `case` gives on a pair, and the candidates its grids match,
     as `solver.solve.pairs` judges a case of the solver."""
-    if not isinstance(o, Grids):
-        return CaseOnPair(case, o, ())
-    return CaseOnPair(case, o, tuple(k for k, grids in candidates(ex)
-                                     if frozenset(o.grids) == grids))
+    return CaseOnPair(case, o, matching(candidates(ex), o))

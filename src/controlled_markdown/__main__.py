@@ -30,6 +30,8 @@ from . import (
     check_links,
     check_partial_sites,
     check_paths,
+    check_quote_rule,
+    check_quotes,
     parse,
     render,
     write,
@@ -101,9 +103,9 @@ LIB_GLOBS = ("programs/lib.dl", "programs/lib/*.dl")
 
 
 def check_code(root: Path, document_set: set[Path]) -> int:
-    """Every fragment a program holds, read as the format, and every document
-    it names by path. The rest of each file is code, so nothing else in it is
-    read."""
+    """Every fragment a program holds, read as the format, every document
+    it names by path, and every handbook passage it quotes. The rest of each
+    file is code, so nothing else in it is read."""
     off = 0
     for path in code_files(root):
         try:
@@ -115,6 +117,13 @@ def check_code(root: Path, document_set: set[Path]) -> int:
         except ControlledMarkdownError as err:
             print(err)
             off += 1
+        if path.suffix == ".py":
+            for err in check_quotes(path, shown(path)):
+                print(err)
+                off += 1
+    for err in check_quote_rule(shown):
+        print(err)
+        off += 1
     for pattern in LIB_GLOBS:
         for path in sorted(root.glob(pattern)):
             try:

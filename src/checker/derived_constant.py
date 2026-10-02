@@ -2,45 +2,32 @@
 hold the same tuples on every example."""
 
 import random
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 
-from checker.runs import Runs
-from checker.variants import TimedOut, parallel
-from checker.judged import is_timeout, no_result
+from checker.domains import colors
 from checker.finding import AtPair, RunKind
+from checker.judged import is_timeout
+from checker.runs import Runs
+from checker.variants import TimedOut, timed_out
 from engine import (
     DeclId,
     Grid,
-    Program,
     RelationName,
-    Resolved,
-    RunFailure,
     Rows,
+    RunFailure,
     Scope,
 )
+from engine.engine import resolved
 from engine.program import (
-    Aggregate,
-    AtomLiteral,
-    BinaryTerm,
-    BodyLiteral,
-    Comparison,
     Component,
-    ConstructorTerm,
-    Disjunction,
-    FunctorCall,
-    IntrinsicCall,
     Qualifier,
-    RecordTerm,
-    Term,
-    UnaryTerm,
+    body_atoms,
 )
-from solver.model import Solver
-from solver.solve import PairId, as_grid
+from engine.quotes import quotes
+from solver.model import TOP, Solver
+from solver.solve import as_grid, at_once, examples
 from solver.vocabulary import INPUT, OUTPUT, RUN_RELATIONS
-
-SKIP = frozenset(r.name for r in RUN_RELATIONS)
-"""The run relations the survey never reads."""
 
 CONTROL_SEED = 7
 """The seed of the control grids, so a rerun reports the same
@@ -99,45 +86,6 @@ type ConstantResult = (ConstantReport | NoCandidate | NoConstant
                        | ExampleFails | TimedOut)
 
 
-def _term_atoms(term: Term) -> Iterator[AtomLiteral]:
-    match term:
-        case Aggregate(expr=expr, body=body):
-            if expr is not None:
-                yield from _term_atoms(expr)
-            for lit in body:
-                yield from _atoms(lit)
-        case ConstructorTerm(args=args) | RecordTerm(args=args) \
-                | IntrinsicCall(args=args) | FunctorCall(args=args):
-            for a in args:
-                yield from _term_atoms(a)
-        case UnaryTerm(arg=arg):
-            yield from _term_atoms(arg)
-        case BinaryTerm(lhs=lhs, rhs=rhs):
-            yield from _term_atoms(lhs)
-            yield from _term_atoms(rhs)
-        case _:
-            pass
-
-
-def _atoms(lit: BodyLiteral) -> Iterator[AtomLiteral]:
-    """Every atom a body literal reads, in aggregates and disjunctions
-    too."""
-    match lit:
-        case AtomLiteral(atom=atom):
-            yield lit
-            for a in atom.args:
-                yield from _term_atoms(a)
-        case Comparison(lhs=lhs, rhs=rhs):
-            yield from _term_atoms(lhs)
-            yield from _term_atoms(rhs)
-        case Disjunction(branches=branches):
-            for b in branches:
-                for sub in b:
-                    yield from _atoms(sub)
-        case _:
-            pass
-
-
 def _reachable(edges: dict[DeclId, set[DeclId]], start: DeclId
                ) -> set[DeclId]:
     seen = {start}
@@ -154,64 +102,37 @@ def _path(c: Component) -> tuple[str, ...]:
     return (*c.scope.components, c.name)
 
 
-def _chain(program: Program, comp: Component) -> list[Component]:
-    """The component and the components it extends, nearest first."""
-    out = [comp]
-    while out[-1].base is not None:
-        base = _find(program, out[-1].base, out[-1].scope)
-        if base is None or base in out:
-            break
-        out.append(base)
-    return out
-
-
-def _find(program: Program, name: str, scope: Scope) -> Component | None:
-    """The component `name` read in `scope`: the innermost one."""
-    comps = scope.components
-    for k in range(len(comps), -1, -1):
-        for c in program.components:
-            if c.name == name and c.scope.components == comps[:k]:
-                return c
-    return None
-
-
 def candidates(solver: Solver, runs: Runs
                ) -> list[tuple[RelationName, DeclId]]:
     """The relations that read `in` by forward dataflow and feed `out` by
     backward dataflow, by every name that reaches them from the top level,
     one instance path per name: a relation off either path is stored or
-    dead. An inline relation is left out."""
+    dead. An inline relation is left out. The program compiles, so every
+    atom resolves (`engine.engine.resolved`); the command refuses one that
+    does not."""
     program = solver.program
     index = runs.index
-    top = Scope(())
 
-    def decl(name: RelationName, scope: Scope) -> DeclId | None:
-        got = index.resolve(name, scope)
-        return got.declaration if isinstance(got, Resolved) else None
+    def decl(name: RelationName, scope: Scope) -> DeclId:
+        return resolved(index, name, scope).declaration
 
     forward: dict[DeclId, set[DeclId]] = {}
     backward: dict[DeclId, set[DeclId]] = {}
     for u in program.units:
-        head = decl(u.head.relation, u.scope)
-        if head is None or u.body is None:
+        if u.body is None:
             continue
-        for lit in u.body:
-            for a in _atoms(lit):
-                body = decl(a.atom.relation, u.scope)
-                if body is None:
-                    continue
-                forward.setdefault(body, set()).add(head)
-                backward.setdefault(head, set()).add(body)
-    start, end = decl(INPUT, top), decl(OUTPUT, top)
-    if start is None or end is None:
-        return []
+        head = decl(u.head.relation, u.scope)
+        for a, _negated in body_atoms(u.body):
+            body = decl(a.relation, u.scope)
+            forward.setdefault(body, set()).add(head)
+            backward.setdefault(head, set()).add(body)
+    start, end = decl(INPUT, TOP), decl(OUTPUT, TOP)
     wanted = _reachable(forward, start) & _reachable(backward, end)
-    by_id = {r.id: r for r in program.relations}
     names: list[tuple[RelationName, DeclId]] = []
     seen: set[str] = set()
 
     def add(name: RelationName, d: DeclId) -> None:
-        r = by_id.get(d)
+        r = program.relation(d)
         if d not in wanted or r is None or Qualifier.INLINE in r.qualifiers \
                 or name.text in seen:
             return
@@ -219,14 +140,15 @@ def candidates(solver: Solver, runs: Runs
         names.append((name, d))
 
     for r in program.relations:
-        if not r.scope.components and r.name not in SKIP:
-            add(RelationName((), r.name), r.id)
+        if not r.scope.components \
+                and r.scoped_name not in RUN_RELATIONS:
+            add(r.scoped_name, r.id)
 
     def walk(path: tuple[str, ...], comp: Component,
              stack: frozenset[str]) -> None:
         if comp.name in stack:
             return
-        chain = _chain(program, comp)
+        chain = index.chain(comp)
         for c in chain:
             for r in program.relations:
                 if r.scope.components == _path(c):
@@ -234,13 +156,13 @@ def candidates(solver: Solver, runs: Runs
         for c in chain:
             for inst in program.instances:
                 if inst.scope.components == _path(c):
-                    sub = _find(program, inst.component, Scope(_path(c)))
+                    sub = index.component(inst.component, inst.scope)
                     if sub is not None:
                         walk((*path, inst.name), sub, stack | {comp.name})
 
     for inst in program.instances:
         if not inst.scope.components:
-            comp = _find(program, inst.component, top)
+            comp = index.component(inst.component, TOP)
             if comp is not None:
                 walk((inst.name,), comp, frozenset())
     return names
@@ -254,11 +176,11 @@ def controls(grids: list[Grid]) -> list[Grid]:
     rng = random.Random(CONTROL_SEED)
     out: list[Grid] = []
     for grid in grids:
-        palette = sorted({c for row in grid for c in row})
+        palette = sorted(colors([grid]))
         out.append(tuple(tuple(rng.choice(palette) for _ in row)
                          for row in grid))
     first = grids[0]
-    palette = sorted({c for row in first for c in row})
+    palette = sorted(colors([first]))
     height, width = len(first), len(first[0])
     out.append(tuple(tuple(rng.choice(palette)
                            for _ in range(max(1, width - 1)))
@@ -266,40 +188,38 @@ def controls(grids: list[Grid]) -> list[Grid]:
     return out
 
 
+@quotes("procedure.md", "Develop",
+        "`uv run python scripts/run_dl.py store <task_id>` lists the derived "
+        "values that are the same on every input.")
 def survey_derived_constant(solver: Solver, runs: Runs) -> ConstantResult:
     """The relations whose tuples are the same, and not empty, on every
     train and test input, less those that keep their tuples on the
     control grids too: a derived value that is one value over the task,
-    the evidence `store` rests on (procedure.md:135). Where a control
-    grid's run gives no result, no relation is left out."""
-    engine, limits = runs.engine, runs.limits
+    the evidence `store` rests on. Where a control grid's run gives no
+    result, no relation is left out. A solver with no task file raises
+    `ValueError`; the command refuses it first."""
+    task = solver.given_task
     names = candidates(solver, runs)
     if not names:
         return NoCandidate()
-    task = solver.task
-    if task is None:
-        return NoCandidate()
-    examples = [(PairId("train", i), as_grid(e.input))
-                for i, e in enumerate(task.train)] + [
-        (PairId("test", i), as_grid(e.input))
-        for i, e in enumerate(task.test)]
+    inputs = [(pair, as_grid(e.input)) for pair, e in examples(task)]
     outputs = [n for n, _ in names]
 
     def run(grid: Grid) -> Mapping[RelationName, Rows] | RunFailure:
-        return runs.relations_on(grid, outputs)
+        return runs.defined_relations(grid, outputs)
 
-    got = parallel(run, [g for _, g in examples])
-    for (pair, _), r in zip(examples, got, strict=True):
+    got = at_once(run, [g for _, g in inputs])
+    for (pair, _), r in zip(inputs, got, strict=True):
         if not isinstance(r, Mapping) and not is_timeout(r):
             return ExampleFails(r)
-    for (pair, _), r in zip(examples, got, strict=True):
+    for (pair, _), r in zip(inputs, got, strict=True):
         if not isinstance(r, Mapping):
-            return TimedOut(no_result(r, RunKind.PAIR, None, AtPair(pair)))
+            return timed_out(r, RunKind.PAIR, AtPair(pair))
     tuples = [r for r in got if isinstance(r, Mapping)]
 
     def rows(t: Mapping[RelationName, Rows], n: RelationName
              ) -> frozenset[object]:
-        return frozenset(t.get(n, ()))
+        return frozenset(t[n])
 
     constant = {n: rows(tuples[0], n) for n in outputs
                 if rows(tuples[0], n)
@@ -307,8 +227,8 @@ def survey_derived_constant(solver: Solver, runs: Runs) -> ConstantResult:
     if not constant:
         return NoConstant(len(names))
     flagged = sorted(constant, key=lambda n: n.text)
-    control_runs = parallel(lambda g: runs.relations_on(g, flagged),
-                            controls([g for _, g in examples]))
+    control_runs = at_once(lambda g: runs.defined_relations(g, flagged),
+                            controls([g for _, g in inputs]))
     unrun = tuple(ControlRun(i, r) for i, r in enumerate(control_runs)
                   if not isinstance(r, Mapping))
     moved: set[RelationName] = set()
@@ -321,7 +241,7 @@ def survey_derived_constant(solver: Solver, runs: Runs) -> ConstantResult:
     for n in kept:
         groups.setdefault((n.name, constant[n]), []).append(n)
     consts = tuple(Constant(tuple(sorted(paths, key=lambda p: p.text)),
-                            tuple(first.get(paths[0], ())))
+                            tuple(first[paths[0]]))
                    for paths in groups.values())
     return ConstantReport(consts, len(names), len(flagged) - len(kept),
                           unrun)

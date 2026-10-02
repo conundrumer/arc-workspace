@@ -17,8 +17,7 @@ import tempfile
 import threading
 import time
 import zlib
-from collections import OrderedDict
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
@@ -37,11 +36,23 @@ from engine.engine import (
     UngroundedVariable,
     WallLimit,
 )
-from engine.program import Grid, Program, RelationName, Row, Rows, Scope, Value, value_text
+from engine.memo import Once, Recent, write_whole
+from engine.program import (
+    Grid,
+    Program,
+    RecordValue,
+    RelationName,
+    Row,
+    Rows,
+    Scope,
+    Value,
+    cell_place,
+)
+from engine.text import fact_text
 from souffle.expand import expand
-from souffle.index import Tree, held_index
+from souffle.index import Hit, Tree, tree_of
 from souffle.render import rendered_for_run
-from souffle.runkey import included_files, program_digest
+from souffle.runkey import included_files, reached
 from souffle.values import printed
 
 FIRST_ERROR_RE = re.compile(r"^Error:", re.M)
@@ -96,8 +107,8 @@ def grid_rows(grid: Grid, lead: tuple[int, ...] = ()) -> list[str]:
     for r, row in enumerate(grid):
         w = len(row)
         for c, color in enumerate(row):
-            place = f"[{r}, {h - 1 - r}, {c}, {w - 1 - c}]"
-            out.append("\t".join([*(str(x) for x in lead), place, str(color)]))
+            place = RecordValue(cell_place(r, c, h, w))
+            out.append("\t".join(fact_text(v) for v in (*lead, place, color)))
     return out
 
 
@@ -107,7 +118,7 @@ def fact_lines(value: InputValue) -> list[str]:
             return grid_rows(grid)
         case IndexedGrids(grids):
             return [line for i, g in enumerate(grids) for line in grid_rows(g, (i,))]
-    return ["\t".join(value_text(v) for v in row) for row in value]
+    return ["\t".join(fact_text(v) for v in row) for row in value]
 
 
 @cache
@@ -162,13 +173,29 @@ def _running() -> threading.BoundedSemaphore:
         return _RUNNING[0]
 
 
+STORED_SUFFIX = ".json.z"
+"""The end of a stored record's file name in the cache directory."""
+
+
+def _stored_name(key: str) -> str:
+    """The file name of the record stored under `key`."""
+    return f"{key}{STORED_SUFFIX}"
+
+
+def _cpu_limit_key(key: str, cpu: int) -> str:
+    """The key of the record that the run under `key` reached a CPU limit
+    of `cpu` seconds."""
+    return f"{key}-cpu{cpu}"
+
+
 class Runner:
     def __init__(self, functor_dir: Path | None, cache_dir: Path | None):
         self.functor_dir = functor_dir
         self.cache_dir = cache_dir
-        self._lock = threading.Lock()
-        self._done: OrderedDict[str, Tuples] = OrderedDict()
-        self._done_rows = 0
+        self._done: Recent[str, Tuples] = Recent(DONE_CAP_ROWS, _size)
+        """The results of the runs made, by key, the least recently used
+        leaving past `DONE_CAP_ROWS` rows."""
+        self._once: Once[str, RunResult] = Once(self._done)
         self._files: dict[str, tuple[tuple[int, int], bytes | None]] = {}
 
     def flags(self) -> list[str]:
@@ -180,14 +207,14 @@ class Runner:
     def run(self, program: Program, inputs: Mapping[RelationName, InputValue],
             outputs: Sequence[RelationName], limits: Limits,
             caps: Mapping[RelationName, int] | None = None) -> RunResult:
-        held = held_index(program)
-        tree = held.tree if held is not None else Tree(program)
+        tree = tree_of(program)
         undefined = tuple(o for o in outputs if tree.resolve(o, Scope(())) is None)
         if undefined:
             return UndefinedOutput(undefined)
         facts: dict[str, str] = {}
         directives: list[str] = []
-        for i, (rel, value) in enumerate(sorted(inputs.items(), key=lambda kv: kv[0].text)):
+        for i, (rel, value) in enumerate(sorted(
+                inputs.items(), key=lambda kv: (kv[0].instances, kv[0].name))):
             file = f"in{i}.facts"
             facts[file] = "".join(line + "\n" for line in fact_lines(value))
             directives.append(f'.input {rel.text}(IO=file, filename="{file}")')
@@ -205,59 +232,42 @@ class Runner:
             else:
                 printed_as[rel], lines_of_copy = copy
                 directives += lines_of_copy
-        key = self._key(program, directives, facts)
-        with self._lock:
-            done = self._done.get(key)
-            if done is not None:
-                self._done.move_to_end(key)
-                return done
-        lines: list[tuple[str, int | None]] = []
+        named = [hit.decl.id for rel in (*inputs, *outputs)
+                 if (hit := tree.resolve(rel, Scope(()))) is not None]
+        lines = rendered_for_run(expand(reached(program, named)))
+        text = "".join(t + "\n" for t, _ in lines) \
+            + "".join(d + "\n" for d in directives)
+        key = self._key(program, text, facts)
+        # The same run being made in another thread is read once it ends.
+        return self._once.get(key, lambda: self._result(
+            key, text, facts, limits, lines, directives, outputs, tree, printed_as, capped))
 
-        def text() -> str:
-            if not lines:
-                lines.extend(rendered_for_run(expand(program)))
-                lines.extend((d, None) for d in directives)
-            return "".join(t + "\n" for t, _ in lines)
-
+    def _result(self, key: str, text: str, facts: dict[str, str],
+                limits: Limits, lines: list[tuple[str, int | None]],
+                directives: list[str], outputs: Sequence[RelationName],
+                tree: Tree, printed_as: Mapping[RelationName, str],
+                capped: Mapping[RelationName, int]) -> RunResult:
+        """The run under `key`, stored or made now, read and held."""
         ran = self._cached(key, text, facts, limits)
         if isinstance(ran, CpuLimit | WallLimit):
             return ran
         if ran.code != 0:
-            text()
-            return _failure(ran, [o for _, o in lines])
+            return _failure(ran, [o for _, o in lines] + [None] * len(directives))
         got = Tuples(_Printed(ran.stdout, outputs, tree, printed_as, capped))
-        self._keep(key, got)
+        self._done.put(key, got)
         return got
-
-    def _keep(self, key: str, got: Tuples) -> None:
-        """Holds `got` as the result of the run under `key`, the least
-        recently used results leaving past `DONE_CAP_ROWS` rows."""
-        rows = _size(got)
-        if rows > DONE_CAP_ROWS:
-            return
-        with self._lock:
-            if key in self._done:
-                return
-            self._done[key] = got
-            self._done_rows += rows
-            while self._done_rows > DONE_CAP_ROWS:
-                _k, old = self._done.popitem(last=False)
-                self._done_rows -= _size(old)
 
     # cache
 
-    def _key(self, program: Program, directives: list[str],
-             facts: dict[str, str]) -> str:
-        """The hash of all a run reads: the program's digest
-        (`souffle.runkey`), which the text it renders to determines, the
-        input and output directives that follow that text, each included
-        file's path and bytes, the functor library, the fact files and
-        the flags."""
+    def _key(self, program: Program, text: str, facts: dict[str, str]) -> str:
+        """The hash of all a run reads: the text Souffle reads, the
+        program's statements (`rendered_for_run`) with the declarations its
+        units reach alone (`reached`) and the input and output directives
+        after them, each included file's path and bytes,
+        the functor library, the fact files and the flags."""
         h = hashlib.sha256()
         h.update(souffle_version().encode())
-        h.update(b"\0" + program_digest(program))
-        for d in directives:
-            h.update(b"\0" + d.encode())
+        h.update(b"\0" + text.encode())
         for path in included_files(program):
             body = self._file(path)
             if body is not None:
@@ -296,7 +306,7 @@ class Runner:
     def _read(self, key: str) -> dict | None:
         if self.cache_dir is None:
             return None
-        path = self.cache_dir / f"{key}.json.z"
+        path = self.cache_dir / _stored_name(key)
         try:
             record = json.loads(zlib.decompress(path.read_bytes()))
         except (OSError, ValueError, zlib.error):
@@ -310,29 +320,24 @@ class Runner:
             return
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         data = zlib.compress(json.dumps(record).encode(), 6)
-        fd, tmp = tempfile.mkstemp(dir=self.cache_dir, suffix=".tmp")
-        try:
-            with os.fdopen(fd, "wb") as f:
-                f.write(data)
-            os.replace(tmp, self.cache_dir / f"{key}.json.z")
-        except OSError:
-            Path(tmp).unlink(missing_ok=True)
+        with contextlib.suppress(OSError):
+            write_whole(self.cache_dir / _stored_name(key), data)
         if random.randrange(CACHE_PRUNE_EVERY) == 0:
             prune(self.cache_dir, CACHE_CAP_BYTES)
 
-    def _cached(self, key: str, text: Callable[[], str], facts: dict[str, str],
+    def _cached(self, key: str, text: str, facts: dict[str, str],
                 limits: Limits) -> Ran | CpuLimit | WallLimit:
-        """The stored run under `key`, else the run of `text()`, which
-        renders the program only here."""
+        """The stored run under `key`, else the run of `text`."""
         cpu = max(1, math.ceil(limits.cpu_seconds))
         hit = self._read(key)
         if hit is not None:
             return Ran(hit["code"], hit["stdout"], hit["stderr"])
-        if self._read(f"{key}-cpu{cpu}") is not None:
+        over = _cpu_limit_key(key, cpu)
+        if self._read(over) is not None:
             return CpuLimit(limits.cpu_seconds)
-        ran = self._process(text(), facts, cpu, limits.wall_seconds)
+        ran = self._process(text, facts, cpu, limits.wall_seconds)
         if isinstance(ran, CpuLimit):
-            self._write(f"{key}-cpu{cpu}", {"cpu": cpu})
+            self._write(over, {"cpu": cpu})
             return CpuLimit(limits.cpu_seconds)
         if isinstance(ran, Ran) and ran.code >= 0:
             self._write(key, {"code": ran.code, "stdout": ran.stdout, "stderr": ran.stderr})
@@ -383,7 +388,7 @@ def prune(cache_dir: Path, cap: int, now: float | None = None) -> None:
         if path.suffix == ".tmp":
             if now - st.st_mtime > CACHE_STALE_TEMP_SECONDS:
                 path.unlink(missing_ok=True)
-        elif path.name.endswith(".json.z"):
+        elif path.name.endswith(STORED_SUFFIX):
             entries.append((st.st_mtime, st.st_size, path))
     total = sum(size for _, size, _ in entries)
     for _, size, path in sorted(entries):
@@ -626,9 +631,8 @@ class _Printed(Mapping[RelationName, Rows]):
         with self._lock:
             got = self._types.get(rel)
             if got is None:
-                hit = self._tree.resolve(rel, Scope(()))
-                assert hit is not None
-                got = self._types[rel] = tuple(c.type for c in hit.decl.columns)
+                got = self._types[rel] = tuple(
+                    c.type for c in _output_decl(self._tree, rel).decl.columns)
             return got
 
     def _span(self, rel: RelationName) -> tuple[int, int]:
@@ -701,6 +705,14 @@ def _capped_copy(rel: RelationName, cap: int, tree: Tree, taken: set[str]
     ]
 
 
+def _output_decl(tree: Tree, rel: RelationName) -> Hit:
+    """The declaration an output relation of a run resolves to from the
+    top level; the run printed it, so it resolves."""
+    hit = tree.resolve(rel, Scope(()))
+    assert hit is not None, "an output of a run resolves"
+    return hit
+
+
 def _top_level_types(rel: RelationName, tree: Tree) -> list[str] | None:
     """The name at the top level of each column type of `rel`: a type an
     instance on the way down declares, or one of its components extends,
@@ -721,7 +733,7 @@ def _top_level_types(rel: RelationName, tree: Tree) -> list[str] | None:
         if len(place) > len(hit.place) \
                 or any(a is not b for a, b in zip(place, hit.place, strict=False)):
             return None
-        out.append(".".join((*rel.instances[:len(place)], decl.name)))
+        out.append(RelationName(rel.instances[:len(place)], decl.name).text)
     return out
 
 
@@ -729,8 +741,7 @@ def _rows_of(rel: RelationName, lines: list[str], tree: Tree) -> Rows:
     """The rows of `rel` its printed lines give, each value read by its
     column's type. Raises ValueError, naming the relation and the row, for
     a value the declared types cannot read."""
-    hit = tree.resolve(rel, Scope(()))
-    assert hit is not None
+    hit = _output_decl(tree, rel)
     cols = [c.type for c in hit.decl.columns]
     if cols and lines:
         # Column by column: each distinct text is read once, and the rows

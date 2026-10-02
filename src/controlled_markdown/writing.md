@@ -50,8 +50,16 @@
     - A hole that is a whole line places a fragment of its own, which the check reads where that fragment stands.
     - A `${…}` that is not a name is an error: the value it takes is computed above the literal and given a name.
 - A fence inside a JavaScript fragment is written with tildes.
-- A string that names a document by path names one the tree holds, and the check reports one it does not. A path holding a hole or a wildcard names a shape and is passed over.
-- A `///` or `//!` comment in a Souffle file is the text of one statement, and it takes the rules on a statement's text.
+- A document path in a string is the path of a file in the tree, and the check reports one that is not. The check passes over a path that holds a hole or a wildcard.
+- A `quotes(document, heading, words)` call quotes the handbook, and the check reads its three strings as literals.
+    - The document is a path under [handbook](docs/handbook), the heading is the text of a heading in it, and the words stand under that heading, in its subsections too, up to line wrapping.
+    - The check reports a call whose document, heading or words it does not find, at the call's line, with the words.
+    - In [checker](src/checker), every `survey_` function has a `quotes` decorator, and every `check_` function has a `quotes` or a `guard` decorator.
+        - A `check_` function in [lint](src/checker/lint), or one whose every finding kind stands outside `FAILING` in [finding.py](src/checker/finding.py), may have a `guard(words)` decorator in place of `quotes`, where no handbook passage states what it guards against.
+            - The check reads the one string of a `guard` call as a literal, and that string says what the function guards against.
+        - Every other `check_` function has a `quotes` decorator that quotes [Principles](docs/handbook/principles.md).
+- A `///` or `//!` comment in a Souffle file is read as the text of one statement, and the rules on a statement's text apply to it.
+- The check reads nothing else in a code file as a document, and it reports each finding in a code file at that file's own line.
 
 ## Nesting
 

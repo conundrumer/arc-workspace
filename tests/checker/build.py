@@ -46,10 +46,6 @@ def pos(a: Atom) -> AtomLiteral:
     return AtomLiteral(a, False)
 
 
-def neg(a: Atom) -> AtomLiteral:
-    return AtomLiteral(a, True)
-
-
 @dataclass
 class Builder:
     """A program built part by part, each part with a fresh id."""
@@ -121,6 +117,14 @@ class FakeIndex:
                 return Resolved(d.id, tuple(through), ())
         return Unresolved(name, scope)
 
+    def type_decl(self, name: str, scope: Scope) -> TypeDecl | None:
+        for s in (scope, TOP):
+            d = next((t for t in self.program.types
+                      if t.name == name and t.scope == s), None)
+            if d is not None:
+                return d
+        return None
+
     def _occurrences(self, relation: DeclId, role: Role
                      ) -> tuple[Occurrence, ...]:
         out: list[Occurrence] = []
@@ -149,7 +153,7 @@ def annotations(**parts: object) -> Annotations:
     base: dict[str, object] = dict(
         header=(), reviews=(), representative=None, claims=(), witnesses=(),
         derives=(), stores=(), claim_lines=(), ignores=(), markers=(),
-        trailing=(), workarounds=(), header_prose=())
+        trailing=(), workarounds=(), header_prose=(), task_id=None)
     base.update(parts)
     return Annotations(**base)  # type: ignore[arg-type]
 
@@ -158,7 +162,7 @@ def solver(program: Program, ann: Annotations | None = None) -> Solver:
     return Solver(stem="0000test", task_id="0000test", program=program,
                   annotations=ann or annotations(), choice=None, branches=(),
                   params=Params(()), witness_file=None, task=None,
-                  lib=Lib(frozenset(), {}, {}), problems=())
+                  lib=Lib(frozenset(), {}, {}, {}), problems=())
 
 
 class FakeEngine:

@@ -31,8 +31,8 @@
 - The roles: [roles](prompts/roles), one document per role. A role's `agent` attribute says which agent runs it, and a role with none runs as `handbook`.
     - Its context: `context role <name>`.
     - A role's brief comes from the script or the session that spawns it, and the `context role` output gives that file's path.
-- The audit's deletion report: [Deletion report](prompts/run_dl.md).
-- The other sentences a runner tool prints: the `mctx` strings of the modules under [dl](src), and the help text in [cli.py](src/cli/parser.py) and [context.py](scripts/context.py).
+- The `deletions` report: [Deletion report](prompts/run_dl.md).
+- The other sentences a runner tool prints: the `mctx` strings of the modules under [render](src/checker/render) and of [text.py](src/cli/text.py), and the help text in [parser.py](src/cli/parser.py) and [context.py](scripts/context.py).
 - What the callout-rate classifier reads: [Classification rubric](tools/console/recal/RUBRIC.md).
 - The classifier: [Callout rate recalibration](tools/console/recal/README.md).
 - The workflow briefs and the schema descriptions: the scripts under [workflows](.claude/workflows).

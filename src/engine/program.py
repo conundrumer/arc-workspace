@@ -1,8 +1,10 @@
 """The parsed program an engine gives: declarations, units, macro calls and
 comments, as values with no program text in them."""
 
-from dataclasses import dataclass, field
+from collections.abc import Callable, Iterator, Sequence
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
+from functools import cached_property
 
 
 @dataclass(frozen=True)
@@ -55,7 +57,7 @@ class RelationName:
     @property
     def text(self) -> str:
         """The name as a statement writes it, `params.bg`."""
-        return ".".join((*self.instances, self.name))
+        return dotted((*self.instances, self.name))
 
 
 # Values
@@ -93,31 +95,45 @@ class AdtValue:
         return h
 
 
+PRIMITIVES = frozenset({"number", "unsigned", "float", "symbol"})
+"""The names of Souffle's primitive types."""
+
+
 type Value = int | float | str | RecordValue | AdtValue
 """One column's value: a number, a float, a symbol, a record or an ADT
 value."""
 
-
-def value_text(value: Value) -> str:
-    """A value as a program's text and its fact files write it: `$Count`,
-    `$Rank($Big)`, `[$Count, $Or]`, a number or a symbol as it stands."""
-    match value:
-        case bool():
-            return str(int(value))
-        case int() | float() | str():
-            return str(value)
-        case RecordValue(fields=fields):
-            return "[" + ", ".join(value_text(f) for f in fields) + "]"
-        case AdtValue(constructor=c, args=()):
-            return f"${c}"
-        case AdtValue(constructor=c, args=args):
-            return f"${c}(" + ", ".join(value_text(a) for a in args) + ")"
 
 type Row = tuple[Value, ...]
 type Rows = tuple[Row, ...]
 
 type Grid = tuple[tuple[int, ...], ...]
 """Rows of colors."""
+
+
+def as_grid(rows: Sequence[Sequence[int]]) -> Grid:
+    """Rows of colors as a `Grid`, rows of tuples: a task's grid or a
+    witness file's, rows of lists."""
+    return tuple(tuple(r) for r in rows)
+
+
+def cell_place(r: int, c: int, h: int, w: int) -> tuple[int, int, int, int]:
+    """The place of the cell at row `r` and column `c` of a grid of `h`
+    rows and `w` columns: its distances to the top, bottom, left and right
+    edges."""
+    return (r, h - 1 - r, c, w - 1 - c)
+
+
+def grid_size(grid: Grid) -> tuple[int, int]:
+    """The height and width of `grid`, a grid of one row or more, as a task
+    file and a witness file give it."""
+    return len(grid), len(grid[0])
+
+
+def grid_lists(grid: Grid) -> list[list[int]]:
+    """A `Grid` as rows of lists, the form a task file and a witness file
+    write."""
+    return [list(r) for r in grid]
 
 
 # Types
@@ -235,6 +251,12 @@ class RelationDecl:
     chart_of: str | None = field(default=None, kw_only=True)
     """The RIGID block whose chart this relation is; None for any other
     relation."""
+
+    @property
+    def scoped_name(self) -> RelationName:
+        """The relation's name as a statement of its own scope writes it,
+        with no instance part."""
+        return RelationName((), self.name)
 
 
 @dataclass(frozen=True)
@@ -428,6 +450,8 @@ class Atom:
     relation: RelationName
     args: tuple[Term, ...]
     line: int
+    """The line the atom stands on; 0 for an atom of a part an operation
+    wrote (`first_line`)."""
 
 
 @dataclass(frozen=True)
@@ -512,6 +536,30 @@ class GridForm(StrEnum):
 
 
 @dataclass(frozen=True)
+class GridLayout:
+    """What a GRID macro's name states of its calls: the form, whether each
+    emitted cell is placed as its offset from an anchor cell, and the
+    height and width."""
+
+    form: GridForm
+    stamp: bool
+    height: int
+    width: int
+
+    @property
+    def full(self) -> bool:
+        """Every cell holds a value and is emitted."""
+        return self.form is GridForm.DENSE and not self.stamp
+
+    @property
+    def valued(self) -> bool:
+        """Each emitted fact holds the cell's value after its place; the
+        other layouts take `1` for a member cell and `0` or `_` for an
+        empty one."""
+        return self.form is GridForm.SPARSE or self.full
+
+
+@dataclass(frozen=True)
 class GridCell:
     """One cell of a GRID call: its term, and whether it is a stamp's
     anchor cell, written `@<term>`."""
@@ -527,15 +575,18 @@ class GridCall:
 
     id: UnitId
     scope: Scope
-    form: GridForm
-    stamp: bool
-    """Each emitted cell's place is its offset from the anchor cell."""
-    height: int
-    width: int
+    layout: GridLayout
     relation: RelationName
     keys: tuple[Term, ...]
     cells: tuple[tuple[GridCell, ...], ...]
     span: Span | None
+
+    @property
+    def anchor(self) -> tuple[int, int] | None:
+        """The row and column of the cell marked `@`, None where no cell
+        is."""
+        return next(((r, c) for r, row in enumerate(self.cells)
+                     for c, cell in enumerate(row) if cell.anchor), None)
 
 
 @dataclass(frozen=True)
@@ -549,6 +600,23 @@ class RigidCall:
     body: tuple[UnitId, ...]
     names: tuple[str, ...]
     span: Span | None
+
+    def is_chart(self, decl: RelationDecl) -> bool:
+        """Whether `decl` is a chart relation the call declares: one of
+        its block, at its scope."""
+        return decl.scope == self.scope and decl.chart_of == self.block
+
+    def binds(self, decl: RelationDecl) -> bool:
+        """Whether the call declares or binds `decl`: a chart relation of
+        the call (`is_chart`), or the relation of a name it binds, at its
+        scope."""
+        return self.is_chart(decl) \
+            or (decl.scope == self.scope and decl.name in self.names)
+
+
+POSE_COLUMN = 0
+"""The column of a RIGID call's placed relation that holds the pose, the
+D4 element the chart's rows are placed by, before the chart's columns."""
 
 
 type MacroCall = GridCall | RigidCall
@@ -615,3 +683,252 @@ class Program:
     comments: tuple[Comment, ...]
     includes: tuple[Include, ...]
     defines: tuple[Define, ...]
+
+    @property
+    def declarations(self) -> tuple["Declaration", ...]:
+        """Every declaration: the types, relations, components, instances
+        and functors, in that order."""
+        return (*self.types, *self.relations, *self.components,
+                *self.instances, *self.functors)
+
+    @cached_property
+    def _by_id(self) -> tuple[dict[DeclId, "Declaration"],
+                              dict[UnitId, "Unit"],
+                              dict[DeclId, RelationDecl]]:
+        """The declarations, units and relation declarations by id, the
+        first of each id, built on the first lookup."""
+        return ({d.id: d for d in reversed(self.declarations)},
+                {u.id: u for u in reversed(self.units)},
+                {r.id: r for r in reversed(self.relations)})
+
+    def declaration(self, id: DeclId) -> "Declaration | None":
+        """The declaration whose id is `id`; None where none is."""
+        return self._by_id[0].get(id)
+
+    def unit(self, id: UnitId) -> "Unit | None":
+        """The unit whose id is `id`; None where none is."""
+        return self._by_id[1].get(id)
+
+    def relation(self, id: DeclId) -> RelationDecl | None:
+        """The relation declaration whose id is `id`; None where none
+        is."""
+        return self._by_id[2].get(id)
+
+    def declared(self, id: DeclId) -> "Declaration":
+        """The declaration whose id is `id`, an id read from this program.
+        Raises `ValueError` where none is."""
+        got = self.declaration(id)
+        if got is None:
+            raise ValueError(f"no declaration has the id {id}")
+        return got
+
+    def declared_relation(self, id: DeclId) -> RelationDecl:
+        """The relation declaration whose id is `id`, an id read from this
+        program. Raises `ValueError` where none is."""
+        got = self.relation(id)
+        if got is None:
+            raise ValueError(f"no relation declaration has the id {id}")
+        return got
+
+    def next_decl_index(self) -> int:
+        """The index past every declaration id of the program."""
+        return 1 + max((d.id.index for d in self.declarations), default=-1)
+
+    def next_unit_index(self) -> int:
+        """The index past every unit and macro call id of the program."""
+        return 1 + max((u.id.index for u in (*self.units, *self.macros)),
+                       default=-1)
+
+    def charts(self, call: RigidCall) -> tuple[RelationDecl, ...]:
+        """The chart relations a RIGID call declares (`RigidCall.is_chart`),
+        in their order."""
+        return tuple(r for r in self.relations if call.is_chart(r))
+
+    def placed(self, call: RigidCall) -> tuple[RelationDecl, ...]:
+        """The relations of the names a RIGID call binds, at its scope, in
+        declaration order."""
+        return tuple(r for r in self.relations
+                     if r.scope == call.scope and r.name in call.names)
+
+    def bound_names(self, call: RigidCall) -> tuple[str, ...]:
+        """The names of the relations a RIGID call declares or binds
+        (`RigidCall.binds`): the names it binds, then its charts'."""
+        return (*call.names, *(r.name for r in self.charts(call)))
+
+    def in_rigid_body(self, unit: UnitId) -> bool:
+        """Whether `unit` stands in the body of a RIGID call."""
+        return any(isinstance(m, RigidCall) and unit in m.body
+                   for m in self.macros)
+
+    def rigid_bound(self, decl: RelationDecl) -> bool:
+        """Whether some RIGID call of the program declares or binds `decl`
+        (`RigidCall.binds`)."""
+        return any(isinstance(m, RigidCall) and m.binds(decl)
+                   for m in self.macros)
+
+    def bound_charts(self, call: RigidCall
+                     ) -> tuple[tuple[str, RelationDecl], ...] | None:
+        """Each name a RIGID call binds with the chart relation that holds
+        its facts, in the call's order; None where the call's charts
+        (`charts`) are not one per name."""
+        charts = self.charts(call)
+        if len(charts) != len(call.names):
+            return None
+        return tuple(zip(call.names, charts, strict=True))
+
+
+type Declaration = TypeDecl | RelationDecl | Component | Instance | FunctorDecl
+
+
+def dotted(path: tuple[str, ...]) -> str:
+    """A qualified name's text, its parts joined by dots, `params.bg`: the
+    one text of a relation's name (`RelationName.text`), an instance path
+    or a type of a component."""
+    return ".".join(path)
+
+
+def enclosing[T](path: tuple[T, ...]) -> Iterator[tuple[T, ...]]:
+    """`path` and each path around it, innermost first, the empty path
+    last: where a name read at `path` is looked for."""
+    return (path[:n] for n in range(len(path), -1, -1))
+
+
+def own(at: Span | Comment | Include | Define | None) -> bool:
+    """Whether a part is of the text handed to `parse`, not of an include
+    or written by an operation: `at` is the part's span, or a comment,
+    include or define. A solver's own text is these parts (plan §D3)."""
+    return at is not None and at.file is None
+
+
+def first_line(span: Span | None) -> int:
+    """The first line of a part whose span is `span`; 0 for a part an
+    operation wrote, which stands on no line of the text."""
+    return 0 if span is None else span.first
+
+
+def subterms(term: Term) -> tuple[Term, ...]:
+    """The terms `term` holds directly, left to right; none for an
+    aggregate, whose terms stand in its own body."""
+    match term:
+        case ConstructorTerm(args=args) | RecordTerm(args=args) \
+                | IntrinsicCall(args=args) | FunctorCall(args=args):
+            return args
+        case UnaryTerm(arg=arg) | Cast(term=arg):
+            return (arg,)
+        case BinaryTerm(lhs=lhs, rhs=rhs):
+            return (lhs, rhs)
+    return ()
+
+
+def with_subterms(term: Term, fn: Callable[[Term], Term]) -> Term:
+    """`term` with each term it holds directly (`subterms`) as `fn` gives
+    it, `fn` called left to right; an aggregate as it stands."""
+    match term:
+        case ConstructorTerm(args=args) | RecordTerm(args=args) \
+                | IntrinsicCall(args=args) | FunctorCall(args=args):
+            return replace(term, args=tuple(fn(a) for a in args))
+        case UnaryTerm(arg=arg):
+            return replace(term, arg=fn(arg))
+        case Cast(term=arg):
+            return replace(term, term=fn(arg))
+        case BinaryTerm(lhs=lhs, rhs=rhs):
+            new_lhs = fn(lhs)
+            return replace(term, lhs=new_lhs, rhs=fn(rhs))
+    return term
+
+
+def literal_terms(lit: BodyLiteral) -> tuple[Term, ...]:
+    """The terms an atom literal or a comparison holds at its top level,
+    left to right; none for another literal."""
+    match lit:
+        case AtomLiteral(atom=atom):
+            return atom.args
+        case Comparison(lhs=lhs, rhs=rhs):
+            return (lhs, rhs)
+    return ()
+
+
+def with_literal_terms(lit: BodyLiteral,
+                       fn: Callable[[Term], Term]) -> BodyLiteral:
+    """`lit` with each term `literal_terms` gives as `fn` gives it, `fn`
+    called left to right; another literal as it stands."""
+    match lit:
+        case AtomLiteral(atom=atom):
+            return replace(lit, atom=replace(
+                atom, args=tuple(fn(a) for a in atom.args)))
+        case Comparison(lhs=lhs, rhs=rhs):
+            new_lhs = fn(lhs)
+            return replace(lit, lhs=new_lhs, rhs=fn(rhs))
+    return lit
+
+
+def term_aggregates(term: Term) -> list[Aggregate]:
+    """The aggregates a term holds, left to right, not those inside
+    another aggregate."""
+    if isinstance(term, Aggregate):
+        return [term]
+    return [a for x in subterms(term) for a in term_aggregates(x)]
+
+
+def literal_aggregates(lit: BodyLiteral) -> list[Aggregate]:
+    """The aggregates the terms of an atom or a comparison hold, left to
+    right, not those inside another aggregate; none for another
+    literal."""
+    return [a for t in literal_terms(lit) for a in term_aggregates(t)]
+
+
+def body_atoms(body: tuple[BodyLiteral, ...]) -> Iterator[tuple[Atom, bool]]:
+    """Every atom a body reads, in order, with whether it stands negated:
+    an atom before the atoms of the aggregates its terms hold, through
+    disjunctions and the bodies of aggregates."""
+    for lit in body:
+        if isinstance(lit, Disjunction):
+            for branch in lit.branches:
+                yield from body_atoms(branch)
+            continue
+        if isinstance(lit, AtomLiteral):
+            yield lit.atom, lit.negated
+        for agg in literal_aggregates(lit):
+            yield from _aggregate_atoms(agg)
+
+
+def _aggregate_atoms(agg: Aggregate) -> Iterator[tuple[Atom, bool]]:
+    """Every atom an aggregate reads: those of the aggregates its
+    expression holds, then those of its body."""
+    if agg.expr is not None:
+        for inner in term_aggregates(agg.expr):
+            yield from _aggregate_atoms(inner)
+    yield from body_atoms(agg.body)
+
+
+def term_value(term: Term, defined: Callable[[str], "Value | None"]
+               ) -> "Value | None":
+    """The value a term states with no variable or call in it: a number, a
+    symbol, a constructor or record of such, a cast of one, a negation,
+    `+`, `-` or `*` of two numbers, or a defined name whose value
+    `defined` gives; None for any other term."""
+    match term:
+        case NumberTerm(value=v) | StringTerm(value=v):
+            return v
+        case DefinedName(name=name):
+            return defined(name)
+        case ConstructorTerm(args=args) | RecordTerm(args=args):
+            vals = [term_value(a, defined) for a in args]
+            if any(v is None for v in vals):
+                return None
+            held = tuple(v for v in vals if v is not None)
+            return AdtValue(term.name, held) \
+                if isinstance(term, ConstructorTerm) else RecordValue(held)
+        case Cast(term=arg):
+            return term_value(arg, defined)
+        case UnaryTerm(op=UnaryOperator.NEGATE, arg=arg):
+            v = term_value(arg, defined)
+            return -v if isinstance(v, int | float) else None
+        case BinaryTerm(op=op, lhs=lhs, rhs=rhs) if op in (
+                BinaryOperator.ADD, BinaryOperator.SUB, BinaryOperator.MUL):
+            a, b = term_value(lhs, defined), term_value(rhs, defined)
+            if not isinstance(a, int | float) or not isinstance(b, int | float):
+                return None
+            return a + b if op == BinaryOperator.ADD else (
+                a - b if op == BinaryOperator.SUB else a * b)
+    return None

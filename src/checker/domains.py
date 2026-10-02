@@ -1,12 +1,14 @@
 """A parameter's candidate values, by the declared type of each column, and
 a value as the sweep, drop-one and the determination plan print it."""
 
-from collections.abc import Sequence
+import itertools
+from collections.abc import Iterable, Sequence
 from enum import StrEnum
 
 from arc.task import Task
 from engine import RecordValue, Row, Value
 from solver.model import Lib
+from solver.solve import row_key, value_key
 from solver.vocabulary import BOX, COLOR, NUMBER, OFFSET
 
 MAGNITUDE_TYPES = frozenset({BOX, OFFSET})
@@ -51,9 +53,14 @@ def _known_grids(task: Task) -> list[list[list[int]]]:
         ex.input for ex in task.test]
 
 
+def colors(grids: Iterable[Sequence[Sequence[int]]]) -> frozenset[int]:
+    """The colors `grids` hold."""
+    return frozenset(c for g in grids for row in g for c in row)
+
+
 def color_domain(task: Task) -> list[Value]:
     """The colors the known grids hold."""
-    return list(sorted({c for g in _known_grids(task) for row in g for c in row}))
+    return list(sorted(colors(_known_grids(task))))
 
 
 def number_domain(task: Task) -> list[int]:
@@ -65,9 +72,11 @@ def number_domain(task: Task) -> list[int]:
 
 def orientation_domain(type_name: str, lib: Lib) -> list[Value]:
     """The values of the orientation type's members, sorted."""
-    vals = [lib.constants[m] for m in lib.orientation_types[type_name]
-            if m in lib.constants]
-    return sorted(vals, key=lambda v: v if isinstance(v, int) else 0)
+    members = lib.orientation_types[type_name]
+    unvalued = [m for m in members if m not in lib.constants]
+    if unvalued:
+        raise ValueError(f"the lib gives no value to {', '.join(unvalued)}")
+    return sorted((lib.constants[m] for m in members), key=value_key)
 
 
 def _ints(v: Value) -> tuple[int, ...]:
@@ -111,6 +120,14 @@ def position_domain(type_name: str, stored: list[Value], nums: list[int]
     return [RecordValue(v) for v in sorted(out)]
 
 
+def candidate_rows(domains: Sequence[Sequence[Value]], stored: Sequence[Row]
+                   ) -> list[Row]:
+    """A parameter's candidate rows: each row of its columns' domains
+    (`param_domains`), and its stored rows, in row order."""
+    return sorted(set(itertools.product(*domains)) | set(stored),
+                  key=row_key)
+
+
 def param_domains(types: Sequence[str], stored: Sequence[Row], task: Task,
                   lib: Lib) -> list[list[Value]]:
     """Each column's candidate domain, in column order. Raises
@@ -130,9 +147,3 @@ def param_domains(types: Sequence[str], stored: Sequence[Row], task: Task,
             case None:
                 raise ValueError(f"no domain enumerates a `{t}` column")
     return out
-
-
-def row_key(row: Row) -> tuple[object, ...]:
-    """An order on rows by their values' parts."""
-    from solver.solve import value_key
-    return tuple(value_key(v) for v in row)

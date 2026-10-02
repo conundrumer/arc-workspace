@@ -2,21 +2,21 @@
 
 import json
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 from checker.finding import AtEntry, AtLine, Finding, Kind
 from checker.payloads.witness import (
     AnnotationPayload,
     ApproximatedWithoutWitness,
     ApproximationUnwitnessed,
-    BranchUnwitnessed,
     AssignPayload,
     BranchRef,
+    BranchUnwitnessed,
     CaseSet,
     ConceptPayload,
-    Condition,
-    DerivedAt,
-    DriftPayload,
     ConceptUnenumeratedPayload,
+    Condition,
+    DriftPayload,
     DroppedPayload,
     ForeignUnderApproximated,
     NoDivergence,
@@ -38,34 +38,26 @@ from checker.payloads.witness import (
 from checker.render import (
     _no_sentence,
     _ticked,
-    branch_name,
     case_name,
     grid_lines,
-    joined,
-    verdict_text,
+    names_text,
+    shifted,
     where_text,
 )
 from controlled_markdown import mctx
 from solver import names
+from solver.annotations import Slot, comment_text, verdict_text, witness_text
 from solver.model import (
-    Case,
-    ConstructorBranch,
-    DeriveBranch,
     Solver,
-    StoreBranch,
-    StoredAtDerive,
 )
 from solver.solve import Grids, Outcome, PairId
-from typing import TYPE_CHECKING
-
 from solver.witness import (
-    AssignArg,
-    AssignRows,
     AssignValue,
     GroupGrid,
     RejectedOutput,
     Resolutions,
     Undefined,
+    assign_json,
 )
 
 if TYPE_CHECKING:
@@ -83,14 +75,6 @@ _WITNESSES = "([Witnesses](docs/handbook/principles.md#witnesses))"
 
 
 # Parts
-
-
-def location(solver: Solver, f: Finding) -> str:
-    """Where a witness finding stands, as the `witness` report writes it:
-    `line <n>` for a line of the solver, else `where_text`."""
-    if isinstance(f.where, AtLine):
-        return mctx("line {n}").format(n=f.where.line)
-    return where_text(solver, f.where)
 
 
 def outcome_lines(value: Outcome | GroupGrid | RejectedOutput) -> list[str]:
@@ -119,13 +103,13 @@ def _side(label: str, value: Outcome | GroupGrid | RejectedOutput
           ) -> list[str]:
     if isinstance(value, Undefined):
         return [f"  {label}: " + mctx("undefined")]
-    return [f"  {label}:", *(f"    {ln}" if ln else ""
+    return [f"  {label}:", *(shifted(ln, "    ") if ln else ""
                              for ln in outcome_lines(value))]
 
 
 def _cases(cases: CaseSet) -> str:
     """A set of cases by the names that print it (`CaseSet`)."""
-    return ", ".join(cases.names)
+    return names_text(cases.names)
 
 
 def _params(names: Sequence[str]) -> str:
@@ -134,35 +118,21 @@ def _params(names: Sequence[str]) -> str:
 
 
 def _ref_name(ref: BranchRef) -> str:
-    """A branch in the one name form: a constructor with Souffle's `$`
-    prefix, a `@derive` or `@store` branch as `branch_name` gives it."""
-    if isinstance(ref, ConstructorBranch):
-        return names.ctor_text(ref.name)
-    return branch_name(ref)
+    """A branch in the one name form (`solver.names.part_text`)."""
+    return names.part_text(ref)
 
 
 def _branches_text(parts: Sequence[PointBranch]) -> str:
     """One side of a branch difference as one name: the branch it takes
     at each point where the two sides differ, joined as a name
-    (`joined`)."""
-    out: list[str] = []
-    for x in parts:
-        if isinstance(x, DerivedAt):
-            out.append(f"{x.store.spelled}={names.DERIVED}")
-        else:
-            out.append(_ref_name(x))
-    return f"`{joined(out)}`"
+    (`solver.names.part_name`)."""
+    return f"`{names.part_name(parts)}`"
 
 
-def _arg_text(arg: AssignArg) -> object:
-    return [_arg_text(a) for a in arg] if isinstance(arg, tuple) else arg
-
-
-def _assign_json(assign: Sequence[tuple[str, AssignValue]]) -> str:
-    return json.dumps({
-        k: [[_arg_text(a) for a in row] for row in v.rows]
-        if isinstance(v, AssignRows) else [list(r) for r in v]
-        for k, v in assign})
+def _assign_text(assign: Sequence[tuple[str, AssignValue]]) -> str:
+    """An `assign` value as the witness file writes it
+    (`solver.witness.assign_json`)."""
+    return json.dumps(assign_json(assign))
 
 
 # Sentences
@@ -191,16 +161,16 @@ def _annotation_text(solver: Solver, p: AnnotationPayload) -> str:
                         ).format(slug=slug)
         case VerdictOutputUnknown(verdict=v):
             return mctx("the output the verdict `{verdict}` denotes on this "
-                        "witness is unknown: the runner holds no case that "
-                        "takes `{verdict}`").format(verdict=verdict_text(v))
+                        "witness is unknown: no witnessed case takes "
+                        "`{verdict}`").format(verdict=verdict_text(v))
         case WitnessEntryMissing(witness=w):
             return mctx("the witness file holds no witness `{id}`").format(
                 id=w)
         case BranchUnwitnessed(constructor=c):
             return mctx("`{name}` is no concept branch and has no "
-                        "`@witness` line; add "
-                        "`// @witness <id>: <plausibility> <verdict>`"
-                        ).format(name=c)
+                        "`@witness` line; add `{line}`").format(
+                name=c, line=comment_text(witness_text(
+                    Slot.ID, Slot.PLAUSIBILITY, Slot.VERDICT)))
         case ReassignedMismatch(reassigned=r, assigned=a):
             return mctx("the `@reassigned` lines give {named}; the "
                         "witness's `assign` changes {holds}").format(
@@ -218,7 +188,8 @@ def _annotation_text(solver: Solver, p: AnnotationPayload) -> str:
                 + _WITNESSES)
 
 
-def _pairs_lines(p: UnseparatedPayload | SubsumedPayload) -> list[str]:
+def _pairs_lines(solver: Solver, p: UnseparatedPayload | SubsumedPayload
+                 ) -> list[str]:
     """A branch difference and the pairs it holds: how many of the pairs
     that differ by it alone, and the names of the branches both cases of
     each such pair take elsewhere."""
@@ -232,7 +203,9 @@ def _pairs_lines(p: UnseparatedPayload | SubsumedPayload) -> list[str]:
     if not p.contexts.names:
         return [head + " " + (
             mctx("in the one pair of cases that differs by these branches "
-                 "alone") if of == 1 else
+                 "alone, of which one is `{case}`").format(
+                case=case_name(solver, p.contexts.cases[0]))
+            if of == 1 and p.contexts.cases else
             mctx("in any of the {of} pairs of cases that differ by these "
                  "branches alone").format(of=of))]
     return [head + " " + mctx(
@@ -245,7 +218,7 @@ def _pairs_lines(p: UnseparatedPayload | SubsumedPayload) -> list[str]:
 def _dropped_line(solver: Solver, p: DroppedPayload) -> str:
     a = case_name(solver, p.case)
     against = "" if p.against is None else (
-        f"{p.against.section} {p.against.index}"
+        p.against.text
         if isinstance(p.against, PairId) else case_name(solver, p.against))
     match p.condition:
         case Condition.UNDEFINED:
@@ -288,7 +261,7 @@ def witness_lines(solver: Solver, f: Finding) -> list[str]:
     """The lines of one finding of a witness kind: one block per
     finding."""
     p = f.payload
-    at = location(solver, f)
+    at = where_text(solver, f.where)
     match p:
         case DriftPayload(cases=cases, expected=expected,
                                       actual=actual):
@@ -316,7 +289,7 @@ def witness_lines(solver: Solver, f: Finding) -> list[str]:
                     entry=at, case=case),
                 *_side(mctx("the solver's output"), actual)]
         case UnseparatedPayload() | SubsumedPayload():
-            return _pairs_lines(p)
+            return _pairs_lines(solver, p)
         case ConceptPayload(concept=concept):
             return [mctx("{entry}: the concept case gives a grid other than "
                          "the judged output").format(entry=at),
@@ -326,10 +299,10 @@ def witness_lines(solver: Solver, f: Finding) -> list[str]:
                          "group lists it").format(entry=at, name=name)]
         case UnheldPayload(names=names):
             return [f"{at}: " + (
-                mctx("the runner does not hold the case {names} denotes, so "
+                mctx("{names} denotes no case of the solver, so "
                      "the grid of the group that lists it is not checked")
                 if len(names) == 1 else
-                mctx("the runner does not hold the cases these names denote, "
+                mctx("these names denote no case of the solver, "
                      "so the grids of the groups that list them are not "
                      "checked: {names}")).format(names=_ticked(names))]
         case DroppedPayload():
@@ -360,7 +333,7 @@ def witness_lines(solver: Solver, f: Finding) -> list[str]:
                          "the `{id}` witness in the task's witness file: "
                          "`{assign}`").format(
                 entry=at, names=names, id=task_entry,
-                assign=_assign_json(assign))]
+                assign=_assign_text(assign))]
         case (
                 ApproximatedWithoutWitness() | ApproximationUnwitnessed()
                 | ForeignUnderApproximated() | RelaxedNotScene()
@@ -382,7 +355,8 @@ def try_lines(solver: Solver, result: "TryResult") -> list[str]:
     differing; it writes nothing."""
     from checker.render.branches import record_lines
 
-    lines = record_lines(result.entry, solver, result.cases)[1:] + [""]
+    lines = record_lines(result.entry, solver, result.cases,
+                         result.of) + [""]
 
     def counted(n: int, left: int) -> str:
         return mctx("all {n} of its pairs").format(n=n) if not left \

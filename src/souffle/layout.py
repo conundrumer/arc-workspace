@@ -2,11 +2,10 @@
 from, so that a rendering copies the text of each part no operation
 changed, and the program that carries it."""
 
-import threading
-import weakref
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 
+from engine.memo import ByIdentity
 from engine.program import (
     Component,
     DeclId,
@@ -115,45 +114,34 @@ def layout_keys(segments: Iterable[Segment]) -> set[Key]:
     return out
 
 
-_HELD_UNITS: dict[int, tuple[weakref.ref[Layout], int]] = {}
-_HELD_UNITS_LOCK = threading.Lock()
+_HELD_UNITS: ByIdentity[Layout, int] = ByIdentity()
 
 
 def _held_unit(layout: Layout) -> int:
     """The greatest unit id index `layout` holds, -1 where it holds none;
     read once per layout while it lives, as the programs an operation
     derives from one share its layout."""
-    key = id(layout)
-    with _HELD_UNITS_LOCK:
-        got = _HELD_UNITS.get(key)
-    if got is not None and got[0]() is layout:
-        return got[1]
-    top = max((k.index for k in layout_keys(layout.segments) if isinstance(k, UnitId)),
-              default=-1)
-
-    def drop(_r: object, key: int = key) -> None:
-        with _HELD_UNITS_LOCK:
-            held = _HELD_UNITS.get(key)
-            if held is not None and held[0]() is None:
-                del _HELD_UNITS[key]
-
-    with _HELD_UNITS_LOCK:
-        _HELD_UNITS[key] = (weakref.ref(layout, drop), top)
-    return top
+    return _HELD_UNITS.compute(layout, lambda: max(
+        (k.index for k in layout_keys(layout.segments)
+         if isinstance(k, UnitId)), default=-1))
 
 
 def next_unit(program: Program) -> int:
     """The index of the next unit id an operation writes: past every unit
     and macro call of the program and every one its layout holds, so that
     no id of a removed part comes back on another."""
-    return 1 + max((*(u.id.index for u in (*program.units, *program.macros)),
-                    _held_unit(layout_of(program))), default=-1)
+    return max(program.next_unit_index(), 1 + _held_unit(layout_of(program)))
 
 
 def next_decl(program: Program) -> int:
     """The index of the next declaration id an operation writes, past
     every one the program and its layout hold."""
     held = [k.index for k in layout_keys(layout_of(program).segments) if isinstance(k, DeclId)]
-    return 1 + max((*(d.id.index for d in (*program.types, *program.relations,
-                                             *program.components, *program.instances,
-                                             *program.functors)), *held), default=-1)
+    return max(program.next_decl_index(), 1 + max(held, default=-1))
+
+
+def written_lines(lines: Sequence[str], first: int, last: int) -> list[str]:
+    """The lines `first` to `last`, 1-based and inclusive, of a text split
+    into `lines`, each without the spaces at its end: a part as written,
+    by the first and last line of its span."""
+    return [lines[n - 1].rstrip() for n in range(first, last + 1)]

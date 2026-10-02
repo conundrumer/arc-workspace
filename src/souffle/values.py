@@ -5,12 +5,8 @@ from engine.program import (
     AdtType,
     AdtValue,
     AliasType,
-    BinaryOperator,
-    BinaryTerm,
-    Cast,
     ConstructorTerm,
     Define,
-    DefinedName,
     NumberTerm,
     RecordTerm,
     RecordType,
@@ -19,11 +15,11 @@ from engine.program import (
     SubtypeType,
     Term,
     TypeDecl,
-    UnaryOperator,
-    UnaryTerm,
     UnionType,
     Value,
 )
+from engine.program import term_value
+from engine.text import split_top
 from souffle.index import Level, Tree
 
 
@@ -32,45 +28,19 @@ class NotConstant(Exception):
 
 
 def constant(t: Term, defines: dict[str, Define]) -> Value:
-    """The value a constant term states. Raises `NotConstant` for a term
+    """The value a constant term states (`engine.program.term_value`), a
+    defined name read through `defines`. Raises `NotConstant` for a term
     that holds a variable or a call."""
-    match t:
-        case NumberTerm(v):
-            return v
-        case StringTerm(v):
-            return v
-        case RecordTerm(args):
-            return RecordValue(tuple(constant(a, defines) for a in args))
-        case ConstructorTerm(name, args):
-            return AdtValue(name, tuple(constant(a, defines) for a in args))
-        case DefinedName(name) if name in defines and defines[name].value is not None:
-            value = defines[name].value
-            assert value is not None
-            return constant(value, defines)
-        case Cast(arg, _):
-            return constant(arg, defines)
-        case UnaryTerm(UnaryOperator.NEGATE, arg):
-            v = constant(arg, defines)
-            if isinstance(v, int | float):
-                return -v
-        case BinaryTerm(op, lhs, rhs):
-            a, b = constant(lhs, defines), constant(rhs, defines)
-            if isinstance(a, int) and isinstance(b, int):
-                folded = _fold(op, a, b)
-                if folded is not None:
-                    return folded
-    raise NotConstant(repr(t))
 
+    def defined(name: str) -> Value | None:
+        d = defines.get(name)
+        return None if d is None or d.value is None \
+            else term_value(d.value, defined)
 
-def _fold(op: BinaryOperator, a: int, b: int) -> int | None:
-    match op:
-        case BinaryOperator.ADD:
-            return a + b
-        case BinaryOperator.SUB:
-            return a - b
-        case BinaryOperator.MUL:
-            return a * b
-    return None
+    got = term_value(t, defined)
+    if got is None:
+        raise NotConstant(repr(t))
+    return got
 
 
 def term_of(v: Value) -> Term:
@@ -113,22 +83,6 @@ def _resolved(name: str, tree: Tree, place: tuple[Level, ...], start: int,
     return decl, inner, at
 
 
-def _split(text: str) -> list[str]:
-    """`text` split at the commas outside brackets and parentheses."""
-    parts: list[str] = []
-    depth, start = 0, 0
-    for i, ch in enumerate(text):
-        if ch in "([":
-            depth += 1
-        elif ch in ")]":
-            depth -= 1
-        elif ch == "," and depth == 0:
-            parts.append(text[start:i].strip())
-            start = i + 1
-    parts.append(text[start:].strip())
-    return [] if parts == [""] else parts
-
-
 def _fields(parts: list[str], types: list[str], what: str) -> list[tuple[str, str]]:
     if len(parts) != len(types):
         raise ValueError(f"{what} holds {len(parts)} values, and its type {len(types)}")
@@ -153,7 +107,7 @@ def printed(text: str, type_name: str, tree: Tree, place: tuple[Level, ...],
         if not (s.startswith("[") and s.endswith("]")):
             raise ValueError(f"`{text}` is no record of type `{type_name}`")
         return RecordValue(tuple(printed(p, t, tree, inner, at) for p, t in _fields(
-            _split(s[1:-1]), [f.type for f in kind.fields], f"`{text}`")))
+            split_top(s[1:-1]), [f.type for f in kind.fields], f"`{text}`")))
     if isinstance(kind, AdtType):
         if not s.startswith("$"):
             raise ValueError(f"`{text}` is no value of type `{type_name}`")
@@ -161,7 +115,7 @@ def printed(text: str, type_name: str, tree: Tree, place: tuple[Level, ...],
         ctor = next((c for c in kind.constructors if c.name == name), None)
         if ctor is None or (paren and not rest.endswith(")")):
             raise ValueError(f"`{text}` is no value of type `{type_name}`")
-        parts = _split(rest[:-1]) if paren else []
+        parts = split_top(rest[:-1]) if paren else []
         return AdtValue(name, tuple(printed(p, t, tree, inner, at) for p, t in _fields(
             parts, [f.type for f in ctor.fields], f"`{text}`")))
     raise ValueError(f"type `{type_name}` reads no printed value")

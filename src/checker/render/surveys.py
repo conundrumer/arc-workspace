@@ -7,11 +7,16 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import controlled_markdown as nm
-from checker.domains import (
-    MAGNITUDE_TYPES,
-    ColumnDomain,
-    column_domain,
-    row_key,
+from checker.deletions import (
+    BaselineFails,
+    ColumnName,
+    DeletionKind,
+    DeletionReport,
+    DeletionResult,
+    DeletionRow,
+    Quote,
+    Quoted,
+    TypeName,
 )
 from checker.derived_constant import (
     ConstantReport,
@@ -40,28 +45,21 @@ from checker.determination_plan import (
     classify,
     covering,
 )
-from checker.drop_one import DroppedFact, DropOneResult, Fact, TrainFails
-from checker.deletions import (
-    BaselineFails,
-    ColumnName,
-    DeletionKind,
-    DeletionReport,
-    DeletionResult,
-    DeletionRow,
-    Quote,
-    Quoted,
-    TypeName,
+from checker.domains import (
+    MAGNITUDE_TYPES,
 )
+from checker.drop_one import DropOneResult, DroppedFact, Fact, TrainFails
 from checker.render import (
-    atom_text,
-    case_name,
+    arg_text,
     failure_text,
+    file_line,
     finding_lines,
-    literal_text,
     marker_text,
+    names_text,
+    noun,
     solver_name,
-    value_text,
 )
+from checker.render.branches import NOT_BETWEEN
 from checker.sweep import (
     CaseSets,
     Cut,
@@ -79,8 +77,11 @@ from checker.sweep import (
 )
 from checker.variants import OnTest, TimedOut
 from controlled_markdown import mctx
-from engine import AdtValue, RecordValue, Row, Value, checkout
-from solver.model import Lib, Solver, has_determine
+from engine import RecordValue, Row, checkout
+from engine.text import text as code_text
+from solver.model import Case, Lib, Solver, has_determine
+from solver.names import cover
+from solver.solve import row_key
 from solver.vocabulary import NUMBER
 
 
@@ -95,8 +96,19 @@ def deletion_doc() -> Path:
 def _head_text(q: Quoted) -> str:
     """A clause's head, with `<= <atom>` for a subsumptive clause."""
     if q.dominating is None:
-        return atom_text(q.head)
-    return f"{atom_text(q.head)} <= {atom_text(q.dominating)}"
+        return code_text(q.head)
+    return f"{code_text(q.head)} <= {code_text(q.dominating)}"
+
+
+_KIND_ORDER = {k: i for i, k in enumerate(DeletionKind)}
+"""The order of the deletion kinds as `DeletionKind` declares them. Rows
+of one line and kind keep the order `deletions` gives them, the order of
+their parts in the clause."""
+
+
+def _label(r: DeletionRow) -> str:
+    """A row's kind as the report prints it."""
+    return f"determination {r.kind}" if r.determination else str(r.kind)
 
 
 def quote_text(q: Quote) -> str:
@@ -106,7 +118,7 @@ def quote_text(q: Quote) -> str:
         case Quoted(part=None):
             return _head_text(q)
         case Quoted(part=part):
-            return (", ".join(literal_text(x) for x in part or ())
+            return (", ".join(code_text(x) for x in part or ())
                     + f"` in `{_head_text(q)}")
         case ColumnName(relation=r, column=c):
             return f"{r}.{c}"
@@ -143,12 +155,12 @@ def render_deletions(solver: Solver, result: DeletionResult) -> list[str]:
         return finding_lines(solver, result.finding)
     report: DeletionReport = result
     judged = report.judged
-    name = solver_name(solver)
-    rows = sorted(report.rows,
-                  key=lambda r: (r.line, r.label, quote_text(r.quote)))
+    rows = sorted(report.rows, key=lambda r: (
+        r.line, r.determination, _KIND_ORDER[r.kind]))
 
     def entries(group: list[DeletionRow]) -> list[str]:
-        return [f"{ROW}- {name}:{r.line}: {r.label} `{quote_text(r.quote)}`"
+        return [f"{ROW}- {file_line(solver.stem, r.line)}: {_label(r)} "
+                f"`{quote_text(r.quote)}`"
                 for r in group]
 
     apart = (DeletionKind.UNPROBED_CASE, DeletionKind.UNGROUNDED,
@@ -180,13 +192,13 @@ def render_deletions(solver: Solver, result: DeletionResult) -> list[str]:
         lines.append("")
         lines += _section(
             "unprobed", count=len(unprobed),
-            noun="case column" if len(unprobed) == 1 else "case columns")
+            noun=noun(len(unprobed), "case column"))
         lines += entries(unprobed)
     if ungrounded:
         lines.append("")
         lines += _section(
             "ungrounded", count=len(ungrounded),
-            noun="deletion" if len(ungrounded) == 1 else "deletions")
+            noun=noun(len(ungrounded), "deletion"))
     if unexercised:
         lines.append("")
         lines += _section("unexercised")
@@ -196,25 +208,15 @@ def render_deletions(solver: Solver, result: DeletionResult) -> list[str]:
     if report.timed_out:
         lines.append("")
         lines += _section("timed-out")
-        lines += [f"{ROW}- {name}:{t.line}: {t.kind} "
+        lines += [f"{ROW}- {file_line(solver.stem, t.line)}: {t.kind} "
                   f"`{quote_text(t.quote)}`: "
                   f"{' '.join(finding_lines(solver, t.finding))}"
                   for t in sorted(report.timed_out, key=lambda t: (
-                      t.line, str(t.kind), quote_text(t.quote)))]
+                      t.line, _KIND_ORDER[t.kind]))]
     return lines
 
 
 # Values as the sweep, drop-one and the determination plan print them
-
-
-def arg_text(value: Value, type_name: str, lib: Lib) -> str:
-    """One column's value: an orientation member by the constant that
-    names it, any other value as the solver writes it."""
-    if column_domain(type_name, lib) == ColumnDomain.ORIENTATION:
-        for member in lib.orientation_types.get(type_name, ()):
-            if lib.constants.get(member) == value:
-                return member
-    return value_text(value)
 
 
 def row_text(row: Row, types: Sequence[str], lib: Lib) -> str:
@@ -252,10 +254,11 @@ def render_drop_one(solver: Solver, result: DropOneResult) -> list[str]:
                 + (f"  — {SWEEP_NOTE}" if d.enumerable else "")
                 for d in group]
 
-    noun = "parameter" if result.parameters == 1 else "parameters"
+    parameters = noun(result.parameters, "parameter")
     lines = [mctx("{tested} stored facts across {params} multi-fact "
                   "{noun}").format(tested=result.tested,
-                                   params=result.parameters, noun=noun)]
+                                   params=result.parameters,
+                                   noun=parameters)]
     hits = list(result.dropped)
     both = [d for d in hits if d.on_test == OnTest.PASSED]
     train_only = [d for d in hits if d.on_test == OnTest.REFUTED]
@@ -293,28 +296,14 @@ SHOWN_TUPLES = 4
 """How many tuples a constant's line shows."""
 
 
-def printed(value: Value) -> str:
-    """A value as a run prints it: a constructor with no arguments as
-    `$Name`."""
-    match value:
-        case AdtValue(constructor=name, args=()):
-            return f"${name}"
-        case AdtValue(constructor=name, args=args):
-            return f"${name}({', '.join(printed(a) for a in args)})"
-        case RecordValue(fields=fields):
-            return f"[{', '.join(printed(f) for f in fields)}]"
-        case _:
-            return value_text(value)
-
-
 def render_derived_constant(solver: Solver, result: ConstantResult
                             ) -> list[str]:
     """The derived-constant report."""
     name = solver_name(solver)
     match result:
         case NoCandidate():
-            return [mctx("{solver}: no relation both reads `in` and feeds "
-                         "`out`").format(solver=name)]
+            return [mctx("{solver}: {why}").format(solver=name,
+                                                    why=NOT_BETWEEN)]
         case NoConstant(tested=tested):
             return [mctx("{solver}: no constant relation among the {tested} "
                          "that read `in`").format(solver=name,
@@ -336,14 +325,14 @@ def render_derived_constant(solver: Solver, result: ConstantResult
                            "every train and test example:").format(
             count=len(result.constants))]
         for c in sorted(result.constants,
-                        key=lambda c: [p.text for p in c.paths]):
-            texts = sorted("\t".join(printed(v) for v in row)
-                           for row in c.rows)
-            shown = ", ".join(t.replace("\t", ", ")
-                              for t in texts[:SHOWN_TUPLES])
-            more = "" if len(texts) <= SHOWN_TUPLES else ", …"
+                        key=lambda c: [(p.instances, p.name)
+                                       for p in c.paths]):
+            rows = sorted(c.rows, key=row_key)
+            shown = ", ".join(", ".join(code_text(v) for v in row)
+                              for row in rows[:SHOWN_TUPLES])
+            more = "" if len(rows) <= SHOWN_TUPLES else ", …"
             lines.append(f"  {', '.join(p.text for p in c.paths)}: "
-                         f"{len(texts)} tuple(s) — {shown}{more}")
+                         f"{len(rows)} tuple(s) — {shown}{more}")
     if result.dropped:
         lines += ["", mctx("{count} relation(s) hold their tuples on the "
                            "control grids too, so they do not read the "
@@ -462,8 +451,8 @@ def render_determination_plan(solver: Solver, result: PlanResult,
             and not open_valued and not unjudged):
         lines.append(mctx("no actions"))
     section(mctx("write a determination relation"), determine)
-    section(mctx("the train pairs leave several values, so record the "
-                 "surviving values as the parameter's open values"),
+    section(mctx("the train pairs leave several values, so give the "
+                 "parameter one fact per surviving value"),
             [f"{p} ({', '.join(shown_of(p)(r) for r in surviving[p].surviving)})"
              for p in open_valued])
     if over:
@@ -679,16 +668,17 @@ def _set_line(solver: Solver, r: SetSweep, undetermined: bool) -> str:
 
 
 def _cases_line(solver: Solver, r: CaseSets) -> str:
-    groups: dict[frozenset[Row], list[str]] = {}
-    for label, values in sorted((case_name(solver, c), v)
-                                for c, v in r.per_case):
-        groups.setdefault(values, []).append(label)
-    order = sorted(groups.items(), key=lambda g: (len(g[0]), sorted(g[1])))
-    least = order[0][0]
+    groups: dict[frozenset[Row], list[Case]] = {}
+    for c, values in r.per_case:
+        groups.setdefault(values, []).append(c)
+    every = [c for c, _v in r.per_case]
+    named = {v: cover(solver, cs, every) for v, cs in groups.items()}
+    order = sorted(groups, key=lambda v: (len(v), sorted(named[v])))
+    least = order[0]
     parts = [CASES.format(param=r.parameter)]
-    for values, cases in order:
-        label = ", ".join(cases)
-        s = "" if len(cases) > 1 else "s"
+    for values in order:
+        label = names_text(named[values])
+        s = "" if len(named[values]) > 1 else "s"
         shown = ", ".join(row_text(v, r.types, solver.lib)
                           for v in sorted(values, key=row_key))
         if values == r.domain:
@@ -705,10 +695,16 @@ def _cases_line(solver: Solver, r: CaseSets) -> str:
 
 def _skip_text(solver: Solver, r: Skipped) -> str:
     match r.reason:
+        case NotSwept.DERIVED:
+            return "derived"
+        case NotSwept.NO_FACTS:
+            return "0 facts"
         case NotSwept.NON_ENUMERABLE:
             return f"non-enumerable ({', '.join(r.types)})"
-        case NotSwept():
-            return r.reason.value
+        case NotSwept.TIME_LIMIT:
+            return "time limit"
+        case NotSwept.FAILS_TRAIN:
+            return "stored value fails train"
         case RunFailed(failure=failure):
             return mctx("the run failed: {error}").format(
                 error=failure_text(failure))

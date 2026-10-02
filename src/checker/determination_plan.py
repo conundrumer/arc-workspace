@@ -5,13 +5,15 @@ import itertools
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import StrEnum
 
+from checker.derive import proposers
 from checker.domains import (
     ColumnDomain,
+    candidate_rows,
     column_domain,
     enumerable,
     param_domains,
-    row_key,
 )
 from checker.drop_one import stored_facts
 from checker.finding import AtLine
@@ -20,21 +22,28 @@ from checker.runs import Runs
 from checker.variants import (
     Fails,
     TimedOut,
-    same_profile,
     pairs_of,
-    parallel,
-    profile,
+    same_profile,
     with_program,
 )
-from engine import Program, Row, RunFailure, Scope, Value
-from solver.model import Solver, proposers_program
-from solver.solve import FixParam, Proposals, probe, variation
-from solver.vocabulary import IDENT, PARAMS, PROPOSE
+from engine import Program, Row, RunFailure, Value
+from engine.quotes import quotes
+from solver.model import Solver, proposers_program, resolved_types
+from solver.solve import (
+    FixParam,
+    Proposals,
+    TaskSection,
+    at_once,
+    probe,
+    row_key,
+    variation,
+)
+from solver.vocabulary import IDENT
 
 ENUMERATION_LIMIT = 100
 """The joint candidate count a produce run may enumerate to settle
 parameters by verification; over it, parameters move under determination
-until the rest go under (procedure.md:146)."""
+until the rest go under (procedure.md, under "Determine")."""
 
 
 @dataclass(frozen=True)
@@ -46,6 +55,14 @@ class KeyedTable:
 
     child: str
     parent: str
+
+
+class DomainName(StrEnum):
+    """The name a parameter's domain stands under among the proposers'
+    verdicts."""
+
+    DOMAIN = "domain"
+    POSITION = "position-domain"
 
 
 type Subject = str | KeyedTable
@@ -124,8 +141,8 @@ class ProbeResult:
         """The verdicts, then the domain under its name."""
         out: list[tuple[str, Verdict | Enumerable]] = list(self.verdicts)
         if self.domain is not None:
-            out.append(("position-domain" if self.domain.position
-                        else "domain", self.domain))
+            out.append((DomainName.POSITION if self.domain.position
+                        else DomainName.DOMAIN, self.domain))
         return out
 
 
@@ -174,13 +191,6 @@ class ProbeFails:
 
 
 type PlanResult = Plan | ProbeFails
-
-
-def _proposer_types(program: Program) -> dict[str, tuple[str, ...]]:
-    """Each proposer's `propose` column types, by the proposer."""
-    return {r.scope.components[-1]: tuple(c.type for c in r.columns)
-            for r in program.relations
-            if r.name == PROPOSE and len(r.scope.components) == 1}
 
 
 def _column_verdict(cand: set[Row], stored: set[Row], domain: int
@@ -307,23 +317,30 @@ def classify(results: Sequence[ProbeResult], determined: frozenset[str]
     return sorted(determine), settle, sorted(done), sorted(exact)
 
 
+@quotes("procedure.md", "Determine",
+        "Run the plan (`uv run python scripts/run_dl.py determination-plan "
+        "<task_id>`).")
 def survey_determination_plan(solver: Solver, runs: Runs) -> PlanResult:
-    """The plan procedure.md:142-146 asks for: each fact parameter's
-    stored value against each proposer of its type, a set-keyed
-    relation's table against each proposer of its row type, and a
-    single-fact enumerable parameter's own domain; then, where the
-    parameters that their own domain settles have a joint product within
-    the enumeration limit, the joint assignments that reproduce every
-    train pair."""
+    """The plan: each fact parameter's stored value against each proposer of
+    its type, a set-keyed relation's table against each proposer of its row
+    type, and a single-fact enumerable parameter's own domain; then, where
+    the parameters that their own domain settles have a joint product within
+    the enumeration limit, the joint assignments that reproduce every train
+    pair. A solver with no task file raises `ValueError`; the command
+    refuses it first."""
     engine, limits = runs.engine, runs.limits
-    task = solver.task
-    if task is None:
-        return Plan((), (), frozenset(), (), None)
+    task = solver.given_task
     proposals = probe(engine, task, limits)
     if not isinstance(proposals, Proposals):
         return ProbeFails(proposals)
     program = proposers_program(engine)
-    known = _proposer_types(program) if isinstance(program, Program) else {}
+    if not isinstance(program, Program):
+        raise ValueError("the proposers program the probe ran does not parse")
+    known = {name: p.types for name, p in proposers(program).items()}
+
+    def resolved(types: tuple[str, ...]) -> tuple[str, ...]:
+        return resolved_types(solver.program, types)
+
     lib = solver.lib
 
     fact: dict[str, tuple[tuple[str, ...], set[Row]]] = {}
@@ -342,7 +359,7 @@ def survey_determination_plan(solver: Solver, runs: Runs) -> PlanResult:
         domains = param_domains(types, sorted(stored, key=row_key), task, lib)
         verdicts: list[tuple[str, Verdict]] = []
         for prop in sorted(proposals.values):
-            if known.get(prop) != types:
+            if known[prop] != resolved(types):
                 continue
             cand = set(proposals.values[prop])
             verdicts.append((prop, _column_verdict(cand, stored,
@@ -359,7 +376,7 @@ def survey_determination_plan(solver: Solver, runs: Runs) -> PlanResult:
     for table, types, rows in _keyed_tables(solver, fact):
         tv = tuple((prop, _table_verdict(set(proposals.values[prop]), rows))
                    for prop in sorted(proposals.values)
-                   if known.get(prop) == types)
+                   if known.get(prop) == resolved(types))
         if tv:
             results.append(ProbeResult(table, tv, None))
 
@@ -375,19 +392,12 @@ def survey_determination_plan(solver: Solver, runs: Runs) -> PlanResult:
 def _embedded(solver: Solver, runs: Runs) -> set[str]:
     """The rule-derived parameters whose rules write a value as a
     literal (the lint's `params data`)."""
-    lines = {f.where.line for f in check_params_data(solver, runs)
-             if isinstance(f.where, AtLine)}
+    fired = {uid for f in check_params_data(solver, runs)
+             if isinstance(f.where, AtLine) for uid in f.where.units}
     names = {p.name for p in solver.params.parameters if p.columns}
-    scope = Scope((PARAMS,))
-    out: set[str] = set()
-    for u in solver.program.units:
-        if u.scope != scope or u.body is None or u.span is None \
-                or u.span.file is not None or u.head.relation.instances \
-                or u.head.relation.name not in names:
-            continue
-        if any(u.span.first <= ln <= u.span.last for ln in lines):
-            out.add(u.head.relation.name)
-    return out
+    return {u.head.relation.name for u in solver.program.units
+            if u.id in fired and not u.head.relation.instances
+            and u.head.relation.name in names}
 
 
 def _joint(solver: Solver, runs: Runs, results: Sequence[ProbeResult],
@@ -413,16 +423,15 @@ def _joint(solver: Solver, runs: Runs, results: Sequence[ProbeResult],
         types, stored = fact[p.name]
         srt = sorted(stored, key=row_key)
         domains = param_domains(types, srt, task, solver.lib)
-        cands = sorted(set(itertools.product(*domains)) | set(srt),
-                       key=row_key)
+        cands = candidate_rows(domains, srt)
         enumerated.append((p.name, cands))
     if not enumerated:
         return None
     assignments = list(itertools.product(*(c for _, c in enumerated)))
     if len(assignments) > ENUMERATION_LIMIT:
         return None
-    train = pairs_of(solver, ("train",))
-    reference = profile(engine, solver, train, limits)
+    train = pairs_of(solver, (TaskSection.TRAIN,))
+    reference = runs.train_profile
     if isinstance(reference, TimedOut):
         return reference
     if isinstance(reference, Fails):
@@ -433,9 +442,9 @@ def _joint(solver: Solver, runs: Runs, results: Sequence[ProbeResult],
         s = solver
         for (name, _c), row in zip(enumerated, a, strict=True):
             s = with_program(s, variation(engine, s, FixParam(name, (row,))))
-        return same_profile(engine, s, train, limits, ref)
+        return same_profile(engine, s, runs.cases, train, limits, ref)
 
-    got = parallel(test, assignments)
+    got = at_once(test, assignments)
     surviving = [a for a, ok in zip(assignments, got, strict=True)
                  if ok is True]
     timed = [(a, ok) for a, ok in zip(assignments, got, strict=True)

@@ -1,12 +1,17 @@
 """The payloads of the witness kinds: the checks over the witness file and
-the cases (principles.md:126-128, :150-153, :185, :271-287)."""
+the cases (principles.md, under "Witnesses", "Relational form" and "Cases")."""
 
 from dataclasses import dataclass
 from enum import StrEnum
 
 from engine import Grid
 from solver.annotations import ClaimKind, Verdict
-from solver.model import Branch, Case, ConstructorBranch, StoreBranch
+from solver.model import (
+    Branch,
+    Case,
+    ConstructorBranch,
+    DerivedAtStore,
+)
 from solver.solve import Outcome, PairId
 from solver.witness import AssignValue, GroupGrid, RejectedOutput
 
@@ -29,7 +34,7 @@ class CaseSet:
 class DriftPayload:
     """The cases that give `actual` on an entry where the entry records
     `expected`: a group's grid, or the judged output of an `other`
-    verdict, which no case gives (principles.md:153)."""
+    verdict, which no case gives (principles.md, under "Witnesses")."""
 
     cases: CaseSet
     expected: GroupGrid | RejectedOutput
@@ -39,7 +44,7 @@ class DriftPayload:
 @dataclass(frozen=True)
 class UnlistedPayload:
     """Cases of the solver that give `actual` on an entry, which no group of the
-    entry lists (solver-file.md:181-186)."""
+    entry lists (solver-file.md, under "Witness file")."""
 
     cases: CaseSet
     actual: Outcome
@@ -51,7 +56,7 @@ class UnlistedPayload:
 @dataclass(frozen=True)
 class ApproximatedWithoutWitness:
     """A claim is approximated and has no `@witness` line under its
-    `@approximated:` (solver-file.md:93)."""
+    `@approximated:` (solver-file.md, under "Header")."""
 
     kind: ClaimKind
     slug: str
@@ -60,7 +65,7 @@ class ApproximatedWithoutWitness:
 @dataclass(frozen=True)
 class ApproximationUnwitnessed:
     """No witness under the claim's `@approximated:` shows `case` giving
-    an output other than the verdict's (solver-file.md:93)."""
+    an output other than the verdict's (solver-file.md, under "Header")."""
 
     kind: ClaimKind
     slug: str
@@ -70,7 +75,7 @@ class ApproximationUnwitnessed:
 @dataclass(frozen=True)
 class ForeignUnderApproximated:
     """A `@witness` under an `@approximated:` line is `foreign`
-    (solver-file.md:92)."""
+    (solver-file.md, under "Header")."""
 
     witness: str
     kind: ClaimKind
@@ -80,7 +85,7 @@ class ForeignUnderApproximated:
 @dataclass(frozen=True)
 class RelaxedNotScene:
     """`@relaxed <slug>` denotes a claim of another kind than a scene claim
-    (procedure.md:150)."""
+    (procedure.md, under "Witness")."""
 
     slug: str
     denotes: ClaimKind
@@ -88,7 +93,8 @@ class RelaxedNotScene:
 
 @dataclass(frozen=True)
 class RelaxedNoClaim:
-    """`@relaxed <slug>` denotes no claim in the header (procedure.md:150)."""
+    """`@relaxed <slug>` denotes no claim in the header (procedure.md, under
+    "Witness")."""
 
     slug: str
 
@@ -96,7 +102,7 @@ class RelaxedNoClaim:
 @dataclass(frozen=True)
 class VerdictOutputUnknown:
     """The output the verdict denotes on the witness is unknown: the runner
-    holds no case that takes it (principles.md:150-153)."""
+    holds no case that takes it (principles.md, under "Witnesses")."""
 
     verdict: Verdict
 
@@ -111,7 +117,7 @@ class WitnessEntryMissing:
 @dataclass(frozen=True)
 class BranchUnwitnessed:
     """A branch of a choice point, other than its concept branch, whose
-    branch comment holds no `@witness` line (style.md:50)."""
+    branch comment holds no `@witness` line (style.md, under "Cases")."""
 
     constructor: str
 
@@ -119,7 +125,7 @@ class BranchUnwitnessed:
 @dataclass(frozen=True)
 class ReassignedMismatch:
     """The `@reassigned` lines and the witness's `assign` name different
-    parameters (procedure.md:150)."""
+    parameters (procedure.md, under "Witness")."""
 
     witness: str
     reassigned: tuple[str, ...]
@@ -129,7 +135,7 @@ class ReassignedMismatch:
 @dataclass(frozen=True)
 class StandsElsewhere:
     """The witness stands at the stored assignment, and its `assign`
-    changes `changed` (principles.md:127)."""
+    changes `changed` (principles.md, under "Witnesses")."""
 
     witness: str
     changed: tuple[str, ...]
@@ -138,7 +144,8 @@ class StandsElsewhere:
 @dataclass(frozen=True)
 class NoDivergence:
     """On the witness, `model` and `first` give the same output or neither
-    is defined, so it is no witness of `branch` (principles.md:126)."""
+    is defined, so it is no witness of `branch` (principles.md, under
+    "Witnesses")."""
 
     witness: str
     model: Case
@@ -163,15 +170,7 @@ ANNOTATION_SHAPES = (ApproximatedWithoutWitness, ApproximationUnwitnessed,
 """The classes of `AnnotationPayload`, for an `isinstance` test."""
 
 
-@dataclass(frozen=True)
-class DerivedAt:
-    """`<rel>=derived`: the derived branch of a `@store` point, the branch
-    a case takes there where it takes no `@store` branch."""
-
-    store: StoreBranch
-
-
-type PointBranch = ConstructorBranch | Branch | DerivedAt
+type PointBranch = ConstructorBranch | Branch | DerivedAtStore
 """The branch a case takes at one choice point: a constructor, a `@derive`
 branch or `<param>=stored`, a `@store` branch or `<rel>=derived`."""
 
@@ -196,8 +195,9 @@ class UnseparatedPayload:
 class SubsumedPayload:
     """Pairs of cases of the solver that differ by the branches `a` and `b`
     alone, where no run shows the `a` case defined and differing from the
-    `b` case and some run shows them apart (principles.md:176, :179,
-    :287); `contexts` and `of` as `UnseparatedPayload` has them."""
+    `b` case and some run shows them apart (principles.md, under
+    "Equivalence and subsumption" and "Cases"); `contexts` and `of` as
+    `UnseparatedPayload` has them."""
 
     a: tuple[PointBranch, ...]
     b: tuple[PointBranch, ...]
@@ -230,7 +230,7 @@ class UnheldPayload:
 
 
 class Condition(StrEnum):
-    """The case condition a dropped case fails (principles.md:271-287)."""
+    """The case condition a dropped case fails (principles.md, under "Cases")."""
 
     FIT = "Fit"
     UNDEFINED = "undefined"
@@ -239,7 +239,7 @@ class Condition(StrEnum):
     is judged."""
     ENTRY_NOT_RUN = "entry not run"
     """A witness entry's assignment is one the model cannot place, a fault
-    `check_faults` reports, so the case is not run on that entry and no
+    `fault_findings` reports, so the case is not run on that entry and no
     condition is judged."""
     EQUIVALENCE = "unseparated"
     SUBSUMPTION = "Subsumption"

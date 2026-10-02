@@ -3,28 +3,29 @@ check, and of the `derive` and `store` command blocks."""
 
 from collections.abc import Sequence
 
-from checker.finding import AtFile, Finding, Kind, WholeFile
-from checker.judged import NoResult, Swap
+from checker.finding import AtFile, Finding, Kind
+from checker.judged import NO_TASK, NoResult, Swap
 from checker.payloads.branches import (
     BranchEntryPayload,
     BranchName,
     BranchPayload,
     ColorAskPayload,
-    DeriveFitPayload,
     DerivedDataPayload,
+    DeriveFitPayload,
     DeterminationDiffPayload,
     DiffersOn,
     DuplicatePayload,
+    ExcludedPayload,
     HomonymsPayload,
     IdleIgnorePayload,
     KeyedBy,
     MarkerUnownedPayload,
     MissingLinePayload,
     NoAnchor,
-    NoTaskPayload,
-    NotCheckedPayload,
-    NotBetween,
     NoRows,
+    NoTaskPayload,
+    NotBetween,
+    NotCheckedPayload,
     NoValue,
     RelationPayload,
     RowCapPayload,
@@ -32,42 +33,50 @@ from checker.payloads.branches import (
     StoreValuesPayload,
     Unread,
 )
-from checker.runs import NoTask
 from checker.render import (
     Hint,
     HintKind,
     LineForm,
     _no_sentence,
     _ticked,
-    branch_name,
+    arg_text,
     case_name,
-    verdict_text,
     failure_text,
     finding_lines,
-    in_line_order,
     grid_lines,
     hint_line,
+    in_line_order,
     marker_text,
-    value_text,
+    shifted,
     where_text,
 )
-from controlled_markdown import mctx
-from engine import AdtValue, RecordValue
+from checker.runs import NoTask
 from checker.store import (
+    D4,
     POSITION_TYPES,
     ROW_CAP,
-    D4,
     Change,
-    ColorSwap,
     Found,
     StoreSurvey,
     ValueKind,
     corner,
+    member_key,
     shown_case_names,
 )
+from controlled_markdown import mctx
+from engine import AdtValue, RecordValue
+from engine.program import dotted
+from solver.annotations import DirectiveWord, IgnoreForm, at_word, derive_text, ignore_text
 from solver.model import Case, DeriveBranch, Solver, StoreBranch
-from solver.solve import Determined, DetermineResult, NoDetermine
-from solver.names import Denoted, denote
+from solver.names import Denoted, branch_text, denote
+from solver.solve import (
+    Determined,
+    DetermineResult,
+    NoDetermine,
+    PairId,
+    TaskSection,
+)
+from solver.vocabulary import TIEBREAK_RESOLUTION
 from solver.witness import (
     ConflictingCells,
     Entry,
@@ -80,12 +89,12 @@ from solver.witness import (
     Undefined,
     UndefinedReason,
 )
-from solver.vocabulary import TIEBREAK_RESOLUTION
 
 BRANCH_KINDS = frozenset({
     Kind.IDLE_BRANCH_IGNORE, Kind.MISSING_BRANCH_LINE,
     Kind.DUPLICATE_BRANCH_LINE, Kind.BRANCH_WITNESS_MISSING,
-    Kind.BRANCH_ENTRY, Kind.DERIVE_UNREAD, Kind.DERIVE_FIT,
+    Kind.BRANCH_ENTRY, Kind.BRANCH_EXCLUDED, Kind.DERIVE_UNREAD,
+    Kind.DERIVE_FIT,
     Kind.DERIVE_UNPLACED, Kind.STORE_PARAMETER_NAME, Kind.STORE_VALUES,
     Kind.STORE_NO_VALUE, Kind.STORE_UNTAKEN, Kind.STORE_HOMONYMS,
     Kind.STORE_IDENT_KEY,
@@ -94,6 +103,10 @@ BRANCH_KINDS = frozenset({
     Kind.NOT_CHECKED,
 })
 """The kinds whose sentence this module writes."""
+
+GROUP_WIDTH = 100
+"""The widest a witness group's line of case names stands; a wider
+group puts each name on a line of its own."""
 
 SHOWN_MEMBERS = 8
 """How many members of a value that draws no picture the `store` block
@@ -117,7 +130,8 @@ words."""
 
 
 def _word(branch: BranchName) -> str:
-    return "@derive" if isinstance(branch, DeriveBranch) else "@store"
+    return at_word(DirectiveWord.DERIVE if isinstance(branch, DeriveBranch)
+                   else DirectiveWord.STORE)
 
 
 def _first(branch: BranchName) -> str:
@@ -126,32 +140,66 @@ def _first(branch: BranchName) -> str:
             else mctx("the derived value"))
 
 
-def transform_text(change: Change | Swap) -> str:
+def transform_text(change: Change) -> str:
     """How a witness grid comes from a train input: a color swap, or a D4
     element in words."""
     match change:
-        case ColorSwap(stored=a, free=b) | Swap(stored=a, free=b):
+        case Swap(stored=a, free=b):
             return mctx("with {a} and {b} swapped").format(a=a, b=b)
         case D4():
             return D4_TEXT[change]
 
 
-def separates(branch: BranchName, label: str, change: Change | Swap) -> str:
+def train_text(index: int) -> str:
+    """The train input of `index`, as a pair is named
+    (`solver.solve.PairId.text`)."""
+    return PairId(TaskSection.TRAIN, index).text
+
+
+def separates(branch: BranchName, train: int, change: Change) -> str:
     """The `separates` of a witness a survey builds: the branch, the
-    point's first branch, and how the grid comes from a train input."""
+    point's first branch, and how the grid comes from the train input of
+    index `train`."""
     return mctx("`{b}` from {first}: {grid} {change}").format(
-        b=branch_name(branch), first=_first(branch), grid=label,
+        b=branch_text(branch), first=_first(branch), grid=train_text(train),
         change=transform_text(change))
 
 
+def _entry_input(entry: Entry) -> str:
+    """A recorded entry's input, at its assignment where it gives one."""
+    return mctx("the input of `{id}`{at}").format(
+        id=entry.id, at=" " + mctx("at its assignment") if entry.assign
+        else "")
+
+
+def _needs_witness(word: str, id: str) -> str:
+    """The sentence asking for a branch's witness under the id `id`."""
+    return mctx("a `{word}` line needs a witness whose id is `{b}`").format(
+        word=word, b=id)
+
+
+def _diff_line(parameters: Sequence[str]) -> str:
+    """The determination line naming the parameters whose rows differ."""
+    return mctx("determination: DIFF on ") + ", ".join(parameters)
+
+
+def separates_recorded(branch: BranchName, entry: Entry) -> str:
+    """The `separates` of a witness a survey builds from an input of the
+    witness file: the branch, the point's first branch, and the entry
+    whose input it takes."""
+    return mctx("`{b}` from {first}: {input}").format(
+        b=branch_text(branch), first=_first(branch), input=_entry_input(entry))
+
+
 def _idle_text(p: IdleIgnorePayload) -> str:
-    word = "@derive" if p.ignore.form.value == "derive" else "@store"
+    derive = p.ignore.form is IgnoreForm.DERIVE
+    word = at_word(DirectiveWord.DERIVE if derive else DirectiveWord.STORE)
     if p.under is None:
         return (mctx("no `{word}` line stands above this line")
-                if word == "@derive" else
+                if derive else
                 mctx("no `{word}` line stands above the relation under "
                      "this line")).format(word=word)
-    return mctx("this line excludes no case: no case the runner holds takes "
+    return mctx("this line excludes no case: no case of the solver takes "
                 "the `{word}` line's branch and every branch whose name "
                 "`{name}` contains").format(word=word, name=p.ignore.name)
 
@@ -174,14 +222,14 @@ def _no_value_text(rel: str, why: NoValue) -> str:
         case Unread():
             return mctx("`{rel}` is no relation a case reads").format(rel=rel)
         case NoAnchor():
-            return mctx("`{rel}` stands at another place on each input, and "
-                        "the runner picks no anchor").format(rel=rel)
+            return mctx("`{rel}` {why}").format(rel=rel,
+                                                why=_no_anchor_text())
         case KeyedBy(keys=keys):
-            return mctx("`{rel}` varies by {keys}, an id the runner stores "
-                        "nothing under").format(rel=rel, keys=_ticked(keys))
+            return mctx("`{rel}` {why}").format(rel=rel,
+                                                why=_keyed_text(keys))
         case DiffersOn(pair=pair):
             return mctx("`{rel}` gives another value on {grid}").format(
-                rel=rel, grid=f"{pair.section} {pair.index}")
+                rel=rel, grid=pair.text)
         case NoRows():
             return mctx("`{rel}` gives no value the runner can store"
                         ).format(rel=rel)
@@ -191,22 +239,17 @@ def homonyms_text(p: HomonymsPayload) -> str:
     rels = [f"`{r.text}`" for r in sorted(p.relations, key=lambda r: r.text)]
     return mctx("`{b}` denotes the `@store` branches of {n} relations, "
                 "{rels} and {last}").format(
-        b=branch_name(p.branch), n=len(rels), rels=", ".join(rels[:-1]),
+        b=branch_text(p.branch), n=len(rels), rels=", ".join(rels[:-1]),
         last=rels[-1])
 
 
 def _member_text(solver: Solver, types: Sequence[str],
                  member: Sequence[object]) -> str:
-    names = orientation_names(solver)
-    orientation = solver.lib.orientation_types
-
     def shown(t: str, v: object) -> str:
         if isinstance(v, tuple):
             return f"({', '.join(str(x) for x in v)})"
         if isinstance(v, (int, str, AdtValue, RecordValue)):
-            text = value_text(v)
-            return names.get(v, text) if t in orientation \
-                and isinstance(v, int) else text
+            return arg_text(v, t, solver.lib)
         return str(v)
 
     if len(member) == 1:
@@ -214,32 +257,22 @@ def _member_text(solver: Solver, types: Sequence[str],
     return "(" + ", ".join(shown(t, v) for t, v in zip(types, member)) + ")"
 
 
-def orientation_names(solver: Solver) -> dict[int, str]:
-    """Each orientation member's value under the constant that denotes
-    it."""
-    out: dict[int, str] = {}
-    for members in solver.lib.orientation_types.values():
-        for m in members:
-            v = solver.lib.constants.get(m)
-            if isinstance(v, int):
-                out.setdefault(v, m)
-    return out
-
-
 def inline_text(solver: Solver, types: Sequence[str],
                 members: Sequence[Sequence[object]]) -> str:
     """A value as one phrase: its members, each as the solver writes it,
     an orientation under the constant that denotes it."""
     return ", ".join(_member_text(solver, types, m)
-                     for m in sorted(members, key=_printed))
+                     for m in sorted(members, key=lambda m: member_key(tuple(m))))
 
 
-def _printed(member: Sequence[object]) -> tuple[str, ...]:
-    """A member as the run prints it, which orders the members of a value
-    as the `store` block lists them."""
-    return tuple(value_text(v) if isinstance(v, (int, str, AdtValue,
-                                                  RecordValue)) else str(v)
-                 for v in member)
+def color_ask_text(solver: Solver, types: Sequence[str],
+                   members: Sequence[Sequence[object]]) -> str:
+    """The sentence that asks for a value of one color on every input to
+    be a parameter (principles.md, under "Stored or derived"), its members as
+    `inline_text` writes them."""
+    return mctx("one color on every input: {value}; make it a "
+                "parameter").format(value=inline_text(solver, types,
+                                                      members))
 
 
 def _branch_text(solver: Solver, f: Finding) -> str:
@@ -250,46 +283,58 @@ def _branch_text(solver: Solver, f: Finding) -> str:
             return _idle_text(p)
         case Kind.MISSING_BRANCH_LINE, MissingLinePayload(branch=DeriveBranch() as b):
             return mctx("`{b}` fits and has no `@derive` or `@ignore: derive` "
-                        "line").format(b=branch_name(b))
+                        "line").format(b=branch_text(b))
         case Kind.MISSING_BRANCH_LINE, MissingLinePayload(branch=StoreBranch()):
             return mctx("one value on every input and no `@store` or "
                         "`@ignore: store` line") + _cases_suffix(p.cases)
         case Kind.DUPLICATE_BRANCH_LINE, DuplicatePayload(
                 branch=DeriveBranch() as b, first_line=n):
             return mctx("a second `@derive` line of `{b}`; the first is line "
-                        "{n}").format(b=branch_name(b), n=n)
+                        "{n}").format(b=branch_text(b), n=n)
         case Kind.DUPLICATE_BRANCH_LINE, DuplicatePayload(
                 branch=StoreBranch() as b, second_line=n):
             return mctx("`{rel}` has a second `@store` line at line {n}, so "
                         "`{b}` denotes two branches").format(
-                rel=b.spelled, n=n, b=branch_name(b))
+                rel=b.spelled, n=n, b=branch_text(b))
         case Kind.BRANCH_WITNESS_MISSING, BranchPayload(branch=b):
-            return mctx("a `{word}` line needs a witness whose id is `{b}`"
-                        ).format(word=_word(b), b=branch_name(b))
+            return _needs_witness(_word(b), branch_text(b))
         case Kind.BRANCH_ENTRY, BranchEntryPayload(branch=b):
             return mctx("at the witness's assignment, each case that takes "
                         "`{b}` gives the output of the case that takes "
                         "{first} there and the same branches elsewhere"
-                        ).format(b=branch_name(b), first=_first(b))
+                        ).format(b=branch_text(b), first=_first(b))
+        case Kind.BRANCH_EXCLUDED, ExcludedPayload(
+                branch=b, ignores=lines, impl_choice=impl):
+            by = ([mctx("the `@ignore` line at {lines}") if len(lines) == 1
+                   else mctx("the `@ignore` lines at {lines}")] if lines
+                  else []) + ([mctx("`impl_choice`")] if impl else [])
+            one = len(by) == 1 and len(lines) <= 1
+            return (mctx("no case of the solver takes `{b}`, so its verdict "
+                         "is not judged; {by} excludes its cases") if one
+                    else mctx("no case of the solver takes `{b}`, so its "
+                              "verdict is not judged; {by} exclude its cases")
+                    ).format(b=branch_text(b), by=mctx(" and ").join(by).format(
+                        lines=_line_list(lines)))
         case Kind.DERIVE_UNREAD, BranchPayload():
             return mctx("`@derive` stands above a parameter no case of the solver "
                         "reads")
         case Kind.DERIVE_FIT, DeriveFitPayload(branch=b, pair=pair):
             return mctx("`{b}` fails Fit at {pair}").format(
-                b=branch_name(b),
-                pair=f"{pair.section} {pair.index}")
+                b=branch_text(b),
+                pair=pair.text)
         case Kind.DERIVE_UNPLACED, BranchPayload(branch=b):
             return unplaced_text(b)
-        case Kind.STORE_PARAMETER_NAME, RelationPayload(relation=r):
+        case Kind.STORE_PARAMETER_NAME, BranchPayload(
+                branch=StoreBranch(spelled=r)):
             return mctx("the `@store` line is on `{r}`, which is also the "
                         "name of a parameter, so `{r}=stored` denotes two "
-                        "branches").format(r=r.name)
+                        "branches").format(r=r)
         case Kind.STORE_VALUES, StoreValuesPayload(branch=b, values=n,
                                                     cases=cases):
             rel = b.spelled
             return mctx("`{r}` holds {n} values at {cases}, so `{b}` "
                         "denotes {n} branches there").format(
-                r=rel, n=n, b=branch_name(b),
+                r=rel, n=n, b=branch_text(b),
                 cases=_ticked(cases))
         case Kind.STORE_NO_VALUE, StoreNoValuePayload(relation=r, reason=why):
             return _no_value_text(r.text, why)
@@ -302,12 +347,10 @@ def _branch_text(solver: Solver, f: Finding) -> str:
                         "`{r}=stored` runs").format(r=r.text)
         case Kind.STORE_HOMONYMS, HomonymsPayload() as h:
             return homonyms_text(h)
-        case Kind.STORE_PARAMS_ASK, ColorAskPayload(value=value, cases=cases):
-            return mctx("one color on every input: {value}; store it in "
-                        "Params").format(value=", ".join(sorted(
-                            ", ".join(str(v) for v in m) if len(m) == 1
-                            else "(" + ", ".join(str(v) for v in m) + ")"
-                            for m in value))) + _cases_suffix(cases)
+        case Kind.STORE_PARAMS_ASK, ColorAskPayload(
+                types=types, value=value, cases=cases):
+            return color_ask_text(solver, types, value) \
+                + _cases_suffix(cases)
         case Kind.STORE_ROW_CAP, RowCapPayload(relations=rels, cap=cap):
             return row_cap_text(cap, [r.text for r in rels])
         case Kind.MARKER_UNOWNED, MarkerUnownedPayload(marker=m,
@@ -316,7 +359,7 @@ def _branch_text(solver: Solver, f: Finding) -> str:
                         "clauses under it at {at}").format(
                 m=marker_text(m), at=_line_list(ls))
         case Kind.DETERMINATION_DIFF, DeterminationDiffPayload(diff=d):
-            return mctx("determination: DIFF on ") + d.parameter
+            return _diff_line([d.parameter])
         case Kind.DETERMINATION_OF_DERIVED, DerivedDataPayload(relation=r):
             return mctx("determination: ERROR determination relation "
                         "'{name}' matches derived Params data, which carries "
@@ -343,7 +386,7 @@ def unplaced_text(b: BranchName) -> str:
     return mctx("whether `{b}` fits is not judged: the runner finds no "
                 "`.decl` of the parameter in `Params`, and no `RIGID` call "
                 "whose chart it is, to put its `@derive` line above"
-                ).format(b=branch_name(b))
+                ).format(b=branch_text(b))
 
 
 def untaken_text() -> str:
@@ -382,15 +425,14 @@ def determination_lines(solver: Solver, result: DetermineResult | NoTask,
     if isinstance(result, NoDetermine):
         return [mctx("determination: no Determine comp")]
     if isinstance(result, NoTask):
-        return [mctx("determination: ") + _branch_text(solver, Finding(
-            Kind.NO_TASK, AtFile(WholeFile.SOLVER), NoTaskPayload()))]
+        return [mctx("determination: ") + _branch_text(solver, NO_TASK)]
     lines: list[str] = []
     if isinstance(result, Determined):
         scopes = {u.id: u.scope for u in solver.program.units}
         lines += [mctx("circular determination: ") + ", ".join(
             mctx("{param} reads params.{reads} ({comp} line {line})").format(
                 param=r.parameter, reads=r.reads,
-                comp=".".join(scopes[r.unit].components), line=r.line)
+                comp=dotted(scopes[r.unit].components), line=r.line)
             for r in cycle) for cycle in result.cycles]
     diffs = [f.payload.diff.parameter for f in findings
              if isinstance(f.payload, DeterminationDiffPayload)]
@@ -399,7 +441,7 @@ def determination_lines(solver: Solver, result: DetermineResult | NoTask,
     for f in in_line_order(others):
         lines += finding_lines(solver, f)
     if diffs:
-        lines.append(mctx("determination: DIFF on ") + ", ".join(diffs))
+        lines.append(_diff_line(diffs))
     if isinstance(result, Determined) and not findings and not result.cycles:
         names = sorted(p.name for p in solver.params.parameters
                        if p.determined)
@@ -439,16 +481,15 @@ def undefined_lines(reason: UndefinedReason | None) -> list[str]:
             return []
 
 
-def record_lines(entry: Entry, solver: Solver, cases: Sequence[Case]
-                 ) -> list[str]:
+def record_lines(entry: Entry, solver: Solver, cases: Sequence[Case],
+                 of: int) -> list[str]:
     """A built witness as `record` prints it: the input, each group of
     cases above the grid they give, or above why their cells describe no
     grid (`undefined_lines`), the cases that give none, and the
-    count line (`checker.render.commands.COUNT_LINE`): the bases and the
-    cases among `cases`, the cases the groups were built from, a case's
-    base its `Choice` value (solver-file.md:99), and the distinct
-    grids."""
-    lines = ["", mctx("input:"), *(f"  {r}" for r in grid_lines(
+    count line (`checker.render.commands.COUNT_LINE`): how many `cases`,
+    the witnessed cases the groups were built from, of the `of` cases of
+    the solver, and the distinct grids."""
+    lines = [mctx("input:"), *(shifted(r, "  ") for r in grid_lines(
         entry.input))]
     groups = entry.output.groups if isinstance(entry.output, Groups) else ()
     silent: list[tuple[str, UndefinedReason | None]] = []
@@ -462,7 +503,7 @@ def record_lines(entry: Entry, solver: Solver, cases: Sequence[Case]
             continue
         joined = ", ".join(g.cases)
         lines.append("")
-        if len(joined) > 100:
+        if len(joined) > GROUP_WIDTH:
             lines += [f"  {n}" for n in g.cases] + [":"]
         else:
             lines.append(f"{joined}:")
@@ -477,11 +518,10 @@ def record_lines(entry: Entry, solver: Solver, cases: Sequence[Case]
                                     TIEBREAK_RESOLUTION) \
                     if i < len(out.values) else f"grid {i + 1}"
                 lines.append(f"  {head}:")
-                lines += [f"    {r}" for r in grid_lines(grid)]
+                lines += [shifted(r, "    ") for r in grid_lines(grid)]
         else:
             grids.add(out)
-            lines += [f"  {r}" for r in grid_lines(out)]
-    bases = len({c.base for c in cases})
+            lines += [shifted(r, "  ") for r in grid_lines(out)]
     if silent:
         lines.append("")
         lines += [mctx("{name}: emits nothing").format(name=n)
@@ -489,10 +529,9 @@ def record_lines(entry: Entry, solver: Solver, cases: Sequence[Case]
                       r is None and not takes_branch(solver, n))
                   else mctx("{name}: undefined").format(name=n)
                   for n, r in silent]
-    if len(cases) > 1:
+    if of > 1:
         from checker.render.commands import COUNT_LINE
-        lines += ["", COUNT_LINE.format(bases=bases, cases=len(cases),
-                                        g=len(grids))]
+        lines += ["", COUNT_LINE.format(n=len(cases), m=of, g=len(grids))]
     return lines
 
 
@@ -504,7 +543,7 @@ def derive_lines(solver: Solver, survey: object) -> list[str]:
     ([Develop](docs/handbook/procedure.md#develop)): one block per
     derivation whose model does not miss Fit, then each witness the
     command built, as `record` prints it."""
-    from checker.branches import SwapWitness
+    from checker.branches import RecordedWitness, SwapWitness
     from checker.derive import DeriveSurvey, Excluded, Unplaced
 
     assert isinstance(survey, DeriveSurvey)
@@ -512,13 +551,12 @@ def derive_lines(solver: Solver, survey: object) -> list[str]:
         return [mctx("no built-in derivation fits")]
     lines: list[str] = []
     for d in survey.derivations:
-        name = branch_name(d.name)
+        name = branch_text(d.name)
         lines.append(mctx("{param}: {proposer} — {comment}").format(
             param=d.parameter, proposer=d.proposer.name,
             comment=d.proposer.comment))
         if d.ignored:
-            lines.append("  " + mctx("`@ignore: derive` stands in place of "
-                                     "its `@derive` line"))
+            lines.append("  " + _ignored_text(IgnoreForm.DERIVE, DirectiveWord.DERIVE))
             continue
         if isinstance(d.fit, Unplaced):
             lines.append("  " + unplaced_text(d.name))
@@ -534,60 +572,67 @@ def derive_lines(solver: Solver, survey: object) -> list[str]:
         if isinstance(d.fit, Excluded):
             lines.append("  " + mctx(
                 "the `@ignore: derive <name>` lines under its `@derive` "
-                "line exclude every case that takes the branch"))
+                "line exclude every case that takes the branch; "
+                "`// @ignore: derive {proposer} — <reason>` in place of the "
+                "`@derive` line excludes the derivation").format(
+                    proposer=d.proposer.name))
             continue
         if isinstance(d.fit, NoResult):
             lines.append("  " + mctx(
                 "whether `{b}` fits is not judged: the run gives no result "
                 "on {pairs}").format(b=name, pairs=", ".join(
-                    f"{p.section} {p.index}" for p, _f in d.fit.pairs)))
+                    p.text for p, _f in d.fit.pairs)))
             continue
         w = d.witness
         if d.entry:
-            lines.append("  " + mctx("witness: `{case}` in the witness file"
-                                     ).format(case=name))
+            lines.append("  " + _filed_witness(name))
         elif isinstance(w, SwapWitness):
+            lines.append("  " + _moved_witness(w.swap.index, w.swap) + mctx(
+                "; there `{case}` differs from `{other}`").format(
+                case=case_name(solver, w.case),
+                other=case_name(solver, w.other)))
+        elif isinstance(w, RecordedWitness):
             lines.append("  " + mctx(
-                "witness: train {i} with {stored} and {free} swapped; there "
-                "`{case}` differs from `{other}`").format(
-                i=w.swap.index, stored=w.swap.stored, free=w.swap.free,
+                "witness: {input}; there `{case}` differs from `{other}`"
+            ).format(
+                input=_entry_input(w.entry),
                 case=case_name(solver, w.case),
                 other=case_name(solver, w.other)))
         else:
             lines.append("  " + mctx("no witness: {reason}").format(
                 reason=_no_witness_text(w)))
-            lines.append("  " + mctx(
-                "a `@derive` line needs a witness whose id is `{case}`"
-                ).format(case=name))
+            lines.append("  " + _needs_witness(at_word(DirectiveWord.DERIVE), name))
         if d.line is not None:
-            lines.append("  " + mctx(
-                "line {line}: @derive {proposer}: {plausibility} {verdict}"
-            ).format(line=d.line.line, proposer=d.proposer.name,
-                     plausibility=d.line.plausibility.value,
-                     verdict=verdict_text(d.line.verdict)))
+            lines.append("  " + mctx("line {line}: {directive}").format(
+                line=d.line.line, directive=derive_text(
+                    d.proposer.name, d.line.plausibility,
+                    d.line.verdict)))
             continue
         lines.append("  " + hint_line(Hint(HintKind.DERIVE, d.proposer.name,
                                            site=d.rigid)))
-        lines.append("  " + hint_line(Hint(HintKind.IGNORE_DERIVE)))
+        lines.append("  " + hint_line(Hint(HintKind.IGNORE_DERIVE,
+                                           d.proposer.name)))
     return lines
 
 
 def _no_witness_text(w: object) -> str:
-    from checker.branches import FailedOn, NoWitness
+    from checker.branches import FailedOn, NoWitness, Unwitnessed
 
+    recorded = mctx("no input of the witness file shows the branch's model "
+                    "defined and giving an output other than the output of "
+                    "the stored value's model")
     match w:
-        case NoWitness.NOT_ONE_COLOR:
-            return mctx("the parameter is not one color")
-        case NoWitness.NO_FREE_COLOR:
-            return mctx("no train input has a free color")
-        case FailedOn(grid=grid, failure=failure):
+        case Unwitnessed(swap=NoWitness.NOT_ONE_COLOR):
+            return mctx("the parameter is not one color, and ") + recorded
+        case Unwitnessed(swap=NoWitness.NO_FREE_COLOR):
+            return mctx("no train input has a free color, and ") + recorded
+        case Unwitnessed(swap=FailedOn(train=train, failure=failure)):
             return mctx("the run fails on {grid} with the stored color "
-                        "swapped for a free color: {error}").format(
-                grid=grid, error=failure_text(failure))
+                        "swapped for a free color: {error}; and ").format(
+                grid=train_text(train), error=failure_text(failure)) \
+                + recorded
         case _:
-            return mctx("no color swap of a train input shows the branch's "
-                        "model defined and giving an output other than the "
-                        "model of the stored value")
+            return mctx("no color swap of a train input and ") + recorded
 
 
 # The `store` block
@@ -608,8 +653,10 @@ def _picture(marks: dict[tuple[int, int], str]) -> list[str]:
 
 
 def _cell(f: Found, x: object) -> tuple[int, int] | None:
-
-    if getattr(f, "kind") is ValueKind.TRANSLATED:
+    """The cell a member of the value stands for: a translated value's
+    member holds its top and left from the set's corner; another value's,
+    a Box value (`corner`)."""
+    if f.kind is ValueKind.TRANSLATED:
         return x if isinstance(x, tuple) else None  # type: ignore[return-value]
     return corner(x)
 
@@ -619,7 +666,8 @@ def drawn(f: Found) -> list[str]:
     stamps; no line where it draws none."""
 
     if f.rect:
-        return [mctx("{rect} rectangle").format(rect=f.rect)]
+        return [mctx("{h}x{w} rectangle").format(h=f.rect.height,
+                                                 w=f.rect.width)]
     if len(f.family) != 1:
         return []
     one = f.one
@@ -685,12 +733,11 @@ def _headline(solver: Solver, f: Found) -> str:
     if f.kind is ValueKind.TRANSLATED:
         return mctx("{name}: one {noun} up to translation on every input"
                     ).format(name=name, noun=_noun(f))
-    members = sorted(f.one, key=_printed)
+    members = sorted(f.one, key=member_key)
     if f.colors:
         value = inline_text(solver, f.types, members)
         if f.asks_params:
-            return mctx("{name}: one color on every input: {value}; store "
-                        "it in Params").format(name=name, value=value)
+            return f"{name}: {color_ask_text(solver, f.types, members)}"
         return mctx("{name}: one color on every input: {value}").format(
             name=name, value=value) + _in_case(solver, f)
     if drawn(f):
@@ -703,29 +750,39 @@ def _headline(solver: Solver, f: Found) -> str:
         name=name, value=inline_text(solver, f.types, members)) + _in_case(solver, f)
 
 
+def _filed_witness(name: str) -> str:
+    """The witness line of a branch whose witness the witness file holds
+    under its name."""
+    return mctx("witness: `{case}` in the witness file").format(case=name)
+
+
+def _moved_witness(train: int, change: Change) -> str:
+    """The witness line of a branch whose witness is a train input under
+    a change."""
+    return mctx("witness: {grid} {change}").format(
+        grid=train_text(train), change=transform_text(change))
+
+
 def _witness_line(solver: Solver, f: Found) -> str:
 
     if f.homonyms:
         return homonyms_text(HomonymsPayload(f.name, (f.relation,
                                                       *f.homonyms)))
     if f.entry:
-        return mctx("witness: `{case}` in the witness file").format(
-            case=f.case_id)
+        return _filed_witness(f.case_id)
     if f.untaken:
         return untaken_text()
-    ask = mctx("`{case}` needs a witness whose id is `{case}`").format(
-        case=f.case_id)
+    ask = _needs_witness(at_word(DirectiveWord.STORE), f.case_id)
     if f.move is None:
         why = mctx("no D4 image or color swap of a train input changes the "
                    "value")
         if f.failed is not None:
             why = mctx("the run fails on {grid}: {error}").format(
-                grid=f"train {f.failed.index} "
+                grid=f"{train_text(f.failed.index)} "
                      f"{transform_text(f.failed.change)}",
                 error=failure_text(f.failed.failure))
         return mctx("no witness: {why}; {ask}").format(why=why, ask=ask)
-    line = mctx("witness: {grid} {change}").format(
-        grid=f"train {f.move.index}", change=transform_text(f.move.change))
+    line = _moved_witness(f.move.index, f.move.change)
     if f.move.identity and f.read:
         line += mctx("; the concept case gives the input unchanged")
     elif f.move.identity:
@@ -748,10 +805,27 @@ def _store_hints(f: Found, alone: bool = False) -> list[str]:
 def _no_case_text(f: Found) -> str:
 
     if f.kind is ValueKind.TRANSLATED:
-        return mctx("stands at another place on each input, and the runner "
-                    "picks no anchor")
+        return _no_anchor_text()
+    return _keyed_text(f.keys)
+
+
+def _no_anchor_text() -> str:
+    """Why a value that moves with the input is stored at no case."""
+    return mctx("stands at another place on each input, and the runner "
+                "picks no anchor")
+
+
+def _keyed_text(keys: Sequence[str]) -> str:
+    """Why a value keyed by an id is stored at no case."""
     return mctx("varies by {keys}, an id the runner stores nothing under"
-                ).format(keys=_ticked(f.keys))
+                ).format(keys=_ticked(keys))
+
+
+def _ignored_text(form: IgnoreForm, word: DirectiveWord) -> str:
+    """A branch whose bare `@ignore` line of `form` stands in place of
+    its line of `word`."""
+    return mctx("`{ignore}` stands in place of its `{word}` line").format(
+        ignore=ignore_text(None, form), word=at_word(word))
 
 
 def store_lines(solver: Solver, survey: StoreSurvey) -> list[str]:
@@ -783,9 +857,13 @@ def store_lines(solver: Solver, survey: StoreSurvey) -> list[str]:
 
     for f in sorted(survey.listed, key=rank):
         lines.append(_headline(solver, f) + _cases_suffix(shown(f)))
-        if f.ignored:
-            lines.append("  " + mctx("`@ignore: store` stands in place of "
-                                     "its `@store` line"))
+        if f.reads_back and f.line is None:
+            lines.append("  " + mctx(
+                "stored already: the value reads back the stored rows of "
+                "{params}").format(params=", ".join(
+                    f"`{p}`" for p in f.reads_back)))
+        elif f.ignored:
+            lines.append("  " + _ignored_text(IgnoreForm.STORE, DirectiveWord.STORE))
         elif f.store_branch and f.line is None:
             lines += ["  " + ln for ln in drawn(f)]
             lines.append("  " + _witness_line(solver, f))

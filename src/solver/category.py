@@ -5,7 +5,7 @@ from enum import StrEnum
 
 class Category(StrEnum):
     """A lint category: what an `@ignore: <category>` line may name
-    (solver-file.md:134)."""
+    (solver-file.md, under "Cases")."""
 
     RESERVED_NAME = "reserved name"
     SHADOWED_TYPE = "shadowed type"
@@ -24,7 +24,6 @@ class Category(StrEnum):
     GLOSS = "gloss"
     WITNESS = "witness"
     ONE_CASE = "one case"
-    INCLUDE = "include"
     RIGID_CHART = "rigid chart"
     ORIENTATION_LITERAL = "orientation literal"
     NONZERO_LITERAL = "nonzero literal"
@@ -55,7 +54,6 @@ class Category(StrEnum):
     CONST_JOIN = "const-join"
     COMP_IDIOM = "comp-idiom"
     COMMON_SUBEXPR = "common-subexpr"
-    HELD_INPUT = "held input"
     IGNORE = "ignore"
 
 

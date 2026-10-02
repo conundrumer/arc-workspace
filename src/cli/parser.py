@@ -6,11 +6,14 @@ from collections.abc import Callable, Collection
 from functools import partial
 from typing import Any
 
+from checker.render.branches import GROUP_WIDTH
+from checker.render.commands import SLOWEST
+from checker.store import ROW_CAP
 from checker.sweep import MAX_CANDIDATES, TIME_LIMIT_SECONDS
 from cli import audit, record, run, survey
 from controlled_markdown import mctx
 
-TIME_LIMIT_HELP = mctx("wall-clock limit in seconds on the sweep's solver "
+SWEEP_LIMIT_HELP = mctx("wall-clock limit in seconds on the sweep's solver "
                        "runs; once they take that long, the parameter in "
                        "progress reports as cut, and each parameter not yet "
                        "started reports as not swept")
@@ -87,7 +90,8 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                        default=True, help=mctx("include the hints section"))
     run_p.add_argument("--time", action="store_true", dest="timed",
                        help=mctx("print wall times: per phase for one solver, "
-                                 "the slowest 15 for more than one"))
+                                 "the slowest {n} for more than one").format(
+                                     n=SLOWEST))
     run_p.add_argument("--json", action="store_true", dest="as_json",
                        help=mctx("print the report of a run over several "
                                  "solvers as one JSON object; with one solver, "
@@ -115,11 +119,12 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                          "the same output are listed "
                          "together above that output: on one line, joined by "
                          "`, ` and ending in `:`, or, when that line would "
-                         "pass 100 characters, one per indented line and "
+                         "pass {width} characters, one per indented line and "
                          "then a line of `:`. After them come `<case>: emits "
                          "nothing` for each case that emits no grid, and "
                          "`<case>: undefined` for each case that takes a "
-                         "`@derive` or `@store` branch and emits none."),
+                         "`@derive` or `@store` branch and emits none."
+                         ).format(width=GROUP_WIDTH),
         epilog=GRID_HELP,
     )
     grid.add_argument("stem", help=STEM_HELP)
@@ -167,7 +172,11 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                          "again on the input and `assign` the file holds "
                          "for it, and writes only its groups; `--all` does "
                          "this for every witness of the file. A witness "
-                         "with verdict `other` keeps its judged output."),
+                         "with verdict `other` keeps its judged output. "
+                         "With `--separates` and no grid file or "
+                         "`--assign`, an id the file holds keeps its input "
+                         "and groups and takes the new text; `-` reads a "
+                         "new grid from stdin."),
         epilog=GRID_HELP,
     )
     record_p.add_argument("stem", help=STEM_HELP)
@@ -181,6 +190,9 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                                     "for a new witness"))
     record_p.add_argument("--assign", metavar="JSON", dest="assign",
                           help=mctx("the witness's `assign` object"))
+    record_p.add_argument("--remove", action="store_true", dest="remove",
+                          help=mctx("take the witness of the id out of the "
+                                    "file"))
     record_p.add_argument("--all", action="store_true", dest="every",
                           help=mctx("run every witness of the file again; the "
                                     "file is written only when every run "
@@ -195,7 +207,7 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
 
     sweep = command(
         "sweep",
-        lambda a: survey.cmd_sweep(a.stem, a.cap, a.time_limit),
+        lambda a: survey.cmd_sweep(a.stem, a.cap, a.sweep_limit),
         help=mctx("parameter value sweep only"),
         description=mctx("For each Params parameter, the values of its "
                          "domain that reproduce every train pair. A ✓ marks "
@@ -210,8 +222,8 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                                  "the stored facts, or single-row changes "
                                  "for a parameter swept as a set, up to that "
                                  "count"))
-    sweep.add_argument("--time-limit", type=float, dest="time_limit",
-                       default=TIME_LIMIT_SECONDS, help=TIME_LIMIT_HELP)
+    sweep.add_argument("--sweep-limit", type=float, dest="sweep_limit",
+                       default=TIME_LIMIT_SECONDS, help=SWEEP_LIMIT_HELP)
 
     command(
         "deletions", lambda a: survey.cmd_deletions(a.stem),
@@ -221,14 +233,13 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
     ).add_argument("stem", help=STEM_HELP)
     audit_p = command(
         "audit",
-        lambda a: audit.cmd_audit(a.stem, a.time_limit, a.witness_file),
-        help=mctx("parameter value sweep + deletion report + witness report "
-                  "+ dropped case report + derive report + store report; writes no "
-                  "witness"),
+        lambda a: audit.cmd_audit(a.stem, a.witness_file),
+        help=mctx("witness report + dropped case report + derive report + "
+                  "store report; writes no witness"),
+        description=mctx("Each section prints when it completes, with the "
+                         "seconds it took on its header line."),
     )
     audit_p.add_argument("stem", help=STEM_HELP)
-    audit_p.add_argument("--time-limit", type=float, dest="time_limit",
-                         default=TIME_LIMIT_SECONDS, help=TIME_LIMIT_HELP)
     audit_p.add_argument("--witness-file", metavar="PATH",
                          dest="witness_file",
                          help=mctx("a witness file to read in place of the "
@@ -302,8 +313,9 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                          "cases that take the branch from the cases that "
                          "take the stored value there and the same branches "
                          "elsewhere; a derivation whose "
-                         "`@ignore: derive — <reason>` line stands gets "
-                         "none. A derivation whose branch no case takes is "
+                         "`@ignore: derive <Proposer> — <reason>` line, or "
+                         "whose parameter's `@ignore: derive — <reason>` "
+                         "line, stands gets none. A derivation whose branch no case takes is "
                          "listed where the concept case fits, and one is "
                          "listed where the `@ignore: derive <name>` lines "
                          "exclude every case that takes its branch, each "
@@ -328,8 +340,9 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                          "witness file, as `record` writes one, with the `@store` "
                          "line standing, and keeps a witness the file "
                          "already holds for the branch. A relation with "
-                         "more than 20000 rows on some input is not checked: "
-                         "that is too many rows to be a stored value."),
+                         "more than {cap} rows on some input is not checked: "
+                         "that is too many rows to be a stored value."
+                         ).format(cap=ROW_CAP),
     )
     for p in (derive, store):
         p.add_argument("stem", nargs="?",

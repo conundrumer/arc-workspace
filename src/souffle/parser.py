@@ -3,7 +3,7 @@ its layout."""
 
 import re
 from bisect import bisect_right
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -36,6 +36,7 @@ from engine.program import (
     GridCall,
     GridCell,
     GridForm,
+    GridLayout,
     Include,
     Instance,
     Intrinsic,
@@ -79,6 +80,21 @@ from souffle.lexer import LINE_DIRECTIVE_RE, LexError, RawComment, Token, lex
 
 GRID_RE = re.compile(r"GRID_(STAMP_)?(MASK_|SPARSE_)?(\d+)x(\d+)")
 RIGID_CHART_PREFIX = "_rigid_"
+
+
+def chart_prefix(block: str) -> str:
+    """What the names of a RIGID block's chart relations start with."""
+    return f"{RIGID_CHART_PREFIX}{block}_"
+
+
+def chart_name(block: str, rel: str) -> str:
+    """The chart relation a RIGID block declares for its relation `rel`."""
+    return f"{chart_prefix(block)}{rel}"
+
+
+def placed_name(block: str, rel: str) -> str:
+    """The relation a RIGID block places its relation `rel`'s rows in."""
+    return f"{block}_{rel}"
 
 RIGID_ACTIONS = {
     "Box": "apply", "Position": "apply", "Offset": "apply",
@@ -131,44 +147,26 @@ class _Fail(Exception):
         self.message = message
 
 
-@dataclass(frozen=True)
-class Shape:
-    """What a GRID macro's name says of its calls: which cells it emits,
-    whether it places them from an anchor, and its height and width."""
+def _dotted_name(parts: Sequence[str]) -> RelationName:
+    """The name whose dotted parts are `parts`, the relation's name last."""
+    return RelationName(tuple(parts[:-1]), parts[-1])
 
-    form: GridForm
-    stamp: bool
-    h: int
-    w: int
 
-    @staticmethod
-    def of(name: str) -> "Shape | None":
-        m = GRID_RE.fullmatch(name)
-        if m is None:
-            return None
-        form = (GridForm.MASK if m[2] == "MASK_" else
-                GridForm.SPARSE if m[2] == "SPARSE_" else GridForm.DENSE)
-        return Shape(form, bool(m[1]), int(m[3]), int(m[4]))
+def relation_name(text: str) -> RelationName:
+    """The name a statement writes as `text`, `params.bg`: the inverse of
+    `RelationName.text`."""
+    return _dotted_name(text.split("."))
 
-    @staticmethod
-    def of_call(call: GridCall) -> "Shape":
-        return Shape(call.form, call.stamp, call.height, call.width)
 
-    @property
-    def name(self) -> str:
-        segment = {GridForm.DENSE: "", GridForm.MASK: "MASK_",
-                   GridForm.SPARSE: "SPARSE_"}[self.form]
-        return f"GRID_{'STAMP_' if self.stamp else ''}{segment}{self.h}x{self.w}"
-
-    @property
-    def full(self) -> bool:
-        """Every cell holds a value and is emitted."""
-        return self.form is GridForm.DENSE and not self.stamp
-
-    @property
-    def valued(self) -> bool:
-        """Each emitted fact holds the cell's value after its place."""
-        return self.form is GridForm.SPARSE or self.full
+def grid_layout(name: str) -> GridLayout | None:
+    """What a GRID macro's name states of its calls; None for a name that is
+    no GRID macro's."""
+    m = GRID_RE.fullmatch(name)
+    if m is None:
+        return None
+    form = (GridForm.MASK if m[2] == "MASK_" else
+            GridForm.SPARSE if m[2] == "SPARSE_" else GridForm.DENSE)
+    return GridLayout(form, bool(m[1]), int(m[3]), int(m[4]))
 
 
 @dataclass
@@ -335,7 +333,7 @@ class _Parser:
             raise self.fail(t, f"unknown directive .{word}")
         if t.kind == "ident" and t.text == "RIGID" and self.at("(", 1):
             return self.rigid(scope)
-        if t.kind == "ident" and Shape.of(t.text) and self.at("(", 1):
+        if t.kind == "ident" and grid_layout(t.text) and self.at("(", 1):
             call = self.grid(scope, None)
             self.mark_item(t, call.id)
             return self.piece(t, [(call.id, call)])
@@ -651,11 +649,11 @@ class _Parser:
 
     def grid(self, scope: Scope, rename: dict[str, str] | None) -> GridCall:
         t = self.next()
-        form = Shape.of(t.text)
+        form = grid_layout(t.text)
         assert form is not None
         self.expect("(")
         spans = self.arg_spans(t)
-        cells = form.h * form.w
+        cells = form.height * form.width
         if len(spans) < 1 + cells:
             raise self.fail(t, f"{t.text} has {len(spans) - 1} arguments after the "
                                f"relation name, fewer than its {cells} cells")
@@ -665,14 +663,15 @@ class _Parser:
         nkeys = len(spans) - cells
         keys = tuple(self.within(s, self.expr) for s in spans[1:nkeys])
         flat = [self.within(s, self.cell) for s in spans[nkeys:]]
-        rows = tuple(tuple(flat[r * form.w:(r + 1) * form.w]) for r in range(form.h))
+        rows = tuple(tuple(flat[r * form.width:(r + 1) * form.width])
+                     for r in range(form.height))
         self.check_cells(t, form, rel, keys, flat)
-        call = GridCall(self.b.unit_id(), scope, form.form, form.stamp, form.h, form.w,
-                        rel, keys, rows, self.span(t))
+        call = GridCall(self.b.unit_id(), scope, form, rel, keys, rows,
+                        self.span(t))
         self.b.macros.append(call)
         return call
 
-    def check_cells(self, t: Token, form: Shape, rel: RelationName,
+    def check_cells(self, t: Token, form: GridLayout, rel: RelationName,
                     keys: tuple[Term, ...], cells: list[GridCell]) -> None:
         """Fail where a cell is not one the call's form takes: a digit or
         `_` under a sparse name, `1` or `_` under a mask name, and one
@@ -701,7 +700,7 @@ class _Parser:
         while self.at("."):
             self.next()
             parts.append(self.ident("relation name").text)
-        return RelationName(tuple(parts[:-1]), parts[-1])
+        return _dotted_name(parts)
 
     def rigid(self, scope: Scope) -> Segment:
         start = self.next()
@@ -724,7 +723,7 @@ class _Parser:
             elif tok.text == "decl" and self.toks[self.pos - 2].text == ".":
                 declared.append(self.peek().text)
         self.pos = mark
-        rename = {rel: f"{RIGID_CHART_PREFIX}{block}_{rel}" for rel in declared}
+        rename = {rel: chart_name(block, rel) for rel in declared}
         parts: list[tuple[Key, Part]] = []
         body: list[UnitId] = []
         while not self.at(")"):
@@ -742,13 +741,13 @@ class _Parser:
                 chart = RelationDecl(self.b.decl_id(), rename[name], scope,
                                      tuple(Column(f.name, f.type) for f in fields),
                                      (), (), span, chart_of=block)
-                placed = RelationDecl(self.b.decl_id(), f"{block}_{name}", scope,
+                placed = RelationDecl(self.b.decl_id(), placed_name(block, name), scope,
                                       (Column("d4", "D4"),
                                        *(Column(f.name, f.type) for f in fields)),
                                       (), (), span)
                 self.b.relations += [chart, placed]
                 parts += [(chart.id, chart), (placed.id, placed)]
-            elif t.kind == "ident" and Shape.of(t.text) and self.at("(", 1):
+            elif t.kind == "ident" and grid_layout(t.text) and self.at("(", 1):
                 call = self.grid(scope, rename)
                 body.append(call.id)
                 parts.append((call.id, call))
@@ -759,7 +758,7 @@ class _Parser:
                     body.append(unit.id)
                     parts.append((unit.id, unit))
         self.next()
-        names = tuple(f"{block}_{rel}" for rel in declared)
+        names = tuple(placed_name(block, rel) for rel in declared)
         call = RigidCall(self.b.unit_id(), scope, block, tuple(body), names,
                          self.span(start))
         self.b.macros.append(call)
@@ -907,7 +906,7 @@ class _Parser:
             if not self.at(")"):
                 self.expect(",")
         self.next()
-        return Atom(RelationName(tuple(parts[:-1]), parts[-1]), tuple(args), t.line)
+        return Atom(_dotted_name(parts), tuple(args), t.line)
 
     # terms
 

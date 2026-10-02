@@ -4,16 +4,15 @@ from checker.finding import (
     AtEntry,
     AtFile,
     AtLine,
+    FaultPayload,
     Finding,
     Kind,
-    FaultPayload,
     Where,
     WholeFile,
-    WitnessFileRole,
 )
 from checker.runs import Runs
 from solver.model import Solver
-from solver.problems import InSolver, InWitnessFile, Fault
+from solver.problems import Fault, InSolver, InWitnessFile
 
 
 def where_of(problem: Fault) -> Where:
@@ -21,22 +20,22 @@ def where_of(problem: Fault) -> Where:
     match problem.place:
         case InSolver(line=line):
             return AtLine(line)
-        case InWitnessFile(entry=entry):
+        case InWitnessFile(entry=entry, file=file):
             if entry is None:
                 return AtFile(WholeFile.WITNESS_FILE)
-            return AtEntry(entry, WitnessFileRole.TASK)
+            return AtEntry(entry, file)
 
 
 def finding_of(problem: Fault) -> Finding:
-    """A fault as a finding (`check_faults`)."""
+    """A fault as a finding."""
     return Finding(Kind(problem.kind), where_of(problem),
                    FaultPayload(problem))
 
 
-def check_faults(solver: Solver, runs: Runs) -> list[Finding]:
+def fault_findings(solver: Solver, runs: Runs) -> list[Finding]:
     """A finding for each of the model's faults, so that every
-    command reports them the same way (plan §D5; the problems are those of
-    plan §D4 `Fault`). A fault's finding kind is its own kind
+    command reports them the same way. It is no check and carries no
+    `quotes`. A fault's finding kind is its own kind
     (`Kind(problem.kind)`): the undecided one outside `FAILING`, every
     other inside it."""
     return [finding_of(p) for p in solver.problems]

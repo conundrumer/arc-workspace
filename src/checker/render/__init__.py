@@ -4,12 +4,13 @@ result holds its own timed-out and failed runs, and its render function
 prints them."""
 
 from collections.abc import Callable, Sequence
-from typing import NoReturn
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import NoReturn
 
 from checker.finding import (
     FAILING,
+    LINT_SHAPES,
     AtCase,
     AtEntry,
     AtFile,
@@ -18,81 +19,86 @@ from checker.finding import (
     AtParameter,
     AtRelation,
     Code,
+    FaultPayload,
     Finding,
     Kind,
+    LintBranchForm,
     LintCode,
     LintCounted,
+    LintFamily,
+    LintFragment,
     LintIgnore,
     LintLabeled,
     LintMarked,
-    LintFamily,
-    LintRun,
-    LINT_SHAPES,
-    LintFragment,
     LintNamed,
     LintPayload,
+    LintRun,
     LintSentence,
     NoResultPayload,
-    FaultPayload,
     RunKind,
     UndecidedPayload,
     Where,
     WholeFile,
-    WitnessFileRole,
+    is_hint,
 )
+from checker.judged import is_timeout
 from controlled_markdown import mctx
 from engine import (
-    AdtValue,
     CompileError,
     CpuLimit,
     Exited,
     Grid,
+    GridLayout,
     ParseFailure,
-    RecordValue,
+    RelationName,
     RunFailure,
     UndefinedOutput,
     UngroundedVariable,
     Value,
     WallLimit,
+    checkout,
 )
-from engine.program import (
-    Cast,
-    Aggregate,
-    Atom,
-    AtomLiteral,
-    BinaryTerm,
-    BodyLiteral,
-    BoolLiteral,
-    Comparison,
-    ConstructorTerm,
-    DefinedName,
-    Disjunction,
-    FunctorCall,
-    IntrinsicCall,
-    NumberTerm,
-    RecordTerm,
-    StringTerm,
-    Term,
-    UnaryOperator,
-    UnaryTerm,
-    Variable,
-    Wildcard,
+from engine.text import text as code_text
+from engine.quotes import quoted
+from solver import names
+from solver.annotations import (
+    HEADER_RANK,
+    REVIEW_WORD,
+    SIBLING_DROPS,
+    CaseMarker,
+    DirectiveWord,
+    IgnoreForm,
+    MarkerPart,
+    Slot,
+    at_word,
+    comment_text,
+    derive_text,
+    header_word_text,
+    ignore_text,
+    store_text,
 )
-from solver.annotations import CaseMarker, MarkerPart, Verdict, VerdictWord
 from solver.category import HINTS, Category
 from solver.model import (
-    Branch,
     Case,
+    DeriveBranch,
+    Lib,
     Solver,
+    solver_file,
 )
-from solver import names
 from solver.problems import (
     Detail,
+    AnchorWithoutStamp,
     Expected,
+    GridCellOffForm,
+    GridOffLayout,
     Named,
     ProblemKind,
     Quoted,
     ShapeFault,
+    Storage,
+    WitnessFileRole,
+)
+from solver.problems import (
     Undecided as UndecidedDetail,
 )
 from solver.solve import Grids, Outcome, PairId
@@ -142,8 +148,15 @@ def exit_code(findings: Sequence[Finding]) -> int:
     return 0 if passes(findings) else 1
 
 
-def _plural(n: int, word: str) -> str:
-    return f"{n} {word}{'s' if n != 1 else ''}"
+def noun(n: int, singular: str, plural: str | None = None) -> str:
+    """The noun for `n` things: `singular` for one, else `plural`, which
+    is `singular` with an `s` where it is not given."""
+    return singular if n == 1 else (plural or f"{singular}s")
+
+
+def counted(n: int, singular: str, plural: str | None = None) -> str:
+    """`n` and its noun (`noun`): `1 hint`, `2 hints`."""
+    return f"{n} {noun(n, singular, plural)}"
 
 
 def pass_line(section: Section, findings: Sequence[Finding]) -> str | None:
@@ -158,99 +171,31 @@ def pass_line(section: Section, findings: Sequence[Finding]) -> str | None:
         return None
     ok = f"{section.value}: ok"
     if section == Section.LINT:
-        hints = sum(1 for f in findings if f.kind == Kind.HINT)
-        return f"{ok}, {_plural(hints, 'hint')}" if hints else ok
+        hints = sum(1 for f in findings if is_hint(f))
+        return f"{ok}, {counted(hints, 'hint')}" if hints else ok
     if section == Section.WITNESS and findings:
-        return f"{ok}, {_plural(len(findings), 'non-failing finding')}"
+        return f"{ok}, {counted(len(findings), 'non-failing finding')}"
     return ok
 
 
 # Grids, values and code
 
 
+class GridRow(str):
+    """A line that draws a row of a grid (`grid_lines`), so that an order
+    of a section's lines reads what a line draws from its type."""
+
+
 def grid_lines(grid: Grid) -> list[str]:
     """A grid drawn: one row per line, cells separated by spaces."""
     if not grid or not grid[0]:
         return ["(empty)"]
-    return [" ".join(str(c) for c in row) for row in grid]
+    return [GridRow(" ".join(str(c) for c in row)) for row in grid]
 
 
-def value_text(value: Value) -> str:
-    """A column's value as the solver writes it."""
-    match value:
-        case AdtValue(constructor=name, args=args):
-            return f"${name}({', '.join(value_text(a) for a in args)})"
-        case RecordValue(fields=fields):
-            return f"[{', '.join(value_text(f) for f in fields)}]"
-        case float() | int():
-            return str(value)
-        case str():
-            return f'"{value}"'
-
-
-def term_text(term: Term) -> str:
-    """A term as the solver writes it."""
-    sub = term_text
-    match term:
-        case Variable(name=name) | DefinedName(name=name):
-            return name
-        case Wildcard():
-            return "_"
-        case NumberTerm(value=value):
-            return str(value)
-        case StringTerm(value=value):
-            return f'"{value}"'
-        case ConstructorTerm(name=name, args=args):
-            return f"${name}({', '.join(map(sub, args))})"
-        case RecordTerm(args=args):
-            return f"[{', '.join(map(sub, args))}]"
-        case IntrinsicCall(functor=functor, args=args):
-            return f"{functor.value}({', '.join(map(sub, args))})"
-        case FunctorCall(name=name, args=args):
-            return f"@{name}({', '.join(map(sub, args))})"
-        case UnaryTerm(op=op, arg=arg):
-            space = "" if op == UnaryOperator.NEGATE else " "
-            return f"{op.value}{space}{sub(arg)}"
-        case BinaryTerm(op=op, lhs=lhs, rhs=rhs, parens=parens):
-            inner = f"{sub(lhs)} {op.value} {sub(rhs)}"
-            return f"({inner})" if parens else inner
-        case Aggregate(op=op, expr=expr, body=body):
-            e = "" if expr is None else f" {sub(expr)}"
-            inner = ", ".join(literal_text(lit) for lit in body)
-            return f"{op.value}{e} : {{ {inner} }}"
-        case Cast(term=inner, type=type_name):
-            return f"as({sub(inner)}, {type_name})"
-
-
-def atom_text(atom: Atom) -> str:
-    return (f"{atom.relation.text}"
-            f"({', '.join(term_text(a) for a in atom.args)})")
-
-
-def literal_text(lit: BodyLiteral) -> str:
-    """A body literal as the solver writes it."""
-    match lit:
-        case AtomLiteral(atom=atom, negated=negated):
-            return ("!" if negated else "") + atom_text(atom)
-        case Comparison(op=op, lhs=lhs, rhs=rhs):
-            return f"{term_text(lhs)} {op.value} {term_text(rhs)}"
-        case BoolLiteral(value=value):
-            return "true" if value else "false"
-        case Disjunction(branches=branches):
-            inner = " ; ".join(", ".join(literal_text(x) for x in b)
-                               for b in branches)
-            return f"({inner})"
-
-
-def code_text(code: Code) -> str:
-    """A piece of code a finding quotes."""
-    match code:
-        case Atom():
-            return atom_text(code)
-        case AtomLiteral() | Comparison():
-            return literal_text(code)
-        case _:
-            return term_text(code)
+def shifted(line: str, by: str) -> str:
+    """`line` indented by `by`, a grid's row still a row (`GridRow`)."""
+    return GridRow(by + line) if isinstance(line, GridRow) else by + line
 
 
 def _codes(codes: Sequence[Code]) -> str:
@@ -271,19 +216,33 @@ def joined(parts: Sequence[str]) -> str:
     return names.SEPARATOR.join(parts)
 
 
-def verdict_text(verdict: Verdict) -> str:
-    """A verdict as its line writes it: its word, or its name."""
-    if isinstance(verdict, VerdictWord):
-        return verdict.value
-    return verdict.text
+def arg_text(value: Value, type_name: str, lib: Lib) -> str:
+    """One column's value: an orientation member by the constant that
+    names it, any other value as the solver writes it."""
+    if type_name in lib.orientation_types:
+        for member in lib.orientation_types.get(type_name, ()):
+            if lib.constants.get(member) == value:
+                return member
+    return code_text(value)
 
 
-def branch_name(branch: Branch) -> str:
-    """A `@derive` or `@store` branch by its name
-    ([Witness file](docs/handbook/solver-file.md#witness-file)):
-    `<param>=<Proposer>`, `<rel>=stored`, `<param>=stored`
-    (`solver.names.branch_text`)."""
-    return names.branch_text(branch)
+
+def header_line(title: str) -> str:
+    """A section's header line."""
+    return f"--- {title} ---"
+
+
+def cases_text(solver: Solver, cases: Sequence[Case],
+               among: Sequence[Case]) -> str:
+    """A set of cases as every report prints one: the fewest names whose
+    cases among `among` are exactly them (`solver.names.cover`)."""
+    return names_text(names.cover(solver, cases, among))
+
+
+def names_text(names: Sequence[str]) -> str:
+    """The names that denote a set of cases, as every report prints
+    them."""
+    return ", ".join(names)
 
 
 def case_name(solver: Solver, case: Case) -> str:
@@ -318,8 +277,11 @@ def failure_text(failure: RunFailure) -> str:
 
 
 def _limit(failure: RunFailure) -> float:
-    return failure.seconds if isinstance(failure, CpuLimit | WallLimit) \
-        else 0.0
+    """The limit a run reached, which a `TIMEOUT` finding's failure
+    holds."""
+    if not is_timeout(failure):
+        raise ValueError("a run that reached no limit has no limit's seconds")
+    return failure.seconds
 
 
 def _no_result_lines(solver: Solver, f: Finding, p: NoResultPayload,
@@ -360,9 +322,20 @@ def _no_result_lines(solver: Solver, f: Finding, p: NoResultPayload,
 # Locations
 
 
+def file_name(stem: str) -> str:
+    """A solver's file by its name (`solver.model.solver_file`), as every
+    line gives it."""
+    return solver_file(stem).name
+
+
+def file_line(stem: str, line: int) -> str:
+    """A line of a solver's file, as a lint line gives it."""
+    return f"{file_name(stem)}:{line}"
+
+
 def solver_name(solver: Solver) -> str:
     """The solver's file, as a finding line gives it."""
-    return f"{solver.stem}.dl"
+    return file_name(solver.stem)
 
 
 def where_text(solver: Solver, where: Where,
@@ -371,7 +344,7 @@ def where_text(solver: Solver, where: Where,
     in `form`, which is `line N` in every section but the lint's."""
     match where:
         case AtLine(line=line) if form == LineForm.FILE:
-            return f"{solver_name(solver)}:{line}"
+            return file_line(solver.stem, line)
         case AtLine(line=line):
             return mctx("line {n}").format(n=line)
         case AtEntry(entry=entry, assigned=False):
@@ -385,7 +358,7 @@ def where_text(solver: Solver, where: Where,
         case AtParameter(parameter=p):
             return p
         case AtPair(pair=pair):
-            return f"{pair.section} {pair.index}"
+            return pair.text
         case AtFile(file=WholeFile.SOLVER):
             return solver_name(solver)
         case AtFile():
@@ -410,9 +383,12 @@ def entry_label(solver: Solver, entry: str, role: WitnessFileRole) -> str:
 
 FORM_RULE = "`// @rule <slug>: <text>`"
 FORM_CLAIM = "`// @claim <slug> [<slug> ...]`"
-HEADER_ORDER = ("@draft, @representative, @keywords, @scene, @rule, concept, "
-                "input, output, review")
-SIBLING_DROPS = "`@keywords:`, `concept:`, `input:`, `output:`"
+HEADER_ORDER = ", ".join([*(header_word_text(w) for w in HEADER_RANK),
+                          REVIEW_WORD])
+"""The header lines' order, as the header-order sentence states it."""
+SIBLING_DROPS_TEXT = ", ".join(f"`{header_word_text(w)}:`"
+                               for w in HEADER_RANK if w in SIBLING_DROPS)
+"""The fields a sibling leaves out, as the sibling sentence names them."""
 
 LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
                                        str]] = {
@@ -430,16 +406,17 @@ LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
         "`{0}` is internal to the lib; instantiate a public component"
     ).format(*n),
     LintSentence.NO_PROPOSAL_ENTRY: lambda n, _: mctx(
-        "`{0}` is a proposal comp with no entry "
-        "docs/wf-solver/proposals/{0}.md; the lib pass writes the entry, or "
-        "the comp folds into the program").format(*n),
+        "`{0}` is a proposal comp with no entry {entry}; report the "
+        "operation, or fold the comp into the program").format(
+            *n, entry=checkout.proposal_entry(n[0]).relative_to(
+                checkout.ROOT).as_posix()),
     LintSentence.PROPOSAL_UNREAD: lambda n, _: (mctx(
-        "`{comp}` is a proposal comp, and no derivation of the concept case "
-        "reads its relations; the cases that read them: {cases} "
+        "`{comp}` is a proposal comp, and the concept case reads none of "
+        "its relations; the cases that read them: {cases} "
         "([In the pass](docs/handbook/lib-protocol.md#in-the-pass))").format(
             comp=n[0], cases=_ticked(n[1:])) if n[1:] else mctx(
-        "`{comp}` is a proposal comp, and no derivation of any case reads "
-        "its relations ([In the pass]"
+        "`{comp}` is a proposal comp, and no case reads its relations "
+        "([In the pass]"
         "(docs/handbook/lib-protocol.md#in-the-pass))").format(comp=n[0])),
     LintSentence.PARSE_UNREAD: lambda n, _: mctx(
         "no Determine comp reads this Parse comp; read it in Determine, or "
@@ -462,7 +439,7 @@ LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
         "`{0}` stands once in the header").format(*n),
     LintSentence.SIBLING_DROPS: lambda n, _: mctx(
         "a sibling carries `@representative:` in place of {drops}").format(
-        drops=SIBLING_DROPS),
+        drops=SIBLING_DROPS_TEXT),
     LintSentence.SLUG_TWICE: lambda n, _: mctx(
         "`{0}` repeats the slug of an earlier claim; a slug stands once "
         "across `@scene` and `@rule`").format(*n),
@@ -556,9 +533,8 @@ CODE_TEXT: dict[LintSentence, Callable[[LintCode], str]] = {
     LintSentence.ALIAS: lambda p: mctx("`{head}` is `{atom}` renamed").format(
         head=code_text(p.code[0]), atom=code_text(p.code[1])),
     LintSentence.NEGATED_USE: lambda p: mctx(
-        "`!{name}({args})` ⇒ `{parts}`").format(
-        name=p.names[0], args=_codes(p.code),
-        parts=", ".join("!" + code_text(c) for c in p.rewritten)),
+        "`{code}` ⇒ `{parts}`").format(
+        code=_codes(p.code), parts=_codes(p.rewritten)),
     LintSentence.SHARED_UNREAD: lambda p: mctx(
         "`{name}` is shared, and {cases} never reads it; move it under the "
         "marker of the cases that read it").format(
@@ -577,10 +553,10 @@ CODE_TEXT: dict[LintSentence, Callable[[LintCode], str]] = {
         "`{atom}` adds nothing next to `{other}`").format(
         atom=code_text(p.code[0]), other=code_text(p.code[1])),
     LintSentence.NEGATED_VALUE: lambda p: mctx(
-        "`{code}` ⇒ `!{rewritten}`").format(
+        "`{code}` ⇒ `{rewritten}`").format(
         code=_codes(p.code), rewritten=_codes(p.rewritten)),
     LintSentence.NAMED_COMPLEMENT: lambda p: mctx(
-        "`{code}` ⇒ `!{rewritten}`").format(
+        "`{code}` ⇒ `{rewritten}`").format(
         code=_codes(p.code), rewritten=_codes(p.rewritten)),
     LintSentence.LIB_IDIOM: lambda p: mctx(
         "`{code}` ⇒ `{rewritten}`").format(
@@ -653,7 +629,7 @@ def _marker_or_none(m: CaseMarker | None) -> str:
 def _labeled_text(p: LintLabeled) -> str:
     if p.sentence != LintSentence.ORDINARY_RELAXED:
         raise ValueError(f"no sentence for {p.sentence}")
-    what = f"@{p.word.value}" + (f" {p.name}" if p.name is not None else "")
+    what = at_word(p.word) + (f" {p.name}" if p.name is not None else "")
     return mctx("`{what}` is `ordinary` and carries {relaxed}; see "
                 "plausibility in "
                 "[Witnesses](docs/handbook/principles.md#witnesses)").format(
@@ -664,32 +640,32 @@ def _run_text(solver: Solver, p: LintRun) -> str:
     match p.sentence, p.outcome:
         case LintSentence.ONE_CASE_UNKNOWN_TIMEOUT, CpuLimit(seconds=t) \
                 | WallLimit(seconds=t):
-            return mctx("the run that gives the cases the runner holds "
-                        "timed out after {seconds}s, so whether it holds one "
+            return mctx("the run that gives the solver's cases "
+                        "timed out after {seconds}s, so whether it has one "
                         "case is unknown").format(seconds=f"{t:g}")
         case LintSentence.ONE_CASE_UNKNOWN_FAILED, Case():
             raise ValueError("a failed run of the solver's cases without its failure")
         case LintSentence.ONE_CASE_UNKNOWN_FAILED, failure:
-            return mctx("the run that gives the cases the runner holds "
-                        "fails, so whether it holds one case is unknown: "
+            return mctx("the run that gives the solver's cases "
+                        "fails, so whether it has one case is unknown: "
                         "{failure}").format(failure=failure_text(failure))
         case LintSentence.CASE_SECTION_UNJUDGED, Case():
             raise ValueError("an unjudged case section without its failure")
         case LintSentence.CASE_SECTION_UNJUDGED, failure:
-            return mctx("the run that gives the cases the runner holds gave "
+            return mctx("the run that gives the solver's cases gave "
                         "no result, so no clause under a case marker was "
                         "judged against the cases its marker lists: "
                         "{failure}").format(failure=failure_text(failure))
         case LintSentence.CASE_SECTION_READ_UNJUDGED, Case():
             raise ValueError("an unjudged case section without its failure")
         case LintSentence.CASE_SECTION_READ_UNJUDGED, failure:
-            return mctx("the run that gives the cases the runner holds gave "
+            return mctx("the run that gives the solver's cases gave "
                         "no result, so no marker was judged against the "
                         "cases that read its clauses: {failure}").format(
                 failure=failure_text(failure))
         case LintSentence.ONE_CASE, Case() as case:
-            return mctx("the runner holds one case, `{case}`, and the "
-                        "solver declares `Choice`; see "
+            return mctx("the solver has one case, `{case}`, and "
+                        "declares `Choice`; see "
                         "[Cases](docs/handbook/solver-file.md#cases)").format(
                 case=case_name(solver, case))
         case _:
@@ -718,16 +694,23 @@ def _family_text(p: LintFamily) -> str:
 
 def _ignore_text(p: LintIgnore) -> str:
     ig = p.ignore
-    category = ig.category.value if ig.category is not None else ""
+    if ig.category is None:
+        raise ValueError("an `@ignore` line of the lint form has a category")
+    category = ig.category.value
     match p.sentence:
         case LintSentence.IDLE_IGNORE:
-            site = p.site.text if p.site is not None else ""
+            if p.site is None:
+                raise ValueError("an idle `@ignore` line stands on a site")
+            site = p.site.text
             return mctx("no finding or hint with the category `{category}` "
                         "fires on `{site}`").format(category=category,
                                                    site=site)
+        case LintSentence.IGNORE_ON_LINT:
+            return mctx("`{category}` gives a lint finding, which an "
+                        "`@ignore` line does not dismiss; it dismisses a "
+                        "hint alone").format(category=category)
         case LintSentence.IGNORE_ON_DECL | LintSentence.IGNORE_UNPLACED:
-            rel = f" {ig.relation}" if ig.relation else ""
-            directive = f"@ignore{rel}: {category}"
+            directive = ignore_text(ig.relation, ig.category)
             if p.sentence == LintSentence.IGNORE_ON_DECL:
                 return mctx("`{d}` states a relation above a `.decl`"
                             ).format(d=directive)
@@ -758,6 +741,15 @@ def lint_message(solver: Solver, p: LintPayload) -> str:
             return _family_text(p)
         case LintIgnore():
             return _ignore_text(p)
+        case LintBranchForm(finding=inner, relations=rels, cases=cases):
+            return lint_message(solver, inner) + mctx(
+                "; no derivation of the concept case reads {rels}, and the "
+                "cases that read {them}: {cases}; a branch whose claim needs "
+                "this form fails [Relational form]"
+                "(docs/handbook/principles.md#relational-form)").format(
+                rels=_ticked([r.text for r in rels]),
+                them="it" if len(rels) == 1 else "them",
+                cases=_ticked(cases))
 
 
 def lint_line(solver: Solver, f: Finding) -> str:
@@ -778,13 +770,14 @@ def lint_line(solver: Solver, f: Finding) -> str:
 
 def _lint_lines(solver: Solver, findings: Sequence[Finding]) -> list[str]:
     lines: list[str] = []
-    for kinds, one in (((Kind.LINT,), "finding"), ((Kind.HINT,), "hint")):
-        shown = [f for f in findings if f.kind in kinds]
+    lints = [f for f in findings if f.kind == Kind.LINT]
+    hints = [f for f in findings if is_hint(f)]
+    for shown, one in ((lints, "finding"), (hints, "hint")):
         if not shown:
             continue
-        lines += ["", f"--- {len(shown)} {one}(s) ---",
+        lines += ["", header_line(f"{len(shown)} {one}(s)"),
                   *(f"  {lint_line(solver, f)}" for f in shown)]
-    others = [f for f in findings if f.kind not in (Kind.LINT, Kind.HINT)]
+    others = [f for f in findings if f.kind != Kind.LINT and not is_hint(f)]
     lines += [ln for f in others
               for ln in finding_lines(solver, f, LineForm.FILE)]
     return lines
@@ -813,6 +806,9 @@ PROBLEM_TEXT: dict[ProblemKind, str] = {
         "`{text}` is no relation of the instance below it"),
     ProblemKind.UNKNOWN_PROPOSER: mctx(
         "`{text}` is no proposer of `programs/proposers.dl`"),
+    ProblemKind.TWO_LINES_ON_DERIVATION: mctx(
+        "`{text}` has both a `@derive` line and an `@ignore: derive` line; "
+        "remove one"),
     ProblemKind.WITNESS_FILE_SHAPE: mctx(
         "the witness file is off its shape: {text}; see "
         "[Witness file](docs/handbook/solver-file.md#witness-file)"),
@@ -824,6 +820,9 @@ PROBLEM_TEXT: dict[ProblemKind, str] = {
     ProblemKind.ASSIGN_NAMES_NOTHING: mctx(
         "the `assign` name `{text}` names no parameter, stored relation or "
         "lib constant"),
+    ProblemKind.GRID_OFF_LAYOUT: mctx("the entry gives {text}"),
+    ProblemKind.ANCHOR_WITHOUT_STAMP: mctx("the entry gives {text}"),
+    ProblemKind.GRID_CELL_OFF_FORM: mctx("the entry gives {text}"),
     ProblemKind.MARKER_NAMES_NOTHING: mctx(
         "the marker name `{text}` denotes no case of the solver"),
     ProblemKind.REPRESENTATIVE_MISSING: mctx(
@@ -866,6 +865,9 @@ SHAPE_TEXT: dict[Expected, str] = {
         "integers 0 to 9"),
     Expected.FACTS_OR_GRID: mctx(
         "`{field}` is neither a list of facts nor a grid"),
+    Expected.ANCHORED_GRID: mctx(
+        "`{field}` is no object of a `grid` and an `anchor`, the row and "
+        "column of a cell of that grid"),
     Expected.PRESENT: mctx("missing field `{field}`"),
     Expected.ABSENT: mctx("unknown field `{field}`"),
     Expected.UNIQUE: mctx("`{field}` stands twice"),
@@ -879,15 +881,52 @@ def detail_text(detail: Detail) -> str:
     match detail:
         case Quoted(text=text):
             return text
+        case Named(name=RelationName() as relation):
+            return relation.text
+        case Named(name=DeriveBranch() as branch):
+            return names.branch_text(branch)
+        case Named(name=DirectiveWord() as word):
+            return word.value
         case Named(name=name):
+            assert isinstance(name, str)
             return name
         case ShapeFault(field=path, expected=expected):
             field = "/".join(str(k) for k in path) or mctx("the file")
             return SHAPE_TEXT[expected].format(field=field)
         case UndecidedDetail(form=form, name=name):
             return name if name is not None else form.value
+        case AnchorWithoutStamp(name=name, storage=storage):
+            stored = (mctx("in a `{form}` call").format(form=code_text(storage))
+                      if isinstance(storage, GridLayout) else STORAGE_TEXT[storage])
+            return mctx("`{name}` a grid with an anchor, and the solver "
+                        "stores `{name}` {stored}, not by one `GRID_STAMP` "
+                        "call").format(name=name, stored=stored)
+        case GridCellOffForm(name=name, layout=layout, cell=(r, c),
+                             value=v):
+            return mctx("`{name}` the value {v} at row {r}, column {c}, and "
+                        "its `{form}` layout takes 1 for a member and 0 for "
+                        "an empty cell").format(
+                            name=name, v=v, r=r, c=c, form=code_text(layout))
+        case GridOffLayout(name=name, layout=layout, given=(h, w)):
+            if layout is None:
+                return mctx("`{name}` a {h}x{w} grid, and the solver stores "
+                            "`{name}` by no one GRID call whose layout "
+                            "places it").format(name=name, h=h, w=w)
+            return mctx("`{name}` a {h}x{w} grid with no anchor, and the "
+                        "solver's `GRID_STAMP` layout for `{name}` is "
+                        "{lh}x{lw}").format(name=name, h=h, w=w,
+                                            lh=layout.height, lw=layout.width)
         case ParseFailure(line=line, column=column, message=message):
             return f"{line}:{column}: {message}"
+
+
+STORAGE_TEXT: dict[Storage, str] = {
+    Storage.FACTS: mctx("as facts"),
+    Storage.GRID_CALLS: mctx("in several GRID calls"),
+    Storage.STORED_RELATION: mctx("as a `@store` relation"),
+}
+"""How a name with no one GRID call is stored, as the anchor fault says
+it."""
 
 
 def _reading_lines(solver: Solver, f: Finding, p: FaultPayload,
@@ -917,19 +956,18 @@ def finding_lines(solver: Solver, f: Finding,
     if f.kind in WITNESS_KINDS:
         return witness_lines(solver, f)
     match p:
-        case (LintFragment() | LintNamed() | LintCounted() | LintCode()
-              | LintMarked() | LintLabeled() | LintRun() | LintFamily()
-              | LintIgnore()):
+        case _ if isinstance(p, LINT_SHAPES):
             return [lint_line(solver, f)]
         case FaultPayload():
             return _reading_lines(solver, f, p, form)
         case NoResultPayload():
             return _no_result_lines(solver, f, p, form)
         case UndecidedPayload(relation=rel):
+            words = "; ".join(f"\"{q.words}\"" for q in quoted(p))
             return [mctx("{at}: undecided: `{rel}` holds one set of rows on "
                          "every input and no value the survey reads; the "
-                         "nearest handbook line: solver-file.md:137").format(
-                             at=at, rel=rel.text)]
+                         "check rests on {words}").format(
+                             at=at, rel=rel.text, words=words)]
         case _:
             _no_sentence(f)
 
@@ -989,7 +1027,7 @@ class HintKind(StrEnum):
 @dataclass(frozen=True)
 class Hint:
     """A directive line to add: its kind, the proposer of a `@derive`
-    line, the relation a line on an instance names, and the site it goes
+    or `@ignore: derive <Proposer>` line, the relation a line on an instance names, and the site it goes
     above: the instance of an `.init`, or the block of a `RIGID` call;
     None for the relation's own `.decl`. `alone` says no `@derive` or
     `@store` line stands above it in the report, so it states the
@@ -1002,18 +1040,29 @@ class Hint:
     alone: bool = False
 
 
+def derive_line_to_add(proposer: str) -> str:
+    """The `@derive` line of `proposer` for the agent to add, its
+    plausibility and verdict left as slots."""
+    return comment_text(derive_text(proposer, Slot.PLAUSIBILITY,
+                                    Slot.VERDICT))
+
+
 def hint_line(h: Hint) -> str:
     """The line the session adds, as the `derive` and `store` reports
     print it ([Program](docs/handbook/solver-file.md#program))."""
     if h.kind == HintKind.DERIVE:
         add = "add:" if h.site is None \
             else f"add above `RIGID({h.site}, …)`:"
-        return f"{add} // @derive {h.proposer}: <plausibility> <verdict>"
-    named = f" {h.relation}" \
-        if h.site is not None and h.relation is not None else ""
+        assert h.proposer is not None
+        return f"{add} " + derive_line_to_add(h.proposer)
+    named = h.relation if h.site is not None else None
     add = "add:" if h.site is None else f"add above `.init {h.site}`:"
     if h.kind == HintKind.STORE:
-        return f"{add} // @store{named}: <plausibility> <verdict>"
-    word = "derive" if h.kind == HintKind.IGNORE_DERIVE else "store"
+        return f"{add} " + comment_text(store_text(
+            named, Slot.PLAUSIBILITY, Slot.VERDICT))
     lead = f"{add} " if h.alone and h.site is not None else "or:  "
-    return f"{lead}// @ignore{named}: {word} — <reason>"
+    if h.kind == HintKind.IGNORE_DERIVE:
+        return lead + comment_text(ignore_text(
+            named, IgnoreForm.DERIVE, Slot.REASON, h.proposer))
+    return lead + comment_text(ignore_text(named, IgnoreForm.STORE,
+                                           Slot.REASON))

@@ -96,6 +96,10 @@
 ### Cases
 - A case's model reads its output grids from `out` at that case, one grid per tiebreak resolution, and is undefined on an input where a grid's facts give two frame sizes.
 - A case's base is its `Choice` value, its branch at each point the `Choice` encodes; a case is a base with a branch at each `@derive` and `@store` point its base reads.
+- A case is witnessed when it is the concept case or a branch's model, or when an input of the task or of the witness file shows it giving an output that no case taking only part of its non-concept branches gives, where undefined counts as an output.
+    - A case that takes two branches on which every verdict is `concept` is not witnessed, unless every case that takes one of them also takes the other.
+    - On every input of the task and of the witness file, every other case that is not witnessed gives the output of a witnessed case, so a run of the witnessed cases shows each Fit failure it has.
+    - Every check, survey and count of `scripts/run_dl.py` runs and reports the witnessed cases alone.
 - A branch's clauses are the clauses shared by its cases and absent from the other cases.
 - A constructor stands for its branch alone, not for what another branch shares with it, and is named as the Analyze report names the branch.
 - `@claim` under the concept branch's constructor denotes the header claim the choice point turns on, which each other branch's `@scene` or `@rule` line changes.
@@ -117,9 +121,11 @@
 - **`@singleton-axis` literal.** A structure that extends along one axis is written in a two-axis type, and the other axis takes a literal `1`.
     - The clause containing that literal ends with `// @singleton-axis: <what the structure is>`.
 - **`@derive` directive.** The line is a branch of a choice point on the parameter, at which each case whose base reads the parameter takes a branch and whose concept branch is the stored parameter, with the parameter's value derived by the built-in derivation the line's `<Proposer>` selects; lines on one parameter are branches of one point, and the cases that take one of them are cases of the solver.
-    - In a run on an input, a pair's or a witness's, the parameter takes the value the derivation gives on that input; where it gives none, every case that takes the branch is undefined on that input.
+    - In a run on an input, a pair's or a witness's, the parameter takes the values the derivation gives on that input; where it gives none, every case that takes the branch is undefined on that input.
     - The verdict `derived` denotes that branch, beside the verdicts a `@witness` line takes, and its witness's id is the branch's name; a further witness of the branch is in the witness file, and the solver has no `@witness` line for it.
-    - `// @ignore: derive — <reason>` in its place records that the cases taking the branch fail a case condition, Fit, Equivalence or Subsumption, and no case that takes it is then a case of the solver; `// @ignore: derive <name> — <reason>` under the `@derive` line records that for the cases of `<name>` that take the line's branch.
+    - `// @ignore: derive — <reason>` above the parameter records that every derivation of it fails a case condition, Fit, Equivalence or Subsumption, and no case takes a derived branch of it.
+    - `// @ignore: derive <Proposer> — <reason>` above the parameter records the same for the one derivation `<Proposer>` selects.
+    - `// @ignore: derive <name> — <reason>` under a `@derive` line records that the cases of `<name>` that take the line's branch fail a case condition, and none of them is a case of the solver.
 
 ## Types
 - A solver may define:
@@ -131,14 +137,14 @@
     - a record used as a type argument of a generic comp
 
 ## Program
-- **`@ignore` directive.** A relation kept despite a finding has `// @ignore: <category> — <reason>` on the line immediately above its declaration, with the category the finding gives.
-    - The finding does not fire on the relation.
+- **`@ignore` directive.** A relation kept despite a hint has `// @ignore: <category> — <reason>` on the line immediately above its declaration, with the category the hint gives.
+    - The hint does not fire on the relation.
     - Above a `.init`, `// @ignore <relation>: <category> — <reason>` dismisses that one relation of the instance, and the bare form dismisses every relation of it.
 - **`@store` directive.** The relation, or the instance's relation the line names, has one value on every input, and the line is a branch of a choice point on it, at which each case whose base reads the relation takes a branch and whose concept branch is the derived relation, with the relation's value stored per case; the cases that take that branch are cases of the solver.
     - The verdict `stored` denotes that branch, beside the verdicts a `@witness` line takes, with the branch's witnesses named and placed as a `@derive` branch's are; `// @ignore: store — <reason>` and `// @ignore: store <name> — <reason>` record what the `@ignore: derive` forms record.
 - **`@workaround` directive.** A temporary workaround is under a `// @workaround: <the principled form it stands in for>` line.
 - **`@claim` directive.** At program scope or inside `Parse`, an instance of a component without an `@construction` mark has the directive, one line per instance, listing the claims the instance serves.
-    - Each slug denotes a claim in the solver's header.
+    - Each slug denotes a claim.
     - In a family sibling, that claim belongs to the representative's header.
 
 ## Components
@@ -177,7 +183,7 @@
         "id": string,                            // unique within this file
         "separates": string,                     // models separated by this input
         "input": Grid,
-        "assign": {<parameter>: Fact[] | Grid},  // the parameters the witness reassigns, which may include a `@store` line's relation
+        "assign": {<parameter>: Fact[] | Grid | {"grid": Grid, "anchor": [row, col]}},  // the parameters the witness reassigns, which may include a `@store` line's relation
         "output": Group[]                        // when the verdict is not other: one group per distinct output
                 | Grid                           // when the verdict is other: the annotator's judged output
       }] }
@@ -190,6 +196,7 @@
     ```
 - Use a string for a lib constant and a list for a record.
 - [`GRID_HxW` for grid data](docs/handbook/patterns.md#grid_hxw-for-grid-data) states the form of a stored grid.
+    - For a parameter that a `GRID_STAMP_HxW` or `GRID_STAMP_SPARSE_HxW` call stores, a grid of the call's size is read as a picture with the `@` on the cell that carries it in the call's layout, and `{"grid": Grid, "anchor": [row, col]}` is read as a picture of any size with the `@` on the cell at that row and column, counted from 0.
 - A `<name>` fixes the branch at some choice points, in one of these forms. Its model takes the fixed branches and the concept branch at every other point it takes; its cases are the cases of the solver that take the fixed branches ([Choice points and open parameters](docs/handbook/principles.md#choice-points-and-open-parameters) states both for one branch). A `@witness` verdict names its model; a case marker, an `@ignore: derive` or `@ignore: store` line and a group name its cases.
     - `concept`: the concept branch at every point the `Choice` encodes, the concept base; alone, its model and its one case are the concept case
     - a constructor's name with its prefix, such as `$Alt`: that branch at each point where the constructor stands, for a nested constructor too, whether or not `impl_choice` contains its model

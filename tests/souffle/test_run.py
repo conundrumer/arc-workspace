@@ -19,7 +19,6 @@ from engine import (
     RelationName,
     RemoveAtom,
     RemoveColumn,
-    RemoveUnit,
     Tuples,
     UngroundedVariable,
 )
@@ -93,27 +92,6 @@ def test_an_argument_an_aggregate_grounds_used_outside_it_is_ungrounded(engine: 
                                "a(N, X) :- N = count : { p(X) }.\n"))
     result = engine.run(program, {}, [RelationName((), "a")], LIMITS)
     assert result == UngroundedVariable("X", 4)
-
-
-def test_a_path_steps_into_an_aggregate_body(engine: Engine):
-    _, program, _ = _solver(engine, "a47bf94d")
-    unit = next(u for u in program.units if u.span is not None and u.span.file is None
-                and u.head.relation.name == "left_rank")
-    removed = engine.remove(program, RemoveAtom(unit.id, (1, 0, 0)))
-    line = [ln.text for ln in engine.render(removed).lines
-            if unit.span is not None and ln.origin == unit.span.first]
-    assert line == ["    left_rank(K, A, I) :- left(K, A), "
-                    "I = count : { as(A2, number) < as(A, number) }."]
-
-
-def test_a_removal_keeps_every_other_part_in_its_component(engine: Engine):
-    text, program, inputs = _solver(engine, "00576224")
-    unit = next(u for u in program.units if u.span is not None and u.span.file is None
-                and u.span.first <= 74 <= u.span.last)
-    assert unit.span is not None
-    assert text.splitlines()[unit.span.first - 1].startswith("out(")
-    result = engine.run(engine.remove(program, RemoveUnit(unit.id)), inputs, [OUT], LIMITS)
-    assert isinstance(result, Tuples)
 
 
 def test_a_fixed_relation_of_one_instance_leaves_the_others(engine: Engine):

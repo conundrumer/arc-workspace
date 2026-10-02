@@ -46,7 +46,7 @@ class Card:
     # As one sentence, stated so that the options are the only answers to it.
     question: str = ""
     codes: list[CodeSlice] = field(default_factory=list[CodeSlice])
-    # Paths to grid text files, in the format `dl.facts.parse_grid` reads.
+    # Paths to grid text files, in the format `arc.task.read_grid` reads.
     # With none, the task's first train input is the witness, which suits a
     # question the task's own pairs already separate. Write a witness file
     # when the question turns on an input the task does not contain.
@@ -59,10 +59,11 @@ class Card:
     tables: list[Table] = field(default_factory=list[Table])
     # The `.dl` file to run on each witness, defaulting to the task's own.
     solver: str | None = None
-    # The cases the shipped solver lacks. Naming them filters the witnesses:
-    # a witness is kept only when a dropped case's grid differs from every
-    # kept case's. With no witness left, the card falls back to the task's
-    # first train input, under a note.
+    # The cases the shipped solver lacks, each by its name as the tool prints
+    # it (`solver.names.name`): `$Free`, `$Free & $Wide`, `concept`. Naming
+    # them filters the witnesses: a witness is kept only when a dropped
+    # case's grid differs from every kept case's. With no witness left, the
+    # card falls back to the task's first train input, under a note.
     dropped: list[str] = field(default_factory=list[str])
     # A recorded reason, quoted above the witness.
     quote: str = ""

@@ -3,58 +3,68 @@ glosses, witnesses and claims, markers and sections, the components a
 solver holds, and the types it may declare."""
 
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from checker.finding import (
     Finding,
-    LabelWord,
+    LintFamily,
     LintLabeled,
     LintMarked,
     LintNamed,
-    LintFamily,
     LintRun,
     LintSentence,
 )
-from checker.judged import is_timeout
+from checker.judged import (
+    base_names,
+    bases_of,
+    concept_among,
+    is_timeout,
+    parse_failure,
+    reading_names,
+    representative,
+)
 from checker.lint.view import (
     STOCK_COMPS,
     TOP,
     View,
     atoms_read,
-    literal_terms,
-    subterms,
-    type_refs,
-    unqualified,
-    spanned,
-    view,
     lint,
+    literal_terms,
+    spanned,
+    subterms,
+    tag_fact,
+    type_refs,
+    view,
 )
 from checker.runs import Runs
-from engine import ParseFailure, Resolved, checkout
+from engine import ParseFailure, Resolved, RunFailure, checkout
 from engine.program import (
     AdtType,
-    DeclId,
     AtomLiteral,
     BodyLiteral,
     Comparison,
     ComparisonOperator,
     ConstructorTerm,
+    DeclId,
     Disjunction,
+    FunctorDecl,
     RecordTerm,
     RecordType,
+    Scope,
     Term,
+    TypeDecl,
     Unit,
     Variable,
     Wildcard,
+    own,
 )
-from solver.vocabulary import (
-    CHOICE,
-    DETERMINE,
-    PARSE,
-    TIEBREAK_RESOLUTION,
-)
+from engine.quotes import quotes
 from solver.annotations import (
+    DirectiveWord,
+    HEADER_RANK,
+    REVIEW_RANK,
+    SIBLING_DROPS,
     CaseMarker,
     ClaimKind,
     HeaderWord,
@@ -62,81 +72,91 @@ from solver.annotations import (
 )
 from solver.category import Category
 from solver.model import (
+    choice_line,
     Base,
     Case,
     Choice,
     ChoicePoint,
+    Node,
     Solver,
-    UnderMarker,
+    branch_witnesses,
     concept_branch,
     dependence,
-    is_concept,
-    load,
+    marker_at,
     other_branches,
-    section_at,
+    readers,
 )
-from solver.names import Denoted, cases_of, cover, ctor_text, denote
-from solver.problems import ProblemKind, Fault
+from solver.names import Denoted, cases_of, denote, denote_constructor
+from solver.vocabulary import (
+    CHOICE,
+    DETERMINE,
+    DETERMINE_SCOPE,
+    PARSE,
+    TIEBREAK_RESOLUTION,
+)
 
 
 def keywords_doc() -> Path:
     """The handbook's list of keywords a solver header may name."""
-    return checkout.docs() / "handbook" / "keywords.md"
-
-
-def proposals() -> Path:
-    """Where each proposal comp's entry stands."""
-    return checkout.docs() / "wf-solver" / "proposals"
+    return checkout.handbook() / "keywords.md"
 
 
 KEYWORD_BULLET = re.compile(r"^- `([^`]+)`")
 
-REVIEW_RANK = 7
-HEADER_RANK: dict[HeaderWord | str, int] = {
-    HeaderWord.DRAFT: 0, HeaderWord.REPRESENTATIVE: 1, HeaderWord.KEYWORDS: 1,
-    "scene": 2, "rule": 3, HeaderWord.CONCEPT: 4, HeaderWord.INPUT: 5,
-    HeaderWord.OUTPUT: 6,
-}
-"""The rank of each header line's word: the lines stand in rank order,
-and the words of one rank in either order (solver-file.md:11-19, :82)."""
-
-SIBLING_DROPS = frozenset({HeaderWord.KEYWORDS, HeaderWord.CONCEPT,
-                           HeaderWord.INPUT, HeaderWord.OUTPUT})
-"""The fields a family sibling leaves out, since it carries
-`@representative:` in their place (solver-file.md:86-90)."""
 
 
-def _known_keywords() -> frozenset[str]:
-    """Every keyword keywords.md lists: the leading code span of a
-    bullet."""
-    return frozenset(m.group(1) for line in keywords_doc().read_text()
-                     .splitlines() if (m := KEYWORD_BULLET.match(line)))
+
+def doc_keywords(written: str) -> dict[str, list[str]]:
+    """The keywords of keywords.md, in doc order, per `##` section: the
+    leading code span of each bullet."""
+    out: dict[str, list[str]] = {}
+    section: list[str] = []
+    for line in written.splitlines():
+        if line.startswith("## "):
+            section = out.setdefault(line[3:].strip(), [])
+        elif m := KEYWORD_BULLET.match(line):
+            section.append(m.group(1))
+    return out
 
 
-def _task_id_line(v: View) -> bool:
-    return any(c.line == 1 and c.own_line and c.file is None
-               for c in v.program.comments)
+def known_keywords() -> frozenset[str]:
+    """Every keyword keywords.md lists (`doc_keywords`)."""
+    return frozenset(w for words in doc_keywords(
+        keywords_doc().read_text()).values() for w in words)
 
 
+def header_keywords(solver: Solver) -> tuple[int, tuple[str, ...]] | None:
+    """The line of the solver's `@keywords:` field and its words, every
+    line of the field read; None where the header has none."""
+    fields = sorted((f for f in solver.annotations.header
+                     if f.word == HeaderWord.KEYWORDS), key=lambda f: f.line)
+    return None if not fields else (fields[0].line, fields[0].words)
+
+
+@quotes("solver-file.md", "Header",
+        "`@scene` and `@rule` are in dependency order.")
+@quotes("solver-file.md", "Header",
+        "A `// review <kind>: <text>` line stands last in the header.")
+@quotes("principles.md", "The concept",
+        "**concept statement**: the claims that express the concept.")
+@quotes("style.md", "Header",
+        "`@scene` is only included when `@claim` or `@relaxed` denotes it")
 def check_header(solver: Solver, runs: Runs) -> list[Finding]:
-    """The header lines that break its grammar, and the fields it lacks
-    (solver-file.md:11-19, :82 "`@scene` and `@rule` are in dependency
-    order", :84 "A `// review <kind>: <text>` line stands last in the
-    header", :86-90). Serves readability: the header is what a reader of
-    the corpus reads first."""
-    v = view(solver, runs)
+    """The header lines that break its grammar, and the fields it lacks.
+    Serves readability: the header is what a reader of the corpus reads
+    first."""
     ann = solver.annotations
     out: list[Finding] = []
 
     def flag(line: int, sentence: LintSentence, *names: str) -> None:
         out.append(lint(line, LintNamed(Category.HEADER, sentence, names)))
 
-    if not _task_id_line(v):
+    if ann.task_id is None:
         return [lint(1, LintNamed(Category.HEADER, LintSentence.NO_TASK_ID,
                                   ()))]
     placed = sorted(
         [(f.line, HEADER_RANK[f.word]) for f in ann.header]
-        + [(c.line, HEADER_RANK[c.kind.value]) for c in ann.claims
+        + [(c.line, HEADER_RANK[c.kind]) for c in ann.claims
            if c.constructor is None]
         + [(r.line, REVIEW_RANK) for r in ann.reviews])
     last = -1
@@ -151,7 +171,7 @@ def check_header(solver: Solver, runs: Runs) -> list[Finding]:
                 flag(f.line, LintSentence.DRAFT_PLACE)
             continue
         if f.word in seen:
-            flag(f.line, LintSentence.FIELD_TWICE, f.word.value)
+            flag(f.line, LintSentence.FIELD_TWICE, f.word)
         elif (f.word in SIBLING_DROPS and HeaderWord.REPRESENTATIVE in seen
               or f.word == HeaderWord.REPRESENTATIVE
               and not seen.isdisjoint(SIBLING_DROPS)):
@@ -178,42 +198,39 @@ def check_header(solver: Solver, runs: Runs) -> list[Finding]:
     return out
 
 
+@quotes("solver-file.md", "Header",
+        "`@keywords` carries the keywords any case claims.")
 def check_keyword(solver: Solver, runs: Runs) -> list[Finding]:
     """A word of the `@keywords:` line that keywords.md does not list, a
-    hint: a session adds the keyword it needs and proposes it in its
-    review (solver-file.md:83 "`@keywords` carries the keywords any case
-    claims"). Serves readability: keywords index the corpus."""
-    fields = sorted((f for f in solver.annotations.header
-                     if f.word == HeaderWord.KEYWORDS), key=lambda f: f.line)
-    if not fields:
+    hint: a session adds the keyword it needs and proposes it in its review.
+    Serves readability: keywords index the corpus."""
+    got = header_keywords(solver)
+    if got is None:
         return []
-    known = _known_keywords()
-    return [lint(fields[0].line, LintNamed(
+    line, words = got
+    known = known_keywords()
+    return [lint(line, LintNamed(
                 Category.KEYWORD, LintSentence.UNKNOWN_KEYWORD, (w,)))
-            for w in fields[0].value.split() if w not in known]
+            for w in words if w not in known]
 
 
-def _representative(solver: Solver, runs: Runs) -> Solver | None:
-    """The family's representative solver the header names; None where
-    the header names none or the reader reports it missing."""
-    rep = solver.annotations.representative
-    if rep is None or any(p.kind == ProblemKind.REPRESENTATIVE_MISSING
-                          for p in solver.problems):
-        return None
-    return load(rep.task_id, runs.engine)
-
-
+@quotes("solver-file.md", "Header",
+        "// @representative: <family's first-solved task id> <Case when the "
+        "sibling has one case of its Choice>")
+@quotes("principles.md", "Models and tasks",
+        "**sibling task**: another task in the family of this task's model.")
+@quotes("style.md", "Cases",
+        "**Concept branch.** The concept branch is declared first in `Choice`")
 def check_family_case(solver: Solver, runs: Runs) -> list[Finding]:
-    """A `@representative:` case name the representative's `Choice` does
-    not hold (solver-file.md:90): the name denotes one case of the
-    representative's `Choice`, so it stands among that type's
-    constructors. Serves the concept's form: the sibling names its
-    family's case."""
+    """A `@representative:` case name the representative's `Choice` does not
+    hold: the name denotes one case of the representative's `Choice`, so it
+    stands among that type's constructors. Serves the concept's form: the
+    sibling names its family's case."""
     rep = solver.annotations.representative
     if rep is None or rep.case is None:
         return []
     case = rep.case
-    other = _representative(solver, runs)
+    other = representative(solver, runs.engine)
     if other is None:
         return []
 
@@ -222,10 +239,9 @@ def check_family_case(solver: Solver, runs: Runs) -> list[Finding]:
         return [lint(rep.line, LintFamily(Category.FAMILY_CASE, sentence,
                                           rep.task_id, case, failure))]
 
-    failed = next((p for p in other.problems
-                   if p.kind == ProblemKind.PARSE_FAILURE), None)
-    if failed is not None and isinstance(failed.detail, ParseFailure):
-        return flag(LintSentence.FAMILY_NOT_PARSED, failed.detail)
+    failed = parse_failure(other)
+    if failed is not None:
+        return flag(LintSentence.FAMILY_NOT_PARSED, failed)
     if other.choice is None:
         return flag(LintSentence.FAMILY_NO_CHOICE)
     if other.choice.record is not None:
@@ -235,14 +251,17 @@ def check_family_case(solver: Solver, runs: Runs) -> list[Finding]:
     return [] if rep.case in top else flag(LintSentence.FAMILY_NO_CASE)
 
 
+@quotes("solver-file.md", "Cases",
+        "The comma separates names.")
+@quotes("style.md", "Params",
+        "A parameter that some case never reads goes under the marker of the "
+        "cases that read it.")
 def check_case_marker(solver: Solver, runs: Runs) -> list[Finding]:
-    """A case marker whose case names are joined by `/`
-    (solver-file.md:105 "`// --- Box, Erode ---`", :107 "The comma still
-    separates cases"). Serves readability."""
+    """A case marker whose case names are joined by `/`. Serves readability."""
     return [lint(m.line, LintNamed(Category.CASE_MARKER,
                                    LintSentence.MARKER_SLASH, ()))
             for m in solver.annotations.markers
-            if any("/" in p.name for p in m.parts)]
+            if any(p.slash_joined for p in m.parts)]
 
 
 def _choice_adts(solver: Solver, v: View
@@ -264,27 +283,25 @@ def _choice_adts(solver: Solver, v: View
 def _comment_block_above(v: View, line: int) -> list[int]:
     """The lines of the own-line comments directly above `line`, nearest
     first, stopping at a case marker."""
-    lines = {c.line for c in v.program.comments
-             if c.own_line and c.file is None}
-    marks = {m.line for m in v.markers}
     out: list[int] = []
     n = line - 1
-    while n in lines and n not in marks:
+    while n in v.comment_lines and n not in v.marker_lines:
         out.append(n)
         n -= 1
     return out
 
 
+@quotes("style.md", "Cases",
+        "**Choice gloss.** The gloss of a choice is above its type, and "
+        "nowhere else.")
+@quotes("principles.md", "Choice points and open parameters",
+        "**branch**: one possible answer to a choice point.")
 def check_gloss(solver: Solver, runs: Runs) -> list[Finding]:
     """`Choice` lacking its gloss above the type, and a constructor of a
-    choice ADT that opens no line of its own (style.md:49 "The gloss of a
-    choice is above its type, and nowhere else"; solver-file.md:99-102).
-    Serves readability: each branch's directive lines are its
-    description."""
+    choice ADT that opens no line of its own. Serves readability: each
+    branch's directive lines are its description."""
     v = view(solver, runs)
-    marks = {m.line for m in v.markers}
-    comments = {c.line for c in v.program.comments
-                if c.own_line and c.file is None}
+    marks, comments = v.marker_lines, v.comment_lines
     out: list[Finding] = []
     for is_choice, _p, td in _choice_adts(solver, v):
         above = td.span.first - 1
@@ -298,28 +315,37 @@ def check_gloss(solver: Solver, runs: Runs) -> list[Finding]:
     return out
 
 
+@quotes("principles.md", "Witnesses",
+        "`ordinary`: readily, breaking no scene claim of the concept case.")
+@quotes("procedure.md", "Witness",
+        "`@relaxed` for the scene claim it breaks, which rules out `ordinary`")
+@quotes("procedure.md", "Witness",
+        "A witness of the concept case stands under the branch its verdict "
+        "denotes, and with verdict `other` under an `@approximated:` line of "
+        "the rule whose approximation disagrees on it.")
+@quotes("principles.md", "Witnesses",
+        "A branch's witnesses are divergence witnesses between its model and "
+        "the concept branch's model.")
 def check_witness(solver: Solver, runs: Runs) -> list[Finding]:
     """A `@witness`, `@derive` or `@store` line at `ordinary` that carries
-    `@relaxed` (principles.md:136 "`ordinary`: readily, breaking no scene
-    claim of the concept case"; procedure.md:150); a concept branch that
-    carries a `@witness` line, and a `@witness` line under neither a
-    branch nor an `@approximated:` line (style.md:48-52). Serves the
-    concept's form."""
+    `@relaxed`; a concept branch that carries a `@witness` line, and a
+    `@witness` line under neither a branch nor an `@approximated:` line.
+    Serves the concept's form."""
     v = view(solver, runs)
     ann = solver.annotations
     out: list[Finding] = []
     labeled = (
         [(w.line, LintLabeled(Category.WITNESS, LintSentence.ORDINARY_RELAXED,
-                              LabelWord.WITNESS, w.id, tuple(w.relaxed)),
+                              DirectiveWord.WITNESS, w.id, tuple(w.relaxed)),
           w.plausibility) for w in ann.witnesses]
         + [(d.line, LintLabeled(Category.WITNESS,
                                 LintSentence.ORDINARY_RELAXED,
-                                LabelWord.DERIVE, d.proposer,
+                                DirectiveWord.DERIVE, d.proposer,
                                 tuple(d.relaxed)), d.plausibility)
            for d in ann.derives]
         + [(s.line, LintLabeled(Category.WITNESS,
                                 LintSentence.ORDINARY_RELAXED,
-                                LabelWord.STORE, None, tuple(s.relaxed)),
+                                DirectiveWord.STORE, None, tuple(s.relaxed)),
             s.plausibility) for s in ann.stores])
     for line, payload, plausibility in labeled:
         if plausibility == Plausibility.ORDINARY and payload.relaxed:
@@ -328,7 +354,7 @@ def check_witness(solver: Solver, runs: Runs) -> list[Finding]:
         first = concept_branch(p)
         if not first.own_line:
             continue
-        if any(w.constructor == first.name for w in ann.witnesses):
+        if branch_witnesses(solver, first.name):
             out.append(lint(first.line, LintNamed(
                 Category.WITNESS, LintSentence.CONCEPT_WITNESS,
                 (first.name,))))
@@ -339,54 +365,79 @@ def check_witness(solver: Solver, runs: Runs) -> list[Finding]:
     return out
 
 
+@quotes("solver-file.md", "Cases",
+        "A solver with one case has no `Choice`, case markers, or case column "
+        "on `out`.")
+@quotes("principles.md", "Choice points and open parameters",
+        "Each case takes one branch at each choice point at the concept, and "
+        "at each under a branch it takes.")
 def check_one_case(solver: Solver, runs: Runs) -> list[Finding]:
-    """`Choice` in a solver the runner holds one case of
-    (solver-file.md:103 "A solver with one case has no `Choice`, case
-    markers, or case column on `out`"). Where the run that gives the solver's
-    cases fails, whether it holds one case is unknown, and the finding
-    says so. Serves the purest form."""
+    """`Choice` in a solver with one case. Where the run that gives the
+    solver's cases fails, whether it has one case is unknown, and the
+    finding says so. Serves the purest form."""
     choice = solver.choice
     if choice is None:
         return []
     v = view(solver, runs)
     line = _choice_line(v, choice)
-    solver_cases = runs.cases
+    solver_cases = runs.solver_cases
     if not isinstance(solver_cases, tuple):
         sentence = LintSentence.ONE_CASE_UNKNOWN_TIMEOUT \
             if is_timeout(solver_cases) else LintSentence.ONE_CASE_UNKNOWN_FAILED
-        return [lint(line, LintRun(Category.ONE_CASE, sentence, solver_cases))]
+        return [_at_choice(v, choice, Category.ONE_CASE, sentence,
+                           solver_cases)]
     if len(solver_cases) != 1:
         return []
     return [lint(line, LintRun(Category.ONE_CASE, LintSentence.ONE_CASE,
                                solver_cases[0]))]
 
 
+def _at_choice(v: View, choice: Choice, category: Category,
+               sentence: LintSentence, failure: RunFailure) -> Finding:
+    """The hint at `Choice` that the run that enumerates the solver's
+    cases gave no result, so what `category` judges is unknown."""
+    return lint(_choice_line(v, choice), LintRun(category, sentence, failure))
+
+
 def _choice_line(v: View, choice: Choice) -> int:
     """The line `Choice`'s declaration starts on."""
-    decl = v.decls.get(choice.declaration)
-    return spanned(decl.span).first if decl is not None else 1
+    return choice_line(v.program, choice)
 
 
 def _constructions(v: View) -> frozenset[str]:
     """The lib components whose `.comp` line ends with `// @construction`
-    (solver-file.md:140): an instance of one builds a term the model
+    (solver-file.md, under "Program"): an instance of one builds a term the model
     reads through, and serves no claim of its own."""
     trailing = {(c.file, c.line) for c in v.program.comments
                 if not c.own_line and c.text.strip()
                 .startswith("@construction")}
     return frozenset(c.name for c in v.program.components
-                     if c.span is not None and c.span.file is not None
+                     if c.span is not None and not own(c.span)
                      and (c.span.file, c.span.first) in trailing)
 
 
+@quotes("solver-file.md", "Program",
+        "**`@claim` directive.** At program scope or inside `Parse`, an "
+        "instance of a component without an `@construction` mark has the "
+        "directive, one line per instance, listing the claims the instance "
+        "serves.")
+@quotes("solver-file.md", "Program",
+        "Each slug denotes a claim.")
+@quotes("solver-file.md", "Cases",
+        "`@claim` under the concept branch's constructor denotes the header "
+        "claim the choice point turns on")
+@quotes("encoding.md", "Component instances",
+        "In the program, an instance of a component that is not a "
+        "construction implements a claim and asserts that the task has that "
+        "claim.")
+@quotes("principles.md", "The concept",
+        "**claim**: a statement about the task, of one of these kinds:")
 def check_claim(solver: Solver, runs: Runs) -> list[Finding]:
-    """A `@claim` line whose slug no header claim states; in a solver
-    whose header states claims, an instance at program scope or inside
-    `Parse` of a component without `@construction` that carries no
-    `@claim` line, and a concept branch with no `@claim` line; and a
-    branch's claim that carries `@approximated:` (solver-file.md:140-142;
-    encoding.md:42 "an instance of a component that is not a construction
-    implements a claim"). Serves the concept's form."""
+    """A `@claim` line whose slug no header claim states; in a solver whose
+    header states claims, an instance at program scope or inside `Parse` of
+    a component without `@construction` that carries no `@claim` line, and a
+    concept branch with no `@claim` line; and a branch's claim that carries
+    `@approximated:`. Serves the concept's form."""
     v = view(solver, runs)
     ann = solver.annotations
     out: list[Finding] = []
@@ -395,11 +446,11 @@ def check_claim(solver: Solver, runs: Runs) -> list[Finding]:
         if c.approximated:
             out.append(lint(c.line, LintNamed(
                 Category.CLAIM, LintSentence.BRANCH_APPROXIMATED,
-                (c.kind.value, c.slug))))
+                (c.kind, c.slug))))
     header = [c for c in ann.claims if c.constructor is None]
     stated = {c.slug for c in header}
     if not header and ann.representative is not None:
-        other = _representative(solver, runs)
+        other = representative(solver, runs.engine)
         if other is None:
             return out
         header = [c for c in other.annotations.claims
@@ -434,17 +485,23 @@ def check_claim(solver: Solver, runs: Runs) -> list[Finding]:
     return out
 
 
+@quotes("style.md", "Components",
+        "A proposal comp with no entry is a hint.")
+@quotes("solver-file.md", "Components",
+        "A comp outside `Params`, `Determine`, and `Parse` is lib code, and a "
+        "solver writes one only as a proposal comp")
+@quotes("lib-protocol.md", "In the pass",
+        "**Proposal comp.** If those relations need a banned form and the "
+        "concept case reads them, place them in a proposal comp")
+@quotes("style.md", "Components",
+        "**Proposal comps.** The program-style checks skip a proposal comp.")
 def check_comp_without_entry(solver: Solver, runs: Runs) -> list[Finding]:
     """A proposal comp with no entry under docs/wf-solver/proposals/, a
-    hint (style.md:112-113 "A proposal comp with no entry is a hint";
-    solver-file.md:153 "A comp outside `Params`, `Determine`, and `Parse`
-    is lib code, and a solver writes one only as a proposal comp").
-    Serves the purest form: the comp is lib code on its way out of the
+    hint. Serves the purest form: the comp is lib code on its way out of the
     solver. A proposal comp whose relations no derivation of the concept
     case reads (`solver.model.dependence`) is a `proposal comp` lint in
-    place of that hint (lib-protocol.md "In the pass": a proposal comp
-    holds relations "the concept case reads"), naming through `cover`
-    the cases whose derivations read them."""
+    place of that hint, naming through `cover` the cases whose derivations
+    read them."""
     v = view(solver, runs)
     comps = [c for c in v.own_components
              if c.scope == TOP and c.name not in STOCK_COMPS]
@@ -457,7 +514,7 @@ def check_comp_without_entry(solver: Solver, runs: Runs) -> list[Finding]:
             out.append(lint(line, LintNamed(
                 Category.PROPOSAL_COMP, LintSentence.PROPOSAL_UNREAD,
                 (c.name, *got))))
-        elif not (proposals() / f"{c.name}.md").is_file():
+        elif not checkout.proposal_entry(c.name).is_file():
             out.append(lint(line, LintNamed(
                 Category.COMP_WITHOUT_ENTRY, LintSentence.NO_PROPOSAL_ENTRY,
                 (c.name,))))
@@ -470,29 +527,31 @@ def _comp_readers(solver: Solver, runs: Runs, comps: Sequence[str]
     depends on (`solver.model.dependence`), with the fewest names that
     cover the cases whose derivations depend on one of them; none where
     the run that enumerates the solver's cases gives no result."""
-    every = runs.cases
+    every = runs.solver_cases
     if not comps or not isinstance(every, tuple):
         return {}
-    bases = list(dict.fromkeys(c.base for c in every))
+    bases = bases_of(every)
     rd = dependence(solver, bases)
     out: dict[str, tuple[str, ...]] = {}
     for name in comps:
-        reading: set[Base | None] = set()
-        for u in solver.program.units:
-            if u.scope.components[:1] == (name,):
-                reading |= set(rd.units.get(u.id, ()))
-        if any(is_concept(solver, b) for b in reading):
+        reading = readers(rd, (u.id for u in solver.program.units
+                               if u.scope.components[:1] == (name,)))
+        if concept_among(solver, reading) is not None:
             continue
-        out[name] = cover(solver, [c for c in every if c.base in reading],
-                          every)
+        out[name] = reading_names(solver, every, reading)
     return out
 
 
+@quotes("solver-file.md", "Parse",
+        "A `.comp Parse<Key>` contains a derivation that the program and the "
+        "Determine comp share.")
+@quotes("style.md", "Components",
+        "**Shared comp instances.** A comp instance is shared exactly when "
+        "its case-specific versions differ only in the case name.")
 def check_parse_unshared_with_determine(solver: Solver, runs: Runs
                                         ) -> list[Finding]:
-    """A `Parse` comp that no `Determine` comp reads (solver-file.md:155
-    "A `.comp Parse<Key>` contains a derivation that the program and the
-    Determine comp share"). Serves the purest form."""
+    """A `Parse` comp that no `Determine` comp reads. Serves the purest
+    form."""
     v = view(solver, runs)
     parse = next((c for c in v.own_components if c.name == PARSE), None)
     if parse is None:
@@ -509,62 +568,71 @@ def check_parse_unshared_with_determine(solver: Solver, runs: Runs
 def _reads_parse(v: View) -> bool:
     """`Determine` holds a `Parse` instance, or a clause of it reads a
     relation `Parse` declares."""
-    if any(i.component == PARSE and i.scope.components == (DETERMINE,)
+    if any(i.component == PARSE and i.scope == DETERMINE_SCOPE
            for i in v.program.instances):
         return True
     for u in v.own_units:
         if u.scope.components[:1] != (DETERMINE,):
             continue
         for a in atoms_read(u):
-            r = v.index.resolve(a.atom.relation, u.scope)
+            r = v.index.resolve(a.relation, u.scope)
             if isinstance(r, Resolved):
                 d = v.decls.get(r.declaration)
-                if d is not None and getattr(d, "scope", TOP) \
-                        .components[:1] == (PARSE,):
+                if d is not None and not isinstance(d, FunctorDecl) \
+                        and d.scope.components[:1] == (PARSE,):
                     return True
     return False
 
 
+@quotes("style.md", "Types",
+        "lists the types a solver may define, and any other type is banned.")
+@quotes("solver-file.md", "Types",
+        "a record used as a type argument of a generic comp")
 def check_banned_type(solver: Solver, runs: Runs) -> list[Finding]:
-    """A type the solver declares that is none of the types solver-file.md
-    lists (solver-file.md:125-131; style.md:64 "any other type is
-    banned"): the types `Choice` and `TiebreakResolution` reach, and the
+    """A type the solver declares that is none of the types a solver may
+    define: the types `Choice` and `TiebreakResolution` reach, and the
     records an instance takes as a type argument with the records their
     fields reach. Only the types at the top level and in `Determine` and
     `Parse` are flagged. Serves the purest form."""
     v = view(solver, runs)
     scoped = [(t, t.scope == TOP or t.scope.components[:1] in
                ((DETERMINE,), (PARSE,))) for t in v.own_types]
-    by_name: dict[str, list] = {}
-    for t, _ in scoped:
-        by_name.setdefault(t.name, []).append(t)
-    declared = set(by_name)
+    own_types = {t.id: t for t, _ in scoped}
 
-    def refs(name: str) -> set[str]:
-        return {unqualified(r) for t in by_name[name]
-                for r in type_refs(t)} - {name}
+    def resolved(name: str, scope: Scope) -> TypeDecl | None:
+        return _type_among(runs, name, scope, own_types)
 
-    sanctioned: set[str] = set()
-    stack = [n for n in (CHOICE, TIEBREAK_RESOLUTION) if n in declared]
-    while stack:
-        name = stack.pop()
-        if name in sanctioned:
-            continue
-        sanctioned.add(name)
-        stack.extend((refs(name) & declared) - sanctioned)
-    records = {n for n, ts in by_name.items()
-               if any(isinstance(t, RecordType) for t in ts)}
-    filled = {a for i in v.own_instances for a in i.type_args}
-    stack = list(records & filled)
-    while stack:
-        name = stack.pop()
-        if name in sanctioned:
-            continue
-        sanctioned.add(name)
-        stack.extend((refs(name) & records) - sanctioned)
+    def refs(t: TypeDecl) -> list[TypeDecl]:
+        return [d for r in type_refs(t)
+                if (d := resolved(r, t.scope)) is not None and d.id != t.id]
+
+    def sanction(stack: list[TypeDecl], admits: type) -> None:
+        while stack:
+            t = stack.pop()
+            if t.id in sanctioned:
+                continue
+            sanctioned.add(t.id)
+            stack.extend(r for r in refs(t)
+                         if isinstance(r, admits) and r.id not in sanctioned)
+
+    sanctioned: set[DeclId] = set()
+    sanction([d for n in (CHOICE, TIEBREAK_RESOLUTION)
+              if (d := resolved(n, TOP)) is not None], object)
+    sanction([d for i in v.own_instances for a in i.type_args
+              if isinstance(d := resolved(a, i.scope), RecordType)],
+             RecordType)
     return [lint(t.span.first, LintNamed(
                 Category.BANNED_TYPE, LintSentence.BANNED_TYPE, (t.name,)))
-            for t, linted in scoped if linted and t.name not in sanctioned]
+            for t, linted in scoped if linted and t.id not in sanctioned]
+
+
+def _type_among[T](runs: Runs, name: str, scope: Scope,
+                   among: Mapping[DeclId, T]) -> T | None:
+    """The declaration among `among` that the type `name` denotes in
+    `scope` (`engine.Index.type_decl`); None where it denotes a
+    primitive type, a type parameter or a declaration not among them."""
+    d = runs.index.type_decl(name, scope)
+    return None if d is None else among.get(d.id)
 
 
 # Unread fields
@@ -612,30 +680,45 @@ def _reads(term: Term, uses: dict[str, int]) -> bool:
     return not (isinstance(term, Variable) and uses.get(term.name, 0) <= 1)
 
 
+@quotes("procedure.md", "Witness",
+        "A case never reads a `Choice` field: the choice point that field "
+        "encodes stands under the other branches")
+@quotes("principles.md", "Choice points and open parameters",
+        "A choice point stands at the concept, or under a branch when its "
+        "property exists only with that branch.")
+@quotes("style.md", "Cases",
+        "**Concept branch.** The concept branch is declared first in "
+        "`Choice`, and in each field's type of a record-typed `Choice`.")
 def check_unread_field(solver: Solver, runs: Runs) -> list[Finding]:
-    """A case, a constructor at its parent, whose clauses never read a
-    field that encodes a choice point, a hint (procedure.md:175 "A case
-    never reads a `Choice` field: the choice point that field encodes
-    stands under the other branches"; principles.md:106-108). A clause
-    reads a field where it writes the constructor and puts at the field
-    anything but `_` or a variable it uses nowhere else. Serves the
-    concept's form."""
+    """A case, a constructor at its parent, whose clauses never read a field
+    that encodes a choice point, a hint. A clause reads a field where it
+    writes the constructor and puts at the field anything but `_` or a
+    variable it uses nowhere else.
+    Serves the concept's form."""
     choice = solver.choice
     if choice is None:
         return []
     v = view(solver, runs)
-    adts = {td.name: td for _, _p, td in _choice_adts(solver, v)}
+    adts = {td.id: td for _, _p, td in _choice_adts(solver, v)}
+
+    def adt_of(name: str, scope: Scope) -> AdtType | None:
+        return _type_among(runs, name, scope, adts)
+
     points: dict[str, list[tuple[int, str]]] = {}
     owner: dict[str, AdtType] = {}
     for td in adts.values():
         for c in td.constructors:
             owner[c.name] = td
             chosen = [(j, f.name) for j, f in enumerate(c.fields)
-                      if f.type in adts]
+                      if adt_of(f.type, td.scope) is not None]
             if chosen:
                 points[c.name] = chosen
+    choice_decl = solver.program.declared(choice.declaration)
+    if not isinstance(choice_decl, AdtType | RecordType):
+        raise ValueError("`Choice` names no type declaration")
     roots: list[tuple[str, AdtType | None]] = [
-        (f.name, adts.get(f.type)) for f in choice.record or ()]
+        (f.name, adt_of(f.type, choice_decl.scope))
+        for f in choice.record or ()]
     if not points and len(roots) < 2:
         return []
     enums = v.enumerators
@@ -688,11 +771,9 @@ def check_unread_field(solver: Solver, runs: Runs) -> list[Finding]:
     out: list[Finding] = []
 
     def hint(ctor: str, field: str) -> None:
-        td = owner.get(ctor)
-        at = 1
-        if td is not None:
-            c = next(c for c in td.constructors if c.name == ctor)
-            at = c.span.first if c.own_line else td.span.first
+        td = owner[ctor]
+        c = next(c for c in td.constructors if c.name == ctor)
+        at = c.span.first if c.own_line else td.span.first
         out.append(lint(at, LintNamed(Category.UNREAD_FIELD,
                                       LintSentence.UNREAD_FIELD,
                                       (ctor, field))))
@@ -744,18 +825,22 @@ def _marks(solver: Solver, marker: CaseMarker,
     return out or None
 
 
+@quotes("solver-file.md", "Cases",
+        "**Case markers.** Cases do not interleave: each case's Params and "
+        "clauses are under its marker.")
+@quotes("style.md", "Params",
+        "A parameter that some case never reads goes under the marker of the "
+        "cases that read it.")
 def check_case_section(solver: Solver, runs: Runs) -> list[Finding]:
-    """A top-level clause that contains exactly one constructor of a
-    choice ADT other than its type's first, and stands outside that
-    constructor's marker: before the first marker, or under a marker none
-    of whose names lists cases (`cases_of`) that all take it, a hint
-    (solver-file.md:104
-    "Cases do not interleave: each case's Params and clauses are under
-    its marker"). A marker whose names are prose marks nothing and is
-    neutral; a constructor under a negation or a `!=` does not count; a
-    clause of an enumerator, and a fact of one constructor or record,
-    belong to no case. The clauses on one line that give one hint give
-    it once. Where the run that enumerates the solver's cases gives no
+    """A top-level clause that contains exactly one constructor of a choice
+    ADT other than its type's first, and stands outside that constructor's
+    marker: above the first marker that lists a case, or under a marker none
+    of whose names lists cases (`cases_of`) that all take it
+    (`solver.model.section_at`), a hint. A marker whose names are prose
+    marks nothing and is neutral; a constructor under a negation or a `!=`
+    does not count; a clause of an enumerator, and a fact of one constructor
+    or record, belong to no case. The clauses on one line that give one hint
+    give it once. Where the run that enumerates the solver's cases gives no
     result, a clause under a marker is not judged, and a hint at `Choice`
     says so with the run's failure. Serves readability."""
     v = view(solver, runs)
@@ -764,15 +849,14 @@ def check_case_section(solver: Solver, runs: Runs) -> list[Finding]:
     if not cases:
         return []
     enums = v.enumerators
-    every = runs.cases
+    every = runs.solver_cases
     out: list[Finding] = []
     unjudged = False
     for u in v.own_units:
         if u.scope != TOP or (not u.head.relation.instances
                               and u.head.relation.name in enums):
             continue
-        if u.body is None and len(u.head.args) == 1 \
-                and isinstance(u.head.args[0], ConstructorTerm | RecordTerm):
+        if tag_fact(u):
             continue
         named = {t.name for lit in _all_literals(u)
                  for top in _admitting_terms(lit, u)
@@ -781,15 +865,16 @@ def check_case_section(solver: Solver, runs: Runs) -> list[Finding]:
         if len(named) != 1 or u.span is None:
             continue
         (case,) = named
-        marker = v.section(u)
+        marker = marker_at(solver, u.scope, u.span.first)
         if marker is not None:
             if not isinstance(every, tuple):
                 unjudged = True
                 continue
             marked = _marks(solver, marker, every)
-            d = denote(solver, ctor_text(case))
-            taking = frozenset(cases_of(solver, d, every)) \
-                if isinstance(d, Denoted) else frozenset()
+            d = denote_constructor(solver, case)
+            if d is None:
+                raise ValueError(f"`{case}` stands at no choice point")
+            taking = frozenset(cases_of(solver, d, every))
             if marked is None or any(m and m <= taking for m in marked):
                 continue
         if marker is None:
@@ -802,51 +887,53 @@ def check_case_section(solver: Solver, runs: Runs) -> list[Finding]:
         out.append(lint(u.span.first, payload))
     if unjudged and solver.choice is not None \
             and not isinstance(every, tuple):
-        out.append(lint(_choice_line(v, solver.choice), LintRun(
-            Category.CASE_SECTION, LintSentence.CASE_SECTION_UNJUDGED,
-            every)))
+        out.append(_at_choice(v, solver.choice, Category.CASE_SECTION,
+                              LintSentence.CASE_SECTION_UNJUDGED, every))
     return list(dict.fromkeys(out))
 
 
+@quotes("solver-file.md", "Cases",
+        "**Case markers.** Cases do not interleave: each case's Params and "
+        "clauses are under its marker.")
+@quotes("style.md", "Params",
+        "A parameter that some case never reads goes under the marker of the "
+        "cases that read it.")
 def check_case_section_read(solver: Solver, runs: Runs) -> list[Finding]:
     """A clause that feeds a relation some cases read, where every clause
-    that feeds the rows they read there stands under a marker that does
-    not list them (`solver.model.Dependence.stranded`):
-    the program runs the clause for those cases, so its marker does not
-    list every case that reads it (solver-file.md:104 "Cases do not
-    interleave: each case's Params and clauses are under its marker").
-    One finding per solver line, relation and marker: the clauses on one
-    line that feed one relation under one marker give one finding, on
-    that line, naming through `cover` the cases that read any of them.
-    Where the run that enumerates the solver's cases gives no result,
-    nothing is judged, and a hint at `Choice` says so with the run's
-    failure. Serves the purest form."""
-    every = runs.cases
+    that feeds the rows they read there stands under a marker that does not
+    list them (`solver.model.Dependence.stranded`): the program runs the
+    clause for those cases, so its marker does not list every case that
+    reads it. One finding per solver line, relation and marker: the clauses
+    on one line that feed one relation under one marker give one finding, on
+    that line, naming through `cover` the cases that read any of them. Where
+    the run that enumerates the solver's cases gives no result, nothing is
+    judged, and a hint at `Choice` says so with the run's failure. Serves
+    the purest form."""
+    every = runs.solver_cases
     if solver.choice is None:
         return []
     if not isinstance(every, tuple):
-        return [lint(_choice_line(view(solver, runs), solver.choice), LintRun(
-            Category.CASE_SECTION, LintSentence.CASE_SECTION_READ_UNJUDGED,
-            every))]
-    bases = list(dict.fromkeys(c.base for c in every))
+        return [_at_choice(view(solver, runs), solver.choice,
+                           Category.CASE_SECTION,
+                           LintSentence.CASE_SECTION_READ_UNJUDGED, every)]
+    bases = bases_of(every)
     among = [b for b in bases if b is not None]
     if not among:
         return []
     rd = dependence(solver, bases)
     by_id = {u.id: u for u in solver.program.units}
-    lines: dict[tuple[int, str, CaseMarker], set[Base | None]] = {}
-    for (uid, relation), reaching in sorted(
-            rd.stranded.items(), key=lambda kv: (kv[0][0].index, kv[0][1])):
+    lines: dict[tuple[int, Node, CaseMarker], set[Base | None]] = {}
+    for (uid, node), reaching in rd.stranded.items():
         u = by_id[uid]
-        if u.span is None:
-            continue
-        section = section_at(solver, u.scope, u.span.first)
-        if not isinstance(section, UnderMarker):
-            continue
-        lines.setdefault((u.span.first, relation, section.marker),
+        line = spanned(u.span).first
+        # A stranded unit stands under a marker (`Dependence.stranded`).
+        marker = marker_at(solver, u.scope, line)
+        if marker is None:
+            raise ValueError(f"a stranded unit at line {line} under no marker")
+        lines.setdefault((line, node, marker),
                          set()).update(reaching)
     return [lint(line, LintMarked(
-        Category.CASE_SECTION, LintSentence.CASE_SECTION_READ, relation,
-        marker, cases=tuple(cover(solver, [b for b in among if b in reaching],
-                                  among))))
-        for (line, relation, marker), reaching in lines.items()]
+        Category.CASE_SECTION, LintSentence.CASE_SECTION_READ, node.text,
+        marker, cases=base_names(solver, [b for b in among if b in reaching],
+                                 among)))
+        for (line, node, marker), reaching in lines.items()]

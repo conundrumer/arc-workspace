@@ -30,6 +30,18 @@ def test_an_included_file_and_the_input_facts_are_in_the_key(tmp_path: Path):
     assert _rows(engine, text, tmp_path, {IN: ((20,),)}) == ((22,),)
 
 
+def test_a_clause_is_in_the_key_and_a_comment_is_not(tmp_path: Path):
+    engine = SouffleEngine(functor_dir=None, cache_dir=tmp_path / "cache")
+    text = ".decl i(x: number)\n.decl o(x: number)\no(X + 1) :- i(X).\n"
+    assert _rows(engine, text, tmp_path, {IN: ((10,),)}) == ((11,),)
+    edited = text.replace("X + 1", "X + 2")
+    assert _rows(engine, edited, tmp_path, {IN: ((10,),)}) == ((12,),)
+    stored = sorted((tmp_path / "cache").glob("*.json.z"))
+    commented = "// a comment\n\n" + edited.replace(".\n", ". // why\n")
+    assert _rows(engine, commented, tmp_path, {IN: ((10,),)}) == ((12,),)
+    assert sorted((tmp_path / "cache").glob("*.json.z")) == stored
+
+
 # One process of the concurrency test: it writes and reads the shared keys
 # with a prune on every write, under a cap that evicts. A read finds the
 # entry missing or finds the whole entry that key stands for.

@@ -5,6 +5,7 @@ of a pair, which `load` and the runner's pairs file read (`read_pair`) and
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, get_args
@@ -35,6 +36,8 @@ PAIR_KEYS = (INPUT, OUTPUT, ALT)
 KIND, GRID = "kind", "grid"
 ALT_KEYS = (KIND, GRID)
 
+COLORS = range(10)
+"""The colors a cell of a grid holds, 0 to 9."""
 TASKS_DIR = Path(__file__).resolve().parents[2] / "data" / "tasks"
 
 
@@ -100,10 +103,32 @@ def as_grid(value: object) -> Grid:
     for row in value:
         for cell in row:
             if isinstance(cell, bool) or not isinstance(cell, int) \
-                    or not 0 <= cell <= 9:
+                    or cell not in COLORS:
                 raise ValueError(mctx("cell out of range: {cell}").format(
                     cell=repr(cell)))
     return value
+
+
+class GridFormError(ValueError):
+    """A written grid that writes no grid (`read_grid`)."""
+
+
+def read_grid(written: str) -> Grid:
+    """The grid the text writes: one line per row, one digit per cell,
+    spaces and commas between cells optional, blank lines and `#` lines
+    skipped, and text that starts with `[` read as JSON. Raises
+    `GridFormError`, saying what is off, where it writes none."""
+    stripped = written.strip()
+    try:
+        if stripped.startswith("["):
+            rows = json.loads(stripped)
+        else:
+            rows = [[int(ch) for ch in re.sub(r"[\s,]", "", line)]
+                    for line in stripped.splitlines()
+                    if line.strip() and not line.lstrip().startswith("#")]
+        return as_grid(rows)
+    except (ValueError, TypeError) as e:
+        raise GridFormError(e) from None
 
 
 def _grid(where: str, key: str, value: object) -> Grid:
@@ -194,9 +219,14 @@ def _examples(path: Path, section: SetT, pairs: list[object]) -> list[Example]:
     return examples
 
 
+def task_file(task_id: str) -> Path:
+    """Where the materialized task `task_id` stands."""
+    return TASKS_DIR / f"{task_id}.json"
+
+
 def load(task_id: str) -> Task:
     """Load a materialized task from data/tasks/. Patches applied; upstream errors fixed."""
-    path = TASKS_DIR / f"{task_id}.json"
+    path = task_file(task_id)
     if not path.exists():
         raise FileNotFoundError(f"no materialized task at {path}")
     data = json.loads(path.read_text())

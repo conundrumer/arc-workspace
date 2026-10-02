@@ -12,14 +12,14 @@ from checker.lint.view import (
     flatten,
     lint,
     literal_vars,
+    positive_atoms,
     subterms,
     term_vars,
     view,
 )
-
 from checker.runs import Runs
-from engine import Resolved
 from engine.program import (
+    PRIMITIVES,
     AdtType,
     Atom,
     AtomLiteral,
@@ -31,7 +31,6 @@ from engine.program import (
     Qualifier,
     RecordTerm,
     RecordType,
-    RelationDecl,
     RelationName,
     SubtypeType,
     Term,
@@ -39,14 +38,15 @@ from engine.program import (
     Unit,
     Variable,
     Wildcard,
+    own,
 )
-from solver.vocabulary import (
-    ELEM_SUFFIX,
-)
+from engine.quotes import quotes
 from solver.category import Category
 from solver.model import Solver
-
-PRIMITIVE_TYPES = frozenset({"number", "unsigned", "float", "symbol"})
+from solver.vocabulary import (
+    COMPOSE,
+    ELEM_SUFFIX,
+)
 
 
 def _unpacked(term: Term) -> set[str]:
@@ -82,22 +82,8 @@ class Columns:
                       if isinstance(t, AdtType) for c in t.constructors}
         self._grounded: dict[object, frozenset[int]] = {}
 
-    def resolved(self, unit: Unit, atom: Atom
-                 ) -> tuple[RelationDecl, dict[str, str]] | None:
-        r = self.v.index.resolve(atom.relation, unit.scope)
-        if not isinstance(r, Resolved):
-            return None
-        d = self.v.decls.get(r.declaration)
-        if not isinstance(d, RelationDecl):
-            return None
-        return d, dict(r.type_arguments)
-
     def columns(self, unit: Unit, atom: Atom) -> list[str] | None:
-        found = self.resolved(unit, atom)
-        if found is None or len(found[0].columns) != len(atom.args):
-            return None
-        d, subst = found
-        return [subst.get(c.type, c.type) for c in d.columns]
+        return self.v.column_types(unit, atom)
 
     def var_types(self, unit: Unit, atom: Atom) -> dict[str, set[str]]:
         """Each variable of an atom and the declared types of the columns
@@ -126,10 +112,9 @@ class Columns:
     def grounded(self, unit: Unit, atom: Atom) -> frozenset[int] | None:
         """The columns an atom grounds: each, for a relation that is not
         inline; for an inline one, each that every clause of it grounds."""
-        found = self.resolved(unit, atom)
-        if found is None:
+        d = self.v.relation(unit, atom)
+        if d is None:
             return None
-        d = found[0]
         if d.id in self._grounded:
             return self._grounded[d.id]
         if Qualifier.INLINE not in d.qualifiers:
@@ -178,12 +163,10 @@ def _elem_tables(v: View) -> tuple[dict[str, str], dict[str, set[str]]]:
     """Each lib `*_elem` relation with the element type it holds, and each
     type with the types wider than it: a union is wider than its members,
     a subtype's base wider than it, transitively."""
-    elem = {d.name: d.columns[0].type for d in v.program.relations
-            if d.span.file is not None and d.name.endswith(ELEM_SUFFIX)
-            and len(d.columns) == 1}
+    elem = dict(v.solver.lib.elems)
     wider: dict[str, set[str]] = {}
     for t in v.program.types:
-        if t.span.file is None:
+        if own(t.span):
             continue
         if isinstance(t, SubtypeType):
             wider.setdefault(t.name, set()).add(t.base)
@@ -191,7 +174,7 @@ def _elem_tables(v: View) -> tuple[dict[str, str], dict[str, set[str]]]:
             for m in t.members:
                 wider.setdefault(m, set()).add(t.name)
     for ws in wider.values():
-        ws.difference_update(PRIMITIVE_TYPES)
+        ws.difference_update(PRIMITIVES)
     changed = True
     while changed:
         changed = False
@@ -252,25 +235,20 @@ def enumerator_binder(v: View, cols: Columns, unit: Unit, atom: Atom
     return None if first is None else (first, binding)
 
 
+@quotes("style.md", "Idioms",
+        "**Narrowing.** When a clause binds an argument of a lib relation to "
+        "a head column of a narrower type, it takes that type's `*_elem` "
+        "atom.")
 def check_domain_enumerator(solver: Solver, runs: Runs) -> list[Finding]:
     """An `*_elem` atom whose variable an atom before it already binds, a
-    hint (style.md:83 "When a clause binds an argument of a lib relation
-    to a head column of a narrower type, it takes that type's `*_elem`
-    atom"; prompts/run_dl.md#enumerator, the readable form of a
-    per-member test). An atom that binds it first stays quiet. Serves
-    readability."""
+    hint. An atom that binds it first stays quiet. Serves readability."""
     v = view(solver, runs)
     cols = Columns(v)
     out: list[Finding] = []
     for u in v.program_units():
         if u.body is None:
             continue
-        seen: dict[int, Atom] = {}
-        for f in flatten(u.body):
-            for x in f:
-                if (a := _positive(x)) is not None:
-                    seen.setdefault(id(a), a)
-        for a in seen.values():
+        for a in positive_atoms(flatten(u.body)):
             found = enumerator_binder(v, cols, u, a)
             if found is not None and found[1] == Binding.BOUND:
                 out.append(lint(a.line, LintCode(
@@ -327,9 +305,9 @@ class Chain:
 
 
 CHAINS = (
-    Chain("neighbor", ("step_offset", 2, 1), ("compose", 3, (0, 1)),
+    Chain("neighbor", ("step_offset", 2, 1), (COMPOSE, 3, (0, 1)),
           (PARTNER, InA(0), InB(2))),
-    Chain("jump", ("jump_offset", 3, 2), ("compose", 3, (0, 1)),
+    Chain("jump", ("jump_offset", 3, 2), (COMPOSE, 3, (0, 1)),
           (PARTNER, InA(0), InA(1), InB(2))),
     Chain("same_line", ("split", 4, 3), ("split", 4, (3,)),
           (InA(1), InA(0), InB(0)),
@@ -346,10 +324,10 @@ def _delta_out(v: View) -> dict[str, int]:
     or reads it off another such relation."""
     boxes = v.solver.lib.box_types
     decls = {d.name: d for d in v.program.relations
-             if d.span.file is not None and not d.scope.components}
+             if not own(d.span) and not d.scope.components}
     clauses: dict[str, list[Unit]] = {}
     for u in v.program.units:
-        if u.span is not None and u.span.file is not None \
+        if u.span is not None and not own(u.span) \
                 and not u.scope.components and not u.head.relation.instances:
             clauses.setdefault(u.head.relation.name, []).append(u)
 
@@ -401,7 +379,7 @@ def _delta_vars(deltas: dict[str, int], ext: list[Atom]) -> set[str]:
     while changed:
         changed = False
         for a in ext:
-            if a.relation.name != "compose" or len(a.args) != 3:
+            if a.relation.name != COMPOSE or len(a.args) != 3:
                 continue
             ops = [term_vars(a.args[i]) for i in (0, 1)]
             if all(vs and vs <= out for vs in ops):
@@ -472,10 +450,12 @@ def _pairs(ext: list[Atom], deltas: set[str]
     return out
 
 
+@quotes("procedure.md", "Simplify",
+        "Reimplements what the lib provides.")
 def check_lib_idiom(solver: Solver, runs: Runs) -> list[Finding]:
-    """A lib relation's defining chain written out by hand, with the
-    linking value confined to the chain: name it with the relation.
-    Serves the purest form: the lib names the idiom."""
+    """A lib relation's defining chain written out by hand, with the linking
+    value confined to the chain: name it with the relation. Serves the
+    purest form: the lib names the idiom."""
     v = view(solver, runs)
     deltas = _delta_out(v)
     out: list[Finding] = []

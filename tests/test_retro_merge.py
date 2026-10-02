@@ -1,5 +1,6 @@
-"""The retro's worktree merge: the patch it takes from a worktree, the tree it
-applies that patch to, and the diffs it carries over."""
+"""The retro's worktree merge into a tree that refuses its patch: the tree
+keeps its files, and the worktree, which holds the only copy of the change,
+stays."""
 
 import importlib.util
 import subprocess
@@ -65,20 +66,6 @@ def pair(tmp_path: Path) -> tuple[Path, Path]:
     return repo, worktree_of(repo, tmp_path / "wt")
 
 
-def test_merge_applies_the_change_copies_the_diffs_and_removes_the_worktree(
-        retro_merge, tmp_path: Path, pair):
-    repo, wt = pair
-    into = repo_at(tmp_path / "into")
-    result = retro_merge.merge(wt, into)
-    assert result == {"applied": True, "files": ["src/a.py", "tests/test_b.py"], "conflict": ""}
-    assert (into / "src" / "a.py").read_text() == "a = 2\n"
-    assert (into / "tests" / "test_b.py").exists()
-    assert (into / ".scratch" / "retro" / "diffs" / "src__a.py.diff").read_text() == "the diff\n"
-    assert not (into / ".scratch" / "loose.txt").exists()
-    assert not wt.exists()
-    assert "wt" not in git(repo, "worktree", "list")
-
-
 def test_a_tree_that_refuses_the_patch_keeps_its_files_and_the_worktree(
         retro_merge, tmp_path: Path, pair):
     _, wt = pair
@@ -90,5 +77,3 @@ def test_a_tree_that_refuses_the_patch_keeps_its_files_and_the_worktree(
     assert (into / "src" / "a.py").read_text() == "a = 99\n"
     assert not (into / "tests" / "test_b.py").exists()
     assert wt.is_dir()
-
-

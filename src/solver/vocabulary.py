@@ -1,45 +1,85 @@
 """The names the handbook and the lib fix, which the model reads a
 solver's program by. Every reader of them takes them from here."""
 
-from engine import RelationName
+from typing import Annotated
 
-PARAMS = "Params"
-"""The component of the parameterization (solver-file.md:112)."""
-DETERMINE = "Determine"
-"""The component of the determination (solver-file.md:157)."""
-PARSE = "Parse"
-"""The component the program and `Determine` share (solver-file.md:155)."""
-CHOICE = "Choice"
-"""The case type (solver-file.md:22, :124-131)."""
-TIEBREAK_RESOLUTION = "TiebreakResolution"
-"""The type of `out`'s resolution column (solver-file.md:168)."""
-ENUMERATOR = "impl_choice"
-"""The relation that enumerates the cases (solver-file.md:108)."""
-CASE_COLUMN = "ch"
-"""`impl_choice`'s column (solver-file.md:108)."""
+from engine import RelationName, Scope
+from engine.quotes import quotes
+
+PARAMS: Annotated[str,
+    quotes("solver-file.md", "Params",
+           "Params contains the parameterization and what derives from "
+           "it.")] = "Params"
+"""The component of the parameterization."""
+DETERMINE: Annotated[str,
+    quotes("solver-file.md", "Determination",
+           "`Determine` contains the determination as one relation per "
+           "determined parameter, with the parameter's name and "
+           "schema")] = "Determine"
+"""The component of the determination."""
+PARAMS_SCOPE = Scope((PARAMS,))
+"""The scope of what `Params` declares and holds."""
+DETERMINE_SCOPE = Scope((DETERMINE,))
+"""The scope of what `Determine` declares and holds."""
+PARSE: Annotated[str,
+    quotes("solver-file.md", "Parse",
+           "A `.comp Parse<Key>` contains a derivation that the program and "
+           "the Determine comp share.")] = "Parse"
+"""The component the program and `Determine` share."""
+CHOICE: Annotated[str,
+    quotes("solver-file.md", "Cases",
+           "A case's base is its `Choice` value"),
+    quotes("solver-file.md", "Types",
+           "an ADT in `Choice`, in one of these places:")] = "Choice"
+"""The case type."""
+TIEBREAK_RESOLUTION: Annotated[str,
+    quotes("solver-file.md", "Alt outputs",
+           "The solver enumerates a tiebreak's resolutions through a trailing "
+           "`out` column of type "
+           "`TiebreakResolution`.")] = "TiebreakResolution"
+"""The type of `out`'s resolution column."""
+ENUMERATOR: Annotated[str,
+    quotes("solver-file.md", "Cases",
+           "**`impl_choice`.** The relation that enumerates the cases is "
+           "`impl_choice`, and its column is `ch`.")] = "impl_choice"
+"""The relation that enumerates the cases."""
+IMPL = RelationName((), ENUMERATOR)
+"""`impl_choice` as a run names it."""
+CASE_COLUMN: Annotated[str,
+    quotes("solver-file.md", "Cases",
+           "**`impl_choice`.** The relation that enumerates the cases is "
+           "`impl_choice`, and its column is `ch`.")] = "ch"
+"""`impl_choice`'s column."""
 INPUT = RelationName((), "in")
 """The input grid's cells (lib.dl, the runner contract)."""
-OUTPUT = RelationName((), "out")
-"""The output grids' cells (solver-file.md:36, :98)."""
+OUTPUT: Annotated[RelationName,
+    quotes("solver-file.md", "Cases",
+           "A case's model reads its output grids from `out` at that "
+           "case")] = RelationName((), "out")
+"""The output grids' cells."""
 EX_IN = RelationName((), "ex_in")
-EX_OUT = RelationName((), "ex_out")
-"""The examples' inputs and train outputs, by example (solver-file.md:158,
-:162)."""
+EX_OUT: Annotated[RelationName,
+    quotes("solver-file.md", "Determination",
+           "derived from `ex_in` and `ex_out`.")] = RelationName((), "ex_out")
+"""The examples' inputs and train outputs, by example."""
 PROPOSE = "propose"
 """The relation a proposer states its values in (proposers.dl)."""
 LIB_FILE = "lib.dl"
 PROPOSERS_FILE = "proposers.dl"
 IDENT = "Ident"
-"""The lib's identity type (solver-file.md:161)."""
+"""The lib's identity type (lib.dl, `.type Ident`)."""
 COLOR = "Color"
-BOX = "Box"
-"""The lib's edge-margin record (style.md, "Box readings")."""
+BOX: Annotated[str,
+    quotes("style.md", "Box readings",
+           "A Box column is read as a cell with the `Position` alias, a "
+           "translation with the `Offset` alias, or a rectangle, margin, or "
+           "frame change with bare `Box`.")] = "Box"
+"""The lib's edge-margin record."""
+COMPOSE = "compose"
+"""The lib relation that places one box in another's frame, the shift of a
+cell by an offset among its uses (lib/box.dl)."""
 ELEM_SUFFIX = "_elem"
 """The suffix of the lib relations that enumerate an orientation type."""
-CONCEPT = "concept"
-"""The name of the concept case (solver-file.md:194)."""
-STORED = "stored"
-"""The reading of a stored branch, `<rel>=stored` (solver-file.md:199)."""
 DETERMINATION_DIFF = RelationName((), "_determination_diff")
 """The lib's relation of the parameters whose determination differs
 (lib.dl)."""

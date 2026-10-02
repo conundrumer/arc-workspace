@@ -1,95 +1,36 @@
-"""The digest of a parsed program that a run's cache key holds, computed
-without rendering the program.
+"""What a run's cache key holds beyond the text of its statements: the
+files a parsed program includes, with their bytes; and the declarations a
+run's text holds, those its units reach."""
 
-The text a run renders is a function of the program's fields and its
-layout: `expand` and the renderer read nothing else. They read a part's id
-only to place the part: a part whose id the layout holds renders at that
-place, and every other part, one an operation wrote, renders after the
-placed parts of its scope, in the order of its id. An operation writes each
-new part with the next id past every id the program and its layout hold,
-so the same part can come with different ids, and the digest reads a
-written part's id only as its rank among the written parts' ids.
+from collections.abc import Iterable, Iterator
+from dataclasses import replace
 
-The digest is the SHA-256 of the layout's digest and, for each field that
-holds parts, its length and a record per part in the order the field holds
-them, then the digest of each other field. A placed part's record holds
-the SHA-256 of its `repr`, which states every field of the part. A written
-part's holds its rank and the SHA-256 of its `repr` with its id left out;
-a RIGID call that holds a written unit states that unit by its rank. Two programs with equal digests therefore have equal layouts, equal
-placed parts at equal places, and written parts equal but for ids in the
-same order, and render the same text.
+from engine.memo import ByIdentity
+from engine.program import (
+    AdtType,
+    Aggregate,
+    AliasType,
+    BodyLiteral,
+    Cast,
+    ConstructorTerm,
+    DeclId,
+    Disjunction,
+    GridCall,
+    Program,
+    RecordType,
+    RelationDecl,
+    SubtypeType,
+    Term,
+    TypeDecl,
+    UnionType,
+    own,
+    literal_terms,
+    subterms,
+)
+from souffle.index import index_of
+from souffle.layout import CompBlock, IncludeBlock, Layout, Segment, layout_of
 
-A program an operation derives shares its layout, the fields the operation
-did not change and the parts it kept with its source, and each digest is
-held by the identity of the object it digests: the derived program digests
-only the parts the operation wrote, and looks up each other part once."""
-
-import hashlib
-from collections.abc import Callable
-from dataclasses import fields, replace
-
-from engine.program import DeclId, Program, RigidCall, UnitId
-from souffle.layout import IncludeBlock, Key, Layout, Segment, layout_keys, layout_of
-
-PART_CAP = 1 << 17
-"""The most part records held at once; past it the held records are
-dropped."""
-FIELD_CAP = 1 << 11
-"""The most field, program and layout digests held at once."""
-
-_PARTS = ("types", "relations", "components", "instances", "functors", "units", "macros")
-"""The fields that hold parts, each with an id."""
-_OTHERS = tuple(f.name for f in fields(Program) if f.name not in _PARTS)
-
-PLACED, WRITTEN, HOLDS_WRITTEN = 0, 1, 2
-"""What a part is under a layout: placed; written; or a placed RIGID call
-that holds a written unit."""
-
-_parts: dict[int, tuple[object, Layout, int, bytes]] = {}
-"""Per part, under the layout it was last read with: what it is, and its
-record where placed, else its digest with its id left out."""
-_fields: dict[int, tuple[object, bytes]] = {}
-_programs: dict[int, tuple[object, bytes]] = {}
-_layouts: dict[int, tuple[Layout, bytes, tuple[str, ...], frozenset[Key]]] = {}
-
-
-def _held(memo: dict[int, tuple[object, bytes]], cap: int, obj: object,
-          compute: Callable[[], bytes]) -> bytes:
-    """The digest held for `obj`, computed once while it is held. Each
-    entry holds its object, so that no other object takes its id."""
-    got = memo.get(id(obj))
-    if got is not None and got[0] is obj:
-        return got[1]
-    digest = compute()
-    if len(memo) >= cap:
-        memo.clear()
-    memo[id(obj)] = (obj, digest)
-    return digest
-
-
-def _sha(text: str) -> bytes:
-    return hashlib.sha256(text.encode()).digest()
-
-
-def _part(part: object, layout: Layout,
-          placed: frozenset[Key]) -> tuple[object, Layout, int, bytes]:
-    key = part.id  # type: ignore[attr-defined]
-    if key not in placed:
-        blank = DeclId(-1) if isinstance(key, DeclId) else UnitId(-1)
-        entry = (part, layout, WRITTEN, _sha(repr(replace(part, id=blank))))  # type: ignore[type-var]
-    elif isinstance(part, RigidCall) and any(k not in placed for k in part.body):
-        entry = (part, layout, HOLDS_WRITTEN, b"")
-    else:
-        entry = (part, layout, PLACED, b"p" + bytes(4) + _sha(repr(part)))
-    if len(_parts) >= PART_CAP:
-        _parts.clear()
-    _parts[id(part)] = entry
-    return entry
-
-
-def _field(values: tuple[object, ...]) -> bytes:
-    return _held(_fields, FIELD_CAP, values,
-                 lambda: _sha(repr(values)))
+_INCLUDED: ByIdentity[Layout, tuple[str, ...]] = ByIdentity()
 
 
 def _included(segments: tuple[Segment, ...]) -> list[str]:
@@ -98,72 +39,135 @@ def _included(segments: tuple[Segment, ...]) -> list[str]:
         if isinstance(s, IncludeBlock):
             out.append(s.path)
             out += _included(s.body)
-        elif hasattr(s, "body"):
-            out += _included(s.body)  # type: ignore[attr-defined]
+        elif isinstance(s, CompBlock):
+            out += _included(s.body)
     return out
-
-
-def _layout(layout: Layout) -> tuple[bytes, tuple[str, ...], frozenset[Key]]:
-    """The layout's digest, the path of each file it includes, and the
-    key of every part it places."""
-    got = _layouts.get(id(layout))
-    if got is not None and got[0] is layout:
-        return got[1], got[2], got[3]
-    held = (_sha(repr(layout)), tuple(_included(layout.segments)),
-            frozenset(layout_keys(layout.segments)))
-    if len(_layouts) >= FIELD_CAP:
-        _layouts.clear()
-    _layouts[id(layout)] = (layout, *held)
-    return held
 
 
 def included_files(program: Program) -> tuple[str, ...]:
     """The path of each file the program's layout includes, in the order
-    the layout holds them."""
-    return _layout(layout_of(program))[1]
+    the layout holds them; read once per layout while it lives, as the
+    programs an operation derives from one share its layout."""
+    layout = layout_of(program)
+    return _INCLUDED.compute(layout, lambda: tuple(_included(layout.segments)))
 
 
-def _order(key: Key) -> tuple[int, int]:
-    """Declarations first, then units, each in the order of its id, as the
-    renderer places written parts."""
-    return (0 if isinstance(key, DeclId) else 1, key.index)
+_REACHED: ByIdentity[Program, dict[frozenset[DeclId], Program]] = ByIdentity()
 
 
-def program_digest(program: Program) -> bytes:
-    def compute() -> bytes:
-        layout = layout_of(program)
-        digest, _, placed = _layout(layout)
-        get = _parts.get
-        groups: list[list[tuple[object, Layout, int, bytes]]] = []
-        written: list[Key] = []
-        for name in _PARTS:
-            group = []
-            for p in getattr(program, name):
-                e = get(id(p))
-                if e is None or e[0] is not p or e[1] is not layout:
-                    e = _part(p, layout, placed)
-                if e[2] == WRITTEN:
-                    written.append(p.id)
-                group.append(e)
-            groups.append(group)
-        rank = {key: i for i, key in enumerate(sorted(written, key=_order))}
-        out = [digest]
-        for group in groups:
-            out.append(len(group).to_bytes(4, "big"))
-            for p, _, kind, got in group:
-                if kind == PLACED:
-                    out.append(got)
-                elif kind == WRITTEN and not isinstance(p, RigidCall):
-                    out.append(b"w" + rank[p.id].to_bytes(4, "big") + got)  # type: ignore[attr-defined]
-                else:
-                    assert isinstance(p, RigidCall)
-                    r = rank.get(p.id)
-                    body = tuple(UnitId(-1 - rank[k]) if k in rank else k for k in p.body)
-                    at = UnitId(-1 - r) if r is not None else p.id
-                    out.append(b"r" + (r if r is not None else 0).to_bytes(4, "big")
-                               + _sha(repr(replace(p, id=at, body=body))))
-        for name in _OTHERS:
-            out.append(_field(getattr(program, name)))
-        return hashlib.sha256(b"".join(out)).digest()
+def reached(program: Program, named: Iterable[DeclId]) -> Program:
+    """`program` with the declarations a run of it reads: without each
+    relation declaration of its own text that no unit or macro call feeds
+    or reads, other than those of `named` (the relations the run reads in
+    or prints), and without each type declaration of its own text that no
+    declaration it keeps, unit, macro call, instance, functor or `#define`
+    names. An included file's declarations stay, since the run's text names
+    the file whole. Computed once per program and `named` while the
+    program lives, as a group's program runs on every input."""
+    key = frozenset(named)
+    return _REACHED.keyed(program, key, lambda: _reached(program, key))
 
-    return _held(_programs, FIELD_CAP, program, compute)
+
+def _reached(program: Program, named: frozenset[DeclId]) -> Program:
+    index = index_of(program)
+    bound = {r.id for r in program.relations
+             if r.chart_of is not None
+             or program.rigid_bound(r)}
+    relations = tuple(
+        r for r in program.relations
+        if not own(r.span) or r.id in named or r.id in bound
+        or index.feeding(r.id) or index.reading(r.id))
+    types = program.types
+    if all(d.value is not None for d in program.defines):
+        types = _named_types(program, relations)
+    if len(relations) == len(program.relations) and len(types) == len(program.types):
+        return program
+    return replace(program, relations=relations, types=types)
+
+
+def _named_types(program: Program, relations: tuple[RelationDecl, ...]
+                 ) -> tuple[TypeDecl, ...]:
+    """The type declarations of `program` that stay with `relations`
+    (`reached`): each not of its own text, and each that a name it reaches
+    names, through the types it keeps. A name is matched by its last part,
+    so that a qualified name keeps every type of that name."""
+    names: set[str] = set()
+    for r in relations:
+        names.update(c.type for c in r.columns)
+    for c in program.components:
+        names.update(c.base_type_args)
+    for i in program.instances:
+        names.update(i.type_args)
+    for f in program.functors:
+        names.update(p.type for p in f.params)
+        names.add(f.result)
+    terms: list[Term] = [d.value for d in program.defines if d.value is not None]
+    for u in program.units:
+        terms += u.head.args
+        if u.body is not None:
+            terms += _body_terms(u.body)
+    for m in program.macros:
+        if isinstance(m, GridCall):
+            terms += m.keys
+            terms += [c.term for row in m.cells for c in row]
+    constructors: set[str] = set()
+    for t in terms:
+        _term_names(t, names, constructors)
+    by_ctor = {c.name.lstrip("$"): t.name for t in program.types
+               if isinstance(t, AdtType) for c in t.constructors}
+    names.update(by_ctor[c] for c in constructors if c in by_ctor)
+    names = {n.rsplit(".", 1)[-1] for n in names}
+    kept: dict[DeclId, TypeDecl] = {t.id: t for t in program.types if not own(t.span)}
+    for t in kept.values():
+        names.update(_type_refs(t))
+    while True:
+        more = [t for t in program.types
+                if t.id not in kept and t.name in names]
+        if not more:
+            break
+        for t in more:
+            kept[t.id] = t
+            names.update(n.rsplit(".", 1)[-1] for n in _type_refs(t))
+    return tuple(t for t in program.types if t.id in kept)
+
+
+def _type_refs(t: TypeDecl) -> Iterator[str]:
+    """The type names a type declaration names."""
+    match t:
+        case AdtType():
+            for c in t.constructors:
+                yield from (f.type for f in c.fields)
+        case RecordType():
+            yield from (f.type for f in t.fields)
+        case AliasType():
+            yield t.target
+        case SubtypeType():
+            yield t.base
+        case UnionType():
+            yield from t.members
+
+
+def _body_terms(body: tuple[BodyLiteral, ...]) -> Iterator[Term]:
+    for lit in body:
+        if isinstance(lit, Disjunction):
+            for branch in lit.branches:
+                yield from _body_terms(branch)
+        else:
+            yield from literal_terms(lit)
+
+
+def _term_names(t: Term, types: set[str], constructors: set[str]) -> None:
+    """Add the type names `t` casts to into `types`, and the constructor
+    names it applies into `constructors`."""
+    match t:
+        case Cast(type=type_):
+            types.add(type_)
+        case ConstructorTerm(name=name):
+            constructors.add(name.lstrip("$"))
+        case Aggregate(expr=expr, body=body):
+            if expr is not None:
+                _term_names(expr, types, constructors)
+            for b in _body_terms(body):
+                _term_names(b, types, constructors)
+    for a in subterms(t):
+        _term_names(a, types, constructors)

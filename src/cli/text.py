@@ -30,8 +30,7 @@ PAIRS_NONE = mctx("the file holds no pair")
 # `grid`, `relation` and `record`
 
 NO_CASE_NAMED = mctx("no case of {stem} is `{name}`")
-NO_HELD_TAKES = mctx("the runner holds no case that takes the branches of "
-                     "`{name}`")
+NO_HELD_TAKES = mctx("no witnessed case takes the branches of `{name}`")
 NO_RELATION = mctx("no relation `{name}`")
 NO_ENTRY = mctx("no witness `{id}` in {path}; a new witness takes "
                 "`--separates`")
@@ -44,6 +43,8 @@ NEW_NEEDS_SEPARATES = mctx("a new witness takes `--separates`; without it, "
                            "record runs the witness of that id again and "
                            "takes no grid or `--assign`")
 ONE_SEPARATOR = mctx("record takes one `---` separator at most")
+REMOVE_ALONE = mctx("`--remove` takes a witness id alone, and no grid, "
+                    "`--separates`, `--assign`, `--all` or `--format`")
 
 # `witness`, `derive` and `store`
 
@@ -53,8 +54,8 @@ WITNESS_NEEDS = mctx("witness: give a task id, `--file`, or both")
 WITNESS_FILE_NEEDS_STEM = mctx("`--witness-file` takes a stem")
 TRY_ALONE = mctx("witness: `--try` takes a task id and no `--file` or "
                  "`--every-case`")
-TRY_ONE_GRID = mctx("witness: `--try` takes one grid and no `---` separator")
+TRY_ONE_GRID = mctx("witness: `--try` takes one grid")
 
 # `since`
 
-NO_HISTORY = mctx("git found no history for {when!r}")
+GIT_FAILED = mctx("git failed: {error}")

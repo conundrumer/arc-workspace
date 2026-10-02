@@ -3,11 +3,14 @@ engine's comment list gives it."""
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Annotated
 
-from engine import Comment, DeclId, Program, TypeDecl, UnitId
-from engine.program import AdtType, Component, Instance, RelationDecl
+from engine import Comment, DeclId, Program, UnitId
+from engine.program import AdtType, Span, own
+from engine.text import split_top
+from engine.quotes import quotes
 from solver.category import Category
 from solver.problems import (
     Detail,
@@ -21,8 +24,10 @@ from solver.problems import (
 )
 
 
+@quotes("solver-file.md", "File structure",
+        "// <task_id> // @draft // @keywords: <keywords from keywords.md>")
 class HeaderWord(StrEnum):
-    """solver-file.md:11-90 (the template and Header)."""
+    """The word of a header field."""
 
     DRAFT = "draft"
     KEYWORDS = "keywords"
@@ -32,11 +37,22 @@ class HeaderWord(StrEnum):
     CONCEPT = "concept"
 
 
+PREFIXED_WORDS: Annotated[frozenset[HeaderWord],
+    quotes("solver-file.md", "File structure",
+           "// <task_id> // @draft // @keywords: <keywords from keywords.md>")
+] = frozenset({HeaderWord.DRAFT, HeaderWord.REPRESENTATIVE,
+               HeaderWord.KEYWORDS})
+"""The header words the template writes with `@`; `concept:`, `input:` and
+`output:` stand without it."""
+
+
+@quotes("solver-file.md", "File structure",
+        "// <task_id> // @draft // @keywords: <keywords from keywords.md>")
 @dataclass(frozen=True)
 class HeaderField:
-    """A header field, solver-file.md:11-90. `prefixed` is false for the
-    plain `input:`, `output:` and `concept:` forms. (The annotation
-    `Field`; the syntax one is `engine.program.TypeField`.)"""
+    """A header field. `prefixed` is false for the plain `input:`, `output:`
+    and `concept:` forms.
+    (The annotation `Field`; the syntax one is `engine.program.TypeField`.)"""
 
     word: HeaderWord
     value: str
@@ -44,27 +60,41 @@ class HeaderField:
     end: int
     prefixed: bool
 
+    @property
+    def words(self) -> tuple[str, ...]:
+        """The field's words, every line of it read: the keywords of a
+        `@keywords:` field (solver-file.md, under "File structure")."""
+        return tuple(self.value.split())
 
+
+@quotes("solver-file.md", "Header",
+        "A `// review <kind>: <text>` line stands last in the header.")
 @dataclass(frozen=True)
 class ReviewLine:
-    """`// review <kind>: <text>`, solver-file.md:84."""
+    """`// review <kind>: <text>`."""
 
     kind: str
     text: str
     line: int
 
 
+@quotes("solver-file.md", "Header",
+        "// @representative: <family's first-solved task id> <Case when the "
+        "sibling has one case of its Choice>")
 @dataclass(frozen=True)
 class Representative:
-    """`@representative: <task id> [<Case>]`, solver-file.md:90."""
+    """`@representative: <task id> [<Case>]`."""
 
     task_id: str
     case: str | None
     line: int
 
 
+@quotes("principles.md", "Witnesses",
+        "**plausibility**: the annotator's ordinal estimate of how readily "
+        "the generator could produce the witness.")
 class Plausibility(StrEnum):
-    """principles.md:136 (plausibility)."""
+    """A witness's plausibility."""
 
     ORDINARY = "ordinary"
     VARIANT = "variant"
@@ -72,9 +102,18 @@ class Plausibility(StrEnum):
     FOREIGN = "foreign"
 
 
+@quotes("principles.md", "Witnesses",
+        "`concept`: the concept case's output.")
+@quotes("principles.md", "Witnesses",
+        "`any`: the output of any case defined on the witness.")
+@quotes("principles.md", "Witnesses",
+        "`other`: an output that no case produces.")
+@quotes("solver-file.md", "Params",
+        "The verdict `derived` denotes that branch")
+@quotes("solver-file.md", "Program",
+        "The verdict `stored` denotes that branch")
 class VerdictWord(StrEnum):
-    """principles.md:150-153; `derived` solver-file.md:121, `stored`
-    solver-file.md:138."""
+    """A verdict a line writes as a word."""
 
     CONCEPT = "concept"
     ANY = "any"
@@ -83,11 +122,12 @@ class VerdictWord(StrEnum):
     STORED = "stored"
 
 
+@quotes("principles.md", "Witnesses",
+        "the branch's name: the output of that branch's model.")
 @dataclass(frozen=True)
 class NamedVerdict:
-    """A verdict that names a branch, or branches joined by `&`
-    (principles.md:150-153): the name as its line writes it, whose parts
-    `names.denote` reads."""
+    """A verdict that names a branch, or branches joined by `&`: the name as
+    its line writes it, whose parts `names.denote` reads."""
 
     text: str
 
@@ -95,11 +135,19 @@ class NamedVerdict:
 type Verdict = VerdictWord | NamedVerdict
 
 
+@quotes("solver-file.md", "File structure",
+        "// @witness <id>: <plausibility> <verdict> // @relaxed <slug of the "
+        "scene claim this witness breaks> // @reassigned <parameter changed "
+        "for this witness>")
+@quotes("procedure.md", "Witness",
+        "`@relaxed` for the scene claim it breaks, which rules out "
+        "`ordinary`, and `@reassigned` for each parameter that the assignment "
+        "it stands at changes.")
 @dataclass(frozen=True)
 class WitnessLine:
     """`@witness <id>: <plausibility> <verdict>` with its nested `@relaxed`
-    and `@reassigned` lines, solver-file.md:11-79 and procedure.md:150.
-    (The comment line; a witness file entry is `solver.witness.Entry`.)"""
+    and `@reassigned` lines. (The comment line; a witness file entry is
+    `solver.witness.Entry`.)"""
 
     id: str
     plausibility: Plausibility
@@ -114,25 +162,34 @@ class WitnessLine:
     """The constructor whose branch comment holds it; None in the header."""
 
 
+@quotes("solver-file.md", "Header",
+        "`@scene` and `@rule` are in dependency order.")
 class ClaimKind(StrEnum):
-    """solver-file.md:82 (`@scene` and `@rule`)."""
+    """`@scene` and `@rule`."""
 
     SCENE = "scene"
     RULE = "rule"
 
 
+@quotes("solver-file.md", "File structure",
+        "// @rule <slug>: <what the output takes from the input> // "
+        "@approximated: <the rule the program runs>")
 @dataclass(frozen=True)
 class Approximated:
-    """`@approximated: <text>` under a `@rule`, solver-file.md:92-93."""
+    """`@approximated: <text>` under a `@rule`."""
 
     text: str
     line: int
     witnesses: tuple[WitnessLine, ...]
 
 
+@quotes("solver-file.md", "Header",
+        "`@scene` and `@rule` are in dependency order.")
+@quotes("solver-file.md", "Cases",
+        "which each other branch's `@scene` or `@rule` line changes")
 @dataclass(frozen=True)
 class Claim:
-    """`@scene` or `@rule` `<slug>: <text>`, solver-file.md:82 and :101."""
+    """`@scene` or `@rule` `<slug>: <text>`."""
 
     kind: ClaimKind
     slug: str
@@ -143,9 +200,12 @@ class Claim:
     """The constructor whose branch comment holds it; None in the header."""
 
 
+@quotes("solver-file.md", "Params",
+        "**`@derive` directive.** The line is a branch of a choice point on "
+        "the parameter")
 @dataclass(frozen=True)
 class DeriveLine:
-    """`@derive <Proposer>: <plausibility> <verdict>`, solver-file.md:120-121."""
+    """`@derive <Proposer>: <plausibility> <verdict>`."""
 
     proposer: str
     plausibility: Plausibility
@@ -157,10 +217,13 @@ class DeriveLine:
     relaxed: tuple[str, ...]
 
 
+@quotes("solver-file.md", "Program",
+        "**`@store` directive.** The relation, or the instance's relation the "
+        "line names, has one value on every input, and the line is a branch "
+        "of a choice point on it")
 @dataclass(frozen=True)
 class StoreLine:
-    """`@store: …` above a `.decl`, or `@store <rel>: …` above an `.init`,
-    solver-file.md:137-138."""
+    """`@store: …` above a `.decl`, or `@store <rel>: …` above an `.init`."""
 
     relation: str | None
     """The relation the line names; None for the bare form."""
@@ -171,29 +234,52 @@ class StoreLine:
     relaxed: tuple[str, ...]
 
 
+@quotes("solver-file.md", "Program",
+        "**`@claim` directive.** At program scope or inside `Parse`, an "
+        "instance of a component without an `@construction` mark has the "
+        "directive, one line per instance, listing the claims the instance "
+        "serves.")
 @dataclass(frozen=True)
 class ClaimLine:
-    """`// @claim <slug>…` above an instance, solver-file.md:140-142. (The
-    annotation `Ref`; the syntax one is `engine.Occurrence`.)"""
+    """`// @claim <slug>…` above an instance. (The annotation `Ref`; the
+    syntax one is `engine.Occurrence`.)"""
 
     slugs: tuple[str, ...]
     line: int
     above: DeclId | None
 
 
+@quotes("solver-file.md", "Program",
+        "A relation kept despite a hint has `// @ignore: <category> — "
+        "<reason>` on the line immediately above its declaration")
+@quotes("solver-file.md", "Program",
+        "Above a `.init`, `// @ignore <relation>: <category> — <reason>` "
+        "dismisses that one relation of the instance")
+@quotes("solver-file.md", "Params",
+        "`// @ignore: derive <Proposer> — <reason>` above the parameter "
+        "records the same for the one derivation `<Proposer>` selects.")
+@quotes("solver-file.md", "Program",
+        "`// @ignore: store — <reason>` and `// @ignore: store <name> — "
+        "<reason>` record what the `@ignore: derive` forms record.")
 class IgnoreForm(StrEnum):
     LINT = "lint"
-    """`@ignore: <category>` and `@ignore <rel>: <category>`,
-    solver-file.md:134-136."""
+    """`@ignore: <category>` and `@ignore <rel>: <category>`."""
     DERIVE = "derive"
-    """`@ignore: derive [<name>]`, solver-file.md:122."""
+    """`@ignore: derive [<Proposer> | <name>]`."""
     STORE = "store"
-    """`@ignore [<rel>]: store [<name>]`, solver-file.md:138."""
+    """`@ignore [<rel>]: store [<name>]`."""
 
 
+@quotes("solver-file.md", "Program",
+        "**`@ignore` directive.** A relation kept despite a hint has `// "
+        "@ignore: <category> — <reason>` on the line immediately above its "
+        "declaration, with the category the hint gives.")
+@quotes("solver-file.md", "Params",
+        "`// @ignore: derive — <reason>` above the parameter records that "
+        "every derivation of it fails a case condition")
 @dataclass(frozen=True)
 class IgnoreLine:
-    """An `@ignore` line of any form, solver-file.md:122, :134-136, :138."""
+    """An `@ignore` line of any form."""
 
     form: IgnoreForm
     category: Category | None
@@ -206,12 +292,19 @@ class IgnoreLine:
     reason: str
     line: int
     above: DeclId | None
+    proposer: str | None = None
+    """The `<Proposer>` of `@ignore: derive <Proposer>`, which stands in
+    place of a `@derive <Proposer>` line and excludes that one derivation
+    of the parameter; None for every other form, the bare
+    `@ignore: derive` among them, which excludes every derivation."""
 
 
+@quotes("solver-file.md", "Cases",
+        "Cases that share facts or clauses are under one marker listing names "
+        "whose cases they are")
 @dataclass(frozen=True)
 class MarkerPart:
-    """One name a case marker lists, as written (solver-file.md:105-106),
-    for `names.denote` to read."""
+    """One name a case marker lists, as written, for `names.denote` to read."""
 
     name: str
 
@@ -220,23 +313,92 @@ class MarkerPart:
         """Whether the part is prose: more than one word stands between two
         of its `&`s, as in `Size decompose data`, whatever word it starts
         with. A prose part lists no case and denotes nothing."""
-        return any(len(piece.split()) > 1 for piece in self.name.split("&"))
+        return any(len(piece.split()) > 1 for piece in pieces(self.name))
+
+    @property
+    def slash_joined(self) -> bool:
+        """Whether the part joins names by `/`, which a marker writes as
+        separate parts (solver-file.md, under "Cases")."""
+        return "/" in self.name
 
 
+def pieces(name: str) -> list[str]:
+    """The pieces of a name as written between its `&`s, each with the
+    spaces around it."""
+    return name.split("&")
+
+
+@quotes("solver-file.md", "Cases",
+        "**Case markers.** Cases do not interleave: each case's Params and "
+        "clauses are under its marker.")
 @dataclass(frozen=True)
 class CaseMarker:
-    """`// --- <names>[: gloss] ---`, solver-file.md:104-107."""
+    """`// --- <names>[: gloss] ---`."""
 
     parts: tuple[MarkerPart, ...]
     gloss: str | None
     line: int
 
 
+@quotes("solver-file.md", "File structure",
+        "// @derive <Proposer>: <plausibility> <verdict>")
+@quotes("solver-file.md", "Program",
+        "**`@workaround` directive.** A temporary workaround is under a `// "
+        "@workaround: <the principled form it stands in for>` line.")
+class DirectiveWord(StrEnum):
+    """The word of an `@` line of a comment block that the reader reads
+    besides the header fields and the claims' kinds."""
+
+    CLAIM = "claim"
+    WITNESS = "witness"
+    DERIVE = "derive"
+    STORE = "store"
+    APPROXIMATED = "approximated"
+    RELAXED = "relaxed"
+    REASSIGNED = "reassigned"
+    IGNORE = "ignore"
+    WORKAROUND = "workaround"
+
+
+HEADER_RANK: Annotated[dict[HeaderWord | ClaimKind, int],
+    quotes("solver-file.md", "Header",
+           "`@scene` and `@rule` are in dependency order."),
+    quotes("solver-file.md", "Header",
+           "A `// review <kind>: <text>` line stands last in the header.")] = {
+    HeaderWord.DRAFT: 0, HeaderWord.REPRESENTATIVE: 1, HeaderWord.KEYWORDS: 1,
+    ClaimKind.SCENE: 2, ClaimKind.RULE: 3, HeaderWord.CONCEPT: 4,
+    HeaderWord.INPUT: 5, HeaderWord.OUTPUT: 6,
+}
+"""The rank of each header line's word, in template order: the lines stand
+in rank order, and the words of one rank in either order. A review line
+stands last (`REVIEW_RANK`)."""
+REVIEW_RANK = 7
+
+SIBLING_DROPS: Annotated[frozenset[HeaderWord],
+    quotes("solver-file.md", "Header",
+           "A family sibling's header, omitting other fields:")
+] = frozenset({HeaderWord.KEYWORDS, HeaderWord.CONCEPT,
+               HeaderWord.INPUT, HeaderWord.OUTPUT})
+"""The fields a family sibling leaves out, since it carries
+`@representative:` in their place."""
+
+
+def header_word_text(word: HeaderWord | ClaimKind) -> str:
+    """A header line's word as the template writes it: `@keywords`,
+    `@scene`, `concept`."""
+    prefixed = isinstance(word, ClaimKind) or word in PREFIXED_WORDS
+    return at_word(word) if prefixed else str(word)
+
+
+@quotes("solver-file.md", "Params",
+        "The clause containing that literal ends with `// @singleton-axis: "
+        "<what the structure is>`.")
+@quotes("solver-file.md", "Program",
+        "an instance of a component without an `@construction` mark has the "
+        "directive")
 class TrailingWord(StrEnum):
     SINGLETON_AXIS = "singleton-axis"
-    """solver-file.md:118-119."""
     CONSTRUCTION = "construction"
-    """solver-file.md:140."""
 
 
 @dataclass(frozen=True)
@@ -250,9 +412,12 @@ class TrailingDirective:
     """The unit or declaration on whose line it trails."""
 
 
+@quotes("solver-file.md", "Program",
+        "**`@workaround` directive.** A temporary workaround is under a `// "
+        "@workaround: <the principled form it stands in for>` line.")
 @dataclass(frozen=True)
 class Workaround:
-    """`// @workaround: <form>`, solver-file.md:139."""
+    """`// @workaround: <form>`."""
 
     text: str
     line: int
@@ -277,7 +442,13 @@ class Annotations:
     header_prose: tuple[Comment, ...]
     """The header's lines that open no field, no claim and no directive,
     and continue none: the header check's to judge. The task id's line
-    (line 1) is not among them."""
+    (`task_id`) is not among them."""
+    task_id: Annotated[Comment | None,
+        quotes("solver-file.md", "File structure",
+               "// <task_id> // @draft // @keywords: <keywords from "
+               "keywords.md>")]
+    """The own-line comment on line 1, the line that holds the task id; None
+    where line 1 holds none."""
 
 
 # The reader
@@ -292,31 +463,106 @@ _WITNESS_TAIL_RE = re.compile(rf"^\s+({_SLUG}):\s*(\S+)\s+({_VERDICT})$")
 _DERIVE_TAIL_RE = re.compile(rf"^\s+(\w+):\s*(\S+)\s+({_VERDICT})$")
 _STORE_TAIL_RE = re.compile(rf"^(?:\s+([\w.]+))?:\s*(\S+)\s+({_VERDICT})$")
 _IGNORE_TAIL_RE = re.compile(r"^(?:\s+([\w.]+))?:\s*(.*)$")
+_PROPOSER_RE = re.compile(r"[A-Za-z_]\w*")
+"""The `<Proposer>` of `@ignore: derive <Proposer>`: a bare word, which no
+case name is but `concept`, since a constructor's name carries `$` and a
+branch's name `=`."""
 _REPRESENTATIVE_RE = re.compile(r"^(\S+)(?:\s+(\S+))?$")
 _PLAIN_FIELD_RE = re.compile(r"^(\w+)(?:\s+([\w-]+))?:\s*(.*)$")
 _MARKER_RE = re.compile(r"^---\s*(.*?)\s*---$")
 _DASH = "—"
 
 _RETIRED = frozenset({"invariant", "addition", "deviation"})
-_NESTED_WORDS = frozenset({"approximated", "relaxed", "reassigned"})
+_NESTED_WORDS = frozenset({DirectiveWord.APPROXIMATED, DirectiveWord.RELAXED,
+                           DirectiveWord.REASSIGNED})
+REVIEW_WORD: Annotated[str,
+    quotes("solver-file.md", "Header",
+           "A `// review <kind>: <text>` line stands last in the "
+           "header.")] = "review"
+"""The word of a `// review <kind>:` line."""
 _INPUT_MARK = "input"
 """`// @input` after a declaration: the lib's mark of a runner input, read
 by no rule of the solver file."""
 
 
+@dataclass(eq=False)
 class _Open:
     """A line that nested and continuation lines under it join, while its
-    comment block lasts."""
+    comment block lasts: `end` is the last line joined."""
 
-    def __init__(self, kind: str, line: int, parts: dict[str, object]) -> None:
-        self.kind = kind
-        self.line = line
-        self.parts = parts
-        self.relaxed: list[str] = []
-        self.reassigned: list[str] = []
-        self.witnesses: list[_Open] = []
-        self.approximated: list[_Open] = []
-        self.end = line
+    line: int
+
+    def __post_init__(self) -> None:
+        self.end = self.line
+
+
+@dataclass(eq=False)
+class _OpenField(_Open):
+    """A header field."""
+
+    word: HeaderWord
+    value: str
+    prefixed: bool
+
+
+@dataclass(eq=False)
+class _OpenReview(_Open):
+    """A `// review <kind>:` line."""
+
+    kind: str
+    value: str
+
+
+@dataclass(eq=False)
+class _OpenApproximated(_Open):
+    """An `@approximated:` line, with the `@witness` lines under it."""
+
+    value: str
+    witnesses: list["_OpenWitness"] = field(default_factory=list)
+
+
+@dataclass(eq=False)
+class _OpenClaim(_Open):
+    """An `@scene` or `@rule` claim, with its `@approximated:` lines."""
+
+    kind: ClaimKind
+    slug: str
+    value: str
+    constructor: str | None
+    approximated: list[_OpenApproximated] = field(default_factory=list)
+
+
+@dataclass(eq=False)
+class _OpenVerdict(_Open):
+    """A line with a plausibility and a verdict, with the `@relaxed` and
+    `@reassigned` lines under it."""
+
+    plausibility: Plausibility
+    verdict: Verdict
+    relaxed: list[str] = field(default_factory=list, kw_only=True)
+    reassigned: list[str] = field(default_factory=list, kw_only=True)
+
+
+@dataclass(eq=False)
+class _OpenWitness(_OpenVerdict):
+    """A `@witness` line."""
+
+    id: str
+    constructor: str | None
+    approximates: str | None = None
+
+
+@dataclass(eq=False)
+class _OpenBranch(_OpenVerdict):
+    """A `@derive` or `@store` line: `target` is the proposer or the
+    relation it names, None for a `@store` line that names none."""
+
+    target: str | None
+    above: DeclId | None
+
+
+type _Joined = _OpenField | _OpenReview | _OpenClaim | _OpenApproximated
+"""A line a continuation line joins."""
 
 
 def _content(comment: Comment) -> tuple[int, str] | None:
@@ -346,39 +592,33 @@ def _plausibility(text: str) -> Plausibility | None:
         return None
 
 
-def _split(text: str) -> list[str]:
-    """`text` split at the commas that stand outside parentheses."""
-    out: list[str] = []
-    depth, cur = 0, ""
-    for ch in text:
-        depth += (ch == "(") - (ch == ")")
-        if ch == "," and depth == 0:
-            out.append(cur)
-            cur = ""
-        else:
-            cur += ch
-    out.append(cur)
-    return [p.strip() for p in out]
-
-
 def _marker(text: str, line: int) -> CaseMarker:
     """`<names>[: gloss]`: the names split at the commas that stand outside
     parentheses, each kept as written, for `names.denote` to read
-    (solver-file.md:104-106)."""
+    (solver-file.md, under "Cases")."""
     head, colon, gloss = text.partition(":")
-    parts = [MarkerPart(name) for name in _split(head) if name]
+    parts = [MarkerPart(name) for name in split_top(head) if name]
     return CaseMarker(tuple(parts), gloss.strip() if colon else None, line)
 
 
+def branch_band(adt: AdtType, index: int) -> tuple[int, int]:
+    """The lines between which constructor `index`'s branch comment stands
+    (solver-file.md, under "File structure"), both outside it: the last line of
+    the constructor before it, or the type's first line, and the constructor's
+    first line."""
+    start = adt.span.first if index == 0 \
+        else adt.constructors[index - 1].span.last
+    return start, adt.constructors[index].span.first
+
+
 def _constructor_at(program: Program, line: int) -> str | None:
-    """The constructor whose branch comment holds `line`: in the solver's
-    own ADT whose declaration spans it, the first constructor below it
-    (solver-file.md:21-34)."""
+    """The constructor whose branch comment holds `line` (`branch_band`),
+    in the solver's own ADT whose declaration spans it."""
     for t in program.types:
-        if isinstance(t, AdtType) and t.span.file is None \
-                and t.span.first <= line <= t.span.last:
-            for c in t.constructors:
-                if c.span.first > line:
+        if isinstance(t, AdtType) and _holds(t.span, line):
+            for i, c in enumerate(t.constructors):
+                start, end = branch_band(t, i)
+                if start < line < end:
                     return c.name
     return None
 
@@ -387,25 +627,18 @@ def _trailing_unit(program: Program, line: int) -> UnitId | DeclId | None:
     """The unit or declaration of the solver's own text on whose line a
     trailing comment stands: the one of the smallest span that holds the
     line."""
-    found: list[tuple[int, UnitId | DeclId]] = []
-    for u in program.units:
-        if u.span is not None and u.span.file is None \
-                and u.span.first <= line <= u.span.last:
-            found.append((u.span.last - u.span.first, u.id))
-    for m in program.macros:
-        if m.span is not None and m.span.file is None \
-                and m.span.first <= line <= m.span.last:
-            found.append((m.span.last - m.span.first, m.id))
-    decls: list[TypeDecl | RelationDecl | Component | Instance] = [
-        *program.types, *program.relations, *program.components,
-        *program.instances]
-    for d in decls:
-        if d.span is not None and d.span.file is None \
-                and d.span.first <= line <= d.span.last:
-            found.append((d.span.last - d.span.first, d.id))
+    found = [(x.span.last - x.span.first, x.id)
+             for x in (*program.units, *program.macros, *program.declarations)
+             if x.span is not None and _holds(x.span, line)]
     if not found:
         return None
     return min(found, key=lambda f: f[0])[1]
+
+
+def _holds(span: Span | None, line: int) -> bool:
+    """Whether `span` is of the solver's own text (`own`) and holds
+    `line`."""
+    return own(span) and span is not None and span.first <= line <= span.last
 
 
 def read(program: Program) -> tuple[Annotations, tuple[Fault, ...]]:
@@ -413,13 +646,13 @@ def read(program: Program) -> tuple[Annotations, tuple[Fault, ...]]:
     each comment's `above` link and its indentation, and what could not be
     read.
 
-    The comments read are the solver's own (`file` None) and the `//`
-    ones: a line inside a block comment is no annotation. A comment block
-    is a run of own-line comments on consecutive lines; the header is the
-    block that starts on line 1 (solver-file.md:11-20). A nested line
-    carries two spaces or more after `//` (solver-file.md:18-19); a line of
-    two spaces or more that opens no directive continues the field or
-    claim above it (solver-file.md:16)."""
+    The comments read are the solver's own (`file` None) and the `//` ones: a
+    line inside a block comment is no annotation. A comment block is a run of
+    own-line comments on consecutive lines; the header is the block that starts
+    on line 1 (solver-file.md, under "File structure"). A nested line carries
+    two spaces or more after `//` (solver-file.md, under "File structure"); a
+    line of two spaces or more that opens no directive continues the field or
+    claim above it (solver-file.md, under "File structure")."""
     problems: list[Fault] = []
 
     def problem(kind: ProblemKind, line: int, read: str | Detail) -> None:
@@ -427,22 +660,22 @@ def read(program: Program) -> tuple[Annotations, tuple[Fault, ...]]:
             kind, InSolver(line),
             Quoted(read) if isinstance(read, str) else read))
 
-    own = sorted((c for c in program.comments if c.file is None),
-                 key=lambda c: (c.line, c.column))
+    owned = sorted((c for c in program.comments if own(c)),
+                   key=lambda c: (c.line, c.column))
     header_end = 0
-    for c in own:
+    for c in owned:
         if not c.own_line or c.line != header_end + 1 \
                 or _content(c) is None:
             break
         header_end = c.line
 
-    fields: list[_Open] = []
-    reviews: list[_Open] = []
+    fields: list[_OpenField] = []
+    reviews: list[_OpenReview] = []
     representatives: list[Representative] = []
-    claims: list[_Open] = []
-    witnesses: list[_Open] = []
-    derives: list[_Open] = []
-    stores: list[_Open] = []
+    claims: list[_OpenClaim] = []
+    witnesses: list[_OpenWitness] = []
+    derives: list[_OpenBranch] = []
+    stores: list[_OpenBranch] = []
     claim_lines: list[ClaimLine] = []
     ignores: list[IgnoreLine] = []
     markers: list[CaseMarker] = []
@@ -454,7 +687,7 @@ def read(program: Program) -> tuple[Annotations, tuple[Fault, ...]]:
     # continuation lines, for the `@ignore` lines that stand directly above
     # their declaration.
     blocks: list[list[Comment]] = []
-    for c in own:
+    for c in owned:
         if not c.own_line:
             continue
         if blocks and blocks[-1][-1].line + 1 == c.line:
@@ -472,17 +705,17 @@ def read(program: Program) -> tuple[Annotations, tuple[Fault, ...]]:
             rest_continues = rest_continues and r is not None \
                 and r[0] >= 2 and not r[1].startswith("@")
 
-    open_field: _Open | None = None     # a field or claim a continuation joins
-    open_claim: _Open | None = None     # a claim an `@approximated:` joins
-    open_approx: _Open | None = None    # an `@approximated:` a witness joins
-    open_block: _Open | None = None     # a witness, derive or store line
+    open_field: _Joined | None = None   # a field or claim a continuation joins
+    open_claim: _OpenClaim | None = None  # a claim an `@approximated:` joins
+    open_approx: _OpenApproximated | None = None  # an `@approximated:` a witness joins
+    open_block: _OpenVerdict | None = None  # a witness, derive or store line
     prev_line = -1
 
     def close() -> None:
         nonlocal open_field, open_claim, open_approx, open_block
         open_field = open_claim = open_approx = open_block = None
 
-    for c in own:
+    for c in owned:
         got = _content(c)
         if got is None:
             continue
@@ -513,9 +746,8 @@ def read(program: Program) -> tuple[Annotations, tuple[Fault, ...]]:
             if content and spaces >= 2 and (open_field is not None
                                             or not in_header):
                 if open_field is not None:
-                    sep = " " if open_field.parts["value"] else ""
-                    open_field.parts["value"] = (
-                        f"{open_field.parts['value']}{sep}{content}")
+                    sep = " " if open_field.value else ""
+                    open_field.value = f"{open_field.value}{sep}{content}"
                     open_field.end = line
                 continue
             if (m := _MARKER_RE.match(content)) and m[1].strip("-").strip():
@@ -524,9 +756,8 @@ def read(program: Program) -> tuple[Annotations, tuple[Fault, ...]]:
                 continue
             plain = _PLAIN_FIELD_RE.match(content) if in_header else None
             close()
-            if plain is not None and plain[1] == "review" and plain[2]:
-                reviews.append(_Open("review", line, {
-                    "kind": plain[2], "value": plain[3].strip()}))
+            if plain is not None and plain[1] == REVIEW_WORD and plain[2]:
+                reviews.append(_OpenReview(line, plain[2], plain[3].strip()))
                 open_field = reviews[-1]
                 continue
             if plain is not None and plain[2] is None:
@@ -535,15 +766,12 @@ def read(program: Program) -> tuple[Annotations, tuple[Fault, ...]]:
                 except ValueError:
                     word = None
                 if word is not None:
-                    fields.append(_Open("field", line, {
-                        "word": word, "value": plain[3].strip(),
-                        "prefixed": False}))
+                    fields.append(_OpenField(line, word, plain[3].strip(),
+                                             False))
                     open_field = fields[-1]
                     continue
             if in_header and content == HeaderWord.DRAFT:
-                fields.append(_Open("field", line, {
-                    "word": HeaderWord.DRAFT, "value": "",
-                    "prefixed": False}))
+                fields.append(_OpenField(line, HeaderWord.DRAFT, "", False))
             elif in_header and line > 1 and content:
                 header_prose.append(c)
             continue
@@ -556,8 +784,7 @@ def read(program: Program) -> tuple[Annotations, tuple[Fault, ...]]:
             continue
         if word == HeaderWord.DRAFT:
             close()
-            fields.append(_Open("field", line, {
-                "word": HeaderWord.DRAFT, "value": "", "prefixed": True}))
+            fields.append(_OpenField(line, HeaderWord.DRAFT, "", True))
             if tail.strip():
                 problem(ProblemKind.OFF_FORM, line, content)
             continue
@@ -567,9 +794,8 @@ def read(program: Program) -> tuple[Annotations, tuple[Fault, ...]]:
             if not tail.startswith(":"):
                 problem(ProblemKind.OFF_FORM, line, content)
                 continue
-            fields.append(_Open("field", line, {
-                "word": HeaderWord(word), "value": tail[1:].strip(),
-                "prefixed": True}))
+            fields.append(_OpenField(line, HeaderWord(word),
+                                     tail[1:].strip(), True))
             open_field = fields[-1]
             continue
         if word in (ClaimKind.SCENE, ClaimKind.RULE):
@@ -581,21 +807,19 @@ def read(program: Program) -> tuple[Annotations, tuple[Fault, ...]]:
                         else ProblemKind.OFF_FORM)
                 problem(kind, line, content)
                 continue
-            claims.append(_Open("claim", line, {
-                "kind": ClaimKind(word), "slug": m[1],
-                "value": m[2].strip(),
-                "constructor": None if in_header
-                else _constructor_at(program, line)}))
+            claims.append(_OpenClaim(
+                line, ClaimKind(word), m[1], m[2].strip(),
+                None if in_header else _constructor_at(program, line)))
             open_field = open_claim = claims[-1]
             continue
-        if word == "claim":
+        if word == DirectiveWord.CLAIM:
             close()
             if not _REF_TAIL_RE.match(tail):
                 problem(ProblemKind.OFF_FORM, line, content)
                 continue
             claim_lines.append(ClaimLine(tuple(tail.split()), line, above))
             continue
-        if word == "witness":
+        if word == DirectiveWord.WITNESS:
             nested = spaces >= 2
             m = _WITNESS_TAIL_RE.match(tail)
             plaus = None if m is None else _plausibility(m[2])
@@ -603,17 +827,15 @@ def read(program: Program) -> tuple[Annotations, tuple[Fault, ...]]:
                 problem(ProblemKind.OFF_FORM, line, content)
                 open_block = None
                 continue
-            block = _Open("witness", line, {
-                "id": m[1], "plausibility": plaus, "verdict": _verdict(m[3]),
-                "approximates": None,
-                "constructor": None if in_header
-                else _constructor_at(program, line)})
+            block = _OpenWitness(
+                line, plaus, _verdict(m[3]), m[1],
+                None if in_header else _constructor_at(program, line))
             if nested:
                 if open_approx is None or open_claim is None:
                     problem(ProblemKind.OFF_FORM, line, content)
                     open_block = None
                     continue
-                block.parts["approximates"] = open_claim.parts["slug"]
+                block.approximates = open_claim.slug
                 open_approx.witnesses.append(block)
                 open_field = None
             else:
@@ -621,45 +843,42 @@ def read(program: Program) -> tuple[Annotations, tuple[Fault, ...]]:
             witnesses.append(block)
             open_block = block
             continue
-        if word in ("derive", "store"):
+        if word in (DirectiveWord.DERIVE, DirectiveWord.STORE):
             close()
-            m = (_DERIVE_TAIL_RE if word == "derive"
+            m = (_DERIVE_TAIL_RE if word == DirectiveWord.DERIVE
                  else _STORE_TAIL_RE).match(tail)
             plaus = None if m is None else _plausibility(m[2])
             if m is None or plaus is None:
                 problem(ProblemKind.OFF_FORM, line, content)
                 continue
-            block = _Open(word, line, {
-                "target": m[1], "plausibility": plaus,
-                "verdict": _verdict(m[3]), "above": above})
-            (derives if word == "derive" else stores).append(block)
-            open_block = block
+            branch = _OpenBranch(line, plaus, _verdict(m[3]), m[1], above)
+            (derives if word == DirectiveWord.DERIVE else stores).append(branch)
+            open_block = branch
             continue
-        if word == "approximated":
+        if word == DirectiveWord.APPROXIMATED:
             if not tail.startswith(":") or open_claim is None \
-                    or open_claim.parts["kind"] != ClaimKind.RULE:
+                    or open_claim.kind != ClaimKind.RULE:
                 problem(ProblemKind.OFF_FORM, line, content)
                 continue
-            approx = _Open("approximated", line,
-                           {"value": tail[1:].strip()})
+            approx = _OpenApproximated(line, tail[1:].strip())
             open_claim.approximated.append(approx)
             open_approx = open_field = approx
             continue
-        if word in ("relaxed", "reassigned"):
+        if word in (DirectiveWord.RELAXED, DirectiveWord.REASSIGNED):
             value = tail.strip()
             if not value or " " in value or open_block is None \
-                    or (word == "reassigned"
-                        and open_block.kind != "witness"):
+                    or (word == DirectiveWord.REASSIGNED
+                        and not isinstance(open_block, _OpenWitness)):
                 problem(ProblemKind.OFF_FORM, line, content)
                 continue
-            (open_block.relaxed if word == "relaxed"
+            (open_block.relaxed if word == DirectiveWord.RELAXED
              else open_block.reassigned).append(value)
             continue
-        if word == "ignore":
+        if word == DirectiveWord.IGNORE:
             _ignore(tail, content, line, above, last_of_block[line],
                     ignores, problem)
             continue
-        if word == "workaround":
+        if word == DirectiveWord.WORKAROUND:
             if not tail.startswith(":") or not tail[1:].strip():
                 problem(ProblemKind.OFF_FORM, line, content)
             else:
@@ -671,56 +890,48 @@ def read(program: Program) -> tuple[Annotations, tuple[Fault, ...]]:
         close()
 
     for f in fields:
-        if f.parts["word"] != HeaderWord.REPRESENTATIVE:
+        if f.word != HeaderWord.REPRESENTATIVE:
             continue
-        m = _REPRESENTATIVE_RE.match(str(f.parts["value"]))
+        m = _REPRESENTATIVE_RE.match(f.value)
         if m is None:
-            problem(ProblemKind.OFF_FORM, f.line, str(f.parts["value"]))
+            problem(ProblemKind.OFF_FORM, f.line, f.value)
         else:
             representatives.append(Representative(m[1], m[2], f.line))
     if len(representatives) > 1:
         problem(ProblemKind.UNDECIDED, representatives[1].line,
                 Undecided(UndecidedForm.SECOND_REPRESENTATIVE, None))
 
-    def witness_of(w: _Open) -> WitnessLine:
-        p = w.parts
+    def witness_of(w: _OpenWitness) -> WitnessLine:
         return WitnessLine(
-            str(p["id"]), _as(p["plausibility"], Plausibility),
-            _verdict_of(p["verdict"]), w.line, tuple(w.relaxed),
-            tuple(w.reassigned), _opt_str(p["approximates"]),
-            _opt_str(p["constructor"]))
+            w.id, w.plausibility, w.verdict, w.line, tuple(w.relaxed),
+            tuple(w.reassigned), w.approximates, w.constructor)
 
     annotations = Annotations(
-        header=tuple(HeaderField(
-            _as(f.parts["word"], HeaderWord), str(f.parts["value"]), f.line,
-            f.end, bool(f.parts["prefixed"])) for f in fields),
-        reviews=tuple(ReviewLine(str(r.parts["kind"]), str(r.parts["value"]),
-                                 r.line) for r in reviews),
+        header=tuple(HeaderField(f.word, f.value, f.line, f.end, f.prefixed)
+                     for f in fields),
+        reviews=tuple(ReviewLine(r.kind, r.value, r.line) for r in reviews),
         representative=representatives[0] if representatives else None,
         claims=tuple(Claim(
-            _as(c.parts["kind"], ClaimKind), str(c.parts["slug"]),
-            str(c.parts["value"]), c.line,
-            tuple(Approximated(str(a.parts["value"]), a.line,
+            c.kind, c.slug, c.value, c.line,
+            tuple(Approximated(a.value, a.line,
                                tuple(witness_of(w) for w in a.witnesses))
                   for a in c.approximated),
-            _opt_str(c.parts["constructor"])) for c in claims),
+            c.constructor) for c in claims),
         witnesses=tuple(witness_of(w) for w in witnesses),
         derives=tuple(DeriveLine(
-            str(d.parts["target"]),
-            _as(d.parts["plausibility"], Plausibility),
-            _verdict_of(d.parts["verdict"]), d.line,
-            _opt_decl(d.parts["above"]), tuple(d.relaxed)) for d in derives),
+            _as(d.target, str), d.plausibility, d.verdict, d.line, d.above,
+            tuple(d.relaxed)) for d in derives),
         stores=tuple(StoreLine(
-            _opt_str(s.parts["target"]),
-            _as(s.parts["plausibility"], Plausibility),
-            _verdict_of(s.parts["verdict"]), s.line,
-            _opt_decl(s.parts["above"]), tuple(s.relaxed)) for s in stores),
+            s.target, s.plausibility, s.verdict, s.line, s.above,
+            tuple(s.relaxed)) for s in stores),
         claim_lines=tuple(claim_lines),
         ignores=tuple(ignores),
         markers=tuple(markers),
         trailing=tuple(trailing),
         workarounds=tuple(workarounds),
         header_prose=tuple(header_prose),
+        task_id=next((c for c in owned if c.line == 1 and c.own_line),
+                     None),
     )
     return annotations, tuple(sorted(problems, key=_problem_line))
 
@@ -734,27 +945,14 @@ def _as[T](value: object, kind: type[T]) -> T:
     return value
 
 
-def _opt_str(value: object) -> str | None:
-    return value if isinstance(value, str) else None
-
-
-def _opt_decl(value: object) -> DeclId | None:
-    return value if isinstance(value, DeclId) else None
-
-
-def _verdict_of(value: object) -> Verdict:
-    assert isinstance(value, (VerdictWord, NamedVerdict))
-    return value
-
-
 def _ignore(tail: str, content: str, line: int, above: DeclId | None,
             last: bool, out: list[IgnoreLine],
             problem: Callable[[ProblemKind, int, str | Detail], None]
             ) -> None:
-    """One `@ignore` line (solver-file.md:122, :134-136, :138). The lint
-    form stands on the declaration directly under it, with no other
-    directive between (solver-file.md:134); the derive and store forms
-    stand on the declaration their comment block stands above."""
+    """One `@ignore` line (solver-file.md, under "Params" and "Program"). The
+    lint form stands on the declaration directly under it, with no other
+    directive between (solver-file.md, under "Program"); the derive and store
+    forms stand on the declaration their comment block stands above."""
     m = _IGNORE_TAIL_RE.match(tail)
     if m is None:
         problem(ProblemKind.OFF_FORM, line, content)
@@ -771,8 +969,14 @@ def _ignore(tail: str, content: str, line: int, above: DeclId | None,
         if first == IgnoreForm.DERIVE and relation is not None:
             problem(ProblemKind.OFF_FORM, line, content)
             return
+        name = name.strip()
+        if first == IgnoreForm.DERIVE and _PROPOSER_RE.fullmatch(name) \
+                and name != VerdictWord.CONCEPT:
+            out.append(IgnoreLine(IgnoreForm.DERIVE, None, None, None,
+                                  reason, line, above, name))
+            return
         out.append(IgnoreLine(IgnoreForm(first), None, relation,
-                              name.strip() or None, reason, line, above))
+                              name or None, reason, line, above))
         return
     try:
         category = Category(given)
@@ -781,3 +985,86 @@ def _ignore(tail: str, content: str, line: int, above: DeclId | None,
         return
     out.append(IgnoreLine(IgnoreForm.LINT, category, relation, None, reason,
                           line, above if last else None))
+
+
+# Writing annotation lines
+
+class Slot(StrEnum):
+    """The slots a line the tool asks the session to add holds where the
+    session writes its own judgment."""
+
+    ID = "<id>"
+    PLAUSIBILITY = "<plausibility>"
+    VERDICT = "<verdict>"
+    REASON = "<reason>"
+
+
+def at_word(word: "DirectiveWord | HeaderWord | ClaimKind") -> str:
+    """A word of an `@` line as the line writes it, after its `@`:
+    `@witness`, `@derive`, `@scene`."""
+    return f"@{word}"
+
+
+def _named(relation: str | None) -> str:
+    """The relation a `@store` or `@ignore` line names after its word,
+    with the space before it; nothing where it names none."""
+    return f" {relation}" if relation is not None else ""
+
+
+def comment_text(line: str) -> str:
+    """An annotation line as a `//` comment of the solver file."""
+    return f"// {line}"
+
+
+def verdict_text(verdict: Verdict | Slot) -> str:
+    """A verdict as its line writes it: its word, or its name; a slot as
+    the slot."""
+    if isinstance(verdict, NamedVerdict):
+        return verdict.text
+    return verdict.value
+
+
+def _judgment(plausibility: Plausibility | Slot,
+              verdict: Verdict | Slot) -> str:
+    """The plausibility and verdict a `@witness`, `@derive` or `@store`
+    line ends with."""
+    return f"{plausibility.value} {verdict_text(verdict)}"
+
+
+def witness_text(id: str | Slot, plausibility: Plausibility | Slot,
+                 verdict: Verdict | Slot) -> str:
+    """A `@witness` line (solver-file.md, under "File structure"), as the
+    reader reads it."""
+    return (f"{at_word(DirectiveWord.WITNESS)} {id}: "
+            f"{_judgment(plausibility, verdict)}")
+
+
+def derive_text(proposer: str, plausibility: Plausibility | Slot,
+                verdict: Verdict | Slot) -> str:
+    """A `@derive` line (solver-file.md, under "Params"), as the reader reads
+    it."""
+    return (f"{at_word(DirectiveWord.DERIVE)} {proposer}: "
+            f"{_judgment(plausibility, verdict)}")
+
+
+def store_text(relation: str | None, plausibility: Plausibility | Slot,
+               verdict: Verdict | Slot) -> str:
+    """A `@store` line (solver-file.md, under "Program"), naming the relation
+    of an instance where it stands above an `.init`."""
+    return (f"{at_word(DirectiveWord.STORE)}{_named(relation)}: "
+            f"{_judgment(plausibility, verdict)}")
+
+
+def ignore_text(relation: str | None, what: Category | IgnoreForm,
+                reason: str | Slot | None = None, proposer: str | None = None
+                ) -> str:
+    """An `@ignore` line (solver-file.md, under "Params" and "Program"):
+    `what` is the category of the lint form, or the derive or store form,
+    the derive form with `proposer` where it is given; `reason` follows the
+    dash where it is given. The lint form without its category raises
+    `ValueError`."""
+    if what == IgnoreForm.LINT:
+        raise ValueError("an `@ignore` line of the lint form has a category")
+    word = what.value if proposer is None else f"{what.value} {proposer}"
+    tail = f" {_DASH} {reason}" if reason is not None else ""
+    return f"{at_word(DirectiveWord.IGNORE)}{_named(relation)}: {word}{tail}"

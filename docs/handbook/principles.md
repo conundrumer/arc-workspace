@@ -186,6 +186,7 @@
 ## Relational form
 - An ARC concept relates cells, regions, and their properties.
 - A claim has a **relational form** when some set of clauses agrees with the claim on every input the generator produces on which the claim applies.
+- A claim that refers to a number that counts nothing the task has, such as a mean or a centroid, has no relational form.
 - An **approximation** is a set of clauses that the program runs in place of a rule that has no relational form.
     - The approximation disagrees with the rule on some such input, and that input is a divergence witness.
 
@@ -233,7 +234,7 @@
     - a9f96cdd, d364b489
         - The two tasks paint one cell per direction and differ only in the type: a9f96cdd runs over the diagonals and d364b489 over the cardinals. Neither program reassigns into the other.
             + gloss
-- **Payload.** When values vary from member to member, the rows are task data and the orientation type is their domain.
+- **Payload.** When values vary from member to member, they are task data, in a relation keyed by the orientation type.
     - d364b489
         - One parameter relation stores the direction-to-color rows.
             + gloss
@@ -266,7 +267,7 @@
     + formal
     - M_open: the model read with open(i) in place of θᵢ
 - The program runs with every open value of the parameter.
-    - The output consists of the grids that every open value produces.
+    - The output contains a grid exactly when every open value produces that grid.
         - At those values, the model does not fit a task containing a pair whose accepted output some open value does not produce.
     - 28a6681f
         - Water settles under gravity one cell at a time. Along a line across gravity, either end can pour first, and the program runs both orders.

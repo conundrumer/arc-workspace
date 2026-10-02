@@ -43,6 +43,7 @@ from engine.program import (
     Grid,
     GridCell,
     GridForm,
+    GridLayout,
     Program,
     RecordValue,
     RelationName,
@@ -55,12 +56,13 @@ from engine.program import (
     Unit,
     UnitId,
     Value,
-    value_text,
 )
+from engine.quotes import guard, quoted, quotes
+from engine.text import fact_text
 
 __all__ = [
     "AdtValue", "Atom", "BodyLiteral", "Cast", "Comment", "CompileError", "CpuLimit",
-    "DeclId", "Engine", "Exited", "Grid", "GridCell", "GridForm", "GridInput", "GridValue", "Index",
+    "DeclId", "Engine", "Exited", "Grid", "GridCell", "GridForm", "GridLayout", "GridInput", "GridValue", "Index",
     "IndexedGrids", "InputValue", "Limits", "Occurrence", "ParseFailure",
     "Program", "RecordValue", "RelationName", "RelationValue", "RemovalTarget",
     "RemoveAtom", "RemoveColumn", "RemoveDisjunct", "RemoveFact",
@@ -68,5 +70,5 @@ __all__ = [
     "RenderedLine", "Resolved", "Role", "Row", "Rows", "RunFailure",
     "RunResult", "Scope", "Span", "Term", "Tuples", "TypeDecl",
     "UndefinedOutput", "UngroundedVariable", "Unit", "UnitId", "Unresolved",
-    "Value", "WallLimit", "value_text",
+    "Value", "WallLimit", "fact_text", "guard", "quoted", "quotes",
 ]

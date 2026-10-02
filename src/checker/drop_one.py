@@ -10,18 +10,16 @@ from checker.variants import (
     Fails,
     OnTest,
     TimedOut,
-    same_profile,
     pairs_of,
-    parallel,
-    profile,
-    test_reference,
+    same_profile,
     test_verdicts,
     with_program,
 )
-from engine import Program, RelationName, RemoveFact, Row, Scope
+from engine import Program, RelationName, RemoveFact, Row
+from engine.quotes import quotes
 from solver.model import Parameter, Solver, StoredGrid, row_value
-from solver.solve import Remove, parameter, variation
-from solver.vocabulary import PARAMS
+from solver.solve import Remove, TaskSection, at_once, parameter, variation
+from solver.vocabulary import PARAMS_SCOPE
 
 
 @dataclass(frozen=True)
@@ -69,24 +67,27 @@ def stored_facts(solver: Solver, runs: Runs, p: Parameter) -> list[Row]:
     if not isinstance(p.stored, StoredGrid):
         return list(p.stored)
     expanded = runs.engine.expand(solver.program)
-    scope = Scope((PARAMS,))
     out: list[Row] = []
     for u in expanded.units:
-        if u.scope == scope and u.body is None \
+        if u.scope == PARAMS_SCOPE and u.body is None \
                 and u.head.relation == RelationName((), p.name):
             row = row_value(u.head.args, solver.lib.constants)
-            if row is not None:
-                out.append(row)
+            if row is None:
+                raise ValueError(f"a fact of `{p.name}` the GRID expansion "
+                                 "wrote states no constant")
+            out.append(row)
     return out
 
 
+@quotes("principles.md", "Cases",
+        "**Unseen key.** When a test uses a key that no train pair contains, "
+        "a lookup table fails Fit.")
 def survey_drop_one(solver: Solver, runs: Runs) -> DropOneResult:
     """Each stored fact of each parameter that holds more than one, cut on
     its own: a fact whose removal keeps the stored program's profile on
     the train pairs is one they never need, and the test pairs then judge
-    its removal. The mechanism of the unseen-key check (the determination
-    step of procedure.md:142-146); a run that reached a limit is no
-    result."""
+    its removal. The mechanism of the unseen-key check; a run that reached
+    a limit is no result."""
     engine, limits = runs.engine, runs.limits
     work: list[Fact] = []
     params = 0
@@ -98,8 +99,8 @@ def survey_drop_one(solver: Solver, runs: Runs) -> DropOneResult:
             work += [Fact(p.name, types, r) for r in rows]
     if not work:
         return DropOneReport((), 0, 0, ())
-    train = pairs_of(solver, ("train",))
-    reference = profile(engine, solver, train, limits)
+    train = pairs_of(solver, (TaskSection.TRAIN,))
+    reference = runs.train_profile
     if isinstance(reference, Fails):
         return TrainFails()
     if isinstance(reference, TimedOut):
@@ -110,14 +111,14 @@ def survey_drop_one(solver: Solver, runs: Runs) -> DropOneResult:
         return variation(engine, solver, Remove(
             RemoveFact(parameter(solver, f.parameter), f.row)))
 
-    train_fits = parallel(
-        lambda f: same_profile(engine, with_program(solver, program_of(f)), train,
-                       limits, ref), work)
+    train_fits = at_once(
+        lambda f: same_profile(engine, with_program(solver, program_of(f)),
+                               runs.cases, train, limits, ref), work)
     dead = [f for f, ok in zip(work, train_fits, strict=True) if ok is True]
     timed = [(f, ok.finding) for f, ok in zip(work, train_fits, strict=True)
              if isinstance(ok, TimedOut)]
-    on_test = test_verdicts(engine, solver, limits, dead, program_of,
-                            test_reference(engine, solver, limits)) \
+    on_test = test_verdicts(engine, solver, runs.cases, limits, dead,
+                            program_of, runs.test_profile) \
         if dead else {}
     dropped: list[DroppedFact] = []
     for f in dead:

@@ -2,19 +2,25 @@
 `deletions`, `drop-one`, `derived-constant`, `determination-plan`,
 `size`, `keywords`, `since` and `expand`."""
 
-import dataclasses
 import re
 import subprocess
 import sys
 from collections import defaultdict
-from collections.abc import Iterator
+from dataclasses import dataclass
 
 from checker import Runs
 from checker.deletions import DeletionReport, survey_deletions
 from checker.derived_constant import survey_derived_constant
 from checker.determination_plan import survey_determination_plan
 from checker.drop_one import survey_drop_one
-from checker.render import commands
+from checker.judged import parse_failure
+from checker.lint.form import (
+    doc_keywords,
+    header_keywords,
+    keywords_doc,
+    known_keywords,
+)
+from checker.render import commands, header_line
 from checker.render.surveys import (
     render_deletions,
     render_derived_constant,
@@ -23,87 +29,87 @@ from checker.render.surveys import (
     render_sweep,
 )
 from checker.sweep import MAX_CANDIDATES, TIME_LIMIT_SECONDS, survey_sweep
-from checker.lint.form import keywords_doc
 from cli import text
 from cli.common import (
     LIMITS,
     all_stems,
+    command_solver,
+    compiles,
     engine,
-    load_solver,
     missing,
     stem_of,
 )
-from engine import ParseFailure, Program, checkout
+from engine import Program, checkout
 from engine.program import (
-    Aggregate,
     AtomLiteral,
     BodyLiteral,
     BoolLiteral,
     Comparison,
     Disjunction,
     GridCall,
+    literal_aggregates,
+    own,
 )
-from solver.annotations import HeaderWord
-from solver.model import Solver, load, own
-from solver.problems import ProblemKind
+from solver.model import Solver, load
+from souffle import SouffleEngine
 
 # The surveys
 
 
-def _runs(arg: str) -> tuple[Runs, int] | int:
-    if missing(arg):
-        return 2
+def _runs(arg: str, task: bool = False) -> Runs | None:
+    """The runs of the solver the argument names; None, with its line on
+    stderr, where no solver file stands there, or, under `task`, where its
+    task has no task file."""
     eng = engine()
-    solver = load_solver(arg, eng)
-    return Runs(eng, solver, LIMITS), 0
+    solver = command_solver(arg, eng, task=task)
+    return None if solver is None else Runs(eng, solver, LIMITS)
 
 
 def cmd_sweep(arg: str, cap: int = MAX_CANDIDATES,
-              time_limit: float = TIME_LIMIT_SECONDS) -> int:
-    got = _runs(arg)
-    if isinstance(got, int):
-        return got
-    runs, _ = got
-    report = survey_sweep(runs.solver, runs, cap, time_limit)
+              sweep_limit: float = TIME_LIMIT_SECONDS) -> int:
+    runs = _runs(arg, task=True)
+    if runs is None:
+        return 2
+    report = survey_sweep(runs.solver, runs, cap, sweep_limit)
     print("\n".join(render_sweep(runs.solver, report)))
     return 0
 
 
 def cmd_deletions(arg: str) -> int:
-    got = _runs(arg)
-    if isinstance(got, int):
-        return got
-    runs, _ = got
+    runs = _runs(arg)
+    if runs is None:
+        return 2
     result = survey_deletions(runs.solver, runs)
     print("\n".join(render_deletions(runs.solver, result)))
     return 0 if isinstance(result, DeletionReport) else 1
 
 
 def cmd_drop_one(arg: str) -> int:
-    got = _runs(arg)
-    if isinstance(got, int):
-        return got
-    runs, _ = got
+    runs = _runs(arg)
+    if runs is None:
+        return 2
     print("\n".join(render_drop_one(runs.solver,
                                     survey_drop_one(runs.solver, runs))))
     return 0
 
 
 def cmd_derived_constant(arg: str) -> int:
-    got = _runs(arg)
-    if isinstance(got, int):
-        return got
-    runs, _ = got
+    eng = engine()
+    solver = command_solver(arg, eng)
+    if solver is None:
+        return 2
+    if not compiles(eng, solver):
+        return 1
+    runs = Runs(eng, solver, LIMITS)
     print("\n".join(render_derived_constant(
         runs.solver, survey_derived_constant(runs.solver, runs))))
     return 0
 
 
 def cmd_determination_plan(arg: str, verdicts: bool = False) -> int:
-    got = _runs(arg)
-    if isinstance(got, int):
-        return got
-    runs, _ = got
+    runs = _runs(arg, task=True)
+    if runs is None:
+        return 2
     print("\n".join(render_determination_plan(
         runs.solver, survey_determination_plan(runs.solver, runs),
         verdicts)))
@@ -113,24 +119,15 @@ def cmd_determination_plan(arg: str, verdicts: bool = False) -> int:
 # `size`
 
 
-def parse_failure(solver: Solver) -> ParseFailure | None:
-    """What the parser reported, for a solver that does not parse."""
-    return next((p.detail for p in solver.problems
-                 if p.kind == ProblemKind.PARSE_FAILURE
-                 and isinstance(p.detail, ParseFailure)), None)
-
-
-def _aggregates(value: object) -> Iterator[Aggregate]:
-    """Each aggregate inside a term, outermost first."""
-    if isinstance(value, Aggregate):
-        yield value
-        return
-    if isinstance(value, tuple):
-        for v in value:
-            yield from _aggregates(v)
-    elif dataclasses.is_dataclass(value) and not isinstance(value, type):
-        for f in dataclasses.fields(value):
-            yield from _aggregates(getattr(value, f.name))
+def _parsed(stem: str, eng: SouffleEngine) -> Solver | None:
+    """The solver of `stem`; None, with what the parser reported on
+    stderr, where it does not parse (`checker.judged.parse_failure`)."""
+    solver = load(stem, eng)
+    failure = parse_failure(solver)
+    if failure is None:
+        return solver
+    print(commands.size_unread(stem, failure), file=sys.stderr)
+    return None
 
 
 def _literals(lit: BodyLiteral) -> int:
@@ -143,7 +140,7 @@ def _literals(lit: BodyLiteral) -> int:
         case Disjunction(branches=branches):
             return sum(_literals(x) for b in branches for x in b)
         case AtomLiteral() | Comparison():
-            return 1 + sum(_literals(x) for a in _aggregates(lit)
+            return 1 + sum(_literals(x) for a in literal_aggregates(lit)
                            for x in a.body)
 
 
@@ -164,10 +161,8 @@ def cmd_size(arg: str | None = None) -> int:
     eng = engine()
     bad = False
     for stem in [stem_of(arg)] if arg else all_stems():
-        solver = load(stem, eng)
-        failure = parse_failure(solver)
-        if failure is not None:
-            print(commands.size_unread(stem, failure), file=sys.stderr)
+        solver = _parsed(stem, eng)
+        if solver is None:
             bad = True
             continue
         print(commands.SIZE_ROW.format(count=literal_count(solver.program),
@@ -176,22 +171,6 @@ def cmd_size(arg: str | None = None) -> int:
 
 
 # `keywords`
-
-KEYWORD_BULLET_RE = re.compile(r"^- `([^`]+)`")
-
-
-def doc_keywords(written: str) -> dict[str, list[str]]:
-    """The keywords of keywords.md, in doc order, per `##` section: the
-    leading code span of each bullet."""
-    out: dict[str, list[str]] = {}
-    section: list[str] = []
-    for line in written.splitlines():
-        if line.startswith("## "):
-            section = out.setdefault(line[3:].strip(), [])
-        elif m := KEYWORD_BULLET_RE.match(line):
-            section.append(m.group(1))
-    return out
-
 
 def cmd_keywords(args: list[str] | None = None) -> int:
     """How many solvers carry each keyword of keywords.md, and each header
@@ -202,20 +181,17 @@ def cmd_keywords(args: list[str] | None = None) -> int:
     eng = engine()
     stems = [stem_of(a) for a in args] if args else all_stems()
     sections = doc_keywords(keywords_doc().read_text())
-    known = {w for words in sections.values() for w in words}
+    known = known_keywords()
     carriers: dict[str, set[str]] = defaultdict(set)
     unknown: list[str] = []
     bad = False
     for stem in stems:
-        solver = load(stem, eng)
-        failure = parse_failure(solver)
-        if failure is not None:
-            print(commands.size_unread(stem, failure), file=sys.stderr)
+        solver = _parsed(stem, eng)
+        if solver is None:
             bad = True
             continue
-        field = next((f for f in solver.annotations.header
-                      if f.word == HeaderWord.KEYWORDS), None)
-        words = field.value.split("\n")[0].split() if field else []
+        got = header_keywords(solver)
+        words = [] if got is None else got[1]
         for word in words:
             if word in known:
                 carriers[word].add(stem)
@@ -223,7 +199,7 @@ def cmd_keywords(args: list[str] | None = None) -> int:
                 unknown.append(commands.UNKNOWN_KEYWORD.format(stem=stem,
                                                            word=word))
     for name, words in sections.items():
-        print(commands.KEYWORDS_SECTION.format(name=name))
+        print(header_line(name))
         for word in words:
             print(commands.KEYWORD_ROW.format(n=len(carriers[word]), word=word))
         print()
@@ -235,17 +211,34 @@ def cmd_keywords(args: list[str] | None = None) -> int:
 
 # `since`
 
-SOLVER_PATH_RE = re.compile(r"programs/solvers/([^/]+)\.dl$")
+SOLVERS = checkout.solvers().relative_to(checkout.ROOT).as_posix()
+"""The solvers directory as git names it, from the checkout's root."""
+SOLVER_PATH_RE = re.compile(re.escape(SOLVERS) + r"/([^/]+)\.dl$")
 REWRITE_SHARE = 0.5
 """The share of the corpus above which commits count as a mechanical
 rewrite rather than solver work."""
 
 
-def _git(*args: str) -> str | None:
-    """Git's stdout, or None where the call fails."""
+@dataclass(frozen=True)
+class GitFailed:
+    """A git call that exited with an error, and what git wrote on
+    stderr."""
+
+    stderr: str
+
+
+def _git(*args: str) -> str | GitFailed:
+    """Git's stdout, or what git wrote on stderr where the call fails."""
     ran = subprocess.run(["git", *args], cwd=checkout.ROOT, capture_output=True,
                          text=True)
-    return ran.stdout if ran.returncode == 0 else None
+    return ran.stdout if ran.returncode == 0 else GitFailed(ran.stderr)
+
+
+def _git_failed(got: GitFailed) -> int:
+    """The exit code of `since` where a git call fails, with git's error
+    on stderr."""
+    print(text.GIT_FAILED.format(error=got.stderr.strip()), file=sys.stderr)
+    return 1
 
 
 def _commit_stems(log: str) -> list[tuple[str, set[str]]]:
@@ -274,15 +267,18 @@ def _worktree_stems(status: str) -> set[str]:
 
 def cmd_since(when: str) -> int:
     """The stems the commits since `when` touch, and those whose
-    working-tree content differs from HEAD; a commit that rewrites more
+    working-tree content differs from HEAD, the scope lib-protocol.md
+    gives under "The sequence" for a survey of an entry whose newest
+    `Survey:` time is `when`; a commit that rewrites more
     than half the corpus gives none, and a window whose commits together
     do keeps only the solvers they add."""
     log = _git("log", f"--since={when}", "--name-only",
-               "--pretty=format:commit %H", "--", "programs/solvers")
-    status = _git("status", "--porcelain", "--", "programs/solvers")
-    if log is None or status is None:
-        print(text.NO_HISTORY.format(when=when), file=sys.stderr)
-        return 1
+               "--pretty=format:commit %H", "--", SOLVERS)
+    if isinstance(log, GitFailed):
+        return _git_failed(log)
+    status = _git("status", "--porcelain", "--", SOLVERS)
+    if isinstance(status, GitFailed):
+        return _git_failed(status)
     corpus = set(all_stems())
     committed: set[str] = set()
     for sha, touched in _commit_stems(log):
@@ -295,10 +291,9 @@ def cmd_since(when: str) -> int:
     if _rewrite(committed, corpus):
         added = _git("log", f"--since={when}", "--diff-filter=A",
                      "--name-only", "--pretty=format:commit %H", "--",
-                     "programs/solvers")
-        if added is None:
-            print(text.NO_HISTORY.format(when=when), file=sys.stderr)
-            return 1
+                     SOLVERS)
+        if isinstance(added, GitFailed):
+            return _git_failed(added)
         kept = committed & {s for _, t in _commit_stems(added) for s in t}
         print(commands.WINDOW_REWRITE.format(
             n=len(committed), total=len(corpus), share=REWRITE_SHARE,
@@ -318,10 +313,10 @@ def cmd_expand(arg: str) -> int:
     """The solver's text with each GRID call and RIGID block replaced by
     the units it states: the engine's rendering of the expanded program,
     each line that renders the solver's own text."""
-    if missing(arg):
-        return 2
     eng = engine()
-    solver = load_solver(arg, eng)
+    solver = command_solver(arg, eng, task=False)
+    if solver is None:
+        return 2
     rendered = eng.render(eng.expand(solver.program))
     sys.stdout.write("".join(f"{ln.text}\n" for ln in rendered.lines))
     return 0

@@ -4,6 +4,9 @@ remove a part, add an instance."""
 from dataclasses import replace
 
 from engine.engine import (
+    AnchorOffStamp,
+    CellOffForm,
+    GridMisfit,
     GridValue,
     Occurrence,
     RelationValue,
@@ -13,44 +16,42 @@ from engine.engine import (
     RemoveDisjunct,
     RemoveFact,
     RemoveUnit,
+    SizeOffLayout,
 )
 from engine.program import (
     Aggregate,
     Atom,
     AtomLiteral,
-    BinaryTerm,
     BodyLiteral,
     BoolLiteral,
-    Cast,
-    Comparison,
     Component,
-    ConstructorTerm,
     DeclId,
     Disjunction,
-    FunctorCall,
     GridCall,
     GridCell,
     GridForm,
+    GridLayout,
     Instance,
-    IntrinsicCall,
     NumberTerm,
     Program,
-    RecordTerm,
     RelationDecl,
     RelationName,
     RigidCall,
     Row,
     Scope,
     Term,
-    UnaryTerm,
     Unit,
     UnitId,
     Wildcard,
+    literal_aggregates,
+    with_literal_terms,
+    with_subterms,
+    grid_size,
 )
 from souffle.expand import expand, grid_facts
-from souffle.index import Tree, hold, index_of
+from souffle.index import Tree, held_index, hold, index_of, tree_of
 from souffle.layout import next_decl, next_unit
-from souffle.parser import Shape
+from engine.text import text as code_text
 from souffle.values import NotConstant, constant, term_of
 
 # remove
@@ -86,9 +87,16 @@ def _in_rigid_bodies(program: Program, gone: UnitId,
 
 
 def _remove_unit(program: Program, unit: UnitId) -> Program:
-    if any(u.id == unit for u in program.units):
-        return _in_rigid_bodies(
+    gone = [u for u in program.units if u.id == unit]
+    if gone:
+        out = _in_rigid_bodies(
             replace(program, units=tuple(u for u in program.units if u.id != unit)), unit)
+        # The index is carried where the removal changes no declaration
+        # and no RIGID call's body.
+        index = held_index(program)
+        if index is not None and not program.in_rigid_body(unit):
+            hold(out, index.changed((gone, ()), ((), ())))
+        return out
     macro = next((m for m in program.macros if m.id == unit), None)
     if macro is None:
         raise ValueError(f"no unit {unit.index}")
@@ -96,9 +104,7 @@ def _remove_unit(program: Program, unit: UnitId) -> Program:
     relations = program.relations
     if isinstance(macro, RigidCall):
         gone |= set(macro.body)
-        relations = tuple(r for r in relations
-                          if not (r.scope == macro.scope
-                                  and (r.chart_of == macro.block or r.name in macro.names)))
+        relations = tuple(r for r in relations if not macro.binds(r))
     return _in_rigid_bodies(replace(
         program, relations=relations,
         units=tuple(u for u in program.units if u.id not in gone),
@@ -151,68 +157,17 @@ def _without(body: tuple[BodyLiteral, ...], path: tuple[int, ...],
     return body[:i] + (_with_aggregate(lit, k, inner),) + body[i + 1:]
 
 
-def _literal_terms(lit: BodyLiteral) -> tuple[Term, ...]:
-    match lit:
-        case AtomLiteral(atom, _):
-            return atom.args
-        case Comparison(_, lhs, rhs):
-            return (lhs, rhs)
-    return ()
-
-
-def _term_aggregates(t: Term) -> list[Aggregate]:
-    match t:
-        case Aggregate():
-            return [t]
-        case ConstructorTerm(_, args) | RecordTerm(args) | IntrinsicCall(_, args) \
-                | FunctorCall(_, args):
-            return [a for x in args for a in _term_aggregates(x)]
-        case UnaryTerm(_, arg) | Cast(arg, _):
-            return _term_aggregates(arg)
-        case BinaryTerm(_, lhs, rhs):
-            return _term_aggregates(lhs) + _term_aggregates(rhs)
-    return []
-
-
-def literal_aggregates(lit: BodyLiteral) -> list[Aggregate]:
-    """The aggregates a literal's terms hold, left to right, not those
-    inside another aggregate."""
-    return [a for t in _literal_terms(lit) for a in _term_aggregates(t)]
-
-
 def _with_aggregate(lit: BodyLiteral, k: int, new: Aggregate) -> BodyLiteral:
     """`lit` with its `k`th aggregate (`literal_aggregates`) as `new`."""
     seen = [0]
 
     def swap(t: Term) -> Term:
-        match t:
-            case Aggregate():
-                seen[0] += 1
-                return new if seen[0] - 1 == k else t
-            case ConstructorTerm(name, args):
-                return ConstructorTerm(name, tuple(swap(a) for a in args))
-            case RecordTerm(args):
-                return RecordTerm(tuple(swap(a) for a in args))
-            case IntrinsicCall(f, args):
-                return IntrinsicCall(f, tuple(swap(a) for a in args))
-            case FunctorCall(name, args):
-                return FunctorCall(name, tuple(swap(a) for a in args))
-            case UnaryTerm(op, arg):
-                return UnaryTerm(op, swap(arg))
-            case Cast(arg, type_name):
-                return Cast(swap(arg), type_name)
-            case BinaryTerm(op, lhs, rhs):
-                lhs2 = swap(lhs)
-                return BinaryTerm(op, lhs2, swap(rhs))
-        return t
+        if isinstance(t, Aggregate):
+            seen[0] += 1
+            return new if seen[0] - 1 == k else t
+        return with_subterms(t, swap)
 
-    match lit:
-        case AtomLiteral(atom, negated):
-            return AtomLiteral(replace(atom, args=tuple(swap(a) for a in atom.args)), negated)
-        case Comparison(op, lhs, rhs, line):
-            lhs2 = swap(lhs)
-            return Comparison(op, lhs2, swap(rhs), line)
-    return lit
+    return with_literal_terms(lit, swap)
 
 
 def map_atoms(body: tuple[BodyLiteral, ...], fn) -> tuple[BodyLiteral, ...]:
@@ -223,53 +178,32 @@ def map_atoms(body: tuple[BodyLiteral, ...], fn) -> tuple[BodyLiteral, ...]:
         match lit:
             case AtomLiteral(atom, negated):
                 a = fn(atom)
-                out.append(AtomLiteral(replace(a, args=_map_terms(a.args, fn)), negated))
-            case Comparison(op, lhs, rhs, line):
-                lhs2, rhs2 = _map_terms((lhs, rhs), fn)
-                out.append(Comparison(op, lhs2, rhs2, line))
+                out.append(AtomLiteral(replace(a, args=tuple(
+                    _map_term(t, fn) for t in a.args)), negated))
             case Disjunction(branches, line):
                 out.append(Disjunction(tuple(map_atoms(b, fn) for b in branches), line))
             case _:
-                out.append(lit)
+                out.append(with_literal_terms(lit, lambda t: _map_term(t, fn)))
     return tuple(out)
 
 
-def _map_terms(terms: tuple[Term, ...], fn) -> tuple[Term, ...]:
-    out: list[Term] = []
-    for t in terms:
-        match t:
-            case Aggregate(op, expr, body):
-                out.append(Aggregate(op, None if expr is None else _map_terms((expr,), fn)[0],
-                                     map_atoms(body, fn)))
-            case ConstructorTerm(name, args):
-                out.append(ConstructorTerm(name, _map_terms(args, fn)))
-            case RecordTerm(args):
-                out.append(RecordTerm(_map_terms(args, fn)))
-            case IntrinsicCall(f, args):
-                out.append(IntrinsicCall(f, _map_terms(args, fn)))
-            case FunctorCall(name, args):
-                out.append(FunctorCall(name, _map_terms(args, fn)))
-            case UnaryTerm(op, arg):
-                out.append(UnaryTerm(op, _map_terms((arg,), fn)[0]))
-            case Cast(arg, type_name):
-                out.append(Cast(_map_terms((arg,), fn)[0], type_name))
-            case BinaryTerm(op, lhs, rhs):
-                a, b = _map_terms((lhs, rhs), fn)
-                out.append(BinaryTerm(op, a, b))
-            case _:
-                out.append(t)
-    return tuple(out)
+def _map_term(t: Term, fn) -> Term:
+    """`t` with `fn` applied to every atom of the aggregate bodies it
+    holds."""
+    if isinstance(t, Aggregate):
+        return replace(t, expr=None if t.expr is None else _map_term(t.expr, fn),
+                       body=map_atoms(t.body, fn))
+    return with_subterms(t, lambda x: _map_term(x, fn))
 
 
 def _remove_column(program: Program, relation: DeclId, column: int) -> Program:
-    tree = Tree(program)
-    decl = next((r for r in program.relations if r.id == relation), None)
+    tree = tree_of(program)
+    decl = program.relation(relation)
     if decl is None or column >= len(decl.columns):
         raise ValueError(f"no column {column} of declaration {relation.index}")
 
     def resolves(atom: Atom, scope: Scope) -> bool:
-        hit = tree.resolve(atom.relation, scope)
-        return hit is not None and hit.decl.id == relation
+        return tree.denotes(atom.relation, scope, relation)
 
     def cut(atom: Atom, scope: Scope) -> Atom:
         if not resolves(atom, scope):
@@ -285,7 +219,7 @@ def _remove_column(program: Program, relation: DeclId, column: int) -> Program:
     for m in program.macros:
         if isinstance(m, GridCall) and resolves(Atom(m.relation, (), 0), m.scope):
             if column >= len(m.keys):
-                raise ValueError(f"column {column} of {Shape.of_call(m).name} is a cell column")
+                raise ValueError(f"column {column} of {code_text(m.layout)} is a cell column")
             m = replace(m, keys=m.keys[:column] + m.keys[column + 1:])
         macros.append(m)
     decls = tuple(replace(r, columns=r.columns[:column] + r.columns[column + 1:])
@@ -302,14 +236,13 @@ def _row_of(atom: Atom, program: Program) -> Row | None:
 
 
 def _remove_fact(program: Program, relation: RelationName, row: Row) -> Program:
-    tree = Tree(program)
+    tree = tree_of(program)
     target = tree.resolve(relation, Scope(()))
     if target is None:
-        raise ValueError(f"no relation {relation}")
+        raise ValueError(f"no relation {relation.text}")
 
     def same(atom: Atom, scope: Scope) -> bool:
-        hit = tree.resolve(atom.relation, scope)
-        return hit is not None and hit.decl.id == target.decl.id
+        return tree.denotes(atom.relation, scope, target.decl.id)
 
     for u in program.units:
         if u.body is None and same(u.head, u.scope) and _row_of(u.head, program) == row:
@@ -331,7 +264,7 @@ def _remove_fact(program: Program, relation: RelationName, row: Row) -> Program:
                     replace(program, units=(*program.units, *units),
                             macros=tuple(x for x in program.macros if x.id != m.id)),
                     m.id, tuple(u.id for u in units))
-    raise ValueError(f"no fact {row} of {relation}")
+    raise ValueError(f"no fact {row} of {relation.text}")
 
 
 # instantiate
@@ -354,15 +287,16 @@ def fix_relation(program: Program, relation: RelationName, value: RelationValue)
     `value`, as facts or as one GRID call of the form the relation's calls
     had, fed by none of its units. Where a component that feeds it is held
     by another instance too, the instance on the path reads a copy. Raises
-    `ValueError` where no declaration answers the name, and for a grid on a
-    stamp or sparse form."""
+    `ValueError` where no declaration answers the name, for a grid with an
+    anchor on a relation whose call is no stamp or one without an anchor on
+    a stamp, and for a cell other than 0 and 1 on a form that takes members
+    alone."""
     index = index_of(program)
     tree = index.tree
     hit = tree.resolve(relation, Scope(()))
     if hit is None:
-        raise ValueError(f"no relation {'.'.join((*relation.instances, relation.name))}")
-    if any(isinstance(m, RigidCall) and hit.decl.name in m.names for m in program.macros) \
-            or hit.decl.chart_of is not None:
+        raise ValueError(f"no relation {relation.text}")
+    if program.rigid_bound(hit.decl) or hit.decl.chart_of is not None:
         program = expand(program)
         index = index_of(program)
         tree = index.tree
@@ -370,25 +304,25 @@ def fix_relation(program: Program, relation: RelationName, value: RelationValue)
         assert hit is not None
     scope_of = {u.id: u.scope.components for u in (*program.units, *program.macros)}
     feeding = [o for o in index.feeding(hit.decl.id)
-               if _feeds_instance(tree, scope_of.get(o.unit, ()), o, relation)]
+               if _feeds_instance(tree, scope_of[o.unit], o, relation)]
     feeders = {o.unit for o in feeding}
-    grid_form = next((Shape.of_call(m) for m in program.macros
-                      if isinstance(m, GridCall) and m.id in feeders), None)
-    scopes = {_scope_of(program, o.unit) for o in feeding}
+    layout = next((m for m in program.macros
+                   if isinstance(m, GridCall) and m.id in feeders), None)
+    scopes = {scope_of[o.unit] for o in feeding}
     shared = [s for s in scopes if s and _uses(tree, program, s) != 1]
     if shared:
         program = _clone_for(program, tree, relation, hit.decl, feeders)
         # A top-level clause whose head names the instance relation is in
         # no copied text, so it goes here.
-        top = {u for u in feeders if not scope_of.get(u, ())}
+        top = {u for u in feeders if not scope_of[u]}
         program = replace(program,
                           units=tuple(u for u in program.units if u.id not in top),
                           macros=tuple(m for m in program.macros if m.id not in top))
-        return _add_value(program, relation, value, grid_form)
+        return _add_value(program, relation, value, layout)
     kept = replace(program,
                    units=tuple(u for u in program.units if u.id not in feeders),
                    macros=tuple(m for m in program.macros if m.id not in feeders))
-    out = _add_value(kept, relation, value, grid_form)
+    out = _add_value(kept, relation, value, layout)
     # The index is carried: the rewrite changes no declaration, so the
     # result's index is this one without the feeders and with the value's
     # units or call.
@@ -420,28 +354,33 @@ def _feeds_instance(tree: Tree, scope: tuple[str, ...], occurrence: Occurrence,
     return scope == holder or scope in tree.chain(holder)
 
 
-def _instance_text(tree: Tree, instances: tuple[str, ...]) -> tuple[str, ...] | None:
-    """The path of the component text the instance path `instances`,
-    named from the top level, stands for; `()` for the top level, None
-    where a part names no instance."""
+def _instance_walk(tree: Tree, instances: tuple[str, ...]
+                   ) -> tuple[list[Instance], tuple[str, ...]] | str:
+    """The instance each part of the instance path `instances`, named from
+    the top level, names, outermost first, and the path of the component
+    text the path stands for, `()` for the top level; the first part that
+    names no instance where one does not."""
+    inits: list[Instance] = []
     scope: tuple[str, ...] = ()
     for part in instances:
         init = next((i for texts in tree.levels(scope) for p in texts
                      if (i := tree.inits.get(p, {}).get(part)) is not None), None)
         if init is None:
-            return None
+            return part
         got = tree.comp(init.component, init.scope.components)
         if got is None:
-            return None
+            return part
+        inits.append(init)
         scope = got
-    return scope
+    return inits, scope
 
 
-def _scope_of(program: Program, unit: UnitId) -> tuple[str, ...]:
-    for u in (*program.units, *program.macros):
-        if u.id == unit:
-            return u.scope.components
-    return ()
+def _instance_text(tree: Tree, instances: tuple[str, ...]) -> tuple[str, ...] | None:
+    """The path of the component text the instance path `instances`,
+    named from the top level, stands for; `()` for the top level, None
+    where a part names no instance."""
+    got = _instance_walk(tree, instances)
+    return None if isinstance(got, str) else got[1]
 
 
 def _uses(tree: Tree, program: Program, path: tuple[str, ...], depth: int = 0) -> int:
@@ -462,22 +401,63 @@ def _uses(tree: Tree, program: Program, path: tuple[str, ...], depth: int = 0) -
     return total
 
 
+def place_grid(layout: GridLayout, mark: tuple[int, int] | None,
+               value: GridValue) -> GridValue | GridMisfit:
+    """`value` as the value of a relation one GRID call of `layout` stores,
+    the call's cell marked `@` at `mark` (`engine.Engine.place_grid`).
+    Raises `ValueError` for a stamp layout with no `mark`, which no parsed
+    call is."""
+    grid, anchor = value.grid, value.anchor
+    if anchor is not None and not layout.stamp:
+        return AnchorOffStamp()
+    if not layout.valued:
+        off = next(((r, c, v) for r, row in enumerate(grid)
+                    for c, v in enumerate(row) if v not in (0, 1)), None)
+        if off is not None:
+            return CellOffForm((off[0], off[1]), off[2])
+    if anchor is not None or not layout.stamp:
+        return value
+    if mark is None:
+        raise ValueError(f"{code_text(layout)} with no cell marked `@`")
+    given = grid_size(grid)
+    if given != (layout.height, layout.width):
+        return SizeOffLayout(given)
+    return GridValue(value.keys, grid, mark)
+
+
 def _add_value(program: Program, relation: RelationName, value: RelationValue,
-               form: Shape | None) -> Program:
+               layout: GridCall | None) -> Program:
+    """`program` with `value` added as facts of `relation`, or a grid as one
+    GRID call of `layout`'s form at the grid's own size, placed as
+    `place_grid` places it, and a dense call where no GRID call is
+    `layout`: a stamp anchored at the placed anchor, a form that takes
+    members alone taking `1` as a member and `0` as an empty cell, and a
+    valued form taking every cell as a value. Raises `ValueError` for a
+    grid `place_grid` does not place."""
     n = next_unit(program)
     if isinstance(value, GridValue):
-        grid = value.grid
-        policy = form.form if form is not None else GridForm.DENSE
-        if form is not None and (form.stamp or form.form is GridForm.SPARSE):
-            raise ValueError(f"{form.name} takes no grid of colors")
-        if policy is GridForm.MASK and any(c not in (0, 1) for row in grid for c in row):
-            raise ValueError(f"{form.name if form else 'GRID'} takes 1 and 0 cells only")
-        cell = ((lambda c: GridCell(NumberTerm(1) if c else Wildcard(), False))
-                if policy is GridForm.MASK else (lambda c: GridCell(NumberTerm(c), False)))
-        call = GridCall(UnitId(n), Scope(()), policy, False, len(grid),
-                        len(grid[0]) if grid else 0, relation,
-                        tuple(term_of(k) for k in value.keys),
-                        tuple(tuple(cell(c) for c in row) for row in grid), None)
+        if layout is not None:
+            placed = place_grid(layout.layout, layout.anchor, value)
+            if not isinstance(placed, GridValue):
+                raise ValueError(f"{relation.text}: {code_text(layout.layout)} "
+                                 f"does not place the grid ({placed})")
+            value = placed
+        elif value.anchor is not None:
+            raise ValueError(f"{relation.text}: a grid with an anchor and no "
+                             "GRID call")
+        grid, anchor = value.grid, value.anchor
+        h, w = grid_size(grid)
+        form = GridLayout(GridForm.DENSE if layout is None
+                          else layout.layout.form, anchor is not None, h, w)
+        member_only = not form.valued
+
+        def cell(r: int, c: int, v: int) -> GridCell:
+            term = (NumberTerm(1) if v else Wildcard()) if member_only else NumberTerm(v)
+            return GridCell(term, (r, c) == anchor)
+
+        call = GridCall(UnitId(n), Scope(()), form, relation, tuple(term_of(k) for k in value.keys),
+                        tuple(tuple(cell(r, c, v) for c, v in enumerate(row))
+                              for r, row in enumerate(grid)), None)
         return replace(program, macros=(*program.macros, call))
     units = tuple(Unit(UnitId(n + i), Scope(()),
                        Atom(relation, tuple(term_of(v) for v in row), 0), None, None, None)
@@ -490,18 +470,10 @@ def _clone_for(program: Program, tree: Tree, relation: RelationName, decl: Relat
     """`program` with the instances on `relation`'s path reading copies of
     their components, the copies without the units in `feeders`, so that no
     other instance loses them."""
-    inits: list[Instance] = []
-    scope: tuple[str, ...] = ()
-    for part in relation.instances:
-        levels = list(tree.levels(scope))
-        init = next((i for texts in levels for p in texts
-                     if (i := tree.inits.get(p, {}).get(part)) is not None), None)
-        if init is None:
-            raise ValueError(f"no instance {part}")
-        inits.append(init)
-        path = tree.comp(init.component, init.scope.components)
-        assert path is not None
-        scope = path
+    walked = _instance_walk(tree, relation.instances)
+    if isinstance(walked, str):
+        raise ValueError(f"no instance {walked}")
+    inits = walked[0]
     state = _Cloner(program, tree, feeders)
     # From the innermost instance outward: each copy's instance is written
     # in the text that holds it, which is copied in turn when shared.

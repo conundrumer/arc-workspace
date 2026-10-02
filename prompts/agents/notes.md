@@ -38,7 +38,7 @@
     - <how the solver or the witness file differs from the Analyze files>: <the condition or fact it rests on>
 
     ## Judgments
-    - <a judgment the files do not show>: <what it rests on>
+    - <a judgment>: <what it rests on>
 
     ## Open
     - <what the pass leaves unsettled>: <what would settle it>
@@ -53,4 +53,3 @@
     - `delay` or `interference`: <the doc or tool line, and how it slowed the pass, or what the pass wrote wrong because of it>
     ```
 - A section with nothing holds `none`.
-- Nothing in the report waits on a ruling.

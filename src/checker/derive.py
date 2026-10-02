@@ -1,23 +1,30 @@
-"""The `derive` survey (procedure.md:133-134): the built-in derivations of
+"""The `derive` survey (procedure.md, under "Develop"): the built-in derivations of
 the solver's stored parameters that fit, each a branch, with its witness,
 and the findings on the solver's `@derive` lines."""
 
 import threading
 from dataclasses import dataclass, replace
 
+from arc.task import Example, Task
 from checker.branches import (
     BuiltBy,
+    RecordedWitness,
     SwapWitness,
+    Unwitnessed,
     Witness,
+    bare_ignored,
     entry_findings,
-    file_entry,
+    excluded_finding,
     idle_ignores,
     model_fit,
     ordered,
+    recorded_entry,
+    recorded_witness,
+    swap_entry,
     swap_witness,
     taking,
+    with_line,
     without_named_ignores,
-    witness_entry,
 )
 from checker.finding import (
     AtFile,
@@ -27,39 +34,49 @@ from checker.finding import (
     Finding,
     Kind,
     RunKind,
+    Where,
     WholeFile,
 )
-from checker.judged import Fits, Misses, NoResult, is_concept, no_result
+from checker.judged import (
+    NO_TASK,
+    Fits,
+    Misses,
+    NoResult,
+    concept_case,
+    enumeration_failed,
+    no_result,
+)
 from checker.payloads.branches import (
     BranchPayload,
     DeriveFitPayload,
     DuplicatePayload,
     MissingLinePayload,
-    NoTaskPayload,
     Unread,
 )
-from checker.render import branch_name
+from checker.readable import finding_of
 from checker.runs import Runs
-from checker.variants import parallel
-from arc.task import Example, Task
 from engine import Program, RunFailure
-from engine.engine import CompileError
-from engine.program import AliasType
 from solver.annotations import DeriveLine, IgnoreForm
 from solver.model import (
-    Branch,
     Case,
     DeriveBranch,
     Parameter,
     Solver,
-    StoredAtDerive,
-    ignore_targets,
+    declaration_of,
     own,
     proposer_names,
     proposers_program,
+    resolved_columns,
 )
-from solver.model import cases as cases_of
-from solver.solve import Proposals, at_once, examples, probe
+from solver.names import branch_text
+from solver.problems import (
+    Fault,
+    InSolver,
+    ProblemKind,
+    Undecided,
+    UndecidedForm,
+)
+from solver.solve import Proposals, at_once, examples, probe, probe_failure
 from solver.vocabulary import COLOR, PROPOSE
 from solver.witness import Entry
 
@@ -75,18 +92,6 @@ class Proposer:
     comment: str
 
 
-def resolved_type(program: Program, name: str) -> str:
-    """The type `name` denotes in `program`, each alias followed to the
-    type it names."""
-    aliases = {t.name: t.target for t in program.types
-               if isinstance(t, AliasType)}
-    seen: set[str] = set()
-    while name in aliases and name not in seen:
-        seen.add(name)
-        name = aliases[name]
-    return name
-
-
 def proposers(program: Program) -> dict[str, Proposer]:
     """Each proposer of the proposers program by name
     (`solver.model.proposer_names`)."""
@@ -99,7 +104,7 @@ def proposers(program: Program) -> dict[str, Proposer]:
                        if c.above == comp.id and not c.block)
         text = " ".join(t for _l, t in lines if t).rstrip(".")
         out[name] = Proposer(
-            name, tuple(resolved_type(program, c.type) for c in decl.columns),
+            name, resolved_columns(program, decl.columns),
             text[:1].lower() + text[1:])
     return out
 
@@ -128,10 +133,11 @@ reads the parameter, so the model is the concept case's
 @dataclass(frozen=True)
 class Derivation:
     """One parameter read off the input by one proposer whose model does
-    not miss Fit (procedure.md:134): how its model meets Fit, its
+    not miss Fit (procedure.md, under "Develop"): how its model meets Fit, its
     `@derive` line where one stands, the RIGID block whose chart the
     parameter is, whether a bare `@ignore: derive` line stands in its
-    place, whether the witness file holds the entry of its name, the swap
+    place, or an `@ignore: derive <Proposer>` line of its proposer,
+    whether the witness file holds the entry of its name, the swap
     witness the survey sought where it holds none, and the entry built
     from that witness."""
 
@@ -165,21 +171,15 @@ class DeriveSurvey:
     findings: tuple[Finding, ...]
 
 
-def _types(solver: Solver, p: Parameter) -> tuple[str, ...]:
-    return tuple(resolved_type(solver.program, c.type) for c in p.columns)
-
-
 def derivations(runs: Runs, known: dict[str, Proposer]
                 ) -> tuple[list[tuple[Parameter, Proposer]], list[Finding]]:
     """Each parameter with a stored value, with each proposer of its
     column types that gives a value on every pair's input, each input
-    read alone (solver-file.md:120; principles.md "Two
-    parameterizations"): Fit, not the stored value, decides which the
+    read alone (solver-file.md, under "Params"; principles.md, under "Stored
+    or derived"): Fit, not the stored value, decides which the
     survey reports. The findings are the probe runs that gave no
     result, one per pair."""
-    task = runs.solver.task
-    if task is None:
-        return [], []
+    task = runs.solver.given_task
     given: dict[str, int] = {}
     failed: list[Finding] = []
     pairs = list(examples(task))
@@ -198,7 +198,7 @@ def derivations(runs: Runs, known: dict[str, Proposer]
     for p in runs.solver.params.parameters:
         if not isinstance(p.stored, tuple) or not p.stored:
             continue
-        types = _types(runs.solver, p)
+        types = resolved_columns(runs.solver.program, p.columns)
         for name in sorted(known):
             if known[name].types == types and given.get(name) == len(pairs):
                 out.append((p, known[name]))
@@ -212,31 +212,13 @@ def _synthetic(parameter: Parameter, proposer: str) -> DeriveBranch:
     return DeriveBranch(parameter.name, proposer, None)
 
 
-def with_line(solver: Solver, branch: DeriveBranch) -> Solver:
-    """The solver with `branch`'s `@derive` line standing: the branch at
-    its parameter's point, after the point's own branches, and the stored
-    branch of the point first where the point is new."""
-    branches: list[Branch] = list(solver.branches)
-    at = [i for i, b in enumerate(branches)
-          if isinstance(b, (DeriveBranch, StoredAtDerive))
-          and b.parameter == branch.parameter]
-    if at:
-        branches.insert(at[-1] + 1, branch)
-    else:
-        branches += [StoredAtDerive(branch.parameter), branch]
-    return replace(solver, branches=tuple(branches))
-
-
 def _chart(solver: Solver, p: Parameter) -> str | None:
-    decl = next((r for r in solver.program.relations
-                 if r.id == p.declaration), None)
-    return None if decl is None else decl.chart_of
+    return declaration_of(solver.program, p).chart_of
 
 
 def _placed(solver: Solver, p: Parameter) -> bool:
-    decl = next((r for r in solver.program.relations
-                 if r.id == p.declaration), None)
-    return decl is not None and (own(decl.span) or decl.chart_of is not None)
+    decl = declaration_of(solver.program, p)
+    return own(decl.span) or decl.chart_of is not None
 
 
 def _one_color(p: Parameter) -> int | None:
@@ -246,6 +228,12 @@ def _one_color(p: Parameter) -> int | None:
             and isinstance(stored[0][0], int):
         return stored[0][0]
     return None
+
+
+def _unresulted(fit: NoResult, where: Where) -> list[Finding]:
+    """The runs of a Fit that rests on no result, one finding per pair
+    (`checker.judged.NoResult`)."""
+    return [no_result(f, RunKind.PAIR, fit.case, where) for _p, f in fit.pairs]
 
 
 @dataclass(frozen=True)
@@ -260,35 +248,37 @@ class _One:
 
 
 def derive_survey(runs: Runs) -> DeriveSurvey:
-    """The `derive` report (procedure.md:133-137): each derivation of a
+    """The `derive` report (procedure.md, under "Develop"): each derivation of a
     stored parameter whose model does not miss Fit, and the findings on
     the solver's `@derive` lines and on the derivations."""
     solver = runs.solver
     solver_cases = runs.cases
     if not isinstance(solver_cases, tuple):
-        return DeriveSurvey((), (no_result(solver_cases, RunKind.CASE, None,
-                                           AtFile(WholeFile.SOLVER)),))
+        return DeriveSurvey((), (enumeration_failed(solver_cases),))
     parsed = proposers_program(runs.engine)
     if not isinstance(parsed, Program):
         return DeriveSurvey((), (no_result(
-            CompileError(parsed.line, parsed.message), RunKind.PROBE, None,
+            probe_failure(parsed), RunKind.PROBE, None,
             AtFile(WholeFile.SOLVER)),))
     if solver.task is None:
-        return DeriveSurvey((), (Finding(Kind.NO_TASK, AtFile(
-            WholeFile.SOLVER), NoTaskPayload()),))
+        return DeriveSurvey((), (NO_TASK,))
     known = proposers(parsed)
-    names = {r.id: r.name for r in solver.program.relations}
     lined = {(b.parameter, b.proposer): b for b in solver.branches
              if isinstance(b, DeriveBranch)}
     findings: list[Finding] = []
     first: dict[tuple[str, str], int] = {}
     judged: dict[tuple[str, str], Fits | NoResult | Excluded] = {}
     misfits: set[tuple[str, str]] = set()
+    unwitnessed: set[tuple[str, str]] = set()
     unnamed: tuple[Case, ...] | RunFailure | None = None
+    ignored = {(t.name, p) for t, p in bare_ignored(solver,
+                                                    IgnoreForm.DERIVE)}
     for d in solver.annotations.derives:
-        param = None if d.above is None else names.get(d.above)
-        if param is None:
+        above = None if d.above is None \
+            else solver.program.relation(d.above)
+        if above is None:
             continue
+        param = above.name
         key = (param, d.proposer)
         branch = lined.get(key)
         if branch is None or d.proposer not in known:
@@ -299,7 +289,18 @@ def derive_survey(runs: Runs) -> DeriveSurvey:
                 DuplicatePayload(branch, first[key], d.line)))
             continue
         first[key] = d.line
+        if key in ignored:
+            # The fault `TWO_LINES_ON_DERIVATION` stands on the pair.
+            continue
         cases = taking(solver, solver_cases, branch)
+        every = runs.solver_cases
+        if not cases and isinstance(every, tuple) \
+                and taking(solver, every, branch):
+            unwitnessed.add(key)
+            findings.append(finding_of(Fault(
+                ProblemKind.UNDECIDED, InSolver(d.line),
+                Undecided(UndecidedForm.BRANCH_UNWITNESSED, None))))
+            continue
         if not cases:
             if unnamed is None:
                 unnamed = without_named_ignores(runs, solver)
@@ -307,9 +308,12 @@ def derive_survey(runs: Runs) -> DeriveSurvey:
                 findings.append(no_result(unnamed, RunKind.CASE, None,
                                           AtLine(d.line)))
                 continue
+            excluded = excluded_finding(runs, solver, branch, AtLine(d.line))
+            if excluded is not None:
+                findings.append(excluded)
             if taking(solver, unnamed, branch):
                 judged[key] = Excluded()
-            else:
+            elif excluded is None:
                 findings.append(Finding(Kind.DERIVE_UNREAD, AtLine(d.line),
                                         BranchPayload(branch)))
             continue
@@ -320,14 +324,10 @@ def derive_survey(runs: Runs) -> DeriveSurvey:
                                     DeriveFitPayload(branch, line_fit.pair)))
             continue
         if isinstance(line_fit, NoResult):
-            findings += [no_result(f, RunKind.PAIR, line_fit.case, AtLine(d.line))
-                         for _p, f in line_fit.pairs]
+            findings += _unresulted(line_fit, AtLine(d.line))
         if line_fit is not None:
             judged[key] = line_fit
     findings += idle_ignores(runs, IgnoreForm.DERIVE)
-    ignored = {t.name for i in solver.annotations.ignores
-               if i.form is IgnoreForm.DERIVE and i.name is None
-               for t in ignore_targets(solver.program, i)}
     concept: list[Fits | Misses | NoResult | None] = []
     concept_lock = threading.Lock()
     found, failed = derivations(runs, known)
@@ -340,10 +340,11 @@ def derive_survey(runs: Runs) -> DeriveSurvey:
         reached: list[bool] = []
         late: list[int] = []
         key = (param.name, prop.name)
-        if key in misfits:
+        if key in misfits or key in unwitnessed:
             return _One(out, findings, bool(reached), late)
         rigid = _chart(solver, param)
-        is_ignored = param.name in ignored and key not in judged
+        is_ignored = ((param.name, None) in ignored or key in ignored) \
+            and key not in judged
         branch = lined.get(key) if key in judged else None
         if branch is not None:
             line: DeriveLine | None = branch.line
@@ -362,7 +363,7 @@ def derive_survey(runs: Runs) -> DeriveSurvey:
                 return _One(out, findings, bool(reached), late)
             branch = _synthetic(param, prop.name)
             lined_solver = with_line(solver, branch)
-            got = cases_of(lined_solver, runs.engine, runs.limits)
+            got = runs.lined(lined_solver, branch)
             if not isinstance(got, tuple):
                 findings.append(no_result(got, RunKind.CASE, None,
                                           AtParameter(param.name)))
@@ -375,9 +376,8 @@ def derive_survey(runs: Runs) -> DeriveSurvey:
                 if judged_fit is None or isinstance(judged_fit, Misses):
                     return _One(out, findings, bool(reached), late)
                 if isinstance(judged_fit, NoResult):
-                    findings += [no_result(f, RunKind.PAIR, judged_fit.case,
-                                           AtParameter(param.name))
-                                 for _p, f in judged_fit.pairs]
+                    findings += _unresulted(judged_fit,
+                                            AtParameter(param.name))
                 fit = judged_fit
             else:
                 reached.append(True)
@@ -389,7 +389,7 @@ def derive_survey(runs: Runs) -> DeriveSurvey:
                     return _One(out, findings, bool(reached), late)
                 fit = Unread()
         ref = branch
-        name = branch_name(branch)
+        name = branch_text(branch)
         if is_ignored or not isinstance(fit, Fits):
             out.append(Derivation(
                 param.name, prop, fit, line, rigid, is_ignored, False, None,
@@ -397,21 +397,28 @@ def derive_survey(runs: Runs) -> DeriveSurvey:
             late.append(len(out) - 1)
             return _One(out, findings, bool(reached), late)
         cases = taking(solver, every, branch)
-        entry = file_entry(runs, name)
+        entry = runs.branch_entry(branch)
         witness: Witness | None = None
         built: Entry | None = None
         if entry is not None:
             findings += entry_findings(runs, lined_solver, branch, ref, name,
                                        cases, entry)
         else:
-            witness = swap_witness(runs, lined_solver, cases, branch,
-                                   _one_color(param))
-            if isinstance(witness, SwapWitness):
-                from checker.render.branches import separates
-                made = witness_entry(
-                    runs, lined_solver, name,
-                    separates(ref, f"train {witness.swap.index}",
-                              witness.swap), witness.swap.grid, every)
+            swap = swap_witness(runs, lined_solver, cases, branch,
+                                _one_color(param))
+            if isinstance(swap, SwapWitness):
+                witness = swap
+            else:
+                recorded = recorded_witness(runs, lined_solver, cases, branch)
+                witness = Unwitnessed(swap) if recorded is None else recorded
+            if isinstance(witness, (SwapWitness, RecordedWitness)):
+                if isinstance(witness, SwapWitness):
+                    made: Entry | RunFailure = swap_entry(
+                        runs, lined_solver, name, ref, witness.swap.index,
+                        witness.swap, witness.swap.grid, every)
+                else:
+                    made = recorded_entry(runs, lined_solver, name, ref,
+                                          witness.entry, every)
                 built = made if isinstance(made, Entry) else None
         if line is None:
             findings.append(Finding(Kind.MISSING_BRANCH_LINE,
@@ -428,7 +435,7 @@ def derive_survey(runs: Runs) -> DeriveSurvey:
     # itself, read it, as when they ran one after another.
     out: list[Derivation] = []
     read_concept = False
-    for got in parallel(lambda f: one(*f), found):
+    for got in at_once(lambda f: one(*f), found):
         read_concept = read_concept or got.reached
         shown = concept[0] if read_concept and concept \
             and not isinstance(concept[0], Misses) else None
@@ -443,5 +450,5 @@ def _concept_fit(runs: Runs, solver: Solver, solver_cases: tuple[Case, ...]
     """How the concept case's model meets Fit: the model of a derivation
     of a parameter no case of the solver reads. None where no case of the solver is the
     concept case."""
-    concept = [c for c in solver_cases if is_concept(solver, c)]
-    return model_fit(runs, solver, concept[:1])
+    concept = concept_case(solver, solver_cases)
+    return model_fit(runs, solver, [] if concept is None else [concept])

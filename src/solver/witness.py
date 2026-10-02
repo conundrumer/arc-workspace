@@ -1,5 +1,5 @@
-"""The witness file (solver-file.md:172-199), and the one place where a
-name in it resolves to the model it denotes."""
+"""The witness file (solver-file.md, under "Witness file"), and the one place
+where a name in it resolves to the model it denotes."""
 
 import fcntl
 import json
@@ -7,36 +7,47 @@ import os
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Annotated, Any, cast
 
 from arc.jsonio import format_file
-from engine import Grid, Value, checkout
+from arc.task import as_grid as task_grid
+from engine import Grid, RunFailure, Value, checkout
+from engine.memo import write_whole
+from engine.program import as_grid, grid_lists
+from engine.quotes import quotes
 from solver.problems import (
     Expected,
     InWitnessFile,
     ProblemKind,
     Fault,
+    NameFault,
     ShapeFault,
+    WitnessFileRole,
 )
 
 if TYPE_CHECKING:
     from solver.model import Case, Solver
 
 
+@quotes("principles.md", "Models and tasks",
+        "A model is defined at an assignment and input when its output is "
+        "nonempty and contains only total grids.")
 @dataclass(frozen=True)
 class NoOutput:
-    """`out` holds no cell at the case (principles.md:49: the output is
-    empty)."""
+    """`out` holds no cell at the case: the output is empty."""
 
 
 type Cell = tuple[int, int]
 """A cell of a grid, by row and column."""
 
 
+@quotes("principles.md", "Models and tasks",
+        "A model is defined at an assignment and input when its output is "
+        "nonempty and contains only total grids.")
 @dataclass(frozen=True)
 class MissingCells:
-    """`out`'s cells at the case leave cells of their frame without a
-    color: the grid is not total (principles.md:49)."""
+    """`out`'s cells at the case leave cells of their frame without a color:
+    the grid is not total."""
 
     cells: tuple[Cell, ...]
     """The cells without a color, in row order."""
@@ -73,8 +84,8 @@ class InconsistentBounds:
 @dataclass(frozen=True)
 class NoDerivedValue:
     """A `@derive` branch of the case derives its parameter, and the
-    proposer gives it no value on the input (principles.md "Two
-    parameterizations")."""
+    proposer gives it no value on the input (principles.md, under "Stored or
+    derived")."""
 
     parameter: str
     proposer: str
@@ -84,23 +95,28 @@ type UndefinedReason = (NoOutput | MissingCells | ConflictingCells
                         | NegativeEdges | InconsistentBounds | NoDerivedValue)
 
 
+@quotes("solver-file.md", "Witness file",
+        "\"grid\": Grid | Grid[] | null } // null for undefined")
 @dataclass(frozen=True)
 class Undefined:
-    """`null`: the cases are undefined on the input (solver-file.md:186).
-    Two values are equal whatever their reasons, as a witness file's
-    `null` states none; two outputs are the same output only where their
-    reasons are equal too (`same_output`)."""
+    """`null`: the cases are undefined on the input. Two values are equal
+    whatever their reasons, as a witness file's `null` states none; two
+    outputs are the same output only where their reasons are equal too
+    (`same_output`)."""
 
     reason: UndefinedReason | None = field(default=None, compare=False)
     """Why a run gives no grid; None for a witness file's `null`, which
     states no reason."""
 
 
+@quotes("solver-file.md", "Witness file",
+        "a list of the grids the cases give, one per tiebreak resolution, "
+        "when they give more than one")
 @dataclass(frozen=True)
 class Resolutions:
-    """A list of grids, one per tiebreak resolution (solver-file.md:186,
-    history 1119), and the resolution value of each where a run gave them;
-    a witness file holds the grids alone."""
+    """A list of grids, one per tiebreak resolution, and the resolution
+    value of each where a run gave them; a witness file holds the grids
+    alone."""
 
     grids: tuple[Grid, ...]
     values: tuple[Value, ...] = field(default=(), compare=False)
@@ -109,35 +125,43 @@ class Resolutions:
 type GroupGrid = Grid | Resolutions | Undefined
 
 
+@quotes("solver-file.md", "Witness file",
+        "the fewest names whose cases together are exactly the cases that "
+        "give this output")
 @dataclass(frozen=True)
 class Group:
-    """`{cases, grid}`, solver-file.md:185-186."""
+    """`{cases, grid}`."""
 
     cases: tuple[str, ...]
     grid: GroupGrid
 
 
+@quotes("solver-file.md", "Witness file",
+        "\"output\": Group[] // when the verdict is not other: one group per "
+        "distinct output")
 @dataclass(frozen=True)
 class Groups:
-    """An `output` of groups, for a verdict that is not `other`
-    (solver-file.md:181)."""
+    """An `output` of groups, for a verdict that is not `other`."""
 
     groups: tuple[Group, ...]
 
 
+@quotes("solver-file.md", "Witness file",
+        "when the verdict is other: the annotator's judged output")
 @dataclass(frozen=True)
 class RejectedOutput:
     """An `output` that is a bare grid, the judged output of an `other`
-    verdict (solver-file.md:182)."""
+    verdict."""
 
     grid: Grid
 
 
 type Output = Groups | RejectedOutput
 
-type AssignArg = int | str | tuple["AssignArg", ...]
-"""solver-file.md:188-191: a string for a lib constant, a list for a
-record."""
+type AssignArg = Annotated[int | str | tuple["AssignArg", ...],
+    quotes("solver-file.md", "Witness file",
+           "Use a string for a lib constant and a list for a record.")]
+"""A string for a lib constant, a list for a record."""
 
 
 @dataclass(frozen=True)
@@ -145,15 +169,26 @@ class AssignRows:
     rows: tuple[tuple[AssignArg, ...], ...]
 
 
-type AssignValue = AssignRows | Grid
+@dataclass(frozen=True)
+class AnchoredGrid:
+    """A stamp picture an entry gives with its anchor: the grid, and the row
+    and column of the anchor cell in it, counted from 0."""
+
+    grid: Grid
+    anchor: tuple[int, int]
 
 
+type AssignValue = AssignRows | Grid | AnchoredGrid
+
+
+@quotes("solver-file.md", "Witness file",
+        "the parameters the witness reassigns, which may include a `@store` "
+        "line's relation")
 @dataclass(frozen=True)
 class Entry:
-    """One witness of the file, solver-file.md:176-182. `assign` holds
-    each parameter or stored relation it reassigns (history 1131) in file
-    order. (A file entry; the `@witness` comment line is
-    `solver.annotations.WitnessLine`.)"""
+    """One witness of the file. `assign` holds each parameter or stored
+    relation it reassigns in file order. (A file entry; the `@witness`
+    comment line is `solver.annotations.WitnessLine`.)"""
 
     id: str
     separates: str
@@ -162,22 +197,43 @@ class Entry:
     output: Output
 
 
+@quotes("solver-file.md", "Witness file",
+        "`programs/witnesses/<task_id>.wit.json` holds the witnesses the "
+        "solver's cases are pinned to.")
 @dataclass(frozen=True)
 class WitnessFile:
-    """`programs/witnesses/<task_id>.wit.json`, solver-file.md:173."""
+    """`programs/witnesses/<task_id>.wit.json`."""
 
     task_id: str
     entries: tuple[Entry, ...]
 
+    def entry(self, id: str) -> Entry | None:
+        """The file's first entry of the id `id`; None where it has none."""
+        return next((e for e in self.entries if e.id == id), None)
+
 
 def path(task_id: str) -> Path:
-    """`programs/witnesses/<task_id>.wit.json` (solver-file.md:173)."""
+    """`programs/witnesses/<task_id>.wit.json` (solver-file.md, under "Witness
+    file")."""
     return checkout.witnesses() / f"{task_id}.wit.json"
 
 
-def read(text: str) -> tuple[WitnessFile | None, tuple[Fault, ...]]:
+type Path_ = tuple[str | int, ...]
+type Off = Callable[[str | None, Path_, Expected], None]
+
+
+def shape_fault(entry: str | None, file: WitnessFileRole, field: Path_,
+                expected: Expected) -> Fault:
+    """A witness file off its shape: at `entry` of `file` (None for the file
+    as a whole), the field `field` is not what `expected` says."""
+    return Fault(ProblemKind.WITNESS_FILE_SHAPE, InWitnessFile(entry, file),
+                 ShapeFault(field, expected))
+
+
+def read(text: str, file: WitnessFileRole
+         ) -> tuple[WitnessFile | None, tuple[Fault, ...]]:
     """The witness file `text` states, None where its shape gives none,
-    and what could not be read.
+    and what could not be read, placed in `file`.
 
     An entry off the shape is left out, with a problem for each part off
     it; an unknown field and a repeated id are problems beside the entry
@@ -187,9 +243,7 @@ def read(text: str) -> tuple[WitnessFile | None, tuple[Fault, ...]]:
     problems: list[Fault] = []
 
     def off(entry: str | None, field: Path_, expected: Expected) -> None:
-        problems.append(Fault(
-            ProblemKind.WITNESS_FILE_SHAPE, InWitnessFile(entry),
-            ShapeFault(field, expected)))
+        problems.append(shape_fault(entry, file, field, expected))
 
     try:
         data = json.loads(text)
@@ -224,40 +278,35 @@ _FILE_KEYS = ("id", "witnesses")
 _ENTRY_KEYS = ("id", "separates", "input", "assign", "output")
 _GROUP_KEYS = ("cases", "grid")
 
-type Path_ = tuple[str | int, ...]
-type Off = Callable[[str | None, Path_, Expected], None]
+
+
+_KINDS: dict[type, Expected] = {str: Expected.STRING, list: Expected.LIST}
+"""The kinds `_typed` reads a field as, with what a field of another kind
+was expected to be."""
 
 
 def _typed(value: dict[str, object], key: str, kind: type, entry: str | None,
            prefix: Path_, off: Off) -> object:
-    """`value[key]` where it is of `kind`; otherwise None, and the fault:
-    the field missing, or of another kind."""
+    """`value[key]` where it is of `kind`, one of `_KINDS`; otherwise None,
+    and the fault: the field missing, or of another kind."""
     if key not in value:
         off(entry, (*prefix, key), Expected.PRESENT)
         return None
     got = value[key]
     if not isinstance(got, kind):
-        off(entry, (*prefix, key),
-            Expected.STRING if kind is str else Expected.LIST)
+        off(entry, (*prefix, key), _KINDS[kind])
         return None
     return got
 
 
 def _grid(value: object) -> Grid | None:
-    """A rectangular, nonempty grid of colors 0 to 9, or None."""
-    if not isinstance(value, list) or not value:
+    """A rectangular, nonempty grid of colors 0 to 9 (`arc.task.as_grid`),
+    or None."""
+    try:
+        rows = task_grid(value)
+    except ValueError:
         return None
-    rows: list[tuple[int, ...]] = []
-    for row in cast(list[object], value):
-        if not isinstance(row, list) or not row:
-            return None
-        cells = cast(list[object], row)
-        if not all(type(c) is int and 0 <= c <= 9 for c in cells):
-            return None
-        rows.append(tuple(cast(list[int], cells)))
-    if len({len(r) for r in rows}) != 1:
-        return None
-    return tuple(rows)
+    return as_grid(rows)
 
 
 def _arg(value: object) -> AssignArg | None:
@@ -278,6 +327,13 @@ def _assign(value: object, entry: str | None, prefix: Path_, off: Off
         return None
     out: list[tuple[str, AssignValue]] = []
     for name, facts in cast(dict[str, object], value).items():
+        if isinstance(facts, dict):
+            anchored = _anchored(cast(dict[str, object], facts))
+            if anchored is None:
+                off(entry, (*prefix, "assign", name), Expected.ANCHORED_GRID)
+                return None
+            out.append((name, anchored))
+            continue
         rows: list[tuple[AssignArg, ...]] = []
         if isinstance(facts, list):
             for fact in cast(list[object], facts):
@@ -290,6 +346,54 @@ def _assign(value: object, entry: str | None, prefix: Path_, off: Off
             off(entry, (*prefix, "assign", name), Expected.FACTS_OR_GRID)
             return None
         out.append((name, AssignRows(tuple(rows))))
+    return tuple(out)
+
+
+def _anchored(value: dict[str, object]) -> AnchoredGrid | None:
+    """`{"grid": Grid, "anchor": [row, col]}` with the anchor a cell of the
+    grid, or None."""
+    if set(value) != {"grid", "anchor"}:
+        return None
+    grid = _grid(value["grid"])
+    at = value["anchor"]
+    if grid is None or not isinstance(at, list):
+        return None
+    cells = cast(list[object], at)
+    if len(cells) != 2 or any(type(c) is not int for c in cells):
+        return None
+    r, c = cast(list[int], cells)
+    if not (0 <= r < len(grid) and 0 <= c < len(grid[0])):
+        return None
+    return AnchoredGrid(grid, (r, c))
+
+
+def read_assign(value: object
+                ) -> tuple[tuple[tuple[str, AssignValue], ...] | None,
+                           tuple[Fault, ...]]:
+    """An `--assign` object, as `read` reads an entry's `assign` value, None
+    where it is off its shape, and what could not be read."""
+    problems: list[Fault] = []
+
+    def off(entry: str | None, field: Path_, expected: Expected) -> None:
+        problems.append(shape_fault(entry, WitnessFileRole.ASSIGN, field,
+                                    expected))
+
+    return _assign(value, None, (), off), tuple(problems)
+
+
+def assign_with_grids(assign: tuple[tuple[str, AssignValue], ...],
+                      grid_names: frozenset[str]
+                      ) -> tuple[tuple[str, AssignValue], ...]:
+    """`assign` with each value of a name in `grid_names`, a parameter
+    stored as a grid, read as a grid where it has a grid's shape
+    (solver-file.md, under "Witness file"), and as facts otherwise."""
+    out: list[tuple[str, AssignValue]] = []
+    for name, value in assign:
+        if name in grid_names and isinstance(value, AssignRows):
+            grid = _grid([list(r) for r in value.rows])
+            if grid is not None:
+                value = grid
+        out.append((name, value))
     return tuple(out)
 
 
@@ -382,12 +486,19 @@ def _entry(raw: object, index: int, off: Off) -> Entry | None:
     return Entry(entry, separates, grid, assign, output)
 
 
-def same_output(a: GroupGrid, b: GroupGrid) -> bool:
+def output_key(o: object) -> object:
+    """A value two outputs share exactly where they are the same output
+    (`same_output`): an undefined output's reason beside `Undefined`, any
+    other output itself. `o` is what a witness file's group holds, or what
+    a run gives."""
+    return (Undefined, o.reason) if isinstance(o, Undefined) else o
+
+
+def same_output(a: object, b: object) -> bool:
     """Whether two cases give the same output: equal grids, or both
-    undefined for the same reason at the same cells."""
-    if isinstance(a, Undefined) and isinstance(b, Undefined):
-        return a.reason == b.reason
-    return a == b
+    undefined for the same reason at the same cells. `a` and `b` are what
+    a witness file's group holds, or what a run gives."""
+    return output_key(a) == output_key(b)
 
 
 def grouped(solver: "Solver", outcomes: Sequence[tuple["Case", GroupGrid]]
@@ -396,8 +507,8 @@ def grouped(solver: "Solver", outcomes: Sequence[tuple["Case", GroupGrid]]
     input: one group per distinct output (`same_output`), the group that
     holds the concept case first and the rest in the order the cases come
     in, naming its cases by the fewest names that denote exactly them
-    (`solver.names.cover`; solver-file.md:185)."""
-    from solver.model import is_concept
+    (`solver.names.cover`; solver-file.md, under "Witness file")."""
+    from solver.model import is_concept_case
     from solver.names import cover
     among = [c for c, _g in outcomes]
     out: list[tuple[list["Case"], GroupGrid]] = []
@@ -409,50 +520,155 @@ def grouped(solver: "Solver", outcomes: Sequence[tuple["Case", GroupGrid]]
         else:
             out.append(([c], got))
     out.sort(key=lambda group: not any(
-        not c.branches and is_concept(solver, c.base) for c in group[0]))
+        is_concept_case(solver, c) for c in group[0]))
     return Groups(tuple(Group(cover(solver, cases, among), g)
                         for cases, g in out))
 
 
-def with_grids(file: WitnessFile, grid_names: frozenset[str]
-               ) -> tuple[WitnessFile, tuple[Fault, ...]]:
+type Outcomes = tuple[tuple["Case", GroupGrid], ...]
+"""What each case of the solver gives on an entry's input at its
+`assign`, in the order the cases come in."""
+
+
+def members(outcomes: Outcomes, group: Group) -> tuple["Case", ...]:
+    """The cases a group of `grouped(solver, outcomes)` holds: those that
+    give its grid."""
+    return tuple(c for c, g in outcomes if same_output(g, group.grid))
+
+
+@dataclass(frozen=True)
+class JudgedKept:
+    """A judged output, which a run leaves as it is."""
+
+
+@dataclass(frozen=True)
+class GroupsKept:
+    """The groups a run gives list the cases the file's groups list, each
+    by the name the file gives it, with the same grids."""
+
+
+@quotes("solver-file.md", "Witness file",
+        "the fewest names whose cases together are exactly the cases that "
+        "give this output")
+@dataclass(frozen=True)
+class NamesRewritten:
+    """The file's groups list, by other names, the cases the run's groups
+    list, with the same grids: the names of each file group denote together
+    (`solver.names.denoted_cases`) the cases of the run's group, and the
+    run's names replace them."""
+
+
+@dataclass(frozen=True)
+class PartitionChanged:
+    """The groups a run gives split the solver's cases otherwise than the
+    file's groups do: `newly` cases of the solver the file lists in no
+    group, and `gone` names of the file that denote no case of the
+    solver."""
+
+    newly: int
+    gone: int
+
+
+@dataclass(frozen=True)
+class GridChanged:
+    """The groups a run gives split the solver's cases as the file's
+    groups do, and a group's grid differs from the file's: `groups`
+    holds the names of each such group, as the run names its cases."""
+
+    groups: tuple[tuple[str, ...], ...]
+
+
+type RecordChange = (JudgedKept | GroupsKept | NamesRewritten
+                     | PartitionChanged | GridChanged)
+"""What running a witness of the file again changes in its entry."""
+
+
+def _listing[T](groups: Sequence[tuple[frozenset[T], GroupGrid]]
+                ) -> frozenset[tuple[frozenset[T], GroupGrid]]:
+    """Groups as what each lists and its grid, in no order."""
+    return frozenset(groups)
+
+
+def rerecorded(solver: "Solver", entry: Entry,
+               run: Callable[[], Outcomes | RunFailure | Fault]
+               ) -> tuple[Entry, RecordChange] | RunFailure | Fault:
+    """The entry with its groups built again (`grouped`) from what `run`
+    gives, the solver's cases on the entry's input at its `assign`, and
+    what that changes in it; a judged output stays, and `run` is not
+    called for it. The failure where `run` gives no outcomes."""
+    from solver.names import denoted_cases
+    if isinstance(entry.output, RejectedOutput):
+        return entry, JudgedKept()
+    outcomes = run()
+    if not isinstance(outcomes, tuple):
+        return outcomes
+    groups = grouped(solver, outcomes)
+    got = replace(entry, output=groups)
+    if _listing([(frozenset(g.cases), g.grid) for g in groups.groups]) \
+            == _listing([(frozenset(g.cases), g.grid)
+                         for g in entry.output.groups]):
+        return got, GroupsKept()
+    among = [c for c, _g in outcomes]
+    old: list[tuple[frozenset["Case"], GroupGrid]] = []
+    unheld = 0
+    for g in entry.output.groups:
+        listed: set["Case"] = set()
+        for n in g.cases:
+            denoted = denoted_cases(solver, n, among)
+            if isinstance(denoted, NameFault) or not denoted:
+                unheld += 1
+            else:
+                listed |= denoted
+        old.append((frozenset(listed), g.grid))
+    new = [(frozenset(members(outcomes, g)), g) for g in groups.groups]
+    if unheld or {cs for cs, _g in old} != {cs for cs, _g in new}:
+        was = {c for cs, _g in old for c in cs}
+        return got, PartitionChanged(len(set(among) - was), unheld)
+    held = _listing(old)
+    moved = tuple(g.cases for cs, g in new if (cs, g.grid) not in held)
+    if not moved:
+        return got, NamesRewritten()
+    return got, GridChanged(moved)
+
+
+def with_grids(file: WitnessFile, grid_names: frozenset[str]) -> WitnessFile:
     """`file` with each `assign` value of a name in `grid_names`, a
     parameter stored as a grid, read as a grid where it has a grid's shape
-    (solver-file.md:180, :192), and as facts otherwise; a value that is
-    neither is the problem `read` gives."""
-    problems: list[Fault] = []
-    entries: list[Entry] = []
-    for e in file.entries:
-        assign: list[tuple[str, AssignValue]] = []
-        for name, value in e.assign:
-            if name in grid_names and isinstance(value, AssignRows):
-                grid = _grid([list(r) for r in value.rows])
-                if grid is not None:
-                    value = grid
-            assign.append((name, value))
-        entries.append(replace(e, assign=tuple(assign)))
-    return replace(file, entries=tuple(entries)), tuple(problems)
-
-
-def _json_grid(grid: Grid) -> list[list[int]]:
-    return [list(r) for r in grid]
+    (solver-file.md, under "Witness file"), and as facts otherwise
+    (`assign_with_grids`)."""
+    entries = tuple(replace(e, assign=assign_with_grids(e.assign, grid_names))
+                    for e in file.entries)
+    return replace(file, entries=entries)
 
 
 def _json_arg(arg: AssignArg) -> object:
     return [_json_arg(a) for a in arg] if isinstance(arg, tuple) else arg
 
 
+def assign_json(assign: Sequence[tuple[str, AssignValue]]
+                ) -> dict[str, Any]:
+    """An `assign` value in the witness file's JSON form."""
+    return {name: _assign_value_json(v) for name, v in assign}
+
+
+def _assign_value_json(value: AssignValue) -> object:
+    match value:
+        case AssignRows(rows=rows):
+            return [[_json_arg(a) for a in row] for row in rows]
+        case AnchoredGrid(grid=grid, anchor=(r, c)):
+            return {"grid": grid_lists(grid), "anchor": [r, c]}
+        case _:
+            return grid_lists(value)
+
+
 def _json_entry(e: Entry) -> dict[str, Any]:
     out: dict[str, Any] = {"id": e.id, "separates": e.separates,
-                           "input": _json_grid(e.input)}
+                           "input": grid_lists(e.input)}
     if e.assign:
-        out["assign"] = {
-            name: (_json_grid(v) if not isinstance(v, AssignRows)
-                   else [[_json_arg(a) for a in row] for row in v.rows])
-            for name, v in e.assign}
+        out["assign"] = assign_json(e.assign)
     match e.output:
         case RejectedOutput(grid=grid):
-            out["output"] = _json_grid(grid)
+            out["output"] = grid_lists(grid)
         case Groups(groups=groups):
             out["output"] = [{"cases": list(g.cases),
                               "grid": _json_group_grid(g.grid)}
@@ -465,9 +681,9 @@ def _json_group_grid(grid: GroupGrid) -> object:
         case Undefined():
             return None
         case Resolutions(grids=grids):
-            return [_json_grid(g) for g in grids]
+            return [grid_lists(g) for g in grids]
         case _:
-            return _json_grid(grid)
+            return grid_lists(grid)
 
 
 def text(file: WitnessFile) -> str:
@@ -477,21 +693,25 @@ def text(file: WitnessFile) -> str:
                         "witnesses": [_json_entry(e) for e in file.entries]})
 
 
-def _merged_text(at: Path, task_id: str, entries: Sequence[Entry]
+def _merged_text(at: Path, task_id: str, entries: Sequence[Entry],
+                 removed: Sequence[str] = ()
                  ) -> tuple[str | None, str] | list[Fault]:
     """The file's text at `at` (None where no file is there) and the text
-    with `entries` put into it (`put`); the file's problems where it is
-    off its shape, an entry with no id among them (`read`), so every
-    entry the merge meets has one."""
+    with `entries` put into it (`put`) and the entries of the ids
+    `removed` taken out (`remove`); the file's problems where it is off
+    its shape, an entry with no id among them (`read`), so every entry
+    the merge meets has one."""
     held_text: str | None = None
     data: dict[str, Any] = {"id": task_id, "witnesses": []}
     if at.exists():
         held_text = at.read_text()
-        on_disk, problems = read(held_text)
+        on_disk, problems = read(held_text, WitnessFileRole.TASK)
         if on_disk is None or problems:
             return list(problems)
         data = json.loads(held_text)
-    kept: list[dict[str, Any]] = data["witnesses"]
+    kept: list[dict[str, Any]] = [e for e in data["witnesses"]
+                                  if e["id"] not in removed]
+    data["witnesses"] = kept
     for entry in entries:
         ids = [e["id"] for e in kept]
         if entry.id in ids:
@@ -508,29 +728,16 @@ def put_changed(at: Path, task_id: str, entries: Sequence[Entry]
     shape. The text differs where an entry's content, or the order of
     its groups or of their cases, is not the writer's."""
     at.parent.mkdir(parents=True, exist_ok=True)
-    lock = os.open(at.parent, os.O_RDONLY)
-    try:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        got = _merged_text(at, task_id, entries)
-        if isinstance(got, list):
-            return tuple(got)
-        held_text, text = got
-        if text == held_text:
-            return False
-        _replace(at, text)
-        return True
-    finally:
-        os.close(lock)
+    return _write_merged(at, task_id, entries, (), True)
 
 
-def _replace(at: Path, text: str) -> None:
-    """Write `text` to a file beside `at` that then replaces it."""
-    tmp = at.with_name(f".{at.name}.{os.getpid()}.tmp")
-    try:
-        tmp.write_text(text)
-        os.replace(tmp, at)
-    finally:
-        tmp.unlink(missing_ok=True)
+def remove(at: Path, task_id: str, ids: Sequence[str]) -> tuple[Fault, ...]:
+    """Take the entries of `ids` out of the witness file at `at` and
+    write it, as `put` writes, the other entries keeping their text. A
+    file that is off the shape is not written, and its problems are
+    returned."""
+    got = _write_merged(at, task_id, (), ids, False)
+    return () if isinstance(got, bool) else got
 
 
 def put(at: Path, task_id: str, entries: Sequence[Entry]
@@ -545,13 +752,28 @@ def put(at: Path, task_id: str, entries: Sequence[Entry]
     layout gives it. A file there that is off the shape is not written,
     and its problems are returned."""
     at.parent.mkdir(parents=True, exist_ok=True)
+    got = _write_merged(at, task_id, entries, (), False)
+    return () if isinstance(got, bool) else got
+
+
+def _write_merged(at: Path, task_id: str, entries: Sequence[Entry],
+                  removed: Sequence[str], only_changed: bool
+                  ) -> bool | tuple[Fault, ...]:
+    """The file at `at` merged with `entries` and without the entries of
+    the ids `removed` (`_merged_text`), read and written under a lock on
+    its directory, and written whole (`write_whole`): whether it was
+    written, which it is not where `only_changed` holds and the text is
+    the file's; the file's problems where it is off its shape."""
     lock = os.open(at.parent, os.O_RDONLY)
     try:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        got = _merged_text(at, task_id, entries)
+        got = _merged_text(at, task_id, entries, removed)
         if isinstance(got, list):
             return tuple(got)
-        _replace(at, got[1])
-        return ()
+        held_text, text = got
+        if only_changed and text == held_text:
+            return False
+        write_whole(at, text.encode())
+        return True
     finally:
         os.close(lock)

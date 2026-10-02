@@ -16,15 +16,19 @@ all. Read those documents for what each agent gets.
 from __future__ import annotations
 
 import json
-import os
 import re
-import threading
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
+from enum import Enum, StrEnum
 from functools import lru_cache
 from pathlib import Path
 
 import controlled_markdown as nm
 from controlled_markdown import mctx
+from engine import checkout
+from engine.memo import write_whole
+from souffle.layout import written_lines
 from handbook import paths
 from handbook.items import (
     Comp,
@@ -40,13 +44,12 @@ from handbook.items import (
 )
 from handbook.items import parse as parse_file
 from handbook.paths import REPO_ROOT
-from solver.vocabulary import LIB_FILE
 
 # The handbook's own files. Nothing here reads them as a directory: the
 # composition document lists each one, and the registry reads it from there.
-DOCS_DIR = REPO_ROOT / "docs" / "handbook"
-ROLE_DIR = REPO_ROOT / "prompts" / "roles"
-LIB_SRC = REPO_ROOT / "programs" / LIB_FILE
+DOCS_DIR = checkout.handbook()
+ROLE_DIR = checkout.prompts() / "roles"
+LIB_SRC = paths.lib_src()
 
 # The agent documents, one per handbook agent: front matter holding the
 # agent's definition, a `lib` attribute saying how the lib renders, and an
@@ -55,24 +58,51 @@ LIB_SRC = REPO_ROOT / "programs" / LIB_FILE
 # under `.claude/agents/` are generated at each entry point and not tracked. A
 # role's document states its agent in an `agent` attribute. A role with no such
 # attribute runs as the handbook agent.
-AGENT_DIR = REPO_ROOT / "prompts" / "agents"
+AGENT_DIR = checkout.prompts() / "agents"
 # The session's own entry document: the handbook, and the passes it runs.
-SESSION_DOC = REPO_ROOT / "prompts" / "session.md"
+SESSION_DOC = checkout.prompts() / "session.md"
 # The codex session's entry document, composed the same way.
-CODEX_DOC = REPO_ROOT / "prompts" / "codex.md"
-AGENT_PATH = REPO_ROOT / ".claude" / "agents" / "handbook.md"
-AGENT_NAMES = ("handbook", "handbook-expanded")
+CODEX_DOC = checkout.prompts() / "codex.md"
+AGENT_OUT = checkout.agents()
+"""Where the agent definitions are written."""
+
+
+def agent_file(name: str) -> Path:
+    """The definition file of the agent `name`."""
+    return AGENT_OUT / f"{name}.md"
+
+
+def repo_label(path: Path) -> str:
+    """A path of the checkout as the context prints it: from the
+    checkout's root (`engine.checkout.shown`)."""
+    return str(checkout.shown(path))
+
+
+def agent_doc(name: str, agents: Path = AGENT_DIR) -> Path:
+    """The agent document of the agent `name` under `agents`."""
+    return agents / f"{name}.md"
+
+
+def role_file(name: str, roles: Path = ROLE_DIR) -> Path:
+    """The role document of the role `name` under `roles`."""
+    return roles / f"{name}.md"
+
+
+HANDBOOK_AGENT = "handbook"
+"""The agent a role with no `agent` attribute runs on."""
+AGENT_PATH = agent_file(HANDBOOK_AGENT)
+AGENT_NAMES = (HANDBOOK_AGENT, "handbook-expanded")
 # The steps the analyze agent reads after it writes the concept: a document
 # under `AGENT_DIR` with no front matter, rendered to its own file.
 ANALYZE_NEXT = "analyze-next"
-ANALYZE_NEXT_PATH = REPO_ROOT / ".claude" / "analyze-next.md"
+ANALYZE_NEXT_PATH = checkout.claude() / "analyze-next.md"
 
 
 def parse(text: str, base_dir: Path | None = None) -> Program:
     """One lib file's items and comments (`handbook.items.parse`), each
     `#include` in it resolved against `base_dir`, the programs directory
     where none is given."""
-    return parse_file(text, base_dir or paths.programs_dir())
+    return parse_file(text, base_dir or checkout.programs())
 
 
 APPENDIX = mctx("the system-prompt appendix")
@@ -147,11 +177,11 @@ def _is_input(decl: Decl, lines: list[str]) -> bool:
                for ln in range(decl.line, decl.end_line + 1))
 
 
-def _name(it: Item) -> str:
-    return it.inst if isinstance(it, Init) else getattr(it, "name", "")
+def _name(it: Documented) -> str:
+    return it.inst if isinstance(it, Init) else it.name
 
 
-def _hidden(it: Item) -> bool:
+def _hidden(it: Documented) -> bool:
     """A `_`-prefixed item is private to the lib."""
     return _name(it).startswith("_")
 
@@ -184,10 +214,10 @@ def _comp_block(comp: Comp, lines: list[str], docs: dict[int, tuple[int, int]]) 
             out.extend(_comp_block(it, lines, docs))
             continue
         end = it.end_line if isinstance(it, Decl) else it.line
-        out.extend(lines[ln - 1].rstrip() for ln in range(it.line, end + 1))
+        out += written_lines(lines, it.line, end)
         if isinstance(it, Decl) and is_input:
             out.extend(lines[ln - 1].rstrip() for ln in sorted(set(facts.get(it.name, []))))
-    out.append(lines[comp.end_line - 1].rstrip())
+    out += written_lines(lines, comp.end_line, comp.end_line)
     return out
 
 
@@ -200,7 +230,7 @@ def _runs(items: list[Item], docs: dict[int, tuple[int, int]]) -> list[list[Docu
     i = 0
     while i < len(items):
         it = items[i]
-        if _hidden(it) or not isinstance(it, DOCUMENTED):
+        if not isinstance(it, DOCUMENTED) or _hidden(it):
             i += 1
             continue
         run: list[Documented] = [it]
@@ -288,17 +318,7 @@ def lib_doc(text: str) -> str:
         block = docs.get(it.line - 1)
         if block is not None:
             emit_prose(_prose(lines[block[0] - 1:block[1]], ITEM_DOC))
-        if len(run) > 1 and isinstance(it, Define):
-            emit_code([" ".join(_name(d) for d in run)])
-        elif (len(run) > 1 and isinstance(it, TypeDecl)
-              and isinstance(it.form, SubtypeForm)):
-            emit_code([f".type {', '.join(_name(t) for t in run)} "
-                       f"<: {it.form.base}"])
-        elif isinstance(it, Comp):
-            emit_code(_comp_block(it, lines, docs))
-        else:
-            end = it.end_line if isinstance(it, Decl) else it.line
-            emit_code([lines[ln - 1].rstrip() for ln in range(it.line, end + 1)])
+        emit_code(_run_code(run, lines, docs))
     # A block over no item renders where it stands.
     for end, (start, _) in sorted(docs.items()):
         if end not in attached:
@@ -307,21 +327,62 @@ def lib_doc(text: str) -> str:
     return "\n\n".join(p for p in parts if p) + "\n"
 
 
+def _run_code(run: list[Documented], lines: list[str],
+              docs: dict[int, tuple[int, int]]) -> list[str]:
+    """The code lines a run of lib items renders as: consecutive defines
+    folded to one line of names, consecutive subtypes of one base to one
+    `.type … <:` line, a component as its block, any other item as its
+    source lines."""
+    it = run[0]
+    if len(run) > 1 and isinstance(it, Define):
+        return [" ".join(_name(d) for d in run)]
+    if len(run) > 1 and isinstance(it, TypeDecl) \
+            and isinstance(it.form, SubtypeForm):
+        return [f".type {', '.join(_name(t) for t in run)} <: {it.form.base}"]
+    if isinstance(it, Comp):
+        return _comp_block(it, lines, docs)
+    end = it.end_line if isinstance(it, Decl) else it.line
+    return written_lines(lines, it.line, end)
+
+
 def interface_path(src: Path) -> Path:
     """The interface file beside a lib source: the `.md` of the same stem."""
     return src.with_suffix(".md")
 
 
-def lib_part(lib: Path = LIB_SRC, kind: str = "interface") -> str:
+class LibForm(Enum):
+    """How the lib renders after an entry document, as its `lib`
+    attribute states."""
+
+    INTERFACE = "interface"
+    INDEX = "index"
+    NONE = "none"
+
+
+def lib_form(document: nm.Node) -> LibForm:
+    """The form an entry document's `lib` attribute states: `interface`
+    where it states none, and an error where it states no form."""
+    value = document.attr("lib")
+    if value is None:
+        return LibForm.INTERFACE
+    try:
+        return LibForm(value.strip())
+    except ValueError:
+        raise SystemExit(
+            f"`lib: {value.strip()}` in {document.source} is no lib form; "
+            "the forms are " + ", ".join(f.value for f in LibForm)) from None
+
+
+def lib_part(lib: Path = LIB_SRC, kind: LibForm = LibForm.INTERFACE) -> str:
     """The lib's files, each under a heading stating its file: as each file's
     interface, or as an index pointing at the interface file beside each
     source. `none` leaves the lib out."""
-    if kind == "none":
+    if kind is LibForm.NONE:
         return ""
     parts = []
     for path, text in lib_sources(lib):
         rel = Path("programs") / path.relative_to(lib.parent)
-        if kind == "index":
+        if kind is LibForm.INDEX:
             parts.append(f"\n---\n\n## {rel} — index\n\n{lib_entries(text)}")
         else:
             parts.append(f"\n---\n\n## {rel}\n\n{lib_doc(text)}")
@@ -330,7 +391,7 @@ def lib_part(lib: Path = LIB_SRC, kind: str = "interface") -> str:
 
 def agent_document(name: str, agents: Path = AGENT_DIR) -> nm.Node:
     """One agent document, parsed."""
-    return nm.Registry(REPO_ROOT).load(agents / f"{name}.md")
+    return nm.Registry(REPO_ROOT).load(agent_doc(name, agents))
 
 
 def agent_meta(name: str, agents: Path = AGENT_DIR) -> dict[str, str]:
@@ -347,10 +408,7 @@ def render(name: str = "handbook-expanded", lib: Path = LIB_SRC,
            agents: Path = AGENT_DIR) -> str:
     """The handbook an agent document composes: its body, with the doc each
     include names put in place, then the lib as its `lib` attribute says."""
-    registry = nm.Registry(REPO_ROOT)
-    document = registry.load(agents / f"{name}.md")
-    return (nm.render(document, registry)
-            + lib_part(lib, (document.attr("lib") or "interface").strip()))
+    return entry_text(agent_doc(name, agents), lib)
 
 
 def entry_text(doc: Path, lib: Path = LIB_SRC) -> str:
@@ -359,13 +417,18 @@ def entry_text(doc: Path, lib: Path = LIB_SRC) -> str:
     registry = nm.Registry(REPO_ROOT)
     document = registry.load(doc)
     return (nm.render(document, registry)
-            + lib_part(lib, (document.attr("lib") or "interface").strip()))
+            + lib_part(lib, lib_form(document)))
 
 
 def session_text(doc: Path = SESSION_DOC, lib: Path = LIB_SRC) -> str:
     """What a session at a terminal reads: the handbook with its passes, then
     the lib."""
     return entry_text(doc, lib)
+
+
+def _handbook_docs(docs: Path = DOCS_DIR) -> list[Path]:
+    """The handbook's documents under `docs`, in name order."""
+    return sorted(docs.glob("*.md"))
 
 
 def _doc_path(name: str, docs: Path = DOCS_DIR) -> Path:
@@ -376,12 +439,11 @@ def _doc_path(name: str, docs: Path = DOCS_DIR) -> Path:
         name = name[:-3]
     name = name.rsplit("/", 1)[-1]
     want = nm.slug(name)
-    for path in sorted(docs.glob("*.md")):
+    for path in _handbook_docs(docs):
         if path.stem == want or path.stem == name:
             return path
-        title = nm.parse(path.read_text(), path.name).children
-        heads = [c for c in title if c.kind == nm.HEADING]
-        if heads and nm.slug(heads[0].text) == want:
+        title = _title(nm.parse(path.read_text(), path.name))
+        if title is not None and nm.slug(title) == want:
             return path
     raise SystemExit(f"no handbook doc named `{name}`")
 
@@ -400,31 +462,22 @@ def lib_component(src: Path, name: str) -> str:
         it = run[0]
         block = docs.get(it.line - 1)
         prose = _prose(lines[block[0] - 1:block[1]], ITEM_DOC) if block else ""
-        if len(run) > 1 and isinstance(it, Define):
-            body = [" ".join(_name(d) for d in run)]
-        elif (len(run) > 1 and isinstance(it, TypeDecl)
-              and isinstance(it.form, SubtypeForm)):
-            body = [f".type {', '.join(_name(t) for t in run)} "
-                    f"<: {it.form.base}"]
-        elif isinstance(it, Comp):
-            body = _comp_block(it, lines, docs)
-        else:
-            end = it.end_line if isinstance(it, Decl) else it.line
-            body = [lines[ln - 1].rstrip() for ln in range(it.line, end + 1)]
-        code = "```\n" + "\n".join(body) + "\n```"
+        code = "```\n" + "\n".join(_run_code(run, lines, docs)) + "\n```"
         return "\n\n".join(p for p in (f"# {name}", prose, code) if p) + "\n"
-    raise SystemExit(f"no component `{name}` in `{src.relative_to(REPO_ROOT)}`")
+    raise SystemExit(f"no component `{name}` in `{repo_label(src)}`")
 
 
 def section_text(where: str, docs: Path = DOCS_DIR) -> str:
-    """One section of a handbook doc in full, named `<doc>#<section>`, or one
-    lib component's interface, named `programs/lib/<module>.dl#<Component>`.
+    """One section of a handbook doc in full, named `<doc>#<section>`, or
+    by its heading alone where one section of the handbook's documents has
+    that heading, or one lib component's interface, named
+    `programs/lib/<module>.dl#<Component>`.
     The doc is the link form a document carries, the title a render shows, or
     its file stem, and the section is the title a render shows, slugified, so
     a reader runs the command off the lines in front of them. A render leaves
     no line out, so the section arrives with the glosses and the drafts an
     edition excludes."""
-    name, _, ident = where.partition("#")
+    name, sep, ident = where.partition("#")
     name, ident = name.strip(), ident.strip()
     if name.endswith(".dl"):
         src = REPO_ROOT / name
@@ -432,14 +485,53 @@ def section_text(where: str, docs: Path = DOCS_DIR) -> str:
             raise SystemExit(f"no lib source named `{name}`")
         return lib_component(src, ident)
     registry = nm.Registry(REPO_ROOT)
-    document = registry.load(_doc_path(name, docs))
-    node = registry.ids[document.source].get(nm.slug(ident))
-    if node is None:
-        raise SystemExit(
-            f"no section `{ident}` in {registry.rel(document)}")
+    if not sep and not name.endswith(".md"):
+        document, node = _bare_section(registry, name, docs)
+    else:
+        document = registry.load(_doc_path(name, docs))
+        ids = registry.ids[document.source]
+        node = ids.get(nm.slug(ident)) if sep else next(iter(ids.values()), None)
+        if node is None:
+            raise SystemExit(
+                f"no section `{ident}` in {registry.rel(document)}")
     body = nm.Node(nm.DOCUMENT, source=document.source)
     body.children = [node]
     return nm.render(body, registry)
+
+
+def _bare_section(registry: nm.Registry, heading: str, docs: Path
+                  ) -> tuple[nm.Node, nm.Node]:
+    """The one section of the handbook's documents whose heading is
+    `heading`, a document's title among them, with its document; where
+    none or more than one is, the command exits with the line that says
+    so, naming each candidate in the `<doc>#<section>` form."""
+    want = nm.slug(heading)
+    found: list[tuple[nm.Node, nm.Node]] = []
+    for path in _handbook_docs(docs):
+        document = registry.load(path)
+        node = registry.ids[document.source].get(want)
+        if node is not None and node.kind == nm.HEADING:
+            found.append((document, node))
+    if len(found) == 1:
+        return found[0]
+    if not found:
+        raise SystemExit(f"no section `{heading}` in the handbook's documents")
+    named = ", ".join(
+        f"`{_title(document)}#{node.text}`" for document, node in found)
+    raise SystemExit(f"`{heading}` is a section of more than one handbook "
+                     f"document; name one: {named}")
+
+
+def _first_heading(document: nm.Node) -> nm.Node | None:
+    """A document's first heading; None where it has none."""
+    return next((c for c in document.children if c.kind == nm.HEADING), None)
+
+
+def _title(document: nm.Node) -> str | None:
+    """A document's title, its first heading's text (`_first_heading`);
+    None where it has no heading."""
+    head = _first_heading(document)
+    return None if head is None else head.text
 
 
 def workflow_bundle(name: str, roles: Path = ROLE_DIR) -> dict:
@@ -447,10 +539,7 @@ def workflow_bundle(name: str, roles: Path = ROLE_DIR) -> dict:
     a run picks the ones it reaches. The script holds its own briefs and its
     own return schemas, each an `mctx` literal the check reads where it
     stands. A name no script under `WORKFLOW_DIR` carries is an error."""
-    names = workflow_names()
-    if name not in names:
-        raise SystemExit(f"no workflow named `{name}`; the workflows are "
-                         + ", ".join(names))
+    workflow_file(name)
     return {
         "roles": {r: role_text(r, roles) for r in _workflow_roles(name, roles)},
     }
@@ -458,14 +547,37 @@ def workflow_bundle(name: str, roles: Path = ROLE_DIR) -> dict:
 
 def _workflow_roles(name: str, roles: Path) -> list[str]:
     """Every role under `roles`, since a run picks the ones it reaches."""
+    return role_stems(roles)
+
+
+def role_stems(roles: Path = ROLE_DIR) -> list[str]:
+    """The stem of each role file under `roles`, in name order."""
     return sorted(p.stem for p in roles.glob("*.md"))
+
+
+BRIEF_MESSAGE = "brief"
+"""The one value of an agent document's `message` attribute."""
+
+
+def _takes_brief(document: nm.Node) -> bool:
+    """Whether an agent document's `message` attribute is `brief`: it takes
+    the brief alone as its message. A document with no such attribute
+    takes a role as its message, and any other value is an error."""
+    value = document.attr("message")
+    if value is None:
+        return False
+    if value.strip() != BRIEF_MESSAGE:
+        raise SystemExit(f"`message: {value.strip()}` in {document.source} "
+                         f"is no message form; the one form is "
+                         f"`{BRIEF_MESSAGE}`")
+    return True
 
 
 def role_body(name: str, roles: Path = ROLE_DIR) -> str:
     """One role document under `roles`, as the agent running it reads it: the
     text the agent's prompt opens with, and nothing above."""
     registry = nm.Registry(REPO_ROOT)
-    return nm.role(registry.load(roles / f"{name}.md"), registry)[1]
+    return nm.role(registry.load(role_file(name, roles)), registry)[1]
 
 
 def role_text(name: str, roles: Path = ROLE_DIR) -> str:
@@ -473,7 +585,7 @@ def role_text(name: str, roles: Path = ROLE_DIR) -> str:
     reads it: `Agent: <name>` on the first line, then the text the agent's
     prompt opens with."""
     registry = nm.Registry(REPO_ROOT)
-    agent, text = nm.role(registry.load(roles / f"{name}.md"), registry)
+    agent, text = nm.role(registry.load(role_file(name, roles)), registry)
     return f"Agent: {agent}\n\n{text}"
 
 
@@ -489,24 +601,19 @@ def agent_definition(document: nm.Node, handbook: str) -> str:
     takes the brief alone as its message, and its rendering is the whole
     prompt; any other agent's message opens with a role, and the prompt says
     so."""
-    if (document.attr("message") or "").strip() == "brief":
+    if _takes_brief(document):
         return f"{document.front}\n{handbook}"
     return f"{document.front}\n{agent_prompt(handbook)}"
 
 
 def _write_whole(path: Path, text: str) -> Path:
-    """Write a generated file, whole: a reader that opens it while the write
-    is in progress reads the old file or the new one. A file that already
-    holds the text is left alone."""
+    """Write a generated file, whole (`engine.memo.write_whole`): a reader
+    that opens it while the write is in progress reads the old file or the
+    new one. A file that already holds the text is left alone."""
     if path.exists() and path.read_text() == text:
         return path
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(f".{os.getpid()}-{threading.get_ident()}.tmp")
-    try:
-        tmp.write_text(text)
-        tmp.replace(path)
-    finally:
-        tmp.unlink(missing_ok=True)
+    write_whole(path, text.encode())
     return path
 
 
@@ -530,15 +637,22 @@ def agent_names(agents: Path = AGENT_DIR) -> list[str]:
 def write_agent(path: Path = AGENT_PATH, lib: Path = LIB_SRC,
                 agents: Path = AGENT_DIR) -> Path:
     """Write every agent definition under `agents` and the lib's interface
-    files, and return the handbook agent's path. `path` holds the handbook
-    agent, and each other agent's file sits beside it under the agent's
+    files, and return the handbook agent's path. `path` is the handbook
+    agent's file, and each agent's file stands beside it under the agent's
     name."""
     write_interfaces(lib)
-    for name in agent_names(agents):
-        out = path if name == AGENT_NAMES[0] else path.with_name(f"{name}{path.suffix}")
+    for name, out in agent_paths(path, agents):
         _write_whole(out, agent_definition(agent_document(name, agents),
                                            render(name, lib, agents)))
     return path
+
+
+def agent_paths(path: Path = AGENT_PATH, agents: Path = AGENT_DIR
+                ) -> list[tuple[str, Path]]:
+    """Each agent under `agents` with the file `write_agent` writes it to:
+    beside `path`, the handbook agent's file, under the agent's name."""
+    return [(name, path.with_name(f"{name}{path.suffix}"))
+            for name in agent_names(agents)]
 
 
 def write_analyze_next(path: Path = ANALYZE_NEXT_PATH,
@@ -644,16 +758,17 @@ SAMPLE_SCRATCH = ".scratch/survey/<run>"
 
 # The session's own skill, which a session at a terminal reads beside the
 # handbook.
-SESSION_SKILL = REPO_ROOT / ".claude" / "skills" / "session" / "SKILL.md"
-CONSOLE_DIR = REPO_ROOT / "tools" / "console"
-WORKFLOW_DIR = REPO_ROOT / ".claude" / "workflows"
+SESSION_SKILL = checkout.skills() / "session" / "SKILL.md"
+CONSOLE_DIR = checkout.console()
+WORKFLOW_DIR = checkout.workflows()
 # The scripts that build a role's brief. A file here that states the role on a
 # line about roles spawns that role.
-SPAWN_GLOBS = (".claude/workflows/*.js", "scripts/*.py",
-               "tools/console/*.py", "tools/console/solver_console/*.py")
+SPAWN_GLOBS = ((WORKFLOW_DIR, "*.js"), (checkout.scripts(), "*.py"),
+               (CONSOLE_DIR, "*.py"), (CONSOLE_DIR / "solver_console", "*.py"))
 # The documents that tell a session to spawn a role. A session that reads one
 # of them briefs the role itself.
-SPAWN_DOC_GLOBS = ("docs/handbook/*.md", "prompts/**/*.md")
+SPAWN_DOC_GLOBS = ((DOCS_DIR, "*.md"),
+                   (checkout.prompts(), "**/*.md"))
 
 
 def _section(what: str, text: str) -> str:
@@ -664,18 +779,19 @@ def _section(what: str, text: str) -> str:
 def _console():
     """The console's prompt builders and its stage chain. The console reads
     this module, so the import stands here."""
-    import sys
-    if str(CONSOLE_DIR) not in sys.path:
-        sys.path.insert(0, str(CONSOLE_DIR))
+    paths.console_importable()
     from solver_console import prompts, store
     return prompts, store
 
 
-def _body(text: str) -> str:
-    """A file's text from its first heading, so a front matter block that
-    reaches no agent is left out."""
-    head = re.search(r"^# ", text, re.M)
-    return text[head.start():] if head else text
+def _body(path: Path) -> str:
+    """A file's text from its first heading (`_first_heading`), so a front
+    matter block that reaches no agent is left out."""
+    text = path.read_text()
+    head = _first_heading(nm.parse(text, path.name))
+    if head is None:
+        return text
+    return "".join(text.splitlines(keepends=True)[head.line - 1:])
 
 
 def session_context() -> str:
@@ -686,9 +802,9 @@ def session_context() -> str:
     stand."""
     write_interfaces()
     return "\n".join([
-        _section(str(SESSION_SKILL.relative_to(REPO_ROOT)),
-                 _body(SESSION_SKILL.read_text())),
-        _section(str(SESSION_DOC.relative_to(REPO_ROOT)), session_text()),
+        _section(repo_label(SESSION_SKILL),
+                 _body(SESSION_SKILL)),
+        _section(repo_label(SESSION_DOC), session_text()),
     ])
 
 
@@ -704,7 +820,7 @@ def agent_prompt_text(name: str, lib: Path = LIB_SRC,
     front matter."""
     document = agent_document(name, agents)
     text = render(name, lib, agents)
-    if (document.attr("message") or "").strip() == "brief":
+    if _takes_brief(document):
         return text
     return agent_prompt(text)
 
@@ -716,9 +832,9 @@ def agent_context(name: str) -> str:
     if name not in agent_names():
         raise SystemExit(f"no agent named `{name}`; the agents are "
                          + ", ".join(agent_names()))
-    text = _section(f".claude/agents/{name}.md", agent_prompt_text(name))
+    text = _section(repo_label(agent_file(name)), agent_prompt_text(name))
     if name == "analyze":
-        text += "\n" + _section(str(ANALYZE_NEXT_PATH.relative_to(REPO_ROOT)),
+        text += "\n" + _section(repo_label(ANALYZE_NEXT_PATH),
                                 render(ANALYZE_NEXT))
     return text
 
@@ -727,22 +843,39 @@ def _role_agent(name: str, roles: Path = ROLE_DIR) -> str:
     """The agent a role runs on: its `agent` attribute, or the handbook
     agent."""
     registry = nm.Registry(REPO_ROOT)
-    return nm.role(registry.load(roles / f"{name}.md"), registry)[0]
+    return nm.role(registry.load(role_file(name, roles)), registry)[0]
 
 
 def _spawners(name: str) -> list[str]:
     """The scripts that build the role's brief: the ones stating the role on a
     line that is about roles."""
-    quoted = re.compile(rf"""(['"]){re.escape(name)}\1""")
-    attribute = re.compile(rf"\broles\.{re.escape(name)}\b")
     out = []
-    for pattern in SPAWN_GLOBS:
-        for path in sorted(REPO_ROOT.glob(pattern)):
+    for directory, pattern in SPAWN_GLOBS:
+        for path in sorted(directory.glob(pattern)):
             for line in path.read_text().splitlines():
-                if attribute.search(line) or (quoted.search(line)
-                                              and "role" in line.lower()):
-                    out.append(str(path.relative_to(REPO_ROOT)))
+                if _role_columns(line, name):
+                    out.append(repo_label(path))
                     break
+    return out
+
+
+def _word_at(word: str, line: str) -> int | None:
+    """The column of the first whole-word occurrence of `word` on the
+    line; None where it does not occur."""
+    m = re.search(rf"\b{re.escape(word)}\b", line)
+    return None if m is None else m.start()
+
+
+def _role_columns(line: str, stem: str) -> list[int]:
+    """Where a script's line refers to the role `stem`: as `roles.<stem>`,
+    or as the quoted stem on a line that is about roles; the column of
+    each."""
+    out: list[int] = []
+    if (at := _word_at(f"roles.{stem}", line)) is not None:
+        out.append(at)
+    if (m := re.search(rf"""(['"]){re.escape(stem)}\1""", line)) \
+            and "role" in line.lower():
+        out.append(m.start())
     return out
 
 
@@ -750,10 +883,10 @@ def _spawn_docs(name: str) -> list[str]:
     """The documents that tell a session to spawn the role."""
     said = re.compile(rf"(?i:spawn) the `{re.escape(name)}` role")
     out = []
-    for pattern in SPAWN_DOC_GLOBS:
-        for path in sorted(REPO_ROOT.glob(pattern)):
+    for directory, pattern in SPAWN_DOC_GLOBS:
+        for path in sorted(directory.glob(pattern)):
             if said.search(path.read_text()):
-                out.append(str(path.relative_to(REPO_ROOT)))
+                out.append(repo_label(path))
     return sorted(set(out))
 
 
@@ -773,21 +906,33 @@ def spawn_line(name: str) -> str:
     return mctx("Brief: briefed by the session that spawns it.")
 
 
+class Unplaced(Enum):
+    """A role a workflow script refers to that no phase of the script
+    reaches."""
+
+    NO_PHASE = "no phase"
+
+
+type Phase = str | Unplaced
+"""The phase a workflow run reaches a role in: a title of the script's
+`meta.phases`, or `Unplaced.NO_PHASE`."""
+
+
 def role_context(name: str, roles: Path = ROLE_DIR,
-                 stage: str | None = None,
+                 stage: Phase | None = None,
                  seen: set[str] | None = None,
                  brief: bool = True) -> str:
     """What an agent running the role reads: its agent's definition, its role
     text, then the line saying where its brief comes from. `stage` is the
-    phase a workflow run reaches the role in, and the empty string says no
-    phase of the script reaches it. `seen` holds the agents a caller has
+    phase a workflow run reaches the role in, None for a role read outside
+    a workflow. `seen` holds the agents a caller has
     already printed, and an agent it holds takes a marker line in place of its
     definition. `brief` set to False leaves out the line about the brief, for
     a caller that states the source itself."""
-    if not (roles / f"{name}.md").is_file():
+    if not role_file(name, roles).is_file():
         raise SystemExit(f"no role named `{name}`")
     agent = _role_agent(name, roles)
-    path = f".claude/agents/{agent}.md"
+    path = repo_label(agent_file(agent))
     if seen is not None and agent in seen:
         head = MARKER.format(
             what=mctx("{path}, the definition printed above").format(path=path))
@@ -795,13 +940,13 @@ def role_context(name: str, roles: Path = ROLE_DIR,
         head = agent_context(agent)
         if seen is not None:
             seen.add(agent)
-    label = f"prompts/roles/{name}.md"
-    if stage:
-        label = mctx("{path}, in the {phase} phase").format(
-            path=label, phase=stage)
-    elif stage == "":
+    label = repo_label(role_file(name, roles))
+    if stage is Unplaced.NO_PHASE:
         label = mctx("{path}, in a phase this listing does not find").format(
             path=label)
+    elif stage is not None:
+        label = mctx("{path}, in the {phase} phase").format(
+            path=label, phase=stage)
     parts = [head, _section(label, role_body(name, roles))]
     if brief:
         parts.append(_section(mctx("the brief"), spawn_line(name)))
@@ -883,11 +1028,12 @@ def survey_context() -> str:
     """What a survey session reads: the appendix its agent takes as its system
     prompt, then the role's text and the survey brief."""
     prompts, _ = _console()
-    agent = _role_agent("survey")
+    agent = agent_document(_role_agent("survey"))
     return "\n".join([
-        _section(APPENDIX,
-                 prompts.append_text(index=agent == AGENT_NAMES[0])),
-        _section("prompts/roles/survey.md", prompts.role_text("survey")),
+        _section(APPENDIX, prompts.append_text(
+            index=lib_form(agent) is LibForm.INDEX)),
+        _section(repo_label(role_file("survey")),
+                 prompts.role_text("survey")),
         _section(mctx("the `survey` message"),
                  prompts.survey_brief(entry=SAMPLE_ENTRY, scope=SAMPLE_SCOPE,
                                       scratch=SAMPLE_SCRATCH)),
@@ -1001,51 +1147,48 @@ def _at_column(named: dict[str, int], stem: str, column: int) -> None:
 
 
 def workflow_phases(name: str, roles: Path = ROLE_DIR,
-                    workflows: Path = WORKFLOW_DIR) -> dict[str, str]:
+                    workflows: Path = WORKFLOW_DIR) -> dict[str, Phase]:
     """Each role the workflow script refers to, in phase order, with the phase it
     runs in. A line inside an `agent(` call that carries a `phase:` option
     takes that phase, and any other line takes the phase of the nearest
     `phase()` statement above it. A line refers to a role by its stem, by a
     variable bound to `roles.<stem>`, or, inside such a call, by a list of
     stems or a function returning members of one. A role no phase reaches
-    takes the empty string, and it follows the placed roles, at the line it
+    takes `Unplaced.NO_PHASE`, and it follows the placed roles, at the line it
     first stands on. Roles one line refers to follow the order they stand
     in on it."""
-    path = workflows / f"{name}.js"
-    if not path.is_file():
-        raise SystemExit(f"no workflow named `{name}`")
+    path = workflow_file(name, workflows)
     text = path.read_text()
     phases = _workflow_phases(text)
-    stems = sorted(p.stem for p in roles.glob("*.md"))
+    stems = role_stems(roles)
     aliases = _role_aliases(text, set(stems))
     groups = _role_groups(text, set(stems))
     call_phases = _call_phases(text)
-    running = ""
-    found: dict[str, tuple[int, int, int, str]] = {}
+    running: Phase = Unplaced.NO_PHASE
+    found: dict[str, tuple[int, int, int, Phase]] = {}
     for number, line in enumerate(text.splitlines(), start=1):
         bare = BARE_PHASE_RE.match(line)
         if bare:
             running = bare.group(1)
         option = PHASE_RE.search(line)
-        title = option.group(1) if option else call_phases.get(number, running)
-        title = title if title in phases else ""
-        rank = phases.index(title) if title else len(phases)
+        named_phase = option.group(1) if option \
+            else call_phases.get(number, running)
+        title: Phase = named_phase if named_phase in phases \
+            else Unplaced.NO_PHASE
+        rank = len(phases) if isinstance(title, Unplaced) \
+            else phases.index(title)
         named: dict[str, int] = {}
         for stem in stems:
-            quoted = re.search(rf"""(['"]){re.escape(stem)}\1""", line)
-            attribute = re.search(rf"\broles\.{re.escape(stem)}\b", line)
-            if attribute:
-                _at_column(named, stem, attribute.start())
-            if quoted and "role" in line.lower():
-                _at_column(named, stem, quoted.start())
+            for column in _role_columns(line, stem):
+                _at_column(named, stem, column)
         for variable, stem in aliases.items():
-            if m := re.search(rf"\b{re.escape(variable)}\b", line):
-                _at_column(named, stem, m.start())
+            if (at := _word_at(variable, line)) is not None:
+                _at_column(named, stem, at)
         if number in call_phases:
             for group, members in groups.items():
-                if m := re.search(rf"\b{re.escape(group)}\b", line):
+                if (at := _word_at(group, line)) is not None:
                     for member in members:
-                        _at_column(named, member, m.start())
+                        _at_column(named, member, at)
         for stem, column in named.items():
             at = found.get(stem)
             if at is None or rank < at[0]:
@@ -1060,13 +1203,20 @@ def workflow_roles(name: str, roles: Path = ROLE_DIR,
     return list(workflow_phases(name, roles, workflows))
 
 
+def workflow_file(name: str, workflows: Path = WORKFLOW_DIR) -> Path:
+    """The script of the workflow `name`; an error where none stands."""
+    path = workflows / f"{name}.js"
+    if not path.is_file():
+        raise SystemExit(f"no workflow named `{name}`; the workflows are "
+                         + ", ".join(workflow_names(workflows)))
+    return path
+
+
 def workflow_roleless_phases(name: str, roles: Path = ROLE_DIR,
                              workflows: Path = WORKFLOW_DIR) -> list[str]:
     """The phases of the script's `meta.phases` that no role the roles listing
     places falls in, in `meta.phases` order."""
-    path = workflows / f"{name}.js"
-    if not path.is_file():
-        raise SystemExit(f"no workflow named `{name}`")
+    path = workflow_file(name, workflows)
     placed = set(workflow_phases(name, roles, workflows).values())
     return [title for title in _workflow_phases(path.read_text())
             if title not in placed]
@@ -1086,10 +1236,8 @@ def workflow_fragments(name: str, workflows: Path = WORKFLOW_DIR) -> str:
     """The script's briefs and schema descriptions: every `mctx` fragment the
     file holds, in file order, each under a line giving the script and the
     line the fragment starts on. The holes stand as the source writes them."""
-    path = workflows / f"{name}.js"
-    if not path.is_file():
-        raise SystemExit(f"no workflow named `{name}`")
-    script = f".claude/workflows/{name}.js"
+    path = workflow_file(name, workflows)
+    script = repo_label(path)
     return "\n\n".join(f"{script}:{fragment.line}\n\n{fragment.text.rstrip()}"
                        for fragment in nm.fragments(path, script))
 
@@ -1098,7 +1246,7 @@ def workflow_context(name: str) -> str:
     """What each agent of a workflow run reads: the role context of every role
     the script refers to, in phase order, the phases no role runs in, then the
     line stating where the briefs are built and the briefs themselves."""
-    script = f".claude/workflows/{name}.js"
+    script = repo_label(workflow_file(name))
     phases = workflow_phases(name)
     parts = [_section(mctx("the roles {path} reaches").format(path=script),
                       "\n".join(phases))]
@@ -1116,26 +1264,51 @@ def workflow_context(name: str) -> str:
     return "\n".join(parts)
 
 
-# Each reader the `context` command knows, with the argument it takes and the
-# values that argument takes.
+class ArgumentForm(StrEnum):
+    """The argument a reader of the `context` command takes, as its usage
+    line writes it."""
+
+    NAME = "<name>"
+    STAGE = "<stage>"
+
+
+@dataclass(frozen=True)
+class Reader:
+    """A reader the `context` command knows: the form of the argument it
+    takes, None where it takes none; the values that argument takes; and
+    its context, from the arguments."""
+
+    form: ArgumentForm | None
+    values: Callable[[], list[str]]
+    context: Callable[[list[str]], str]
+
+
+def _no_values() -> list[str]:
+    return []
+
+
 CONTEXT_READERS = {
-    "session": (None, lambda: []),
-    "codex": (None, lambda: []),
-    "agent": ("<name>", agent_names),
-    "role": ("<name>", lambda: sorted(p.stem for p in ROLE_DIR.glob("*.md"))),
-    "console": ("<stage>", console_stages),
-    "survey": (None, lambda: []),
-    "workflow": ("<name>", workflow_names),
+    "session": Reader(None, _no_values, lambda _a: session_context()),
+    "codex": Reader(None, _no_values, lambda _a: codex_context()),
+    "agent": Reader(ArgumentForm.NAME, agent_names, lambda a: agent_context(a[0])),
+    "role": Reader(ArgumentForm.NAME, role_stems, lambda a: role_context(a[0])),
+    "console": Reader(ArgumentForm.STAGE, console_stages,
+                      lambda a: console_context(a[0])),
+    "survey": Reader(None, _no_values, lambda _a: survey_context()),
+    "workflow": Reader(ArgumentForm.NAME, workflow_names,
+                       lambda a: workflow_context(a[0])),
 }
+"""Each reader the `context` command knows, by name."""
 
 
 def contexts_text() -> str:
     """Every reader the `context` command knows, one per line: its name, its
     argument form, and the values that argument takes."""
     out = []
-    for name, (form, values) in CONTEXT_READERS.items():
+    for name, reader in CONTEXT_READERS.items():
+        form = reader.form
         head = f"context {name}" + (f" {form}" if form else "")
-        names = values()
+        names = reader.values()
         out.append(f"{head:<24}{', '.join(names)}".rstrip())
     return "\n".join(out) + "\n"
 
@@ -1145,21 +1318,10 @@ def context_text(reader: str, args: list[str]) -> str:
     if reader not in CONTEXT_READERS:
         raise SystemExit("no reader named "
                          f"`{reader}`\n{contexts_text()}".rstrip())
-    form = CONTEXT_READERS[reader][0]
+    known = CONTEXT_READERS[reader]
+    form = known.form
     if form and len(args) != 1:
         raise SystemExit(f"usage: context {reader} {form}")
     if not form and args:
         raise SystemExit(f"usage: context {reader}")
-    if reader == "session":
-        return session_context()
-    if reader == "codex":
-        return codex_context()
-    if reader == "agent":
-        return agent_context(args[0])
-    if reader == "role":
-        return role_context(args[0])
-    if reader == "console":
-        return console_context(args[0])
-    if reader == "survey":
-        return survey_context()
-    return workflow_context(args[0])
+    return known.context(args)

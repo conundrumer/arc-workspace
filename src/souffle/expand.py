@@ -6,6 +6,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from engine.program import (
+    first_line,
     Atom,
     GridCall,
     NumberTerm,
@@ -17,6 +18,7 @@ from engine.program import (
     Unit,
     UnitId,
     Wildcard,
+    cell_place,
 )
 from souffle import printer
 from souffle.layout import (
@@ -36,8 +38,9 @@ from souffle.lexer import lex
 from souffle.parser import (
     RIGID_ACTIONS,
     RIGID_AXIS_ACTIONS,
-    RIGID_CHART_PREFIX,
-    Shape,
+    chart_prefix,
+    grid_layout,
+    placed_name,
     parse,
 )
 
@@ -72,12 +75,9 @@ def grid_facts(call: GridCall) -> list[tuple[int, Atom]]:
     holds something; each fact's keys, then the cell's place (its offset
     from the anchor for a stamp), then its value where the form holds
     one."""
-    form = Shape.of_call(call)
-    h, w = form.h, form.w
-    anchor = (0, 0)
-    if form.stamp:
-        anchor = next((r, c) for r in range(h) for c in range(w)
-                      if call.cells[r][c].anchor)
+    form = call.layout
+    h, w = form.height, form.width
+    anchor = call.anchor or (0, 0)
     out: list[tuple[int, Atom]] = []
     for r in range(h):
         for c in range(w):
@@ -88,11 +88,11 @@ def grid_facts(call: GridCall) -> list[tuple[int, Atom]]:
                 dr, dc = r - anchor[0], c - anchor[1]
                 place = (dr, -dr, dc, -dc)
             else:
-                place = (r, h - 1 - r, c, w - 1 - c)
+                place = cell_place(r, c, h, w)
             args: tuple[Term, ...] = (*call.keys, RecordTerm(tuple(NumberTerm(v) for v in place)))
             if form.valued:
                 args = (*args, cell)
-            line = call.span.first if call.span else 0
+            line = first_line(call.span)
             out.append((r, Atom(call.relation, args, line)))
     return out
 
@@ -136,7 +136,7 @@ class _Expander:
         """The closure rules of a RIGID call's placed relations."""
         charts = self.charts(call)
         text = "\n".join(
-            rigid_rule(f"{call.block}_{d.name.removeprefix(self.prefix(call))}", d.name,
+            rigid_rule(placed_name(call.block, d.name.removeprefix(self.prefix(call))), d.name,
                        [c.type for c in d.columns])
             for d in charts)
         parsed = parse(text, Path("."))
@@ -144,18 +144,17 @@ class _Expander:
         out = []
         for u in parsed.units:
             unit = replace(u, id=self.fresh(), scope=call.scope, span=call.span,
-                           head=replace(u.head, line=call.span.first if call.span else 0))
+                           head=replace(u.head, line=first_line(call.span)))
             self.units[unit.id] = unit
             out.append(unit)
         self.done.add(call.id)
         return out
 
     def prefix(self, call: RigidCall) -> str:
-        return f"{RIGID_CHART_PREFIX}{call.block}_"
+        return chart_prefix(call.block)
 
     def charts(self, call: RigidCall) -> list[RelationDecl]:
-        return [r for r in self.program.relations
-                if r.scope == call.scope and r.chart_of == call.block]
+        return list(self.program.charts(call))
 
     # layout
 
@@ -193,8 +192,7 @@ class _Expander:
             self.current(key) == part for key, part in parts[1:])
         closure = self.rigid_units(macro)
         charts = self.charts(macro)
-        placed = [r for r in self.program.relations
-                  if r.scope == macro.scope and r.name in macro.names]
+        placed = self.program.placed(macro)
         kept: list[tuple[Key, Part]] = [(d.id, d) for d in (*charts, *placed)]
         for key in macro.body:
             part = self.macros.get(key) or self.units.get(key)
@@ -216,8 +214,8 @@ class _Expander:
             rel = chart.name.removeprefix(self.prefix(macro))
             fields = ", ".join(f"{c.name}: {c.type}" for c in chart.columns)
             generated += [
-                f".decl {macro.block}_{rel}(d4: D4, {fields})",
-                rigid_rule(f"{macro.block}_{rel}", chart.name, [c.type for c in chart.columns]),
+                f".decl {placed_name(macro.block, rel)}(d4: D4, {fields})",
+                rigid_rule(placed_name(macro.block, rel), chart.name, [c.type for c in chart.columns]),
             ]
         full = body_text[0] + "\n" + "\n".join(f"{indent}{g}" for g in generated)
         return Generated(full, line, (*kept, *((u.id, u) for u in closure)))
@@ -226,7 +224,7 @@ class _Expander:
         """The part `key` names in the program being expanded."""
         if isinstance(key, UnitId):
             return self.units.get(key) or self.macros.get(key)
-        return next((r for r in self.program.relations if r.id == key), None)
+        return self.program.relation(key)
 
     def rigid_body(self, call: RigidCall, text: str, indent: str) -> str:
         """The body of a RIGID call's text, each name of a relation it
@@ -287,7 +285,7 @@ def _expand_grids_in(text: str, calls: list[GridCall]) -> str:
     n = 0
     while i < len(tokens):
         t = tokens[i]
-        if (t.kind == "ident" and Shape.of(t.text) is not None and i + 1 < len(tokens)
+        if (t.kind == "ident" and grid_layout(t.text) is not None and i + 1 < len(tokens)
                 and tokens[i + 1].text == "(" and n < len(calls)):
             depth = 0
             j = i + 1

@@ -2,18 +2,29 @@
 verdict line denotes, a run that gives no result, and the color-swap
 witness (plan §D5, "Judged once")."""
 
-from collections.abc import Sequence
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
+from typing import TypeGuard
 
-from checker.finding import Finding, Kind, NoResultPayload, RunKind, Where
+from arc.task import COLORS, Task
+from checker.domains import colors
+from checker.finding import (
+    AtFile,
+    Finding,
+    Kind,
+    NoResultPayload,
+    RunKind,
+    Where,
+    WholeFile,
+)
+from checker.payloads.branches import NoTaskPayload
 from engine import (
     AdtValue,
     CpuLimit,
     Engine,
     Grid,
-    Limits,
+    ParseFailure,
     RecordValue,
-    RelationName,
     RunFailure,
     Value,
     WallLimit,
@@ -26,17 +37,20 @@ from solver.model import (
     DeriveBranch,
     Solver,
     StoreBranch,
+    is_concept_case,
+    load,
 )
 from solver.model import is_concept as concept_base
-from solver.names import Denoted, denote, model_of
-from solver.problems import InSolver, Named, ProblemKind, Fault
-from solver.solve import Grids, PairId, PairRuns
+from solver.names import Denoted, cover, denote, model_of
+from solver.problems import Fault, Named, NameFault, ProblemKind
+from solver.solve import CaseOnPair, Grids, PairId, PairRuns, as_grid, is_result
+from solver.vocabulary import COLOR
 from solver.witness import Undefined
 
 # A run that gives no result
 
 
-def is_timeout(failure: RunFailure) -> bool:
+def is_timeout(failure: object) -> TypeGuard[CpuLimit | WallLimit]:
     """The run reached a limit, CPU or wall; its outcome is no result."""
     return isinstance(failure, CpuLimit | WallLimit)
 
@@ -49,6 +63,17 @@ def no_result(failure: RunFailure, run: RunKind, case: Case | None,
     return Finding(kind, where, NoResultPayload(run, case, failure))
 
 
+def enumeration_failed(failure: RunFailure) -> Finding:
+    """The finding for the run that enumerates the solver's cases where
+    it gives no result."""
+    return no_result(failure, RunKind.CASE, None, AtFile(WholeFile.SOLVER))
+
+
+NO_TASK = Finding(Kind.NO_TASK, AtFile(WholeFile.SOLVER), NoTaskPayload())
+"""The finding of a check that runs over the task's examples where the
+solver's task has no task file."""
+
+
 # Fit
 
 
@@ -56,7 +81,7 @@ def no_result(failure: RunFailure, run: RunKind, case: Case | None,
 class Fits:
     """The model fits the task at its stored assignment: some case of it
     gives one of each pair's candidates on every train and test pair
-    (principles.md:74-78, :272)."""
+    (principles.md, under "Models and tasks" and "Cases")."""
 
     case: Case
 
@@ -84,6 +109,22 @@ class NoResult:
 type Fit = Fits | Misses | NoResult
 
 
+def differ(a: object, b: object) -> bool:
+    """Two results of runs differ, one of them defined: other grids, in
+    their resolutions' order, or one defined and the other not; two
+    undefined outcomes agree (principles.md, under "Witnesses" and
+    "Equivalence and subsumption")."""
+    if isinstance(a, Grids) and isinstance(b, Grids):
+        return a != b
+    return {type(a), type(b)} == {Grids, Undefined}
+
+
+def missed(run: CaseOnPair) -> bool:
+    """The case misses the pair: its run gives a result, and that result
+    is no candidate of the pair (principles.md, under "Models and tasks")."""
+    return is_result(run.outcome) and not run.matches
+
+
 def _case_fit(pairs: Sequence[PairRuns], case: Case) -> Fit | None:
     """How one case meets Fit; None where `pairs` holds no run of it."""
     limited: list[tuple[PairId, RunFailure]] = []
@@ -94,12 +135,10 @@ def _case_fit(pairs: Sequence[PairRuns], case: Case) -> Fit | None:
         if run is None:
             continue
         seen = True
-        if isinstance(run.outcome, Grids) and run.matches:
-            continue
-        if not isinstance(run.outcome, Grids | Undefined):
+        if missed(run):
+            miss = miss or p.pair
+        elif not is_result(run.outcome):
             limited.append((p.pair, run.outcome))
-            continue
-        miss = miss or p.pair
     if not seen:
         return None
     if miss is not None:
@@ -111,7 +150,7 @@ def _case_fit(pairs: Sequence[PairRuns], case: Case) -> Fit | None:
 
 def fit(pairs: Sequence[PairRuns], cases: Sequence[Case]) -> Fit | None:
     """How the model whose cases are `cases` meets Fit
-    (principles.md:272): it fits where some case fits every pair. Where
+    (principles.md, under "Cases"): it fits where some case fits every pair. Where
     none fits and some case misses at no pair but has a run that reached
     a limit or failed, the
     judgment rests on no result; otherwise it misses where its first case
@@ -131,53 +170,112 @@ def fit(pairs: Sequence[PairRuns], cases: Sequence[Case]) -> Fit | None:
 # The cases a verdict line denotes
 
 
-def _constructors(value: Value) -> list[str]:
-    """Every constructor a `Choice` value spells, outermost first."""
+def value_constructors(value: Value) -> list[str]:
+    """Every constructor a value spells, outermost first; a field that is
+    no constructor and no record holds data, and no branch."""
     match value:
         case AdtValue(constructor=name, args=args):
-            return [name, *(n for a in args for n in _constructors(a))]
+            return [name, *(n for a in args for n in value_constructors(a))]
         case RecordValue(fields=fields):
-            return [n for f in fields for n in _constructors(f)]
+            return [n for f in fields for n in value_constructors(f)]
         case _:
             return []
 
 
 def base_constructors(base: Base | None) -> list[str]:
     """The constructors a case's base takes, outermost first."""
-    return [] if base is None else _constructors(base)
+    return [] if base is None else value_constructors(base)
 
 
-def is_concept(solver: Solver, case: Case) -> bool:
-    """The concept case: the concept case's base (`solver.model.is_concept`)
-    with the first branch at every `@derive` and `@store` point
-    (principles.md:102)."""
-    return not case.branches and concept_base(solver, case.base)
+def reading_names(solver: Solver, every: Sequence[Case],
+                  reading: Collection[Base | None]) -> tuple[str, ...]:
+    """The cases of `every` whose base is one of `reading`, by the fewest
+    names that denote exactly them (`solver.names.cover`)."""
+    return tuple(cover(solver, [c for c in every if c.base in reading],
+                       every))
+
+
+def parse_fault(solver: Solver) -> Fault | None:
+    """The fault of a solver whose text does not parse, among its
+    problems; None where it parses."""
+    return solver.fault(ProblemKind.PARSE_FAILURE)
+
+
+def parse_failure(solver: Solver) -> ParseFailure | None:
+    """The parse's failure that `parse_fault` holds; None where the
+    solver's text parses."""
+    got = parse_fault(solver)
+    return got.detail if got is not None \
+        and isinstance(got.detail, ParseFailure) else None
+
+
+def representative(solver: Solver, engine: Engine) -> Solver | None:
+    """The family's representative solver the header names (`load`);
+    None where the header names none or the reader reports it missing."""
+    rep = solver.annotations.representative
+    if rep is None \
+            or solver.fault(ProblemKind.REPRESENTATIVE_MISSING) is not None:
+        return None
+    return load(rep.task_id, engine)
+
+
+def concept_case(solver: Solver, cases: Iterable[Case]) -> Case | None:
+    """The concept case among `cases`: the concept base, with no
+    `@derive` or `@store` branch (`solver.model.is_concept_case`); None
+    where none is it."""
+    return next((c for c in cases if is_concept_case(solver, c)), None)
+
+
+def base_names(solver: Solver, chosen: Sequence[Base | None],
+               among: Sequence[Base | None]) -> tuple[str, ...]:
+    """The fewest names whose bases among `among`, the solver's bases, are
+    exactly `chosen` (`solver.names.cover`): the cases a value is stored
+    at, the bases that depend on a relation."""
+    picked = [b for b in chosen if b is not None]
+    if solver.choice is None or not picked:
+        return ()
+    return cover(solver, picked, [b for b in among if b is not None])
+
+
+def bases_of(cases: Iterable[Case]) -> list[Base | None]:
+    """The bases of `cases`, each once, in their order."""
+    return list(dict.fromkeys(c.base for c in cases))
+
+
+def concept_among(solver: Solver, bases: Iterable[Base | None]
+                  ) -> Base | None:
+    """The concept case's base among `bases` (`solver.model.is_concept`),
+    None where none is it."""
+    return next((b for b in bases if concept_base(solver, b)), None)
 
 
 @dataclass(frozen=True)
 class AnyCase:
     """`any`: the output of any case defined on the witness
-    (principles.md:152)."""
+    (principles.md, under "Witnesses")."""
 
 
 @dataclass(frozen=True)
 class NoCase:
-    """`other`: an output that no case produces (principles.md:153)."""
+    """`other`: an output that no case produces (principles.md, under
+    "Witnesses")."""
 
 
-type VerdictCase = Case | None | AnyCase | NoCase | Fault
+type VerdictCase = Case | None | AnyCase | NoCase | NameFault
 
 
 def verdict_case(solver: Solver, verdict: Verdict, among: Sequence[Case],
                  branch: Branch | None) -> VerdictCase:
-    """The case whose output the verdict denotes (principles.md:150-153;
-    `derived` solver-file.md:121, `stored` solver-file.md:138). A verdict
-    asks for a model (principles.md:152, "the branch's name: the output
-    of that branch's model"), so a name reads through `solver.names.model_of`,
-    one case: the branches it names, with every other point at its concept
-    branch (principles.md:116), the case of `among` that is it where one
-    is. `concept` is the concept case, and `derived` and `stored` the
-    model of `branch`, the line's own. None where no model can be built.
+    """The case whose output the verdict denotes (principles.md, under "Witnesses";
+    `derived` solver-file.md, under "Params", `stored` solver-file.md, under
+    "Program"). A verdict asks for a model (principles.md, under "Witnesses",
+    "the branch's name: the output of that branch's model"), so a name reads
+    through `solver.names.model_of`, one case: the branches it names, with
+    every other point at its concept branch (principles.md, under
+    "Choice points and open parameters"), the case of `among` that is it where
+    one is.
+    `concept` is the concept case, and `derived` and `stored` the model of
+    `branch`, the line's own. None where no model can be built.
     A name that denotes nothing is the fault `denote` gives. `derived` or
     `stored` on a line with no branch of its kind denotes nothing, and is
     that problem too, with the word as the name: a verdict word is never
@@ -193,12 +291,20 @@ def verdict_case(solver: Solver, verdict: Verdict, among: Sequence[Case],
             kind = DeriveBranch if verdict == VerdictWord.DERIVED \
                 else StoreBranch
             if not isinstance(branch, kind):
-                return Fault(ProblemKind.NAME_DENOTES_NO_CASE,
-                             InSolver(0), Named(verdict.value))
+                return NameFault(ProblemKind.NAME_DENOTES_NO_CASE,
+                                 Named(verdict))
             return model_of(solver, Denoted((), (branch,)), among)
         case _:
-            d = denote(solver, verdict.text)
-            return d if isinstance(d, Fault) else model_of(solver, d, among)
+            return model_named(solver, verdict.text, among)
+
+
+def model_named(solver: Solver, text: str, among: Sequence[Case]
+                ) -> Case | None | NameFault:
+    """The model of the name `text` among `among`
+    (`solver.names.model_of`); the fault `denote` gives where the name
+    denotes nothing."""
+    d = denote(solver, text)
+    return d if isinstance(d, NameFault) else model_of(solver, d, among)
 
 
 # The color-swap witness
@@ -221,17 +327,33 @@ def swapped(grid: Grid, a: int, b: int) -> Grid:
                  for row in grid)
 
 
-def swaps(inputs: Sequence[Grid], stored: frozenset[int],
-          stored_colors: frozenset[int]) -> list[Swap]:
-    """One color swap per train input that holds a color of `stored` and
-    has a free color: the least stored color the input holds, swapped
-    for the least color that neither the input nor `stored_colors`, the
-    colors the solver's parameters store, holds."""
+def stored_colors(solver: Solver) -> frozenset[int]:
+    """Every color a parameter's stored rows hold, in a `Color` column."""
+    out: set[int] = set()
+    for p in solver.params.parameters:
+        if not isinstance(p.stored, tuple):
+            continue
+        cols = [i for i, c in enumerate(p.columns) if c.type == COLOR]
+        out |= {v for r in p.stored for i in cols
+                if isinstance(v := r[i], int)}
+    return frozenset(out)
+
+
+def swaps(solver: Solver, task: Task, stored: frozenset[int] | None = None
+          ) -> list[Swap]:
+    """One color swap per train input of `task` that holds a color of
+    `stored`, the colors the solver's parameters store where None, and
+    has a free color: the least stored color the input holds, swapped for
+    the least color that neither the input nor a parameter of the solver
+    holds (`stored_colors`)."""
+    held = stored_colors(solver)
+    stored = held if stored is None else stored
     out: list[Swap] = []
-    for i, grid in enumerate(inputs):
-        used = {c for row in grid for c in row}
+    for i, ex in enumerate(task.train):
+        grid = as_grid(ex.input)
+        used = colors([grid])
         present = sorted(stored & used)
-        free = [c for c in range(10) if c not in used | stored_colors]
+        free = [c for c in COLORS if c not in used | held]
         if not present or not free:
             continue
         out.append(Swap(i, present[0], free[0],

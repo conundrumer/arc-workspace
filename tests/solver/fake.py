@@ -11,6 +11,8 @@ from engine import (
     Comment,
     DeclId,
     Grid,
+    GridLayout,
+    GridValue,
     Index,
     InputValue,
     Limits,
@@ -27,6 +29,7 @@ from engine import (
     Unit,
     UnitId,
 )
+from engine.engine import Classed, GridMisfit
 from engine.program import (
     AdtType,
     Column,
@@ -37,9 +40,6 @@ from engine.program import (
     RelationDecl,
     TypeDecl,
 )
-
-LIB = "/lib.dl"
-
 
 def span(first: int, last: int | None = None, file: str | None = None) -> Span:
     return Span(first, first if last is None else last, file=file, width=40)
@@ -129,6 +129,10 @@ class FakeEngine:
         self.fixed.append((relation, value))
         return program
 
+    def place_grid(self, layout: GridLayout, mark: tuple[int, int] | None,
+                   value: GridValue) -> GridValue | GridMisfit:
+        raise NotImplementedError
+
     def remove(self, program: Program, target: RemovalTarget) -> Program:
         return program
 
@@ -140,6 +144,10 @@ class FakeEngine:
             outputs: Sequence[RelationName], limits: Limits,
             caps: Mapping[RelationName, int] | None = None) -> RunResult:
         return self.runs(program, inputs, outputs)
+
+    def classify(self, program: Program, relation: RelationName,
+                 column: int) -> Classed:
+        raise NotImplementedError
 
     def expand(self, program: Program) -> Program:
         return program

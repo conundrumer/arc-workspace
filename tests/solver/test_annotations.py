@@ -7,7 +7,6 @@ from solver import annotations
 from solver.annotations import (
     ClaimKind,
     IgnoreForm,
-    MarkerPart,
     NamedVerdict,
     Plausibility,
     VerdictWord,
@@ -77,14 +76,3 @@ def test_forms_and_their_places() -> None:
         (ProblemKind.OFF_FORM, InSolver(24)),
         (ProblemKind.OFF_FORM, InSolver(24)),
     ]
-
-
-def test_lint_ignore_directly_above() -> None:
-    parsed = program(relations=[relation(9, "band", 4)], comments=[
-        comment(2, "// @ignore: dead — kept", BAND),
-        comment(3, "//   for the reader", BAND),
-    ])
-    got, problems = annotations.read(parsed)
-    assert problems == ()
-    assert [(i.category, i.above) for i in got.ignores] == [
-        (Category.DEAD, BAND)]

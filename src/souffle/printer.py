@@ -36,7 +36,8 @@ from engine.program import (
     Variable,
     Wildcard,
 )
-from souffle.parser import BINARY, RIGID_CHART_PREFIX, UNARY_PRECEDENCE, Shape
+from engine.text import text as layout_name
+from souffle.parser import BINARY, UNARY_PRECEDENCE, chart_prefix
 
 PRECEDENCE = {op: prec for prec, op in BINARY.values()}
 INDENT = "    "
@@ -171,14 +172,14 @@ def grid_call(call: GridCall, indent: str) -> str:
     rows = f",\n{indent}{INDENT}".join(", ".join(("@" if c.anchor else "") + term(c.term)
                                                  for c in row)
                                        for row in call.cells)
-    return f"{Shape.of_call(call).name}({head},\n{indent}{INDENT}{rows})"
+    return f"{layout_name(call.layout)}({head},\n{indent}{INDENT}{rows})"
 
 
 def rigid_call(call: RigidCall, charts: list[RelationDecl], body: list[str],
                indent: str) -> str:
     """A RIGID call, from its chart declarations and the text of each
     statement of its body, with chart names as the body writes them."""
-    prefix = f"{RIGID_CHART_PREFIX}{call.block}_"
+    prefix = chart_prefix(call.block)
     inner = indent + INDENT
     lines = [f"RIGID({call.block},"]
     for d in charts:

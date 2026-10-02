@@ -10,6 +10,7 @@ import pytest
 import cli.record
 from engine import WallLimit
 from solver import witness
+from solver.problems import WitnessFileRole
 from solver.witness import (
     AssignRows,
     Entry,
@@ -79,7 +80,7 @@ def test_record_all_keeps_each_witness_but_its_groups_and_writes_nothing_on_a_fa
         Entry("c", "c", ((3,),), (), Groups((Group(("$Keep",), ((3,),)),))),
     ]
     target.write_text(witness.text(WitnessFile(STEM, tuple(entries))))
-    outcomes = cli.record.case_outcomes
+    outcomes = cli.record.entry_outcomes
     fail = True
 
     def failing(runs, entry):
@@ -87,13 +88,13 @@ def test_record_all_keeps_each_witness_but_its_groups_and_writes_nothing_on_a_fa
             return WallLimit(1.0)
         return outcomes(runs, entry)
 
-    monkeypatch.setattr(cli.record, "case_outcomes", failing)
+    monkeypatch.setattr(cli.record, "entry_outcomes", failing)
     before = target.read_text()
     assert cli.record.cmd_record_all(STEM, str(target)) == 1
     assert target.read_text() == before
     fail = False
     assert cli.record.cmd_record_all(STEM, str(target)) == 0
-    file, problems = witness.read(target.read_text())
+    file, problems = witness.read(target.read_text(), WitnessFileRole.TASK)
     assert problems == ()
     assert file is not None
     a, b, c = file.entries

@@ -1,76 +1,34 @@
 """Which units feed and read each relation, and the resolution of a
 qualified name through instances."""
 
-import threading
-import weakref
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 
 from engine.engine import Occurrence, Resolved, Role, Unresolved
+from engine.memo import ByIdentity
 from engine.program import (
-    Aggregate,
+    first_line,
+    PRIMITIVES,
+    body_atoms,
+    enclosing,
     Atom,
-    AtomLiteral,
-    BinaryTerm,
-    BodyLiteral,
-    Cast,
-    Comparison,
     Component,
-    ConstructorTerm,
     DeclId,
-    Disjunction,
-    FunctorCall,
     GridCall,
     Instance,
-    IntrinsicCall,
     MacroCall,
     Program,
-    RecordTerm,
     RelationDecl,
     RelationName,
     RigidCall,
     Scope,
-    Term,
     TypeDecl,
-    UnaryTerm,
     Unit,
     UnitId,
     Wildcard,
 )
-from souffle.parser import Shape
 
 type Path = tuple[str, ...]
-
-
-def body_atoms(body: tuple[BodyLiteral, ...]) -> Iterator[tuple[Atom, bool]]:
-    """Every atom a body reads, in order, with whether it stands negated:
-    through disjunctions and the bodies of aggregates."""
-    for lit in body:
-        match lit:
-            case AtomLiteral(atom, negated):
-                yield from _term_atoms(atom.args)
-                yield atom, negated
-            case Comparison(_, lhs, rhs):
-                yield from _term_atoms((lhs, rhs))
-            case Disjunction(branches):
-                for branch in branches:
-                    yield from body_atoms(branch)
-
-
-def _term_atoms(terms: tuple[Term, ...]) -> Iterator[tuple[Atom, bool]]:
-    for t in terms:
-        match t:
-            case Aggregate(_, expr, body):
-                if expr is not None:
-                    yield from _term_atoms((expr,))
-                yield from body_atoms(body)
-            case ConstructorTerm(_, args) | RecordTerm(args) | IntrinsicCall(_, args) \
-                    | FunctorCall(_, args):
-                yield from _term_atoms(args)
-            case UnaryTerm(_, arg) | Cast(arg, _):
-                yield from _term_atoms((arg,))
-            case BinaryTerm(_, lhs, rhs):
-                yield from _term_atoms((lhs, rhs))
 
 
 class Level:
@@ -95,11 +53,8 @@ class TypeRef:
     start: int
 
 
-PRIMITIVES = frozenset({"number", "unsigned", "float", "symbol"})
-
-
 @dataclass(frozen=True)
-class _Hit:
+class Hit:
     decl: RelationDecl
     through: tuple[DeclId, ...]
     type_arguments: tuple[tuple[str, str], ...]
@@ -130,10 +85,8 @@ class Tree:
     def comp(self, name: str, at: Path) -> Path | None:
         """The component `name` read in the text of `at`: declared there or
         in a text around it."""
-        for k in range(len(at), -1, -1):
-            if (*at[:k], name) in self.comps:
-                return (*at[:k], name)
-        return None
+        return next(((*around, name) for around in enclosing(at)
+                     if (*around, name) in self.comps), None)
 
     def chain(self, path: Path) -> list[Path]:
         """The component and the ones it extends, derived first."""
@@ -175,11 +128,17 @@ class Tree:
                 return i
         return None
 
-    def resolve(self, name: RelationName, scope: Scope) -> _Hit | None:
+    def denotes(self, name: RelationName, scope: Scope, decl: DeclId) -> bool:
+        """Whether `name` read in `scope` resolves to the declaration
+        `decl`."""
+        hit = self.resolve(name, scope)
+        return hit is not None and hit.decl.id == decl
+
+    def resolve(self, name: RelationName, scope: Scope) -> Hit | None:
         if not name.instances:
             for texts in self.levels(scope.components):
                 if (d := self.find_decl(texts, name.name)) is not None:
-                    return _Hit(d, (), (), (), 0)
+                    return Hit(d, (), (), (), 0)
             return None
         first = name.instances[0]
         for texts in self.levels(scope.components):
@@ -207,7 +166,7 @@ class Tree:
                 strict=False)}
         return inner
 
-    def _down(self, init: Instance, rest: tuple[str, ...], rel: str) -> _Hit | None:
+    def _down(self, init: Instance, rest: tuple[str, ...], rel: str) -> Hit | None:
         through: list[DeclId] = []
         args: list[tuple[str, str]] = []
         place: tuple[Level, ...] = ()
@@ -225,7 +184,7 @@ class Tree:
                 for k, c in enumerate(chain):
                     d = self.decls.get(c, {}).get(rel)
                     if d is not None:
-                        return _Hit(d, tuple(through), tuple(args), place, k)
+                        return Hit(d, tuple(through), tuple(args), place, k)
                 return None
             hit = next(((k, i) for k, c in enumerate(chain)
                         if (i := self.inits.get(c, {}).get(rest[0])) is not None), None)
@@ -302,16 +261,18 @@ class SouffleIndex:
     def _macro_occurrences(self, macro: MacroCall
                            ) -> Iterator[tuple[DeclId, Occurrence]]:
         if isinstance(macro, GridCall):
-            width = 2 if Shape.of_call(macro).valued else 1
+            width = 2 if macro.layout.valued else 1
             atom = Atom(macro.relation, (*macro.keys, *(Wildcard(),) * width),
-                        macro.span.first if macro.span else 0)
+                        first_line(macro.span))
             yield from self._occurrence(atom, macro.scope, macro.id, Role.FEEDS, False)
         elif isinstance(macro, RigidCall):
             for placed in macro.names:
                 hit = self.tree.resolve(RelationName((), placed), macro.scope)
-                arity = len(hit.decl.columns) if hit else 1
-                atom = Atom(RelationName((), placed), (Wildcard(),) * arity,
-                            macro.span.first if macro.span else 0)
+                if hit is None:
+                    continue
+                atom = Atom(RelationName((), placed),
+                            (Wildcard(),) * len(hit.decl.columns),
+                            first_line(macro.span))
                 yield from self._occurrence(atom, macro.scope, macro.id, Role.FEEDS,
                                             False)
 
@@ -363,37 +324,52 @@ class SouffleIndex:
             return Unresolved(name, scope)
         return Resolved(hit.decl.id, hit.through, hit.type_arguments)
 
+    def component(self, name: str, scope: Scope) -> Component | None:
+        path = self.tree.comp(name, scope.components)
+        return None if path is None else self.tree.comps[path]
 
-_HELD: dict[int, tuple[weakref.ref[Program], SouffleIndex]] = {}
-_HELD_LOCK = threading.Lock()
+    def type_decl(self, name: str, scope: Scope) -> TypeDecl | None:
+        head, dot, rest = name.partition(".")
+        for texts in self.tree.levels(scope.components):
+            for p in texts:
+                comp = self.tree.comps.get(p)
+                if not dot:
+                    if comp is not None and name in comp.type_params:
+                        return None
+                    if (t := self.tree.types.get(p, {}).get(name)) is not None:
+                        return t
+                elif (init := self.tree.inits.get(p, {}).get(head)) is not None:
+                    path = self.tree.comp(init.component, init.scope.components)
+                    return None if path is None \
+                        else self.type_decl(rest, Scope(path))
+        return None
+
+    def chain(self, component: Component) -> tuple[Component, ...]:
+        return tuple(self.tree.comps[p] for p in self.tree.chain(
+            (*component.scope.components, component.name)))
+
+
+_HELD: ByIdentity[Program, SouffleIndex] = ByIdentity()
 
 
 def held_index(program: Program) -> SouffleIndex | None:
     """The index held for `program`, where one is."""
-    with _HELD_LOCK:
-        got = _HELD.get(id(program))
-    return got[1] if got is not None and got[0]() is program else None
+    return _HELD.get(program)
+
+
+def tree_of(program: Program) -> Tree:
+    """`program`'s `Tree`: the held index's, else one built now and not
+    held."""
+    held = _HELD.get(program)
+    return held.tree if held is not None else Tree(program)
 
 
 def index_of(program: Program) -> SouffleIndex:
     """The index of `program`: the one held for it, else one built and held
     while the program lives."""
-    got = held_index(program)
-    if got is None:
-        got = SouffleIndex(program)
-        hold(program, got)
-    return got
+    return _HELD.compute(program, lambda: SouffleIndex(program))
 
 
 def hold(program: Program, index: SouffleIndex) -> None:
     """Holds `index` as `program`'s while the program lives."""
-    key = id(program)
-    with _HELD_LOCK:
-        _HELD[key] = (weakref.ref(program, lambda _p, key=key: _drop(key)), index)
-
-
-def _drop(key: int) -> None:
-    with _HELD_LOCK:
-        held = _HELD.get(key)
-        if held is not None and held[0]() is None:
-            del _HELD[key]
+    _HELD.put(program, index)

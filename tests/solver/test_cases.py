@@ -47,9 +47,11 @@ def _cases(bg_ignore: str, fg_ignore: str) -> tuple[Case, ...]:
             relation(18, "out", 18, columns=[
                 ("p", "Position"), ("col", "Color"), ("ch", "Choice")]),
             relation(30, "propose", 31, ("DominantColor",), [("c", "Color")]),
+            relation(34, "propose", 35, ("RarestColor",), [("c", "Color")]),
         ],
         components=[component(7, "Params", 7, 16),
-                    component(29, "DominantColor", 30, 32)],
+                    component(29, "DominantColor", 30, 32),
+                    component(33, "RarestColor", 34, 36)],
         instances=[instance(17, "params", "Params", 17)],
         units=[
             # Both cases read bg and fg; only B reads mg.
@@ -99,3 +101,11 @@ def test_a_named_ignore_takes_its_line_branch_and_each_named_branch(
     assert set(got) == {
         Case(A, ()), Case(A, (fg,)), Case(A, (bg, fg)),
         Case(B, ()), Case(B, (fg,)), Case(B, (mg,)), Case(B, (fg, mg))}
+
+
+def test_a_proposer_ignore_takes_its_one_derivation(solvers: Path) -> None:
+    got = _cases("// @ignore: derive RarestColor — fails Fit",
+                 "// @ignore: derive — fails Subsumption")
+    bg, mg = _derive(got, "bg"), _derive(got, "mg")
+    assert set(got) == {Case(A, ()), Case(A, (bg,)), Case(B, ()),
+                        Case(B, (bg,)), Case(B, (mg,)), Case(B, (bg, mg))}

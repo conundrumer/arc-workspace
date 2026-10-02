@@ -17,6 +17,7 @@ from engine.program import (
     Scope,
     SubtypeType,
     UnionType,
+    own,
 )
 from souffle import SouffleEngine
 
@@ -131,12 +132,9 @@ def parse(text: str, base_dir: Path = Path(".")) -> Program:
 def _view(p: Parsed) -> Program:
     placed: list[tuple[int, Scope, Item]] = []
 
-    def own(span: object) -> bool:
-        return span is not None and getattr(span, "file", "") is None
-
     comps: dict[tuple[str, ...], Comp] = {}
     for c in p.components:
-        if c.span is None or c.span.file is not None:
+        if c.span is None or not own(c.span):
             continue
         comp = Comp(c.name, c.span.first, c.span.last)
         comps[(*c.scope.components, c.name)] = comp
@@ -155,7 +153,7 @@ def _view(p: Parsed) -> Program:
             placed.append((r.span.first, r.scope,
                            Decl(r.name, r.span.first, r.span.last)))
     for i in p.instances:
-        if i.span is not None and i.span.file is None:
+        if i.span is not None and own(i.span):
             placed.append((i.span.first, i.scope,
                            Init(i.name, i.span.first, i.span.last)))
     for f in p.functors:
@@ -164,7 +162,7 @@ def _view(p: Parsed) -> Program:
                            Functor(f.name, f.span.first, f.span.last)))
     seen: set[tuple[int, int, str]] = set()
     for u in p.units:
-        if u.span is None or u.span.file is not None:
+        if u.span is None or not own(u.span):
             continue
         key = (u.span.first, u.span.last, "/".join(u.scope.components))
         if key in seen:
@@ -174,10 +172,10 @@ def _view(p: Parsed) -> Program:
                        Rule(Head(u.head.relation.name), u.body, u.span.first,
                             u.span.last)))
     for inc in p.includes:
-        if inc.file is None:
+        if own(inc):
             placed.append((inc.line, Scope(()), Include(inc.path, inc.line)))
     for d in p.defines:
-        if d.file is None:
+        if own(d):
             placed.append((d.line, Scope(()), Define(d.name, d.line)))
     top: list[Item] = []
     for _line, scope, item in sorted(placed, key=lambda x: x[0]):
@@ -185,5 +183,5 @@ def _view(p: Parsed) -> Program:
         (holder.items if holder is not None else top).append(item)
     comments = [Comment(c.line, ("/*" + c.text + "*/") if c.block
                         else "//" + c.text, c.own_line)
-                for c in p.comments if c.file is None]
+                for c in p.comments if own(c)]
     return Program(top, comments)

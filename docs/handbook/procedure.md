@@ -66,7 +66,7 @@
     - Form them from the pairs, the reference TS solver, the headers of the solvers under `programs/solvers/`, probes over the pairs, and variant tasks.
         - `grep -l '^// @keywords:.*<keyword>' programs/solvers/*.dl` lists the solvers under a keyword, and `awk '/^$/{exit} 1' programs/solvers/<id>.dl` prints one solver's header.
         - A probe is a script you write under `.scratch/<task_id>/` that runs a reading over grids and prints the outputs.
-    - Name each branch by a constructor name of its own, in the form [Witness file](docs/handbook/solver-file.md#witness-file) gives, `$EightConnected`.
+    - Name each branch by a constructor name of its own, in the form [Witness file](docs/handbook/solver-file.md#witness-file) gives. The name says what the branch changes and contains no value of a parameter.
     - A claim considered and not formed as a branch goes under Not formed, with why.
 3. Place each choice point at the concept or under a branch, as [Choice points and open parameters](docs/handbook/principles.md#choice-points-and-open-parameters) states.
     - For each two choice points where neither stands under a branch of the other, state the model of each case that takes a non-concept branch at both.
@@ -117,7 +117,7 @@
     - A rule that report restates takes the restated text, and the concept file's text stands under it as its `@approximated:` line when the restated text has no relational form.
     - Each branch that report gives a witness is a constructor, named as the report names it and nested as the report nests its choice point.
     - A concept branch's constructor takes a name of your own.
-    - An open parameter of that report, or one the pairs leave unresolved, unless [Principles](docs/handbook/principles.md) make it a choice point, is a `Params` relation with a fact per open value, and no constructor; its values are the report's where it gives them, whatever the concept file gives.
+    - An open parameter of that report, or one the pairs leave unresolved, unless [Principles](docs/handbook/principles.md) make it a choice point, is a `Params` relation with a fact per open value, and no constructor; its values are the report's where it gives them, together with each value the sweep in [Determine](#determine) reports beyond them, whatever the concept file gives.
     - The cases are the combinations of those branches that fit, which the run shows, whether or not one case's model subsumes another's.
     - A `<branch>` & `<branch>` line of that report gives what the case that takes both branches reads.
     - Leave the `Determine` comp for the Determine operation.
@@ -138,6 +138,7 @@
     - A check the audit skips goes in the review as open.
 
 ### Determine
+- Run the sweep (`uv run python scripts/run_dl.py sweep <task_id>`), and store each value it reports for a parameter beyond the stored values, as [Open parameters](docs/handbook/principles.md#open-parameters) states, unless [Principles](docs/handbook/principles.md) make that parameter a choice point.
 - Run the plan (`uv run python scripts/run_dl.py determination-plan <task_id>`).
 - When the plan lists actions and a different parameterization would give a simpler or more principled model, change the parameterization, run [Develop](#develop) again over the changed solver, and put the change in the review.
 - Otherwise, do the actions the plan lists.
@@ -149,7 +150,7 @@
     - Write the `@witness` lines of the header and the branches, with each plausibility and verdict as the Analyze report gives it, `@relaxed` for the scene claim it breaks, which rules out `ordinary`, and `@reassigned` for each parameter that the assignment it stands at changes.
         * comment: The clause "which rules out `ordinary`" restates the plausibility definition, and a64e4611 Create needed it.
     - A witness of the concept case stands under the branch its verdict denotes, and with verdict `other` under an `@approximated:` line of the rule whose approximation disagrees on it.
-    - On a branch's witness with no `@reassigned` line, on which no open values disagree and no approximation disagrees with its rule, an `other` verdict identifies a problem with the concept case, and so does a non-concept verdict at `ordinary` plausibility; the concept case is fixed to give the judged output, the verdict becomes `concept`, and the fix goes in the review as a departure.
+    - On a branch's witness with no `@reassigned` line, on which no open values disagree and no approximation disagrees with its rule, an `other` verdict identifies a problem with the concept case, and so does a verdict denoting that branch at `ordinary` plausibility; the concept case is fixed to give the judged output, the verdict becomes `concept`, and the fix goes in the review as a departure.
 - **Divergence witness.**
     - Replace each name that has no case of the solver with names for the cases `witness` lists for it, or remove it when `witness` lists none, rewrite a `separates` text that mentions it, and remove a witness that then separates nothing.
     - Rewrite each name in a form the [Witness file](docs/handbook/solver-file.md#witness-file) does not give into one it gives, and remove each witness that duplicates the one `derive` or `store` records.
@@ -159,7 +160,7 @@
     - Judge the plausibility and verdict of a witness you build, and put that judgment in the review.
 - A branch dropped under a case condition goes in the review with the condition it fails, and for Relational form with why no set of clauses states its claim.
 - For each approximated rule, state in the review why no set of clauses states it.
-- When no witness can be built, replace the rule's text with the approximation's and remove the `@approximated:` line.
+- When the approximation agrees with the rule on every input the generator produces, replace the rule's text with the approximation's and remove the `@approximated:` line.
 - Record each witness you build with `uv run python scripts/run_dl.py record <task_id> <witness id> --separates "<what it separates>"`, with the grid on stdin.
     - For an `other` verdict, take the judged output from `uv run python scripts/run_dl.py grid <task_id>` on a control grid: the witness changed so that the program's output is the concept's reading.
 - When the divergence requires a parameter to be reassigned, reassign that parameter with `--assign`.
@@ -187,6 +188,7 @@
     - Reads as implementation detail with no conceptual meaning.
     - Has repetition where a principled form exists.
     - Has unusual or needless indirection.
+- Run `uv run python scripts/run_dl.py deletions <task_id>`.
 - Run the solver after simplifying.
 
 ### Prune

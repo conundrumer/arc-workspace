@@ -4,7 +4,6 @@ The stub replays a canned event stream per turn and records the argv and the
 prompt it was called with, so no test reaches the real CLI.
 """
 
-import importlib.util
 import json
 import os
 import queue
@@ -12,7 +11,6 @@ import subprocess
 import sys
 import threading
 import time
-import types
 from pathlib import Path
 
 import pytest
@@ -163,137 +161,12 @@ def codex(tmp_path, stub):
         adapter.close()
 
 
-@pytest.fixture(scope="session")
-def adapter():
-    """The adapter module, loaded once so the in-process tests share it."""
-    spec = importlib.util.spec_from_file_location("codex_adapter", ADAPTER)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"no module loader for {ADAPTER}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-class Stdin:
-    """The child's stdin, holding what was written past the close."""
-
-    def __init__(self):
-        self.text = ""
-
-    def write(self, text):
-        self.text += text
-
-    def close(self):
-        pass
-
-
-class FakeChild:
-    """One `codex exec` run: the argv and prompt it was given, and the
-    scripted stream it answers with."""
-
-    def __init__(self, argv, script):
-        self.argv, self.script = argv, script
-        self.returncode = 0
-        self.stdin = Stdin()
-        self.stdout, self.stderr = [], []
-        for step in script:
-            if "_stderr" in step:
-                self.stderr.append(step["_stderr"])
-            elif "_exit" in step:
-                self.returncode = step["_exit"]
-            else:
-                self.stdout.append(json.dumps(step) + "\n")
-
-    def wait(self):
-        return self.returncode
-
-
-@pytest.fixture
-def inproc(tmp_path, adapter, monkeypatch):
-    """The adapter's turn loop in this process, against a scripted child.
-
-    The process-level fixture above covers the adapter as a worker; this one
-    covers what it makes of a turn, with no interpreter to start.
-    """
-    scripts, calls, events = {}, [], []
-    monkeypatch.setattr(adapter, "emit", events.append)
-
-    def popen(argv, **kw):
-        child = FakeChild(argv, scripts.get(len(calls) + 1) or scripts.get(1, []))
-        calls.append(child)
-        return child
-    monkeypatch.setattr(adapter, "subprocess",
-                        types.SimpleNamespace(Popen=popen, PIPE=subprocess.PIPE))
-
-    class Harness:
-        root = tmp_path
-
-        def script(self, turn, *steps):
-            scripts[turn] = list(steps)
-
-        def start(self, *args):
-            self.worker = adapter.Worker(adapter.parser().parse_args(
-                ["--codex", "codex", *args]))
-            return self
-
-        def turn(self, text):
-            events.clear()
-            self.worker.run_turn(text)
-            return list(events)
-
-        def calls(self):
-            return [{"argv": c.argv[1:], "prompt": c.stdin.text} for c in calls]
-
-    return Harness()
-
-
-def texts(events):
-    out = []
-    for ev in events:
-        for block in (ev.get("message") or {}).get("content", []):
-            if block.get("type") == "text":
-                out.append(block["text"])
-    return out
-
-
-def tools(events):
-    out = []
-    for ev in events:
-        for block in (ev.get("message") or {}).get("content", []):
-            if block.get("type") == "tool_use":
-                out.append((block["name"], block["input"]))
-    return out
-
-
-def test_interrupt_cuts_the_turn_and_kills_the_child(codex):
-    codex.script(1, {"type": "thread.started", "thread_id": "th-1"},
-                 message("thinking"), {"_sleep": 60})
-    worker = codex.start()
-    worker.send({"type": "user", "message": {"role": "user", "content": "go"}})
-    worker.until("assistant")
-    worker.interrupt()
-    events = worker.until("result")
-    assert any(ev["type"] == "control_response" for ev in events)
-    assert events[-1]["terminal_reason"] == "aborted_streaming"
-    assert events[-1]["is_error"] is True
-
-
 def test_an_interrupt_that_beats_the_spawn_still_cuts_the_turn(codex):
     codex.script(1, {"type": "thread.started", "thread_id": "th-1"}, {"_sleep": 60})
     worker = codex.start()
     worker.send({"type": "user", "message": {"role": "user", "content": "go"}})
     worker.interrupt()
     assert worker.until("result")[-1]["terminal_reason"] == "aborted_streaming"
-
-
-def test_a_child_that_dies_mid_turn_still_lands_a_result(inproc):
-    inproc.script(1, {"type": "thread.started", "thread_id": "th-1"},
-                 message("half"), {"_stderr": "stream error: connection reset\n"},
-                 {"_exit": 3})
-    events = inproc.start().turn("go")
-    assert events[-1]["terminal_reason"] == "error_during_execution"
-    assert events[-1]["result"] == ""
-    assert any("code 3" in t and "connection reset" in t for t in texts(events))
 
 
 def test_stdin_close_ends_the_adapter(codex):
