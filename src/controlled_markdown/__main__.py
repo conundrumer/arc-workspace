@@ -72,13 +72,10 @@ SKIPPED = {".venv", "node_modules", ".git", "data", ".scratch"}
 def code_files(root: Path) -> list[Path]:
     """Every file under the root that a program's prose can stand in."""
     out = []
-    for path in sorted(root.rglob("*")):
-        if path.suffix not in CODE_SUFFIXES or not path.is_file():
-            continue
-        if SKIPPED & set(path.relative_to(root).parts):
-            continue
-        out.append(path)
-    return out
+    for folder, dirs, files in root.walk():
+        dirs[:] = [name for name in dirs if name not in SKIPPED]
+        out.extend(folder / name for name in files if name.endswith(CODE_SUFFIXES))
+    return sorted(out)
 
 
 def collect(names: list[str]) -> list[Path]:
