@@ -1,6 +1,5 @@
 + index: headings
 * comment: when editing this doc
-    - Write in the indicative mood.
     - Write what File structure says by editing the template, and describe only what the template cannot explain.
 
 # Solver file

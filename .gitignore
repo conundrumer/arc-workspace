@@ -27,6 +27,7 @@ tests/scratch/
 .claude/agents/analyze.md
 .claude/agents/create.md
 .claude/agents/refine.md
+.claude/agents/doc-editor.md
 .claude/analyze-next.md
 programs/lib.md
 programs/lib/*.md

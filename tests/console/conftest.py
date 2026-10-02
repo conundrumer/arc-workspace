@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from handbook.context import DOCS_DIR, EDITING_DOC
+from handbook.context import DOCS_DIR
 
 ROOT = Path(__file__).resolve().parents[2]
 SERVER_PY = ROOT / "tools" / "console" / "server.py"
@@ -104,7 +104,7 @@ def tmp_path(workdir, request):     # noqa: A002 — replaces pytest's own
 
 def handbook_stems():
     """The docs the handbook's composition document includes."""
-    return sorted(p.stem for p in DOCS_DIR.glob("*.md") if p.name != EDITING_DOC)
+    return sorted(p.stem for p in DOCS_DIR.glob("*.md") if p.name != "editing.md")
 
 
 def fake_queue(n, order, held=()):

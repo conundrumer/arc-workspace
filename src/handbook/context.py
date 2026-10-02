@@ -46,8 +46,6 @@ from solver.vocabulary import LIB_FILE
 # composition document lists each one, and the registry reads it from there.
 DOCS_DIR = REPO_ROOT / "docs" / "handbook"
 ROLE_DIR = REPO_ROOT / "prompts" / "roles"
-# The doc that tells an editor where each section lives. It is not rendered.
-EDITING_DOC = "editing.md"
 LIB_SRC = REPO_ROOT / "programs" / LIB_FILE
 
 # The agent documents, one per handbook agent: front matter holding the

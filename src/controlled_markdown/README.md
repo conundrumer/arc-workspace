@@ -23,7 +23,7 @@
 ## The documents
 
 - Each document below states its own rules, and a reader takes the one its job needs.
-- Each is written in the indicative mood, and each demonstrates a rule in a fenced example where a demo helps.
+- Each demonstrates a rule in a fenced example where a demo helps.
 - `writing.md`: the lines and the markers, for anyone editing a document.
 - `templating.md`: composing a document out of others and filling it with values, for anyone editing the prompts.
 - `grammar.md`: the exact rules and the edge cases, for anyone maintaining the package.

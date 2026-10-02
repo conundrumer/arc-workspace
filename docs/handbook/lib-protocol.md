@@ -1,6 +1,4 @@
 + index: headings
-* comment: when editing this doc
-    - Write in the imperative mood.
 
 # Lib addition protocol
 - Qualify a new operation for the lib, `programs/lib.dl` and the modules under `programs/lib/`, by real use in the solvers and by generality.

@@ -20,7 +20,7 @@
 
 ## Handbook
 - The handbook is what a solver session reads.
-- [Editing the agent-facing documents](docs/handbook/editing.md) says what it is made of and how it is edited.
+- To edit a document an agent reads, send a request to the `doc-editor` agent.
 
 ## Solver console
 - `tools/console/` runs solver sessions as `claude -p` workers in staged chains.

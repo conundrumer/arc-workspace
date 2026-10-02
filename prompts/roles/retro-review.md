@@ -23,7 +23,7 @@
 - A doc wording change that only makes a doc rule more precise, with no rule drawn from one file, is a fix.
 - A fix is not an option when some reachable outcome of it violates a principle in [Principles](docs/handbook/principles.md), and the default on such an issue is drop.
 - When the principle itself looks wrong, the call says so instead.
-- A fix that cites a solver is judged by the editing note that opens [Principles](docs/handbook/principles.md), which you read in the file.
+- A fix that cites a solver, or that adds a statement to [Principles](docs/handbook/principles.md) or [Encoding](docs/handbook/encoding.md), is judged by the editing note that opens [Principles](docs/handbook/principles.md), which you read in the file.
 - A keyword addition or a gloss change is a proposal, tier 4.
 - A fix to a principle returns the readings the call chose between as options beside the default, each labeled in one word, with the wording it puts in the file, its consequence over approved solvers, and a task or solver where the readings differ.
 - Do not rest the default on a reason whose condition a ground rules out.
