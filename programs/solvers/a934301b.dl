@@ -104,11 +104,6 @@
     //     @reassigned dropped_count
     // @witness five-marks: ordinary concept
   | CountTable {}
-    // @rule keep-few-marks: a block whose mark count is below the mean mark
-    //  count of the grid's blocks is copied to the output unchanged
-    // @rule drop-many-marks: every other block becomes params.background
-    // @witness high-mean: ordinary concept
-  | BelowMean {}
     // @rule keep-few-marks: a block whose mark count is below the median mark
     //  count of the grid's blocks is copied to the output unchanged
     // @rule drop-many-marks: every other block becomes params.background
@@ -132,79 +127,55 @@
 
 .decl out(p: Position, col: Color, ch: Choice)
 
-// The members of each key whose score lies below the mean score of the
-// key's members.
-.comp MeanSplit<Key, Val> {
-    .decl cand(key: Key, v: Val, s: number)  // @input
-
-    .decl below(key: Key, v: Val)
-    below(Ky, V) :-
-        cand(Ky, V, S),
-        N = count : { cand(Ky, _, _) }, T = sum S2 : { cand(Ky, _, S2) },
-        S * N < T.
-}
-
 .comp Params {
     // @derive DominantColor: variant derived
     //     @relaxed blocks
     // With the dominant color as background, the rarest color is the mark
     // GridMinority reads wherever GridMinority is defined.
-    // @ignore: derive $DiagConnect & $GridMinority & $BelowMean — subsumed by its mark=RarestColor case
     // @ignore: derive $DiagConnect & $GridMinority & $BelowMedian — subsumed by its mark=RarestColor case
     // @ignore: derive $DiagConnect & $GridMinority & $CountTable — subsumed by its mark=RarestColor case
     // @ignore: derive $DiagConnect & $GridMinority & $FewestThree — subsumed by its mark=RarestColor case
     // @ignore: derive $DiagConnect & $GridMinority — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $GridMinority & $MarkPieces & $BelowMean — subsumed by its mark=RarestColor case
     // @ignore: derive $DiagConnect & $GridMinority & $MarkPieces & $BelowMedian — subsumed by its mark=RarestColor case
     // @ignore: derive $DiagConnect & $GridMinority & $MarkPieces & $CountTable — subsumed by its mark=RarestColor case
     // @ignore: derive $DiagConnect & $GridMinority & $MarkPieces & $FewestThree — subsumed by its mark=RarestColor case
     // @ignore: derive $DiagConnect & $GridMinority & $MarkPieces — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $BelowMean & $CopyOther — subsumed by its mark=RarestColor case
     // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $BelowMedian & $CopyOther — subsumed by its mark=RarestColor case
     // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $CountTable & $CopyOther — subsumed by its mark=RarestColor case
     // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $FewestThree & $CopyOther — subsumed by its mark=RarestColor case
     // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $CopyOther — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $MarkPieces & $BelowMean & $CopyOther — subsumed by its mark=RarestColor case
     // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $MarkPieces & $BelowMedian & $CopyOther — subsumed by its mark=RarestColor case
     // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $MarkPieces & $CountTable & $CopyOther — subsumed by its mark=RarestColor case
     // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $MarkPieces & $FewestThree & $CopyOther — subsumed by its mark=RarestColor case
     // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $MarkPieces & $CopyOther — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $BelowMean — subsumed by its mark=RarestColor case
     // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $BelowMedian — subsumed by its mark=RarestColor case
     // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $CountTable — subsumed by its mark=RarestColor case
     // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $FewestThree — subsumed by its mark=RarestColor case
     // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $MarkPieces & $BelowMean — subsumed by its mark=RarestColor case
     // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $MarkPieces & $BelowMedian — subsumed by its mark=RarestColor case
     // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $MarkPieces & $CountTable — subsumed by its mark=RarestColor case
     // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $MarkPieces & $FewestThree — subsumed by its mark=RarestColor case
     // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $MarkPieces — subsumed by its mark=RarestColor case
-    // @ignore: derive $GridMinority & $BelowMean — subsumed by its mark=RarestColor case
     // @ignore: derive $GridMinority & $BelowMedian — subsumed by its mark=RarestColor case
     // @ignore: derive $GridMinority & $CountTable — subsumed by its mark=RarestColor case
     // @ignore: derive $GridMinority & $FewestThree — subsumed by its mark=RarestColor case
     // @ignore: derive $GridMinority — subsumed by its mark=RarestColor case
-    // @ignore: derive $GridMinority & $MarkPieces & $BelowMean — subsumed by its mark=RarestColor case
     // @ignore: derive $GridMinority & $MarkPieces & $BelowMedian — subsumed by its mark=RarestColor case
     // @ignore: derive $GridMinority & $MarkPieces & $CountTable — subsumed by its mark=RarestColor case
     // @ignore: derive $GridMinority & $MarkPieces & $FewestThree — subsumed by its mark=RarestColor case
     // @ignore: derive $GridMinority & $MarkPieces — subsumed by its mark=RarestColor case
-    // @ignore: derive $BodyMarkOnly & $GridMinority & $BelowMean & $CopyOther — subsumed by its mark=RarestColor case
     // @ignore: derive $BodyMarkOnly & $GridMinority & $BelowMedian & $CopyOther — subsumed by its mark=RarestColor case
     // @ignore: derive $BodyMarkOnly & $GridMinority & $CountTable & $CopyOther — subsumed by its mark=RarestColor case
     // @ignore: derive $BodyMarkOnly & $GridMinority & $FewestThree & $CopyOther — subsumed by its mark=RarestColor case
     // @ignore: derive $BodyMarkOnly & $GridMinority & $CopyOther — subsumed by its mark=RarestColor case
-    // @ignore: derive $BodyMarkOnly & $GridMinority & $MarkPieces & $BelowMean & $CopyOther — subsumed by its mark=RarestColor case
     // @ignore: derive $BodyMarkOnly & $GridMinority & $MarkPieces & $BelowMedian & $CopyOther — subsumed by its mark=RarestColor case
     // @ignore: derive $BodyMarkOnly & $GridMinority & $MarkPieces & $CountTable & $CopyOther — subsumed by its mark=RarestColor case
     // @ignore: derive $BodyMarkOnly & $GridMinority & $MarkPieces & $FewestThree & $CopyOther — subsumed by its mark=RarestColor case
     // @ignore: derive $BodyMarkOnly & $GridMinority & $MarkPieces & $CopyOther — subsumed by its mark=RarestColor case
-    // @ignore: derive $BodyMarkOnly & $GridMinority & $BelowMean — subsumed by its mark=RarestColor case
     // @ignore: derive $BodyMarkOnly & $GridMinority & $BelowMedian — subsumed by its mark=RarestColor case
     // @ignore: derive $BodyMarkOnly & $GridMinority & $CountTable — subsumed by its mark=RarestColor case
     // @ignore: derive $BodyMarkOnly & $GridMinority & $FewestThree — subsumed by its mark=RarestColor case
     // @ignore: derive $BodyMarkOnly & $GridMinority — subsumed by its mark=RarestColor case
-    // @ignore: derive $BodyMarkOnly & $GridMinority & $MarkPieces & $BelowMean — subsumed by its mark=RarestColor case
     // @ignore: derive $BodyMarkOnly & $GridMinority & $MarkPieces & $BelowMedian — subsumed by its mark=RarestColor case
     // @ignore: derive $BodyMarkOnly & $GridMinority & $MarkPieces & $CountTable — subsumed by its mark=RarestColor case
     // @ignore: derive $BodyMarkOnly & $GridMinority & $MarkPieces & $FewestThree — subsumed by its mark=RarestColor case
@@ -251,7 +222,7 @@ mark_color_choice($StoredMark()). mark_color_choice($GridMinority()). mark_color
 measure_choice($MarkCells()). measure_choice($MarkPieces()).
 
 .decl keep_choice(k: Keep)
-keep_choice($MaxMarks()). keep_choice($CountTable()). keep_choice($BelowMean()).
+keep_choice($MaxMarks()). keep_choice($CountTable()).
 keep_choice($BelowMedian()). keep_choice($FewestThree()).
 
 .decl impl_choice(ch: Choice)
@@ -417,14 +388,6 @@ dropped(C, $MaxMarks()) :- marks(C, N), params.max_marks(M), N > M.
 // --- $CountTable ---
 kept(C, $CountTable()) :- marks(C, N), params.kept_count(N).
 dropped(C, $CountTable()) :- marks(C, N), params.dropped_count(N).
-
-// --- $BelowMean ---
-// @claim keep-few-marks drop-many-marks
-.init mean_test = MeanSplit<CountView, Ident>
-mean_test.cand(Cv, Id, N) :- marks([Cv, Id], N).
-
-kept([Cv, Id], $BelowMean()) :- mean_test.below(Cv, Id).
-dropped([Cv, Id], $BelowMean()) :- marks([Cv, Id], _), !mean_test.below(Cv, Id).
 
 // --- $BelowMedian, $FewestThree ---
 // The blocks of X's grid with at most X's mark count, X included.

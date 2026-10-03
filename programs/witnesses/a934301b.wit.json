@@ -40,7 +40,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["$DiagConnect & $BelowMean","$DiagConnect & $FewestThree"],
+      "cases": ["$DiagConnect & $FewestThree"],
       "grid": [
         [1,1,1,0,0,0,0,0,0,0,0,0,0,0,0],
         [1,1,1,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -103,16 +103,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": [
-        "$AnyInk & $BlockMinority & $BelowMean",
-        "$AnyInk & $BlockMinority & $CountTable",
-        "$AnyInk & $BlockMinority & $MaxMarks",
-        "$AnyInk & $StoredMark & $BelowMean & mark=stored",
-        "$AnyInk & $StoredMark & $CountTable & mark=stored",
-        "$AnyInk & $StoredMark & $MaxMarks & mark=stored",
-        "$CopyOther & $BlockMinority & mark=stored",
-        "$CopyOther & $StoredMark & mark=stored"
-      ],
+      "cases": ["$AnyInk & $BlockMinority & $CountTable", "$AnyInk & $BlockMinority & $MaxMarks", "$AnyInk & $StoredMark & $CountTable & mark=stored", "$AnyInk & $StoredMark & $MaxMarks & mark=stored", "$CopyOther & $BlockMinority & mark=stored", "$CopyOther & $StoredMark & mark=stored"],
       "grid": [
         [1,1,1,0,0,1,1,1,1,0,8,1,1,0,0],
         [1,1,1,0,0,1,1,8,1,0,1,1,1,0,0],
@@ -162,33 +153,7 @@
       "cases": ["$AnyInk & $GridMinority"],
       "grid": null
     }, {
-      "cases": [
-        "$AnyInk & $BelowMean & mark=RarestColor",
-        "$CopyOther & $StoredMark & $BelowMean & mark=RarestColor"
-      ],
-      "grid": [
-        [1,1,1,0,0,1,1,1,1,0,8,1,1,0,0],
-        [1,1,1,0,0,1,1,8,1,0,1,1,1,0,0],
-        [1,1,1,0,0,1,1,1,1,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [1,1,8,0,0,8,1,1,0,0,1,8,1,1,0],
-        [1,1,1,0,0,1,1,1,0,0,1,1,1,8,0],
-        [8,1,1,0,0,1,8,1,0,0,8,1,1,1,0],
-        [0,0,0,0,0,1,1,8,0,0,1,1,8,1,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-      ]
-    }, {
-      "cases": [
-        "$AnyInk & $BelowMedian & mark=RarestColor",
-        "$EraseOther & $BlockMinority & $BelowMean & mark=RarestColor",
-        "$EraseOther & $BelowMedian & mark=RarestColor"
-      ],
+      "cases": ["$AnyInk & $BelowMedian & mark=RarestColor", "$EraseOther & $BelowMedian & mark=RarestColor"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -234,10 +199,7 @@
       "cases": ["$AnyInk & $FewestThree & mark=RarestColor"],
       "grid": null
     }, {
-      "cases": [
-        "$CopyOther & $BlockMinority & $BelowMean & mark=RarestColor",
-        "$CopyOther & $BelowMedian & mark=RarestColor"
-      ],
+      "cases": ["$CopyOther & $BelowMedian & mark=RarestColor"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,8,0,0,0,0],
         [0,0,0,0,0,0,0,8,0,0,0,0,0,0,0],
@@ -308,25 +270,6 @@
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
       ]
-    }, {
-      "cases": ["$EraseOther & $StoredMark & $BelowMean & mark=RarestColor"],
-      "grid": [
-        [1,1,1,0,0,1,1,1,1,0,0,1,1,0,0],
-        [1,1,1,0,0,1,1,0,1,0,1,1,1,0,0],
-        [1,1,1,0,0,1,1,1,1,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [1,1,0,0,0,0,1,1,0,0,1,0,1,1,0],
-        [1,1,1,0,0,1,1,1,0,0,1,1,1,0,0],
-        [0,1,1,0,0,1,0,1,0,0,0,1,1,1,0],
-        [0,0,0,0,0,1,1,0,0,0,1,1,0,1,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-      ]
     }]
   }, {
     "id": "other-color-on-dropped",
@@ -375,25 +318,6 @@
     }, {
       "cases": ["$AnyInk & $GridMinority"],
       "grid": null
-    }, {
-      "cases": ["$AnyInk & $BelowMean & mark=RarestColor"],
-      "grid": [
-        [1,1,1,0,0,1,1,1,1,0,8,1,1,0,0],
-        [1,1,1,0,0,1,1,8,1,0,1,1,1,0,0],
-        [1,1,1,0,0,1,1,1,1,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,8,1,1,0,0,1,8,1,1,0],
-        [0,0,0,0,0,1,1,1,0,0,1,1,1,8,0],
-        [0,0,0,0,0,1,8,1,0,0,8,1,1,1,0],
-        [0,0,0,0,0,1,1,8,0,0,1,1,8,1,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-      ]
     }, {
       "cases": [
         "$AnyInk & $BelowMedian & mark=RarestColor",
@@ -466,25 +390,6 @@
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": ["$CopyOther & $BelowMean & mark=RarestColor"],
-      "grid": [
-        [1,1,1,0,0,1,1,1,1,0,8,1,1,0,0],
-        [1,1,1,0,0,1,1,8,1,0,1,1,1,0,0],
-        [1,1,1,0,0,1,1,1,1,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,8,0,0,8,1,1,0,0,1,8,1,1,0],
-        [0,0,0,0,0,1,1,1,0,0,1,1,1,8,0],
-        [8,0,0,0,0,1,8,1,0,0,8,1,1,1,0],
-        [0,0,0,0,0,1,1,8,0,0,1,1,8,1,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-      ]
-    }, {
       "cases": ["$CopyOther & $BelowMedian & mark=RarestColor"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,8,0,0,0,0],
@@ -509,25 +414,6 @@
     }, {
       "cases": ["$BodyMarkOnly & $GridMinority"],
       "grid": null
-    }, {
-      "cases": ["$EraseOther & $BelowMean & mark=RarestColor"],
-      "grid": [
-        [1,1,1,0,0,1,1,1,1,0,0,1,1,0,0],
-        [1,1,1,0,0,1,1,0,1,0,1,1,1,0,0],
-        [1,1,1,0,0,1,1,1,1,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,1,1,0,0,1,0,1,1,0],
-        [0,0,0,0,0,1,1,1,0,0,1,1,1,0,0],
-        [0,0,0,0,0,1,0,1,0,0,0,1,1,1,0],
-        [0,0,0,0,0,1,1,0,0,0,1,1,0,1,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-      ]
     }, {
       "cases": [
         "$EraseOther & $CountTable & mark=RarestColor",
@@ -591,11 +477,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$MarkPieces & $BelowMean",
-        "$MarkPieces & $CountTable",
-        "$MarkPieces & $MaxMarks"
-      ],
+      "cases": ["$MarkPieces & $CountTable", "$MarkPieces & $MaxMarks"],
       "grid": [
         [1,1,1,0,0,1,1,1,1,0,8,1,1,0,0],
         [1,1,1,0,0,1,1,8,1,0,1,1,1,0,0],
@@ -683,14 +565,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$BlockMinority & $BelowMean",
-        "$BlockMinority & $CountTable",
-        "$BlockMinority & $MaxMarks",
-        "$MarkPieces & $BelowMean",
-        "$MarkPieces & $CountTable",
-        "$MarkPieces & $MaxMarks"
-      ],
+      "cases": ["$BlockMinority & $CountTable", "$BlockMinority & $MaxMarks", "$MarkPieces & $CountTable", "$MarkPieces & $MaxMarks"],
       "grid": [
         [1,1,1,0,0,1,1,1,1,0,8,1,1,0,0],
         [1,1,1,0,0,1,1,8,1,0,1,1,1,0,0],
@@ -732,28 +607,6 @@
       "grid": null
     }, {
       "cases": [
-        "$GridMinority & $MarkCells & $BelowMean",
-        "$StoredMark & $MarkCells & $BelowMean"
-      ],
-      "grid": [
-        [1,1,1,0,0,1,1,1,1,0,8,1,1,0,0],
-        [1,1,1,0,0,1,1,8,1,0,1,1,1,0,0],
-        [1,1,1,0,0,1,1,1,1,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [1,1,8,0,0,0,0,0,0,0,0,0,0,0,0],
-        [1,1,1,0,0,0,0,0,0,0,0,0,0,0,0],
-        [8,1,1,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-      ]
-    }, {
-      "cases": [
         "$GridMinority & $MarkCells & $CountTable",
         "$StoredMark & $MarkCells & $CountTable"
       ],
@@ -792,16 +645,7 @@
         [0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$BlockMinority & $BelowMean & mark=stored",
-        "$BlockMinority & $BelowMedian & mark=stored",
-        "$AnyInk & $GridMinority & $BelowMedian",
-        "$AnyInk & $GridMinority & $MarkCells & $MaxMarks",
-        "$AnyInk & $GridMinority & $MarkPieces & $BelowMean",
-        "$AnyInk & $BelowMedian & mark=RarestColor",
-        "$AnyInk & $MarkCells & $MaxMarks & mark=RarestColor",
-        "$AnyInk & $MarkPieces & $BelowMean & mark=RarestColor"
-      ],
+      "cases": ["$BlockMinority & $BelowMedian & mark=stored", "$AnyInk & $GridMinority & $BelowMedian", "$AnyInk & $GridMinority & $MarkCells & $MaxMarks", "$AnyInk & $BelowMedian & mark=RarestColor", "$AnyInk & $MarkCells & $MaxMarks & mark=RarestColor"],
       "grid": [
         [0,0,0,0,0,8,8,8,8,0],
         [0,0,0,0,0,8,8,8,8,0],
@@ -815,15 +659,7 @@
         [0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$BlockMinority & $CountTable & mark=stored",
-        "$BlockMinority & $MaxMarks & mark=stored",
-        "$AnyInk & $GridMinority & $MarkCells & $BelowMean",
-        "$AnyInk & $MarkCells & $BelowMean & mark=RarestColor",
-        "$StoredMark & $MarkPieces & $BelowMean & mark=stored",
-        "$StoredMark & $MarkPieces & $CountTable & mark=stored",
-        "$StoredMark & $MarkPieces & $MaxMarks & mark=stored"
-      ],
+      "cases": ["$BlockMinority & $CountTable & mark=stored", "$BlockMinority & $MaxMarks & mark=stored", "$StoredMark & $MarkPieces & $CountTable & mark=stored", "$StoredMark & $MarkPieces & $MaxMarks & mark=stored"],
       "grid": [
         [8,1,0,0,0,8,8,8,8,0],
         [1,1,0,0,0,8,8,8,8,0],
@@ -872,34 +708,10 @@
       ],
       "grid": null
     }, {
-      "cases": ["$StoredMark & $MarkCells & $BelowMean & mark=stored"],
-      "grid": [
-        [8,1,0,0,0,0,0,0,0,0],
-        [1,1,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0],
-        [1,1,8,0,0,0,0,0,0,0],
-        [1,1,1,0,0,0,0,0,0,0],
-        [8,1,1,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0]
-      ]
-    }, {
       "cases": ["$StoredMark & $MarkCells & $CountTable & mark=stored"],
       "grid": null
     }, {
-      "cases": [
-        "$StoredMark & $MarkPieces & $BelowMedian & mark=stored",
-        "$EraseOther & $BlockMinority & $BelowMean & mark=RarestColor",
-        "$EraseOther & $BlockMinority & $BelowMedian & mark=RarestColor",
-        "$EraseOther & $MarkPieces & $BelowMean & mark=RarestColor",
-        "$EraseOther & $MarkPieces & $BelowMedian & mark=RarestColor",
-        "$EraseOther & $GridMinority & $MarkCells & $MaxMarks",
-        "$EraseOther & $GridMinority & $MarkPieces & $BelowMean",
-        "$EraseOther & $GridMinority & $MarkPieces & $BelowMedian",
-        "$EraseOther & $StoredMark & $MarkCells & $MaxMarks & mark=RarestColor"
-      ],
+      "cases": ["$StoredMark & $MarkPieces & $BelowMedian & mark=stored", "$EraseOther & $BlockMinority & $BelowMedian & mark=RarestColor", "$EraseOther & $MarkPieces & $BelowMedian & mark=RarestColor", "$EraseOther & $GridMinority & $MarkCells & $MaxMarks", "$EraseOther & $GridMinority & $MarkPieces & $BelowMedian", "$EraseOther & $StoredMark & $MarkCells & $MaxMarks & mark=RarestColor"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0],
@@ -913,16 +725,7 @@
         [0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$CopyOther & $BlockMinority & $BelowMean & mark=RarestColor",
-        "$CopyOther & $BlockMinority & $BelowMedian & mark=RarestColor",
-        "$CopyOther & $MarkPieces & $BelowMean & mark=RarestColor",
-        "$CopyOther & $MarkPieces & $BelowMedian & mark=RarestColor",
-        "$CopyOther & $GridMinority & $MarkCells & $MaxMarks",
-        "$CopyOther & $GridMinority & $MarkPieces & $BelowMean",
-        "$CopyOther & $GridMinority & $MarkPieces & $BelowMedian",
-        "$CopyOther & $StoredMark & $MarkCells & $MaxMarks & mark=RarestColor"
-      ],
+      "cases": ["$CopyOther & $BlockMinority & $BelowMedian & mark=RarestColor", "$CopyOther & $MarkPieces & $BelowMedian & mark=RarestColor", "$CopyOther & $GridMinority & $MarkCells & $MaxMarks", "$CopyOther & $GridMinority & $MarkPieces & $BelowMedian", "$CopyOther & $StoredMark & $MarkCells & $MaxMarks & mark=RarestColor"],
       "grid": [
         [8,0,0,0,0,8,8,8,8,0],
         [0,0,0,0,0,8,8,8,8,0],
@@ -936,12 +739,7 @@
         [0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$CopyOther & $GridMinority & $MarkCells & $BelowMean",
-        "$CopyOther & $GridMinority & $MarkCells & $BelowMedian",
-        "$CopyOther & $StoredMark & $MarkCells & $BelowMean & mark=RarestColor",
-        "$CopyOther & $StoredMark & $MarkCells & $BelowMedian & mark=RarestColor"
-      ],
+      "cases": ["$CopyOther & $GridMinority & $MarkCells & $BelowMedian", "$CopyOther & $StoredMark & $MarkCells & $BelowMedian & mark=RarestColor"],
       "grid": [
         [8,1,0,0,0,8,8,8,8,0],
         [1,1,0,0,0,8,8,8,8,0],
@@ -984,12 +782,7 @@
         [0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$EraseOther & $GridMinority & $MarkCells & $BelowMean",
-        "$EraseOther & $GridMinority & $MarkCells & $BelowMedian",
-        "$EraseOther & $StoredMark & $MarkCells & $BelowMean & mark=RarestColor",
-        "$EraseOther & $StoredMark & $MarkCells & $BelowMedian & mark=RarestColor"
-      ],
+      "cases": ["$EraseOther & $GridMinority & $MarkCells & $BelowMedian", "$EraseOther & $StoredMark & $MarkCells & $BelowMedian & mark=RarestColor"],
       "grid": [
         [0,1,0,0,0,0,0,0,0,0],
         [1,1,0,0,0,0,0,0,0,0],
@@ -1024,7 +817,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["$BelowMean","$BelowMedian","$FewestThree","$MaxMarks","$MarkPieces"],
+      "cases": ["$BelowMedian", "$FewestThree", "$MaxMarks", "$MarkPieces"],
       "grid": [
         [1,1,1,0,0,1,1,1,1,0,8,1,1,0,0],
         [1,1,1,0,0,1,1,8,1,0,1,1,1,0,0],
@@ -1078,7 +871,7 @@
       ]
     },
     "output": [{
-      "cases": ["$BelowMean","$BelowMedian","$FewestThree","$MaxMarks"],
+      "cases": ["$BelowMedian", "$FewestThree", "$MaxMarks"],
       "grid": [
         [1,1,1,0,0,1,1,1,1,0,8,1,1,0,0],
         [1,1,1,0,0,1,1,8,1,0,1,1,1,0,0],
@@ -1117,65 +910,6 @@
       ]
     }]
   }, {
-    "id": "high-mean",
-    "separates": "$BelowMean from the concept: the mark counts are 0, 1, 1, 2, 4, 4, 4, with mean 2.71. $BelowMean keeps the two-mark block at rows 5-7 cols 0-2; the concept drops it.",
-    "input": [
-      [1,1,1,0,0,1,1,1,1,0,8,1,1,0,0],
-      [1,1,1,0,0,1,1,8,1,0,1,1,1,0,0],
-      [1,1,1,0,0,1,1,1,1,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [1,1,8,0,0,8,1,1,0,0,1,8,1,1,0],
-      [1,1,1,0,0,1,1,8,0,0,1,1,1,8,0],
-      [8,1,1,0,0,1,8,1,0,0,8,1,1,1,0],
-      [0,0,0,0,0,1,1,8,0,0,1,1,8,1,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [1,8,1,1,0,0,0,0,0,0,0,0,0,0,0],
-      [1,1,1,8,0,0,0,0,0,0,0,0,0,0,0],
-      [8,1,1,1,0,0,0,0,0,0,0,0,0,0,0],
-      [1,1,8,1,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-    ],
-    "output": [{
-      "cases": ["$BelowMedian","$CountTable","$FewestThree","$MaxMarks"],
-      "grid": [
-        [1,1,1,0,0,1,1,1,1,0,8,1,1,0,0],
-        [1,1,1,0,0,1,1,8,1,0,1,1,1,0,0],
-        [1,1,1,0,0,1,1,1,1,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-      ]
-    }, {
-      "cases": ["$BelowMean"],
-      "grid": [
-        [1,1,1,0,0,1,1,1,1,0,8,1,1,0,0],
-        [1,1,1,0,0,1,1,8,1,0,1,1,1,0,0],
-        [1,1,1,0,0,1,1,1,1,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [1,1,8,0,0,0,0,0,0,0,0,0,0,0,0],
-        [1,1,1,0,0,0,0,0,0,0,0,0,0,0,0],
-        [8,1,1,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-      ]
-    }]
-  }, {
     "id": "high-median",
     "separates": "$BelowMedian from the concept: the mark counts are 0, 1, 1, 2, 3, 3, 3, 3, with median 2.5. $BelowMedian keeps the two-mark block at rows 5-7 cols 0-2; the concept drops it.",
     "input": [
@@ -1196,7 +930,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["$BelowMean","$CountTable","$FewestThree","$MaxMarks"],
+      "cases": ["$CountTable", "$FewestThree", "$MaxMarks"],
       "grid": [
         [1,1,1,0,0,1,1,1,1,0,8,1,1,0,0],
         [1,1,1,0,0,1,1,8,1,0,1,1,1,0,0],
@@ -1255,7 +989,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": ["$BelowMean","$BelowMedian","$CountTable","$MaxMarks"],
+      "cases": ["$BelowMedian", "$CountTable", "$MaxMarks"],
       "grid": [
         [1,1,1,0,0,1,1,1,1,0,0,0,0,0,0],
         [1,1,1,0,0,1,1,8,1,0,0,0,0,0,0],
@@ -1307,16 +1041,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": [
-        "$GridMinority & $MarkCells & $BelowMean",
-        "$GridMinority & $MarkCells & $BelowMedian",
-        "$GridMinority & $MarkCells & $CountTable",
-        "$GridMinority & $MarkCells & $MaxMarks",
-        "$StoredMark & $MarkCells & $BelowMean",
-        "$StoredMark & $MarkCells & $BelowMedian",
-        "$StoredMark & $MarkCells & $CountTable",
-        "$StoredMark & $MarkCells & $MaxMarks"
-      ],
+      "cases": ["$GridMinority & $MarkCells & $BelowMedian", "$GridMinority & $MarkCells & $CountTable", "$GridMinority & $MarkCells & $MaxMarks", "$StoredMark & $MarkCells & $BelowMedian", "$StoredMark & $MarkCells & $CountTable", "$StoredMark & $MarkCells & $MaxMarks"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,1,1,0,0,8,1,0,0,0,0,0],
@@ -1328,12 +1053,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$BlockMinority & $BelowMean",
-        "$BlockMinority & $CountTable",
-        "$BlockMinority & $FewestThree",
-        "$BlockMinority & $MaxMarks"
-      ],
+      "cases": ["$BlockMinority & $CountTable", "$BlockMinority & $FewestThree", "$BlockMinority & $MaxMarks"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,1,1,0,0,8,1,0,0,8,8,0],
@@ -1345,12 +1065,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$BlockMinority & $BelowMedian",
-        "$MarkPieces & $BelowMedian",
-        "$GridMinority & $MarkPieces & $BelowMean",
-        "$StoredMark & $MarkPieces & $BelowMean"
-      ],
+      "cases": ["$BlockMinority & $BelowMedian", "$MarkPieces & $BelowMedian"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,1,1,0,0,0,0,0,0,0,0,0],
@@ -1414,14 +1129,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": [
-        "$BlockMinority & $BelowMean",
-        "$BlockMinority & $BelowMedian",
-        "$MarkCells & $BelowMedian",
-        "$BlockMinority & $CountTable",
-        "$BlockMinority & $MaxMarks",
-        "$MarkCells & $MaxMarks"
-      ],
+      "cases": ["$BlockMinority & $BelowMedian", "$MarkCells & $BelowMedian", "$BlockMinority & $CountTable", "$BlockMinority & $MaxMarks", "$MarkCells & $MaxMarks"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,1,1,0,0,8,1,0,0,0,0,0],
@@ -1433,12 +1141,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$BlockMinority & $FewestThree",
-        "$MarkCells & $FewestThree",
-        "$GridMinority & $MarkCells & $BelowMean",
-        "$StoredMark & $MarkCells & $BelowMean"
-      ],
+      "cases": ["$BlockMinority & $FewestThree", "$MarkCells & $FewestThree"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,1,1,0,0,8,1,0,0,1,1,1],
@@ -1456,12 +1159,7 @@
       ],
       "grid": null
     }, {
-      "cases": [
-        "$GridMinority & $MarkPieces & $BelowMean",
-        "$GridMinority & $MarkPieces & $BelowMedian",
-        "$StoredMark & $MarkPieces & $BelowMean",
-        "$StoredMark & $MarkPieces & $BelowMedian"
-      ],
+      "cases": ["$GridMinority & $MarkPieces & $BelowMedian", "$StoredMark & $MarkPieces & $BelowMedian"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,1,1,0,0,0,0,0,0,0,0,0],
@@ -1520,14 +1218,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$BlockMinority & $BelowMean & mark=stored",
-        "$BlockMinority & $BelowMedian & mark=stored",
-        "$AnyInk & $GridMinority & $BelowMedian",
-        "$AnyInk & $GridMinority & $MarkPieces & $BelowMean",
-        "$AnyInk & $BelowMedian & mark=RarestColor",
-        "$AnyInk & $MarkPieces & $BelowMean & mark=RarestColor"
-      ],
+      "cases": ["$BlockMinority & $BelowMedian & mark=stored", "$AnyInk & $GridMinority & $BelowMedian", "$AnyInk & $BelowMedian & mark=RarestColor"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,8,8,0,0,8,8,0,0,0,0,0],
@@ -1561,16 +1252,7 @@
       "cases": ["$BlockMinority & $FewestThree & mark=stored"],
       "grid": null
     }, {
-      "cases": [
-        "$AnyInk & $GridMinority & $MarkCells & $BelowMean",
-        "$AnyInk & $GridMinority & $MarkCells & $CountTable",
-        "$AnyInk & $GridMinority & $MarkCells & $FewestThree",
-        "$AnyInk & $GridMinority & $MarkCells & $MaxMarks",
-        "$AnyInk & $MarkCells & $BelowMean & mark=RarestColor",
-        "$AnyInk & $MarkCells & $CountTable & mark=RarestColor",
-        "$AnyInk & $MarkCells & $FewestThree & mark=RarestColor",
-        "$AnyInk & $MarkCells & $MaxMarks & mark=RarestColor"
-      ],
+      "cases": ["$AnyInk & $GridMinority & $MarkCells & $CountTable", "$AnyInk & $GridMinority & $MarkCells & $FewestThree", "$AnyInk & $GridMinority & $MarkCells & $MaxMarks", "$AnyInk & $MarkCells & $CountTable & mark=RarestColor", "$AnyInk & $MarkCells & $FewestThree & mark=RarestColor", "$AnyInk & $MarkCells & $MaxMarks & mark=RarestColor"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,8,8,0,0,8,8,0,0,0,0,0],
@@ -1603,10 +1285,7 @@
       ],
       "grid": null
     }, {
-      "cases": [
-        "$StoredMark & $MarkCells & $BelowMean & mark=stored",
-        "$StoredMark & $MarkCells & $FewestThree & mark=stored"
-      ],
+      "cases": ["$StoredMark & $MarkCells & $FewestThree & mark=stored"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,8,8,0,0,8,1,0],
@@ -1617,15 +1296,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$StoredMark & $MarkPieces & $BelowMean & mark=stored",
-        "$StoredMark & $MarkPieces & $BelowMedian & mark=stored",
-        "$EraseOther & $BlockMinority & $BelowMean & mark=RarestColor",
-        "$EraseOther & $BelowMedian & mark=RarestColor",
-        "$EraseOther & $MarkPieces & $BelowMean & mark=RarestColor",
-        "$EraseOther & $GridMinority & $BelowMedian",
-        "$EraseOther & $GridMinority & $MarkPieces & $BelowMean"
-      ],
+      "cases": ["$StoredMark & $MarkPieces & $BelowMedian & mark=stored", "$EraseOther & $BelowMedian & mark=RarestColor", "$EraseOther & $GridMinority & $BelowMedian"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0,0],
@@ -1639,13 +1310,7 @@
       "cases": ["$StoredMark & $MarkPieces & $FewestThree & mark=stored"],
       "grid": null
     }, {
-      "cases": [
-        "$CopyOther & $BlockMinority & $BelowMean & mark=RarestColor",
-        "$CopyOther & $BelowMedian & mark=RarestColor",
-        "$CopyOther & $MarkPieces & $BelowMean & mark=RarestColor",
-        "$CopyOther & $GridMinority & $BelowMedian",
-        "$CopyOther & $GridMinority & $MarkPieces & $BelowMean"
-      ],
+      "cases": ["$CopyOther & $BelowMedian & mark=RarestColor", "$CopyOther & $GridMinority & $BelowMedian"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,8,8,0,0,8,8,0,0,8,0,0],
@@ -1663,16 +1328,7 @@
       ],
       "grid": null
     }, {
-      "cases": [
-        "$CopyOther & $GridMinority & $MarkCells & $BelowMean",
-        "$CopyOther & $GridMinority & $MarkCells & $CountTable",
-        "$CopyOther & $GridMinority & $MarkCells & $FewestThree",
-        "$CopyOther & $GridMinority & $MarkCells & $MaxMarks",
-        "$CopyOther & $StoredMark & $MarkCells & $BelowMean & mark=RarestColor",
-        "$CopyOther & $StoredMark & $MarkCells & $CountTable & mark=RarestColor",
-        "$CopyOther & $StoredMark & $MarkCells & $FewestThree & mark=RarestColor",
-        "$CopyOther & $StoredMark & $MarkCells & $MaxMarks & mark=RarestColor"
-      ],
+      "cases": ["$CopyOther & $GridMinority & $MarkCells & $CountTable", "$CopyOther & $GridMinority & $MarkCells & $FewestThree", "$CopyOther & $GridMinority & $MarkCells & $MaxMarks", "$CopyOther & $StoredMark & $MarkCells & $CountTable & mark=RarestColor", "$CopyOther & $StoredMark & $MarkCells & $FewestThree & mark=RarestColor", "$CopyOther & $StoredMark & $MarkCells & $MaxMarks & mark=RarestColor"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,8,8,0,0,8,8,0,0,8,0,0],
@@ -1701,16 +1357,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$EraseOther & $GridMinority & $MarkCells & $BelowMean",
-        "$EraseOther & $GridMinority & $MarkCells & $CountTable",
-        "$EraseOther & $GridMinority & $MarkCells & $FewestThree",
-        "$EraseOther & $GridMinority & $MarkCells & $MaxMarks",
-        "$EraseOther & $StoredMark & $MarkCells & $BelowMean & mark=RarestColor",
-        "$EraseOther & $StoredMark & $MarkCells & $CountTable & mark=RarestColor",
-        "$EraseOther & $StoredMark & $MarkCells & $FewestThree & mark=RarestColor",
-        "$EraseOther & $StoredMark & $MarkCells & $MaxMarks & mark=RarestColor"
-      ],
+      "cases": ["$EraseOther & $GridMinority & $MarkCells & $CountTable", "$EraseOther & $GridMinority & $MarkCells & $FewestThree", "$EraseOther & $GridMinority & $MarkCells & $MaxMarks", "$EraseOther & $StoredMark & $MarkCells & $CountTable & mark=RarestColor", "$EraseOther & $StoredMark & $MarkCells & $FewestThree & mark=RarestColor", "$EraseOther & $StoredMark & $MarkCells & $MaxMarks & mark=RarestColor"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0,0],
@@ -1747,20 +1394,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$BlockMinority & $BelowMean & mark=stored",
-        "$BlockMinority & $BelowMedian & mark=stored",
-        "$BlockMinority & $CountTable & mark=stored",
-        "$BlockMinority & $MaxMarks & mark=stored",
-        "$AnyInk & $MarkPieces & $BelowMean",
-        "$AnyInk & $MarkPieces & $BelowMedian",
-        "$AnyInk & $MarkPieces & $CountTable",
-        "$AnyInk & $MarkPieces & $MaxMarks",
-        "$StoredMark & $MarkPieces & $BelowMean & mark=stored",
-        "$StoredMark & $MarkPieces & $BelowMedian & mark=stored",
-        "$StoredMark & $MarkPieces & $CountTable & mark=stored",
-        "$StoredMark & $MarkPieces & $MaxMarks & mark=stored"
-      ],
+      "cases": ["$BlockMinority & $BelowMedian & mark=stored", "$BlockMinority & $CountTable & mark=stored", "$BlockMinority & $MaxMarks & mark=stored", "$AnyInk & $MarkPieces & $BelowMedian", "$AnyInk & $MarkPieces & $CountTable", "$AnyInk & $MarkPieces & $MaxMarks", "$StoredMark & $MarkPieces & $BelowMedian & mark=stored", "$StoredMark & $MarkPieces & $CountTable & mark=stored", "$StoredMark & $MarkPieces & $MaxMarks & mark=stored"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,1,1,0,0,8,8,8,0,0,0,0],
@@ -1775,12 +1409,7 @@
       "cases": ["$BlockMinority & $FewestThree & mark=stored"],
       "grid": null
     }, {
-      "cases": [
-        "$AnyInk & $GridMinority & $MarkCells & $BelowMean",
-        "$AnyInk & $GridMinority & $MarkCells & $BelowMedian",
-        "$AnyInk & $MarkCells & $BelowMean & mark=RarestColor",
-        "$AnyInk & $MarkCells & $BelowMedian & mark=RarestColor"
-      ],
+      "cases": ["$AnyInk & $GridMinority & $MarkCells & $BelowMedian", "$AnyInk & $MarkCells & $BelowMedian & mark=RarestColor"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,8,8,8,0,0,0,0],
@@ -1809,16 +1438,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$AnyInk & $GridMinority & $MarkCells & $FewestThree",
-        "$AnyInk & $MarkCells & $FewestThree & mark=RarestColor",
-        "$CopyOther & $GridMinority & $MarkCells & $BelowMean",
-        "$CopyOther & $GridMinority & $MarkCells & $CountTable",
-        "$CopyOther & $GridMinority & $MarkCells & $MaxMarks",
-        "$CopyOther & $StoredMark & $MarkCells & $BelowMean & mark=RarestColor",
-        "$CopyOther & $StoredMark & $MarkCells & $CountTable & mark=RarestColor",
-        "$CopyOther & $StoredMark & $MarkCells & $MaxMarks & mark=RarestColor"
-      ],
+      "cases": ["$AnyInk & $GridMinority & $MarkCells & $FewestThree", "$AnyInk & $MarkCells & $FewestThree & mark=RarestColor", "$CopyOther & $GridMinority & $MarkCells & $CountTable", "$CopyOther & $GridMinority & $MarkCells & $MaxMarks", "$CopyOther & $StoredMark & $MarkCells & $CountTable & mark=RarestColor", "$CopyOther & $StoredMark & $MarkCells & $MaxMarks & mark=RarestColor"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,8,8,8,0,0,0,0],
@@ -1845,10 +1465,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$StoredMark & $MarkCells & $BelowMean & mark=stored",
-        "$StoredMark & $MarkCells & $BelowMedian & mark=stored"
-      ],
+      "cases": ["$StoredMark & $MarkCells & $BelowMedian & mark=stored"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,1,1,0,0,0,0,0,0,0,0,0],
@@ -1887,13 +1504,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$CopyOther & $BlockMinority & $BelowMean & mark=RarestColor",
-        "$CopyOther & $BelowMedian & mark=RarestColor",
-        "$CopyOther & $MarkPieces & $BelowMean & mark=RarestColor",
-        "$CopyOther & $GridMinority & $BelowMedian",
-        "$CopyOther & $GridMinority & $MarkPieces & $BelowMean"
-      ],
+      "cases": ["$CopyOther & $BelowMedian & mark=RarestColor", "$CopyOther & $GridMinority & $BelowMedian"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,8,8,8,0,0,0,0],
@@ -1937,13 +1548,7 @@
       ],
       "grid": null
     }, {
-      "cases": [
-        "$EraseOther & $BlockMinority & $BelowMean & mark=RarestColor",
-        "$EraseOther & $BelowMedian & mark=RarestColor",
-        "$EraseOther & $MarkPieces & $BelowMean & mark=RarestColor",
-        "$EraseOther & $GridMinority & $BelowMedian",
-        "$EraseOther & $GridMinority & $MarkPieces & $BelowMean"
-      ],
+      "cases": ["$EraseOther & $BelowMedian & mark=RarestColor", "$EraseOther & $GridMinority & $BelowMedian"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0,0],
@@ -1974,14 +1579,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$EraseOther & $GridMinority & $MarkCells & $BelowMean",
-        "$EraseOther & $GridMinority & $MarkCells & $CountTable",
-        "$EraseOther & $GridMinority & $MarkCells & $MaxMarks",
-        "$EraseOther & $StoredMark & $MarkCells & $BelowMean & mark=RarestColor",
-        "$EraseOther & $StoredMark & $MarkCells & $CountTable & mark=RarestColor",
-        "$EraseOther & $StoredMark & $MarkCells & $MaxMarks & mark=RarestColor"
-      ],
+      "cases": ["$EraseOther & $GridMinority & $MarkCells & $CountTable", "$EraseOther & $GridMinority & $MarkCells & $MaxMarks", "$EraseOther & $StoredMark & $MarkCells & $CountTable & mark=RarestColor", "$EraseOther & $StoredMark & $MarkCells & $MaxMarks & mark=RarestColor"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0,0],
@@ -2011,24 +1609,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": [
-        "$AnyInk & $BlockMinority & $BelowMean",
-        "$AnyInk & $BlockMinority & $CountTable",
-        "$AnyInk & $BlockMinority & $FewestThree",
-        "$AnyInk & $BlockMinority & $MaxMarks",
-        "$AnyInk & $StoredMark & $BelowMean & mark=stored",
-        "$AnyInk & $StoredMark & $CountTable & mark=stored",
-        "$AnyInk & $StoredMark & $FewestThree & mark=stored",
-        "$AnyInk & $StoredMark & $MaxMarks & mark=stored",
-        "$CopyOther & $BlockMinority & $BelowMean & mark=stored",
-        "$CopyOther & $BlockMinority & $BelowMedian & mark=stored",
-        "$CopyOther & $BlockMinority & $CountTable & mark=stored",
-        "$CopyOther & $BlockMinority & $MaxMarks & mark=stored",
-        "$CopyOther & $StoredMark & $BelowMean & mark=stored",
-        "$CopyOther & $StoredMark & $BelowMedian & mark=stored",
-        "$CopyOther & $StoredMark & $CountTable & mark=stored",
-        "$CopyOther & $StoredMark & $MaxMarks & mark=stored"
-      ],
+      "cases": ["$AnyInk & $BlockMinority & $CountTable", "$AnyInk & $BlockMinority & $FewestThree", "$AnyInk & $BlockMinority & $MaxMarks", "$AnyInk & $StoredMark & $CountTable & mark=stored", "$AnyInk & $StoredMark & $FewestThree & mark=stored", "$AnyInk & $StoredMark & $MaxMarks & mark=stored", "$CopyOther & $BlockMinority & $BelowMedian & mark=stored", "$CopyOther & $BlockMinority & $CountTable & mark=stored", "$CopyOther & $BlockMinority & $MaxMarks & mark=stored", "$CopyOther & $StoredMark & $BelowMedian & mark=stored", "$CopyOther & $StoredMark & $CountTable & mark=stored", "$CopyOther & $StoredMark & $MaxMarks & mark=stored"],
       "grid": [
         [1,1,1,0,0,1,1,1,1,0,0,0,0,0,0],
         [1,1,1,0,0,1,1,8,1,0,0,0,0,0,0],
@@ -2066,30 +1647,7 @@
       "cases": ["$AnyInk & $GridMinority"],
       "grid": null
     }, {
-      "cases": [
-        "$AnyInk & $BelowMean & mark=RarestColor",
-        "$CopyOther & $StoredMark & $BelowMean & mark=RarestColor"
-      ],
-      "grid": [
-        [1,1,1,0,0,1,1,1,1,0,0,0,0,0,0],
-        [1,1,1,0,0,1,1,8,1,0,0,0,0,0,0],
-        [1,1,1,0,0,1,1,1,1,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [1,1,8,0,0,8,1,1,0,0,0,0,0,0,0],
-        [1,1,1,0,0,1,1,1,0,0,0,0,0,0,0],
-        [8,1,1,0,0,1,8,1,0,0,0,0,0,0,0],
-        [0,0,0,0,0,1,1,8,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-      ]
-    }, {
-      "cases": [
-        "$AnyInk & $BelowMedian & mark=RarestColor",
-        "$EraseOther & $BlockMinority & $BelowMean & mark=RarestColor",
-        "$EraseOther & $BelowMedian & mark=RarestColor"
-      ],
+      "cases": ["$AnyInk & $BelowMedian & mark=RarestColor", "$EraseOther & $BelowMedian & mark=RarestColor"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -2129,10 +1687,7 @@
       "cases": ["$AnyInk & $FewestThree & mark=RarestColor"],
       "grid": null
     }, {
-      "cases": [
-        "$CopyOther & $BlockMinority & $BelowMean & mark=RarestColor",
-        "$CopyOther & $BelowMedian & mark=RarestColor"
-      ],
+      "cases": ["$CopyOther & $BelowMedian & mark=RarestColor"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,8,0,0,0,0,0,0,0],
@@ -2176,16 +1731,7 @@
       ],
       "grid": null
     }, {
-      "cases": [
-        "$EraseOther & $BlockMinority & $BelowMean & mark=stored",
-        "$EraseOther & $BlockMinority & $BelowMedian & mark=stored",
-        "$EraseOther & $BlockMinority & $CountTable & mark=stored",
-        "$EraseOther & $BlockMinority & $MaxMarks & mark=stored",
-        "$EraseOther & $StoredMark & $BelowMean & mark=stored",
-        "$EraseOther & $StoredMark & $BelowMedian & mark=stored",
-        "$EraseOther & $StoredMark & $CountTable & mark=stored",
-        "$EraseOther & $StoredMark & $MaxMarks & mark=stored"
-      ],
+      "cases": ["$EraseOther & $BlockMinority & $BelowMedian & mark=stored", "$EraseOther & $BlockMinority & $CountTable & mark=stored", "$EraseOther & $BlockMinority & $MaxMarks & mark=stored", "$EraseOther & $StoredMark & $BelowMedian & mark=stored", "$EraseOther & $StoredMark & $CountTable & mark=stored", "$EraseOther & $StoredMark & $MaxMarks & mark=stored"],
       "grid": [
         [1,1,1,0,0,1,1,1,1,0,0,0,0,0,0],
         [1,1,1,0,0,1,1,8,1,0,0,0,0,0,0],
@@ -2238,22 +1784,6 @@
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
       ]
-    }, {
-      "cases": ["$EraseOther & $StoredMark & $BelowMean & mark=RarestColor"],
-      "grid": [
-        [1,1,1,0,0,1,1,1,1,0,0,0,0,0,0],
-        [1,1,1,0,0,1,1,0,1,0,0,0,0,0,0],
-        [1,1,1,0,0,1,1,1,1,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [1,1,0,0,0,0,1,1,0,0,0,0,0,0,0],
-        [1,1,1,0,0,1,1,1,0,0,0,0,0,0,0],
-        [0,1,1,0,0,1,0,1,0,0,0,0,0,0,0],
-        [0,0,0,0,0,1,1,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-        [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-      ]
     }]
   }, {
     "id": "other-body-color",
@@ -2271,12 +1801,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": [
-        "$AnyInk & $BelowMean",
-        "$AnyInk & $BelowMedian",
-        "$AnyInk & $CountTable",
-        "$AnyInk & $MaxMarks"
-      ],
+      "cases": ["$AnyInk & $BelowMedian", "$AnyInk & $CountTable", "$AnyInk & $MaxMarks"],
       "grid": [
         [3,3,3,0,0,3,3,3,3,0,0,0,0,0,0],
         [3,3,3,0,0,3,3,8,3,0,0,0,0,0,0],
@@ -2304,11 +1829,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$CopyOther & $BlockMinority & $BelowMean",
-        "$CopyOther & $BelowMedian",
-        "$EdgeConnect & $CopyOther & $BelowMean"
-      ],
+      "cases": ["$CopyOther & $BelowMedian"],
       "grid": [
         [3,3,3,0,0,3,3,3,3,0,0,0,0,0,0],
         [3,3,3,0,0,3,3,0,3,0,0,0,0,0,0],
@@ -2347,14 +1868,7 @@
       ],
       "grid": null
     }, {
-      "cases": [
-        "$DiagConnect & $CopyOther & $GridMinority & $BelowMean",
-        "$DiagConnect & $CopyOther & $GridMinority & $CountTable",
-        "$DiagConnect & $CopyOther & $GridMinority & $MaxMarks",
-        "$DiagConnect & $CopyOther & $StoredMark & $BelowMean",
-        "$DiagConnect & $CopyOther & $StoredMark & $CountTable",
-        "$DiagConnect & $CopyOther & $StoredMark & $MaxMarks"
-      ],
+      "cases": ["$DiagConnect & $CopyOther & $GridMinority & $CountTable", "$DiagConnect & $CopyOther & $GridMinority & $MaxMarks", "$DiagConnect & $CopyOther & $StoredMark & $CountTable", "$DiagConnect & $CopyOther & $StoredMark & $MaxMarks"],
       "grid": [
         [3,3,3,0,0,3,3,3,3,0,0,0,0,0,0],
         [3,3,3,0,0,3,3,8,3,0,0,0,0,0,0],
@@ -2374,11 +1888,7 @@
       ],
       "grid": null
     }, {
-      "cases": [
-        "$EraseOther & $BlockMinority & $BelowMean",
-        "$EraseOther & $BelowMedian",
-        "$EdgeConnect & $EraseOther & $BelowMean"
-      ],
+      "cases": ["$EraseOther & $BelowMedian"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -2411,14 +1921,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$DiagConnect & $EraseOther & $GridMinority & $BelowMean",
-        "$DiagConnect & $EraseOther & $GridMinority & $CountTable",
-        "$DiagConnect & $EraseOther & $GridMinority & $MaxMarks",
-        "$DiagConnect & $EraseOther & $StoredMark & $BelowMean",
-        "$DiagConnect & $EraseOther & $StoredMark & $CountTable",
-        "$DiagConnect & $EraseOther & $StoredMark & $MaxMarks"
-      ],
+      "cases": ["$DiagConnect & $EraseOther & $GridMinority & $CountTable", "$DiagConnect & $EraseOther & $GridMinority & $MaxMarks", "$DiagConnect & $EraseOther & $StoredMark & $CountTable", "$DiagConnect & $EraseOther & $StoredMark & $MaxMarks"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,8,0,0,0,0,0,0,0],
@@ -2446,12 +1949,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": [
-        "$MarkCells & $BelowMean",
-        "$MarkCells & $BelowMedian",
-        "$MarkCells & $CountTable",
-        "$MarkCells & $MaxMarks"
-      ],
+      "cases": ["$MarkCells & $BelowMedian", "$MarkCells & $CountTable", "$MarkCells & $MaxMarks"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,1,1,0,0,1,8,0,0,0,0,0],
@@ -2475,12 +1973,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$MarkPieces & $BelowMean",
-        "$MarkPieces & $CountTable",
-        "$MarkPieces & $FewestThree",
-        "$MarkPieces & $MaxMarks"
-      ],
+      "cases": ["$MarkPieces & $CountTable", "$MarkPieces & $FewestThree", "$MarkPieces & $MaxMarks"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,1,1,0,0,1,8,0,0,0,0,0],
@@ -2518,20 +2011,7 @@
       [0,0,0,0,0,0,0,0,0,0,0,0]
     ],
     "output": [{
-      "cases": [
-        "$AnyInk & $StoredMark & $MarkCells & $MaxMarks & mark=stored",
-        "$AnyInk & $StoredMark & $MarkPieces & $BelowMean & mark=stored",
-        "$AnyInk & $StoredMark & $MarkPieces & $BelowMedian & mark=stored",
-        "$EraseOther & $BlockMinority & $BelowMean",
-        "$EraseOther & $BelowMean & mark=RarestColor",
-        "$EraseOther & $BlockMinority & $BelowMedian",
-        "$EraseOther & $BelowMedian & mark=RarestColor",
-        "$EraseOther & $MarkPieces & $BelowMean",
-        "$EraseOther & $MarkPieces & $BelowMedian",
-        "$EraseOther & $GridMinority & $BelowMean",
-        "$EraseOther & $GridMinority & $BelowMedian",
-        "$EraseOther & $StoredMark & $MarkCells & $MaxMarks & mark=stored"
-      ],
+      "cases": ["$AnyInk & $StoredMark & $MarkCells & $MaxMarks & mark=stored", "$AnyInk & $StoredMark & $MarkPieces & $BelowMedian & mark=stored", "$EraseOther & $BlockMinority & $BelowMedian", "$EraseOther & $BelowMedian & mark=RarestColor", "$EraseOther & $MarkPieces & $BelowMedian", "$EraseOther & $GridMinority & $BelowMedian", "$EraseOther & $StoredMark & $MarkCells & $MaxMarks & mark=stored"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0,0],
@@ -2543,18 +2023,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$AnyInk & $BlockMinority & $BelowMean",
-        "$AnyInk & $MarkCells & $BelowMean",
-        "$AnyInk & $BlockMinority & $BelowMedian",
-        "$AnyInk & $MarkCells & $BelowMedian",
-        "$AnyInk & $GridMinority & $BelowMean",
-        "$AnyInk & $GridMinority & $BelowMedian",
-        "$AnyInk & $BelowMean & mark=RarestColor",
-        "$AnyInk & $BelowMedian & mark=RarestColor",
-        "$EraseOther & $StoredMark & $MarkCells & $BelowMean & mark=stored",
-        "$EraseOther & $StoredMark & $MarkCells & $BelowMedian & mark=stored"
-      ],
+      "cases": ["$AnyInk & $BlockMinority & $BelowMedian", "$AnyInk & $MarkCells & $BelowMedian", "$AnyInk & $GridMinority & $BelowMedian", "$AnyInk & $BelowMedian & mark=RarestColor", "$EraseOther & $StoredMark & $MarkCells & $BelowMedian & mark=stored"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,8,8,0,0,8,8,8,0,0,0,0],
@@ -2631,19 +2100,7 @@
       "cases": ["$AnyInk & $StoredMark & $MarkPieces & $FewestThree & mark=stored"],
       "grid": null
     }, {
-      "cases": [
-        "$CopyOther & $BlockMinority & $BelowMean & mark=stored",
-        "$CopyOther & $BlockMinority & $BelowMedian & mark=stored",
-        "$CopyOther & $StoredMark & $MarkCells & $MaxMarks & mark=stored",
-        "$CopyOther & $StoredMark & $MarkPieces & $BelowMean & mark=stored",
-        "$CopyOther & $StoredMark & $MarkPieces & $BelowMedian & mark=stored",
-        "$EraseOther & $CountTable & mark=RarestColor",
-        "$EraseOther & $FewestThree & mark=RarestColor",
-        "$EraseOther & $MaxMarks & mark=RarestColor",
-        "$EraseOther & $GridMinority & $CountTable",
-        "$EraseOther & $GridMinority & $FewestThree",
-        "$EraseOther & $GridMinority & $MaxMarks"
-      ],
+      "cases": ["$CopyOther & $BlockMinority & $BelowMedian & mark=stored", "$CopyOther & $StoredMark & $MarkCells & $MaxMarks & mark=stored", "$CopyOther & $StoredMark & $MarkPieces & $BelowMedian & mark=stored", "$EraseOther & $CountTable & mark=RarestColor", "$EraseOther & $FewestThree & mark=RarestColor", "$EraseOther & $MaxMarks & mark=RarestColor", "$EraseOther & $GridMinority & $CountTable", "$EraseOther & $GridMinority & $FewestThree", "$EraseOther & $GridMinority & $MaxMarks"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0,0],
@@ -2655,16 +2112,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$CopyOther & $BelowMean & mark=RarestColor",
-        "$CopyOther & $BelowMedian & mark=RarestColor",
-        "$CopyOther & $GridMinority & $BelowMean",
-        "$CopyOther & $GridMinority & $BelowMedian",
-        "$EraseOther & $BlockMinority & $CountTable & mark=stored",
-        "$EraseOther & $BlockMinority & $MaxMarks & mark=stored",
-        "$EraseOther & $StoredMark & $MarkPieces & $CountTable & mark=stored",
-        "$EraseOther & $StoredMark & $MarkPieces & $MaxMarks & mark=stored"
-      ],
+      "cases": ["$CopyOther & $BelowMedian & mark=RarestColor", "$CopyOther & $GridMinority & $BelowMedian", "$EraseOther & $BlockMinority & $CountTable & mark=stored", "$EraseOther & $BlockMinority & $MaxMarks & mark=stored", "$EraseOther & $StoredMark & $MarkPieces & $CountTable & mark=stored", "$EraseOther & $StoredMark & $MarkPieces & $MaxMarks & mark=stored"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,8,8,0,0,8,8,8,0,0,0,0],
@@ -2682,10 +2130,7 @@
       ],
       "grid": null
     }, {
-      "cases": [
-        "$CopyOther & $StoredMark & $MarkCells & $BelowMean & mark=stored",
-        "$CopyOther & $StoredMark & $MarkCells & $BelowMedian & mark=stored"
-      ],
+      "cases": ["$CopyOther & $StoredMark & $MarkCells & $BelowMedian & mark=stored"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0],
         [0,8,8,0,0,8,8,8,0,0,0,0],
@@ -2737,18 +2182,7 @@
       [8,1,1,0,1,8,1]
     ],
     "output": [{
-      "cases": [
-        "$BlockMinority & $CountTable & background=stored & mark=stored",
-        "$MaxMarks & background=stored & mark=stored",
-        "$MarkPieces & $CountTable & background=stored & mark=stored",
-        "$GridMinority & $MarkPieces & $BelowMedian",
-        "$AnyInk & $BelowMean & background=stored & mark=RarestColor",
-        "$AnyInk & $BelowMedian & background=stored & mark=RarestColor",
-        "$StoredMark & $MarkPieces & $BelowMedian & background=stored & mark=stored",
-        "$DiagConnect & $EraseOther & $BelowMean & background=stored & mark=RarestColor",
-        "$EraseOther & $BelowMedian & background=stored & mark=RarestColor",
-        "$DiagConnect & $EraseOther & $MarkCells & $MaxMarks & background=stored"
-      ],
+      "cases": ["$BlockMinority & $CountTable & background=stored & mark=stored", "$MaxMarks & background=stored & mark=stored", "$MarkPieces & $CountTable & background=stored & mark=stored", "$GridMinority & $MarkPieces & $BelowMedian", "$AnyInk & $BelowMedian & background=stored & mark=RarestColor", "$StoredMark & $MarkPieces & $BelowMedian & background=stored & mark=stored", "$EraseOther & $BelowMedian & background=stored & mark=RarestColor", "$DiagConnect & $EraseOther & $MarkCells & $MaxMarks & background=stored"],
       "grid": [
         [0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0],
@@ -2759,10 +2193,7 @@
         [0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$BlockMinority & $MarkCells & $BelowMean & background=stored & mark=stored",
-        "$BlockMinority & $MarkCells & $BelowMedian & background=stored & mark=stored"
-      ],
+      "cases": ["$BlockMinority & $MarkCells & $BelowMedian & background=stored & mark=stored"],
       "grid": [
         [1,1,8,0,0,0,0],
         [8,1,1,0,0,0,0],
@@ -2773,12 +2204,7 @@
         [0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$DiagConnect & $AnyInk & $BelowMean & background=DominantColor",
-        "$DiagConnect & $AnyInk & $BelowMedian & background=DominantColor",
-        "$DiagConnect & $AnyInk & $MarkCells & $MaxMarks & background=DominantColor",
-        "$DiagConnect & $AnyInk & $StoredMark & $MaxMarks & background=DominantColor & mark=stored"
-      ],
+      "cases": ["$DiagConnect & $AnyInk & $BelowMedian & background=DominantColor", "$DiagConnect & $AnyInk & $MarkCells & $MaxMarks & background=DominantColor", "$DiagConnect & $AnyInk & $StoredMark & $MaxMarks & background=DominantColor & mark=stored"],
       "grid": [
         [1,1,1,1,1,1,1],
         [8,1,1,1,1,1,1],
@@ -2828,10 +2254,7 @@
         [8,1,1,0,1,8,1]
       ]
     }, {
-      "cases": [
-        "$BlockMinority & $MarkPieces & $BelowMean & background=stored & mark=stored",
-        "$BlockMinority & $MarkPieces & $BelowMedian & background=stored & mark=stored"
-      ],
+      "cases": ["$BlockMinority & $MarkPieces & $BelowMedian & background=stored & mark=stored"],
       "grid": [
         [1,1,8,0,1,8,8],
         [8,1,1,0,8,1,8],
@@ -2848,12 +2271,7 @@
       ],
       "grid": null
     }, {
-      "cases": [
-        "$GridMinority & $MarkCells & $BelowMean",
-        "$GridMinority & $MarkCells & $BelowMedian",
-        "$StoredMark & $MarkCells & $BelowMean & background=stored & mark=stored",
-        "$StoredMark & $MarkCells & $BelowMedian & background=stored & mark=stored"
-      ],
+      "cases": ["$GridMinority & $MarkCells & $BelowMedian", "$StoredMark & $MarkCells & $BelowMedian & background=stored & mark=stored"],
       "grid": [
         [1,1,8,0,0,0,0],
         [8,1,1,0,0,0,0],
@@ -2885,12 +2303,7 @@
         [8,1,1,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$GridMinority & $MarkPieces & $BelowMean",
-        "$GridMinority & $MarkPieces & $FewestThree",
-        "$StoredMark & $MarkPieces & $BelowMean & background=stored & mark=stored",
-        "$StoredMark & $MarkPieces & $FewestThree & background=stored & mark=stored"
-      ],
+      "cases": ["$GridMinority & $MarkPieces & $FewestThree", "$StoredMark & $MarkPieces & $FewestThree & background=stored & mark=stored"],
       "grid": [
         [1,1,8,0,1,8,8],
         [8,1,1,0,8,1,8],
@@ -2904,11 +2317,7 @@
       "cases": ["$AnyInk & $FewestThree & background=stored & mark=RarestColor"],
       "grid": null
     }, {
-      "cases": [
-        "$DiagConnect & $CopyOther & $BelowMean & background=stored & mark=RarestColor",
-        "$CopyOther & $BelowMedian & background=stored & mark=RarestColor",
-        "$DiagConnect & $CopyOther & $MarkCells & $MaxMarks & background=stored & mark=RarestColor"
-      ],
+      "cases": ["$CopyOther & $BelowMedian & background=stored & mark=RarestColor", "$DiagConnect & $CopyOther & $MarkCells & $MaxMarks & background=stored & mark=RarestColor"],
       "grid": [
         [0,0,8,0,0,8,8],
         [8,0,0,0,8,0,8],
@@ -2919,10 +2328,7 @@
         [8,0,0,0,0,8,0]
       ]
     }, {
-      "cases": [
-        "$CopyOther & $BlockMinority & $MarkCells & $BelowMean & background=DominantColor & mark=stored",
-        "$CopyOther & $BlockMinority & $MarkCells & $BelowMedian & background=DominantColor & mark=stored"
-      ],
+      "cases": ["$CopyOther & $BlockMinority & $MarkCells & $BelowMedian & background=DominantColor & mark=stored"],
       "grid": [
         [1,1,8,0,1,1,1],
         [8,1,1,0,1,1,1],
@@ -2933,12 +2339,7 @@
         [1,1,1,0,1,1,1]
       ]
     }, {
-      "cases": [
-        "$CopyOther & $BelowMean & background=DominantColor & mark=RarestColor",
-        "$CopyOther & $BelowMedian & background=DominantColor & mark=RarestColor",
-        "$CopyOther & $MarkCells & $MaxMarks & background=DominantColor & mark=RarestColor",
-        "$EdgeConnect & $CopyOther & $FewestThree & background=DominantColor & mark=RarestColor"
-      ],
+      "cases": ["$CopyOther & $BelowMedian & background=DominantColor & mark=RarestColor", "$CopyOther & $MarkCells & $MaxMarks & background=DominantColor & mark=RarestColor", "$EdgeConnect & $CopyOther & $FewestThree & background=DominantColor & mark=RarestColor"],
       "grid": [
         [1,1,8,1,1,8,8],
         [8,1,1,1,8,1,8],
@@ -2984,10 +2385,7 @@
         [8,1,1,0,1,8,1]
       ]
     }, {
-      "cases": [
-        "$CopyOther & $BlockMinority & $MarkPieces & $BelowMean & background=DominantColor & mark=stored",
-        "$CopyOther & $BlockMinority & $MarkPieces & $BelowMedian & background=DominantColor & mark=stored"
-      ],
+      "cases": ["$CopyOther & $BlockMinority & $MarkPieces & $BelowMedian & background=DominantColor & mark=stored"],
       "grid": [
         [1,1,8,0,1,8,8],
         [8,1,1,0,8,1,8],
@@ -2998,10 +2396,7 @@
         [1,1,1,0,1,1,1]
       ]
     }, {
-      "cases": [
-        "$CopyOther & $StoredMark & $MarkCells & $BelowMean & background=DominantColor & mark=stored",
-        "$CopyOther & $StoredMark & $MarkCells & $BelowMedian & background=DominantColor & mark=stored"
-      ],
+      "cases": ["$CopyOther & $StoredMark & $MarkCells & $BelowMedian & background=DominantColor & mark=stored"],
       "grid": [
         [1,1,8,0,1,1,1],
         [8,1,1,0,1,1,1],
@@ -3025,10 +2420,7 @@
         [8,1,1,0,1,1,1]
       ]
     }, {
-      "cases": [
-        "$CopyOther & $StoredMark & $MarkPieces & $BelowMean & background=DominantColor & mark=stored",
-        "$CopyOther & $StoredMark & $MarkPieces & $FewestThree & background=DominantColor & mark=stored"
-      ],
+      "cases": ["$CopyOther & $StoredMark & $MarkPieces & $FewestThree & background=DominantColor & mark=stored"],
       "grid": [
         [1,1,8,0,1,8,8],
         [8,1,1,0,8,1,8],
@@ -3039,10 +2431,7 @@
         [1,1,1,0,1,8,1]
       ]
     }, {
-      "cases": [
-        "$EraseOther & $BlockMinority & $MarkCells & $BelowMean & background=DominantColor & mark=stored",
-        "$EraseOther & $BlockMinority & $MarkCells & $BelowMedian & background=DominantColor & mark=stored"
-      ],
+      "cases": ["$EraseOther & $BlockMinority & $MarkCells & $BelowMedian & background=DominantColor & mark=stored"],
       "grid": [
         [1,1,8,1,1,1,1],
         [8,1,1,1,1,1,1],
@@ -3053,17 +2442,7 @@
         [1,1,1,1,1,1,1]
       ]
     }, {
-      "cases": [
-        "$EraseOther & $BelowMean & background=DominantColor & mark=RarestColor",
-        "$EraseOther & $BelowMedian & background=DominantColor & mark=RarestColor",
-        "$EraseOther & $BlockMinority & $CountTable & background=DominantColor & mark=stored",
-        "$EraseOther & $MarkCells & $MaxMarks & background=DominantColor",
-        "$EraseOther & $MaxMarks & background=DominantColor & mark=stored",
-        "$EraseOther & $MarkPieces & $CountTable & background=DominantColor & mark=stored",
-        "$EraseOther & $StoredMark & $MarkPieces & $BelowMedian & background=DominantColor",
-        "$EdgeConnect & $AnyInk & $BelowMedian & background=DominantColor",
-        "$EdgeConnect & $EraseOther & $FewestThree & background=DominantColor & mark=RarestColor"
-      ],
+      "cases": ["$EraseOther & $BelowMedian & background=DominantColor & mark=RarestColor", "$EraseOther & $BlockMinority & $CountTable & background=DominantColor & mark=stored", "$EraseOther & $MarkCells & $MaxMarks & background=DominantColor", "$EraseOther & $MaxMarks & background=DominantColor & mark=stored", "$EraseOther & $MarkPieces & $CountTable & background=DominantColor & mark=stored", "$EraseOther & $StoredMark & $MarkPieces & $BelowMedian & background=DominantColor", "$EdgeConnect & $AnyInk & $BelowMedian & background=DominantColor", "$EdgeConnect & $EraseOther & $FewestThree & background=DominantColor & mark=RarestColor"],
       "grid": [
         [1,1,1,1,1,1,1],
         [1,1,1,1,1,1,1],
@@ -3102,10 +2481,7 @@
         [8,1,1,1,1,8,1]
       ]
     }, {
-      "cases": [
-        "$EraseOther & $BlockMinority & $MarkPieces & $BelowMean & background=DominantColor & mark=stored",
-        "$EraseOther & $BlockMinority & $MarkPieces & $BelowMedian & background=DominantColor & mark=stored"
-      ],
+      "cases": ["$EraseOther & $BlockMinority & $MarkPieces & $BelowMedian & background=DominantColor & mark=stored"],
       "grid": [
         [1,1,8,1,1,8,8],
         [8,1,1,1,8,1,8],
@@ -3116,10 +2492,7 @@
         [1,1,1,1,1,1,1]
       ]
     }, {
-      "cases": [
-        "$EraseOther & $StoredMark & $MarkCells & $BelowMean & background=DominantColor & mark=stored",
-        "$EraseOther & $StoredMark & $MarkCells & $BelowMedian & background=DominantColor & mark=stored"
-      ],
+      "cases": ["$EraseOther & $StoredMark & $MarkCells & $BelowMedian & background=DominantColor & mark=stored"],
       "grid": [
         [1,1,8,1,1,1,1],
         [8,1,1,1,1,1,1],
@@ -3143,10 +2516,7 @@
         [8,1,1,1,1,1,1]
       ]
     }, {
-      "cases": [
-        "$EraseOther & $StoredMark & $MarkPieces & $BelowMean & background=DominantColor & mark=stored",
-        "$EraseOther & $StoredMark & $MarkPieces & $FewestThree & background=DominantColor & mark=stored"
-      ],
+      "cases": ["$EraseOther & $StoredMark & $MarkPieces & $FewestThree & background=DominantColor & mark=stored"],
       "grid": [
         [1,1,8,1,1,8,8],
         [8,1,1,1,8,1,8],
@@ -3157,15 +2527,7 @@
         [1,1,1,1,1,8,1]
       ]
     }, {
-      "cases": [
-        "$EdgeConnect & $AnyInk & $BlockMinority & $BelowMean & background=DominantColor",
-        "$EdgeConnect & $AnyInk & $BlockMinority & $MaxMarks & background=DominantColor",
-        "$EdgeConnect & $AnyInk & $MarkPieces & $BelowMean & background=DominantColor",
-        "$EdgeConnect & $AnyInk & $MarkPieces & $CountTable & background=DominantColor & mark=stored",
-        "$EdgeConnect & $AnyInk & $MarkPieces & $MaxMarks & background=DominantColor & mark=stored",
-        "$EdgeConnect & $AnyInk & $BelowMean & background=DominantColor & mark=RarestColor",
-        "$EdgeConnect & $AnyInk & $MarkCells & $MaxMarks & background=DominantColor & mark=RarestColor"
-      ],
+      "cases": ["$EdgeConnect & $AnyInk & $BlockMinority & $MaxMarks & background=DominantColor", "$EdgeConnect & $AnyInk & $MarkPieces & $CountTable & background=DominantColor & mark=stored", "$EdgeConnect & $AnyInk & $MarkPieces & $MaxMarks & background=DominantColor & mark=stored", "$EdgeConnect & $AnyInk & $MarkCells & $MaxMarks & background=DominantColor & mark=RarestColor"],
       "grid": [
         [1,1,1,1,1,8,8],
         [8,1,1,1,1,1,8],
@@ -3186,10 +2548,7 @@
       ],
       "grid": null
     }, {
-      "cases": [
-        "$EdgeConnect & $AnyInk & $StoredMark & $MarkCells & $BelowMean & background=DominantColor & mark=stored",
-        "$EdgeConnect & $AnyInk & $StoredMark & $MarkCells & $MaxMarks & background=DominantColor & mark=stored"
-      ],
+      "cases": ["$EdgeConnect & $AnyInk & $StoredMark & $MarkCells & $MaxMarks & background=DominantColor & mark=stored"],
       "grid": [
         [1,1,1,1,1,1,1],
         [8,1,1,1,1,1,1],
@@ -3205,11 +2564,7 @@
       ],
       "grid": null
     }, {
-      "cases": [
-        "$EdgeConnect & $CopyOther & $BelowMean & background=stored & mark=RarestColor",
-        "$EdgeConnect & $CopyOther & $FewestThree & background=stored & mark=RarestColor",
-        "$EdgeConnect & $CopyOther & $MarkCells & $MaxMarks & background=stored & mark=RarestColor"
-      ],
+      "cases": ["$EdgeConnect & $CopyOther & $FewestThree & background=stored & mark=RarestColor", "$EdgeConnect & $CopyOther & $MarkCells & $MaxMarks & background=stored & mark=RarestColor"],
       "grid": [
         [0,0,8,0,0,8,8],
         [8,0,0,0,8,0,8],
@@ -3223,11 +2578,7 @@
       "cases": ["$EdgeConnect & $BodyMarkOnly & $MarkCells & $CountTable & mark=RarestColor"],
       "grid": null
     }, {
-      "cases": [
-        "$EdgeConnect & $EraseOther & $BelowMean & background=stored & mark=RarestColor",
-        "$EdgeConnect & $EraseOther & $FewestThree & background=stored & mark=RarestColor",
-        "$EdgeConnect & $EraseOther & $MarkCells & $MaxMarks & background=stored & mark=RarestColor"
-      ],
+      "cases": ["$EdgeConnect & $EraseOther & $FewestThree & background=stored & mark=RarestColor", "$EdgeConnect & $EraseOther & $MarkCells & $MaxMarks & background=stored & mark=RarestColor"],
       "grid": [
         [0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0],
@@ -3251,12 +2602,7 @@
       [8,1,1]
     ],
     "output": [{
-      "cases": [
-        "$BelowMean & background=stored & mark=stored",
-        "$BelowMedian & background=stored & mark=stored",
-        "$CountTable & background=stored & mark=stored",
-        "$MaxMarks & background=stored & mark=stored"
-      ],
+      "cases": ["$BelowMedian & background=stored & mark=stored", "$CountTable & background=stored & mark=stored", "$MaxMarks & background=stored & mark=stored"],
       "grid": [
         [1,8,1],
         [1,1,1],
@@ -3267,14 +2613,7 @@
         [0,0,0]
       ]
     }, {
-      "cases": [
-        "$AnyInk & $BlockMinority & $BelowMean & background=DominantColor",
-        "$AnyInk & $BlockMinority & $FewestThree & background=DominantColor",
-        "$AnyInk & $BelowMean & background=DominantColor & mark=RarestColor",
-        "$AnyInk & $MarkCells & $CountTable & background=DominantColor & mark=RarestColor",
-        "$AnyInk & $FewestThree & background=DominantColor & mark=RarestColor",
-        "$AnyInk & $MarkCells & $MaxMarks & background=DominantColor & mark=RarestColor"
-      ],
+      "cases": ["$AnyInk & $BlockMinority & $FewestThree & background=DominantColor", "$AnyInk & $MarkCells & $CountTable & background=DominantColor & mark=RarestColor", "$AnyInk & $FewestThree & background=DominantColor & mark=RarestColor", "$AnyInk & $MarkCells & $MaxMarks & background=DominantColor & mark=RarestColor"],
       "grid": [
         [1,8,1],
         [1,1,1],
@@ -3285,14 +2624,7 @@
         [8,1,1]
       ]
     }, {
-      "cases": [
-        "$AnyInk & $BelowMedian & background=DominantColor",
-        "$AnyInk & $StoredMark & $BelowMean & background=DominantColor & mark=stored",
-        "$EraseOther & $BelowMean & background=DominantColor & mark=RarestColor",
-        "$EraseOther & $BelowMedian & background=DominantColor & mark=RarestColor",
-        "$EraseOther & $MarkCells & $CountTable & background=DominantColor & mark=RarestColor",
-        "$EraseOther & $MarkCells & $MaxMarks & background=DominantColor & mark=RarestColor"
-      ],
+      "cases": ["$AnyInk & $BelowMedian & background=DominantColor", "$EraseOther & $BelowMedian & background=DominantColor & mark=RarestColor", "$EraseOther & $MarkCells & $CountTable & background=DominantColor & mark=RarestColor", "$EraseOther & $MarkCells & $MaxMarks & background=DominantColor & mark=RarestColor"],
       "grid": [
         [1,1,1],
         [1,1,1],
@@ -3326,14 +2658,7 @@
         [8,1,1]
       ]
     }, {
-      "cases": [
-        "$AnyInk & $BelowMean & background=stored & mark=RarestColor",
-        "$AnyInk & $BelowMedian & background=stored & mark=RarestColor",
-        "$EraseOther & $BelowMean & background=stored & mark=RarestColor",
-        "$EraseOther & $BelowMedian & background=stored & mark=RarestColor",
-        "$EraseOther & $MarkCells & $CountTable & background=stored & mark=RarestColor",
-        "$EraseOther & $MarkCells & $MaxMarks & background=stored & mark=RarestColor"
-      ],
+      "cases": ["$AnyInk & $BelowMedian & background=stored & mark=RarestColor", "$EraseOther & $BelowMedian & background=stored & mark=RarestColor", "$EraseOther & $MarkCells & $CountTable & background=stored & mark=RarestColor", "$EraseOther & $MarkCells & $MaxMarks & background=stored & mark=RarestColor"],
       "grid": [
         [0,0,0],
         [0,0,0],
@@ -3349,12 +2674,7 @@
       ],
       "grid": null
     }, {
-      "cases": [
-        "$CopyOther & $BelowMean & background=stored & mark=RarestColor",
-        "$CopyOther & $BelowMedian & background=stored & mark=RarestColor",
-        "$CopyOther & $MarkCells & $CountTable & background=stored & mark=RarestColor",
-        "$CopyOther & $MarkCells & $MaxMarks & background=stored & mark=RarestColor"
-      ],
+      "cases": ["$CopyOther & $BelowMedian & background=stored & mark=RarestColor", "$CopyOther & $MarkCells & $CountTable & background=stored & mark=RarestColor", "$CopyOther & $MarkCells & $MaxMarks & background=stored & mark=RarestColor"],
       "grid": [
         [0,8,0],
         [0,0,0],
@@ -3365,12 +2685,7 @@
         [8,0,0]
       ]
     }, {
-      "cases": [
-        "$CopyOther & $BelowMean & background=DominantColor & mark=stored",
-        "$CopyOther & $BelowMedian & background=DominantColor & mark=stored",
-        "$CopyOther & $CountTable & background=DominantColor & mark=stored",
-        "$CopyOther & $MaxMarks & background=DominantColor & mark=stored"
-      ],
+      "cases": ["$CopyOther & $BelowMedian & background=DominantColor & mark=stored", "$CopyOther & $CountTable & background=DominantColor & mark=stored", "$CopyOther & $MaxMarks & background=DominantColor & mark=stored"],
       "grid": [
         [1,8,1],
         [1,1,1],
@@ -3381,13 +2696,7 @@
         [1,1,1]
       ]
     }, {
-      "cases": [
-        "$CopyOther & $BelowMean & background=DominantColor & mark=RarestColor",
-        "$CopyOther & $BelowMedian & background=DominantColor & mark=RarestColor",
-        "$CopyOther & $MarkCells & $CountTable & background=DominantColor & mark=RarestColor",
-        "$CopyOther & $MarkCells & $MaxMarks & background=DominantColor & mark=RarestColor",
-        "$EraseOther & $FewestThree & background=DominantColor & mark=stored"
-      ],
+      "cases": ["$CopyOther & $BelowMedian & background=DominantColor & mark=RarestColor", "$CopyOther & $MarkCells & $CountTable & background=DominantColor & mark=RarestColor", "$CopyOther & $MarkCells & $MaxMarks & background=DominantColor & mark=RarestColor", "$EraseOther & $FewestThree & background=DominantColor & mark=stored"],
       "grid": [
         [1,8,1],
         [1,1,1],
@@ -3398,12 +2707,7 @@
         [8,1,1]
       ]
     }, {
-      "cases": [
-        "$EraseOther & $BelowMean & background=DominantColor & mark=stored",
-        "$EraseOther & $BelowMedian & background=DominantColor & mark=stored",
-        "$EraseOther & $CountTable & background=DominantColor & mark=stored",
-        "$EraseOther & $MaxMarks & background=DominantColor & mark=stored"
-      ],
+      "cases": ["$EraseOther & $BelowMedian & background=DominantColor & mark=stored", "$EraseOther & $CountTable & background=DominantColor & mark=stored", "$EraseOther & $MaxMarks & background=DominantColor & mark=stored"],
       "grid": [
         [1,8,1],
         [1,1,1],
@@ -3481,10 +2785,7 @@
         [0,0,0,0,1,1,1]
       ]
     }, {
-      "cases": [
-        "$AnyInk & $BlockMinority & $BelowMean & background=stored",
-        "$AnyInk & $BlockMinority & $BelowMedian & background=stored"
-      ],
+      "cases": ["$AnyInk & $BlockMinority & $BelowMedian & background=stored"],
       "grid": [
         [1,1,1,0,0,0,0],
         [1,1,1,0,0,0,0],
@@ -3495,11 +2796,7 @@
         [0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$AnyInk & $BlockMinority & $BelowMean & background=DominantColor",
-        "$AnyInk & $CountTable & background=DominantColor & mark=stored",
-        "$AnyInk & $MaxMarks & background=DominantColor & mark=stored"
-      ],
+      "cases": ["$AnyInk & $CountTable & background=DominantColor & mark=stored", "$AnyInk & $MaxMarks & background=DominantColor & mark=stored"],
       "grid": [
         [1,1,1,1,1,1,1],
         [1,1,1,1,1,8,1],
@@ -3510,13 +2807,7 @@
         [1,1,1,1,1,1,1]
       ]
     }, {
-      "cases": [
-        "$AnyInk & $BlockMinority & $BelowMedian & background=DominantColor",
-        "$AnyInk & $BelowMedian & background=DominantColor & mark=RarestColor",
-        "$EraseOther & $BelowMean & background=DominantColor",
-        "$EraseOther & $BelowMedian & background=DominantColor",
-        "$EraseOther & $FewestThree & background=DominantColor & mark=RarestColor"
-      ],
+      "cases": ["$AnyInk & $BlockMinority & $BelowMedian & background=DominantColor", "$AnyInk & $BelowMedian & background=DominantColor & mark=RarestColor", "$EraseOther & $BelowMedian & background=DominantColor", "$EraseOther & $FewestThree & background=DominantColor & mark=RarestColor"],
       "grid": [
         [1,1,1,1,1,1,1],
         [1,1,1,1,1,1,1],
@@ -3547,14 +2838,7 @@
       "cases": ["$AnyInk & $GridMinority"],
       "grid": null
     }, {
-      "cases": [
-        "$AnyInk & $StoredMark & $BelowMean & background=stored & mark=stored",
-        "$AnyInk & $StoredMark & $BelowMedian & background=stored & mark=stored",
-        "$CopyOther & $BlockMinority & $BelowMean & background=stored & mark=stored",
-        "$CopyOther & $BlockMinority & $BelowMedian & background=stored & mark=stored",
-        "$CopyOther & $StoredMark & $BelowMean & background=stored & mark=stored",
-        "$CopyOther & $StoredMark & $BelowMedian & background=stored & mark=stored"
-      ],
+      "cases": ["$AnyInk & $StoredMark & $BelowMedian & background=stored & mark=stored", "$CopyOther & $BlockMinority & $BelowMedian & background=stored & mark=stored", "$CopyOther & $StoredMark & $BelowMedian & background=stored & mark=stored"],
       "grid": [
         [1,1,1,0,0,0,0],
         [1,1,1,0,0,0,0],
@@ -3565,12 +2849,7 @@
         [0,0,0,0,1,1,1]
       ]
     }, {
-      "cases": [
-        "$AnyInk & $BelowMean & background=stored & mark=RarestColor",
-        "$AnyInk & $FewestThree & background=stored & mark=RarestColor",
-        "$CopyOther & $BelowMean & background=stored & mark=RarestColor",
-        "$CopyOther & $FewestThree & background=stored & mark=RarestColor"
-      ],
+      "cases": ["$AnyInk & $FewestThree & background=stored & mark=RarestColor", "$CopyOther & $FewestThree & background=stored & mark=RarestColor"],
       "grid": [
         [1,1,1,0,1,1,1],
         [1,1,1,0,1,8,1],
@@ -3581,12 +2860,7 @@
         [1,1,8,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$AnyInk & $StoredMark & $BelowMean & background=DominantColor & mark=stored",
-        "$AnyInk & $StoredMark & $BelowMedian & background=DominantColor & mark=stored",
-        "$EraseOther & $CountTable & background=DominantColor & mark=RarestColor",
-        "$EraseOther & $MaxMarks & background=DominantColor & mark=RarestColor"
-      ],
+      "cases": ["$AnyInk & $StoredMark & $BelowMedian & background=DominantColor & mark=stored", "$EraseOther & $CountTable & background=DominantColor & mark=RarestColor", "$EraseOther & $MaxMarks & background=DominantColor & mark=RarestColor"],
       "grid": [
         [1,1,1,1,1,1,1],
         [1,1,1,1,1,1,1],
@@ -3597,12 +2871,7 @@
         [1,1,1,1,1,1,1]
       ]
     }, {
-      "cases": [
-        "$AnyInk & $BelowMean & background=DominantColor & mark=RarestColor",
-        "$CopyOther & $BelowMean & background=DominantColor & mark=RarestColor",
-        "$CopyOther & $BelowMedian & background=DominantColor & mark=RarestColor",
-        "$CopyOther & $FewestThree & background=DominantColor & mark=RarestColor"
-      ],
+      "cases": ["$CopyOther & $BelowMedian & background=DominantColor & mark=RarestColor", "$CopyOther & $FewestThree & background=DominantColor & mark=RarestColor"],
       "grid": [
         [1,1,1,0,1,1,1],
         [1,1,1,0,1,8,1],
@@ -3627,10 +2896,7 @@
         [0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$CopyOther & $BelowMean & background=DominantColor & mark=stored",
-        "$CopyOther & $BelowMedian & background=DominantColor & mark=stored"
-      ],
+      "cases": ["$CopyOther & $BelowMedian & background=DominantColor & mark=stored"],
       "grid": [
         [1,1,1,0,1,1,1],
         [1,1,1,0,1,1,1],
@@ -3670,12 +2936,7 @@
       "cases": ["$BodyMarkOnly & $GridMinority"],
       "grid": null
     }, {
-      "cases": [
-        "$EraseOther & $BlockMinority & $BelowMean & background=stored & mark=stored",
-        "$EraseOther & $BlockMinority & $BelowMedian & background=stored & mark=stored",
-        "$EraseOther & $StoredMark & $BelowMean & background=stored & mark=stored",
-        "$EraseOther & $StoredMark & $BelowMedian & background=stored & mark=stored"
-      ],
+      "cases": ["$EraseOther & $BlockMinority & $BelowMedian & background=stored & mark=stored", "$EraseOther & $StoredMark & $BelowMedian & background=stored & mark=stored"],
       "grid": [
         [1,1,1,0,0,0,0],
         [1,1,1,0,0,0,0],
@@ -3686,10 +2947,7 @@
         [0,0,0,0,1,1,1]
       ]
     }, {
-      "cases": [
-        "$EraseOther & $BelowMean & background=stored & mark=RarestColor",
-        "$EraseOther & $FewestThree & background=stored & mark=RarestColor"
-      ],
+      "cases": ["$EraseOther & $FewestThree & background=stored & mark=RarestColor"],
       "grid": [
         [1,1,1,0,1,1,1],
         [1,1,1,0,1,0,1],
@@ -3767,14 +3025,7 @@
       [2,2,2,2,2,2,2,2,2,2,2,2,2,2]
     ],
     "output": [{
-      "cases": [
-        "$AnyInk & $BlockMinority & $BelowMean & background=stored",
-        "$AnyInk & $BlockMinority & $BelowMedian & background=stored",
-        "$AnyInk & $BlockMinority & $MaxMarks & background=stored",
-        "$AnyInk & $StoredMark & $BelowMean & background=stored",
-        "$AnyInk & $StoredMark & $BelowMedian & background=stored",
-        "$AnyInk & $StoredMark & $MaxMarks & background=stored"
-      ],
+      "cases": ["$AnyInk & $BlockMinority & $BelowMedian & background=stored", "$AnyInk & $BlockMinority & $MaxMarks & background=stored", "$AnyInk & $StoredMark & $BelowMedian & background=stored", "$AnyInk & $StoredMark & $MaxMarks & background=stored"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -3942,14 +3193,7 @@
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$AnyInk & $StoredMark & $BelowMean & mark=stored",
-        "$AnyInk & $StoredMark & $BelowMedian & mark=stored",
-        "$EraseOther & $BlockMinority & $BelowMean & mark=stored",
-        "$EraseOther & $BlockMinority & $BelowMedian & mark=stored",
-        "$EraseOther & $StoredMark & $BelowMean & mark=stored",
-        "$EraseOther & $StoredMark & $BelowMedian & mark=stored"
-      ],
+      "cases": ["$AnyInk & $StoredMark & $BelowMedian & mark=stored", "$EraseOther & $BlockMinority & $BelowMedian & mark=stored", "$EraseOther & $StoredMark & $BelowMedian & mark=stored"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -3970,12 +3214,7 @@
       "cases": ["$AnyInk & $StoredMark & $FewestThree & mark=stored"],
       "grid": null
     }, {
-      "cases": [
-        "$CopyOther & $BlockMinority & $BelowMean & mark=stored",
-        "$CopyOther & $BlockMinority & $BelowMedian & mark=stored",
-        "$CopyOther & $StoredMark & $BelowMean & mark=stored",
-        "$CopyOther & $StoredMark & $BelowMedian & mark=stored"
-      ],
+      "cases": ["$CopyOther & $BlockMinority & $BelowMedian & mark=stored", "$CopyOther & $StoredMark & $BelowMedian & mark=stored"],
       "grid": [
         [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
         [0,0,2,0,0,0,0,0,0,0,0,0,0,0],
@@ -4052,7 +3291,7 @@
         [0,0,0,0,1,1,1,1]
       ]
     }, {
-      "cases": ["$BelowMean & background=stored","$BelowMedian & background=stored"],
+      "cases": ["$BelowMedian & background=stored"],
       "grid": [
         [1,1,1,0,0,0,0,0],
         [1,1,1,0,0,0,0,0],
@@ -4064,10 +3303,7 @@
         [0,0,0,0,0,0,0,0]
       ]
     }, {
-      "cases": [
-        "$AnyInk & $BlockMinority & $BelowMean & background=DominantColor",
-        "$AnyInk & $BlockMinority & $FewestThree & background=DominantColor"
-      ],
+      "cases": ["$AnyInk & $BlockMinority & $FewestThree & background=DominantColor"],
       "grid": [
         [1,1,1,1,1,1,1,1],
         [1,1,1,1,1,1,8,1],
@@ -4079,12 +3315,7 @@
         [1,1,1,1,1,1,1,1]
       ]
     }, {
-      "cases": [
-        "$AnyInk & $BelowMedian & background=DominantColor",
-        "$AnyInk & $StoredMark & $BelowMean & background=DominantColor",
-        "$EraseOther & $BelowMean & background=DominantColor",
-        "$EraseOther & $BelowMedian & background=DominantColor"
-      ],
+      "cases": ["$AnyInk & $BelowMedian & background=DominantColor", "$EraseOther & $BelowMedian & background=DominantColor"],
       "grid": [
         [1,1,1,1,1,1,1,1],
         [1,1,1,1,1,1,1,1],
@@ -4114,10 +3345,7 @@
       "cases": ["$AnyInk & $StoredMark & $FewestThree & background=DominantColor"],
       "grid": null
     }, {
-      "cases": [
-        "$CopyOther & $BelowMean & background=DominantColor",
-        "$CopyOther & $BelowMedian & background=DominantColor"
-      ],
+      "cases": ["$CopyOther & $BelowMedian & background=DominantColor"],
       "grid": [
         [1,1,1,0,1,1,1,1],
         [1,1,1,0,1,1,1,1],

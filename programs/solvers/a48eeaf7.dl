@@ -27,26 +27,12 @@
 // the line the marker walks
 .type PathShape =
     // @claim slide
-    Line {heading: Heading, stop: Stop}
+    Line {stop: Stop}
     // @rule slide: the marker steps diagonally toward the block until it is
     //  level with the block's rows or columns, then goes straight. It stops at
     //  the first cell that touches the block, and is defined on every input.
     // @witness off-line: variant $Clamp
   | KingPath {}
-
-// which of the eight directions the line takes
-.type Heading =
-    // @claim slide
-    PointsAt {}
-    // @rule slide: the line takes the one of the eight directions nearest in
-    //  angle to the direction from the marker to the block's center
-    // @witness wide-block: variant concept
-    //     @relaxed block
-    // @witness off-angle: variant $Clamp
-    //     @relaxed markers
-    // @witness graze: variant $Clamp
-    //     @relaxed markers
-  | NearestAngle {}
 
 // where the line stops
 .type Stop =
@@ -122,14 +108,11 @@
 
 .init params = Params
 
-.decl heading_choice(h: Heading)
-heading_choice($PointsAt()). heading_choice($NearestAngle()).
-
 .decl stop_choice(s: Stop)
 stop_choice($Touch()). stop_choice($PassBy()).
 
 .decl path_shape_choice(ps: PathShape)
-path_shape_choice($Line(H, St)) :- heading_choice(H), stop_choice(St).
+path_shape_choice($Line(St)) :- stop_choice(St).
 path_shape_choice($KingPath()).
 
 .decl collide_choice(c: Collide)
@@ -284,39 +267,22 @@ end(S, Ps, M, P) :- on_path(S, Ps, M, P), !next(S, Ps, M, P, _).
 
 // --- $Line ---
 // The direction of the line from marker M.
-.decl aim(s: Scene, h: Heading, m: Position, d: Dir8)
-
-// --- $PointsAt ---
-aim(S, $PointsAt(), M, D) :- S = [_, R], marker(R, M, _), toward(S, M, D).
-
-// --- $NearestAngle ---
-// Twice the translation from marker M to the block's center: the sum of its
-// translations to two opposite corners of the block's box.
-.decl twice(s: Scene, m: Position, v: Offset)
-twice(S, M, V) :-
-    bbox.box(S, B), S = [_, R], marker(R, M, _),
-    in(Q1, _), box_corner(Q1, B, C), diag_opposite(C, C2), in(Q2, _), box_corner(Q2, B, C2),
-    relative(M, Q1, V1), relative(M, Q2, V2), compose(V1, V2, V).
-
-// @claim slide
-.init compass = Compass<Scene>
-compass.vec(S, V) :- twice(S, _, V).
-
-aim(S, $NearestAngle(), M, D) :- twice(S, M, V), compass.nearest(S, V, D).
+.decl aim(s: Scene, m: Position, d: Dir8)
+aim(S, M, D) :- S = [_, R], marker(R, M, _), toward(S, M, D).
 
 // --- $Touch ---
-next(S, $Line(H, $Touch()), M, P, Q) :-
-    on_path(S, $Line(H, $Touch()), M, P), !touch(S, P),
-    aim(S, H, M, D), neighbor(P, D, Q), in(Q, _).
+next(S, $Line($Touch()), M, P, Q) :-
+    on_path(S, $Line($Touch()), M, P), !touch(S, P),
+    aim(S, M, D), neighbor(P, D, Q), in(Q, _).
 
-arrive(S, $Line(H, $Touch()), M, P) :- end(S, $Line(H, $Touch()), M, P), touch(S, P).
+arrive(S, $Line($Touch()), M, P) :- end(S, $Line($Touch()), M, P), touch(S, P).
 
 // --- $PassBy ---
-next(S, $Line(H, $PassBy()), M, P, Q) :-
-    on_path(S, $Line(H, $PassBy()), M, P),
-    aim(S, H, M, D), neighbor(P, D, Q), in(Q, _), !block(S, Q).
+next(S, $Line($PassBy()), M, P, Q) :-
+    on_path(S, $Line($PassBy()), M, P),
+    aim(S, M, D), neighbor(P, D, Q), in(Q, _), !block(S, Q).
 
-arrive(S, $Line(H, $PassBy()), M, P) :- end(S, $Line(H, $PassBy()), M, P).
+arrive(S, $Line($PassBy()), M, P) :- end(S, $Line($PassBy()), M, P).
 
 // --- $KingPath ---
 next(S, $KingPath(), M, P, Q) :-
@@ -369,37 +335,6 @@ clamped(S, M, Q, A) :-
 
 landed([$Clamp(), Bp, R], M, Q) :-
     clamped([Bp, R], M, Q, A), perp(A, A2), clamped([Bp, R], M, Q, A2).
-
-// The nearest of the eight compass directions to a translation's angle:
-// the eight directions split the turn into equal sectors. A zero
-// translation has none.
-.comp Compass<Key> {
-    .decl vec(key: Key, v: Offset)  // @input
-
-    .decl nearest(key: Key, v: Offset, d: Dir8)
-
-    // The component on axis a: its size and the edge it heads toward.
-    .decl _part(key: Key, v: Offset, a: Axis, n: number, d: Dir)
-    _part(Ky, V, AXIS_V, N, DIR_B) :- vec(Ky, V), V = [T, _, _, _], T > 0, N = T.
-    _part(Ky, V, AXIS_V, N, DIR_T) :- vec(Ky, V), V = [T, _, _, _], T < 0, N = -T.
-    _part(Ky, V, AXIS_H, N, DIR_R) :- vec(Ky, V), V = [_, _, L, _], L > 0, N = L.
-    _part(Ky, V, AXIS_H, N, DIR_L) :- vec(Ky, V), V = [_, _, L, _], L < 0, N = -L.
-
-    .decl _size(key: Key, v: Offset, a: Axis, n: number)
-    _size(Ky, V, A, N) :- _part(Ky, V, A, N, _).
-    _size(Ky, V, AXIS_V, 0) :- vec(Ky, V), V = [0, _, _, _].
-    _size(Ky, V, AXIS_H, 0) :- vec(Ky, V), V = [_, _, 0, _].
-
-    // Within 22.5 degrees of the axis: tan(22.5°) = √2 − 1, so the minor
-    // component m and the major n satisfy (n − m)² > 2m².
-    nearest(Ky, V, D) :-
-        _part(Ky, V, A, N, D), perp(A, A2), _size(Ky, V, A2, M),
-        N > M, (N - M) * (N - M) > 2 * M * M.
-    nearest(Ky, V, D) :-
-        _part(Ky, V, AXIS_V, N, D1), _part(Ky, V, AXIS_H, M, D2),
-        (N - M) * (N - M) < 2 * min(N, M) * min(N, M),
-        diag_dirs(D, AXIS_V, D1, D2).
-}
 
 .comp Determine {
     .init ex = Parse<Example>

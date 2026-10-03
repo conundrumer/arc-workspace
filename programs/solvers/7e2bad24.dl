@@ -70,33 +70,25 @@ enter(Q, D, Ch) :-
 
 // --- $Contact ---
 
-.comp Bounce<Key> {
-    // The cells a beam may stand at, per key.
-    .decl cell(key: Key, p: Position)  // input
+// A beam at p is blocked toward d: a wall cell lies one step that way.
+.decl side(p: Position, d: Dir)
+side(P, D) :- in(P, _), dir_elem(D), neighbor(P, D, Q), wall(Q).
 
-    // A beam at p is blocked toward d, per key.
-    .decl side(key: Key, p: Position, d: Dir)  // input
+// One outgoing component of a heading, inverted where its side blocks.
+.decl leave_dir(p: Position, d: DiagDir, d_out: Dir)
+leave_dir(P, D, D_out) :-
+    in(P, _), diag_dirs(D, _, D_cmp, _),
+    ( side(P, D_cmp), opposite(D_cmp, D_out)
+    ; !side(P, D_cmp), D_out = D_cmp
+    ).
 
-    // One outgoing component of a heading, inverted where its side blocks.
-    .decl leave_dir(key: Key, p: Position, d: DiagDir, d_out: Dir)
-    leave_dir(K, P, D, D_out) :-
-        cell(K, P), diag_dirs(D, _, D_cmp, _),
-        ( side(K, P, D_cmp), opposite(D_cmp, D_out)
-        ; !side(K, P, D_cmp), D_out = D_cmp
-        ).
+// The heading the beam leaves p with, its two components recombined.
+.decl bounce(p: Position, d: DiagDir, d_out: DiagDir)
+bounce(P, D, D_out) :-
+    leave_dir(P, D, D1), leave_dir(P, D, D2),
+    diag_dirs(D_out, _, D1, D2).
 
-    // The heading the beam leaves p with, its two components recombined.
-    .decl bounce(key: Key, p: Position, d: DiagDir, d_out: DiagDir)
-    bounce(K, P, D, D_out) :-
-        leave_dir(K, P, D, D1), leave_dir(K, P, D, D2),
-        diag_dirs(D_out, _, D1, D2).
-}
-
-.init bounce = Bounce<Unit>
-bounce.cell($U(), P) :- in(P, _).
-bounce.side($U(), P, D) :- in(P, _), dir_elem(D), neighbor(P, D, Q), wall(Q).
-
-leave(P, D_out, $Contact()) :- enter(P, D, $Contact()), bounce.bounce($U(), P, D, D_out).
+leave(P, D_out, $Contact()) :- enter(P, D, $Contact()), bounce(P, D, D_out).
 
 // --- $WallAxis ---
 
