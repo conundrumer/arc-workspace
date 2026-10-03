@@ -419,6 +419,12 @@ SIBLING_DROPS_TEXT = ", ".join(f"`{header_word_text(w)}:`"
                                for w in HEADER_RANK if w in SIBLING_DROPS)
 """The fields a sibling leaves out, as the sibling sentence names them."""
 
+TYPED_ORDER = mctx("`{0}` {how} `{1}`, a `{2}`, which has no order; store "
+                   "the order as a parameter")
+"""The sentence of a `typed-order` finding: the operator, aggregate or
+lib relation `{0}` that orders, `{how}` the verb of its ordering, the
+variable `{1}` and its type `{2}`."""
+
 LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
                                        str]] = {
     LintSentence.RESERVED_WORD: lambda n, _: mctx(
@@ -532,15 +538,12 @@ LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
     LintSentence.CONST_JOIN: lambda n, m: mctx(
         "{rels} join on `{vars}`; name the derived constant in Params"
     ).format(rels=_ticked(n), vars=", ".join(m)),
-    LintSentence.TYPED_ORDER_COMPARES: lambda n, _: mctx(
-        "`{0}` compares `{1}`, a `{2}`, which has no order; store the order "
-        "as a parameter").format(*n),
-    LintSentence.TYPED_ORDER_ORDERS: lambda n, _: mctx(
-        "`{0}` orders `{1}`, a `{2}`, which has no order; store the order "
-        "as a parameter").format(*n),
-    LintSentence.TYPED_ORDER_RANKS: lambda n, _: mctx(
-        "`{0}` ranks `{1}`, a `{2}`, which has no order; store the order as "
-        "a parameter").format(*n),
+    LintSentence.TYPED_ORDER_COMPARES: lambda n, _: TYPED_ORDER.format(
+        *n, how=mctx("compares")),
+    LintSentence.TYPED_ORDER_ORDERS: lambda n, _: TYPED_ORDER.format(
+        *n, how=mctx("orders")),
+    LintSentence.TYPED_ORDER_RANKS: lambda n, _: TYPED_ORDER.format(
+        *n, how=mctx("ranks")),
 }
 """The sentence of each `LintNamed` finding, from its names and its
 second list."""
@@ -611,7 +614,7 @@ CODE_TEXT: dict[LintSentence, Callable[[LintCode], str]] = {
 FRAGMENT_CATEGORIES = frozenset({
     Category.RIGID_CHART, Category.ORIENTATION_LITERAL,
     Category.NONZERO_LITERAL, Category.ARITHMETIC, Category.RANGE,
-    Category.PARAMS_DATA,
+    Category.ORD, Category.PARAMS_DATA,
 })
 """The categories whose message is the code fragment that fires."""
 
@@ -634,9 +637,11 @@ def _marked_text(p: LintMarked) -> str:
                         "stands under `{marker}`").format(
                 name=p.name, marker=_marker_line(p.marker))
         case LintSentence.CASE_SECTION_READ:
-            return mctx("{cases} read `{rel}`, which the clause feeds, and "
-                        "the marker `{marker}` above it does not "
-                        "list them").format(
+            return mctx("by the program's rules, not by a run, {cases} "
+                        "read `{rel}`, which the clause feeds, and the "
+                        "marker `{marker}` above it does not list them; see "
+                        "\"Case markers\" in "
+                        "[Cases](docs/handbook/solver-file.md#cases)").format(
                 cases=_ticked(p.cases), rel=p.name,
                 marker=_marker_line(p.marker))
         case LintSentence.SHARED_FACT_MARKED:

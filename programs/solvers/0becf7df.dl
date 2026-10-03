@@ -121,9 +121,12 @@ out(P, Col_out, Ch) :-
         grid_partner(P_grid1, P_grid2),
         key_pos(P_grid1, P1), key_pos(P_grid2, P2).
 
+    .init ident = IdentOf<Position>
+    ident.value(P1) :- partner(P1, _).
+
     .decl src(p: Position, id: Ident)
-    src(P1, as(ord(P1), Ident)) :- partner(P1, _).
+    src(P1, Id) :- partner(P1, _), ident.id(P1, Id).
 
     .decl dst(p: Position, id: Ident)
-    dst(P2, as(ord(P1), Ident)) :- partner(P1, P2).
+    dst(P2, Id) :- partner(P1, P2), ident.id(P1, Id).
 }

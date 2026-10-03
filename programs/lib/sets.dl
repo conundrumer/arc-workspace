@@ -112,6 +112,15 @@
         N = count : { observed_member(Obs, M) }.
 }
 
+/// The `Ident` of each value of a domain. The id is stable within a run and
+/// carries nothing of the value but its identity.
+.comp IdentOf<T> {
+    .decl value(v: T)  // @input
+
+    .decl id(v: T, id: Ident)
+    id(V, as(ord(V), Ident)) :- value(V).
+}
+
 /// One id per class of an equivalence relation. The representative is
 /// arbitrary but deterministic.
 .comp Canon<T> {  // @construction
@@ -127,6 +136,9 @@
     rep(A, B) :- equiv(A, B).
     rep(A, B) <= rep(A, B2) :- ord(B) > ord(B2).
 
+    .init _ident = IdentOf<T>
+    _ident.value(B) :- rep(_, B).
+
     .decl id(a: T, id: Ident)
-    id(A, as(ord(B), Ident)) :- rep(A, B).
+    id(A, Id) :- rep(A, B), _ident.id(B, Id).
 }

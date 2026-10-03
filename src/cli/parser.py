@@ -168,15 +168,15 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
         description=mctx("The witness replaces a witness with the same id. "
                          "For an `other` verdict, put the judged output "
                          "after a `---` line of the grid text. Without "
-                         "`--separates`, record runs the witness of that id "
-                         "again on the input and `assign` the file holds "
-                         "for it, and writes only its groups; `--all` does "
-                         "this for every witness of the file. A witness "
-                         "with verdict `other` keeps its judged output. "
-                         "With `--separates` and no grid file or "
-                         "`--assign`, an id the file holds keeps its input "
-                         "and groups and takes the new text; `-` reads a "
-                         "new grid from stdin."),
+                         "`--separates` or `--assign`, record runs the "
+                         "witness of that id again on the input and "
+                         "`assign` the file holds for it, and writes only "
+                         "its groups; `--all` does this for every witness "
+                         "of the file. A witness with verdict `other` keeps "
+                         "its judged output. Where a witness keeps its "
+                         "input, `--separates` alone keeps its groups and "
+                         "takes the new text, and `--assign` runs it again "
+                         "at the new `assign`."),
         epilog=GRID_HELP,
     )
     record_p.add_argument("stem", help=STEM_HELP)
@@ -184,7 +184,9 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                           help=mctx("the witness's id; required unless "
                                     "`--format` or `--all`"))
     record_p.add_argument("file", nargs="?",
-                          help=mctx("grid file; stdin when omitted or `-`"))
+                          help=mctx("grid file, or `-` for stdin; when "
+                                    "omitted, an id the file holds keeps "
+                                    "its input, and a new id reads stdin"))
     record_p.add_argument("--separates",
                           help=mctx("what the witness separates; required "
                                     "for a new witness"))

@@ -96,8 +96,9 @@
 ### Cases
 - A case's model reads its output grids from `out` at that case, one grid per tiebreak resolution, and is undefined on an input where a grid's facts give two frame sizes.
 - A case's base is its `Choice` value, its branch at each point the `Choice` encodes; a case is a base with a branch at each `@derive` and `@store` point its base reads.
-- A case is witnessed when it is the concept case or a branch's model, or when an input of the task or of the witness file shows it giving an output that no case taking only part of its non-concept branches gives, where undefined counts as an output.
-    - A case that takes two branches on which every verdict is `concept` is not witnessed, unless every case that takes one of them also takes the other.
+- A case is witnessed when it is the concept case or stands for a branch's model, or when an input of the task or of the witness file shows it giving an output that no case taking only part of its non-concept branches gives, where undefined counts as an output.
+    - The case that stands for a branch's model is that model where the model is a case, and otherwise the case that takes the branch and differs from the concept case at the fewest points.
+    - Any other case that takes two branches on which every verdict is `concept` is not witnessed, unless every case that takes one of them also takes the other.
     - On every input of the task and of the witness file, every other case that is not witnessed gives the output of a witnessed case, so a run of the witnessed cases shows each Fit failure it has.
     - Every check, survey and count of `scripts/run_dl.py` runs and reports the witnessed cases alone.
 - A branch's clauses are the clauses shared by its cases and absent from the other cases.

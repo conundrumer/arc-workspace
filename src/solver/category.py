@@ -29,6 +29,7 @@ class Category(StrEnum):
     NONZERO_LITERAL = "nonzero literal"
     ARITHMETIC = "arithmetic"
     RANGE = "range"
+    ORD = "ord"
     BANNED_TYPE = "banned type"
     PARAMS_DATA = "params data"
     DEAD = "dead"

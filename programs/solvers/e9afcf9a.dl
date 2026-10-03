@@ -79,11 +79,14 @@ out(P_grid_out, Col, Ch) :- in(P_grid_in, Col), perm(P_grid_in, P_grid_out, Ch).
     .decl pair(p_in: Position, p_out: Position)
     pair(P_in, P_out) :- divide_axis(A), cand.value([A, P_in], P_out).
 
+    .init ident = IdentOf<Position>
+    ident.value(P_in) :- pair(P_in, _).
+
     .decl in_label(p: Position, id: Ident)
-    in_label(P_in, as(ord(P_in), Ident)) :- pair(P_in, _).
+    in_label(P_in, Id) :- pair(P_in, _), ident.id(P_in, Id).
 
     .decl out_label(p: Position, id: Ident)
-    out_label(P_out, as(ord(P_in), Ident)) :- pair(P_in, P_out).
+    out_label(P_out, Id) :- pair(P_in, P_out), ident.id(P_in, Id).
 
     .decl cell_transform(p_in: Position, d: D4)
     cell_transform(P_in, D) :- pair(P_in, P_out), d4_elem(D), apply(D, P_in, P_out).

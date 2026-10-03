@@ -47,7 +47,8 @@ PROGRAM_CHECKS: tuple[Check, ...] = (
     form.check_family_case, form.check_case_marker, form.check_witness,
     form.check_header, form.check_keyword, names.check_rigid_chart,
     bans.check_orientation_literal, bans.check_nonzero_literal,
-    bans.check_arithmetic, bans.check_range, names.check_reserved_name,
+    bans.check_arithmetic, bans.check_range, bans.check_ord,
+    names.check_reserved_name,
     names.check_shadowed_type, names.check_lib_name,
     names.check_lib_internal, form.check_comp_without_entry,
     form.check_parse_unshared_with_determine, form.check_banned_type,
@@ -212,7 +213,7 @@ def _idle(v: View, ig: IgnoreLine) -> Finding:
 
 BANNED_FORMS = frozenset({
     Category.ARITHMETIC, Category.RAW_AGGREGATE, Category.RANGE,
-    Category.NONZERO_LITERAL, Category.ORIENTATION_LITERAL,
+    Category.ORD, Category.NONZERO_LITERAL, Category.ORIENTATION_LITERAL,
 })
 """The categories of the banned forms (style.md, under "Bans")."""
 

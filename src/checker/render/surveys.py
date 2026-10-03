@@ -640,12 +640,11 @@ SET_CASES = mctx("the cases differ in which single-row changes of the "
                  "stored set give their train outputs")
 NEVER_READS = mctx("{label} never read{s} {param} — move {param} under the "
                    "marker of the cases that read it")
-WHOLE_DOMAIN = mctx("{label} admit{s} the whole domain {shown}, so "
-                    "{never_reads}")
-UNPINNED_UNDER = mctx("{label} admit{s} the whole domain {shown}, so "
-                      "{not_pinned}")
-UNEXERCISED = mctx("{label} admit{s} {shown}, so the pairs do not exercise "
-                   "{param} under {label}")
+ADMITS = mctx("{label} admit{s} {shown}")
+SO = mctx("{clause}, so {then}")
+WHOLE_DOMAIN = mctx("the whole domain {shown}")
+UNDER = mctx("{param} under {label}")
+UNEXERCISED = mctx("the pairs do not exercise {under}")
 COMMON = mctx("{shown} serve{s} every case, so {param} needs no case column")
 NO_COMMON: Annotated[str, quotes(
     "solver-file.md", "Params",
@@ -883,8 +882,11 @@ def _sorted_list(values: Iterable[Row], r: CaseSets[Row],
 
 
 def _cases_line(solver: Solver, r: CaseSets[Row]) -> str:
-    """Each group of cases with the values it admits, and then `COMMON` or
-    `NO_COMMON`. Where some value is common, a group that admits more
+    """Each group of cases with the values it admits (`ADMITS`), and then
+    `COMMON` or `NO_COMMON`. A group that admits the whole domain says so
+    (`WHOLE_DOMAIN`) where a clause follows its values (`SO`): its
+    cases never read the parameter, or the train pairs do not pin the
+    parameter under it. Where some value is common, a group that admits more
     than the common values, short of the whole domain, is one the pairs
     do not exercise (`UNEXERCISED`)."""
     groups = _case_groups(solver, r.per_case)
@@ -893,24 +895,21 @@ def _cases_line(solver: Solver, r: CaseSets[Row]) -> str:
     for values in _group_order(groups, len):
         g = groups[values]
         label, s = g.label, g.s
-        shown = _sorted_list(values, r, solver)
+        under = UNDER.format(param=r.parameter, label=label)
         if values == r.domain and set(g.cases) <= r.never_read:
-            parts.append(WHOLE_DOMAIN.format(
-                label=label, s=s, shown=shown,
-                never_reads=NEVER_READS.format(label=label, s=s,
-                                               param=r.parameter)))
+            then = NEVER_READS.format(label=label, s=s, param=r.parameter)
         elif common and values == r.domain:
-            parts.append(UNPINNED_UNDER.format(
-                label=label, s=s, shown=shown,
-                not_pinned=NOT_PINNED.format(what=mctx(
-                    "{param} under {label}").format(param=r.parameter,
-                                                    label=label))))
+            then = NOT_PINNED.format(what=under)
         elif common and values != common:
-            parts.append(UNEXERCISED.format(label=label, s=s, shown=shown,
-                                            param=r.parameter))
+            then = UNEXERCISED.format(under=under)
         else:
-            parts.append(mctx("{label} admit{s} {shown}").format(
-                label=label, s=s, shown=shown))
+            then = None
+        shown = _sorted_list(values, r, solver)
+        if then is not None and values == r.domain:
+            shown = WHOLE_DOMAIN.format(shown=shown)
+        admits = ADMITS.format(label=label, s=s, shown=shown)
+        parts.append(admits if then is None
+                     else SO.format(clause=admits, then=then))
     if common:
         parts.append(COMMON.format(shown=_sorted_list(common, r, solver),
                                    s=verb_s(len(common)), param=r.parameter))
@@ -932,9 +931,8 @@ def _set_cases_parts(solver: Solver, parameter: str, r: SetCases
                     "outputs: {count} of {swept}").format(
                         label=g.label, count=count, swept=r.swept)
         if unread:
-            part += mctx(", so {never_reads}").format(
-                never_reads=NEVER_READS.format(label=g.label, s=g.s,
-                                               param=parameter))
+            part = SO.format(clause=part, then=NEVER_READS.format(
+                label=g.label, s=g.s, param=parameter))
         parts.append(part)
     return parts
 

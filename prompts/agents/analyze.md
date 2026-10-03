@@ -25,9 +25,6 @@ tools: Read, Grep, Glob, Bash, Write
 ## Grids
 * inline: ../console.md#grids
 
-## Keywords
-* inline: ../../docs/handbook/keywords.md#keywords
-
 ## Issues
 * inline: notes.md#issue-filing
 

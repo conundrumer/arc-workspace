@@ -40,8 +40,8 @@ ALL_ALONE = mctx("`--all` runs the file's witnesses again and takes no id, "
                  "grid, `--separates` or `--assign`")
 RECORD_NEEDS = mctx("record takes a witness id, `--all` or `--format`")
 NEW_NEEDS_SEPARATES = mctx("a new witness takes `--separates`; without it, "
-                           "record runs the witness of that id again and "
-                           "takes no grid or `--assign`")
+                           "record runs the witness the file holds under "
+                           "that id again and takes no grid file")
 ONE_SEPARATOR = mctx("record takes one `---` separator at most")
 REMOVE_ALONE = mctx("`--remove` takes a witness id alone, and no grid, "
                     "`--separates`, `--assign`, `--all` or `--format`")

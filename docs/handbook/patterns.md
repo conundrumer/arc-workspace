@@ -174,7 +174,7 @@
 - (1b2d62fb, 34b99a2b, dae9d2b5 — per-panel colors in the combine tables, keyed on `p_outer` of the 1×2 divide.)
 
 ## Stored total orders as dense ranks
-- A total order is stored in the parameters as dense rank data and is consumed only by comparison.
+- A total order the output depends on is stored in the parameters as dense rank data and is consumed only by comparison.
     - Ranks state each element's place in the sequence directly, and successor edges state it only through closure.
     - Dense values keep the encoding canonical.
     * comment:

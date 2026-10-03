@@ -75,6 +75,8 @@
     - Lib relations read a Position.
 - **Arithmetic.** Arithmetic, raw aggregates, and `range` are banned.
     - **Bound comparisons.** A comparison of a distance against a bound is program style, is not arithmetic, and needs no lib relation.
+- **`ord`.** `ord` is banned.
+    - The lib comp `IdentOf` gives a value its `Ident`.
 
 ### Idioms
 - **Complement tests.** The test negates the relation of the values it excludes: `!params.bg(Col)` for non-bg.

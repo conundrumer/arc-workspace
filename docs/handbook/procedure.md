@@ -40,6 +40,9 @@
     ```
     # <task_id>
 
+    ## Concept
+    - <what the task is an instance of, as one person would say it to another>
+
     ## Scene
     - `<slug>`: <what every input contains, as the concept reads it>
 
@@ -49,29 +52,32 @@
     ## Parameters
     - `<name>`: <its value, or each open value>
         - <what it holds, where the name does not say>
+
+    ## Scene parameters
+    - `<name>`: <its value, or each open value>
+        - <what it holds, where the name does not say>
     ```
-    - Check that it fits every pair.
-    - After this step, the file is not changed.
+    - Write it from your reading of the pairs alone, before you write any script.
+    - Then check that it fits every pair.
+    - A scene claim fixes no task data.
+        - A value a scene claim states that is task data is a parameter: name it in the claim, and list it with this task's value, under Parameters when applying the rules needs its value and under Scene parameters otherwise.
 3. Only after step 2 is complete, read the next steps: `cat .claude/analyze-next.md`.
 
 ### Analyze after the concept
-1. Read the reference TS solver: `cat ../arc-synth-bun/programs/solvers/<task_id>.ts`.
-    - The reference TS solver solves the task.
-    - Each claim it makes that the concept statement does not make, or makes differently, is a branch.
-    - `bun scripts/ref.ts <task_id>` runs it on the grid on stdin.
-2. Form every other branch.
+1. Form every other branch.
     - A branch is stated by the slugs of the claims it replaces or adds, its parameters, and the inputs on which it is undefined.
     - A branch is formed whether or not another branch's model subsumes it, and whatever its witnesses' plausibility.
     - A branch that derives a parameter's value, or stores a value the program derives, is stated as that derivation or that stored value, and by the claim it replaces.
-    - Form them from the pairs, the reference TS solver, the headers of the solvers under `programs/solvers/`, probes over the pairs, and variant tasks.
+    - Form them from the pairs, the headers of the solvers under `programs/solvers/`, probes over the pairs, and variant tasks.
         - `grep -l '^// @keywords:.*<keyword>' programs/solvers/*.dl` lists the solvers under a keyword, and `awk '/^$/{exit} 1' programs/solvers/<id>.dl` prints one solver's header.
         - A probe is a script you write under `.scratch/<task_id>/` that runs a reading over grids and prints the outputs.
     - Name each branch by a constructor name of its own, in the form [Witness file](docs/handbook/solver-file.md#witness-file) gives. The name says what the branch changes and contains no value of a parameter.
     - A claim considered and not formed as a branch goes under Not formed, with why.
-3. Place each choice point at the concept or under a branch, as [Choice points and open parameters](docs/handbook/principles.md#choice-points-and-open-parameters) states.
+2. Place each choice point at the concept or under a branch, as [Choice points and open parameters](docs/handbook/principles.md#choice-points-and-open-parameters) states.
     - For each two choice points where neither stands under a branch of the other, state the model of each case that takes a non-concept branch at both.
+        - State those models in one statement for the two points, and state on a line of its own the model of each case that statement does not give.
     - When that model is one branch's model alone, the other point's property does not exist with that branch, and that section says where the point goes.
-4. Judge each branch's standing.
+3. Judge each branch's standing.
     - The concept case: each witness with verdict `other` that no branch below lists, with the items below, and the rule restated as the generator applies it, which the concept file's rule approximates.
     - A branch that fails Fit: the pair it fails.
     - A branch that fits every pair: one of its witnesses, on which the branch's model is defined when such a witness exists, with:
@@ -79,12 +85,13 @@
         - the scene claim the witness breaks, when it breaks one
         - the assignment it stands at, when that is not the stored one
         - its plausibility and verdict
+        - the invariant of the inputs it breaks, when its plausibility is below `ordinary`
     - A branch with no witness: why there is none.
-5. Write the witnesses to `.scratch/<task_id>/witnesses.json` in the witness file's shape, with each branch's name, and every fitting branch in the groups of each witness whose verdict is not `other`.
+4. Write the witnesses to `.scratch/<task_id>/witnesses.json` in the witness file's shape, with each branch's name, and every fitting branch in the groups of each witness whose verdict is not `other`.
     * comment:
         - The verdict clause stays: an `other` witness holds a judged grid and no groups, so a pass that reads the line without it has nowhere to put the fitting branches.
     - `uv run python scripts/run_dl.py witness --file .scratch/<task_id>/witnesses.json` checks the file's shape.
-6. Write the report to `.scratch/<task_id>/analyze.md`, in this form:
+5. Write the report to `.scratch/<task_id>/analyze.md`, in this form:
 
     ```
     # <task_id>
@@ -95,9 +102,10 @@
     ## Choice points
     - `<property>`
         - `concept`: <the concept branch>
-        - `<branch>`: <its statement, as step 2 gives it>, <its standing>
+        - `<branch>`: <its statement, as step 1 gives it>, <its standing>
             - `<property>`: <a choice point under this branch, in the same form, with this branch as its concept branch>
-    - `<branch>` & `<branch>`: <the model step 3 gives>
+    - `<property>` & `<property>`: <the model step 2 gives for the two points>
+        - `<branch>` & `<branch>`: <the model of a case that line does not give>
 
     ## Open parameters
     - `<name>`: <its open values>, under `<branch>` when one branch alone reads it
@@ -113,13 +121,13 @@
 1. Read the Analyze files, one at a time: `.scratch/<task_id>/concept.md`, `analyze.md`, and `witnesses.json`.
     - The concept file gives the concept case's claims, and the Analyze report gives each branch's standing.
 2. Write the solver (`programs/solvers/<task_id>.dl`), and copy the Analyze file to the witness file: `cp .scratch/<task_id>/witnesses.json programs/witnesses/<task_id>.wit.json`.
-    - Write the header's `@scene` and `@rule` lines from the concept file's claims, and `Params` from its parameters, under their names.
+    - Write the header's `@scene` and `@rule` lines from the concept file's claims, and `Params` from its Parameters section, under their names. The `@scene` line written from a claim gives the value of each parameter in its Scene parameters section that the claim reads.
     - A rule that report restates takes the restated text, and the concept file's text stands under it as its `@approximated:` line when the restated text has no relational form.
     - Each branch that report gives a witness is a constructor, named as the report names it and nested as the report nests its choice point.
     - A concept branch's constructor takes a name of your own.
     - An open parameter of that report, unless [Principles](docs/handbook/principles.md) make it a choice point, is a `Params` relation with a fact per open value, and no constructor; its values are the report's where it gives them, whatever the concept file gives.
     - The cases are the combinations of those branches that fit, which the run shows, whether or not one case's model subsumes another's.
-    - A `<branch>` & `<branch>` line of that report gives what the case that takes both branches reads.
+    - A `<property>` & `<property>` line of that report gives what each case that takes a non-concept branch at both points reads, and a `<branch>` & `<branch>` line under it gives what the case that takes both branches reads.
     - Leave the `Determine` comp for the Determine operation.
 
 ### Develop
@@ -128,7 +136,7 @@
     - When a hint appears, judge it, and put that judgment in the review.
     - Flag performance issues in the review.
     - When a performance issue prevents the principled form, make a temporary workaround, marked with the `@workaround` directive.
-3. Form each claim under the Analyze report's Not formed as a branch, and add as cases the combinations that take it and meet Fit and Relational form.
+3. Form each claim under the Analyze report's Not formed as a branch, with each reading of an item that names several as a claim of its own, and add as cases the combinations that take it and meet Fit and Relational form.
 4. Hold as a branch each built-in derivation that fits a parameter, and each stored reading of a value the program derives.
     - `uv run python scripts/run_dl.py derive <task_id>` lists the built-in derivations that fit.
     - `uv run python scripts/run_dl.py store <task_id>` lists the derived values that are the same on every input.

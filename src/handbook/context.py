@@ -431,10 +431,20 @@ def _handbook_docs(docs: Path = DOCS_DIR) -> list[Path]:
     return sorted(docs.glob("*.md"))
 
 
-def _doc_path(name: str, docs: Path = DOCS_DIR) -> Path:
+def _no_doc(name: str, docs: Path = DOCS_DIR) -> SystemExit:
+    """The exit where no handbook doc has the name `name` (`_named_doc`):
+    the line that gives the forms of a name and lists each doc's names."""
+    taken = ", ".join(_doc_names(path) for path in _handbook_docs(docs))
+    link = repo_label(docs / "<stem>.md")
+    return SystemExit(f"no handbook doc named `{name}`; a doc is named by its "
+                      f"title, its file stem or its link form, `{link}`: "
+                      f"{taken}")
+
+
+def _named_doc(name: str, docs: Path = DOCS_DIR) -> Path | None:
     """The handbook doc a reader refers to: the slug of its title, as a render
     shows it, its file stem, or the link form a document carries,
-    `docs/handbook/<stem>.md`."""
+    `docs/handbook/<stem>.md`; None where no doc has that name."""
     if name.endswith(".md"):
         name = name[:-3]
     name = name.rsplit("/", 1)[-1]
@@ -442,10 +452,23 @@ def _doc_path(name: str, docs: Path = DOCS_DIR) -> Path:
     for path in _handbook_docs(docs):
         if path.stem == want or path.stem == name:
             return path
-        title = _title(nm.parse(path.read_text(), path.name))
+        title = _doc_title(path)
         if title is not None and nm.slug(title) == want:
             return path
-    raise SystemExit(f"no handbook doc named `{name}`")
+    return None
+
+
+def _doc_title(path: Path) -> str | None:
+    """The title of the handbook doc at `path` (`_title`)."""
+    return _title(nm.parse(path.read_text(), path.name))
+
+
+def _doc_names(path: Path) -> str:
+    """The names `_named_doc` takes for one handbook doc, as `_no_doc`
+    lists them: its title, then its file stem."""
+    title = _doc_title(path)
+    stem = f"`{path.stem}`"
+    return stem if title is None else f"`{title}` ({stem})"
 
 
 def lib_component(src: Path, name: str) -> str:
@@ -469,14 +492,16 @@ def lib_component(src: Path, name: str) -> str:
 
 def section_text(where: str, docs: Path = DOCS_DIR) -> str:
     """One section of a handbook doc in full, named `<doc>#<section>`, or
-    by its heading alone where one section of the handbook's documents has
-    that heading, or one lib component's interface, named
+    by its heading alone, bare or as a link within a document carries it,
+    `#<section>`, where one section of the handbook's documents has that
+    heading, the heading standing alone also where `<doc>` names no doc, as
+    an agent's title in place of the chapter, or one lib component's
+    interface, named
     `programs/lib/<module>.dl#<Component>`.
-    The doc is the link form a document carries, the title a render shows, or
-    its file stem, and the section is the title a render shows, slugified, so
-    a reader runs the command off the lines in front of them. A render leaves
-    no line out, so the section arrives with the glosses and the drafts an
-    edition excludes."""
+    The doc is named as `_named_doc` takes it, and the section is the title
+    a render shows, slugified, so a reader runs the command off the lines in
+    front of them. A render leaves no line out, so the section arrives with
+    the glosses and the drafts an edition excludes."""
     name, sep, ident = where.partition("#")
     name, ident = name.strip(), ident.strip()
     if name.endswith(".dl"):
@@ -485,10 +510,17 @@ def section_text(where: str, docs: Path = DOCS_DIR) -> str:
             raise SystemExit(f"no lib source named `{name}`")
         return lib_component(src, ident)
     registry = nm.Registry(REPO_ROOT)
-    if not sep and not name.endswith(".md"):
-        document, node = _bare_section(registry, name, docs)
+    heading = (ident if sep and not name
+               else name if not sep and not name.endswith(".md") else None)
+    if heading is not None:
+        document, node = _bare_section(registry, heading, docs)
+    elif (path := _named_doc(name, docs)) is None:
+        try:
+            document, node = _bare_section(registry, ident, docs)
+        except SystemExit:
+            raise _no_doc(name, docs)
     else:
-        document = registry.load(_doc_path(name, docs))
+        document = registry.load(path)
         ids = registry.ids[document.source]
         node = ids.get(nm.slug(ident)) if sep else next(iter(ids.values()), None)
         if node is None:

@@ -124,6 +124,17 @@ def _assignment(eng: Engine, solver: Solver,
     return at
 
 
+def _assign_of(eng: Engine, solver: Solver, written: str | None
+               ) -> tuple[tuple[str, AssignValue], ...] | None:
+    """The `--assign` object as an entry's `assign` (`assign_arg`); None,
+    with the problem on stderr, where it is off its shape or names what
+    the solver lacks (`_assignment`)."""
+    assign = assign_arg(written)
+    if assign is None or _assignment(eng, solver, assign) is None:
+        return None
+    return assign
+
+
 # A run of the solver's cases on an entry's input
 
 
@@ -171,8 +182,8 @@ def cmd_grid(arg: str, path: str | None = None, every: bool = False,
     solver = command_solver(arg, eng, task=False)
     if solver is None:
         return 2
-    assign = assign_arg(assign_text)
-    if assign is None or _assignment(eng, solver, assign) is None:
+    assign = _assign_of(eng, solver, assign_text)
+    if assign is None:
         return 2
     grids = written_grids(path, 1, text.GRID_ONE.format(command="grid"))
     if grids is None:
@@ -303,16 +314,19 @@ def dispatch(args: argparse.Namespace) -> int:
     if args.id is None:
         print(text.RECORD_NEEDS, file=sys.stderr)
         return 2
+    changes = args.separates is not None or args.assign is not None
+    if args.file is None and changes \
+            and _held_entry(args.stem, args.id, args.witness_file) is not None:
+        if args.assign is None and args.separates is not None:
+            return cmd_reseparate(args.stem, args.id, args.separates,
+                                  args.witness_file)
+        return cmd_rerecord(args.stem, args.id, args.witness_file,
+                            args.separates, args.assign)
     if args.separates is None:
         if args.file or args.assign:
             print(text.NEW_NEEDS_SEPARATES, file=sys.stderr)
             return 2
         return cmd_rerecord(args.stem, args.id, args.witness_file)
-    if args.file is None and args.assign is None:
-        held = _held_entry(args.stem, args.id, args.witness_file)
-        if held is not None:
-            return cmd_reseparate(args.stem, args.id, args.separates,
-                                  args.witness_file)
     return cmd_record(args.stem, args.id, args.separates, args.file,
                       args.assign, args.witness_file)
 
@@ -423,8 +437,8 @@ def cmd_record(arg: str, entry_id: str, separates: str,
     solver = command_solver(arg, eng)
     if solver is None:
         return 2
-    assign = assign_arg(assign_text)
-    if assign is None or _assignment(eng, solver, assign) is None:
+    assign = _assign_of(eng, solver, assign_text)
+    if assign is None:
         return 2
     grids = written_grids(path, 2, text.ONE_SEPARATOR)
     if grids is None:
@@ -456,14 +470,26 @@ def cmd_record(arg: str, entry_id: str, separates: str,
 
 
 def cmd_rerecord(arg: str, entry_id: str,
-                 witness_file: str | None = None) -> int:
-    """Run the witness `entry_id` again on its stored input and `assign`,
-    and rewrite its groups as `record` writes them."""
+                 witness_file: str | None = None,
+                 separates: str | None = None,
+                 assign_text: str | None = None) -> int:
+    """Run the witness `entry_id` again on its stored input, at the
+    `assign` the caller gives or else the one the file holds, and rewrite
+    its groups as `record` writes them, with the `separates` text the
+    caller gives or else the one the file holds."""
     eng = engine()
     got = _entry_of(arg, entry_id, witness_file, eng)
     if got is None:
         return 2
     solver, lined, at, old = got
+    if assign_text is not None:
+        assign = _assign_of(eng, solver, assign_text)
+        if assign is None:
+            return 2
+        old = replace(old, assign=assign)
+    if separates is not None:
+        old = replace(old, separates=separates)
+    lined = _with_entry(lined, old)
     if not compiles(eng, solver):
         return 1
     runs = Runs(eng, lined, LIMITS)

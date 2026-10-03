@@ -138,11 +138,14 @@ out(P_grid, Col, $Map()) :- in(P_in, Col), params.map(P_in, P_grid).
     .decl pair(p_in: Position, p_out: Position)
     pair(P_in, P_out) :- cand(_, P_in, P_out), !broken(P_in, P_out).
 
+    .init ident = IdentOf<Position>
+    ident.value(P_in) :- pair(P_in, _).
+
     .decl src(p: Position, id: Ident)
-    src(P_in, as(ord(P_in), Ident)) :- pair(P_in, _).
+    src(P_in, Id) :- pair(P_in, _), ident.id(P_in, Id).
 
     .decl dst(p: Position, id: Ident)
-    dst(P_out, as(ord(P_in), Ident)) :- pair(P_in, P_out).
+    dst(P_out, Id) :- pair(P_in, P_out), ident.id(P_in, Id).
 
     // The output lines a cell's tile occupies, per axis.
     .decl tile_line(p_in: Position, a: Axis, p_along: Position)

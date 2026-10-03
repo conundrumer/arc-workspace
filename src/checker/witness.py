@@ -122,6 +122,7 @@ from solver.solve import (
     Outcome,
     PairRuns,
     at_once,
+    branch_model,
     constructor_denoted,
     examples,
     is_result,
@@ -433,7 +434,8 @@ def _groups(solver: Solver, runs: Runs, entry: Entry,
     names denote the solver's cases still, those the solver's own
     `impl_choice` holds (`_shown`): a dropped case is judged by
     `check_case_conditions` alone (solver-file.md, under "Witness file"). A
-    given file's name is read as the model of the branches it names (`_model_set`):
+    given file's name is read as the case that stands for the model of the
+    branches it names (`_model_set`):
     the file gives each branch's output, and no other case is compared
     with it (procedure.md, under "Analyze after the concept" and "Witness").
     The names denote cases of the solver, and the `drift` and `unlisted`
@@ -501,13 +503,14 @@ def _model_set(solver: Solver, text: str, solver_cases: Sequence[Case]
                ) -> frozenset[Case] | NameFault:
     """A given file's group name read as a branch's model
     (procedure.md, under "Analyze after the concept" and "Witness"): the one
-    case `model_of` gives for it among the solver's cases, none where that
-    model is no case of the solver; the problem where the name denotes nothing."""
-    model = model_named(solver, text, solver_cases)
-    if isinstance(model, NameFault):
-        return model
-    return frozenset() if model is None or model not in solver_cases \
-        else frozenset({model})
+    case of the solver's cases that stands for that model
+    (`solver.solve.branch_model`; solver-file.md, under "Cases"), none where
+    no case takes the branch; the problem where the name denotes nothing."""
+    d = denote(solver, text)
+    if isinstance(d, NameFault):
+        return d
+    model = branch_model(solver, solver_cases, d)
+    return frozenset() if model is None else frozenset({model})
 
 
 def _own(solver: Solver, entry: Entry, solver_cases: Sequence[Case]

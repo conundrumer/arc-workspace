@@ -204,7 +204,9 @@
 }
 
 /// Rigid bodies traveling toward one heading until first contact: the frame
-/// edge, a blocked cell, or a body already at rest ahead.
+/// edge, a blocked cell, or a body at rest ahead. Bodies that each lie ahead
+/// of the other in some line rest together, held by the nearest contact any
+/// of them makes.
 .comp Gravity<Key, Body> {
     /// The cells of each body.
     .decl cell(key: Key, b: Body, p: Position)  // @input
@@ -216,30 +218,42 @@
     /// body cell stops its own body.
     .decl blocked(key: Key, p: Position)  // @input
 
-    /// The travel one of the body's cells allows before contact.
-    .decl clearance(key: Key, b: Body, v: Offset)
-    clearance(Ky, B, V) :-
-        cell(Ky, B, P), dir(Ky, D),
-        ( dist(P, D, K), jump_offset(D, K, V)                   // travel to the frame edge
-        ; axis_of(D, A), same_line(A, P, Q), nearer(D, Q, P),   // a cell ahead in the line
-          ( blocked(Ky, Q), Q2 = Q                              // a blocked cell, in place
-          ; cell(Ky, B2, Q), B != B2,                           // another body's cell
-            _least.first([Ky, B2], V2), compose(Q, V2, Q2)      // where that cell rests
-          ),
-          opposite(D, D2), neighbor(Q2, D2, P2), relative(P, P2, V)  // travel to just behind it
-        ).
+    // A cell that can stop a body: blocked, or a body's.
+    .decl _contact(key: Key, q: Position)
+    _contact(Ky, Q) :- blocked(Ky, Q).
+    _contact(Ky, Q) :- cell(Ky, _, Q).
+
+    // A cell of body b lies behind contact cell q in a line along the
+    // heading, with k cells between them.
+    .decl _gap(key: Key, b: Body, q: Position, k: number)
+    _gap(Ky, B, Q, K) :-
+        cell(Ky, B, P), _contact(Ky, Q),
+        dir(Ky, D), axis_of(D, A), same_line(A, P, Q), nearer(D, Q, P),
+        dist(P, D, Kp), dist(Q, D, Kq), K = Kp - Kq - 1.
 
     .type _KB = [key: Key, b: Body]
 
-    // Shorter travel first.
-    .init _least = Order<_KB, Offset>
-    _least.elem([Ky, B], V) :- clearance(Ky, B, V).
-    _least.before([Ky, B], V, V2) :-
-        _least.elem([Ky, B], V), _least.elem([Ky, B], V2), dir(Ky, D), nearer(D, V2, V).
+    // The travel body b allows to the frame edge: the least over its cells.
+    .init _edge = Extremes<_KB>
+    _edge.cand([Ky, B], K) :- cell(Ky, B, P), dir(Ky, D), dist(P, D, K).
 
-    /// The displacement each body takes: the least of its cells' clearances.
+    // Body b travels at most k: a contact ahead stops it there. A bound past
+    // the edge travel adds nothing, so the bounds are finite.
+    .decl _bound(key: Key, b: Body, k: number)
+    _bound(Ky, B, K) :- _edge.low([Ky, B], K).
+    _bound(Ky, B, K) :- _gap(Ky, B, Q, K), blocked(Ky, Q).
+    _bound(Ky, B, K) :-
+        _gap(Ky, B, Q, G), cell(Ky, B2, Q), B != B2, _bound(Ky, B2, K2),
+        K = K2 + G, _edge.low([Ky, B], Ke), K < Ke.
+
+    // The least bound.
+    .init _least = Extremes<_KB>
+    _least.cand([Ky, B], K) :- _bound(Ky, B, K).
+
+    /// The displacement each body takes: the least travel any of its
+    /// contacts allows.
     .decl travel(key: Key, b: Body, v: Offset)
-    travel(Ky, B, V) :- _least.first([Ky, B], V).
+    travel(Ky, B, V) :- _least.low([Ky, B], K), dir(Ky, D), jump_offset(D, K, V).
 }
 
 /// The dense frame a sparse member set induces along an axis, with each
@@ -358,9 +372,12 @@
     .decl step(delta: Offset)  // @input
     step([-1, 1, 0, 0]). step([1, -1, 0, 0]). step([0, 0, -1, 1]). step([0, 0, 1, -1]).
 
+    .init _ident = IdentOf<Position>
+    _ident.value(P) :- node(_, P).
+
     /// The id of the component p belongs to.
     .decl label(key: Key, p: Position, id: Ident)
-    label(Ky, P, as(ord(P), Ident)) :- node(Ky, P).
+    label(Ky, P, Id) :- node(Ky, P), _ident.id(P, Id).
     label(Ky, Q, Id) :- label(Ky, P, Id), step(D), compose(P, D, Q), node(Ky, Q).
     label(Ky, P, Id) <= label(Ky, P, Id2) :- Id2 < Id.
 

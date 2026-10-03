@@ -1,0 +1,317 @@
+// ac2e8ecf
+// @draft
+// @keywords: objects classify enclose move
+// @scene background: every cell outside the shapes is the background color
+// @scene single-color-objects: each shape is one 4-connected set of cells of
+//  one color; shapes of different colors may touch
+// @scene two-kinds: each shape is either a hollow rectangle (a one-cell-thick
+//  rectangle outline that closes off an interior of background) or a cross (a
+//  horizontal bar and a vertical bar that cross, closing off nothing)
+// @rule kind: a shape that by itself closes off a region from the grid edge,
+//  under 4-adjacency, is a rectangle; every other shape is a cross
+// @rule rectangles-rise: the rectangles, as rigid objects, fall under Gravity
+//  toward closed_dir, with only the other rectangles and the grid edge as
+//  obstacles
+// @rule crosses-sink: the crosses, as rigid objects, fall under Gravity toward
+//  open_dir, with only the other crosses and the grid edge as obstacles
+// @rule compose: the output is the background with every shape drawn at its
+//  settled place; no settled rectangle overlaps a settled cross
+
+// how cells group into shapes
+.type ShapeParse =
+    // @claim single-color-objects
+    Components4 {}
+    // @scene single-color-objects: each shape is one 8-connected set of cells
+    //  of one color
+    // @witness diag-touch: ordinary concept
+  | Components8 {}
+
+// which shapes are rectangles
+.type KindTest =
+    // @claim kind
+    OwnClosure {}
+    // @rule kind: a shape that by itself closes off a region, or that fills
+    //  its bounding box, is a rectangle
+    // @witness solid-block: borderline $SolidCountsClosed
+    //     @relaxed two-kinds
+  | SolidCountsClosed {}
+    // @rule kind: a shape with a cell whose four neighbors all lie in the
+    //  shape is a cross; every other shape is a rectangle
+    // @witness broken-box: borderline $CrossingSinks
+    //     @relaxed two-kinds
+    // @witness t-shape: borderline concept
+    //     @relaxed two-kinds
+  | CrossingSinks {}
+    // @rule kind: a shape is a rectangle only when its region stays closed
+    //  off from the grid edge with the background passing between two cells
+    //  that touch at a corner
+    // @witness cut-corner: borderline concept
+    //     @relaxed two-kinds
+  | ClosedAgainstDiagonal {}
+    // @rule kind: a shape that borders a region that all the shapes together
+    //  close off from the grid edge is a rectangle
+    // @witness joint-pocket: borderline concept
+  | ClosedInGrid {}
+
+// where the crosses' heading comes from
+.type OpenDir =
+    // @claim crosses-sink
+    OpenStored {}
+    // @rule crosses-sink: the crosses fall toward the edge opposite closed_dir
+    // @witness perpendicular-dirs: borderline concept
+    //     @reassigned closed_dir
+  | OpenDirOpposite {}
+
+// what part of a falling shape meets an obstacle
+.type Contact =
+    // @claim rectangles-rise crosses-sink
+    StackByCells {}
+    // @rule rectangles-rise: a rectangle stops where its bounding box meets
+    //  the bounding box of another rectangle
+    // @rule crosses-sink: a cross stops where its bounding box meets the
+    //  bounding box of another cross
+    // @witness interlock: ordinary concept
+  | StackByBbox {}
+    // @rule rectangles-rise: a rectangle stops where its bounding box meets
+    //  the bounding box of another rectangle
+    // @witness tailed-box: borderline concept
+    //     @relaxed two-kinds
+  | StackRectanglesByBbox {}
+
+// the output where a settled rectangle and a settled cross share a cell
+.type KindsMeet =
+    // @claim compose
+    Apart {}
+    // @rule compose: where a settled rectangle and a settled cross share a
+    //  cell, the rectangle's color shows
+    // @witness kinds-meet: borderline concept
+  | RectanglesOnTop {}
+    // @rule compose: where a settled rectangle and a settled cross share a
+    //  cell, the cross's color shows
+    // @witness kinds-meet: borderline concept
+  | CrossesOnTop {}
+
+.type Choice = [s: ShapeParse, k: KindTest, o: OpenDir, c: Contact, m: KindsMeet]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    // @ignore: derive concept — wherever it is defined, it gives the output of
+    //  the case that takes $RectanglesOnTop and the derived background
+    .decl background(c: Color) background(0).
+
+    // The edge the rectangles fall toward.
+    .decl closed_dir(d: Dir) closed_dir(DIR_T).
+
+    // --- $OpenStored ---
+
+    // The edge the crosses fall toward.
+    .decl open_dir(d: Dir) open_dir(DIR_B).
+}
+
+.init params = Params
+
+.decl shape_parse_choice(s: ShapeParse)
+shape_parse_choice($Components4()). shape_parse_choice($Components8()).
+
+.decl kind_test_choice(k: KindTest)
+kind_test_choice($OwnClosure()). kind_test_choice($SolidCountsClosed()).
+kind_test_choice($CrossingSinks()). kind_test_choice($ClosedAgainstDiagonal()).
+kind_test_choice($ClosedInGrid()).
+
+.decl contact_choice(c: Contact)
+contact_choice($StackByCells()). contact_choice($StackByBbox()).
+contact_choice($StackRectanglesByBbox()).
+
+.decl kinds_meet_choice(m: KindsMeet)
+kinds_meet_choice($Apart()). kinds_meet_choice($RectanglesOnTop()).
+kinds_meet_choice($CrossesOnTop()).
+
+.decl open_dir_choice(o: OpenDir)
+open_dir_choice($OpenStored()). open_dir_choice($OpenDirOpposite()).
+
+// The concept case, and every case that draws where the kinds meet. Any
+// other case is undefined there, and the case that draws the rectangles
+// there gives its output wherever it is defined.
+.decl impl_choice(ch: Choice)
+impl_choice([$Components4(), $OwnClosure(), $OpenStored(), $StackByCells(), $Apart()]).
+impl_choice([S, K, O, C, M]) :-
+    shape_parse_choice(S), kind_test_choice(K), open_dir_choice(O), contact_choice(C),
+    kinds_meet_choice(M), M != $Apart().
+
+// One shape under one parse.
+.type Shape = [s: ShapeParse, id: Ident]
+
+// The rectangles' fall under one parse, kind test and contact.
+.type Rise = [s: ShapeParse, k: KindTest, c: Contact]
+
+// The crosses' fall under one parse, kind test, heading and contact.
+.type Sink = [s: ShapeParse, k: KindTest, o: OpenDir, c: Contact]
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.background(Col).
+
+.decl shape(sh: Shape, p: Position)
+
+// --- $Components4 ---
+
+// @claim single-color-objects
+.init shapes4 = Components<Color>
+shapes4.node(Col, P) :- ink(P, Col).
+shape([$Components4(), Id], P) :- shapes4.label(_, P, Id).
+
+// --- $Components8 ---
+
+// @claim single-color-objects
+.init shapes8 = Components8<Color>
+shapes8.node(Col, P) :- ink(P, Col).
+shape([$Components8(), Id], P) :- shapes8.label(_, P, Id).
+
+// --- kinds ---
+
+// The grid cells outside the shape.
+.decl off_shape(sh: Shape, p: Position)
+off_shape(Sh, P) :- shape(Sh, _), in(P, _), !shape(Sh, P).
+
+// The regions the shape closes off by itself.
+// @claim kind
+.init own = Closed<Shape>
+own.cell(Sh, P) :- off_shape(Sh, P).
+
+// @claim kind rectangles-rise crosses-sink
+.init box = Bbox<Shape>
+box.cell(Sh, P) :- shape(Sh, P).
+
+// The cells of the shape's bounding box.
+.decl box_cell(sh: Shape, p: Position)
+box_cell(Sh, P) :- box.box(Sh, B), in(P, _), inside(P, B).
+
+.decl rectangle(sh: Shape, k: KindTest)
+
+.decl cross(sh: Shape, k: KindTest)
+cross(Sh, K) :- shape(Sh, _), kind_test_choice(K), !rectangle(Sh, K).
+
+// --- $OwnClosure ---
+rectangle(Sh, $OwnClosure()) :- own.region(Sh, _, _).
+
+// --- $SolidCountsClosed ---
+
+// A cell of the shape's bounding box lies outside the shape.
+.decl gap(sh: Shape)
+gap(Sh) :- box_cell(Sh, P), !shape(Sh, P).
+
+rectangle(Sh, $SolidCountsClosed()) :- own.region(Sh, _, _).
+rectangle(Sh, $SolidCountsClosed()) :- shape(Sh, _), !gap(Sh).
+
+// --- $CrossingSinks ---
+
+// @claim kind
+.init rim = Rim<Shape>
+rim.cell(Sh, P) :- shape(Sh, P).
+
+// A cell whose four neighbors all lie in the shape.
+.decl hub(sh: Shape)
+hub(Sh) :- shape(Sh, P), !rim.rim(Sh, P).
+
+rectangle(Sh, $CrossingSinks()) :- shape(Sh, _), !hub(Sh).
+
+// --- $ClosedAgainstDiagonal ---
+
+// The cells the grid edge reaches outside the shape, stepping to any of the
+// eight neighbors.
+// @claim kind
+.init own8 = Reach<Shape>
+own8.step(V) :- step_offset(_, V).
+own8.node(Sh, P) :- off_shape(Sh, P).
+own8.seed(Sh, P) :- off_shape(Sh, P), dir_elem(D), dist(P, D, 0).
+
+rectangle(Sh, $ClosedAgainstDiagonal()) :- off_shape(Sh, P), !own8.reach(Sh, P).
+
+// --- $ClosedInGrid ---
+
+// The regions all the shapes together close off.
+// @claim kind
+.init pockets = Closed<Unit>
+pockets.cell($U(), P) :- in(P, Col), params.background(Col).
+
+rectangle(Sh, $ClosedInGrid()) :-
+    pockets.region($U(), P, _), dir_elem(D), neighbor(P, D, Q),    // beside a closed-off cell
+    shape(Sh, Q).
+
+// --- contact ---
+
+// The cells a falling rectangle meets an obstacle with.
+.decl rise_body(sh: Shape, c: Contact, p: Position)
+
+// The cells a falling cross meets an obstacle with.
+.decl sink_body(sh: Shape, c: Contact, p: Position)
+
+// --- $StackByCells ---
+rise_body(Sh, $StackByCells(), P) :- shape(Sh, P).
+sink_body(Sh, $StackByCells(), P) :- shape(Sh, P).
+
+// --- $StackByBbox ---
+rise_body(Sh, $StackByBbox(), P) :- box_cell(Sh, P).
+sink_body(Sh, $StackByBbox(), P) :- box_cell(Sh, P).
+
+// --- $StackRectanglesByBbox ---
+rise_body(Sh, $StackRectanglesByBbox(), P) :- box_cell(Sh, P).
+sink_body(Sh, $StackRectanglesByBbox(), P) :- shape(Sh, P).
+
+// --- heading ---
+
+// The edge the crosses fall toward.
+.decl sink_dir(o: OpenDir, d: Dir)
+
+// --- $OpenStored ---
+sink_dir($OpenStored(), D) :- params.open_dir(D).
+
+// --- $OpenDirOpposite ---
+sink_dir($OpenDirOpposite(), D) :- params.closed_dir(D_closed), opposite(D_closed, D).
+
+// --- the falls ---
+
+// @claim rectangles-rise
+.init rise = Gravity<Rise, Ident>
+rise.dir([S, K, C], D) :-
+    shape_parse_choice(S), kind_test_choice(K), contact_choice(C), params.closed_dir(D).
+rise.cell([S, K, C], Id, P) :- rectangle([S, Id], K), rise_body([S, Id], C, P).
+
+// @claim crosses-sink
+.init sink = Gravity<Sink, Ident>
+sink.dir([S, K, O, C], D) :- rise.dir([S, K, C], _), sink_dir(O, D).
+sink.cell([S, K, O, C], Id, P) :- cross([S, Id], K), sink_dir(O, _), sink_body([S, Id], C, P).
+
+// The rectangles' cells at rest.
+.decl risen(r: Rise, p: Position, col: Color)
+risen([S, K, C], Q, Col) :-
+    rise.travel([S, K, C], Id, V), shape([S, Id], P), in(P, Col), compose(P, V, Q).
+
+// The crosses' cells at rest.
+// @ignore: common-subexpr — the rectangles and the crosses fall in separate
+//  instances, and each draws its shapes at their travel
+.decl sunk(f: Sink, p: Position, col: Color)
+sunk([S, K, O, C], Q, Col) :-
+    sink.travel([S, K, O, C], Id, V), shape([S, Id], P), in(P, Col), compose(P, V, Q).
+
+// --- output ---
+
+out(P, Col, [S, K, O, C, M]) :-
+    impl_choice([S, K, O, C, M]), in(P, _), params.background(Col),
+    !risen([S, K, C], P, _), !sunk([S, K, O, C], P, _).
+
+// --- $Apart ---
+out(P, Col, [S, K, O, C, $Apart()]) :-
+    risen([S, K, C], P, Col), sink_dir(O, _), !sunk([S, K, O, C], P, _).
+out(P, Col, [S, K, O, C, $Apart()]) :- sunk([S, K, O, C], P, Col), !risen([S, K, C], P, _).
+
+// --- $RectanglesOnTop ---
+out(P, Col, [S, K, O, C, $RectanglesOnTop()]) :- risen([S, K, C], P, Col), sink_dir(O, _).
+out(P, Col, [S, K, O, C, $RectanglesOnTop()]) :-
+    sunk([S, K, O, C], P, Col), !risen([S, K, C], P, _).
+
+// --- $CrossesOnTop ---
+out(P, Col, [S, K, O, C, $CrossesOnTop()]) :- sunk([S, K, O, C], P, Col).
+out(P, Col, [S, K, O, C, $CrossesOnTop()]) :-
+    risen([S, K, C], P, Col), sink_dir(O, _), !sunk([S, K, O, C], P, _).

@@ -1799,8 +1799,8 @@ def witnessed_by(solver: Solver, cases: Sequence[Case],
     for one in shown:
         failed |= one.failed
         differing |= one.differing
-    return tuple(c for c in cases if c in failed or (
-        not stacked(took[c]) and (c in kept or c in differing)))
+    return tuple(c for c in cases if c in failed or c in kept or (
+        not stacked(took[c]) and c in differing))
 
 
 WITNESSED_DIR = "witnessed"
@@ -1906,10 +1906,11 @@ def witnessed(engine: Engine, solver: Solver, limits: Limits,
     output, its grids over the tiebreak resolutions or undefined with its
     reason and cells, that no case it extends gives, so that a case
     undefined where a case it extends gives a grid is witnessed and its
-    Fit failure shown; and not when it takes two
-    rejected branches (`rejected`) of which neither requires the other, a
-    branch requiring another when every case of the solver that takes it
-    takes the other. A case whose run on some recorded input
+    Fit failure shown. A case other than the concept case and the
+    branch models is not witnessed on what an input shows when it takes
+    two rejected branches (`rejected`) of which neither requires the
+    other, a branch requiring another when every case of the solver that
+    takes it takes the other. A case whose run on some recorded input
     fails or reaches a limit is witnessed, so that the failure is shown.
     What each recorded input shows (`Shown`) is kept on disk under its
     key (`shown_key`) where no run on it failed, so that a command on an
