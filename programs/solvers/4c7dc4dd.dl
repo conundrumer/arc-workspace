@@ -104,7 +104,7 @@ own(Pan, Col) :- mark(Pan, _, Col), content(Pan2), Pan != Pan2, !mark(Pan2, _, C
 }
 
 // The catalog's rules, keying Induce — the comp's own override of the type
-// rule (see proposals/Induce.md).
+// rule (see proposals/Subtask.md).
 .type Rule = Extend {} | Span {} | Reflect {}
 
 .init catalog = Induce<Rule, Box, Color>
