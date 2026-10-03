@@ -19,7 +19,8 @@ scripts/.queue-cache
 tools/console/state/
 .scratch
 tests/scratch/
-/issues/
+/issues/*
+!/issues/README.md
 # generated
 .codex/
 /AGENTS.md

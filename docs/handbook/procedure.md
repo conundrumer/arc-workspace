@@ -105,8 +105,8 @@
     ## Not formed
     - <claim>: <why>
 
-    ## Doc and tool issues
-    - `delay` or `interference`: <the doc or tool line, and how it slowed the pass, or what the pass wrote wrong because of it>
+    ## Issues filed
+    - <the name of a file the pass wrote under `issues/new/`>
     ```
 
 ### Write

@@ -23,7 +23,7 @@
 
 ## solver-pass-lead
 - What an operation routes to the review goes in your report, under the section it fits.
-- Write under `programs/solvers/`, `programs/witnesses/`, and `.scratch/<task_id>/`, and nowhere else; the Analyze files are not changed.
+- Write under `programs/solvers/`, `programs/witnesses/`, `.scratch/<task_id>/`, and `issues/new/`, and nowhere else; the Analyze files are not changed.
 - Report a failing run as failing.
 - Do not read `../arc-synth-bun/`.
 - Never run a git command that changes state.
@@ -47,12 +47,33 @@
     - <an operation the trigger fires on>: <its solver-local form, and the sites the grep found>
 
     ## Fixes elsewhere
-    - <a file the pass does not edit, and the line>: <the fix it needs>
+    - <another task's file, and the line>: <the fix it needs>
 
-    ## Doc and tool issues
-    - `delay` or `interference`: <the doc or tool line, and how it slowed the pass, or what the pass wrote wrong because of it>
+    ## Issues filed
+    - <the name of a file the pass wrote under `issues/new/`>
     ```
 - A section with nothing holds `none`.
+
+## issue-filing
+- An issue is a doc line or a tool behavior that slowed the pass, or that made its output wrong; a problem in the task's own files is not one.
+- As each issue happens, note it in `.scratch/<task_id>/progress.md`, under a heading that is the name of this pass's report.
+- When the report's other sections are settled, file each issue noted under that heading as one file under `issues/new/`, whether or not an earlier pass hit it, and create that directory when it is absent.
+    - Name the files `<unix time>-<task_id>-<agent>-<n>.md`, with one `date +%s` for all of them, `<agent>` your agent's name (`analyze`, `create` or `refine`), and `<n>` counting them from 1.
+    - Write each file in this form:
+        ```
+        ---
+        kind: <delay or interference>
+        ---
+        # <the target as you cite it: a link as this rendering shows it, a step and the phrase quoted, or a command>: <what is wrong in it>
+
+        ## Effect
+        <what it cost the pass; for `interference`, what was wrong in the output, and whether it still is>
+
+        ## Evidence
+        <the line quoted, or the command and its output, or the grid, as you saw it>
+        ```
+    - `kind` is `interference` when the pass's output had something wrong because of the issue, whether or not the pass repaired it, and `delay` otherwise.
+    - Say what is wrong and what it cost, and not what the fix should be.
 
 ## code-working-rules
 - Run every command in the foreground, with an explicit timeout of at most 600000 ms on the Bash call.

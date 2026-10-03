@@ -30,6 +30,9 @@
 - A running server re-execs itself when `server.py` or a module under `solver_console/` changes, at its next quiet moment (`solver_console/reload.py`), so a code change needs no restart.
 - The page and `ui/` are served from disk on each request.
 
+## Issues
+- `issues/` is the track of doc and tool issues that solver passes file, and [issues/README.md](issues/README.md) states its conventions.
+
 ## Cards
 - When the user requests a card to help make a decision regarding a solver, send a handbook agent and tell it to make one based on [card_spec.py](src/study/card_spec.py).
 

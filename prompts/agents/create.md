@@ -64,6 +64,9 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 ## Prune
 * inline: ../../docs/handbook/procedure.md#prune
 
+## Issues
+* inline: notes.md#issue-filing
+
 ## Report
 - Write the report to `.scratch/<task_id>/create.md`.
 * inline: notes.md#report-form

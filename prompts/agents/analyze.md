@@ -12,7 +12,7 @@ tools: Read, Grep, Glob, Bash, Write
 # Analyze agent
 - Your brief names one task.
 - Run Analyze on it.
-- Put the files you write under `.scratch/<task_id>/` and nowhere else.
+- Put the files you write under `.scratch/<task_id>/` and `issues/new/`, and nowhere else.
 - Never run a git command that changes state.
 - Your reply is the report's path.
 - A section with nothing, in a file you write, holds `none`.
@@ -27,6 +27,9 @@ tools: Read, Grep, Glob, Bash, Write
 
 ## Keywords
 * inline: ../../docs/handbook/keywords.md#keywords
+
+## Issues
+* inline: notes.md#issue-filing
 
 ## Analyze
 * inline: ../../docs/handbook/procedure.md#analyze
