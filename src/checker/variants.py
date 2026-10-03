@@ -242,14 +242,17 @@ def _compared(runs: GroupRuns, cases: Sequence[Case], pair: PairId,
 def profile(engine: Engine, solver: Solver,
             cases: tuple[Case, ...] | RunFailure,
             pairs: Sequence[tuple[PairId, Example]], limits: Limits,
-            reference: Profile | None = None, held: bool = True
+            reference: Profile | None = None, held: bool = True,
+            stop: Callable[[Sequence[Entry]], bool] | None = None
             ) -> ProfileResult:
     """The profile of `cases` under the solver's program on `pairs`, read
     in pair order, `cases` the witnessed cases or the failure of the run
     that enumerates them (`checker.runs.Runs.cases`):
     the pair that fails where one does. With `reference`, the first pair
     whose entry differs from the reference's ends the reading, and the
-    profile read so far, which differs, is the result. A run that reaches a
+    profile read so far, which differs, is the result. With `stop`, the
+    reading ends at the first pair after which `stop` of the entries read
+    holds, and the entries read are the result. A run that reaches a
     limit before any of these is no result.
 
     With `reference`, each pair's runs are compared with the reference's
@@ -271,6 +274,8 @@ def profile(engine: Engine, solver: Solver,
         out.append(e)
         if reference is not None and (i >= len(reference)
                                       or reference[i] != e):
+            break
+        if stop is not None and stop(out):
             break
     return tuple(out)
 

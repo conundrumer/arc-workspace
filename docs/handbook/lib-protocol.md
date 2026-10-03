@@ -15,6 +15,8 @@
 1. Write plain program relations that state the lib operation.
     - When cases share those relations, key them.
     - **Proposal comp.** If those relations need a banned form and the concept case reads them, place them in a proposal comp: a `.comp` named for the operation.
+        - If the concept case does not read them, write no comp: the branch whose claim needs that form has no set of clauses, and it fails Relational form.
+            * comment: The second Create pass on a47bf94d wrote a `MinCostMatching` proposal comp for the branch `min-cost-match` alone, which the concept case does not read.
     - **Extension of a lib comp.** Write no comp for an extension of a lib comp. Keep its local clause beside the instance.
     - Run the solver and confirm that the operation works in context.
 2. Report the operation: name it, describe it, show the solver-local version, and list the sites the grep found.

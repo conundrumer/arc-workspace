@@ -49,7 +49,15 @@ class ProblemKind(StrEnum):
     NAME_FORM = "name-form"
     """A name in none of the name forms."""
     ASSIGN_NAMES_NOTHING = "assign-names-nothing"
-    """An `assign` key or string that names nothing."""
+    """An `assign` key that is no parameter and no `@store` relation."""
+    ASSIGN_VALUE_UNKNOWN = "assign-value-unknown"
+    """An `assign` string value that is no lib constant and no
+    constructor without arguments of an ADT the solver or the lib
+    declares."""
+    ASSIGN_ARITY = "assign-arity"
+    ASSIGN_TYPE = "assign-type"
+    """An `assign` value whose facts have another number of arguments
+    than the relation it names has columns outside its case columns."""
     ANCHOR_WITHOUT_STAMP = "anchor-without-stamp"
     """An `assign` grid with an anchor for a name the solver stores by no
     one `GRID_STAMP` call: by one position GRID call, by facts, by several
@@ -76,6 +84,9 @@ class ProblemKind(StrEnum):
     TYPE_ARGUMENTS = "type-arguments"
     """An instance, or a component's base, given another number of type
     arguments than the component declares type parameters."""
+    CASE_COLUMN_OFF_FORM = "case-column-off-form"
+    """A parameter's column that carries the case in another form than a
+    parameter's case column (`CaseColumnOffForm`)."""
     RIGID_CHARTS = "rigid-charts"
     """A RIGID call in `Params` whose block's chart relations are not one
     per name the call binds."""
@@ -266,8 +277,70 @@ class GridCellOffForm:
     value: int
 
 
+@quotes("solver-file.md", "Witness file",
+        "An `assign` of a relation in [Params](docs/handbook/solver-file.md#params) "
+        "or of a `@store` line's relation gives its facts without their case "
+        "part")
+@dataclass(frozen=True)
+class AssignArity:
+    """An `assign` value of the relation `name` whose facts have `given`
+    arguments, where the relation takes `expected`: its columns outside
+    its case part (`solver.solve.PerCase.given`), `per_case` where it has
+    a case column."""
+
+    name: str
+    given: tuple[int, ...]
+    expected: int
+    per_case: bool
+
+
+@quotes("solver-file.md", "Witness file",
+        "Use a string for a lib constant and a list for a record. Write a "
+        "constructor with no arguments as a string, such as "
+        "`\"$Anchor\"`.")
+@dataclass(frozen=True)
+class AssignType:
+    """An `assign` value of the relation `name` with the argument `arg`,
+    as JSON writes it, in the column `column`, where that argument is no
+    value of `type`: the column's type, or for a case column with fields
+    outside the case, the list of those fields' types."""
+
+    name: str
+    column: str
+    type: str | tuple[str, ...]
+    arg: str
+
+
+@quotes("solver-file.md", "Params",
+        "**Case column.** Where the cases that read a relation in Params "
+        "store different values of it, the relation takes a case column in "
+        "the form of `out`'s, and each fact's case column is the `Choice` "
+        "value of the case that stores the fact.")
+@dataclass(frozen=True)
+class CaseColumnOffForm:
+    """A parameter's column that carries the case and is no case column
+    of a parameter (`solver.model.parameter_case_columns`): of `type`, as
+    the declaration writes it, which is of the `kind` given."""
+
+    relation: str
+    column: str
+    type: str
+    kind: "OffFormType"
+
+
+class OffFormType(StrEnum):
+    """What a column that carries the case is, other than `Choice`
+    (`solver.model.case_columns`)."""
+
+    ADT = "adt"
+    """An ADT in `Choice`."""
+    RECORD = "record"
+    """A record with a field of an ADT in `Choice`."""
+
+
 type Detail = (Quoted | Named | ShapeFault | Undecided | GridOffLayout
-               | AnchorWithoutStamp | GridCellOffForm | ParseFailure)
+               | AnchorWithoutStamp | GridCellOffForm | AssignArity
+               | AssignType | CaseColumnOffForm | ParseFailure)
 
 
 @dataclass(frozen=True)

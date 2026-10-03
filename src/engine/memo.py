@@ -2,6 +2,7 @@
 per key however many threads ask, the most recently used under a cap, and
 a file written whole or not at all. Every package may import it."""
 
+import functools
 import os
 import tempfile
 import threading
@@ -142,6 +143,28 @@ class Recent[K: Hashable, V]:
             while self._total > self.cap:
                 _k, old = self._held.popitem(last=False)
                 self._total -= self.weight(old)
+
+
+def kept_recent[K: Hashable, V](cap: int
+                                ) -> Callable[[Callable[[K], V]],
+                                              Callable[[K], V]]:
+    """A function of one argument whose results are kept for the `cap`
+    arguments most recently used (`Recent`)."""
+
+    def wrap(fn: Callable[[K], V]) -> Callable[[K], V]:
+        held: Recent[K, V] = Recent(cap)
+
+        @functools.wraps(fn)
+        def call(key: K) -> V:
+            got = held.get(key)
+            if got is None:
+                got = fn(key)
+                held.put(key, got)
+            return got
+
+        return call
+
+    return wrap
 
 
 _UMASK = os.umask(0)

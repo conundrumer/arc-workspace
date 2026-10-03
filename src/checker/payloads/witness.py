@@ -266,19 +266,9 @@ class UnjustifiedDropPayload:
 
 
 @dataclass(frozen=True)
-class AssignPayload:
-    """An `assign` key whose rows have `arities` arguments, where the
-    relation it names takes `columns`."""
-
-    name: str
-    arities: tuple[int, ...]
-    columns: int
-
-
-@dataclass(frozen=True)
 class TaskAssignPayload:
-    """An entry of a given file whose `assign` holds strings that are no
-    lib constant, each with its key in `values`, runs at `assign`, the
+    """An entry of a given file whose `assign` holds strings that name
+    nothing (`solver.model.unknown_strings`), each with its key in `values`, runs at `assign`, the
     `assign` of the task's witness file's entry of its id."""
 
     values: tuple[tuple[str, str], ...]
@@ -299,4 +289,4 @@ type WitnessPayload = (DriftPayload | UnlistedPayload | AnnotationPayload
                        | ConceptPayload | SeparatesPayload | UnheldPayload
                        | DroppedPayload | UnjustifiedDropPayload
                        | ConceptUnenumeratedPayload
-                       | AssignPayload | TaskAssignPayload)
+                       | TaskAssignPayload)

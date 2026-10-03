@@ -1,6 +1,7 @@
 """The drop-one survey: which stored facts of a parameter that holds more
-than one no train pair needs."""
+than one at a case no train pair needs."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from checker.domains import enumerable
@@ -15,17 +16,26 @@ from checker.variants import (
     test_verdicts,
     with_program,
 )
-from engine import Program, RelationName, RemoveFact, Row
+from engine import Program, RemoveFact, Row, RunFailure
 from engine.quotes import quotes
-from solver.model import Parameter, Solver, StoredGrid, row_value
-from solver.solve import Remove, TaskSection, at_once, parameter, variation
-from solver.vocabulary import PARAMS_SCOPE
+from solver.model import Solver
+from solver.model import parameter
+from solver.solve import (
+    stored_facts,
+    PerCase,
+    Remove,
+    TaskSection,
+    at_once,
+    by_base,
+    parameter_reading,
+    variation,
+)
 
 
 @dataclass(frozen=True)
 class Fact:
-    """One stored fact of a parameter: the parameter, its column types,
-    and the fact's row."""
+    """One stored fact of a parameter: the parameter, its column types
+    (`solver.model.column_types`), and the fact's row."""
 
     parameter: str
     types: tuple[str, ...]
@@ -36,7 +46,7 @@ class Fact:
 class DroppedFact:
     """A fact whose removal keeps the train pairs' profile, with what the
     test pairs say of its removal, and whether `sweep` enumerates its
-    parameter."""
+    parameter's values (`sweeps_values`)."""
 
     fact: Fact
     on_test: OnTest
@@ -62,41 +72,34 @@ class TrainFails:
 type DropOneResult = DropOneReport | TrainFails | TimedOut
 
 
-def stored_facts(solver: Solver, runs: Runs, p: Parameter) -> list[Row]:
-    """The parameter's stored facts, a GRID call's cells among them."""
-    if not isinstance(p.stored, StoredGrid):
-        return list(p.stored)
-    expanded = runs.engine.expand(solver.program)
-    out: list[Row] = []
-    for u in expanded.units:
-        if u.scope == PARAMS_SCOPE and u.body is None \
-                and u.head.relation == RelationName((), p.name):
-            row = row_value(u.head.args, solver.lib.constants)
-            if row is None:
-                raise ValueError(f"a fact of `{p.name}` the GRID expansion "
-                                 "wrote states no constant")
-            out.append(row)
-    return out
+def sweeps_values(solver: Solver, value_types: Sequence[str]) -> bool:
+    """Whether the sweep enumerates a parameter's values: each column of
+    its value (`solver.solve.PerCase.value_types`) has a candidate
+    domain."""
+    return enumerable(value_types, solver.lib)
 
 
 @quotes("principles.md", "Cases",
         "**Unseen key.** When a test uses a key that no train pair contains, "
         "a lookup table fails Fit.")
 def survey_drop_one(solver: Solver, runs: Runs) -> DropOneResult:
-    """Each stored fact of each parameter that holds more than one, cut on
-    its own: a fact whose removal keeps the stored program's profile on
-    the train pairs is one they never need, and the test pairs then judge
-    its removal. The mechanism of the unseen-key check; a run that reached
-    a limit is no result."""
+    """Each stored fact of each parameter that holds more than one at a
+    case (`_tried`), cut on its own: a fact whose removal keeps the stored
+    program's profile on the train pairs is one they never need, and the
+    test pairs then judge its removal. The mechanism of the unseen-key
+    check; a run that reached a limit is no result."""
     engine, limits = runs.engine, runs.limits
     work: list[Fact] = []
-    params = 0
+    many: dict[str, bool] = {}
     for p in solver.params.parameters:
-        rows = stored_facts(solver, runs, p)
-        if len(rows) > 1:
-            params += 1
-            types = tuple(c.type for c in p.columns)
-            work += [Fact(p.name, types, r) for r in rows]
+        reading = parameter_reading(solver, p.name)
+        rows = _tried(solver, runs, reading, stored_facts(runs.engine, solver, p))
+        if not isinstance(rows, list):
+            failed = runs.train_profile
+            return failed if isinstance(failed, TimedOut) else TrainFails()
+        if rows:
+            many[p.name] = sweeps_values(solver, reading.value_types)
+            work += [Fact(p.name, reading.types, r) for r in rows]
     if not work:
         return DropOneReport((), 0, 0, ())
     train = pairs_of(solver, (TaskSection.TRAIN,))
@@ -126,5 +129,22 @@ def survey_drop_one(solver: Solver, runs: Runs) -> DropOneResult:
         if isinstance(v, TimedOut):
             timed.append((f, v.finding))
             continue
-        dropped.append(DroppedFact(f, v, enumerable(f.types, solver.lib)))
-    return DropOneReport(tuple(dropped), len(work), params, tuple(timed))
+        dropped.append(DroppedFact(f, v, many[f.parameter]))
+    return DropOneReport(tuple(dropped), len(work), len(many), tuple(timed))
+
+
+def _tried(solver: Solver, runs: Runs, reading: PerCase, rows: list[Row]
+           ) -> list[Row] | RunFailure:
+    """The facts of `rows`, a parameter's stored facts, that drop-one
+    cuts: the facts at each base of the cases the checks read
+    (`solver.solve.by_base`) that holds more than one, a parameter with no
+    case column holding every fact; the failure of the run that
+    enumerates the cases where it fails."""
+    got = by_base(solver, reading, rows, runs.bases)
+    if not isinstance(got, list):
+        return got
+    out: dict[Row, None] = {}
+    for _base, at in got:
+        if len(at) > 1:
+            out |= dict.fromkeys(at)
+    return list(out)

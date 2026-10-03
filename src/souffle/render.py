@@ -1,6 +1,7 @@
 """A program as text, each line with the line of the parsed text it
 renders."""
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 from engine.engine import Rendered, RenderedLine
@@ -287,5 +288,9 @@ def rendered_for_run(program: Program) -> list[tuple[str, int | None]]:
 
 
 def format_program(program: Program) -> str:
-    lines = _Renderer(program, True).render()
-    return "".join(line.text + "\n" for line in lines)
+    return lines_text(line.text for line in _Renderer(program, True).render())
+
+
+def lines_text(lines: Iterable[str]) -> str:
+    """`lines` as one text, each line ended by a newline."""
+    return "".join(line + "\n" for line in lines)

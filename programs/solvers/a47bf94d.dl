@@ -1,10 +1,9 @@
 // a47bf94d
 // @draft
-// @keywords: objects occlude continue match stamp lookup route
-// @scene slots: slots of the params.slot footprint stand in two facing rows
-//  (top and bottom) or two facing columns (left and right). Each slot holds a
-//  solid block of one color, a diamond of one color, an X of one color, or
-//  nothing.
+// @keywords: objects walk occlude match lookup
+// @scene slots: 3×3 slots stand in two facing rows (top and bottom) or two
+//  facing columns (left and right). Each slot holds a solid block of one
+//  color, a diamond of one color, an X of one color, or nothing.
 // @scene wires: paths of wire cells join each slot to one slot in the facing
 //  row. A wire leaves the middle cell of the slot edge that faces the other
 //  row. Every slot is on exactly one wire.
@@ -19,568 +18,427 @@
 //  The wire goes straight through crossings and turns at corners. Under an
 //  occluder, a visible end joins the end straight across from it on the same
 //  line. An end with no end straight across joins the one remaining end.
-//  Undefined where one occluder has more than two ends with no end straight
-//  across.
 // @rule complete: after the rule, each wire has a diamond of its color at one
 //  end and an X of that color at the other end. A solid block becomes the
-//  diamond. An empty end takes the shape that the other end lacks. Undefined
-//  where the filled ends of a wire have two colors.
+//  diamond. An empty end takes the shape that the other end lacks.
 // @rule keep: wires, marks, occluders, and the background are unchanged.
 
-// how the slot ends at the two ends of a wire pair up
-.type Pairing =
+// which lone end under a block an end joins
+.type Join =
     // @claim trace
-    Trace {unfaced: Unfaced}
-    // @rule trace: a fewest-step search from each slot end runs over the
-    //  wire, mark and occluder cells. It goes straight at a cell with four
-    //  such neighbours and may turn elsewhere. The slot ends of the two rows
-    //  pair up by the matching with the lowest total path length, and a slot
-    //  end that no route reaches stays unpaired and unchanged.
-    // @witness occ-turn: ordinary concept
-    // @witness occ-turn-xs: ordinary concept
-  | MinCostMatch {}
+    OneRemaining {}
+    // @rule trace: an end with no end straight across joins whichever other
+    //  such end of the block is nearest it through the block
+    // @witness two-turns: borderline $Nearest
+  | Nearest {}
 
-// what an end with no end straight across it under an occluder joins
-.type Unfaced =
-    // @claim trace
-    OneLeft {}
-    // @rule trace: such an end joins the unfaced end of its occluder that is
-    //  the fewest steps away through the occluder, when each of the two is
-    //  the other's one nearest end. Undefined where an unfaced end has no
-    //  such partner.
-    // @witness crowded-block: borderline $NearestEnd
-  | NearestEnd {}
+// whether the grid changes when the wire ends spread over more than two lines
+.type Grouping =
+    // @claim keep
+    Ungrouped {}
+    // @rule keep: when the wire ends do not lie on exactly two rows or exactly
+    //  two columns, the whole grid is unchanged
+    // @witness three-rows: foreign concept
+    //     @relaxed slots
+  | PortGrouping {}
 
-// which end of a wire takes the diamond
+// which end of a wire gets the diamond
 .type Roles =
     // @claim complete
-    ShapeRoles {}
-    // @rule complete: on each wire with a filled end, the end whose slot
-    //  lies toward a params.diamond_side side takes the diamond, and the
-    //  other end takes the X, in the filled end's color
+    ByShape {}
+    // @rule complete: on every wire with a filled end, the end whose slot lies
+    //  on the stored side of its axis takes the diamond and the other end the
+    //  X, in the filled end's color
     // @witness flipped-test: variant concept
   | SideRoles {}
 
-// what a wire with a diamond at one end and nothing at the other gives
+// what a wire whose ends are a diamond and an empty slot does
 .type Lone =
     // @claim complete
-    LoneX {}
-    // @rule complete: such a wire stays unchanged
+    FillX {}
+    // @rule complete: a wire whose ends are a diamond and an empty slot stays
+    //  unchanged
     // @witness lone-diamond-train0: variant concept
   | LoneDiamond {}
-
-// how the X end takes its shape
-.type Paint =
-    // @claim complete
-    Replace {}
-    // @rule complete: the X is drawn only onto the background cells of its
-    //  slot, and the slot's filled cells stay
-    // @witness solid-diamond: borderline concept
-  | Overlay {}
-
-// where the rule acts
-.type Layout =
-    // @claim keep
-    AnyLayout {}
-    // @rule keep: when the slot ends do not lie on exactly two rows or
-    //  exactly two columns, the output is the input
-    // @witness shifted-slot: foreign concept
-    //     @relaxed slots
-  | TwoLines {}
 
 // where the X footprint comes from
 .type XShape =
     // @claim complete
     StoredX {}
-    // @rule complete: the X is the slot cells that the diamond leaves empty
+    // @rule complete: the X footprint is the slot cells that the diamond
+    //  footprint leaves empty
     // @witness plus-shapes: variant concept
     //     @reassigned diamond
   | XComplement {}
 
-.type Choice = [pairing: Pairing, roles: Roles, lone: Lone, paint: Paint, layout: Layout,
-                xshape: XShape]
+// how a shape is drawn into a slot
+.type Paint =
+    // @claim complete
+    Replace {}
+    // @rule complete: the end across from a solid or a diamond takes the X,
+    //  and the end across from an X takes the diamond, whatever the end holds
+    //  unless it is solid. A shape is drawn onto the slot's background cells
+    //  only, except that a solid block becomes the diamond.
+    // @witness solid-diamond: foreign concept
+  | Overlay {}
 
-// A search state: a cell, entered moving toward d.
-.type Heading = [p: Position, d: Dir]
+.type Choice = [
+    join: Join, grouping: Grouping, roles: Roles, lone: Lone, x_shape: XShape, paint: Paint
+]
 
-// Two slot ends.
-.type Link = [e: Position, f: Position]
-
-// A changed patch of an example.
-.type Patch = [e: Example, id: Ident]
+// A visible wire end at a block, and the side the block lies on.
+.type End = [p: Position, e: Dir]
 
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
+    .init helpers = ParamsHelpers
+
     // @derive DominantColor: variant derived
-    //     @relaxed slots
-    // @ignore: derive $OneLeft — wherever it is defined, the same case with
-    //  NearestEnd gives its output
     .decl background(c: Color) background(0).
     .decl wire_color(c: Color) wire_color(8).
     .decl mark_color(c: Color) mark_color(5).
     .decl occluder_color(c: Color) occluder_color(9).
+    .decl slot_size(k: number) slot_size(3).
 
-    // The cells of a slot, as offsets from its center.
-    .decl slot(v: Offset)
-    GRID_STAMP_3x3(slot,
-        1, 1, 1,
-        1, @1, 1,
-        1, 1, 1)
+    // The cells of a slot, in the slot's own frame.
+    .decl slot_cell(p: Position)
+    slot_cell(P) :- slot_size(K), helpers.frame_pos([K, K], P).
 
-    // The footprint that a solid block becomes.
-    .decl diamond(v: Offset)
-    GRID_STAMP_3x3(diamond,
+    // The footprint a solid block becomes.
+    .decl diamond(p: Position)
+    GRID_MASK_3x3(diamond,
         _, 1, _,
-        1, @_, 1,
+        1, _, 1,
         _, 1, _)
 
     // --- $StoredX ---
-    // The footprint that the other end takes.
-    .decl x(v: Offset)
-    GRID_STAMP_3x3(x,
+    // The footprint the other end takes.
+    .decl x(p: Position)
+    GRID_MASK_3x3(x,
         1, _, 1,
-        _, @1, _,
+        _, 1, _,
         1, _, 1)
 
     // --- $SideRoles ---
-    // The sides whose slots take the diamond, one per axis.
+    // The side, one per axis, whose end takes the diamond.
     .decl diamond_side(d: Dir) diamond_side(DIR_T). diamond_side(DIR_L).
 }
 
 .init params = Params
 
-.decl pairing_choice(pr: Pairing)
-pairing_choice($Trace($OneLeft())). pairing_choice($Trace($NearestEnd())). pairing_choice($MinCostMatch()).
+.decl join_choice(j: Join)
+join_choice($OneRemaining()). join_choice($Nearest()).
 
-.decl unfaced_choice(uf: Unfaced)
-unfaced_choice($OneLeft()). unfaced_choice($NearestEnd()).
+.decl grouping_choice(g: Grouping)
+grouping_choice($Ungrouped()). grouping_choice($PortGrouping()).
 
-.decl roles_choice(ro: Roles)
-roles_choice($ShapeRoles()). roles_choice($SideRoles()).
+.decl roles_choice(r: Roles)
+roles_choice($ByShape()). roles_choice($SideRoles()).
 
-.decl lone_choice(lo: Lone)
-lone_choice($LoneX()). lone_choice($LoneDiamond()).
+.decl lone_choice(l: Lone)
+lone_choice($FillX()). lone_choice($LoneDiamond()).
 
-.decl paint_choice(pa: Paint)
+.decl x_shape_choice(x: XShape)
+x_shape_choice($StoredX()). x_shape_choice($XComplement()).
+
+.decl paint_choice(p: Paint)
 paint_choice($Replace()). paint_choice($Overlay()).
 
-.decl layout_choice(la: Layout)
-layout_choice($AnyLayout()). layout_choice($TwoLines()).
-
-.decl xshape_choice(xs: XShape)
-xshape_choice($StoredX()). xshape_choice($XComplement()).
-
-// Every combination of the branches, less each case other than the concept
-// case that takes OneLeft: the same case with NearestEnd gives its output
-// wherever it is defined.
 .decl impl_choice(ch: Choice)
-impl_choice([$Trace($OneLeft()), $ShapeRoles(), $LoneX(), $Replace(), $AnyLayout(), $StoredX()]).
-impl_choice([Pr, Ro, Lo, Pa, La, Xs]) :-
-    pairing_choice(Pr), Pr != $Trace($OneLeft()), roles_choice(Ro), lone_choice(Lo),
-    paint_choice(Pa), layout_choice(La), xshape_choice(Xs).
+impl_choice([J, G, R, L, X, Pt]) :-
+    join_choice(J), grouping_choice(G), roles_choice(R),
+    lone_choice(L), x_shape_choice(X), paint_choice(Pt).
 
-// The pairs of a bipartite matching that pairs the most members and, among
-// those matchings, has the lowest total cost. Every tied matching appears.
-.comp MinCostMatching<Key, T> {
-    .decl left(key: Key, a: T)  // @input
-    .decl right(key: Key, b: T)  // @input
+.comp Parse<Key> {
+    .decl cell(k: Key, p: Position, col: Color)
 
-    // The cost of pairing a with b; a pair with no cost row is not allowed.
-    .decl cost(key: Key, a: T, b: T, n: number)  // @input
+    // A wire cell: wire color or mark color.
+    .decl wire(k: Key, p: Position)
+    wire(K, P) :- cell(K, P, Col), ( params.wire_color(Col) ; params.mark_color(Col) ).
 
-    .decl paired(key: Key, a: T, b: T)
+    .decl occluder(k: Key, p: Position)
+    occluder(K, P) :- cell(K, P, Col), params.occluder_color(Col).
 
-    .init left_order = Order<Key, T>
-    left_order.elem(K, A) :- left(K, A).
-    left_order.before(K, A, A2) :- left(K, A), left(K, A2), as(A, number) < as(A2, number).
+    // The cell beside wire cell P toward D.
+    .decl beside(k: Key, p: Position, d: Dir, q: Position)
+    beside(K, P, D, Q) :- wire(K, P), dir_elem(D), neighbor(P, D, Q).
 
-    .init right_order = Order<Key, T>
-    right_order.elem(K, B) :- right(K, B).
-    right_order.before(K, B, B2) :- right(K, B), right(K, B2), as(B, number) < as(B2, number).
+    // The wire continues from P toward D.
+    .decl wire_link(k: Key, p: Position, d: Dir)
+    wire_link(K, P, D) :- beside(K, P, D, Q), wire(K, Q).
 
-    .init left_count = Tally<Key, T>
-    left_count.item(K, A) :- left(K, A).
-    left_count.domain(K) :- left(K, _).
+    // A wire end at a slot: the slot lies toward D, and nothing but the wire
+    // behind touches the end.
+    .decl port(k: Key, p: Position, d: Dir)
+    port(K, P, D) :-
+        beside(K, P, D, Q), !wire(K, Q), !occluder(K, Q), !side_contact(K, P, D).
 
-    // The radix of a code: one digit per left member, 0 for unpaired and
-    // j + 1 for the right member of rank j.
-    .decl radix(key: Key, n: number)
-    radix(K, N + 1) :- left(K, _), N = count : { right(K, _) }.
+    // A wire or occluder cell beside P, across D's axis.
+    .decl side_contact(k: Key, p: Position, d: Dir)
+    side_contact(K, P, D) :-
+        beside(K, P, D2, R), perp_dir(D, D2), ( wire(K, R) ; occluder(K, R) ).
 
-    // A partial matching of the left members of rank below i: the right
-    // members it uses as a bit set, its code, its pair count, its total cost.
-    .decl state(key: Key, i: number, used: number, code: number, n: number, s: number)
-    state(K, 0, 0, 1, 0, 0) :- left_count.tally(K, _).
-    state(K, I + 1, U, C * R, N, S) :-
-        state(K, I, U, C, N, S), left_count.tally(K, L), I < L, radix(K, R).
-    state(K, I + 1, U bor (1 bshl J), C2, N + 1, S + X) :-
-        state(K, I, U, C, N, S), pick(K, C2, C, A, B), cost(K, A, B, X), right_order.rank(K, B, J).
+    // The slot cell a wire attaches to, for a slot lying toward D: the middle
+    // of the slot's edge that faces the wire.
+    .decl attach(d: Dir, a: Position)
+    attach(D, A) :-
+        params.slot_cell(A), opposite(D, D_near), dist(A, D_near, 0),
+        perp_dir(D, D1), dist_pair(A, D1, N, N).
 
-    // Code c2 extends code c by pairing a with b.
-    .decl pick(key: Key, code: number, code0: number, a: T, b: T)
-    pick(K, C * R + J + 1, C, A, B) :-
-        state(K, I, U, C, _, _), left_order.rank(K, A, I), cost(K, A, B, _), right_order.rank(K, B, J),
-        (U band (1 bshl J)) = 0, radix(K, R).
+    // The slot at port P: slot cell P_inner lies at P_grid.
+    .decl slot(k: Key, p: Position, p_inner: Position, p_grid: Position)
+    slot(K, P, P_inner, P_grid) :-
+        port(K, P, D), attach(D, A), neighbor(P, D, Q),
+        params.slot_cell(P_inner), relative(A, P_inner, V), compose(Q, V, P_grid).
 
-    // Code c2 extends code c.
-    .decl parent(key: Key, code: number, code0: number)
-    parent(K, C * R, C) :- state(K, I, _, C, _, _), left_count.tally(K, L), I < L, radix(K, R).
-    parent(K, C2, C) :- pick(K, C2, C, _, _).
+    .decl ink(k: Key, p: Position, p_inner: Position, col: Color)
+    ink(K, P, P_inner, Col) :-
+        slot(K, P, P_inner, P_grid), cell(K, P_grid, Col), !params.background(Col).
 
-    .decl complete(key: Key, code: number, n: number, s: number)
-    complete(K, C, N, S) :- state(K, L, _, C, N, S), left_count.tally(K, L).
+    .decl filled(k: Key, p: Position, col: Color)
+    filled(K, P, Col) :- ink(K, P, _, Col).
 
-    .decl most(key: Key, n: number)
-    most(K, N) :- complete(K, _, _, _), N = max N2 : { complete(K, _, N2, _) }.
+    // Some slot cell holds the background.
+    .decl gap(k: Key, p: Position)
+    gap(K, P) :- slot(K, P, P_inner, _), !ink(K, P, P_inner, _).
 
-    .decl least(key: Key, s: number)
-    least(K, S) :- most(K, N), S = min S2 : { complete(K, _, N, S2) }.
-
-    .decl chosen(key: Key, code: number)
-    chosen(K, C) :- complete(K, C, N, S), most(K, N), least(K, S).
-    chosen(K, C0) :- chosen(K, C), parent(K, C, C0).
-
-    paired(K, A, B) :- chosen(K, C), pick(K, C, _, A, B).
+    .decl solid(k: Key, p: Position)
+    solid(K, P) :- filled(K, P, _), !gap(K, P).
 }
 
-// --- the wires ---
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
 
-.decl wire(p: Position)
-wire(P) :- in(P, Col), ( params.wire_color(Col) ; params.mark_color(Col) ).
+.decl empty(p: Position)
+empty(P) :- parse.port($U(), P, _), !parse.filled($U(), P, _).
 
-.decl occluder(p: Position)
-occluder(P) :- in(P, Col), params.occluder_color(Col).
+// The X footprint.
+.decl x_cell(xs: XShape, p_inner: Position)
 
-// The wire cell's neighbour toward d is a wire cell.
-.decl wire_toward(p: Position, d: Dir)
-wire_toward(P, D) :- wire(P), dir_elem(D), neighbor(P, D, Q), wire(Q).
+// The slot at P holds the diamond.
+// @claim complete
+.init as_diamond = KeyedSetCompare<Position, Unit, Position>
+as_diamond.pattern_member($U(), P_inner) :- params.diamond(P_inner).
+as_diamond.observed_member(P, P_inner) :- parse.ink($U(), P, P_inner, _).
 
-.decl branching(p: Position)
-branching(P) :- wire_toward(P, D), wire_toward(P, D2), D != D2.
-
-// A wire cell with a side open: any cell but a crossing, which has wire on
-// all four sides.
-.decl open_side(p: Position)
-open_side(P) :- wire(P), dir_elem(D), !wire_toward(P, D).
+// The slot at P holds the X.
+// @claim complete
+.init as_x = KeyedSetCompare<Position, XShape, Position>
+as_x.pattern_member(Xs, P_inner) :- x_cell(Xs, P_inner).
+as_x.observed_member(P, P_inner) :- parse.ink($U(), P, P_inner, _).
 
 // @claim occluders
 .init blocks = Components<Unit>
-blocks.node($U(), P) :- occluder(P).
+blocks.node($U(), P) :- parse.occluder($U(), P).
 
-// A wire end that touches occluder block Id.
-.decl covered_end(p: Position, id: Ident)
-covered_end(P, Id) :-
-    wire(P), !branching(P), dir_elem(D), neighbor(P, D, Q), blocks.label($U(), Q, Id).
+// A visible wire end at a block: P touches block cell Q toward E, and the
+// wire leaves P on at most one side.
+.decl occ_end(p: Position, e: Dir, q: Position)
+occ_end(P, E, Q) :- parse.beside($U(), P, E, Q), parse.occluder($U(), Q), !branching(P).
 
-// The cells a wire runs over, the hidden ones included.
-.decl track(p: Position)
-track(P) :- wire(P).
-track(P) :- occluder(P).
-
-// The wire cell's neighbour toward d is a track cell.
-.decl track_toward(p: Position, d: Dir)
-track_toward(P, D) :- wire(P), dir_elem(D), neighbor(P, D, Q), track(Q).
-
-.decl track_branching(p: Position)
-track_branching(P) :- track_toward(P, D), track_toward(P, D2), D != D2.
-
-// A slot end: a wire cell with one track neighbour. Its slot lies the other
-// way, toward d.
-.decl slot_end(p: Position, d: Dir)
-slot_end(P, D) :- track_toward(P, D0), !track_branching(P), opposite(D0, D).
-
-// --- the slots ---
-
-// The slot footprint placed so that it covers the cell past the slot end, on
-// the end's line.
-.decl center_cand(e: Position, c: Position)
-center_cand(E, C) :-
-    slot_end(E, D), neighbor(E, D, A), params.slot(V), relative(V, A, C),
-    axis_of(D, Ax), same_line(Ax, C, E).
-
-.decl cand_cell(c: Position, p: Position)
-cand_cell(C, P) :- center_cand(_, C), params.slot(V), compose(C, V, P).
-
-// The slot's cell at offset v from its center, the placement that leaves
-// the slot end outside.
-.decl slot_cell(e: Position, v: Offset, p: Position)
-slot_cell(E, V, P) :- center_cand(E, C), !cand_cell(C, E), params.slot(V), compose(C, V, P).
-
-.decl slot_ink(e: Position, v: Offset, col: Color)
-slot_ink(E, V, Col) :- slot_cell(E, V, P), in(P, Col), !params.background(Col).
-
-.decl filled(e: Position, v: Offset)
-filled(E, V) :- slot_ink(E, V, _).
-
-.decl slot_color(e: Position, col: Color)
-slot_color(E, Col) :- slot_ink(E, _, Col).
-
-.decl empty(e: Position)
-empty(E) :- slot_end(E, _), !filled(E, _).
-
-// Some slot cell is not filled.
-.decl gap(e: Position)
-gap(E) :- slot_end(E, _), params.slot(V), !filled(E, V).
-
-// The filled cells are not the diamond footprint.
-.decl off_diamond(e: Position)
-off_diamond(E) :-
-    slot_end(E, _),
-    ( params.diamond(V), !filled(E, V)
-    ; !params.diamond(V), filled(E, V)
-    ).
-
-.decl holds_diamond(e: Position)
-holds_diamond(E) :- slot_end(E, _), !off_diamond(E).
-
-// The X footprint.
-.decl x_shape(xs: XShape, v: Offset)
-
-// The filled cells are not the X footprint.
-.decl off_x(xs: XShape, e: Position)
-off_x(Xs, E) :-
-    slot_end(E, _), xshape_choice(Xs),
-    ( x_shape(Xs, V), !filled(E, V)
-    ; !x_shape(Xs, V), filled(E, V)
-    ).
-
-// --- completing the wires ---
-
-// The two slot ends of a wire.
-.decl wire_pair(pr: Pairing, e: Position, f: Position)
-
-// The color of a wire's filled end.
-.decl wire_ink(pr: Pairing, e: Position, col: Color)
-wire_ink(Pr, E, Col) :- wire_pair(Pr, E, F), ( slot_color(E, Col) ; slot_color(F, Col) ).
-
-// The wire has a diamond at one end and nothing at the other.
-.decl lone_diamond(pr: Pairing, e: Position)
-lone_diamond(Pr, E) :-
-    wire_pair(Pr, E, F),
-    ( holds_diamond(E), empty(F)
-    ; empty(E), holds_diamond(F)
-    ).
-
-// The rule redraws the slot at slot end e.
-.decl redrawn(pr: Pairing, lo: Lone, e: Position)
-
-// The slot at slot end e takes the diamond.
-.decl diamond_end(pr: Pairing, ro: Roles, xs: XShape, e: Position)
-
-// The color the X takes at offset v of the slot at slot end e.
-.decl x_ink(pa: Paint, pr: Pairing, xs: XShape, e: Position, v: Offset, col: Color)
-
-// The diamond end's slot is replaced by the diamond, and the other end's slot
-// takes the X.
-.decl redraw(pr: Pairing, ro: Roles, lo: Lone, pa: Paint, xs: XShape, p: Position, col: Color)
-redraw(Pr, Ro, Lo, Pa, Xs, P, Col) :-
-    slot_cell(E, V, P), redrawn(Pr, Lo, E), paint_choice(Pa),
-    ( diamond_end(Pr, Ro, Xs, E), wire_ink(Pr, E, C),
-      ( params.diamond(V), Col = C
-      ; !params.diamond(V), params.background(Col)
-      )
-    ; wire_pair(Pr, E, F), diamond_end(Pr, Ro, Xs, F), x_ink(Pa, Pr, Xs, E, V, Col)
-    ).
-
-// A cell of a slot whose wire has no other end.
-.decl unresolved(pr: Pairing, p: Position)
-
-// The layout lets the rule act.
-.decl grouped(la: Layout)
-
-out(P, Col, [Pr, Ro, Lo, Pa, La, Xs]) :-
-    in(P, Col_in), impl_choice([Pr, Ro, Lo, Pa, La, Xs]),
-    ( grouped(La), redraw(Pr, Ro, Lo, Pa, Xs, P, Col)
-    ; grouped(La), !redraw(Pr, Ro, Lo, Pa, Xs, P, _), !unresolved(Pr, P), Col = Col_in
-    ; !grouped(La), Col = Col_in
-    ).
-
-// --- $Trace ---
-// @claim trace
-.init across = Slide<Unit>
-across.node($U(), P) :- occluder(P).
-across.dir($U(), D) :- dir_elem(D).
-
-// Two ends straight across block Id from each other.
-.decl facing(p: Position, q: Position, id: Ident)
-facing(P, Q, Id) :-
-    covered_end(P, Id), neighbor(P, D, O),
-    across.rest($U(), O, D, O2), neighbor(O2, D, Q), covered_end(Q, Id).
-
-.decl unfaced(p: Position, id: Ident)
-unfaced(P, Id) :- covered_end(P, Id), !facing(P, _, Id).
-
-// The stretch a block hides joins two ends.
-.decl hidden(uf: Unfaced, p: Position, q: Position)
-hidden(Uf, P, Q) :- facing(P, Q, _), unfaced_choice(Uf).
-
-// The wire from slot end e runs through cell p along axis a. An end cell has
-// at most one wire neighbour, so it takes both axes.
-.decl traced(uf: Unfaced, e: Position, p: Position, a: Axis)
-traced(Uf, E, E, A) :- slot_end(E, _), axis_elem(A), unfaced_choice(Uf).
-traced(Uf, E, Q, A) :- traced(Uf, E, P, A), axis_of(D, A), neighbor(P, D, Q), wire(Q).  // on along the axis
-traced(Uf, E, P, A2) :- traced(Uf, E, P, A), open_side(P), perp(A, A2).                  // round a corner
-traced(Uf, E, Q, A) :- traced(Uf, E, P, _), hidden(Uf, P, Q), axis_elem(A).             // under a block
-
-wire_pair($Trace(Uf), E, F) :- traced(Uf, E, F, _), slot_end(F, _), E != F.
-
-unresolved($Trace(Uf), P) :- slot_cell(E, _, P), unfaced_choice(Uf), !wire_pair($Trace(Uf), E, _).
-
-// --- $OneLeft ---
-// A block with more than two unfaced ends.
-.decl crowded(id: Ident)
-crowded(Id) :- unfaced(P, Id), unfaced(Q, Id), unfaced(R, Id), P != Q, P != R, Q != R.
-
-hidden($OneLeft(), P, Q) :- unfaced(P, Id), unfaced(Q, Id), P != Q, !crowded(Id).
-
-// --- $NearestEnd ---
-// Steps from unfaced end e through its block.
-// @claim trace
-.init through = GraphDistance<Position, Position>
-through.seed(E, E) :- unfaced(E, _).
-through.edge(E, P, Q) :-
-    unfaced(E, Id), ( P = E ; blocks.label($U(), P, Id) ),
-    dir_elem(D), neighbor(P, D, Q), ( blocks.label($U(), Q, Id) ; unfaced(Q, Id) ).
+.decl branching(p: Position)
+branching(P) :- parse.wire_link($U(), P, D1), parse.wire_link($U(), P, D2), D1 != D2.
 
 // @claim trace
-.init nearest = ArgExtremes<Position, Position>
-nearest.cand(E, F, K) :- through.distance(E, F, K), unfaced(F, _), E != F.
+.init under = Slide<Unit>
+under.node($U(), P) :- parse.occluder($U(), P).
+under.dir($U(), D) :- dir_elem(D).
 
-// Two unfaced ends are equally near e.
-.decl tied(e: Position)
-tied(E) :- nearest.low(E, F, _), nearest.low(E, F2, _), F != F2.
+// The end straight across the block from end P, on the same line.
+.decl across(p: Position, e: Dir, p2: Position, e2: Dir)
+across(P, E, P2, E2) :-
+    occ_end(P, E, Q), under.rest($U(), Q, E, Q2), neighbor(Q2, E, P2),
+    opposite(E, E2), occ_end(P2, E2, _).
 
-hidden($NearestEnd(), P, Q) :- nearest.low(P, Q, _), nearest.low(Q, P, _), !tied(P), !tied(Q).
+// An end with no end straight across, in block Id.
+.decl lone(p: Position, e: Dir, id: Ident)
+lone(P, E, Id) :- occ_end(P, E, Q), blocks.label($U(), Q, Id), !across(P, E, _, _).
 
-// --- $MinCostMatch ---
-// A track cell with a side open.
-.decl unhemmed(p: Position)
-unhemmed(P) :- track(P), dir_elem(D), neighbor(P, D, Q), !track(Q).
+// The hidden stretch under a block joins end P to end P2.
+.decl join(j: Join, p: Position, e: Dir, p2: Position, e2: Dir)
+join(J, P, E, P2, E2) :- join_choice(J), across(P, E, P2, E2).
 
-// A search step. A cell hemmed in on all four sides passes the search
-// straight on.
-.decl step(a: Heading, b: Heading)
-step([P, D], [Q, D2]) :-
-    track(P), dir_elem(D), dir_elem(D2), neighbor(P, D2, Q), track(Q),
-    ( D2 = D ; unhemmed(P) ).
+// The wire from port P0 reaches P heading D.
+.decl walk(j: Join, p0: Position, p: Position, d: Dir)
+walk(J, P0, P0, D) :- join_choice(J), parse.port($U(), P0, D0), opposite(D0, D).
+walk(J, P0, Q, D2) :-
+    walk(J, P0, P, D),
+    ( parse.wire_link($U(), P, D), D2 = D                     // straight on
+    ; !parse.wire_link($U(), P, D), perp_dir(D, D2),          // a corner
+      parse.wire_link($U(), P, D2) ),
+    neighbor(P, D2, Q).
+walk(J, P0, P2, D2) :-
+    walk(J, P0, P, D), join(J, P, E, P2, E2), !opposite(D, E),
+    opposite(E2, D2).                                         // under a block
+
+// Port P0's wire ends at port P1.
+.decl partner(j: Join, p0: Position, p1: Position)
+partner(J, P0, P1) :- walk(J, P0, P1, D), parse.port($U(), P1, D), P0 != P1.
+
+// The grid stays as it is.
+.decl unchanged(g: Grouping)
+
+// The wire at P stays as it is.
+.decl held(l: Lone, j: Join, p: Position)
+
+// The slot at P takes the diamond, or the X, in color Col.
+.decl gets_diamond(ch: Choice, p: Position, col: Color)
+.decl gets_x(ch: Choice, p: Position, col: Color)
+
+// The footprint cells and color of the shape the slot at P takes.
+.decl shape(ch: Choice, p: Position, p_inner: Position, col: Color)
+shape(Ch, P, P_inner, Col) :- gets_diamond(Ch, P, Col), params.diamond(P_inner).
+shape([J, G, R, L, Xs, Pt], P, P_inner, Col) :-
+    gets_x([J, G, R, L, Xs, Pt], P, Col), x_cell(Xs, P_inner).
+
+// The shape replaces the whole content of the slot at P.
+.decl redrawn(pt: Paint, p: Position)
+
+// Slot cell P_inner of the slot at P takes color Col.
+.decl draw(ch: Choice, p: Position, p_inner: Position, col: Color)
+draw([J, G, R, L, Xs, Pt], P, P_inner, Col) :-
+    shape([J, G, R, L, Xs, Pt], P, _, _), !unchanged(G), redrawn(Pt, P),
+    parse.slot($U(), P, P_inner, _),
+    ( shape([J, G, R, L, Xs, Pt], P, P_inner, Col)
+    ; !shape([J, G, R, L, Xs, Pt], P, P_inner, _), params.background(Col) ).
+draw([J, G, R, L, Xs, Pt], P, P_inner, Col) :-
+    shape([J, G, R, L, Xs, Pt], P, P_inner, Col), !unchanged(G), !redrawn(Pt, P),
+    !parse.ink($U(), P, P_inner, _).
+
+.decl painted(ch: Choice, p: Position)
+painted(Ch, P_grid) :- draw(Ch, P, P_inner, _), parse.slot($U(), P, P_inner, P_grid).
+
+out(P_grid, Col, Ch) :- impl_choice(Ch), in(P_grid, Col), !painted(Ch, P_grid).
+out(P_grid, Col, Ch) :- draw(Ch, P, P_inner, Col), parse.slot($U(), P, P_inner, P_grid).
+
+// --- $OneRemaining ---
+
+join($OneRemaining(), P, E, P2, E2) :- lone(P, E, Id), lone(P2, E2, Id), P != P2.
+
+// --- $Nearest ---
+
+// The fewest steps through the block from a lone end's block cell.
+// @claim trace
+.init under_len = GraphDistance<End, Position>
+under_len.seed([P, E], Q) :- lone(P, E, _), occ_end(P, E, Q).
+under_len.edge([P, E], Q, Q2) :-
+    lone(P, E, _), parse.occluder($U(), Q),
+    dir_elem(D), neighbor(Q, D, Q2), parse.occluder($U(), Q2).
 
 // @claim trace
-.init search = GraphDistance<Position, Heading>
-search.seed(E, [E, D]) :- slot_end(E, D2), opposite(D2, D).
-search.edge(E, A, B) :- slot_end(E, _), step(A, B).
+.init nearest = ArgExtremes<End, End>
+nearest.cand([P, E], [P2, E2], K) :-
+    lone(P, E, Id), lone(P2, E2, Id), P != P2,
+    occ_end(P2, E2, Q2), under_len.distance([P, E], Q2, K).
 
-// @claim trace
-.init route = Extremes<Link>
-route.cand([E, F], K) :- search.distance(E, [F, _], K), slot_end(F, _), E != F.
+join($Nearest(), P, E, P2, E2) :- nearest.low([P, E], [P2, E2], _).
 
-// The slot ends of each row against the slot ends of the facing row.
-// @claim trace
-.init matching = MinCostMatching<Dir, Position>
-matching.left(D, E) :- slot_end(E, D).
-matching.right(D, F) :- slot_end(F, D2), opposite(D, D2).
-matching.cost(D, E, F, K) :- route.low([E, F], K), slot_end(E, D).
+// --- $PortGrouping ---
 
-// Each row's matching against the other gives every pair both ways round.
-wire_pair($MinCostMatch(), E, F) :- matching.paired(_, E, F).
+// The wire ends lie on at least three lines across D's axis.
+.decl spread(d: Dir)
+spread(D) :-
+    dir_elem(D), parse.port($U(), P1, _), parse.port($U(), P2, _), !same_dist(D, P1, P2),
+    parse.port($U(), P3, _), !same_dist(D, P3, P1), !same_dist(D, P3, P2).
 
-// --- $ShapeRoles ---
-diamond_end(Pr, $ShapeRoles(), Xs, E) :-
-    wire_pair(Pr, E, F), xshape_choice(Xs),
-    ( !gap(E)                     // a solid block
-    ; empty(E), !off_x(Xs, F)     // an empty end facing an X
-    ; holds_diamond(E), empty(F)  // a diamond facing an empty end
-    ).
+// The wire ends lie on exactly two lines across D's axis.
+.decl grouped(d: Dir)
+grouped(D) :-
+    dir_elem(D), parse.port($U(), P1, _), parse.port($U(), P2, _), !same_dist(D, P1, P2),
+    !spread(D).
 
-// --- $SideRoles ---
-diamond_end(Pr, $SideRoles(), Xs, E) :-
-    wire_pair(Pr, E, _), slot_end(E, D), params.diamond_side(D), xshape_choice(Xs).
-
-// --- $LoneX ---
-redrawn(Pr, $LoneX(), E) :- wire_ink(Pr, E, _).
+unchanged($PortGrouping()) :- !grouped(_).
 
 // --- $LoneDiamond ---
-redrawn(Pr, $LoneDiamond(), E) :- wire_ink(Pr, E, _), !lone_diamond(Pr, E).
 
-// --- $Replace ---
-x_ink($Replace(), Pr, Xs, E, V, Col) :-
-    wire_ink(Pr, E, C), slot_cell(E, V, _), xshape_choice(Xs),
-    ( x_shape(Xs, V), Col = C
-    ; !x_shape(Xs, V), params.background(Col)
-    ).
-
-// --- $Overlay ---
-x_ink($Overlay(), Pr, Xs, E, V, Col) :-
-    wire_ink(Pr, E, Col), x_shape(Xs, V), slot_cell(E, V, P), in(P, B), params.background(B).
-
-// --- $AnyLayout ---
-grouped($AnyLayout()).
-
-// --- $TwoLines ---
-// The line a slot end lies on, across axis a.
-.decl end_line(a: Axis, l: Position)
-end_line(A, L) :- slot_end(E, _), axis_elem(A), split(E, A, L, _).
-
-.decl third_line(a: Axis)
-third_line(A) :- end_line(A, L), end_line(A, L2), end_line(A, L3), L != L2, L != L3, L2 != L3.
-
-grouped($TwoLines()) :- end_line(A, L), end_line(A, L2), L != L2, !third_line(A).
+// A wire with a diamond at one end and an empty slot at the other.
+held($LoneDiamond(), J, P) :-
+    partner(J, P, P2),
+    ( as_diamond.equals(P, $U()), empty(P2)
+    ; empty(P), as_diamond.equals(P2, $U()) ).
 
 // --- $StoredX ---
-x_shape($StoredX(), V) :- params.x(V).
+
+x_cell($StoredX(), P_inner) :- params.x(P_inner).
 
 // --- $XComplement ---
-x_shape($XComplement(), V) :- params.slot(V), !params.diamond(V).
+
+x_cell($XComplement(), P_inner) :- params.slot_cell(P_inner), !params.diamond(P_inner).
+
+// --- $Replace ---
+
+redrawn($Replace(), P) :- parse.port($U(), P, _).
+
+// --- $Overlay ---
+
+redrawn($Overlay(), P) :- parse.solid($U(), P).
+
+// --- $ByShape ---
+
+// End P2 across the wire from filled end P, whose color is Col, takes its
+// shape from P.
+.decl facing(pt: Paint, j: Join, p: Position, p2: Position, col: Color)
+
+gets_diamond([J, G, $ByShape(), L, Xs, Pt], P, Col) :-
+    impl_choice([J, G, $ByShape(), L, Xs, Pt]),
+    parse.solid($U(), P), parse.filled($U(), P, Col).
+gets_diamond([J, G, $ByShape(), L, Xs, Pt], P2, Col) :-
+    impl_choice([J, G, $ByShape(), L, Xs, Pt]), facing(Pt, J, P, P2, Col), as_x.equals(P, Xs).
+gets_x([J, G, $ByShape(), L, Xs, Pt], P2, Col) :-
+    impl_choice([J, G, $ByShape(), L, Xs, Pt]), facing(Pt, J, P, P2, Col),
+    ( parse.solid($U(), P) ; as_diamond.equals(P, $U()), !held(L, J, P) ).
+
+// --- $ByShape & $Replace ---
+
+facing($Replace(), J, P, P2, Col) :-
+    partner(J, P, P2), empty(P2), parse.filled($U(), P, Col).
+
+// --- $ByShape & $Overlay ---
+
+facing($Overlay(), J, P, P2, Col) :-
+    partner(J, P, P2), !parse.solid($U(), P2), parse.filled($U(), P, Col).
+
+// --- $SideRoles ---
+
+// The wire from P, on the diamond side, to P2 changes, in its filled end's
+// color Col.
+.decl sided(l: Lone, j: Join, p: Position, p2: Position, col: Color)
+sided(L, J, P, P2, Col) :-
+    lone_choice(L), partner(J, P, P2), !held(L, J, P),
+    parse.port($U(), P, D), params.diamond_side(D),
+    ( parse.filled($U(), P, Col) ; parse.filled($U(), P2, Col) ).
+
+gets_diamond([J, G, $SideRoles(), L, Xs, Pt], P, Col) :-
+    impl_choice([J, G, $SideRoles(), L, Xs, Pt]), sided(L, J, P, _, Col).
+gets_x([J, G, $SideRoles(), L, Xs, Pt], P2, Col) :-
+    impl_choice([J, G, $SideRoles(), L, Xs, Pt]), sided(L, J, _, P2, Col).
 
 .comp Determine {
-    // The cells an example output changes fall in redrawn slots.
-    .init patches = Components8<Example>
-    patches.node(E, P) :- ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
 
-    .init patch_box = Bbox<Patch>
-    patch_box.cell([E, Id], P) :- patches.label(E, P, Id).
+    // A slot cell that the output inks.
+    .decl out_ink(e: Example, p: Position, p_inner: Position)
+    out_ink(E, P, P_inner) :-
+        parse.slot(E, P, P_inner, P_grid), ex_out(E, P_grid, Col), !params.background(Col).
 
-    // A redrawn slot's cell, as an offset from the slot's center.
-    .decl redrawn_cell(e: Example, id: Ident, v: Offset, p: Position)
-    redrawn_cell(E, Id, V, P) :-
-        patch_box.box([E, Id], B), ex_in(E, C, _), crop(C, B, C_rel), centered(C_rel),
-        ex_in(E, P, _), crop(P, B, _), relative(C, P, V).
+    // A solid block becomes the diamond.
+    .decl diamond(p: Position)
+    diamond(P_inner) :- parse.solid(E, P), out_ink(E, P, P_inner).
 
-    .decl slot(v: Offset)
-    slot(V) :- redrawn_cell(_, _, V, _).
+    // The output slot differs from the diamond somewhere.
+    .decl off_diamond(e: Example, p: Position)
+    off_diamond(E, P) :-
+        parse.slot(E, P, P_inner, _),
+        ( diamond(P_inner), !out_ink(E, P, P_inner)
+        ; !diamond(P_inner), out_ink(E, P, P_inner) ).
 
-    // The redrawn slot held a background cell in the input.
-    .decl gap(e: Example, id: Ident)
-    gap(E, Id) :- redrawn_cell(E, Id, _, P), ex_in(E, P, Col), params.background(Col).
+    // Every other filled output slot holds the X.
+    .decl x(p: Position)
+    x(P_inner) :- out_ink(E, P, P_inner), off_diamond(E, P).
 
-    // The shape a solid slot becomes.
-    .decl diamond(v: Offset)
-    diamond(V) :-
-        redrawn_cell(E, Id, V, P), !gap(E, Id), ex_out(E, P, Col), !params.background(Col).
-
-    // The redrawn slot's output shape is not the diamond.
-    .decl off_diamond(e: Example, id: Ident)
-    off_diamond(E, Id) :-
-        redrawn_cell(E, Id, V, P), ex_out(E, P, Col),
-        ( diamond(V), params.background(Col)
-        ; !diamond(V), !params.background(Col)
-        ).
-
-    .decl x(v: Offset)
-    x(V) :-
-        redrawn_cell(E, Id, V, P), off_diamond(E, Id), ex_out(E, P, Col), !params.background(Col).
-
-    // The centers of the redrawn slots that took the diamond and the X.
-    .decl diamond_center(e: Example, c: Position)
-    diamond_center(E, C) :- redrawn_cell(E, Id, ZERO, C), !off_diamond(E, Id).
-
-    .decl x_center(e: Example, c: Position)
-    x_center(E, C) :- redrawn_cell(E, Id, ZERO, C), off_diamond(E, Id).
-
-    // Some diamond slot lies no nearer edge d than some X slot.
-    .decl behind(e: Example, d: Dir)
-    behind(E, D) :- diamond_center(E, C), x_center(E, C2), dir_elem(D), !nearer(D, C, C2).
-
+    // The sides the output diamonds stand on.
     .decl diamond_side(d: Dir)
-    diamond_side(D) :- diamond_center(E, _), x_center(E, _), dir_elem(D), !behind(E, D).
+    diamond_side(D) :- parse.port(E, P, D), !off_diamond(E, P).
 }

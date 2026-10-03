@@ -79,7 +79,7 @@ def _kinds(function: Function) -> frozenset[Kind] | None:
     return frozenset(named)
 
 
-def is_hint(function: Function) -> bool:
+def gives_hints(function: Function) -> bool:
     """`function` names a finding kind, and every kind it names stands
     outside `FAILING`."""
     kinds = _kinds(function)
@@ -95,7 +95,7 @@ def unquoted(functions: Iterable[tuple[Function, bool]]
         words = quoted(function)
         guard = guarded(function)
         check = function.__name__.startswith(CHECK_PREFIX)
-        hint_or_lint = check and (lint or is_hint(function))
+        hint_or_lint = check and (lint or gives_hints(function))
         if guard is not None and not hint_or_lint:
             out.append(Unquoted(function, Breach.GUARD))
         elif not words and guard is None:

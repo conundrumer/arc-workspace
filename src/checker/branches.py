@@ -404,7 +404,7 @@ def swap_witness(runs: Runs, solver: Solver, cases: Sequence[Case],
     task = solver.given_task
     if color is None:
         return NoWitness.NOT_ONE_COLOR
-    found = swaps(solver, task, frozenset({color}))
+    found = swaps(runs.engine, solver, task, cases, frozenset({color}))
     if not found:
         return NoWitness.NO_FREE_COLOR
     models = witness_targets(runs, solver, cases, branch)
@@ -456,8 +456,8 @@ def witness_entry(runs: Runs, solver: Solver, name: str, separates: str,
     assert not isinstance(assign, Fault)
     got = runs.outcomes_of(solver, cases, grid, assign)
     groups = groups_of(solver, [(c, got[c]) for c in [
-        *(c for c in cases if not c.branches),
-        *(c for c in cases if c.branches)]])
+        *(c for c in cases if c.is_base_case),
+        *(c for c in cases if not c.is_base_case)]])
     if not isinstance(groups, Groups):
         assert not isinstance(groups, Fault)
         return groups
@@ -671,6 +671,9 @@ def check_color_structure_stored(solver: Solver, runs: Runs
         "determined parameter, with the parameter's name and schema, derived "
         "from `ex_in` and `ex_out`.")
 @quotes("solver-file.md", "Determination",
+        "The determination relation of a parameter with a case column gives "
+        "the rows of every case.")
+@quotes("solver-file.md", "Determination",
         "A derived relation has no determination relation.")
 @quotes("patterns.md", "`RIGID` — parameter relations coupled as a rigid assembly",
         "exposes them only as D4 placements that transform them together, so "
@@ -679,6 +682,9 @@ def check_stored_assignment(solver: Solver, runs: Runs) -> list[Finding]:
     """A determined parameter whose `Determine` relation differs from its
     stored value is a finding; one stored by a RIGID call differs where no
     D4 image of its block's stored assembly gives the determined one. A
+    parameter with a case column differs where its rows differ at a case
+    the checks read (`checker.runs.Runs.differing_bases`), since each case
+    reads its own rows. A
     `Determine` relation that mirrors a relation `Params` derives is a
     finding too."""
     result = runs.determined
@@ -690,9 +696,12 @@ def check_stored_assignment(solver: Solver, runs: Runs) -> list[Finding]:
                                DerivedDataPayload(d.name)))
     if isinstance(result, Determined):
         for d in result.diffs:
+            bases = runs.differing_bases(d)
+            if bases == ():
+                continue
             out.append(Finding(Kind.DETERMINATION_DIFF,
                                AtParameter(d.parameter),
-                               DeterminationDiffPayload(d)))
+                               DeterminationDiffPayload(d, bases)))
         return out
     if isinstance(result, NoTask):
         out.append(NO_TASK)
@@ -701,17 +710,3 @@ def check_stored_assignment(solver: Solver, runs: Runs) -> list[Finding]:
                              AtFile(WholeFile.SOLVER)))
     return out
 
-
-
-def write_witnesses(runs: Runs, built: Sequence[Entry | None],
-                    every_stem: bool) -> tuple[Fault, ...]:
-    """Write the entries a `derive` or `store` run built to the task's
-    witness file (`solver.witness.put`); nothing where the command runs
-    over every stem."""
-    from solver import witness
-
-    entries = [e for e in built if e is not None]
-    if every_stem or not entries:
-        return ()
-    return witness.put(witness.path(runs.solver.task_id),
-                       runs.solver.task_id, entries)

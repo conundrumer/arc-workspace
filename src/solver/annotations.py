@@ -9,7 +9,7 @@ from typing import Annotated
 
 from engine import Comment, DeclId, Program, UnitId
 from engine.program import AdtType, Span, own
-from engine.text import split_top
+from engine.text import line_comment, split_top
 from engine.quotes import quotes
 from solver.category import Category
 from solver.problems import (
@@ -269,6 +269,13 @@ class IgnoreForm(StrEnum):
     STORE = "store"
     """`@ignore [<rel>]: store [<name>]`."""
 
+    @property
+    def directive(self) -> "DirectiveWord | None":
+        """The directive whose line a bare `@ignore` line of this form
+        stands in place of; None for a lint category."""
+        return {IgnoreForm.DERIVE: DirectiveWord.DERIVE,
+                IgnoreForm.STORE: DirectiveWord.STORE}.get(self)
+
 
 @quotes("solver-file.md", "Program",
         "**`@ignore` directive.** A relation kept despite a hint has `// "
@@ -338,6 +345,12 @@ class CaseMarker:
     parts: tuple[MarkerPart, ...]
     gloss: str | None
     line: int
+
+
+def marker_line(text: str) -> str:
+    """The comment line of a case marker whose text between its dashes is
+    `text`, as the solver writes it."""
+    return line_comment(f"{_MARKER_DASHES} {text} {_MARKER_DASHES}")
 
 
 @quotes("solver-file.md", "File structure",
@@ -469,7 +482,8 @@ case name is but `concept`, since a constructor's name carries `$` and a
 branch's name `=`."""
 _REPRESENTATIVE_RE = re.compile(r"^(\S+)(?:\s+(\S+))?$")
 _PLAIN_FIELD_RE = re.compile(r"^(\w+)(?:\s+([\w-]+))?:\s*(.*)$")
-_MARKER_RE = re.compile(r"^---\s*(.*?)\s*---$")
+_MARKER_DASHES = "---"
+_MARKER_RE = re.compile(rf"^{_MARKER_DASHES}\s*(.*?)\s*{_MARKER_DASHES}$")
 _DASH = "—"
 
 _RETIRED = frozenset({"invariant", "addition", "deviation"})
@@ -1012,8 +1026,9 @@ def _named(relation: str | None) -> str:
 
 
 def comment_text(line: str) -> str:
-    """An annotation line as a `//` comment of the solver file."""
-    return f"// {line}"
+    """An annotation line as a `//` comment of the solver file
+    (`engine.text.line_comment`)."""
+    return line_comment(line)
 
 
 def verdict_text(verdict: Verdict | Slot) -> str:

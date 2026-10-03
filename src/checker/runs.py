@@ -3,7 +3,7 @@
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from functools import cached_property
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from engine import Engine, Grid, Index, Limits, RelationName, RunFailure
 from engine.memo import ByIdentity
@@ -12,19 +12,23 @@ from solver.model import (
     Base,
     Branch,
     Case,
+    base_case,
     DeriveBranch,
     Solver,
     cases,
+    choice_bases,
     enumerates,
     every_base,
+    is_concept,
 )
-from solver.names import Denoted, branch_text
+from solver.names import Denoted, branch_text, name as case_name
 from solver.problems import Fault, WitnessFileRole
 from solver.solve import (
     Assignment,
     DetermineResult,
     Outcome,
     PairRuns,
+    ParamDiff,
     Restrict,
     TaskSection,
     assignment,
@@ -33,8 +37,10 @@ from solver.solve import (
     determine,
     outcomes_on,
     pairs,
+    per_case,
     recorded_inputs,
     relations_at,
+    at_bases,
     variation,
     witnessed,
 )
@@ -44,6 +50,30 @@ if TYPE_CHECKING:
     from checker.derive import DeriveSurvey
     from checker.store import StoreSurvey
     from checker.variants import Fails, Profile, TimedOut
+
+
+class BaseOrder(NamedTuple):
+    """Where a base stands among the bases (`Runs.bases`): the concept
+    base first, the others by the name of their base case
+    (`solver.model.base_case`)."""
+
+    later: bool
+    name: str
+
+
+def base_order(solver: Solver, base: Base) -> BaseOrder:
+    """Where `base` stands among the bases (`BaseOrder`)."""
+    return BaseOrder(not is_concept(solver, base),
+                     case_name(solver, base))
+
+
+@dataclass(frozen=True)
+class NoCases:
+    """The run that enumerates the solver's cases failed, so a survey
+    reads no value of a parameter that stores a value per case
+    (`solver.solve.per_case`), whose bases that run gives."""
+
+    failure: RunFailure
 
 
 @dataclass(frozen=True)
@@ -136,6 +166,35 @@ class Runs:
         enumerates the solver's cases fails, which a check reports."""
         got = self.cases
         return got if isinstance(got, tuple) else ()
+
+    @property
+    def bases(self) -> list[Base] | RunFailure:
+        """The bases of the cases the checks read (`cases`), the concept
+        base first and the others by the name of their base case
+        (`solver.model.base_case`); the failure of the run that enumerates
+        the solver's cases where it fails."""
+        got = self.cases
+        if not isinstance(got, tuple):
+            return got
+        return sorted(choice_bases(got),
+                      key=lambda b: base_order(self.solver, b))
+
+    def differing_bases(self, d: ParamDiff
+                        ) -> tuple[Base, ...] | RunFailure | None:
+        """For a parameter that stores a value per case (`per_case`), each
+        base (`bases`) at which its stored and its determined value differ:
+        a row of the diff holds there (`solver.solve.at_bases`), whether the
+        row is stored or determined; the failure of the run that enumerates
+        the solver's cases where it fails; None for a parameter with no
+        case column, whose one value differs."""
+        pc = per_case(self.solver, d.parameter)
+        if pc is None:
+            return None
+        got = at_bases(self.solver, pc, (*d.stored_only, *d.determined_only),
+                       self.bases)
+        if not isinstance(got, list):
+            return got
+        return tuple(b for b, at in got if at)
 
     @cached_property
     def judged(self) -> Judged | RunFailure:
@@ -438,7 +497,7 @@ class Runs:
         relation holds at most `cap` plus one of its rows, all of them
         where it has at most `cap`, and the run prints none past those. A
         relation the run does not output raises `ValueError`."""
-        return relations_at(self.engine, self.solver, Case(None, ()), grid,
+        return relations_at(self.engine, self.solver, base_case(None), grid,
                             relations, at, self.limits, cap)
 
     def defined_relations(self, grid: Grid,
@@ -516,7 +575,7 @@ class Runs:
         """The runs of the solver with `impl_choice` holding `bases`
         alone (`solver.solve.Restrict`)."""
         program = variation(self.engine, self.solver,
-                            Restrict(tuple(Case(b, ()) for b in bases)))
+                            Restrict(tuple(base_case(b) for b in bases)))
         return Runs(self.engine, replace(self.solver, program=program),
                     self.limits, kept=kept, given=self.given)
 

@@ -32,8 +32,24 @@ from engine.program import (
     Wildcard,
 )
 
+PREFIX = "$"
+"""What a constructor's name carries in a value, in a term, in a name and
+in an `assign` string, as Souffle reads and prints a constructor."""
+
+
+def prefixed(text: str) -> str | None:
+    """What follows the constructor prefix (`PREFIX`) that `text` starts
+    with; None where it starts with none."""
+    return text.removeprefix(PREFIX) if text.startswith(PREFIX) else None
+
 type Part = Term | Atom | BodyLiteral | Value | RelationDecl | GridLayout
 """What `text` renders."""
+
+
+GRID_FORM_SEGMENT: dict[GridForm, str] = {
+    GridForm.DENSE: "", GridForm.MASK: "MASK_", GridForm.SPARSE: "SPARSE_"}
+"""The segment a GRID macro's name gives each form, after `STAMP_` and
+before the size."""
 
 
 def text(part: Part) -> str:
@@ -68,7 +84,7 @@ def text(part: Part) -> str:
         case StringTerm(value=value):
             return f'"{value}"'
         case ConstructorTerm(name=name, args=args):
-            return f"${name}({_joined(args)})"
+            return f"{PREFIX}{name}({_joined(args)})"
         case RecordTerm(args=args):
             return f"[{_joined(args)}]"
         case IntrinsicCall(functor=functor, args=args):
@@ -87,10 +103,14 @@ def text(part: Part) -> str:
         case Cast(term=inner, type=type_name):
             return f"as({text(inner)}, {type_name})"
         case GridLayout(form=form, stamp=stamp, height=h, width=w):
-            segment = {GridForm.DENSE: "", GridForm.MASK: "MASK_",
-                       GridForm.SPARSE: "SPARSE_"}[form]
-            return f"GRID_{'STAMP_' if stamp else ''}{segment}{h}x{w}"
+            return (f"GRID_{'STAMP_' if stamp else ''}"
+                    f"{GRID_FORM_SEGMENT[form]}{h}x{w}")
     raise TypeError(f"no text for {part!r}")
+
+
+def line_comment(content: str) -> str:
+    """A line comment of `content` as the solver writes it."""
+    return f"// {content}"
 
 
 def fact_text(value: Value) -> str:
@@ -109,9 +129,9 @@ def _value(value: Value, quoted: bool) -> str:
         case str():
             return f'"{value}"' if quoted else value
         case AdtValue(constructor=name, args=()):
-            return f"${name}"
+            return f"{PREFIX}{name}"
         case AdtValue(constructor=name, args=args):
-            return f"${name}(" + ", ".join(_value(a, quoted) for a in args) + ")"
+            return f"{PREFIX}{name}(" + ", ".join(_value(a, quoted) for a in args) + ")"
         case RecordValue(fields=fields):
             return "[" + ", ".join(_value(f, quoted) for f in fields) + "]"
 

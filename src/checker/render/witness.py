@@ -9,7 +9,6 @@ from checker.payloads.witness import (
     AnnotationPayload,
     ApproximatedWithoutWitness,
     ApproximationUnwitnessed,
-    AssignPayload,
     BranchRef,
     BranchUnwitnessed,
     CaseSet,
@@ -36,14 +35,15 @@ from checker.payloads.witness import (
     WitnessEntryMissing,
 )
 from checker.render import (
+    NO_ASSIGN_VALUE,
     _no_sentence,
     _ticked,
-    case_name,
     grid_lines,
     names_text,
     shifted,
     where_text,
 )
+from solver.names import name as case_name
 from controlled_markdown import mctx
 from solver import names
 from solver.annotations import Slot, comment_text, verdict_text, witness_text
@@ -66,7 +66,7 @@ if TYPE_CHECKING:
 WITNESS_KINDS = frozenset({
     Kind.DRIFT, Kind.UNLISTED, Kind.ANNOTATION, Kind.UNSEPARATED,
     Kind.SUBSUMED, Kind.CONCEPT, Kind.SEPARATES, Kind.UNHELD, Kind.DROPPED,
-    Kind.DROP_UNJUSTIFIED, Kind.ASSIGN, Kind.TASK_ASSIGN,
+    Kind.DROP_UNJUSTIFIED, Kind.TASK_ASSIGN,
     Kind.CONCEPT_UNENUMERATED,
 })
 """The kinds this module states."""
@@ -315,19 +315,13 @@ def witness_lines(solver: Solver, f: Finding) -> list[str]:
                          "as a case of the solver; see "
                          "[Cases](docs/handbook/solver-file.md#cases)"
                          ).format(a=case_name(solver, concept))]
-        case AssignPayload(name=name, arities=arities,
-                                        columns=columns):
-            return [mctx("{entry}: the `assign` value of `{param}` has facts "
-                         "of {got} arguments, and the relation `{param}` "
-                         "takes {want}").format(
-                entry=at, param=name, want=columns,
-                got=" and ".join(str(n) for n in arities))]
         case TaskAssignPayload(values=values,
                                                  task_entry=task_entry,
                                                  assign=assign):
             names = "; ".join(
                 mctx("the `assign` value of `{param}` holds `{value}`, "
-                     "which is not a lib constant").format(param=k, value=v)
+                     "which is {unknown}").format(
+                         param=k, value=v, unknown=NO_ASSIGN_VALUE)
                 for k, v in values)
             return [mctx("{entry}: {names}, so the run takes the `assign` of "
                          "the `{id}` witness in the task's witness file: "

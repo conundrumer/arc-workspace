@@ -7,8 +7,9 @@ from dataclasses import dataclass
 from engine.engine import Occurrence, Resolved, Role, Unresolved
 from engine.memo import ByIdentity
 from engine.program import (
+    check_type_depth,
     first_line,
-    PRIMITIVES,
+    Primitive,
     body_atoms,
     enclosing,
     Atom,
@@ -194,17 +195,17 @@ class Tree:
             rest = rest[1:]
 
     def resolve_type(self, name: str, place: tuple[Level, ...], start: int,
-                     depth: int = 0) -> tuple[TypeDecl | str, tuple[Level, ...], int]:
+                     depth: int = 0
+                     ) -> tuple[TypeDecl | Primitive, tuple[Level, ...], int]:
         """What the type `name` stands for, read at `place` in the text at
         `start` of the innermost chain: a primitive, or a declaration with
         the place and start its own names are read at. A component's type
         parameter reads as what its instance binds it to, and `o.T` reads
         `T` in the instance `o`. Raises ValueError where nothing answers the
         name."""
-        if depth > 64:
-            raise ValueError(f"type `{name}` does not end in a declaration")
-        if name in PRIMITIVES:
-            return name, (), 0
+        check_type_depth(name, depth)
+        if (primitive := Primitive.named(name)) is not None:
+            return primitive, (), 0
         head, dot, rest = name.partition(".")
         for k in range(len(place) - 1, -1, -1):
             level = place[k]

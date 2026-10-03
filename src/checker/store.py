@@ -46,7 +46,6 @@ from checker.judged import (
     NO_TASK,
     Swap,
     base_names,
-    bases_of,
     concept_among,
     enumeration_failed,
     no_result,
@@ -77,6 +76,7 @@ from checker.runs import Runs
 from engine import (
     AdtValue,
     DeclId,
+    Engine,
     Grid,
     Index,
     RecordValue,
@@ -105,16 +105,18 @@ from engine.program import (
     Unit,
     Variable,
 )
+from engine.quotes import quotes
 from solver.annotations import (
     CaseMarker,
     IgnoreForm,
 )
 from solver.model import (
-    resolved_columns,
-    resolved_types,
+    bases_of,
+    choice_values,
     TOP,
     Base,
     Case,
+    base_case,
     CaseTypes,
     Dependence,
     Graph,
@@ -123,17 +125,16 @@ from solver.model import (
     Solver,
     StoreBranch,
     case_types,
-    column_types,
     dependence,
     every_base,
     ident_keyed,
+    holds_at,
     is_concept,
     lists_case,
     marker_at,
     non_concept_at,
     own,
     readers,
-    value_at,
 )
 from solver.names import branch_text, cover, marker_lists
 from solver.problems import ProblemKind
@@ -143,11 +144,14 @@ from solver.solve import (
     PairId,
     as_grid,
     at_once,
-    case_columns,
+    case_reading,
+    parameter_reading,
     examples,
+    per_case,
     position,
     relation_decl,
     row_key,
+    rows_at,
     value_key,
 )
 from solver.vocabulary import (
@@ -564,29 +568,6 @@ class StoreSurvey:
                                             and not f.reads_back))
 
 
-def _holds(solver: Solver, base: Base | None, types: Sequence[str],
-           case_cols: Sequence[int], values: tuple[Value, ...]) -> bool:
-    """Whether the base holds the case values of a row: the base itself
-    at a `Choice` column, and at a column of a point's type, the column's
-    value at some point of that type, `types` being the column types as
-    the model resolves them (`column_types`). Whether the base depends on
-    the relation is the caller's to ask."""
-    choice = solver.choice
-    if choice is None or base is None:
-        return False
-    reading = case_types(solver)
-    for i, v in zip(case_cols, values, strict=True):
-        for t, leaf in reading.leaves(types[i], v):
-            if t == CHOICE:
-                if leaf != base:
-                    return False
-                continue
-            if not any(value_at(choice, base, p.path) == leaf
-                       for p in choice.points if p.type == t):
-                return False
-    return True
-
-
 def site_of(solver: Solver, index: Index, path: RelationName,
             decl: RelationDecl) -> tuple[str | None, str, str | None]:
     """The instance whose `.init` a line on the relation stands above, and
@@ -616,7 +597,7 @@ def _analyze(solver: Solver, runs: Runs, rels: Sequence[RelationName],
              ) -> tuple[list[Found], list[RelationName]]:
     """Each relation's repeating values at each case and each subset of
     its data columns, and the relations over the row cap. A row's case
-    values stand for the bases that hold them (`_holds`) and depend on
+    values stand for the bases that hold them (`holds_at`) and depend on
     the relation (`dependence`)."""
     data = _data_types(solver)
     found: list[Found] = []
@@ -626,13 +607,13 @@ def _analyze(solver: Solver, runs: Runs, rels: Sequence[RelationName],
                 or ident_keyed(solver.program, path):
             continue
         decl = relation_decl(runs.engine, solver.program, path)
-        types = column_types(solver.program, path)
+        held_by_case = case_reading(solver, path)
+        types, case_cols = held_by_case.types, held_by_case.case
         rows_per = [g[path] for g in per_input]
         if max(len(r) for r in rows_per) > ROW_CAP:
             capped.append(path)
             continue
         site, spelled, named = site_of(solver, runs.index, path, decl)
-        case_cols = case_columns(solver, types)
         held = case_types(solver)
         keyed = {i for i in case_cols if _keyed_too(held, types[i])}
         reading = set(rd.relations.get(path, ()))
@@ -669,7 +650,7 @@ def _analyze(solver: Solver, runs: Runs, rels: Sequence[RelationName],
                     if not any(set(s) < set(s2)
                                and hits[s2] in (k, ValueKind.OWNED)
                                for s2 in hits)}
-            restricted = frozenset(b for b in bases if case and _holds(
+            restricted = frozenset(b for b in bases if case and holds_at(
                 solver, b, types, case_cols, case) and b in reading)
             cases_named = _named_case(
                 solver, [b for b in bases if b in restricted], types,
@@ -721,8 +702,8 @@ def _named_case(solver: Solver, restricted: Sequence[Base | None],
             continue
         if all(non_concept_at(choice, b, p) is None
                for p in choice.points if p.type not in carried):
-            return (Case(b, ()),)
-    return tuple(Case(b, ()) for b in restricted)
+            return (base_case(b),)
+    return tuple(base_case(b) for b in restricted)
 
 
 def _case_leaf_types(reading: CaseTypes, type: str) -> set[str]:
@@ -786,7 +767,7 @@ def _bases(solver: Solver, solver_cases: Sequence[Case]
     return bases, concept
 
 
-def marker_findings(solver: Solver,
+def marker_findings(engine: Engine, solver: Solver,
                     bases: Sequence[Base | None]) -> list[Finding]:
     """Each top-level marker that lists a case, where a base it does not
     list depends on a clause under it: with that marker set aside and
@@ -809,7 +790,7 @@ def marker_findings(solver: Solver,
             continue
         aside = tuple(CaseMarker((), x.gloss, x.line) if x == m else x
                       for x in markers)
-        rd = dependence(replace(solver, annotations=replace(
+        rd = dependence(engine, replace(solver, annotations=replace(
             solver.annotations, markers=aside)), bases)
         lines = sorted({u.span.first for u in under[m.line]
                         if u.span is not None
@@ -830,8 +811,8 @@ def store_survey(runs: Runs) -> StoreSurvey:
         stop = enumeration_failed(solver_cases)
         return StoreSurvey((), (), (stop,), (), (stop,), True)
     bases, concept = _bases(solver, solver_cases)
-    rd = dependence(solver, bases)
-    markers = tuple(marker_findings(solver, bases))
+    rd = dependence(runs.engine, solver, bases)
+    markers = tuple(marker_findings(runs.engine, solver, bases))
     task = solver.task
     rels = between(solver, runs.index, rd)
     if not rels:
@@ -869,8 +850,7 @@ def store_survey(runs: Runs) -> StoreSurvey:
     ignored = {t for t, _p in bare_ignored(solver, IgnoreForm.STORE)}
     stored = StoredAlready(solver, runs.index)
     graph = Graph(solver.program)
-    among = [b for b in bases_of(solver_cases)
-             if b is not None]
+    among = bases_of(solver_cases)
     for f in found:
         f.case_names = base_names(solver, [c.base for c in f.cases], among)
         f.line = lines.get(f.relation)
@@ -1248,35 +1228,64 @@ def _read_back(solver: Solver, f: Found) -> tuple[str, ...]:
     """The stored parameters whose value the found value is on every
     input: the same rows as one parameter's, or as the product of several
     parameters' rows, under a renaming of columns, each column of the
-    value of a parameter column's type (plan §D5 "Derive and store"). The
-    fewest parameters that give it, in `Params` order; empty where none
-    do."""
+    value of a parameter column's type (plan §D5 "Derive and store"); a
+    parameter that stores a value per case gives its value at the found
+    value's bases (`_stored_reading`). The fewest parameters that give
+    it, in `Params` order; empty where none do."""
     if len(f.family) != 1:
         return ()
     (value,) = f.family
     width = len(f.types)
-    params = [p for p in solver.params.parameters
-              if isinstance(p.stored, tuple) and p.stored
-              and 0 < len(p.columns) <= width]
-    types = {p.name: resolved_columns(solver.program, p.columns)
-             for p in params}
-    want = resolved_types(solver.program, f.types)
+    stored: dict[str, tuple[tuple[str, ...], tuple[Row, ...]]] = {}
+    for p in solver.params.parameters:
+        if not isinstance(p.stored, tuple) or not p.stored:
+            continue
+        read = _stored_reading(solver, p.name, p.stored, f.bases)
+        if read is None:
+            stored[p.name] = (parameter_reading(solver, p.name).types,
+                              p.stored)
+        elif read[1]:
+            stored[p.name] = read
+    params = [n for n, (t, _r) in stored.items() if 0 < len(t) <= width]
+    want = f.types
     for k in range(1, width + 1):
         for chosen in combinations(params, k):
-            if sum(len(p.columns) for p in chosen) != width:
+            if sum(len(stored[n][0]) for n in chosen) != width:
                 continue
             product = [()]
-            for p in chosen:
-                assert isinstance(p.stored, tuple)
-                product = [r + tuple(s) for r in product for s in p.stored]
-            got_types = tuple(t for p in chosen for t in types[p.name])
+            for n in chosen:
+                product = [r + tuple(s) for r in product
+                           for s in stored[n][1]]
+            got_types = tuple(t for n in chosen for t in stored[n][0])
             for order in permutations(range(width)):
                 if any(got_types[order[i]] != want[i] for i in range(width)):
                     continue
                 if frozenset(tuple(r[order[i]] for i in range(width))
                              for r in product) == value:
-                    return tuple(p.name for p in chosen)
+                    return tuple(chosen)
     return ()
+
+
+@quotes("solver-file.md", "Params",
+        "**Case column.** Where the cases that read a relation in Params "
+        "store different values of it, the relation takes a case column in "
+        "the form of `out`'s, and each fact's case column is the `Choice` "
+        "value of the case that stores the fact.")
+def _stored_reading(solver: Solver, name: str, rows: Sequence[Row],
+                    bases: frozenset[Base | None]
+                    ) -> tuple[tuple[str, ...], tuple[Row, ...]] | None:
+    """For a parameter that stores a value per case (`per_case`), its
+    value at the bases that hold a found value, with the value's column
+    types: the one value they store, or no rows where they store
+    different values; None for any other parameter."""
+    pc = per_case(solver, name)
+    if pc is None:
+        return None
+    values = {frozenset(rows_at(solver, pc, rows, b))
+              for b in choice_values(bases)}
+    if len(values) != 1:
+        return pc.value_types, ()
+    return pc.value_types, tuple(sorted(next(iter(values)), key=row_key))
 
 
 def _stored_already(solver: Solver, runs: Runs, stored: StoredAlready,
@@ -1285,15 +1294,15 @@ def _stored_already(solver: Solver, runs: Runs, stored: StoredAlready,
     """Whether the value is stored already (`StoredAlready`): at the rows
     of every case that holds it, and at every row where no column carries
     the case; with `every` false, at the concept case's rows alone."""
-    types = column_types(solver.program, f.relation)
-    case_cols = case_columns(solver, types)
+    held_by_case = case_reading(solver, f.relation)
+    types, case_cols = held_by_case.types, held_by_case.case
     place = stored.top(f.relation)
     if place is None:
         return False
     rows: tuple[tuple[Value, ...], ...] = f.case_values or ((),)
     if not every:
         values = next((v for v in f.case_values
-                       if _holds(solver, concept, types, case_cols, v)), None)
+                       if holds_at(solver, concept, types, case_cols, v)), None)
         if values is None:
             return False
         rows = (values,)
@@ -1371,12 +1380,12 @@ def _witness(runs: Runs, solver: Solver, f: Found) -> Finding | None:
     cases = fitting_both(runs, lined, cases, branch)
     if not cases:
         return None
-    types = column_types(solver.program, f.relation)
-    case_cols = case_columns(solver, types)
+    held_by_case = case_reading(solver, f.relation)
+    types, case_cols = held_by_case.types, held_by_case.case
     grids: list[tuple[int, Change, Grid]] = []
     for i, ex in enumerate(task.train):
         grids += [(i, d, g) for d, g in d4_images(as_grid(ex.input))]
-    grids += [(s.index, s, s.grid) for s in swaps(solver, task)]
+    grids += [(s.index, s, s.grid) for s in swaps(runs.engine, solver, task, cases)]
     for index, change, grid in grids:
         got = runs.defined_relations(grid, [f.relation])
         if not isinstance(got, Mapping):

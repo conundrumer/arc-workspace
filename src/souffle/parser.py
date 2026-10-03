@@ -7,7 +7,9 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from arc.task import COLORS
 from engine.engine import ParseFailure
+from engine.text import GRID_FORM_SEGMENT, PREFIX
 from engine.program import (
     AdtType,
     Aggregate,
@@ -37,6 +39,7 @@ from engine.program import (
     GridCell,
     GridForm,
     GridLayout,
+    MemberCell,
     Include,
     Instance,
     Intrinsic,
@@ -78,7 +81,10 @@ from souffle.layout import (
 )
 from souffle.lexer import LINE_DIRECTIVE_RE, LexError, RawComment, Token, lex
 
-GRID_RE = re.compile(r"GRID_(STAMP_)?(MASK_|SPARSE_)?(\d+)x(\d+)")
+_FORM_OF_SEGMENT = {v: k for k, v in GRID_FORM_SEGMENT.items()}
+GRID_RE = re.compile(r"GRID_(STAMP_)?("
+                     + "|".join(re.escape(v) for v in GRID_FORM_SEGMENT.values())
+                     + r")(\d+)x(\d+)")
 RIGID_CHART_PREFIX = "_rigid_"
 
 
@@ -164,9 +170,7 @@ def grid_layout(name: str) -> GridLayout | None:
     m = GRID_RE.fullmatch(name)
     if m is None:
         return None
-    form = (GridForm.MASK if m[2] == "MASK_" else
-            GridForm.SPARSE if m[2] == "SPARSE_" else GridForm.DENSE)
-    return GridLayout(form, bool(m[1]), int(m[3]), int(m[4]))
+    return GridLayout(_FORM_OF_SEGMENT[m[2]], bool(m[1]), int(m[3]), int(m[4]))
 
 
 @dataclass
@@ -687,13 +691,12 @@ class _Parser:
             return
         for c in cells:
             v = c.term
-            if isinstance(v, Wildcard):
-                continue
-            if form.form is GridForm.SPARSE and not (
-                    isinstance(v, NumberTerm) and isinstance(v.value, int) and 0 <= v.value <= 9):
-                raise self.fail(t, f"{label}: cell {term(v)!r} is not a color digit or '_'")
-            if form.form is not GridForm.SPARSE and v != NumberTerm(1):
-                raise self.fail(t, f"{label}: cell {term(v)!r} is not '1' or '_'")
+            if form.form is GridForm.SPARSE and MemberCell.of_term(v) is not MemberCell.EMPTY and not (
+                    isinstance(v, NumberTerm) and isinstance(v.value, int) and v.value in COLORS):
+                raise self.fail(t, f"{label}: cell {term(v)!r} is not a color digit or {str(MemberCell.EMPTY)!r}")
+            if not form.valued and MemberCell.of_term(v) is None:
+                cells_text = " or ".join(repr(str(m)) for m in MemberCell)
+                raise self.fail(t, f"{label}: cell {term(v)!r} is not {cells_text}")
 
     def relation_name(self) -> RelationName:
         parts = [self.ident("relation name").text]
@@ -948,7 +951,7 @@ class _Parser:
             e = self.expr()
             self.expect(")")
             return replace(e, parens=True) if isinstance(e, BinaryTerm) else e
-        if t.text == "$":
+        if t.text == PREFIX:
             name = self.ident("constructor name").text
             return ConstructorTerm(name, self.arg_list() if self.at("(") else ())
         if t.text == "[":

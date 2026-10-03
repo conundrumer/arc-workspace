@@ -4,7 +4,7 @@ column and offset."""
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
-from functools import lru_cache
+from engine.memo import kept_recent
 from typing import Literal
 
 type TokenKind = Literal["ident", "num", "str", "punct", "hash", "eof"]
@@ -125,7 +125,7 @@ def _spans(text: str) -> Iterator[tuple[str, int, int]]:
         i = end
 
 
-@lru_cache(maxsize=64)
+@kept_recent(64)
 def lex(text: str) -> tuple[tuple[Token, ...], tuple[RawComment, ...],
                             tuple[tuple[int, int], ...]]:
     """The tokens, ending in one of kind `eof`, and the comments of `text`,

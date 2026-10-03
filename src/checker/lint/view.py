@@ -47,7 +47,7 @@ from engine.program import literal_terms as top_terms
 from engine.program import subterms as direct_subterms
 from solver.annotations import CaseMarker
 from solver.category import HINTS
-from solver.model import TOP, Solver
+from solver.model import TOP, Solver, marker_at
 from solver.vocabulary import (
     DETERMINE,
     ENUMERATOR,
@@ -338,6 +338,17 @@ class View:
         """The units whose head is `decl`, in unit order."""
         return [self.units[o.unit] for o in self.index.feeding(decl.id)
                 if o.unit in self.units]
+
+    def marked_facts(self, decl: RelationDecl
+                     ) -> list[tuple[Unit, int, CaseMarker | None]]:
+        """Each fact of `decl` (`defs`) on a line of the file, with that
+        line and the case marker it stands under
+        (`solver.model.marker_at`), None above the first marker that lists
+        a case. A fact an operation wrote stands on no line."""
+        return [(u, u.span.first,
+                 marker_at(self.solver, u.scope, u.span.first))
+                for u in self.defs(decl)
+                if u.body is None and u.span is not None]
 
     def uses(self, decl: RelationDecl) -> list[tuple[Unit, Atom, bool]]:
         """Each atom that reads `decl`, with its unit and whether it is

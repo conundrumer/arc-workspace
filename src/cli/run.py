@@ -28,6 +28,7 @@ from checker.branches import check_stored_assignment
 from checker.finding import LINT_SHAPES, is_hint
 from checker.render import Section, commands, exit_code, pass_line, passes
 from checker.render.branches import determination_lines
+from checker.sweep import GivingValues, values_giving
 from cli import text
 from cli.common import (
     LIMITS,
@@ -150,16 +151,19 @@ def _pairs(solver: Solver, runs: Runs
         return 0, len(exs), commands.enumeration_failed_lines(names, got), \
             commands.shared_failure_lines(names, got)
     lines: list[str] = []
-    failing: list[tuple[str, tuple[CaseOnPair, ...], Example]] = []
+    failing: list[tuple[str, tuple[CaseOnPair, ...], Example,
+                        tuple[GivingValues, ...]]] = []
     shown: set[Case] = set()
+    giving = values_giving(solver, runs)
     ok = 0
     for pr, (_pid, ex) in zip(got, exs, strict=True):
         passed = commands.passed(pr.cases)
         ok += passed
+        here = tuple(g for g in giving if g.pair == pr.pair)
         if not passed:
-            failing.append((pr.pair.text, pr.cases, ex))
+            failing.append((pr.pair.text, pr.cases, ex, here))
         lines += commands.pair_lines(solver, pr.pair.text, pr.cases, ex,
-                                     shown)
+                                     shown, here)
     return ok, len(exs), lines, commands.stem_failure_lines(solver, failing)
 
 

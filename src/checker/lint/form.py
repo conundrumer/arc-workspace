@@ -3,7 +3,7 @@ glosses, witnesses and claims, markers and sections, the components a
 solver holds, and the types it may declare."""
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 
 from checker.finding import (
@@ -17,7 +17,6 @@ from checker.finding import (
 )
 from checker.judged import (
     base_names,
-    bases_of,
     concept_among,
     is_timeout,
     parse_failure,
@@ -38,7 +37,12 @@ from checker.lint.view import (
     view,
 )
 from checker.runs import Runs
-from engine import ParseFailure, Resolved, RunFailure, checkout
+from engine import (
+    ParseFailure,
+    Resolved,
+    RunFailure,
+    checkout,
+)
 from engine.program import (
     AdtType,
     AtomLiteral,
@@ -51,6 +55,7 @@ from engine.program import (
     FunctorDecl,
     RecordTerm,
     RecordType,
+    RelationDecl,
     Scope,
     Term,
     TypeDecl,
@@ -72,6 +77,8 @@ from solver.annotations import (
 )
 from solver.category import Category
 from solver.model import (
+    bases_of,
+    choice_bases,
     choice_line,
     Base,
     Case,
@@ -83,10 +90,17 @@ from solver.model import (
     concept_branch,
     dependence,
     marker_at,
+    row_value,
     other_branches,
     readers,
 )
-from solver.names import Denoted, cases_of, denote, denote_constructor
+from solver.names import (
+    Denoted,
+    cases_of,
+    denote,
+    denote_constructor,
+)
+from solver.solve import PerCase, per_case
 from solver.vocabulary import (
     CHOICE,
     DETERMINE,
@@ -531,7 +545,7 @@ def _comp_readers(solver: Solver, runs: Runs, comps: Sequence[str]
     if not comps or not isinstance(every, tuple):
         return {}
     bases = bases_of(every)
-    rd = dependence(solver, bases)
+    rd = dependence(runs.engine, solver, bases)
     out: dict[str, tuple[str, ...]] = {}
     for name in comps:
         reading = readers(rd, (u.id for u in solver.program.units
@@ -825,6 +839,58 @@ def _marks(solver: Solver, marker: CaseMarker,
     return out or None
 
 
+def _lists(solver: Solver, marker: CaseMarker | None, every: Sequence[Case],
+           taking: frozenset[Case]) -> bool:
+    """Whether a line of the cases `taking` stands under their marker:
+    not above the first marker that lists a case (`marker` None), and not
+    under a marker none of whose names lists cases (`cases_of`) that are
+    all of `taking`. A marker whose names are prose marks nothing and is
+    neutral."""
+    if marker is None:
+        return False
+    marked = _marks(solver, marker, every)
+    return marked is None or any(m and m <= taking for m in marked)
+
+
+def _case_column_parameters(solver: Solver
+                            ) -> Iterator[tuple[DeclId, PerCase]]:
+    """Each parameter with a case column, by its declaration, with its
+    case reading (`solver.solve.per_case`)."""
+    for p in solver.params.parameters:
+        if (pc := per_case(solver, p.name)) is not None:
+            yield p.declaration, pc
+
+
+def case_column_facts(solver: Solver, v: View, every: Sequence[Case]
+                      ) -> list[Finding]:
+    """A fact of a parameter with a case column that stands outside the
+    marker of the cases its case values hold at (`_lists`,
+    `solver.solve.PerCase.holds`), a `shared-read` finding naming their
+    bases, as a shared fact under a marker is. A fact whose
+    value the load reads as no constant is the load's fault, and a fact
+    whose case values hold at no case of the solver belongs to no case's
+    marker."""
+    out: list[Finding] = []
+    constants = solver.lib.constants
+    for decl, pc in _case_column_parameters(solver):
+        d = v.decls[decl]
+        assert isinstance(d, RelationDecl)
+        for u, line, marker in v.marked_facts(d):
+            row = row_value(u.head.args, constants)
+            if row is None:
+                continue
+            taking = frozenset(c for c in every
+                               if pc.holds(solver, c.base, row))
+            if not taking or _lists(solver, marker, every, taking):
+                continue
+            out.append(lint(line, LintNamed(
+                Category.SHARED_READ, LintSentence.CASE_COLUMN_FACT,
+                base_names(solver, bases_of(c for c in every
+                                            if c in taking),
+                           bases_of(every)))))
+    return out
+
+
 @quotes("solver-file.md", "Cases",
         "**Case markers.** Cases do not interleave: each case's Params and "
         "clauses are under its marker.")
@@ -834,15 +900,14 @@ def _marks(solver: Solver, marker: CaseMarker,
 def check_case_section(solver: Solver, runs: Runs) -> list[Finding]:
     """A top-level clause that contains exactly one constructor of a choice
     ADT other than its type's first, and stands outside that constructor's
-    marker: above the first marker that lists a case, or under a marker none
-    of whose names lists cases (`cases_of`) that all take it
-    (`solver.model.section_at`), a hint. A marker whose names are prose
-    marks nothing and is neutral; a constructor under a negation or a `!=`
-    does not count; a clause of an enumerator, and a fact of one constructor
-    or record, belong to no case. The clauses on one line that give one hint
-    give it once. Where the run that enumerates the solver's cases gives no
-    result, a clause under a marker is not judged, and a hint at `Choice`
-    says so with the run's failure. Serves readability."""
+    marker (`_lists`, the cases that take it), a hint. A constructor under
+    a negation or a `!=` does not count; a clause of an enumerator, and a fact of one constructor
+    or record, belong to no case. A fact of a parameter with a case column
+    is judged by the `shared-read` lint (`case_column_facts`).
+    The clauses on one line that give one hint give it once. Where the run that enumerates the solver's cases gives no
+    result, a clause under a marker, a fact of a parameter with a case
+    column among them, is not judged, and a hint at `Choice` says so with
+    the run's failure. Serves readability."""
     v = view(solver, runs)
     cases = {c.name for _, p, _td in _choice_adts(solver, v)
              for c in other_branches(p)}
@@ -870,12 +935,11 @@ def check_case_section(solver: Solver, runs: Runs) -> list[Finding]:
             if not isinstance(every, tuple):
                 unjudged = True
                 continue
-            marked = _marks(solver, marker, every)
             d = denote_constructor(solver, case)
             if d is None:
                 raise ValueError(f"`{case}` stands at no choice point")
-            taking = frozenset(cases_of(solver, d, every))
-            if marked is None or any(m and m <= taking for m in marked):
+            if _lists(solver, marker, every,
+                      frozenset(cases_of(solver, d, every))):
                 continue
         if marker is None:
             payload = LintNamed(Category.CASE_SECTION,
@@ -885,6 +949,9 @@ def check_case_section(solver: Solver, runs: Runs) -> list[Finding]:
                                  LintSentence.CASE_SECTION_UNDER, case,
                                  marker)
         out.append(lint(u.span.first, payload))
+    if not isinstance(every, tuple) and any(
+            _case_column_parameters(solver)):
+        unjudged = True
     if unjudged and solver.choice is not None \
             and not isinstance(every, tuple):
         out.append(_at_choice(v, solver.choice, Category.CASE_SECTION,
@@ -917,10 +984,10 @@ def check_case_section_read(solver: Solver, runs: Runs) -> list[Finding]:
                            Category.CASE_SECTION,
                            LintSentence.CASE_SECTION_READ_UNJUDGED, every)]
     bases = bases_of(every)
-    among = [b for b in bases if b is not None]
+    among = choice_bases(every)
     if not among:
         return []
-    rd = dependence(solver, bases)
+    rd = dependence(runs.engine, solver, bases)
     by_id = {u.id: u for u in solver.program.units}
     lines: dict[tuple[int, Node, CaseMarker], set[Base | None]] = {}
     for (uid, node), reaching in rd.stranded.items():

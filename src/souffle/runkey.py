@@ -113,7 +113,7 @@ def _named_types(program: Program, relations: tuple[RelationDecl, ...]
     constructors: set[str] = set()
     for t in terms:
         _term_names(t, names, constructors)
-    by_ctor = {c.name.lstrip("$"): t.name for t in program.types
+    by_ctor = {c.name: t.name for t in program.types
                if isinstance(t, AdtType) for c in t.constructors}
     names.update(by_ctor[c] for c in constructors if c in by_ctor)
     names = {n.rsplit(".", 1)[-1] for n in names}
@@ -163,7 +163,7 @@ def _term_names(t: Term, types: set[str], constructors: set[str]) -> None:
         case Cast(type=type_):
             types.add(type_)
         case ConstructorTerm(name=name):
-            constructors.add(name.lstrip("$"))
+            constructors.add(name)
         case Aggregate(expr=expr, body=body):
             if expr is not None:
                 _term_names(expr, types, constructors)

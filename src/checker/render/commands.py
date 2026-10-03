@@ -9,12 +9,12 @@ from pathlib import Path
 from arc.task import Example
 from checker.finding import Finding
 from checker.judged import value_constructors
+from checker.sweep import GivingValues
 from checker.render import (
     GridRow,
     LineForm,
     Section,
     _ticked,
-    case_name,
     cases_text,
     counted,
     derive_line_to_add,
@@ -33,6 +33,8 @@ from checker.render import (
     shifted,
     solver_name,
 )
+from checker.render.surveys import giving_text
+from solver.names import name as case_name
 from controlled_markdown import mctx
 from engine import AdtValue, Grid, ParseFailure, RecordValue, RunFailure, Value
 from engine.program import RelationDecl
@@ -185,7 +187,8 @@ def _one_failure(cases: Sequence[CaseOnPair]) -> RunFailure | None:
 
 def pair_failure_lines(solver: Solver, name: str,
                        cases: Sequence[CaseOnPair], ex: Example,
-                       shown: set[Case] | None = None) -> list[str]:
+                       shown: set[Case] | None = None,
+                       giving: Sequence[GivingValues] = ()) -> list[str]:
     """A failing pair: what its run hit, or each case whose grids are
     none of the pair's candidates with why, the count of the cases that
     fit, fail and give no output, then each grid the pair does not
@@ -194,13 +197,20 @@ def pair_failure_lines(solver: Solver, name: str,
     the cells at which it is undefined, under the fewest names of the
     cases that give it (`solver.names.cover`). With `shown`, the cases whose output an
     earlier pair drew, an output is drawn on the first pair where its
-    cases fail alone, and the cases drawn here join it."""
+    cases fail alone, and the cases drawn here join it. Under the line of
+    each case, each of `giving` at that case (`giving_text`): `giving` holds
+    those whose first train pair with no output is this one."""
     lines = [mctx("{pair}: FAIL").format(pair=name)]
     whole = _one_failure(cases)
     if whole is not None:
         return _failed_on(name, whole)
+
+    def guided(members: Sequence[Case]) -> list[str]:
+        return [f"    {giving_text(solver, g)}" for g in giving
+                if g.case in members]
+
     if not any(isinstance(c.outcome, Grids) for c in cases):
-        return [*lines, f"  {NO_GRID}"]
+        return [*lines, f"  {NO_GRID}", *guided([c.case for c in cases])]
     accepted = {g for stored in _stored(ex) for _n, g in stored}
     every = [c.case for c in cases]
     bad: list[CaseOnPair] = []
@@ -216,8 +226,10 @@ def pair_failure_lines(solver: Solver, name: str,
         grids = o.grids if isinstance(o, Grids) else ()
         if reasons := _reasons(grids, ex):
             groups.setdefault(reasons, []).append(c.case)
-    lines += [f"  {cases_text(solver, members, every)}: {'; '.join(reasons)}"
-              for reasons, members in groups.items()]
+    for reasons, members in groups.items():
+        lines.append(
+            f"  {cases_text(solver, members, every)}: {'; '.join(reasons)}")
+        lines += guided(members)
     drawn = _drawn_outputs(solver, cases, ex, shown)
     empty = sum(not isinstance(c.outcome, Grids) for c in cases)
     many = len(cases) > 1 or resolved(solver)
@@ -286,13 +298,14 @@ def _drawn_outputs(solver: Solver, cases: Sequence[CaseOnPair],
 
 
 def pair_lines(solver: Solver, name: str, cases: Sequence[CaseOnPair],
-               ex: Example, shown: set[Case] | None = None) -> list[str]:
+               ex: Example, shown: set[Case] | None = None,
+               giving: Sequence[GivingValues] = ()) -> list[str]:
     """One pair of `run`: its pass line, or its failure
     (`pair_failure_lines`, `shown` the cases an earlier pair drew)."""
     if passed(cases):
         return [mctx("{pair}: PASS{suffix}").format(
             pair=name, suffix=pass_suffix(solver, cases))]
-    return pair_failure_lines(solver, name, cases, ex, shown)
+    return pair_failure_lines(solver, name, cases, ex, shown, giving)
 
 
 def enumeration_failed_lines(names: Sequence[str], failure: RunFailure
@@ -316,18 +329,22 @@ def _failed_on(pairs: str, failure: RunFailure) -> list[str]:
 
 def stem_failure_lines(solver: Solver,
                        failing: Sequence[tuple[str, Sequence[CaseOnPair],
-                                               Example]]) -> list[str]:
+                                               Example,
+                                               Sequence[GivingValues]]]
+                       ) -> list[str]:
     """The failing pairs of one solver, as a report over several solvers
     gives them: once where more than one fails on one and the same
     failure."""
-    shared = {_one_failure(cases) for _n, cases, _ex in failing}
+    shared = {_one_failure(cases) for _n, cases, _ex, _g in failing}
     if len(failing) > 1 and len(shared) == 1:
         (only,) = shared
         if only is not None:
-            return shared_failure_lines([n for n, _c, _e in failing], only)
+            return shared_failure_lines([n for n, _c, _e, _g in failing],
+                                        only)
     shown: set[Case] = set()
-    return [ln for n, cases, ex in failing
-            for ln in pair_failure_lines(solver, n, cases, ex, shown)]
+    return [ln for n, cases, ex, giving in failing
+            for ln in pair_failure_lines(solver, n, cases, ex, shown,
+                                         giving)]
 
 
 def probe_lines(solver: Solver, name: str,
@@ -487,7 +504,6 @@ def unchanged_file(n: int, path: object) -> str:
 
 WROTE_NOTHING = mctx("wrote nothing to {path}: {failed} of {n} witnesses "
                      "could not be run")
-RUN_FAILED = mctx("run failed: {error}")
 COUNT_LINE = mctx("{n} witnessed cases of {m}, {g} distinct grid(s)")
 """The count line of a built witness: the witnessed cases its groups were
 built from, the solver's cases, and the distinct grids they give
@@ -681,7 +697,7 @@ def souffle_text(solver: Solver, value: Value, type_name: str) -> str:
     the branches of its constructors, each by its name, joined by
     ` & `."""
     if type_name == CHOICE and isinstance(value, AdtValue | RecordValue):
-        return case_name(solver, Case(value, ()))
+        return case_name(solver, value)
     points = set() if solver.choice is None \
         else {p.type for p in solver.choice.points}
     if type_name in points and isinstance(value, AdtValue):

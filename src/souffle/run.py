@@ -36,8 +36,9 @@ from engine.engine import (
     UngroundedVariable,
     WallLimit,
 )
-from engine.memo import Once, Recent, write_whole
+from engine.memo import ByIdentity, Once, Recent, kept_recent, write_whole
 from engine.program import (
+    Primitive,
     Grid,
     Program,
     RecordValue,
@@ -48,10 +49,10 @@ from engine.program import (
     Value,
     cell_place,
 )
-from engine.text import fact_text
+from engine.text import PREFIX, fact_text
 from souffle.expand import expand
 from souffle.index import Hit, Tree, tree_of
-from souffle.render import rendered_for_run
+from souffle.render import lines_text, rendered_for_run
 from souffle.runkey import included_files, reached
 from souffle.values import printed
 
@@ -121,6 +122,24 @@ def fact_lines(value: InputValue) -> list[str]:
     return ["\t".join(fact_text(v) for v in row) for row in value]
 
 
+GRID_FILES_HELD = 64
+"""How many grids' fact files a process keeps written: the runs of every
+group of cases on one input read the same file."""
+
+
+def fact_file(value: InputValue) -> str:
+    """The fact file that gives `value` (`fact_lines`), a grid's written
+    once while it is among the last grids written (`_grid_file`)."""
+    if isinstance(value, GridInput):
+        return _grid_file(value.grid)
+    return lines_text(fact_lines(value))
+
+
+@kept_recent(GRID_FILES_HELD)
+def _grid_file(grid: Grid) -> str:
+    return lines_text(fact_lines(GridInput(grid)))
+
+
 @cache
 def souffle_version() -> str:
     try:
@@ -188,6 +207,25 @@ def _cpu_limit_key(key: str, cpu: int) -> str:
     return f"{key}-cpu{cpu}"
 
 
+_STATEMENTS: ByIdentity[Program, tuple[list[tuple[str, int | None]], str]] \
+    = ByIdentity()
+"""`_statements` of each program while it lives: a group's program runs
+on every input."""
+
+
+def _statements(program: Program) -> tuple[list[tuple[str, int | None]], str]:
+    """The lines a run of `program` gives Souffle before its directives,
+    each with its origin line (`rendered_for_run` of the program with its
+    macros expanded), and their text; computed once per program while it
+    lives."""
+
+    def make() -> tuple[list[tuple[str, int | None]], str]:
+        lines = rendered_for_run(expand(program))
+        return lines, lines_text(t for t, _ in lines)
+
+    return _STATEMENTS.compute(program, make)
+
+
 class Runner:
     def __init__(self, functor_dir: Path | None, cache_dir: Path | None):
         self.functor_dir = functor_dir
@@ -216,7 +254,7 @@ class Runner:
         for i, (rel, value) in enumerate(sorted(
                 inputs.items(), key=lambda kv: (kv[0].instances, kv[0].name))):
             file = f"in{i}.facts"
-            facts[file] = "".join(line + "\n" for line in fact_lines(value))
+            facts[file] = fact_file(value)
             directives.append(f'.input {rel.text}(IO=file, filename="{file}")')
         capped = {} if not caps else \
             {rel: caps[rel] for rel in dict.fromkeys(outputs) if rel in caps}
@@ -234,9 +272,8 @@ class Runner:
                 directives += lines_of_copy
         named = [hit.decl.id for rel in (*inputs, *outputs)
                  if (hit := tree.resolve(rel, Scope(()))) is not None]
-        lines = rendered_for_run(expand(reached(program, named)))
-        text = "".join(t + "\n" for t, _ in lines) \
-            + "".join(d + "\n" for d in directives)
+        lines, statements = _statements(reached(program, named))
+        text = statements + lines_text(directives)
         key = self._key(program, text, facts)
         # The same run being made in another thread is read once it ends.
         return self._once.get(key, lambda: self._result(
@@ -430,8 +467,8 @@ def _term_at(source: str, at: int) -> str | None:
     if at >= len(source):
         return None
     end = at
-    if source[at] == "$":
-        m = re.compile(r"\$[A-Za-z_]\w*").match(source, at)
+    if source[at] == PREFIX:
+        m = re.compile(re.escape(PREFIX) + r"[A-Za-z_]\w*").match(source, at)
         if m is None:
             return None
         end = m.end()
@@ -727,8 +764,8 @@ def _top_level_types(rel: RelationName, tree: Tree) -> list[str] | None:
             decl, place, _start = tree.resolve_type(column.type, hit.place, hit.start)
         except ValueError:
             return None
-        if isinstance(decl, str):
-            out.append(decl)
+        if isinstance(decl, Primitive):
+            out.append(decl.value)
             continue
         if len(place) > len(hit.place) \
                 or any(a is not b for a, b in zip(place, hit.place, strict=False)):
@@ -737,32 +774,58 @@ def _top_level_types(rel: RelationName, tree: Tree) -> list[str] | None:
     return out
 
 
+_READERS: ByIdentity[Tree, dict[RelationName, list[dict[str, Value]]]] \
+    = ByIdentity()
+"""The values read from each printed text, per output relation and
+column, for each tree while it lives: the programs one operation derives
+from another share their tree, so the runs of a group on every input read
+a column's texts through one reader."""
+
+
+def _readers(rel: RelationName, tree: Tree, width: int
+             ) -> list[dict[str, Value]]:
+    """The one reader of each column of `rel` under `tree`: each text it
+    has read, with its value."""
+    return _READERS.keyed(tree, rel, lambda: [{} for _ in range(width)])
+
+
+def _read_text(seen: dict[str, Value], text: str, type_name: str,
+               tree: Tree, hit: Hit) -> Value:
+    """The value of `text` in a column of type `type_name` of the
+    relation `hit` declares, through the column's reader `seen`
+    (`_readers`), which reads it where it has not yet. Raises ValueError
+    where the type cannot read it."""
+    got = seen.get(text, _UNREAD)
+    if got is _UNREAD:
+        got = seen[text] = printed(text, type_name, tree, hit.place,
+                                   hit.start)
+    return got
+
+
 def _rows_of(rel: RelationName, lines: list[str], tree: Tree) -> Rows:
     """The rows of `rel` its printed lines give, each value read by its
-    column's type. Raises ValueError, naming the relation and the row, for
-    a value the declared types cannot read."""
+    column's type through the column's reader (`_readers`), which reads
+    each distinct text once. Raises ValueError, naming the relation and
+    the row, for a value the declared types cannot read."""
     hit = _output_decl(tree, rel)
     cols = [c.type for c in hit.decl.columns]
+    read = _readers(rel, tree, len(cols))
     if cols and lines:
-        # Column by column: each distinct text is read once, and the rows
-        # share the value read from it.
+        # Column by column: the rows share the value read from a text.
         try:
             columns = list(zip(*[line.split("\t") for line in lines],
                                strict=True))
             if len(columns) == len(cols):
                 values = []
-                for column, c in zip(columns, cols, strict=True):
-                    seen = {t: printed(t, c, tree, hit.place, hit.start)
-                            for t in dict.fromkeys(column)}
+                for column, c, seen in zip(columns, cols, read, strict=True):
+                    for t in dict.fromkeys(column):
+                        _read_text(seen, t, c, tree, hit)
                     values.append(list(map(seen.__getitem__, column)))
                 return tuple(zip(*values, strict=True))
         except ValueError:
             pass
     # Row by row, where a row is not of the relation's width or a value
     # is not read, so that the error names the first such row.
-    # Per column, each text already read: a column's values repeat
-    # across rows, and reading one resolves its type at each level.
-    read: list[dict[str, Value]] = [{} for _ in cols]
     width = len(cols)
     rows: list[Row] = []
     for line in lines:
@@ -783,10 +846,7 @@ def _rows_of(rel: RelationName, lines: list[str], tree: Tree) -> Rows:
                 raise ValueError(f"{len(texts)} columns, and the declaration {width}")
             row: list[Value] = []
             for t, c, seen in zip(texts, cols, read, strict=True):
-                v = seen.get(t, _UNREAD)
-                if v is _UNREAD:
-                    v = seen[t] = printed(t, c, tree, hit.place, hit.start)
-                row.append(v)
+                row.append(_read_text(seen, t, c, tree, hit))
             rows.append(tuple(row))
         except ValueError as err:
             raise ValueError(f"{rel.text}: row {chr(9).join(texts)!r}: {err}") from None

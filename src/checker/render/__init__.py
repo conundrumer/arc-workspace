@@ -69,6 +69,7 @@ from solver.annotations import (
     DirectiveWord,
     IgnoreForm,
     MarkerPart,
+    marker_line,
     Slot,
     at_word,
     comment_text,
@@ -88,6 +89,10 @@ from solver.model import (
 from solver.problems import (
     Detail,
     AnchorWithoutStamp,
+    AssignArity,
+    CaseColumnOffForm,
+    OffFormType,
+    AssignType,
     Expected,
     GridCellOffForm,
     GridOffLayout,
@@ -152,6 +157,12 @@ def noun(n: int, singular: str, plural: str | None = None) -> str:
     """The noun for `n` things: `singular` for one, else `plural`, which
     is `singular` with an `s` where it is not given."""
     return singular if n == 1 else (plural or f"{singular}s")
+
+
+def verb_s(n: int) -> str:
+    """The ending of a present-tense verb whose subject is `n` things:
+    `s` for one, else none."""
+    return "s" if n == 1 else ""
 
 
 def counted(n: int, singular: str, plural: str | None = None) -> str:
@@ -245,10 +256,10 @@ def names_text(names: Sequence[str]) -> str:
     return ", ".join(names)
 
 
-def case_name(solver: Solver, case: Case) -> str:
-    """A case by its name for a place that asks for a model: the points
-    at which it differs from the concept case (`solver.names.name`)."""
-    return names.name(solver, case)
+def under_case(parameter: str, name: str) -> str:
+    """A parameter's name with the name of the case whose value a line
+    gives."""
+    return mctx("{param} under {case}").format(param=parameter, case=name)
 
 
 # Runs that gave no result
@@ -262,8 +273,8 @@ def failure_text(failure: RunFailure) -> str:
                 line=line)
             return at + message
         case UngroundedVariable(variable=v, line=line):
-            at = "" if line is None else mctx(" at line {line}").format(
-                line=line)
+            at = "" if line is None else " " + mctx(
+                "at line {line}").format(line=line)
             return mctx("the variable `{v}` is ungrounded{at}").format(
                 v=v, at=at)
         case CpuLimit(seconds=s) | WallLimit(seconds=s):
@@ -274,6 +285,26 @@ def failure_text(failure: RunFailure) -> str:
         case Exited(code=code, message=message):
             return mctx("the run exits with {code}: {message}").format(
                 code=code, message=message)
+
+
+RUN = mctx("run")
+"""A run that `run_failed` names by no kind."""
+
+
+def run_failed(failure: RunFailure, run: str = RUN) -> str:
+    """That the run `run` names failed, with what it reports
+    (`failure_text`)."""
+    return mctx("the {run} failed: {error}").format(
+        run=run, error=failure_text(failure))
+
+
+CASES_RUN_FAILED = mctx("the run that enumerates the solver's cases failed")
+
+
+def cases_run_failed(failure: RunFailure) -> str:
+    """That the run that enumerates the solver's cases failed
+    (`CASES_RUN_FAILED`), with what it reports (`failure_text`)."""
+    return f"{CASES_RUN_FAILED}: {failure_text(failure)}"
 
 
 def _limit(failure: RunFailure) -> float:
@@ -298,25 +329,23 @@ def _no_result_lines(solver: Solver, f: Finding, p: NoResultPayload,
         if p.case is not None:
             return [mctx("{entry}: case `{case}` timed out after {limit}s, "
                          "so no finding rests on its outcome there").format(
-                entry=at, case=case_name(solver, p.case), limit=limit)]
+                entry=at, case=names.name(solver, p.case), limit=limit)]
         return [mctx("{entry}: the run of the solver's cases timed out "
                      "after {limit}s, so no finding rests on their outcomes "
                      "there").format(entry=at, limit=limit)]
     error = failure_text(p.failure)
+    kind_run = mctx("{kind} run").format(kind=p.run.value)
     if p.run == RunKind.DROPPED_CASE:
-        return [mctx("{at}: the {run} run failed: {error}").format(
-            at=at, run=p.run.value, error=error)]
+        return [f"{at}: {run_failed(p.failure, kind_run)}"]
     if isinstance(f.where, AtEntry):
         return [mctx("the entry `{entry}` failed: {error}").format(
             entry=at, error=error)]
     if p.case is not None:
         return [mctx("{at}: case `{case}` failed: {error}").format(
-            at=at, case=case_name(solver, p.case), error=error)]
+            at=at, case=names.name(solver, p.case), error=error)]
     if p.run == RunKind.CASE:
-        return [mctx("{at}: the run that enumerates the solver's cases "
-                     "failed: {error}").format(at=at, error=error)]
-    return [mctx("{at}: the {run} run failed: {error}").format(
-        at=at, run=p.run.value, error=error)]
+        return [f"{at}: {cases_run_failed(p.failure)}"]
+    return [f"{at}: {run_failed(p.failure, kind_run)}"]
 
 
 # Locations
@@ -352,7 +381,7 @@ def where_text(solver: Solver, where: Where,
         case AtEntry(entry=entry, file=role):
             return entry_label(solver, entry, role)
         case AtCase(case=case):
-            return case_name(solver, case)
+            return names.name(solver, case)
         case AtRelation(relation=rel):
             return rel.text
         case AtParameter(parameter=p):
@@ -465,6 +494,10 @@ LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
     LintSentence.CASE_SECTION_BEFORE: lambda n, _: mctx(
         "the clause contains the constructor `{0}` and stands before the "
         "first marker").format(*n),
+    LintSentence.CASE_COLUMN_FACT: lambda n, _: mctx(
+        "the fact's case column holds `{0}`, and the fact stands outside "
+        "the marker of that case; see "
+        "[Params](docs/handbook/solver-file.md#params)").format(*n),
     LintSentence.BRANCH_APPROXIMATED: lambda n, _: mctx(
         "`@{0} {1}` stands in a branch and carries `@approximated:`; a "
         "branch's `@rule` states the rule it runs").format(*n),
@@ -598,14 +631,20 @@ def _marked_text(p: LintMarked) -> str:
     match p.sentence:
         case LintSentence.CASE_SECTION_UNDER:
             return mctx("the clause contains the constructor `{name}` and "
-                        "stands under `// --- {marker} ---`").format(
-                name=p.name, marker=_marker_or_none(p.marker))
+                        "stands under `{marker}`").format(
+                name=p.name, marker=_marker_line(p.marker))
         case LintSentence.CASE_SECTION_READ:
             return mctx("{cases} read `{rel}`, which the clause feeds, and "
-                        "the marker `// --- {marker} ---` above it does not "
+                        "the marker `{marker}` above it does not "
                         "list them").format(
                 cases=_ticked(p.cases), rel=p.name,
-                marker=_marker_or_none(p.marker))
+                marker=_marker_line(p.marker))
+        case LintSentence.SHARED_FACT_MARKED:
+            return mctx("`{name}` is declared above the case markers and "
+                        "has no case column, and this fact of it stands "
+                        "under `{marker}`; move the fact to its "
+                        "declaration").format(
+                name=p.name, marker=_marker_line(p.marker))
         case LintSentence.MARKER_LISTS_NO_CASE:
             return mctx("`{name}` is under the marker `{marker}`, which "
                         "lists no case; see "
@@ -624,6 +663,12 @@ def _marker_or_none(m: CaseMarker | None) -> str:
     if m is None:
         raise ValueError("a marked lint finding without its marker")
     return marker_text(m)
+
+
+def _marker_line(m: CaseMarker | None) -> str:
+    """A marked lint finding's marker as its comment line
+    (`solver.annotations.marker_line`)."""
+    return marker_line(_marker_or_none(m))
 
 
 def _labeled_text(p: LintLabeled) -> str:
@@ -667,7 +712,7 @@ def _run_text(solver: Solver, p: LintRun) -> str:
             return mctx("the solver has one case, `{case}`, and "
                         "declares `Choice`; see "
                         "[Cases](docs/handbook/solver-file.md#cases)").format(
-                case=case_name(solver, case))
+                case=names.name(solver, case))
         case _:
             raise ValueError(f"no sentence for {p.sentence}")
 
@@ -786,6 +831,13 @@ def _lint_lines(solver: Solver, findings: Sequence[Finding]) -> list[str]:
 # Faults
 
 
+_ASSIGN_VALUE = mctx("the `assign` value of {text}")
+"""The sentence of an `assign` value off its relation's columns, by
+arity (`AssignArity`) or by type (`AssignType`)."""
+NO_ASSIGN_VALUE = mctx("no lib constant and no constructor without "
+                       "arguments of an ADT the solver or the lib declares")
+"""What an `assign` string value that refers to nothing is not."""
+
 PROBLEM_TEXT: dict[ProblemKind, str] = {
     ProblemKind.PARSE_FAILURE: mctx("the solver does not parse: {text}"),
     ProblemKind.RETIRED_FORM: mctx(
@@ -818,8 +870,12 @@ PROBLEM_TEXT: dict[ProblemKind, str] = {
         "`{text}` is in no form [Witness file]"
         "(docs/handbook/solver-file.md#witness-file) lists"),
     ProblemKind.ASSIGN_NAMES_NOTHING: mctx(
-        "the `assign` name `{text}` names no parameter, stored relation or "
-        "lib constant"),
+        "the `assign` key `{text}` is no parameter of the solver and no "
+        "`@store` line's relation"),
+    ProblemKind.ASSIGN_VALUE_UNKNOWN: mctx(
+        "the `assign` value `{text}` is ") + NO_ASSIGN_VALUE,
+    ProblemKind.ASSIGN_ARITY: _ASSIGN_VALUE,
+    ProblemKind.ASSIGN_TYPE: _ASSIGN_VALUE,
     ProblemKind.GRID_OFF_LAYOUT: mctx("the entry gives {text}"),
     ProblemKind.ANCHOR_WITHOUT_STAMP: mctx("the entry gives {text}"),
     ProblemKind.GRID_CELL_OFF_FORM: mctx("the entry gives {text}"),
@@ -840,6 +896,8 @@ PROBLEM_TEXT: dict[ProblemKind, str] = {
     ProblemKind.TYPE_ARGUMENTS: mctx(
         "`{text}` is given another number of type arguments than it "
         "declares type parameters"),
+    ProblemKind.CASE_COLUMN_OFF_FORM: mctx(
+        "{text}; see [Params](docs/handbook/solver-file.md#params)"),
     ProblemKind.RIGID_CHARTS: mctx(
         "the RIGID call of block `{text}` binds another number of "
         "relations than its block has charts, so its relations compare as "
@@ -907,6 +965,31 @@ def detail_text(detail: Detail) -> str:
                         "its `{form}` layout takes 1 for a member and 0 for "
                         "an empty cell").format(
                             name=name, v=v, r=r, c=c, form=code_text(layout))
+        case AssignArity(name=name, given=given, expected=expected,
+                         per_case=per_case):
+            text = mctx("`{name}` has facts of {got} arguments, and the "
+                        "relation `{name}` takes {want}").format(
+                name=name, want=expected,
+                got=" and ".join(str(n) for n in given))
+            return mctx("{text} outside its case part").format(
+                text=text) if per_case else text
+        case CaseColumnOffForm(relation=relation, column=column, type=t,
+                               kind=off):
+            kind = (mctx("a record with a field of an ADT in `Choice`")
+                    if off is OffFormType.RECORD
+                    else mctx("an ADT in `Choice`"))
+            return mctx("the column `{column}` of `{relation}` is of type "
+                        "`{t}`, {kind}, and the case column of a relation "
+                        "in Params is in the form of `out`'s, of type "
+                        "`Choice`").format(column=column, relation=relation,
+                                           t=t, kind=kind)
+        case AssignType(name=name, column=column, type=t, arg=arg):
+            return mctx("`{name}` gives `{arg}` in the column `{column}`, "
+                        "and that column takes a value of type `{t}`; see "
+                        "[Witness file](docs/handbook/solver-file.md"
+                        "#witness-file)").format(
+                name=name, arg=arg, column=column,
+                t=t if isinstance(t, str) else f"[{', '.join(t)}]")
         case GridOffLayout(name=name, layout=layout, given=(h, w)):
             if layout is None:
                 return mctx("`{name}` a {h}x{w} grid, and the solver stores "

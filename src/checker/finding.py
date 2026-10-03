@@ -10,7 +10,6 @@ from checker.payloads.witness import (  # noqa: F401  (re-exported)
     AnnotationPayload,
     ApproximatedWithoutWitness,
     ApproximationUnwitnessed,
-    AssignPayload,
     BranchRef,
     ConceptPayload,
     Condition,
@@ -70,7 +69,6 @@ class Kind(StrEnum):
     CONCEPT_UNENUMERATED = "concept-unenumerated"
     """The concept case is not among the cases `impl_choice` enumerates
     (solver-file.md, under "Cases")."""
-    ASSIGN = "assign"
     TASK_ASSIGN = "task-assign"
 
     # Lint: the payload's category says which (solver-file.md, under "Program").
@@ -235,6 +233,7 @@ class LintSentence(StrEnum):
     UNREAD_FIELD = "unread field"
     CASE_SECTION_BEFORE = "case section before"
     CASE_SECTION_UNDER = "case section under"
+    CASE_COLUMN_FACT = "case column fact"
     CASE_SECTION_READ = "case section read"
     CASE_SECTION_UNJUDGED = "case section unjudged"
     CASE_SECTION_READ_UNJUDGED = "case section read unjudged"
@@ -249,6 +248,7 @@ class LintSentence(StrEnum):
     CHOICE_DOMAIN = "choice domain"
     MARKER_LISTS_NO_CASE = "marker lists no case"
     SHARED_UNREAD = "shared unread"
+    SHARED_FACT_MARKED = "shared fact marked"
     CHOICE_TAG = "choice tag"
     CROSS_CHOICE = "cross choice"
     RAW_AGGREGATE = "raw aggregate"

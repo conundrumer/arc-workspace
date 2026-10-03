@@ -12,6 +12,7 @@
 ## Where each text is
 - The handbook's documents: [Handbook](prompts/handbook.md) includes them in order, and holds no text of its own.
 - The operations: [Procedure](docs/handbook/procedure.md).
+- The theory of tasks, models and encodings: [Principles](docs/handbook/principles.md) and [Encoding](docs/handbook/encoding.md).
 - The lib's sections: the `//!` and `///` comments of [lib.dl](programs/lib.dl) and of the modules under [lib](programs/lib).
 - What every session in the repo reads: [arc-workspace](CLAUDE.md).
 - What a session at a terminal reads, and the passes it runs: [Session](.claude/skills/session/SKILL.md), then [Solver session](prompts/session.md).

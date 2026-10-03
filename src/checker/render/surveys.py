@@ -3,7 +3,9 @@ result's timed-out and failed runs print here, through the finding lines
 every command prints them with."""
 
 import math
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass
+from typing import Annotated
 from pathlib import Path
 
 import controlled_markdown as nm
@@ -27,6 +29,9 @@ from checker.derived_constant import (
 )
 from checker.determination_plan import (
     ENUMERATION_LIMIT,
+    AtCase,
+    Candidates,
+    Covering,
     Empty,
     Enumerable,
     Exact,
@@ -37,13 +42,17 @@ from checker.determination_plan import (
     Open,
     Partial,
     PlanResult,
+    PlanValue,
     ProbeFails,
     Settled,
     Subject,
     Superset,
     Verdict,
+    by_parameter,
     classify,
     covering,
+    parameter_of,
+    value_order,
 )
 from checker.domains import (
     MAGNITUDE_TYPES,
@@ -51,6 +60,9 @@ from checker.domains import (
 from checker.drop_one import DropOneResult, DroppedFact, Fact, TrainFails
 from checker.render import (
     arg_text,
+    CASES_RUN_FAILED,
+    run_failed,
+    cases_run_failed,
     failure_text,
     file_line,
     finding_lines,
@@ -58,29 +70,39 @@ from checker.render import (
     names_text,
     noun,
     solver_name,
+    under_case,
+    verb_s,
 )
 from checker.render.branches import NOT_BETWEEN
+from checker.runs import NoCases
 from checker.sweep import (
     CaseSets,
     Cut,
     Extras,
     Gaps,
+    GivingValues,
     Near,
     NoCaseMarker,
     NotSwept,
     RunFailed,
+    SetCases,
+    Uncompared,
     SetSweep,
+    SetValue,
     Skipped,
     SweepEntry,
     SweepReport,
     ValueSweep,
+    set_rows,
 )
 from checker.variants import OnTest, TimedOut
 from controlled_markdown import mctx
-from engine import RecordValue, Row, checkout
+from engine import RecordValue, Row, RunFailure, checkout
+from engine.quotes import quotes
 from engine.text import text as code_text
 from solver.model import Case, Lib, Solver, has_determine
 from solver.names import cover
+from solver.names import name as case_name
 from solver.solve import row_key
 from solver.vocabulary import NUMBER
 
@@ -223,6 +245,17 @@ def row_text(row: Row, types: Sequence[str], lib: Lib) -> str:
     """A row of a parameter, as `(<value>, ...)`."""
     return "(" + ", ".join(arg_text(v, t, lib)
                            for v, t in zip(row, types, strict=True)) + ")"
+
+
+def rows_text(rows: Iterable[Row], types: Sequence[str], lib: Lib) -> str:
+    """Rows of a parameter (`row_text`) in the order given, separated by
+    commas."""
+    return ", ".join(row_text(r, types, lib) for r in rows)
+
+
+def rows_list(rows: Iterable[Row], types: Sequence[str], lib: Lib) -> str:
+    """A list of rows of a parameter (`rows_text`), in brackets."""
+    return f"[{rows_text(rows, types, lib)}]"
 
 
 # Drop-one
@@ -371,26 +404,73 @@ def verdict_text(v: Verdict | Enumerable) -> str:
 
 def _subject_text(subject: Subject) -> str:
     if isinstance(subject, KeyedTable):
-        return f"{subject.child}+{subject.parent}"
-    return subject
+        return f"{_value_text(subject.child)}+{_value_text(subject.parent)}"
+    return _value_text(subject)
 
 
-def _settled_note(settled: Settled, shown: Callable[[Row], str]) -> str:
+def _value_text(v: PlanValue) -> str:
+    """A parameter's name, and for its value at a case, the case's."""
+    if isinstance(v, str):
+        return v
+    return under_case(v.parameter, v.name)
+
+
+def _settled_note(settled: Settled, types: Sequence[str], lib: Lib) -> str:
     """What a covered line says of a parameter's values in the joint
-    enumeration: `pairs-exact` where the train pairs leave one value,
-    `pairs-ambiguous(n)` where they leave n, and no verdict where a value
-    is unjudged."""
-    surviving = ", ".join(shown(r) for r in settled.surviving)
+    enumeration, rows of `types`: `pairs-exact` with the value where the
+    train pairs leave one value, `pairs-ambiguous(n)` where they leave n,
+    whose values the `JUDGE_FREE` section lists, and no verdict where a
+    value is unjudged."""
+    surviving = rows_text(settled.surviving, types, lib)
     if not settled.unjudged:
-        verdict = ("pairs-exact" if len(settled.surviving) == 1
-                   else f"pairs-ambiguous({len(settled.surviving)})")
-        return f"{verdict}: {surviving}"
-    unjudged = ", ".join(shown(r) for r in settled.unjudged)
+        if len(settled.surviving) == 1:
+            return f"pairs-exact: {surviving}"
+        return f"pairs-ambiguous({len(settled.surviving)})"
+    unjudged = rows_text(settled.unjudged, types, lib)
     if not settled.surviving:
         return mctx("unjudged, since a run timed out: {unjudged}").format(
             unjudged=unjudged)
     return mctx("surviving: {values}; unjudged, since a run timed out: "
                 "{unjudged}").format(values=surviving, unjudged=unjudged)
+
+
+def _by_parameter(values: Sequence[PlanValue],
+                  note: Callable[[PlanValue], str], form: str) -> list[str]:
+    """One item per parameter among `values` (`by_parameter`): a parameter's
+    one value with its `note`, and a parameter that stores a value per
+    case in `form`, with each case's name and its value's `note`."""
+    def noted(name: str, v: PlanValue) -> str:
+        return " ".join(x for x in (name, note(v)) if x)
+
+    return [noted(p, p) if vs is None else form.format(
+        param=p, cases=", ".join(noted(v.name, v) for v in vs))
+        for p, vs in by_parameter(values).items()]
+
+
+def _over_lines(settle: Sequence[tuple[PlanValue, Candidates]]
+                ) -> list[str]:
+    """One item per parameter over the enumeration limit, with its
+    candidate count (`by_parameter`); a parameter that stores a value per case
+    with the product of its cases' counts and each case's count."""
+    counts = {p: c.count for p, c in settle}
+    return [f"{p}({counts[p]})" if vs is None else
+            f"{p}({math.prod(counts[v] for v in vs)}: "
+            + ", ".join(f"{v.name} {counts[v]}" for v in vs) + ")"
+            for p, vs in by_parameter(p for p, _c in settle).items()]
+
+
+def _make_run(failure: RunFailure) -> str:
+    """The action that closes a plan sentence on a run that gave no
+    result, with the run's failure."""
+    return mctx("; make the run give a result: {error}").format(
+        error=failure_text(failure))
+
+
+JUDGE_FREE: Annotated[str, quotes(
+    "procedure.md", "Determine",
+    "store a value it reports for a parameter beyond the stored values only "
+    "where the concept leaves that parameter's value free")] \
+    = mctx("judge whether the concept leaves the value free")
 
 
 def render_determination_plan(solver: Solver, result: PlanResult,
@@ -400,21 +480,29 @@ def render_determination_plan(solver: Solver, result: PlanResult,
     if isinstance(result, ProbeFails):
         return [mctx("the proposer probe gives no result: {error}").format(
             error=failure_text(result.failure))]
+    if isinstance(result, NoCases):
+        return [mctx("no value a parameter stores per case is read, and "
+                     "this plan is not made, since {failed}").format(
+                         failed=CASES_RUN_FAILED)
+                + _make_run(result.failure)]
     lib = solver.lib
     types = dict(result.types)
 
-    def shown_of(param: str) -> Callable[[Row], str]:
+    def shown_of(param: PlanValue) -> Callable[[Row], str]:
         return lambda r: row_text(r, types[param], lib)
 
     joint = result.joint
     baseline = joint if isinstance(joint, TimedOut) else None
     enumerated = joint if isinstance(joint, Joint) else None
     surviving = dict(enumerated.values) if enumerated else {}
-    determine, settle, done, exact = classify(result.results,
-                                              result.determined)
+    differing = result.differing
+    classes = classify(result.results, result.determined, differing)
+    determine, settle, exact = classes.determine, classes.settle, \
+        classes.exact
     product = math.prod(v.count for _, v in settle)
     over = product > ENUMERATION_LIMIT
-    covered = sorted(exact + ([] if over else [p for p, _ in settle]))
+    covered = sorted(exact + ([] if over else [p for p, _ in settle]),
+                     key=value_order)
     by_subject = {r.subject: r for r in result.results}
     lines: list[str] = []
 
@@ -428,47 +516,75 @@ def render_determination_plan(solver: Solver, result: PlanResult,
             lines.append(note)
         lines.extend(f"  {i}" for i in items)
 
-    def covered_line(param: str) -> str:
+    def best_of(param: PlanValue) -> tuple[str, Covering] | None:
         best = covering(by_subject[param])
         if best is None:
             for r in result.results:
                 t = r.subject
                 if isinstance(t, KeyedTable) and param in (t.child, t.parent):
                     best = covering(r)
+        return best
+
+    def covered_note(param: PlanValue) -> str:
+        best = best_of(param)
         if best is None:
-            return param
+            return ""
         note = f"{best[0]} {verdict_text(best[1])}"
         if param in surviving:
-            note += f", {_settled_note(surviving[param], shown_of(param))}"
-        return f"{param} ({note})"
+            note += f", {_settled_note(surviving[param], types[param], lib)}"
+        return f"({note})"
 
-    open_valued = [p for p in sorted(surviving)
-                   if not surviving[p].unjudged
-                   and len(surviving[p].surviving) > 1]
-    unjudged = baseline is not None or any(
-        s.unjudged for s in surviving.values())
+    def state(param: PlanValue) -> str:
+        """A value's state in a relation to write: where its parameter is
+        determined, whether the relation gives it; else its cover, which
+        a parameter's one value, listed there for want of one, omits."""
+        if parameter_of(param) in result.determined:
+            return (mctx("differs from its stored rows")
+                    if isinstance(differing, frozenset)
+                    and param in differing else mctx("determined"))
+        note = covered_note(param)
+        if note:
+            return mctx("covered {note}").format(note=note)
+        return mctx("covered by no proposer") \
+            if isinstance(param, AtCase) else ""
+
+    open_valued = [p for p in sorted(surviving, key=value_order)
+                   if not surviving[p].unjudged and surviving[p].extras()]
+    unjudged = baseline is not None \
+        or not isinstance(differing, frozenset) \
+        or any(s.unjudged for s in surviving.values())
     if (not determine and not over and not result.embedded
             and not open_valued and not unjudged):
         lines.append(mctx("no actions"))
-    section(mctx("write a determination relation"), determine)
-    section(mctx("the train pairs leave several values, so give the "
-                 "parameter one fact per surviving value"),
-            [f"{p} ({', '.join(shown_of(p)(r) for r in surviving[p].surviving)})"
+    section(mctx("write a determination relation"),
+            _by_parameter(determine, state, mctx(
+                "{param}, giving the rows of each case: {cases}")))
+    section(JUDGE_FREE,
+            [f"{_value_text(p)}: " + _also_admits(
+                surviving[p].stored, surviving[p].extras(), types[p], lib)
              for p in open_valued])
     if over:
-        section(mctx("over the enumeration limit ({joint} > {limit})").format(
+        section(mctx("over the enumeration limit ({joint} > {limit}); "
+                     "determine the parameters simplest to determine until "
+                     "the product of the remaining candidate counts goes "
+                     "under the limit").format(
             joint=product, limit=ENUMERATION_LIMIT),
-            [f"{p}({v.count})" for p, v in settle])
+            _over_lines(settle))
         if any(isinstance(v, Enumerable) and v.position for _, v in settle):
             lines.append("  " + mctx(
                 "A Position parameter's candidates are the cells of the "
                 "frame its stored value implies, so its count follows the "
                 "frame the parse produces. A Box or Offset parameter's count "
                 "follows the largest height or width of the task's grids."))
-    section(mctx("determined"), done)
+    section(mctx("determined"), list(by_parameter(classes.done)))
+    if not isinstance(differing, frozenset):
+        section(mctx("the determination run gives no result, so whether "
+                     "these determination relations give the stored values "
+                     "is not known") + _make_run(differing),
+                list(by_parameter(classes.unknown)))
     section(mctx("the value is covered on this task's examples, so no "
                  "determination relation is needed"),
-            [covered_line(p) for p in covered])
+            _by_parameter(covered, covered_note, "{param}: {cases}"))
     if surviving and enumerated is not None:
         lines.append(mctx("{survived} of {tried} joint assignments of the "
                           "enumerated parameters reproduce every train "
@@ -478,7 +594,8 @@ def render_determination_plan(solver: Solver, result: PlanResult,
         lines.append(mctx("{count} joint assignment(s) whose run timed "
                           "out:").format(count=len(enumerated.timed_out)))
         lines += [
-            "  " + ", ".join(f"{n}={shown_of(n)(r)}" for n, r in a)
+            "  " + ", ".join(f"{_value_text(n)}={shown_of(n)(r)}"
+                             for n, r in a)
             + f": {' '.join(finding_lines(solver, t.finding))}"
             for a, t in enumerated.timed_out]
     if baseline is not None:
@@ -499,23 +616,45 @@ def render_determination_plan(solver: Solver, result: PlanResult,
 
 
 UNIQUE = mctx("{param}: unique = {shown}{mark}{scope}")
-UNIQUE_SET = mctx("{param}: unique as a set = {shown}{mark} (facts fit only "
-                  "together; {scope})")
+SET_SCOPE: Annotated[str, quotes(
+    "solver-file.md", "Params",
+    "Of a parameter whose value is a set of rows, a case stores one set.")] \
+    = mctx("its value is a set of rows, and a case stores one set; {scope}")
+UNIQUE_SET = mctx("{param}: unique as a set = {shown}{mark} ({set_scope})")
+STORED_SET = mctx("{param}: stored {shown} ({set_scope})")
+NOT_PINNED = mctx("the train pairs do not pin {what}")
+UNPINNED = mctx("{not_pinned}: single-row changes of it that give every "
+                "train output: {count}")
+UNCOMPARED = mctx("the cases that read it were not compared, since the time "
+                  "limit cut the sweep")
 REFUTES = mctx("test refutes {shown} — {note}")
 DETERMINED = mctx("the determination picks the stored value")
 UNDETERMINED = mctx("a determination from train alone could pick it")
 PASSING = mctx("{shown} reproduce the stored outputs on test too")
 UNJUDGED = mctx("{shown} did not run on test — the solver fails a test pair "
                 "at its stored assignment")
-IN_KIND = mctx("[{shown}] and stored are open values, differing in a nominal "
-               "argument")
-BELOW = mctx("[{shown}] fit and are smaller than stored")
+IN_KIND = mctx("{shown} differ from stored in a nominal argument")
+BELOW = mctx("{shown} fit and are smaller than stored")
 CASES = mctx("{param}: the cases admit different values")
-WHOLE_DOMAIN = mctx("{label} admit{s} the whole domain [{shown}], so {label} "
-                    "never read{s} {param} — move {param} under the marker "
-                    "of the cases that read it")
-UNEXERCISED = mctx("{label} admit{s} [{shown}], so the pairs do not exercise "
+SET_CASES = mctx("the cases differ in which single-row changes of the "
+                 "stored set give their train outputs")
+NEVER_READS = mctx("{label} never read{s} {param} — move {param} under the "
+                   "marker of the cases that read it")
+WHOLE_DOMAIN = mctx("{label} admit{s} the whole domain {shown}, so "
+                    "{never_reads}")
+UNPINNED_UNDER = mctx("{label} admit{s} the whole domain {shown}, so "
+                      "{not_pinned}")
+UNEXERCISED = mctx("{label} admit{s} {shown}, so the pairs do not exercise "
                    "{param} under {label}")
+COMMON = mctx("{shown} serve{s} every case, so {param} needs no case column")
+NO_COMMON: Annotated[str, quotes(
+    "solver-file.md", "Params",
+    "**Case column.** Where the cases that read a relation in Params store "
+    "different values of it, the relation takes a case column in the form "
+    "of `out`'s, and each fact's case column is the `Choice` value of the "
+    "case that stores the fact.")] \
+    = mctx("no value is admitted by every case, so each group stores what "
+           "it admits under a case column")
 UNMARKED = mctx("line {line}: {params} {verb} under the marker `{marker}`, "
                 "which lists no case; see "
                 "[Cases](docs/handbook/solver-file.md#cases)")
@@ -585,111 +724,255 @@ def _timed_clauses[V](solver: Solver, timed: Sequence[tuple[V, TimedOut]],
         for v, t in timed]
 
 
+def _swept(solver: Solver, r: ValueSweep | SetSweep | Skipped) -> str:
+    """The parameter a sweep line is about: its name, and for a parameter
+    that stores a value per case, the case whose value the line gives."""
+    if r.case is None:
+        return r.parameter
+    return under_case(r.parameter, case_name(solver, r.case))
+
+
+def _scope_clause(r: ValueSweep | SetSweep) -> str | None:
+    """How many of a sweep's candidates ran, the values of a value sweep
+    or the single-row changes of a set sweep: those nearest the stored
+    value (`Near`), or those the time limit left (`Cut`); None where every
+    candidate ran."""
+    match r.scope:
+        case None:
+            return None
+        case Near(swept=ran, whole=whole):
+            cut = ""
+        case Cut(ran=ran, whole=whole):
+            cut = mctx("cut by the time limit; ")
+    swept = mctx("values") if isinstance(r, ValueSweep) \
+        else mctx("single-row changes")
+    return cut + mctx("{ran} of {whole} {swept} swept").format(
+        ran=ran, whole=whole, swept=swept)
+
+
+def _also_admits(stored: Sequence[Row], extras: Sequence[Row],
+                 types: Sequence[str], lib: Lib) -> str:
+    """A parameter's stored rows and the values beyond them that the
+    train pairs also admit."""
+    return mctx("stored {stored}; {not_pinned}: they also admit {shown}"
+                ).format(stored=rows_text(stored, types, lib),
+                         not_pinned=NOT_PINNED.format(what=mctx("the value")),
+                         shown=rows_list(extras, types, lib))
+
+
 def _value_line(solver: Solver, r: ValueSweep, undetermined: bool) -> str:
     types, lib = r.types, solver.lib
-    match r.scope:
-        case Near(swept=swept, whole=whole):
-            scope = " " + mctx("(swept single-column changes; {swept} of "
-                               "{whole} values)").format(swept=swept,
-                                                         whole=whole)
-        case Cut(ran=ran, whole=whole):
-            scope = " " + mctx("(cut by the time limit; {run} of {whole} "
-                               "values)").format(run=ran, whole=whole)
-        case None:
-            scope = ""
+    clause = _scope_clause(r)
+    scope = "" if clause is None else f" ({clause})"
 
     def one(v: Row) -> str:
         return row_text(v, types, lib)
 
     def shown(vs: Sequence[Row]) -> str:
-        return ", ".join(one(v) for v in vs)
+        return rows_text(vs, types, lib)
 
-    gap_parts = (_gap_clauses(r.gaps, lambda vs: f"[{shown(vs)}]")
+    def listed(vs: Sequence[Row]) -> str:
+        return rows_list(vs, types, lib)
+
+    gap_parts = (_gap_clauses(r.gaps, listed)
                  + _timed_clauses(solver, [*r.timed, *r.extras.timed], one))
     if r.admits_stored_alone():
         mark = " ✓" if r.settles() else ""
         if len(set(r.stored)) == 1:
-            head = UNIQUE.format(param=r.parameter, shown=shown(r.stored),
+            head = UNIQUE.format(param=_swept(solver, r), shown=shown(r.stored),
                                  mark=mark, scope=scope)
         else:
-            head = mctx("{param}: set of {count} = [{shown}]{mark}{scope}"
-                        ).format(param=r.parameter, count=len(set(r.stored)),
-                                 shown=shown(r.stored), mark=mark,
+            head = mctx("{param}: set of {count} = {shown}{mark}{scope}"
+                        ).format(param=_swept(solver, r), count=len(set(r.stored)),
+                                 shown=listed(r.stored), mark=mark,
                                  scope=scope)
         return "; ".join([head] + gap_parts)
-    parts = [mctx("stored {shown}").format(shown=shown(r.stored)),
-             mctx("train also admits [{shown}]").format(
-                 shown=shown(r.extras.values)),
-             *_test_clauses(r.extras, undetermined,
-                            lambda vs: f"[{shown(vs)}]")]
+    parts = [_also_admits(r.stored, r.extras.values, types, lib),
+             *_test_clauses(r.extras, undetermined, listed)]
     passing = r.extras.group(OnTest.PASSED)
     if kind := [e for e in passing
                 if not any(_peer(e, s, types) for s in r.stored)]:
-        parts.append(IN_KIND.format(shown=shown(kind)))
+        parts.append(IN_KIND.format(shown=listed(kind)))
     if below := [e for e in passing
                  if any(_below(e, s, types) for s in r.stored)]:
-        parts.append(BELOW.format(shown=shown(below)))
-    return f"{r.parameter}: " + "; ".join(parts + gap_parts) + scope
+        parts.append(BELOW.format(shown=listed(below)))
+    return f"{_swept(solver, r)}: " + "; ".join(parts + gap_parts) + scope
 
 
-def _set_line(solver: Solver, r: SetSweep, undetermined: bool) -> str:
+def _set_text(v: SetValue, types: Sequence[str], lib: Lib) -> str:
+    """A set value: its rows (`row_text`) in order (`set_rows`), in
+    braces."""
+    return "{" + rows_text(set_rows(v), types, lib) + "}"
+
+
+def _set_line(solver: Solver, r: SetSweep) -> str:
     types, lib = r.types, solver.lib
-    match r.scope:
-        case Near(swept=swept, whole=whole):
-            scope = mctx("swept single-row changes; {swept} of {whole} "
-                         "sets").format(swept=swept, whole=whole)
-        case Cut(ran=ran, whole=whole):
-            scope = mctx("cut by the time limit; {run} of {whole} "
-                         "sets").format(run=ran, whole=whole)
-        case None:
-            scope = mctx("swept whole")
+    scope = _scope_clause(r) or mctx("every single-row change swept")
 
     def one(v: frozenset[Row]) -> str:
-        return "{" + ", ".join(row_text(x, types, lib)
-                               for x in sorted(v, key=row_key)) + "}"
+        return _set_text(v, types, lib)
 
     def many(vs: Sequence[frozenset[Row]]) -> str:
         return "[" + ", ".join(one(v) for v in vs) + "]"
 
     shown_s = one(frozenset(r.stored))
     gap_parts = (_gap_clauses(r.gaps, many)
-                 + _timed_clauses(solver, [*r.timed, *r.extras.timed], one))
-    if r.admits_stored_alone():
+                 + _timed_clauses(solver, r.timed, one))
+    set_scope = SET_SCOPE.format(scope=scope)
+    if r.admits_stored_alone() and not r.cases_differ:
         mark = " ✓" if r.settles() else ""
-        return "; ".join([UNIQUE_SET.format(param=r.parameter, shown=shown_s,
-                                            mark=mark, scope=scope)]
-                         + gap_parts)
-    parts = [mctx("stored {shown} ({scope})").format(shown=shown_s,
-                                                     scope=scope),
-             mctx("train also admits sets {shown}").format(
-                 shown=many(r.extras.values)),
-             *_test_clauses(r.extras, undetermined, many)]
-    return f"{r.parameter}: " + "; ".join(parts + gap_parts)
+        return "; ".join([UNIQUE_SET.format(
+            param=_swept(solver, r), shown=shown_s, mark=mark,
+            set_scope=set_scope)] + gap_parts)
+    head = STORED_SET.format(param=_swept(solver, r), shown=shown_s,
+                             set_scope=set_scope)
+    match r.per_case:
+        case SetCases():
+            told = _set_cases_parts(solver, r.parameter, r.per_case)
+        case Uncompared():
+            told = [UNCOMPARED]
+        case None:
+            told = [UNPINNED.format(
+                not_pinned=NOT_PINNED.format(what=mctx("the set")),
+                count=r.unpinned)]
+    return "; ".join([head, *told] + gap_parts)
 
 
-def _cases_line(solver: Solver, r: CaseSets) -> str:
-    groups: dict[frozenset[Row], list[Case]] = {}
-    for c, values in r.per_case:
-        groups.setdefault(values, []).append(c)
-    every = [c for c, _v in r.per_case]
-    named = {v: cover(solver, cs, every) for v, cs in groups.items()}
-    order = sorted(groups, key=lambda v: (len(v), sorted(named[v])))
-    least = order[0]
+@dataclass(frozen=True)
+class _CaseGroup:
+    """The cases of a per-case line that share a key: the fewest names
+    that cover them (`cover`), as printed, and the verb ending that
+    agrees with those names."""
+
+    cases: tuple[Case, ...]
+    names: tuple[str, ...]
+
+    @property
+    def label(self) -> str:
+        return names_text(self.names)
+
+    @property
+    def s(self) -> str:
+        return verb_s(len(self.names))
+
+
+def _case_groups[K](solver: Solver, keyed: Sequence[tuple[Case, K]]
+                    ) -> dict[K, _CaseGroup]:
+    """The cases of `keyed` grouped by their key, each group named by its
+    cover among all of them."""
+    groups: dict[K, list[Case]] = {}
+    for c, k in keyed:
+        groups.setdefault(k, []).append(c)
+    every = [c for c, _k in keyed]
+    return {k: _CaseGroup(tuple(cs), tuple(cover(solver, cs, every)))
+            for k, cs in groups.items()}
+
+
+def _group_order[K](groups: dict[K, _CaseGroup], size: Callable[[K], int]
+                    ) -> list[K]:
+    """The keys of `groups` in the order their parts print: by `size`,
+    and then by the names of the group."""
+    return sorted(groups, key=lambda k: (size(k), sorted(groups[k].names)))
+
+
+def _sorted_list(values: Iterable[Row], r: CaseSets[Row],
+                 solver: Solver) -> str:
+    """A set of a parameter's rows, in order (`row_key`), as a list
+    (`rows_list`)."""
+    return rows_list(sorted(values, key=row_key), r.types, solver.lib)
+
+
+def _cases_line(solver: Solver, r: CaseSets[Row]) -> str:
+    """Each group of cases with the values it admits, and then `COMMON` or
+    `NO_COMMON`. Where some value is common, a group that admits more
+    than the common values, short of the whole domain, is one the pairs
+    do not exercise (`UNEXERCISED`)."""
+    groups = _case_groups(solver, r.per_case)
+    common = r.common
     parts = [CASES.format(param=r.parameter)]
-    for values in order:
-        label = names_text(named[values])
-        s = "" if len(named[values]) > 1 else "s"
-        shown = ", ".join(row_text(v, r.types, solver.lib)
-                          for v in sorted(values, key=row_key))
-        if values == r.domain:
-            parts.append(WHOLE_DOMAIN.format(label=label, s=s, shown=shown,
-                                             param=r.parameter))
-        elif values != least:
+    for values in _group_order(groups, len):
+        g = groups[values]
+        label, s = g.label, g.s
+        shown = _sorted_list(values, r, solver)
+        if values == r.domain and set(g.cases) <= r.never_read:
+            parts.append(WHOLE_DOMAIN.format(
+                label=label, s=s, shown=shown,
+                never_reads=NEVER_READS.format(label=label, s=s,
+                                               param=r.parameter)))
+        elif common and values == r.domain:
+            parts.append(UNPINNED_UNDER.format(
+                label=label, s=s, shown=shown,
+                not_pinned=NOT_PINNED.format(what=mctx(
+                    "{param} under {label}").format(param=r.parameter,
+                                                    label=label))))
+        elif common and values != common:
             parts.append(UNEXERCISED.format(label=label, s=s, shown=shown,
                                             param=r.parameter))
         else:
-            parts.append(mctx("{label} admit{s} [{shown}]").format(
+            parts.append(mctx("{label} admit{s} {shown}").format(
                 label=label, s=s, shown=shown))
+    if common:
+        parts.append(COMMON.format(shown=_sorted_list(common, r, solver),
+                                   s=verb_s(len(common)), param=r.parameter))
+    else:
+        parts.append(NO_COMMON)
+    return "; ".join(parts)
+
+
+def _set_cases_parts(solver: Solver, parameter: str, r: SetCases
+                     ) -> list[str]:
+    """Per group of cases that admit as many single-row changes of the
+    stored set, that count, the groups by count and then by name."""
+    groups = _case_groups(
+        solver, [(c, (count, c in r.unread)) for c, count in r.per_case])
+    parts = [SET_CASES]
+    for key in _group_order(groups, lambda k: k[0]):
+        (count, unread), g = key, groups[key]
+        part = mctx("under {label}, single-row changes that give the train "
+                    "outputs: {count} of {swept}").format(
+                        label=g.label, count=count, swept=r.swept)
+        if unread:
+            part += mctx(", so {never_reads}").format(
+                never_reads=NEVER_READS.format(label=g.label, s=g.s,
+                                               param=parameter))
+        parts.append(part)
+    return parts
+
+
+def giving_text(solver: Solver, g: GivingValues) -> str:
+    """The rows a parameter holds at a case that gives no output on a
+    train pair, those under which alone the case gives its train outputs,
+    the guidance to keep only those at the case unless the parameter's
+    value is a set of rows, a judgment the reader makes, and each row
+    whose run failed."""
+    def one(v: Row) -> str:
+        return row_text(v, g.types, solver.lib)
+
+    def listed(vs: Sequence[Row]) -> str:
+        return rows_list(vs, g.types, solver.lib)
+
+    case = case_name(solver, g.case)
+    parts = [mctx("{param} holds the rows {held} at {case}").format(
+        param=g.parameter, held=listed(g.held), case=case)]
+    match g.giving:
+        case (only,):
+            parts.append(mctx(
+                "{case} gives its train outputs under {giving} alone; "
+                "unless the value of {param} is a set of rows, keep only "
+                "that row at {case}").format(
+                    giving=one(only), case=case, param=g.parameter))
+        case ():
+            parts.append(mctx(
+                "{case} gives its train outputs under no one of the rows "
+                "that ran").format(case=case))
+        case _:
+            parts.append(mctx(
+                "{case} gives its train outputs under each of {giving} "
+                "alone; unless the value of {param} is a set of rows, keep "
+                "only those rows at {case}").format(
+                    giving=listed(g.giving), case=case, param=g.parameter))
+    parts += [run_failed(f, mctx("run at {value}").format(value=one(v)))
+              for v, f in g.failed]
     return "; ".join(parts)
 
 
@@ -704,40 +987,44 @@ def _skip_text(solver: Solver, r: Skipped) -> str:
         case NotSwept.TIME_LIMIT:
             return "time limit"
         case NotSwept.FAILS_TRAIN:
-            return "stored value fails train"
+            return "; ".join(["stored value fails train",
+                              *(giving_text(solver, g) for g in r.giving)])
         case RunFailed(failure=failure):
-            return mctx("the run failed: {error}").format(
-                error=failure_text(failure))
+            return run_failed(failure)
+        case NoCases(failure=failure):
+            return cases_run_failed(failure)
         case TimedOut(finding=finding):
             return " ".join(finding_lines(solver, finding))
 
 
-def sweep_line(solver: Solver, entry: SweepEntry,
-               determined: frozenset[str]) -> str:
-    """One entry's line: a parameter's, ` ✓` where the sweep settles it,
-    or a marker's that lists no case."""
+def sweep_lines(solver: Solver, entry: SweepEntry,
+                determined: frozenset[str]) -> list[str]:
+    """One entry's lines: a parameter's, ` ✓` where the sweep settles it,
+    and for a value sweep whose bases admit different values, the line of
+    each base's values under it; or a marker's that lists no case."""
     match entry:
-        case ValueSweep():
-            return _value_line(solver, entry,
-                               entry.parameter not in determined)
+        case ValueSweep(per_case=per_case):
+            return [_value_line(solver, entry,
+                                entry.parameter not in determined),
+                    *([] if per_case is None
+                      else [_cases_line(solver, per_case)])]
         case SetSweep():
-            return _set_line(solver, entry, entry.parameter not in determined)
-        case CaseSets():
-            return _cases_line(solver, entry)
+            return [_set_line(solver, entry)]
         case Skipped():
-            return mctx("{param}: not swept — {detail}").format(
-                param=entry.parameter, detail=_skip_text(solver, entry))
+            return [mctx("{param}: not swept — {detail}").format(
+                param=_swept(solver, entry),
+                detail=_skip_text(solver, entry))]
         case NoCaseMarker(marker=m, parameters=params):
-            return UNMARKED.format(
+            return [UNMARKED.format(
                 line=m.line, marker=marker_text(m),
                 params=", ".join(f"`{p}`" for p in params),
-                verb="are" if len(params) > 1 else "is")
+                verb="are" if len(params) > 1 else "is")]
 
 
 def render_sweep(solver: Solver, report: SweepReport) -> list[str]:
-    """One line per entry, in declaration order, then the time limit and
-    the seconds the sweep took."""
-    return [sweep_line(solver, e, report.determined)
-            for e in report.entries] + [
+    """Each entry's lines (`sweep_lines`), in declaration order, then the
+    time limit and the seconds the sweep took."""
+    return [ln for e in report.entries
+            for ln in sweep_lines(solver, e, report.determined)] + [
         mctx("time limit {limit:.0f}s; elapsed {elapsed:.0f}s").format(
             limit=report.time_limit, elapsed=report.elapsed)]

@@ -1,5 +1,5 @@
-//! Components with a keyed cell-set input: the caller feeds the cells of a set
-//! under each key, and the component reports what holds of that set.
+//! Components with a keyed cell-set input: the caller populates the cells of a
+//! set under each key, and the component reports what holds of that set.
 
 /// 2D decomposition of the frame from a tile count on each axis. The counts
 /// may differ between the axes.

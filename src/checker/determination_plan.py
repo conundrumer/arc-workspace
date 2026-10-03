@@ -3,7 +3,7 @@ from the proposer probe."""
 
 import itertools
 import math
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -15,10 +15,10 @@ from checker.domains import (
     enumerable,
     param_domains,
 )
-from checker.drop_one import stored_facts
 from checker.finding import AtLine
 from checker.lint.bans import check_params_data
-from checker.runs import Runs
+from checker.runs import BaseOrder, NoCases, NoTask, Runs, base_order
+from checker.sweep import beyond_stored
 from checker.variants import (
     Fails,
     TimedOut,
@@ -28,15 +28,28 @@ from checker.variants import (
 )
 from engine import Program, Row, RunFailure, Value
 from engine.quotes import quotes
-from solver.model import Solver, proposers_program, resolved_types
+from solver.model import (
+    Base,
+    Case,
+    base_case,
+    Solver,
+    proposers_program,
+)
 from solver.solve import (
+    stored_facts,
+    Determined,
     FixParam,
+    NoDetermine,
     Proposals,
     TaskSection,
     at_once,
+    parameter_reading,
+    per_case,
     probe,
+    by_base,
     row_key,
     variation,
+    with_rows_at,
 )
 from solver.vocabulary import IDENT
 
@@ -51,10 +64,11 @@ class KeyedTable:
     """A relation keyed by a multiset of members, held as two tables
     joined by an id: `child` holds `(id, member fields)`, `parent` holds
     `(id, out fields)` (patterns.md, "Set-keyed relations via
-    parent/child tables")."""
+    parent/child tables"); for parameters that store a value per case,
+    their values at one case."""
 
-    child: str
-    parent: str
+    child: "PlanValue"
+    parent: "PlanValue"
 
 
 class DomainName(StrEnum):
@@ -65,7 +79,69 @@ class DomainName(StrEnum):
     POSITION = "position-domain"
 
 
-type Subject = str | KeyedTable
+@dataclass(frozen=True)
+class AtCase:
+    """The value of a parameter that stores a value per case
+    (`solver.solve.PerCase`) at `base`; `order` is where the base stands
+    among the bases (`checker.runs.base_order`)."""
+
+    parameter: str
+    base: Base
+    order: BaseOrder
+
+    @property
+    def name(self) -> str:
+        """The name of the base case of `base` (`solver.names.name`)."""
+        return self.order.name
+
+    @property
+    def case(self) -> Case:
+        """The base case of `base` (`solver.model.base_case`)."""
+        return base_case(self.base)
+
+
+type PlanValue = str | AtCase
+"""A parameter's one value, by the parameter's name, or its value at a
+case."""
+
+type Subject = PlanValue | KeyedTable
+
+
+def parameter_of(v: PlanValue) -> str:
+    """The parameter a value is of."""
+    return v if isinstance(v, str) else v.parameter
+
+
+def by_parameter(values: Iterable[PlanValue]
+                 ) -> dict[str, tuple[AtCase, ...] | None]:
+    """Each parameter among `values`, in order of its first value, with
+    its values at cases where it stores a value per case; None for a
+    parameter's one value."""
+    at: dict[str, list[AtCase] | None] = {}
+    for v in values:
+        if isinstance(v, str):
+            at[v] = None
+        else:
+            held = at.setdefault(v.parameter, [])
+            assert held is not None
+            held.append(v)
+    return {p: None if vs is None else tuple(vs) for p, vs in at.items()}
+
+
+def at_case(solver: Solver, parameter: str, base: Base) -> AtCase:
+    """The value of `parameter`, which stores a value per case, at
+    `base`."""
+    return AtCase(parameter, base, base_order(solver, base))
+
+
+def value_order(v: PlanValue) -> tuple[str, BaseOrder | None]:
+    """The order values are listed in: by parameter, and a parameter's
+    values at its cases in the order of the bases
+    (`checker.runs.base_order`). A parameter's values are all its one
+    value or all values at cases."""
+    if isinstance(v, str):
+        return v, None
+    return v.parameter, v.order
 
 
 @dataclass(frozen=True)
@@ -148,12 +224,18 @@ class ProbeResult:
 
 @dataclass(frozen=True)
 class Settled:
-    """One enumerated parameter's values in the joint enumeration: the
-    values an assignment that reproduces every train pair holds, and each
-    other value only an assignment whose run gave no result holds."""
+    """One enumerated parameter's values in the joint enumeration: its
+    stored rows, the values an assignment that reproduces every train pair
+    holds, and each other value only an assignment whose run gave no result
+    holds."""
 
+    stored: tuple[Row, ...]
     surviving: tuple[Row, ...]
     unjudged: tuple[Row, ...]
+
+    def extras(self) -> list[Row]:
+        """The surviving values beyond the stored rows (`beyond_stored`)."""
+        return beyond_stored(self.surviving, self.stored)
 
 
 @dataclass(frozen=True)
@@ -165,8 +247,8 @@ class Joint:
 
     tried: int
     survived: int
-    values: tuple[tuple[str, Settled], ...]
-    timed_out: tuple[tuple[tuple[tuple[str, Row], ...], TimedOut], ...]
+    values: tuple[tuple[PlanValue, Settled], ...]
+    timed_out: tuple[tuple[tuple[tuple[PlanValue, Row], ...], TimedOut], ...]
 
 
 @dataclass(frozen=True)
@@ -179,7 +261,10 @@ class Plan:
     results: tuple[ProbeResult, ...]
     embedded: tuple[str, ...]
     determined: frozenset[str]
-    types: tuple[tuple[str, tuple[str, ...]], ...]
+    differing: frozenset[PlanValue] | RunFailure
+    """The values the determination run gives other than as stored
+    (`_differing`); the run's failure where it gives no result."""
+    types: tuple[tuple[PlanValue, tuple[str, ...]], ...]
     joint: Joint | TimedOut | None
 
 
@@ -190,7 +275,7 @@ class ProbeFails:
     failure: RunFailure
 
 
-type PlanResult = Plan | ProbeFails
+type PlanResult = Plan | ProbeFails | NoCases
 
 
 def _column_verdict(cand: set[Row], stored: set[Row], domain: int
@@ -218,19 +303,23 @@ def _table_verdict(cand: set[Row], stored: set[Row]) -> Verdict:
 
 
 def _keyed_tables(solver: Solver,
-                  fact: dict[str, tuple[tuple[str, ...], set[Row]]]
+                  fact: dict[PlanValue, tuple[tuple[str, ...], set[Row]]]
                   ) -> list[tuple[KeyedTable, tuple[str, ...], set[Row]]]:
-    """Each set-keyed relation among the fact parameters: two parameters
-    whose first column is an `Ident`, which hold one set of ids no other
-    parameter holds, the parent one fact per id and the child more than
-    one for some id. A member's place is left out of the row where every
-    id's members stand at the same places and hold other fields."""
-    by_ids: dict[frozenset[Value], list[str]] = {}
+    """Each set-keyed relation among the fact parameters: two values
+    whose first column is an `Ident`, each a parameter's one value or its
+    value at one case (`PlanValue`), which hold one set of ids no other
+    value at that case holds, the parent one fact per id and the child
+    more than one for some id. A member's place is left out of the row
+    where every id's members stand at the same places and hold other
+    fields."""
+    by_ids: dict[tuple[Case | None, frozenset[Value]], list[PlanValue]] = {}
     for p, (types, stored) in fact.items():
         if types and types[0] == IDENT:
-            by_ids.setdefault(frozenset(r[0] for r in stored), []).append(p)
+            case = None if isinstance(p, str) else p.case
+            by_ids.setdefault((case, frozenset(r[0] for r in stored)),
+                              []).append(p)
     out: list[tuple[KeyedTable, tuple[str, ...], set[Row]]] = []
-    for ids, params in by_ids.items():
+    for (_case, ids), params in by_ids.items():
         if len(params) != 2:
             continue
         parents = [p for p in params if len(fact[p][1]) == len(ids)]
@@ -279,24 +368,45 @@ def covering(result: ProbeResult) -> tuple[str, Covering] | None:
     return None if best is None else (best[1], best[2])
 
 
-def classify(results: Sequence[ProbeResult], determined: frozenset[str]
-             ) -> tuple[list[str], list[tuple[str, Candidates]], list[str],
-                        list[str]]:
-    """(determine, settle, done, exact): a parameter is exact when a
-    proposer reads it exactly, settles when a candidate set covers it,
-    needs a determination relation when neither, and is done when a
-    determination relation already holds it. A keyed table a proposer
-    reads exactly makes both its tables exact."""
-    determine: list[str] = []
-    settle: list[tuple[str, Candidates]] = []
-    done: list[str] = []
-    exact: list[str] = []
+@dataclass(frozen=True)
+class Classes:
+    """The values of a plan by what each needs (`classify`)."""
+
+    determine: list[PlanValue]
+    settle: list[tuple[PlanValue, Candidates]]
+    done: list[PlanValue]
+    exact: list[PlanValue]
+    unknown: list[PlanValue]
+
+
+@quotes("solver-file.md", "Determination",
+        "The determination relation of a parameter with a case column gives "
+        "the rows of every case.")
+def classify(results: Sequence[ProbeResult], determined: frozenset[str],
+             differing: frozenset[PlanValue] | RunFailure) -> Classes:
+    """A value is exact when a proposer reads it exactly, settles when a
+    candidate set covers it, needs a determination relation when neither,
+    and is done when a determination relation gives it. A value of a
+    determined parameter that its relation gives other than as stored
+    (`differing`) needs the relation, a value the parameter does not store
+    among them; where the determination run gave no result, a value of a
+    determined parameter is unknown. A keyed table a proposer reads
+    exactly makes both its tables exact. A parameter has one determination
+    relation, which gives the rows of every case: where one of its values
+    needs it, each of its values needs it."""
+    differs = differing if isinstance(differing, frozenset) else None
+    determine: list[PlanValue] = []
+    settle: list[tuple[PlanValue, Candidates]] = []
+    done: list[PlanValue] = []
+    exact: list[PlanValue] = []
+    unknown: list[PlanValue] = []
     for r in results:
         p = r.subject
         if isinstance(p, KeyedTable):
             continue
-        if p in determined:
-            done.append(p)
+        if parameter_of(p) in determined:
+            (unknown if differs is None else determine if p in differs
+             else done).append(p)
             continue
         cov = covering(r)
         if cov is None:
@@ -313,8 +423,18 @@ def classify(results: Sequence[ProbeResult], determined: frozenset[str]
                 if part in determine:
                     determine.remove(part)
                     exact.append(part)
-    settle.sort(key=lambda e: (-e[1].count, e[0]))
-    return sorted(determine), settle, sorted(done), sorted(exact)
+    determine += [v for v in differs or () if v not in determine]
+    whole = by_parameter(determine)
+    determine += [v for v in (*exact, *(v for v, _c in settle), *done)
+                  if parameter_of(v) in whole]
+    exact = [v for v in exact if v not in determine]
+    settle = [e for e in settle if e[0] not in determine]
+    done = [v for v in done if v not in determine]
+    settle.sort(key=lambda e: (-e[1].count, value_order(e[0])))
+    return Classes(sorted(determine, key=value_order), settle,
+                   sorted(done, key=value_order),
+                   sorted(exact, key=value_order),
+                   sorted(unknown, key=value_order))
 
 
 @quotes("procedure.md", "Determine",
@@ -326,8 +446,9 @@ def survey_determination_plan(solver: Solver, runs: Runs) -> PlanResult:
     type, and a single-fact enumerable parameter's own domain; then, where
     the parameters that their own domain settles have a joint product within
     the enumeration limit, the joint assignments that reproduce every train
-    pair. A solver with no task file raises `ValueError`; the command
-    refuses it first."""
+    pair. A parameter that stores a value per case gives a subject per
+    case, its value there (`AtCase`). A solver with no task file raises
+    `ValueError`; the command refuses it first."""
     engine, limits = runs.engine, runs.limits
     task = solver.given_task
     proposals = probe(engine, task, limits)
@@ -338,19 +459,21 @@ def survey_determination_plan(solver: Solver, runs: Runs) -> PlanResult:
         raise ValueError("the proposers program the probe ran does not parse")
     known = {name: p.types for name, p in proposers(program).items()}
 
-    def resolved(types: tuple[str, ...]) -> tuple[str, ...]:
-        return resolved_types(solver.program, types)
-
     lib = solver.lib
 
-    fact: dict[str, tuple[tuple[str, ...], set[Row]]] = {}
+    fact: dict[PlanValue, tuple[tuple[str, ...], set[Row]]] = {}
+    bases = runs.bases
     for p in solver.params.parameters:
-        types = tuple(c.type for c in p.columns)
-        if not types:
+        pc = parameter_reading(solver, p.name)
+        if not pc.types:
             continue
-        rows = stored_facts(solver, runs, p)
-        if rows:
-            fact[p.name] = (types, set(rows))
+        got = by_base(solver, pc, stored_facts(runs.engine, solver, p), bases)
+        if not isinstance(got, list):
+            return NoCases(got)
+        for base, at in got:
+            if at:
+                key = p.name if base is None else at_case(solver, p.name, base)
+                fact[key] = (pc.value_types, set(pc.values(at)))
     results: list[ProbeResult] = []
     for name, (types, stored) in fact.items():
         if not enumerable(types, lib):
@@ -359,7 +482,7 @@ def survey_determination_plan(solver: Solver, runs: Runs) -> PlanResult:
         domains = param_domains(types, sorted(stored, key=row_key), task, lib)
         verdicts: list[tuple[str, Verdict]] = []
         for prop in sorted(proposals.values):
-            if known[prop] != resolved(types):
+            if known[prop] != types:
                 continue
             cand = set(proposals.values[prop])
             verdicts.append((prop, _column_verdict(cand, stored,
@@ -376,17 +499,52 @@ def survey_determination_plan(solver: Solver, runs: Runs) -> PlanResult:
     for table, types, rows in _keyed_tables(solver, fact):
         tv = tuple((prop, _table_verdict(set(proposals.values[prop]), rows))
                    for prop in sorted(proposals.values)
-                   if known.get(prop) == resolved(types))
+                   if known.get(prop) == types)
         if tv:
             results.append(ProbeResult(table, tv, None))
 
     embedded = sorted(_embedded(solver, runs))
     determined = frozenset(p.name for p in solver.params.parameters
                            if p.determined)
+    differing = _differing(solver, runs, determined)
+    if isinstance(differing, NoCases):
+        return differing
     all_types = tuple((n, t) for n, (t, _) in fact.items())
-    joint = _joint(solver, runs, results, determined, fact)
-    return Plan(tuple(results), tuple(embedded), determined, all_types,
-                joint)
+    joint = _joint(solver, runs, results, determined, differing, fact)
+    return Plan(tuple(results), tuple(embedded), determined, differing,
+                all_types, joint)
+
+
+def _differing(solver: Solver, runs: Runs, determined: frozenset[str]
+               ) -> frozenset[PlanValue] | RunFailure | NoCases:
+    """The values of the determined parameters that the determination
+    run gives other than as stored: a parameter's one value, or its value
+    at each base where a row of its diff holds
+    (`checker.runs.Runs.differing_bases`), a base it stores no rows at
+    among them; the run's failure where it gives no result, and the
+    failure of the run that enumerates the solver's cases, which those
+    bases are read from, where that run gives none. Raises
+    `ValueError` where a determined parameter stands and the run reports
+    no `Determine` comp or no task file, which the parameter and the
+    command's refusal rule out."""
+    if not determined:
+        return frozenset()
+    got = runs.determined
+    if isinstance(got, (NoDetermine, NoTask)):
+        raise ValueError(f"{solver.stem}: a determined parameter and no "
+                         "determination run")
+    if not isinstance(got, Determined):
+        return got
+    out: set[PlanValue] = set()
+    for d in got.diffs:
+        bases = runs.differing_bases(d)
+        if bases is None:
+            out.add(d.parameter)
+            continue
+        if not isinstance(bases, tuple):
+            return NoCases(bases)
+        out |= {at_case(solver, d.parameter, b) for b in bases}
+    return frozenset(out)
 
 
 def _embedded(solver: Solver, runs: Runs) -> set[str]:
@@ -402,7 +560,8 @@ def _embedded(solver: Solver, runs: Runs) -> set[str]:
 
 def _joint(solver: Solver, runs: Runs, results: Sequence[ProbeResult],
            determined: frozenset[str],
-           fact: dict[str, tuple[tuple[str, ...], set[Row]]]
+           differing: frozenset[PlanValue] | RunFailure,
+           fact: dict[PlanValue, tuple[tuple[str, ...], set[Row]]]
            ) -> Joint | TimedOut | None:
     """The parameters their own domain settles, enumerated jointly, as a
     produce run does; a parameter a proposer narrows keeps its stored
@@ -411,20 +570,22 @@ def _joint(solver: Solver, runs: Runs, results: Sequence[ProbeResult],
     engine, limits = runs.engine, runs.limits
     task = solver.task
     assert task is not None
-    _d, settle, _done, _exact = classify(results, determined)
+    settle = classify(results, determined, differing).settle
     if not settle or math.prod(v.count for _, v in settle) \
             > ENUMERATION_LIMIT:
         return None
     own = {p for p, v in settle if isinstance(v, Enumerable)}
-    enumerated: list[tuple[str, list[Row]]] = []
-    for p in solver.params.parameters:
-        if p.name not in own:
+    enumerated: list[tuple[PlanValue, list[Row]]] = []
+    stored_rows: dict[PlanValue, tuple[Row, ...]] = {}
+    for key in fact:
+        if key not in own:
             continue
-        types, stored = fact[p.name]
+        types, stored = fact[key]
         srt = sorted(stored, key=row_key)
+        stored_rows[key] = tuple(srt)
         domains = param_domains(types, srt, task, solver.lib)
         cands = candidate_rows(domains, srt)
-        enumerated.append((p.name, cands))
+        enumerated.append((key, cands))
     if not enumerated:
         return None
     assignments = list(itertools.product(*(c for _, c in enumerated)))
@@ -440,8 +601,10 @@ def _joint(solver: Solver, runs: Runs, results: Sequence[ProbeResult],
 
     def test(a: tuple[Row, ...]) -> bool | TimedOut:
         s = solver
-        for (name, _c), row in zip(enumerated, a, strict=True):
-            s = with_program(s, variation(engine, s, FixParam(name, (row,))))
+        for name, rows in _written(solver, runs, [
+                (key, row) for (key, _c), row
+                in zip(enumerated, a, strict=True)]).items():
+            s = with_program(s, variation(engine, s, FixParam(name, rows)))
         return same_profile(engine, s, runs.cases, train, limits, ref)
 
     got = at_once(test, assignments)
@@ -449,10 +612,11 @@ def _joint(solver: Solver, runs: Runs, results: Sequence[ProbeResult],
                  if ok is True]
     timed = [(a, ok) for a, ok in zip(assignments, got, strict=True)
              if isinstance(ok, TimedOut)]
-    values: list[tuple[str, Settled]] = []
+    values: list[tuple[PlanValue, Settled]] = []
     for i, (name, _c) in enumerate(enumerated):
         kept = {a[i] for a in surviving}
         values.append((name, Settled(
+            stored_rows[name],
             tuple(sorted(kept, key=row_key)),
             tuple(sorted({a[i] for a, _ in timed} - kept, key=row_key)))))
     return Joint(len(assignments) - len(timed), len(surviving),
@@ -460,3 +624,23 @@ def _joint(solver: Solver, runs: Runs, results: Sequence[ProbeResult],
                  tuple((tuple((n, r) for (n, _c), r
                               in zip(enumerated, a, strict=True)), t)
                        for a, t in timed))
+
+
+def _written(solver: Solver, runs: Runs, values: Sequence[tuple[PlanValue, Row]]
+             ) -> dict[str, tuple[Row, ...]]:
+    """The rows each parameter holds under an assignment of `values`: a
+    parameter's one value as its one row, and its values at cases written
+    into its stored rows, each at its case's base (`with_rows_at`)."""
+    out: dict[str, tuple[Row, ...]] = {}
+    for key, row in values:
+        if isinstance(key, str):
+            out[key] = (row,)
+            continue
+        pc = per_case(solver, key.parameter)
+        p = solver.params.parameter(key.parameter)
+        assert pc is not None and p is not None
+        held = out.get(key.parameter,
+                       tuple(stored_facts(runs.engine, solver, p)))
+        out[key.parameter] = with_rows_at(solver, pc, held, key.base,
+                                          (row,))
+    return out

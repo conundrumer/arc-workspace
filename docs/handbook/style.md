@@ -53,7 +53,7 @@
 
 ## Params
 - **Shared parameters.**
-    - A parameter that every case reads is above the case markers.
+    - A parameter that every case reads is declared above the case markers, and so are its facts when it has no case column.
     - A parameter that some case never reads goes under the marker of the cases that read it.
 - **Derived data.** A clause inside Params writes no value as a literal.
 - Facts are not column-aligned across a block.

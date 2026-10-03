@@ -95,7 +95,32 @@ class AdtValue:
         return h
 
 
-PRIMITIVES = frozenset({"number", "unsigned", "float", "symbol"})
+class Primitive(StrEnum):
+    """Souffle's primitive types, by name."""
+
+    NUMBER = "number"
+    UNSIGNED = "unsigned"
+    FLOAT = "float"
+    SYMBOL = "symbol"
+
+    @property
+    def values(self) -> tuple[type, ...]:
+        """The Python types a value of the type is of."""
+        match self:
+            case Primitive.NUMBER | Primitive.UNSIGNED:
+                return (int,)
+            case Primitive.FLOAT:
+                return (int, float)
+            case Primitive.SYMBOL:
+                return (str,)
+
+    @staticmethod
+    def named(name: str) -> "Primitive | None":
+        """The primitive type `name` names; None where it names none."""
+        return Primitive(name) if name in PRIMITIVES else None
+
+
+PRIMITIVES = frozenset(Primitive)
 """The names of Souffle's primitive types."""
 
 
@@ -559,6 +584,37 @@ class GridLayout:
         return self.form is GridForm.SPARSE or self.full
 
 
+class MemberCell(StrEnum):
+    """A cell of a layout that takes members alone (`GridLayout.valued`
+    false), by its spelling in the GRID text: a member, `1`, which is 1 in
+    a grid; or an empty cell, `_`, which is 0 in a grid."""
+
+    MEMBER = "1"
+    EMPTY = "_"
+
+    @property
+    def grid_value(self) -> int:
+        """The cell's value in a grid."""
+        return 1 if self is MemberCell.MEMBER else 0
+
+    @property
+    def term(self) -> "Term":
+        """The cell's term in a GRID call."""
+        return NumberTerm(1) if self is MemberCell.MEMBER else Wildcard()
+
+    @staticmethod
+    def of_value(value: object) -> "MemberCell | None":
+        """The cell a grid's `value` is; None for a value other than 0
+        and 1."""
+        return next((m for m in MemberCell if m.grid_value == value
+                     and type(value) is int), None)
+
+    @staticmethod
+    def of_term(term: "Term") -> "MemberCell | None":
+        """The cell a GRID call's `term` is; None for any other term."""
+        return next((m for m in MemberCell if m.term == term), None)
+
+
 @dataclass(frozen=True)
 class GridCell:
     """One cell of a GRID call: its term, and whether it is a stamp's
@@ -932,3 +988,105 @@ def term_value(term: Term, defined: Callable[[str], "Value | None"]
             return a + b if op == BinaryOperator.ADD else (
                 a - b if op == BinaryOperator.SUB else a * b)
     return None
+
+
+type TypeReading[P] = Callable[[str, P], "tuple[TypeDecl | Primitive, P]"]
+"""What a type name read at a place of type `P` stands for: a primitive,
+or the declaration with the place its own names are read at. Raises
+ValueError where nothing answers the name."""
+
+
+@dataclass(frozen=True)
+class ValueReading[S]:
+    """How a source of type `S` gives a value: as a primitive's value, as
+    the parts of a record, or as a constructor's name and parts; None
+    where the source is not of that form."""
+
+    primitive: Callable[[S, Primitive], "Value | None"]
+    record: Callable[[S], Sequence[S] | None]
+    constructor: Callable[[S], tuple[str, Sequence[S]] | None]
+
+
+MAX_TYPE_DEPTH = 64
+"""How many type names deep a reading of a type goes before it stops as a
+cycle."""
+
+
+def check_type_depth(name: str, depth: int) -> None:
+    """Raises ValueError where a reading of a type has gone `depth` names
+    deep at the name `name`, past `MAX_TYPE_DEPTH`: the type does not end
+    in a declaration."""
+    if depth > MAX_TYPE_DEPTH:
+        raise ValueError(f"type `{name}` does not end in a declaration")
+
+
+def _kind[P](name: str, at: P, types: TypeReading[P], depth: int
+             ) -> "Primitive | type[AdtType] | type[RecordType]":
+    """The kind of the type `name`, read at `at`: the primitive an alias,
+    subtype or union of primitives comes to, or the kind of declaration
+    a record or ADT is (`typed_value`). A union's kind is its first
+    member's."""
+    check_type_depth(name, depth)
+    decl, inner = types(name, at)
+    match decl:
+        case Primitive():
+            return decl
+        case AliasType(target=t) | SubtypeType(base=t):
+            return _kind(t, inner, types, depth + 1)
+        case UnionType(members=members):
+            return _kind(members[0], inner, types, depth + 1)
+        case AdtType() | RecordType():
+            return type(decl)
+
+
+def typed_value[S, P](source: S, name: str, at: P, types: TypeReading[P],
+                      reading: ValueReading[S], depth: int = 0
+                      ) -> "Value | None":
+    """The value of the type `name`, read at `at`, that `source` gives: of
+    a primitive a value of that primitive, of an alias or subtype a value
+    of its target, of a union a value of its first member that reads one,
+    of a record a record of values of its fields' types, and of an ADT one
+    of its constructors over values of its fields' types; None where
+    `source` gives no value of the type. Raises ValueError where `types`
+    answers no name, for a type that does not end in a declaration, and
+    for a union whose members are of different kinds, which Souffle
+    rejects at compile, so that a run never prints one."""
+    check_type_depth(name, depth)
+    decl, inner = types(name, at)
+
+    def of(s: S, n: str) -> "Value | None":
+        return typed_value(s, n, inner, types, reading, depth + 1)
+
+    def each(parts: Sequence[S], fields: tuple[TypeField, ...]
+             ) -> "tuple[Value, ...] | None":
+        if len(parts) != len(fields):
+            return None
+        got = [of(p, f.type) for p, f in zip(parts, fields, strict=True)]
+        held = tuple(v for v in got if v is not None)
+        return held if len(held) == len(got) else None
+
+    match decl:
+        case Primitive():
+            return reading.primitive(source, decl)
+        case AliasType(target=target):
+            return of(source, target)
+        case SubtypeType(base=base):
+            return of(source, base)
+        case UnionType(members=members):
+            kinds = {_kind(m, inner, types, depth + 1) for m in members}
+            if len(kinds) > 1:
+                raise ValueError(f"the union `{name}` has members of "
+                                 f"different kinds, which Souffle rejects")
+            return next((v for m in members
+                         if (v := of(source, m)) is not None), None)
+        case RecordType(fields=fields):
+            parts = reading.record(source)
+            held = None if parts is None else each(parts, fields)
+            return None if held is None else RecordValue(held)
+        case AdtType(constructors=ctors):
+            got = reading.constructor(source)
+            if got is None:
+                return None
+            ctor = next((c for c in ctors if c.name == got[0]), None)
+            held = None if ctor is None else each(got[1], ctor.fields)
+            return None if held is None else AdtValue(got[0], held)

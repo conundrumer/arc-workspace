@@ -210,7 +210,10 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
         lambda a: survey.cmd_sweep(a.stem, a.cap, a.sweep_limit),
         help=mctx("parameter value sweep only"),
         description=mctx("For each Params parameter, the values of its "
-                         "domain that reproduce every train pair. A ✓ marks "
+                         "domain that reproduce every train pair, and for a "
+                         "parameter whose value is a set of rows, how many "
+                         "single-row changes of its stored set reproduce "
+                         "them. A ✓ marks "
                          "a parameter that a whole sweep finds the train "
                          "pairs fix to its stored value."),
     )
@@ -219,9 +222,10 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                        help=mctx("the most candidates the sweep tries for one "
                                  "parameter; when a parameter has more, the "
                                  "sweep tries only single-column changes of "
-                                 "the stored facts, or single-row changes "
-                                 "for a parameter swept as a set, up to that "
-                                 "count"))
+                                 "the stored facts, up to that count; for a "
+                                 "parameter swept as a set, the most "
+                                 "single-row changes of its stored set the "
+                                 "sweep tries"))
     sweep.add_argument("--sweep-limit", type=float, dest="sweep_limit",
                        default=TIME_LIMIT_SECONDS, help=SWEEP_LIMIT_HELP)
 

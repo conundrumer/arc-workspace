@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 from enum import StrEnum
 
 from checker.finding import Finding
-from checker.judged import bases_of, enumeration_failed, is_timeout
+from checker.judged import enumeration_failed, is_timeout
 from checker.lint.idioms import Columns, enumerator_binder
 from checker.lint.view import view
 from checker.runs import Runs, holding
@@ -44,10 +44,13 @@ from engine.program import (
 )
 from engine.quotes import quotes
 from solver.model import (
+    bases_of,
+    choice_bases,
     choice_line,
     Case,
     Dependence,
     Solver,
+    case_columns,
     dependence,
     enumerated,
     enumerates,
@@ -57,7 +60,6 @@ from solver.solve import (
     NoDetermine,
     Remove,
     at_once,
-    case_columns,
     case_groups,
     variation,
 )
@@ -319,7 +321,7 @@ def _cases_agree(reference: Profile) -> bool:
     carries: on every pair, two or more cases that take no `@derive` or
     `@store` branch give grids, and all give the same grids."""
     for e in reference:
-        bases = [(c, g) for c, g in e if not c.branches]
+        bases = [(c, g) for c, g in e if c.is_base_case]
         if len({c for c, _ in bases}) < 2 or len({g for _, g in bases}) > 1:
             return False
     return True
@@ -364,7 +366,7 @@ def survey_deletions(solver: Solver, runs: Runs) -> DeletionResult:
                                               if not d.determine]
     ref: Profile = reference
     assert isinstance(cases, tuple)
-    bases = frozenset(c.base for c in cases) \
+    bases = frozenset(choice_bases(cases)) \
         if enumerates(solver.program) else frozenset()
 
     def _enumerates(variant: Solver, bases: frozenset[object]
@@ -382,7 +384,7 @@ def survey_deletions(solver: Solver, runs: Runs) -> DeletionResult:
         return bases <= set(got)
 
     groups = case_groups(solver, cases)
-    read = dependence(solver, bases_of(cases))
+    read = dependence(engine, solver, bases_of(cases))
     built = [(d, p) for d in dels
              if (p := _program(solver, runs, d)) is not None]
 

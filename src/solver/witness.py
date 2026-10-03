@@ -711,14 +711,25 @@ def _merged_text(at: Path, task_id: str, entries: Sequence[Entry],
         data = json.loads(held_text)
     kept: list[dict[str, Any]] = [e for e in data["witnesses"]
                                   if e["id"] not in removed]
-    data["witnesses"] = kept
     for entry in entries:
-        ids = [e["id"] for e in kept]
-        if entry.id in ids:
-            kept[ids.index(entry.id)] = _json_entry(entry)
-        else:
-            kept.append(_json_entry(entry))
+        kept = with_entry(kept, entry.id, _json_entry(entry),
+                          lambda e: e["id"])
+    data["witnesses"] = kept
     return held_text, format_file(data)
+
+
+def with_entry[T](held: Sequence[T], id: str, entry: T,
+                  id_of: Callable[[T], str]) -> list[T]:
+    """`held`, a witness file's entries, with `entry` of the id `id` in it:
+    in place of the entry of that id where one stands, else after the
+    last."""
+    out = list(held)
+    ids = [id_of(e) for e in out]
+    if id in ids:
+        out[ids.index(id)] = entry
+    else:
+        out.append(entry)
+    return out
 
 
 def put_changed(at: Path, task_id: str, entries: Sequence[Entry]

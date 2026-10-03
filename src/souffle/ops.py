@@ -31,6 +31,7 @@ from engine.program import (
     GridCell,
     GridForm,
     GridLayout,
+    MemberCell,
     Instance,
     NumberTerm,
     Program,
@@ -42,12 +43,12 @@ from engine.program import (
     Term,
     Unit,
     UnitId,
-    Wildcard,
     literal_aggregates,
     with_literal_terms,
     with_subterms,
     grid_size,
 )
+from engine.memo import ByIdentity
 from souffle.expand import expand, grid_facts
 from souffle.index import Tree, held_index, hold, index_of, tree_of
 from souffle.layout import next_decl, next_unit
@@ -282,6 +283,13 @@ def instantiate(program: Program, component: str, name: str) -> Program:
 # fix_relation
 
 
+_FIXED: ByIdentity[Program, dict[tuple[RelationName, RelationValue], Program]] \
+    = ByIdentity()
+"""`fix_relation`'s programs, for each program they rewrite while it
+lives: a group's run fixes the same value on many inputs, and the one
+program it gives keeps the text and the reading its runs share."""
+
+
 def fix_relation(program: Program, relation: RelationName, value: RelationValue) -> Program:
     """`program` with `relation`, named from the top level, holding exactly
     `value`, as facts or as one GRID call of the form the relation's calls
@@ -290,7 +298,15 @@ def fix_relation(program: Program, relation: RelationName, value: RelationValue)
     `ValueError` where no declaration answers the name, for a grid with an
     anchor on a relation whose call is no stamp or one without an anchor on
     a stamp, and for a cell other than 0 and 1 on a form that takes members
-    alone."""
+    alone. Computed once per program, relation and value while the program
+    lives."""
+    return _FIXED.keyed(program, (relation, value),
+                        lambda: _fix_relation(program, relation, value))
+
+
+def _fix_relation(program: Program, relation: RelationName,
+                  value: RelationValue) -> Program:
+    """`fix_relation`, computed."""
     index = index_of(program)
     tree = index.tree
     hit = tree.resolve(relation, Scope(()))
@@ -412,7 +428,8 @@ def place_grid(layout: GridLayout, mark: tuple[int, int] | None,
         return AnchorOffStamp()
     if not layout.valued:
         off = next(((r, c, v) for r, row in enumerate(grid)
-                    for c, v in enumerate(row) if v not in (0, 1)), None)
+                    for c, v in enumerate(row)
+                    if MemberCell.of_value(v) is None), None)
         if off is not None:
             return CellOffForm((off[0], off[1]), off[2])
     if anchor is not None or not layout.stamp:
@@ -431,7 +448,7 @@ def _add_value(program: Program, relation: RelationName, value: RelationValue,
     GRID call of `layout`'s form at the grid's own size, placed as
     `place_grid` places it, and a dense call where no GRID call is
     `layout`: a stamp anchored at the placed anchor, a form that takes
-    members alone taking `1` as a member and `0` as an empty cell, and a
+    members alone taking each cell as its `MemberCell`, and a
     valued form taking every cell as a value. Raises `ValueError` for a
     grid `place_grid` does not place."""
     n = next_unit(program)
@@ -452,7 +469,8 @@ def _add_value(program: Program, relation: RelationName, value: RelationValue,
         member_only = not form.valued
 
         def cell(r: int, c: int, v: int) -> GridCell:
-            term = (NumberTerm(1) if v else Wildcard()) if member_only else NumberTerm(v)
+            m = MemberCell.of_value(v) if member_only else None
+            term = NumberTerm(v) if m is None else m.term
             return GridCell(term, (r, c) == anchor)
 
         call = GridCall(UnitId(n), Scope(()), form, relation, tuple(term_of(k) for k in value.keys),

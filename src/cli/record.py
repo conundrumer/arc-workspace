@@ -402,6 +402,18 @@ def _write(solver: Solver, at: Path, entries: list[Entry]) -> bool:
     return not problems
 
 
+def _with_entry(solver: Solver, entry: Entry) -> Solver:
+    """The solver with `entry` in its witness file, as `put` writes it
+    (`solver.witness.with_entry`). The cases `record` groups are then the cases witnessed with the
+    entry's input among the file's (solver-file.md, under "Cases"), which
+    `witness` reads on the file `record` writes."""
+    held = () if solver.witness_file is None \
+        else solver.witness_file.entries
+    entries = witness.with_entry(held, entry.id, entry, lambda e: e.id)
+    return replace(solver, witness_file=WitnessFile(solver.task_id,
+                                                    tuple(entries)))
+
+
 def cmd_record(arg: str, entry_id: str, separates: str,
                path: str | None = None, assign_text: str | None = None,
                witness_file: str | None = None) -> int:
@@ -425,7 +437,7 @@ def cmd_record(arg: str, entry_id: str, separates: str,
     if not compiles(eng, solver):
         return 1
     entry = Entry(entry_id, separates, grid, assign, Groups(()))
-    runs = Runs(eng, lined, LIMITS)
+    runs = Runs(eng, _with_entry(lined, entry), LIMITS)
     outcomes = entry_outcomes(runs, entry)
     if not isinstance(outcomes, tuple):
         print("\n".join(failure_lines(solver, outcomes)), file=sys.stderr)

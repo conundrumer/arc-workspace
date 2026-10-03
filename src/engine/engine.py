@@ -111,12 +111,18 @@ class Index(Protocol):
         ...
 
 
+def unresolved(name: RelationName) -> ValueError:
+    """The error of a caller that holds `name` to be declared where it
+    resolves to no declaration."""
+    return ValueError(f"`{name.text}` resolves to no declaration")
+
+
 def resolved(index: Index, name: RelationName, scope: Scope) -> Resolved:
     """`index.resolve` of a name the caller holds to be declared. Raises
-    `ValueError` where it resolves to no declaration."""
+    `unresolved` where it resolves to no declaration."""
     got = index.resolve(name, scope)
     if not isinstance(got, Resolved):
-        raise ValueError(f"`{name.text}` resolves to no declaration")
+        raise unresolved(name)
     return got
 
 

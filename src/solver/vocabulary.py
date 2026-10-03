@@ -4,6 +4,7 @@ solver's program by. Every reader of them takes them from here."""
 from typing import Annotated
 
 from engine import RelationName, Scope
+from engine.program import Primitive
 from engine.quotes import quotes
 
 PARAMS: Annotated[str,
@@ -90,7 +91,7 @@ POSITION = "Position"
 """The lib's cell type: a cell by its distances to the frame's edges."""
 OFFSET = "Offset"
 """The lib's offset type."""
-NUMBER = "number"
+NUMBER = Primitive.NUMBER
 """Souffle's number type."""
 UNIT = "Unit"
 """The lib's one-value type, which labels a row."""

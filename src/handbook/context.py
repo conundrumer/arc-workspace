@@ -21,7 +21,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum, StrEnum
-from functools import lru_cache
+from engine.memo import kept_recent
 from pathlib import Path
 
 import controlled_markdown as nm
@@ -279,7 +279,7 @@ def lib_entries(text: str) -> str:
     return "\n\n".join(p for p in (*prose, "\n".join(out)) if p) + "\n"
 
 
-@lru_cache(maxsize=16)
+@kept_recent(16)
 def lib_doc(text: str) -> str:
     """One lib file as markdown: its `//!` lines as prose, then each public
     item under its `///` prose in a code block. Rules, functors, and

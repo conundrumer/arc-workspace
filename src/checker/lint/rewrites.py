@@ -16,6 +16,7 @@ from checker.finding import (
     LintNamed,
     LintSentence,
 )
+from checker.lint.form import case_column_facts
 from checker.lint.view import (
     TOP,
     View,
@@ -38,6 +39,7 @@ from engine import Resolved
 from engine.program import (
     Scope,
     AdtType,
+    AdtValue,
     Aggregate,
     AggregateOperator,
     Atom,
@@ -71,13 +73,18 @@ from engine.program import (
 from engine.quotes import quotes
 from solver.category import Category
 from solver.model import (
+    Base,
+    based_choice,
     Section,
     Solver,
     UnderMarker,
     Unmarked,
     lists_case,
+    Parameter,
     section_at,
+    value_at,
 )
+from solver.solve import per_case
 from solver.vocabulary import (
     COMPOSE,
     DETERMINE,
@@ -755,18 +762,69 @@ def _live(v: View, tags: set[str], cases: frozenset[str]
     return live
 
 
+@dataclass(frozen=True)
+class PointReads:
+    """The nodes each constructor's derivation of `out` reads (`_live`)
+    at the choice point of `path`."""
+
+    path: tuple[str, ...]
+    live: dict[str, set[Node]]
+
+
+def case_reads(solver: Solver, runs: Runs) -> list[PointReads]:
+    """For each choice point a case is named by (`Choice.points`, nested
+    ones included) with more than one constructor, the nodes each
+    constructor's derivation of `out` reads (`_live`). With no `Choice`
+    there is no such point."""
+    choice = solver.choice
+    if choice is None:
+        return []
+    v = view(solver, runs)
+    tags = set(_tags(solver, v))
+    return [PointReads(pt.path, _live(v, tags, frozenset(
+                c.name for c in pt.constructors)))
+            for pt in choice.points if len(pt.constructors) > 1]
+
+
+def never_reads(solver: Solver, reads: Sequence[PointReads], decl: DeclId,
+                base: Base) -> bool:
+    """Whether the case `base` never reads the relation `decl`: the
+    constructor it takes at a point of `reads` (`solver.model.value_at`)
+    reads no path to it. A point the base does not reach gives no
+    constructor. Raises `ValueError` for a solver with no `Choice`, which
+    has no base."""
+    choice = based_choice(solver)
+    for r in reads:
+        at = value_at(choice, base, r.path)
+        if at is None:
+            continue
+        if not isinstance(at, AdtValue):
+            raise ValueError(f"`{at}` at a choice point is no constructor")
+        if RelNode(decl) not in r.live[at.constructor]:
+            return True
+    return False
+
+
 @quotes("solver-file.md", "Cases",
         "**Case markers.** Cases do not interleave: each case's Params and "
         "clauses are under its marker.")
 @quotes("style.md", "Params",
-        "A parameter that every case reads is above the case markers. A "
+        "A parameter that every case reads is declared above the case "
+        "markers, and so are its facts when it has no case column. A "
         "parameter that some case never reads goes under the marker of the "
         "cases that read it.")
+@quotes("solver-file.md", "Params",
+        "Each of its facts stands under the marker of the case its case "
+        "column holds.")
 def check_shared_read(solver: Solver, runs: Runs) -> list[Finding]:
     """A parameter under a marker that lists no case, below a marker that
-    lists one, and a shared parameter some case never reads. A marker that
-    lists no case above every marker that lists one leaves the parameters
-    under it shared. The reads come from a dataflow walk back from `out`
+    lists one; a fact under a marker of a shared parameter with no case
+    column (`solver.solve.per_case`); a fact of a parameter with a case
+    column outside the marker of its case (`case_column_facts`), judged
+    where the run that enumerates the solver's cases gives a result; and a
+    shared parameter some case never reads. A marker that lists no case
+    above every marker that lists one leaves the parameters under it
+    shared. The reads come from a dataflow walk back from `out`
     under each case, which reads a lib instance as opaque and so
     over-approximates the reads. Every relation `Params` declares is read, a
     derived one too, since the rule is about what cases share, whatever
@@ -786,22 +844,27 @@ def check_shared_read(solver: Solver, runs: Runs) -> list[Finding]:
         match p.section:
             case Unmarked():
                 shared.append(d)
+                if isinstance(p, Parameter) and \
+                        per_case(solver, p.name) is None:
+                    out += [lint(line, LintMarked(
+                        Category.SHARED_READ, LintSentence.SHARED_FACT_MARKED,
+                        d.name, m))
+                        for _u, line, m in v.marked_facts(d) if m is not None]
             case UnderMarker(marker=m) if not lists_case(solver, m):
                 out.append(lint(d.span.first, LintMarked(
                     Category.SHARED_READ, LintSentence.MARKER_LISTS_NO_CASE,
                     d.name, m)))
             case UnderMarker():
                 pass
+    every = runs.solver_cases
+    if isinstance(every, tuple):
+        out += case_column_facts(solver, v, every)
     tags = _tags(solver, v)
-    universes = [frozenset(c.name for c in pt.constructors)
-                 for pt in choice.points if len(pt.path) <= (
-                     0 if choice.record is None else 1)
-                 and len(pt.constructors) > 1]
-    for cases in universes:
-        live = _live(v, set(tags), cases)
+    for reads in case_reads(solver, runs):
+        live = reads.live
         for d in sorted(shared, key=lambda d: d.name):
             node: Node = RelNode(d.id)
-            missing = sorted(c for c in cases if node not in live[c])
+            missing = sorted(c for c in live if node not in live[c])
             if missing:
                 out.append(lint(d.span.first, LintCode(
                     Category.SHARED_READ, LintSentence.SHARED_UNREAD,

@@ -2,24 +2,22 @@
 them in fact files and prints them in its output."""
 
 from engine.program import (
-    AdtType,
     AdtValue,
-    AliasType,
     ConstructorTerm,
     Define,
     NumberTerm,
+    Primitive,
     RecordTerm,
-    RecordType,
     RecordValue,
     StringTerm,
-    SubtypeType,
     Term,
     TypeDecl,
-    UnionType,
+    TypeReading,
     Value,
+    ValueReading,
 )
-from engine.program import term_value
-from engine.text import split_top
+from engine.program import term_value, typed_value
+from engine.text import prefixed, split_top
 from souffle.index import Level, Tree
 
 
@@ -61,61 +59,84 @@ def term_of(v: Value) -> Term:
 # Reading printed values
 
 
-def _resolved(name: str, tree: Tree, place: tuple[Level, ...], start: int,
-              depth: int = 0) -> tuple[TypeDecl | str, tuple[Level, ...], int]:
-    """The primitive or the record or ADT declaration a type name comes to
-    through aliases, subtypes and unions, with where its own names are
-    read. Raises ValueError for a name nothing answers and for a union
-    whose members come to different types."""
-    if depth > 64:
-        raise ValueError(f"type `{name}` does not end in a declaration")
-    decl, inner, at = tree.resolve_type(name, place, start)
-    match decl:
-        case AliasType(_, _, _, target):
-            return _resolved(target, tree, inner, at, depth + 1)
-        case SubtypeType(_, _, _, base):
-            return _resolved(base, tree, inner, at, depth + 1)
-        case UnionType(_, _, _, members):
-            kinds = [_resolved(m, tree, inner, at, depth + 1)[0] for m in members]
-            if any(k is not kinds[0] and k != kinds[0] for k in kinds):
-                raise ValueError(f"the members of union `{name}` come to different types")
-            return _resolved(members[0], tree, inner, at, depth + 1)
-    return decl, inner, at
+type _Place = tuple[tuple[Level, ...], int]
+"""Where a type name is read: the levels and the start in the text of the
+innermost chain (`Tree.resolve_type`)."""
 
 
-def _fields(parts: list[str], types: list[str], what: str) -> list[tuple[str, str]]:
-    if len(parts) != len(types):
-        raise ValueError(f"{what} holds {len(parts)} values, and its type {len(types)}")
-    return list(zip(parts, types, strict=True))
+def _types(tree: Tree) -> TypeReading[_Place]:
+    """The reading of a type name at a place in `tree`."""
+
+    def read(name: str, at: _Place) -> tuple[TypeDecl | Primitive, _Place]:
+        decl, inner, start = tree.resolve_type(name, *at)
+        return decl, (inner, start)
+
+    return read
+
+
+def _number(text: str) -> int | None:
+    try:
+        return int(text)
+    except ValueError:
+        return None
+
+
+def _float(text: str) -> float | None:
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _record(text: str) -> list[str] | None:
+    s = text.strip()
+    return split_top(s[1:-1]) if s.startswith("[") and s.endswith("]") \
+        else None
+
+
+def _constructor(text: str) -> tuple[str, list[str]] | None:
+    written = prefixed(text.strip())
+    if written is None:
+        return None
+    name, paren, rest = written.partition("(")
+    if paren and not rest.endswith(")"):
+        return None
+    return name, split_top(rest[:-1]) if paren else []
+
+
+def _primitive(text: str, kind: Primitive) -> Value | None:
+    """A primitive's value as Souffle prints it: a symbol bare, a number
+    or an unsigned as an integer, a float as a float; None where the text
+    gives no value of the kind."""
+    match kind:
+        case Primitive.SYMBOL:
+            return text
+        case Primitive.FLOAT:
+            return _float(text)
+        case Primitive.NUMBER:
+            return _number(text)
+        case Primitive.UNSIGNED:
+            got = _number(text)
+            return None if got is None or got < 0 else got
+
+
+_PRINTED = ValueReading[str](
+    primitive=_primitive,
+    record=_record,
+    constructor=_constructor)
+"""A value as Souffle prints it: a symbol bare, a record in brackets, a
+constructor with its prefix and, where it has fields, its argument
+list."""
 
 
 def printed(text: str, type_name: str, tree: Tree, place: tuple[Level, ...],
             start: int) -> Value:
     """A value as Souffle prints it in a column of type `type_name`, the
     name read at `place` in the text at `start` of the innermost chain
-    (`Tree.resolve_type`). Raises ValueError where the type cannot read
-    it."""
-    kind, inner, at = _resolved(type_name, tree, place, start)
-    if kind == "symbol":
-        return text
-    if kind in ("number", "unsigned"):
-        return int(text)
-    if kind == "float":
-        return float(text)
-    s = text.strip()
-    if isinstance(kind, RecordType):
-        if not (s.startswith("[") and s.endswith("]")):
-            raise ValueError(f"`{text}` is no record of type `{type_name}`")
-        return RecordValue(tuple(printed(p, t, tree, inner, at) for p, t in _fields(
-            split_top(s[1:-1]), [f.type for f in kind.fields], f"`{text}`")))
-    if isinstance(kind, AdtType):
-        if not s.startswith("$"):
-            raise ValueError(f"`{text}` is no value of type `{type_name}`")
-        name, paren, rest = s[1:].partition("(")
-        ctor = next((c for c in kind.constructors if c.name == name), None)
-        if ctor is None or (paren and not rest.endswith(")")):
-            raise ValueError(f"`{text}` is no value of type `{type_name}`")
-        parts = split_top(rest[:-1]) if paren else []
-        return AdtValue(name, tuple(printed(p, t, tree, inner, at) for p, t in _fields(
-            parts, [f.type for f in ctor.fields], f"`{text}`")))
-    raise ValueError(f"type `{type_name}` reads no printed value")
+    (`Tree.resolve_type`), read as a value of that type
+    (`engine.program.typed_value`). Raises ValueError where the type
+    cannot read it."""
+    got = typed_value(text, type_name, (place, start), _types(tree), _PRINTED)
+    if got is None:
+        raise ValueError(f"`{text}` is no value of type `{type_name}`")
+    return got

@@ -37,13 +37,25 @@ from solver.model import (
     DeriveBranch,
     Solver,
     StoreBranch,
+    choice_bases,
+    choice_values,
     is_concept_case,
     load,
 )
 from solver.model import is_concept as concept_base
 from solver.names import Denoted, cover, denote, model_of
 from solver.problems import Fault, Named, NameFault, ProblemKind
-from solver.solve import CaseOnPair, Grids, PairId, PairRuns, as_grid, is_result
+from solver.solve import (
+    CaseOnPair,
+    Grids,
+    PairId,
+    PairRuns,
+    as_grid,
+    by_base,
+    is_result,
+    parameter_reading,
+    stored_facts,
+)
 from solver.vocabulary import COLOR
 from solver.witness import Undefined
 
@@ -231,15 +243,10 @@ def base_names(solver: Solver, chosen: Sequence[Base | None],
     """The fewest names whose bases among `among`, the solver's bases, are
     exactly `chosen` (`solver.names.cover`): the cases a value is stored
     at, the bases that depend on a relation."""
-    picked = [b for b in chosen if b is not None]
+    picked = choice_values(chosen)
     if solver.choice is None or not picked:
         return ()
-    return cover(solver, picked, [b for b in among if b is not None])
-
-
-def bases_of(cases: Iterable[Case]) -> list[Base | None]:
-    """The bases of `cases`, each once, in their order."""
-    return list(dict.fromkeys(c.base for c in cases))
+    return cover(solver, picked, choice_values(among))
 
 
 def concept_among(solver: Solver, bases: Iterable[Base | None]
@@ -327,26 +334,31 @@ def swapped(grid: Grid, a: int, b: int) -> Grid:
                  for row in grid)
 
 
-def stored_colors(solver: Solver) -> frozenset[int]:
-    """Every color a parameter's stored rows hold, in a `Color` column."""
+def stored_colors(engine: Engine, solver: Solver, cases: Iterable[Case]
+                  ) -> frozenset[int]:
+    """Every color the parameters' stored facts (`solver.solve.stored_facts`)
+    hold in a `Color` column at the bases of `cases`
+    (`solver.solve.by_base`). A case has no base only in a solver with no
+    `Choice`, where no parameter has a case column."""
+    bases = choice_bases(cases)
     out: set[int] = set()
     for p in solver.params.parameters:
-        if not isinstance(p.stored, tuple):
-            continue
         cols = [i for i, c in enumerate(p.columns) if c.type == COLOR]
-        out |= {v for r in p.stored for i in cols
+        got = by_base(solver, parameter_reading(solver, p.name),
+                      stored_facts(engine, solver, p), bases)
+        out |= {v for _base, rows in got for r in rows for i in cols
                 if isinstance(v := r[i], int)}
     return frozenset(out)
 
 
-def swaps(solver: Solver, task: Task, stored: frozenset[int] | None = None
-          ) -> list[Swap]:
+def swaps(engine: Engine, solver: Solver, task: Task, cases: Sequence[Case],
+          stored: frozenset[int] | None = None) -> list[Swap]:
     """One color swap per train input of `task` that holds a color of
-    `stored`, the colors the solver's parameters store where None, and
-    has a free color: the least stored color the input holds, swapped for
-    the least color that neither the input nor a parameter of the solver
-    holds (`stored_colors`)."""
-    held = stored_colors(solver)
+    `stored`, the colors the solver's parameters store at `cases` where
+    None, and has a free color: the least stored color the input holds,
+    swapped for the least color that neither the input nor a parameter
+    holds at `cases` (`stored_colors`)."""
+    held = stored_colors(engine, solver, cases)
     stored = held if stored is None else stored
     out: list[Swap] = []
     for i, ex in enumerate(task.train):

@@ -65,8 +65,8 @@ from solver.model import (
     declaration_of,
     own,
     proposer_names,
+    Graph,
     proposers_program,
-    resolved_columns,
 )
 from solver.names import branch_text
 from solver.problems import (
@@ -76,7 +76,14 @@ from solver.problems import (
     Undecided,
     UndecidedForm,
 )
-from solver.solve import Proposals, at_once, examples, probe, probe_failure
+from solver.solve import (
+    Proposals,
+    at_once,
+    parameter_reading,
+    examples,
+    probe,
+    probe_failure,
+)
 from solver.vocabulary import COLOR, PROPOSE
 from solver.witness import Entry
 
@@ -96,6 +103,7 @@ def proposers(program: Program) -> dict[str, Proposer]:
     """Each proposer of the proposers program by name
     (`solver.model.proposer_names`)."""
     out: dict[str, Proposer] = {}
+    graph = Graph(program)
     for name in proposer_names(program):
         comp = next(c for c in program.components if c.name == name)
         decl = next(r for r in program.relations
@@ -104,7 +112,8 @@ def proposers(program: Program) -> dict[str, Proposer]:
                        if c.above == comp.id and not c.block)
         text = " ".join(t for _l, t in lines if t).rstrip(".")
         out[name] = Proposer(
-            name, resolved_columns(program, decl.columns),
+            name, tuple(graph.resolve_type(c.type, decl.scope.components)
+                        for c in decl.columns),
             text[:1].lower() + text[1:])
     return out
 
@@ -198,7 +207,7 @@ def derivations(runs: Runs, known: dict[str, Proposer]
     for p in runs.solver.params.parameters:
         if not isinstance(p.stored, tuple) or not p.stored:
             continue
-        types = resolved_columns(runs.solver.program, p.columns)
+        types = parameter_reading(runs.solver, p.name).value_types
         for name in sorted(known):
             if known[name].types == types and given.get(name) == len(pairs):
                 out.append((p, known[name]))
@@ -221,10 +230,18 @@ def _placed(solver: Solver, p: Parameter) -> bool:
     return own(decl.span) or decl.chart_of is not None
 
 
-def _one_color(p: Parameter) -> int | None:
+def _one_color(solver: Solver, p: Parameter) -> int | None:
+    """The one color the parameter stores: its one fact's, and for a
+    parameter that stores a value per case (`per_case`), the one color
+    every case stores; None where it stores other values."""
     stored = p.stored
-    if isinstance(stored, tuple) and len(stored) == 1 \
-            and len(p.columns) == 1 and p.columns[0].type == COLOR \
+    if not isinstance(stored, tuple):
+        return None
+    pc = parameter_reading(solver, p.name)
+    types = pc.value_types
+    if pc.case:
+        stored = tuple(dict.fromkeys(pc.value(r) for r in stored))
+    if len(stored) == 1 and types == (COLOR,) \
             and isinstance(stored[0][0], int):
         return stored[0][0]
     return None
@@ -405,7 +422,7 @@ def derive_survey(runs: Runs) -> DeriveSurvey:
                                        cases, entry)
         else:
             swap = swap_witness(runs, lined_solver, cases, branch,
-                                _one_color(param))
+                                _one_color(solver, param))
             if isinstance(swap, SwapWitness):
                 witness = swap
             else:

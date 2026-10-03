@@ -20,7 +20,6 @@ from checker.finding import (
     line_of,
 )
 from checker.judged import (
-    bases_of,
     concept_among,
     parse_failure,
     reading_names,
@@ -40,7 +39,7 @@ from engine.program import (
 from engine.quotes import quotes
 from solver.annotations import IgnoreForm, IgnoreLine
 from solver.category import HINTS, Category
-from solver.model import Solver, dependence, readers
+from solver.model import Solver, bases_of, dependence, readers
 
 type Check = Callable[[Solver, Runs], list[Finding]]
 
@@ -233,7 +232,7 @@ def _branch_forms(solver: Solver, runs: Runs, findings: list[Finding]
     if not banned or not isinstance(every, tuple):
         return findings
     bases = bases_of(every)
-    rd = dependence(solver, bases)
+    rd = dependence(runs.engine, solver, bases)
     by_id = {u.id: u for u in solver.program.units}
     out: list[Finding] = []
     for f in findings:

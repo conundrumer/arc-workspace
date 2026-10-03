@@ -7,7 +7,8 @@
 - `uv run pyright`
 - `uv run python scripts/materialize.py`
 - `uv run python scripts/run_dl.py`
-    - Run all Souffle solvers; `--help` for per-solver tooling.
+    - Run every Souffle solver. It takes a long time, so run it only when the user asks to run every solver.
+    - `--help` for per-solver tooling.
 - `uv run python scripts/run_dl.py <stem>`
     - Run one.
 - `uv run python scripts/context.py`

@@ -210,17 +210,22 @@ def derive_or_store(run: Callable[..., int], args) -> int:
 
 
 def _branch_solver(arg: str, witness_file: str | None,
-                   eng: SouffleEngine) -> tuple[Solver, Path] | None:
+                   eng: SouffleEngine, corpus: bool
+                   ) -> tuple[Solver, Path] | None:
     """The solver of `derive` or `store`, with the witness file it reads
-    and writes."""
+    and writes; None, with its line on stderr, where no file stands there
+    and the command, which writes there unless it runs over every solver,
+    creates none (`absent`)."""
     solver = command_solver(arg, eng)
     if solver is None:
         return None
     at = target(solver, witness_file)
-    if witness_file is None:
-        return solver, at
-    lined = lined_solver(solver, at, creates=True)
-    return None if lined is None else (lined, at)
+    if witness_file is not None:
+        lined = lined_solver(solver, at, creates=True)
+        return None if lined is None else (lined, at)
+    if not corpus and absent(at, creates=True):
+        return None
+    return solver, at
 
 
 def _unrecorded(found: Iterable[Derivation | Found]
@@ -299,7 +304,7 @@ def cmd_derive(arg: str, witness_file: str | None = None,
     the audit's derive section prints them; each witness it builds is
     written into the witness file."""
     eng = engine()
-    got = _branch_solver(arg, witness_file, eng)
+    got = _branch_solver(arg, witness_file, eng, corpus)
     if got is None:
         return 2
     solver, at = got
@@ -320,7 +325,7 @@ def cmd_store(arg: str, witness_file: str | None = None,
     witness and the line that records the judgment; each witness it builds
     is written into the witness file."""
     eng = engine()
-    got = _branch_solver(arg, witness_file, eng)
+    got = _branch_solver(arg, witness_file, eng, corpus)
     if got is None:
         return 2
     solver, at = got

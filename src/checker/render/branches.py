@@ -40,7 +40,7 @@ from checker.render import (
     _no_sentence,
     _ticked,
     arg_text,
-    case_name,
+    cases_run_failed,
     failure_text,
     finding_lines,
     grid_lines,
@@ -48,8 +48,10 @@ from checker.render import (
     in_line_order,
     marker_text,
     shifted,
+    under_case,
     where_text,
 )
+from solver.names import name as case_name
 from checker.runs import NoTask
 from checker.store import (
     D4,
@@ -183,6 +185,21 @@ def _diff_line(parameters: Sequence[str]) -> str:
     return mctx("determination: DIFF on ") + ", ".join(parameters)
 
 
+def _differing(solver: Solver, p: DeterminationDiffPayload) -> list[str]:
+    """The parameter whose rows differ, and for a parameter that stores a
+    value per case, each base at which they differ, or that the run that
+    enumerates the cases failed."""
+    param = p.diff.parameter
+    if p.bases is None:
+        return [param]
+    if not isinstance(p.bases, tuple):
+        return [mctx("{param} at cases not known, since {failed}").format(
+            param=param, failed=cases_run_failed(p.bases))]
+    if not p.bases:
+        raise ValueError(f"a determination finding on {param} at no case")
+    return [under_case(param, case_name(solver, b)) for b in p.bases]
+
+
 def separates_recorded(branch: BranchName, entry: Entry) -> str:
     """The `separates` of a witness a survey builds from an input of the
     witness file: the branch, the point's first branch, and the entry
@@ -313,7 +330,7 @@ def _branch_text(solver: Solver, f: Finding) -> str:
                          "is not judged; {by} excludes its cases") if one
                     else mctx("no case of the solver takes `{b}`, so its "
                               "verdict is not judged; {by} exclude its cases")
-                    ).format(b=branch_text(b), by=mctx(" and ").join(by).format(
+                    ).format(b=branch_text(b), by=(" " + mctx("and") + " ").join(by).format(
                         lines=_line_list(lines)))
         case Kind.DERIVE_UNREAD, BranchPayload():
             return mctx("`@derive` stands above a parameter no case of the solver "
@@ -358,8 +375,8 @@ def _branch_text(solver: Solver, f: Finding) -> str:
             return mctx("cases the marker `{m}` does not list read the "
                         "clauses under it at {at}").format(
                 m=marker_text(m), at=_line_list(ls))
-        case Kind.DETERMINATION_DIFF, DeterminationDiffPayload(diff=d):
-            return _diff_line([d.parameter])
+        case Kind.DETERMINATION_DIFF, DeterminationDiffPayload() as d:
+            return _diff_line(_differing(solver, d))
         case Kind.DETERMINATION_OF_DERIVED, DerivedDataPayload(relation=r):
             return mctx("determination: ERROR determination relation "
                         "'{name}' matches derived Params data, which carries "
@@ -434,8 +451,9 @@ def determination_lines(solver: Solver, result: DetermineResult | NoTask,
                 param=r.parameter, reads=r.reads,
                 comp=dotted(scopes[r.unit].components), line=r.line)
             for r in cycle) for cycle in result.cycles]
-    diffs = [f.payload.diff.parameter for f in findings
-             if isinstance(f.payload, DeterminationDiffPayload)]
+    diffs = [n for f in findings
+             if isinstance(f.payload, DeterminationDiffPayload)
+             for n in _differing(solver, f.payload)]
     others = [f for f in findings
               if not isinstance(f.payload, DeterminationDiffPayload)]
     for f in in_line_order(others):
@@ -556,7 +574,7 @@ def derive_lines(solver: Solver, survey: object) -> list[str]:
             param=d.parameter, proposer=d.proposer.name,
             comment=d.proposer.comment))
         if d.ignored:
-            lines.append("  " + _ignored_text(IgnoreForm.DERIVE, DirectiveWord.DERIVE))
+            lines.append("  " + _ignored_text(IgnoreForm.DERIVE))
             continue
         if isinstance(d.fit, Unplaced):
             lines.append("  " + unplaced_text(d.name))
@@ -821,9 +839,12 @@ def _keyed_text(keys: Sequence[str]) -> str:
                 ).format(keys=_ticked(keys))
 
 
-def _ignored_text(form: IgnoreForm, word: DirectiveWord) -> str:
+def _ignored_text(form: IgnoreForm) -> str:
     """A branch whose bare `@ignore` line of `form` stands in place of
-    its line of `word`."""
+    its directive line (`IgnoreForm.directive`)."""
+    word = form.directive
+    if word is None:
+        raise ValueError(f"`@ignore: {form}` stands in place of no line")
     return mctx("`{ignore}` stands in place of its `{word}` line").format(
         ignore=ignore_text(None, form), word=at_word(word))
 
@@ -863,7 +884,7 @@ def store_lines(solver: Solver, survey: StoreSurvey) -> list[str]:
                 "{params}").format(params=", ".join(
                     f"`{p}`" for p in f.reads_back)))
         elif f.ignored:
-            lines.append("  " + _ignored_text(IgnoreForm.STORE, DirectiveWord.STORE))
+            lines.append("  " + _ignored_text(IgnoreForm.STORE))
         elif f.store_branch and f.line is None:
             lines += ["  " + ln for ln in drawn(f)]
             lines.append("  " + _witness_line(solver, f))

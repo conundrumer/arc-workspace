@@ -12,11 +12,14 @@ from typing import Annotated
 
 from engine import AdtValue, RecordValue, Value
 from engine.quotes import quotes
+from engine.text import PREFIX, prefixed
 from solver.annotations import CaseMarker, MarkerPart, VerdictWord, pieces
 from solver.model import (
     Base,
     Branch,
     Case,
+    as_case,
+    base_case,
     Choice,
     ChoicePoint,
     ConstructorBranch,
@@ -73,9 +76,6 @@ SEPARATOR: Annotated[str,
     quotes("solver-file.md", "Witness file",
            "`<name> & <name>`: what each fixes")] = " & "
 """What joins the parts of a name."""
-PREFIX = "$"
-"""What a constructor's name carries in a name, as Souffle writes a
-constructor."""
 
 
 def ctor_text(ctor: str) -> str:
@@ -120,9 +120,9 @@ def denote(solver: Solver, name: str | tuple[str, ...]
             if branch is None:
                 return _problem(ProblemKind.NAME_DENOTES_NO_CASE, text)
             branches.append(branch)
-        elif part.startswith(PREFIX) \
-                and _CTOR_RE.fullmatch(part.removeprefix(PREFIX)):
-            ctor_parts.append(part.removeprefix(PREFIX))
+        elif (ctor := prefixed(part)) is not None \
+                and _CTOR_RE.fullmatch(ctor):
+            ctor_parts.append(ctor)
         else:
             return _problem(ProblemKind.NAME_FORM, text)
     choice = solver.choice
@@ -182,7 +182,8 @@ def names_in(text: str) -> list[str]:
     out: list[str] = []
     for m in _PROSE_NAME_RE.finditer(text):
         n = m.group(0)
-        if ("&" in n or "=" in n or n.startswith("$") or n == VerdictWord.CONCEPT) \
+        if ("&" in n or "=" in n or prefixed(n) is not None
+                or n == VerdictWord.CONCEPT) \
                 and n not in out:
             out.append(n)
     return out
@@ -210,7 +211,7 @@ def lists(solver: Solver, part: MarkerPart, base: Base | None) -> bool:
     denoted = denote(solver, part.name)
     return isinstance(denoted, Denoted) and bool(cases_of(
         solver, Denoted(denoted.constructors, (), denoted.concept),
-        [Case(base, ())]))
+        [base_case(base)]))
 
 
 _CTOR_RE = re.compile(r"[A-Z]\w*")
@@ -255,7 +256,7 @@ def branch_text(branch: Branch) -> str:
             return f"{p}={VerdictWord.STORED}"
 
 
-def name(solver: Solver, case: Case) -> str:
+def name(solver: Solver, case: Case | Base) -> str:
     """The name of `case` for a place that asks for a model (solver-file.md,
     under "Witness file"), the inverse of `denote` read by `model_of`: the
     points at which the case differs from the concept case. `concept` for the
@@ -265,7 +266,9 @@ def name(solver: Solver, case: Case) -> str:
     line of the file holds, a branch a survey proposes, in the case's order. A
     point at its concept branch is left out: a first constructor,
     `<param>=stored` at a `@derive` point, and `<rel>=derived` at a `@store`
-    point (solver-file.md, under "Params" and "Program")."""
+    point (solver-file.md, under "Params" and "Program"). A base is named
+    as its base case (`solver.model.as_case`)."""
+    case = as_case(case)
     choice = solver.choice
     parts: list[str] = []
     if choice is not None and case.base is not None:
@@ -529,10 +532,10 @@ def cover(solver: Solver, chosen: Collection[Case] | Collection[Base],
     fixes, and the cases of the concept base are also named `concept`
     (solver-file.md, under "Witness file"). Of the covers by those names, the
     fewest names; of names of one set, the fewest parts, then `concept` before
-    any other name, then name order. Bases are read as the cases that take no
-    `@derive` or `@store` branch, for naming a set of bases."""
-    universe = [c if isinstance(c, Case) else Case(c, ()) for c in among]
-    wanted = {c if isinstance(c, Case) else Case(c, ()) for c in chosen}
+    any other name, then name order. Bases are read as their base cases
+    (`solver.model.base_case`), for naming a set of bases."""
+    universe = [as_case(c) for c in among]
+    wanted = {as_case(c) for c in chosen}
     bit = {c: 1 << i for i, c in enumerate(universe)}
     target = 0
     for c in wanted:

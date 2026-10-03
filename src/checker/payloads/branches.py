@@ -4,9 +4,9 @@ determination check (solver-file.md, under "Params", "Program" and
 
 from dataclasses import dataclass
 
-from engine import RelationName, Row
+from engine import RelationName, Row, RunFailure
 from solver.annotations import CaseMarker, IgnoreLine
-from solver.model import Branch, DeriveBranch, StoreBranch
+from solver.model import Base, Branch, DeriveBranch, StoreBranch
 from solver.solve import PairId, ParamDiff
 
 type BranchName = DeriveBranch | StoreBranch
@@ -193,9 +193,14 @@ class MarkerUnownedPayload:
 @dataclass(frozen=True)
 class DeterminationDiffPayload:
     """A determined parameter whose determination differs from its stored
-    value (solver-file.md, under "Determination")."""
+    value (solver-file.md, under "Determination"), and for a parameter that
+    stores a value per case (`solver.solve.per_case`), each base at which
+    the two differ, at least one, or the failure of the run that enumerates
+    the cases; None for a parameter with no case column
+    (`checker.runs.Runs.differing_bases`)."""
 
     diff: ParamDiff
+    bases: tuple[Base, ...] | RunFailure | None
 
 
 @dataclass(frozen=True)

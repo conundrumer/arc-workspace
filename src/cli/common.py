@@ -13,7 +13,7 @@ from arc.task import task_file
 from arc.task import GridFormError, read_grid
 from checker.judged import parse_fault
 from checker.readable import finding_of
-from checker.render import commands, failure_text, finding_lines
+from checker.render import commands, finding_lines, run_failed
 from checker.runs import Runs
 from cli import text
 from engine import (
@@ -152,7 +152,7 @@ def failure_lines(solver: Solver, failure: RunFailure | Fault) -> list[str]:
     command prints them once its runs began."""
     if isinstance(failure, Fault):
         return fault_lines(solver, [failure])
-    return [commands.RUN_FAILED.format(error=failure_text(failure))]
+    return [run_failed(failure)]
 
 
 def fault_lines(solver: Solver, faults: Sequence[Fault]) -> list[str]:

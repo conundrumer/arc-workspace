@@ -44,6 +44,7 @@ from engine.program import (
     GridCell,
     GridForm,
     GridLayout,
+    MemberCell,
     Program,
     RecordValue,
     RelationName,
@@ -62,7 +63,7 @@ from engine.text import fact_text
 
 __all__ = [
     "AdtValue", "Atom", "BodyLiteral", "Cast", "Comment", "CompileError", "CpuLimit",
-    "DeclId", "Engine", "Exited", "Grid", "GridCell", "GridForm", "GridLayout", "GridInput", "GridValue", "Index",
+    "DeclId", "Engine", "Exited", "Grid", "GridCell", "GridForm", "GridLayout", "GridInput", "MemberCell", "GridValue", "Index",
     "IndexedGrids", "InputValue", "Limits", "Occurrence", "ParseFailure",
     "Program", "RecordValue", "RelationName", "RelationValue", "RemovalTarget",
     "RemoveAtom", "RemoveColumn", "RemoveDisjunct", "RemoveFact",

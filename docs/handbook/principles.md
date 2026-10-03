@@ -119,10 +119,9 @@
                     + gloss
         - A branch's model takes that branch, and the concept branch at every other choice point it takes.
         - A branch's cases are the cases that take it.
-- **open parameter**: a parameter whose value the pairs leave unresolved.
-    - **open values**: two or more values of a parameter that the pairs leave unresolved.
+- **open parameter**: an undetermined property whose possible answers are values of one parameter, with the program unchanged.
+    - **open values**: the values of that parameter that a reader of the concept could take, and that the pairs do not separate.
     - A sibling task containing an input on which the open values disagree fixes the parameter to one of those values.
-    - An undetermined property is an open parameter when its possible answers are values of one parameter, with the program unchanged.
 
 ### Witnesses
 - **divergence witness**: an input on which one of these holds:

@@ -36,6 +36,7 @@ from engine.program import (
     Variable,
     Wildcard,
 )
+from engine.text import PREFIX
 from engine.text import text as layout_name
 from souffle.parser import BINARY, UNARY_PRECEDENCE, chart_prefix
 
@@ -56,7 +57,7 @@ def term(t: Term) -> str:
         case DefinedName(name):
             return name
         case ConstructorTerm(name, args):
-            return f"${name}({terms(args)})"
+            return f"{PREFIX}{name}({terms(args)})"
         case RecordTerm(args):
             return f"[{terms(args)}]"
         case IntrinsicCall(functor, args):

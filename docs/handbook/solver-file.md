@@ -117,6 +117,10 @@
 - The program reads a parameter as `params.<rel>`.
 - `.init helpers = ParamsHelpers` gives the declarations inside Params the shared helpers as `helpers.<rel>`.
     - The program has no access to those helpers.
+- A case stores its base's values of each open parameter it stores, and those are that parameter's open values under the case of that base that takes the concept branch at every `@derive` and `@store` point.
+    - Of a parameter whose value is a set of rows, a case stores one set.
+- **Case column.** Where the cases that read a relation in Params store different values of it, the relation takes a case column in the form of `out`'s, and each fact's case column is the `Choice` value of the case that stores the fact.
+    - Each of its facts stands under the marker of the case its case column holds.
 - **Empty parameterization.** A task with an empty parameterization keeps the comp empty and the `.init` unchanged: `.comp Params {}`.
 - **`@singleton-axis` literal.** A structure that extends along one axis is written in a two-axis type, and the other axis takes a literal `1`.
     - The clause containing that literal ends with `// @singleton-axis: <what the structure is>`.
@@ -162,6 +166,7 @@
 
 ## Determination
 - `Determine` contains the determination as one relation per determined parameter, with the parameter's name and schema, derived from `ex_in` and `ex_out`.
+- The determination relation of a parameter with a case column gives the rows of every case.
 - A determination relation that mirrors no parameter is a helper and takes no parameter's name.
 - A derived relation has no determination relation.
 - When several determined parameters use an Ident for the same entity, their determination relations derive the same id for that entity. The derived id need not equal the stored id.
@@ -194,7 +199,8 @@
     Fact: Arg[]                           // the arguments of one fact
     Arg: number | string | Arg[]
     ```
-- Use a string for a lib constant and a list for a record.
+- Use a string for a lib constant and a list for a record. Write a constructor with no arguments as a string, such as `"$Anchor"`.
+- An `assign` of a relation in [Params](docs/handbook/solver-file.md#params) or of a `@store` line's relation gives its facts without their case part, and every case reads those facts at its own value of the part left out. For a relation in Params, it leaves out the relation's case column. For a `@store` line's relation, it leaves out each column whose type is an ADT in `Choice` or a record built only of such ADTs, and writes a record column that has such fields beside others as the list, in order, of the others. Its key for the relation of a `@store` line above an `.init` is `<instance>.<relation>`.
 - [`GRID_HxW` for grid data](docs/handbook/patterns.md#grid_hxw-for-grid-data) states the form of a stored grid.
     - For a parameter that a `GRID_STAMP_HxW` or `GRID_STAMP_SPARSE_HxW` call stores, a grid of the call's size is read as a picture with the `@` on the cell that carries it in the call's layout, and `{"grid": Grid, "anchor": [row, col]}` is read as a picture of any size with the `@` on the cell at that row and column, counted from 0.
 - A `<name>` fixes the branch at some choice points, in one of these forms. Its model takes the fixed branches and the concept branch at every other point it takes; its cases are the cases of the solver that take the fixed branches ([Choice points and open parameters](docs/handbook/principles.md#choice-points-and-open-parameters) states both for one branch). A `@witness` verdict names its model; a case marker, an `@ignore: derive` or `@ignore: store` line and a group name its cases.

@@ -64,10 +64,11 @@
 /// The task input grid.
 .decl in(p: Position, col: Color)  // @input
 
-/// Train and test inputs, fed in determination mode.
+/// Train and test inputs, which the runner gives as facts in determination
+/// mode.
 .decl ex_in(e: Example, p: Position, col: Color)  // @input
 
-/// Train outputs, fed in determination mode.
+/// Train outputs, which the runner gives as facts in determination mode.
 .decl ex_out(e: Example, p: Position, col: Color)  // @input
 
 // Per-parameter diff between determine.<parameter> and params.<parameter>;

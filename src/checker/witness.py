@@ -3,7 +3,7 @@
 witness file is the evidence for (principles.md, under "Cases"), with what
 `record` computes for an entry."""
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
 from checker.branches import groups_of, untaken_lines
@@ -37,7 +37,6 @@ from checker.judged import (
 from checker.payloads.witness import (
     ApproximatedWithoutWitness,
     ApproximationUnwitnessed,
-    AssignPayload,
     BranchUnwitnessed,
     CaseSet,
     ConceptPayload,
@@ -80,6 +79,7 @@ from solver.annotations import (
 )
 from solver.model import (
     Case,
+    base_case,
     ConstructorBranch,
     DeriveBranch,
     DerivedAtStore,
@@ -97,8 +97,8 @@ from solver.model import (
     is_concept_branch,
     is_concept_case,
     other_branches,
+    unknown_strings,
     point_at,
-    store_branch,
 )
 from solver.names import (
     cover,
@@ -126,7 +126,6 @@ from solver.solve import (
     examples,
     is_result,
     pairs,
-    relation_decl,
     taken,
     task_inputs,
 )
@@ -380,51 +379,20 @@ def _placed(solver: Solver, runs: Runs, entry: Entry
                     for p in solver.problems)
         return None, [] if known and runs.given is None \
             else [finding_of(at)]
-    for key, value in entry.assign:
-        columns = _columns(runs, key)
-        if columns is None or not isinstance(value, AssignRows):
-            continue
-        arities = tuple(sorted({len(r) for r in value.rows}))
-        if arities != (columns,):
-            return None, [Finding(Kind.ASSIGN, _at(runs, entry),
-                                  AssignPayload(key, arities, columns))]
     return entry, []
-
-
-def _columns(runs: Runs, key: str) -> int | None:
-    """How many columns the parameter or `@store` relation an `assign` key
-    names has; None where the key names neither, which
-    `solver.solve.assignment` reports."""
-    solver = runs.solver
-    param = solver.params.parameter(key)
-    if param is not None:
-        return len(param.columns)
-    branch = store_branch(solver, key)
-    if branch is None:
-        return None
-    return len(relation_decl(runs.engine, solver.program,
-                             branch.relation).columns)
 
 
 def _unknown_constants(solver: Solver, entry: Entry
                        ) -> tuple[tuple[str, str], ...] | None:
-    """Each string of the entry's `assign` that is no lib constant, with its
-    key; None where a key names no parameter or stored relation, or every
-    string is a constant."""
-    def strings(args: object) -> Iterator[str]:
-        if isinstance(args, str):
-            yield args
-        elif isinstance(args, tuple):
-            for a in args:
-                yield from strings(a)
-
+    """Each string of the entry's `assign` that names nothing
+    (`solver.model.unknown_strings`), with its key; None where a key names
+    no parameter or stored relation, or every string names something."""
     out: list[tuple[str, str]] = []
     for key, value in entry.assign:
         if not assignable(solver, key):
             return None
         if isinstance(value, AssignRows):
-            out += [(key, s) for s in strings(value.rows)
-                    if s not in solver.lib.constants]
+            out += [(key, s) for s in unknown_strings(solver, value.rows)]
     return tuple(out) or None
 
 
@@ -1489,7 +1457,7 @@ def check_concept_enumerated(solver: Solver, runs: Runs) -> list[Finding]:
     concept = concept_among(solver, every_base(choice) or ())
     if concept is None:
         return []
-    case = Case(concept, ())
+    case = base_case(concept)
     return [Finding(Kind.CONCEPT_UNENUMERATED, AtCase(case),
                     ConceptUnenumeratedPayload(case))]
 

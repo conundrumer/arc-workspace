@@ -14,6 +14,7 @@ from typing import Annotated
 from arc import task as arc_task
 from arc.task import Task
 from engine import checkout
+from engine.engine import unresolved
 from engine.memo import ByIdentity, Once, Recent
 from engine import (
     AdtValue,
@@ -36,8 +37,13 @@ from engine import (
     Value,
 )
 from engine.program import (
+    MemberCell,
+    Primitive,
     first_line,
     term_value,
+    typed_value,
+    TypeReading,
+    ValueReading,
     dotted,
     body_atoms,
     enclosing,
@@ -67,6 +73,7 @@ from engine.program import (
     Wildcard,
 )
 from engine.quotes import quotes
+from engine.text import prefixed
 from solver import annotations as annotations_reader
 from solver import witness as witness_reader
 from solver.annotations import (
@@ -82,6 +89,8 @@ from solver.annotations import (
     WitnessLine,
 )
 from solver.problems import (
+    CaseColumnOffForm,
+    OffFormType,
     InSolver,
     InWitnessFile,
     Named,
@@ -237,6 +246,14 @@ class StoredAtDerive:
 type Branch = DeriveBranch | StoreBranch | StoredAtDerive
 
 
+def derived_parameters(branches: Iterable[Branch]) -> frozenset[str]:
+    """The parameters a `@derive` branch among `branches` derives: a case
+    that takes those branches reads each of them as derived, and every
+    other parameter at its stored value."""
+    return frozenset(b.parameter for b in branches
+                     if isinstance(b, DeriveBranch))
+
+
 @quotes("solver-file.md", "Witness file",
         "the branch of `<rel>`'s point in which the solver's clauses derive "
         "its value")
@@ -263,6 +280,47 @@ class Case:
     base: Base | None
     branches: tuple[Branch, ...]
 
+    @property
+    def is_base_case(self) -> bool:
+        """Whether the case is its base's case (`base_case`)."""
+        return not self.branches
+
+
+@quotes("solver-file.md", "Params",
+        "A case stores its base's values of each open parameter it stores, "
+        "and those are that parameter's open values under the case "
+        "of that base that takes the concept branch at every `@derive` and "
+        "`@store` point.")
+def base_case(base: Base | None) -> Case:
+    """The case of `base` that takes the concept branch at every `@derive`
+    and `@store` point: its base's case, under which the base's stored
+    values are read."""
+    return Case(base, ())
+
+
+def as_case(c: Case | Base) -> Case:
+    """`c` as a case: a case as it is, a base as its base case
+    (`base_case`)."""
+    return c if isinstance(c, Case) else base_case(c)
+
+
+def bases_of(cases: Iterable[Case]) -> list[Base | None]:
+    """The bases of `cases`, each once, in their order; None where the
+    solver has no `Choice` (`Case.base`)."""
+    return list(dict.fromkeys(c.base for c in cases))
+
+
+def choice_values(bases: Iterable[Base | None]) -> list[Base]:
+    """The `Choice` values among `bases`, None left out, in their
+    order."""
+    return [b for b in bases if b is not None]
+
+
+def choice_bases(cases: Iterable[Case]) -> list[Base]:
+    """The `Choice` values among the bases of `cases` (`bases_of`,
+    `choice_values`), each once, in their order."""
+    return choice_values(bases_of(cases))
+
 
 # Params
 
@@ -273,7 +331,8 @@ class UnderMarker:
 
 
 @quotes("style.md", "Params",
-        "A parameter that every case reads is above the case markers.")
+        "A parameter that every case reads is declared above the case "
+        "markers, and so are its facts when it has no case column.")
 @dataclass(frozen=True)
 class Unmarked:
     """Above the first marker that lists a case: a parameter every case
@@ -283,10 +342,8 @@ class Unmarked:
 type Section = Annotated[UnderMarker | Unmarked,
     quotes("solver-file.md", "Cases",
            "**Case markers.** Cases do not interleave: each case's Params and "
-           "clauses are under its marker."),
-    quotes("style.md", "Params",
-           "A parameter that every case reads is above the case markers.")]
-"""Case markers and shared parameters. A marker that lists no case, such as
+           "clauses are under its marker.")]
+"""Case markers, and the shared parameters (`Unmarked`). A marker that lists no case, such as
 `// --- Shared ---`, is a marker like any other."""
 
 
@@ -346,11 +403,7 @@ class DerivedRelation:
         quotes("solver-file.md", "Determination",
                "A derived relation has no determination relation.")]
     """A `Determine` relation of its name mirrors it."""
-    section: Annotated[Section,
-        quotes("style.md", "Params",
-               "A parameter that every case reads is above the case markers. "
-               "A parameter that some case never reads goes under the marker "
-               "of the cases that read it.")]
+    section: Section
     """The section it stands in, as a parameter's (`Parameter.section`):
     what cases share is the marker rule's concern, whatever feeds the
     relation."""
@@ -480,28 +533,6 @@ def row_value(terms: tuple[Term, ...],
 # Reading the lib
 
 
-def resolved_type(types: Sequence[TypeDecl], name: str) -> str:
-    """The type `name` denotes among `types`, each alias followed to the
-    type it names, by name."""
-    return followed(
-        {t.name: t.target for t in types if isinstance(t, AliasType)},
-        name)[-1]
-
-
-def resolved_types(program: Program, types: Iterable[str]
-                   ) -> tuple[str, ...]:
-    """`types` with each alias among the program's types followed
-    (`resolved_type`), as a proposer's types are held."""
-    return tuple(resolved_type(program.types, t) for t in types)
-
-
-def resolved_columns(program: Program, columns: Iterable[Column]
-                     ) -> tuple[str, ...]:
-    """The type of each of `columns`, each alias followed
-    (`resolved_types`)."""
-    return resolved_types(program, (c.type for c in columns))
-
-
 def followed(links: Mapping[str, str], name: str) -> list[str]:
     """`name`, then the type each link names in turn, each once: a type
     name followed through aliases (or subtypes) to the end of its chain,
@@ -524,8 +555,8 @@ def read_lib(program: Program) -> Lib:
     the constants are the lib's `#define` names whose value is a
     constant."""
     lib_types = [t for t in program.types if not own(t.span)]
-    box = {BOX} | {t.name for t in lib_types if isinstance(t, AliasType)
-                   and resolved_type(lib_types, t.name) == BOX} \
+    links = {t.name: t.target for t in lib_types if isinstance(t, AliasType)}
+    box = {BOX} | {n for n in links if followed(links, n)[-1] == BOX} \
         if any(t.name == BOX for t in lib_types) else set[str]()
     constants: dict[str, Value] = {}
     pending = [d for d in program.defines if not own(d)
@@ -759,6 +790,14 @@ def takes_constructor(choice: Choice, base: Base | None,
         and constructor_at(choice, base, point_at(choice, ctor)) == ctor.name
 
 
+def based_choice(solver: "Solver") -> Choice:
+    """The solver's `Choice`, for a caller that holds a base of it. Raises
+    `ValueError` for a solver with no `Choice`, which has no base."""
+    if solver.choice is None:
+        raise ValueError(f"{solver.stem}: no `Choice`, so no base")
+    return solver.choice
+
+
 def every_base(choice: Choice) -> tuple[Base, ...] | None:
     """Every `Choice` value, for a solver that has no `impl_choice`
     (solver-file.md, under "Cases": the cases are every combination of the
@@ -908,8 +947,11 @@ def _grid_call(call: GridCall, constants: Mapping[str, Value]
     for row in call.cells:
         cells: list[int | None] = []
         for cell in row:
-            if isinstance(cell.term, Wildcard) and not call.layout.full:
-                cells.append(None)
+            member = None if call.layout.full \
+                else MemberCell.of_term(cell.term)
+            if member is not None:
+                cells.append(None if member is MemberCell.EMPTY
+                             else member.grid_value)
                 continue
             value = term_value(cell.term, constants.get)
             if type(value) is not int:
@@ -1383,7 +1425,7 @@ def load(stem: str, engine: Engine, path: Path | None = None) -> Solver:
             Named(annotations.representative.task_id)))
     solver = Solver(stem, task_id, program, annotations, choice, branches,
                     params, witness_file, task, lib, tuple(problems))
-    named = tuple(_name_problems(solver))
+    named = (*_name_problems(solver), *_off_form_case_columns(solver))
     if named:
         solver = Solver(stem, task_id, program, annotations, choice,
                         branches, params, witness_file, task, lib,
@@ -1442,7 +1484,7 @@ def lists_case(solver: Solver, marker: CaseMarker) -> bool:
 def _name_problems(solver: Solver) -> Iterator[Fault]:
     """The names the solver and its witness file hold that denote nothing:
     verdicts, markers, named `@ignore` lines, group names, and `assign`
-    keys and constants."""
+    keys and the strings of `assign` values (`arg_value`)."""
     from solver.names import denote, names_a_constructor
 
     def check(name: str | tuple[str, ...], line: int
@@ -1488,21 +1530,10 @@ def _name_problems(solver: Solver) -> Iterator[Fault]:
                             InWitnessFile(e.id, WitnessFileRole.TASK),
                             Named(key))
             if isinstance(value, AssignRows):
-                for s in _strings(value.rows):
-                    if s not in solver.lib.constants:
-                        yield Fault(ProblemKind.ASSIGN_NAMES_NOTHING,
-                                    InWitnessFile(e.id, WitnessFileRole.TASK),
-                                    Named(s))
-
-
-def _strings(args: tuple[AssignArg, ...] | tuple[tuple[AssignArg, ...], ...]
-             ) -> Iterator[str]:
-    """Every string among `assign` arguments, records opened."""
-    for a in args:
-        if isinstance(a, str):
-            yield a
-        elif isinstance(a, tuple):
-            yield from _strings(a)
+                for s in unknown_strings(solver, value.rows):
+                    yield Fault(ProblemKind.ASSIGN_VALUE_UNKNOWN,
+                                InWitnessFile(e.id, WitnessFileRole.TASK),
+                                Named(s))
 
 
 # Dependence
@@ -1533,6 +1564,12 @@ class Dependence:
     that relation; with the relation as a top-level clause names it, or
     the instance of a lib component by its path."""
 
+    def reads_parameter(self, base: Base | None, name: str) -> bool:
+        """Whether `base` has a derivation of `out` that depends on the
+        relation of `Params` `name` (`parameters`); a name absent there is
+        one no base reads."""
+        return base in self.parameters.get(name, ())
+
 
 def readers(rd: Dependence, units: Iterable[UnitId]
             ) -> frozenset[Base | None]:
@@ -1554,18 +1591,24 @@ _DEPENDENCE_ONCE: Once[tuple[tuple[int, ...], tuple[Base | None, ...]],
     = Once(_DEPENDENCE)
 
 
-def dependence(solver: Solver, bases: Sequence[Base | None]) -> Dependence:
+def dependence(engine: Engine, solver: Solver, bases: Sequence[Base | None]
+               ) -> Dependence:
     """Which of `bases` have a derivation of `out` that depends on each
     unit, parameter and relation of the solver's own text
     (solver-file.md, under "Cases", "Params" and "Program").
 
     The result is a function of the solver's model, its case markers
-    among its annotations, the program's declarations and the units of
-    the solver's own text, whose rows are the rows the walk reads; a unit
-    an operation wrote (`own`) is none of them. So it is computed once for each distinct such input, by the
-    identity of those parts: a variation that fixes a parameter's value
-    removes the same own units whatever the value, and a deletion removes
-    its own.
+    among its annotations, the program's declarations, its GRID and RIGID
+    calls and the units of the solver's own text, whose rows are the rows
+    the walk reads; a unit an operation wrote (`own`) is none of them. So
+    it is computed once for each distinct such input, by the identity of
+    those parts: a variation that fixes a parameter's value removes the
+    same own units whatever the value, and a deletion removes its own.
+
+    The walk reads the program as it runs, its GRID and RIGID calls
+    expanded (`Engine.expand`), so that a unit in a RIGID block is read
+    through the rules that place its chart; the units, parameters and
+    stranded units it reports are those of the solver's program.
 
     A unit of a component runs at each instance of the component, and a
     relation of a component is one relation per instance (`Graph`). A base's
@@ -1603,11 +1646,11 @@ def dependence(solver: Solver, bases: Sequence[Base | None]) -> Dependence:
         solver.lib, solver.problems, program.types, program.relations,
         program.components, program.instances, program.functors,
         program.comments, program.includes, program.defines,
-        *(u for u in program.units if own(u.span)))
+        program.macros, *(u for u in program.units if own(u.span)))
     key = (tuple(map(id, held)), tuple(bases))
 
     def make() -> tuple[tuple[object, ...], Dependence]:
-        got = (held, _dependence(solver, bases))
+        got = (held, _dependence(engine.expand(program), solver, bases))
         _DEPENDENCE.put(key, got)
         return got
 
@@ -1620,11 +1663,13 @@ reached units hold, and whether the read is at every value, so that
 every feeder of its relation is read through it."""
 
 
-def _dependence(solver: Solver, bases: Sequence[Base | None]) -> Dependence:
-    """`dependence`, computed."""
+def _dependence(expanded: Program, solver: Solver,
+                bases: Sequence[Base | None]) -> Dependence:
+    """`dependence`, computed over `expanded`, the solver's program with
+    its GRID and RIGID calls expanded."""
     from solver.names import marker_lists
 
-    graph = Graph(solver.program)
+    graph = Graph(expanded)
     cases = _Cases(graph, solver.choice)
     section_at = _sections(solver)
     listing = _listing(solver)
@@ -1683,13 +1728,16 @@ def _dependence(solver: Solver, bases: Sequence[Base | None]) -> Dependence:
             by_relation.setdefault(rel, []).append(base)
     params = [r.name for r in solver.program.relations
               if r.scope == PARAMS_SCOPE]
+    written = frozenset(u.id for u in solver.program.units)
     return Dependence(
-        {u.id: tuple(by_unit[u.id]) for u in graph.units if u.id in by_unit},
+        {u.id: tuple(by_unit[u.id]) for u in graph.units
+         if u.id in by_unit and u.id in written},
         {p: tuple(by_param[p]) for p in params if p in by_param},
         {r: tuple(by_relation[r])
          for r in sorted(by_relation, key=lambda r: (r.instances, r.name))},
         {k: tuple(by_stranded[k]) for k in sorted(
-            by_stranded, key=lambda k: (k[0].index, k[1].path, k[1].name))})
+            by_stranded, key=lambda k: (k[0].index, k[1].path, k[1].name))
+         if k[0] in written})
 
 
 class NodeKind(Enum):
@@ -1743,10 +1791,16 @@ type Placed = tuple[Unit, InstancePath]
 class CaseTypes:
     """The types whose values carry a case (`_Cases`): `Choice`, each
     type that stands in it, and each record type of the solver's own text
-    with a field of such a type; with each record type's field types."""
+    with a field of such a type; with each record type's field types, and
+    the type of each choice point as the model resolves it, by its path."""
 
     types: frozenset[str]
     records: Mapping[str, tuple[str, ...]]
+    points: Mapping[tuple[str, ...], str]
+
+    def at(self, choice: Choice, type: str) -> list[ChoicePoint]:
+        """The points of `choice` of `type`, as the model resolves it."""
+        return [p for p in choice.points if self.points[p.path] == type]
 
     def leaves(self, type: str, value: Value) -> list[tuple[str, Value]]:
         """The values at the case-typed places of a value of `type`, each
@@ -1762,6 +1816,25 @@ class CaseTypes:
         return [x for f, v in zip(fields, value.fields, strict=True)
                 for x in self.leaves(f, v)]
 
+    def whole(self, type: str) -> bool:
+        """Whether every place of a value of `type` carries the case:
+        `Choice`, a type that stands in it, or a record type whose fields
+        are each of such a type."""
+        if type not in self.types:
+            return False
+        fields = self.records.get(type)
+        return type == CHOICE or fields is None \
+            or all(self.whole(f) for f in fields)
+
+    def kept(self, type: str) -> tuple[int, ...] | None:
+        """For a record type with a field of a case type and a field of
+        another (`whole`), the places of the fields that are not wholly of
+        the case, in order; None for any other type."""
+        fields = self.records.get(type)
+        if type not in self.types or fields is None or self.whole(type):
+            return None
+        return tuple(i for i, f in enumerate(fields) if not self.whole(f))
+
 
 def case_types(solver: Solver) -> CaseTypes:
     """The solver's case types, as `dependence` reads them, the types
@@ -1771,7 +1844,10 @@ def case_types(solver: Solver) -> CaseTypes:
 
     def make() -> CaseTypes:
         cases = _Cases(Graph(program), choice)
-        return CaseTypes(frozenset(cases.case_types), dict(cases.records))
+        return CaseTypes(frozenset(cases.case_types), dict(cases.records),
+                         {} if choice is None else {
+                             p.path: cases.graph.resolve_type(p.type, ())
+                             for p in choice.points})
 
     return _CASE_TYPES.guarded(program, choice, make)
 
@@ -1807,6 +1883,19 @@ class Graph:
         """The scope whose text declares the instance at each path."""
         self.own_types = {(t.scope.components, t.name)
                           for t in program.types if own(t.span)}
+        self.type_decls: dict[str, TypeDecl] = {}
+        """Each type the program declares by its key: an own type's
+        `type_key`, a lib type's name. Souffle takes one declaration of a
+        name in a scope, so a key has one declaration."""
+        for t in program.types:
+            self.type_decls.setdefault(
+                self.type_key(t.scope.components, t.name) if own(t.span)
+                else t.name, t)
+        self.aliases: dict[str, str] = {
+            k: self.link(t) for k, t in self.type_decls.items()
+            if isinstance(t, AliasType)}
+        """Each alias by its type key, with the type key its target names
+        (`link`)."""
         for at, path, inst, comp in self._instance_tree(False):
             self.comp[path] = comp.name
             self.inst_scope[path] = inst.scope.components
@@ -1988,10 +2077,23 @@ class Graph:
         return dotted((*scope, name))
 
     def resolve_type(self, name: str, scope: tuple[str, ...]) -> str:
-        """The type `name` denotes when read in `scope`: the nearest scope
-        around it, itself first, whose own text declares the name, as
-        `type_key` names it; the name itself where no own text declares
-        it, as for a lib or built-in type."""
+        """The type `name` denotes when read in `scope`, as `type_key`
+        names it: the type the nearest scope around `scope`, itself first,
+        whose own text declares the name, declares, or the name itself
+        where no own text declares it, as for a lib or built-in type; then
+        each alias followed to the type it names (`aliases`). The one
+        reading of a type that a comparison of types reads."""
+        return followed(self.aliases, self._scoped(name, scope))[-1]
+
+    def link(self, t: AliasType | SubtypeType) -> str:
+        """The type key an alias's target or a subtype's base names: an
+        own type's read in the scope that declares it, a lib type's by its
+        name."""
+        target = t.target if isinstance(t, AliasType) else t.base
+        return self._scoped(target, t.scope.components) if own(t.span) \
+            else target
+
+    def _scoped(self, name: str, scope: tuple[str, ...]) -> str:
         for around in enclosing(scope):
             if (around, name) in self.own_types:
                 return self.type_key(around, name)
@@ -2193,7 +2295,7 @@ class _Cases:
         self.graph = graph
         self.choice = choice
         self.points = set() if choice is None else {
-            p.type for p in choice.points}
+            graph.resolve_type(p.type, ()) for p in choice.points}
         self.records: dict[str, tuple[str, ...]] = {
             graph.type_key(t.scope.components, t.name): tuple(
                 graph.resolve_type(f.type, t.scope.components)
@@ -2209,8 +2311,7 @@ class _Cases:
             self.case_types |= more
             grown = bool(more)
         self._eq: dict[UnitId, dict[str, Term]] = {}
-        self.declared = {graph.type_key(*k) for k in graph.own_types} \
-            | {t.name for t in graph.program.types if not own(t.span)}
+        self.declared = set(graph.type_decls)
         self._cycles = 0
         """How many reads of a place being read already have been met; a
         result that met none, or holds, is final."""
@@ -2566,9 +2667,7 @@ def takes(solver: Solver, case: Case, branch: Branch) -> bool:
     lists, or `<param>=stored` where it lists no `@derive` branch of the
     parameter."""
     if isinstance(branch, StoredAtDerive):
-        return not any(isinstance(b, DeriveBranch)
-                       and b.parameter == branch.parameter
-                       for b in case.branches)
+        return branch.parameter not in derived_parameters(case.branches)
     return branch in case.branches
 
 
@@ -2606,24 +2705,194 @@ def is_concept(solver: Solver, base: Base | None) -> bool:
     return all(non_concept_at(choice, base, p) is None for p in choice.points)
 
 
+def holds_at(solver: Solver, base: Base | None, types: Sequence[str],
+             case_cols: Sequence[int], values: tuple[Value, ...]) -> bool:
+    """Whether the base holds the case values of a row: the base itself
+    at a `Choice` column, and at a column of a point's type, the column's
+    value at some point of that type, `types` being the column types as
+    the model resolves them (`column_types`). Whether the base depends on
+    the relation is the caller's to ask."""
+    choice = solver.choice
+    if choice is None or base is None:
+        return False
+    reading = case_types(solver)
+    for i, v in zip(case_cols, values, strict=True):
+        for t, leaf in reading.leaves(types[i], v):
+            if leaf not in base_values(choice, reading, base, t):
+                return False
+    return True
+
+
+def base_values(choice: Choice, reading: CaseTypes, base: Base, type: str
+                ) -> list[Value]:
+    """What `base` holds at a case column of `type`: the base itself at a
+    `Choice` column, and at a column of a point's type the base's value at
+    each point of that type it reaches (`value_at`). Raises `ValueError`
+    where `type` is neither: a place of a record case type that holds no
+    record of its fields, which no value of the column's type is."""
+    if type == CHOICE:
+        return [base]
+    points = reading.at(choice, type)
+    if not points:
+        raise ValueError(f"`{type}` is neither `Choice` nor a point's type")
+    return [v for p in points
+            if (v := value_at(choice, base, p.path)) is not None]
+
+
+def case_values(solver: Solver, choice: Choice, base: Base, type: str
+                ) -> list[Value]:
+    """What `base` holds at a case column or field of `type` wholly of the
+    case (`CaseTypes.whole`): `base_values` at `Choice` and at a point's
+    type, and at a record type each record of what the base holds at its
+    fields. Raises `ValueError` where `type` is not wholly of the case."""
+    reading = case_types(solver)
+    if not reading.whole(type):
+        raise ValueError(f"`{type}` is not wholly of the case")
+    fields = reading.records.get(type)
+    if type == CHOICE or fields is None:
+        return base_values(choice, reading, base, type)
+    return [RecordValue(tuple(v)) for v in product(
+        *(case_values(solver, choice, base, f) for f in fields))]
+
+
+def parameter(solver: Solver, name: str) -> RelationName:
+    """A parameter as the program reads it, `params.<rel>`
+    (solver-file.md, under "Params")."""
+    inst = instance_of(solver.program, PARAMS)
+    if inst is None:
+        raise ValueError(f"{solver.stem}: no instance of `Params`")
+    return RelationName((inst.name,), name)
+
+
+@quotes("solver-file.md", "Params",
+        "**Case column.** Where the cases that read a relation in Params "
+        "store different values of it, the relation takes a case column in "
+        "the form of `out`'s, and each fact's case column is the `Choice` "
+        "value of the case that stores the fact.")
+def parameter_case_columns(types: Sequence[str]) -> tuple[int, ...]:
+    """The case columns of a parameter of column types `types`, as the
+    model resolves them (`column_types`): its columns of type `Choice`,
+    each fact's `Choice` value there being the case that stores the
+    fact."""
+    # A case column is keyed by the whole `Choice` value; keying it by one
+    # branch in its place is deferred.
+    return tuple(i for i, t in enumerate(types) if t == CHOICE)
+
+
+def parameter_columns(solver: Solver, name: str) -> "ColumnTypes":
+    """The column types of the parameter `name` as the program reads it
+    (`parameter`, `column_reading`)."""
+    return column_reading(solver.program, parameter(solver, name))
+
+
+def _off_form_case_columns(solver: Solver) -> Iterator[Fault]:
+    """Each parameter's column that carries the case (`case_columns`) and
+    is no case column of a parameter (`parameter_case_columns`). With no
+    `Choice` no column carries the case, and with no instance of `Params`
+    the program reads no parameter."""
+    if solver.choice is None or instance_of(solver.program, PARAMS) is None:
+        return
+    records = case_types(solver).records
+    for p in solver.params.parameters:
+        decl = declaration_of(solver.program, p)
+        types = parameter_columns(solver, p.name).types
+        case = parameter_case_columns(types)
+        for i in case_columns(solver, types):
+            if i not in case:
+                column = decl.columns[i]
+                yield Fault(ProblemKind.CASE_COLUMN_OFF_FORM,
+                            InSolver(decl.span.first),
+                            CaseColumnOffForm(
+                                p.name, column.name, column.type,
+                                OffFormType.RECORD if types[i] in records
+                                else OffFormType.ADT))
+
+
+def case_columns(solver: Solver, of: RelationName | Sequence[str]
+                 ) -> tuple[int, ...]:
+    """The columns of the relation `of` of the solver's program, or of a
+    relation of column types `of`, as the model resolves them
+    (`column_types`), that carry the case: of type `Choice`, of an
+    ADT that stands in `Choice` (solver-file.md, under "Types"), or of a record
+    type with a field of such a type, a component's type parameter read through
+    the instance, which carries the case in that field and is a key in its
+    other fields (`case_types`, as `dependence` reads them). A
+    case column is a key of a stored value, never one of its columns."""
+    if solver.choice is None:
+        return ()
+    types = column_types(solver.program, of) \
+        if isinstance(of, RelationName) else of
+    case = case_types(solver).types
+    return tuple(i for i, t in enumerate(types) if t in case)
+
+
 def is_concept_case(solver: Solver, case: Case) -> bool:
-    """Whether `case` is the concept case: the concept case's base
-    (`is_concept`) with the concept branch at every `@derive` and `@store`
-    point (principles.md, under "The concept")."""
-    return not case.branches and is_concept(solver, case.base)
+    """Whether `case` is the concept case: the base case (`base_case`) of
+    the concept case's base (`is_concept`) (principles.md, under "The
+    concept")."""
+    return case.is_base_case and is_concept(solver, case.base)
+
+
+@dataclass(frozen=True)
+class ColumnTypes:
+    """A relation's column types: `types`, each as the model resolves it
+    (`Graph.resolve_type`), which every comparison of types reads; and
+    `written`, each as the declaration writes it, which a report prints."""
+
+    written: tuple[str, ...]
+    types: tuple[str, ...]
+
+
+_COLUMN_READINGS: ByIdentity[Program, dict[RelationName, ColumnTypes]] \
+    = ByIdentity()
+"""`column_reading`'s results, for each program while it lives: a
+parameter's value is written into a group's program on every input."""
+
+
+def column_reading(program: Program, relation: RelationName) -> ColumnTypes:
+    """The column types of `relation`, named from the top level
+    (`ColumnTypes`), so that a type the solver's own text declares in a
+    component is not a top-level type of the same name. Raises
+    `ValueError` where the model resolves no declaration of the
+    relation. Computed once per program and relation while the program
+    lives."""
+    return _COLUMN_READINGS.keyed(
+        program, relation, lambda: _column_reading(program, relation))
+
+
+def _column_reading(program: Program, relation: RelationName
+                    ) -> ColumnTypes:
+    """`column_reading`, computed."""
+    graph = Graph(program)
+    got = graph.column_types((), relation)
+    if got is None:
+        raise unresolved(relation)
+    decl = _declaration(graph, relation)
+    return ColumnTypes(tuple(c.type for c in decl.columns), tuple(got))
+
+
+def column_names(program: Program, relation: RelationName
+                 ) -> tuple[str, ...]:
+    """The name of each column of `relation`, named from the top level, in
+    its declaration. Raises `ValueError` where the model resolves no
+    declaration of the relation."""
+    return tuple(c.name for c in _declaration(Graph(program), relation).columns)
+
+
+def _declaration(graph: Graph, relation: RelationName) -> RelationDecl:
+    """The declaration of `relation`, named from the top level, that the
+    model resolves. Raises `ValueError` where it resolves none."""
+    got = graph.decl((), relation)
+    if got is None:
+        raise unresolved(relation)
+    return got[0]
 
 
 def column_types(program: Program, relation: RelationName
                  ) -> tuple[str, ...]:
-    """The type of each column of `relation`, named from the top level, as
-    the model resolves it (`Graph.column_types`), so that a type the
-    solver's own text declares in a component is not a top-level type of
-    the same name. Raises `ValueError` where the model resolves no
-    declaration of the relation."""
-    got = Graph(program).column_types((), relation)
-    if got is None:
-        raise ValueError(f"`{relation.text}` resolves to no declaration")
-    return tuple(got)
+    """The type of each column of `relation` as the model resolves it
+    (`column_reading`)."""
+    return column_reading(program, relation).types
 
 
 def ident_keyed(program: Program, relation: RelationName) -> bool:
@@ -2639,19 +2908,131 @@ def ident_keyed(program: Program, relation: RelationName) -> bool:
     types = graph.column_types((), relation)
     if types is None:
         return False
-    links: dict[str, str] = {}
-    for t in program.types:
-        if not isinstance(t, AliasType | SubtypeType):
-            continue
-        target = t.target if isinstance(t, AliasType) else t.base
-        scope = t.scope.components
-        if own(t.span):
-            links.setdefault(graph.type_key(scope, t.name),
-                             graph.resolve_type(target, scope))
-        else:
-            links.setdefault(t.name, target)
-
+    links = {k: graph.link(t) for k, t in graph.type_decls.items()
+             if isinstance(t, AliasType | SubtypeType)}
     return any(IDENT in followed(links, t) for t in types)
+
+
+# Reading an `assign` argument
+
+
+@dataclass(frozen=True)
+class ArgUnknown:
+    """An `assign` string that names no lib constant and, with its `$`
+    prefix, no constructor with no arguments of a type the program
+    declares."""
+
+    text: str
+
+
+@dataclass(frozen=True)
+class ArgOffType:
+    """An `assign` argument whose value is no value of `type`."""
+
+    type: str
+
+
+type ArgOff = ArgUnknown | ArgOffType
+
+
+@quotes("solver-file.md", "Witness file",
+        "Use a string for a lib constant and a list for a record. Write a "
+        "constructor with no arguments as a string, such as "
+        "`\"$Anchor\"`.")
+def arg_value(solver: Solver, arg: AssignArg, type: str
+              ) -> Value | ArgOff:
+    """An `assign` argument as a value (`_arg_read`), which must be a value
+    of `type`, a column type as `column_types` names it, a type parameter
+    read as the type the instance gives it (`engine.program.typed_value`).
+    Raises ValueError for a type name that resolves to no declaration
+    (`_types`)."""
+    value = _arg_read(solver, arg, _nullary_constructors(solver.program))
+    if isinstance(value, ArgUnknown):
+        return value
+    fits = typed_value(value, type, _as_named, _types(solver.program),
+                       _VALUES) is not None
+    return value if fits else ArgOffType(type)
+
+
+def _arg_read(solver: Solver, arg: AssignArg, ctors: frozenset[str]
+              ) -> Value | ArgUnknown:
+    """An `assign` argument as a value: a number; a string with the
+    constructor prefix as the constructor of `ctors` of that name, any
+    other string as the lib constant it names; a list as a record of
+    such."""
+    if isinstance(arg, tuple):
+        fields: list[Value] = []
+        for f in arg:
+            v = _arg_read(solver, f, ctors)
+            if isinstance(v, ArgUnknown):
+                return v
+            fields.append(v)
+        return RecordValue(tuple(fields))
+    if isinstance(arg, int):
+        return arg
+    if (name := prefixed(arg)) is not None:
+        return AdtValue(name, ()) if name in ctors else ArgUnknown(arg)
+    got = solver.lib.constants.get(arg)
+    return ArgUnknown(arg) if got is None else got
+
+
+def unknown_strings(solver: Solver, args: Sequence[AssignArg]
+                    ) -> Iterator[str]:
+    """Each string among `assign` arguments, records opened, that names
+    nothing (`_arg_read`), in order."""
+    ctors = _nullary_constructors(solver.program)
+    for a in args:
+        if isinstance(a, tuple):
+            yield from unknown_strings(solver, a)
+        elif isinstance(a, str) \
+                and isinstance(_arg_read(solver, a, ctors), ArgUnknown):
+            yield a
+
+
+def _nullary_constructors(program: Program) -> frozenset[str]:
+    """The constructors with no arguments of the types the program
+    declares, its lib's among them."""
+    return frozenset(c.name for t in program.types if isinstance(t, AdtType)
+                     for c in t.constructors if not c.fields)
+
+
+type _Scope = Callable[[str], str]
+"""The reading of a type name in the scope that declares the type it is
+read in, as `column_types` names a type."""
+
+
+def _types(program: Program) -> TypeReading[_Scope]:
+    """The reading of a type name, as `column_types` names a type: each
+    type the program declares by its key (`Graph.type_decls`), with the
+    reading of a name in the scope that declares it. Raises ValueError for
+    a name that is neither a primitive nor such a key."""
+    graph = Graph(program)
+
+    def read(name: str, scope: _Scope) -> tuple[TypeDecl | Primitive, _Scope]:
+        key = scope(name)
+        if (primitive := Primitive.named(key)) is not None:
+            return primitive, scope
+        t = graph.type_decls.get(key)
+        if t is None:
+            raise ValueError(f"type `{key}` resolves to no declaration")
+        own_scope = t.scope.components
+        return t, ((lambda n: graph.resolve_type(n, own_scope))
+                   if own(t.span) else _as_named)
+
+    return read
+
+
+def _as_named(name: str) -> str:
+    return name
+
+
+_VALUES = ValueReading[Value](
+    primitive=lambda v, kind: v if isinstance(v, kind.values)
+    and not isinstance(v, bool) else None,
+    record=lambda v: v.fields if isinstance(v, RecordValue) else None,
+    constructor=lambda v: (v.constructor, v.args)
+    if isinstance(v, AdtValue) else None)
+"""A value as the value it is."""
 
 
 def cases(solver: Solver, engine: Engine, limits: Limits
@@ -2694,8 +3075,8 @@ def cases(solver: Solver, engine: Engine, limits: Limits
     else:
         every = every_base(choice)
         bases = () if every is None else every
-    read = dependence(solver, bases) if solver.branches else Dependence({}, {}, {})
-    params = {p: set(b) for p, b in read.parameters.items()}
+    read = dependence(engine, solver, bases) if solver.branches \
+        else Dependence({}, {}, {})
     relations = {r: set(b) for r, b in read.relations.items()}
     order = {b: i for i, b in enumerate(solver.branches)}
     cases: list[Case] = []
@@ -2704,7 +3085,7 @@ def cases(solver: Solver, engine: Engine, limits: Limits
         at: dict[str, int] = {}
         for b in solver.branches:
             if isinstance(b, DeriveBranch) \
-                    and base in params.get(b.parameter, ()):
+                    and read.reads_parameter(base, b.parameter):
                 if b.parameter not in at:
                     at[b.parameter] = len(points)
                     points.append([None])
