@@ -2,8 +2,11 @@
 
     uv run python scripts/merge_change.py <worktree> -m <message>
 
-The worktree stands on a branch of its own. The script runs the change's
-checks in the worktree, on the files as they stand there:
+The worktree stands on a branch of its own. The script first sets up the
+worktree's git submodules with `git submodule update --init`, cloning each
+from the main tree's copy of it under `.git/modules/`, with every transport
+but the local one refused, so that the setup uses no network. It then runs
+the change's checks in the worktree, on the files as they stand there:
 
     uv run python -m controlled_markdown check     always
     uv run pyright                                 where the change touches
@@ -18,10 +21,13 @@ When every check passes, the script commits the worktree's uncommitted
 changes on its branch with the message given, rebases the branch onto
 `master`, fast-forwards `master` in the main tree to the branch, runs
 `uv run python scripts/context.py --write` in the main tree, and removes the
-worktree and its branch.
+worktree and its branch. Since git removes a worktree that holds submodules
+only by force, the removal is forced, after a check that the worktree holds
+no change against its branch.
 
 The script refuses, and says why, where:
 
+- the submodule setup fails;
 - a check fails;
 - the main tree has uncommitted changes to a path the change touches;
 - the rebase conflicts, in which case it aborts the rebase and leaves the
@@ -74,14 +80,16 @@ class Check:
     last_line: str | None = None
 
 
-def git(cwd: Path, *argv: str) -> subprocess.CompletedProcess[str]:
-    """One git command in `cwd`."""
-    return subprocess.run(["git", *argv], cwd=cwd, capture_output=True, text=True)
+def git(cwd: Path, *argv: str,
+        env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    """One git command in `cwd`, in the environment `env` where one is given."""
+    return subprocess.run(["git", *argv], cwd=cwd, env=env, capture_output=True,
+                          text=True)
 
 
-def git_out(cwd: Path, *argv: str) -> str:
+def git_out(cwd: Path, *argv: str, env: dict[str, str] | None = None) -> str:
     """The stdout of a git command in `cwd`, which must succeed."""
-    done = git(cwd, *argv)
+    done = git(cwd, *argv, env=env)
     if done.returncode != 0:
         raise Failed(f"git {' '.join(argv)} failed in {cwd}: {said(done)}")
     return done.stdout
@@ -115,6 +123,27 @@ def changed_paths(tree: Path, base: str) -> set[str]:
     names = git_out(tree, "diff", "--name-only", "--no-renames", "-z", base)
     new = git_out(tree, "ls-files", "--others", "--exclude-standard", "-z")
     return {p for p in (names + new).split("\0") if p}
+
+
+def set_up_submodules(worktree: Path, main: Path) -> None:
+    """Run `git submodule update --init` in the worktree, with each
+    submodule's URL set to the main tree's copy of its repository, and every
+    transport but the local one refused. A failure is a refusal."""
+    print("merge_change: setting up the submodules from the main tree", flush=True)
+    try:
+        listed = git_out(worktree, "config", "-f", ".gitmodules", "-z",
+                         "--get-regexp", r"^submodule\..*\.path$")
+        overrides: list[str] = []
+        for entry in filter(None, listed.split("\0")):
+            key = entry.split("\n", 1)[0]
+            name = key.removeprefix("submodule.").removesuffix(".path")
+            source = git_out(main, "rev-parse", "--path-format=absolute",
+                             "--git-path", f"modules/{name}").strip()
+            overrides += ["-c", f"submodule.{name}.url={source}"]
+        git_out(worktree, *overrides, "submodule", "update", "--init",
+                env={**os.environ, "GIT_ALLOW_PROTOCOL": "file"})
+    except Failed as exc:
+        raise Refused(f"setting up the submodules from {main} failed: {exc}") from exc
 
 
 def checks(touched: set[str]) -> list[Check]:
@@ -209,6 +238,7 @@ def merge(worktree: Path, message: str) -> None:
         raise Refused(f"{branch} holds no change against {MASTER}")
     refuse_main_touched(main, touched)
 
+    set_up_submodules(worktree, main)
     for check in checks(touched):
         run_check(worktree, check)
 
@@ -236,7 +266,11 @@ def merge(worktree: Path, message: str) -> None:
                       f"in {main}; {worktree} and {branch} stay:\n{said(done)}")
 
     print(f"merge_change: removing {worktree} and {branch}", flush=True)
-    git_out(main, "worktree", "remove", str(worktree))
+    left = sorted(changed_paths(worktree, "HEAD"))
+    if left:
+        raise Failed(f"{MASTER} is fast-forwarded, and {worktree} holds changes made "
+                     f"after the commit, so it and {branch} stay:\n" + "\n".join(left))
+    git_out(main, "worktree", "remove", "--force", str(worktree))
     git_out(main, "branch", "-q", "-d", branch)
     print(f"merge_change: merged {branch} into {MASTER}")
 
