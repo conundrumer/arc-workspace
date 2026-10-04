@@ -11,7 +11,7 @@
 - Where the editor leaves a kept finding for a decision, decide the question it raises, from the reason the editor gives, as [How a decision is made](prompts/agents/notes/decisions.md#how-a-decision-is-made) gives, and send the editor the decision.
 - Where the `controlled_markdown` check reports a `quotes` call that a change to the documents broke, send that finding to a code editor in place of the doc editor: launch one in the change's worktree, with §D5 of `~/.claude/plans/typed-crunching-teapot.md` as its spec section, each call the check reports as an item, and the files of those calls as the files it may edit.
 - Where you did not launch the editor, return the findings you keep and your decisions in your reply in place of sending them to it.
-- In each message that sends a reviewer fixes, give what has been settled about the change since its brief.
+- In each message that sends a reviewer fixes, give what has been settled about the change since its brief, and each request the user added to the change since its brief.
 - Before you launch the first editor of a change, add a worktree for it on a branch of its own, with `git worktree add -b <branch> <path>`, at a path outside the main tree.
 - Give that worktree in the brief of each agent that works on the change.
 - Run the changes you launch at the same time, each in its own worktree.
@@ -26,3 +26,4 @@
 
 ## worktree
 - The message that launches you gives the worktree of the change you work on. Run each command in it, and take each path in the repo from it.
+- A later message may add a request to the change, in the form your brief gives one, and that request is part of what the change is to do.

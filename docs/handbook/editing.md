@@ -12,7 +12,11 @@
 - Choose an edit in this order of preference: a deletion; no change, where a tool or another line already covers it; a change to existing words; and new words only where none of those is enough.
 - Fix a finding by changing the line that caused it, and add no exception to a rule for a small inconsistency.
 - When the premise of a line is wrong, change the line that states that premise.
-- A line kept against a rule of this document, or put back after a cut, has a `comment`, as [Directives](src/controlled_markdown/writing.md#directives) gives it, that says why it stays. A comment on a kept restatement or elaboration gives the observed failure that required it. Take that failure from the one who asked for the change, or from a record you read of a session, a task and pass, or a run.
+- A line kept against a rule of this document, or put back after a cut, has a `comment`, as [Directives](src/controlled_markdown/writing.md#directives) gives it, that says why it stays. A comment on a kept restatement or elaboration names the observed failure that required it: the reader that failed, where, and what it did without that text, with the issue or the transcript that records it. Take that failure from the one who asked for the change, or from an issue or a transcript you read, and in either case cite the issue or the transcript that records it.
+- Where a restatement or an elaboration you write or keep in your edit has no issue or transcript that records its failure, search the issues and the project's session transcripts for one. Where you find one, rewrite the comment to name it, and where you find none, cut the line.
+    - The issues are under `issues/` in the main tree, the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints. Git ignores `issues/`, so a worktree has none.
+    - `python3 ~/.claude/skills/retrieve/transcripts.py --help` lists the subcommands that read the transcripts, and each takes a session as its id or its `.jsonl` path.
+    - The session transcripts are the `.jsonl` files directly in `~/.claude/projects/-Users-davidlu-code-arc-workspace/` and in `~/.claude-console/projects/-Users-davidlu-code-arc-workspace/`, and a session's subagent transcripts are the `.jsonl` files at any depth under `<session id>/subagents/` in the same directory, each of which a subcommand takes as a session of its own.
 
 ## Where each text is
 - The handbook's documents: [Handbook](prompts/handbook.md) includes them in order, and holds no text of its own.
@@ -68,7 +72,7 @@
 ## Writing a file
 - In an edit, follow the form the file's other lines show.
 - A file that has editing notes opens with them, under a `* comment: when editing this doc` line. Read them before you edit the file.
-- A line uses precise and conventional words, each term in the meaning the documents give it, and no contrastive structure unless the alternative must be addressed.
+- A line uses precise and conventional words, each term in the meaning the documents give it, and no contrastive structure unless the alternative must be addressed. The conventional word for a thing is the term practitioners of its discipline use for it, where one exists.
     - A line uses each word in its literal sense: `name` as a verb is for giving a thing a name, and nowhere else.
 - Write that a thing always holds or never holds only where you know it does. Where a check is what the claim rests on, state the claim over the instances the check covered, such as the task's inputs.
     - Such a claim most often uses `never`, `every`, `no` or `nothing`.
@@ -95,6 +99,8 @@
     - Follow the reader through each operation its context gives, in order. At each operation, ask what the reader is focused on, what it holds, where each output it makes goes (a file, its report, or its reply), and whether the context gives what the operation needs.
     - Where one pass takes another pass's output, check that the form the first pass's context gives that output is the form the second pass's context reads.
     - Check each line against every rule that this document, [Writing a document](src/controlled_markdown/writing.md) and [Templating a document](src/controlled_markdown/templating.md) give a line.
+    - List every term the change introduces, headings and labels included, wherever you write the review, apart from its findings, and report as a finding each that breaks the rule on conventional words in [Writing a file](#writing-a-file).
+        * comment: On 2026-10-04, the doc-reviewer runs `ab58e2331176baa7c` and `a8875999997fee88e` of session `dc433af1-cf87-408d-ab9d-9a1ede6b1b2a` applied the rule on conventional words to other lines of a diff that added the section name `pass-issues`, and their findings did not report that name.
     - Report each line that gives an agent a power it did not have, such as deleting, overwriting, renaming, reverting, or deciding what the user decides, and each line that moves a step between the user, the session at a terminal, and an agent. Report each such line as an item of its own, to the one who asked for the change.
     - Start from the assumption that defects are there, and trace each one to the line that caused it, or to the premise that is wrong.
     - Treat a finding as one instance of a kind, and search every context for the other instances of that kind.
