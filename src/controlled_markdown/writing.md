@@ -60,6 +60,8 @@
         - Every other `check_` function has a `quotes` decorator that quotes [Principles](docs/handbook/principles.md).
 - A `///` or `//!` comment in a Souffle file is read as the text of one statement, and the rules on a statement's text apply to it.
 - The check reads nothing else in a code file as a document, and it reports each finding in a code file at that file's own line.
+- A docstring, or a comment in Python or JavaScript, holds only a rule or a reason the code does not show, or an index that leads a reader to what the code holds.
+    - Where your edit meets text in one that restates the code it sits beside, cut that text in place of updating it.
 
 ## Nesting
 
