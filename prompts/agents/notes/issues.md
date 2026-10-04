@@ -2,7 +2,7 @@
 - The statements on filing an issue that more than one entry point inlines.
 
 ## pass-issues
-- An issue is a doc line or a tool behavior that slowed the pass, or that made its output wrong; a problem in the task's own files is not one.
+- An issue is a doc line or a tool behavior that cost the pass time or tokens, or that made its output wrong; a problem in the task's own files is not one.
 - As each issue happens, note it in `.scratch/<task_id>/progress.md`, under a heading that is the name of this pass's report.
 - When the report's other sections are settled, file each issue noted under that heading, whether or not an earlier pass hit it, with the task id as `<source>` and your agent's name as `<agent>`.
     - `kind` is `interference` when the pass's output had something wrong because of the issue, whether or not the pass repaired it, and `delay` otherwise.

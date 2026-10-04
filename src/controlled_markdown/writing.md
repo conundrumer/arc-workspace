@@ -54,6 +54,7 @@
 - A `quotes(document, heading, words)` call quotes the most direct handbook text the function it decorates rests on, and the check reads its three strings as literals.
     - The document is a path under [handbook](docs/handbook), the heading is the text of a heading in it, and the words stand under that heading, in its subsections too, up to line wrapping.
     - The check reports a call whose document, heading or words it does not find, at the call's line, with the words.
+        - A rewording of the document that breaks a quote is kept, and an editor of the code checks the function at the line the check reports against the new text, then changes the quote there.
     - In [checker](src/checker), every `survey_` function has a `quotes` decorator, and every `check_` function has a `quotes` or a `guard` decorator.
         - A `check_` function in [lint](src/checker/lint), or one whose every finding kind stands outside `FAILING` in [finding.py](src/checker/finding.py), may have a `guard(words)` decorator in place of `quotes`, where no handbook passage states what it guards against.
             - The check reads the one string of a `guard` call as a literal, and that string says what the function guards against.

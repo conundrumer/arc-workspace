@@ -59,6 +59,7 @@
     - A reader whose `+ lib:` is `index` reads a declaration's interface when it needs one.
 - A document mentions a file under [src](src) only where its reader runs or reads the file.
 - State a fact or a rule once, in the document and the section whose subject it is, and link it from every other place.
+- An agent's `description`, in the front matter of its prompt, says what the agent is for, and each input its brief must give for that work, where the agent needs any.
 - A line that links a section relies on that section's heading alone.
 - No document restricts, replaces or redirects an operation another document states.
 - Guidance for an uncommon case reaches its reader where the reader meets the case: a tool's output there gives at most a clause and points to longer text, or a stated condition tells the reader to load it.
@@ -99,6 +100,7 @@
     - Follow the reader through each operation its context gives, in order. At each operation, ask what the reader is focused on, what it holds, where each output it makes goes (a file, its report, or its reply), and whether the context gives what the operation needs.
     - Where one pass takes another pass's output, check that the form the first pass's context gives that output is the form the second pass's context reads.
     - Check each line against every rule that this document, [Writing a document](src/controlled_markdown/writing.md) and [Templating a document](src/controlled_markdown/templating.md) give a line.
+    - A finding needs a decision where its possible fixes differ in what a reader is told or may do.
     - List every term the change introduces, headings and labels included, wherever you write the review, apart from its findings, and report as a finding each that breaks the rule on conventional words in [Writing a file](#writing-a-file).
         * comment: On 2026-10-04, the doc-reviewer runs `ab58e2331176baa7c` and `a8875999997fee88e` of session `dc433af1-cf87-408d-ab9d-9a1ede6b1b2a` applied the rule on conventional words to other lines of a diff that added the section name `pass-issues`, and their findings did not report that name.
     - Report each line that gives an agent a power it did not have, such as deleting, overwriting, renaming, reverting, or deciding what the user decides, and each line that moves a step between the user, the session at a terminal, and an agent. Report each such line as an item of its own, to the one who asked for the change.
