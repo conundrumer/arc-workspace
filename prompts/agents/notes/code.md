@@ -22,8 +22,9 @@
         * comment: Of scan 7's 30 items, 9 stood with reasons, among them one style.md sentence quoted at four checks, which the quote rule requires.
 - Places that pose a question:
     - A condition on one solver, one command or one shape of input.
+    - A change in the diff that makes false the premise of any line but its own lines, in a document or in prose in code.
 
 ## place-issues
 - Cite a place's target as every location of the place. For one idea in two places, the locations include those outside the diff.
-- Write under `Effect` what the code does there, and quote that code under `Evidence`.
+- Write under `Effect` what the code does there, and quote each location under `Evidence`.
 - In the title of an `undecided` issue, write the question it poses after the target, in place of what is wrong in it.

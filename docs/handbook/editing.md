@@ -107,6 +107,7 @@
     - Start from the assumption that defects are there, and trace each one to the line that caused it, or to the premise that is wrong.
     - Treat a finding as one instance of a kind, and search every context for the other instances of that kind.
     - After each fix, read the contexts the fix touches again for contradictions.
+- Find each line of the document set or of prose in code, outside the change, whose premise the change makes false, read it in each of its readers' contexts, and report each that no longer stands.
 - Report nothing the one who asked for the change gives as already settled.
 - After a change that moves or reshapes the lines of a document, diff the handbook render and the console messages against HEAD, and read the diff for dropped lines.
     * comment:
