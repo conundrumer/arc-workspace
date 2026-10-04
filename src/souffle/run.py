@@ -11,6 +11,7 @@ import math
 import os
 import random
 import re
+import shutil
 import signal
 import subprocess
 import tempfile
@@ -164,6 +165,51 @@ def preprocessor_flags() -> tuple[str, ...]:
     return (f"--preprocessor={clang} -x c -E",)
 
 
+FUNCTOR_LIB_NAME = "functors"
+"""The name Souffle links the functor library by (`-lfunctors`)."""
+FUNCTOR_LIB = f"lib{FUNCTOR_LIB_NAME}.dylib"
+"""The functor library's file in the functor directory."""
+FUNCTOR_SOURCE = "lib_functors.cpp"
+"""The functor library's source in the functor directory."""
+
+_BUILDING = threading.Lock()
+
+
+def souffle_include() -> Path:
+    """The header directory of the Souffle install that runs: `include/`
+    beside the `bin/` that holds the `souffle` binary."""
+    found = shutil.which("souffle")
+    if found is None:
+        raise RuntimeError("no souffle binary on PATH")
+    include = Path(found).resolve().parent.parent / "include"
+    if not (include / "souffle" / "SouffleFunctor.h").is_file():
+        raise RuntimeError(f"no Souffle headers under {include}")
+    return include
+
+
+def build_functors(functor_dir: Path) -> None:
+    """Compile the functor library from its source, with the clang++ of the
+    SDK xcrun selects, where the library is absent or older than the
+    source. The library is written whole, so a run in another process reads
+    the old library or the new one."""
+    source = functor_dir / FUNCTOR_SOURCE
+    lib = functor_dir / FUNCTOR_LIB
+    with _BUILDING:
+        source_mtime = source.stat().st_mtime_ns
+        if lib.exists() and lib.stat().st_mtime_ns >= source_mtime:
+            return
+        with tempfile.TemporaryDirectory(prefix="functors-") as tmp:
+            out = Path(tmp) / FUNCTOR_LIB
+            done = subprocess.run(
+                ["xcrun", "clang++", "-std=c++17", "-shared", "-fPIC",
+                 f"-I{souffle_include()}", f"-Wl,-install_name,{lib}",
+                 "-o", str(out), str(source)],
+                capture_output=True, text=True)
+            if done.returncode != 0:
+                raise RuntimeError(f"building {lib} from {source} failed:\n{done.stderr}")
+            write_whole(lib, out.read_bytes())
+
+
 _RUNNING: list[threading.BoundedSemaphore] = []
 _RUNNING_LOCK = threading.Lock()
 
@@ -239,7 +285,7 @@ class Runner:
     def flags(self) -> list[str]:
         out = ["-w"]
         if self.functor_dir is not None:
-            out += ["-L", str(self.functor_dir), "-lfunctors"]
+            out += ["-L", str(self.functor_dir), f"-l{FUNCTOR_LIB_NAME}"]
         return out
 
     def run(self, program: Program, inputs: Mapping[RelationName, InputValue],
@@ -274,6 +320,8 @@ class Runner:
                  if (hit := tree.resolve(rel, Scope(()))) is not None]
         lines, statements = _statements(reached(program, named))
         text = statements + lines_text(directives)
+        if self.functor_dir is not None:
+            build_functors(self.functor_dir)
         key = self._key(program, text, facts)
         # The same run being made in another thread is read once it ends.
         return self._once.get(key, lambda: self._result(
@@ -313,7 +361,7 @@ class Runner:
             else:
                 h.update(b"\0" + path.encode())
         if self.functor_dir is not None:
-            lib = self._file(str(self.functor_dir / "libfunctors.dylib"))
+            lib = self._file(str(self.functor_dir / FUNCTOR_LIB))
             if lib is not None:
                 h.update(b"\0")
                 h.update(lib)

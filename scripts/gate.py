@@ -1,5 +1,5 @@
 """The gate: the gate commands on each gate stem, compared with the accepted
-outputs and times under `tests/gate/accepted/`.
+outputs under `tests/gate/accepted/` and the machine's accepted times.
 
     uv run python scripts/gate.py <out-dir> [cmd ...]
     uv run python scripts/gate.py --accept [--replace] <out-dir> [cmd ...]
@@ -34,12 +34,20 @@ is dropped.
 both passes' wall times, and `<out-dir>/gate/log.txt` the lines printed
 above the last line.
 
+The accepted times depend on the machine, so every worktree of the
+repository reads them from one file: the gitignored
+`tests/gate/accepted/times.json` of the main checkout, the directory that
+holds the repository's common git directory. The accepted outputs are read
+from the worktree the gate runs in.
+
+`--accepted` names an accepted directory other than `tests/gate/accepted/`.
+Its accepted outputs and its accepted times, in its own `times.json`, are
+read in place of those above.
+
 `--accept` takes an `<out-dir>` with no `gate/` under it, runs the gate, and
-then writes the cold times as the accepted times, in the gitignored
-`times.json` beside the accepted outputs. It writes an output as accepted
-where no accepted output of that name stands, and over one that stands only
-with `--replace`. `--accepted` names an accepted directory other than
-`tests/gate/accepted/`.
+then writes the cold times into the accepted times file. It writes an
+output as accepted where no accepted output of that name stands, and over
+one that stands only with `--replace`.
 """
 
 import argparse
@@ -69,8 +77,8 @@ ACCEPTED = GATE / "accepted"
 TIME_EXT = ".time"
 """The extension of the file in `new/` holding a cold run's time."""
 TIMES_FILE = "times.json"
-"""The accepted times, a JSON object from `<name>-<stem>` to seconds, in
-the accepted directory."""
+"""The accepted times, a JSON object from `<name>-<stem>` to seconds
+(`times_file`)."""
 
 STEMS = ("ac0c5833", "a934301b", "abbfd121")
 RECORD_STEM = "ac0c5833"
@@ -162,10 +170,16 @@ OUT_MARK = "<out>/gate/"
 def lock_file() -> Path:
     """The lock file in the repository's common git directory, which every
     worktree of the repository shares."""
-    common = subprocess.run(
-        ["git", "rev-parse", "--git-common-dir"], cwd=checkout.ROOT,
-        capture_output=True, text=True, check=True).stdout.strip()
-    return (checkout.ROOT / common).resolve() / "arc-gate.lock"
+    return checkout.git_common_dir(checkout.ROOT) / "arc-gate.lock"
+
+
+def times_file(accepted: Path) -> Path:
+    """The accepted times of the accepted directory `accepted`: for
+    `ACCEPTED`, the machine's, `TIMES_FILE` in the main checkout's
+    `ACCEPTED`; for another directory, its own `TIMES_FILE`."""
+    if accepted.resolve() != ACCEPTED.resolve():
+        return accepted / TIMES_FILE
+    return checkout.main_checkout(checkout.ROOT) / ACCEPTED.relative_to(checkout.ROOT) / TIMES_FILE
 
 
 def load() -> str:
@@ -182,9 +196,9 @@ class Gate:
         self.warm = self.new / "warm"
         self.wit = self.dir / "wit" / "cur"
         self.accepted = accepted
-        times = accepted / TIMES_FILE
+        self.times_file = times_file(accepted)
         self.times: dict[str, float] = (
-            json.loads(times.read_text()) if times.exists() else {})
+            json.loads(self.times_file.read_text()) if self.times_file.exists() else {})
         self.shown = f"{checkout.shown(self.dir)}/"
         self.lock = lock_file()
         self.log_lock = threading.Lock()
@@ -306,13 +320,13 @@ class Gate:
         return text.splitlines()
 
     def accept(self, replace: bool) -> tuple[int, int]:
-        """The cold times written as the accepted times, and each cold
+        """The cold times written as the machine's accepted times, and each cold
         output written as accepted where none of its name stands, or over
         it with `replace`; the counts of times and outputs written."""
         times = {p.name.removesuffix(TIME_EXT): float(p.read_text())
                  for p in sorted(self.new.glob(f"*{TIME_EXT}"))}
         merged = dict(sorted({**self.times, **times}.items()))
-        write_whole(self.accepted / TIMES_FILE,
+        write_whole(self.times_file,
                     (json.dumps(merged, indent=1) + "\n").encode())
         written = 0
         for p in sorted([*self.new.glob("*.txt"), *self.new.glob("*.wit.json")]):
@@ -361,7 +375,8 @@ def main(argv: Sequence[str]) -> int:
     if a.accept:
         print(f"load after: {load()}")
         times, outputs = gate.accept(a.replace)
-        print(f"baseline: {times} accepted times and {outputs} new accepted outputs written to {a.accepted}")
+        print(f"baseline: {times} accepted times written to {gate.times_file}, "
+              f"and {outputs} new accepted outputs to {a.accepted}")
     return 0
 
 

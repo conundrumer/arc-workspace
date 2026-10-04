@@ -8,7 +8,7 @@
 // Constants mirror lib/orientation.dl's disjoint #define ranges (Dir 10-13,
 // Axis 20-21, DiagDir 30-33, D4 50-57).
 //
-// Build: see build_functors() in run_dl.py (auto-built; artifact gitignored).
+// Build: see build_functors() in src/souffle/run.py (auto-built; artifact gitignored).
 
 #include "souffle/RecordTable.h"
 #include "souffle/SouffleFunctor.h"

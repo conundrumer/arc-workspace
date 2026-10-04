@@ -5,6 +5,7 @@ and the witness files each move to the directory an environment variable
 names, where it is set."""
 
 import os
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -32,6 +33,23 @@ def _from_env(var: str, default: Path) -> Path:
     if not value:
         raise ValueError(f"{var} is set but empty")
     return Path(value)
+
+
+def git_common_dir(tree: Path) -> Path:
+    """The common git directory of the repository `tree` is a worktree of,
+    which every worktree of that repository shares. A `tree` that is no
+    git worktree is a fault."""
+    done = subprocess.run(["git", "rev-parse", "--git-common-dir"], cwd=tree,
+                          capture_output=True, text=True)
+    if done.returncode != 0:
+        raise RuntimeError(f"{tree} is no git worktree: {done.stderr.strip()}")
+    return (tree / done.stdout.strip()).resolve()
+
+
+def main_checkout(tree: Path) -> Path:
+    """The main checkout of the repository `tree` is a worktree of: the
+    directory that holds the common git directory."""
+    return git_common_dir(tree).parent
 
 
 def shown(path: Path) -> Path:

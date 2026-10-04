@@ -36,6 +36,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from engine import checkout
+
 # Where a retro agent writes its diffs, under the tree it worked in.
 DIFF_DIR = Path(".scratch") / "retro" / "diffs"
 # The paths the patch covers: everything the tree tracks, less the scratch
@@ -50,17 +52,6 @@ def git(cwd: Path, *argv: str, stdin: str | None = None) -> subprocess.Completed
     """One git command in `cwd`."""
     return subprocess.run(["git", *argv], cwd=cwd, input=stdin,
                           capture_output=True, text=True)
-
-
-def main_tree(worktree: Path) -> Path:
-    """The main worktree of the repo `worktree` belongs to."""
-    done = git(worktree, "rev-parse", "--git-common-dir")
-    if done.returncode != 0:
-        raise RuntimeError(f"{worktree} is no git worktree: {done.stderr.strip()}")
-    common = Path(done.stdout.strip())
-    if not common.is_absolute():
-        common = (worktree / common).resolve()
-    return common.parent
 
 
 def new_files(worktree: Path) -> list[str]:
@@ -137,7 +128,7 @@ def merge(worktree: Path, into: Path | None = None, check: bool = False) -> dict
     """Take the worktree's change into `into`, the repo's main worktree when
     no other tree is named."""
     worktree = worktree.resolve()
-    owner = main_tree(worktree)
+    owner = checkout.main_checkout(worktree)
     target = (into or owner).resolve()
     patch, files = patch_text(worktree)
     conflict = apply_patch(target, patch, check=True)
