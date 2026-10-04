@@ -30,7 +30,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 ## Resolving
 - Where [The user's part](#the-users-part) brings a decision to the user, act on none of its options, and return it in your reply in the form that section gives.
 - Carry out every other resolution: resolve the issue with its resolution word, through a code-editor or a doc-editor with a brief where the resolution changes the tree.
-    - Each change to the code or the documents, even a small one, is written by an editor.
 - In a brief for speed, give the profile that exists, or ask for one as the brief's first deliverable.
 - When a code editor you launched ends its turn blocked, open the document lines its case turns on and write down one option its message does not contain before you resolve the case.
 - Give rote work to an agent, and judge the list it returns.

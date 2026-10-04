@@ -31,7 +31,8 @@
 - When the user talks with you and you run no solver pass, read [Decision notes](prompts/agents/notes/decisions.md) before you make a decision on the solver tools or the agents' documents.
 
 ## Changes
-- Before you launch an agent, read [Launching notes](prompts/agents/notes/launching.md), and before you launch the first editor of a change to the code or the documents, read [Changes](prompts/agents/notes/changes.md#changes).
+- Before you launch an agent, read [Launching notes](prompts/agents/notes/launching.md).
+- When the user talks with you and you run no solver pass, read [Changes](prompts/agents/notes/changes.md#changes) before you change the code or the documents.
 
 ## Cards
 - When the user requests a card to help make a decision regarding a solver, send a handbook agent and tell it to make one based on [card_spec.py](src/study/card_spec.py).
