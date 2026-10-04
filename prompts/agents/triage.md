@@ -43,13 +43,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 * inline: notes/launching.md#launching
 
 ## Editors
-- When a code editor you launched reports done, check its claims as [Claims](#claims) gives.
 - Once a change is merged, move each issue it settles to `issues/resolved/` as `fixed`.
 - Judge each `refactor` place that the `Review` section of a code editor's report gives as standing, by the reason it gives.
 
 ## Changes
 * inline: notes/changes.md#changes
-
-## Claims
-* inline: notes/code.md#gate
-* inline: notes/code.md#claims

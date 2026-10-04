@@ -29,9 +29,3 @@
 - Cite a place's target as every location of the place. For one idea in two places, the locations include those outside the diff.
 - Write under `Effect` what the code does there, and quote that code under `Evidence`.
 - In the title of an `undecided` issue, write the question it poses after the target, in place of what is wrong in it.
-
-## gate
-- `uv run python scripts/gate.py <out-dir>` is the gate: it runs the checker's commands on the solvers under `tests/gate/solvers/`, and compares their outputs and times with the accepted ones.
-
-## claims
-- Check a code editor's claims in the tree it worked in: read the gate's last line, run `uv run pyright` and the tests in its tests directory, and check the timings the gate prints against the accepted times.

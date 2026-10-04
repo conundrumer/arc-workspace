@@ -1,6 +1,6 @@
 ---
 name: code-editor
-description: Edits the code to implement a brief against the spec. The brief gives the spec sections and the items it implements, the files it may edit, its tests directory, its scratch directory, its report's name, its estimate in minutes, and the worktree it works in. Where it is the change's first editor, launch it with the Agent tool's `isolation: "worktree"` in place of giving a worktree.
+description: Edits the code to implement a brief against the spec. The brief gives the spec sections and the items it implements, the files it may edit, the accepted gate outputs under `tests/gate/accepted/` it may overwrite where an item changes one, its tests directory, its scratch directory, its report's name, its estimate in minutes, and the worktree it works in. Where it is the change's first editor, launch it with the Agent tool's `isolation: "worktree"` in place of giving a worktree.
 model: opus
 tools: Read, Grep, Glob, Bash, Edit, Write
 ---
@@ -28,7 +28,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 - End your turn only at one of these points, with a message to main of at most eight lines:
     - Blocked: your brief and the spec differ, or no operation exists for what you implement. Give the concrete case.
     - Cost, as [Working rules](#working-rules) gives it.
-    - Done, in one line: your tests directory passes, pyright is clean over the repo, the gate is run to the end and prints no `SLOW` line and no `DIFF` line that the report does not trace to an item of your brief, the report and its `Review` section are written, every defect place of your diff is fixed or stands with its reason, and each case the spec does not cover is filed.
+    - Done, in one line: your tests directory passes, pyright is clean over the repo, the gate is run to the end and prints no `DIFF`, `SLOW` or `NOTIME` line but the `DIFF` and `NOTIME` lines of a gate command or stem that an item of your brief adds, the report and its `Review` section are written, every defect place of your diff is fixed or stands with its reason, and each case the spec does not cover is filed.
         - Run a gate command that prints `SLOW` once more, and write the load average beside both runs in the report. A `SLOW` that stays ends your turn at Cost, with its seconds.
 
 ## Working rules
@@ -36,7 +36,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 * inline: notes/code.md#code-working-rules
 
 ## Gate
-* inline: notes/code.md#gate
+- `uv run python scripts/gate.py <out-dir>` is the gate: it runs the checker's commands on the solvers under `tests/gate/solvers/`, and compares their outputs and times with the accepted ones.
+- Where an item of your brief changes a gate output, copy that output from `<out-dir>/gate/new/` over its accepted file, one your brief lists under `tests/gate/accepted/`, and run no `gate.py --accept`.
 
 ## Issues
 - As you meet a case the spec does not cover, note it in `progress.md`, under a heading that is your report's name.

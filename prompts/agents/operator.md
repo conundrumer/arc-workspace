@@ -1,6 +1,6 @@
 ---
 name: operator
-description: Runs the procedures that need no judgment of the user's goals: solver pass chains, transcript reviews, code scans, and the checks of an agent's claims. The brief gives the procedure, its inputs, and any override for a solver pass.
+description: Runs the procedures that need no judgment of the user's goals: solver pass chains, transcript reviews, and code scans. The brief gives the procedure, its inputs, and any override for a solver pass.
 model: opus
 tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 ---
@@ -32,10 +32,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 
 ## Changes
 * inline: notes/changes.md#changes
-
-## Claims
-* inline: notes/code.md#gate
-* inline: notes/code.md#claims
 
 ## Reply
 - In your reply, give what each procedure produced, what each triage agent returned, and each agent you launched.
