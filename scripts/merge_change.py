@@ -17,19 +17,27 @@ A check passes when it exits 0, and the gate passes only when its last line
 is `gate: 0 DIFF, 0 SLOW, 0 NOTIME` as well. The gate writes into a new
 temporary directory, which a failing gate names.
 
-When every check passes, the script commits the worktree's uncommitted
-changes on its branch with the message given, rebases the branch onto
+When every check passes, the script stages the worktree's uncommitted
+changes, commits them on its branch with the message given, rebases the branch onto
 `master`, fast-forwards `master` in the main tree to the branch, runs
 `uv run python scripts/context.py --write` in the main tree, and removes the
 worktree and its branch. Since git removes a worktree that holds submodules
 only by force, the removal is forced, after a check that the worktree holds
-no change against its branch.
+no change against its branch, counting changes and untracked files inside
+its submodules.
 
 The script refuses, and says why, where:
 
 - the submodule setup fails;
 - a check fails;
 - the main tree has uncommitted changes to a path the change touches;
+- a submodule of the worktree holds changes or untracked files, which no
+  commit of the worktree's branch can hold;
+- a gitlink in the worktree's index, once the changes are staged, is not
+  listed in `.gitmodules`, or names a commit that the main tree's copy of
+  that submodule's repository lacks. The removal of the worktree deletes
+  the worktree's own copies of the submodules' repositories, so the commit
+  would then exist nowhere. The refusal puts the index back as it was.
 - the rebase conflicts, in which case it aborts the rebase and leaves the
   worktree as it was before the commit.
 
@@ -58,6 +66,9 @@ CODE_DIRS = ("src", "scripts", "tests")
 
 GATE_PASS = "gate: 0 DIFF, 0 SLOW, 0 NOTIME"
 """The last line of a gate run that passes."""
+
+GITLINK_MODE = "160000"
+"""The mode git gives an index entry that records a submodule's commit."""
 
 TAIL = 40
 """Lines of a failed command's output a refusal shows."""
@@ -118,11 +129,39 @@ def branch_of(tree: Path) -> str:
 
 def changed_paths(tree: Path, base: str) -> set[str]:
     """The paths whose content in `tree` differs from commit `base`: the
-    tracked ones, each side of a rename, and the untracked ones git does not
-    ignore."""
-    names = git_out(tree, "diff", "--name-only", "--no-renames", "-z", base)
+    tracked ones, each side of a rename, the untracked ones git does not
+    ignore, and each submodule whose checkout differs from its commit, holds
+    changes, or holds untracked files."""
+    names = git_out(tree, "diff", "--name-only", "--no-renames",
+                    "--ignore-submodules=none", "-z", base)
     new = git_out(tree, "ls-files", "--others", "--exclude-standard", "-z")
     return {p for p in (names + new).split("\0") if p}
+
+
+@dataclass(frozen=True)
+class Submodule:
+    """A submodule `.gitmodules` lists: its name, and its path in the tree."""
+
+    name: str
+    path: str
+
+
+def submodules(tree: Path) -> list[Submodule]:
+    """The submodules the `.gitmodules` of `tree` lists, in its order."""
+    listed = git_out(tree, "config", "-f", ".gitmodules", "-z",
+                     "--get-regexp", r"^submodule\..*\.path$")
+    found: list[Submodule] = []
+    for entry in filter(None, listed.split("\0")):
+        key, path = entry.split("\n", 1)
+        found.append(Submodule(key.removeprefix("submodule.").removesuffix(".path"), path))
+    return found
+
+
+def main_gitdir(main: Path, sub: Submodule) -> str:
+    """The git directory of submodule `sub` in the main tree, which holds
+    the main tree's copy of its repository."""
+    return git_out(main, "rev-parse", "--path-format=absolute",
+                   "--git-path", f"modules/{sub.name}").strip()
 
 
 def set_up_submodules(worktree: Path, main: Path) -> None:
@@ -131,15 +170,9 @@ def set_up_submodules(worktree: Path, main: Path) -> None:
     transport but the local one refused. A failure is a refusal."""
     print("merge_change: setting up the submodules from the main tree", flush=True)
     try:
-        listed = git_out(worktree, "config", "-f", ".gitmodules", "-z",
-                         "--get-regexp", r"^submodule\..*\.path$")
         overrides: list[str] = []
-        for entry in filter(None, listed.split("\0")):
-            key = entry.split("\n", 1)[0]
-            name = key.removeprefix("submodule.").removesuffix(".path")
-            source = git_out(main, "rev-parse", "--path-format=absolute",
-                             "--git-path", f"modules/{name}").strip()
-            overrides += ["-c", f"submodule.{name}.url={source}"]
+        for sub in submodules(worktree):
+            overrides += ["-c", f"submodule.{sub.name}.url={main_gitdir(main, sub)}"]
         git_out(worktree, *overrides, "submodule", "update", "--init",
                 env={**os.environ, "GIT_ALLOW_PROTOCOL": "file"})
     except Failed as exc:
@@ -189,18 +222,79 @@ def refuse_main_touched(main: Path, touched: set[str]) -> None:
                       "would touch:\n" + "\n".join(hit))
 
 
+def refuse_dirty_submodules(worktree: Path) -> None:
+    """Refuse where a submodule of the worktree holds changes or untracked
+    files. A commit of the superproject records only the commit a submodule
+    stands on, so that content would not merge, and the removal of the
+    worktree would delete it."""
+    held: list[str] = []
+    for sub in submodules(worktree):
+        checkout = worktree / sub.path
+        if not checkout.is_dir() or Path(git_out(
+                checkout, "rev-parse", "--show-toplevel").strip()) != checkout:
+            raise Failed(f"the submodule {sub.path} is not checked out in {worktree}")
+        held += sorted(f"{sub.path}/{p}" for p in changed_paths(checkout, "HEAD"))
+    if held:
+        raise Refused("the worktree's submodules hold changes or untracked files, "
+                      "which no commit of its branch can hold:\n" + "\n".join(held))
+
+
+def gitlinks(tree: Path) -> list[tuple[str, str]]:
+    """The gitlinks of the index of `tree`: each one's path and commit, in
+    the index's order."""
+    found: list[tuple[str, str]] = []
+    for entry in filter(None, git_out(tree, "ls-files", "-s", "-z").split("\0")):
+        meta, path = entry.split("\t", 1)
+        mode, commit, _stage = meta.split(" ")
+        if mode == GITLINK_MODE:
+            found.append((path, commit))
+    return found
+
+
+def refuse_gitlinks(worktree: Path, main: Path) -> None:
+    """Refuse where a gitlink of the worktree's index is not listed in
+    `.gitmodules`, or names a commit that the main tree's copy of that
+    submodule's repository lacks. The removal of the worktree deletes the
+    worktree's own copies of the submodules' repositories, so the commit
+    would then exist nowhere."""
+    listed = {sub.path: sub for sub in submodules(worktree)}
+    unlisted: list[str] = []
+    lacked: list[str] = []
+    for path, commit in gitlinks(worktree):
+        sub = listed.get(path)
+        if sub is None:
+            unlisted.append(f"{path} {commit}")
+        elif git(main, "--git-dir", main_gitdir(main, sub), "cat-file", "-e",
+                 f"{commit}^{{commit}}").returncode != 0:
+            lacked.append(f"{path} {commit}")
+    reasons: list[str] = []
+    if unlisted:
+        reasons.append("gitlinks that .gitmodules does not list:\n" + "\n".join(unlisted))
+    if lacked:
+        reasons.append("gitlinks to commits that the main tree's copies of the "
+                       "submodules' repositories lack:\n" + "\n".join(lacked))
+    if reasons:
+        raise Refused("the worktree's index holds commits that the removal of the "
+                      "worktree would delete; " + "\n".join(reasons))
+
+
 def index_file(worktree: Path) -> Path:
     """The worktree's index file."""
     return Path(git_out(worktree, "rev-parse", "--path-format=absolute",
                         "--git-path", "index").strip())
 
 
-def commit(worktree: Path, message: str, backup: Path) -> None:
-    """Commit every uncommitted change of the worktree, with a copy of its
-    index kept at `backup` first."""
+def stage(worktree: Path, main: Path, backup: Path) -> None:
+    """Stage every uncommitted change of the worktree, with a copy of its
+    index kept at `backup` first, and refuse where `refuse_gitlinks` does,
+    with the index put back."""
     shutil.copy2(index_file(worktree), backup)
     git_out(worktree, "add", "-A")
-    git_out(worktree, "commit", "-q", "-m", message)
+    try:
+        refuse_gitlinks(worktree, main)
+    except Refused:
+        shutil.copy2(backup, index_file(worktree))
+        raise
 
 
 def rebase(worktree: Path, before: str, backup: Path | None) -> None:
@@ -243,15 +337,17 @@ def merge(worktree: Path, message: str) -> None:
         run_check(worktree, check)
 
     refuse_main_touched(main, touched)
+    refuse_dirty_submodules(worktree)
     before = git_out(worktree, "rev-parse", "HEAD").strip()
     with tempfile.TemporaryDirectory(prefix="merge-change-") as tmp:
-        backup = None
-        if changed_paths(worktree, "HEAD"):
-            backup = Path(tmp) / "index"
+        backup = Path(tmp) / "index"
+        committing = bool(changed_paths(worktree, "HEAD"))
+        stage(worktree, main, backup)
+        if committing:
             print(f"merge_change: committing on {branch}", flush=True)
-            commit(worktree, message, backup)
+            git_out(worktree, "commit", "-q", "-m", message)
         print(f"merge_change: rebasing {branch} onto {MASTER}", flush=True)
-        rebase(worktree, before, backup)
+        rebase(worktree, before, backup if committing else None)
 
     print(f"merge_change: fast-forwarding {MASTER} to {branch}", flush=True)
     done = git(main, "merge", "--ff-only", "-q", branch)
