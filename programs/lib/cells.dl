@@ -205,10 +205,10 @@
     rest(Ky, P, D, P) :- rim_dir(Ky, P, D).
 }
 
-/// Rigid bodies traveling toward one heading until first contact: the frame
-/// edge, a blocked cell, or a body at rest ahead. Bodies that each lie ahead
-/// of the other in some line rest together, held by the nearest contact any
-/// of them makes.
+/// Where rigid bodies falling together toward one heading come to rest: each
+/// body travels the least distance that brings one of its cells against the
+/// frame edge, a blocked cell, or a cell of another body at that body's
+/// resting place.
 .comp Gravity<Key, Body> {
     /// The cells of each body.
     .decl cell(key: Key, b: Body, p: Position)  // @input

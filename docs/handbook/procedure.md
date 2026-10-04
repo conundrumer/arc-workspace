@@ -59,6 +59,8 @@
     ```
     - Write it from your reading of the pairs alone, before you write any script.
     - Then check that it fits every pair.
+        - Where a script of this pass needs what a lib component computes, run the component in place of rebuilding it: write a Souffle file under `.scratch/<task_id>/`, its name starting with the task id, that instantiates lib components over `in(p, color)`, then run `uv run python scripts/run_dl.py relation <that path> <instance>.<relation> <grid file>`, which prints that relation's rows on that grid.
+            - The runner includes the lib, and the file needs no `out`.
     - A scene claim fixes no task data.
         - A value a scene claim states that is task data is a parameter: name it in the claim, and list it with this task's value, under Parameters when applying the rules needs its value and under Scene parameters otherwise.
 3. Only after step 2 is complete, read the next steps: `cat .claude/analyze-next.md`.
@@ -68,14 +70,15 @@
     - A branch is stated by the slugs of the claims it replaces or adds, its parameters, and the inputs on which it is undefined.
     - A branch is formed whether or not another branch's model subsumes it, and whatever its witnesses' plausibility.
     - A branch that derives a parameter's value, or stores a value the program derives, is stated as that derivation or that stored value, and by the claim it replaces.
-    - Form them from the pairs, the headers of the solvers under `programs/solvers/`, probes over the pairs, and variant tasks.
+    - Form them from these sources alone: the pairs, the headers of the solvers under `programs/solvers/`, the lib, probes over the pairs, and variant tasks.
         - `grep -l '^// @keywords:.*<keyword>' programs/solvers/*.dl` lists the solvers under a keyword, and `awk '/^$/{exit} 1' programs/solvers/<id>.dl` prints one solver's header.
         - A probe is a script you write under `.scratch/<task_id>/` that runs a reading over grids and prints the outputs.
     - Name each branch by a constructor name of its own, in the form [Witness file](docs/handbook/solver-file.md#witness-file) gives. The name says what the branch changes and contains no value of a parameter.
     - A claim considered and not formed as a branch goes under Not formed, with why.
 2. Place each choice point at the concept or under a branch, as [Choice points and open parameters](docs/handbook/principles.md#choice-points-and-open-parameters) states. A point whose branches' models differ, in an output or in where they are defined, stands at the concept. A point whose branches give one model under another point's concept branch stands under a branch of that point under which they differ.
-    - For each two choice points where neither stands under a branch of the other, state the model of each case that takes a non-concept branch at both.
-        - State those models in one statement for the two points, and state on a line of its own the model of each case that statement does not give.
+    - For each two choice points where neither stands under a branch of the other, judge the model of each case that takes a non-concept branch at both.
+        - State in one statement every such pair of points where each of those models applies the two branches' changes together.
+        - For each other pair, state those models in one statement for the two points, and state on a line of its own the model of each case that statement does not give.
     - When that model is one branch's model alone, the other point's property does not exist with that branch, and that section says where the point goes.
 3. Judge each branch's standing.
     - The concept case: each witness with verdict `other` that no branch below lists, with the items below, and the rule restated as the generator applies it, which the concept file's rule approximates.
@@ -103,6 +106,7 @@
         - `concept`: <the concept branch>
         - `<branch>`: <its statement, as step 1 gives it>, <its standing>
             - `<property>`: <a choice point under this branch, in the same form, with this branch as its concept branch>
+    - `<property>` & `<property>`, `<property>` & `<property>`: the two branches' changes applied together
     - `<property>` & `<property>`: <the model step 2 gives for the two points>
         - `<branch>` & `<branch>`: <the model of a case that line does not give>
 
@@ -126,7 +130,7 @@
     - A concept branch's constructor takes a name of your own.
     - An open parameter of that report, unless [Principles](docs/handbook/principles.md) make it a choice point, is a `Params` relation with a fact per open value, and no constructor; its values are the report's where it gives them, whatever the concept file gives.
     - The cases are the combinations of those branches that fit, which the run shows, whether or not one case's model subsumes another's.
-    - A `<property>` & `<property>` line of that report gives what each case that takes a non-concept branch at both points reads, and a `<branch>` & `<branch>` line under it gives what the case that takes both branches reads.
+    - A line of that report that names a `<property>` & `<property>` pair gives what each case that takes a non-concept branch at both points of that pair reads, and a `<branch>` & `<branch>` line under it gives what the case that takes both branches reads.
     - Leave the `Determine` comp for the Determine operation.
 
 ### Develop
@@ -166,7 +170,7 @@
 - A branch dropped under a case condition goes in the review with the condition it fails, and for Relational form with why no set of clauses states its claim.
 - For each approximated rule, state in the review why no set of clauses states it.
 - When the approximation agrees with the rule on every input the generator produces, replace the rule's text with the approximation's and remove the `@approximated:` line.
-- Record each witness you build with `uv run python scripts/run_dl.py record <task_id> <witness id> --separates "<what it separates>"`, with the grid on stdin.
+- Record each witness you build with `uv run python scripts/run_dl.py record <task_id> <witness id> --separates "<its separates text>"`, with the grid on stdin.
     - For an `other` verdict, take the judged output from `uv run python scripts/run_dl.py grid <task_id>` on a control grid: the witness changed so that the program's output is the concept's reading.
 - When the divergence requires a parameter to be reassigned, reassign that parameter with `--assign`.
 * comment:

@@ -187,7 +187,7 @@
     { "id": <task_id>,
       "witnesses": [{
         "id": string,                            // unique within this file
-        "separates": string,                     // models separated by this input
+        "separates": string,                     // the feature of the input on which the models differ, and each model's output
         "input": Grid,
         "assign": {<parameter>: Fact[] | Grid | {"grid": Grid, "anchor": [row, col]}},  // the parameters the witness reassigns, which may include a `@store` line's relation
         "output": Group[]                        // when the verdict is not other: one group per distinct output
@@ -209,3 +209,4 @@
     - a constructor's name with its prefix, such as `$Alt`: that branch at each point where the constructor stands, for a nested constructor too, whether or not `impl_choice` contains its model
     - `<name> & <name>`: what each fixes
     - `<param>=<Proposer>`, `<rel>=stored`, `<rel>=derived` and `<param>=stored`, each read as a constructor's name: the branch that the `@derive` line on `<param>` with that `<Proposer>` is; the branch that the `@store` line on `<rel>` is; the branch of `<rel>`'s point in which the solver's clauses derive its value; and the branch of `<param>`'s choice point in which its value is stored per case
+        - A `<Proposer>` is a component of [proposers.dl](programs/proposers.dl).
