@@ -91,10 +91,10 @@ def holding(groups: Iterable[Sequence[Case]], has: Callable[[Case], bool]
 
 @dataclass(frozen=True)
 class Judged:
-    """A program's judged cases (plan §D5, the count line's paragraph):
-    the witnessed cases of the program the runs judge, which every check
-    and survey judges, and every case the runs of the groups that hold
-    one of them show, which a judged case is compared against."""
+    """A program's judged cases: the witnessed cases of the program the
+    runs judge, which every check and survey judges, and every case the
+    runs of the groups that hold one of them show, which a judged case is
+    compared against."""
 
     cases: tuple[Case, ...]
     shown: tuple[Case, ...]
@@ -105,7 +105,7 @@ class Runs:
     for one program: the solver, the solver with every case restored
     (`restored`), the solver with a line a survey proposes (`lined_runs`),
     or the solver with one base alone (`alone`). Each part is computed on
-    first use, so a check that reads no run costs none (plan §D5 `Runs`).
+    first use, so a check that reads no run costs none.
     Each run stops at `limits`, which the command passes from its option.
     Every check and survey reads its cases from `judged`.
 
@@ -547,9 +547,8 @@ class Runs:
         runs' solver and the branch's model among the cases of `solver`
         (`solver.solve.branch_model`), in the order of those cases, and no
         witnessed case of `solver` is computed, since a derivation with no
-        line is judged on its model alone (plan §D5, the derive survey's
-        paragraph). The failure of the run that enumerates either
-        solver's cases where it fails."""
+        line is judged on its model alone. The failure of the run that
+        enumerates either solver's cases where it fails."""
         if derived is None:
             return self.lined_runs(solver).cases
         every = self.lined_runs(solver).solver_cases

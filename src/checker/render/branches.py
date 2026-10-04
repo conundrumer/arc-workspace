@@ -174,7 +174,9 @@ def _entry_input(entry: Entry) -> str:
 
 
 def _needs_witness(word: str, id: str) -> str:
-    """The sentence asking for a branch's witness under the id `id`."""
+    """The sentence asking for a branch's witness under the id `id`, said
+    in the `derive` and `store` blocks; the audit reports the unseparated
+    pair in its place."""
     return mctx("a `{word}` line needs a witness whose id is `{b}`").format(
         word=word, b=id)
 
@@ -840,8 +842,7 @@ def _ignored_text(form: IgnoreForm) -> str:
 
 def store_lines(solver: Solver, survey: StoreSurvey) -> list[str]:
     """The `store` command's output
-    ([Develop](docs/handbook/procedure.md#develop)): the markers under
-    which cases they do not list read clauses and the inputs whose run
+    ([Develop](docs/handbook/procedure.md#develop)): the inputs whose run
     fails, each `@store` line on a relation with an `Ident` column, one
     block per value some case reads, the relations over the row cap, then
     each witness the command built, as `record` prints it."""
@@ -852,7 +853,7 @@ def store_lines(solver: Solver, survey: StoreSurvey) -> list[str]:
                 for ln in finding_lines(solver, f)] \
             + [NOT_BETWEEN]
     lines: list[str] = []
-    for f in in_line_order((*survey.markers, *survey.failed, *keyed)):
+    for f in in_line_order((*survey.failed, *keyed)):
         lines += finding_lines(solver, f)
     shown = shown_case_names(survey.found)
 

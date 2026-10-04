@@ -953,8 +953,9 @@ def check_witness_assignment(solver: Solver, runs: Runs) -> list[Finding]:
     output the verdict denotes, or from the judged output for `other`. A
     witness whose `assign` changes a parameter, where that model is defined
     at the stored assignment and differs there from what the witness
-    separates it from, is a finding. The search for the assignment that
-    changes the fewest parameters is not made here."""
+    separates it from, is a finding. A witness is judged at the
+    assignment its entry gives, the stored one where it gives none, and
+    no other assignment is searched."""
     if runs.given is not None:
         return []
     solver_cases = runs.cases_or_none
@@ -1178,9 +1179,9 @@ def _by_difference(solver: Solver, runs: Runs,
         "`witness` without `--file` reports a pair of cases that no witness "
         "separates.")
 def check_equivalence(solver: Solver, runs: Runs) -> list[Finding]:
-    """The evidence is the witness file and the task's pairs: two cases of
-    the solver that agree on every entry and every pair are a pair no
-    witness separates. One finding per branch difference among those pairs
+    """The evidence is the witness file and the task's pairs, and no input
+    the tool builds: two cases of the solver that agree on every entry and
+    every pair are a pair no witness separates. One finding per branch difference among those pairs
     (`_by_difference`); a pair where some run gave no result is not
     reported, and each run on a pair that gave no result is reported at its
     pair (the entries' runs are `check_entry_outputs`'s)."""

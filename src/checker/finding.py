@@ -1,5 +1,6 @@
 """The one finding type: a kind from one closed Enum, a typed location, and
-a payload dataclass per kind."""
+a payload dataclass per kind. A value of several parts is a dataclass,
+never a tagged tuple."""
 
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -43,9 +44,9 @@ from solver.solve import PairId
 
 
 class Kind(StrEnum):
-    """Every kind of finding (plan §D5 `Finding`): the kinds the checks
-    give, and each fault kind (`ProblemKind`) as a member of its own, so
-    that `Kind(problem.kind)` is a fault's finding kind."""
+    """Every kind of finding: the kinds the checks give, and each fault
+    kind (`ProblemKind`) as a member of its own, so that
+    `Kind(problem.kind)` is a fault's finding kind."""
 
     # Witness kinds (procedure.md, under "Witness").
     DRIFT = "drift"
@@ -89,7 +90,7 @@ class Kind(StrEnum):
     BRANCH_EXCLUDED = "branch-excluded"
     """A `@derive` or `@store` line that no case of the solver takes, each
     case of it excluded by a named `@ignore` line or by `impl_choice`; the
-    line's verdict is not judged (plan §D5 `FAILING`)."""
+    line's verdict is not judged."""
     DERIVE_FIT = "derive-fit"
     DERIVE_UNPLACED = "derive-unplaced"
     STORE_PARAMETER_NAME = "store-parameter-name"
@@ -100,7 +101,7 @@ class Kind(StrEnum):
     STORE_IDENT_KEY = "store-ident-key"
     """A `@store` line on a relation with an `Ident` column: an ordinal
     the program assigns names no object in another run, so the tool runs
-    no case of the branch (plan §D5 `FAILING`)."""
+    no case of the branch."""
     STORE_PARAMS_ASK = "store-params-ask"
     STORE_ROW_CAP = "store-row-cap"
     DETERMINATION_DIFF = "determination-diff"
@@ -120,10 +121,10 @@ class Kind(StrEnum):
     TIMEOUT = "timeout"
     RUN_FAILED = "failed"
 
-    # The fault kinds (plan §D4 `Fault`), each a member of its own under
-    # its `ProblemKind` name and value, through `fault_findings`. Among them
-    # `UNDECIDED`, a case the principles do not decide (plan §G3), which
-    # the checks give too; outside `FAILING`.
+    # The fault kinds, each a member of its own under its `ProblemKind`
+    # name and value, through `fault_findings`. Among them `UNDECIDED`, a
+    # case the principles do not decide, which a check gives in place of
+    # picking a default; outside `FAILING`.
     locals().update({k.name: k.value for k in ProblemKind})
 
 
@@ -497,7 +498,8 @@ type Payload = (WitnessPayload | FaultPayload | LintPayload
 
 @dataclass(frozen=True)
 class Finding:
-    """One finding of any check (plan §D5 `Finding`)."""
+    """One finding of any check. A check writes no sentence or fragment of
+    output: the renderer writes each from the finding's typed parts."""
 
     kind: Kind
     where: Where
@@ -522,4 +524,6 @@ FAILING = frozenset(Kind) - {
     Kind.CONCEPT, Kind.SEPARATES, Kind.DROPPED, Kind.TASK_ASSIGN,
     Kind.NOT_CHECKED,
 }
-"""The kinds that fail a command's check (plan §D5 `FAILING`)."""
+"""The kinds that fail a command's check, from which every command's pass
+line and exit code come (`checker.render.passes`). `LINT` is among them,
+so that `run` fails on a lint finding as `lint` does."""

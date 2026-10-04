@@ -51,7 +51,6 @@ from checker.judged import (
     no_result,
     swaps,
 )
-from checker.lint.form import check_case_section_read
 from checker.lint.view import literal_vars, term_vars
 from checker.payloads.branches import (
     BranchPayload,
@@ -319,8 +318,7 @@ def _case_key(reading: CaseTypes, types: Sequence[str],
               case_cols: Sequence[int]) -> Callable[[Row], tuple[Value, ...]]:
     """A row's case values: each case column's value, a record's fields
     that carry no case masked, since a record column with a case field is
-    a case column in that field and a key in its other fields (plan §D5
-    "Derive and store")."""
+    a case column in that field and a key in its other fields."""
     def mask(type: str, value: Value) -> Value:
         fields = reading.fields(type)
         if fields is None \
@@ -552,13 +550,12 @@ class Found:
 class StoreSurvey:
     """The `store` report of one solver: the values it finds, the
     relations over the row cap, the runs on an input that failed, the
-    markers under which cases they do not list read clauses, the audit's
-    findings, and whether some relation stands between `in` and `out`."""
+    audit's findings, and whether some relation stands between `in` and
+    `out`."""
 
     found: tuple[Found, ...]
     capped: tuple[RelationName, ...]
     failed: tuple[Finding, ...]
-    markers: tuple[Finding, ...]
     findings: tuple[Finding, ...]
     between: bool
 
@@ -783,20 +780,19 @@ def survey_store(runs: Runs) -> StoreSurvey:
     solver_cases = runs.cases
     if not isinstance(solver_cases, tuple):
         stop = enumeration_failed(solver_cases)
-        return StoreSurvey((), (), (stop,), (), (stop,), True)
+        return StoreSurvey((), (), (stop,), (stop,), True)
     bases, concept = _bases(solver, solver_cases)
     rd = dependence(runs.engine, solver, bases)
-    markers = tuple(check_case_section_read(solver, runs))
     task = solver.task
     rels = between(solver, runs.index, rd)
     if not rels:
-        return StoreSurvey((), (), (), markers, (Finding(
+        return StoreSurvey((), (), (), (Finding(
             Kind.NOT_CHECKED, AtFile(WholeFile.SOLVER), NotCheckedPayload()),
-            *markers, *_line_findings(runs, solver, rels, [], [], set(), {},
-                                      solver_cases)), False)
+            *_line_findings(runs, solver, rels, [], [], set(), {},
+                            solver_cases)), False)
     if task is None:
         stop = NO_TASK
-        return StoreSurvey((), (), (stop,), markers, (stop, *markers), True)
+        return StoreSurvey((), (), (stop,), (stop,), True)
     failed: list[Finding] = []
     per_input: list[Mapping[RelationName, tuple[Row, ...]]] = []
     labels: list[PairId] = []
@@ -813,8 +809,7 @@ def survey_store(runs: Runs) -> StoreSurvey:
     # A value is one value on every input only where every input ran: an
     # input whose run failed or timed out leaves every relation unjudged.
     if failed:
-        return StoreSurvey((), (), tuple(failed), markers,
-                           (*failed, *markers), True)
+        return StoreSurvey((), (), tuple(failed), tuple(failed), True)
     found, capped = _analyze(solver, runs, rels, per_input, bases, rd)
     differs = {p: next((labels[i] for i, g in enumerate(per_input)
                         if set(g.get(p, ())) != set(per_input[0].get(p, ()))),
@@ -868,12 +863,12 @@ def survey_store(runs: Runs) -> StoreSurvey:
         if stop is not None:
             failed.append(stop)
     empty = {p for p in rels if all(not g.get(p) for g in per_input)}
-    findings = [*failed, *markers, *_line_findings(
+    findings = [*failed, *_line_findings(
         runs, solver, rels, found, capped, empty, differs, solver_cases)]
     if capped:
         findings.append(Finding(Kind.STORE_ROW_CAP, AtFile(WholeFile.SOLVER),
                                 RowCapPayload(tuple(capped), ROW_CAP)))
-    return StoreSurvey(tuple(found), tuple(capped), tuple(failed), markers,
+    return StoreSurvey(tuple(found), tuple(capped), tuple(failed),
                        tuple(findings), True)
 
 
@@ -1093,10 +1088,10 @@ def _read_back(solver: Solver, f: Found) -> tuple[str, ...]:
     """The stored parameters whose value the found value is on every
     input: the same rows as one parameter's, or as the product of several
     parameters' rows, under a renaming of columns, each column of the
-    value of a parameter column's type (plan §D5 "Derive and store"); a
-    parameter that stores a value per case gives its value at the found
-    value's bases (`_stored_reading`). The fewest parameters that give
-    it, in `Params` order; empty where none do."""
+    value of a parameter column's type (principles.md, under "Stored or
+    derived"); a parameter that stores a value per case gives its value at
+    the found value's bases (`_stored_reading`). The fewest parameters
+    that give it, in `Params` order; empty where none do."""
     if len(f.family) != 1:
         return ()
     (value,) = f.family

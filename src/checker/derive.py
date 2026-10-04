@@ -186,9 +186,9 @@ def derivations(runs: Runs, known: dict[str, Proposer]
     """Each parameter with a stored value, with each proposer of its
     column types that gives a value on every pair's input, each input
     read alone (solver-file.md, under "Params"; principles.md, under "Stored
-    or derived"): Fit, not the stored value, decides which the
-    survey reports. The findings are the probe runs that gave no
-    result, one per pair."""
+    or derived"): Fit, judged per pair with the value derived from that
+    pair's input, not the stored value, decides which the survey reports.
+    The findings are the probe runs that gave no result, one per pair."""
     task = runs.solver.given_task
     given: dict[str, int] = {}
     failed: list[Finding] = []

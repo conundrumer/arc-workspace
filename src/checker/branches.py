@@ -204,9 +204,9 @@ def exclusion(runs: Runs, solver: Solver, branch: DeriveBranch | StoreBranch
     `@store` line, what excludes its cases: the named `@ignore` lines
     under the line, where the cases the runner would hold without them
     take the branch, and `impl_choice`, where the cases with every value
-    of `Choice` restored take it beyond those (plan §D5 "Derive and
-    store"). None where neither excludes a case of it, as where no case
-    reads the line's parameter or relation."""
+    of `Choice` restored take it beyond those. None where neither excludes
+    a case of it, as where no case reads the line's parameter or
+    relation."""
     a = solver.annotations
     form = IgnoreForm.DERIVE if isinstance(branch, DeriveBranch) \
         else IgnoreForm.STORE
@@ -381,7 +381,7 @@ def fitting(runs: Runs, solver: Solver, cases: Sequence[Case]
 def witness_targets(runs: Runs, solver: Solver, cases: Sequence[Case],
                     branch: DeriveBranch | StoreBranch) -> list[Case]:
     """The cases a survey looks for a branch's witness with, each against
-    its counterpart (plan §D5 "Derive and store"): the branch's models
+    its counterpart: the branch's models
     (`branch_models`), else the cases that take it, in `ordered` order,
     each where it and its counterpart fit the pairs, since a case that
     fails Fit is no separation target."""

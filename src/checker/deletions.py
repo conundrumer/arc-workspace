@@ -341,7 +341,8 @@ def survey_deletions(solver: Solver, runs: Runs) -> DeletionResult:
     reproduces the stored values, the determination still does; a deletion
     inside the Determine comp holds when the determination still does. Where
     the solver has no Determine comp, the report says that no determination
-    was checked. A deletion whose run fails for an ungrounded variable
+    was checked. A row of `out` at a value that is no case counts for
+    nothing. A deletion whose run fails for an ungrounded variable
     measured nothing, and a run that reached a limit is no result. A case
     column's rows stand apart; where the pairs part the cases, a case column
     reads as any other column, and an unprobed one is left out. Where the

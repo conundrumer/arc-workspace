@@ -2,7 +2,11 @@
 from the functions themselves: a check or survey carries `quotes` or a
 `guard`, a `guard` stands on a hint or lint check alone, and a check that
 is neither a hint nor a lint quotes `principles.md`. `python -m
-controlled_markdown check` reports what `unquoted` gives."""
+controlled_markdown check` reports what `unquoted` gives.
+
+A check quotes the principle it serves and, where it checks the solver's
+form, the solver-file.md passage that states the form too; a hint or lint
+quotes the nearest procedure or style line."""
 
 import ast
 import importlib
@@ -19,7 +23,8 @@ from checker.finding import FAILING, Kind
 from engine.quotes import guarded, quoted
 
 CHECK_PREFIX = "check_"
-"""The start of a check's name, `check_<rule>`."""
+"""The start of a check's name: a check is `check_<rule>(solver, runs) ->
+list[Finding]`. A function's kind, check or survey, is in its name."""
 SURVEY_PREFIX = "survey_"
 """The start of a survey's name."""
 PRINCIPLES = "principles.md"

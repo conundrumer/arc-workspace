@@ -1,5 +1,3 @@
-abbfd121.dl:419: case section: by the program's rules, not by a run, `$IsometryOrbit` read `kind`, which the clause feeds, and the marker `// --- $LatticePeriod ---` above it does not list them; see "Case markers" in [Cases](docs/handbook/solver-file.md#cases)
-abbfd121.dl:431: case section: by the program's rules, not by a run, `$LatticePeriod` read `kind`, which the clause feeds, and the marker `// --- $IsometryOrbit ---` above it does not list them; see "Case markers" in [Cases](docs/handbook/solver-file.md#cases)
 parse.above[x]: one value on every input: AXIS_V, AXIS_H
   stored already: the value reads back the stored rows of `primary_axis`
 parse.period.min_period[a]: one value on every input: AXIS_V, AXIS_H

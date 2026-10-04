@@ -1,7 +1,8 @@
 """The views of a solver's parsed program the lint checks read: its own
 parts, the scopes program style applies to, the case enumeration, the
 units that feed and read each relation, and walks over terms and
-literals."""
+literals. A lint compares terms and literals by these walks, never by the
+renderer's text."""
 
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, fields, is_dataclass, replace

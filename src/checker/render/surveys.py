@@ -167,7 +167,7 @@ NO_DETERMINE = mctx("the solver has no Determine comp, so no deletion's "
 
 
 def render_deletions(solver: Solver, result: DeletionResult) -> list[str]:
-    """The deletion section, as the audit and `deletions` print it: each
+    """The deletion section, as `deletions` prints it: each
     group's statement, its note and its rows under it, then the rows
     whose run timed out, each with its timeout line; each list in line
     order."""

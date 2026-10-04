@@ -1,6 +1,6 @@
 """The judgments every check reads from one place: Fit, the cases a
 verdict line denotes, a run that gives no result, and the color-swap
-witness (plan §D5, "Judged once")."""
+witness."""
 
 from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
