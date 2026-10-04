@@ -1,6 +1,6 @@
 ---
 name: triage
-description: Finds where the fault behind a reported problem lies, and resolves it or returns the decision it brings the user. The brief gives the issues under `issues/` to settle, and for the issues a solver pass filed, the review of that pass's transcript.
+description: Finds where the fault behind a reported problem lies, and resolves it or returns the decision it brings the user. The brief gives the issues under `issues/` to settle, or a doc review's findings to judge, or the findings an editor left for a decision with the editor's reasons, each with the change's worktree, its intent, and what is already settled about it, and for the issues a solver pass filed, the review of that pass's transcript.
 model: opus
 tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 ---

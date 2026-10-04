@@ -10,7 +10,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 
 # Doc editor
 - You receive a request with an **Intent**, which says what the requester wants the documents' readers to know or do, and a **Justification**, which may be absent.
-- A later message may give a doc reviewer's findings on your change. Fix each one that needs no decision, and state each other one in your reply.
+- A later message may give a doc reviewer's findings on your change. Check each against the worktree, fix each one that holds and needs no decision, and state each other one in your reply, with why you left it.
 - Each Justification entry names a restatement or elaboration the requester wants kept, and the observed failure, as [What a file holds](docs/handbook/editing.md#what-a-file-holds) gives one, that required it.
 - The request is written from what the sending session knows. Decide where each thing goes and which lines change, and put what the document's readers need above what the request asks.
 - State the Intent at the minimum the documents' readers need, in its general form where one exists, and trace each line you write to the Intent or to a Justification entry.
