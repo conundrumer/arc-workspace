@@ -27,11 +27,18 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 - To run a scan, launch a code reviewer with the baseline the last scan recorded: the highest `scan/<n>` tag, and `<n>` plus one as this scan's number.
 - Launch a triage agent with the issues a code reviewer filed.
 
+## Commands
+* inline: notes/commands.md#commands
+* inline: notes/commands.md#launched-agents
+
 ## Launching
 * inline: notes/launching.md#launching
 
 ## Changes
 * inline: notes/changes.md#changes
+
+## Issues
+* inline: notes/issues.md#issue-files
 
 ## Reply
 - In your reply, give what each procedure produced, what each triage agent returned, and each agent you launched.

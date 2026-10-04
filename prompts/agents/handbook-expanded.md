@@ -11,6 +11,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 
 * inline: notes/reading.md#citations
 
+* inline: notes/issues.md#issue-files
+
 * include: ../handbook.md
     + exclude: draft, gloss
     + abridged: ../../docs/handbook/patterns.md

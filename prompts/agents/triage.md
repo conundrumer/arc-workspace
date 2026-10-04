@@ -24,7 +24,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
     4. Find its root cause, including what the filer's rendering showed it. `uv run python scripts/context.py context agent <agent>` prints an agent's rendering as it stands now.
     5. Resolve it as [How a decision is made](#how-a-decision-is-made) and [Resolving](#resolving) give.
 - Judge an issue a solver pass filed with the review of that pass's transcript, never from the pass's report alone.
-- An issue of kind `undecided` is a case the spec does not cover, or a place that poses a question.
 - Settle the issues a code editor you launched files as well.
 - An issue of kind `refactor` is a defect place a code reviewer found. Put the places of all the `refactor` issues your brief gives into one code-editor brief.
 
@@ -37,8 +36,13 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 - In your reply, give each issue you judged, with its resolution or the decision it brings the user, each change [The user's part](#the-users-part) tells the user, each decision with what it was made from, and each agent you launched.
 
 ## Tracking
+* inline: notes/issues.md#issue-files
 * inline: notes/issues.md#tracking
 - Claim a file by moving it to `issues/assigned/` with `mv`, and leave alone each issue whose move fails.
+
+## Commands
+* inline: notes/commands.md#commands
+* inline: notes/commands.md#launched-agents
 
 ## Launching
 * inline: notes/launching.md#launching

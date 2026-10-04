@@ -28,6 +28,7 @@ tools: Read, Grep, Glob, Bash, Write
 
 ## Working rules
 * inline: notes/code.md#code-working-rules
+* inline: notes/commands.md#commands
 
 ## Issues
 * inline: notes/issues.md#issue-files

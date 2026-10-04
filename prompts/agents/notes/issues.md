@@ -5,13 +5,17 @@
 - An issue is a doc line or a tool behavior that cost the pass time or tokens, or that made its output wrong; a problem in the task's own files is not one.
 - As each issue happens, note it in `.scratch/<task_id>/progress.md`, under a heading that is the name of this pass's report.
 - When the report's other sections are settled, file each issue noted under that heading, whether or not an earlier pass hit it, with the task id as `<source>` and your agent's name as `<agent>`.
-    - `kind` is `interference` when the pass's output had something wrong because of the issue, whether or not the pass repaired it, and `delay` otherwise.
     - Cite the target as a link as this rendering shows it, a step and the phrase quoted, or a command.
     - Write under `Effect` what the issue cost the pass, and for `interference`, what was wrong in the output and whether it still is.
 
 ## Issue files
-- File each issue as one file under `issues/new/`, and create that directory when it is absent.
+- Where your instructions, your brief or a later message ask you to file an issue, file it as one file under `issues/new/` in the main tree, the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints, and create that directory when it is absent.
     - Name the files `<unix time>-<source>-<agent>-<i>.md`, with one `date +%s` for all of them, and `<i>` counting them from 1.
+    - Where no other line gives them, `<agent>` is your agent's name, and `<source>` is a short name for your work.
+    - Where no other line gives an issue's kind, give it one of these:
+        - `interference`: something in your output was wrong because of the issue, whether or not you repaired it.
+        - `delay`: the issue cost time or tokens only.
+        - `undecided`: a case your rules do not cover, or a place that poses a question.
     - Write each file in this form:
         ```
         ---

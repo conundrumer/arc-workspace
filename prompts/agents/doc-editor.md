@@ -26,6 +26,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 - Then judge each line of the place you edited again as each of its readers, by [What a file holds](docs/handbook/editing.md#what-a-file-holds), cut each line there that those rules do not keep, and reply.
 - In your reply, list as unused each Justification entry that kept no line from that cut.
 - In your reply, state each finding of the last review pass that you left unfixed because it needs a decision.
+* inline: notes/issues.md#issue-files
 
 * include: ../../docs/handbook/editing.md
 
