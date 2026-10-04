@@ -9,8 +9,7 @@
 - Send the findings you keep from a change's review, and the findings of its claims check, to the editor that made the change, and that editor's fixes to the reviewer that reviewed it, each with SendMessage. Launch a fresh reviewer only for a change's first review.
 - Where the editor leaves a kept finding for a decision, decide the question it raises, from the reason the editor gives, as [How a decision is made](prompts/agents/notes/decisions.md#how-a-decision-is-made) gives, and send the editor the decision.
 - Where you did not launch the editor, return the findings you keep and your decisions in your reply in place of sending them to it.
-- In each message that sends a reviewer fixes, give what has been settled about the change since its brief, such as a power the user approved or a premise you checked.
-    * comment: A doc reviewer re-reported in each of three rounds the powers the user had approved, and three times reported a gate output that the worktree does not produce.
+- In each message that sends a reviewer fixes, give what has been settled about the change since its brief.
 - Before you launch the first editor of a change, add a worktree for it on a branch of its own, with `git worktree add -b <branch> <path>`, at a path outside the main tree.
 - Give that worktree in the brief of each agent that works on the change.
 - Run the changes you launch at the same time, each in its own worktree.

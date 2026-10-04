@@ -87,9 +87,7 @@
         - its plausibility and verdict
         - the invariant of the inputs it breaks, when its plausibility is below `ordinary`
     - A branch with no witness: why there is none.
-4. Write the witnesses to `.scratch/<task_id>/witnesses.json` in the witness file's shape, with each branch's name, and, in each witness whose verdict is not `other`, each fitting branch in the group of the output the branch's model gives.
-    * comment:
-        - The verdict clause stays: an `other` witness holds a judged grid and no groups, so a pass that reads the line without it has nowhere to put the fitting branches.
+4. Write the witnesses to `.scratch/<task_id>/witnesses.json` in the witness file's shape, with each branch's name, and each fitting branch in the group of the output the branch's model gives.
     - `uv run python scripts/run_dl.py witness --file .scratch/<task_id>/witnesses.json` checks the file's shape.
 5. Write the report to `.scratch/<task_id>/analyze.md`, in this form:
 

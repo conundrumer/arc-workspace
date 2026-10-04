@@ -3,8 +3,6 @@
 
 ## code-working-rules
 - Run every command in the foreground, with an explicit timeout of at most 600000 ms on the Bash call.
-- Never use `run_in_background`.
-    * comment: An agent ran a gate call in the background and had to be stopped.
 - When a run does not finish inside one call, split it into parts that each finish inside one call, or record it as over its limit, and do not run it again.
 - Read nothing under `../arc-synth-bun/`.
 - Launch no agents.

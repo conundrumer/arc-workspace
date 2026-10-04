@@ -8,10 +8,11 @@
     - A line that has to be edited only because its list needs another item holds a list of kinds, and the general term goes in its place.
 - Write or keep a line that is a restatement or an elaboration for each of its readers only where an observed failure required it.
     - An observed failure is a reader's failure without that text, at a session, a task and pass, or a run. An argued reason or a predicted failure is not one.
+    - A restatement or an elaboration is required only by a failure its reader made with the text it restates or elaborates in its context.
 - Choose an edit in this order of preference: a deletion; no change, where a tool or another line already covers it; a change to existing words; and new words only where none of those is enough.
 - Fix a finding by changing the line that caused it, and add no exception to a rule for a small inconsistency.
 - When the premise of a line is wrong, change the line that states that premise.
-- A line kept against a rule of this document, or put back after a cut, has a `comment`, as [Directives](src/controlled_markdown/writing.md#directives) gives it, that says why it stays. A comment on a kept restatement or elaboration gives the observed failure that required it.
+- A line kept against a rule of this document, or put back after a cut, has a `comment`, as [Directives](src/controlled_markdown/writing.md#directives) gives it, that says why it stays. A comment on a kept restatement or elaboration gives the observed failure that required it. Take that failure from the one who asked for the change, or from a record you read of a session, a task and pass, or a run.
 
 ## Where each text is
 - The handbook's documents: [Handbook](prompts/handbook.md) includes them in order, and holds no text of its own.
