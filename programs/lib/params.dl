@@ -2,6 +2,8 @@
 //! `.init helpers = ParamsHelpers`. A Params comp cannot reach the rest of
 //! the program.
 
+/// The positions of a frame of a given Dim, and each position of a tiled
+/// frame decomposed into its tile and its cell within the tile.
 .comp ParamsHelpers {  // @construction
     /// All positions of a frame of the given Dim.
     .decl frame_pos(dim: Dim, p: Position) inline

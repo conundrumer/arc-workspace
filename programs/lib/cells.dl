@@ -1,7 +1,7 @@
 //! Components with a keyed cell-set input: the caller populates the cells of a
 //! set under each key, and the component reports what holds of that set.
 
-/// 2D decomposition of the frame from a tile count on each axis. The counts
+/// The frame cut into equal tiles, from a tile count on each axis. The counts
 /// may differ between the axes.
 .comp Divide2D<Key> {
     .decl cell(p: Position)  // @input
@@ -106,7 +106,8 @@
     diag_cell(Ky, P, Diag, K) :- quadrant(Ky, P, Diag), diag_dist(P, Diag, _, K, K).
 }
 
-/// Marks cast rays toward the key's directions. A mark is on its own ray.
+/// The cells in line with a mark toward each of the key's directions, and
+/// the first blocked cell on each line. A mark is on its own ray.
 /// The cast crosses the whole frame, and the domain decides which cells are
 /// reported. Direction columns are Dir8.
 .comp Ray<Key> {
@@ -160,8 +161,8 @@
     stop(Ky, P, D, K, Src) :- _ahead(Ky, P, D, K, Src), blocked(Ky, P).
 }
 
-/// The two-sided fold of Ray along an axis. A mark is on its own ray, as in
-/// Ray.
+/// The cells with a mark on each side along one of the key's axes. A mark is
+/// on its own ray, as in Ray.
 .comp Between<Key> : Ray<Key> {
     /// The fold axes.
     .decl axis(key: Key, a: Axis4)  // @input
@@ -175,7 +176,8 @@
         ray(K, P, D, _, _), ray(K, P, O, _, _).
 }
 
-/// The maximal straight run inside a node set.
+/// Where a straight slide from each node toward a direction stops: the last
+/// node before the slide would leave the node set.
 .comp Slide<Key> {
     /// The nodes: Positions or Offsets.
     .decl node(key: Key, p: Position)  // @input
@@ -256,8 +258,8 @@
     travel(Ky, B, V) :- _least.low([Ky, B], K), dir(Ky, D), jump_offset(D, K, V).
 }
 
-/// The dense frame a sparse member set induces along an axis, with each
-/// member's line in it. Members are opaque and may span several lines.
+/// The rank of each member along an axis, as its line in a dense frame of one
+/// line per member. Members are opaque and may span several lines.
 ///
 /// Requires: each key's member line sets separate cleanly along the axis — no
 /// shared line, no interleaving. A pair that mixes breaks the order and
@@ -402,9 +404,10 @@
     reach(Ky, Q) :- reach(Ky, P), step(D), compose(P, D, Q), node(Ky, Q).
 }
 
-/// Boundary and erosion depth of a cell set. The rim is the cells with a
-/// neighbor outside the set, off-frame counting as outside; depth runs inward
-/// from the rim, one per step. Neighbors are the four cardinals.
+/// The concentric layers of a cell set, from its boundary inward. The rim is
+/// the cells with a neighbor outside the set, off-frame counting as outside;
+/// depth runs inward from the rim, one per step. Neighbors are the four
+/// cardinals.
 .comp Rim<Key> {
     .decl cell(key: Key, p: Position)  // @input
 
@@ -451,11 +454,11 @@
     region(Ky, P, Id) :- _regions.label(Ky, P, Id).
 }
 
-/// D4 ops taking one valued cell set onto another, in two readings of
-/// absence: `mismatch`/`map` read a missing image cell as difference, so `dst`
-/// must be total over each key's domain; `conflict`/`compatible` compare only
-/// where both cells exist, so a partial dst keeps its ops. With dst = src the
-/// maps are the set's symmetries.
+/// The D4 ops that take one valued cell set onto another. The outputs treat
+/// a missing image cell in two ways: `mismatch`/`map` read it as difference,
+/// so `dst` must be total over each key's domain; `conflict`/`compatible`
+/// compare only where both cells exist, so a partial dst keeps its ops. With
+/// dst = src the maps are the set's symmetries.
 .comp D4Map<Key, Val> {
     .decl src(key: Key, p: Position, v: Val)  // @input
     .decl dst(key: Key, p: Position, v: Val)  // @input

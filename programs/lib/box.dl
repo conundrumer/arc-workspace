@@ -75,7 +75,7 @@ diag_dist(P, Diag, A, K1, K2) :-
 .decl corner_dist(p: Box, diag: DiagDir, k: number) inline
 corner_dist(P, Diag, K) :- diag_dir_elem(Diag), K = @box_corner_dist(P, Diag).
 
-/// Decompose p by axis: along carries the axis component (perpendicular
+/// p decomposed by axis: along carries the axis component (perpendicular
 /// zeroed); across carries the perpendicular (axis zeroed).
 .decl split(p: Box, a: Axis, along: Box, across: Box) inline
 split(P, A, Along, Across) :- Along = @box_along(P, A), Across = @box_across(P, A).
@@ -141,7 +141,7 @@ neighbor(P, D, Q) :- dir8_elem(D), Q = @box_compose(P, @box_jump_offset(D, 1)).
 .decl jump(p: Box, d: Dir8, k: number, q: Box) inline
 jump(P, D, K, Q) :- dir8_elem(D), Q = @box_compose(P, @box_jump_offset(D, K)).
 
-/// Apply a D4 transform to a box.
+/// The image of a box under a D4 transform.
 .decl apply(d: D4, p: Box, p_out: Box) inline
 apply(D, P, P_out) :- P_out = @box_apply(D, P).
 
@@ -161,7 +161,7 @@ apply_dir8(D, Dir, Dir_out) :-
     d4_elem(D), dir8_elem(Dir), dir8_elem(Dir_out),
     step_offset(Dir, S), apply(D, S, S2), step_offset(Dir_out, S2).
 
-/// Divide p's axis-a extent into n equal parts. p_outer is the tile
+/// p's axis-a extent cut into n equal parts. p_outer is the tile
 /// index in an n-strip frame; p_inner is the cell within the tile.
 /// Both axis-only (perpendicular zeroed). A cell in a gap row or column
 /// (gap > 0) gets no decomposition, and no cell decomposes unless the
@@ -190,9 +190,9 @@ divide_gap(P, A, N, K, G) :-
     (Ext - N*K) % (N-1) = 0,
     G = (Ext - N*K) / (N-1).
 
-/// Distance t along width-w periods separated by gaps of g decomposes into
-/// period index n and within-period offset k when it lies within a period.
-/// No divisibility condition applies.
+/// The period n that distance t falls in, and the index k within that
+/// period, along periods of width w separated by gaps of g. A distance in a
+/// gap gives none, and no divisibility condition applies.
 .decl stride(t: number, w: number, g: number, n: number, k: number) inline
 stride(T, W, G, N, K) :-
     T >= 0,
@@ -200,7 +200,7 @@ stride(T, W, G, N, K) :-
     K = T_cyc,
     N = T / (W + G).
 
-/// Recompose axis-a tiles into a single extent — the inverse of divide, over
+/// Axis-a tiles recomposed into a single extent — the inverse of divide, over
 /// the same p_outer and p_inner. p_grid is axis-only on the same axis. With
 /// gap > 0, only filled tile cells appear in p_grid — gap rows/cols are
 /// absent.
@@ -247,9 +247,9 @@ box_edge(P, B, D) :- inside(P, B), dir_elem(D), same_dist(D, P, B).
 .decl box_corner(p: Position, b: Box, d: DiagDir) inline
 box_corner(P, B, D) :- inside(P, B), corner_anchor(D, P, B).
 
-/// 1D divide along axis a with perpendicular passthrough. p_outer is
-/// axis-only on a; p_inner is the full 2D within-slab position —
-/// perpendicular carried from p.
+/// p's axis-a extent cut into n equal slabs, each across the whole
+/// perpendicular extent. p_outer is axis-only on a; p_inner is the full 2D
+/// within-slab position — perpendicular carried from p.
 /// No cell decomposes unless the gap-adjusted extent divides evenly by n.
 .decl divide_slab(p: Position, a: Axis, n: number, gap: number,
                   p_outer: Position, p_inner: Position) inline
@@ -267,7 +267,8 @@ divide_by_size_slab(P, A, K, G, P_outer, P_inner) :-
     split(P, A, _, Across),
     compose(P_i_axis, Across, P_inner).
 
-/// 2D divide, one tile count and gap on both axes. Outputs are full 2D:
+/// p's frame cut into n by n equal tiles, with one gap width on both axes.
+/// Outputs are full 2D:
 /// p_outer indexes an n×n tile arrangement; p_inner is the cell within a tile.
 .decl divide_2d(p: Position, n: number, gap: number,
                 p_outer: Position, p_inner: Position) inline
@@ -286,18 +287,18 @@ divide_by_size_2d(P, K, G, P_outer, P_inner) :-
     compose(P_ov, P_oh, P_outer),
     compose(P_iv, P_ih, P_inner).
 
-/// 1D concat along axis a with perpendicular passthrough — the inverse of
-/// divide_slab, over the same p_outer and p_inner. p_grid is the recomposed
-/// full 2D position.
+/// Axis-a slabs recomposed into a single frame — the inverse of divide_slab,
+/// over the same p_outer and p_inner. p_grid is the recomposed full 2D
+/// position.
 .decl concat_slab(p_outer: Position, p_inner: Position, a: Axis, gap: number,
                   p_grid: Position) inline
 concat_slab(P_outer, P_inner, A, G, P_grid) :-
     P_grid = @box_compose(@box_concat(P_outer, @box_along(P_inner, A), A, G),
                           @box_across(P_inner, A)).
 
-/// 2D concat on both axes — the inverse of divide_2d and divide_by_size_2d,
-/// over the same p_outer and p_inner. p_grid is the recomposed full 2D
-/// position.
+/// 2D tiles recomposed into a single frame — the inverse of divide_2d and
+/// divide_by_size_2d, over the same p_outer and p_inner. p_grid is the
+/// recomposed full 2D position.
 .decl concat_2d(p_outer: Position, p_inner: Position, gap: number,
                 p_grid: Position) inline
 concat_2d(P_outer, P_inner, G, P_grid) :-
@@ -305,7 +306,8 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         @box_concat(@box_along(P_outer, AXIS_V), @box_along(P_inner, AXIS_V), AXIS_V, G),
         @box_concat(@box_across(P_outer, AXIS_V), @box_across(P_inner, AXIS_V), AXIS_H, G)).
 
-/// 1D frame defined by an index set and an edge.
+/// The positions of a 1-wide frame laid out from a dense index set, each
+/// index at its distance from an edge.
 .comp DirFrame<Key> {  // @construction
     /// The edge the distances are measured from.
     .decl dir(d: Dir)  // @input
@@ -336,8 +338,8 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         axis_inset(D, K, N-1-K, P).
 }
 
-/// 1D frame from an axis-tagged extent — the n axis-only positions of a
-/// 1-wide frame.
+/// The cells of a 1-wide frame of a given extent along an axis: n axis-only
+/// positions.
 .comp AxisFrame<Key> {  // @construction
     .decl extent(key: Key, a: Axis, n: number)  // @input
 
@@ -348,8 +350,8 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         axis_inset(D, K, N-1-K, P).
 }
 
-/// 2D frame from per-axis extents: the 1D cells of the two axes combined
-/// into full 2D positions.
+/// The cells of a frame of a given extent on each axis, as full 2D
+/// positions.
 .comp Frame2D<Key> {  // @construction
     .decl extent(key: Key, a: Axis, n: number)  // @input
 
@@ -363,8 +365,8 @@ concat_2d(P_outer, P_inner, G, P_grid) :-
         compose(P1, P2, P).
 }
 
-/// A Box packed from per-Dir scalars: the inverse read of dist. A caller with
-/// an edge of no width writes that edge's zero row.
+/// The Box with a given distance to each edge: the inverse read of dist. A
+/// caller with an edge of no width writes that edge's zero row.
 .comp DirPack<Key> {  // @construction
     .decl edge(key: Key, d: Dir, k: number)  // @input
 

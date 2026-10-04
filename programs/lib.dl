@@ -26,6 +26,13 @@
 
 // A name with a leading `_` is private to the lib.
 
+// Open a public component's doc with a sentence that states the reading it
+// computes: what it finds or does in a grid, or the conventional name of its
+// concept. For a component a solver uses as machinery, state there what it
+// produces for the solver. A variant that directly follows its base may state
+// that sentence against the base. Put the inputs, the outputs and the
+// mechanics after that sentence.
+
 .type Color <: number
 .type Dir <: number
 .type Axis <: number
