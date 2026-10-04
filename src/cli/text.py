@@ -30,7 +30,7 @@ PAIRS_NONE = mctx("the file holds no pair")
 # `grid`, `relation` and `record`
 
 NO_CASE_NAMED = mctx("no case of {stem} is `{name}`")
-NO_HELD_TAKES = mctx("no witnessed case takes the branches of `{name}`")
+NO_WITNESSED_TAKES = mctx("no witnessed case takes the branches of `{name}`")
 NO_RELATION = mctx("no relation `{name}`")
 NO_ENTRY = mctx("no witness `{id}` in {path}; a new witness takes "
                 "`--separates`")

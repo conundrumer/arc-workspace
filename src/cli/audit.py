@@ -29,7 +29,7 @@ from checker.witness import (
     WITNESS_CHECKS,
     TryResult,
     check_case_conditions,
-    try_witness,
+    survey_witness_try,
 )
 from cli import text
 from cli.common import (
@@ -159,11 +159,11 @@ def cmd_witness(arg: str | None, file: str | None = None,
 
 def _try(eng: SouffleEngine, solver: Solver, path: str) -> int:
     """`witness --try`: the grid at `path` as a candidate witness
-    (`checker.witness.try_witness`); nothing is written."""
+    (`checker.witness.survey_witness_try`); nothing is written."""
     grids = written_grids(path, 1, text.TRY_ONE_GRID)
     if grids is None:
         return 2
-    got = try_witness(solver, Runs(eng, solver, LIMITS),
+    got = survey_witness_try(solver, Runs(eng, solver, LIMITS),
                       Entry(TRY_ID, "", grids[0], (), Groups(())))
     if not isinstance(got, TryResult):
         print("\n".join(failure_lines(solver, got)))

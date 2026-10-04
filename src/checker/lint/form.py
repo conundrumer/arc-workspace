@@ -94,7 +94,7 @@ from solver.model import (
     marker_at,
     row_value,
     other_branches,
-    readers,
+    dependent_bases,
 )
 from solver.names import (
     Denoted,
@@ -521,11 +521,11 @@ def check_comp_without_entry(solver: Solver, runs: Runs) -> list[Finding]:
     v = view(solver, runs)
     comps = [c for c in v.own_components
              if c.scope == TOP and c.name not in STOCK_COMPS]
-    readers = _comp_readers(solver, runs, [c.name for c in comps])
+    dependents = _comp_dependents(solver, runs, [c.name for c in comps])
     out: list[Finding] = []
     for c in comps:
         line = spanned(c.span).first
-        got = readers.get(c.name)
+        got = dependents.get(c.name)
         if got is not None:
             out.append(lint(line, LintNamed(
                 Category.PROPOSAL_COMP, LintSentence.PROPOSAL_UNREAD,
@@ -537,8 +537,8 @@ def check_comp_without_entry(solver: Solver, runs: Runs) -> list[Finding]:
     return out
 
 
-def _comp_readers(solver: Solver, runs: Runs, comps: Sequence[str]
-                  ) -> dict[str, tuple[str, ...]]:
+def _comp_dependents(solver: Solver, runs: Runs, comps: Sequence[str]
+                     ) -> dict[str, tuple[str, ...]]:
     """Each of `comps` whose units no derivation of the concept case
     depends on (`solver.model.dependence`), with the fewest names that
     cover the cases whose derivations depend on one of them; none where
@@ -550,8 +550,8 @@ def _comp_readers(solver: Solver, runs: Runs, comps: Sequence[str]
     rd = dependence(runs.engine, solver, bases)
     out: dict[str, tuple[str, ...]] = {}
     for name in comps:
-        reading = readers(rd, (u.id for u in solver.program.units
-                               if u.scope.components[:1] == (name,)))
+        reading = dependent_bases(rd, (u.id for u in solver.program.units
+                                       if u.scope.components[:1] == (name,)))
         if concept_among(solver, reading) is not None:
             continue
         out[name] = reading_names(solver, every, reading)
@@ -990,11 +990,12 @@ def check_case_section(solver: Solver, runs: Runs) -> list[Finding]:
         "A parameter that some case never reads goes under the marker of the "
         "cases that read it.")
 def check_case_section_read(solver: Solver, runs: Runs) -> list[Finding]:
-    """A clause that feeds a relation some cases read, where every clause
-    that feeds the rows they read there stands under a marker that does not
-    list them (`solver.model.Dependence.stranded`): the program runs the
-    clause for those cases, so its marker does not list every case that
-    reads it. One finding per solver line, relation and marker: the clauses
+    """A clause that feeds a relation some cases read, where the clause
+    stands under a marker that does not list them
+    (`solver.model.Dependence.stranded`): the program runs the clause for
+    those cases, so its marker does not list every case that reads it. The
+    marker finding of `solver.model.dependence`, which the `store` report
+    prints too. One finding per solver line, relation and marker: the clauses
     on one line that feed one relation under one marker give one finding, on
     that line, naming through `cover` the cases that read any of them. Where
     the run that enumerates the solver's cases gives no result, nothing is

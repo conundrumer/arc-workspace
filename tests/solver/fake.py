@@ -30,6 +30,7 @@ from engine import (
     UnitId,
 )
 from engine.engine import Classed, GridMisfit
+from souffle.index import index_of
 from engine.program import (
     AdtType,
     Column,
@@ -122,7 +123,7 @@ class FakeEngine:
         return self.parsed
 
     def index(self, program: Program) -> Index:
-        raise NotImplementedError
+        return index_of(program)
 
     def fix_relation(self, program: Program, relation: RelationName,
                      value: RelationValue) -> Program:
@@ -154,9 +155,6 @@ class FakeEngine:
 
     def render(self, program: Program) -> Rendered:
         return Rendered(())
-
-    def format(self, program: Program) -> str:
-        return ""
 
 
 def grid(*rows: str) -> Grid:

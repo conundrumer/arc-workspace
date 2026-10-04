@@ -54,7 +54,7 @@ from checker.payloads.witness import (
     StandsElsewhere,
     SubsumedPayload,
     TaskAssignPayload,
-    UnheldPayload,
+    ListsNoCasePayload,
     UnjustifiedDropPayload,
     UnlistedPayload,
     UnseparatedPayload,
@@ -335,7 +335,7 @@ def check_entry_outputs(solver: Solver, runs: Runs) -> list[Finding]:
     """Per entry of the witness file: the cases a group names whose output
     is not the group's grid (`drift`), the solver's cases no group names
     (`unlisted`), the group names that denote none of the solver's cases
-    (`unheld`), an `assign` whose rows do not have the columns of the
+    (`lists-no-case`), an `assign` whose rows do not have the columns of the
     parameter or `@store` relation it names (`assign`), and the runs that
     give no result. An entry whose id names a case of the solver need not
     list it. A given file is an Analyze file, which lists no case of the
@@ -430,7 +430,7 @@ def _groups(solver: Solver, runs: Runs, entry: Entry,
     (solver-file.md, under "Witness file"). A case a name denotes whose output
     is not its group's grid is `drift`: the name reaches into another group. A case
     no group names is `unlisted`, and a name that denotes none of the
-    solver's cases `unheld`. Under the `witness --every-case` form the
+    solver's cases `lists-no-case`. Under the `witness --every-case` form the
     names denote the solver's cases still, those the solver's own
     `impl_choice` holds (`_shown`): a dropped case is judged by
     `check_case_conditions` alone (solver-file.md, under "Witness file"). A
@@ -448,7 +448,7 @@ def _groups(solver: Solver, runs: Runs, entry: Entry,
     where = _at(runs, entry)
     drift: list[tuple[Case, object, Outcome]] = []
     problems: list[Finding] = []
-    unheld: list[str] = []
+    listing_none: list[str] = []
     named: set[Case] = set()
     for group in entry.output.groups:
         in_group: set[Case] = set()
@@ -463,7 +463,7 @@ def _groups(solver: Solver, runs: Runs, entry: Entry,
                     problems.append(finding_of(cases.at(InWitnessFile(
                         entry.id, runs.file_role))))
             elif not cases:
-                unheld.append(n)
+                listing_none.append(n)
             in_group |= set() if isinstance(cases, NameFault) else cases
         named |= in_group
         for case in solver_cases:
@@ -480,8 +480,9 @@ def _groups(solver: Solver, runs: Runs, entry: Entry,
         out.append(Finding(Kind.DRIFT, where, DriftPayload(
             _case_set(runs, cases), want, got)))
     out += problems
-    if unheld:
-        out.append(Finding(Kind.UNHELD, where, UnheldPayload(tuple(unheld))))
+    if listing_none:
+        out.append(Finding(Kind.LISTS_NO_CASE, where,
+                           ListsNoCasePayload(tuple(listing_none))))
     if runs.given is not None or _unread_names(solver, entry):
         return out
     own = _own(solver, entry, solver_cases)
@@ -1281,7 +1282,7 @@ class Narrowed:
 
 @dataclass(frozen=True)
 class TryResult:
-    """What a candidate witness would change (`try_witness`): the entry as
+    """What a candidate witness would change (`survey_witness_try`): the entry as
     `record` would write it, the cases its groups were built from, the
     unseparated and the subsumed branch differences of the report whose
     pairs it would reduce."""
@@ -1294,8 +1295,11 @@ class TryResult:
     subsumed: tuple[Narrowed, ...]
 
 
-def try_witness(solver: Solver, runs: Runs, entry: Entry
-                ) -> TryResult | RunFailure | Fault:
+@quotes("procedure.md", "Witness",
+        "The cases' clauses differ and some input separates them: build the "
+        "witness that shows it.")
+def survey_witness_try(solver: Solver, runs: Runs, entry: Entry
+                       ) -> TryResult | RunFailure | Fault:
     """The `witness --try` survey: the report's unseparated and subsumed
     branch differences (`check_equivalence`, `check_subsumption`), each
     with the count of its pairs that stay with `entry` added to the

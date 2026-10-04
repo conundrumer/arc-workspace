@@ -271,14 +271,14 @@ class Runs:
     @cached_property
     def derive_survey(self) -> "DeriveSurvey":
         """The `derive` report of the solver (`checker.derive`)."""
-        from checker.derive import derive_survey
-        return derive_survey(self)
+        from checker.derive import survey_derive
+        return survey_derive(self)
 
     @cached_property
     def store_survey(self) -> "StoreSurvey":
         """The `store` report of the solver (`checker.store`)."""
-        from checker.store import store_survey
-        return store_survey(self)
+        from checker.store import survey_store
+        return survey_store(self)
 
     @cached_property
     def determined(self) -> DetermineResult | NoTask:

@@ -79,6 +79,3 @@ class SouffleEngine:
 
     def render(self, program: Program) -> Rendered:
         return render.render(program)
-
-    def format(self, program: Program) -> str:
-        return render.format_program(program)

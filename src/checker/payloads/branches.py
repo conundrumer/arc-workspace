@@ -5,7 +5,7 @@ determination check (solver-file.md, under "Params", "Program" and
 from dataclasses import dataclass
 
 from engine import RelationName, Row, RunFailure
-from solver.annotations import CaseMarker, IgnoreLine
+from solver.annotations import IgnoreLine
 from solver.model import Base, Branch, DeriveBranch, StoreBranch
 from solver.solve import PairId, ParamDiff
 
@@ -185,12 +185,6 @@ class HomonymsPayload:
 
 
 @dataclass(frozen=True)
-class MarkerUnownedPayload:
-    marker: CaseMarker
-    clause_lines: tuple[int, ...]
-
-
-@dataclass(frozen=True)
 class DeterminationDiffPayload:
     """A determined parameter whose determination differs from its stored
     value (solver-file.md, under "Determination"), and for a parameter that
@@ -229,7 +223,7 @@ type BranchesPayload = (IdleIgnorePayload | MissingLinePayload
                         | StoreValuesPayload | RelationPayload
                         | StoreNoValuePayload | ColorAskPayload
                         | RowCapPayload | HomonymsPayload
-                        | MarkerUnownedPayload | DeterminationDiffPayload
+                        | DeterminationDiffPayload
                         | DerivedDataPayload | NoTaskPayload
                         | NotCheckedPayload)
 """The payload of every kind of this family."""

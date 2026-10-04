@@ -55,7 +55,8 @@ from checker.payloads.branches import (
 )
 from checker.readable import finding_of
 from checker.runs import Runs
-from engine import Program, RunFailure
+from engine import Engine, Program, RunFailure
+from engine.quotes import quotes
 from solver.annotations import DeriveLine, IgnoreForm
 from solver.model import (
     Case,
@@ -99,11 +100,11 @@ class Proposer:
     comment: str
 
 
-def proposers(program: Program) -> dict[str, Proposer]:
+def proposers(engine: Engine, program: Program) -> dict[str, Proposer]:
     """Each proposer of the proposers program by name
     (`solver.model.proposer_names`)."""
     out: dict[str, Proposer] = {}
-    graph = Graph(program)
+    graph = Graph(program, engine)
     for name in proposer_names(program):
         comp = next(c for c in program.components if c.name == name)
         decl = next(r for r in program.relations
@@ -264,7 +265,10 @@ class _One:
     late: list[int]
 
 
-def derive_survey(runs: Runs) -> DeriveSurvey:
+@quotes("procedure.md", "Develop",
+        "`uv run python scripts/run_dl.py derive <task_id>` lists the built-in "
+        "derivations that fit.")
+def survey_derive(runs: Runs) -> DeriveSurvey:
     """The `derive` report (procedure.md, under "Develop"): each derivation of a
     stored parameter whose model does not miss Fit, and the findings on
     the solver's `@derive` lines and on the derivations."""
@@ -279,7 +283,7 @@ def derive_survey(runs: Runs) -> DeriveSurvey:
             AtFile(WholeFile.SOLVER)),))
     if solver.task is None:
         return DeriveSurvey((), (NO_TASK,))
-    known = proposers(parsed)
+    known = proposers(runs.engine, parsed)
     lined = {(b.parameter, b.proposer): b for b in solver.branches
              if isinstance(b, DeriveBranch)}
     findings: list[Finding] = []

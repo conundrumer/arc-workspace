@@ -210,7 +210,7 @@ def cmd_grid(arg: str, path: str | None = None, every: bool = False,
                 return 2
             stand_ins = solve.stand_ins(solver, solver_cases, denoted)
             if not stand_ins:
-                print(text.NO_HELD_TAKES.format(name=value), file=sys.stderr)
+                print(text.NO_WITNESSED_TAKES.format(name=value), file=sys.stderr)
                 return 2
             kept |= set(stand_ins)
         groups = _by_name(solver, outcomes, groups, kept)

@@ -1,1 +1,5 @@
-lint: ok
+
+--- hints: 2 across 1 solver(s) ---
+  abbfd121.dl:419: case section: by the program's rules, not by a run, `$IsometryOrbit` read `kind`, which the clause feeds, and the marker `// --- $LatticePeriod ---` above it does not list them; see "Case markers" in [Cases](docs/handbook/solver-file.md#cases); an `@ignore` directive can keep the relation it fires on
+  abbfd121.dl:431: case section: by the program's rules, not by a run, `$LatticePeriod` read `kind`, which the clause feeds, and the marker `// --- $IsometryOrbit ---` above it does not list them; see "Case markers" in [Cases](docs/handbook/solver-file.md#cases); an `@ignore` directive can keep the relation it fires on
+lint: ok, 2 hints

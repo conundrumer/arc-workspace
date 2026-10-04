@@ -39,7 +39,7 @@ from engine.program import (
 from engine.quotes import quotes
 from solver.annotations import IgnoreForm, IgnoreLine
 from solver.category import HINTS, Category
-from solver.model import Solver, bases_of, dependence, readers
+from solver.model import Solver, bases_of, dependence, dependent_bases
 
 type Check = Callable[[Solver, Runs], list[Finding]]
 
@@ -243,7 +243,7 @@ def _branch_forms(solver: Solver, runs: Runs, findings: list[Finding]
             out.append(f)
             continue
         units = [by_id[i] for i in f.where.units]
-        reading = readers(rd, (u.id for u in units))
+        reading = dependent_bases(rd, (u.id for u in units))
         if not reading or concept_among(solver, reading) is not None:
             out.append(f)
             continue

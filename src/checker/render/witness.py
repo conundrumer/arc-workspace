@@ -27,7 +27,7 @@ from checker.payloads.witness import (
     StandsElsewhere,
     SubsumedPayload,
     TaskAssignPayload,
-    UnheldPayload,
+    ListsNoCasePayload,
     UnjustifiedDropPayload,
     UnlistedPayload,
     UnseparatedPayload,
@@ -66,8 +66,8 @@ if TYPE_CHECKING:
 
 WITNESS_KINDS = frozenset({
     Kind.DRIFT, Kind.UNLISTED, Kind.ANNOTATION, Kind.UNSEPARATED,
-    Kind.SUBSUMED, Kind.CONCEPT, Kind.SEPARATES, Kind.UNHELD, Kind.DROPPED,
-    Kind.DROP_UNJUSTIFIED, Kind.TASK_ASSIGN,
+    Kind.SUBSUMED, Kind.CONCEPT, Kind.SEPARATES, Kind.LISTS_NO_CASE,
+    Kind.DROPPED, Kind.DROP_UNJUSTIFIED, Kind.TASK_ASSIGN,
     Kind.CONCEPT_UNENUMERATED,
 })
 """The kinds this module states."""
@@ -302,7 +302,7 @@ def witness_lines(solver: Solver, f: Finding) -> list[str]:
         case SeparatesPayload(name=name):
             return [mctx("{entry}: the `separates` text has `{name}`, and no "
                          "group lists it").format(entry=at, name=name)]
-        case UnheldPayload(names=names):
+        case ListsNoCasePayload(names=names):
             return [f"{at}: " + (
                 mctx("{names} denotes no case of the solver, so "
                      "the grid of the group that lists it is not checked")

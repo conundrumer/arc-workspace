@@ -1,4 +1,5 @@
-"""What a reader of the solver model could not read, as data."""
+"""What a load function found malformed, unresolved or off its shape in a
+solver file, its annotations or a witness file, as data."""
 
 from dataclasses import dataclass
 from enum import StrEnum
@@ -345,7 +346,7 @@ type Detail = (Quoted | Named | ShapeFault | Undecided | GridOffLayout
 
 @dataclass(frozen=True)
 class Fault:
-    """What a reader of the model could not read: its kind, where it
+    """What a load function could not read: its kind, where it
     stands, and what was read there as typed parts (plan §D4
     `Fault`). The load functions return it beside the model and raise
     nothing for it."""

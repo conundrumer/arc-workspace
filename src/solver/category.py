@@ -2,10 +2,16 @@
 
 from enum import StrEnum
 
+from engine.quotes import quotes
 
+
+@quotes("solver-file.md", "Program",
+        "A relation kept despite a hint has `// @ignore: <category> — "
+        "<reason>` on the line immediately above its declaration, with the "
+        "category the hint gives.")
 class Category(StrEnum):
     """A lint category: what an `@ignore: <category>` line may name
-    (solver-file.md, under "Cases")."""
+    (solver-file.md, under "Program")."""
 
     RESERVED_NAME = "reserved name"
     SHADOWED_TYPE = "shadowed type"

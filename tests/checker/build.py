@@ -162,7 +162,8 @@ def solver(program: Program, ann: Annotations | None = None) -> Solver:
     return Solver(stem="0000test", task_id="0000test", program=program,
                   annotations=ann or annotations(), choice=None, branches=(),
                   params=Params(()), witness_file=None, task=None,
-                  lib=Lib(frozenset(), {}, {}, {}), problems=())
+                  lib=Lib(frozenset(), {}, {}, {}), problems=(),
+                  engine=FakeEngine())  # type: ignore[arg-type]
 
 
 class FakeEngine:

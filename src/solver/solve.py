@@ -464,18 +464,18 @@ def _read_units(engine: Engine, solver: Solver,
     missing = [b for b in dict.fromkeys(bases) if b not in memo]
     if missing:
         rd = dependence(engine, solver, missing)
-        units = _by_reader(rd.units, missing)
-        relations = _by_reader(rd.relations, missing)
+        units = _by_base(rd.units, missing)
+        relations = _by_base(rd.relations, missing)
         for b in missing:
             memo.setdefault(b, _Reads(units[b], relations[b]))
     return {b: memo[b] for b in bases}
 
 
-def _by_reader[K](read: Mapping[K, tuple[Base | None, ...]],
-                  bases: Sequence[Base | None]
-                  ) -> dict[Base | None, frozenset[K]]:
-    """For each of `bases`, the keys of `read` whose readers hold it."""
-    return {b: frozenset(k for k, readers in read.items() if b in readers)
+def _by_base[K](read: Mapping[K, tuple[Base | None, ...]],
+                bases: Sequence[Base | None]
+                ) -> dict[Base | None, frozenset[K]]:
+    """For each of `bases`, the keys of `read` whose bases include it."""
+    return {b: frozenset(k for k, depending in read.items() if b in depending)
             for b in bases}
 
 
@@ -793,7 +793,7 @@ def _written_assign(solver: Solver, name: str,
         else parameter_reading(solver, name)
     rel = pc.relation
     types = pc.types
-    names = column_names(solver.program, rel)
+    names = column_names(solver.engine, solver.program, rel)
     mixed = pc.mixed
     given = tuple(sorted({len(f) for f in facts}))
     if given and given != (len(pc.given),):
@@ -1142,7 +1142,8 @@ def case_reading(solver: Solver, relation: RelationName,
     where it is None: its column types (`column_reading`) and its case
     columns (`case_columns`)."""
     columns = column_reading(
-        solver.program if program is None else program, relation)
+        solver.engine, solver.program if program is None else program,
+        relation)
     types = columns.types
     case = case_columns(solver, types)
     reading = case_types(solver)
@@ -1578,18 +1579,18 @@ def pairs(engine: Engine, solver: Solver, limits: Limits,
     """Per train and test pair, per case: the run and the judged profile
     (`pair_runs`), of `cases`, else of the solver's cases, from `run`,
     else from `outcomes_on`. Where the run that enumerates the solver's
-    cases fails, its failure; a solver with no task has no pair."""
-    if solver.task is None:
-        return ()
+    cases fails, its failure. Raises `ValueError` where the solver has no
+    task (`Solver.given_task`)."""
+    task = solver.given_task
     if cases is None:
         every = cases_of(solver, engine, limits)
         if not isinstance(every, tuple):
             return every
         cases = every
-    inputs = task_inputs(solver.task)
+    inputs = task_inputs(task)
     got = run(cases, inputs) if run is not None \
         else outcomes_on(engine, solver, cases, inputs, limits)
-    return pair_runs(solver.task, cases, got)
+    return pair_runs(task, cases, got)
 
 
 def pair_runs(task: Task, cases: Sequence[Case],

@@ -19,7 +19,6 @@ from checker.payloads.branches import (
     HomonymsPayload,
     IdleIgnorePayload,
     KeyedBy,
-    MarkerUnownedPayload,
     MissingLinePayload,
     NoAnchor,
     NoRows,
@@ -46,7 +45,7 @@ from checker.render import (
     grid_lines,
     hint_line,
     in_line_order,
-    marker_text,
+    line_list,
     resolution_lines,
     shifted,
     under_case,
@@ -100,7 +99,7 @@ BRANCH_KINDS = frozenset({
     Kind.DERIVE_UNPLACED, Kind.STORE_PARAMETER_NAME, Kind.STORE_VALUES,
     Kind.STORE_NO_VALUE, Kind.STORE_UNTAKEN, Kind.STORE_HOMONYMS,
     Kind.STORE_IDENT_KEY,
-    Kind.STORE_PARAMS_ASK, Kind.STORE_ROW_CAP, Kind.MARKER_UNOWNED,
+    Kind.STORE_PARAMS_ASK, Kind.STORE_ROW_CAP,
     Kind.DETERMINATION_DIFF, Kind.DETERMINATION_OF_DERIVED, Kind.NO_TASK,
     Kind.NOT_CHECKED,
 })
@@ -331,7 +330,7 @@ def _branch_text(solver: Solver, f: Finding) -> str:
                     else mctx("no case of the solver takes `{b}`, so its "
                               "verdict is not judged; {by} exclude its cases")
                     ).format(b=branch_text(b), by=(" " + mctx("and") + " ").join(by).format(
-                        lines=_line_list(lines)))
+                        lines=line_list(lines)))
         case Kind.DERIVE_UNREAD, BranchPayload():
             return mctx("`@derive` stands above a parameter no case of the solver "
                         "reads")
@@ -370,11 +369,6 @@ def _branch_text(solver: Solver, f: Finding) -> str:
                 + _cases_suffix(cases)
         case Kind.STORE_ROW_CAP, RowCapPayload(relations=rels, cap=cap):
             return row_cap_text(cap, [r.text for r in rels])
-        case Kind.MARKER_UNOWNED, MarkerUnownedPayload(marker=m,
-                                                        clause_lines=ls):
-            return mctx("cases the marker `{m}` does not list read the "
-                        "clauses under it at {at}").format(
-                m=marker_text(m), at=_line_list(ls))
         case Kind.DETERMINATION_DIFF, DeterminationDiffPayload() as d:
             return _diff_line(_differing(solver, d))
         case Kind.DETERMINATION_OF_DERIVED, DerivedDataPayload(relation=r):
@@ -391,12 +385,6 @@ def _branch_text(solver: Solver, f: Finding) -> str:
 
 
 NOT_BETWEEN = mctx("no relation both reads `in` and feeds `out`")
-
-
-def _line_list(lines: Sequence[int]) -> str:
-    if len(lines) == 1:
-        return mctx("line {n}").format(n=lines[0])
-    return mctx("lines {ns}").format(ns=", ".join(str(n) for n in lines))
 
 
 def unplaced_text(b: BranchName) -> str:

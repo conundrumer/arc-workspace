@@ -87,10 +87,9 @@ class _Out:
 
 
 class _Renderer:
-    def __init__(self, program: Program, canonical: bool, absolute: bool = False,
+    def __init__(self, program: Program, absolute: bool = False,
                  bare: bool = False):
         self.program = program
-        self.canonical = canonical
         self.absolute = absolute
         self.bare = bare
         self.layout = layout_of(program)
@@ -158,14 +157,13 @@ class _Renderer:
                         # Never printed: each rendered line's origin
                         # carries the number the directive gives it.
                         continue
-                    if not parts or self.unchanged(parts) and not (
-                            self.canonical and not self._rigid_piece(parts)):
+                    if not parts or self.unchanged(parts):
                         out.add(text, line if own else None, True)
                     else:
                         out.add(self.print_parts(parts, _indent_before(out)),
                                 line if own else None, False)
                 case Generated(text, line, parts):
-                    if self.unchanged(parts) and not self.canonical:
+                    if self.unchanged(parts):
                         out.add(text, line if own else None, False)
                     else:
                         out.add(self.print_parts(parts, _indent_before(out)),
@@ -175,7 +173,7 @@ class _Renderer:
                         continue
                     now = self.current[key]
                     assert isinstance(now, Component) and isinstance(comp, Component)
-                    if now == comp and not self.canonical:
+                    if now == comp:
                         out.add(head, line if own else None, True)
                     else:
                         out.add(printer.declaration(now), line if own else None, False)
@@ -195,9 +193,6 @@ class _Renderer:
                         self.segments(body, out, False, "")
             if self.bare:
                 _end_line(out)
-
-    def _rigid_piece(self, parts: tuple[tuple[Key, Part], ...]) -> bool:
-        return isinstance(parts[0][1], RigidCall)
 
     def print_parts(self, parts: tuple[tuple[Key, Part], ...], indent: str) -> str:
         """The surviving parts of a statement, in their canonical form."""
@@ -273,7 +268,7 @@ def _indent_before(out: _Out) -> str:
 
 
 def render(program: Program) -> Rendered:
-    return Rendered(_Renderer(program, False).render())
+    return Rendered(_Renderer(program).render())
 
 
 def rendered_for_run(program: Program) -> list[tuple[str, int | None]]:
@@ -283,12 +278,7 @@ def rendered_for_run(program: Program) -> list[tuple[str, int | None]]:
     wherever the statements stand in the file and whatever comments stand
     between them."""
     return [(line.text, line.origin)
-            for line in _Renderer(program, False, absolute=True,
-                                  bare=True).render()]
-
-
-def format_program(program: Program) -> str:
-    return lines_text(line.text for line in _Renderer(program, True).render())
+            for line in _Renderer(program, absolute=True, bare=True).render()]
 
 
 def lines_text(lines: Iterable[str]) -> str:

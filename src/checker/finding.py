@@ -24,7 +24,7 @@ from checker.payloads.witness import (  # noqa: F401  (re-exported)
     StandsElsewhere,
     SubsumedPayload,
     TaskAssignPayload,
-    UnheldPayload,
+    ListsNoCasePayload,
     UnjustifiedDropPayload,
     UnlistedPayload,
     UnseparatedPayload,
@@ -59,7 +59,7 @@ class Kind(StrEnum):
     SEPARATES = "separates"
     """No principle stands behind it (`check_separates`); outside
     `FAILING`."""
-    UNHELD = "unheld"
+    LISTS_NO_CASE = "lists-no-case"
     DROPPED = "dropped"
     """A case `impl_choice` drops, and a case condition it fails; outside
     `FAILING`."""
@@ -72,6 +72,8 @@ class Kind(StrEnum):
     TASK_ASSIGN = "task-assign"
 
     # Lint: the payload's category says which (solver-file.md, under "Program").
+    # `checker.lint.view.lint` makes a lint finding a `HINT` where its
+    # category is in `solver.category.HINTS`, else a `LINT`.
     LINT = "lint"
     HINT = "hint"
 
@@ -101,7 +103,6 @@ class Kind(StrEnum):
     no case of the branch (plan §D5 `FAILING`)."""
     STORE_PARAMS_ASK = "store-params-ask"
     STORE_ROW_CAP = "store-row-cap"
-    MARKER_UNOWNED = "marker-unowned"
     DETERMINATION_DIFF = "determination-diff"
     """A determined parameter whose determination differs from its stored
     value (solver-file.md, under "Determination")."""

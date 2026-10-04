@@ -13,7 +13,7 @@ relation's value differs."""
 
 from collections import Counter
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from enum import StrEnum
 from itertools import combinations, permutations
 
@@ -51,6 +51,7 @@ from checker.judged import (
     no_result,
     swaps,
 )
+from checker.lint.form import check_case_section_read
 from checker.lint.view import literal_vars, term_vars
 from checker.payloads.branches import (
     BranchPayload,
@@ -59,7 +60,6 @@ from checker.payloads.branches import (
     DuplicatePayload,
     HomonymsPayload,
     KeyedBy,
-    MarkerUnownedPayload,
     MissingLinePayload,
     NoAnchor,
     NoRows,
@@ -76,7 +76,6 @@ from checker.runs import Runs
 from engine import (
     AdtValue,
     DeclId,
-    Engine,
     Grid,
     Index,
     RecordValue,
@@ -107,7 +106,6 @@ from engine.program import (
 )
 from engine.quotes import quotes
 from solver.annotations import (
-    CaseMarker,
     IgnoreForm,
 )
 from solver.model import (
@@ -137,7 +135,7 @@ from solver.model import (
     marker_at,
     non_concept_at,
     own,
-    readers,
+    dependent_bases,
 )
 from solver.names import branch_text, cover, marker_lists
 from solver.problems import ProblemKind
@@ -202,7 +200,7 @@ def between(solver: Solver, index: Index, rd: Dependence
     each on their own (`solver.model.Graph.reads_input`), by the name a
     top-level clause reads it by, but the run's own relations and the
     inline ones."""
-    graph = Graph(solver.program)
+    graph = Graph(solver.program, solver.engine)
     out: list[RelationName] = []
     for rel in rd.relations:
         d = _declaration(index, rel, TOP)
@@ -612,7 +610,7 @@ def _analyze(solver: Solver, runs: Runs, rels: Sequence[RelationName],
     capped: list[RelationName] = []
     for path in rels:
         if any(not g.get(path) for g in per_input) \
-                or ident_keyed(solver.program, path):
+                or ident_keyed(solver.engine, solver.program, path):
             continue
         decl = relation_decl(runs.engine, solver.program, path)
         held_by_case = case_reading(solver, path)
@@ -775,42 +773,10 @@ def _bases(solver: Solver, solver_cases: Sequence[Case]
     return bases, concept
 
 
-def marker_findings(engine: Engine, solver: Solver,
-                    bases: Sequence[Base | None]) -> list[Finding]:
-    """Each top-level marker that lists a case, where a base it does not
-    list depends on a clause under it: with that marker set aside and
-    every other standing, the model's `dependence` gives the base's
-    derivation of `out` depending on the clause
-    ([Cases](docs/handbook/solver-file.md#cases))."""
-    if solver.choice is None:
-        return []
-    markers = solver.annotations.markers
-    under: dict[int, list[Unit]] = {}
-    for u in solver.program.units:
-        if u.scope != TOP or not own(u.span) or u.span is None:
-            continue
-        marker = marker_at(solver, u.scope, u.span.first)
-        if marker is not None:
-            under.setdefault(marker.line, []).append(u)
-    out: list[Finding] = []
-    for m in markers:
-        if m.line not in under or not lists_case(solver, m):
-            continue
-        aside = tuple(CaseMarker((), x.gloss, x.line) if x == m else x
-                      for x in markers)
-        rd = dependence(engine, replace(solver, annotations=replace(
-            solver.annotations, markers=aside)), bases)
-        lines = sorted({u.span.first for u in under[m.line]
-                        if u.span is not None
-                        and any(not marker_lists(solver, m, b)
-                                for b in readers(rd, [u.id]))})
-        if lines:
-            out.append(Finding(Kind.MARKER_UNOWNED, AtLine(m.line),
-                               MarkerUnownedPayload(m, tuple(lines))))
-    return out
-
-
-def store_survey(runs: Runs) -> StoreSurvey:
+@quotes("procedure.md", "Develop",
+        "`uv run python scripts/run_dl.py store <task_id>` lists the derived "
+        "values that are the same on every input.")
+def survey_store(runs: Runs) -> StoreSurvey:
     """The `store` report (procedure.md, under "Develop"), and the findings
     the audit prints on the `@store` lines and on the values (`StoreSurvey`)."""
     solver = runs.solver
@@ -820,7 +786,7 @@ def store_survey(runs: Runs) -> StoreSurvey:
         return StoreSurvey((), (), (stop,), (), (stop,), True)
     bases, concept = _bases(solver, solver_cases)
     rd = dependence(runs.engine, solver, bases)
-    markers = tuple(marker_findings(runs.engine, solver, bases))
+    markers = tuple(check_case_section_read(solver, runs))
     task = solver.task
     rels = between(solver, runs.index, rd)
     if not rels:
@@ -857,7 +823,7 @@ def store_survey(runs: Runs) -> StoreSurvey:
              if isinstance(b, StoreBranch)}
     ignored = {t for t, _p in bare_ignored(solver, IgnoreForm.STORE)}
     stored = StoredAlready(solver, runs.index)
-    graph = Graph(solver.program)
+    graph = Graph(solver.program, solver.engine)
     among = bases_of(solver_cases)
     for f in found:
         f.case_names = base_names(solver, [c.base for c in f.cases], among)
@@ -957,7 +923,7 @@ class StoredAlready:
     def __init__(self, solver: Solver, index: Index) -> None:
         self.solver = solver
         self.index = index
-        self.graph = Graph(solver.program)
+        self.graph = Graph(solver.program, solver.engine)
         self.program = solver.program
         self.done: dict[tuple[Place, frozenset[int], Pattern], bool] = {}
         self.open: set[tuple[Place, frozenset[int], Pattern]] = set()
@@ -1245,7 +1211,7 @@ def _concept_runs(solver: Solver, runs: Runs, rd: Dependence,
     solver's own text that feeds the relation; true where no such clause
     feeds it."""
     mine = [u for u in feeding(solver, runs.index, decl.id) if own(u.span)]
-    return not mine or concept in readers(rd, (u.id for u in mine))
+    return not mine or concept in dependent_bases(rd, (u.id for u in mine))
 
 
 def _lineless(f: Found) -> StoreBranch:
@@ -1359,7 +1325,7 @@ def _line_findings(runs: Runs, solver: Solver, rels: Sequence[RelationName],
             out.append(Finding(Kind.STORE_PARAMETER_NAME, at,
                                BranchPayload(b)))
             continue
-        if ident_keyed(solver.program, b.relation):
+        if ident_keyed(solver.engine, solver.program, b.relation):
             out.append(Finding(Kind.STORE_IDENT_KEY, at,
                                RelationPayload(b.relation)))
             continue

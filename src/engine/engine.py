@@ -394,7 +394,3 @@ class Engine(Protocol):
     def render(self, program: Program) -> Rendered:
         """`program` as text, each line with its origin line."""
         ...
-
-    def format(self, program: Program) -> str:
-        """`program` as text in the formatting rewrites' form."""
-        ...

@@ -1,3 +1,4 @@
+a934301b.dl:380: case section: by the program's rules, not by a run, `$MarkCells` read `parse.marks`, which the clause feeds, and the marker `// --- $MarkPieces ---` above it does not list them; see "Case markers" in [Cases](docs/handbook/solver-file.md#cases)
 parse.mark_color: one color on every input: 8
   stored already: the value reads back the stored rows of `mark`
 parse.cell[col]: 3 values, one per `p`

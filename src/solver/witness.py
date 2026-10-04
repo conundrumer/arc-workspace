@@ -610,20 +610,20 @@ def rerecorded(solver: "Solver", entry: Entry,
         return got, GroupsKept()
     among = [c for c, _g in outcomes]
     old: list[tuple[frozenset["Case"], GroupGrid]] = []
-    unheld = 0
+    listing_none = 0
     for g in entry.output.groups:
         listed: set["Case"] = set()
         for n in g.cases:
             denoted = denoted_cases(solver, n, among)
             if isinstance(denoted, NameFault) or not denoted:
-                unheld += 1
+                listing_none += 1
             else:
                 listed |= denoted
         old.append((frozenset(listed), g.grid))
     new = [(frozenset(members(outcomes, g)), g) for g in groups.groups]
-    if unheld or {cs for cs, _g in old} != {cs for cs, _g in new}:
+    if listing_none or {cs for cs, _g in old} != {cs for cs, _g in new}:
         was = {c for cs, _g in old for c in cs}
-        return got, PartitionChanged(len(set(among) - was), unheld)
+        return got, PartitionChanged(len(set(among) - was), listing_none)
     held = _listing(old)
     moved = tuple(g.cases for cs, g in new if (cs, g.grid) not in held)
     if not moved:

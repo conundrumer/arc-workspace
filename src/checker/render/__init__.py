@@ -391,7 +391,7 @@ def where_text(solver: Solver, where: Where,
         case AtLine(line=line) if form == LineForm.FILE:
             return file_line(solver.stem, line)
         case AtLine(line=line):
-            return mctx("line {n}").format(n=line)
+            return line_text(line)
         case AtEntry(entry=entry, assigned=False):
             return entry
         case AtEntry(entry=entry, file=role):
@@ -671,6 +671,18 @@ def _marked_text(p: LintMarked) -> str:
                 name=p.name, spot=spot)
         case _:
             raise ValueError(f"no sentence for {p.sentence}")
+
+
+def line_text(line: int) -> str:
+    """A solver line as a sentence names it."""
+    return mctx("line {n}").format(n=line)
+
+
+def line_list(lines: Sequence[int]) -> str:
+    """Solver lines as a sentence names them."""
+    if len(lines) == 1:
+        return line_text(lines[0])
+    return mctx("lines {ns}").format(ns=", ".join(str(n) for n in lines))
 
 
 def _marker_or_none(m: CaseMarker | None) -> str:

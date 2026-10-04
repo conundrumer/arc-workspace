@@ -457,7 +457,7 @@ def survey_determination_plan(solver: Solver, runs: Runs) -> PlanResult:
     program = proposers_program(engine)
     if not isinstance(program, Program):
         raise ValueError("the proposers program the probe ran does not parse")
-    known = {name: p.types for name, p in proposers(program).items()}
+    known = {name: p.types for name, p in proposers(engine, program).items()}
 
     lib = solver.lib
 

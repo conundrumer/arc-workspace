@@ -223,8 +223,8 @@ class SeparatesPayload:
 
 
 @dataclass(frozen=True)
-class UnheldPayload:
-    """Group names, as written, of cases the runner does not hold."""
+class ListsNoCasePayload:
+    """Group names, as written, that list no case of the solver."""
 
     names: tuple[str, ...]
 
@@ -286,7 +286,7 @@ class ConceptUnenumeratedPayload:
 
 type WitnessPayload = (DriftPayload | UnlistedPayload | AnnotationPayload
                        | UnseparatedPayload | SubsumedPayload
-                       | ConceptPayload | SeparatesPayload | UnheldPayload
+                       | ConceptPayload | SeparatesPayload | ListsNoCasePayload
                        | DroppedPayload | UnjustifiedDropPayload
                        | ConceptUnenumeratedPayload
                        | TaskAssignPayload)
