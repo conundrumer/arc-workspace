@@ -62,7 +62,8 @@ class ProblemKind(StrEnum):
     ANCHOR_WITHOUT_STAMP = "anchor-without-stamp"
     """An `assign` grid with an anchor for a name the solver stores by no
     one `GRID_STAMP` call: by one position GRID call, by facts, by several
-    GRID calls, or as a `@store` relation."""
+    GRID calls, or as a `@store` relation. An anchor locates a cell as a
+    distance from a mark, and such a name has no mark."""
     GRID_CELL_OFF_FORM = "grid-cell-off-form"
     """An `assign` grid for a parameter whose GRID layout takes members
     alone, with a cell other than 0 and 1."""
@@ -347,9 +348,9 @@ type Detail = (Quoted | Named | ShapeFault | Undecided | GridOffLayout
 @dataclass(frozen=True)
 class Fault:
     """What a load function could not read: its kind, where it
-    stands, and what was read there as typed parts (plan §D4
-    `Fault`). The load functions return it beside the model and raise
-    nothing for it."""
+    stands, and what was read there as typed parts. The load functions
+    return it beside the model and raise nothing for it, and put no
+    default in place of what they could not read."""
 
     kind: ProblemKind
     place: ProblemPlace

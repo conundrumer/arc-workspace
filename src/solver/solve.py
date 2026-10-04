@@ -238,8 +238,9 @@ def outcomes(engine: Engine, solver: Solver, cases: Sequence[Case],
     with no cells in `out`, or a grid that is not total, is undefined
     (principles.md, under "Models and tasks").
 
-    The solver's `program` is the one that runs, so a variation runs
-    through here on the solver with its program replaced. `limits` are
+    Every run of cases goes through here, those of `pairs` and of every
+    variation among them: the solver's `program` is the one that runs, so a
+    variation runs on the solver with its program replaced. `limits` are
     those of a run on one grid, which the command passes from its option,
     as they are for every solve function."""
     return _outcomes(engine, solver, cases, input, assign, limits, _Stored())
@@ -1012,7 +1013,9 @@ class PerCase:
     of those fields (`CaseTypes.kept`). A fact holds at each base that
     holds its case values (`solver.model.holds_at`), and the relation's
     value at a base is the facts that hold there, each without its case
-    part (`value`)."""
+    part (`value`). Every reading of a parameter's value, the runs, the
+    sweep, the determination, `derive`, `store` and the lint, reads each
+    case at its own rows."""
 
     relation: RelationName
     types: tuple[str, ...]
@@ -1439,7 +1442,8 @@ def _grids(res_col: int | None, mine: Sequence[Row],
 def value_key(value: Value) -> tuple[object, ...]:
     """An order on values built from their parts: numbers, then symbols,
     then records by their fields, then ADT values by constructor and
-    arguments."""
+    arguments. An ordering of values that reaches output is by a key built
+    from their parts, never by `repr`."""
     match value:
         case bool() | int() | float():
             return (0, value)
@@ -1579,8 +1583,8 @@ def pairs(engine: Engine, solver: Solver, limits: Limits,
     """Per train and test pair, per case: the run and the judged profile
     (`pair_runs`), of `cases`, else of the solver's cases, from `run`,
     else from `outcomes_on`. Where the run that enumerates the solver's
-    cases fails, its failure. Raises `ValueError` where the solver has no
-    task (`Solver.given_task`)."""
+    cases fails, its failure. It never gives empty pairs: it raises
+    `ValueError` where the solver has no task (`Solver.given_task`)."""
     task = solver.given_task
     if cases is None:
         every = cases_of(solver, engine, limits)
@@ -1953,7 +1957,7 @@ def witnessed(engine: Engine, solver: Solver, limits: Limits,
     added: the cases and the witnessed cases of the solver without it. A
     case of both solvers keeps its standing there, unchanged by the line;
     of the cases that take the new branch, the witnessed ones are judged
-    as above (plan §D5, the derive survey's paragraph)."""
+    as above."""
     every = cases_of(solver, engine, limits)
     if not isinstance(every, tuple):
         return every

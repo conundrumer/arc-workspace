@@ -453,7 +453,7 @@ class Params:
 @dataclass(frozen=True)
 class Lib:
     """The lib's types and constants as the model reads them, parsed
-    through the engine from `programs/lib/` (plan §D4 `Lib`)."""
+    through the engine from `programs/lib/`."""
 
     box_types: frozenset[str]
     orientation_types: Mapping[str, tuple[str, ...]]
@@ -474,8 +474,8 @@ class Lib:
         "A solver is one file, `<task_id>.dl`.")
 @dataclass(frozen=True)
 class Solver:
-    """One solver: its program and the model read from it (plan §D4
-    `Solver`). `problems` holds the faults: what `load` could not read."""
+    """One solver: its program and the model read from it. `problems`
+    holds the faults: what `load` could not read."""
 
     stem: str
     task_id: str
@@ -535,7 +535,7 @@ _STEM_RE = re.compile(r"^[0-9a-f]{8}")
 
 def parse_with_lib(engine: Engine, text: str) -> Program | ParseFailure:
     """`text` parsed against the solvers directory, with the lib's include
-    added where the parse holds none (plan §D3 `parse`)."""
+    added where the parse holds none."""
     parsed = engine.parse(text, checkout.solvers())
     if isinstance(parsed, Program) and any(
             Path(i.path).name == LIB_FILE for i in parsed.includes):
@@ -1396,11 +1396,12 @@ def load(stem: str, engine: Engine, path: Path | None = None) -> Solver:
     `path`, a solver file anywhere whose name starts with the task id,
     else of `<stem>.dl` under `programs/solvers/`. Every solver reads the
     lib: `load` adds the lib's `#include` to the text when the text lacks
-    it, and parses it against the solvers directory, wherever the file
-    stands.
+    it (`LIB_INCLUDE`), and parses it against the solvers directory,
+    wherever the file stands.
 
-    The include goes above the text with a `#line 1` directive after it,
-    so every line of the solver keeps its number in the parse."""
+    A form the tool no longer reads gives a fault, never a reading of the
+    form it replaced, so a file fails as written until it is brought to
+    the form the tool reads."""
     task_id = task_id_of(stem)
     problems: list[Fault] = []
     parsed = parse_with_lib(engine, (path or solver_file(stem)).read_text())
@@ -1592,7 +1593,9 @@ class Dependence:
         default_factory=dict[tuple[UnitId, "Node"], tuple[Base | None, ...]])
     """Each unit a base's walk reads that stands under a marker that does
     not list the base, with the relation the unit feeds: as a top-level
-    clause names it, or the instance of a lib component by its path."""
+    clause names it, or the instance of a lib component by its path.
+    `checker` gives the marker of each a hint of the case-section
+    category, which fails no command."""
 
     def reads_parameter(self, base: Base | None, name: str) -> bool:
         """Whether `base` has a derivation of `out` that depends on the
@@ -1905,8 +1908,7 @@ class Graph:
     declares resolves to nothing, a path deeper than `MAX_DEPTH` is not
     followed, a base no file declares ends a component's chain, and type
     arguments pair with type parameters as far as both go: each is a
-    fault of `load` (`instance_faults`). A type name resolves through
-    `engine`'s index of the program (`Index.type_decl`)."""
+    fault of `load` (`instance_faults`)."""
 
     def __init__(self, program: Program, engine: Engine) -> None:
         self.program = program
@@ -2115,7 +2117,10 @@ class Graph:
     def resolve_type(self, name: str, scope: tuple[str, ...]) -> str:
         """The type `name` denotes when read in `scope` (`scoped_key`), then
         each alias followed to the type it names (`aliases`). The one
-        reading of a type that a comparison of types reads."""
+        reading of a type that a comparison of types reads. Every type the
+        model reads, a component's record among them, resolves through
+        the engine's index of the program in the scope that reads it
+        (`Index.type_decl`), never by its bare name."""
         return followed(self.aliases, self.scoped_key(name, scope))[-1]
 
     def link(self, t: AliasType | SubtypeType) -> str:
@@ -3194,7 +3199,7 @@ def ident_keyed(engine: Engine, program: Program, relation: RelationName
     a type that is `Ident` by an alias or a subtype, each link resolved in
     the scope that declares it. The program assigns an `Ident` as an
     ordinal in each run, so a stored row of the relation names no object in
-    another run (plan §D5 `FAILING`). A relation the model resolves to no
+    another run. A relation the model resolves to no
     declaration it reads, which `load` reports as a fault, has no column
     the model reads."""
     graph = Graph(program, engine)
@@ -3347,11 +3352,10 @@ def cases(solver: Solver, engine: Engine, limits: Limits
     branch and every branch its `<name>` contains (`solver.names.cases_of`;
     solver-file.md, under "Params" and "Program"; history "The runner holds
     cases the solver does not write" and 1103), and minus each case that takes
-    a `@store` branch on a relation with an `Ident` column (`ident_keyed`),
-    since no stored value of it names an object on another input; the `@store`
-    line on such a relation is a finding of the store check (plan §D5
-    `FAILING`). The handbook does not define the solver's cases in one place;
-    this docstring is where the definition stands.
+    a `@store` branch on a relation with an `Ident` column (`ident_keyed`);
+    the `@store` line on such a relation is a finding of the store check that
+    fails the command. The handbook does not define the solver's cases in one
+    place; this docstring is where the definition stands.
 
     A `Choice` with no `impl_choice` relation has every combination of
     its fields as a case (solver-file.md, under "Cases")."""

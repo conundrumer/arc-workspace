@@ -180,7 +180,8 @@ def names_in(text: str) -> list[str]:
     """The names in the one form (solver-file.md, under "Witness file") that
     prose, an entry's `separates` text among it, holds, each once, in text
     order: the runs of words joined by ` & `, a word with `=`, a constructor
-    with its `$`, or `concept`. A bare word is prose."""
+    with its `$`, or `concept`. A bare word is prose. No other reader
+    finds a name in prose."""
     out: list[str] = []
     for m in _PROSE_NAME_RE.finditer(text):
         n = m.group(0)

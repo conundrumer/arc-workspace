@@ -438,7 +438,7 @@ class Workaround:
 
 @dataclass(frozen=True)
 class Annotations:
-    """Every annotation of one solver (plan §D4 `Annotations`)."""
+    """Every annotation of one solver."""
 
     header: tuple[HeaderField, ...]
     reviews: tuple[ReviewLine, ...]

@@ -761,7 +761,8 @@ def put(at: Path, task_id: str, entries: Sequence[Entry]
     beside it that then replaces it, so a write that stops part way leaves
     the file as it was. The entries it does not put keep their text as the
     layout gives it. A file there that is off the shape is not written,
-    and its problems are returned."""
+    and its problems are returned. `record`, `derive` and `store` write a
+    witness file through here alone."""
     at.parent.mkdir(parents=True, exist_ok=True)
     got = _write_merged(at, task_id, entries, (), False)
     return () if isinstance(got, bool) else got
