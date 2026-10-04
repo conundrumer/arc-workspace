@@ -11,7 +11,13 @@ empty: this is the cold pass. Then the same sequence runs again with every
 result cached: this is the warm pass. A `record*` command runs on ac0c5833
 alone.
 
-The cold pass is compared with the accepted outputs and the accepted times.
+A command's outputs are its output, in `<key>.txt`, the witness file, in
+`<key>.wit.json`, but for the `TEXT_ONLY_SUBS`, and its exit code, in
+`<key>.rc`, with `<key>` its name and stem joined by `-`. A command stopped
+at `TIME_LIMIT` has the exit code `TIMEOUT_RC`.
+
+The cold pass is compared with the accepted outputs and the accepted times,
+so a command's exit code is compared with the accepted one.
 A `DIFF` line names an output file that differs, a `SLOW` line a time over
 1.25 times the accepted time plus 1 s, and a `NOTIME` line a command with no
 accepted time. A command's time depends on what the commands before it
@@ -116,8 +122,14 @@ type Sub = Literal["run", "lint", "witness", "derive", "store", "audit",
 WITNESS_FILE_SUBS: frozenset[Sub] = frozenset({"derive", "audit", "store", "witness", "record"})
 """The subcommands given a witness file."""
 TEXT_ONLY_SUBS: frozenset[Sub] = frozenset({"sweep", "determination-plan", "lint"})
-"""The subcommands that take no witness file, so only their text is
-compared."""
+"""The subcommands that take no witness file, so no witness file of theirs
+is compared."""
+
+type Ext = Literal["txt", "wit.json", "rc"]
+"""The extension of an output file: the normalized output, the witness file,
+and the exit code."""
+EXTS: tuple[Ext, ...] = ("txt", "wit.json", "rc")
+"""Every output file's extension, in the order a command's are compared."""
 
 
 @dataclass(frozen=True)
@@ -142,8 +154,8 @@ class Command:
         return f"{self.name}-{stem}"
 
     @property
-    def exts(self) -> tuple[str, ...]:
-        return ("txt",) if self.sub in TEXT_ONLY_SUBS else ("txt", "wit.json")
+    def exts(self) -> tuple[Ext, ...]:
+        return tuple(e for e in EXTS if e != "wit.json" or self.sub not in TEXT_ONLY_SUBS)
 
 
 def _record(name: str, label: str, input_file: str, *extra: str) -> Command:
@@ -239,8 +251,9 @@ class Gate:
         return _LIMIT_RE.sub(r"\1Ns", text)
 
     def run_one(self, cmd: Command, stem: str, cold: bool, cache: Path) -> tuple[int, float]:
-        """`cmd` on `stem` under the lock, its normalized output and witness
-        file written to the pass's directory; the exit code and wall time."""
+        """`cmd` on `stem` under the lock, its normalized output, witness
+        file and exit code written to the pass's directory; the exit code
+        and wall time."""
         wf = self.wit / f"{stem}.wit.json"
         shutil.copyfile(FROZEN / f"{stem}.wit.json", wf)
         argv = ["uv", "run", "--project", str(checkout.ROOT), "python",
@@ -267,6 +280,7 @@ class Gate:
         Path(f"{base}.txt").write_text(self.normalize(raw.decode()))
         if "wit.json" in cmd.exts:
             shutil.copyfile(wf, f"{base}.wit.json")
+        Path(f"{base}.rc").write_text(f"{rc}\n")
         with self.log_lock, open(self.dir / "times.txt", "a") as fh:
             fh.write(f"{cmd.name} {stem} pass{1 if cold else 2} rc={rc} wall={wall}s\n")
         return rc, wall
@@ -357,7 +371,7 @@ class Gate:
         write_whole(self.times_file,
                     (json.dumps(merged, indent=1) + "\n").encode())
         written = 0
-        for p in sorted([*self.new.glob("*.txt"), *self.new.glob("*.wit.json")]):
+        for p in sorted(p for ext in EXTS for p in self.new.glob(f"*.{ext}")):
             dest = self.accepted / p.name
             if replace or not dest.exists():
                 shutil.copyfile(p, dest)

@@ -181,6 +181,14 @@ def set_up_submodules(worktree: Path, main: Path) -> None:
         raise Refused(f"setting up the submodules from {main} failed: {exc}") from exc
 
 
+def checked_out(tree: Path, sub: Submodule) -> bool:
+    """Whether submodule `sub` is checked out in `tree`: its path is the top
+    directory of a repository of its own."""
+    path = tree / sub.path
+    return path.is_dir() and Path(git_out(
+        path, "rev-parse", "--show-toplevel").strip()) == path
+
+
 def checks(touched: set[str]) -> list[Check]:
     """The checks a change that touches `touched` runs. The gate writes into
     a new temporary directory."""
@@ -226,11 +234,9 @@ def refuse_dirty_submodules(worktree: Path) -> None:
     worktree would delete it."""
     held: list[str] = []
     for sub in submodules(worktree):
-        checkout = worktree / sub.path
-        if not checkout.is_dir() or Path(git_out(
-                checkout, "rev-parse", "--show-toplevel").strip()) != checkout:
+        if not checked_out(worktree, sub):
             raise Failed(f"the submodule {sub.path} is not checked out in {worktree}")
-        held += sorted(f"{sub.path}/{p}" for p in changed_paths(checkout, "HEAD"))
+        held += sorted(f"{sub.path}/{p}" for p in changed_paths(worktree / sub.path, "HEAD"))
     if held:
         raise Refused("the worktree's submodules hold changes or untracked files, "
                       "which no commit of its branch can hold:\n" + "\n".join(held))

@@ -1,6 +1,11 @@
+"""The resolution of a task to its upstream source. The tests read the
+`data/upstream/` submodules, which the `upstream` fixture sets up."""
+
 import pytest
 
 from arc.upstream import find, load
+
+pytestmark = pytest.mark.usefixtures("upstream")
 
 
 @pytest.mark.parametrize(

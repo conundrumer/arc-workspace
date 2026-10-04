@@ -17,6 +17,7 @@ ALLOWED: dict[str, frozenset[str]] = {
     "solver": frozenset({"solver", "engine"}),
     "checker": frozenset({"checker", "solver", "engine"}),
     "cli": PACKAGES,
+    "handbook": PACKAGES,
 }
 """For each package the rule constrains, the packages it may import."""
 

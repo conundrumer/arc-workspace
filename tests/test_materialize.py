@@ -1,4 +1,6 @@
-"""Integration tests against the real migrated patches + materialized tasks."""
+"""Integration tests against the real migrated patches + materialized tasks.
+The tests read the `data/upstream/` submodules, which the `upstream` fixture
+sets up."""
 
 import json
 from pathlib import Path
@@ -6,6 +8,8 @@ from pathlib import Path
 import pytest
 
 from arc.materialize import materialize_default
+
+pytestmark = pytest.mark.usefixtures("upstream")
 
 TASKS_DIR = Path(__file__).resolve().parents[1] / "data" / "tasks"
 
