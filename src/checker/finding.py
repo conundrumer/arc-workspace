@@ -354,6 +354,20 @@ class LintMarked:
 
 
 @dataclass(frozen=True)
+class LintCaseValue:
+    """A case-section sentence over a clause's case value: the outermost
+    terms that apply a constructor of a choice ADT, in the order the
+    clause writes them, and the case marker the clause stands under
+    (None above every marker)."""
+
+    category: Category
+    sentence: LintSentence
+    values: tuple[Term, ...]
+    marker: CaseMarker | None
+    on_relation: bool = False
+
+
+@dataclass(frozen=True)
 class LintLabeled:
     """A lint sentence over a `@witness`, `@derive` or `@store` line: its
     word, the witness id or proposer it names (None for `@store`), and the
@@ -420,12 +434,13 @@ class LintBranchForm:
 
 
 type LintPayload = (LintFragment | LintNamed | LintCounted | LintCode
-                    | LintMarked | LintLabeled | LintRun | LintFamily
-                    | LintIgnore | LintBranchForm)
+                    | LintMarked | LintCaseValue | LintLabeled | LintRun
+                    | LintFamily | LintIgnore | LintBranchForm)
 """The payload of `LINT` and `HINT`: its category says which lint."""
 
 LINT_SHAPES = (LintFragment, LintNamed, LintCounted, LintCode, LintMarked,
-               LintLabeled, LintRun, LintFamily, LintIgnore, LintBranchForm)
+               LintCaseValue, LintLabeled, LintRun, LintFamily, LintIgnore,
+               LintBranchForm)
 """The classes of `LintPayload`, for an `isinstance` test."""
 
 

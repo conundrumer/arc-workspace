@@ -3,11 +3,12 @@ glosses, witnesses and claims, markers and sections, the components a
 solver holds, and the types it may declare."""
 
 import re
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Collection, Iterator, Mapping, Sequence
 from pathlib import Path
 
 from checker.finding import (
     Finding,
+    LintCaseValue,
     LintFamily,
     LintLabeled,
     LintMarked,
@@ -64,6 +65,7 @@ from engine.program import (
     Wildcard,
     own,
 )
+from engine.program import subterms as direct_subterms
 from engine.quotes import quotes
 from solver.annotations import (
     DirectiveWord,
@@ -97,8 +99,8 @@ from solver.model import (
 from solver.names import (
     Denoted,
     cases_of,
+    constructors_fixed,
     denote,
-    denote_constructor,
 )
 from solver.solve import PerCase, per_case
 from solver.vocabulary import (
@@ -823,6 +825,17 @@ def _admitting_terms(lit: BodyLiteral | None, unit: Unit) -> list[Term]:
     return list(literal_terms(lit))
 
 
+def _case_values(term: Term, ctors: Collection[str]) -> Iterator[Term]:
+    """The outermost terms in `term` that apply a constructor of `ctors`,
+    left to right; none inside an aggregate, whose terms stand in its own
+    body."""
+    if isinstance(term, ConstructorTerm) and term.name in ctors:
+        yield term
+        return
+    for t in direct_subterms(term):
+        yield from _case_values(t, ctors)
+
+
 def _marks(solver: Solver, marker: CaseMarker,
            cases: Sequence[Case]) -> list[frozenset[Case]] | None:
     """For each name of a marker that denotes cases, the cases of the
@@ -850,6 +863,13 @@ def _lists(solver: Solver, marker: CaseMarker | None, every: Sequence[Case],
         return False
     marked = _marks(solver, marker, every)
     return marked is None or any(m and m <= taking for m in marked)
+
+
+def _misplaced(solver: Solver, marker: CaseMarker | None,
+               every: Sequence[Case], taking: frozenset[Case]) -> bool:
+    """Whether a line of the cases `taking` stands outside their marker
+    (`_lists`); a line of no case of the solver is not judged."""
+    return bool(taking) and not _lists(solver, marker, every, taking)
 
 
 def _case_column_parameters(solver: Solver
@@ -881,7 +901,7 @@ def case_column_facts(solver: Solver, v: View, every: Sequence[Case]
                 continue
             taking = frozenset(c for c in every
                                if pc.holds(solver, c.base, row))
-            if not taking or _lists(solver, marker, every, taking):
+            if not _misplaced(solver, marker, every, taking):
                 continue
             out.append(lint(line, LintNamed(
                 Category.SHARED_READ, LintSentence.CASE_COLUMN_FACT,
@@ -898,20 +918,27 @@ def case_column_facts(solver: Solver, v: View, every: Sequence[Case]
         "A parameter that some case never reads goes under the marker of the "
         "cases that read it.")
 def check_case_section(solver: Solver, runs: Runs) -> list[Finding]:
-    """A top-level clause that contains exactly one constructor of a choice
-    ADT other than its type's first, and stands outside that constructor's
-    marker (`_lists`, the cases that take it), a hint. A constructor under
-    a negation or a `!=` does not count; a clause of an enumerator, and a fact of one constructor
-    or record, belong to no case. A fact of a parameter with a case column
-    is judged by the `shared-read` lint (`case_column_facts`).
+    """A top-level clause that contains a constructor of a choice ADT other
+    than its type's first, and stands outside the marker of the cases its
+    case value denotes (`_lists`), one hint that names its case value: the
+    outermost terms that apply a choice-ADT constructor. Its case value
+    denotes `cases_of` the branches of every choice-ADT constructor it
+    contains, a nested one and a first one among them
+    (`constructors_fixed`); where those constructors denote no case of the
+    solver, the clause is a clause of no case and is not judged, above the
+    first marker as under one. A constructor under a negation or a
+    `!=` does not count; a clause of an enumerator, and a fact of one constructor or
+    record, belong to no case. A fact of a parameter with a case column is
+    judged by the `shared-read` lint (`case_column_facts`).
     The clauses on one line that give one hint give it once. Where the run that enumerates the solver's cases gives no
     result, a clause under a marker, a fact of a parameter with a case
     column among them, is not judged, and a hint at `Choice` says so with
     the run's failure. Serves readability."""
     v = view(solver, runs)
-    cases = {c.name for _, p, _td in _choice_adts(solver, v)
-             for c in other_branches(p)}
-    if not cases:
+    points = [p for _, p, _td in _choice_adts(solver, v)]
+    ctors = {c.name for p in points for c in p.constructors}
+    others = {c.name for p in points for c in other_branches(p)}
+    if not others:
         return []
     enums = v.enumerators
     every = runs.solver_cases
@@ -923,32 +950,29 @@ def check_case_section(solver: Solver, runs: Runs) -> list[Finding]:
             continue
         if tag_fact(u):
             continue
-        named = {t.name for lit in _all_literals(u)
-                 for top in _admitting_terms(lit, u)
-                 for t in subterms(top)
-                 if isinstance(t, ConstructorTerm) and t.name in cases}
-        if len(named) != 1 or u.span is None:
+        values = tuple(dict.fromkeys(
+            value for lit in _all_literals(u)
+            for top in _admitting_terms(lit, u)
+            for value in _case_values(top, ctors)))
+        named = list(dict.fromkeys(
+            t.name for value in values for t in subterms(value)
+            if isinstance(t, ConstructorTerm) and t.name in ctors))
+        fixed = constructors_fixed(solver, named)
+        if not any(n in others for n in named) or fixed is None \
+                or u.span is None:
             continue
-        (case,) = named
         marker = marker_at(solver, u.scope, u.span.first)
-        if marker is not None:
-            if not isinstance(every, tuple):
-                unjudged = True
+        if marker is not None and not isinstance(every, tuple):
+            unjudged = True
+            continue
+        if isinstance(every, tuple):
+            taking = frozenset(cases_of(solver, Denoted(fixed, ()), every))
+            if not _misplaced(solver, marker, every, taking):
                 continue
-            d = denote_constructor(solver, case)
-            if d is None:
-                raise ValueError(f"`{case}` stands at no choice point")
-            if _lists(solver, marker, every,
-                      frozenset(cases_of(solver, d, every))):
-                continue
-        if marker is None:
-            payload = LintNamed(Category.CASE_SECTION,
-                                LintSentence.CASE_SECTION_BEFORE, (case,))
-        else:
-            payload = LintMarked(Category.CASE_SECTION,
-                                 LintSentence.CASE_SECTION_UNDER, case,
-                                 marker)
-        out.append(lint(u.span.first, payload))
+        out.append(lint(u.span.first, LintCaseValue(
+            Category.CASE_SECTION,
+            LintSentence.CASE_SECTION_BEFORE if marker is None
+            else LintSentence.CASE_SECTION_UNDER, values, marker)))
     if not isinstance(every, tuple) and any(
             _case_column_parameters(solver)):
         unjudged = True

@@ -125,32 +125,34 @@ def denote(solver: Solver, name: str | tuple[str, ...]
             ctor_parts.append(ctor)
         else:
             return _problem(ProblemKind.NAME_FORM, text)
-    choice = solver.choice
-    ctors: list[ConstructorBranch] = []
-    points: list[frozenset[tuple[str, ...]]] = []
-    for part in ctor_parts:
-        if choice is None:
-            return _problem(ProblemKind.NAME_DENOTES_NO_CASE, text)
-        places = [(p.path, c) for p, c in constructor_places(choice, part)]
-        if not places:
-            return _problem(ProblemKind.NAME_DENOTES_NO_CASE, text)
-        at = frozenset(path for path, _c in places)
-        if at in points:
-            return _problem(ProblemKind.NAME_DENOTES_NO_CASE, text)
-        points.append(at)
-        ctors += [c for _path, c in places if c not in ctors]
-    return Denoted(tuple(ctors), tuple(branches), VerdictWord.CONCEPT in parts,
+    ctors = constructors_fixed(solver, ctor_parts)
+    if ctors is None:
+        return _problem(ProblemKind.NAME_DENOTES_NO_CASE, text)
+    return Denoted(ctors, tuple(branches), VerdictWord.CONCEPT in parts,
                    tuple(derived))
 
 
-def denote_constructor(solver: Solver, ctor: str) -> Denoted | None:
-    """What the name of the constructor `ctor` denotes (`denote`): that
-    branch at each point where it stands; None where it stands at no
-    point."""
+def constructors_fixed(solver: Solver, ctors: Sequence[str]
+                       ) -> tuple[ConstructorBranch, ...] | None:
+    """The branches the constructors `ctors` fix together (`denote`): each
+    constructor's branch at each point where it stands. None where they
+    denote no case: one stands at no point, or two are branches of the
+    same points."""
     choice = solver.choice
-    found = () if choice is None else tuple(dict.fromkeys(
-        c for _p, c in constructor_places(choice, ctor)))
-    return Denoted(found, ()) if found else None
+    found: list[ConstructorBranch] = []
+    points: list[frozenset[tuple[str, ...]]] = []
+    for ctor in ctors:
+        if choice is None:
+            return None
+        places = [(p.path, c) for p, c in constructor_places(choice, ctor)]
+        if not places:
+            return None
+        at = frozenset(path for path, _c in places)
+        if at in points:
+            return None
+        points.append(at)
+        found += [c for _path, c in places if c not in found]
+    return tuple(found)
 
 
 def names_a_constructor(solver: Solver, text: str) -> bool:

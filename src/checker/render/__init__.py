@@ -23,6 +23,7 @@ from checker.finding import (
     Finding,
     Kind,
     LintBranchForm,
+    LintCaseValue,
     LintCode,
     LintCounted,
     LintFamily,
@@ -107,6 +108,7 @@ from solver.problems import (
     Undecided as UndecidedDetail,
 )
 from solver.solve import Grids, Outcome, PairId
+from solver.vocabulary import TIEBREAK_RESOLUTION
 from solver.witness import GroupGrid, RejectedOutput, Resolutions, Undefined
 
 
@@ -207,6 +209,20 @@ def grid_lines(grid: Grid) -> list[str]:
 def shifted(line: str, by: str) -> str:
     """`line` indented by `by`, a grid's row still a row (`GridRow`)."""
     return GridRow(by + line) if isinstance(line, GridRow) else by + line
+
+
+def resolution_lines(solver: Solver, out: Resolutions) -> list[str]:
+    """A `Resolutions` output drawn: each grid under its resolution value
+    as Souffle prints it, and under `grid <i>` where the run gave none, as
+    a witness file's grids are."""
+    from checker.render.commands import souffle_text
+    lines: list[str] = []
+    for i, grid in enumerate(out.grids):
+        head = souffle_text(solver, out.values[i], TIEBREAK_RESOLUTION) \
+            if i < len(out.values) else f"grid {i + 1}"
+        lines.append(f"{head}:")
+        lines += [shifted(r, "  ") for r in grid_lines(grid)]
+    return lines
 
 
 def _codes(codes: Sequence[Code]) -> str:
@@ -497,9 +513,6 @@ LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
     LintSentence.UNREAD_FIELD: lambda n, _: mctx(
         "case `{0}` never reads field `{1}`, so the choice point `{1}` "
         "encodes stands under the other branches").format(*n),
-    LintSentence.CASE_SECTION_BEFORE: lambda n, _: mctx(
-        "the clause contains the constructor `{0}` and stands before the "
-        "first marker").format(*n),
     LintSentence.CASE_COLUMN_FACT: lambda n, _: mctx(
         "the fact's case column holds `{0}`, and the fact stands outside "
         "the marker of that case; see "
@@ -632,10 +645,6 @@ def marker_text(m: CaseMarker) -> str:
 
 def _marked_text(p: LintMarked) -> str:
     match p.sentence:
-        case LintSentence.CASE_SECTION_UNDER:
-            return mctx("the clause contains the constructor `{name}` and "
-                        "stands under `{marker}`").format(
-                name=p.name, marker=_marker_line(p.marker))
         case LintSentence.CASE_SECTION_READ:
             return mctx("by the program's rules, not by a run, {cases} "
                         "read `{rel}`, which the clause feeds, and the "
@@ -674,6 +683,27 @@ def _marker_line(m: CaseMarker | None) -> str:
     """A marked lint finding's marker as its comment line
     (`solver.annotations.marker_line`)."""
     return marker_line(_marker_or_none(m))
+
+
+def _case_value_text(p: LintCaseValue) -> str:
+    values = _ticked([code_text(v) for v in p.values])
+    match p.sentence:
+        case LintSentence.CASE_SECTION_BEFORE:
+            return (mctx("the clause contains the case value {values} and "
+                         "stands before the first marker")
+                    if len(p.values) == 1 else
+                    mctx("the clause contains the case values {values} and "
+                         "stands before the first marker")).format(
+                values=values)
+        case LintSentence.CASE_SECTION_UNDER:
+            return (mctx("the clause contains the case value {values} and "
+                         "stands under `{marker}`")
+                    if len(p.values) == 1 else
+                    mctx("the clause contains the case values {values} and "
+                         "stands under `{marker}`")).format(
+                values=values, marker=_marker_line(p.marker))
+        case _:
+            raise ValueError(f"no sentence for {p.sentence}")
 
 
 def _labeled_text(p: LintLabeled) -> str:
@@ -783,6 +813,8 @@ def lint_message(solver: Solver, p: LintPayload) -> str:
             return CODE_TEXT[s](p)
         case LintMarked():
             return _marked_text(p)
+        case LintCaseValue():
+            return _case_value_text(p)
         case LintLabeled():
             return _labeled_text(p)
         case LintRun():

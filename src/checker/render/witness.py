@@ -40,6 +40,7 @@ from checker.render import (
     _ticked,
     grid_lines,
     names_text,
+    resolution_lines,
     shifted,
     where_text,
 )
@@ -77,12 +78,16 @@ _WITNESSES = "([Witnesses](docs/handbook/principles.md#witnesses))"
 # Parts
 
 
-def outcome_lines(value: Outcome | GroupGrid | RejectedOutput) -> list[str]:
+def outcome_lines(solver: Solver,
+                  value: Outcome | GroupGrid | RejectedOutput) -> list[str]:
     """An outcome drawn: each grid one row per line, a blank line between
-    the grids of an outcome of more than one; nothing for an undefined
-    outcome."""
+    the grids of an outcome of more than one, a `Resolutions` output's
+    grids each under its resolution value (`resolution_lines`); nothing
+    for an undefined outcome."""
     match value:
-        case Grids(grids=gs) | Resolutions(grids=gs):
+        case Resolutions():
+            return resolution_lines(solver, value)
+        case Grids(grids=gs):
             grids = gs
         case RejectedOutput(grid=g):
             grids = (g,)
@@ -99,12 +104,12 @@ def outcome_lines(value: Outcome | GroupGrid | RejectedOutput) -> list[str]:
     return lines
 
 
-def _side(label: str, value: Outcome | GroupGrid | RejectedOutput
-          ) -> list[str]:
+def _side(solver: Solver, label: str,
+          value: Outcome | GroupGrid | RejectedOutput) -> list[str]:
     if isinstance(value, Undefined):
         return [f"  {label}: " + mctx("undefined")]
     return [f"  {label}:", *(shifted(ln, "    ") if ln else ""
-                             for ln in outcome_lines(value))]
+                             for ln in outcome_lines(solver, value))]
 
 
 def _cases(cases: CaseSet) -> str:
@@ -273,27 +278,27 @@ def witness_lines(solver: Solver, f: Finding) -> list[str]:
                         if one else
                         mctx("{entry}: these cases give the witness's judged "
                              "output: {case}").format(entry=at, case=case),
-                        *_side(mctx("the judged output"), actual)]
+                        *_side(solver, mctx("the judged output"), actual)]
             return [mctx("{entry}: case {case} gives an output the witness "
                          "does not name").format(entry=at, case=case)
                     if one else
                     mctx("{entry}: these cases give an output the witness "
                          "does not name: {case}").format(entry=at, case=case),
-                    *_side(mctx("the witness's output"), expected),
-                    *_side(mctx("the solver's output"), actual)]
+                    *_side(solver, mctx("the witness's output"), expected),
+                    *_side(solver, mctx("the solver's output"), actual)]
         case UnlistedPayload(cases=cases, actual=actual):
             case = _cases(cases)
             return [mctx("{entry}: case {case} is not listed").format(
                 entry=at, case=case) if len(cases.cases) == 1 else
                 mctx("{entry}: these cases are not listed: {case}").format(
                     entry=at, case=case),
-                *_side(mctx("the solver's output"), actual)]
+                *_side(solver, mctx("the solver's output"), actual)]
         case UnseparatedPayload() | SubsumedPayload():
             return _pairs_lines(solver, p)
         case ConceptPayload(concept=concept):
             return [mctx("{entry}: the concept case gives a grid other than "
                          "the judged output").format(entry=at),
-                    *_side(mctx("the solver's output"), concept)]
+                    *_side(solver, mctx("the solver's output"), concept)]
         case SeparatesPayload(name=name):
             return [mctx("{entry}: the `separates` text has `{name}`, and no "
                          "group lists it").format(entry=at, name=name)]

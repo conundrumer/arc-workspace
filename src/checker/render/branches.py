@@ -47,6 +47,7 @@ from checker.render import (
     hint_line,
     in_line_order,
     marker_text,
+    resolution_lines,
     shifted,
     under_case,
     where_text,
@@ -78,7 +79,6 @@ from solver.solve import (
     PairId,
     TaskSection,
 )
-from solver.vocabulary import TIEBREAK_RESOLUTION
 from solver.witness import (
     ConflictingCells,
     Entry,
@@ -529,14 +529,8 @@ def record_lines(entry: Entry, solver: Solver, cases: Sequence[Case],
             grids.add((Undefined, out.reason))
             lines += [f"  {ln}" for ln in why]
         elif isinstance(out, Resolutions):
-            from checker.render.commands import souffle_text
-            for i, grid in enumerate(out.grids):
-                grids.add(grid)
-                head = souffle_text(solver, out.values[i],
-                                    TIEBREAK_RESOLUTION) \
-                    if i < len(out.values) else f"grid {i + 1}"
-                lines.append(f"  {head}:")
-                lines += [shifted(r, "    ") for r in grid_lines(grid)]
+            grids.update(out.grids)
+            lines += [shifted(r, "  ") for r in resolution_lines(solver, out)]
         else:
             grids.add(out)
             lines += [shifted(r, "  ") for r in grid_lines(out)]
