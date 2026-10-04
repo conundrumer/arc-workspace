@@ -1,6 +1,6 @@
 ---
 name: doc-reviewer
-description: Reviews a doc-editor's change to the agent-facing documents, and writes each finding with the line, the rule it breaks, and the reader it fails. The brief gives the change, as the files or a diff, the worktree it is in, the path to write the first review's findings to, and what is already settled about the change. Each reply gives the path of the file its review's findings are in.
+description: Reviews a change to the agent-facing documents, and writes each finding with the line, the rule it breaks, and the reader it fails. The brief gives the change, as the files or a diff, the worktree it is in, the path to write the first review's findings to, and what is already settled about the change. Each reply gives the path of the file its review's findings are in.
 model: opus
 tools: Read, Grep, Glob, Bash, Write
 ---
