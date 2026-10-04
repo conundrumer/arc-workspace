@@ -1,0 +1,10 @@
+no actions
+
+determined:
+  marker_max_side
+
+the value is covered on this task's examples, so no determination relation is needed:
+  background (DominantColor exact)
+  marker_color (UnchangedColor narrowed(2))
+  marker_stride (SepTileCount exact)
+  template_color (RarestColor exact)

@@ -1,15 +1,11 @@
-"""Constant terms as values, values as terms, and values as Souffle writes
+"""Constant terms as values, and values as Souffle writes
 them in fact files and prints them in its output."""
 
 from engine.program import (
     AdtValue,
-    ConstructorTerm,
     Define,
-    NumberTerm,
     Primitive,
-    RecordTerm,
     RecordValue,
-    StringTerm,
     Term,
     TypeDecl,
     TypeReading,
@@ -39,21 +35,6 @@ def constant(t: Term, defines: dict[str, Define]) -> Value:
     if got is None:
         raise NotConstant(repr(t))
     return got
-
-
-def term_of(v: Value) -> Term:
-    match v:
-        case bool():
-            return NumberTerm(int(v))
-        case int() | float():
-            return NumberTerm(v)
-        case str():
-            return StringTerm(v)
-        case RecordValue(fields):
-            return RecordTerm(tuple(term_of(f) for f in fields))
-        case AdtValue(name, args):
-            return ConstructorTerm(name, tuple(term_of(a) for a in args))
-    raise TypeError(f"not a value: {v!r}")
 
 
 # Reading printed values

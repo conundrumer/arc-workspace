@@ -40,21 +40,17 @@ from engine.program import (
     Scope,
     AdtType,
     AdtValue,
-    Aggregate,
     AggregateOperator,
     Atom,
     AtomLiteral,
-    BinaryTerm,
     BodyLiteral,
     BoolLiteral,
-    Cast,
     Comparison,
     ComparisonOperator,
     ConstructorTerm,
     DeclId,
     DefinedName,
     Disjunction,
-    FunctorCall,
     Instance,
     Intrinsic,
     IntrinsicCall,
@@ -64,7 +60,6 @@ from engine.program import (
     RelationDecl,
     RelationName,
     Term,
-    UnaryTerm,
     Unit,
     Variable,
     Wildcard,
@@ -73,6 +68,9 @@ from engine.program import (
 from engine.quotes import quotes
 from solver.category import Category
 from solver.model import (
+    compared,
+    substituted_atom,
+    substituted_literal,
     Base,
     based_choice,
     Section,
@@ -381,50 +379,6 @@ def _projection(v: View, d: Unit) -> bool:
         n == 1 for name, n in counts.items() if name not in head_vars)
 
 
-def _substituted(t: Term, terms: dict[str, Term]) -> Term:
-    """`t` with each variable of `terms` replaced by its term."""
-    def sub(x: Term) -> Term:
-        return _substituted(x, terms)
-    match t:
-        case Variable(name=name):
-            return terms.get(name, t)
-        case ConstructorTerm(args=args) | RecordTerm(args=args) \
-                | IntrinsicCall(args=args) | FunctorCall(args=args):
-            return replace(t, args=tuple(map(sub, args)))
-        case UnaryTerm(arg=arg):
-            return replace(t, arg=sub(arg))
-        case Cast(term=inner):
-            return replace(t, term=sub(inner))
-        case BinaryTerm(lhs=lhs, rhs=rhs):
-            return replace(t, lhs=sub(lhs), rhs=sub(rhs))
-        case Aggregate(expr=expr, body=body):
-            return replace(t, expr=None if expr is None else sub(expr),
-                           body=tuple(_substituted_lit(x, terms)
-                                      for x in body))
-        case _:
-            return t
-
-
-def _substituted_atom(a: Atom, terms: dict[str, Term]) -> Atom:
-    return replace(a, args=tuple(_substituted(x, terms) for x in a.args))
-
-
-def _substituted_lit(lit: BodyLiteral, terms: dict[str, Term]
-                     ) -> BodyLiteral:
-    match lit:
-        case AtomLiteral(atom=atom):
-            return replace(lit, atom=_substituted_atom(atom, terms))
-        case Comparison(lhs=lhs, rhs=rhs):
-            return replace(lit, lhs=_substituted(lhs, terms),
-                           rhs=_substituted(rhs, terms))
-        case Disjunction(branches=branches):
-            return replace(lit, branches=tuple(
-                tuple(_substituted_lit(x, terms) for x in b)
-                for b in branches))
-        case _:
-            return lit
-
-
 def _negated_use(v: View, decl: RelationDecl) -> Finding | None:
     """Referenced only under negation, every rule a single-atom
     projection."""
@@ -445,7 +399,7 @@ def _negated_use(v: View, decl: RelationDecl) -> Finding | None:
         assert atom is not None
         terms: dict[str, Term] = {name: carried.get(name, Wildcard())
                                   for name in literal_vars(atom)}
-        parts.append(AtomLiteral(_substituted_atom(atom, terms), True))
+        parts.append(AtomLiteral(substituted_atom(atom, terms), True))
     use = Atom(decl.scoped_name, canon, decl.span.first)
     return lint(decl.span.first, LintCode(
         Category.NEGATED_USE, LintSentence.NEGATED_USE,
@@ -652,11 +606,8 @@ def head_ctors(unit: Unit) -> set[str]:
     spell, and the ones a body equality `V = <term>` sets a head variable
     to."""
     bound: dict[str, list[Term]] = {}
-    for lit in unit.body or ():
-        if isinstance(lit, Comparison) and lit.op == ComparisonOperator.EQ:
-            for var, term in ((lit.lhs, lit.rhs), (lit.rhs, lit.lhs)):
-                if isinstance(var, Variable):
-                    bound.setdefault(var.name, []).append(term)
+    for var, term in compared(unit, ComparisonOperator.EQ):
+        bound.setdefault(var, []).append(term)
     out: set[str] = set()
     seen: set[str] = set()
     work: list[Term] = list(unit.head.args)
@@ -1360,8 +1311,8 @@ def _canon(window: Sequence[BodyLiteral | Atom]
         for name in _ordered_vars(x):
             if name not in terms:
                 terms[name] = Variable(f"v{len(terms)}")
-    return bare(tuple(_substituted_atom(x, terms) if isinstance(x, Atom)
-                      else _substituted_lit(x, terms) for x in window))
+    return bare(tuple(substituted_atom(x, terms) if isinstance(x, Atom)
+                      else substituted_literal(x, terms) for x in window))
 
 
 def _ordered_vars(x: BodyLiteral | Atom) -> Iterator[str]:

@@ -1,0 +1,74 @@
+- 57/150 deletions change nothing:
+    - The removal changed no pair's output and no determined value.
+    - The pairs never instantiate the structure it removed, or another atom already implies that structure.
+    - Judge which.
+    - The cases agree on every pair, so dropping the case column changes nothing.
+    - The column stays.
+    - [Models and tasks](docs/handbook/principles.md#models-and-tasks) states what a case claims.
+    - abbfd121.dl:227: atom `axis_of(D, A)` in `axis_link(Ky, P, Q)`
+    - abbfd121.dl:238: rule `aperiodic(Ky)`
+    - abbfd121.dl:238: negation `!period.min_period(Ky, A, _)` in `aperiodic(Ky)`
+    - abbfd121.dl:243: rule `carried(Ky, D, X)`
+    - abbfd121.dl:249: rule `far(Ky, D, X)`
+    - abbfd121.dl:253: rule `near(Ky, D, X)`
+    - abbfd121.dl:253: negation `!aperiodic(Ky)` in `near(Ky, D, X)`
+    - abbfd121.dl:253: negation `!far(Ky, D, X)` in `near(Ky, D, X)`
+    - abbfd121.dl:258: atom `compose(P1, X, Q)` in `contradicted(Ky, D, X)`
+    - abbfd121.dl:267: rule `map_link(Ky, R, P, Q)`
+    - abbfd121.dl:267: atom `hidden(Ky, Q)` in `map_link(Ky, R, P, Q)`
+    - abbfd121.dl:274: rule `color(Ky, R, Q, Col)`
+    - abbfd121.dl:310: atom `perp(X, Y)` in `above(Ky, $AxisThenCross(), X, A, B)`
+    - abbfd121.dl:336: rule `scan_order.corner([K, C, A], C)`
+    - abbfd121.dl:337: rule `scan_order.axis([K, C, A], A)`
+    - abbfd121.dl:343: atom `box_corner(P, B, C)` in `first_pick([Ky, Sel, X], C, A, B)`
+    - abbfd121.dl:363: column `pick.x`
+    - abbfd121.dl:363: case column `pick.s`
+    - abbfd121.dl:363: case column `pick.sel`
+    - abbfd121.dl:363: case column `pick.t`
+    - abbfd121.dl:366: case column `unpicked.s`
+    - abbfd121.dl:366: case column `unpicked.sel`
+    - abbfd121.dl:366: case column `unpicked.t`
+    - abbfd121.dl:367: rule `unpicked(S, Sel, T)`
+    - abbfd121.dl:370: case column `shade.s`
+    - abbfd121.dl:370: case column `shade.r`
+    - abbfd121.dl:370: case column `shade.f`
+    - abbfd121.dl:376: rule `broken([O, R, F, Sel, T])`
+    - abbfd121.dl:377: rule `broken([O, R, F, Sel, T])`
+    - abbfd121.dl:377: atom `pick([O, K], Sel, _, T, B)` in `broken([O, R, F, Sel, T])`
+    - abbfd121.dl:381: negation `!broken([O, R, F, Sel, T])` in `out(P_inner, Col, [O, R, F, Sel, T])`
+    - abbfd121.dl:381: atom `impl_choice([O, R, F, Sel, T])` in `out(P_inner, Col, [O, R, F, Sel, T])`
+    - abbfd121.dl:410: column `narrow.k`
+    - abbfd121.dl:419: rule `kind($LatticePeriod(), D)`
+    - abbfd121.dl:422: column `clash.d`
+    - abbfd121.dl:422: column `clash.x`
+    - abbfd121.dl:422: case column `clash.s`
+    - abbfd121.dl:423: atom `kind($LatticePeriod(), D)` in `clash(S, D, X)`
+    - abbfd121.dl:423: atom `compose(P1, X, Q)` in `clash(S, D, X)`
+    - abbfd121.dl:427: rule `parse.map(S, $LatticePeriod(), D, X)`
+    - abbfd121.dl:431: rule `kind($IsometryOrbit(), D)`
+    - abbfd121.dl:432: rule `parse.map(S, $IsometryOrbit(), D, X)`
+    - abbfd121.dl:435: rule `shade(S, R, $HiddenFill(), P, Col)`
+    - abbfd121.dl:451: atom `reads_axis(Sel, X)` in `pick(S, Sel, X, $UniqueTop(), B)`
+    - abbfd121.dl:454: atom `reads_axis(Sel, X)` in `pick(S, Sel, X, $TieFirst(), B)`
+    - abbfd121.dl:454: atom `params.scan(C, A)` in `pick(S, Sel, X, $TieFirst(), B)`
+    - abbfd121.dl:464: determination rule `unframed(E, B)`
+    - abbfd121.dl:469: determination negation `!unframed(E, B)` in `axis_fits(E, X)`
+    - abbfd121.dl:472: determination rule `axis_contradicted(X)`
+    - abbfd121.dl:475: determination negation `!axis_contradicted(X)` in `primary_axis(X)`
+    - abbfd121.dl:480: determination rule `scan_contradicted(C, A)`
+    - abbfd121.dl:484: determination negation `!scan_contradicted(C, A)` in `scan(C, A)`
+    - abbfd121.dl:489: determination rule `palette(Col)`
+    - abbfd121.dl:494: determination rule `fill_contradicted(Col)`
+    - abbfd121.dl:494: determination atom `parse.sole.value([E, $Area(), _], B)` in `fill_contradicted(Col)`
+    - abbfd121.dl:494: determination atom `crop(P, B, P_inner)` in `fill_contradicted(Col)`
+    - abbfd121.dl:500: determination negation `!fill_contradicted(Col)` in `fill(Col)`
+
+- 1 case column the probe cannot judge:
+    - Dropping the case column ungrounds a variable, so the probe result says nothing about the cases.
+    - The pairs settle nothing about the cases.
+    - [Models and tasks](docs/handbook/principles.md#models-and-tasks) states what a case claims.
+    - abbfd121.dl:360: unprobed case column `reads_axis.sel`
+
+- 109 deletions the run cannot judge:
+    - The removal ungrounds a variable, so Souffle rejects the file.
+    - The run says nothing about the pairs.

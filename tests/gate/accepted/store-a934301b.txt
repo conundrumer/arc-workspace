@@ -1,0 +1,20 @@
+parse.mark_color: one color on every input: 8
+  stored already: the value reads back the stored rows of `mark`
+parse.cell[col]: 3 values, one per `p`
+  no case: the value varies by `p`, an id the runner stores nothing under
+rest[col]: 3 values, one per `p`; case `$CopyOther`
+  no case: the value varies by `p`, an id the runner stores nothing under
+parse.grid_rank.low[v]: one color on every input: 8; under `$GridMinority`
+  stored already: the value reads back the stored rows of `mark`
+parse.rarest.item: one color on every input: 8; under `$GridMinority`
+  stored already: the value reads back the stored rows of `mark`
+parse.rarest.value: one color on every input: 8; under `$GridMinority`
+  stored already: the value reads back the stored rows of `mark`
+parse.rest_colors.item: one color on every input: 1; under `$GridMinority`
+  stored already: the value reads back the stored rows of `body`
+parse.rest_colors.value: one color on every input: 1; under `$GridMinority`
+  stored already: the value reads back the stored rows of `body`
+parse.block_colors.item[m]: 2 values, one per `key`, `t`
+  no case: the value varies by `key`, `t`, an id the runner stores nothing under
+parse.grid_rank.cand[v]: 2 values, one per `s`
+  no case: the value varies by `s`, an id the runner stores nothing under

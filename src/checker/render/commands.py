@@ -67,8 +67,8 @@ from solver.witness import (
 
 # Files and the stamp
 
-NO_WITNESS_FILE = mctx("no witness file at {path}: the Write operation "
-                       "copies the Analyze file there")
+NO_WITNESS_FILE = mctx("no witness file at {path}: the first witness that "
+                       "`record`, `derive` or `store` writes creates it")
 CORPUS_READ_ONLY = mctx("read-only over every solver: a run on this stem "
                         "alone records the witnesses below")
 STAMP = mctx("runner and lib: {stamp}")

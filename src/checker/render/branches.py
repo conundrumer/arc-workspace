@@ -799,6 +799,13 @@ def _witness_line(solver: Solver, f: Found) -> str:
                 grid=f"{train_text(f.failed.index)} "
                      f"{transform_text(f.failed.change)}",
                 error=failure_text(f.failed.failure))
+        elif f.unseparated is not None:
+            model, other = f.unseparated
+            why = mctx("on no D4 image or color swap of a train input that "
+                       "changes the value does the branch's model `{case}` "
+                       "give an output other than `{other}`").format(
+                case=case_name(solver, model),
+                other=case_name(solver, other))
         return mctx("no witness: {why}; {ask}").format(why=why, ask=ask)
     line = _moved_witness(f.move.index, f.move.change)
     if f.move.identity and f.read:

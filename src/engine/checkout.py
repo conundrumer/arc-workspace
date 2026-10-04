@@ -1,11 +1,37 @@
 """The checkout's root and the directories under it, which every package
 reads. Each directory is computed from `ROOT` when asked, so a checkout
-that sets `ROOT` moves every one of them."""
+that sets `ROOT` moves every one of them. The run cache, the solver files
+and the witness files each move to the directory an environment variable
+names, where it is set."""
 
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 """The root of the checkout the tool runs in."""
+
+CACHE_ENV = "ARC_CACHE_DIR"
+"""The environment variable that names the run cache in place of
+`.scratch/cache/`."""
+
+SOLVER_FILES_ENV = "ARC_SOLVER_FILES_DIR"
+"""The environment variable that names the directory `solver_files`
+returns in place of `programs/solvers/`."""
+
+WITNESSES_ENV = "ARC_WITNESSES_DIR"
+"""The environment variable that names the directory of the witness files
+in place of `programs/witnesses/`."""
+
+
+def _from_env(var: str, default: Path) -> Path:
+    """The directory the environment variable `var` names, or `default`
+    where `var` is unset. An empty value is a fault."""
+    value = os.environ.get(var)
+    if value is None:
+        return default
+    if not value:
+        raise ValueError(f"{var} is set but empty")
+    return Path(value)
 
 
 def shown(path: Path) -> Path:
@@ -28,9 +54,16 @@ def solvers() -> Path:
     return programs() / "solvers"
 
 
+def solver_files() -> Path:
+    """Where each solver's file stands: `solvers()`, unless
+    `SOLVER_FILES_ENV` names another directory."""
+    return _from_env(SOLVER_FILES_ENV, solvers())
+
+
 def witnesses() -> Path:
-    """`programs/witnesses/`, where each task's witness file stands."""
-    return programs() / "witnesses"
+    """`programs/witnesses/`, where each task's witness file stands, unless
+    `WITNESSES_ENV` names another directory."""
+    return _from_env(WITNESSES_ENV, programs() / "witnesses")
 
 
 def docs() -> Path:
@@ -60,8 +93,9 @@ def scratch() -> Path:
 
 
 def cache() -> Path:
-    """`.scratch/cache/`: the run cache, a directory per kind of result."""
-    return scratch() / "cache"
+    """`.scratch/cache/`: the run cache, a directory per kind of result,
+    unless `CACHE_ENV` names another directory."""
+    return _from_env(CACHE_ENV, scratch() / "cache")
 
 
 def claude() -> Path:

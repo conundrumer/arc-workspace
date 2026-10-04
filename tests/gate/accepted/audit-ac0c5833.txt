@@ -1,0 +1,26 @@
+--- witness ---
+`@witness` lines:
+  stride-three: variant $DerivedStride
+    relaxed: markers
+  squashed-marker: borderline concept
+    relaxed: markers
+  green-markers: variant $DerivedMarkerColor
+    relaxed: markers
+  two-color-template: variant $AnyColorTemplate
+    relaxed: template
+  green-template: variant $AnyColorTemplate
+    relaxed: template
+  asymmetric-template: variant concept
+  copy-over-marker: borderline concept
+
+21 witness grids run
+witness: ok
+
+--- dropped cases ---
+dropped cases: ok
+
+--- derive ---
+derive: ok
+
+--- store ---
+store: ok

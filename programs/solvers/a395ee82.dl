@@ -37,8 +37,6 @@
     //  one such color
     // @witness touching-markers: borderline $LargestPiece & $AnchorNearest & $StepGcd
     //     @relaxed dots
-    // @witness stray-pair: foreign $LargestPiece & $AnchorMinority & $MarkersByColor
-    //     @relaxed dots
   | MarkersByColor {}
 
 // which object is the shape
@@ -118,9 +116,14 @@
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
+    // @ignore: derive — no derivation gives the gap 0, so no stamp sits next
+    //  to the shape, as the stamps of train 0 do
     .decl stamp_gap(k: number) stamp_gap(0).
 
     // --- $StoredStep ---
+    // @ignore: derive — no derivation gives the step 2 alone; at another
+    //  step, a marker of train 0 lies off the lattice or its stamp lands on a
+    //  wrong block
     .decl dot_step(k: number) dot_step(2).
 }
 
@@ -210,11 +213,6 @@ impl_choice([$LargestPiece($MarkersByColor()), An, La, Co, J]) :-
 impl_choice([$LargestPiece($MarkersByColor()), $AnchorMinority(), $StoredStep(), Co, J]) :-
     content_choice(Co), adjacency_choice(J).
 
-// The markers reading each shape reading takes.
-.decl markers_of(sh: Shape, m: Markers)
-markers_of($OnePiece(), $SingleDots()).
-markers_of($LargestPiece(M), M) :- markers_choice(M).
-
 // A dot: an object of one cell.
 .decl dot(j: Adjacency, p: Position, col: Color)
 dot(J, P, Col) :- parse.object($U(), J, Id, Col, P), !parse.multi($U(), J, Id).
@@ -222,8 +220,13 @@ dot(J, P, Col) :- parse.object($U(), J, Id, Col, P), !parse.multi($U(), J, Id).
 // The shape object and its color S under each shape reading.
 .decl shape(sh: Shape, j: Adjacency, id: Ident, s: Color)
 
+// The markers reading each shape reading takes.
+.decl markers_of(sh: Shape, m: Markers)
+
 // --- $OnePiece ---
 shape($OnePiece(), J, Id, S) :- parse.sole.value([$U(), J], Id), parse.object($U(), J, Id, S, _).
+
+markers_of($OnePiece(), $SingleDots()).
 
 // --- $LargestPiece ---
 // @claim shape
@@ -240,6 +243,8 @@ biggest.item(J, Id) :- largest.high(J, Id, _).
 
 shape($LargestPiece(M), J, Id, S) :-
     markers_choice(M), biggest.value(J, Id), parse.object($U(), J, Id, S, _).
+
+markers_of($LargestPiece(M), M) :- markers_choice(M).
 
 // --- shared ---
 .decl read(r: Read)
@@ -274,6 +279,8 @@ span.item([R, P], [M, A, L]) :-
     nearer(D, M, P), nearer(D, L, P), !nearer(D, L, M).   // past P toward M, up to M
 
 // The lines of the grid on each axis, axis-only.
+// @store: borderline $LargestPiece & $AnchorNearest
+//     @relaxed dots
 .decl line(a: Axis, l: Position)
 line(A, L) :- in(P, _), axis_elem(A), split(P, A, L, _).
 
@@ -297,7 +304,7 @@ reserved([Sh, $AnchorMinority(), J], A) :- read([Sh, $AnchorMinority(), J]), lon
 anchor.item([Sh, $AnchorMinority(), J], P) :-
     read([Sh, $AnchorMinority(), J]), lone.value(J, A), dot(J, P, A).
 
-// --- $SingleDots ---
+// --- concept, $SingleDots ---
 ink.item([Sh, An, J], C) :-
     read([Sh, An, J]), markers_of(Sh, $SingleDots()), dot(J, _, C), !reserved([Sh, An, J], C).
 

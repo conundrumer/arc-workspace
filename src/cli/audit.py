@@ -42,7 +42,7 @@ from cli.common import (
     print_faults,
     written_grids,
 )
-from cli.record import absent, lined_solver, read_file, target
+from cli.record import absent, lined_solver, read_file, target, with_file
 from engine import RunFailure, checkout
 from solver import witness
 from solver.model import DeriveBranch, Solver, declaration_of
@@ -132,7 +132,7 @@ def cmd_witness(arg: str | None, file: str | None = None,
     given: WitnessFile | None = None
     if file is not None:
         path = Path(file)
-        if absent(path, creates=False):
+        if absent(path):
             return 2
         got, problems = read_file(solver, path, WitnessFileRole.GIVEN)
         if got is None or problems:
@@ -140,7 +140,7 @@ def cmd_witness(arg: str | None, file: str | None = None,
             return 1
         given = got
     elif witness_file is not None:
-        lined = lined_solver(solver, Path(witness_file), creates=False)
+        lined = lined_solver(solver, Path(witness_file))
         if lined is None:
             return 2
         solver = lined
@@ -174,7 +174,7 @@ def _try(eng: SouffleEngine, solver: Solver, path: str) -> int:
 
 def _shape_only(path: Path) -> int:
     """The shape check of a witness file alone, with no solver."""
-    if absent(path, creates=False):
+    if absent(path):
         return 2
     _file, problems = witness.read(path.read_text(), WitnessFileRole.GIVEN)
     if problems:
@@ -210,22 +210,19 @@ def derive_or_store(run: Callable[..., int], args) -> int:
 
 
 def _branch_solver(arg: str, witness_file: str | None,
-                   eng: SouffleEngine, corpus: bool
-                   ) -> tuple[Solver, Path] | None:
+                   eng: SouffleEngine) -> tuple[Solver, Path] | None:
     """The solver of `derive` or `store`, with the witness file it reads
-    and writes; None, with its line on stderr, where no file stands there
-    and the command, which writes there unless it runs over every solver,
-    creates none (`absent`)."""
+    and writes through `witness.put`; None, with its line on stderr, where
+    the solver cannot be read or the file is off its shape
+    (`with_file`)."""
     solver = command_solver(arg, eng)
     if solver is None:
         return None
     at = target(solver, witness_file)
-    if witness_file is not None:
-        lined = lined_solver(solver, at, creates=True)
-        return None if lined is None else (lined, at)
-    if not corpus and absent(at, creates=True):
-        return None
-    return solver, at
+    if witness_file is None:
+        return solver, at
+    lined = with_file(solver, at)
+    return None if lined is None else (lined, at)
 
 
 def _unrecorded(found: Iterable[Derivation | Found]
@@ -304,7 +301,7 @@ def cmd_derive(arg: str, witness_file: str | None = None,
     the audit's derive section prints them; each witness it builds is
     written into the witness file."""
     eng = engine()
-    got = _branch_solver(arg, witness_file, eng, corpus)
+    got = _branch_solver(arg, witness_file, eng)
     if got is None:
         return 2
     solver, at = got
@@ -325,7 +322,7 @@ def cmd_store(arg: str, witness_file: str | None = None,
     witness and the line that records the judgment; each witness it builds
     is written into the witness file."""
     eng = engine()
-    got = _branch_solver(arg, witness_file, eng, corpus)
+    got = _branch_solver(arg, witness_file, eng)
     if got is None:
         return 2
     solver, at = got
@@ -350,7 +347,7 @@ def cmd_audit(arg: str, witness_file: str | None = None) -> int:
     if solver is None:
         return 2
     if witness_file is not None:
-        lined = lined_solver(solver, Path(witness_file), creates=False)
+        lined = lined_solver(solver, Path(witness_file))
         if lined is None:
             return 2
         solver = lined

@@ -37,6 +37,14 @@ from engine import (
     Value,
 )
 from engine.program import (
+    Aggregate,
+    BinaryTerm,
+    BodyLiteral,
+    Cast,
+    Disjunction,
+    FunctorCall,
+    IntrinsicCall,
+    UnaryTerm,
     MemberCell,
     Primitive,
     first_line,
@@ -71,6 +79,9 @@ from engine.program import (
     Unit,
     Variable,
     Wildcard,
+    term_of,
+    with_literal_terms,
+    with_subterms,
 )
 from engine.quotes import quotes
 from engine.text import prefixed
@@ -490,8 +501,8 @@ class Solver:
 # Paths
 
 def solver_file(stem: str) -> Path:
-    """The file of the solver `stem` under `programs/solvers/`."""
-    return checkout.solvers() / f"{stem}.dl"
+    """The file of the solver `stem` under `checkout.solver_files()`."""
+    return checkout.solver_files() / f"{stem}.dl"
 
 
 def proposers_path() -> Path:
@@ -1802,14 +1813,20 @@ class CaseTypes:
         """The points of `choice` of `type`, as the model resolves it."""
         return [p for p in choice.points if self.points[p.path] == type]
 
+    def fields(self, type: str) -> tuple[str, ...] | None:
+        """The types of the fields a value of `type` opens into; None
+        where it is no record, and for `Choice`, which a value is compared
+        with whole, as the base."""
+        return None if type == CHOICE else self.records.get(type)
+
     def leaves(self, type: str, value: Value) -> list[tuple[str, Value]]:
         """The values at the case-typed places of a value of `type`, each
         with its type: a record of a case type opened by its fields'
-        types, and `Choice` taken whole."""
+        types (`fields`)."""
         if type not in self.types:
             return []
-        fields = self.records.get(type)
-        if type == CHOICE or fields is None \
+        fields = self.fields(type)
+        if fields is None \
                 or not isinstance(value, RecordValue) \
                 or len(fields) != len(value.fields):
             return [(type, value)]
@@ -1822,15 +1839,14 @@ class CaseTypes:
         are each of such a type."""
         if type not in self.types:
             return False
-        fields = self.records.get(type)
-        return type == CHOICE or fields is None \
-            or all(self.whole(f) for f in fields)
+        fields = self.fields(type)
+        return fields is None or all(self.whole(f) for f in fields)
 
     def kept(self, type: str) -> tuple[int, ...] | None:
         """For a record type with a field of a case type and a field of
         another (`whole`), the places of the fields that are not wholly of
         the case, in order; None for any other type."""
-        fields = self.records.get(type)
+        fields = self.fields(type)
         if type not in self.types or fields is None or self.whole(type):
             return None
         return tuple(i for i, f in enumerate(fields) if not self.whole(f))
@@ -1905,6 +1921,8 @@ class Graph:
         self.units = [u for u in program.units if own(u.span)]
         self._full: dict[InstancePath, str] | None = None
         self._reach: frozenset[RelationName] | None = None
+        self._feeds: dict[RelationName, list[tuple[Unit, InstancePath]]] \
+            | None = None
         self.heads: dict[Node, list[Placed]] = {}
         for u in self.units:
             for at in self.paths_of(u):
@@ -2233,11 +2251,65 @@ class Graph:
             return None
         return self._relation(self.component_at(node.path), node.name)
 
+    def place(self, at: InstancePath, rel: RelationName
+              ) -> RelationName | None:
+        """The relation a unit at `at` names by `rel`, by the instance
+        path that declares it in the instance tree with the lib's
+        instances, and its name; None where no declaration gives it."""
+        return self._place(self._tree(), at, rel)
+
+    def feeding(self, place: RelationName
+                ) -> list[tuple[Unit, InstancePath]]:
+        """The clauses that put rows into the relation at `place`
+        (`place`), each at the instance path it runs at: the units of the
+        solver's own text and of the lib alike, a subsumptive clause left
+        out, as it puts no row in."""
+        if self._feeds is None:
+            tree = self._tree()
+            feeds: dict[RelationName, list[tuple[Unit, InstancePath]]] = {}
+            for u in self.program.units:
+                if u.subsumptive:
+                    continue
+                for at in self._paths_in(tree, u):
+                    q = self._place(tree, at, u.head.relation)
+                    if q is not None:
+                        feeds.setdefault(q, []).append((u, at))
+            self._feeds = feeds
+        return self._feeds.get(place, [])
+
     def top_name(self, node: Node, name: str) -> RelationName:
         """The name a top-level clause reads a node's relation by, where
         a unit read it by `name`."""
         return RelationName(node.path, node.name
                             if node.kind is NodeKind.RELATION else name)
+
+
+def substituted(t: Term, terms: dict[str, Term]) -> Term:
+    """`t` with each variable of `terms` replaced by its term."""
+    match t:
+        case Variable(name=name):
+            return terms.get(name, t)
+        case Aggregate(expr=expr, body=body):
+            return replace(t, expr=None if expr is None
+                           else substituted(expr, terms),
+                           body=tuple(substituted_literal(x, terms)
+                                      for x in body))
+    return with_subterms(t, lambda x: substituted(x, terms))
+
+
+def substituted_atom(a: Atom, terms: dict[str, Term]) -> Atom:
+    """`a` with each variable of `terms` replaced by its term."""
+    return replace(a, args=tuple(substituted(x, terms) for x in a.args))
+
+
+def substituted_literal(lit: BodyLiteral, terms: dict[str, Term]
+                        ) -> BodyLiteral:
+    """`lit` with each variable of `terms` replaced by its term."""
+    if isinstance(lit, Disjunction):
+        return replace(lit, branches=tuple(
+            tuple(substituted_literal(x, terms) for x in b)
+            for b in lit.branches))
+    return with_literal_terms(lit, lambda x: substituted(x, terms))
 
 
 def _wild(x: object) -> bool:
@@ -2269,6 +2341,17 @@ def _holds_case(term: Term) -> bool:
     return isinstance(term, (ConstructorTerm, RecordTerm))
 
 
+def compared(unit: Unit, op: ComparisonOperator
+             ) -> Iterator[tuple[str, Term]]:
+    """Each variable a comparison `op` of a unit's body compares with a
+    term, from either side, with that term, in body order."""
+    for lit in unit.body or ():
+        if isinstance(lit, Comparison) and lit.op is op:
+            for var, term in ((lit.lhs, lit.rhs), (lit.rhs, lit.lhs)):
+                if isinstance(var, Variable):
+                    yield var.name, term
+
+
 class _Cases:
     """Where a unit's rows hold a case value, and whether a base's value
     can stand there (`dependence`).
@@ -2277,7 +2360,10 @@ class _Cases:
     stands in `Choice`, or a record type of the solver's own text with a
     field of a case type, the value then standing in that field. A term
     there admits a base where the base's value can stand in it. A variable
-    takes the term an equality of the body sets it to. Else, for each
+    takes the term an equality of the body sets it to. A variable that a
+    `!=` of the body holds apart from a constant admits no base whose value
+    there is that constant, as `An != $AnchorMinority()` shuts out the
+    bases that take `$AnchorMinority`. Else, for each
     positive atom of the body that reads it in a column, or in a field of
     a record there, the variable holds one of the terms the rows of that
     column can hold there, read in the unit that heads them: the terms
@@ -2311,6 +2397,7 @@ class _Cases:
             self.case_types |= more
             grown = bool(more)
         self._eq: dict[UnitId, dict[str, Term]] = {}
+        self._ne: dict[UnitId, dict[str, list[Term]]] = {}
         self.declared = set(graph.type_decls)
         self._cycles = 0
         """How many reads of a place being read already have been met; a
@@ -2384,10 +2471,10 @@ class _Cases:
 
     def _case_leaves(self, term: Term, type: str) -> list[Term]:
         """The terms at the case-typed places of a term of `type`, records
-        opened by their fields' types."""
+        opened by their fields' types (`_fields`)."""
         if type not in self.case_types:
             return []
-        fields = self.records.get(type)
+        fields = self._fields(type)
         if isinstance(term, RecordTerm) and fields is not None \
                 and len(fields) == len(term.args):
             return [x for a, f in zip(term.args, fields, strict=True)
@@ -2444,7 +2531,7 @@ class _Cases:
         for t, term in self._typed(at, atom):
             if not isinstance(term, ConstructorTerm | RecordTerm):
                 continue
-            value = term_value(term, lambda _name: None)
+            value = _constant(term)
             if not isinstance(value, AdtValue | RecordValue):
                 continue
             if t == CHOICE:
@@ -2470,7 +2557,12 @@ class _Cases:
         it, where the places of `open_` are being read already. A value
         reaches such a place again only through another route, so a read
         of it on this path admits nothing, as a recursive clause adds no
-        value its other clauses do not give."""
+        value its other clauses do not give. A term of a point's type is
+        admitted where the base's value at some point of that type matches
+        it, or where the base has no value at some point of that type: a
+        unit can give a constructor a fixed value at a point under another
+        branch, as `markers_of($OnePiece(), $SingleDots())` does where
+        `markers` stands under `LargestPiece`."""
         choice = self.choice
         if choice is None or base is None or type not in self.case_types:
             return True
@@ -2483,6 +2575,9 @@ class _Cases:
             term = self._equalities(unit).get(term.name, term)
             if not isinstance(term, Variable):
                 return self._admits_in(placed, type, term, path, base, open_)
+            if not path and any(self._is_value(type, c, base)
+                                for c in self._exclusions(unit, term.name)):
+                return False
             key = (unit.id, at, term.name, path)
             if key in open_:
                 self._cycles += 1
@@ -2503,34 +2598,69 @@ class _Cases:
             return self._admits[memo]
         if path:
             return True
-        if type in self.records and not (type == CHOICE
-                                         and choice.record is None):
-            fields = self.records[type]
+        fields = self._fields(type)
+        if fields is not None:
             if isinstance(term, RecordTerm) and len(term.args) == len(fields):
                 return all(self._admits_in(placed, f, a, (), base, open_)
                            for f, a in zip(fields, term.args, strict=True))
             return True
+        return any(v is None or _matches(term, v)
+                   for v in self._leaf_values(type, base))
+
+    def _leaf_values(self, type: str, base: Base) -> list[Value | None]:
+        """The values `base` can hold at a case-typed place of `type` that
+        is no record: the base itself in a `Choice` column, else its value
+        at each point of that type, None where it does not reach it."""
+        choice = self.choice
+        assert choice is not None, "a case-typed place has a choice"
         if type == CHOICE:
-            return _matches(term, base)
-        return any(v is not None and _matches(term, v)
-                   for v in (value_at(choice, base, p.path)
-                             for p in points_of_type(choice, type)))
+            return [base]
+        points = points_of_type(choice, type)
+        if not points:
+            raise ValueError(f"no choice point has the type `{type}`")
+        return [value_at(choice, base, p.path) for p in points]
+
+    def _fields(self, type: str) -> tuple[str, ...] | None:
+        """The types of the fields a case-typed place of `type` opens
+        into; None where it is no record, as `Choice` is none where the
+        choice is no record."""
+        choice = self.choice
+        if type == CHOICE and (choice is None or choice.record is None):
+            return None
+        return self.records.get(type)
+
+    def _is_value(self, type: str, term: Term, base: Base) -> bool:
+        """Whether `term`, a constant that a `!=` of the unit's body
+        compares a variable with, is the value `base` holds at a
+        case-typed place of `type` that is no record: at each point of
+        that type, where several have it, so that the comparison shuts the
+        base out there."""
+        if self._fields(type) is not None:
+            return False
+        value = _constant(term)
+        if not isinstance(value, AdtValue | RecordValue):
+            return False
+        return all(v == value for v in self._leaf_values(type, base))
 
     def _equalities(self, unit: Unit) -> dict[str, Term]:
         """The terms the equalities of a unit's body set its variables
         to, where the term holds a constructor or a record."""
         if unit.id not in self._eq:
-            eq: dict[str, Term] = {}
-            for lit in unit.body or ():
-                if isinstance(lit, Comparison) \
-                        and lit.op is ComparisonOperator.EQ:
-                    if isinstance(lit.lhs, Variable) and _holds_case(lit.rhs):
-                        eq[lit.lhs.name] = lit.rhs
-                    elif isinstance(lit.rhs, Variable) \
-                            and _holds_case(lit.lhs):
-                        eq[lit.rhs.name] = lit.lhs
-            self._eq[unit.id] = eq
+            self._eq[unit.id] = {
+                v: t for v, t in compared(unit, ComparisonOperator.EQ)
+                if _holds_case(t)}
         return self._eq[unit.id]
+
+    def _exclusions(self, unit: Unit, var: str) -> list[Term]:
+        """The terms the `!=` comparisons of a unit's body hold a variable
+        apart from, where the term holds a constructor or a record."""
+        if unit.id not in self._ne:
+            ne: dict[str, list[Term]] = {}
+            for v, term in compared(unit, ComparisonOperator.NE):
+                if _holds_case(term):
+                    ne.setdefault(v, []).append(term)
+            self._ne[unit.id] = ne
+        return self._ne[unit.id].get(var, [])
 
     def _may_hold(self, column: str, path: tuple[int, ...],
                   type: str) -> bool:
@@ -2539,7 +2669,7 @@ class _Cases:
         types are declared and differ, since then the clause feeds another
         instance of the component that reads it."""
         for j in path:
-            fields = self.records.get(column)
+            fields = self._fields(column)
             if fields is None or j >= len(fields):
                 return True
             column = fields[j]
@@ -2566,36 +2696,187 @@ class _Cases:
                 heads = self.graph.heads.get(node, [])
                 if not heads:
                     continue
-                read = self._typed(at, lit.atom)
                 for i, arg in enumerate(lit.atom.args):
                     for path in _paths(arg, var):
-                        got = self._held_at(node, heads, i, read)
-                        if got:
+                        got = self._held_at(node, heads, i, at, lit.atom)
+                        if got is not None:
                             out.append([(h, t, path, c) for h, t, c in got])
             self._alts[key] = out
         return self._alts[key]
 
     def _held_at(self, node: Node, heads: Sequence[Placed], column: int,
-                 read: Sequence[tuple[str, Term]]
+                 at: InstancePath, read: Atom
                  ) -> list[tuple[Placed, Term, str]] | None:
-        """The terms the clauses `heads` of `node` hold in a column a read
-        names, each with the column's type as its clause types it
-        (`_alternatives`); None where one holds none."""
+        """The terms the clauses `heads` of `node` hold in a column of a
+        read, the read's unit running at `at`, each with the column's type
+        as its clause types it (`_alternatives`); None where one holds
+        none. A clause of a relation joins the read (`joined`): a value
+        the read fixes wholly in a column sets the variable the clause's
+        head holds there, and a clause whose head holds another value
+        there gives the read no row and no term. A read of a relation of
+        a lib instance joins the clauses that feed that relation
+        (`Graph.feeding`) alike, and gives no term where none meets it."""
         out: list[tuple[Placed, Term, str]] = []
+        row = tuple(_known(t) for t in read.args)
         if node.kind is NodeKind.RELATION:
             for h in heads:
                 typed = self._typed(h[1], h[0].head)
                 if column >= len(typed):
                     return None
-                out.append((h, typed[column][1], typed[column][0]))
+                held = joined(h[0].head.args, row, _no_name)
+                if held is None:
+                    continue
+                out.append((h, substituted(typed[column][1], {
+                    v: term_of(x) for v, x in held.items() if fixed(x)}),
+                    typed[column][0]))
             return out
-        if column >= len(read):
+        typed_read = self._typed(at, read)
+        if column >= len(typed_read):
             return None
-        type = read[column][0]
+        place = self.graph.place(at, read.relation)
+        if place is None:
+            raise ValueError(f"`{read.relation.text}` has column types and "
+                             "no place")
+        feeding = self.graph.feeding(place)
+        if feeding and all(joined(u.head.args, row, _no_name) is None
+                           for u, _at in feeding):
+            return []
+        type = typed_read[column][0]
         for h in heads:
             out += [(h, term, t) for t, term in self._typed(h[1], h[0].head)
                     if t == type]
         return out or None
+
+
+def _no_name(_name: str) -> Value | None:
+    """The value `_Cases` reads a defined name as: none."""
+    return None
+
+
+def _known(term: Term) -> Value | None:
+    """What a read's term fixes of its value (`known`), a defined name
+    read as fixing none."""
+    return known(term, {}, _no_name)
+
+
+def _constant(term: Term) -> Value | None:
+    """The value a term states with no variable, call or defined name in
+    it (`term_value`); None for any other term."""
+    return term_value(term, _no_name)
+
+
+type Pattern = tuple[Value | None, ...]
+"""What is known of a row of a relation, per column: the value that a
+read's term, or a case, fixes there; None where nothing does."""
+
+
+UNFIXED: Value = AdtValue("", ())
+"""A part of a record or constructor value in a `Pattern` that nothing
+fixes, where some other part of it is fixed."""
+
+
+def compatible(a: Value, b: Value) -> bool:
+    """Whether two values of a `Pattern` may be one value: equal where
+    both fix a part (`UNFIXED`)."""
+    if a == UNFIXED or b == UNFIXED:
+        return True
+    if isinstance(a, AdtValue) and isinstance(b, AdtValue):
+        return a.constructor == b.constructor \
+            and len(a.args) == len(b.args) \
+            and all(compatible(x, y)
+                    for x, y in zip(a.args, b.args, strict=True))
+    if isinstance(a, RecordValue) and isinstance(b, RecordValue):
+        return len(a.fields) == len(b.fields) \
+            and all(compatible(x, y)
+                    for x, y in zip(a.fields, b.fields, strict=True))
+    return a == b
+
+
+def _meet(a: Value, b: Value) -> Value:
+    """What two `compatible` values of a `Pattern` fix together."""
+    if a == UNFIXED:
+        return b
+    if isinstance(a, AdtValue) and isinstance(b, AdtValue):
+        return AdtValue(a.constructor, tuple(
+            _meet(x, y) for x, y in zip(a.args, b.args, strict=True)))
+    if isinstance(a, RecordValue) and isinstance(b, RecordValue):
+        return RecordValue(tuple(
+            _meet(x, y) for x, y in zip(a.fields, b.fields, strict=True)))
+    return a
+
+
+def fixed(v: Value) -> bool:
+    """Whether a value of a `Pattern` fixes every part (`UNFIXED`)."""
+    if v == UNFIXED:
+        return False
+    if isinstance(v, AdtValue):
+        return all(fixed(x) for x in v.args)
+    if isinstance(v, RecordValue):
+        return all(fixed(x) for x in v.fields)
+    return True
+
+
+def known(term: Term, env: Mapping[str, Value],
+          defined: Callable[[str], Value | None]) -> Value | None:
+    """What a read's term fixes of the value it stands for, a variable's
+    value read in `env` and a defined name's through `defined`: None where
+    it fixes none of it, and a record or constructor value with `UNFIXED`
+    at each part it does not fix."""
+    match term:
+        case Variable(name=name):
+            return env.get(name)
+        case ConstructorTerm(name=name, args=args):
+            vals = [known(a, env, defined) for a in args]
+            return AdtValue(name, tuple(UNFIXED if v is None else v
+                                        for v in vals))
+        case RecordTerm(args=args):
+            vals = [known(a, env, defined) for a in args]
+            return None if all(v is None for v in vals) else RecordValue(
+                tuple(UNFIXED if v is None else v for v in vals))
+    return term_value(term, defined)
+
+
+def joined(head: Sequence[Term], row: Pattern,
+           defined: Callable[[str], Value | None]
+           ) -> dict[str, Value] | None:
+    """The value a read fixes (`row`) of each variable of a clause's head,
+    column by column, a variable met twice taking what both fix; None
+    where the read and the head fix different values in one place, so
+    that no row of the clause meets the read. A defined name of the head
+    reads through `defined`. Raises `ValueError` where the head and the
+    row differ in length."""
+    if len(head) != len(row):
+        raise ValueError(f"a head of {len(head)} terms read with "
+                         f"{len(row)}")
+    env: dict[str, Value] = {}
+
+    def join(term: Term, value: Value | None) -> bool:
+        if value is None or value == UNFIXED:
+            return True
+        match term:
+            case Variable(name=name):
+                if name in env:
+                    if not compatible(env[name], value):
+                        return False
+                    value = _meet(env[name], value)
+                env[name] = value
+                return True
+            case ConstructorTerm(name=name, args=args):
+                return isinstance(value, AdtValue) \
+                    and value.constructor == name \
+                    and len(value.args) == len(args) and all(
+                        join(t, v)
+                        for t, v in zip(args, value.args, strict=True))
+            case RecordTerm(args=args):
+                return isinstance(value, RecordValue) \
+                    and len(value.fields) == len(args) and all(
+                        join(t, v)
+                        for t, v in zip(args, value.fields, strict=True))
+        mine = term_value(term, defined)
+        return mine is None or compatible(mine, value)
+
+    ok = all(join(t, v) for t, v in zip(head, row, strict=True))
+    return env if ok else None
 
 
 def _paths(term: Term, var: str, at: tuple[int, ...] = ()
@@ -2748,8 +3029,8 @@ def case_values(solver: Solver, choice: Choice, base: Base, type: str
     reading = case_types(solver)
     if not reading.whole(type):
         raise ValueError(f"`{type}` is not wholly of the case")
-    fields = reading.records.get(type)
-    if type == CHOICE or fields is None:
+    fields = reading.fields(type)
+    if fields is None:
         return base_values(choice, reading, base, type)
     return [RecordValue(tuple(v)) for v in product(
         *(case_values(solver, choice, base, f) for f in fields))]

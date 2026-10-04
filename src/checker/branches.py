@@ -323,6 +323,17 @@ def diverges(runs: Runs, solver: Solver, cases: Sequence[Case],
     return failed
 
 
+def witness_divergence(runs: Runs, solver: Solver, cases: Sequence[Case],
+                       branch: DeriveBranch | StoreBranch, grid: Grid,
+                       assign: Assignment
+                       ) -> tuple[Case, Case] | RunFailure | None:
+    """The output a witness needs (principles.md, under "Witnesses"): the
+    first case of `cases` defined on `grid` at `assign` that gives an
+    output other than its counterpart's, with that counterpart
+    (`diverges`)."""
+    return diverges(runs, solver, cases, branch, grid, assign, defined=True)
+
+
 @dataclass(frozen=True)
 class RecordedWitness:
     """An input of the witness file, at its entry's assignment, on which
@@ -374,12 +385,10 @@ def witness_targets(runs: Runs, solver: Solver, cases: Sequence[Case],
     (`branch_models`), else the cases that take it, in `ordered` order,
     each where it and its counterpart fit the pairs, since a case that
     fails Fit is no separation target."""
-    for pool in (branch_models(solver, cases, branch),
-                 ordered(solver, cases, branch)):
-        got = fitting_both(runs, solver, pool, branch)
-        if got:
-            return got
-    return []
+    models = branch_models(solver, cases, branch)
+    fit = fitting_both(runs, solver, list(dict.fromkeys(
+        [*models, *ordered(solver, cases, branch)])), branch)
+    return [c for c in models if c in fit] or fit
 
 
 def fitting_both(runs: Runs, solver: Solver, cases: Sequence[Case],
@@ -397,10 +406,10 @@ def swap_witness(runs: Runs, solver: Solver, cases: Sequence[Case],
                  ) -> SwapWitness | NoWitness | FailedOn:
     """The color-swap witness of `branch` (`judged.swaps`): the first
     swapped train input on which a case the survey looks with
-    (`witness_targets`), a model of the branch that fits the pairs, is
-    defined and gives an output other than its counterpart's, which fits
-    them too (principles.md, under "Witnesses"). `color` is the one color the
-    branch's value holds; None where it holds other than one color."""
+    (`witness_targets`) gives the output a witness needs
+    (`witness_divergence`, principles.md, under "Witnesses"). `color` is
+    the one color the branch's value holds; None where it holds other
+    than one color."""
     task = solver.given_task
     if color is None:
         return NoWitness.NOT_ONE_COLOR
@@ -412,8 +421,8 @@ def swap_witness(runs: Runs, solver: Solver, cases: Sequence[Case],
         return NoWitness.ONE_OUTPUT
     failed: FailedOn | None = None
     for s in found:
-        got = diverges(runs, solver, models, branch, s.grid, Assignment(()),
-                       defined=True)
+        got = witness_divergence(runs, solver, models, branch, s.grid,
+                                 Assignment(()))
         if isinstance(got, tuple):
             return SwapWitness(s, got[0], got[1])
         if got is not None and failed is None:
@@ -426,9 +435,9 @@ def recorded_witness(runs: Runs, solver: Solver, cases: Sequence[Case],
                      ) -> RecordedWitness | None:
     """The first input of the witness file, each at its entry's
     assignment, on which a case the survey looks with
-    (`witness_targets`) is defined and gives an output other than its
-    counterpart's (principles.md, under "Witnesses"):
-    the recorded inputs a survey looks on beside the color swaps. None
+    (`witness_targets`) gives the output a witness needs
+    (`witness_divergence`, principles.md, under "Witnesses"): the
+    recorded inputs a survey looks on beside the color swaps. None
     where none does; an entry whose `assign` names nothing is the fault
     `fault_findings` reports, and is passed over."""
     models = witness_targets(runs, solver, cases, branch)
@@ -436,8 +445,8 @@ def recorded_witness(runs: Runs, solver: Solver, cases: Sequence[Case],
         return None
     for e, assign in entry_assignments(runs.engine, runs.solver, runs.entries,
                                        runs.file_role):
-        got = diverges(runs, solver, models, branch, e.input, assign,
-                       defined=True)
+        got = witness_divergence(runs, solver, models, branch, e.input,
+                                 assign)
         if isinstance(got, tuple):
             return RecordedWitness(e, *got)
     return None

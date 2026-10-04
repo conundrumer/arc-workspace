@@ -73,7 +73,7 @@
         - A probe is a script you write under `.scratch/<task_id>/` that runs a reading over grids and prints the outputs.
     - Name each branch by a constructor name of its own, in the form [Witness file](docs/handbook/solver-file.md#witness-file) gives. The name says what the branch changes and contains no value of a parameter.
     - A claim considered and not formed as a branch goes under Not formed, with why.
-2. Place each choice point at the concept or under a branch, as [Choice points and open parameters](docs/handbook/principles.md#choice-points-and-open-parameters) states.
+2. Place each choice point at the concept or under a branch, as [Choice points and open parameters](docs/handbook/principles.md#choice-points-and-open-parameters) states. A point whose branches' models differ, in an output or in where they are defined, stands at the concept. A point whose branches give one model under another point's concept branch stands under a branch of that point under which they differ.
     - For each two choice points where neither stands under a branch of the other, state the model of each case that takes a non-concept branch at both.
         - State those models in one statement for the two points, and state on a line of its own the model of each case that statement does not give.
     - When that model is one branch's model alone, the other point's property does not exist with that branch, and that section says where the point goes.
@@ -211,12 +211,12 @@
     * comment:
         - The Analyze files are listed here as well as in Write because the Refine render does not carry Write.
 - Run these in this order.
-- **Rulings.** A ruling in your brief decides an item of that report. Apply each ruling, and quote it in the report where you apply it. Then run again each operation from [Develop](#develop) through [Witness](#witness) that applying the rulings touches.
+- **Overrides.** An override in your brief decides an item of that report. Apply each override, and quote it in the report where you apply it. Then run again each operation from [Develop](#develop) through [Witness](#witness) that applying the overrides touches.
 - **Departures.** Judge each departure and open item of that report, and each `## Fixes elsewhere` item on this task's files in another task's latest report (`grep -l <task_id> .scratch/*/create.md .scratch/*/refine-*.md`), under the current docs, from the solver, the witness file, and the pairs; an item on an Analyze file is judged as a departure, and a `## Fixes elsewhere` item that holds is applied to the solver or the witness file.
     - Run the solver against the Analyze file, as [Witness](#witness) says.
     - A departure holds when what it rests on is true and each case it adds or keeps meets every case condition, and each case it drops fails one in a `witness --every-case` run with that case restored.
     - Revert a departure that does not hold, make the solver follow the docs on each open item they decide, and run again each operation these changes and each applied fix touch.
-- A ruled, reverted, or applied item, a `## Fixes elsewhere` item judged in the latest report, or an open item the docs decide, is not formed or judged again.
+- An overridden, reverted, or applied item, a `## Fixes elsewhere` item judged in the latest report, or an open item the docs decide, is not formed or judged again.
 
 ### Promote
 - When the user says `promote` or `migrate` over an entry under `docs/wf-solver/proposals/`.

@@ -63,12 +63,11 @@ def in_witness_dir(path: Path) -> bool:
     return path.resolve().is_relative_to(witness.path("").parent.resolve())
 
 
-def absent(path: Path, creates: bool) -> bool:
-    """True, with its line on stderr, where no file stands at `path` and
-    the command does not create one there: a command that writes creates
-    a file outside the witness directory, and no command creates one in
-    it."""
-    if path.exists() or (creates and not in_witness_dir(path)):
+def absent(path: Path) -> bool:
+    """True, with its line on stderr, where no file stands at `path` for
+    a command that reads one there. A command that writes a witness reads
+    the file with `with_file`, and writes it through `witness.put`."""
+    if path.exists():
         return False
     line = commands.NO_WITNESS_FILE if in_witness_dir(path) else text.NO_FILE
     print(line.format(path=checkout.shown(path)), file=sys.stderr)
@@ -96,12 +95,11 @@ def with_file(solver: Solver, path: Path) -> Solver | None:
     return replace(solver, witness_file=file)
 
 
-def lined_solver(solver: Solver, at: Path, creates: bool) -> Solver | None:
+def lined_solver(solver: Solver, at: Path) -> Solver | None:
     """The solver with the witness file at `at` in place of the task's
     (`with_file`); None, with its line on stderr, where no file stands
-    there and the command creates none (`absent`), or where the file is
-    off its shape."""
-    if absent(at, creates):
+    there (`absent`), or where the file is off its shape."""
+    if absent(at):
         return None
     return with_file(solver, at)
 
@@ -340,7 +338,7 @@ def _file_of(arg: str, witness_file: str | None, eng: SouffleEngine
     if solver is None:
         return None
     at = target(solver, witness_file)
-    lined = lined_solver(solver, at, creates=False)
+    lined = lined_solver(solver, at)
     if lined is None or lined.witness_file is None:
         return None
     return solver, lined, at, lined.witness_file
@@ -445,7 +443,7 @@ def cmd_record(arg: str, entry_id: str, separates: str,
         return 2
     grid, judged = grids[0], (grids[1] if len(grids) == 2 else None)
     at = target(solver, witness_file)
-    lined = lined_solver(solver, at, creates=True)
+    lined = with_file(solver, at)
     if lined is None:
         return 2
     if not compiles(eng, solver):
@@ -556,7 +554,7 @@ def cmd_format(arg: str, witness_file: str | None = None) -> int:
     if solver is None:
         return 2
     at = target(solver, witness_file)
-    if absent(at, creates=False):
+    if absent(at):
         return 2
     if not _write(solver, at, []):
         return 2

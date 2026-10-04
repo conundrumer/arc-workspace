@@ -2,7 +2,7 @@
 // @keywords: symmetry decompose crop repair latent-canvas occlude
 // input: a mosaic that overhangs the grid and decomposes into an arrangement
 //  of square tiles, occluded by a solid block of params.mask
-// output: The output is the block's content. Each tile carries the subgroup of
+// output: the block's content. Each tile carries the subgroup of
 //  whole-mosaic transforms that holds on its cells, and a hidden cell restores
 //  from a visible cell that a transform of its tile's subgroup reaches.
 
@@ -77,8 +77,8 @@ out(P_inner, Col) :-
         cell_split(E, A, L1, X, C1),
         cell_split(E, A, L2, X, C2), C2 != C1.
 
-    // The extension's mirror relates two distinct cells — the witness that
-    // the examples exercise it.
+    // The extension's mirror relates two distinct clean cells, so the
+    // examples exercise it.
     .decl ext_pair(a: Axis, b: Box)
     ext_pair(A, B) :-
         ext_map(A, B, L1, L2), L1 != L2,
@@ -124,17 +124,14 @@ out(P_inner, Col) :-
     .decl cand_sym(n: number, p_tile: Position, d: D4)
     cand_sym(N, T, D) :- cand_tile(N, _, T), d4_elem(D), !cand_broken(N, T, D).
 
-    // Tile count: the coarsest decomposition whose tile labels differ.
+    // The tile count is the coarsest decomposition whose tile labels differ.
     .init nonuniform = Extremes<Unit>
     nonuniform.cand($U(), N) :- cand_sym(N, T1, D), cand_tile(N, _, T2), !cand_sym(N, T2, D).
-
-    .decl tile_count(n: number)
-    tile_count(N) :- nonuniform.low($U(), N).
 
     // Each tile's group is the named subgroup matching its unbroken set.
     .init symid = KeyedSetCompare<Position, Sym, D4>
     symid.pattern_member(S, D) :- sym_member(S, D).
-    symid.observed_member(T, D) :- tile_count(N), cand_sym(N, T, D).
+    symid.observed_member(T, D) :- nonuniform.low($U(), N), cand_sym(N, T, D).
 
     .decl tile_sym(p_tile: Position, s: Sym)
     tile_sym(T, S) :- symid.equals(T, S).

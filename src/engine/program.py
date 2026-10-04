@@ -990,6 +990,22 @@ def term_value(term: Term, defined: Callable[[str], "Value | None"]
     return None
 
 
+def term_of(v: Value) -> Term:
+    """The term that states a value, the one `term_value` reads back."""
+    match v:
+        case bool():
+            return NumberTerm(int(v))
+        case int() | float():
+            return NumberTerm(v)
+        case str():
+            return StringTerm(v)
+        case RecordValue(fields):
+            return RecordTerm(tuple(term_of(f) for f in fields))
+        case AdtValue(name, args):
+            return ConstructorTerm(name, tuple(term_of(a) for a in args))
+    raise TypeError(f"not a value: {v!r}")
+
+
 type TypeReading[P] = Callable[[str, P], "tuple[TypeDecl | Primitive, P]"]
 """What a type name read at a place of type `P` stands for: a primitive,
 or the declaration with the place its own names are read at. Raises

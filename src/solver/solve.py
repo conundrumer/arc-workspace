@@ -402,14 +402,25 @@ def _unread_units(engine: Engine, solver: Solver,
                   groups: Sequence[tuple[Case, ...]]
                   ) -> list[frozenset[UnitId]]:
     """For each group, the units of the solver's own text that no case of
-    the group depends on (`dependence`): its run leaves them out, so that
-    the run's text, which keys its stored result, holds the units its
-    cases depend on, and an edit to a unit reruns only the groups whose
-    cases depend on it."""
+    the group depends on (`dependence`), and the facts an operation wrote
+    of a relation that no case of the group reads or feeds, as a variation
+    writes a parameter's value: its run leaves them out, so that the run's
+    text, which keys its stored result, holds the units its cases depend
+    on, and an edit to a unit, or a variation of a relation, reruns only
+    the groups whose cases depend on it."""
     own_units = frozenset(u.id for u in solver.program.units if own(u.span))
+    written = [u for u in solver.program.units
+               if u.span is None and u.body is None]
     read = _read_units(engine, _enumerated(engine, solver),
                        [c.base for g in groups for c in g])
-    return [own_units.difference(*(read[c.base] for c in g)) for g in groups]
+    out: list[frozenset[UnitId]] = []
+    for g in groups:
+        relations = frozenset[RelationName]().union(
+            *(read[c.base].relations for c in g))
+        out.append(own_units.difference(*(read[c.base].units for c in g))
+                   | {u.id for u in written
+                      if u.head.relation not in relations})
+    return out
 
 
 def _enumerated(engine: Engine, solver: Solver) -> Solver:
@@ -425,31 +436,47 @@ def _enumerated(engine: Engine, solver: Solver) -> Solver:
     return replace(solver, program=restricted(engine, solver, tuple(every)))
 
 
+@dataclass(frozen=True)
+class _Reads:
+    """What a base's derivation of `out` depends on (`dependence`): the
+    units of the solver's own text, and the relations those units read or
+    feed."""
+
+    units: frozenset[UnitId]
+    relations: frozenset[RelationName]
+
+
 _READ_UNITS: ByIdentity[Program, tuple[tuple[object, ...],
-                                      dict[Base | None, frozenset[UnitId]]]] \
+                                      dict[Base | None, _Reads]]] \
     = ByIdentity()
-"""`_read_units`'s units by base, for each program while it lives, with
+"""`_read_units`'s reads by base, for each program while it lives, with
 the parts of the solver the result also reads."""
 
 
 def _read_units(engine: Engine, solver: Solver,
                 bases: Sequence[Base | None]
-                ) -> dict[Base | None, frozenset[UnitId]]:
-    """The units each of `bases` depends on (`dependence`), computed once
-    per base for the solver's program."""
+                ) -> dict[Base | None, _Reads]:
+    """What each of `bases` depends on (`dependence`), computed once per
+    base for the solver's program."""
     program = solver.program
     parts = (solver.choice, solver.annotations.markers, solver.params)
     memo = _READ_UNITS.guarded(program, parts, dict)
     missing = [b for b in dict.fromkeys(bases) if b not in memo]
     if missing:
-        found: dict[Base | None, set[UnitId]] = {b: set() for b in missing}
-        for uid, readers in dependence(engine, solver, missing).units.items():
-            for b in readers:
-                if b in found:
-                    found[b].add(uid)
-        for b, units in found.items():
-            memo.setdefault(b, frozenset(units))
+        rd = dependence(engine, solver, missing)
+        units = _by_reader(rd.units, missing)
+        relations = _by_reader(rd.relations, missing)
+        for b in missing:
+            memo.setdefault(b, _Reads(units[b], relations[b]))
     return {b: memo[b] for b in bases}
+
+
+def _by_reader[K](read: Mapping[K, tuple[Base | None, ...]],
+                  bases: Sequence[Base | None]
+                  ) -> dict[Base | None, frozenset[K]]:
+    """For each of `bases`, the keys of `read` whose readers hold it."""
+    return {b: frozenset(k for k, readers in read.items() if b in readers)
+            for b in bases}
 
 
 def _without(engine: Engine, program: Program, drop: frozenset[UnitId]

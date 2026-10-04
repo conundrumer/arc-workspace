@@ -42,7 +42,7 @@ from engine.program import (
 )
 from engine.quotes import quotes
 from solver.category import Category
-from solver.model import Solver
+from solver.model import Solver, compared
 from solver.vocabulary import (
     COMPOSE,
     ELEM_SUFFIX,
@@ -346,13 +346,12 @@ def _delta_out(v: View) -> dict[str, int]:
             return at[0] if term_vars(out) <= inputs else None
         if not isinstance(out, Variable):
             return None
+        if any(var == out.name and isinstance(value, FunctorCall)
+               and term_vars(value) <= inputs
+               for var, value in compared(u, ComparisonOperator.EQ)):
+            return at[0]
         for lit in u.body or ():
-            if isinstance(lit, Comparison) and lit.op == ComparisonOperator.EQ:
-                for side, value in ((lit.lhs, lit.rhs), (lit.rhs, lit.lhs)):
-                    if side == out and isinstance(value, FunctorCall) \
-                            and term_vars(value) <= inputs:
-                        return at[0]
-            elif (a := _positive(lit)) is not None \
+            if (a := _positive(lit)) is not None \
                     and not a.relation.instances \
                     and a.relation.name not in reading \
                     and (k := slot(a.relation.name,

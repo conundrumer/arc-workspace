@@ -1,0 +1,13 @@
+no actions
+
+determined:
+  dropped_count
+  kept_count
+
+the value is covered on this task's examples, so no determination relation is needed:
+  background (DominantColor exact)
+  body (domain enumerable(3), pairs-exact: (1))
+  keep_count (TileCount narrowed(5))
+  mark (RarestColor exact)
+  max_marks (DivisorRatio exact)
+1 of 3 joint assignments of the enumerated parameters reproduce every train pair

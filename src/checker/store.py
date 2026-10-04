@@ -21,10 +21,10 @@ from checker.branches import (
     BuiltBy,
     bare_ignored,
     counterpart,
-    diverges,
     entry_findings,
     excluded_finding,
-    fitting_both,
+    witness_divergence,
+    witness_targets,
     idle_ignores,
     ordered,
     swap_entry,
@@ -121,6 +121,9 @@ from solver.model import (
     Dependence,
     Graph,
     InstancePath,
+    Pattern,
+    joined,
+    known,
     NodeKind,
     Solver,
     StoreBranch,
@@ -321,8 +324,8 @@ def _case_key(reading: CaseTypes, types: Sequence[str],
     a case column in that field and a key in its other fields (plan §D5
     "Derive and store")."""
     def mask(type: str, value: Value) -> Value:
-        fields = reading.records.get(type)
-        if type == CHOICE or fields is None \
+        fields = reading.fields(type)
+        if fields is None \
                 or not isinstance(value, RecordValue) \
                 or len(fields) != len(value.fields):
             return value
@@ -336,8 +339,8 @@ def _case_key(reading: CaseTypes, types: Sequence[str],
 def _keyed_too(reading: CaseTypes, type: str) -> bool:
     """Whether a case column of `type` is a record with a field that
     carries no case, which makes it a key too."""
-    fields = reading.records.get(type)
-    if type == CHOICE or fields is None:
+    fields = reading.fields(type)
+    if fields is None:
         return False
     return any(f not in reading.types or _keyed_too(reading, f)
                for f in fields)
@@ -488,6 +491,11 @@ class Found:
     homonyms: tuple[RelationName, ...] = ()
     untaken: bool = False
     move: Move | None = None
+    unseparated: tuple[Case, Case] | None = None
+    """Where some grid the witness search tries changes the value and on
+    none does a case it looks with (`witness_targets`) give the output a
+    witness needs (`witness_divergence`): the first case it looks with
+    and that case's counterpart (`_witness`)."""
     failed: FailedRun | None = None
     entry: bool = False
     built: Entry | None = None
@@ -709,8 +717,8 @@ def _named_case(solver: Solver, restricted: Sequence[Base | None],
 def _case_leaf_types(reading: CaseTypes, type: str) -> set[str]:
     """The types of the case-typed places of a value of `type`
     (`CaseTypes.leaves`)."""
-    fields = reading.records.get(type)
-    if type == CHOICE or fields is None:
+    fields = reading.fields(type)
+    if fields is None:
         return {type}
     return {x for f in fields if f in reading.types
             for x in _case_leaf_types(reading, f)}
@@ -906,12 +914,6 @@ def store_survey(runs: Runs) -> StoreSurvey:
 # Stored already
 
 
-type Pattern = tuple[Value | None, ...]
-"""What is known of a row of a relation, per column: the value the row's
-case, or a term of the atom that reads the row, fixes there; None where
-nothing does."""
-
-
 def _literals(body: Sequence[BodyLiteral] | None) -> Iterator[BodyLiteral]:
     """A clause's body literals, each disjunction's branches in place,
     its aggregates' bodies left out."""
@@ -923,30 +925,9 @@ def _literals(body: Sequence[BodyLiteral] | None) -> Iterator[BodyLiteral]:
             yield lit
 
 
-_PART = AdtValue("", ())
-"""A part of a record or constructor value in a `Pattern` that nothing
-fixes, where some other part of it is fixed."""
-
-
-def _compatible(a: Value, b: Value) -> bool:
-    """Whether two values of a `Pattern` may be one value: equal where
-    both fix a part (`_PART`)."""
-    if a == _PART or b == _PART:
-        return True
-    if isinstance(a, AdtValue) and isinstance(b, AdtValue):
-        return a.constructor == b.constructor \
-            and len(a.args) == len(b.args) \
-            and all(_compatible(x, y) for x, y in zip(a.args, b.args))
-    if isinstance(a, RecordValue) and isinstance(b, RecordValue):
-        return len(a.fields) == len(b.fields) \
-            and all(_compatible(x, y) for x, y in zip(a.fields, b.fields))
-    return a == b
-
-
 type Place = tuple[InstancePath, DeclId]
-"""A relation at the instance it stands at: the instance path and its
-declaration. The relations of an instance of a lib component, and those
-of the instances inside it, stand at that instance's path."""
+"""A relation at the instance it stands at: the instance path that
+declares it (`solver.model.Graph.place`), and its declaration."""
 
 
 @dataclass(frozen=True)
@@ -969,24 +950,15 @@ class StoredAlready:
     each variable of the head's terms at those columns takes stored values
     alone, following its bindings through stored relations (`_var`). A
     term with no variable, a literal fact's among them, is not stored
-    already, nor is a value read on a cycle of the relations. A relation is read at
-    each instance it stands at (`Place`): the clauses of a relation there
-    are the units of the solver's own text whose head names it at that
-    instance (`solver.model.Graph`), and, for a relation of a lib
-    component, the lib's clauses the engine's index gives for its
-    declaration that run at that instance: those of its component, or of
-    a component it extends, that name the relation unqualified."""
+    already, nor is a value read on a cycle of the relations. A relation
+    is read at each instance it stands at (`Place`), with the clauses
+    that feed it there (`solver.model.Graph.feeding`)."""
 
     def __init__(self, solver: Solver, index: Index) -> None:
         self.solver = solver
         self.index = index
         self.graph = Graph(solver.program)
         self.program = solver.program
-        self.heads: dict[Place, list[tuple[Unit, InstancePath]]] = {}
-        for u, at in self.graph.placed():
-            place = self.place(u, at, u.head.relation)
-            if place is not None:
-                self.heads.setdefault(place, []).append((u, at))
         self.done: dict[tuple[Place, frozenset[int], Pattern], bool] = {}
         self.open: set[tuple[Place, frozenset[int], Pattern]] = set()
         self.holds: dict[tuple[Place, Pattern], bool] = {}
@@ -994,29 +966,21 @@ class StoredAlready:
 
     def place(self, unit: Unit, at: InstancePath, rel: RelationName
               ) -> Place | None:
-        """The relation a unit running at `at` names by `rel`: through the
-        model's graph for a unit of the solver's own text, and for a lib
-        unit at the path of the lib instance it runs in, joined to the
-        instances `rel` names."""
-        if not own(unit.span):
-            d = _declaration(self.index, rel, unit.scope)
-            return None if d is None else ((*at, *rel.instances), d)
-        node = self.graph.resolve(at, rel)
-        if node is None:
-            return None
-        if node.kind is NodeKind.RELATION:
-            decl = self.graph.relation_decl(node)
-            return None if decl is None else (node.path, decl.id)
-        d = _declaration(self.index, rel, unit.scope)
-        return None if d is None else (node.path, d)
+        """The relation a unit running at `at` names by `rel`
+        (`Graph.place`)."""
+        return self._placed(at, rel, unit.scope)
 
     def top(self, rel: RelationName) -> Place | None:
         """The relation a top-level clause names by `rel`."""
-        node = self.graph.resolve((), rel)
-        d = _declaration(self.index, rel, TOP)
-        if node is None or d is None:
-            return None
-        return node.path, d
+        return self._placed((), rel, TOP)
+
+    def _placed(self, at: InstancePath, rel: RelationName, scope: Scope
+                ) -> Place | None:
+        """The relation a unit of `scope` running at `at` names by
+        `rel`."""
+        q = self.graph.place(at, rel)
+        d = _declaration(self.index, rel, scope)
+        return None if q is None or d is None else (q.instances, d)
 
     def at(self, place: Place, cols: frozenset[int], row: Pattern) -> bool:
         """Whether the value of the relation at `place` at its columns
@@ -1036,31 +1000,18 @@ class StoredAlready:
         return got
 
     def _feeding(self, place: Place) -> list[tuple[Unit, InstancePath]]:
-        """The clauses that put rows into the relation at `place`: the
-        solver's own that name it there, and a lib relation's lib clauses;
-        a subsumptive clause puts none in."""
+        """The clauses that put rows into the relation at `place`
+        (`Graph.feeding`)."""
         path, decl = place
-        out = [(u, at) for u, at in self.heads.get(place, ())
-               if not u.subsumptive]
-        if not own(self.program.declared_relation(decl).span):
-            comp = self.graph.component_path(path)
-            out += [(u, path) for occ in self.index.feeding(decl)
-                    if (u := self.program.unit(occ.unit)) is not None
-                    and not own(u.span) and not u.subsumptive
-                    and not u.head.relation.instances
-                    and u.scope.components[-1:] != ()
-                    and comp is not None
-                    and self.graph.extends(comp, u.scope.components[-1])]
-        return out
+        return self.graph.feeding(
+            RelationName(path, self.program.declared_relation(decl).name))
 
     def _frames(self, place: Place, row: Pattern) -> list[_Frame]:
         """Each clause that may put the row into the relation."""
         out: list[_Frame] = []
         for u, at in self._feeding(place):
-            env: dict[str, Value] = {}
-            if len(u.head.args) == len(row) and all(
-                    self._matches(t, k, env)
-                    for t, k in zip(u.head.args, row, strict=True)):
+            env = joined(u.head.args, row, self.constants.get)
+            if env is not None:
                 out.append(_Frame(u, at, env))
         return out
 
@@ -1075,7 +1026,7 @@ class StoredAlready:
             decl = self._decl(lit.atom, frame)
             if decl is None:
                 continue
-            row = tuple(self._known(t, frame.env) for t in lit.atom.args)
+            row = tuple(known(t, frame.env, self.constants.get) for t in lit.atom.args)
             if all(v is None for v in row):
                 continue
             if not self._can_hold(decl, row):
@@ -1095,58 +1046,6 @@ class StoredAlready:
                                  for f in self._frames(place, row))
         self.holds[key] = got
         return got
-
-    def _matches(self, term: Term, known: Value | None,
-                 env: dict[str, Value]) -> bool:
-        """Whether a head's term may take a value `known` admits, each
-        variable whose value `known` fixes bound in `env`."""
-        if known is None or known == _PART:
-            return True
-        match term:
-            case Variable(name=name):
-                if name in env:
-                    return _compatible(env[name], known)
-                env[name] = known
-                return True
-            case ConstructorTerm(name=name, args=args):
-                return isinstance(known, AdtValue) \
-                    and known.constructor == name \
-                    and len(known.args) == len(args) and all(
-                        self._matches(t, k, env)
-                        for t, k in zip(args, known.args, strict=True))
-            case RecordTerm(args=args):
-                return isinstance(known, RecordValue) \
-                    and len(known.fields) == len(args) and all(
-                        self._matches(t, k, env)
-                        for t, k in zip(args, known.fields, strict=True))
-            case NumberTerm(value=v) | StringTerm(value=v):
-                return v == known
-            case DefinedName(name=name) if name in self.constants:
-                return self.constants[name] == known
-            case _:
-                return True
-
-    def _known(self, term: Term, env: Mapping[str, Value]) -> Value | None:
-        """What an atom's term fixes of the value it stands for: None
-        where it fixes none of it, and a record or constructor value with
-        `_PART` at each part it does not fix."""
-        match term:
-            case Variable(name=name):
-                return env.get(name)
-            case NumberTerm(value=v) | StringTerm(value=v):
-                return v
-            case DefinedName(name=name):
-                return self.constants.get(name)
-            case ConstructorTerm(name=name, args=args):
-                vals = [self._known(a, env) for a in args]
-                return AdtValue(name, tuple(_PART if v is None else v
-                                            for v in vals))
-            case RecordTerm(args=args):
-                vals = [self._known(a, env) for a in args]
-                return None if all(v is None for v in vals) else RecordValue(
-                    tuple(_PART if v is None else v for v in vals))
-            case _:
-                return None
 
     def _term(self, term: Term, frame: _Frame) -> bool:
         names = sorted(term_vars(term))
@@ -1213,7 +1112,7 @@ class StoredAlready:
             return False
         if self._params(decl):
             return True
-        row = tuple(None if j in cols else self._known(t, frame.env)
+        row = tuple(None if j in cols else known(t, frame.env, self.constants.get)
                     for j, t in enumerate(atom.args))
         return self.at(decl, frozenset(cols), row)
 
@@ -1308,9 +1207,9 @@ def _stored_already(solver: Solver, runs: Runs, stored: StoredAlready,
         rows = (values,)
     for values in rows:
         held = case_types(solver)
-        known = {i: v for i, v in zip(case_cols, values, strict=True)
+        given = {i: v for i, v in zip(case_cols, values, strict=True)
                  if not _keyed_too(held, types[i])} if values else {}
-        row = tuple(known.get(i) for i in range(len(types)))
+        row = tuple(given.get(i) for i in range(len(types)))
         if not stored.at(place, frozenset(f.subset), row):
             return False
     return True
@@ -1355,13 +1254,17 @@ def _lineless(f: Found) -> StoreBranch:
     return StoreBranch(f.relation, f.spelled, None)
 
 
+@quotes("principles.md", "Witnesses",
+        "A branch's witnesses are divergence witnesses between its model "
+        "and the concept branch's model.")
 def _witness(runs: Runs, solver: Solver, f: Found) -> Finding | None:
-    """The first grid on which the value differs: the D4 images of each
-    train input in turn, then a color swap of each. A grid the relation
-    stands empty on holds no value, and it is the witness where some case
-    that takes the value gives different outputs with the relation
-    derived and with the value stored. The failure of the run that
-    enumerates the cases with the branch standing, where it fails."""
+    """The first grid on which the value differs and a case the survey
+    looks with (`witness_targets`, among the cases that take the value)
+    gives the output a witness needs (`witness_divergence`): the D4 images
+    of each train input in turn, then a color swap of each. A grid the
+    relation stands empty on holds no value. It sets `Found.unseparated`
+    and `Found.failed`. The failure of the run that enumerates the cases
+    with the branch standing, where it fails."""
     task = solver.task
     assert task is not None
     branch = f.name
@@ -1374,12 +1277,11 @@ def _witness(runs: Runs, solver: Solver, f: Found) -> Finding | None:
     if not cases:
         f.untaken = True
         return None
-    # A case that fails Fit is no separation target (plan §D5 "Derive and
-    # store"): the search looks with the cases that fit the pairs, each
-    # against its counterpart, which fits them too.
-    cases = fitting_both(runs, lined, cases, branch)
-    if not cases:
+    models = witness_targets(runs, lined, cases, branch)
+    if not models:
         return None
+    model = models[0]
+    other = counterpart(model, branch)
     held_by_case = case_reading(solver, f.relation)
     types, case_cols = held_by_case.types, held_by_case.case
     grids: list[tuple[int, Change, Grid]] = []
@@ -1388,19 +1290,26 @@ def _witness(runs: Runs, solver: Solver, f: Found) -> Finding | None:
     grids += [(s.index, s, s.grid) for s in swaps(runs.engine, solver, task, cases)]
     for index, change, grid in grids:
         got = runs.defined_relations(grid, [f.relation])
-        if not isinstance(got, Mapping):
-            if f.failed is None:
-                f.failed = FailedRun(index, change, got)
+        if isinstance(got, Mapping):
+            value = _projection(got[f.relation], f, _case_key(
+                case_types(solver), types, case_cols), types)
+            if value == f.family:
+                continue
+            apart = witness_divergence(runs, lined, models, branch, grid,
+                                       Assignment(()))
+            if apart is None:
+                f.unseparated = (model, other)
+                continue
+            if isinstance(apart, tuple):
+                failure = None
+            else:
+                failure = apart
+        else:
+            failure = got
+        if failure is not None:
+            f.failed = f.failed or FailedRun(index, change, failure)
             continue
-        value = _projection(got[f.relation], f, _case_key(
-            case_types(solver), types, case_cols), types)
-        if value == f.family:
-            continue
-        if value is None and not isinstance(diverges(
-                runs, lined, cases, branch, grid, Assignment(())), tuple):
-            continue
-        first = counterpart(cases[0], branch)
-        out = runs.outcomes_of(lined, [first], grid, Assignment(()))[first]
+        out = runs.outcomes_of(lined, [other], grid, Assignment(()))[other]
         f.move = Move(index, change, grid,
                       isinstance(out, Grids) and out.grids == (grid,))
         made = swap_entry(runs, lined, f.case_id, branch, index, change,

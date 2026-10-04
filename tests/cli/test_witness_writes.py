@@ -56,19 +56,6 @@ def solvers(root: Path) -> Path:
     return solvers
 
 
-def test_record_does_not_create_the_task_file(solvers: Path, capsys):
-    witnesses = solvers.parent / "witnesses"
-    grid = solvers.parent.parent / "grid.txt"
-    assert cli.record.cmd_record(STEM, "probe", "probe", str(grid)) == 2
-    assert not (witnesses / f"{STEM}.wit.json").exists()
-    assert "no witness file at" in capsys.readouterr().err
-    named = f"{witnesses}/../witnesses/{STEM}.wit.json"
-    assert cli.record.cmd_record(STEM, "probe", "probe", str(grid),
-                                 witness_file=named) == 2
-    assert not (witnesses / f"{STEM}.wit.json").exists()
-    assert "no witness file at" in capsys.readouterr().err
-
-
 def test_record_all_keeps_each_witness_but_its_groups_and_writes_nothing_on_a_failure(
         solvers: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     target = tmp_path / "copy.wit.json"
