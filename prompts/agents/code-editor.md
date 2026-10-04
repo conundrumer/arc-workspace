@@ -16,8 +16,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 - Run no git command that changes state.
 - In code, a case the spec does not cover becomes an `undecided` finding or a fault, never a default, and you file it as [Issues](#issues) gives.
 - Before you write code, search every package for what already computes, names, checks or prints what you need, and use it, or extend the one that nearly fits. Then decide the shape: each idea in one operation, called from every site that needs it.
-- Edit only the files your brief gives, your tests directory, and the issues you file.
-- Compare only against the gate's accepted outputs and times, and run nothing to make a before side.
+- Edit only the files your brief gives, the accepted gate outputs a finding of your checks gives you to update, your tests directory, and the issues you file.
+- Compare only against what is already recorded, and run nothing to make a before side.
     * comment: Six briefs from 2026-09-27 to 2026-10-01 had agents run "before" measurements a file already held.
 - A timing your brief asks for is one run per job, against the seconds already recorded.
 - Where your brief gives the places of `refactor` issues, fix the defect at each.
@@ -28,8 +28,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 - End your turn only at one of these points, with a message to main of at most eight lines:
     - Blocked: your brief and the spec differ, or no operation exists for what you implement. Give the concrete case.
     - Cost, as [Working rules](#working-rules) gives it.
-    - Done, in one line: your tests directory passes, pyright is clean over the repo, the gate is run to the end and prints no `DIFF`, `SLOW` or `NOTIME` line but the `NOTIME` lines of a gate command or stem that an item of your brief adds, the report and its `Review` section are written, every defect place of your diff is fixed or stands with its reason, and each case the spec does not cover is filed.
-        - Run a gate command that prints `SLOW` once more, and write the load average beside both runs in the report. A `SLOW` that stays ends your turn at Cost, with its seconds.
+    - Done, in one line: your tests directory passes, pyright is clean over the repo, where your diff affects a gate command, the gate prints no `DIFF` line in a run after the copies [Gate](#gate) gives, the report and its `Review` section are written, every defect place of your diff is fixed or stands with its reason, and each case the spec does not cover is filed.
 
 ## Working rules
 * inline: notes/changes.md#worktree
@@ -37,8 +36,9 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 * inline: notes/commands.md#commands
 
 ## Gate
-- `uv run python scripts/gate.py <out-dir>` is the gate: it runs the checker's commands on the solvers under `tests/gate/solvers/`, and compares their outputs and times with the accepted ones.
-- Where an item of your brief changes or adds a gate output, copy that output from `<out-dir>/gate/new/` to its accepted file, one your brief lists under `tests/gate/accepted/`, and run no `gate.py --accept`.
+- `uv run python scripts/gate.py --outputs-only <out-dir> [cmd ...]` is the gate: it runs the gate commands it is given on the solvers under `tests/gate/solvers/`, and compares their outputs with the accepted ones.
+- Give it the gate commands your diff affects, and run it only where your diff affects one.
+- Where an item of your brief changes or adds a gate output, or a finding of your checks gives one to update, copy that output from `<out-dir>/gate/new/` to its accepted file under `tests/gate/accepted/`, and run no `gate.py --accept`.
 
 ## Issues
 - As you meet a case the spec does not cover, note it in `progress.md`, under a heading that is your report's name.
