@@ -5,21 +5,26 @@
 The worktree stands on a branch of its own. The script first sets up the
 worktree's git submodules with `git submodule update --init`, cloning each
 from the main tree's copy of it under `.git/modules/`, with every transport
-but the local one refused, so that the setup uses no network. It then runs
-the change's checks in the worktree, on the files as they stand there:
+but the local one refused, so that the setup uses no network. It then stages
+the worktree's uncommitted changes, commits them on its branch with the
+message given, rebases the branch onto `master`, and sets up the submodules
+again, for the commits the rebased branch records. It then runs the
+change's checks in the worktree, on the change as it will merge:
 
     uv run python -m controlled_markdown check     always
     uv run pyright                                 where the change touches
     uv run pytest -q                               src/, scripts/ or tests/
-    uv run python scripts/gate.py <out>
+    uv run python scripts/gate.py --outputs-only <out>
 
-A check passes when it exits 0, and the gate passes only when its last line
-is `gate: 0 DIFF, 0 SLOW, 0 NOTIME` as well. The gate writes into a new
-temporary directory, which a failing gate names.
+A check passes when it exits 0. The gate writes into a new temporary
+directory, which a failing gate names.
 
-When every check passes, the script stages the worktree's uncommitted
-changes, commits them on its branch with the message given, rebases the branch onto
-`master`, fast-forwards `master` in the main tree to the branch, runs
+The gate runs with `--outputs-only`, so a merge judges no time. A `SLOW`
+line of the timed gate run on `master` that follows a batch of merges is
+filed as a `delay` issue, and blocks no merge.
+
+When every check passes, the script fast-forwards `master` in the main
+tree to the branch, runs
 `uv run python scripts/context.py --write` in the main tree, and removes the
 worktree and its branch. Since git removes a worktree that holds submodules
 only by force, the removal is forced, after a check that the worktree holds
@@ -29,7 +34,9 @@ its submodules.
 The script refuses, and says why, where:
 
 - the submodule setup fails;
-- a check fails;
+- a check, or the submodule setup after the rebase, fails, in which case it
+  moves the branch back to the `master` commit it was rebased onto, with
+  the change left uncommitted in the worktree and nothing staged;
 - the main tree has uncommitted changes to a path the change touches;
 - a submodule of the worktree holds changes or untracked files, which no
   commit of the worktree's branch can hold;
@@ -64,9 +71,6 @@ MASTER = "master"
 CODE_DIRS = ("src", "scripts", "tests")
 """The top-level directories whose change runs the code checks."""
 
-GATE_PASS = "gate: 0 DIFF, 0 SLOW, 0 NOTIME"
-"""The last line of a gate run that passes."""
-
 GITLINK_MODE = "160000"
 """The mode git gives an index entry that records a submodule's commit."""
 
@@ -84,11 +88,9 @@ class Failed(Exception):
 
 @dataclass(frozen=True)
 class Check:
-    """A command run in the worktree, and the last line it must print to
-    pass, where it must print one."""
+    """A command run in the worktree."""
 
     argv: tuple[str, ...]
-    last_line: str | None = None
 
 
 def git(cwd: Path, *argv: str,
@@ -188,7 +190,7 @@ def checks(touched: set[str]) -> list[Check]:
         run += [
             Check(("uv", "run", "pyright")),
             Check(("uv", "run", "pytest", "-q")),
-            Check(("uv", "run", "python", "scripts/gate.py", gate_out), GATE_PASS),
+            Check(("uv", "run", "python", "scripts/gate.py", "--outputs-only", gate_out)),
         ]
     return run
 
@@ -204,13 +206,8 @@ def run_check(worktree: Path, check: Check) -> None:
     shown = " ".join(check.argv)
     print(f"merge_change: running {shown}", flush=True)
     done = run_in(worktree, check.argv)
-    lines = done.stdout.strip().splitlines()
-    last = lines[-1] if lines else ""
     if done.returncode != 0:
         raise Refused(f"the check `{shown}` failed:\n{said(done)}")
-    if check.last_line is not None and last != check.last_line:
-        raise Refused(f"the check `{shown}` printed `{last}` as its last line, "
-                      f"not `{check.last_line}`:\n{said(done)}")
 
 
 def refuse_main_touched(main: Path, touched: set[str]) -> None:
@@ -297,11 +294,11 @@ def stage(worktree: Path, main: Path, backup: Path) -> None:
         raise
 
 
-def rebase(worktree: Path, before: str, backup: Path | None) -> None:
-    """Rebase the worktree's branch onto `MASTER`. On a conflict, abort the
-    rebase, move the branch back to `before`, put back the index kept at
-    `backup` where a commit was made, and refuse."""
-    done = git(worktree, "rebase", MASTER)
+def rebase(worktree: Path, onto: str, before: str, backup: Path | None) -> None:
+    """Rebase the worktree's branch onto the commit `onto`. On a conflict,
+    abort the rebase, move the branch back to `before`, put back the index
+    kept at `backup` where a commit was made, and refuse."""
+    done = git(worktree, "rebase", onto)
     if done.returncode == 0:
         return
     git_out(worktree, "rebase", "--abort")
@@ -333,12 +330,9 @@ def merge(worktree: Path, message: str) -> None:
     refuse_main_touched(main, touched)
 
     set_up_submodules(worktree, main)
-    for check in checks(touched):
-        run_check(worktree, check)
-
-    refuse_main_touched(main, touched)
     refuse_dirty_submodules(worktree)
     before = git_out(worktree, "rev-parse", "HEAD").strip()
+    onto = git_out(worktree, "rev-parse", MASTER).strip()
     with tempfile.TemporaryDirectory(prefix="merge-change-") as tmp:
         backup = Path(tmp) / "index"
         committing = bool(changed_paths(worktree, "HEAD"))
@@ -347,7 +341,18 @@ def merge(worktree: Path, message: str) -> None:
             print(f"merge_change: committing on {branch}", flush=True)
             git_out(worktree, "commit", "-q", "-m", message)
         print(f"merge_change: rebasing {branch} onto {MASTER}", flush=True)
-        rebase(worktree, before, backup if committing else None)
+        rebase(worktree, onto, before, backup if committing else None)
+
+    try:
+        set_up_submodules(worktree, main)
+        for check in checks(touched):
+            run_check(worktree, check)
+    except Refused as exc:
+        git_out(worktree, "reset", "-q", "--mixed", onto)
+        raise Refused(f"{exc}\n{branch} is moved back to {MASTER}'s commit {onto[:12]}, "
+                      f"and the change stands uncommitted in {worktree}") from exc
+
+    refuse_main_touched(main, touched)
 
     print(f"merge_change: fast-forwarding {MASTER} to {branch}", flush=True)
     done = git(main, "merge", "--ff-only", "-q", branch)

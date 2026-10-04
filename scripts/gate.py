@@ -2,6 +2,7 @@
 outputs under `tests/gate/accepted/` and the machine's accepted times.
 
     uv run python scripts/gate.py <out-dir> [cmd ...]
+    uv run python scripts/gate.py --outputs-only <out-dir> [cmd ...]
     uv run python scripts/gate.py --accept [--replace] <out-dir> [cmd ...]
 
 The stems run in parallel. On each stem, the commands run in the order
@@ -21,6 +22,13 @@ file that differs between them. The last line counts the lines of each kind.
 A cold run holds the lock file exclusively and a warm run holds it shared,
 so a timed run never shares the machine with another gate run, of this
 checkout or of another worktree of the repository.
+
+`--outputs-only` runs the cold pass alone, holding the lock shared, and
+compares its outputs alone: it prints `DIFF` lines, and no `SLOW` or
+`NOTIME` line, and writes no times to `new/`. A gate run shares the machine
+with whatever else runs on it, and its times measure that load as much as
+the change, so times are judged by one timed gate run on `master` after a
+batch of merges, with no other agent running.
 
 Every command reads the solver files from `tests/gate/solvers/` and the
 witness files from `tests/gate/witnesses/`. A command that takes a witness
@@ -47,7 +55,12 @@ read in place of those above.
 `--accept` takes an `<out-dir>` with no `gate/` under it, runs the gate, and
 then writes the cold times into the accepted times file. It writes an
 output as accepted where no accepted output of that name stands, and over
-one that stands only with `--replace`.
+one that stands only with `--replace`. `--accept` and `--outputs-only` are
+not given together.
+
+Exit status: without `--accept`, 1 when the last line counts a line of any
+kind, and 0 otherwise; with `--accept`, 0 once the accepted times and
+outputs are written.
 """
 
 import argparse
@@ -158,7 +171,9 @@ COMMANDS = {c.name: c for c in (
 )}
 """Every gate command, in the order a pass runs them."""
 
-KINDS = ("DIFF", "SLOW", "NOTIME")
+TIME_KINDS = ("SLOW", "NOTIME")
+"""The kinds of line that judge a time."""
+KINDS = ("DIFF", *TIME_KINDS)
 """The kinds of line the last line counts."""
 
 _ELAPSED_RE = re.compile(r" \([0-9.]+s\) ---$", re.M)
@@ -190,12 +205,15 @@ def load() -> str:
 class Gate:
     """One gate run into `out/gate/`."""
 
-    def __init__(self, out: Path, accepted: Path) -> None:
+    def __init__(self, out: Path, accepted: Path, timed: bool) -> None:
         self.dir = out.resolve() / "gate"
         self.new = self.dir / "new"
         self.warm = self.new / "warm"
         self.wit = self.dir / "wit" / "cur"
         self.accepted = accepted
+        self.timed = timed
+        """Whether the run makes the warm pass and judges the cold times;
+        `--outputs-only` clears it."""
         self.times_file = times_file(accepted)
         self.times: dict[str, float] = (
             json.loads(self.times_file.read_text()) if self.times_file.exists() else {})
@@ -226,7 +244,7 @@ class Gate:
                 str(checkout.scripts() / "run_dl.py"), *cmd.argv(stem, wf)]
         base = (self.new if cold else self.warm) / cmd.key(stem)
         with open(self.lock, "a") as fh:
-            fcntl.flock(fh, fcntl.LOCK_EX if cold else fcntl.LOCK_SH)
+            fcntl.flock(fh, fcntl.LOCK_EX if cold and self.timed else fcntl.LOCK_SH)
             start = time.time()
             proc = subprocess.Popen(argv, cwd=checkout.ROOT, env=self.env(cache),
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -252,11 +270,14 @@ class Gate:
 
     def compare(self, cmd: Command, stem: str, wall: float) -> list[str]:
         """The cold run's lines: a `DIFF` line per output file that differs
-        from the accepted one, and a `SLOW` or `NOTIME` line for its time."""
+        from the accepted one, and in a timed run a `SLOW` or `NOTIME` line
+        for its time."""
         key = cmd.key(stem)
-        Path(self.new / f"{key}{TIME_EXT}").write_text(f"{wall}\n")
         lines = [f"DIFF {cmd.name} {stem} {ext}" for ext in cmd.exts
                  if not _same(self.accepted / f"{key}.{ext}", self.new / f"{key}.{ext}")]
+        if not self.timed:
+            return lines
+        Path(self.new / f"{key}{TIME_EXT}").write_text(f"{wall}\n")
         accepted = self.times.get(key)
         if accepted is None:
             lines.append(f"NOTIME {cmd.name} {stem} time={wall}s")
@@ -279,7 +300,7 @@ class Gate:
         cache.mkdir(parents=True)
         lines: list[str] = []
         try:
-            for cold in (True, False):
+            for cold in (True, False) if self.timed else (True,):
                 for cmd in cmds:
                     if cmd.sub == "record" and stem != RECORD_STEM:
                         continue
@@ -319,6 +340,10 @@ class Gate:
         (self.dir / "log.txt").write_text(text)
         return text.splitlines()
 
+    def kinds(self) -> tuple[str, ...]:
+        """The kinds of line the run makes, which the last line counts."""
+        return KINDS if self.timed else tuple(k for k in KINDS if k not in TIME_KINDS)
+
     def accept(self, replace: bool) -> tuple[int, int]:
         """The cold times written as the machine's accepted times, and each cold
         output written as accepted where none of its name stands, or over
@@ -352,16 +377,20 @@ def main(argv: Sequence[str]) -> int:
                     help="write the run's times, and its outputs where none stands, as accepted")
     ap.add_argument("--replace", action="store_true",
                     help="with --accept, write every output over the accepted one")
+    ap.add_argument("--outputs-only", action="store_true",
+                    help="run the cold pass alone and compare its outputs, judging no time")
     ap.add_argument("--accepted", type=Path, default=ACCEPTED,
                     help="the accepted directory (default: tests/gate/accepted)")
     a = ap.parse_args(argv)
     if a.replace and not a.accept:
         ap.error("--replace is given without --accept")
+    if a.accept and a.outputs_only:
+        ap.error("--accept writes the cold times, which --outputs-only does not judge")
     unknown = [c for c in a.cmds if c not in COMMANDS]
     if unknown:
         ap.error(f"no gate command named {', '.join(unknown)}")
     cmds = [COMMANDS[c] for c in a.cmds] or list(COMMANDS.values())
-    gate = Gate(a.out, a.accepted.resolve())
+    gate = Gate(a.out, a.accepted.resolve(), timed=not a.outputs_only)
     if a.accept:
         if gate.dir.exists():
             ap.error(f"{gate.dir} exists; give an empty out-dir")
@@ -370,14 +399,15 @@ def main(argv: Sequence[str]) -> int:
     lines = gate.run(cmds)
     for ln in lines:
         print(ln)
-    counts = {k: sum(ln.startswith(f"{k} ") for ln in lines) for k in KINDS}
+    counts = {k: sum(ln.startswith(f"{k} ") for ln in lines) for k in gate.kinds()}
     print("gate: " + ", ".join(f"{n} {k}" for k, n in counts.items()))
     if a.accept:
         print(f"load after: {load()}")
         times, outputs = gate.accept(a.replace)
         print(f"baseline: {times} accepted times written to {gate.times_file}, "
               f"and {outputs} new accepted outputs to {a.accepted}")
-    return 0
+        return 0
+    return 1 if any(counts.values()) else 0
 
 
 if __name__ == "__main__":
