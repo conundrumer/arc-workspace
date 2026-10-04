@@ -20,14 +20,17 @@ compared with the cold pass: a `DIFF` line ending in `warm` names an output
 file that differs between them. The last line counts the lines of each kind.
 
 A cold run holds the lock file exclusively and a warm run holds it shared,
-so a timed run never shares the machine with another gate run, of this
-checkout or of another worktree of the repository.
+so a cold run never shares the machine with another command run of a gate
+run, of this checkout or of another worktree of the repository. A command's
+output depends on the load it runs under: `LIMITS` in `src/cli/common.py`
+gives a case run a CPU limit and a wall limit, and under load the wall
+limit is reached first. So an `--outputs-only` run gives the same outputs
+as the cold pass of a timed run.
 
-`--outputs-only` runs the cold pass alone, holding the lock shared, and
-compares its outputs alone: it prints `DIFF` lines, and no `SLOW` or
-`NOTIME` line, and writes no times to `new/`. A gate run shares the machine
-with whatever else runs on it, and its times measure that load as much as
-the change, so times are judged by one timed gate run on `master` after a
+`--outputs-only` runs the cold pass alone, and compares its outputs alone:
+it prints `DIFF` lines, and no `SLOW` or `NOTIME` line, and writes no
+times to `new/`. A gate run shares the machine with whatever else runs on
+it, and its times measure that load as much as the change, so times are judged by one timed gate run on `master` after a
 batch of merges, with no other agent running.
 
 Every command reads the solver files from `tests/gate/solvers/` and the
@@ -244,7 +247,7 @@ class Gate:
                 str(checkout.scripts() / "run_dl.py"), *cmd.argv(stem, wf)]
         base = (self.new if cold else self.warm) / cmd.key(stem)
         with open(self.lock, "a") as fh:
-            fcntl.flock(fh, fcntl.LOCK_EX if cold and self.timed else fcntl.LOCK_SH)
+            fcntl.flock(fh, fcntl.LOCK_EX if cold else fcntl.LOCK_SH)
             start = time.time()
             proc = subprocess.Popen(argv, cwd=checkout.ROOT, env=self.env(cache),
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
