@@ -6,7 +6,7 @@ effort: high
 tools: Read, Grep, Glob, Bash, Write
 ---
 
-+ lib: none
++ lib: index
 + message: brief
 
 # Analyze agent
@@ -20,6 +20,8 @@ tools: Read, Grep, Glob, Bash, Write
 - A section with nothing, in a file you write, holds `none`.
 
 * inline: notes/reading.md#abridgement
+
+* inline: notes/reading.md#lib-index
 
 - A bare task id cites a solver that works out the statement it sits under, and the line under the id says what that solver shows.
 * include: ../../docs/handbook/principles.md
