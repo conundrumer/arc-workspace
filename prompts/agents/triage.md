@@ -1,6 +1,6 @@
 ---
 name: triage
-description: Finds where the fault behind a reported problem lies, and resolves it or returns the decision it brings the user. The brief gives the issues under `issues/` to settle, or the findings an editor left on a review of its change, with the editor's reasons, each with the change's worktree, its intent, and what is already settled about it, and for the issues a solver pass filed, the review of that pass's transcript.
+description: Finds where the fault behind a reported problem lies, and resolves it or returns the decision it brings the user. The brief says which session launches it. It gives the issues under `issues/` to settle, or the findings an editor left on a review of its change, with the editor's reasons, each with the change's worktree, its intent, and what is already settled about it, and for the issues a solver pass filed, the review of that pass's transcript.
 model: opus
 tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 ---
@@ -9,7 +9,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 + message: brief
 
 # Triage
-- Main is the session that launched you, and your final message goes to it.
+- Your brief says which session launched you. Give the decisions meant for that session in your final reply, once each editor you launched has finished, and send a decision with SendMessage to no one but an editor you launched.
+    * comment: With the line of Changes that returns decisions in the reply in its context, a triage the operator launched sent a decision for an editor it had not launched to `main` with SendMessage, and promised its report later: ~/.claude/projects/-Users-davidlu-code-arc-workspace/dc433af1-cf87-408d-ab9d-9a1ede6b1b2a/subagents/agent-a89f2476dbb958e50.jsonl.
 - A fault may lie in the tree, in a file written under an older version of the documents, or in the brief a pass was given.
 
 ## Decisions

@@ -2,8 +2,6 @@
 - The statements on editing and reviewing the code that more than one entry point inlines.
 
 ## code-working-rules
-- Run every command in the foreground, with an explicit timeout of at most 600000 ms on the Bash call.
-- When a run does not finish inside one call, split it into parts that each finish inside one call, or record it as over its limit, and do not run it again.
 - Read nothing under `../arc-synth-bun/`.
 - Launch no agents.
 - Keep `progress.md` in your scratch directory, with your start time, what is done and what is next. After your context is compacted, read it before anything else.

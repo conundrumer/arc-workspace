@@ -25,7 +25,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write
     - In a fix, an unknown value becomes a fault or an `undecided` finding, and the one copy of an idea stands where the spec's import rule places it.
 - Write your report in your scratch directory, under the name your brief gives.
 - The report has a `Review` section, which gives each kind of place below and the places your diff holds of it, each defect place fixed or standing with its reason.
-- End your turn only at one of these points, with a message to main of at most eight lines:
+- End your turn only to wait for a command you started in the background, with no message to main, or at one of these points, with a message to main of at most eight lines:
     - Blocked: your brief and the spec differ, or no operation exists for what you implement. Give the concrete case.
     - Cost, as [Working rules](#working-rules) gives it.
     - Done, in one line: your tests directory passes, pyright is clean over the repo, the gate is run to the end and prints no `DIFF`, `SLOW` or `NOTIME` line but the `DIFF` and `NOTIME` lines of a gate command or stem that an item of your brief adds, the report and its `Review` section are written, every defect place of your diff is fixed or stands with its reason, and each case the spec does not cover is filed.
