@@ -1,8 +1,6 @@
 # Code notes
 - The statements on editing and reviewing the code that more than one entry point inlines.
 
-* comment: When editing this doc, keep a statement here when more than one entry point inlines it.
-
 ## code-working-rules
 - Run every command in the foreground, with an explicit timeout of at most 600000 ms on the Bash call.
 - Never use `run_in_background`.

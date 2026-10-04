@@ -1,8 +1,6 @@
 # Issue notes
 - The statements on filing an issue that more than one entry point inlines.
 
-* comment: When editing this doc, keep a statement here when more than one entry point inlines it.
-
 ## pass-issues
 - An issue is a doc line or a tool behavior that slowed the pass, or that made its output wrong; a problem in the task's own files is not one.
 - As each issue happens, note it in `.scratch/<task_id>/progress.md`, under a heading that is the name of this pass's report.

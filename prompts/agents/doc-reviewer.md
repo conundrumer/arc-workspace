@@ -12,7 +12,6 @@ tools: Read, Grep, Glob, Bash, Write
 - Your brief gives a change to the agent-facing documents, and the path to write your findings to.
 * inline: notes/changes.md#worktree
 - Review that change by the steps [Reviewing a change](docs/handbook/editing.md#reviewing-a-change) gives.
-- Report nothing that your brief or a later message gives as already settled, even where a step of that review asks for it.
 - Write each finding to that path, with the line, the rule it breaks, the reader it fails, and whether it needs a decision.
 - When the editor's fixes arrive, review the change again, and write that review's findings to that path in place of the earlier ones.
 - Edit no file other than that one.

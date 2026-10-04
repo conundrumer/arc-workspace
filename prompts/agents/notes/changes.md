@@ -1,8 +1,6 @@
 # Change notes
 - The statements on carrying a change to the code or the documents from its worktree to a commit, that more than one entry point inlines or links.
 
-* comment: When editing this doc, keep a statement here when more than one entry point inlines or links it.
-
 ## Changes
 - A change is one editor's edit, and each edit that fixes what its review or its claims check found.
 - A change to the code passes when its code editor's claims hold. A change to the documents passes when its doc review leaves no finding that you keep.

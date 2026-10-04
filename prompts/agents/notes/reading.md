@@ -1,8 +1,6 @@
 # Reading notes
 - The statements on reading the handbook and the lib that more than one entry point inlines.
 
-* comment: When editing this doc, keep a statement here when more than one entry point inlines it.
-
 ## abridgement
 - `uv run python scripts/context.py section '<chapter>#<heading>'` prints a whole section.
     - The target of a link in the text also works as the argument.

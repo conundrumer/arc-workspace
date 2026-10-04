@@ -1,8 +1,6 @@
 # Launching notes
 - The statements on launching an agent that more than one entry point inlines.
 
-* comment: When editing this doc, keep a statement here when more than one entry point inlines it.
-
 ## Launching
 - After an agent's definition changes, wait 30 seconds before you launch that agent, so the harness reloads its file.
 - Give an agent a brief with what its description says the brief gives, and restate neither the spec nor the agent's definition.

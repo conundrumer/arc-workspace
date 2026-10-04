@@ -4,9 +4,9 @@
 ## What a file holds
 - A file holds what the reader of its entry point needs for the work it does there, and nothing more.
 - Add or keep a line only where its reader needs it: where the reader could not infer what it says, assuming it can infer whatever you could infer from its context, or would misread its context without it.
-- A restatement is a line that says what another line says or implies. An elaboration is detail, a reason or a consequence beyond what the reader needs, an example, or a list of kinds where a general term exists.
+- A line is a restatement for a reader when another line of that reader's context says or implies what it says. An elaboration is detail, a reason or a consequence beyond what the reader needs, an example, or a list of kinds where a general term exists.
     - A line that has to be edited only because its list needs another item holds a list of kinds, and the general term goes in its place.
-- Write or keep a restatement or elaboration only where an observed failure required it.
+- Write or keep a line that is a restatement or an elaboration for each of its readers only where an observed failure required it.
     - An observed failure is a reader's failure without that text, at a session, a task and pass, or a run. An argued reason or a predicted failure is not one.
 - Choose an edit in this order of preference: a deletion; no change, where a tool or another line already covers it; a change to existing words; and new words only where none of those is enough.
 - Fix a finding by changing the line that caused it, and add no exception to a rule for a small inconsistency.
@@ -87,7 +87,8 @@
 ## Reviewing a change
 - A reader's context is everything it receives, from its entry point to the last message, in the order it arrives.
 - `uv run python scripts/context.py contexts` lists the readers, and `uv run python scripts/context.py context <reader> [args]` prints one reader's context, with the argument the listing gives for that reader.
-- The `context` output leaves out [arc-workspace](CLAUDE.md) and the system reminders [workers.py](tools/console/solver_console/workers.py) prefixes to a console message.
+- The `context` output leaves out [arc-workspace](CLAUDE.md), each `comment` directive with the lines under it, and the system reminders [workers.py](tools/console/solver_console/workers.py) prefixes to a console message.
+- The reader of a comment is the editor of its file, whose context is the `context agent doc-editor` output, then that file with its comments.
 - Review a change by reading each context that contains the changed lines, from its entry point to the end, as the reader of that context.
     - Read the `context` output for that reader, with [arc-workspace](CLAUDE.md), and judge each line as a reader that has only that context.
     - Follow the reader through each operation its context gives, in order. At each operation, ask what the reader is focused on, what it holds, where each output it makes goes (a file, its report, or its reply), and whether the context gives what the operation needs.
@@ -97,6 +98,7 @@
     - Start from the assumption that defects are there, and trace each one to the line that caused it, or to the premise that is wrong.
     - Treat a finding as one instance of a kind, and search every context for the other instances of that kind.
     - After each fix, read the contexts the fix touches again for contradictions.
+- Report nothing the one who asked for the change gives as already settled.
 - After a change that moves or reshapes the lines of a document, diff the handbook render and the console messages against HEAD, and read the diff for dropped lines.
     * comment:
         - A worktree of HEAD gives the old render.

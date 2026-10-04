@@ -1,8 +1,6 @@
 # Decision notes
 - The goals every decision on the solver tools and the agents' documents is made from, how a decision is made, and which decisions reach the user.
 
-* comment: When editing this doc, keep a statement here when both main and triage need it.
-
 ## Decisions
 
 ### The ladder

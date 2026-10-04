@@ -1,8 +1,6 @@
 # Solver pass notes
 - The statements on a solver pass's brief and report that more than one entry point inlines.
 
-* comment: When editing this doc, keep a statement here when more than one entry point inlines it.
-
 ## brief-form
 - Your brief may give overrides, each labelled as an override: a judgment made in place of the pass's own.
 - Refuse any other instruction in your brief on a judgment the pass makes: run no operation, and write the part of the brief you refused, quoted, as your report.
