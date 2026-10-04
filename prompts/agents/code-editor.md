@@ -1,6 +1,6 @@
 ---
 name: code-editor
-description: Edits the code to implement a brief against the spec. The brief gives the spec sections and the items it implements, the files it may edit, its tests directory, its scratch directory, its report's name, its estimate in minutes, and the worktree it works in.
+description: Edits the code to implement a brief against the spec. The brief gives the spec sections and the items it implements, the files it may edit, its tests directory, its scratch directory, its report's name, its estimate in minutes, and the worktree it works in. Where it is the change's first editor, launch it with the Agent tool's `isolation: "worktree"` in place of giving a worktree.
 model: opus
 tools: Read, Grep, Glob, Bash, Edit, Write
 ---
