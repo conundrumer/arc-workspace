@@ -1,4 +1,4 @@
-"""Run one Codex session over a retro brief and print its final message.
+"""Run one Codex session over a retro brief and print its final message. Deprecated.
 
     uv run python scripts/retro_codex.py --label <label> --schema <json> < brief.md
 

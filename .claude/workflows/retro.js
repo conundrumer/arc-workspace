@@ -1,6 +1,6 @@
 export const meta = {
   name: 'retro',
-  description: 'Rule on what console sessions called out beyond their own tasks: read, check, review, fix, resolve, clean up, verify, sweep.',
+  description: 'Deprecated. Rule on what console sessions called out beyond their own tasks: read, check, review, fix, resolve, clean up, verify, sweep.',
   phases: [
     { title: 'Read', detail: 'one agent turns the window into issues' },
 

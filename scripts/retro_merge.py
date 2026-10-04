@@ -1,4 +1,4 @@
-"""Take a worktree's whole change into the repo it came from.
+"""Take a worktree's whole change into the repo it came from. Deprecated.
 
     uv run python scripts/retro_merge.py <worktree> [--check]
 

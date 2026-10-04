@@ -1,6 +1,6 @@
 export const meta = {
   name: 'cleanup-sweep',
-  description: 'Rewrite the indirect negations the lint names, one cleanup-role agent per solver.',
+  description: 'Deprecated. Rewrite the indirect negations the lint names, one cleanup-role agent per solver.',
   phases: [
     { title: 'Cleanup', detail: 'one agent under the cleanup role per solver, over the lines the lint names' },
   ],

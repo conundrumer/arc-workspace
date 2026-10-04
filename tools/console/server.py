@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Review console for batch solver workers.
+"""Review console for batch solver workers. Deprecated.
 
 Serves the console UI, launches `claude -p` workers in waves, resumes them
 with review comments, and commits the solvers they write.

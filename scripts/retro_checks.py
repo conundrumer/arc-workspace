@@ -1,4 +1,4 @@
-"""Run the tree's checks and print what each one reports, as JSON.
+"""Run the tree's checks and print what each one reports, as JSON. Deprecated.
 
     uv run python scripts/retro_checks.py [stem ...]
 

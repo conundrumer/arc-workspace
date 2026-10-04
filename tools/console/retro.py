@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The retro window and the mark that bounds it, as JSON on stdout.
+"""The retro window and the mark that bounds it, as JSON on stdout. Deprecated.
 
     uv run python tools/console/retro.py window   # the callouts since the mark
     uv run python tools/console/retro.py mark     # move the mark to now

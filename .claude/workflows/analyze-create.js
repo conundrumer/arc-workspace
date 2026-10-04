@@ -1,6 +1,6 @@
 export const meta = {
   name: 'analyze-create',
-  description: 'Run Analyze, then Create, on each task in args, one chain per task.',
+  description: 'Deprecated. Run Analyze, then Create, on each task in args, one chain per task.',
   phases: [
     { title: 'Analyze', detail: 'one analyze agent per task' },
     { title: 'Create', detail: 'one create agent per task, after its Analyze' },

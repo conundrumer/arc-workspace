@@ -1,6 +1,6 @@
 ---
 name: session
-description: On user ask, bootstrap a solver session for arc-workspace.
+description: Deprecated. On user ask, bootstrap a solver session for arc-workspace.
 argument-hint: [solver|retro|<task_id>]
 ---
 

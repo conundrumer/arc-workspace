@@ -1,6 +1,6 @@
 export const meta = {
   name: 'create-refine',
-  description: 'Run Create, then Refine, on each task in args, one chain per task.',
+  description: 'Deprecated. Run Create, then Refine, on each task in args, one chain per task.',
   phases: [
     { title: 'Create', detail: 'one create agent per task' },
     { title: 'Refine', detail: 'one refine agent per task, after its Create' },
