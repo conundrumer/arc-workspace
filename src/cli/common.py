@@ -4,6 +4,7 @@ the code a run loads."""
 
 import hashlib
 import json
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -16,6 +17,7 @@ from checker.readable import finding_of
 from checker.render import commands, finding_lines, run_failed
 from checker.runs import Runs
 from cli import text
+from controlled_markdown import mctx
 from engine import (
     CompileError,
     Grid,
@@ -32,9 +34,26 @@ from solver.vocabulary import OUTPUT
 from solver.witness import AssignValue, read_assign
 from souffle import SouffleEngine
 
-LIMITS = Limits(cpu_seconds=20.0, wall_seconds=40.0)
-"""The limits of one run on one grid: five CPU seconds, and a wall clock
-of twice that."""
+WALL_LIMIT_ENV = "ARC_WALL_LIMIT_SECONDS"
+"""The environment variable that gives the wall limit of `LIMITS` in
+seconds, so that a caller whose outputs must not depend on the load, like
+the gate, can make the CPU limit the one a run reaches first."""
+
+
+def _limits() -> Limits:
+    cpu = 20.0
+    given = os.environ.get(WALL_LIMIT_ENV)
+    if given is None:
+        return Limits(cpu_seconds=cpu, wall_seconds=2 * cpu)
+    wall = float(given)
+    if not wall > 0:
+        raise ValueError(mctx("{env} gives `{given}`, which is no positive number of "
+                              "seconds").format(env=WALL_LIMIT_ENV, given=given))
+    return Limits(cpu_seconds=cpu, wall_seconds=wall)
+
+
+LIMITS = _limits()
+"""The limits of one run on one grid."""
 
 
 def engine() -> SouffleEngine:

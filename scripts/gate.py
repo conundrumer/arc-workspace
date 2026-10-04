@@ -12,9 +12,9 @@ result cached: this is the warm pass. A `record*` command runs on ac0c5833
 alone.
 
 A command's outputs are its output, in `<key>.txt`, the witness file, in
-`<key>.wit.json`, but for the `TEXT_ONLY_SUBS`, and its exit code, in
-`<key>.rc`, with `<key>` its name and stem joined by `-`. A command stopped
-at `TIME_LIMIT` has the exit code `TIMEOUT_RC`.
+`<key>.wit.json`, where its subcommand is in `WITNESS_FILE_SUBS`, and its
+exit code, in `<key>.rc`, with `<key>` its name and stem joined by `-`. A
+command stopped at `TIME_LIMIT` has the exit code `TIMEOUT_RC`.
 
 The cold pass is compared with the accepted outputs and the accepted times,
 so a command's exit code is compared with the accepted one.
@@ -25,19 +25,25 @@ cached, so times compare only when the full sequence runs. The warm pass is
 compared with the cold pass: a `DIFF` line ending in `warm` names an output
 file that differs between them. The last line counts the lines of each kind.
 
-A cold run holds the lock file exclusively and a warm run holds it shared,
-so a cold run never shares the machine with another command run of a gate
-run, of this checkout or of another worktree of the repository. A command's
-output depends on the load it runs under: `LIMITS` in `src/cli/common.py`
-gives a case run a CPU limit and a wall limit, and under load the wall
-limit is reached first. So an `--outputs-only` run gives the same outputs
-as the cold pass of a timed run.
+`LIMITS` in `src/cli/common.py` gives a case run a CPU limit and a wall
+limit, and under load the wall limit is reached first. The gate sets the
+wall limit to `TIME_LIMIT`, through `WALL_LIMIT_ENV`, so that a command is
+stopped before any case run of it reaches the wall limit. A command's
+outputs then depend on the load it runs under only where the load stretches
+it to `TIME_LIMIT`, or a sweep to its own time limit, and either gives a
+`DIFF` line.
+
+In a timed run, a cold command holds the lock file exclusively and a warm
+command holds it shared, so a cold command never shares the machine with
+another command of a timed run, of this checkout or of another worktree of
+the repository. An `--outputs-only` run takes no lock.
 
 `--outputs-only` runs the cold pass alone, and compares its outputs alone:
 it prints `DIFF` lines, and no `SLOW` or `NOTIME` line, and writes no
 times to `new/`. A gate run shares the machine with whatever else runs on
-it, and its times measure that load as much as the change, so times are judged by one timed gate run on `master` after a
-batch of merges, with no other agent running.
+it, and its times measure that load as much as the change, so times are
+judged by one timed gate run on `master` after a batch of merges, with no
+other agent running.
 
 Every command reads the solver files from `tests/gate/solvers/` and the
 witness files from `tests/gate/witnesses/`. A command that takes a witness
@@ -73,6 +79,7 @@ outputs are written.
 """
 
 import argparse
+import contextlib
 import fcntl
 import json
 import os
@@ -82,11 +89,12 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from cli.common import WALL_LIMIT_ENV
 from engine import checkout
 from engine.memo import write_whole
 
@@ -120,10 +128,8 @@ type Sub = Literal["run", "lint", "witness", "derive", "store", "audit",
 """The `run_dl.py` subcommands the gate runs."""
 
 WITNESS_FILE_SUBS: frozenset[Sub] = frozenset({"derive", "audit", "store", "witness", "record"})
-"""The subcommands given a witness file."""
-TEXT_ONLY_SUBS: frozenset[Sub] = frozenset({"sweep", "determination-plan", "lint"})
-"""The subcommands that take no witness file, so no witness file of theirs
-is compared."""
+"""The subcommands given a witness file, which is then one of the
+command's outputs."""
 
 type Ext = Literal["txt", "wit.json", "rc"]
 """The extension of an output file: the normalized output, the witness file,
@@ -142,10 +148,13 @@ class Command:
     args: tuple[str, ...] = ()
     extra: tuple[str, ...] = ()
 
+    @property
+    def takes_witness_file(self) -> bool:
+        return self.sub in WITNESS_FILE_SUBS
+
     def argv(self, stem: str, witness_file: Path) -> list[str]:
         """The `run_dl.py` arguments of the command on `stem`."""
-        wf = (["--witness-file", str(witness_file)]
-              if self.sub in WITNESS_FILE_SUBS else [])
+        wf = ["--witness-file", str(witness_file)] if self.takes_witness_file else []
         return [self.sub, stem, *self.args, *wf, *self.extra]
 
     def key(self, stem: str) -> str:
@@ -155,7 +164,7 @@ class Command:
 
     @property
     def exts(self) -> tuple[Ext, ...]:
-        return tuple(e for e in EXTS if e != "wit.json" or self.sub not in TEXT_ONLY_SUBS)
+        return tuple(e for e in EXTS if e != "wit.json" or self.takes_witness_file)
 
 
 def _record(name: str, label: str, input_file: str, *extra: str) -> Command:
@@ -240,7 +249,8 @@ class Gate:
         return {**os.environ,
                 checkout.CACHE_ENV: str(cache),
                 checkout.SOLVER_FILES_ENV: str(SOLVERS),
-                checkout.WITNESSES_ENV: str(WITNESSES)}
+                checkout.WITNESSES_ENV: str(WITNESSES),
+                WALL_LIMIT_ENV: str(TIME_LIMIT)}
 
     def normalize(self, raw: str) -> str:
         """`raw` with the lines naming the runner and lib dropped, the out
@@ -250,17 +260,26 @@ class Gate:
         text = _ELAPSED_RE.sub(" ---", text)
         return _LIMIT_RE.sub(r"\1Ns", text)
 
+    @contextlib.contextmanager
+    def locked(self, cold: bool) -> Iterator[None]:
+        if not self.timed:
+            yield
+            return
+        with open(self.lock, "a") as fh:
+            fcntl.flock(fh, fcntl.LOCK_EX if cold else fcntl.LOCK_SH)
+            yield
+
     def run_one(self, cmd: Command, stem: str, cold: bool, cache: Path) -> tuple[int, float]:
         """`cmd` on `stem` under the lock, its normalized output, witness
         file and exit code written to the pass's directory; the exit code
         and wall time."""
         wf = self.wit / f"{stem}.wit.json"
-        shutil.copyfile(FROZEN / f"{stem}.wit.json", wf)
+        if cmd.takes_witness_file:
+            shutil.copyfile(FROZEN / f"{stem}.wit.json", wf)
         argv = ["uv", "run", "--project", str(checkout.ROOT), "python",
                 str(checkout.scripts() / "run_dl.py"), *cmd.argv(stem, wf)]
         base = (self.new if cold else self.warm) / cmd.key(stem)
-        with open(self.lock, "a") as fh:
-            fcntl.flock(fh, fcntl.LOCK_EX if cold else fcntl.LOCK_SH)
+        with self.locked(cold):
             start = time.time()
             proc = subprocess.Popen(argv, cwd=checkout.ROOT, env=self.env(cache),
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
