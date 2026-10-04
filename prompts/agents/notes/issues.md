@@ -9,26 +9,13 @@
     - Write under `Effect` what the issue cost the pass, and for `interference`, what was wrong in the output and whether it still is.
 
 ## Issue files
-- Where your instructions, your brief or a later message ask you to file an issue, file it as one file under `issues/new/` in the main tree, the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints, and create that directory when it is absent.
-    - Name the files `<unix time>-<source>-<agent>-<i>.md`, with one `date +%s` for all of them, and `<i>` counting them from 1.
+- Where your instructions, your brief or a later message ask you to file an issue, file it with `uv run python scripts/file_issue.py`, in the form its `--help` gives.
     - Where no other line gives them, `<agent>` is your agent's name, and `<source>` is a short name for your work.
     - Where no other line gives an issue's kind, give it one of these:
         - `interference`: something in your output was wrong because of the issue, whether or not you repaired it.
         - `delay`: the issue cost time or tokens only.
         - `undecided`: a case your rules do not cover, or a place that poses a question.
-    - Write each file in this form:
-        ```
-        ---
-        kind: <kind>
-        ---
-        # <the target as you cite it>: <what is wrong in it>
-
-        ## Effect
-        <its effect>
-
-        ## Evidence
-        <the line quoted, or the command and its output, or the grid, as you saw it>
-        ```
+    - Write under `Evidence` the line quoted, or the command and its output, or the grid, as you saw it.
     - Leave out what the fix should be.
 
 ## tracking
