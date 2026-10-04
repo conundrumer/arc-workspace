@@ -1,5 +1,5 @@
 """The operations a language implements for the rest: parse, index, the
-rewrites that return a new program, run, expand, render and format."""
+rewrites that return a new program, run, expand and render."""
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -78,7 +78,7 @@ class Unresolved:
 
 class Index(Protocol):
     """Which units feed a relation, which read it, and the resolution of a
-    qualified name through instances (§D3 `index`)."""
+    qualified name through instances."""
 
     def feeding(self, relation: DeclId) -> tuple[Occurrence, ...]:
         """The head atoms, in unit order, whose relation is `relation`."""
@@ -345,7 +345,9 @@ class Engine(Protocol):
                      value: RelationValue) -> Program:
         """`program` with `relation` holding exactly `value`, fed by none of
         its own rules; every other relation's tuples are what they would be
-        with that value."""
+        with that value. It is the one operation for a parameter's facts, a
+        parameter's grid, a set of cases held in `impl_choice`, and a
+        relation's value for a `@store` branch."""
         ...
 
     def place_grid(self, layout: GridLayout, mark: tuple[int, int] | None,
@@ -360,11 +362,13 @@ class Engine(Protocol):
         ...
 
     def remove(self, program: Program, target: RemovalTarget) -> Program:
-        """`program` without `target`."""
+        """`program` without `target`, for deletions and drop-one."""
         ...
 
     def instantiate(self, program: Program, component: str, name: str) -> Program:
-        """`program` with an instance `name` of `component`."""
+        """`program` with an instance `name` of `component`, for the
+        Determine run and the proposer probe. The instance's output
+        directives are the engine's, from the `outputs` of `run`."""
         ...
 
     def run(self, program: Program, inputs: Mapping[RelationName, InputValue],
@@ -373,7 +377,8 @@ class Engine(Protocol):
         """The rows of each of `outputs` after a run over `inputs`, or the
         typed failure of the run. An output `caps` gives a cap holds at most
         cap plus one of its rows, all of them where it has at most cap; the
-        engine prints no row of it past those."""
+        engine prints no row of it past those. No kind of failure folds
+        into another."""
         ...
 
     def classify(self, program: Program, relation: RelationName,
@@ -392,5 +397,7 @@ class Engine(Protocol):
         ...
 
     def render(self, program: Program) -> Rendered:
-        """`program` as text, each line with its origin line."""
+        """`program` as text, each line with its origin line, and never a
+        `#line` directive. The engine renders a program to run it or for a
+        command to print."""
         ...

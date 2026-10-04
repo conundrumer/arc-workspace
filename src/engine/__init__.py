@@ -1,5 +1,6 @@
 """The interface between a language and the rest: the `Program` types and
-the `Engine` Protocol, with no implementation."""
+the `Engine` Protocol, with no implementation, so that a second language
+would implement it."""
 
 from engine.engine import (
     CompileError,

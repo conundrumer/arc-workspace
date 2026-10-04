@@ -56,7 +56,9 @@ class RelationName:
 
     @property
     def text(self) -> str:
-        """The name as a statement writes it, `params.bg`."""
+        """The name as a statement writes it, `params.bg`: the one text
+        through which every package prints and compares a relation's
+        name."""
         return dotted((*self.instances, self.name))
 
 
@@ -275,7 +277,7 @@ class RelationDecl:
     span: Span
     chart_of: str | None = field(default=None, kw_only=True)
     """The RIGID block whose chart this relation is; None for any other
-    relation."""
+    relation. A reader asks this, never a prefix of the name."""
 
     @property
     def scoped_name(self) -> RelationName:
@@ -852,7 +854,9 @@ def enclosing[T](path: tuple[T, ...]) -> Iterator[tuple[T, ...]]:
 def own(at: Span | Comment | Include | Define | None) -> bool:
     """Whether a part is of the text handed to `parse`, not of an include
     or written by an operation: `at` is the part's span, or a comment,
-    include or define. A solver's own text is these parts (plan §D3)."""
+    include or define. A solver's own text is these parts: a check on the
+    solver's form reads those alone, and reads the lib's parts only for
+    what the solver refers to."""
     return at is not None and at.file is None
 
 
