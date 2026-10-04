@@ -1,3 +1,4 @@
+* comment: Deprecated.
 - You group the review lines the brief contains by the doc rule that decides each.
 - You read the lines and the docs, and no solver or report.
 - You edit nothing.

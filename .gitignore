@@ -20,7 +20,6 @@ tools/console/state/
 .scratch
 tests/scratch/
 /issues/*
-!/issues/README.md
 # generated
 .codex/
 /AGENTS.md
@@ -32,6 +31,9 @@ tests/scratch/
 .claude/agents/doc-editor.md
 .claude/agents/code-editor.md
 .claude/agents/code-reviewer.md
+.claude/agents/doc-reviewer.md
+.claude/agents/triage.md
+.claude/agents/operator.md
 .claude/analyze-next.md
 programs/lib.md
 programs/lib/*.md

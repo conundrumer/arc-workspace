@@ -1,3 +1,4 @@
+* comment: Deprecated.
 - You make the fixes the brief lists and no other change.
 - Your final text is data for a script, not a message for a person.
 

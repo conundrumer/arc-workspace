@@ -1,3 +1,4 @@
+* comment: Deprecated.
 - You survey the solvers for one lib operation and report.
 - You change no repo file.
 - Your final text is data for a script, not a message for a person.

@@ -11,12 +11,6 @@
     - `--help` for per-solver tooling.
 - `uv run python scripts/run_dl.py <stem>`
     - Run one.
-- `uv run python scripts/context.py`
-    - The solver session's entry document: the handbook, and the passes it runs.
-- `uv run python scripts/context.py --write`
-    - Generate the files used by handbook readers.
-- `uv run python -m controlled_markdown check`
-    - Check the agent-facing documents.
 - Souffle binary required for `.dl` solvers (`brew install souffle`).
 
 ## Handbook
@@ -24,14 +18,20 @@
 - To edit a document an agent reads, send a request to the `doc-editor` agent.
 
 ## Solver console
-- `tools/console/` runs solver sessions as `claude -p` workers in staged chains.
+- `tools/console/` is deprecated. It runs solver sessions as `claude -p` workers in staged chains.
 - The module docstrings in [solver_console](tools/console/solver_console) index what each module holds: what a worker session reads and may do, how a stage hands off, and how the user reaches a session.
 - Read them before answering a question about how console sessions run.
 - A running server re-execs itself when `server.py` or a module under `solver_console/` changes, at its next quiet moment (`solver_console/reload.py`), so a code change needs no restart.
 - The page and `ui/` are served from disk on each request.
 
 ## Issues
-- `issues/` is the track of doc and tool issues that solver passes file, and [issues/README.md](issues/README.md) states its conventions.
+- `issues/` is the track of the issues agents file, and [Issue notes](prompts/agents/notes/issues.md) states its conventions.
+
+## Decisions
+- When the user talks with you and you run no solver pass, read [Decision notes](prompts/agents/notes/decisions.md) before you make a decision on the solver tools or the agents' documents.
+
+## Changes
+- Before you launch an agent, read [Launching notes](prompts/agents/notes/launching.md), and before you launch the first editor of a change to the code or the documents, read [Changes](prompts/agents/notes/changes.md#changes).
 
 ## Cards
 - When the user requests a card to help make a decision regarding a solver, send a handbook agent and tell it to make one based on [card_spec.py](src/study/card_spec.py).

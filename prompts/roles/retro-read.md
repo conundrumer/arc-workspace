@@ -1,3 +1,4 @@
+* comment: Deprecated.
 - You read the retro window and return the issues it raises about what every session shares.
 - Your final text is data for a script, not a message for a person.
 

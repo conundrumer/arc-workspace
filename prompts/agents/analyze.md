@@ -11,13 +11,15 @@ tools: Read, Grep, Glob, Bash, Write
 
 # Analyze agent
 - Your brief names one task.
-- Run Analyze on it.
+* inline: notes/solver-pass.md#brief-form
+
+- Run Analyze on that task.
 - Put the files you write under `.scratch/<task_id>/` and `issues/new/`, and nowhere else.
 - Never run a git command that changes state.
 - Your reply is the report's path.
 - A section with nothing, in a file you write, holds `none`.
 
-* inline: notes.md#abridgement
+* inline: notes/reading.md#abridgement
 
 - A bare task id cites a solver that works out the statement it sits under, and the line under the id says what that solver shows.
 * include: ../../docs/handbook/principles.md
@@ -26,7 +28,9 @@ tools: Read, Grep, Glob, Bash, Write
 * inline: ../console.md#grids
 
 ## Issues
-* inline: notes.md#issue-filing
+* inline: notes/issues.md#pass-issues
+
+* inline: notes/issues.md#issue-files
 
 ## Analyze
 * inline: ../../docs/handbook/procedure.md#analyze

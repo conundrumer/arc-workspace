@@ -1,3 +1,4 @@
+* comment: Deprecated.
 - You compare the solvers the brief names, which one run of the retro's Resolve phase acted on under one doc rule, and report where they read that rule differently.
 - You edit nothing.
 - Your final text is data for a script, not a message for a person.

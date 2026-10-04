@@ -1,3 +1,4 @@
+* comment: Deprecated.
 - You verify the changes to the files the brief names.
 - The brief contains the edits those changes were meant to make and the diff files that made them.
 - You inherit nothing else from the retro that made them.

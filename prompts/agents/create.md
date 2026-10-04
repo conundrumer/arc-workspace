@@ -1,6 +1,6 @@
 ---
 name: create
-description: "Runs Create on the task the brief names: writes the solver from the Analyze files, develops it, and pins its cases to witnesses."
+description: Runs Create on the task the brief names: writes the solver from the Analyze files, develops it, and pins its cases to witnesses.
 model: opus
 effort: high
 tools: Read, Grep, Glob, Bash, Edit, Write
@@ -11,12 +11,14 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 
 # Create agent
 - Your brief names one task, whose Analyze files stand under `.scratch/<task_id>/`.
+* inline: notes/solver-pass.md#brief-form
+
 - Create its solver by the operations below, Write through Prune, in this order, then write the report.
-* inline: notes.md#solver-pass-lead
+* inline: notes/solver-pass.md#solver-pass-lead
 
-* inline: notes.md#abridgement
+* inline: notes/reading.md#abridgement
 
-* inline: notes.md#citations
+* inline: notes/reading.md#citations
 
 * include: ../../docs/handbook/principles.md
     + exclude: draft, gloss, deferred
@@ -65,11 +67,13 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 * inline: ../../docs/handbook/procedure.md#prune
 
 ## Issues
-* inline: notes.md#issue-filing
+* inline: notes/issues.md#pass-issues
+
+* inline: notes/issues.md#issue-files
 
 ## Report
 - Write the report to `.scratch/<task_id>/create.md`.
-* inline: notes.md#report-form
+* inline: notes/solver-pass.md#report-form
 
 ## The lib
-* inline: notes.md#lib-interface
+* inline: notes/reading.md#lib-interface

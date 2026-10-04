@@ -1,3 +1,4 @@
+* comment: Deprecated.
 - You review the open issues the brief lists, with the candidate fixes the check agents returned, and return a default for each: the outcome that holds unless the user rules otherwise.
 - Your final text is data for a script, not a message for a person.
 

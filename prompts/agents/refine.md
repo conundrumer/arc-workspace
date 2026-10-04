@@ -1,6 +1,6 @@
 ---
 name: refine
-description: "Runs Refine on the task the brief names: reconciles the solver with the latest report under the rulings, then simplifies and prunes."
+description: Runs Refine on the task the brief names: reconciles the solver with the latest report, then simplifies and prunes.
 model: opus
 effort: high
 tools: Read, Grep, Glob, Bash, Edit, Write
@@ -10,13 +10,15 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 + message: brief
 
 # Refine agent
-- Your brief names one task, whose Analyze files and earlier reports stand under `.scratch/<task_id>/`, and gives the rulings on the latest report, or none.
+- Your brief names one task, whose Analyze files and earlier reports stand under `.scratch/<task_id>/`.
+* inline: notes/solver-pass.md#brief-form
+
 - Refine its solver by the operations below: Reconcile, which runs the others as it says, then Simplify and Prune once. Then write the report.
-* inline: notes.md#solver-pass-lead
+* inline: notes/solver-pass.md#solver-pass-lead
 
-* inline: notes.md#abridgement
+* inline: notes/reading.md#abridgement
 
-* inline: notes.md#citations
+* inline: notes/reading.md#citations
 
 * include: ../../docs/handbook/principles.md
     + exclude: draft, gloss, deferred
@@ -65,13 +67,15 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 * inline: ../../docs/handbook/procedure.md#prune
 
 ## Issues
-* inline: notes.md#issue-filing
+* inline: notes/issues.md#pass-issues
+
+* inline: notes/issues.md#issue-files
 
 ## Report
 - Write the report to `.scratch/<task_id>/refine-<n>.md`, with `n` one more than the highest such report present, and 1 when there is none.
-* inline: notes.md#report-form
+* inline: notes/solver-pass.md#report-form
 - Report what this pass changed or judged anew, and carry each item of the latest report that still stands, with the report that first gave it, outside `## Issues filed`.
     * comment: The `## Issues filed` exception stays: at task 9f8de559, refine-1 through refine-5 each carried the same `delay` entries forward under this rule, so one issue stood in five reports.
 
 ## The lib
-* inline: notes.md#lib-interface
+* inline: notes/reading.md#lib-interface

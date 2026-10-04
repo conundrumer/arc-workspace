@@ -5,11 +5,11 @@
 - ARC-AGI-2 work for the 2026 Kaggle competition.
 - Python 3.12, `uv`.
 
-* inline: agents/notes.md#lib-index
+* inline: agents/notes/reading.md#lib-index
 
-* inline: agents/notes.md#abridgement
+* inline: agents/notes/reading.md#abridgement
 
-* inline: agents/notes.md#citations
+* inline: agents/notes/reading.md#citations
 
 * include: handbook.md
     + exclude: draft, gloss

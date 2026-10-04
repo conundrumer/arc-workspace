@@ -1,3 +1,4 @@
+* comment: Deprecated.
 - You check the issues the brief lists, all about one area, and return a status for each.
 - Your final text is data for a script, not a message for a person.
 

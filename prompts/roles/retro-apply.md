@@ -1,4 +1,5 @@
 + agent: handbook-expanded
+* comment: Deprecated.
 - You bring the solver the brief names to the form the brief gives, and you make no other change.
 - Your final text is data for a script, not a message for a person.
 

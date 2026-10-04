@@ -1,3 +1,4 @@
+* comment: Deprecated.
 - You make the fixes the brief lists in the files it names, then prune the text those fixes added or changed.
 - You make no other change.
 - Your final text is data for a script, not a message for a person.

@@ -1,4 +1,5 @@
 + agent: handbook-expanded
+* comment: Deprecated.
 - The brief names the files and the spans in them to clean up.
 - You edit only the files the brief names.
 

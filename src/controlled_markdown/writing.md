@@ -51,7 +51,7 @@
     - A `${…}` that is not a name is an error: the value it takes is computed above the literal and given a name.
 - A fence inside a JavaScript fragment is written with tildes.
 - A document path in a string is the path of a file in the tree, and the check reports one that is not. The check passes over a path that holds a hole or a wildcard.
-- A `quotes(document, heading, words)` call quotes the handbook, and the check reads its three strings as literals.
+- A `quotes(document, heading, words)` call quotes the most direct handbook text the function it decorates rests on, and the check reads its three strings as literals.
     - The document is a path under [handbook](docs/handbook), the heading is the text of a heading in it, and the words stand under that heading, in its subsections too, up to line wrapping.
     - The check reports a call whose document, heading or words it does not find, at the call's line, with the words.
     - In [checker](src/checker), every `survey_` function has a `quotes` decorator, and every `check_` function has a `quotes` or a `guard` decorator.

@@ -7,11 +7,11 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 
 + lib: index
 
-* inline: notes.md#abridgement
+* inline: notes/reading.md#abridgement
 
-* inline: notes.md#citations
+* inline: notes/reading.md#citations
 
-* inline: notes.md#lib-index
+* inline: notes/reading.md#lib-index
 
 * include: ../handbook.md
     + exclude: draft, gloss

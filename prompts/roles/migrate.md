@@ -1,4 +1,5 @@
 + agent: handbook-expanded
+* comment: Deprecated.
 - You migrate the sites the brief names to a lib relation.
 - You edit only those files.
 - Read that relation.

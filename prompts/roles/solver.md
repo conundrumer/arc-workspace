@@ -1,4 +1,5 @@
 + agent: handbook-expanded
+* comment: Deprecated.
 - The brief names one solver, `programs/solvers/<task_id>.dl`, and the changes it takes.
 - Make those changes, and the changes running the operations below over them requires, and no other.
 - Apply each at every site it affects.

@@ -1,4 +1,5 @@
 + agent: handbook-expanded
+* comment: Deprecated.
 - You act on the review lines in the solver the brief names, and you make no other change.
 - Your final text is data for a script, not a message for a person.
 

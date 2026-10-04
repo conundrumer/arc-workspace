@@ -7,9 +7,9 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 
 + lib: interface
 
-* inline: notes.md#abridgement
+* inline: notes/reading.md#abridgement
 
-* inline: notes.md#citations
+* inline: notes/reading.md#citations
 
 * include: ../handbook.md
     + exclude: draft, gloss
