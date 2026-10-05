@@ -18,13 +18,13 @@ from typing import Any
 
 from controlled_markdown import mctx
 from engine import checkout
-from handbook.paths import console_importable
+from handbook.context import agent_names, agent_sources
+from handbook.paths import console_importable, importable
 
 console_importable()
 # `scripts/` is no package: a test loads this module by its path, with
 # `scripts/` off `sys.path`, and `file_issue` imports from there.
-if str(checkout.scripts()) not in sys.path:
-    sys.path.insert(0, str(checkout.scripts()))
+importable(checkout.scripts())
 
 from cli import command_args  # noqa: E402
 from cli.parser import parser as run_dl_parser  # noqa: E402
@@ -60,16 +60,19 @@ HELP = mctx("""
     - One run prints its parts and its labels by time, with each label's share of the wall time and its calls, and for backgrounded work the time it ran from launch to its notification.
     - More than one run prints, per agent type, the number of runs, the minimum, median, P-th percentile and maximum of wall time, the total, the median and P-th percentile of active time, which is wall time less `idle`, and each part's share of the total, then each type's labels by time, with the number of runs each appears in.
     - More than one run also prints the budget of each agent type, which is {factor} times a median wall time, printed with the runs it is taken over:
-        - With `--since DATE`, an ISO date or datetime read in local time where it gives no offset, the window is the runs whose first entry is at or after DATE. Where the window holds at least {window_runs} runs of the type, the median is taken over them.
+        - The window of a type that has an agent document under `prompts/agents/` is the runs whose first entry is at or after the last commit that changed that document, a document it includes or inlines, a lib file its rendered prompt holds, a script under `scripts/` its rendered prompt names, or a package under `src/` its rendered prompt runs with `-m`, and not a module such a script or package imports. `--since DATE`, an ISO date or datetime read in local time where it gives no offset, sets the window of every type to the runs whose first entry is at or after DATE. Where the window holds at least {window_runs} runs of the type, the median is taken over them.
+        - A type with no agent document has a window only with `--since`, and a type whose paths no commit changed has none, and an `undecided` line on stderr names it.
         - Otherwise it is taken over the type's runs whose `waits` and `idle` together are under {low_wait_pct}% of wall time. A type with no such run gets no budget, and an `undecided` line on stderr names it.
     - `--running ID` lists the running agents under the run ID, where ID is a session id or an agent id: the agents the run launched, the agents those launched, and so on, whether or not their launcher has completed. An agent has completed when its turn has ended, when its last entry is the harness's note that the user interrupted it, or when its launcher has its result or a notification of it and its transcript has not changed since. The agents are listed in launch order, each launcher's agents after it. In an agent's shell, `$CLAUDE_CODE_SESSION_ID` holds the id of the top-level session, in a subagent as well, so `--running $CLAUDE_CODE_SESSION_ID` lists the running agents of the whole session. For each agent it prints:
-        - its agent id, type and launch description, its parent, which is the agent id of its launcher or `main`, the time since its first entry, its active time and its budget, and its context size in tokens, which is the input of its last request;
+        - its agent id, type and launch description, its parent, which is the agent id of its launcher or `main`, the time since its first entry, its active time with the time it is measured from, its budget, and its context size in tokens, which is the input of its last request;
         - its working directory, as its first entry gives it;
         - its last text output, the end of the text of its last assistant entry that gives text;
         - each call it has in flight, with its label, its command and the time since the call;
         - each command or agent it backgrounded that is still running, with its label, its command and the time since the call;
         - its last {recent} calls in order, each with its label, its command and its duration, or `pending`.
-    - A running agent's active time is its wall time less `idle`, with its wall time running to now. Its budget is the N of a line of its brief, the messages its first turn answers, of the form `Budget: N minutes`. An agent whose brief has no line that opens with `Budget:` gets no budget. A brief line that opens with `Budget:` in another form, a brief with lines of more than one N, and a later message with a line that opens with `Budget:` give no budget, and an `undecided` line on stderr names each.
+    - The messages from a running agent's launcher are its brief, the messages its first turn answers, and each later message its launcher sent: one the harness gives as from the launcher's agent id, or, for an agent `main` launched, as from the coordinator or queued with no tag. A notification of the agent's own backgrounded work, a message from the user or from another agent, and a note of the harness are none. A later message whose sender is none of these is unknown, and an `undecided` line on stderr names it.
+    - A running agent's active time is its wall time less `idle` since the latest message from its launcher, with its wall time running to now. An agent with an unknown message has no active time and no budget.
+    - Its budget is the N of the line of the form `Budget: N minutes` in the latest message from its launcher that has a line of that form, and an agent none of whose launcher's messages has one gets no budget. A line that opens with `Budget:` in another form gives no budget, and a message with lines of more than one N gives none, and an `undecided` line on stderr names each.
     - A call's command and an agent's text output are printed on one line, a command cut to its first {width} characters and a text output to its last {width}. A call's command is:
         - for a Bash call, its command, led by the kind of each issue it files, as `kind K:`;
         - for an Agent call, its description;
@@ -122,6 +125,7 @@ INTERRUPTED = "[Request interrupted by user"
 # Ways a Bash result says the harness, not the call, moved it to the
 # background after it had run in the foreground.
 MOVED = ("timedOutAfterMs", "assistantAutoBackgrounded", "backgroundedByUser")
+AGENT_MESSAGE = re.compile(r'<agent-message from="([^"]+)"')
 NOTIFICATION = re.compile(r"<task-notification>(.*?)</task-notification>", re.S)
 TAG = re.compile(r"<(task-id|tool-use-id)>([^<]+)</\1>")
 HEREDOC = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n.*?\n\s*\2[ \t]*(?=\n|$)",
@@ -153,6 +157,32 @@ class Span:
 
 
 @dataclass
+class Message:
+    """A message from a run's launcher: its time, its text, and the run's
+    `idle` time before it."""
+    time: float
+    text: str
+    idle: float
+
+
+class Origin(Enum):
+    """The kinds of origin the harness gives a message it delivers to a
+    running agent: a notification of the agent's backgrounded work, and a
+    message from the coordinator, the user or another agent."""
+    TASK_NOTIFICATION = "task-notification"
+    COORDINATOR = "coordinator"
+    HUMAN = "human"
+    PEER = "peer"
+
+
+class Sender(Enum):
+    """Who a message after a run's brief is from, as HELP gives it."""
+    LAUNCHER = "launcher"
+    OTHER = "other"
+    UNKNOWN = "unknown"
+
+
+@dataclass
 class Run:
     label: str
     agent_type: str
@@ -169,8 +199,10 @@ class Run:
     ended: bool
     context: int | None
     said: str | None
-    # The text of the messages each turn answers, the brief first.
-    prompts: list[str]
+    # The messages from the run's launcher, the brief first, and the text
+    # of each later message whose sender is unknown.
+    messages: list[Message]
+    unknown: list[str]
     cwd: str | None
 
     @property
@@ -178,12 +210,15 @@ class Run:
         return self.wall - self.parts[Part.IDLE]
 
     def active_at(self, now: float) -> float | None:
-        """The active time of a run whose turn has not ended, to `now`:
-        the time since its last entry goes to a pending call or to the
-        model, so it is active. None where its start is unknown."""
-        if self.start is None:
+        """The active time of a run whose turn has not ended, since the
+        latest message from its launcher to `now`: the time since its last
+        entry goes to a pending call or to the model, so it is active. None
+        where its start or that message is unknown."""
+        if self.start is None or not self.messages or self.unknown:
             return None
-        return self.active + max(0.0, now - (self.start + self.wall))
+        m = self.messages[-1]
+        end = self.start + self.wall
+        return (end - m.time) - (self.parts[Part.IDLE] - m.idle) + max(0.0, now - end)
 
     @property
     def low_wait(self) -> bool:
@@ -261,14 +296,27 @@ def read_meta(path: Path) -> dict[str, Any] | None:
     return json.loads(meta.read_text())
 
 
-def run_type(path: Path) -> tuple[str, str]:
-    if not is_subagent(path):
-        return MAIN, ""
+def subagent_meta(path: Path) -> dict[str, Any]:
+    """The `.meta.json` of the subagent whose transcript is at `path`, which
+    must give its agent type."""
     meta = read_meta(path)
     if meta is None or "agentType" not in meta:
         raise Refused(mctx("the agent type of `{path}` is unknown: its "
                            ".meta.json is absent or gives none").format(path=path))
+    return meta
+
+
+def run_type(path: Path) -> tuple[str, str]:
+    if not is_subagent(path):
+        return MAIN, ""
+    meta = subagent_meta(path)
     return meta["agentType"], meta.get("description", "")
+
+
+def launcher_id(path: Path) -> str:
+    """The agent id of the launcher of the agent whose transcript is at
+    `path`, or `main`, which its `.meta.json` gives by naming no parent."""
+    return subagent_meta(path).get("parentAgentId") or MAIN
 
 
 def read_entries(path: Path) -> list[Entry]:
@@ -584,6 +632,33 @@ def message_text(entry: Entry) -> str:
     return text_of((entry.get("message") or {}).get("content"))
 
 
+def sender(entry: Entry, launcher: str) -> Sender:
+    """Who a message after a run's brief is from, where `launcher` is the
+    agent id of the run's launcher or `main`."""
+    text = message_text(entry)
+    kind = (entry.get("origin") or {}).get("kind")
+    if kind is not None and kind not in Origin:
+        return Sender.UNKNOWN
+    origin = None if kind is None else Origin(kind)
+    queued = entry.get("type") == "attachment"
+    if origin is Origin.TASK_NOTIFICATION or NOTIFICATION.search(text):
+        return Sender.OTHER
+    if origin is Origin.COORDINATOR:
+        return Sender.LAUNCHER if launcher == MAIN else Sender.OTHER
+    if origin is Origin.HUMAN:
+        return Sender.OTHER
+    if origin is Origin.PEER or queued:
+        m = AGENT_MESSAGE.search(text)
+        if m:
+            return Sender.LAUNCHER if m.group(1) == launcher else Sender.OTHER
+        if queued:
+            return Sender.LAUNCHER if launcher == MAIN else Sender.OTHER
+        return Sender.UNKNOWN
+    if entry.get("isMeta") or entry.get("isCompactSummary") or text.startswith(INTERRUPTED):
+        return Sender.OTHER
+    return Sender.UNKNOWN
+
+
 def notified(entry: Entry) -> list[str]:
     text = message_text(entry)
     return [v for body in NOTIFICATION.findall(text) for _, v in TAG.findall(body)]
@@ -596,6 +671,12 @@ def profile(path: Path, undecided: list[str]) -> Run:
     entries = read_entries(path)
     results = results_by_call(entries)
     starts, ends = turns(entries)
+    # The index of the prompt the model first answers: the brief is the
+    # prompts up to it.
+    briefed = min(starts, default=len(entries))
+    launcher = launcher_id(path) if is_subagent(path) else None
+    messages: list[Message] = []
+    unknown: list[str] = []
 
     parts = dict.fromkeys(Part, 0.0)
     groups: dict[Key, Group] = {}
@@ -636,6 +717,12 @@ def profile(path: Path, undecided: list[str]) -> Run:
         prev = t if prev is None else max(t, prev)
         first = t if first is None else first
         etype = e.get("type")
+        if launcher is not None and i > briefed and is_prompt(e):
+            who = sender(e, launcher)
+            if who is Sender.LAUNCHER:
+                messages.append(Message(t, message_text(e), parts[Part.IDLE]))
+            elif who is Sender.UNKNOWN:
+                unknown.append(message_text(e))
         if etype == "assistant":
             idle = False
             tokens = request_input(e)
@@ -677,14 +764,9 @@ def profile(path: Path, undecided: list[str]) -> Run:
     interrupted = any(e.get("type") == "user" and text_of(
         (e.get("message") or {}).get("content")).startswith(INTERRUPTED)
         for e in last_message)
-    prompts: list[str] = []
-    asked: list[str] = []
-    for i, e in enumerate(entries):
-        if is_prompt(e):
-            asked.append(message_text(e))
-        if i in starts:
-            prompts.append("\n".join(asked))
-            asked = []
+    brief = [message_text(e) for e in entries[:briefed + 1] if is_prompt(e)]
+    if brief and first is not None:
+        messages.insert(0, Message(first, "\n".join(brief), 0.0))
     cwd = next((e["cwd"] for e in entries if e.get("cwd")), None)
     in_flight = [spans[tid] for tid in pending if tid in spans]
     backgrounded = [spans[tid] for tid in running if tid in spans]
@@ -697,7 +779,7 @@ def profile(path: Path, undecided: list[str]) -> Run:
     return Run(label, agent_type, description, first, wall, parts,
                {k: g for k, g in groups.items() if g.time or g.calls},
                list(spans.values()), in_flight, backgrounded, idle or interrupted, context, said,
-               prompts, cwd)
+               messages, unknown, cwd)
 
 
 # Output.
@@ -723,14 +805,32 @@ def by_agent_type(runs: list[Run]) -> dict[str, list[Run]]:
     return by_type
 
 
-def print_budgets(runs: list[Run], since: float | None,
+def type_window(kind: str, undecided: list[str]) -> float | None:
+    """The start of the window of the agent type `kind`, as HELP gives it:
+    the time of the last commit that changed its paths, or None where it
+    has no agent document or no commit changed them."""
+    if kind not in agent_names():
+        return None
+    paths = [str(checkout.shown(p)) for p in agent_sources(kind)]
+    out = checkout.git_out(checkout.ROOT, "log", "-1", "--format=%ct", "--",
+                           *paths).strip()
+    if not out:
+        undecided.append(mctx("{kind}: no commit changed its paths, so it has "
+                              "no window").format(kind=kind))
+        return None
+    return float(out)
+
+
+def print_budgets(runs: list[Run], since_date: float | None,
                   undecided: list[str]) -> None:
     """Print each agent type's budget, its basis, and the runs it is taken
-    over."""
+    over. `since_date` is the start of the window `--since` sets, where it
+    is given."""
     by_type = by_agent_type(runs)
     print(f"{'type':<18} {'budget':>7} {'runs':>4}  basis")
     for kind in sorted(by_type):
         rs = by_type[kind]
+        since = since_date if since_date is not None else type_window(kind, undecided)
         window: list[Run] = []
         if since is not None:
             for r in rs:
@@ -889,31 +989,40 @@ def budget_openings(text: str) -> list[str]:
     return [line for line in lines if BUDGET_OPENING.match(line)]
 
 
+def message_name(r: Run, m: Message) -> str:
+    """How an `undecided` line names a message from the launcher of `r`."""
+    if m is r.messages[0]:
+        return mctx("the brief")
+    return mctx("the message at {time}").format(time=clock(m.time))
+
+
 def stated_budget(r: Run, undecided: list[str]) -> float | None:
-    """The budget in minutes that the brief of `r` states, as HELP gives
-    it, or None."""
-    if not r.prompts:
-        return None
-    stated: set[float] = set()
-    for line in budget_openings(r.prompts[0]):
-        m = BUDGET_LINE.fullmatch(line)
-        if m:
-            stated.add(float(m.group(1)))
-        else:
-            undecided.append(mctx("{run}: the brief line `{line}` is not of the "
-                                  "form `Budget: N minutes`, so it gives no "
-                                  "budget").format(run=r.label, line=line))
-    later = [line for text in r.prompts[1:] for line in budget_openings(text)]
-    for line in later:
-        undecided.append(mctx("{run}: a later message gives the line `{line}`, "
-                              "so the run has no budget").format(run=r.label, line=line))
-    if len(stated) > 1:
-        undecided.append(mctx("{run}: the brief states more than one budget, "
-                              "{values}, so it has no budget").format(
-            run=r.label, values=", ".join(f"{v:g}" for v in sorted(stated))))
-    if len(stated) != 1 or later:
-        return None
-    return next(iter(stated))
+    """The budget in minutes that the messages from the launcher of `r`
+    state, as HELP gives it, or None."""
+    for text in r.unknown:
+        undecided.append(mctx("{run}: the sender of the message `{text}` is "
+                              "unknown, so the run has no active time and no "
+                              "budget").format(run=r.label, text=one_line(text)))
+    budget: float | None = None
+    for m in r.messages:
+        stated: set[float] = set()
+        for line in budget_openings(m.text):
+            match = BUDGET_LINE.fullmatch(line)
+            if match:
+                stated.add(float(match.group(1)))
+            else:
+                undecided.append(mctx("{run}: the line `{line}` of {message} is "
+                                      "not of the form `Budget: N minutes`, so "
+                                      "it gives no budget").format(
+                    run=r.label, line=line, message=message_name(r, m)))
+        if len(stated) > 1:
+            undecided.append(mctx("{run}: {message} states more than one budget, "
+                                  "{values}, so it gives none").format(
+                run=r.label, message=message_name(r, m),
+                values=", ".join(f"{v:g}" for v in sorted(stated))))
+        if stated:
+            budget = next(iter(stated)) if len(stated) == 1 else None
+    return None if r.unknown else budget
 
 
 def print_span(m: Span, time_text: str) -> None:
@@ -926,7 +1035,9 @@ def print_running(runs: list[tuple[str, Run]], now: float,
     for parent, r in runs:
         since = minutes(now - r.start) if r.start is not None else "?"
         active_time = r.active_at(now)
-        active = minutes(active_time) if active_time is not None else "?"
+        active = (mctx("{active} since {time}").format(
+            active=minutes(active_time), time=clock(r.messages[-1].time))
+            if active_time is not None else "?")
         budget = stated_budget(r, undecided)
         of_budget = f" of budget {minutes(budget * 60)}" if budget is not None else ""
         context = f"{r.context:,}" if r.context is not None else "?"
@@ -966,9 +1077,10 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--runs", action="store_true",
                     help=mctx("also print one line per run"))
     ap.add_argument("--since", type=iso_date, metavar="DATE",
-                    help=mctx("start of the window of runs a type's budget "
-                              "is taken over: an ISO date or datetime, in "
-                              "local time where it gives no offset"))
+                    help=mctx("start of the window of runs each type's "
+                              "budget is taken over, in place of the type's "
+                              "own: an ISO date or datetime, in local time "
+                              "where it gives no offset"))
     args = ap.parse_args(argv)
     types = set(args.type.split(",")) if args.type else None
     undecided: list[str] = []

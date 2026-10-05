@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 CACHE_ENV = "ARC_CACHE_DIR"
 """The environment variable that names the run cache in place of
-`.scratch/cache/`."""
+`.cache/`."""
 
 SOLVER_FILES_ENV = "ARC_SOLVER_FILES_DIR"
 """The environment variable that names the directory `solvers` returns in
@@ -189,14 +189,14 @@ def prompts() -> Path:
 
 
 def scratch() -> Path:
-    """`.scratch/`: the run cache and what the tools write for a session."""
+    """`.scratch/`: what the tools write for a session."""
     return ROOT / ".scratch"
 
 
 def cache() -> Path:
-    """`.scratch/cache/`: the run cache, a directory per kind of result,
-    unless `CACHE_ENV` names another directory."""
-    return from_env(CACHE_ENV, scratch() / "cache")
+    """`.cache/`: the run cache, a directory per kind of result, unless
+    `CACHE_ENV` names another directory."""
+    return from_env(CACHE_ENV, ROOT / ".cache")
 
 
 def claude() -> Path:

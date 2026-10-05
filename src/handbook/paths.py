@@ -26,12 +26,17 @@ def document(path: Path, root: Path = DOCUMENTS_ROOT) -> Path:
     return root / path.relative_to(checkout.ROOT)
 
 
+def importable(directory: Path) -> None:
+    """Puts `directory` on `sys.path`, once, so that the modules in it
+    import."""
+    if str(directory) not in sys.path:
+        sys.path.insert(0, str(directory))
+
+
 def console_importable() -> None:
-    """Puts the console's directory on `sys.path`, once, so that
-    `solver_console` imports."""
-    console = str(checkout.console())
-    if console not in sys.path:
-        sys.path.insert(0, console)
+    """Puts the console's directory on `sys.path`, so that `solver_console`
+    imports."""
+    importable(checkout.console())
 
 
 def lib_src() -> Path:

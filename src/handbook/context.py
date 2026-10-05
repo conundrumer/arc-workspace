@@ -439,10 +439,41 @@ def render(name: str = "handbook-expanded", lib: Path = LIB_SRC,
 def entry_text(doc: Path, lib: Path = LIB_SRC) -> str:
     """One entry document as its reader gets it: the document rendered, then
     the lib as the document's `lib` attribute says."""
+    return _composed(doc, lib)[0]
+
+
+def _composed(doc: Path, lib: Path) -> tuple[str, nm.Registry, LibForm]:
+    """`entry_text` of `doc`, the registry that holds each document the
+    render read, and the form the lib renders in after it."""
     registry = nm.Registry(DOCUMENTS_ROOT)
     document = registry.load(doc)
-    after = lib_part(lib, lib_form(document))
-    return nm.render(document, registry, after=after) + after
+    form = lib_form(document)
+    after = lib_part(lib, form)
+    return nm.render(document, registry, after=after) + after, registry, form
+
+
+TOOL_RE = re.compile(r"\b(scripts/[\w-]+\.py)\b|-m ([A-Za-z_]\w*)")
+"""A script path, or the top-level module a `-m` option runs."""
+
+
+def agent_sources(name: str, lib: Path = LIB_SRC,
+                  agents: Path = AGENT_DIR) -> list[Path]:
+    """The files an agent's prompt is composed from and the tools it names,
+    each once, in order: its agent document and each document it includes
+    or inlines, then the lib's files where its `lib` attribute is not
+    `none`, then each script under `scripts/` and each package under `src/`
+    that a `-m` option runs, which the rendered prompt names and the
+    checkout holds. The modules those tools import are left out."""
+    text, registry, form = _composed(agent_doc(name, agents), lib)
+    lib_files = ([] if form is LibForm.NONE
+                 else [path for path, _ in lib_sources(lib)])
+    tools: list[Path] = []
+    for m in TOOL_RE.finditer(text):
+        path = (REPO_ROOT / m.group(1) if m.group(1)
+                else REPO_ROOT / "src" / m.group(2))
+        if path.exists() and path not in tools:
+            tools.append(path)
+    return [*registry.files, *lib_files, *tools]
 
 
 def session_text(doc: Path = SESSION_DOC, lib: Path = LIB_SRC) -> str:

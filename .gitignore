@@ -18,6 +18,7 @@ scripts/.queue-cache
 
 tools/console/state/
 .scratch
+/.cache/
 tests/scratch/
 /issues/*
 # generated
