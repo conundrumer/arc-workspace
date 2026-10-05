@@ -29,6 +29,7 @@ from checker.lint.view import (
     TOP,
     View,
     atoms_read,
+    from_lib,
     lint,
     literal_terms,
     spanned,
@@ -105,6 +106,9 @@ from solver.names import (
 from solver.solve import PerCase, per_case
 from solver.vocabulary import (
     CHOICE,
+    DEMONSTRATED,
+    DEMONSTRATED_CHOICE,
+    DEMONSTRATION_CONSISTENCY,
     DETERMINE,
     DETERMINE_SCOPE,
     PARSE,
@@ -604,12 +608,19 @@ def _reads_parse(v: View) -> bool:
         "lists the types a solver may define, and any other type is banned.")
 @quotes("solver-file.md", "Types",
         "a record used as a type argument of a generic comp")
+@quotes("solver-file.md", "Types",
+        "`DemonstratedChoice`, per [Demonstrated choice]")
+@quotes("solver-file.md", "Demonstrated choice",
+        "`DemonstratedChoice` is the `Demonstrated` type argument of a "
+        "`DemonstrationConsistency` instance.")
 def check_banned_type(solver: Solver, runs: Runs) -> list[Finding]:
     """A type the solver declares that is none of the types a solver may
-    define: the types `Choice` and `TiebreakResolution` reach, and the
-    records an instance takes as a type argument with the records their
-    fields reach. Only the types at the top level and in `Determine` and
-    `Parse` are flagged. Serves the purest form."""
+    define: the types `Choice` and `TiebreakResolution` reach, the types
+    `DemonstratedChoice` reaches where an instance of the lib's
+    `DemonstrationConsistency` takes it as its `Demonstrated` type
+    argument, and the records an instance takes as a type argument with
+    the records their fields reach. Only the types at the top level and
+    in `Determine` and `Parse` are flagged. Serves the purest form."""
     v = view(solver, runs)
     scoped = [(t, t.scope == TOP or t.scope.components[:1] in
                ((DETERMINE,), (PARSE,))) for t in v.own_types]
@@ -634,6 +645,14 @@ def check_banned_type(solver: Solver, runs: Runs) -> list[Finding]:
     sanctioned: set[DeclId] = set()
     sanction([d for n in (CHOICE, TIEBREAK_RESOLUTION)
               if (d := resolved(n, TOP)) is not None], object)
+    demonstrated = resolved(DEMONSTRATED_CHOICE, TOP)
+    if demonstrated is not None and demonstrated.id in {
+            d.id for i in v.own_instances
+            if (of := v.index.component(i.component, i.scope)) is not None
+            and of.name == DEMONSTRATION_CONSISTENCY and from_lib(of.span)
+            for p, a in zip(of.type_params, i.type_args) if p == DEMONSTRATED
+            if (d := resolved(a, i.scope)) is not None}:
+        sanction([demonstrated], object)
     sanction([d for i in v.own_instances for a in i.type_args
               if isinstance(d := resolved(a, i.scope), RecordType)],
              RecordType)

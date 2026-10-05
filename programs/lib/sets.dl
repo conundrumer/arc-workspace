@@ -142,3 +142,34 @@
     .decl id(a: T, id: Ident)
     id(A, Id) :- rep(A, B), _ident.id(B, Id).
 }
+
+/// The alternatives, the entries of a catalog, whose prediction for the first
+/// object of a demonstrated pair holds the second object's value at every
+/// index of the second object. Each object is an indexed family: its value
+/// at each index. A prediction that reaches an index the second object lacks
+/// is not a counterexample: consistency is read at the second object's
+/// indices.
+.comp DemonstrationConsistency<Demonstrated, Object, Index, Value> {
+    /// Each object's value at each index, total over the object's index set.
+    .decl value(o: Object, i: Index, v: Value)  // @input
+
+    /// Each alternative's prediction for each object.
+    .decl prediction(c: Demonstrated, o: Object, i: Index, v: Value)  // @input
+
+    /// The demonstrated pairs: o is the pair's input, o2 its output.
+    .decl demonstration(o: Object, o2: Object)  // @input
+
+    /// Alternative c's prediction for o differs from o2 at some index of o2.
+    .decl counterexample(c: Demonstrated, o: Object, o2: Object)
+    counterexample(C, O, O2) :-
+        demonstration(O, O2), prediction(C, O, I, V),
+        value(O2, I, V2), V != V2.                            // a different value
+    counterexample(C, O, O2) :-
+        demonstration(O, O2), prediction(C, O, _, _),
+        value(O2, I, _), !prediction(C, O, I, _).             // an index left out
+
+    /// Alternative c is consistent with the pair: its prediction for o holds o2.
+    .decl consistent(c: Demonstrated, o: Object, o2: Object)
+    consistent(C, O, O2) :-
+        demonstration(O, O2), prediction(C, O, _, _), !counterexample(C, O, O2).
+}

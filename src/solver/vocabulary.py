@@ -39,6 +39,24 @@ TIEBREAK_RESOLUTION: Annotated[str,
            "`out` column of type "
            "`TiebreakResolution`.")] = "TiebreakResolution"
 """The type of `out`'s resolution column."""
+DEMONSTRATED_CHOICE: Annotated[str,
+    quotes("solver-file.md", "Demonstrated choice",
+           "`DemonstratedChoice` is the `Demonstrated` type argument of a "
+           "`DemonstrationConsistency` instance.")] = "DemonstratedChoice"
+"""The type whose constructors are the rules a demonstration selects
+among."""
+DEMONSTRATION_CONSISTENCY: Annotated[str,
+    quotes("solver-file.md", "Demonstrated choice",
+           "`DemonstratedChoice` is the `Demonstrated` type argument of a "
+           "`DemonstrationConsistency` instance.")] = "DemonstrationConsistency"
+"""The lib's component that reads which values of its `Demonstrated`
+type a demonstrated pair is consistent with (sets.dl)."""
+DEMONSTRATED: Annotated[str,
+    quotes("solver-file.md", "Demonstrated choice",
+           "`DemonstratedChoice` is the `Demonstrated` type argument of a "
+           "`DemonstrationConsistency` instance.")] = "Demonstrated"
+"""The type parameter of `DemonstrationConsistency` whose values a
+demonstrated pair selects among (sets.dl)."""
 ENUMERATOR: Annotated[str,
     quotes("solver-file.md", "Cases",
            "**`impl_choice`.** The relation that enumerates the cases is "

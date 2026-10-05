@@ -139,6 +139,7 @@
         - as the type of a field in the `Choice` record
         - as the type of a field in one or more constructors in `Choice`
     - `TiebreakResolution` for alt outputs
+    - `DemonstratedChoice`, per [Demonstrated choice](docs/handbook/solver-file.md#demonstrated-choice)
     - a record used as a type argument of a generic comp
 
 ## Program
@@ -180,6 +181,14 @@
 - The solver enumerates a tiebreak's resolutions through a trailing `out` column of type `TiebreakResolution`.
 - No parameter stores the resolution values.
 - No clause treats one resolution differently from another.
+
+## Demonstrated choice
+- `DemonstratedChoice` is the `Demonstrated` type argument of a `DemonstrationConsistency` instance.
+- Its constructors name the rules the input may demonstrate.
+- A rule's prediction is the instance's `prediction` relation at that rule's constructor.
+- No parameter stores which rule applies.
+- The program derives the rule that applies to an input from the instance's `consistent` relation, on a demonstrated pair in that input: two of its objects, the second showing what the rule makes of the first.
+- An ADT whose constructors are joined to predictions with no demonstration selecting among them is a disjunction, and is written as one.
 
 ## Witness file
 - `programs/witnesses/<task_id>.wit.json` holds the witnesses the solver's cases are pinned to.
