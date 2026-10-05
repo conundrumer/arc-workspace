@@ -2,7 +2,7 @@
 - The statements on filing an issue that more than one entry point inlines.
 
 ## pass-issues
-- An issue is a doc line or a tool behavior that cost the pass time or tokens, or that made its output wrong; a problem in the task's own files is not one.
+- An issue is a doc line or a tool behavior that cost the pass time or tokens, or that made its output wrong, or a step that a line below has you file a `delay` issue for; a problem in the task's own files is not one.
 - As each issue happens, note it in `.scratch/<task_id>/progress.md`, under a heading that is the name of this pass's report.
 - When the report's other sections are settled, file each issue noted under that heading, whether or not an earlier pass hit it, with the task id as `<source>` and your agent's name as `<agent>`.
     - Give each issue the kind `interference` or `delay`.
@@ -18,6 +18,7 @@
         - `undecided`: a case your rules do not cover, or a place that poses a question.
     - Write under `Evidence` the line quoted, or the command and its output, or the grid, as you saw it.
     - Leave out what the fix should be.
+- File a `delay` issue for each step of your work whose run time is far out of proportion to the work the step does.
 
 ## tracking
 - The directories `issues/new/`, `issues/assigned/` and `issues/resolved/` are an issue's statuses, and moving its file between them is its transition.
