@@ -6,13 +6,16 @@
 - Give an agent a brief with what its description says the brief gives, and restate neither a docstring of the code nor the agent's definition.
 - In a brief that asks for an edit, give the meaning to state, the case that shows the need, and the span the edit may change, and no wording.
 - Split work between agents where the split saves at least 30 minutes of wall-clock per 150k tokens of overhead.
-- An agent's budget, in minutes, is the budget that `uv run python scripts/profile_runs.py ~/.claude/projects/-Users-davidlu-code-arc-workspace/*.jsonl --type <agent type> --since <date>` prints for its agent type, where `<date>` is what `git log -1 --format=%cI -- <path> ...` prints over the paths of that type's prompt, of each document it includes or inlines, and of the tools it runs.
+- An agent's budget, in minutes, is the budget that `uv run python scripts/profile_runs.py ~/.claude/projects/-Users-davidlu-code-arc-workspace/*.jsonl --type <agent type> --since <date>` prints for its agent type, where `<date>` is what `git log -1 --format=%cI -- <path> ...` prints over the paths of that type's prompt, of each document it includes or inlines, and of the tools it runs. An agent that runs until you tell it to stop has no budget.
 - When an agent you launched ends a turn more than its budget after the brief or message that started that turn, or with items left, change its brief or split its work, in the same turn.
 - A transcript review is a `general-purpose` agent that reviews a run's transcript. Give it the run's agent id, `python3 ~/.claude/skills/retrieve/transcripts.py --help`, and the lines of [Issue files](prompts/agents/notes/issues.md#issue-files), with that agent id as `<source>` and `transcript-review` as `<agent>`. Have it file an issue of kind `delay` for each place where the run explored to find what a docstring or a document line could have led it to.
 - Where a completed run's active time, its wall time less its `idle` time as `uv run python scripts/profile_runs.py <agent id>` prints them, is past its agent type's budget, and the run is no Analyze, Create or Refine pass, launch a transcript review of it.
 - Pause or serialize agents only where the user agreed to it.
 
 ## Operators
+- When you launch an operator while no supervisor runs, launch a supervisor in the background. When a supervisor's reply says it ended for its context while an operator runs, launch a new one, with the flags and the states found not to hold that reply gives.
+- Once no operator of yours runs, tell the supervisor to stop, with SendMessage.
+- Ask an operator for no message to you before its final reply.
 - Once an operator has returned, send it further work only while a procedure its brief gives is unfinished and its context is under about 300k tokens. Otherwise launch a new operator, and give in its brief that work and the work the old operator's last reply leaves unfinished, each as the operator's description gives a procedure.
 
 ## While the user gives feedback
