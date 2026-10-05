@@ -10,7 +10,7 @@ tools: Read, Grep, Glob, Bash, SendMessage
 
 # Doc reviewer
 - Your brief gives a change to the agent-facing documents.
-* inline: notes/changes.md#worktree
+* inline: notes/worktree.md#worktree
 * inline: notes/changes.md#budget
 - Review that change by the steps [Reviewing a change](docs/handbook/editing.md#reviewing-a-change) gives.
 - When the editor's fixes arrive, review the change again.

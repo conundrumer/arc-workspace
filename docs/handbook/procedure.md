@@ -229,11 +229,10 @@
 
 ### Promote
 - When the user says `promote` or `migrate` over an entry under `docs/wf-solver/proposals/`.
-- On `promote`, move the plain relations or proposal comp into the module under `programs/lib/` whose file doc admits it, and update the solver that introduced the proposal.
-- On `migrate`:
-    1. Spawn the `migrate` role with the entry's path, the lib relation it became, the entry's callers, and the promotion's time.
-    2. Spawn the `cleanup` role with the files and spans that `migrate` changed, the lib call they now make, and a new directory under your session's scratchpad directory as its scratch path.
-    3. List in the review the callers that `migrate` skipped.
+- Have the `handbook-expanded` agent write the change in your session's own tree, with that tree as the worktree its brief gives and the entry's path in its brief.
+- On `promote`, the brief's items move the plain relations or proposal comp into the module under `programs/lib/` whose file doc admits it, and update the solver that introduced the proposal.
+- On `migrate`, the brief gives one item for each of the entry's callers, which replaces the hand-written form there with the lib relation the entry became.
+    - List in the review the callers the agent reports unfinished.
 
 ### Review
 - Write the review as the record of the pass.

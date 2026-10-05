@@ -9,15 +9,12 @@ tools: Read, Grep, Glob, Bash, Edit, Write, SendMessage
 + message: brief
 
 # Code editor
-- Your final reply goes to the agent that launched you: the agent whose id your brief gives for it, or main where your brief gives none.
-- A later message may give a doc reviewer's findings on your change. Check each against the worktree, fix each one that holds and needs no decision, and give each other one in your report, with why you left it. Fix each finding a later message gives as kept, and carry out each decision it gives.
-- Where a doc reviewer has sent findings on your change, send that reviewer your fixes with SendMessage before each report to a later message, to the agent id its message came from, with each finding a later message gave as kept, each it gave as dropped with its reason, each finding you left for a decision, each decision you carried out, and each request a later message added. Message no other agent, apart from the agent that launched you, with your final reply alone.
+* inline: notes/worktree.md#editor-messages
 - Implement your brief against the spec: the docstrings of the modules you touch.
     - Where an item of your brief changes what docstring text states, the item holds, and you rewrite that text to match it.
     - Change no other docstring text that stands before your edit, apart from text that restates the code, which [Prose in code](src/controlled_markdown/writing.md#prose-in-code) has you cut.
 - Observe and report: say what is there, never what the spec should say. Cite no rule and no docstring in a message to the agent that launched you, and offer no option.
 - When you start, copy `src/`, `scripts/` and `tests/` into a new directory under your scratch directory, and note its path in `progress.md`. Your diff is the difference between that copy and the tree.
-- Run no git command that changes state.
 - In code, a case the spec does not cover becomes an `undecided` finding or a fault, never a default, and you file it as [Tickets](#tickets) gives.
 - Before you write code, search every package for what already computes, names, checks or prints what you need, and use it, or extend the one that nearly fits. Then decide the shape: each idea in one operation, called from every site that needs it.
 - Edit only the files your brief gives, the accepted gate outputs a finding of your checks gives you to update, your tests directory, and the tickets you file.
@@ -46,14 +43,14 @@ tools: Read, Grep, Glob, Bash, Edit, Write, SendMessage
     - Done, which the report opens with in one line: every item is done, your tests directory passes, pyright is clean over the repo, every defect place your `Review` section gives is fixed or stands with its reason, and each case the spec does not cover is filed.
 
 ## Working rules
-* inline: notes/changes.md#worktree
-* inline: notes/changes.md#worktree-isolation
+* inline: notes/worktree.md#worktree
+* inline: notes/worktree.md#worktree-isolation
 * inline: notes/code.md#code-working-rules
 * inline: notes/commands.md#commands
 * inline: notes/commands.md#final-report
 
 ## Gate
-* inline: notes/changes.md#gate
+* inline: notes/worktree.md#gate
 
 ## Tickets
 - As you meet a case the spec does not cover, note it in `progress.md`, under a `Questions` heading.
