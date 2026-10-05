@@ -16,19 +16,21 @@ it. It sets up the submodules of the top of the stack again, for the
 commits its branch records, and runs the checks there, on the changes as
 they will merge:
 
-    uv run python -m controlled_markdown check     always, first
+    uv run python -m controlled_markdown check     always
+    uv run python scripts/gate.py --outputs-only --affected <out>
+                                                   always
     uv run pyright                                 where a change touches
-    uv run pytest -q                               src/, scripts/ or tests/,
-    uv run python scripts/gate.py --outputs-only <out>       concurrently
+    uv run pytest -q                               a path whose content
+                                                   their results can depend on
 
-A check passes when it exits 0. A failing `controlled_markdown` check stops
-the checks; the others run to the end, and a refusal names every one of
-them that fails. The gate writes into a new temporary directory, which a
-failing gate names.
-
-The gate runs with `--outputs-only`, so a merge judges no time. A `SLOW`
-line of the timed gate run on `master` that follows a batch of merges is
-filed as a `delay` issue, and blocks no merge.
+The checks run concurrently. A check passes when it exits 0, and a refusal
+names every check that fails. The paths whose content the results of
+pyright and pytest can depend on are those under src/, scripts/, tests/
+and data/tasks/, those `cli.common.SOURCES` matches, pyproject.toml and
+uv.lock. The gate's dependency record decides which of its commands a
+change affects, so the gate runs on every change. It writes into a new
+temporary directory, which a failing gate names. Its `--help` says which
+commands `--affected` runs and how the gate's times are judged.
 
 When every check passes, the script fast-forwards `master` in the main tree
 to the top of the stack, runs `uv run python scripts/context.py --write` in
@@ -87,13 +89,18 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
+from cli.common import SOURCES
 from controlled_markdown import mctx
+from engine import checkout
 
 MASTER = "master"
 """The branch a change merges into."""
 
-CODE_DIRS = ("src", "scripts", "tests")
-"""The top-level directories whose change runs the code checks."""
+CODE_DIRS = ("src", "scripts", "tests", "data/tasks")
+"""The directories a change under which runs the code checks."""
+
+CODE_FILES = ("pyproject.toml", "uv.lock")
+"""The files that set the environment every code check runs in."""
 
 GITLINK_MODE = "160000"
 """The mode git gives an index entry that records a submodule's commit."""
@@ -112,14 +119,11 @@ class Failed(Exception):
 
 @dataclass(frozen=True)
 class Check:
-    """A command run in the worktree."""
-
     argv: tuple[str, ...]
 
 
 def git(cwd: Path, *argv: str,
         env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    """One git command in `cwd`, in the environment `env` where one is given."""
     return subprocess.run(["git", *argv], cwd=cwd, env=env, capture_output=True,
                           text=True)
 
@@ -136,13 +140,6 @@ def said(done: subprocess.CompletedProcess[str]) -> str:
     """What a command wrote, its last `TAIL` lines."""
     lines = (done.stdout + done.stderr).strip().splitlines()
     return "\n".join(lines[-TAIL:]) or f"exit status {done.returncode}"
-
-
-def main_tree(worktree: Path) -> Path:
-    """The main worktree of the repo `worktree` belongs to."""
-    common = Path(git_out(worktree, "rev-parse", "--path-format=absolute",
-                          "--git-common-dir").strip())
-    return common.parent
 
 
 def branch_of(tree: Path) -> str:
@@ -213,20 +210,30 @@ def checked_out(tree: Path, sub: Submodule) -> bool:
         path, "rev-parse", "--show-toplevel").strip()) == path
 
 
-FIRST_CHECK = Check(("uv", "run", "python", "-m", "controlled_markdown", "check"))
-"""The check every change runs, before the others."""
+MARKDOWN_CHECK = Check(("uv", "run", "python", "-m", "controlled_markdown", "check"))
+"""The check every change runs."""
 
 
-def code_checks(touched: set[str]) -> list[Check]:
-    """The checks, run concurrently, of changes that touch `touched`."""
-    if not any(p.split("/", 1)[0] in CODE_DIRS for p in touched):
-        return []
+def code_paths(tree: Path, main: Path, touched: set[str]) -> set[str]:
+    """The paths of `touched` whose content the results of pyright and
+    pytest can depend on. A path `SOURCES` matches is found in `tree`, where the
+    change adds or edits it, or in the main worktree `main`, where the
+    change deletes it."""
+    sources = {str(p.relative_to(root)) for root in (tree, main)
+               for pattern in SOURCES for p in root.glob(pattern)}
+    return {p for p in touched
+            if p in CODE_FILES or p in sources
+            or any(p.startswith(f"{d}/") for d in CODE_DIRS)}
+
+
+def check(tree: Path, main: Path, touched: set[str]) -> None:
+    """Run in `tree` the checks of changes that touch `touched`, or refuse."""
     gate_out = tempfile.mkdtemp(prefix="merge-change-gate-")
-    return [
-        Check(("uv", "run", "pyright")),
-        Check(("uv", "run", "pytest", "-q")),
-        Check(("uv", "run", "python", "scripts/gate.py", "--outputs-only", gate_out)),
-    ]
+    gate = Check(("uv", "run", "python", "scripts/gate.py", "--outputs-only", "--affected",
+                  gate_out))
+    code = ([Check(("uv", "run", "pyright")), Check(("uv", "run", "pytest", "-q"))]
+            if code_paths(tree, main, touched) else [])
+    run_checks(tree, [MARKDOWN_CHECK, gate, *code])
 
 
 def run_in(tree: Path, argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
@@ -246,13 +253,6 @@ def run_checks(tree: Path, checks: Sequence[Check]) -> None:
               for s, done in zip(shown, dones, strict=True) if done.returncode != 0]
     if failed:
         raise Refused("\n".join(failed))
-
-
-def check(tree: Path, touched: set[str]) -> None:
-    """Run the checks of changes that touch `touched` in `tree`, or
-    refuse."""
-    run_checks(tree, [FIRST_CHECK])
-    run_checks(tree, code_checks(touched))
 
 
 def refuse_main_touched(main: Path, touched: set[str]) -> None:
@@ -319,7 +319,6 @@ def refuse_gitlinks(worktree: Path, main: Path) -> None:
 
 
 def index_file(worktree: Path) -> Path:
-    """The worktree's index file."""
     return Path(git_out(worktree, "rev-parse", "--path-format=absolute",
                         "--git-path", "index").strip())
 
@@ -418,7 +417,7 @@ def stack(main: Path, changes: Sequence[Change]) -> None:
             onto = git_out(c.worktree, "rev-parse", "HEAD").strip()
         top = changes[-1].worktree
         set_up_submodules(top, main)
-        check(top, touched_by(changes))
+        check(top, main, touched_by(changes))
     except Refused:
         for c in changes:
             unstack(c)
@@ -446,7 +445,7 @@ def merge_alone(main: Path, change: Change) -> None:
     rebase(change, onto, MASTER, restore=True)
     try:
         set_up_submodules(change.worktree, main)
-        check(change.worktree, set(change.touched))
+        check(change.worktree, main, set(change.touched))
     except Refused as exc:
         git_out(change.worktree, "reset", "-q", "--mixed", onto)
         raise Refused(f"{exc}\n{change.branch} is moved back to {MASTER}'s commit "
@@ -544,8 +543,12 @@ def merge(pairs: Sequence[tuple[Path, str]]) -> bool:
     """Merge each worktree's change into `MASTER`, committed with its
     message: as one stack, or, where the stack is refused, one at a time.
     Whether every change merged."""
-    main = main_tree(pairs[0][0])
-    others = sorted({str(main_tree(w)) for w, _ in pairs} - {str(main)})
+    try:
+        mains = [checkout.main_worktree(w) for w, _ in pairs]
+    except RuntimeError as exc:
+        raise Refused(str(exc)) from exc
+    main = mains[0]
+    others = sorted({str(m) for m in mains} - {str(main)})
     if others:
         raise Refused(mctx("the worktrees belong to more than one repository: {main}, "
                            "{others}").format(main=main, others=", ".join(others)))

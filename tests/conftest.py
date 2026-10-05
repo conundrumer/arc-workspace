@@ -3,6 +3,7 @@ submodules a test of the upstream tasks reads."""
 
 import fcntl
 import importlib.util
+import sys
 from pathlib import Path
 from types import ModuleType
 
@@ -21,6 +22,7 @@ def script(name: str) -> ModuleType:
     spec = importlib.util.spec_from_file_location(name, checkout.scripts() / f"{name}.py")
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -29,7 +31,7 @@ def script(name: str) -> ModuleType:
 def upstream() -> None:
     """The checkout's `data/upstream/` submodules, set up where one is not
     checked out, as `scripts/merge_change.py` sets them up: from the main
-    checkout's copies of their repositories, with no network. A worktree
+    worktree's copies of their repositories, with no network. A worktree
     starts with them empty. Where the setup fails, the test fails with its
     cause."""
     merge_change = script("merge_change")
@@ -40,7 +42,7 @@ def upstream() -> None:
                for sub in merge_change.submodules(root)):
             return
         try:
-            merge_change.set_up_submodules(root, checkout.main_checkout(root))
+            merge_change.set_up_submodules(root, checkout.main_worktree(root))
         except merge_change.Refused as exc:
             pytest.fail(f"the data/upstream/ submodules are not checked out in {root}, "
                         f"and {exc}", pytrace=False)

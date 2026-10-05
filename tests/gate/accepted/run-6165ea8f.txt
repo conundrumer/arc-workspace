@@ -1,0 +1,11 @@
+train 0: PASS
+train 1: PASS
+train 2: PASS
+test 0: PASS
+test 1: PASS
+
+--- 1 hint(s) ---
+  6165ea8f.dl:57: common-subexpr: 3 literals shared with `legend` (line 46); an `@ignore` directive can keep the relation it fires on
+
+lint: ok, 1 hint
+determination: ok (block, gap, header)

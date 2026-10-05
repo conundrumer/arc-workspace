@@ -1,0 +1,10 @@
+train 0: PASS
+train 1: PASS
+train 2: PASS
+test 0: PASS
+
+--- 1 hint(s) ---
+  696d4842.dl:38: single-consumer: `dot` has one clause and one use (line 52); an `@ignore` directive can keep the relation it fires on
+
+lint: ok, 1 hint
+determination: no Determine comp

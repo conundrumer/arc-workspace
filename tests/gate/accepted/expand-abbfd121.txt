@@ -1,0 +1,502 @@
+#include "lib.dl"
+// abbfd121
+// @draft
+// @keywords: wallpaper occlude repair crop rank color-class objects symmetry
+// @scene wallpaper: a pattern that repeats along both axes covers the whole
+//  grid; its period differs between inputs
+// @scene occluders: two or more solid axis-aligned rectangles cover parts of
+//  the wallpaper, each in its own color that the wallpaper does not use; they
+//  do not touch or overlap; an occluder is a color whose cells fill their
+//  bounding box
+// @scene unique-largest: exactly one occluder has the largest area
+// @rule select: the selected occluder is the one with the largest area
+// @rule frame: the output has the height and width of the selected occluder
+// @rule recover: each output cell is the wallpaper as drawn at the matching
+//  input cell under the selected occluder, before the occluders were placed
+//     @approximated: each output cell takes the color of the visible cells of
+//      its phase under the per-axis shortest periods that no two visible cells
+//      contradict; undefined where the phase has no visible cell
+//     @witness asym-hidden: borderline other
+
+// how the occluders are found
+.type Occluder =
+    // @claim occluders
+    ColorFill {}
+    // @scene occluders: an occluder is a color whose cells fill their
+    //  bounding box and number at least two
+    // @witness lone-cell: variant concept
+    // @witness single-copy: borderline $MinTwoCells
+  | MinTwoCells {}
+    // @scene occluders: an occluder is a 4-connected one-color component
+    //  that fills its bounding box, with both sides at least
+    //  params.min_side
+    // @witness shared-color: variant $ComponentRect
+    //     @relaxed occluders
+    // @witness wallpaper-block: variant concept
+    // @witness lone-cell: variant concept
+  | ComponentRect {}
+
+// which maps carry colors to hidden cells beside the axis periods
+.type Recovery =
+    // @claim recover
+    AxisPeriods {}
+    // @rule recover: a hidden cell also takes the colors that translations
+    //  carry to it; a translation counts when it carries some visible cell
+    //  onto a visible cell of its color, and no visible cell onto a visible
+    //  cell of another color; undefined where a cell takes two colors
+    // @witness oblique-hidden: borderline $LatticePeriod
+    //     @reassigned fill
+    // @witness oblique-wide: borderline $LatticePeriod
+    //     @reassigned fill
+    // @witness lattice-no-axis: borderline $LatticePeriod
+    //     @relaxed wallpaper
+  | LatticePeriod {}
+    // @rule recover: a hidden cell also takes the colors that maps carry to
+    //  it, where a map applies a D4 isometry and then a translation; a map
+    //  counts when it carries some visible cell onto a visible cell of its
+    //  color, its image of the frame lies within an axis period of every
+    //  edge, and it carries no cell's axis-period color onto a cell with
+    //  another color; undefined where a cell takes two colors
+    // @witness mirror-hidden: borderline $IsometryOrbit
+    // @witness mirror-wide: borderline $IsometryOrbit
+    //     @reassigned fill
+    // @witness oblique-hidden: borderline $LatticePeriod
+    // @witness oblique-wide: borderline $LatticePeriod
+  | IsometryOrbit {}
+
+// what a hidden cell gets when no visible cell reaches it
+.type HiddenOrbit =
+    // @claim recover
+    NoSource {}
+    // @rule fill: a hidden cell that no visible cell reaches takes
+    //  params.fill
+    // @witness oblique-hidden: borderline $LatticePeriod
+    // @witness mirror-wide: borderline $IsometryOrbit
+    // @witness asym-fill: borderline other
+    //     @reassigned fill
+  | HiddenFill {}
+
+// which occluder gives the output
+.type Selection =
+    // @claim select
+    Area {}
+    // @rule select: the selected occluder has the largest height plus width
+    // @witness tall-thin: ordinary concept
+    // @witness wide-thin: ordinary concept
+  | Perimeter {}
+    // @rule select: the selected occluder has the greatest extent along
+    //  params.primary_axis, then the greatest extent across it
+    // @witness tall-thin: ordinary concept
+    //     @reassigned primary_axis
+    // @witness wide-thin: ordinary concept
+    //     @reassigned primary_axis
+    // @witness tall-beside-square: ordinary concept
+    //     @reassigned primary_axis
+    // @witness wide-beside-square: ordinary concept
+    //     @reassigned primary_axis
+  | AxisThenCross {}
+    // @rule select: the selected occluder has the longest side, then the
+    //  longest short side
+    // @witness tall-thin: ordinary concept
+    // @witness wide-thin: ordinary concept
+    // @witness tall-beside-square: ordinary concept
+    // @witness wide-beside-square: ordinary concept
+  | LongestThenShortest {}
+
+// what happens when occluders tie at the top of the selection's order
+.type AreaTie =
+    // @claim unique-largest
+    UniqueTop {}
+    // @rule tie-first: among the tied occluders, the one whose corner at the
+    //  corner of params.scan comes first along that scan order wins
+    // @witness area-tie: borderline any
+    //     @relaxed unique-largest
+    //     @reassigned scan
+    // @witness equal-blocks: borderline any
+    //     @relaxed unique-largest
+    //     @reassigned scan
+  | TieFirst {}
+
+.type Choice = [occluder: Occluder, recovery: Recovery, orbit: HiddenOrbit,
+                selection: Selection, tie: AreaTie]
+
+// An occluder reading, with the least side it admits: params.min_side under
+// ComponentRect, and 0 under the color readings, which bound no side.
+.type Scope = [occ: Occluder, side: number]
+
+// A row or a column, by its axis.
+.type Line = [a: Axis, l: Position]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $ComponentRect ---
+    // The pairs fix neither value, so both stay open.
+    .decl min_side(k: number) min_side(2). min_side(3).
+
+    // --- $HiddenFill ---
+    // The pairs hold no hidden cell without a source, so every color stays
+    // open.
+    .decl fill(col: Color)
+    fill(0). fill(1). fill(2). fill(3). fill(4). fill(5). fill(6). fill(7). fill(8). fill(9).
+
+    // --- $AxisThenCross ---
+    // The pairs fix neither axis, so both stay open.
+    .decl primary_axis(a: Axis) primary_axis(AXIS_V). primary_axis(AXIS_H).
+
+    // --- $TieFirst ---
+    // The scan order: a corner and a primary axis. The pairs hold no tie, so
+    // every order stays open.
+    .decl scan(c: DiagDir, a: Axis)
+    scan(DIAG_TL, AXIS_V). scan(DIAG_TL, AXIS_H). scan(DIAG_TR, AXIS_V). scan(DIAG_TR, AXIS_H).
+    scan(DIAG_BL, AXIS_V). scan(DIAG_BL, AXIS_H). scan(DIAG_BR, AXIS_V). scan(DIAG_BR, AXIS_H).
+}
+
+.init params = Params
+
+.decl occluder_choice(o: Occluder)
+occluder_choice($ColorFill()). occluder_choice($MinTwoCells()). occluder_choice($ComponentRect()).
+
+.decl recovery_choice(r: Recovery)
+recovery_choice($AxisPeriods()). recovery_choice($LatticePeriod()). recovery_choice($IsometryOrbit()).
+
+.decl hidden_orbit_choice(f: HiddenOrbit)
+hidden_orbit_choice($NoSource()). hidden_orbit_choice($HiddenFill()).
+
+.decl selection_choice(s: Selection)
+selection_choice($Area()). selection_choice($Perimeter()).
+selection_choice($AxisThenCross()). selection_choice($LongestThenShortest()).
+
+.decl area_tie_choice(t: AreaTie)
+area_tie_choice($UniqueTop()). area_tie_choice($TieFirst()).
+
+// Beside the concept case, every case fills sourceless cells and breaks ties:
+// a case without the fill or the tie-break gives the output of the case with
+// them wherever it gives one.
+.decl impl_choice(ch: Choice)
+impl_choice([$ColorFill(), $AxisPeriods(), $NoSource(), $Area(), $UniqueTop()]).
+impl_choice([O, R, $HiddenFill(), Sel, $TieFirst()]) :-
+    occluder_choice(O), recovery_choice(R), selection_choice(Sel).
+
+// The occluders, each recovery's colors, and each selection's top occluders
+// and tie-break picks. A selection is read along every axis, and a tie along
+// every scan order.
+.comp Parse<Key> {
+    .type Hue = [ky: Key, col: Color]
+    .type Block = [ky: Key, b: Box]
+    // A selection's order over the key's occluders, read along an axis.
+    .type Rank = [ky: Key, sel: Selection, axis: Axis]
+    // A scan order over a rank's top occluders.
+    .type Scan = [rank: Rank, corner: DiagDir, axis: Axis]
+
+    .decl cell(ky: Key, p: Position, col: Color)
+
+    // The occluders, by their boxes.
+    .decl occluder(ky: Key, b: Box)
+
+    // Each color's bounding box.
+    // @claim occluders
+    .init color_box = Bbox<Hue>
+    color_box.cell([Ky, Col], P) :- cell(Ky, P, Col).
+
+    // A cell of another color lies inside the color's box.
+    .decl color_gap(ky: Key, col: Color)
+    color_gap(Ky, Col) :- color_box.box([Ky, Col], B), cell(Ky, P, C), inside(P, B), C != Col.
+
+    // A color whose cells fill their bounding box.
+    .decl color_fill(ky: Key, col: Color, b: Box)
+    color_fill(Ky, Col, B) :- color_box.box([Ky, Col], B), !color_gap(Ky, Col).
+
+    .decl block_cell(ky: Key, b: Box, p: Position)
+    block_cell(Ky, B, P) :- occluder(Ky, B), cell(Ky, P, _), inside(P, B).
+
+    .decl hidden(ky: Key, p: Position)
+    hidden(Ky, P) :- block_cell(Ky, _, P).
+
+    .decl visible(ky: Key, p: Position, col: Color)
+    visible(Ky, P, Col) :- cell(Ky, P, Col), !hidden(Ky, P).
+
+    // --- recovery ---
+
+    // The per-axis shortest periods of the visible cells.
+    // @claim wallpaper recover
+    .init period = OffsetInvariance<Key, Color>
+    period.cell(Ky, P, Col) :- visible(Ky, P, Col).
+
+    // Hidden q takes the color of the cells one period away on either axis.
+    .decl axis_link(ky: Key, p: Position, q: Position)
+    axis_link(Ky, P, Q) :-
+        period.min_period(Ky, A, K), axis_of(D, A), hidden(Ky, Q), jump(Q, D, K, P).
+
+    // The colors the axis periods give a cell: its own where visible, and
+    // those the links carry into hidden cells.
+    .decl axis_color(ky: Key, p: Position, col: Color)
+    axis_color(Ky, P, Col) :- visible(Ky, P, Col).
+    axis_color(Ky, Q, Col) :- axis_color(Ky, P, Col), axis_link(Ky, P, Q).
+
+    // Some axis has no period, so no map is read.
+    .decl aperiodic(ky: Key)
+    aperiodic(Ky) :- visible(Ky, _, _), axis_elem(A), !period.min_period(Ky, A, _).
+
+    // Maps p -> apply(d, p) placed by x that carry some visible cell onto
+    // another visible cell of its color; x is the map's image of the frame.
+    .decl carried(ky: Key, d: D4, x: Box)
+    carried(Ky, D, X) :-
+        kind(_, D), visible(Ky, P, Col), apply(D, P, P1),
+        visible(Ky, Q, Col), P != Q, relative(P1, Q, X).
+
+    // The map's image of the frame lies more than a period in from some edge.
+    .decl far(ky: Key, d: D4, x: Box)
+    far(Ky, D, X) :-
+        carried(Ky, D, X), axis_of(E, A), dist(X, E, M), period.min_period(Ky, A, K), M > K.
+
+    .decl near(ky: Key, d: D4, x: Box)
+    near(Ky, D, X) :- carried(Ky, D, X), !aperiodic(Ky), !far(Ky, D, X).
+
+    // The map carries a cell's axis-period color onto a cell to which the
+    // axis periods give another color.
+    .decl contradicted(ky: Key, d: D4, x: Box)
+    contradicted(Ky, D, X) :-
+        near(Ky, D, X), axis_color(Ky, P, C1), apply(D, P, P1),
+        compose(P1, X, Q), axis_color(Ky, Q, C2), C1 != C2.
+
+    // The maps recovery r reads.
+    .decl map(ky: Key, r: Recovery, d: D4, x: Box)
+
+    // Hidden q is the image of p under a map of recovery r.
+    .decl map_link(ky: Key, r: Recovery, p: Position, q: Position)
+    map_link(Ky, R, P, Q) :-
+        map(Ky, R, D, X), cell(Ky, P, _), apply(D, P, P1), compose(P1, X, Q), hidden(Ky, Q).
+
+    // The colors each recovery gives a cell: those of the axis periods, and
+    // those its maps carry into hidden cells.
+    .decl color(ky: Key, r: Recovery, p: Position, col: Color)
+    color(Ky, R, P, Col) :- recovery_choice(R), axis_color(Ky, P, Col).
+    color(Ky, R, Q, Col) :- color(Ky, R, P, Col), map_link(Ky, R, P, Q).
+
+    // --- selection ---
+
+    .decl extent(ky: Key, b: Box, a: Axis, n: number)
+    extent(Ky, B, A, N) :- block_cell(Ky, B, P), box_extent(B, P, A, N).
+
+    // B ranks above A under selection sel, read along axis x.
+    .decl above(ky: Key, sel: Selection, x: Axis, a: Box, b: Box)
+
+    .decl beaten(k: Rank, a: Box)
+    beaten([Ky, Sel, X], A) :- above(Ky, Sel, X, A, B).
+
+    // The occluders nothing ranks above.
+    .decl top(k: Rank, b: Box)
+    top([Ky, Sel, X], B) :-
+        occluder(Ky, B), selection_choice(Sel), axis_elem(X), !beaten([Ky, Sel, X], B).
+
+    // --- $Area ---
+    // @claim select
+    .init area = Tally<Block, Position>
+    area.item([Ky, B], P) :- block_cell(Ky, B, P).
+
+    above(Ky, $Area(), X, A, B) :-
+        axis_elem(X), area.tally([Ky, A], N1), area.tally([Ky, B], N2), N1 < N2.
+
+    // --- $Perimeter ---
+    // The rows and columns a box spans.
+    // @claim select
+    .init span = Tally<Block, Line>
+    span.item([Ky, B], [A, L]) :- block_cell(Ky, B, P), axis_elem(A), split(P, A, L, _).
+
+    above(Ky, $Perimeter(), X, A, B) :-
+        axis_elem(X), span.tally([Ky, A], N1), span.tally([Ky, B], N2), N1 < N2.
+
+    // --- $AxisThenCross ---
+    above(Ky, $AxisThenCross(), X, A, B) :-
+        perp(X, Y),
+        extent(Ky, A, X, N1), extent(Ky, B, X, N2), extent(Ky, A, Y, M1), extent(Ky, B, Y, M2),
+        ( N1 < N2 ; N1 = N2, M1 < M2 ).
+
+    // --- $LongestThenShortest ---
+    // @claim select
+    .init sides = Extremes<Block>
+    sides.cand([Ky, B], N) :- extent(Ky, B, _, N).
+
+    above(Ky, $LongestThenShortest(), X, A, B) :-
+        axis_elem(X),
+        sides.high([Ky, A], N1), sides.high([Ky, B], N2),
+        sides.low([Ky, A], M1), sides.low([Ky, B], M2),
+        ( N1 < N2 ; N1 = N2, M1 < M2 ).
+
+    // --- $UniqueTop ---
+    // @claim unique-largest
+    .init sole = Unanimous<Rank, Box>
+    sole.item(K, B) :- top(K, B).
+
+    // --- $TieFirst ---
+    // Each top occluder's first cell along a scan is its corner at the scan's
+    // corner.
+    // @claim tie-first
+    .init scan_order = LexOrder<Scan>
+    scan_order.corner([K, C, A], C) :- scan_order.cell([K, C, A], _).
+    scan_order.axis([K, C, A], A) :- scan_order.cell([K, C, A], _).
+    scan_order.cell([[Ky, Sel, X], C, A], P) :-
+        top([Ky, Sel, X], B), axis_elem(A), block_cell(Ky, B, P), box_corner(P, B, C).
+
+    // The top occluder a scan order reaches first.
+    .decl first_pick(k: Rank, c: DiagDir, a: Axis, b: Box)
+    first_pick([Ky, Sel, X], C, A, B) :-
+        scan_order.first([[Ky, Sel, X], C, A], P), top([Ky, Sel, X], B), box_corner(P, B, C).
+}
+
+.decl scope(s: Scope)
+
+.init parse = Parse<Scope>
+parse.cell(S, P, Col) :- scope(S), in(P, Col).
+
+// The linear parts each recovery's maps take.
+.decl kind(r: Recovery, d: D4)
+
+// A D4 element that moves some direction.
+.decl moves(d: D4)
+moves(D) :- apply_dir(D, X, Y), X != Y.
+
+// The axes each selection is read along.
+.decl reads_axis(sel: Selection, x: Axis)
+
+// The occluder each tie reading picks, per axis the selection is read along.
+.decl pick(s: Scope, sel: Selection, x: Axis, t: AreaTie, b: Box)
+
+// Some axis the selection is read along leaves no pick.
+.decl unpicked(s: Scope, sel: Selection, t: AreaTie)
+unpicked(S, Sel, T) :- scope(S), reads_axis(Sel, X), area_tie_choice(T), !pick(S, Sel, X, T, _).
+
+// The colors each hidden-orbit reading gives a cell.
+.decl shade(s: Scope, r: Recovery, f: HiddenOrbit, p: Position, col: Color)
+shade(S, R, F, P, Col) :- hidden_orbit_choice(F), parse.color(S, R, P, Col).
+
+// Some open value leaves the case with no grid, or with a cell of its grid
+// uncolored.
+.decl broken(ch: Choice)
+broken([O, R, F, Sel, T]) :- impl_choice([O, R, F, Sel, T]), unpicked([O, _], Sel, T).
+broken([O, R, F, Sel, T]) :-
+    impl_choice([O, R, F, Sel, T]), pick([O, K], Sel, _, T, B),
+    parse.block_cell([O, K], B, P), !shade([O, K], R, F, P, _).
+
+out(P_inner, Col, [O, R, F, Sel, T]) :-
+    impl_choice([O, R, F, Sel, T]), !broken([O, R, F, Sel, T]),
+    pick([O, K], Sel, _, T, B), shade([O, K], R, F, P, Col), crop(P, B, P_inner).
+
+// --- $ColorFill ---
+scope([$ColorFill(), 0]).
+parse.occluder(S, B) :- S = [$ColorFill(), 0], parse.color_fill(S, _, B).
+
+// --- $MinTwoCells ---
+scope([$MinTwoCells(), 0]).
+parse.occluder(S, B) :-
+    S = [$MinTwoCells(), 0], parse.color_fill(S, Col, B), in(P, Col), in(Q, Col), P != Q.
+
+// --- $ComponentRect ---
+scope([$ComponentRect(), K]) :- params.min_side(K).
+
+// @claim occluders
+.init part = Components<Color>
+part.node(Col, P) :- in(P, Col).
+
+// @claim occluders
+.init part_box = Bbox<Ident>
+part_box.cell(Id, P) :- part.label(_, P, Id).
+
+// A cell outside the component lies inside its box.
+.decl part_gap(id: Ident)
+part_gap(Id) :- part_box.box(Id, B), in(P, _), inside(P, B), !part.label(_, P, Id).
+
+// A side of the component's box is shorter than k.
+.decl narrow(id: Ident, k: number)
+narrow(Id, K) :-
+    part_box.box(Id, B), part.label(_, P, Id), params.min_side(K),
+    box_extent(B, P, A, N), N < K.
+
+parse.occluder([$ComponentRect(), K], B) :-
+    part_box.box(Id, B), !part_gap(Id), params.min_side(K), !narrow(Id, K).
+
+// --- $LatticePeriod ---
+kind($LatticePeriod(), D) :- d4_elem(D), !moves(D).
+
+// The translation carries a visible cell onto a visible cell of another color.
+.decl clash(s: Scope, d: D4, x: Box)
+clash(S, D, X) :-
+    kind($LatticePeriod(), D), parse.carried(S, D, X),
+    parse.visible(S, P, C1), apply(D, P, P1), compose(P1, X, Q), parse.visible(S, Q, C2), C1 != C2.
+
+parse.map(S, $LatticePeriod(), D, X) :-
+    kind($LatticePeriod(), D), parse.carried(S, D, X), !clash(S, D, X).
+
+// --- $IsometryOrbit ---
+kind($IsometryOrbit(), D) :- d4_elem(D).
+parse.map(S, $IsometryOrbit(), D, X) :- parse.near(S, D, X), !parse.contradicted(S, D, X).
+
+// --- $HiddenFill ---
+shade(S, R, $HiddenFill(), P, Col) :-
+    parse.cell(S, P, _), recovery_choice(R), !parse.color(S, R, P, _), params.fill(Col).
+
+// --- $Area ---
+reads_axis($Area(), X) :- axis_elem(X).
+
+// --- $Perimeter ---
+reads_axis($Perimeter(), X) :- axis_elem(X).
+
+// --- $AxisThenCross ---
+reads_axis($AxisThenCross(), X) :- params.primary_axis(X).
+
+// --- $LongestThenShortest ---
+reads_axis($LongestThenShortest(), X) :- axis_elem(X).
+
+// --- $UniqueTop ---
+pick(S, Sel, X, $UniqueTop(), B) :- reads_axis(Sel, X), parse.sole.value([S, Sel, X], B).
+
+// --- $TieFirst ---
+pick(S, Sel, X, $TieFirst(), B) :-
+    reads_axis(Sel, X), params.scan(C, A), parse.first_pick([S, Sel, X], C, A, B).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+    parse.occluder(E, B) :- parse.color_fill(E, _, B).
+
+    // A block that differs from the example's output in extent on some axis.
+    .decl unframed(e: Example, b: Box)
+    unframed(E, B) :- parse.extent(E, B, A, N), ex_out(E, Q, _), axis_dim(Q, A, M), N != M.
+
+    // Under axis x, the concept's tie reading picks a block of the output's
+    // extents.
+    .decl axis_fits(e: Example, x: Axis)
+    axis_fits(E, X) :- parse.sole.value([E, $AxisThenCross(), X], B), !unframed(E, B).
+
+    .decl axis_contradicted(x: Axis)
+    axis_contradicted(X) :- ex_out(E, _, _), axis_elem(X), !axis_fits(E, X).
+
+    .decl primary_axis(a: Axis)
+    primary_axis(X) :- axis_elem(X), !axis_contradicted(X).
+
+    // Under scan (c, a), the tie among the largest blocks goes to one whose
+    // extents differ from the output's.
+    .decl scan_contradicted(c: DiagDir, a: Axis)
+    scan_contradicted(C, A) :-
+        parse.first_pick([E, $Area(), _], C, A, B), unframed(E, B).
+
+    .decl scan(c: DiagDir, a: Axis)
+    scan(C, A) :- diag_dir_elem(C), axis_elem(A), !scan_contradicted(C, A).
+
+    // The colors the examples hold.
+    .decl palette(col: Color)
+    palette(Col) :- ex_in(_, _, Col).
+    palette(Col) :- ex_out(_, _, Col).
+
+    // A cell of the largest block that no visible cell reaches holds another
+    // color in the output.
+    .decl fill_contradicted(col: Color)
+    fill_contradicted(Col) :-
+        parse.sole.value([E, $Area(), _], B), parse.block_cell(E, B, P),
+        !parse.color(E, $AxisPeriods(), P, _),
+        crop(P, B, P_inner), ex_out(E, P_inner, C), palette(Col), Col != C.
+
+    .decl fill(col: Color)
+    fill(Col) :- palette(Col), !fill_contradicted(Col).
+}

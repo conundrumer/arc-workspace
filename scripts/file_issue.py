@@ -86,7 +86,7 @@ def main(args: list[str]) -> int:
     if len(args) != 3:
         print(HELP, file=sys.stderr)
         return 2
-    issues = checkout.main_checkout(checkout.ROOT) / "issues"
+    issues = checkout.main_worktree(checkout.ROOT) / "issues"
     try:
         time, source, agent = args
         print(file_issue(issues, time, source, agent, sys.stdin.read()))

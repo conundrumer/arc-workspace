@@ -1,0 +1,25 @@
+22 stored facts across 4 multi-fact parameters
+
+22 fact(s) no pair needs:
+  min_side(2)  — an enumerable parameter, so `sweep` can report the same drop
+  min_side(3)  — an enumerable parameter, so `sweep` can report the same drop
+  fill(0)  — an enumerable parameter, so `sweep` can report the same drop
+  fill(1)  — an enumerable parameter, so `sweep` can report the same drop
+  fill(2)  — an enumerable parameter, so `sweep` can report the same drop
+  fill(3)  — an enumerable parameter, so `sweep` can report the same drop
+  fill(4)  — an enumerable parameter, so `sweep` can report the same drop
+  fill(5)  — an enumerable parameter, so `sweep` can report the same drop
+  fill(6)  — an enumerable parameter, so `sweep` can report the same drop
+  fill(7)  — an enumerable parameter, so `sweep` can report the same drop
+  fill(8)  — an enumerable parameter, so `sweep` can report the same drop
+  fill(9)  — an enumerable parameter, so `sweep` can report the same drop
+  primary_axis(AXIS_V)  — an enumerable parameter, so `sweep` can report the same drop
+  primary_axis(AXIS_H)  — an enumerable parameter, so `sweep` can report the same drop
+  scan(DIAG_TL, AXIS_V)  — an enumerable parameter, so `sweep` can report the same drop
+  scan(DIAG_TL, AXIS_H)  — an enumerable parameter, so `sweep` can report the same drop
+  scan(DIAG_TR, AXIS_V)  — an enumerable parameter, so `sweep` can report the same drop
+  scan(DIAG_TR, AXIS_H)  — an enumerable parameter, so `sweep` can report the same drop
+  scan(DIAG_BL, AXIS_V)  — an enumerable parameter, so `sweep` can report the same drop
+  scan(DIAG_BL, AXIS_H)  — an enumerable parameter, so `sweep` can report the same drop
+  scan(DIAG_BR, AXIS_V)  — an enumerable parameter, so `sweep` can report the same drop
+  scan(DIAG_BR, AXIS_H)  — an enumerable parameter, so `sweep` can report the same drop

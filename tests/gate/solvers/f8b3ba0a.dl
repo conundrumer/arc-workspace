@@ -1,0 +1,165 @@
+// f8b3ba0a
+// @keywords: decompose objects count rank select
+// input: Color blocks on bg, one color dominant.
+// output: Output is a 1D layout along axis_of(params.rank_dir): the minority
+//  colors, anchored at params.rank_dir, in descending count order; the
+//  dominant (max-count) color is dropped. Extent = number of minority colors.
+//  Minority colors that share a count share a rank, colliding at one output
+//  position; a max-count tie drops every tied color.
+
+// $Cells/$Blocks coincide while every block has one size; $Blocks/$Lattice
+// coincide while every block is a lattice tile.
+
+// what is counted for each color
+.type Choice =
+    // cells of each color
+    Cells {}
+    // connected components of each color
+  | Blocks {}
+    // tiles of the separator lattice (the frame inside the border, divided by
+    // tile size) of each color
+  | Lattice {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(c: Color) bg(0).
+    .decl rank_dir(d: Dir) rank_dir(DIR_T).
+
+    // --- $Lattice ---
+    .decl tile_dim(a: Axis, k: number)
+    tile_dim(AXIS_V, 1). tile_dim(AXIS_H, 2).
+
+    .decl tile_gap(g: number) tile_gap(1).
+
+    // The separator border around the lattice.
+    .decl border_width(k: number) border_width(1).
+}
+
+.init params = Params
+
+// Ranked colors: the max-count color is dominant and drops out; the rest
+// take dense ranks over their counts, fewest first.
+.comp Parse<Key> {
+    .decl count_of(key: Key, col: Color, n: number)
+
+    .init dominant = ArgExtremes<Key, Color>
+    dominant.cand(Ky, Col, N) :- count_of(Ky, Col, N).
+
+    .decl minority_count(key: Key, col: Color, n: number)
+    minority_count(Ky, Col, N) :- count_of(Ky, Col, N), !dominant.high(Ky, Col, _).
+
+    .init o = Ordinal<Key>
+    o.idx_set(Ky, N) :- minority_count(Ky, _, N).
+
+    .decl minority_rank(key: Key, col: Color, r: number)
+    minority_rank(Ky, Col, R) :- minority_count(Ky, Col, N), o.rank(Ky, N, R).
+}
+
+// --- $Blocks: component detection ---
+
+.init comps = Components<Unit>
+comps.node($U(), P) :- in(P, Col), !params.bg(Col).
+
+.init block_count = Tally<Color, Ident>
+block_count.item(Col, Id) :- comps.label($U(), P, Id), in(P, Col).
+
+// --- $Lattice: tile detection ---
+
+// A cell seen in the frame the border encloses. Non-bg cells never sit on that
+// border, so the frame holds every one of them.
+.decl core_cell(p: Position, p_inner: Position)
+core_cell(P, P_inner) :-
+    in(P, _), params.border_width(K), uniform_inset(K, B), crop(P, B, P_inner).
+
+.init lattice = Tile2D<Unit>
+lattice.cell(P_inner) :- in(P, Col), !params.bg(Col), core_cell(P, P_inner).
+lattice.dim($U(), A, K) :- params.tile_dim(A, K).
+lattice.gap(G) :- params.tile_gap(G).
+
+.decl tile_color(p_tile: Position, col: Color)
+tile_color(P_tile, Col) :-
+    in(P, Col),                              // input cell
+    core_cell(P, P_inner),                   // seen in the interior frame
+    lattice.tile($U(), P_inner, P_tile, _).  // its lattice tile
+
+// --- counts per choice ---
+
+.init cell_count = Tally<Color, Position>
+cell_count.item(Col, P) :- in(P, Col), !params.bg(Col).
+
+.init tile_count = Tally<Color, Position>
+tile_count.item(Col, P_tile) :- tile_color(P_tile, Col).
+
+.init parse = Parse<Choice>
+parse.count_of($Cells(), Col, N)   :- cell_count.tally(Col, N).
+parse.count_of($Blocks(), Col, N)  :- block_count.tally(Col, N).
+parse.count_of($Lattice(), Col, N) :- tile_count.tally(Col, N).
+
+// --- place ---
+
+// Output frame: 1D axis anchored at params.rank_dir, per choice. Placing ascending
+// rank from the opposite edge puts the largest count at the rank_dir edge.
+.init col = DirFrame<Choice>
+col.dir(D_opp) :- params.rank_dir(D), opposite(D, D_opp).
+col.dist_set(Ch, R) :- parse.minority_rank(Ch, _, R).
+
+out(P, Col, Ch) :- parse.minority_rank(Ch, Col, Rk), col.pos(Ch, Rk, P).
+
+.comp Determine {
+    // Non-bg cells of a train input — a test input has no output to read.
+    .decl ink(e: Example, p: Position, col: Color)
+    ink(E, P, Col) :- ex_in(E, P, Col), !params.bg(Col), ex_out(E, _, _).
+
+    // The frame the non-bg cells span: the grid inside the separator border,
+    // with each ink cell's place in it.
+    .init span = Bbox<Example>
+    span.cell(E, P) :- ink(E, P, _).
+
+    // The ink spans that frame, so its distance to a grid edge is the
+    // border's width there.
+    .decl border_width(k: number)
+    border_width(K) :- span.box(_, B), dir_elem(D), dist(B, D, K).
+
+    .init blocks = Components<Example>
+    blocks.node(E, P) :- ink(E, P, _).
+
+    .type Block = [e: Example, id: Ident]
+
+    .init bbox = Bbox<Block>
+    bbox.cell([E, Id], P) :- blocks.label(E, P, Id).
+
+    .decl tile_dim(a: Axis, k: number)
+    tile_dim(A, K) :- bbox.cell(Blk, P), bbox.box(Blk, B), box_extent(B, P, A, K).
+
+    .type ED = [e: Example, d: Dir]
+
+    // Blocks along an axis: the distinct offsets their boxes sit at.
+    .init tile_count = Tally<ED, number>
+    tile_count.item([E, D], K) :- bbox.box([E, Id], B), dir_elem(D), dist(B, D, K).
+
+    .decl tile_gap(g: number)
+    tile_gap(G) :-
+        span.cell(E, P), span.box(E, B), crop(P, B, P_inner),  // the frame the lattice divides
+        tile_count.tally([E, D], N), axis_of(D, A), tile_dim(A, K),
+        divide_gap(P_inner, A, N, K, G).
+
+    .type EC = [e: Example, col: Color]
+
+    .init ink_count = Tally<EC, Position>
+    ink_count.item([E, Col], P) :- ink(E, P, Col).
+
+    .init parse = Parse<Example>
+    parse.count_of(E, Col, N) :- ink_count.tally([E, Col], N).
+
+    // A dir whose opposite edge does not measure out the ranks: some output
+    // cell sits at a distance other than its color's rank.
+    .decl rank_mismatch(d: Dir)
+    rank_mismatch(D) :-
+        dir_elem(D), opposite(D, O),
+        ex_out(E, P, Col), parse.minority_rank(E, Col, R),
+        dist(P, O, K), K != R.
+
+    .decl rank_dir(d: Dir)
+    rank_dir(D) :- dir_elem(D), !rank_mismatch(D).
+}

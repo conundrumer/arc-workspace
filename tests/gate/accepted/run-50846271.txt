@@ -1,0 +1,8 @@
+train 0: PASS (3 witnessed cases)
+train 1: PASS (3 witnessed cases)
+train 2: PASS (3 witnessed cases)
+train 3: PASS (3 witnessed cases)
+test 0: PASS (3 witnessed cases)
+
+lint: ok
+determination: no Determine comp

@@ -1,0 +1,4 @@
+28 relations read `in` and feed `out`
+no relation reads the input and holds the same tuples on every example
+
+2 relation(s) hold their tuples on the control grids too, so they do not read the input

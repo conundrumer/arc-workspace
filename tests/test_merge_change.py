@@ -3,17 +3,13 @@ refuses before the commit: files inside its submodules, and submodule
 commits that only the worktree's own copies of the submodules' repositories
 hold."""
 
-import importlib.util
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-
-SCRIPT = REPO_ROOT / "scripts" / "merge_change.py"
+from tests.conftest import script
 
 ENV = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
        "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
@@ -21,13 +17,7 @@ ENV = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
 
 @pytest.fixture(scope="module")
 def merge_change():
-    """The script, loaded from its path: `scripts/` is no package."""
-    spec = importlib.util.spec_from_file_location("merge_change", SCRIPT)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["merge_change"] = module
-    spec.loader.exec_module(module)
-    return module
+    return script("merge_change")
 
 
 def git(cwd: Path, *argv: str) -> str:
@@ -105,7 +95,7 @@ def test_change_refused_in_a_stack_reaches_master_through_no_other(
     (first / "bad").write_text("bad")
     (second / "good").write_text("good")
 
-    def check(tree: Path, touched: set[str]) -> None:
+    def check(tree: Path, main: Path, touched: set[str]) -> None:
         if (tree / "bad").exists():
             raise merge_change.Refused("bad")
 

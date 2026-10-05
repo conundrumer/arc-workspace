@@ -1,0 +1,10 @@
+train 0: PASS
+train 1: PASS (2 resolutions, 2 grids)
+train 2: PASS
+test 0: PASS
+
+--- 1 hint(s) ---
+  89565ca0.dl:102: common-subexpr: 3 literals shared with `row` (line 85); an `@ignore` directive can keep the relation it fires on
+
+lint: ok, 1 hint
+determination: no Determine comp

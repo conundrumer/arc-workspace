@@ -1,0 +1,10 @@
+7 stored facts across 1 multi-fact parameter
+
+7 fact(s) no pair needs:
+  marker_max_side(2)  — an enumerable parameter, so `sweep` can report the same drop
+  marker_max_side(3)  — an enumerable parameter, so `sweep` can report the same drop
+  marker_max_side(4)  — an enumerable parameter, so `sweep` can report the same drop
+  marker_max_side(5)  — an enumerable parameter, so `sweep` can report the same drop
+  marker_max_side(6)  — an enumerable parameter, so `sweep` can report the same drop
+  marker_max_side(7)  — an enumerable parameter, so `sweep` can report the same drop
+  marker_max_side(8)  — an enumerable parameter, so `sweep` can report the same drop

@@ -1,0 +1,8 @@
+train 0: PASS (3 witnessed cases)
+train 1: PASS (3 witnessed cases)
+train 2: PASS (3 witnessed cases)
+train 3: PASS (3 witnessed cases)
+test 0: PASS (3 witnessed cases)
+
+lint: ok
+determination: ok (border_width, rank_dir, tile_dim, tile_gap)

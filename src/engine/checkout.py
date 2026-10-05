@@ -46,8 +46,8 @@ def git_common_dir(tree: Path) -> Path:
     return (tree / done.stdout.strip()).resolve()
 
 
-def main_checkout(tree: Path) -> Path:
-    """The main checkout of the repository `tree` is a worktree of: the
+def main_worktree(tree: Path) -> Path:
+    """The main worktree of the repository `tree` is a worktree of: the
     directory that holds the common git directory."""
     return git_common_dir(tree).parent
 

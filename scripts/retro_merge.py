@@ -128,7 +128,7 @@ def merge(worktree: Path, into: Path | None = None, check: bool = False) -> dict
     """Take the worktree's change into `into`, the repo's main worktree when
     no other tree is named."""
     worktree = worktree.resolve()
-    owner = checkout.main_checkout(worktree)
+    owner = checkout.main_worktree(worktree)
     target = (into or owner).resolve()
     patch, files = patch_text(worktree)
     conflict = apply_patch(target, patch, check=True)

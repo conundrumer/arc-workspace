@@ -2,27 +2,17 @@
 keeps its files, and the worktree, which holds the only copy of the change,
 stays."""
 
-import importlib.util
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-
-SCRIPT = REPO_ROOT / "scripts" / "retro_merge.py"
+from tests.conftest import script
 
 
 @pytest.fixture(scope="module")
 def retro_merge():
-    """The script, loaded from its path: `scripts/` is no package."""
-    spec = importlib.util.spec_from_file_location("retro_merge", SCRIPT)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["retro_merge"] = module
-    spec.loader.exec_module(module)
-    return module
+    return script("retro_merge")
 
 
 def git(cwd: Path, *argv: str) -> str:

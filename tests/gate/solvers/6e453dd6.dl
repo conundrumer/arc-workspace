@@ -1,0 +1,109 @@
+// 6e453dd6
+// @draft
+// @keywords: objects lines move span enclose
+// input: a separator line, with shapes on one side
+// output: Each shape slides toward the separator until it touches it. A gap
+//  that reaches the separator across shape cells marks its row: beyond the
+//  separator, that row fills with the mark color.
+
+// what a gap is
+.type Choice =
+    // a background cell with shape on both sides along the slide axis
+    Between {}
+    // a background cell the grid edge cannot reach around the shapes
+  | Enclosed {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(col: Color) bg(6).
+    .decl shape(col: Color) shape(0).
+    .decl sep(col: Color) sep(5).
+    .decl mark(col: Color) mark(2).
+    .decl slide_dir(d: Dir) slide_dir(DIR_R).
+
+    .decl slide_axis(a: Axis)
+    slide_axis(A) :- slide_dir(D), axis_of(D, A).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Between()). impl_choice($Enclosed()).
+
+// --- the shapes ---
+
+.decl sep_cell(p: Position)
+sep_cell(P) :- in(P, Col), params.sep(Col).
+
+// The two sides the separator cuts.
+.init cut = DividerTiles<Unit>
+cut.cell($U(), P) :- in(P, _).
+cut.divider($U(), A, L) :- sep_cell(P), params.slide_axis(A), split(P, A, L, _).
+
+.init comps = Components<Unit>
+comps.node($U(), P) :- in(P, Col), params.shape(Col).
+
+// --- the slide ---
+
+// Each shape slides on its own until it touches the separator.
+.init slide = Gravity<Ident, Unit>
+slide.cell(Id, $U(), P) :- comps.label($U(), P, Id).
+slide.dir(Id, D) :- comps.label($U(), _, Id), params.slide_dir(D).
+slide.blocked(Id, P) :- comps.label($U(), _, Id), sep_cell(P).
+
+// The shape cells after the slide.
+.decl slid(p: Position)
+slid(P2) :- comps.label($U(), P, Id), slide.travel(Id, $U(), V), compose(P, V, P2).
+
+// The grid with the shapes moved, before the marks.
+.decl canvas(p: Position, col: Color)
+canvas(P, Col) :-
+    in(P, _),
+    ( sep_cell(P), params.sep(Col)
+    ; slid(P), params.shape(Col)
+    ; !sep_cell(P), !slid(P), params.bg(Col)
+    ).
+
+.decl canvas_bg(p: Position)
+canvas_bg(P) :- canvas(P, Col), params.bg(Col).
+
+// --- the gaps ---
+
+.decl gap(ch: Choice, p: Position)
+
+// --- $Between ---
+
+.init flank = Between<Unit>
+flank.axis($U(), A) :- params.slide_axis(A).
+flank.cell($U(), P) :- canvas_bg(P).
+flank.mark($U(), P) :- slid(P).
+
+gap($Between(), P) :- flank.between($U(), P).
+
+// --- $Enclosed ---
+
+// The regions the shapes close off from the grid edge.
+.init closed = Closed<Unit>
+closed.cell($U(), P) :- in(P, _), !slid(P).
+
+gap($Enclosed(), P) :- closed.region($U(), P, _), canvas_bg(P).
+
+// --- the marks ---
+
+// A gap casts toward the separator; the cast stops at the first cell that is
+// not shape.
+.init cast = Ray<Choice>
+cast.dir(Ch, D) :- impl_choice(Ch), params.slide_dir(D).
+cast.mark(Ch, P) :- gap(Ch, P).
+cast.blocked(Ch, P) :- impl_choice(Ch), in(P, _), !slid(P).
+
+// A row whose gap's cast stops at the separator fills beyond it.
+.decl fill(ch: Choice, p: Position)
+fill(Ch, P) :-
+    cast.stop(Ch, S, _, _, _), sep_cell(S),              // the cast reaches the separator
+    params.slide_axis(A), same_line(A, P, S),            // a cell of that row
+    params.slide_dir(D), cut.part_idx($U(), P, D, 0).    // beyond the separator
+
+out(P, Col, Ch) :- fill(Ch, P), params.mark(Col).
+out(P, Col, Ch) :- impl_choice(Ch), canvas(P, Col), !fill(Ch, P).

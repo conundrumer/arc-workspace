@@ -1,0 +1,386 @@
+#include "lib.dl"
+// ac0c5833
+// @draft
+// @keywords: markers stamp d4 bbox color-class
+// @scene markers: several markers of params.marker_color on a field of
+//  params.background, each three isolated cells at three corners of a square
+//  box whose adjacent corners are params.marker_stride apart; the box's fourth
+//  corner, the marker's empty corner, is not params.marker_color
+// @scene template: one shape of params.template_color whose bounding box has
+//  a corner at the empty corner of one marker, the template's marker, and
+//  lies on the far side of that corner from the marker's three cells
+// @rule copy-per-marker: at each other marker, the template is drawn with
+//  its bounding-box corner at that marker's empty corner, extending away from
+//  the marker's three cells; copy cells outside the grid are dropped
+// @rule mirror: the copy is the template mirrored across each axis on which
+//  the target marker's empty corner lies on the other side of its box from
+//  the template marker's empty corner
+// @rule overlay: only the template's cells are written; every other cell
+//  keeps its input color
+
+// how far apart a marker's corners are
+.type Extent =
+    // @claim markers
+    StoredStride {}
+    // @scene markers: the stride is the one corner distance s for which the
+    //  marker-color cells split exactly into three-corner triples of square
+    //  boxes with corners s apart; undefined when no s or more than one does
+    // @witness stride-three: variant $DerivedStride
+    //     @relaxed markers
+  | DerivedStride {}
+    // @scene markers: a marker is three marker-color cells at three corners
+    //  of an axis-aligned rectangle whose adjacent corners are at most
+    //  params.marker_max_side apart, the fourth corner not the marker color
+    // @witness squashed-marker: borderline concept
+    //     @relaxed markers
+  | RectMarker {}
+
+// where the marker color comes from
+.type MarkerColor =
+    // @claim markers
+    StoredMarkerColor {}
+    // @scene markers: the marker color is the one non-background color whose
+    //  cells split exactly into the triples the marker extent reads; undefined
+    //  when no color or more than one does
+    // @witness green-markers: variant $DerivedMarkerColor
+    //     @relaxed markers
+  | DerivedMarkerColor {}
+
+// which cells form the template
+.type TemplateColor =
+    // @claim template
+    StoredTemplateColor {}
+    // @scene template: the template is every cell that is neither
+    //  params.background nor the marker color
+    // @rule overlay: each template cell is copied in its own color; undefined
+    //  where two copies write different colors to one cell
+    // @witness two-color-template: variant $AnyColorTemplate
+    //     @relaxed template
+    // @witness green-template: variant $AnyColorTemplate
+    //     @relaxed template
+  | AnyColorTemplate {}
+
+// how the copy is oriented
+.type CopyTransform =
+    // @claim mirror
+    Mirror {}
+    // @rule mirror: the copy is the template turned by the rotation that
+    //  carries the template marker's corner direction onto the target
+    //  marker's
+    // @witness asymmetric-template: variant concept
+  | Rotate {}
+
+// what a copy writes
+.type CopyExtent =
+    // @claim overlay
+    CellsOnly {}
+    // @rule overlay: the copy writes the template's whole bounding box, its
+    //  cells outside the template in params.background; undefined where one
+    //  copy's background meets another copy's template cell
+    // @witness copy-over-marker: borderline concept
+  | BoxStamp {}
+
+.type Choice = [extent: Extent, marker: MarkerColor, template: TemplateColor,
+                transform: CopyTransform, stamp: CopyExtent]
+
+// A marker extent with a marker-color source.
+.type Reader = [e: Extent, mc: MarkerColor]
+
+// A reader with its open side bound under RectMarker, 0 under the strides.
+.type MarkerKey = [r: Reader, k: number]
+
+// A marker color and the corner distance its triples are read at.
+.type Reading = [col: Color, n: number]
+
+// A marker reading with a template reading.
+.type Scene = [mk: MarkerKey, t: TemplateColor]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $DerivedMarkerColor, $AnyColorTemplate, $BoxStamp ---
+    // @derive DominantColor: variant derived
+    //     @relaxed markers
+    // @derive RarestColor: ordinary concept
+    // @ignore: derive $AnyColorTemplate — fails Fit: the rarest color is the
+    //  template's, so the template reads the field's cells
+    // @ignore: derive $BoxStamp — fails Fit at train 1: the box's cells
+    //  outside the template take the template's color
+    .decl background(c: Color) background(0).
+
+    // --- $StoredMarkerColor ---
+    // @ignore: derive SharedColor — fails Fit: the derivation gives several
+    //  colors, over which the stored stride's and the rectangle's readings
+    //  clash, and under $DerivedStride the template's cells at train 1 split
+    //  exactly into triples with corners 1 apart
+    // @ignore: derive VanishedColor — fails Fit, as SharedColor does: on a
+    //  run without train outputs it gives the input's colors
+    .decl marker_color(c: Color) marker_color(4).
+
+    // --- $StoredTemplateColor ---
+    // @derive RarestColor: variant derived
+    //     @relaxed template
+    .decl template_color(c: Color) template_color(2).
+
+    // --- $StoredStride ---
+    // The distance between adjacent corners of a marker's box.
+    // @ignore: derive SepTileCount — fails Fit at test 0
+    // @derive TileCount: variant $DerivedStride
+    //     @relaxed markers
+    // @ignore: derive $StoredMarkerColor — fails Fit: the several strides the
+    //  derivation gives make the stored color's reading clash
+    .decl marker_stride(k: number) marker_stride(2).
+
+    // --- $RectMarker ---
+    // The largest distance between adjacent corners of a marker's box. The
+    // pairs leave every value from 2 to 8 open.
+    // @derive SepTileCount: ordinary derived
+    // @derive TileCount: ordinary derived
+    .decl marker_max_side(k: number)
+    marker_max_side(2). marker_max_side(3). marker_max_side(4). marker_max_side(5).
+    marker_max_side(6). marker_max_side(7). marker_max_side(8).
+}
+
+.init params = Params
+
+// The markers: L-shaped triples of cells of a candidate color, read at one
+// corner distance or at every distance up to a side bound.
+.comp Parse<Key> {
+    .decl cell(ky: Key, p: Position, col: Color)
+
+    // The colors a marker may have.
+    .decl cand(ky: Key, col: Color)
+
+    // A reading at corner distance n: both arms n.
+    .decl stride(ky: Key, n: number)
+
+    // A reading at side bound n: both arms at most n.
+    .decl bound(ky: Key, n: number)
+
+    // Q lies k cells from P toward D, both of candidate color Col: an arm of
+    // a possible marker.
+    .decl arm(ky: Key, col: Color, p: Position, d: Dir, k: number, q: Position)
+    arm(Ky, Col, P, D, K, Q) :-
+        cand(Ky, Col), cell(Ky, P, Col), cell(Ky, Q, Col), P != Q, relative(P, Q, V),
+        opposite(D, O), dist(V, O, K), K > 0, jump(P, D, K, Q).
+
+    // Corner K with arms of h toward D1, ending at P1, and of w toward D2,
+    // ending at P2; the box's fourth corner M is not Col, and C is its corner
+    // direction.
+    .decl triple(ky: Key, col: Color, h: number, w: number, k: Position,
+                 p1: Position, p2: Position, m: Position, c: DiagDir)
+    triple(Ky, Col, H, W, K, P1, P2, M, C) :-
+        arm(Ky, Col, K, D1, H, P1), arm(Ky, Col, K, D2, W, P2), diag_dirs(C, _, D1, D2),
+        jump(P1, D2, W, M), !cell(Ky, M, Col).
+
+    // The triples the reading at n admits.
+    .decl admits(ky: Key, n: number, col: Color, k: Position, m: Position, c: DiagDir)
+    admits(Ky, N, Col, K, M, C) :- stride(Ky, N), triple(Ky, Col, N, N, K, _, _, M, C).
+    admits(Ky, N, Col, K, M, C) :-
+        bound(Ky, N), triple(Ky, Col, H, W, K, _, _, M, C), H <= N, W <= N.
+
+    // The cells of the admitted triples.
+    .decl held(ky: Key, n: number, col: Color, k: Position, m: Position, p: Position)
+    held(Ky, N, Col, K, M, P) :-
+        admits(Ky, N, Col, K, M, _), triple(Ky, Col, _, _, K, P1, P2, M, _),
+        ( P = K ; P = P1 ; P = P2 ).
+
+    // A cell of the color lies in no admitted triple, or in two.
+    .decl inexact(ky: Key, n: number, col: Color)
+    inexact(Ky, N, Col) :-
+        admits(Ky, N, Col, _, _, _), cell(Ky, P, Col), !held(Ky, N, Col, _, _, P).
+    inexact(Ky, N, Col) :-
+        held(Ky, N, Col, K1, M1, P), held(Ky, N, Col, K2, M2, P), ( K1 != K2 ; M1 != M2 ).
+
+    // The color whose admitted triples hold each of its cells once.
+    .decl exact(ky: Key, n: number, col: Color)
+    exact(Ky, N, Col) :- admits(Ky, N, Col, _, _, _), !inexact(Ky, N, Col).
+}
+
+.decl extent_choice(e: Extent)
+extent_choice($StoredStride()). extent_choice($DerivedStride()). extent_choice($RectMarker()).
+
+.decl marker_color_choice(m: MarkerColor)
+marker_color_choice($StoredMarkerColor()). marker_color_choice($DerivedMarkerColor()).
+
+.decl template_color_choice(t: TemplateColor)
+template_color_choice($StoredTemplateColor()). template_color_choice($AnyColorTemplate()).
+
+.decl copy_transform_choice(x: CopyTransform)
+copy_transform_choice($Mirror()). copy_transform_choice($Rotate()).
+
+.decl copy_extent_choice(x: CopyExtent)
+copy_extent_choice($CellsOnly()). copy_extent_choice($BoxStamp()).
+
+.decl impl_choice(ch: Choice)
+// DerivedStride with DerivedMarkerColor fails Fit at train 1: the template's
+// cells there split exactly into triples with corners 1 apart.
+impl_choice([E, Mc, T, X, St]) :-
+    extent_choice(E), marker_color_choice(Mc), template_color_choice(T),
+    copy_transform_choice(X), copy_extent_choice(St),
+    ( E != $DerivedStride() ; Mc = $StoredMarkerColor() ).
+
+// --- markers ---
+
+// The colors a marker may have under each marker-color source.
+.decl marker_cand(mc: MarkerColor, col: Color)
+
+// @ignore exact: store — subsumed: the stored split holds the stored marker
+//  color with the stored stride or side bounds, so each case that reads it
+//  gives, wherever it is defined, the output of the case that reads those
+//  parameters in its place
+.init parse = Parse<Reader>
+parse.cell([E, Mc], P, Col) :- extent_choice(E), marker_color_choice(Mc), in(P, Col).
+parse.cand([E, Mc], Col) :- extent_choice(E), marker_cand(Mc, Col).
+
+// The marker color and corner distance each marker reading takes.
+// @claim markers
+.init chosen = Unanimous<MarkerKey, Reading>
+
+.decl marker(mk: MarkerKey, m: Position, c: DiagDir)
+marker([R, Kk], M, C) :- chosen.value([R, Kk], [Col, N]), parse.admits(R, N, Col, _, M, C).
+
+// The open side bound each extent runs at: 0 under the strides.
+.decl open_bound(e: Extent, n: number)
+
+// --- $StoredMarkerColor ---
+marker_cand($StoredMarkerColor(), Col) :- params.marker_color(Col).
+
+// --- $DerivedMarkerColor ---
+marker_cand($DerivedMarkerColor(), Col) :- in(_, Col), !params.background(Col).
+
+// --- $StoredStride ---
+parse.stride([$StoredStride(), Mc], N) :- marker_color_choice(Mc), params.marker_stride(N).
+open_bound($StoredStride(), 0).
+
+// --- $StoredStride & $StoredMarkerColor ---
+chosen.item([[$StoredStride(), $StoredMarkerColor()], 0], [Col, N]) :-
+    params.marker_color(Col), params.marker_stride(N).
+
+// --- $StoredStride & $DerivedMarkerColor ---
+chosen.item([[$StoredStride(), $DerivedMarkerColor()], 0], [Col, N]) :-
+    parse.exact([$StoredStride(), $DerivedMarkerColor()], N, Col).
+
+// --- $DerivedStride ---
+parse.stride([$DerivedStride(), Mc], N) :- parse.arm([$DerivedStride(), Mc], _, _, _, N, _).
+open_bound($DerivedStride(), 0).
+chosen.item([[$DerivedStride(), Mc], 0], [Col, N]) :- parse.exact([$DerivedStride(), Mc], N, Col).
+
+// --- $RectMarker ---
+parse.bound([$RectMarker(), Mc], N) :- marker_color_choice(Mc), params.marker_max_side(N).
+open_bound($RectMarker(), N) :- params.marker_max_side(N).
+
+// --- $RectMarker & $StoredMarkerColor ---
+chosen.item([[$RectMarker(), $StoredMarkerColor()], N], [Col, N]) :-
+    params.marker_color(Col), params.marker_max_side(N).
+
+// --- $RectMarker & $DerivedMarkerColor ---
+chosen.item([[$RectMarker(), $DerivedMarkerColor()], N], [Col, N]) :-
+    parse.exact([$RectMarker(), $DerivedMarkerColor()], N, Col).
+
+// --- template ---
+
+// The template's cells under each scene.
+// @ignore: store — the stored reading of the template's color is
+//  params.template_color, StoredTemplateColor
+.decl template(sc: Scene, p: Position, col: Color)
+
+// The template's bounding box.
+// @claim template
+.init template_box = Bbox<Scene>
+template_box.cell(Sc, P) :- template(Sc, P, _).
+
+// --- $StoredTemplateColor ---
+template([Mk, $StoredTemplateColor()], P, Col) :-
+    chosen.value(Mk, _), in(P, Col), params.template_color(Col).
+
+// --- $AnyColorTemplate ---
+template([Mk, $AnyColorTemplate()], P, Col) :-
+    chosen.value(Mk, [K, _]), in(P, Col), !params.background(Col), Col != K.
+
+// --- template's marker ---
+
+// The marker at whose empty corner the template's bounding box has its far
+// corner.
+.decl source(sc: Scene, m: Position, c: DiagDir)
+source(Sc, M, C) :-
+    template_box.box(Sc, B), Sc = [Mk, _], marker(Mk, M, C), diag_opposite(C, C_opp),
+    box_corner(M, B, C_opp).
+
+// Two markers qualify.
+.decl sources_clash(sc: Scene)
+sources_clash(Sc) :- source(Sc, M1, C1), source(Sc, M2, C2), ( M1 != M2 ; C1 != C2 ).
+
+// --- copies ---
+
+// What each copy writes, as offsets from the template marker's empty corner.
+// @ignore: store — the colors are the template's, whose stored reading is
+//  params.template_color, StoredTemplateColor
+.decl stamp(sc: Scene, st: CopyExtent, v: Offset, col: Color)
+
+// The D4 element that carries the template marker's corner direction C0
+// onto a target marker's C1.
+.decl carry(x: CopyTransform, c0: DiagDir, c1: DiagDir, d: D4)
+
+// The cells each copy writes.
+// @ignore: store — the colors are the template's, whose stored reading is
+//  params.template_color, StoredTemplateColor
+.decl copy(sc: Scene, x: CopyTransform, st: CopyExtent, q: Position, col: Color)
+copy(Sc, X, St, Q, Col) :-
+    stamp(Sc, St, V, Col), source(Sc, M0, C0), Sc = [Mk, _],
+    marker(Mk, M1, C1), M1 != M0, carry(X, C0, C1, D), apply(D, V, V1), compose(M1, V1, Q).
+
+// Exactly one template's marker.
+.decl ready(sc: Scene)
+ready(Sc) :- source(Sc, _, _), !sources_clash(Sc).
+
+// At some open value, the case finds no template's marker or more than one.
+.decl broken(ch: Choice)
+broken([E, Mc, T, X, St]) :-
+    impl_choice([E, Mc, T, X, St]), open_bound(E, N), !ready([[[E, Mc], N], T]).
+
+// Each open value's grid; two colors at one cell leave the case undefined.
+out(P, Col, [E, Mc, T, X, St]) :-
+    impl_choice([E, Mc, T, X, St]), !broken([E, Mc, T, X, St]),
+    open_bound(E, N), in(P, C),
+    ( copy([[[E, Mc], N], T], X, St, P, Col)
+    ; !copy([[[E, Mc], N], T], X, St, P, _), Col = C ).
+
+// --- $Mirror ---
+// An element that turns some direction onto the other axis.
+.decl turns_axis(d: D4)
+turns_axis(D) :- apply_dir(D, X, Y), axis_of(X, A1), axis_of(Y, A2), A1 != A2.
+
+carry($Mirror(), C0, C1, D) :- apply_diag_dir(D, C0, C1), !turns_axis(D).
+
+// --- $Rotate ---
+carry($Rotate(), C0, C1, D) :- apply_diag_dir(D, C0, C1), c4_elem(D).
+
+// --- $CellsOnly ---
+stamp(Sc, $CellsOnly(), V, Col) :- source(Sc, M0, _), template(Sc, P, Col), relative(M0, P, V).
+
+// --- $BoxStamp ---
+stamp(Sc, $BoxStamp(), V, Col) :-
+    source(Sc, M0, _), template_box.box(Sc, B), in(P, _), inside(P, B), relative(M0, P, V),
+    ( template(Sc, P, Col)
+    ; !template(Sc, P, _), params.background(Col) ).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+    parse.cand(E, Col) :- ex_in(E, _, Col), params.marker_color(Col).
+    parse.bound(E, N) :- ex_in(E, _, _), side(N).
+
+    // The side bounds tried: each distance from a cell to an edge.
+    .decl side(n: number)
+    side(N) :- ex_in(_, P, _), dir_elem(D), dist(P, D, N).
+
+    // An example with an output whose marker cells do not split exactly at
+    // side bound N.
+    .decl side_contradicted(n: number)
+    side_contradicted(N) :-
+        side(N), ex_out(E, _, _), params.marker_color(Col), !parse.exact(E, N, Col).
+
+    .decl marker_max_side(k: number)
+    marker_max_side(N) :- side(N), !side_contradicted(N).
+}

@@ -1,0 +1,81 @@
+// 696d4842
+// @draft
+// @keywords: objects markers cast walk move
+// output: Each shape is a path of one color with two ends. A dot lies on the
+//  line that one end continues along. The shape crawls toward that dot until it
+//  touches it: the near end grows along the line, and for each cell it gains,
+//  the far end gives up one cell, which takes the dot's color.
+
+.decl out(p: Position, col: Color)
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+// --- shapes ---
+
+.init shapes = Components<Color>
+shapes.node(Col, P) :- in(P, Col), !params.bg(Col).
+
+.init rim = Rim<Color>
+rim.cell(Col, P) :- shapes.node(Col, P).
+
+// The shape continues from P toward D: the cell there is of P's color.
+.decl link(p: Position, d: Dir)
+link(P, D) :- shapes.node(Col, P), dir_elem(D), !rim.rim_dir(Col, P, D).
+
+// The one direction a shape cell's neighbors lie in.
+.init behind = Unanimous<Position, Dir>
+behind.item(P, D) :- link(P, D).
+
+// An end of a shape: its one neighbor lies behind it, and it continues toward D.
+.decl end(p: Position, d: Dir)
+end(P, D) :- behind.value(P, D_in), opposite(D_in, D).
+
+// A dot: a shape cell with no neighbor of its color.
+.decl dot(p: Position)
+dot(P) :- shapes.node(_, P), !link(P, _).
+
+// --- the crawl ---
+
+// Ends look along their line, and any content stops the look.
+.init sight = Ray<Dir>
+sight.dir(D, D) :- dir_elem(D).
+sight.mark(D, P) :- end(P, D).
+sight.cell(D, P) :- dir_elem(D), in(P, Col), params.bg(Col).
+sight.blocked(D, P) :- dir_elem(D), in(P, Col), !params.bg(Col).
+
+// The dot an end faces.
+.decl faces(p_end: Position, p_dot: Position)
+faces(P_end, P_dot) :- sight.stop(D, P_dot, D, _, P_end), dot(P_dot).
+
+// The cells between an end and its dot: where the shape grows.
+.decl growth(p_end: Position, p: Position)
+growth(P_end, P) :- faces(P_end, _), sight.clear(D, P, D, _, P_end).
+
+// The near end advances one growth cell per step, and at each step the far
+// end gives up the next cell of the shape.
+.init crawl = Take<Position, Position, Position>
+crawl.start(P_end, P) :- growth(P_end, P), end(P_end, D), neighbor(P_end, D, P).
+crawl.step(P_end, P, P2) :-
+    growth(P_end, P), end(P_end, D), neighbor(P, D, P2), growth(P_end, P2).
+crawl.init_untaken(P_end, Q) :-
+    faces(P_end, _), shapes.label(Col, P_end, Id), shapes.label(Col, Q, Id).  // the shape's cells
+crawl.take(P_end, P, Q) :-
+    crawl.untaken(P_end, P, Q),
+    ( end(Q, _), Q != P_end                      // the far end is given up first
+    ; link(Q, D), neighbor(Q, D, Q2), crawl.taken(P_end, P, Q2)  // then the next cell along the shape
+    ).
+
+// A cell the far end gave up takes the dot's color.
+.decl vacated(p: Position, col: Color)
+vacated(Q, Col) :- crawl.take(P_end, _, Q), faces(P_end, P_dot), in(P_dot, Col).
+
+out(P, Col) :-
+    in(P, Col_in),
+    ( growth(P_end, P), in(P_end, Col)              // the shape grows
+    ; vacated(P, Col)                               // the far end gives up the cell
+    ; !growth(_, P), !vacated(P, _), Col = Col_in   // unchanged
+    ).
