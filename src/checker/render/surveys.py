@@ -66,6 +66,7 @@ from checker.render import (
     failure_text,
     file_line,
     finding_lines,
+    line_text,
     marker_text,
     names_text,
     noun,
@@ -654,7 +655,7 @@ NO_COMMON: Annotated[str, quotes(
     "case that stores the fact.")] \
     = mctx("no value is admitted by every case, so each group stores what "
            "it admits under a case column")
-UNMARKED = mctx("line {line}: {params} {verb} under the marker `{marker}`, "
+UNMARKED = mctx("{line}: {params} {verb} under the marker `{marker}`, "
                 "which lists no case; see "
                 "[Cases](docs/handbook/solver-file.md#cases)")
 
@@ -1014,7 +1015,7 @@ def sweep_lines(solver: Solver, entry: SweepEntry,
                 detail=_skip_text(solver, entry))]
         case NoCaseMarker(marker=m, parameters=params):
             return [UNMARKED.format(
-                line=m.line, marker=marker_text(m),
+                line=line_text(m.line), marker=marker_text(m),
                 params=", ".join(f"`{p}`" for p in params),
                 verb="are" if len(params) > 1 else "is")]
 

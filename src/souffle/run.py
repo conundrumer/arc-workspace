@@ -166,7 +166,7 @@ def preprocessor_flags() -> tuple[str, ...]:
 
 
 FUNCTOR_LIB_NAME = "functors"
-"""The name Souffle links the functor library by (`-lfunctors`)."""
+"""The name Souffle links the functor library by, after `-l`."""
 FUNCTOR_LIB = f"lib{FUNCTOR_LIB_NAME}.dylib"
 """The functor library's file in the functor directory."""
 FUNCTOR_SOURCE = "lib_functors.cpp"

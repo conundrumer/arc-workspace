@@ -23,8 +23,8 @@ from souffle.index import index_of
 from souffle.run import Runner
 
 FUNCTOR_DIR = checkout.programs()
-"""Where `libfunctors.dylib`, the lib's functors, stands, in the checkout
-at import."""
+"""Where the functor library (`run.FUNCTOR_LIB`) and its source stand, in
+the checkout at import."""
 CACHE_DIR = checkout.cache() / "engine-souffle"
 """Where each run is stored under the hash of all it reads, in the
 checkout at import."""

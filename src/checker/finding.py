@@ -84,7 +84,6 @@ class Kind(StrEnum):
     (solver-file.md, under "Params" and "Program")."""
     MISSING_BRANCH_LINE = "missing-branch-line"
     DUPLICATE_BRANCH_LINE = "duplicate-branch-line"
-    BRANCH_WITNESS_MISSING = "branch-witness-missing"
     BRANCH_ENTRY = "branch-entry"
     DERIVE_UNREAD = "derive-unread"
     BRANCH_EXCLUDED = "branch-excluded"

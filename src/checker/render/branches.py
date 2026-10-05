@@ -46,6 +46,7 @@ from checker.render import (
     hint_line,
     in_line_order,
     line_list,
+    line_text,
     resolution_lines,
     shifted,
     under_case,
@@ -93,7 +94,7 @@ from solver.witness import (
 
 BRANCH_KINDS = frozenset({
     Kind.IDLE_BRANCH_IGNORE, Kind.MISSING_BRANCH_LINE,
-    Kind.DUPLICATE_BRANCH_LINE, Kind.BRANCH_WITNESS_MISSING,
+    Kind.DUPLICATE_BRANCH_LINE,
     Kind.BRANCH_ENTRY, Kind.BRANCH_EXCLUDED, Kind.DERIVE_UNREAD,
     Kind.DERIVE_FIT,
     Kind.DERIVE_UNPLACED, Kind.STORE_PARAMETER_NAME, Kind.STORE_VALUES,
@@ -307,15 +308,13 @@ def _branch_text(solver: Solver, f: Finding) -> str:
                         "`@ignore: store` line") + _cases_suffix(p.cases)
         case Kind.DUPLICATE_BRANCH_LINE, DuplicatePayload(
                 branch=DeriveBranch() as b, first_line=n):
-            return mctx("a second `@derive` line of `{b}`; the first is line "
-                        "{n}").format(b=branch_text(b), n=n)
+            return mctx("a second `@derive` line of `{b}`; the first is "
+                        "{line}").format(b=branch_text(b), line=line_text(n))
         case Kind.DUPLICATE_BRANCH_LINE, DuplicatePayload(
                 branch=StoreBranch() as b, second_line=n):
-            return mctx("`{rel}` has a second `@store` line at line {n}, so "
+            return mctx("`{rel}` has a second `@store` line at {line}, so "
                         "`{b}` denotes two branches").format(
-                rel=b.spelled, n=n, b=branch_text(b))
-        case Kind.BRANCH_WITNESS_MISSING, BranchPayload(branch=b):
-            return _needs_witness(_word(b), branch_text(b))
+                rel=b.spelled, line=line_text(n), b=branch_text(b))
         case Kind.BRANCH_ENTRY, BranchEntryPayload(branch=b):
             return mctx("at the witness's assignment, each case that takes "
                         "`{b}` gives the output of the case that takes "
@@ -437,9 +436,10 @@ def determination_lines(solver: Solver, result: DetermineResult | NoTask,
     if isinstance(result, Determined):
         scopes = {u.id: u.scope for u in solver.program.units}
         lines += [mctx("circular determination: ") + ", ".join(
-            mctx("{param} reads params.{reads} ({comp} line {line})").format(
+            mctx("{param} reads params.{reads} ({comp} {line})").format(
                 param=r.parameter, reads=r.reads,
-                comp=dotted(scopes[r.unit].components), line=r.line)
+                comp=dotted(scopes[r.unit].components),
+                line=line_text(r.line))
             for r in cycle) for cycle in result.cycles]
     diffs = [n for f in findings
              if isinstance(f.payload, DeterminationDiffPayload)
@@ -605,8 +605,8 @@ def derive_lines(solver: Solver, survey: object) -> list[str]:
                 reason=_no_witness_text(w)))
             lines.append("  " + _needs_witness(at_word(DirectiveWord.DERIVE), name))
         if d.line is not None:
-            lines.append("  " + mctx("line {line}: {directive}").format(
-                line=d.line.line, directive=derive_text(
+            lines.append("  " + mctx("{line}: {directive}").format(
+                line=line_text(d.line.line), directive=derive_text(
                     d.proposer.name, d.line.plausibility,
                     d.line.verdict)))
             continue
@@ -726,8 +726,8 @@ def _headline(solver: Solver, f: Found) -> str:
     name = f"{rel}[{', '.join(f.columns)}]" if f.sub else rel
     if f.line is not None and f.line.line is not None \
             and f.kind is ValueKind.OWNED:
-        return mctx("{name}: @store at line {line}").format(
-            name=name, line=f.line.line.line)
+        return mctx("{name}: @store at {line}").format(
+            name=name, line=line_text(f.line.line.line))
     if f.kind is ValueKind.CONSTANT:
         keys = _ticked(f.keys) or mctx("the key")
         return mctx("{name}: {n} {noun}s, one per {keys}").format(

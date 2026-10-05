@@ -516,8 +516,8 @@ class Solver:
 # Paths
 
 def solver_file(stem: str) -> Path:
-    """The file of the solver `stem` under `checkout.solver_files()`."""
-    return checkout.solver_files() / f"{stem}.dl"
+    """The file of the solver `stem` under `checkout.solvers()`."""
+    return checkout.solvers() / f"{stem}.dl"
 
 
 def proposers_path() -> Path:
@@ -525,7 +525,7 @@ def proposers_path() -> Path:
     return checkout.programs() / PROPOSERS_FILE
 
 
-LIB_INCLUDE = f'#include "../{LIB_FILE}"\n#line 1\n'
+LIB_INCLUDE = f'#include "{LIB_FILE}"\n#line 1\n'
 """What `load` puts above a text that lacks the lib's include: the include,
 and a `#line 1` directive, so that the text's own lines keep their
 numbers."""
@@ -534,13 +534,13 @@ _STEM_RE = re.compile(r"^[0-9a-f]{8}")
 
 
 def parse_with_lib(engine: Engine, text: str) -> Program | ParseFailure:
-    """`text` parsed against the solvers directory, with the lib's include
-    added where the parse holds none."""
-    parsed = engine.parse(text, checkout.solvers())
+    """`text` parsed against `programs/`, where the lib stands, with the
+    lib's include added where the parse holds none."""
+    parsed = engine.parse(text, checkout.programs())
     if isinstance(parsed, Program) and any(
             Path(i.path).name == LIB_FILE for i in parsed.includes):
         return parsed
-    return engine.parse(LIB_INCLUDE + text, checkout.solvers())
+    return engine.parse(LIB_INCLUDE + text, checkout.programs())
 
 
 # Reading values
@@ -1394,10 +1394,10 @@ def instance_faults(program: Program) -> list[Fault]:
 def load(stem: str, engine: Engine, path: Path | None = None) -> Solver:
     """The solver of `stem`, the one entry every command uses: the text of
     `path`, a solver file anywhere whose name starts with the task id,
-    else of `<stem>.dl` under `programs/solvers/`. Every solver reads the
+    else of `<stem>.dl` under `checkout.solvers()`. Every solver reads the
     lib: `load` adds the lib's `#include` to the text when the text lacks
-    it (`LIB_INCLUDE`), and parses it against the solvers directory,
-    wherever the file stands.
+    it (`LIB_INCLUDE`), and parses it against `programs/`, wherever the
+    file stands.
 
     A form the tool no longer reads gives a fault, never a reading of the
     form it replaced, so a file fails as written until it is brought to
@@ -1409,7 +1409,7 @@ def load(stem: str, engine: Engine, path: Path | None = None) -> Solver:
         problems.append(Fault(ProblemKind.PARSE_FAILURE,
                                        InSolver(parsed.line), parsed))
         program = _empty_program()
-        lib_parse = engine.parse(LIB_INCLUDE, checkout.solvers())
+        lib_parse = engine.parse(LIB_INCLUDE, checkout.programs())
         lib = read_lib(lib_parse if isinstance(lib_parse, Program)
                        else _empty_program())
     else:
@@ -1836,10 +1836,16 @@ class CaseTypes:
         return [p for p in choice.points if self.points[p.path] == type]
 
     def fields(self, type: str) -> tuple[str, ...] | None:
-        """The types of the fields a value of `type` opens into; None
-        where it is no record, and for `Choice`, which a value is compared
+        """The types of the fields a value of `type` opens into: those of
+        `term_fields`, but none for `Choice`, which a value is compared
         with whole, as the base."""
-        return None if type == CHOICE else self.records.get(type)
+        return None if type == CHOICE else self.term_fields(type)
+
+    def term_fields(self, type: str) -> tuple[str, ...] | None:
+        """The types of the fields a term of `type` in the program opens
+        into; None where it is no record. A record `Choice` opens, since a
+        term builds the base field by field."""
+        return self.records.get(type)
 
     def leaves(self, type: str, value: Value) -> list[tuple[str, Value]]:
         """The values at the case-typed places of a value of `type`, each
@@ -1881,11 +1887,7 @@ def case_types(solver: Solver) -> CaseTypes:
     program, choice = solver.program, solver.choice
 
     def make() -> CaseTypes:
-        cases = _Cases(Graph(program, solver.engine), choice)
-        return CaseTypes(frozenset(cases.case_types), dict(cases.records),
-                         {} if choice is None else {
-                             p.path: cases.graph.resolve_type(p.type, ())
-                             for p in choice.points})
+        return _Cases(Graph(program, solver.engine), choice).types
 
     return _CASE_TYPES.guarded(program, choice, make)
 
@@ -2393,22 +2395,23 @@ class _Cases:
     def __init__(self, graph: Graph, choice: Choice | None) -> None:
         self.graph = graph
         self.choice = choice
-        self.points = set() if choice is None else {
-            graph.resolve_type(p.type, ()) for p in choice.points}
-        self.records: dict[str, tuple[str, ...]] = {
+        points = {} if choice is None else {
+            p.path: graph.resolve_type(p.type, ()) for p in choice.points}
+        records: dict[str, tuple[str, ...]] = {
             graph.key_of(t): tuple(
                 graph.resolve_type(f.type, t.scope.components)
                 for f in t.fields)
             for t in graph.program.types
             if isinstance(t, RecordType) and own(t.span)}
-        self.case_types = {CHOICE, *self.points}
+        carrying = {CHOICE, *points.values()}
         grown = True
         while grown:
-            more = {n for n, fields in self.records.items()
-                    if n not in self.case_types
-                    and any(f in self.case_types for f in fields)}
-            self.case_types |= more
+            more = {n for n, fields in records.items()
+                    if n not in carrying
+                    and any(f in carrying for f in fields)}
+            carrying |= more
             grown = bool(more)
+        self.types = CaseTypes(frozenset(carrying), records, points)
         self._eq: dict[UnitId, dict[str, Term]] = {}
         self._ne: dict[UnitId, dict[str, list[Term]]] = {}
         self.declared = set(graph.type_decls)
@@ -2437,7 +2440,7 @@ class _Cases:
         out: list[tuple[str, Term]] = []
         column = False
         for t, term in self._typed(at, unit.head):
-            if t in self.case_types:
+            if t in self.types.types:
                 column = True
                 out.append((t, term))
         for lit in unit.body or ():
@@ -2459,7 +2462,7 @@ class _Cases:
             unit, at = placed
             filled: set[str] = set()
             for t, term in self._typed(at, unit.head):
-                if t in self.case_types:
+                if t in self.types.types:
                     filled |= _variables(term)
             eq = self._equalities(unit)
             grown = True
@@ -2484,10 +2487,10 @@ class _Cases:
 
     def _case_leaves(self, term: Term, type: str) -> list[Term]:
         """The terms at the case-typed places of a term of `type`, records
-        opened by their fields' types (`_fields`)."""
-        if type not in self.case_types:
+        opened by their fields' types (`CaseTypes.term_fields`)."""
+        if type not in self.types.types:
             return []
-        fields = self._fields(type)
+        fields = self.types.term_fields(type)
         if isinstance(term, RecordTerm) and fields is not None \
                 and len(fields) == len(term.args):
             return [x for a, f in zip(term.args, fields, strict=True)
@@ -2577,7 +2580,7 @@ class _Cases:
         branch, as `markers_of($OnePiece(), $SingleDots())` does where
         `markers` stands under `LargestPiece`."""
         choice = self.choice
-        if choice is None or base is None or type not in self.case_types:
+        if choice is None or base is None or type not in self.types.types:
             return True
         while path and isinstance(term, RecordTerm):
             if path[0] >= len(term.args):
@@ -2611,7 +2614,7 @@ class _Cases:
             return self._admits[memo]
         if path:
             return True
-        fields = self._fields(type)
+        fields = self.types.term_fields(type)
         if fields is not None:
             if isinstance(term, RecordTerm) and len(term.args) == len(fields):
                 return all(self._admits_in(placed, f, a, (), base, open_)
@@ -2633,22 +2636,13 @@ class _Cases:
             raise ValueError(f"no choice point has the type `{type}`")
         return [value_at(choice, base, p.path) for p in points]
 
-    def _fields(self, type: str) -> tuple[str, ...] | None:
-        """The types of the fields a case-typed place of `type` opens
-        into; None where it is no record, as `Choice` is none where the
-        choice is no record."""
-        choice = self.choice
-        if type == CHOICE and (choice is None or choice.record is None):
-            return None
-        return self.records.get(type)
-
     def _is_value(self, type: str, term: Term, base: Base) -> bool:
         """Whether `term`, a constant that a `!=` of the unit's body
         compares a variable with, is the value `base` holds at a
         case-typed place of `type` that is no record: at each point of
         that type, where several have it, so that the comparison shuts the
         base out there."""
-        if self._fields(type) is not None:
+        if self.types.term_fields(type) is not None:
             return False
         value = _constant(term)
         if not isinstance(value, AdtValue | RecordValue):
@@ -2682,7 +2676,7 @@ class _Cases:
         types are declared and differ, since then the clause feeds another
         instance of the component that reads it."""
         for j in path:
-            fields = self._fields(column)
+            fields = self.types.term_fields(column)
             if fields is None or j >= len(fields):
                 return True
             column = fields[j]

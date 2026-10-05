@@ -222,7 +222,7 @@ def resolution_lines(solver: Solver, out: Resolutions) -> list[str]:
     lines: list[str] = []
     for i, grid in enumerate(out.grids):
         head = souffle_text(solver, out.values[i], TIEBREAK_RESOLUTION) \
-            if i < len(out.values) else f"grid {i + 1}"
+            if i < len(out.values) else mctx("grid {i}").format(i=i + 1)
         lines.append(f"{head}:")
         lines += [shifted(r, "  ") for r in grid_lines(grid)]
     return lines
@@ -288,12 +288,11 @@ def failure_text(failure: RunFailure) -> str:
     """What a failed run reports, in one line."""
     match failure:
         case CompileError(line=line, message=message):
-            at = "" if line is None else mctx("line {line}: ").format(
-                line=line)
+            at = "" if line is None else f"{line_text(line)}: "
             return at + message
         case UngroundedVariable(variable=v, line=line):
             at = "" if line is None else " " + mctx(
-                "at line {line}").format(line=line)
+                "at {line}").format(line=line_text(line))
             return mctx("the variable `{v}` is ungrounded{at}").format(
                 v=v, at=at)
         case CpuLimit(seconds=s) | WallLimit(seconds=s):
@@ -569,15 +568,15 @@ COUNTED_TEXT: dict[LintSentence, Callable[[LintCounted], str]] = {
         "{width} > {limit} chars of code on one line; wrap the body").format(
         width=p.count, limit=p.other),
     LintSentence.SINGLE_CONSUMER: lambda p: mctx(
-        "`{name}` has one clause and one use (line {line})").format(
-        name=p.names[0], line=p.other),
+        "`{name}` has one clause and one use ({line})").format(
+        name=p.names[0], line=line_text(p.other)),
     LintSentence.COMMON_SUBEXPR: lambda p: mctx(
-        "{width} literals shared with `{name}` (line {line})").format(
-        width=p.count, name=p.names[0], line=p.other),
+        "{width} literals shared with `{name}` ({line})").format(
+        width=p.count, name=p.names[0], line=line_text(p.other)),
     LintSentence.COMMON_SUBEXPR_MERGE: lambda p: mctx(
-        "{width} literals shared with `{name}` (line {line}); merge the "
+        "{width} literals shared with `{name}` ({line}); merge the "
         "tails into a disjunction").format(
-        width=p.count, name=p.names[0], line=p.other),
+        width=p.count, name=p.names[0], line=line_text(p.other)),
 }
 """The sentence of each `LintCounted` finding."""
 
@@ -701,21 +700,16 @@ def _marker_line(m: CaseMarker | None) -> str:
 
 
 def _case_value_text(p: LintCaseValue) -> str:
-    values = _ticked([code_text(v) for v in p.values])
+    values = (mctx("the case value {values}") if len(p.values) == 1
+              else mctx("the case values {values}")).format(
+        values=_ticked([code_text(v) for v in p.values]))
     match p.sentence:
         case LintSentence.CASE_SECTION_BEFORE:
-            return (mctx("the clause contains the case value {values} and "
-                         "stands before the first marker")
-                    if len(p.values) == 1 else
-                    mctx("the clause contains the case values {values} and "
-                         "stands before the first marker")).format(
-                values=values)
+            return mctx("the clause contains {values} and stands before the "
+                        "first marker").format(values=values)
         case LintSentence.CASE_SECTION_UNDER:
-            return (mctx("the clause contains the case value {values} and "
-                         "stands under `{marker}`")
-                    if len(p.values) == 1 else
-                    mctx("the clause contains the case values {values} and "
-                         "stands under `{marker}`")).format(
+            return mctx("the clause contains {values} and stands under "
+                        "`{marker}`").format(
                 values=values, marker=_marker_line(p.marker))
         case _:
             raise ValueError(f"no sentence for {p.sentence}")

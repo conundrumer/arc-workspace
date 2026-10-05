@@ -10,8 +10,9 @@ from engine.quotes import quotes
         "<reason>` on the line immediately above its declaration, with the "
         "category the hint gives.")
 class Category(StrEnum):
-    """A lint category: what an `@ignore: <category>` line may name
-    (solver-file.md, under "Program")."""
+    """The closed vocabulary of lint categories an `@ignore: <category>`
+    line may name (solver-file.md, the `@ignore` directive under
+    "Program"). A line that names a word outside it is a fault."""
 
     RESERVED_NAME = "reserved name"
     SHADOWED_TYPE = "shadowed type"

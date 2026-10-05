@@ -33,6 +33,8 @@ from solver.solve import Assignment
 from solver.vocabulary import OUTPUT
 from solver.witness import AssignValue, read_assign
 from souffle import SouffleEngine
+from souffle.engine import FUNCTOR_DIR
+from souffle.run import FUNCTOR_SOURCE
 
 WALL_LIMIT_ENV = "ARC_WALL_LIMIT_SECONDS"
 """The environment variable that gives the wall limit of `LIMITS` in
@@ -74,7 +76,7 @@ def stem_of(arg: str) -> str:
 
 def solver_path(arg: str) -> Path:
     """The solver file an argument names: the path as given where a file
-    stands there, else the file of that name under `programs/solvers/`."""
+    stands there, else the file of that name under `checkout.solvers()`."""
     path = Path(arg if arg.endswith(".dl") else f"{arg}.dl")
     if path.exists():
         return path
@@ -273,7 +275,8 @@ def assign_arg(written: str | None
 SOURCES = ["src/engine/**/*.py", "src/souffle/**/*.py", "src/solver/**/*.py",
            "src/checker/**/*.py", "src/cli/**/*.py", "programs/lib.dl",
            "programs/lib/*.dl", "programs/proposers.dl",
-           "programs/lib_functors.cpp"]
+           (FUNCTOR_DIR / FUNCTOR_SOURCE).relative_to(
+               checkout.ROOT).as_posix()]
 """What a run's result depends on besides the solver and the task: the
 packages' code and the Souffle sources every solver includes."""
 

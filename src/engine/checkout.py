@@ -16,8 +16,8 @@ CACHE_ENV = "ARC_CACHE_DIR"
 `.scratch/cache/`."""
 
 SOLVER_FILES_ENV = "ARC_SOLVER_FILES_DIR"
-"""The environment variable that names the directory `solver_files`
-returns in place of `programs/solvers/`."""
+"""The environment variable that names the directory `solvers` returns in
+place of `programs/solvers/`."""
 
 WITNESSES_ENV = "ARC_WITNESSES_DIR"
 """The environment variable that names the directory of the witness files
@@ -68,14 +68,9 @@ def programs() -> Path:
 
 
 def solvers() -> Path:
-    """`programs/solvers/`, the directory `solver.model.load` reads."""
-    return programs() / "solvers"
-
-
-def solver_files() -> Path:
-    """Where each solver's file stands: `solvers()`, unless
+    """`programs/solvers/`, where each solver's file stands, unless
     `SOLVER_FILES_ENV` names another directory."""
-    return _from_env(SOLVER_FILES_ENV, solvers())
+    return _from_env(SOLVER_FILES_ENV, programs() / "solvers")
 
 
 def witnesses() -> Path:
