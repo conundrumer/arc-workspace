@@ -33,7 +33,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 - In a brief for speed, give the profile that exists, or ask for one as the brief's first deliverable.
 - When a code editor you launched ends its turn blocked, open the document lines its case turns on and write down one option its message does not contain before you resolve the case.
 - Give rote work to an agent, and judge the list it returns.
-- In your reply, give each issue you judged, with its resolution or the decision it brings the user, each change [The user's part](#the-users-part) tells the user, each decision with what it was made from, and each agent you launched.
+- In your reply, give each issue you judged, with its resolution or the decision it brings the user, each change [The user's part](#the-users-part) tells the user, each decision with what it was made from, and each agent you launched, by its agent id.
 
 ## Tracking
 * inline: notes/issues.md#issue-files

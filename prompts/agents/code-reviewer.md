@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: Judges the defect places in a diff of the code, and files each defect, each defect place that stands with its reason, and each place that poses a question as an issue. The brief gives the earlier scan's baseline, as a `scan/<n>` tag, this scan's number, what new code the diff holds, the scratch directory, and the estimate in minutes.
+description: Judges the defect places in a diff of the code, and files each defect, each defect place that stands with its reason, and each place that poses a question as an issue. The brief gives the earlier scan's baseline, as a `scan/<n>` tag, this scan's number, what new code the diff holds, the scratch directory, and its budget in minutes.
 model: opus
 tools: Read, Grep, Glob, Bash, Write
 ---

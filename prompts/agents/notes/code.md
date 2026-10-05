@@ -4,8 +4,8 @@
 ## code-working-rules
 - Read nothing under `../arc-synth-bun/`.
 - Launch no agents.
-- Keep `progress.md` in your scratch directory, with your start time, what is done and what is next. After your context is compacted, read it before anything else.
-- When your time since the start passes one and a half times your estimate, write what is done and what is left in `progress.md`, and end your turn with a message to main that says the estimate is passed.
+- Keep `progress.md` in your scratch directory, with the time the brief or message that started your current turn arrived, what is done and what is next. After your context is compacted, read it before anything else.
+- When the time since then passes your budget, write what is done and what is left in `progress.md`, and end your turn with a message to main that says the budget is passed.
 
 ## place-kinds
 - Defects:
