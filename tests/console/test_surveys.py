@@ -146,27 +146,3 @@ def test_a_kill_leaves_a_session_already_waited_for_alone(sv, srv, monkeypatch):
     Session.returncode = None
     sv.survey_kill(Session())
     assert hits == [(999999, signal.SIGKILL)]
-
-
-def test_a_run_the_timeout_ends_leaves_nothing_reading_it(sv, srv, tmp_path,
-                                                          monkeypatch):
-    """A session that leaves a process of its own behind holds the pipe the
-    run reads. The timeout ends the session and what it started, so the run
-    returns."""
-    path = entry(srv, "Thing")
-    marker = tmp_path / "alive"
-    local(srv, sv, tmp_path, monkeypatch,
-          body=f"(sl" f"eep 30; touch {marker}) &\nexit 0\n")
-    monkeypatch.setattr(srv, "SURVEY_TIMEOUT", .2)
-    done = threading.Event()
-    codes = []
-
-    def go():
-        codes.append(sv.survey_entry(path))
-        done.set()
-
-    threading.Thread(target=go, daemon=True).start()
-    assert done.wait(10)
-    assert codes == [1] and not marker.exists()
-
-

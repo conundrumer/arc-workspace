@@ -124,6 +124,7 @@ from pathlib import Path
 from typing import ClassVar, Literal
 
 import coverage
+from coverage.sysmon import SysMonitor
 
 from cli.common import WALL_LIMIT_ENV
 from controlled_markdown import mctx
@@ -471,10 +472,17 @@ def trace(deps_out: Path, cov_out: Path, script: Path, args: Sequence[str]) -> i
     cov = coverage.Coverage(data_file=str(cov_out), config_file=False,
                             source=[str(checkout.ROOT / "src"), str(checkout.scripts())],
                             omit=[str(Path(__file__).resolve())])
+    # A command keeps its own wall-clock limits when traced, and the default
+    # core slows it past them, so that it gives other outputs than untraced.
+    cov.set_option("run:core", "sysmon")
     sys.argv = [str(script), *args]
-    sys.addaudithook(hook)
     status: int = 0
     cov.start()
+    core = dict(cov.sys_info())["core"]
+    if core != SysMonitor.__name__:
+        cov.stop()
+        raise RuntimeError(f"coverage.py traces with the {core} core, not {SysMonitor.__name__}")
+    sys.addaudithook(hook)
     try:
         runpy.run_path(str(script), run_name="__main__")
     except SystemExit as e:
