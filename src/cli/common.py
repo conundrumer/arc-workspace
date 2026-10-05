@@ -60,7 +60,7 @@ LIMITS = _limits()
 
 def engine() -> SouffleEngine:
     """The engine every command runs through, with the functor library
-    under `programs/` and the run cache under `.scratch/`."""
+    under `programs/` and the run cache under `.cache/`."""
     return SouffleEngine()
 
 

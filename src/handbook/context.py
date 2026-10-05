@@ -1028,7 +1028,7 @@ SAMPLE_TASK = '{"train": [{"input": [[0]], "output": [[1]]}], "test": []}'
 SAMPLE_REPORTS = "<prior reports>"
 SAMPLE_ENTRY = "docs/wf-solver/proposals/<entry>.md"
 SAMPLE_SCOPE = "every solver"
-SAMPLE_SCRATCH = ".scratch/survey/<run>"
+SAMPLE_SCRATCH = "work/console/surveys/<entry>/<run time>"
 
 # The session's own skill, which a session at a terminal reads beside the
 # handbook.

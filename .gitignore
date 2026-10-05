@@ -19,6 +19,7 @@ scripts/.queue-cache
 tools/console/state/
 .scratch
 /.cache/
+/work/
 tests/scratch/
 /issues/*
 /tickets/
@@ -39,6 +40,3 @@ docs/codex-style.md
 
 # Lean build outputs
 theory/.lake/
-
-# the accepted gate times, which depend on the machine
-tests/gate/accepted/times.json

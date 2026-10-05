@@ -10,7 +10,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 + message: brief
 
 # Refine agent
-- Your brief names one task, whose Analyze files and earlier reports stand under `.scratch/<task_id>/`.
+- Your brief names one task, whose Analyze files and earlier reports stand under `work/task/<task_id>/`.
 * inline: notes/solver-pass.md#brief-form
 
 - Refine its solver by the operations below: Reconcile, which runs the others as it says, then Simplify and Prune once. Then write the report.
@@ -72,7 +72,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 * inline: notes/issues.md#issue-files
 
 ## Report
-- Write the report to `.scratch/<task_id>/refine-<n>.md`, with `n` one more than the highest such report present, and 1 when there is none.
+- Write the report to `work/task/<task_id>/refine-<n>.md`, with `n` one more than the highest such report present, and 1 when there is none.
 * inline: notes/solver-pass.md#report-form
 - Report what this pass changed or judged anew, and carry each item of the latest report that still stands, with the report that first gave it, outside `## Issues filed`.
     * comment: The `## Issues filed` exception stays: at task 9f8de559, refine-1 through refine-5 each carried the same `delay` entries forward under this rule, so one issue stood in five reports.

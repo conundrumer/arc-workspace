@@ -880,7 +880,7 @@ Your prompt opens with your role, then its brief. Follow the role.
         - the entry has no result: the scope is every solver
         - some solvers are newer than the entry's newest `Survey:` time: the scope is those solvers, as `uv run python scripts/run_dl.py since <time>` lists them for that time
         - the scope's size is no reason to skip the survey
-    - If the command fails, spawn the `survey` role with the entry's path, the scope the command would take, and a scratch path (`.scratch/surveys/<entry name>/`).
+    - If the command fails, spawn the `survey` role with the entry's path, the scope the command would take, and a new directory under your session's scratchpad directory as its scratch path.
         - Append at the end of the entry a blank line, the `Survey:` line in the form the entry's fields give, a blank line, then the role's report.
         - say in the review that the command failed and the role ran
     - If the pass ends with the entry still unsurveyed, say so in the review.
@@ -2435,7 +2435,7 @@ frame decomposed into its tile and its cell within the tile.
     - For an `other` verdict, take the judged output from `uv run python scripts/run_dl.py grid <task_id>` on a control grid: the witness changed so that the program's output is the concept's reading.
 - When the divergence requires a parameter to be reassigned, reassign that parameter with `--assign`.
 - `uv run python scripts/run_dl.py witness <task_id>` reads the solver against `programs/witnesses/<task_id>.wit.json`, whose shape [Witness file](docs/handbook/solver-file.md#witness-file) gives.
-- Run the solver against the Analyze file: `uv run python scripts/run_dl.py witness <task_id> --file .scratch/<task_id>/witnesses.json`.
+- Run the solver against the Analyze file: `uv run python scripts/run_dl.py witness <task_id> --file work/task/<task_id>/witnesses.json`.
     - A branch whose model's output differs from the one the Analyze file gives the branch is an error in the solver to fix, unless the Analyze file erred; then it goes in the review as a departure, with why.
     - Each other difference the run prints under a witness, and that no step of [Develop](#develop) through [Witness](#witness) requires, goes in the review as one departure.
 - Run the audit again when the witness file is complete.

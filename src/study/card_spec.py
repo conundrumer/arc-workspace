@@ -37,7 +37,7 @@ class Table:
 
 @dataclass
 class Card:
-    # Names the file written to .scratch/cards/<name>.html, and heads the page.
+    # Names the file written to work/cards/<name>.html, and heads the page.
     name: str
     # A free label shown under the title. A card of a family shares its kind.
     kind: str

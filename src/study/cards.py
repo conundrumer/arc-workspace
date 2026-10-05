@@ -6,7 +6,7 @@ input, and ends with a numbered list of options. The user answers by index.
 
 `study.card_spec` holds what a card spec may state.
 
-A card is one file under .scratch/cards/ and needs no server: the ARC
+A card is one file under work/cards/ and needs no server: the ARC
 palette and the grid CSS are copied from the console's UI into the page.
 """
 
@@ -37,7 +37,7 @@ from study.card_spec import Card, CodeSlice, Table
 
 REPO_ROOT = checkout.ROOT
 
-CARDS_DIR = checkout.scratch() / "cards"
+CARDS_DIR = checkout.work() / "cards"
 
 
 def from_root(path: str) -> Path:
@@ -385,7 +385,7 @@ def render(card: Card) -> str:
 
 
 def write(card: Card) -> Path:
-    """Render `card` to .scratch/cards/<name>.html and return that path."""
+    """Render `card` to work/cards/<name>.html and return that path."""
     CARDS_DIR.mkdir(parents=True, exist_ok=True)
     path = CARDS_DIR / f"{card.name}.html"
     path.write_text(render(card))

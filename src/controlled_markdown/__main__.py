@@ -15,6 +15,7 @@ takes its paths as given. A path that names a directory stands for every `.md`
 file under it. A name in a message is relative to the current directory.
 """
 
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -65,19 +66,20 @@ def repo_root(start: Path | None = None) -> Path:
     return _table(start)[0]
 
 
-# Where a program's prose can stand. Everything else under the root is data,
-# a build, or history.
+# Where a program's prose can stand.
 CODE_SUFFIXES = (".py", ".js", ".mjs")
-SKIPPED = {".venv", "node_modules", ".git", "data", ".scratch"}
 
 
 def code_files(root: Path) -> list[Path]:
-    """Every file under the root that a program's prose can stand in."""
-    out = []
-    for folder, dirs, files in root.walk():
-        dirs[:] = [name for name in dirs if name not in SKIPPED]
-        out.extend(folder / name for name in files if name.endswith(CODE_SUFFIXES))
-    return sorted(out)
+    """Every file under the root that a program's prose can stand in: each
+    file git lists there as tracked, or as untracked and not ignored, so
+    that what git ignores is skipped. A root that is no git tree is a
+    fault."""
+    listed = subprocess.run(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+        cwd=root, capture_output=True, text=True, check=True).stdout
+    return sorted(path for name in listed.split("\0")
+                  if name.endswith(CODE_SUFFIXES) and (path := root / name).is_file())
 
 
 def collect(names: list[str]) -> list[Path]:

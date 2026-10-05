@@ -121,11 +121,11 @@ both passes' wall times, and `<out-dir>/gate/log.txt` the lines printed
 above the last line.
 
 The accepted times depend on the machine, so every worktree of the
-repository reads them from one file: the gitignored
-`tests/gate/accepted/times.json` of the main worktree, the directory that
-holds the repository's common git directory. The dependency record is
-read and written in the main worktree too. The accepted outputs are read
-from the worktree the gate runs in.
+repository reads them from one file: `times.json` under `.cache/gate/` of
+the main worktree, the directory that holds the repository's common git
+directory. The dependency record is read and written there too, as
+`deps.json`. The accepted outputs are read from the worktree the gate runs
+in.
 
 `--accepted` names an accepted directory other than `tests/gate/accepted/`.
 Its accepted outputs and its accepted times, in its own `times.json`, are
@@ -189,8 +189,8 @@ TIME_EXT = ".time"
 TIMES_FILE = "times.json"
 """The accepted times, a JSON object from `<name>-<stem>` to seconds
 (`times_file`)."""
-DEPS_FILE = checkout.scratch().relative_to(checkout.ROOT) / "gate" / "deps.json"
-"""The dependency record, under the main worktree (`deps_file`)."""
+DEPS_FILE = "deps.json"
+"""The dependency record, under `records_dir` (`deps_file`)."""
 RECORD_OUT = "record.json"
 """The file under `<out-dir>/gate/` that holds the dependencies an
 `--affected` run traced, as a dependency record."""
@@ -474,17 +474,23 @@ def lock_file() -> Path:
     return checkout.git_common_dir(checkout.ROOT) / "arc-gate.lock"
 
 
+def records_dir() -> Path:
+    """`gate/` under the main worktree's `.cache/`, where the machine's
+    accepted times and the dependency record stand."""
+    return checkout.caches() / "gate"
+
+
 def times_file(accepted: Path) -> Path:
     """The accepted times of the accepted directory `accepted`: for
-    `ACCEPTED`, the machine's, `TIMES_FILE` in the main worktree's
-    `ACCEPTED`; for another directory, its own `TIMES_FILE`."""
+    `ACCEPTED`, the machine's, `TIMES_FILE` under `records_dir`; for
+    another directory, its own `TIMES_FILE`."""
     if accepted.resolve() != ACCEPTED.resolve():
         return accepted / TIMES_FILE
-    return checkout.main_worktree(checkout.ROOT) / ACCEPTED.relative_to(checkout.ROOT) / TIMES_FILE
+    return records_dir() / TIMES_FILE
 
 
 def deps_file() -> Path:
-    return checkout.main_worktree(checkout.ROOT) / DEPS_FILE
+    return records_dir() / DEPS_FILE
 
 
 def head_clean() -> bool:
@@ -1156,6 +1162,7 @@ class Gate:
         times = {key: float(p.read_text()) for p in sorted(self.new.glob(f"*{TIME_EXT}"))
                  if _writes(replace, (key := p.name.removesuffix(TIME_EXT)) in self.times)}
         merged = dict(sorted({**self.times, **times}.items()))
+        self.times_file.parent.mkdir(parents=True, exist_ok=True)
         write_whole(self.times_file,
                     (json.dumps(merged, indent=1) + "\n").encode())
         written = 0

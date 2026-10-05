@@ -62,11 +62,13 @@ def upstream() -> None:
 @pytest.fixture
 def root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A checkout under `tmp_path` whose solvers and witness directories
-    start empty, with every other file the checkout's. The commands read
-    and write the solvers and witness files there."""
+    start empty, with every other file the checkout's, and the checkout's
+    run cache. The commands read and write the solvers and witness files
+    there."""
     real = checkout.ROOT
+    monkeypatch.setenv(checkout.CACHE_ENV, str(checkout.cache()))
     for entry in real.iterdir():
-        if entry.name not in ("programs", ".scratch", ".git"):
+        if entry.name not in ("programs", "work", "tickets", ".cache", ".git"):
             (tmp_path / entry.name).symlink_to(entry)
     programs = tmp_path / "programs"
     programs.mkdir()

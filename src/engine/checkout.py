@@ -1,13 +1,15 @@
-"""The checkout's root and the directories under it, which every package
-reads. Each directory is computed from `ROOT` when asked, so a checkout
-that sets `ROOT` moves every one of them. The run cache, the solver files
-and the witness files each move to the directory an environment variable
-names, where it is set. Git runs in a tree through `git`, and
-`changed_paths` lists what a tree changes against a commit."""
+"""The checkout's root, the directories under it, and the directories of
+the main worktree that every worktree of the repository shares, which
+every package reads. Each directory is computed from `ROOT` when asked, so
+a checkout that sets `ROOT` moves every one of them. The run cache, the
+solver files and the witness files each move to the directory an
+environment variable names, where it is set. Git runs in a tree through
+`git`, and `changed_paths` lists what a tree changes against a commit."""
 
+import functools
 import os
 import subprocess
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -28,12 +30,13 @@ WITNESSES_ENV = "ARC_WITNESSES_DIR"
 in place of `programs/witnesses/`."""
 
 
-def from_env(var: str, default: Path) -> Path:
+def from_env(var: str, default: Path | Callable[[], Path]) -> Path:
     """The directory the environment variable `var` names, or `default`
-    where `var` is unset. An empty value is a fault."""
+    where `var` is unset, called where it is a function, so that it is
+    computed only where it is used. An empty value is a fault."""
     value = os.environ.get(var)
     if value is None:
-        return default
+        return default() if callable(default) else default
     if not value:
         raise ValueError(f"{var} is set but empty")
     return Path(value)
@@ -188,15 +191,30 @@ def prompts() -> Path:
     return ROOT / "prompts"
 
 
-def scratch() -> Path:
-    """`.scratch/`: what the tools write for a session."""
-    return ROOT / ".scratch"
+@functools.cache
+def _shared(root: Path) -> Path:
+    """`main_worktree` of `root`, kept for the process."""
+    return main_worktree(root)
+
+
+def caches() -> Path:
+    """`.cache/` in the main worktree, which every worktree of the
+    repository shares: the run cache and the gate's records of the
+    machine."""
+    return _shared(ROOT) / ".cache"
 
 
 def cache() -> Path:
-    """`.cache/`: the run cache, a directory per kind of result, unless
+    """The run cache, a directory per kind of result: `caches()`, unless
     `CACHE_ENV` names another directory."""
-    return from_env(CACHE_ENV, ROOT / ".cache")
+    return from_env(CACHE_ENV, caches)
+
+
+def work() -> Path:
+    """`work/` in the main worktree, beside `caches()`: the files the
+    sessions share and cite, a directory per `<domain>/<subject>`, and
+    the cards."""
+    return _shared(ROOT) / "work"
 
 
 def claude() -> Path:

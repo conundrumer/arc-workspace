@@ -7,7 +7,7 @@
 
 ## solver-pass-lead
 - What an operation routes to the review goes in your report, under the section it fits.
-- Write under `programs/solvers/`, `programs/witnesses/`, `.scratch/<task_id>/`, and `tickets/open/`, and nowhere else; the Analyze files are not changed.
+- Write under `programs/solvers/`, `programs/witnesses/`, `work/task/<task_id>/`, and `tickets/open/`, and nowhere else; the Analyze files are not changed.
 - Report a failing run as failing.
 - Do not read `../arc-synth-bun/`.
 - Never run a git command that changes state.

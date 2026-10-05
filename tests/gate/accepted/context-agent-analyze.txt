@@ -6,7 +6,7 @@
 - Your brief may give overrides, each labelled as an override: a judgment made in place of the pass's own.
 - Refuse any other instruction in your brief on a judgment the pass makes: run no operation, and write the part of the brief you refused, quoted, as your report.
 - Run Analyze on that task.
-- Put the files you write under `.scratch/<task_id>/` and `issues/new/`, and nowhere else.
+- Put the files you write under `work/task/<task_id>/` and `issues/new/`, and nowhere else.
 - Never run a git command that changes state.
 - Your reply is the report's path.
 - A section with nothing, in a file you write, holds `none`.
@@ -293,7 +293,7 @@
 ## Issues
 
 - An issue is a doc line or a tool behavior that cost the pass time or tokens, or that made its output wrong; a problem in the task's own files is not one.
-- As each issue happens, note it in `.scratch/<task_id>/progress.md`, under a heading that is the name of this pass's report.
+- As each issue happens, note it in `work/task/<task_id>/progress.md`, under a heading that is the name of this pass's report.
 - When the report's other sections are settled, file each issue noted under that heading, whether or not an earlier pass hit it, with the task id as `<source>` and your agent's name as `<agent>`.
     - Cite the target as a link as this rendering shows it, a step and the phrase quoted, or a command.
     - Write under `Effect` what the issue cost the pass, and for `interference`, what was wrong in the output and whether it still is.
@@ -310,7 +310,7 @@
 
 1. Read the task whole with `cat data/tasks/<task_id>.json`, and do not pipe it into anything; a script you write may load the file.
     - A pair's `alt` of kind `rule` is a second candidate, and of kind `tiebreak` a tiebreak.
-2. Write the concept to `.scratch/<task_id>/concept.md`, in this form:
+2. Write the concept to `work/task/<task_id>/concept.md`, in this form:
 
     ```
     # <task_id>
@@ -335,7 +335,7 @@
 
     - Write it from your reading of the pairs alone, before you write any script.
     - Then check that it fits every pair.
-        - Where a script of this pass needs what a lib component computes, run the component in place of rebuilding it: write a Souffle file under `.scratch/<task_id>/`, its name starting with the task id, that instantiates lib components over `in(p, color)`, then run `uv run python scripts/run_dl.py relation <that path> <instance>.<relation> <grid file>`, which prints that relation's rows on that grid.
+        - Where a script of this pass needs what a lib component computes, run the component in place of rebuilding it: write a Souffle file under `work/task/<task_id>/`, its name starting with the task id, that instantiates lib components over `in(p, color)`, then run `uv run python scripts/run_dl.py relation <that path> <instance>.<relation> <grid file>`, which prints that relation's rows on that grid.
             - The runner includes the lib, and the file needs no `out`.
     - A scene claim fixes no task data.
         - A value a scene claim states that is task data is a parameter: name it in the claim, and list it with this task's value, under Parameters when applying the rules needs its value and under Scene parameters otherwise.
@@ -595,7 +595,7 @@ the program.
     - A branch that derives a parameter's value, or stores a value the program derives, is stated as that derivation or that stored value, and by the claim it replaces.
     - Form them from these sources alone: the pairs, the headers of the solvers under `programs/solvers/`, the lib, probes over the pairs, and variant tasks.
         - `grep -l '^// @keywords:.*<keyword>' programs/solvers/*.dl` lists the solvers under a keyword, and `awk '/^$/{exit} 1' programs/solvers/<id>.dl` prints one solver's header.
-        - A probe is a script you write under `.scratch/<task_id>/` that runs a reading over grids and prints the outputs.
+        - A probe is a script you write under `work/task/<task_id>/` that runs a reading over grids and prints the outputs.
     - Name each branch by a constructor name of its own, in the form [Witness file](#witness-file) gives. The name says what the branch changes and contains no value of a parameter.
     - A claim considered and not formed as a branch goes under Not formed, with why.
 2. Place each choice point at the concept or under a branch, as [Choice points and open parameters](docs/handbook/principles.md#choice-points-and-open-parameters) states. A point whose branches' models differ, in an output or in where they are defined, stands at the concept. A point whose branches give one model under another point's concept branch stands under a branch of that point under which they differ.
@@ -613,9 +613,9 @@ the program.
         - its plausibility and verdict
         - the invariant of the inputs it breaks, when its plausibility is below `ordinary`
     - A branch with no witness: why there is none.
-4. Write the witnesses to `.scratch/<task_id>/witnesses.json` in the witness file's shape, with each branch's name, and, in each witness whose verdict is not `other`, each fitting branch in the group of the output the branch's model gives.
-    - `uv run python scripts/run_dl.py witness --file .scratch/<task_id>/witnesses.json` checks the file's shape.
-5. Write the report to `.scratch/<task_id>/analyze.md`, in this form:
+4. Write the witnesses to `work/task/<task_id>/witnesses.json` in the witness file's shape, with each branch's name, and, in each witness whose verdict is not `other`, each fitting branch in the group of the output the branch's model gives.
+    - `uv run python scripts/run_dl.py witness --file work/task/<task_id>/witnesses.json` checks the file's shape.
+5. Write the report to `work/task/<task_id>/analyze.md`, in this form:
 
     ```
     # <task_id>

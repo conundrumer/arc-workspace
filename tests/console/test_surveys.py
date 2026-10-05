@@ -62,15 +62,16 @@ def fake_claude(tmp_path, body, name="claude.sh"):
 
 
 def local(srv, sv, tmp_path, monkeypatch, body=f"echo '{RESULT_EVENT}'\n"):
-    """Point the run at the test's own tree and at a fake CLI. The role the
-    brief opens with sits in that tree as well: the run reads the file before
-    it launches, and a writer replacing the one under prompts/roles/ would
-    fail the read."""
+    """Point the run, and the survey directory, at the test's own tree and
+    at a fake CLI. The role the brief opens with sits in that tree as well:
+    the run reads the file before it launches, and a writer replacing the
+    one under prompts/roles/ would fail the read."""
     roles = tmp_path / "roles"
     roles.mkdir(exist_ok=True)
     (roles / "survey.md").write_text(ROLE)
     monkeypatch.setattr(srv, "ROLE_DIR", roles)
     monkeypatch.setattr(srv, "ROOT", tmp_path)
+    monkeypatch.setattr(sv, "SURVEYS_DIR", tmp_path / "surveys")
     monkeypatch.setattr(srv, "CLAUDE", fake_claude(tmp_path, body))
     monkeypatch.setattr(srv, "SURVEY_FLAGS", [])
     monkeypatch.setattr(sv, "survey_session", lambda: [])

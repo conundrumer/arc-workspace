@@ -4,6 +4,7 @@
 ## Launching
 - After an agent's definition changes, wait 30 seconds before you launch that agent, so the harness reloads its file.
 - Give an agent a brief with what its description says the brief gives, and restate neither a docstring of the code nor the agent's definition.
+- Where an agent's description says its brief gives a scratch directory, give a new directory under the session's scratchpad directory, `/private/tmp/claude-<uid>/<working directory>/<session id>/scratchpad`, where `<uid>` is what `id -u` prints, `<working directory>` is the directory the session started in with each `/` as `-`, and `<session id>` is `$CLAUDE_CODE_SESSION_ID`.
 - In a brief that asks for an edit, give the meaning to state, the case that shows the need, and the span the edit may change, and no wording.
 - Split work between agents where the split saves at least 30 minutes of wall-clock per 150k tokens of overhead.
 - An agent's budget is the N of the `Budget: N minutes` line of its brief, or of your latest message to it that has one, which replaces the brief's. Set it from the budget that `uv run python scripts/profile_runs.py ~/.claude/projects/-Users-davidlu-code-arc-workspace/*.jsonl --type <agent type>` prints for its agent type, over the window that command's `--help` gives, and change it for the work the brief or that message asks for. An agent that runs until you tell it to stop has no budget.

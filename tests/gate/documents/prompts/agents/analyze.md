@@ -14,7 +14,7 @@ tools: Read, Grep, Glob, Bash, Write
 * inline: notes/solver-pass.md#brief-form
 
 - Run Analyze on that task.
-- Put the files you write under `.scratch/<task_id>/` and `issues/new/`, and nowhere else.
+- Put the files you write under `work/task/<task_id>/` and `issues/new/`, and nowhere else.
 - Never run a git command that changes state.
 - Your reply is the report's path.
 - A section with nothing, in a file you write, holds `none`.

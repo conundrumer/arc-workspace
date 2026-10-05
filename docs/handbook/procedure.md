@@ -36,7 +36,7 @@
     * comment:
         - The command and the no-pipe rule are here as well as under Every pass because the Analyze render does not carry Every pass.
     - A pair's `alt` of kind `rule` is a second candidate, and of kind `tiebreak` a tiebreak.
-2. Write the concept to `.scratch/<task_id>/concept.md`, in this form:
+2. Write the concept to `work/task/<task_id>/concept.md`, in this form:
     ```
     # <task_id>
 
@@ -74,8 +74,8 @@
         - The `@derive` directive in [Params](docs/handbook/solver-file.md#params) states the values a parameter takes on an input under a `@derive` branch, and where that branch is undefined.
     - Form them from these sources alone: the pairs, the headers of the solvers under `programs/solvers/`, the lib, the proposers in `programs/proposers.dl`, probes over the pairs, and variant tasks.
         - `grep -l '^// @keywords:.*<keyword>' programs/solvers/*.dl` lists the solvers under a keyword, and `awk '/^$/{exit} 1' programs/solvers/<id>.dl` prints one solver's header.
-        - A probe is a script you write under `.scratch/<task_id>/` that runs a reading over grids and prints the outputs.
-            - A probe whose readings are all written in Souffle, and that needs only each reading's output grid, can be a Souffle file under `.scratch/<task_id>/`, its name starting with the task id, that declares a `Choice` with one constructor per reading, `impl_choice` containing each, and `out(p: Position, col: Color, ch: Choice)`. `uv run python scripts/run_dl.py grid <that file> <grid file>` prints each reading's output as a grid, one grid for the readings that give the same one.
+        - A probe is a script you write under `work/task/<task_id>/` that runs a reading over grids and prints the outputs.
+            - A probe whose readings are all written in Souffle, and that needs only each reading's output grid, can be a Souffle file under `work/task/<task_id>/`, its name starting with the task id, that declares a `Choice` with one constructor per reading, `impl_choice` containing each, and `out(p: Position, col: Color, ch: Choice)`. `uv run python scripts/run_dl.py grid <that file> <grid file>` prints each reading's output as a grid, one grid for the readings that give the same one.
                 - Each reading in it instantiates the lib components it uses under instances of its own, and no key of a component instance holds a reading or a `Choice`.
             - A probe that needs a component's rows in the script, or would key one instance of a component by reading, calls the component through `lib_components.components`, once per reading where its inputs differ by reading.
     - Name each branch by a constructor name of its own, in the form [Witness file](docs/handbook/solver-file.md#witness-file) gives. The name says what the branch changes and contains no value of a parameter.
@@ -95,10 +95,10 @@
         - its plausibility and verdict
         - the invariant of the inputs it breaks, when its plausibility is below `ordinary`
     - A branch with no witness: why there is none.
-4. Write each witness step 3 gives to `.scratch/<task_id>/witnesses.json` in the witness file's shape, with an `assign` that reassigns each parameter whose value the assignment step 3 gives it changes, and, in each witness whose verdict is not `other`, each fitting branch in the group of the output the branch's model gives at that witness's assignment.
+4. Write each witness step 3 gives to `work/task/<task_id>/witnesses.json` in the witness file's shape, with an `assign` that reassigns each parameter whose value the assignment step 3 gives it changes, and, in each witness whose verdict is not `other`, each fitting branch in the group of the output the branch's model gives at that witness's assignment.
     * comment: On 2026-09-23, an Analyze pass on a1aa0c1e read this step without the verdict clause, and reported that `four-rungs`, a witness with verdict `other`, had no place for its fitting branches: agent `a12540b7d9e9d4aee` of console session `622904c2-70f8-4e98-830a-3863e040da52`.
-    - `uv run python scripts/run_dl.py witness --file .scratch/<task_id>/witnesses.json` checks the file's shape.
-5. Write the report to `.scratch/<task_id>/analyze.md`, in this form:
+    - `uv run python scripts/run_dl.py witness --file work/task/<task_id>/witnesses.json` checks the file's shape.
+5. Write the report to `work/task/<task_id>/analyze.md`, in this form:
 
     ```
     # <task_id>
@@ -126,9 +126,9 @@
     ```
 
 ### Write
-1. Read the Analyze files, one at a time: `.scratch/<task_id>/concept.md`, `analyze.md`, and `witnesses.json`.
+1. Read the Analyze files, one at a time: `work/task/<task_id>/concept.md`, `analyze.md`, and `witnesses.json`.
     - The concept file gives the concept case's claims, and the Analyze report gives each branch's standing.
-2. Write the solver (`programs/solvers/<task_id>.dl`), and copy the Analyze file to the witness file: `cp .scratch/<task_id>/witnesses.json programs/witnesses/<task_id>.wit.json`.
+2. Write the solver (`programs/solvers/<task_id>.dl`), and copy the Analyze file to the witness file: `cp work/task/<task_id>/witnesses.json programs/witnesses/<task_id>.wit.json`.
     - Write the header's `@scene` and `@rule` lines from the concept file's claims, and `Params` from its Parameters section, under their names. The `@scene` line written from a claim gives the value of each parameter in its Scene parameters section that the claim reads.
     - A rule that report restates takes the restated text, and the concept file's text stands under it as its `@approximated:` line when the restated text has no relational form.
     - Each branch that report gives a witness is a constructor, named as the report names it and nested as the report nests its choice point.
@@ -181,7 +181,7 @@
 * comment:
     - The audit runs the same check.
 - `uv run python scripts/run_dl.py witness <task_id>` reads the solver against `programs/witnesses/<task_id>.wit.json`, whose shape [Witness file](docs/handbook/solver-file.md#witness-file) gives.
-- Run the solver against the Analyze file: `uv run python scripts/run_dl.py witness <task_id> --file .scratch/<task_id>/witnesses.json`.
+- Run the solver against the Analyze file: `uv run python scripts/run_dl.py witness <task_id> --file work/task/<task_id>/witnesses.json`.
     - A branch whose model's output differs from the one the Analyze file gives the branch is an error in the solver to fix, unless the Analyze file erred; then it goes in the review as a departure, with why.
     - Each other difference the run prints under a witness, and that no step of [Develop](#develop) through [Witness](#witness) requires, goes in the review as one departure.
 - Run the audit again when the witness file is complete.
@@ -215,12 +215,12 @@
 - Do not compress it into a telegraphic style.
 
 ### Reconcile
-- Read the Analyze files `.scratch/<task_id>/concept.md`, `analyze.md`, and `witnesses.json`, the latest report, which is the highest-numbered `.scratch/<task_id>/refine-<n>.md` when one exists and `create.md` otherwise, the solver, and the witness file.
+- Read the Analyze files `work/task/<task_id>/concept.md`, `analyze.md`, and `witnesses.json`, the latest report, which is the highest-numbered `work/task/<task_id>/refine-<n>.md` when one exists and `create.md` otherwise, the solver, and the witness file.
     * comment:
         - The Analyze files are listed here as well as in Write because the Refine render does not carry Write.
 - Run these in this order.
 - **Overrides.** An override in your brief decides an item of that report. Apply each override, and quote it in the report where you apply it. Then run again each operation from [Develop](#develop) through [Witness](#witness) that applying the overrides touches.
-- **Departures.** Judge each departure and open item of that report, and each `## Fixes elsewhere` item on this task's files in another task's latest report (`grep -l <task_id> .scratch/*/create.md .scratch/*/refine-*.md`), under the current docs, from the solver, the witness file, and the pairs; an item on an Analyze file is judged as a departure, and a `## Fixes elsewhere` item that holds is applied to the solver or the witness file.
+- **Departures.** Judge each departure and open item of that report, and each `## Fixes elsewhere` item on this task's files in another task's latest report (`grep -l <task_id> work/task/*/create.md work/task/*/refine-*.md`), under the current docs, from the solver, the witness file, and the pairs; an item on an Analyze file is judged as a departure, and a `## Fixes elsewhere` item that holds is applied to the solver or the witness file.
     - Run the solver against the Analyze file, as [Witness](#witness) says.
     - A departure holds when what it rests on is true and each case it adds or keeps meets every case condition, and each case it drops fails one in a `witness --every-case` run with that case restored.
     - Revert a departure that does not hold, make the solver follow the docs on each open item they decide, and run again each operation these changes and each applied fix touch.
@@ -232,7 +232,7 @@
 - On `promote`, move the plain relations or proposal comp into the module under `programs/lib/` whose file doc admits it, and update the solver that introduced the proposal.
 - On `migrate`:
     1. Spawn the `migrate` role with the entry's path, the lib relation it became, the entry's callers, and the promotion's time.
-    2. Spawn the `cleanup` role with the files and spans that `migrate` changed, the lib call they now make, and a scratch path under `.scratch/`.
+    2. Spawn the `cleanup` role with the files and spans that `migrate` changed, the lib call they now make, and a new directory under your session's scratchpad directory as its scratch path.
     3. List in the review the callers that `migrate` skipped.
 
 ### Review

@@ -9,10 +9,11 @@ The entry under docs/wf-solver/proposals/ carries the result, under a
 the result go in together at the end of the run, so an entry never shows a
 `Survey:` line with nothing under it.
 
-A lock file under `.scratch/surveys/<name>/` holds one survey per entry. A
-caller that waits for the lock re-reads the entry, and a result the first
-caller filed leaves the entry current, so two callers on one entry cost one
-survey. The run's own files go under `.scratch/surveys/<name>/<run time>/`.
+A lock file under `work/console/surveys/<name>/` of the main worktree
+holds one survey per entry. A caller that waits for the lock re-reads the
+entry, and a result the first caller filed leaves the entry current, so two
+callers on one entry cost one survey. The run's own files go under
+`<run time>/` in that directory.
 """
 
 import fcntl
@@ -26,6 +27,7 @@ import threading
 import time
 from pathlib import Path
 
+from engine import checkout
 from handbook.context import AGENT_NAMES, agent_meta
 
 from . import config, prompts, solvers
@@ -35,6 +37,8 @@ SURVEY_LINE = re.compile(r"^Survey:[ \t]*(\d{4}-\d{2}-\d{2} \d{2}:\d{2})", re.M)
 CLOSED_LINE = re.compile(r"^Closed:", re.M)
 SURVEY_STAMP = "%Y-%m-%d %H:%M"
 RUN_STAMP = "%Y-%m-%d-%H%M%S"
+SURVEYS_DIR = checkout.work() / "console" / "surveys"
+"""The directory of each entry's lock and runs, by the entry's name."""
 
 
 def entry_path(name: str) -> Path:
@@ -223,7 +227,7 @@ def survey_cmd(path: Path, plan: dict, run_dir: Path) -> list[str]:
              else "the solvers " + ", ".join(plan["scope"]))
     brief = prompts.role_text("survey") + "\n\n" + prompts.survey_brief(
         entry=str(path.relative_to(config.ROOT)), scope=scope,
-        scratch=str(run_dir.relative_to(config.ROOT)))
+        scratch=str(checkout.shown(run_dir, config.ROOT)))
     # The brief opens with a list item, and the CLI takes an argument that
     # starts with "-" for an option unless it follows "--".
     return [config.CLAUDE, "-p", *config.SURVEY_FLAGS, *survey_session(),
@@ -275,7 +279,7 @@ def survey_entry(path: Path, force: bool = False) -> int:
     and the entry is current.
     """
     started = time.time()
-    scratch = config.ROOT / ".scratch" / "surveys" / path.stem
+    scratch = SURVEYS_DIR / path.stem
     scratch.mkdir(parents=True, exist_ok=True)
     with open(scratch / "lock", "w") as lock:
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX)

@@ -1319,7 +1319,7 @@
         - the entry has no result: the scope is every solver
         - some solvers are newer than the entry's newest `Survey:` time: the scope is those solvers, as `uv run python scripts/run_dl.py since <time>` lists them for that time
         - the scope's size is no reason to skip the survey
-    - If the command fails, spawn the `survey` role with the entry's path, the scope the command would take, and a scratch path (`.scratch/surveys/<entry name>/`).
+    - If the command fails, spawn the `survey` role with the entry's path, the scope the command would take, and a new directory under your session's scratchpad directory as its scratch path.
         - Append at the end of the entry a blank line, the `Survey:` line in the form the entry's fields give, a blank line, then the role's report.
         - say in the review that the command failed and the role ran
     - If the pass ends with the entry still unsurveyed, say so in the review.
@@ -1430,9 +1430,9 @@
 
 ### Write
 
-1. Read the Analyze files, one at a time: `.scratch/<task_id>/concept.md`, `analyze.md`, and `witnesses.json`.
+1. Read the Analyze files, one at a time: `work/task/<task_id>/concept.md`, `analyze.md`, and `witnesses.json`.
     - The concept file gives the concept case's claims, and the Analyze report gives each branch's standing.
-2. Write the solver (`programs/solvers/<task_id>.dl`), and copy the Analyze file to the witness file: `cp .scratch/<task_id>/witnesses.json programs/witnesses/<task_id>.wit.json`.
+2. Write the solver (`programs/solvers/<task_id>.dl`), and copy the Analyze file to the witness file: `cp work/task/<task_id>/witnesses.json programs/witnesses/<task_id>.wit.json`.
     - Write the header's `@scene` and `@rule` lines from the concept file's claims, and `Params` from its Parameters section, under their names. The `@scene` line written from a claim gives the value of each parameter in its Scene parameters section that the claim reads.
     - A rule that report restates takes the restated text, and the concept file's text stands under it as its `@approximated:` line when the restated text has no relational form.
     - Each branch that report gives a witness is a constructor, named as the report names it and nested as the report nests its choice point.
@@ -1485,7 +1485,7 @@
     - For an `other` verdict, take the judged output from `uv run python scripts/run_dl.py grid <task_id>` on a control grid: the witness changed so that the program's output is the concept's reading.
 - When the divergence requires a parameter to be reassigned, reassign that parameter with `--assign`.
 - `uv run python scripts/run_dl.py witness <task_id>` reads the solver against `programs/witnesses/<task_id>.wit.json`, whose shape [Witness file](#witness-file) gives.
-- Run the solver against the Analyze file: `uv run python scripts/run_dl.py witness <task_id> --file .scratch/<task_id>/witnesses.json`.
+- Run the solver against the Analyze file: `uv run python scripts/run_dl.py witness <task_id> --file work/task/<task_id>/witnesses.json`.
     - A branch whose model's output differs from the one the Analyze file gives the branch is an error in the solver to fix, unless the Analyze file erred; then it goes in the review as a departure, with why.
     - Each other difference the run prints under a witness, and that no step of [Develop](#develop) through [Witness](#witness) requires, goes in the review as one departure.
 - Run the audit again when the witness file is complete.
@@ -1540,7 +1540,7 @@
 - On `promote`, move the plain relations or proposal comp into the module under `programs/lib/` whose file doc admits it, and update the solver that introduced the proposal.
 - On `migrate`:
     1. Spawn the `migrate` role with the entry's path, the lib relation it became, the entry's callers, and the promotion's time.
-    2. Spawn the `cleanup` role with the files and spans that `migrate` changed, the lib call they now make, and a scratch path under `.scratch/`.
+    2. Spawn the `cleanup` role with the files and spans that `migrate` changed, the lib call they now make, and a new directory under your session's scratchpad directory as its scratch path.
     3. List in the review the callers that `migrate` skipped.
 
 ## Outside the pass

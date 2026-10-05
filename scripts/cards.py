@@ -1,4 +1,4 @@
-"""Render the HTML cards the user rules on, into .scratch/cards/.
+"""Render the HTML cards the user rules on, into work/cards/.
 
     uv run python scripts/cards.py theta            # the Θ card for 5d2a5c43
     uv run python scripts/cards.py render spec.json # any card spec

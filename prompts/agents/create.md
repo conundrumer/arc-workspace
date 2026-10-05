@@ -10,7 +10,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 + message: brief
 
 # Create agent
-- Your brief names one task, whose Analyze files stand under `.scratch/<task_id>/`.
+- Your brief names one task, whose Analyze files stand under `work/task/<task_id>/`.
 * inline: notes/solver-pass.md#brief-form
 
 - Create its solver by the operations below, Write through Prune, in this order, then write the report.
@@ -75,7 +75,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 * inline: notes/tickets.md#ticket-files
 
 ## Report
-- Write the report to `.scratch/<task_id>/create.md`.
+- Write the report to `work/task/<task_id>/create.md`.
 * inline: notes/solver-pass.md#report-form
 
 ## The lib
