@@ -52,7 +52,7 @@
 - `uv run python scripts/context.py --write` generates files git does not track, and `uv run python scripts/context.py --help` lists them.
 
 ## What goes where
-- A document the handbook includes says nothing that holds for one entry point and not another.
+- A document or a section that more than one entry point includes, inlines or links says nothing that holds for one of them and not another, and no default that a line of one of them overrides.
 - An entry point inlines each operation it runs, in order, under a heading of its name.
     - A session's entry point inlines [Every pass](docs/handbook/procedure.md#every-pass) as well.
 - An entry point's `+ lib:` attribute says how it reads the lib.

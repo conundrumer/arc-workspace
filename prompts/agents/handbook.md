@@ -13,6 +13,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 
 * inline: notes/issues.md#issue-files
 
+* inline: notes/issues.md#issue-fields
+
 * inline: notes/reading.md#lib-index
 
 * include: ../handbook.md

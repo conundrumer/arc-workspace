@@ -20,7 +20,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 - Before the first pass of a chain, where `master` holds commits that change `src/`, `scripts/` or `tests/` since the highest `scan/<n>` tag, run a scan as [Code](#code) gives, and launch the pass only once that scan, and its triage agent where one was launched, has returned.
 - Launch an Analyze, Create or Refine pass with a brief that gives the task. Add an override, labelled as one, only where your brief carries it.
 - Where a pass's report quotes a part of its brief that the pass refused, stop the chain there, and launch no review and no triage for that pass.
-- After each pass, launch a transcript review of it, as [Launching](#launching) gives, and have that review also read the pass call by call, with its timing, for what the tool and the documents did to the pass's work.
+- After each pass, launch a transcript review of it, as [Launching](#launching) gives, and have that review also read the pass call by call, with its timing, for what the tool and the documents did to the pass's work, and file an issue of kind `interference` where they made the pass's output wrong, and of kind `delay` where they cost it time or tokens alone.
 - Then launch a triage agent with the issues the pass's report lists under `## Issues filed`, the issues that review filed, and that review.
 - Where one of those issues has kind `interference`, run the next pass only after that triage agent has resolved each `interference` issue. Where it returns a decision for the user on one, stop the chain there.
 
@@ -46,10 +46,15 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 * inline: notes/launching.md#launching
 
 ## Changes
-* inline: notes/changes.md#changes
+* inline: notes/changes.md#carrying-a-change
+- Have a triage agent judge the findings a change's editor leaves and decide each one the editor leaves for a decision, and give that agent only those findings, with the editor's reasons. Send the editor the findings triage keeps, as kept, with triage's reasons, and the decisions it returns.
+* inline: notes/changes.md#merging-a-change
 
 ## Issues
 * inline: notes/issues.md#issue-files
+
+## Issue fields
+* inline: notes/issues.md#issue-fields
 
 ## Reply
 - In your reply, give what each procedure produced, each task you skipped for its claim file, each issue [After a batch](#after-a-batch) filed, what each triage agent returned, and each agent you launched.

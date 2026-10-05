@@ -28,6 +28,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 - In your reply, state each finding of the last review pass that you left unfixed because it needs a decision.
 - Where you ran the gate, state in your reply each output you copied, and each output a `DIFF` line names that you did not copy, with that line.
 * inline: notes/issues.md#issue-files
+* inline: notes/issues.md#issue-fields
 
 * include: ../../docs/handbook/editing.md
 

@@ -47,6 +47,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write
     - Cite a case's target as the code site where the case arises, write under `Effect` what your code does there or cannot do, and quote under `Evidence` the docstring lines that describe the code at that site.
     - Cite a place as [Place issues](#place-issues) gives.
 * inline: notes/issues.md#issue-files
+* inline: notes/issues.md#issue-fields
 
 ## Place issues
 * inline: notes/code.md#place-issues

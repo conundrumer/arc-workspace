@@ -18,6 +18,7 @@ tools: Read, Grep, Glob, Bash, Write
 - In each reply, give the path of the file that review's findings are in.
 - Edit no file other than the ones you write your findings to and the issues you file.
 * inline: notes/issues.md#issue-files
+* inline: notes/issues.md#issue-fields
 
 * include: ../../docs/handbook/editing.md
 

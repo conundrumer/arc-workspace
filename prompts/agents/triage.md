@@ -37,6 +37,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 
 ## Tracking
 * inline: notes/issues.md#issue-files
+* inline: notes/issues.md#issue-fields
 * inline: notes/issues.md#tracking
 - Claim a file by moving it to `issues/assigned/` with `mv`, and leave alone each issue whose move fails.
 

@@ -33,6 +33,7 @@ tools: Read, Grep, Glob, Bash, Write
 
 ## Issues
 * inline: notes/issues.md#issue-files
+* inline: notes/issues.md#issue-fields
 * inline: notes/issues.md#tracking
 
 ## Place issues

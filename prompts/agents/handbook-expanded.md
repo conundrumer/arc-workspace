@@ -13,6 +13,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 
 * inline: notes/issues.md#issue-files
 
+* inline: notes/issues.md#issue-fields
+
 * include: ../handbook.md
     + exclude: draft, gloss
     + abridged: ../../docs/handbook/patterns.md

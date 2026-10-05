@@ -11,14 +11,16 @@
 
 ## Issue files
 - Where your instructions, your brief or a later message ask you to file an issue, file it with `uv run python scripts/file_issue.py`, in the form its `--help` gives.
-    - Where no other line gives them, `<agent>` is your agent's name, and `<source>` is a short name for your work.
-    - Where no other line gives an issue's kind, give it one of these:
-        - `interference`: something in your output was wrong because of the issue, whether or not you repaired it.
-        - `delay`: the issue cost time or tokens only.
-        - `undecided`: a case your rules do not cover, or a place that poses a question.
     - Write under `Evidence` the line quoted, or the command and its output, or the grid, as you saw it.
     - Leave out what the fix should be.
 - File a `delay` issue for each step of your work whose run time is far out of proportion to the work the step does.
+
+## issue-fields
+- `<agent>` is your agent's name, and `<source>` is a short name for your work.
+- An issue's kind is one of these, or a kind another line of your instructions defines:
+    - `interference`: something in your output was wrong because of the issue, whether or not you repaired it.
+    - `delay`: the issue cost time or tokens only.
+    - `undecided`: a case your rules do not cover, or a place that poses a question.
 
 ## tracking
 - The directories `issues/new/`, `issues/assigned/` and `issues/resolved/` are an issue's statuses, and moving its file between them is its transition.
