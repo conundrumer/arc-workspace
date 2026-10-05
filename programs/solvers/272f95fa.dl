@@ -22,6 +22,7 @@
 .comp Params {
     .decl line(col: Color) line(8).
 
+    // --- $Plus, $Cast ---
     .decl center_paint(col: Color) center_paint(6).
 
     .decl arm_paint(d: Dir, col: Color)

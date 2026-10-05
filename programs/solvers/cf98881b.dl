@@ -38,7 +38,7 @@
 
     .decl bg(c: Color) bg(0).
 
-    // --- Table decompose data ---
+    // --- $Table: decompose data ---
     .decl arr_dim(a: Axis, n: number)
     arr_dim(AXIS_V, 1). arr_dim(AXIS_H, 3).
     .decl gap(g: number) gap(1).
@@ -54,20 +54,20 @@
     .decl divide_gap(g: number)
     divide_gap(1).
 
-    // --- Count decompose data ---
+    // --- $Count: decompose data ---
     .decl divisor(n: number)
     divisor(3).
 
-    // --- Spatial priority data ---
+    // --- $Spatial: priority data ---
     .decl stack_dir(d: Dir)
     stack_dir(DIR_L).
 
-    // --- Palette priority data ---
+    // --- $Palette: priority data ---
     // Ink priority ranks, highest first.
     .decl ink_rank(c: Color, r: number)
     ink_rank(4, 0). ink_rank(9, 1). ink_rank(1, 2).
 
-    // --- Stack priority data ---
+    // --- $Stack: priority data ---
     // Pane priority ranks, highest first.
     .decl pane_rank(p_tile: Position, r: number)
     GRID_1x3(pane_rank,

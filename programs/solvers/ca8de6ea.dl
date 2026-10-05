@@ -17,7 +17,7 @@
 .decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    // --- LabeledGrids data ---
+    // --- $LabeledGrids: data ---
     .decl in_label(p: Position, id: Ident)
     GRID_SPARSE_5x5(in_label,
         1, _, _, _, 3,
@@ -35,7 +35,7 @@
     .decl map(p_in: Position, p_out: Position)
     map(P_in, P_out) :- in_label(P_in, Id), out_label(P_out, Id).
 
-    // --- Cycle data ---
+    // --- $Cycle: data ---
     // Output ring as a SENSE_CW cycle of 8 cells, declared by its edges. A cycle's
     // edge set carries no basepoint, so no ring cell is privileged as a start.
     .decl ring_succ(p: Position, p_next: Position)

@@ -17,8 +17,10 @@
 .decl out(p: Position, col: Color, c: Choice)
 
 .comp Params {
-    .decl bg(col: Color) bg(0).
     .decl mark(col: Color) mark(5).
+
+    // --- $Object, $Interior ---
+    .decl bg(col: Color) bg(0).
 
     // --- $Window ---
     // The window's box, as margins from the mark's cell.

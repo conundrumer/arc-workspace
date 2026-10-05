@@ -4,7 +4,9 @@
 //  one color, side cells another — and erases to bg. The cases are
 //  data-equivalent on this task.
 
-.type Corner = Fixed {} | Prop {}
+.type Corner =
+    Fixed {}
+  | Prop {}
 
 // how a marker's ring is drawn
 .type Choice =

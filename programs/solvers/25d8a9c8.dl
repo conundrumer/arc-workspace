@@ -27,23 +27,23 @@
 .comp Params {
     .decl axis(a: Axis) axis(AXIS_H).
 
-    // --- $PairExist + $PerCell ---
+    // --- $PairExist & $PerCell ---
     .decl uniform_color(c: Color) uniform_color(5).
     .decl non_uniform_color(c: Color) non_uniform_color(0).
 
-    // --- $PairExist + $SliceMap ---
+    // --- $PairExist & $SliceMap ---
     .decl uniform_template(p: Position, col: Color)
     GRID_1x3(uniform_template, 5, 5, 5)
 
     .decl non_uniform_template(p: Position, col: Color)
     GRID_1x3(non_uniform_template, 0, 0, 0)
 
-    // --- $Count + $PerCell ---
+    // --- $Count & $PerCell ---
     .decl count_color(n: number, col: Color)
     count_color(1, 5).
     count_color(2, 0).
 
-    // --- $Count + $SliceMap ---
+    // --- $Count & $SliceMap ---
     .decl count_template(n: number, p_inner: Position, col: Color)
     GRID_1x3(count_template, 1, 5, 5, 5)
     GRID_1x3(count_template, 2, 0, 0, 0)

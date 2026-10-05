@@ -30,10 +30,8 @@
 
     .decl frame_dim(a: Axis, n: number)
     frame_dim(AXIS_V, 5). frame_dim(AXIS_H, 4).
-    .decl frame(p: Position)
-    frame(P) :- frame_dim(AXIS_V, Fv), frame_dim(AXIS_H, Fh), helpers.frame_pos([Fv, Fh], P).
 
-    // --- Table decompose data ---
+    // --- $Table: decompose data ---
     // Two 5×4 subgrids side by side, with a 1-column gap.
     .decl arr_dim(a: Axis, n: number)
     arr_dim(AXIS_V, 1). arr_dim(AXIS_H, 2).
@@ -51,11 +49,11 @@
     .decl divide_gap(g: number)
     divide_gap(1).
 
-    // --- Count decompose data ---
+    // --- $Count: decompose data ---
     .decl divisor(n: number)
     divisor(2).
 
-    // --- Lookup combine data ---
+    // --- $Lookup: combine data ---
     .decl combine_member(id: Ident, p_outer: Position, c: Color)
     .decl combine_out(id: Ident, c_out: Color)
 
@@ -64,7 +62,9 @@
     combine_member(2, [0,0,0,1], 8). combine_member(2, [0,0,1,0], 0). combine_out(2, 2).
     combine_member(3, [0,0,0,1], 8). combine_member(3, [0,0,1,0], 5). combine_out(3, 0).
 
-    // --- Xor combine data ---
+    // --- $Xor: combine data ---
+    .decl frame(p: Position)
+    frame(P) :- frame_dim(AXIS_V, Fv), frame_dim(AXIS_H, Fh), helpers.frame_pos([Fv, Fh], P).
     .decl bg(c: Color) bg(0).
     .decl out_fill(c: Color) out_fill(2).
     .decl fill_at(n: number) fill_at(1).

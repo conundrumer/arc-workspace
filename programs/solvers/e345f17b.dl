@@ -31,7 +31,7 @@
     // the tile's extent on both axes
     .decl frame_dim(k: number) frame_dim(4).
 
-    // --- Table decompose data ---
+    // --- $Table: decompose data ---
     .decl arr_dim(a: Axis, n: number)
     arr_dim(AXIS_V, 1). arr_dim(AXIS_H, 2).
     .decl tile_decompose(p: Position, p_outer: Position, p_inner: Position)
@@ -39,7 +39,7 @@
         arr_dim(AXIS_V, Av), arr_dim(AXIS_H, Ah), frame_dim(K),
         helpers.tile_pos([Av, Ah], [K, K], [0, 0], P_grid, P_tile, P_intile).
 
-    // --- Count decompose data ---
+    // --- $Count: decompose data ---
     .decl divisor(n: number)
     divisor(2).
 
@@ -47,7 +47,7 @@
     .decl divide_axis(a: Axis)
     divide_axis(AXIS_H).
 
-    // --- Lookup combine data ---
+    // --- $Lookup: combine data ---
     .decl combine_member(id: Ident, p_outer: Position, c: Color)
     .decl combine_out(id: Ident, c_out: Color)
 
@@ -56,7 +56,7 @@
     combine_member(2, [0,0,0,1], 6). combine_member(2, [0,0,1,0], 0). combine_out(2, 0).
     combine_member(3, [0,0,0,1], 6). combine_member(3, [0,0,1,0], 5). combine_out(3, 0).
 
-    // --- Nor combine data ---
+    // --- $Nor: combine data ---
     .decl bg(c: Color) bg(0).
     .decl out_fill(c: Color) out_fill(4).
 }

@@ -31,10 +31,8 @@
 
     .decl frame_dim(a: Axis, n: number)
     frame_dim(AXIS_V, 6). frame_dim(AXIS_H, 4).
-    .decl frame(p: Position)
-    frame(P) :- frame_dim(AXIS_V, Fv), frame_dim(AXIS_H, Fh), helpers.frame_pos([Fv, Fh], P).
 
-    // --- Table decompose data ---
+    // --- $Table: decompose data ---
     .decl arr_dim(a: Axis, n: number)
     arr_dim(AXIS_V, 2). arr_dim(AXIS_H, 1).
     .decl tile_decompose(p: Position, p_outer: Position, p_inner: Position)
@@ -47,11 +45,11 @@
     .decl divide_axis(a: Axis)
     divide_axis(AXIS_V).
 
-    // --- Count decompose data ---
+    // --- $Count: decompose data ---
     .decl divisor(n: number)
     divisor(2).
 
-    // --- Lookup combine data ---
+    // --- $Lookup: combine data ---
     .decl combine_member(id: Ident, p_outer: Position, c: Color)
     .decl combine_out(id: Ident, c_out: Color)
 
@@ -60,7 +58,9 @@
     combine_member(2, [0,1,0,0], 0). combine_member(2, [1,0,0,0], 5). combine_out(2, 4).
     combine_member(3, [0,1,0,0], 3). combine_member(3, [1,0,0,0], 5). combine_out(3, 4).
 
-    // --- Or combine data ---
+    // --- $Or: combine data ---
+    .decl frame(p: Position)
+    frame(P) :- frame_dim(AXIS_V, Fv), frame_dim(AXIS_H, Fh), helpers.frame_pos([Fv, Fh], P).
     .decl bg(c: Color) bg(0).
     .decl out_fill(c: Color) out_fill(4).
 }

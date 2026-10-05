@@ -38,10 +38,10 @@
     // --- $Tile ---
     .decl gap(g: number) gap(1).
 
-    // --- Tile Count ---
+    // --- $Count ---
     .decl tile_count(n: number) tile_count(5).
 
-    // --- Tile Size ---
+    // --- $Size ---
     .decl tile_size(k: number) tile_size(2).
 }
 

@@ -4,7 +4,9 @@
 //  class's symbol: one color — the top edge row; two — the TL diagonal;
 //  three — the TR diagonal.
 
-.type Canvas = Input {} | Fixed {}
+.type Canvas =
+    Input {}
+  | Fixed {}
 
 // the render: table or rule
 .type Choice =
