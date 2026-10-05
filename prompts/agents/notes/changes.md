@@ -33,6 +33,9 @@
 - The worktree of the change you work on is the one the message that launches you gives, or, where it gives none, your working directory at start. Run each command in it, and take each path in the repo from it.
 - A later message may add a request to the change, in the form your brief gives one, and that request is part of what the change is to do.
 
+## budget
+- Do each step your documents give, and finish the work, even where it runs past the budget a `Budget: N minutes` line of your brief or a later message gives.
+
 ## gate
 - `uv run python scripts/gate.py --outputs-only <out-dir> [cmd ...]` is the gate: it runs the gate commands it is given on the fixed inputs under `tests/gate/` that `gate.py --help` lists, and compares their outputs with the accepted ones.
 - Run it only to write the accepted gate outputs your brief lists and those a finding of your checks gives to update, with the commands whose outputs those are as `cmd` and a new directory under `.scratch/` in the worktree as `<out-dir>`.
