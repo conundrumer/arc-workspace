@@ -15,6 +15,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 ## Solver passes
 - A chain runs Analyze, then Create, then Refine on one task. Start it at the pass your brief gives, or at Analyze.
 - Where your brief gives no task, take the next one from `bash scripts/queue.sh --order name`.
+- Before the first pass of a chain, claim its task: run `mkdir -p .scratch/<task_id> && (set -C; echo "$CLAUDE_CODE_SESSION_ID" > .scratch/<task_id>/claim)` in the main worktree. Where it fails, run no chain on that task, and where you took it from the queue, take the next task after it from the queue, with `-n` to list more than one.
+- When the chain ends, remove that claim file.
 - Before the first pass of a chain, where `master` holds commits that change `src/`, `scripts/` or `tests/` since the highest `scan/<n>` tag, run a scan as [Code](#code) gives, and launch the pass only once that scan, and its triage agent where one was launched, has returned.
 - Launch an Analyze, Create or Refine pass with a brief that gives the task. Add an override, labelled as one, only where your brief carries it.
 - Where a pass's report quotes a part of its brief that the pass refused, stop the chain there, and launch no review and no triage for that pass.
@@ -51,4 +53,4 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 * inline: notes/issues.md#issue-files
 
 ## Reply
-- In your reply, give what each procedure produced, each issue [After a batch](#after-a-batch) filed, what each triage agent returned, and each agent you launched.
+- In your reply, give what each procedure produced, each task you skipped for its claim file, each issue [After a batch](#after-a-batch) filed, what each triage agent returned, and each agent you launched.
