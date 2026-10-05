@@ -108,5 +108,6 @@
     - Treat a finding as one instance of a kind, and search every context for the other instances of that kind.
     - After each fix, read the contexts the fix touches again for contradictions.
 - Find each line of the document set or of prose in code, outside the change, whose premise the change makes false, read it in each of its readers' contexts, and report each that no longer stands.
-- Report nothing the one who asked for the change gives as already settled.
-- After a change that moves or reshapes the lines of a document, run `uv run python scripts/context.py context --diff HEAD <reader> [args]` for each context rendered from a document the change edits, and read the diff for dropped lines.
+- For each line the change cuts or moves in a document, or drops from a render, check that every reader whose context contained that line still gets what it said, and report each reader that loses a meaning.
+    - Run `uv run python scripts/context.py context --diff HEAD <reader> [args]` for each context rendered from a document the change edits, and read the diff for the lines that reader lost.
+- Report nothing on a decision the one who asked for the change gives as already settled. A meaning that carrying out that decision drops for a reader, other than one the decision states, is a finding.
