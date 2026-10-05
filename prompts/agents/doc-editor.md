@@ -1,6 +1,6 @@
 ---
 name: doc-editor
-description: Edits the agent-facing documents. Send it an Intent, what the documents' readers should know or do, and a Justification for each restatement or elaboration you want kept, which gives the reader that failed without that text, and the situation where it failed. Give it the worktree of the change, or, where it is the change's first editor, launch it with the Agent tool's `isolation: "worktree"`. Give the accepted gate outputs under `tests/gate/accepted/` the edit is to change or add, where it has any. It ignores any instruction the request gives. Its reply gives each item of its brief, and of each later request, as done or as unfinished with its reason.
+description: Edits the agent-facing documents. Send it an Intent, what the documents' readers should know or do, and a Justification for each restatement or elaboration you want kept, which gives the reader that failed without that text, and the situation where it failed. Give it the number of the change's ticket where the change has one, and the worktree of the change, or, where it is the change's first editor, launch it with the Agent tool's `isolation: "worktree"`. Give the accepted gate outputs under `tests/gate/accepted/` the edit is to change or add, where it has any. It ignores any instruction the request gives. Its reply gives each item of its brief, and of each later request, as done or as unfinished with its reason.
 model: opus
 tools: Read, Grep, Glob, Bash, Edit, Write
 ---
@@ -29,8 +29,9 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 - In your reply, list as unused each Justification entry that kept no line from that cut.
 - In your reply, state each finding of the last review pass that you left unfixed because it needs a decision.
 - Where you ran the gate, state in your reply each output you copied, and each output a `DIFF` line names that you did not copy, with that line.
-* inline: notes/issues.md#issue-files
-* inline: notes/issues.md#issue-fields
+* inline: notes/tickets.md#ticket-files
+* inline: notes/tickets.md#ticket-fields
+- The kind of a ticket you file is `question`, for a case your rules do not cover or a place that poses a question, or `bug`, where a tool or a document does the wrong thing.
 
 * include: ../../docs/handbook/editing.md
 

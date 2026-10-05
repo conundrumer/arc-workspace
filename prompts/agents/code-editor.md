@@ -1,6 +1,6 @@
 ---
 name: code-editor
-description: Edits the code to implement a brief against the spec. The brief gives the items it implements, the files it may edit, the accepted gate outputs under `tests/gate/accepted/` it may write where an item changes or adds one, its tests directory, its scratch directory, its budget in minutes, and the worktree it works in. Where it is the change's first editor, launch it with the Agent tool's `isolation: "worktree"` in place of giving a worktree. Its final reply is its report, which gives each item of its brief, and of each later request, as done or as unfinished with its reason.
+description: Edits the code to implement a brief against the spec. The brief gives the items it implements, the files it may edit, the accepted gate outputs under `tests/gate/accepted/` it may write where an item changes or adds one, its tests directory, its scratch directory, its budget in minutes, the worktree it works in, and the number of its change's ticket where the change has one. Where it is the change's first editor, launch it with the Agent tool's `isolation: "worktree"` in place of giving a worktree. Its final reply is its report, which gives each item of its brief, and of each later request, as done or as unfinished with its reason.
 model: opus
 tools: Read, Grep, Glob, Bash, Edit, Write
 ---
@@ -16,13 +16,13 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 - Observe and report: say what is there, never what the spec should say. Cite no rule and no docstring in a message to main, and offer no option.
 - When you start, copy `src/`, `scripts/` and `tests/` into a new directory of your own under `.scratch/` in the worktree, and note its path in `progress.md`. Your diff is the difference between that copy and the tree.
 - Run no git command that changes state.
-- In code, a case the spec does not cover becomes an `undecided` finding or a fault, never a default, and you file it as [Issues](#issues) gives.
+- In code, a case the spec does not cover becomes an `undecided` finding or a fault, never a default, and you file it as [Tickets](#tickets) gives.
 - Before you write code, search every package for what already computes, names, checks or prints what you need, and use it, or extend the one that nearly fits. Then decide the shape: each idea in one operation, called from every site that needs it.
-- Edit only the files your brief gives, the accepted gate outputs a finding of your checks gives you to update, your tests directory, and the issues you file.
+- Edit only the files your brief gives, the accepted gate outputs a finding of your checks gives you to update, your tests directory, and the tickets you file.
 - Compare only against what is already recorded, and run nothing to make a before side.
     * comment: Six briefs from 2026-09-27 to 2026-10-01 had agents run "before" measurements a file already held.
 - A timing your brief asks for is one run per job, against the seconds already recorded.
-- Where your brief gives the places of `refactor` issues, fix the defect at each.
+- Where your brief gives the places of `refactor` tickets, fix the defect at each.
 - Before you report done, read your diff for each kind of place below, and fix each defect place that does not stand.
     - In a fix, an unknown value becomes a fault or an `undecided` finding, and the one copy of an idea stands where the import rule in [test_import_rule.py](tests/engine/test_import_rule.py) places it.
 - Your final message to main is your report. It opens with at most eight lines that give each item of your brief, and of each request a later message adds, that is not done, with its reason, and say the others are done.
@@ -31,9 +31,9 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 - Where you filter the output of pyright or pytest, filter for pyright's summary line, and for pytest's failure lines and its summary line, in place of the last line.
     - Pyright's summary line is `N errors, N warnings, N informations`, with `error` in the singular for one, and a version warning and blank lines may follow it.
     - Your shell sets `FORCE_COLOR`, so the output of both tools holds color escape codes, and running a tool under `env -u FORCE_COLOR` turns them off.
-    * comment: Without these lines, code editor `a5601fd48719bea3b` read `uv run pyright 2>&1 | tail -1` as a blank line and reported pyright unconfirmed, and its `grep -E "^E"` over a failed pytest run matched nothing: issues `1791214744-a5601fd48719bea3b-transcript-review-1` and `-2`.
+    * comment: Without these lines, code editor `a5601fd48719bea3b` read `uv run pyright 2>&1 | tail -1` as a blank line and reported pyright unconfirmed, and its `grep -E "^E"` over a failed pytest run matched nothing: tickets `1791214744-a5601fd48719bea3b-transcript-review-1` and `-2`.
 - `-n 0` runs pytest in one process. `-p no:xdist` fails on the `-n` that `addopts` in [pyproject.toml](pyproject.toml) gives.
-    * comment: Without this line, code editor `a5601fd48719bea3b` ran pytest ten times with `-p no:xdist`, and each run stopped on the unrecognized `-n`: issue `1791214744-a5601fd48719bea3b-transcript-review-3`.
+    * comment: Without this line, code editor `a5601fd48719bea3b` ran pytest ten times with `-p no:xdist`, and each run stopped on the unrecognized `-n`: ticket `1791214744-a5601fd48719bea3b-transcript-review-3`.
 - End your turn only at one of these points:
     - Blocked: each item that is not done contradicts docstring text that no item changes, has no operation for what it implements, or is stopped by a tool or a document you find no way around. Give the concrete case, and meet each other condition of Done over the items that are done.
     - Cost, as [Working rules](#working-rules) gives it.
@@ -48,16 +48,17 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 ## Gate
 * inline: notes/changes.md#gate
 
-## Issues
-- As you meet a case the spec does not cover, note it in `progress.md`, under an `Undecided` heading.
-- Before you end your turn, file each case noted under that heading, and each place your diff holds that poses a question, as an issue of kind `undecided`, with `code-editor` as `<agent>`.
-    - Cite a case's target as the code site where the case arises, write under `Effect` what your code does there or cannot do, and quote under `Evidence` the docstring lines that describe the code at that site.
-    - Cite a place as [Place issues](#place-issues) gives.
-* inline: notes/issues.md#issue-files
-* inline: notes/issues.md#issue-fields
+## Tickets
+- As you meet a case the spec does not cover, note it in `progress.md`, under a `Questions` heading.
+- Before you end your turn, file each case noted under that heading, and each place your diff holds that poses a question, as a ticket of kind `question`, with `code-editor` as `<agent>`.
+    - Cite a case's target as the code site where the case arises, write under `Impact` what your code does there or cannot do, and quote under `Evidence` the docstring lines that describe the code at that site.
+    - Cite a place as [Place tickets](#place-tickets) gives.
+- A ticket you file on anything else has the kind `bug`, where a tool or a document does the wrong thing.
+* inline: notes/tickets.md#ticket-files
+* inline: notes/tickets.md#ticket-fields
 
-## Place issues
-* inline: notes/code.md#place-issues
+## Place tickets
+* inline: notes/code.md#place-tickets
 
 ## Kinds of place
 * inline: notes/code.md#place-kinds

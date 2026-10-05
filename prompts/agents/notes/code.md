@@ -19,12 +19,12 @@
     - A name the diff gives a thing, where practitioners of the thing's discipline use a conventional name for it that the diff does not use.
 - A defect place stands, with its reason, where a package boundary forces the second copy, where a rule requires it, or where an absent value has a known meaning.
     - Each check quotes for itself the handbook passage it rests on, so one passage quoted at several checks stands.
-        * comment: Of scan 7's 30 items, 9 stood with reasons, among them one style.md sentence quoted at four checks, which the quote rule requires.
+        * comment: Of code review 7's 30 items, 9 stood with reasons, among them one style.md sentence quoted at four checks, which the quote rule requires.
 - Places that pose a question:
     - A condition on one solver, one command or one shape of input.
     - A change in the diff that makes false the premise of any line but its own lines, in a document or in prose in code.
 
-## place-issues
+## place-tickets
 - Cite a place's target as every location of the place. For one idea in two places, the locations include those outside the diff.
-- Write under `Effect` what the code does there, and quote each location under `Evidence`.
-- In the title of an `undecided` issue, write the question it poses after the target, in place of what is wrong in it.
+- Write under `Impact` what the code does there, and quote each location under `Evidence`.
+- In the title of a `question` ticket, write the question it poses after the target, in place of what is wrong in it.

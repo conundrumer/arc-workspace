@@ -7,20 +7,20 @@
 - Have an editor write each change to the code or the documents.
 - A change is one editor's edit, and each edit that fixes what its review or its checks found.
 - A change passes when each code editor that worked on it reports done or blocked, when no item its editors report done needs an item they report unfinished, and, where it changes the documents, the `///` and `//!` comments of [lib.dl](programs/lib.dl) and of the modules under [lib](programs/lib) among them, when the doc review of those changes leaves no finding that is kept and `uv run python -m controlled_markdown check` passes in its worktree.
-- Where you did not launch a change's editor, return the kept findings on that change and the decisions on it in your reply in place of sending them to that editor.
 - Send the findings of a change's review and of its checks to the editor that made the change, and that editor's fixes to the reviewer that reviewed it, each with SendMessage. Launch a fresh reviewer only for a change's first review.
 - Where the `controlled_markdown` check reports a `quotes` call that a change to the documents broke, send that finding to a code editor in place of the doc editor: launch one in the change's worktree, with each call the check reports as an item, to repair as [Prose in code](src/controlled_markdown/writing.md#prose-in-code) gives, and the files of those calls as the files it may edit.
 - Where a doc review reports a finding on one of those comments that a code editor wrote, send that finding to a doc editor in place of the code editor, with SendMessage. Where the change has no doc editor, first launch one in the change's worktree, with an Intent that says what those comments' readers need to know, taken from the items of the code editor's brief.
 - In each message that sends a reviewer fixes, give what has been settled about the change since its brief, and each request the user added to the change since its brief.
 - Launch the first editor of a change with the Agent tool's `isolation: "worktree"`, and take the change's worktree from the Agent tool's completion notification for that editor.
     - The harness removes that worktree, with its untracked files, when that editor ends a turn with no change to a tracked file. Launch the editor that continues such a change as a new first editor, and send no editor to a worktree you add yourself.
-        * comment: A code editor whose first worktree was removed after a turn with no edit had no worktree to continue in, and its notes under `.scratch/` were gone: issue `1791209231-worktree-cleanup-operator-1`. The operator then sent that editor to a worktree it added with `git worktree add`, and the permission classifier refused the editor's edits to [src](src) and [scripts](scripts) there: issue `1791209668-classifier-refusal-operator-1`.
+        * comment: A code editor whose first worktree was removed after a turn with no edit had no worktree to continue in, and its notes under `.scratch/` were gone: ticket `1791209231-worktree-cleanup-operator-1`. The operator then sent that editor to a worktree it added with `git worktree add`, and the permission classifier refused the editor's edits to [src](src) and [scripts](scripts) there: ticket `1791209668-classifier-refusal-operator-1`.
 - Give that worktree, by its path, in the brief of each later agent that works on the change.
 - Run the changes you launch at the same time.
 
 ### Findings an editor leaves
 - Judge each finding a change's editor leaves with a reason against the change's worktree, that reason, and [The ladder](prompts/agents/notes/decisions.md#the-ladder): keep it only where it is so, acting on it serves a rung, and no decision already made rules it out. Record each finding you drop, with its reason, in your reply, and send the editor each you keep that needs no decision, as kept, with your reason.
 - Where the editor leaves a finding, or an item unfinished, for a decision, decide the question it raises, from the reason the editor gives, as [How a decision is made](prompts/agents/notes/decisions.md#how-a-decision-is-made) gives, and send the editor the decision.
+- Where you did not launch a change's editor, return the kept findings on that change and the decisions on it in your reply in place of sending them to that editor.
 
 ### Merging a change
 - Where a kept finding of a change raises a decision that goes to the user, leave that change unmerged, and give its branch and worktree with that decision in your reply. The session that gets the user's ruling, or carries out that decision's default, merges the change.
@@ -30,12 +30,12 @@
     - Where the failed check is the gate, give in that finding, for each `DIFF` line that the change's briefs ask for, the accepted output under `tests/gate/accepted/` to update.
 
 ## worktree
-- The worktree of the change you work on is the one the message that launches you gives, or, where it gives none, your working directory at start. Run each command in it, and take each path in the repo from it, apart from a path under `issues/`, which you take from the main tree, the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints.
+- The worktree of the change you work on is the one the message that launches you gives, or, where it gives none, your working directory at start. Run each command in it, and take each path in the repo from it, apart from a path under `tickets/`, which you take from the main tree, the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints.
 - A later message may add a request to the change, in the form your brief gives one, and that request is part of what the change is to do.
 
 ## worktree-isolation
 - The harness may refuse a compound Bash command that it cannot verify runs git only inside the worktree, such as one that writes a file through a heredoc, runs `printf` with a computed format, or runs git inside a command substitution. Write such a file with the Write or Edit tool, run such a git call as a simple command in a Bash call of its own, and run the rest of the command in a Bash call of its own.
-    * comment: The refusal message reaches an agent only after the refused call. Without this line, code editor `a16cb9e50afdd6691` had five such commands refused and retried each split: issue `1791218737-a16cb9e50afdd6691-transcript-review-3`. With only the heredoc and `printf` forms named, doc editor `a0c48e5b4d30194d1` had a command with git inside a command substitution refused and split it: issue `1791220161-a0c48e5b4d30194d1-transcript-review-1`. The forms after "such as" stay because a reader cannot tell from the condition alone which commands the harness cannot verify.
+    * comment: The refusal message reaches an agent only after the refused call. Without this line, code editor `a16cb9e50afdd6691` had five such commands refused and retried each split: ticket `1791218737-a16cb9e50afdd6691-transcript-review-3`. With only the heredoc and `printf` forms named, doc editor `a0c48e5b4d30194d1` had a command with git inside a command substitution refused and split it: ticket `1791220161-a0c48e5b4d30194d1-transcript-review-1`. The forms after "such as" stay because a reader cannot tell from the condition alone which commands the harness cannot verify.
 
 ## budget
 - Do each step your documents give, and finish the work, even where it runs past the budget a `Budget: N minutes` line of your brief or a later message gives.

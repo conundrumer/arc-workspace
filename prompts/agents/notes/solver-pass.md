@@ -7,7 +7,7 @@
 
 ## solver-pass-lead
 - What an operation routes to the review goes in your report, under the section it fits.
-- Write under `programs/solvers/`, `programs/witnesses/`, `.scratch/<task_id>/`, and `issues/new/`, and nowhere else; the Analyze files are not changed.
+- Write under `programs/solvers/`, `programs/witnesses/`, `.scratch/<task_id>/`, and `tickets/open/`, and nowhere else; the Analyze files are not changed.
 - Report a failing run as failing.
 - Do not read `../arc-synth-bun/`.
 - Never run a git command that changes state.
@@ -33,7 +33,7 @@
     ## Fixes elsewhere
     - <another task's file, and the line>: <the fix it needs>
 
-    ## Issues filed
-    - <the name of a file the pass wrote under `issues/new/`>
+    ## Tickets filed
+    - <the name of a file the pass wrote under `tickets/open/`>
     ```
 - A section with nothing holds `none`.

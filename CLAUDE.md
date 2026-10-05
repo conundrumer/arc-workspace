@@ -28,7 +28,7 @@
 - The page and `ui/` are served from disk on each request.
 
 ## Issues
-- `issues/` is the track of the issues agents file, and [Issue notes](prompts/agents/notes/issues.md) states its conventions.
+- `issues/` is the track of the issues agents file, and [Ticket notes](prompts/agents/notes/tickets.md) states its conventions.
 
 ## Decisions
 - When the user talks with you and you run no solver pass, read [Decision notes](prompts/agents/notes/decisions.md) before you make a decision on the solver tools or the agents' documents.

@@ -38,7 +38,7 @@
     2. A ground determines it through a reading of the user's intent or of an existing convention, and that reading admits no other.
     3. The grounds permit more than one option, and the default is defensible from them.
     4. No ground bears on it.
-- Record a decision where the rule it makes lives, as the rule alone, and record what it was made from and its discretion tier in the log of the issue it settles or in your reply: a line of [Principles](docs/handbook/principles.md); a support line; a history entry, by its date; or, for the code's shape, the rung it serves.
+- Record a decision where the rule it makes lives, as the rule alone, and record what it was made from and its discretion tier in the log of the ticket it settles or in your reply: a line of [Principles](docs/handbook/principles.md); a support line; a history entry, by its date; or, for the code's shape, the rung it serves.
     - Record each line you write before a decision or a resolution in the same place, beside what the decision was made from.
 - The history of a decision is in the session transcripts, and `python3 ~/.claude/skills/retrieve/transcripts.py --help` lists the subcommands that read them.
 - Take agents' reports as evidence of what is there, never of what the principles or the spec should be.

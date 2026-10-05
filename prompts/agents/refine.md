@@ -69,16 +69,16 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 ## Commands
 * inline: notes/commands.md#commands
 
-## Issues
-* inline: notes/issues.md#pass-issues
+## Tickets
+* inline: notes/tickets.md#pass-tickets
 
-* inline: notes/issues.md#issue-files
+* inline: notes/tickets.md#ticket-files
 
 ## Report
 - Write the report to `.scratch/<task_id>/refine-<n>.md`, with `n` one more than the highest such report present, and 1 when there is none.
 * inline: notes/solver-pass.md#report-form
-- Report what this pass changed or judged anew, and carry each item of the latest report that still stands, with the report that first gave it, outside `## Issues filed`.
-    * comment: The `## Issues filed` exception stays: at task 9f8de559, refine-1 through refine-5 each carried the same `delay` entries forward under this rule, so one issue stood in five reports.
+- Report what this pass changed or judged anew, and carry each item of the latest report that still stands, with the report that first gave it, outside `## Tickets filed`.
+    * comment: The `## Tickets filed` exception stays: at task 9f8de559, refine-1 through refine-5 each carried the same `delay` entries forward under this rule, so one ticket stood in five reports.
 
 ## The lib
 * inline: notes/reading.md#lib-interface

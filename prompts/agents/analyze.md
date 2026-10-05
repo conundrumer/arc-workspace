@@ -14,7 +14,7 @@ tools: Read, Grep, Glob, Bash, Write
 * inline: notes/solver-pass.md#brief-form
 
 - Run Analyze on that task.
-- Put the files you write under `.scratch/<task_id>/` and `issues/new/`, and nowhere else.
+- Put the files you write under `.scratch/<task_id>/` and `tickets/open/`, and nowhere else.
 - Read nothing outside `docs/handbook/`, `data/tasks/<task_id>.json` and `.scratch/<task_id>/`, apart from the files a step of Analyze tells you to read and, once you have read the next steps, the sources their step 1 names.
 - Never run a git command that changes state.
 - Your reply is the report's path.
@@ -33,10 +33,10 @@ tools: Read, Grep, Glob, Bash, Write
 ## Commands
 * inline: notes/commands.md#commands
 
-## Issues
-* inline: notes/issues.md#pass-issues
+## Tickets
+* inline: notes/tickets.md#pass-tickets
 
-* inline: notes/issues.md#issue-files
+* inline: notes/tickets.md#ticket-files
 
 ## Analyze
 * inline: ../../docs/handbook/procedure.md#analyze

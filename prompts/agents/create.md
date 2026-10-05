@@ -69,10 +69,10 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 ## Commands
 * inline: notes/commands.md#commands
 
-## Issues
-* inline: notes/issues.md#pass-issues
+## Tickets
+* inline: notes/tickets.md#pass-tickets
 
-* inline: notes/issues.md#issue-files
+* inline: notes/tickets.md#ticket-files
 
 ## Report
 - Write the report to `.scratch/<task_id>/create.md`.

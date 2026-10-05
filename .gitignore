@@ -21,6 +21,7 @@ tools/console/state/
 /.cache/
 tests/scratch/
 /issues/*
+/tickets/
 # generated
 .codex/
 /AGENTS.md

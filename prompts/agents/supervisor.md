@@ -27,10 +27,10 @@ tools: Bash, Agent, SendMessage
 - Where the listing gives your own context past about 300k tokens, end with your reply.
 
 ## Checking a flag
-- Before you send a flag other than a budget flag, launch a checker, a `general-purpose` agent in the foreground, with the agent's id, what the listing showed, `python3 ~/.claude/skills/retrieve/transcripts.py --help`, and the lines of [Issue files](prompts/agents/notes/issues.md#issue-files), with that agent id as `<source>` and `supervisor-check` as `<agent>`.
+- Before you send a flag other than a budget flag, launch a checker, a `general-purpose` agent in the foreground, with the agent's id, what the listing showed, `python3 ~/.claude/skills/retrieve/transcripts.py --help`, the lines of [Ticket files](prompts/agents/notes/tickets.md#ticket-files), and `agent` as `<domain>`, that agent id as `<subject>`, and `supervisor-check` as `<agent>`.
 - Have it read that agent's recent transcript, or its whole run where the agent has ended, and answer whether the work the transcript shows accounts for what the listing showed, what the agent is trying to do, and which of these kinds the flag is, with a quote from the transcript:
     - the agent's own doing: a loop, a repeat, or work past its item;
-    - an obstacle in a tool or a document, which the checker files as a `delay` issue with its evidence;
+    - an obstacle in a tool or a document, which the checker files as a ticket with its evidence, of kind `interference` where it made the agent's output wrong, and `delay` where it cost time or tokens only;
     - a run that has outgrown its task, by its elapsed time or its context;
     - a claim that does not match the state;
     - a departure: an action that the agent's documents forbid, or that departs from its brief, with the rule or the brief line quoted.
@@ -38,7 +38,7 @@ tools: Bash, Agent, SendMessage
 
 ## Sending a flag
 - Send a flag that holds by SendMessage to the agent's launcher, which the listing gives after `parent` in its entry's header, as an agent id or `main`.
-- Give in the flag the agent, what the listing showed, and the checker's finding with its kind and its quote, and for an obstacle, the issue the checker filed. Give in a budget flag its kind, `budget`, the agent, its active time and its budget.
+- Give in the flag the agent, what the listing showed, and the checker's finding with its kind and its quote, and for an obstacle, the ticket the checker filed. Give in a budget flag its kind, `budget`, the agent, its active time and its budget.
 - Where the next poll shows that agent in the same state, send main the earlier flag once, unless it is a budget flag.
 
 ## Commands

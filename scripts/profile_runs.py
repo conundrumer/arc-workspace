@@ -23,12 +23,12 @@ from handbook.paths import console_importable, importable
 
 console_importable()
 # `scripts/` is no package: a test loads this module by its path, with
-# `scripts/` off `sys.path`, and `file_issue` imports from there.
+# `scripts/` off `sys.path`, and `file_ticket` imports from there.
 importable(checkout.scripts())
 
 from cli import command_args  # noqa: E402
 from cli.parser import parser as run_dl_parser  # noqa: E402
-from file_issue import FORM as ISSUE_FORM  # noqa: E402
+from file_ticket import TICKET_HEAD  # noqa: E402
 from quota import epoch  # noqa: E402
 from solver_console import config  # noqa: E402
 
@@ -75,7 +75,7 @@ HELP = mctx("""
     - A running agent's active time is its wall time less `idle` since the latest message from its launcher, with its wall time running to now. An agent with an unknown message has no active time and no budget.
     - Its budget is the N of the line of the form `Budget: N minutes` in the latest message from its launcher that has a line of that form, and an agent none of whose launcher's messages has one gets no budget. A line that opens with `Budget:` in another form gives no budget, and a message with lines of more than one N gives none, and an `undecided` line on stderr names each.
     - A call's command and an agent's text output are printed on one line, a command cut to its first {width} characters and a text output to its last {width}. A call's command is:
-        - for a Bash call, its command, led by the kind of each issue it files, as `kind K:`;
+        - for a Bash call, its command, led by the kind of each ticket it files, as `kind K:`;
         - for an Agent call, its description;
         - for a Write, Edit or NotebookEdit call, the path of the file it writes;
         - for a SendMessage call, its recipient, as `to R:`, and its message;
@@ -513,7 +513,7 @@ def call_command(block: dict[str, Any]) -> str:
     if name == "Bash":
         command = str(inp.get("command", ""))
         kinds = "".join(f"kind {m.group('kind')}: "
-                        for m in ISSUE_FORM.finditer(command))
+                        for m in TICKET_HEAD.finditer(command))
         return kinds + command
     if name in AGENT_TOOLS:
         return str(inp.get("description", ""))

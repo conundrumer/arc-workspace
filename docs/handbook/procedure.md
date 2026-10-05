@@ -121,8 +121,8 @@
     ## Not formed
     - <claim>: <why>
 
-    ## Issues filed
-    - <the name of a file the pass wrote under `issues/new/`>
+    ## Tickets filed
+    - <the name of a file the pass wrote under `tickets/open/`>
     ```
 
 ### Write
