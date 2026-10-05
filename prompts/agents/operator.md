@@ -58,7 +58,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 
 ## Changes
 * inline: notes/changes.md#carrying-a-change
-- Have an assignee judge the findings a change's editor leaves and decide each one the editor leaves for a decision, and each item an editor leaves unfinished for a decision, and give that agent only those findings and items, with the editor's reasons. Give it as well the places the `Review` section of a code editor's report gives as standing, as findings, and as items left for a decision the `question` tickets under `tickets/open/` filed on the change, with `change` and its number in their names. Send the editor the findings the assignee keeps, as kept, with the assignee's reasons, and the decisions it returns.
+- Have an assignee judge the findings a change's editor leaves and decide each one the editor leaves for a decision, and each item an editor leaves unfinished for a decision, and give that agent only those findings and items, with the editor's reasons and the editor's agent id. Give it as well the places the `Review` section of a code editor's report gives as standing, as findings, and as items left for a decision the `question` tickets under `tickets/open/` filed on the change, with `change` and its number in their names. The assignee sends the editor the findings it keeps or drops and its decisions.
 - Merge a change only once each `question` ticket filed on it is decided. A `bug` or `performance` ticket filed on it does not hold up its merge.
 * inline: notes/changes.md#merging-a-change
 

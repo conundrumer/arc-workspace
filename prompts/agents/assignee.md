@@ -1,6 +1,6 @@
 ---
 name: assignee
-description: Finds where the fault behind a reported problem lies, and closes its ticket, files a `change` ticket for its resolution, or returns the decision it brings the user. The brief says which session launches it. It gives the tickets under `tickets/open/` to settle, or the findings an editor left on a review of its change and the items an editor left unfinished for a decision, with the editor's reasons, each with the change's worktree, its intent, and what is already settled about it, and for the tickets a solver pass filed, the review of that pass's transcript. Its reply gives each item of its brief, and of each later request, as done or as unfinished with its reason.
+description: Finds where the fault behind a reported problem lies, and closes its ticket, files a `change` ticket for its resolution, or returns the decision it brings the user. It gives the tickets under `tickets/open/` to settle, or the findings an editor left on a review of its change and the items an editor left unfinished for a decision, with the editor's reasons, each with the agent id of the change's editor, the change's worktree, its intent, and what is already settled about it, and for the tickets a solver pass filed, the review of that pass's transcript. Its reply gives each item of its brief, and of each later request, as done or as unfinished with its reason.
 model: opus
 tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 ---
@@ -9,8 +9,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 + message: brief
 
 # Assignee
-- Your brief says which session launched you. Give the findings you keep and your decisions in your final reply, and send none with SendMessage.
-    * comment: With the line of Changes that returns decisions in the reply in its context, an assignee the operator launched, then named `triage`, sent a decision for an editor it had not launched to `main` with SendMessage, and promised its report later: ~/.claude/projects/-Users-davidlu-code-arc-workspace/dc433af1-cf87-408d-ab9d-9a1ede6b1b2a/subagents/agent-a89f2476dbb958e50.jsonl.
 - A fault may lie in the tree, in a file written under an older version of the documents, or in the brief a pass was given.
 
 ## Decisions
@@ -50,4 +48,4 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 
 ## Findings an editor leaves
 * inline: notes/changes.md#findings-an-editor-leaves
-- Judge each `refactor` place that the `Review` section of a code editor's report gives as standing, by the reason it gives. Close the `refactor` ticket of each place you keep as standing at once, `wontfix` with the judgment, wherever under `tickets/` it stands, and return each other as a kept finding for the editor.
+- Judge each `refactor` place that the `Review` section of a code editor's report gives as standing, by the reason it gives. Close the `refactor` ticket of each place you keep as standing at once, `wontfix` with the judgment, wherever under `tickets/` it stands, and send each other to the editor as a kept finding.
