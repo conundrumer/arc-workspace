@@ -42,9 +42,17 @@ change affects, so the gate runs on every change, with `<base>` the
 temporary directory, which a failing gate names. Its `--help` says which
 commands `--affected` runs and how the gate's times are judged.
 
+The top of the stack holds every change committed, so where the gate runs
+every command, it traces them and writes a dependency record of that
+commit into its directory.
+
 When every check passes, the script fast-forwards `master` in the main tree
-to the top of the stack, runs `uv run python scripts/context.py --write` in
-the main tree, and removes each worktree and its branch.
+to the top of the stack, and runs in the main tree
+`uv run python scripts/context.py --write` and
+`uv run python scripts/gate.py --adopt-record <out>`, with `<out>` the
+directory of the gate that checked the stack, so that a record the gate
+wrote stands as the dependency record of the new `master`. It then removes
+each worktree and its branch.
 
 Where the stack's rebase conflicts or a check fails on the top of the stack,
 and the stack holds more than one change, the script moves each branch back
@@ -213,15 +221,16 @@ def code_paths(tree: Path, main: Path, touched: set[str]) -> set[str]:
             or any(p.startswith(f"{d}/") for d in CODE_DIRS)}
 
 
-def check(tree: Path, main: Path, base: str, touched: set[str]) -> None:
+def check(tree: Path, main: Path, base: str, touched: set[str]) -> Path:
     """Run in `tree` the checks of changes from the commit `base` that touch
-    `touched`, or refuse."""
+    `touched`, or refuse; the gate's out-dir."""
     gate_out = tempfile.mkdtemp(prefix="merge-change-gate-")
     gate = Check(("uv", "run", "python", "scripts/gate.py", "--outputs-only", "--affected",
                   base, gate_out))
     code = ([Check(("uv", "run", "pyright")), Check(("uv", "run", "pytest", "-q"))]
             if code_paths(tree, main, touched) else [])
     run_checks(tree, [MARKDOWN_CHECK, gate, *code])
+    return Path(gate_out)
 
 
 def run_in(tree: Path, argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
@@ -401,10 +410,10 @@ def touched_by(changes: Sequence[Change]) -> set[str]:
     return {p for c in changes for p in c.touched}
 
 
-def stack(main: Path, changes: Sequence[Change]) -> None:
+def stack(main: Path, changes: Sequence[Change]) -> Path:
     """Rebase the branches of `changes`, in order, onto `MASTER` as one
-    stack, and run the checks on its top, or refuse. A refusal leaves each
-    branch at `committed`."""
+    stack, and run the checks on its top, or refuse; the gate's out-dir. A
+    refusal leaves each branch at `committed`."""
     base = onto = checkout.git_out(main, "rev-parse", MASTER).strip()
     names = [MASTER, *(c.branch for c in changes[:-1])]
     try:
@@ -413,7 +422,7 @@ def stack(main: Path, changes: Sequence[Change]) -> None:
             onto = checkout.git_out(c.worktree, "rev-parse", "HEAD").strip()
         top = changes[-1].worktree
         set_up_submodules(top, main)
-        check(top, main, base, touched_by(changes))
+        return check(top, main, base, touched_by(changes))
     except Refused:
         for c in changes:
             unstack(c)
@@ -441,13 +450,13 @@ def merge_alone(main: Path, change: Change) -> None:
     rebase(change, onto, MASTER, restore=True)
     try:
         set_up_submodules(change.worktree, main)
-        check(change.worktree, main, onto, set(change.touched))
+        gate_out = check(change.worktree, main, onto, set(change.touched))
     except Refused as exc:
         checkout.git_out(change.worktree, "reset", "-q", "--mixed", onto)
         raise Refused(f"{exc}\n{change.branch} is moved back to {MASTER}'s commit "
                       f"{onto[:12]}, and the change stands uncommitted in "
                       f"{change.worktree}") from exc
-    land(main, [change])
+    land(main, [change], gate_out)
 
 
 AGENT_LOCK = "claude agent "
@@ -501,9 +510,10 @@ def remove(main: Path, change: Change) -> None:
     checkout.git_out(main, "branch", "-q", "-d", branch)
 
 
-def land(main: Path, changes: Sequence[Change]) -> None:
+def land(main: Path, changes: Sequence[Change], gate_out: Path) -> None:
     """Fast-forward `MASTER` to the top of `changes`, write the context in
-    the main tree, and remove each change's worktree and branch."""
+    the main tree, adopt the dependency record the gate wrote into
+    `gate_out`, and remove each change's worktree and branch."""
     refuse_main_touched(main, touched_by(changes))
     top = changes[-1].branch
     print(f"merge_change: fast-forwarding {MASTER} to {top}", flush=True)
@@ -512,14 +522,18 @@ def land(main: Path, changes: Sequence[Change]) -> None:
         raise Failed(f"fast-forwarding {MASTER} failed; {top} is committed and "
                      f"rebased in {changes[-1].worktree}:\n{said(done)}")
 
-    print("merge_change: running scripts/context.py --write in the main tree", flush=True)
-    done = run_in(main, ("uv", "run", "python", "scripts/context.py", "--write"))
-    if done.returncode != 0:
-        raise Failed(mctx("{master} is fast-forwarded, and scripts/context.py --write "
-                          "failed in {main}; the worktrees and branches of {branches} "
-                          "stay:").format(
-            master=MASTER, main=main, branches=", ".join(c.branch for c in changes))
-            + "\n" + said(done))
+    for argv in (("scripts/context.py", "--write"),
+                 ("scripts/gate.py", "--adopt-record", str(gate_out))):
+        shown = " ".join(argv)
+        print(mctx("merge_change: running {shown} in the main tree").format(shown=shown),
+              flush=True)
+        done = run_in(main, ("uv", "run", "python", *argv))
+        if done.returncode != 0:
+            raise Failed(mctx("{master} is fast-forwarded, and {shown} failed in {main}; the "
+                              "worktrees and branches of {branches} stay:").format(
+                master=MASTER, shown=shown, main=main,
+                branches=", ".join(c.branch for c in changes)) + "\n" + said(done))
+        print(done.stdout, end="", flush=True)
 
     failed: list[str] = []
     for c in changes:
@@ -577,12 +591,12 @@ def land_all(main: Path, changes: Sequence[Change]) -> bool:
     the stack is refused, one at a time. Whether every change merged."""
     if len(changes) > 1:
         try:
-            stack(main, changes)
+            gate_out = stack(main, changes)
         except Refused as exc:
             print(mctx("merge_change: the stack is refused, so the changes merge one "
                        "at a time:") + "\n" + str(exc), flush=True)
         else:
-            land(main, changes)
+            land(main, changes, gate_out)
             return True
     every = True
     for c in changes:

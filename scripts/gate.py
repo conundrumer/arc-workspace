@@ -5,6 +5,7 @@ times.
     uv run python scripts/gate.py <out-dir> [cmd ...]
     uv run python scripts/gate.py --outputs-only [--affected <base> | --record-deps] [--coverage] <out-dir> [cmd ...]
     uv run python scripts/gate.py --accept [--replace] <out-dir> [cmd ...]
+    uv run python scripts/gate.py --adopt-record <out-dir>
 
 A command runs on the stems its `Command.stems` gives. The stems run in
 parallel. On each stem, the commands run in the order given, which is the
@@ -64,7 +65,17 @@ against `HEAD`, so that the lines it records are the lines of that commit.
 `affects` decides, and every command where no dependency record stands. The
 change is the difference between the commit `<base>`, which the change
 branched from, and the checkout. Its first line names the record and the
-base, and counts the commands it runs.
+base, and counts the commands it runs. Where it runs every command, on a
+checkout with no change to a tracked file against `HEAD`, it traces them as
+`--record-deps` does, and writes their dependencies, with the `HEAD`
+commit, to `<out-dir>/gate/record.json` (`RECORD_OUT`).
+
+`--adopt-record` runs no command: it writes the `RECORD_OUT` that an
+earlier run wrote under `<out-dir>` as the dependency record, where its
+commit is the `HEAD` commit of the checkout it runs in, and fails where it
+is another.
+Where no `RECORD_OUT` stands, it says so and leaves the dependency record
+as it is.
 
 Every command reads the solver files from `tests/gate/solvers/` and the
 witness files from `tests/gate/witnesses/`. A command that takes a witness
@@ -150,6 +161,9 @@ TIMES_FILE = "times.json"
 (`times_file`)."""
 DEPS_FILE = checkout.scratch().relative_to(checkout.ROOT) / "gate" / "deps.json"
 """The dependency record, under the main worktree (`deps_file`)."""
+RECORD_OUT = "record.json"
+"""The file under `<out-dir>/gate/` that holds the dependencies an
+`--affected` run traced, as a dependency record."""
 
 STEMS = ("9c1e755f", "9b30e358", "9b2a60aa", "a61ba2ce", "a04b2602", "a096bf4d",
          "9b4c17c4", "a5f85a15")
@@ -373,6 +387,17 @@ def times_file(accepted: Path) -> Path:
 
 def deps_file() -> Path:
     return checkout.main_worktree(checkout.ROOT) / DEPS_FILE
+
+
+def head_clean() -> bool:
+    """Whether the checkout changes no tracked file against `HEAD`, so that
+    a traced run records the lines of the `HEAD` commit."""
+    return all(c.change is checkout.Change.UNTRACKED
+               for c in checkout.changed_paths(checkout.ROOT, "HEAD"))
+
+
+def head() -> str:
+    return checkout.git_out(checkout.ROOT, "rev-parse", "HEAD").strip()
 
 
 def load() -> str:
@@ -858,7 +883,7 @@ class Gate:
         commit."""
         deps = {p.stem: Deps.from_json(json.loads(p.read_text()))
                 for p in sorted(self.deps.glob("*.json"))}
-        return Record(checkout.git_out(checkout.ROOT, "rev-parse", "HEAD").strip(), deps)
+        return Record(head(), deps)
 
     def accept(self, replace: bool) -> tuple[int, int]:
         """Each cold time and output written as accepted where none of its
@@ -888,6 +913,26 @@ def _same(a: Path, b: Path) -> bool:
     return a.exists() and b.exists() and a.read_bytes() == b.read_bytes()
 
 
+def adopt_record(out: Path) -> int:
+    """Write the `RECORD_OUT` under `out` as the dependency record, where
+    its commit is `HEAD`."""
+    path = out.resolve() / "gate" / RECORD_OUT
+    if not path.exists():
+        print(mctx("record: no {path} stands, so the dependency record at {deps} stays as "
+                   "it is").format(path=path, deps=deps_file()))
+        return 0
+    record = Record.read(path)
+    at = head()
+    if record.commit != at:
+        print(mctx("record: {path} records {commit}, and HEAD is {head}").format(
+            path=path, commit=record.commit[:12], head=at[:12]), file=sys.stderr)
+        return 1
+    record.write(deps_file())
+    print(mctx("record: the dependency record of {commit} is written to {deps}").format(
+        commit=record.commit[:12], deps=deps_file()))
+    return 0
+
+
 def main(argv: Sequence[str]) -> int:
     if argv[:1] == [TRACE]:
         deps_out, cov_out, script, *args = argv[1:]
@@ -915,7 +960,16 @@ def main(argv: Sequence[str]) -> int:
                          "data and dependencies under the out-dir")
     ap.add_argument("--accepted", type=Path, default=ACCEPTED,
                     help="the accepted directory (default: tests/gate/accepted)")
+    ap.add_argument("--adopt-record", action="store_true",
+                    help="write the dependencies an --affected run traced under the out-dir "
+                         "as the dependency record, and run no command")
     a = ap.parse_args(argv)
+    if a.adopt_record:
+        if a.cmds or a.accept or a.replace or a.outputs_only or a.affected is not None \
+                or a.record_deps or a.coverage or a.accepted != ACCEPTED:
+            ap.error(mctx("--adopt-record runs no command, so it takes no command and "
+                          "no other option"))
+        return adopt_record(a.out)
     if a.replace and not a.accept:
         ap.error("--replace is given without --accept")
     if a.accept and a.outputs_only:
@@ -929,17 +983,17 @@ def main(argv: Sequence[str]) -> int:
         ap.error(f"no gate command named {', '.join(unknown)}")
     if a.record_deps and a.cmds:
         ap.error(mctx("--record-deps records every command, so it takes no command"))
-    if a.record_deps and any(c.change is not checkout.Change.UNTRACKED
-                             for c in checkout.changed_paths(checkout.ROOT, "HEAD")):
+    if a.record_deps and not head_clean():
         ap.error(mctx("--record-deps records the lines of HEAD, and the checkout changes "
                       "a tracked file against it"))
     cmds = [COMMANDS[c] for c in a.cmds] or list(COMMANDS.values())
-    gate = Gate(a.out, a.accepted.resolve(), timed=not a.outputs_only,
-                traced=a.record_deps or a.coverage)
     keys = keys_of(cmds)
     if a.affected is not None:
         keys, said = affected(cmds, a.affected)
         print(said, flush=True)
+    records = a.affected is not None and keys == keys_of(COMMANDS.values()) and head_clean()
+    gate = Gate(a.out, a.accepted.resolve(), timed=not a.outputs_only,
+                traced=a.record_deps or a.coverage or records)
     if a.accept:
         if gate.dir.exists():
             ap.error(f"{gate.dir} exists; give an empty out-dir")
@@ -954,10 +1008,11 @@ def main(argv: Sequence[str]) -> int:
         print(ln)
     counts = {k: sum(ln.kind is k for ln in lines) for k in gate.kinds()}
     print("gate: " + ", ".join(f"{n} {k}" for k, n in counts.items()))
-    if a.record_deps:
-        gate.record().write(deps_file())
+    record_to = deps_file() if a.record_deps else gate.dir / RECORD_OUT if records else None
+    if record_to is not None:
+        gate.record().write(record_to)
         print(mctx("deps: the dependencies of {n} commands are written to {path}").format(
-            n=len(keys), path=deps_file()))
+            n=len(keys), path=record_to))
     if a.accept:
         times, outputs = gate.accept(a.replace)
         print(f"baseline: {times} accepted times written to {gate.times_file}, "
