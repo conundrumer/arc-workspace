@@ -17,6 +17,9 @@
 - The handbook is what a solver session reads.
 - To edit a document an agent reads, send a request to the `doc-editor` agent.
 
+## Lib
+- When you work to speed up the lib, look in [Souffle: undocumented features](docs/souffle-undocumented.md) for Souffle features the official documentation leaves out.
+
 ## Solver console
 - `tools/console/` is deprecated. It runs solver sessions as `claude -p` workers in staged chains.
 - The module docstrings in [solver_console](tools/console/solver_console) index what each module holds: what a worker session reads and may do, how a stage hands off, and how the user reaches a session.
