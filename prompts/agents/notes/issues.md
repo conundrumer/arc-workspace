@@ -16,7 +16,7 @@
 - File a `delay` issue for each step of your work whose run time is far out of proportion to the work the step does.
 
 ## issue-fields
-- `<agent>` is your agent's name, and `<source>` is a short name for your work.
+- `<agent>` is your agent's name, or `main` in the main session, and `<source>` is a short name for your work.
 - An issue's kind is one of these, or a kind another line of your instructions defines:
     - `interference`: something in your output was wrong because of the issue, whether or not you repaired it.
     - `delay`: the issue cost time or tokens only.

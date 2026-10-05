@@ -7,7 +7,14 @@
 - In a brief that asks for an edit, give the meaning to state, the case that shows the need, and the span the edit may change, and no wording.
 - Split work between agents where the split saves at least 30 minutes of wall-clock per 150k tokens of overhead.
 - An agent's budget, in minutes, is the budget that `uv run python scripts/profile_runs.py ~/.claude/projects/-Users-davidlu-code-arc-workspace/*.jsonl --type <agent type> --since <date>` prints for its agent type, where `<date>` is what `git log -1 --format=%cI -- <path> ...` prints over the paths of that type's prompt, of each document it includes or inlines, and of the tools it runs. An agent that runs until you tell it to stop has no budget.
-- When an agent you launched ends a turn more than its budget after the brief or message that started that turn, or with items left, change its brief or split its work, in the same turn.
+- When an agent you launched ends a turn more than its budget after the brief or message that started that turn, change its brief or split its work, in the same turn.
+- Act on each item that an agent you launched gives as unfinished, by its reason:
+    - Where it needs more work or more budget, change that agent's brief or split its work, and send the item again, in the same turn.
+    - Where a tool or a document stopped it, file that obstacle as an issue of the kind that fits it, and send the item again once that issue is resolved, or at once by a way around the obstacle where one exists.
+    - Where it needs a decision, act on it as that decision rules, once the decision is made.
+- Where an agent whose description says its reply gives each item of its brief as done or as unfinished has replied, and gives an item you sent it as neither, send that item again, file its drop as an `interference` issue, and leave finding the drop's cause to the triage agent that takes that issue.
+- Launch a triage agent with each issue you file for an obstacle or a drop, as the lines above give, before you end your turn with no other work. Where you are a triage agent, settle those issues yourself.
+- In your reply, give each item an agent you launched left unfinished that you have not finished, as unfinished with its reason.
 - A transcript review is a `general-purpose` agent that reviews a run's transcript. Give it the run's agent id, `python3 ~/.claude/skills/retrieve/transcripts.py --help`, and the lines of [Issue files](prompts/agents/notes/issues.md#issue-files), with that agent id as `<source>` and `transcript-review` as `<agent>`. Have it file an issue of kind `delay` for each place where the run explored to find what a docstring or a document line could have led it to.
 - Where a completed run's active time, its wall time less its `idle` time as `uv run python scripts/profile_runs.py <agent id>` prints them, is past its agent type's budget, and the run is no Analyze, Create or Refine pass, launch a transcript review of it.
 - Pause or serialize agents only where the user agreed to it.

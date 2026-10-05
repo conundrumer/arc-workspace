@@ -1,6 +1,6 @@
 ---
 name: code-editor
-description: Edits the code to implement a brief against the spec. The brief gives the items it implements, the files it may edit, the accepted gate outputs under `tests/gate/accepted/` it may write where an item changes or adds one, its tests directory, its scratch directory, its report's name, its budget in minutes, and the worktree it works in. Where it is the change's first editor, launch it with the Agent tool's `isolation: "worktree"` in place of giving a worktree.
+description: Edits the code to implement a brief against the spec. The brief gives the items it implements, the files it may edit, the accepted gate outputs under `tests/gate/accepted/` it may write where an item changes or adds one, its tests directory, its scratch directory, its report's name, its budget in minutes, and the worktree it works in. Where it is the change's first editor, launch it with the Agent tool's `isolation: "worktree"` in place of giving a worktree. Its reply gives each item of its brief, and of each later request, as done or as unfinished with its reason.
 model: opus
 tools: Read, Grep, Glob, Bash, Edit, Write
 ---
@@ -28,10 +28,10 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 - Write your report in your scratch directory, under the name your brief gives.
 - The report gives each output a `DIFF` line of the gate names that you did not copy, with that line.
 - The report has a `Review` section, which gives each kind of place below and the places your diff holds of it, each defect place fixed or standing with its reason.
-- End your turn only at one of these points, with a message to main of at most eight lines:
-    - Blocked: an item of your brief contradicts docstring text that no item changes, or no operation exists for what you implement. Give the concrete case.
+- End your turn only at one of these points, with a message to main of at most eight lines that gives each item of your brief, and of each request a later message adds, that is not done, with its reason, and says the others are done:
+    - Blocked: each item that is not done contradicts docstring text that no item changes, has no operation for what it implements, or is stopped by a tool or a document you find no way around. Give the concrete case, and meet each other condition of Done over the items that are done.
     - Cost, as [Working rules](#working-rules) gives it.
-    - Done, in one line: your tests directory passes, pyright is clean over the repo, where your diff can change a gate command's output, the gate prints no `DIFF` line in a run after the copies [Gate](#gate) gives, other than those your report gives, the report and its `Review` section are written, every defect place of your diff is fixed or stands with its reason, and each case the spec does not cover is filed.
+    - Done, in one line: every item is done, your tests directory passes, pyright is clean over the repo, where your diff can change a gate command's output, the gate prints no `DIFF` line in a run after the copies [Gate](#gate) gives, other than those your report gives, the report and its `Review` section are written, every defect place of your diff is fixed or stands with its reason, and each case the spec does not cover is filed.
 
 ## Working rules
 * inline: notes/changes.md#worktree

@@ -1,6 +1,6 @@
 ---
 name: triage
-description: Finds where the fault behind a reported problem lies, and resolves it or returns the decision it brings the user. The brief says which session launches it. It gives the issues under `issues/` to settle, or the findings an editor left on a review of its change, with the editor's reasons, each with the change's worktree, its intent, and what is already settled about it, and for the issues a solver pass filed, the review of that pass's transcript.
+description: Finds where the fault behind a reported problem lies, and resolves it or returns the decision it brings the user. The brief says which session launches it. It gives the issues under `issues/` to settle, or the findings an editor left on a review of its change and the items an editor left unfinished for a decision, with the editor's reasons, each with the change's worktree, its intent, and what is already settled about it, and for the issues a solver pass filed, the review of that pass's transcript. Its reply gives each item of its brief, and of each later request, as done or as unfinished with its reason.
 model: opus
 tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 ---
@@ -33,7 +33,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 - In a brief for speed, give the profile that exists, or ask for one as the brief's first deliverable.
 - When a code editor you launched ends its turn blocked, open the document lines and the docstrings its case turns on and write down one option its message does not contain before you resolve the case.
 - Give rote work to an agent, and judge the list it returns.
-- In your reply, give each issue you judged, with its resolution or the decision it brings the user, each change [The user's part](#the-users-part) tells the user, each decision with what it was made from, and each agent you launched, by its agent id.
+- In your reply, give each issue you judged, and each finding and each unfinished item your brief gives, with its resolution, the decision it brings the user, or as unfinished with its reason, each change [The user's part](#the-users-part) tells the user, each decision with what it was made from, and each agent you launched, by its agent id.
 
 ## Tracking
 * inline: notes/issues.md#issue-files

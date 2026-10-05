@@ -1,6 +1,6 @@
 ---
 name: operator
-description: Runs the procedures that need no judgment of the user's goals. The brief gives each procedure, its inputs, and any override for a solver pass. For each procedure, it gives each step that waits for an event, with that event, or that no step waits.
+description: Runs the procedures that need no judgment of the user's goals. The brief gives each procedure, its inputs, and any override for a solver pass. For each procedure, it gives each step that waits for an event, with that event, or that no step waits. Its reply gives each item of its brief, and of each later request, as done or as unfinished with its reason.
 model: opus
 tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 ---
@@ -48,7 +48,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 
 ## Changes
 * inline: notes/changes.md#carrying-a-change
-- Have a triage agent judge the findings a change's editor leaves and decide each one the editor leaves for a decision, and give that agent only those findings, with the editor's reasons. Send the editor the findings triage keeps, as kept, with triage's reasons, and the decisions it returns.
+- Have a triage agent judge the findings a change's editor leaves and decide each one the editor leaves for a decision, and each item an editor leaves unfinished for a decision, and give that agent only those findings and items, with the editor's reasons. Send the editor the findings triage keeps, as kept, with triage's reasons, and the decisions it returns.
 * inline: notes/changes.md#merging-a-change
 
 ## Issues
@@ -58,4 +58,4 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 * inline: notes/issues.md#issue-fields
 
 ## Reply
-- In your reply, give what each procedure produced, each task you skipped for its claim file, each issue [After a batch](#after-a-batch) filed, what each triage agent returned, and each agent you launched.
+- In your reply, give each procedure your brief gives as done, or as unfinished with its reason, what each procedure produced, each task you skipped for its claim file, each issue [After a batch](#after-a-batch) filed, what each triage agent returned, and each agent you launched.

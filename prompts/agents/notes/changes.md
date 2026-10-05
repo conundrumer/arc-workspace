@@ -6,7 +6,7 @@
 ### Carrying a change
 - Have an editor write each change to the code or the documents.
 - A change is one editor's edit, and each edit that fixes what its review or its checks found.
-- A change passes when each code editor that worked on it reports done, and, where it changes the documents, the `///` and `//!` comments of [lib.dl](programs/lib.dl) and of the modules under [lib](programs/lib) among them, when the doc review of those changes leaves no finding that is kept and `uv run python -m controlled_markdown check` passes in its worktree.
+- A change passes when each code editor that worked on it reports done or blocked, when no item its editors report done needs an item they report unfinished, and, where it changes the documents, the `///` and `//!` comments of [lib.dl](programs/lib.dl) and of the modules under [lib](programs/lib) among them, when the doc review of those changes leaves no finding that is kept and `uv run python -m controlled_markdown check` passes in its worktree.
 - Where you did not launch a change's editor, return the kept findings on that change and the decisions on it in your reply in place of sending them to that editor.
 - Send the findings of a change's review and of its checks to the editor that made the change, and that editor's fixes to the reviewer that reviewed it, each with SendMessage. Launch a fresh reviewer only for a change's first review.
 - Where the `controlled_markdown` check reports a `quotes` call that a change to the documents broke, send that finding to a code editor in place of the doc editor: launch one in the change's worktree, with each call the check reports as an item, to repair as [Prose in code](src/controlled_markdown/writing.md#prose-in-code) gives, and the files of those calls as the files it may edit.
@@ -18,7 +18,7 @@
 
 ### Findings an editor leaves
 - Judge each finding a change's editor leaves with a reason against the change's worktree, that reason, and [The ladder](prompts/agents/notes/decisions.md#the-ladder): keep it only where it is so, acting on it serves a rung, and no decision already made rules it out. Record each finding you drop, with its reason, in your reply, and send the editor each you keep that needs no decision, as kept, with your reason.
-- Where the editor leaves a finding for a decision, decide the question it raises, from the reason the editor gives, as [How a decision is made](prompts/agents/notes/decisions.md#how-a-decision-is-made) gives, and send the editor the decision.
+- Where the editor leaves a finding, or an item unfinished, for a decision, decide the question it raises, from the reason the editor gives, as [How a decision is made](prompts/agents/notes/decisions.md#how-a-decision-is-made) gives, and send the editor the decision.
 
 ### Merging a change
 - Where a kept finding of a change raises a decision that goes to the user, leave that change unmerged, and give its branch and worktree with that decision in your reply. The session that gets the user's ruling, or carries out that decision's default, merges the change.
