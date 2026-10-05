@@ -21,11 +21,6 @@
         - A column drop removes that argument at every atom of the relation.
         - The variables that bound it are left unbound at the consumers.
 
-## case
-- The cases agree on every pair, so dropping the case column changes nothing.
-- The column stays.
-* inline: #case-claim
-
 ## enumerator
 - {{count}}/{{judged}} deletions remove an enumerator over a bound variable:
     - The enumerator runs over a variable another atom of its clause binds.
@@ -33,28 +28,10 @@
     * comment:
         - It is the readable form of a per-member test.
 
-## unprobed
-- {{count}} {{noun}} the probe cannot judge:
-    - Dropping the case column ungrounds a variable, so the probe result says nothing about the cases.
-    * inline: #cases-settle-nothing
-
 ## ungrounded
 - {{count}} {{noun}} the run cannot judge:
     - The removal ungrounds a variable, so Souffle rejects the file.
     - The run says nothing about the pairs.
 
-## unexercised
-- the pairs do not separate the case's model from the concept case's:
-    * inline: #cases-settle-nothing
-
 ## timed-out
 - the runs below timed out:
-
-## Partials
-
-### case-claim
-- [Models and tasks](docs/handbook/principles.md#models-and-tasks) states what a case claims.
-
-### cases-settle-nothing
-- The pairs settle nothing about the cases.
-* inline: #case-claim

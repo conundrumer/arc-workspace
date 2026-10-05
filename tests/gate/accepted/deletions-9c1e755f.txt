@@ -5,12 +5,6 @@
     - 9c1e755f.dl:79: column `copy.y`
     - 9c1e755f.dl:80: atom `rail_axis(Y, A)` in `copy(Ch, Y, Q, Col)`
 
-- 1 case column the probe cannot judge:
-    - Dropping the case column ungrounds a variable, so the probe result says nothing about the cases.
-    - The pairs settle nothing about the cases.
-    - [Models and tasks](docs/handbook/principles.md#models-and-tasks) states what a case claims.
-    - 9c1e755f.dl:79: unprobed case column `copy.ch`
-
 - 40 deletions the run cannot judge:
     - The removal ungrounds a variable, so Souffle rejects the file.
     - The run says nothing about the pairs.

@@ -4,16 +4,6 @@
     - Judge which.
     - 9b30e358.dl:129: rule `out(P, Col, Ch)`
 
-- 5 case columns the probe cannot judge:
-    - Dropping the case column ungrounds a variable, so the probe result says nothing about the cases.
-    - The pairs settle nothing about the cases.
-    - [Models and tasks](docs/handbook/principles.md#models-and-tasks) states what a case claims.
-    - 9b30e358.dl:68: unprobed case column `bg.g`
-    - 9b30e358.dl:92: unprobed case column `step_dir.ch`
-    - 9b30e358.dl:101: unprobed case column `case_axis.ch`
-    - 9b30e358.dl:105: unprobed case column `unit_box.ch`
-    - 9b30e358.dl:122: unprobed case column `fill.ch`
-
 - 29 deletions the run cannot judge:
     - The removal ungrounds a variable, so Souffle rejects the file.
     - The run says nothing about the pairs.

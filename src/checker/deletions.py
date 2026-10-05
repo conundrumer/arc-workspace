@@ -2,7 +2,7 @@
 no pair's output and no determined value."""
 
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from enum import StrEnum
 
 from checker.finding import Finding
@@ -47,7 +47,6 @@ from engine.quotes import quotes
 from solver.model import (
     bases_of,
     choice_bases,
-    choice_line,
     Case,
     Dependence,
     Solver,
@@ -83,19 +82,9 @@ class DeletionKind(StrEnum):
     """A positive `*_elem` atom whose variable another atom of its clause
     binds (prompts/run_dl.md#enumerator)."""
     COLUMN = "column"
-    CASE_COLUMN = "case column"
-    """A column whose type is `Choice` or an ADT that stands in it."""
-    UNPROBED_CASE = "unprobed case column"
-    """A case column whose drop ungrounds a variable."""
     UNGROUNDED = "ungrounded deletion"
-    """Any other deletion whose program ungrounds a variable."""
-    UNEXERCISED_CASES = "unexercised cases"
-    """The solver's `Choice`, where the pairs never part its cases and no
-    case column stood in for them."""
-
-
-UNMEASURED = frozenset({DeletionKind.UNPROBED_CASE, DeletionKind.UNGROUNDED})
-"""The kinds of a deletion whose run measured nothing."""
+    """A deletion whose program ungrounds a variable, other than a case
+    column's."""
 
 
 @dataclass(frozen=True)
@@ -117,13 +106,7 @@ class ColumnName:
     column: str
 
 
-@dataclass(frozen=True)
-class TypeName:
-    name: str
-
-
-type Quote = Quoted | ColumnName | TypeName
-
+type Quote = Quoted | ColumnName
 
 
 @dataclass(frozen=True)
@@ -138,13 +121,15 @@ class Deletion:
     determine: bool
     """It removes part of the Determine comp, which the determination run
     alone judges."""
+    case_column: bool = False
+    """It removes a column whose type is `Choice` or an ADT that stands in
+    it."""
 
 
 @dataclass(frozen=True)
 class DeletionRow:
-    """A deletion that changes nothing, one no run judged, or the solver's
-    unexercised cases. `determination` says the determination run alone
-    judged it."""
+    """A deletion that changes nothing, or one no run judged.
+    `determination` says the determination run alone judged it."""
 
     line: int
     kind: DeletionKind
@@ -280,11 +265,10 @@ def deletions(solver: Solver, runs: Runs) -> list[Deletion]:
             continue
         case = case_columns(solver, decl.scoped_name)
         for i, col in enumerate(decl.columns):
-            kind = DeletionKind.CASE_COLUMN if i in case \
-                else DeletionKind.COLUMN
-            out.append(Deletion(decl.span.first, kind,
+            out.append(Deletion(decl.span.first, DeletionKind.COLUMN,
                                 ColumnName(decl.name, col.name),
-                                (RemoveColumn(decl.id, i),), False))
+                                (RemoveColumn(decl.id, i),), False,
+                                i in case))
     return out
 
 
@@ -332,6 +316,12 @@ def _cases_agree(reference: Profile) -> bool:
     return True
 
 
+@dataclass(frozen=True)
+class _LeftOut:
+    """A case column whose drop ungrounds a variable, which no row
+    reports."""
+
+
 @quotes("procedure.md", "Simplify",
         "Run `uv run python scripts/run_dl.py deletions <task_id>`.")
 def survey_deletions(solver: Solver, runs: Runs) -> DeletionResult:
@@ -348,12 +338,11 @@ def survey_deletions(solver: Solver, runs: Runs) -> DeletionResult:
     the solver has no Determine comp, the report says that no determination
     was checked. A row of `out` at a value that is no case counts for
     nothing. A deletion whose run fails for an ungrounded variable
-    measured nothing, and a run that reached a limit is no result. A case
-    column's rows stand apart; where the pairs part the cases, a case column
-    reads as any other column, and an unprobed one is left out. Where the
-    solver has two or more cases of the solver, no case column stood for
-    them, and the pairs never part them, the `Choice` reports as
-    unexercised."""
+    measured nothing, and a run that reached a limit is no result. Where the
+    cases agree on every pair (`_cases_agree`), no case column is run;
+    elsewhere a case column reads as any other column, and one whose drop
+    ungrounds a variable is left out. A deletion left out or not run counts
+    in no total."""
     engine, limits = runs.engine, runs.limits
     pairs = pairs_of(solver)
     cases = runs.cases
@@ -369,8 +358,10 @@ def survey_deletions(solver: Solver, runs: Runs) -> DeletionResult:
     stored_holds = base is True
     measured = determined.cpu_seconds \
         if isinstance(determined, Determined) else None
+    agreed = _cases_agree(reference)
     dels = [d for d in deletions(solver, runs)
-            if not d.determine or stored_holds]
+            if (not d.determine or stored_holds)
+            and not (d.case_column and agreed)]
     dels = [d for d in dels if d.determine] + [d for d in dels
                                               if not d.determine]
     ref: Profile = reference
@@ -409,7 +400,7 @@ def survey_deletions(solver: Solver, runs: Runs) -> DeletionResult:
              if (p := _program(solver, runs, d)) is not None]
 
     def judge(item: tuple[Deletion, Program]
-              ) -> DeletionRow | TimedOutDeletion | None:
+              ) -> DeletionRow | TimedOutDeletion | _LeftOut | None:
         d, program = item
         variant = with_program(solver, program)
 
@@ -419,12 +410,11 @@ def survey_deletions(solver: Solver, runs: Runs) -> DeletionResult:
         def timed(x: TimedOut) -> TimedOutDeletion:
             return TimedOutDeletion(d.line, d.kind, d.quote, x.finding)
 
-        def ungrounded_row() -> DeletionRow:
-            """The row of a deletion whose run ungrounds a variable, so
+        def ungrounded_row() -> DeletionRow | _LeftOut:
+            """The outcome of a deletion whose run ungrounds a variable, so
             that it measured nothing."""
-            return row(DeletionKind.UNPROBED_CASE
-                       if d.kind == DeletionKind.CASE_COLUMN
-                       else DeletionKind.UNGROUNDED, False)
+            return _LeftOut() if d.case_column \
+                else row(DeletionKind.UNGROUNDED, False)
 
         if not d.determine:
             kept = _enumerates(variant, bases)
@@ -455,31 +445,8 @@ def survey_deletions(solver: Solver, runs: Runs) -> DeletionResult:
     rows = [r for r in outcomes if isinstance(r, DeletionRow)]
     timed = tuple(r for r in outcomes if isinstance(r, TimedOutDeletion))
     judged = (len(built) - len(timed)
-              - sum(r.kind in UNMEASURED for r in rows))
-    rows = _case_rows(solver, rows, _cases_agree(ref))
+              - sum(r.kind == DeletionKind.UNGROUNDED for r in rows)
+              - sum(isinstance(r, _LeftOut) for r in outcomes))
     return DeletionReport(judged, tuple(rows), timed,
                           isinstance(base, NoDetermine))
 
-
-def _case_rows(solver: Solver, rows: list[DeletionRow], agreed: bool
-               ) -> list[DeletionRow]:
-    """The rows with the cases settled by the pairs: where a case column
-    fired, and some pair parts the cases, a case column reads as any other
-    column and an unprobed one is left out; where none fired, the solver
-    has two or more cases, and no pair parts them, the `Choice` reports as
-    unexercised."""
-    if any(r.kind in (DeletionKind.CASE_COLUMN, DeletionKind.UNPROBED_CASE)
-           for r in rows):
-        if agreed:
-            return rows
-        return [replace(r, kind=DeletionKind.COLUMN)
-                if r.kind == DeletionKind.CASE_COLUMN else r
-                for r in rows if r.kind != DeletionKind.UNPROBED_CASE]
-    choice = solver.choice
-    if choice is not None and agreed:
-        return [*rows, DeletionRow(
-            choice_line(solver.program, choice),
-            DeletionKind.UNEXERCISED_CASES,
-            TypeName(solver.program.declared(choice.declaration).name),
-            False)]
-    return rows

@@ -18,13 +18,6 @@
     - The enumerator stays.
     - 9b2a60aa.dl:50: bound enumerator `dir8_elem(D)` in `shape(P)`
 
-- 2 case columns the probe cannot judge:
-    - Dropping the case column ungrounds a variable, so the probe result says nothing about the cases.
-    - The pairs settle nothing about the cases.
-    - [Models and tasks](docs/handbook/principles.md#models-and-tasks) states what a case claims.
-    - 9b2a60aa.dl:69: unprobed case column `slot.w`
-    - 9b2a60aa.dl:78: unprobed case column `copy.w`
-
 - 33 deletions the run cannot judge:
     - The removal ungrounds a variable, so Souffle rejects the file.
     - The run says nothing about the pairs.

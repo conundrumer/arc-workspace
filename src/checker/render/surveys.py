@@ -18,7 +18,6 @@ from checker.deletions import (
     DeletionRow,
     Quote,
     Quoted,
-    TypeName,
 )
 from checker.derived_constant import (
     ConstantReport,
@@ -145,19 +144,16 @@ def quote_text(q: Quote) -> str:
                     + f"` in `{_head_text(q)}")
         case ColumnName(relation=r, column=c):
             return f"{r}.{c}"
-        case TypeName(name=n):
-            return n
 
 
-def _section(name: str, pad: str = "", **values: object) -> list[str]:
-    """One section of the deletion report's prose, each line under
-    `pad`."""
+def _section(name: str, **values: object) -> list[str]:
+    """One section of the deletion report's prose."""
     registry = nm.Registry(checkout.ROOT)
     document = registry.load(deletion_doc())
     body = nm.Node(nm.DOCUMENT, source=document.source)
     body.children = list(registry.ids[document.source][name].children)
     text = nm.render(body, registry, values).strip()
-    return [pad + line for line in text.split("\n")]
+    return text.split("\n")
 
 
 ROW = " " * 4
@@ -186,22 +182,16 @@ def render_deletions(solver: Solver, result: DeletionResult) -> list[str]:
                 f"`{quote_text(r.quote)}`"
                 for r in group]
 
-    apart = (DeletionKind.UNPROBED_CASE, DeletionKind.UNGROUNDED,
-             DeletionKind.UNEXERCISED_CASES, DeletionKind.BOUND_ENUMERATOR)
+    apart = (DeletionKind.UNGROUNDED, DeletionKind.BOUND_ENUMERATOR)
     noop = [r for r in rows if r.kind not in apart]
     enumerators = [r for r in rows
                    if r.kind == DeletionKind.BOUND_ENUMERATOR]
-    unprobed = [r for r in rows if r.kind == DeletionKind.UNPROBED_CASE]
     ungrounded = [r for r in rows if r.kind == DeletionKind.UNGROUNDED]
-    unexercised = [r for r in rows
-                   if r.kind == DeletionKind.UNEXERCISED_CASES]
     lines: list[str] = []
     if noop:
         lines += _section("noop", count=len(noop), judged=judged,
                           determined=DETERMINED_CLAUSE
                           if has_determine(solver) else "")
-        if any(r.kind == DeletionKind.CASE_COLUMN for r in noop):
-            lines += _section("case", pad=ROW)
         lines += entries(noop)
     elif not enumerators:
         lines += _section("none", judged=judged)
@@ -211,21 +201,11 @@ def render_deletions(solver: Solver, result: DeletionResult) -> list[str]:
         lines += _section("enumerator", count=len(enumerators),
                           judged=judged)
         lines += entries(enumerators)
-    if unprobed:
-        lines.append("")
-        lines += _section(
-            "unprobed", count=len(unprobed),
-            noun=noun(len(unprobed), "case column"))
-        lines += entries(unprobed)
     if ungrounded:
         lines.append("")
         lines += _section(
             "ungrounded", count=len(ungrounded),
             noun=noun(len(ungrounded), "deletion"))
-    if unexercised:
-        lines.append("")
-        lines += _section("unexercised")
-        lines += entries(unexercised)
     if report.no_determine:
         lines += ["", NO_DETERMINE]
     if report.timed_out:
