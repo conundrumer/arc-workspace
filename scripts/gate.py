@@ -214,8 +214,12 @@ the inputs fit."""
 LIB_STEMS = ("6e453dd6", "33067df9", "97a05b5b", "6d1d5c90", "99306f82", "6165ea8f",
              "ca8de6ea", "f8b3ba0a", "ff28f65a", "409aa875", "aa62e3f4", "50846271",
              "89565ca0", "696d4842")
-"""The stems `run` runs on besides `STEMS`, whose solvers together use every
-component of the lib that no solver of `STEMS` uses."""
+"""The stems `run` runs on besides `STEMS`. A component is a `.comp` that a
+module under `programs/lib/` declares. A solver uses a component where its
+program instantiates it, directly, inside an instance of another component,
+or as the base of a component it so instantiates, so that the component runs
+when the solver runs. Every component that some solver under
+`programs/solvers/` uses is used by a solver of a stem `run` runs on."""
 
 TIME_LIMIT = 560
 KILL_AFTER = 5
