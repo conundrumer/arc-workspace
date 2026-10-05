@@ -59,8 +59,9 @@
     ```
     - Write it from your reading of the pairs alone, before you write any script.
     - Then check that it fits every pair.
-        - Where a script of this pass needs what a lib component computes, run the component in place of rebuilding it: write a Souffle file under `.scratch/<task_id>/`, its name starting with the task id, that instantiates lib components over `in(p, color)`, then run `uv run python scripts/run_dl.py relation <that path> <instance>.<relation> <grid file>`, which prints that relation's rows on that grid.
-            - The runner includes the lib, and the file needs no `out`.
+        - Where a script of this pass needs what a lib component computes, call the component in place of rebuilding it: `lib_components.components` has a function of the same name for each component with no column of a type its caller declares, which runs the component on the rows it is given.
+            - The function takes the component's type arguments, each a `Primitive` from `engine.program` or a `LibType` from `lib_components.components`, the grid size of each key as `sizes`, and the rows of each input relation by that relation's name, with a cell as `(row, column)`. It returns each output relation, whose `.rows` is its set of rows as tuples, and whose `.map()` and `.map_per_key()` give a relation that is a function of its leading columns as a dict.
+            - `Components(Primitive.NUMBER, sizes={i: (h, w)}, node=[(i, (r, c)), ...]).label.map_per_key()` gives `{i: {(r, c): id}}` for each key `i`.
     - A scene claim fixes no task data.
         - A value a scene claim states that is task data is a parameter: name it in the claim, and list it with this task's value, under Parameters when applying the rules needs its value and under Scene parameters otherwise.
 3. Only after step 2 is complete, read the next steps: `cat .claude/analyze-next.md`.
@@ -74,7 +75,9 @@
     - Form them from these sources alone: the pairs, the headers of the solvers under `programs/solvers/`, the lib, the proposers in `programs/proposers.dl`, probes over the pairs, and variant tasks.
         - `grep -l '^// @keywords:.*<keyword>' programs/solvers/*.dl` lists the solvers under a keyword, and `awk '/^$/{exit} 1' programs/solvers/<id>.dl` prints one solver's header.
         - A probe is a script you write under `.scratch/<task_id>/` that runs a reading over grids and prints the outputs.
-            - A probe that needs each reading's output grid can be a Souffle file under `.scratch/<task_id>/`, its name starting with the task id, that declares a `Choice` with one constructor per reading, `impl_choice` containing each, and `out(p: Position, col: Color, ch: Choice)`. `uv run python scripts/run_dl.py grid <that file> <grid file>` prints each reading's output as a grid, one grid for the readings that give the same one.
+            - A probe whose readings are all written in Souffle, and that needs only each reading's output grid, can be a Souffle file under `.scratch/<task_id>/`, its name starting with the task id, that declares a `Choice` with one constructor per reading, `impl_choice` containing each, and `out(p: Position, col: Color, ch: Choice)`. `uv run python scripts/run_dl.py grid <that file> <grid file>` prints each reading's output as a grid, one grid for the readings that give the same one.
+                - Each reading in it instantiates the lib components it uses under instances of its own, and no key of a component instance holds a reading or a `Choice`.
+            - A probe that needs a component's rows in the script, or would key one instance of a component by reading, calls the component through `lib_components.components`, once per reading where its inputs differ by reading.
     - Name each branch by a constructor name of its own, in the form [Witness file](docs/handbook/solver-file.md#witness-file) gives. The name says what the branch changes and contains no value of a parameter.
     - A claim considered and not formed as a branch goes under Not formed, with why.
 2. Place each choice point at the concept or under a branch, as [Choice points and open parameters](docs/handbook/principles.md#choice-points-and-open-parameters) states. A point whose branches' models differ, in an output or in where they are defined, stands at the concept. A point whose branches give one model under another point's concept branch stands under a branch of that point under which they differ.
