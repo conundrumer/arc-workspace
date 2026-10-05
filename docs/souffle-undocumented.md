@@ -1,6 +1,6 @@
 # Souffle: undocumented features
 
-This doc covers Souffle behavior that is absent from the official documentation site (`souffle-lang.github.io`): two merged features — **user-defined aggregates** and **lattices** — and one failure mode, a type argument that collides with a component's own type names. The two features were contributed by Julien Henry (MathWorks); both ship in the released compiler and are exercised by tests in `tests/interface/`.
+This doc covers Souffle behavior that is absent from the official documentation site (`souffle-lang.github.io`): the merged features **user-defined aggregates** and **lattices**, with their speed against the lib's subsumption form, and the failure mode of a type argument that collides with a component's own type names. The two features were contributed by Julien Henry (MathWorks); both ship in the released compiler and are exercised by tests in `tests/interface/`.
 
 The features are related. Lattices give you automatic lub/glb on relation attributes; user-defined aggregates give you manual fold-with-a-stateful-functor over an aggregate body. Both rely on a stateful functor folding over tuples.
 
@@ -193,7 +193,23 @@ Each iteration of the fixpoint produces new candidate intervals, and the lattice
 | Functor signature | `(acc, x) -> acc`, stateful | `(a, b) -> result` for both Lub and Glb |
 | Initial value | Per call site, written inline | Optional `Bottom` in lattice block |
 
-Use a user-defined aggregate when the fold is local to a single rule (e.g., "give me the join of all `x` such that `P(x)`"). Use a lattice when you want every clause that derives into the relation to participate in the same join automatically.
+Use a user-defined aggregate when the fold is local to a single rule (e.g., "give me the join of all `x` such that `P(x)`"). Use a lattice when you want every clause that derives into the relation to participate in the same join automatically. Each ran slower than subsumption on every shape it could express in [Speed against subsumption](#speed-against-subsumption).
+
+## Speed against subsumption
+
+The lib keeps a per-key extreme with subsumption, as in `high(K, S) <= high(K, S2) :- S < S2.` The measurements ran under Souffle 2.5 (`2.5-27-gc3861e0d3`) in the interpreter, with each `Lub`, `Glb` and aggregate functor a one-line `std::min` or `std::max` linked as [run.py](../src/souffle/run.py) links functors, and every form gave the same `count` and `sum` over the result relation.
+
+| Shape | Subsumption | Lattice | User-defined aggregate |
+| --- | --- | --- | --- |
+| Recursive min-label propagation, 40 grids of 30x30, 4-adjacent | 1.34 s | 2.40 s | not expressible |
+| Recursive min-label propagation, 3000-node chain | 5.05 s | 6.45 s | not expressible |
+| Non-recursive per-key max, 300 keys x 1000 candidates | 0.27 s | 111.3 s | 0.30 s |
+
+- Souffle rejects an aggregate whose body reads a relation in the recursive stratum of the rule's head, so a user-defined aggregate cannot replace a recursive subsumption.
+- Neither feature applies where a relation gives the order, since a functor cannot read a relation.
+- A lattice relation keeps one tuple per assignment of its non-lattice attributes, and an aggregate yields one value per key, so a relation that keeps every row at a key's extreme needs a join back to its candidates.
+- A `.lattice` cannot be declared on a component's type parameter. A component can declare an attribute as `T<>` where a `.lattice` on the argument type is declared at top level, so each argument type needs its own `.lattice` declaration.
+- A rule that joins a relation on its lattice column, as `conn(K, P, Q) :- label(K, P, Id), label(K, Q, Id).` joins `label`, takes the glb there ([Semantics](#semantics)) in place of an equality join. For such a relation, declare the lattice attribute on an internal relation, and derive the joined relation from it with that column of the plain type.
 
 ## Limits and gotchas
 
