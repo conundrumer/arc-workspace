@@ -123,7 +123,10 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                          "then a line of `:`. After them come `<case>: emits "
                          "nothing` for each case that emits no grid, and "
                          "`<case>: undefined` for each case that takes a "
-                         "`@derive` or `@store` branch and emits none."
+                         "`@derive` or `@store` branch and emits none. "
+                         "After the count line comes `no case takes "
+                         "$<Ctor>` for each constructor of `Choice`, at "
+                         "any depth, that no case of the solver takes."
                          ).format(width=GROUP_WIDTH),
         epilog=GRID_HELP,
     )

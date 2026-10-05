@@ -175,7 +175,9 @@ def cmd_grid(arg: str, path: str | None = None, every: bool = False,
     """What each case of the solver gives on a grid the caller writes, by the name
     `record` writes; with `every`, each case by its own name
     (`solver.names.name`); with `only`, the
-    case each name denotes, or the solver's cases that stand for it."""
+    case each name denotes, or the solver's cases that stand for it. Then
+    each constructor of `Choice` that no case of the solver takes
+    (`commands.untaken_constructor_lines`)."""
     eng = engine()
     solver = command_solver(arg, eng, task=False)
     if solver is None:
@@ -217,8 +219,14 @@ def cmd_grid(arg: str, path: str | None = None, every: bool = False,
     elif every:
         groups = _by_name(solver, outcomes, groups)
     shown = [c for c, _g in outcomes if not only or c in kept]
-    print("\n".join(_shown(solver, replace(entry, output=groups), shown,
-                           runs.case_count)))
+    lines = _shown(solver, replace(entry, output=groups), shown,
+                   runs.case_count)
+    of_solver = runs.solver_cases
+    if not isinstance(of_solver, tuple):
+        print("\n".join(failure_lines(solver, of_solver)), file=sys.stderr)
+        return 1
+    untaken = commands.untaken_constructor_lines(solver, of_solver)
+    print("\n".join([*lines, *([""] + untaken if untaken else [])]))
     return 0
 
 

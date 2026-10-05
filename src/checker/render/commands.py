@@ -1,6 +1,7 @@
 """The frame lines of the commands: what a command prints around the
 renderer's sections (a summary table, a section header, a wrote-witness
-line, a count line), the pairs of `run`, the rows of `relation`, and the
+line, a count line), the constructors no case takes after `grid`'s
+output, the pairs of `run`, the rows of `relation`, and the
 lines of `record`, `keywords`, `since` and `size`."""
 
 from collections.abc import Sequence
@@ -34,13 +35,14 @@ from checker.render import (
     solver_name,
 )
 from checker.render.surveys import giving_text
+from solver.names import ctor_text
 from solver.names import name as case_name
 from controlled_markdown import mctx
 from engine import AdtValue, Grid, ParseFailure, RecordValue, RunFailure, Value
 from engine.program import RelationDecl
 from engine.text import text as code_text
 from solver.annotations import verdict_text
-from solver.model import Case, Solver
+from solver.model import Case, Solver, takes_constructor
 from solver.problems import Fault
 from solver.solve import (
     AltKind,
@@ -509,6 +511,20 @@ COUNT_LINE = mctx("{n} witnessed cases of {m}, {g} distinct grid(s)")
 built from, the solver's cases, and the distinct grids they give
 (solver-file.md, under "Cases"). `grid` prints the same line
 (`record_lines`)."""
+
+
+def untaken_constructor_lines(solver: Solver, cases: Sequence[Case]
+                              ) -> list[str]:
+    """A line for each constructor of the solver's `Choice`, at any
+    depth, that no case of `cases` takes, in point order."""
+    choice = solver.choice
+    if choice is None:
+        return []
+    return [mctx("no case takes {ctor}").format(ctor=ctor_text(c.name))
+            for p in choice.points for c in p.constructors
+            if not any(takes_constructor(choice, k.base, c) for k in cases)]
+
+
 GROUPS_KEPT = mctx("groups unchanged")
 JUDGED_KEPT = mctx("judged output kept")
 GROUPS_CHANGED = mctx("groups changed: {newly} {cases} newly listed, {gone} "
