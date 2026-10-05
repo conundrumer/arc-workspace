@@ -109,6 +109,4 @@
     - After each fix, read the contexts the fix touches again for contradictions.
 - Find each line of the document set or of prose in code, outside the change, whose premise the change makes false, read it in each of its readers' contexts, and report each that no longer stands.
 - Report nothing the one who asked for the change gives as already settled.
-- After a change that moves or reshapes the lines of a document, diff the handbook render and the console messages against HEAD, and read the diff for dropped lines.
-    * comment:
-        - A worktree of HEAD gives the old render.
+- After a change that moves or reshapes the lines of a document, run `uv run python scripts/context.py context --diff HEAD <reader> [args]` for each context rendered from a document the change edits, and read the diff for dropped lines.
