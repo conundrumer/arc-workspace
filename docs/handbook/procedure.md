@@ -73,6 +73,7 @@
     - Form them from these sources alone: the pairs, the headers of the solvers under `programs/solvers/`, the lib, probes over the pairs, and variant tasks.
         - `grep -l '^// @keywords:.*<keyword>' programs/solvers/*.dl` lists the solvers under a keyword, and `awk '/^$/{exit} 1' programs/solvers/<id>.dl` prints one solver's header.
         - A probe is a script you write under `.scratch/<task_id>/` that runs a reading over grids and prints the outputs.
+            - A probe that needs each reading's output grid can be a Souffle file under `.scratch/<task_id>/`, its name starting with the task id, that declares a `Choice` with one constructor per reading, `impl_choice` containing each, and `out(p: Position, col: Color, ch: Choice)`. `uv run python scripts/run_dl.py grid <that file> <grid file>` prints each reading's output as a grid, one grid for the readings that give the same one.
     - Name each branch by a constructor name of its own, in the form [Witness file](docs/handbook/solver-file.md#witness-file) gives. The name says what the branch changes and contains no value of a parameter.
     - A claim considered and not formed as a branch goes under Not formed, with why.
 2. Place each choice point at the concept or under a branch, as [Choice points and open parameters](docs/handbook/principles.md#choice-points-and-open-parameters) states. A point whose branches' models differ, in an output or in where they are defined, stands at the concept. A point whose branches give one model under another point's concept branch stands under a branch of that point under which they differ.
@@ -90,7 +91,7 @@
         - its plausibility and verdict
         - the invariant of the inputs it breaks, when its plausibility is below `ordinary`
     - A branch with no witness: why there is none.
-4. Write the witnesses to `.scratch/<task_id>/witnesses.json` in the witness file's shape, with each branch's name, and, in each witness whose verdict is not `other`, each fitting branch in the group of the output the branch's model gives.
+4. Write each witness step 3 gives to `.scratch/<task_id>/witnesses.json` in the witness file's shape, with an `assign` that reassigns each parameter whose value the assignment step 3 gives it changes, and, in each witness whose verdict is not `other`, each fitting branch in the group of the output the branch's model gives at that witness's assignment.
     * comment: On 2026-09-23, an Analyze pass on a1aa0c1e read this step without the verdict clause, and reported that `four-rungs`, a witness with verdict `other`, had no place for its fitting branches: agent `a12540b7d9e9d4aee` of console session `622904c2-70f8-4e98-830a-3863e040da52`.
     - `uv run python scripts/run_dl.py witness --file .scratch/<task_id>/witnesses.json` checks the file's shape.
 5. Write the report to `.scratch/<task_id>/analyze.md`, in this form:

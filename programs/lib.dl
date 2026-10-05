@@ -66,6 +66,7 @@
 /// A translation.
 .type Offset = Box
 
+/// The key type of a keyed component used with one key; `$U()` is its one value.
 .type Unit = U {}
 
 /// The task input grid.
