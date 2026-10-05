@@ -26,11 +26,12 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 - Before you report done, read your diff for each kind of place below, and fix each defect place that does not stand.
     - In a fix, an unknown value becomes a fault or an `undecided` finding, and the one copy of an idea stands where the import rule in [test_import_rule.py](tests/engine/test_import_rule.py) places it.
 - Write your report in your scratch directory, under the name your brief gives.
+- The report gives each output a `DIFF` line of the gate names that you did not copy, with that line.
 - The report has a `Review` section, which gives each kind of place below and the places your diff holds of it, each defect place fixed or standing with its reason.
 - End your turn only at one of these points, with a message to main of at most eight lines:
     - Blocked: an item of your brief contradicts docstring text that no item changes, or no operation exists for what you implement. Give the concrete case.
     - Cost, as [Working rules](#working-rules) gives it.
-    - Done, in one line: your tests directory passes, pyright is clean over the repo, where your diff affects a gate command, the gate prints no `DIFF` line in a run after the copies [Gate](#gate) gives, the report and its `Review` section are written, every defect place of your diff is fixed or stands with its reason, and each case the spec does not cover is filed.
+    - Done, in one line: your tests directory passes, pyright is clean over the repo, where your diff can change a gate command's output, the gate prints no `DIFF` line in a run after the copies [Gate](#gate) gives, other than those your report gives, the report and its `Review` section are written, every defect place of your diff is fixed or stands with its reason, and each case the spec does not cover is filed.
 
 ## Working rules
 * inline: notes/changes.md#worktree
@@ -38,9 +39,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 * inline: notes/commands.md#commands
 
 ## Gate
-- `uv run python scripts/gate.py --outputs-only <out-dir> [cmd ...]` is the gate: it runs the gate commands it is given on the fixed inputs under `tests/gate/` that `gate.py --help` lists, and compares their outputs with the accepted ones.
-- Give it the gate commands your diff affects, and run it only where your diff affects one.
-- Where an item of your brief changes or adds a gate output, or a finding of your checks gives one to update, copy that output from `<out-dir>/gate/new/` to its accepted file under `tests/gate/accepted/`, and run no `gate.py --accept`.
+* inline: notes/changes.md#gate
 
 ## Issues
 - As you meet a case the spec does not cover, note it in `progress.md`, under a heading that is your report's name.

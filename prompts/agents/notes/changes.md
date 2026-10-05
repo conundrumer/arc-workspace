@@ -17,11 +17,18 @@
 - Give that worktree, by its path, in the brief of each later agent that works on the change.
 - Run the changes you launch at the same time.
 - Where a kept finding of a change raises a decision that goes to the user, leave that change unmerged, and give its branch and worktree with that decision in your reply. The session that gets the user's ruling, or carries out that decision's default, merges the change.
-- Before you merge a change, read the diff of each accepted gate output its briefs list, and send each difference there that no item of those briefs makes to the change's editor as a finding of its checks.
+- Before you merge a change, read the diff of each accepted gate output its briefs list, and send each difference there that those briefs do not ask for to the change's editor as a finding of its checks.
 - Merge a change only once it passes, with `uv run python scripts/merge_change.py <worktree> -m <message>`, and commit in no other way.
 - Where that script exits with status 1, leave the worktree as it is. Where it reports that the rebase conflicts, run the change again with a new first editor, and give the old worktree and its branch in your reply. Where it reports a failed check, send what it reports to the change's editor as a finding of its checks. Otherwise, give the worktree and the script's message in your reply.
-    - Where the failed check is the gate, give in that finding, for each `DIFF` line that an item of the change's briefs makes, the accepted output under `tests/gate/accepted/` to update.
+    - Where the failed check is the gate, give in that finding, for each `DIFF` line that the change's briefs ask for, the accepted output under `tests/gate/accepted/` to update.
 
 ## worktree
 - The worktree of the change you work on is the one the message that launches you gives, or, where it gives none, your working directory at start. Run each command in it, and take each path in the repo from it.
 - A later message may add a request to the change, in the form your brief gives one, and that request is part of what the change is to do.
+
+## gate
+- `uv run python scripts/gate.py --outputs-only <out-dir> [cmd ...]` is the gate: it runs the gate commands it is given on the fixed inputs under `tests/gate/` that `gate.py --help` lists, and compares their outputs with the accepted ones.
+- Run it only where your diff can change the output of a gate command, with a new directory under `.scratch/` in the worktree as `<out-dir>`.
+- Give it as `cmd` the commands whose output your diff can change, where `gate.py --help` tells you which they are, and run it with `--affected` otherwise.
+- Copy each gate output your diff changes or adds that your brief lists, and each one a finding of your checks gives to update, from `<out-dir>/gate/new/` to its accepted file under `tests/gate/accepted/`, and run no `gate.py --accept`.
+- Copy no other output.
