@@ -14,7 +14,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write
     - Where an item of your brief changes what docstring text states, the item holds, and you rewrite that text to match it.
     - Change no other docstring text that stands before your edit, apart from text that restates the code, which [Prose in code](src/controlled_markdown/writing.md#prose-in-code) has you cut.
 - Observe and report: say what is there, never what the spec should say. Cite no rule and no docstring in a message to main, and offer no option.
-- When you start, copy `src/`, `scripts/` and `tests/` into your scratch directory. Your diff is the difference between that copy and the tree.
+- When you start, copy `src/`, `scripts/` and `tests/` into a new directory of your own under `.scratch/` in the worktree, and note its path in `progress.md`. Your diff is the difference between that copy and the tree.
 - Run no git command that changes state.
 - In code, a case the spec does not cover becomes an `undecided` finding or a fault, never a default, and you file it as [Issues](#issues) gives.
 - Before you write code, search every package for what already computes, names, checks or prints what you need, and use it, or extend the one that nearly fits. Then decide the shape: each idea in one operation, called from every site that needs it.
@@ -41,6 +41,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 
 ## Working rules
 * inline: notes/changes.md#worktree
+* inline: notes/changes.md#worktree-isolation
 * inline: notes/code.md#code-working-rules
 * inline: notes/commands.md#commands
 

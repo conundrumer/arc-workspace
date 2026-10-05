@@ -30,8 +30,12 @@
     - Where the failed check is the gate, give in that finding, for each `DIFF` line that the change's briefs ask for, the accepted output under `tests/gate/accepted/` to update.
 
 ## worktree
-- The worktree of the change you work on is the one the message that launches you gives, or, where it gives none, your working directory at start. Run each command in it, and take each path in the repo from it.
+- The worktree of the change you work on is the one the message that launches you gives, or, where it gives none, your working directory at start. Run each command in it, and take each path in the repo from it, apart from a path under `issues/`, which you take from the main tree, the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints.
 - A later message may add a request to the change, in the form your brief gives one, and that request is part of what the change is to do.
+
+## worktree-isolation
+- The harness may refuse a compound Bash command that writes a file through a heredoc or runs `printf` with a computed format. Write such a file with the Write or Edit tool, and run the rest of the command in a Bash call of its own.
+    * comment: The refusal message reaches an agent only after the refused call. Without this line, code editor `a16cb9e50afdd6691` had five such commands refused and retried each split: issue `1791218737-a16cb9e50afdd6691-transcript-review-3`.
 
 ## budget
 - Do each step your documents give, and finish the work, even where it runs past the budget a `Budget: N minutes` line of your brief or a later message gives.
