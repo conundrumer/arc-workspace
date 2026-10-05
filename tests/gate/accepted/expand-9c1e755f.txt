@@ -1,0 +1,102 @@
+#include "lib.dl"
+// 9c1e755f
+// @draft
+// @keywords: wallpaper objects markers
+// @scene rail: each connected run of the rail color is a rail, a straight bar
+// @scene swatch: each connected group of cells of the other colors, neither
+//  background nor rail, is a swatch: a block that hangs off one side of a rail
+//  at one end of the rail
+// @scene fit: the rail's length is a multiple of the swatch's length along it
+// @rule keep: every input cell keeps its color
+// @rule repeat: the swatch repeats along its rail: copies of the swatch, moved
+//  along the rail by multiples of the swatch's own length, paint the field
+//  the rail spans along its axis and the swatch spans across it
+
+// where the copies are anchored
+.type Choice =
+    // @claim repeat
+    Swatch {}
+    // @rule repeat: the swatch slides flush to the rail's far end, and copies
+    //  of it there, moved back along the rail by multiples of its own length,
+    //  paint the field
+    // @witness odd-rail: variant concept
+    //     @relaxed fit
+  | FarEnd {}
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    .decl bg(c: Color) bg(0).
+    .decl rail(c: Color) rail(5).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice($Swatch()). impl_choice($FarEnd()).
+
+// @claim rail
+.init rails = Components<Unit>
+rails.node($U(), P) :- in(P, Col), params.rail(Col).
+
+.decl rail(x: Ident, p: Position)
+rail(X, P) :- rails.label($U(), P, X).
+
+// @claim repeat
+.init rail_box = Bbox<Ident>
+rail_box.cell(X, P) :- rail(X, P).
+
+// @claim swatch
+.init swatches = Components<Unit>
+swatches.node($U(), P) :- in(P, Col), !params.bg(Col), !params.rail(Col).
+
+.decl swatch(y: Ident, p: Position, col: Color)
+swatch(Y, P, Col) :- swatches.label($U(), P, Y), in(P, Col).
+
+// @claim repeat
+.init swatch_box = Bbox<Ident>
+swatch_box.cell(Y, P) :- swatch(Y, P, _).
+
+// The rail the swatch hangs off, and the side of the rail it hangs on.
+.decl hangs(y: Ident, x: Ident, d: Dir)
+hangs(Y, X, D) :- rail(X, P), dir_elem(D), neighbor(P, D, Q), swatch(Y, Q, _).
+
+// The axis the swatch's rail runs along.
+.decl rail_axis(y: Ident, a: Axis)
+rail_axis(Y, A) :- hangs(Y, _, D), axis_of(D, A_across), perp(A_across, A).
+
+// The field the copies paint: the rail's span along its axis, the swatch's
+// span across it.
+.decl field(y: Ident, b: Box)
+field(Y, B) :-
+    hangs(Y, X, _), rail_axis(Y, A),
+    rail_box.box(X, B_rail), split(B_rail, A, B_along, _),
+    swatch_box.box(Y, B_swatch), split(B_swatch, A, _, B_across),
+    compose(B_along, B_across, B).
+
+// The copies of the swatch that paint the field: from the case's first copy,
+// each copy one swatch-length on from the last, either way along the rail.
+.decl copy(ch: Choice, y: Ident, p: Position, col: Color)
+copy(Ch, Y, Q, Col) :-
+    copy(Ch, Y, P, Col),
+    rail_axis(Y, A), axis_of(D, A),                   // either way along the rail
+    swatch_box.box(Y, B), box_extent(B, P, A, N),     // one swatch-length on
+    jump(P, D, N, Q), field(Y, B_field), inside(Q, B_field).
+
+out(P, Col, Ch) :- copy(Ch, _, P, Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !copy(Ch, _, P, _).
+
+// --- $Swatch ---
+copy($Swatch(), Y, P, Col) :- swatch(Y, P, Col).
+
+// --- $FarEnd ---
+
+// The end of the rail the swatch does not reach, and the swatch's gap to it.
+.decl far_end(y: Ident, d: Dir, k: number)
+far_end(Y, D, K) :-
+    field(Y, B), swatch_box.box(Y, B_swatch), relative(B, B_swatch, B_rel),  // the swatch in the field's frame
+    dir_elem(D), dist(B_rel, D, K), K > 0.
+
+// The swatch slid flush to the far end.
+copy($FarEnd(), Y, Q, Col) :- swatch(Y, P, Col), far_end(Y, D, K), jump(P, D, K, Q).

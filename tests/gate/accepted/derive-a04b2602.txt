@@ -1,0 +1,5 @@
+mark_color: RarestColor — the rarest color of every input
+  witness: `mark_color=RarestColor` in the witness file
+  line 78: @derive RarestColor: variant derived
+
+derive: ok

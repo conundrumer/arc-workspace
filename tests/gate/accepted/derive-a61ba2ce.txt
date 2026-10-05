@@ -1,0 +1,5 @@
+bg: DominantColor — the most frequent color of every input
+  witness: `bg=DominantColor` in the witness file
+  line 52: @derive DominantColor: variant derived
+
+derive: ok

@@ -1,0 +1,6 @@
+`@witness` lines:
+  odd-rail: variant concept
+    relaxed: fit
+
+1 witness grid run
+  no witness separates `bg=stored` from `bg=DominantColor` in the one pair of cases that differs by these branches alone, of which one is `concept`

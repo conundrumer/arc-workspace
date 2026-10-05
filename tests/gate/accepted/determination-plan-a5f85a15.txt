@@ -1,0 +1,13 @@
+no actions
+
+determined:
+  start_edge
+
+the value is covered on this task's examples, so no determination relation is needed:
+  bg (DominantColor exact)
+  line_dir (domain enumerable(4), pairs-exact: (DIAG_BR))
+  mark (AnyOutNewColor exact)
+  mark_phase (DivisorRatio exact)
+  parity_edge (domain enumerable(4), pairs-exact: (DIR_L))
+  period (TileCount narrowed(2))
+1 of 16 joint assignments of the enumerated parameters reproduce every train pair

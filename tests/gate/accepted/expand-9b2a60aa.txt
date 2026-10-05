@@ -1,0 +1,119 @@
+#include "lib.dl"
+// 9b2a60aa
+// @keywords: markers objects walk stamp
+// @scene shape: the ink holds one shape of one color, connected with its
+//  diagonals, and every other ink cell is a marker: a cell no ink touches
+// @scene line: the markers lie on one row or one column
+// @scene own: exactly one marker has the shape's color
+// @rule slots: walked from the shape's marker, the marker line unrolls into
+//  a line of slots: a marker takes the shape's extent along the line, a gap
+//  cell takes one cell, and the shape's marker's slot is the shape's own box
+// @rule copies: each marker's slot holds a copy of the shape in the marker's
+//  color, at the shape's place across the line
+// @rule keep: every other cell keeps its input color
+
+// the walk's reach from the shape's marker: the marker line, or all four
+// directions
+.type Walk =
+    // @claim line slots
+    Line {}
+    // @rule slots: walked from the shape's marker toward each of the four
+    //  edges, the markers along each walk unroll into slots the same way
+    // @witness cross: foreign concept
+    //     @relaxed line
+  | FourDir {}
+
+// which color a cell takes where a copy lands on input ink
+.type Precedence =
+    // @claim copies keep
+    Stamp {}
+    // @rule keep: input ink keeps its color, and a copy paints only
+    //  background cells
+    // @witness overlap: borderline concept
+  | Fill {}
+
+// the walk's reach crossed with the copy's precedence over input ink
+.type Choice = [w: Walk, o: Precedence]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    .decl bg(col: Color) bg(0).
+}
+
+.init params = Params
+
+.decl ink(p: Position)
+ink(P) :- in(P, Col), !params.bg(Col).
+
+// A shape cell: ink that touches other ink, diagonals included.
+.decl shape(p: Position)
+shape(P) :- ink(P), dir8_elem(D), neighbor(P, D, Q), ink(Q).
+
+.decl marker(p: Position)
+marker(P) :- ink(P), !shape(P).
+
+// @claim slots copies
+.init shape_box = Bbox<Unit>
+shape_box.cell($U(), P) :- shape(P).
+
+// The marker in the shape's color.
+.decl own_marker(p: Position)
+own_marker(P) :- marker(P), in(P, Col), shape(Q), in(Q, Col).
+
+.decl walk_choice(w: Walk)
+walk_choice($Line()). walk_choice($FourDir()).
+
+// The walk toward d from the shape's marker; each Walk branch supplies its
+// base. Box b is the shape's box moved along the walk to begin at cell p's
+// slot.
+.decl slot(w: Walk, d: Dir, p: Position, b: Box)
+slot(W, D, Q, B2) :-
+    slot(W, D, P, B), neighbor(P, D, Q), in(Q, _),
+    ( marker(P),                                              // a marker takes a full slot
+      axis_of(D, A), box_extent(B, Q, A, K), jump(B, D, K, B2)
+    ; !marker(P), neighbor(B, D, B2) ).                       // a gap cell takes one cell
+
+// A cell of a marker's copy: the shape's cell at the same place in the
+// marker's slot, in the marker's color.
+.decl copy(w: Walk, p: Position, col: Color)
+copy(W, P_out, Col) :-
+    marker(Q), in(Q, Col), slot(W, _, Q, B),                        // the marker's slot
+    shape(P_in), shape_box.box($U(), B_s), crop(P_in, B_s, P_rel),  // a shape cell
+    in(P_out, _), crop(P_out, B, P_rel).                            // at its place in the slot
+
+// --- $Line ---
+
+// same_line over the markers, so the universal below can negate it.
+.decl aligned(a: Axis, p: Position, q: Position)
+aligned(A, P, Q) :- marker(P), marker(Q), axis_elem(A), same_line(A, P, Q).
+
+// Some pair of markers shares no line of axis a.
+.decl bent(a: Axis)
+bent(A) :- marker(P), marker(Q), axis_elem(A), !aligned(A, P, Q).
+
+// The marker line's axis.
+// @ignore: single-consumer — the axis is the object of scene claim `line`
+.decl line_axis(a: Axis)
+line_axis(A) :- axis_elem(A), !bent(A).
+
+slot($Line(), D, P, B) :- own_marker(P), line_axis(A), axis_of(D, A), shape_box.box($U(), B).
+
+// --- $FourDir ---
+
+slot($FourDir(), D, P, B) :- own_marker(P), dir_elem(D), shape_box.box($U(), B).
+
+// --- $Stamp ---
+
+// A copy paints over the input.
+out(P, Col, [W, $Stamp()]) :- copy(W, P, Col).
+out(P, Col, [W, $Stamp()]) :- in(P, Col), walk_choice(W), !copy(W, P, _).
+
+// --- $Fill ---
+
+// Input ink keeps its color; a copy paints only background.
+out(P, Col, [W, $Fill()]) :- copy(W, P, Col), in(P, C0), params.bg(C0).
+out(P, Col, [W, $Fill()]) :-
+    in(P, Col), walk_choice(W),
+    ( !params.bg(Col)      // ink keeps its color
+    ; !copy(W, P, _) ).    // background with no copy stays background

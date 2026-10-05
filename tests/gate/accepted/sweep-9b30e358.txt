@@ -1,0 +1,3 @@
+dir: unique = (DIR_T) ✓
+axis: unique = (AXIS_V) ✓
+time limit 300s; elapsed Ns

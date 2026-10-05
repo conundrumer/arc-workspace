@@ -1,0 +1,20 @@
+side: one value on every input: 2
+  stored already: the value reads back the stored rows of `side`
+comp4.node[p]: one value up to translation on every input
+  no case: the value stands at another place on each input, and the runner picks no anchor
+gap[d]: 4 values, one per `pc`
+  no case: the value varies by `pc`, an id the runner stores nothing under
+ink[p]: one value up to translation on every input
+  no case: the value stands at another place on each input, and the runner picks no anchor
+other_hole[d]: 4 values, one per `pc`
+  no case: the value varies by `pc`, an id the runner stores nothing under
+piece[p]: one value up to translation on every input
+  no case: the value stands at another place on each input, and the runner picks no anchor
+piece_box.cell[p]: one value up to translation on every input
+  no case: the value stands at another place on each input, and the runner picks no anchor
+quadrant[q]: 4 values, one per `pc`
+  no case: the value varies by `pc`, an id the runner stores nothing under
+box_side.item: one value on every input: 2; under `$SizeFromBox`
+  stored already: the value reads back the stored rows of `side`
+box_side.value: one value on every input: 2; under `$SizeFromBox`
+  stored already: the value reads back the stored rows of `side`

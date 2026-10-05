@@ -1,7 +1,0 @@
-train 0: PASS (16 witnessed cases)
-train 1: PASS (16 witnessed cases)
-train 2: PASS (16 witnessed cases)
-test 0: PASS (16 witnessed cases)
-
-lint: ok
-determination: ok (marker_max_side)

@@ -1,0 +1,115 @@
+separator: SharedColor — a color present in every input
+  witness: train 0 with 0 and 3 swapped; there `separator=SharedColor` differs from `concept`
+  add: // @derive SharedColor: <plausibility> <verdict>
+  or:  // @ignore: derive SharedColor — <reason>
+separator: VanishedColor — a color in every input and no train output
+  witness: train 0 with 0 and 3 swapped; there `separator=VanishedColor` differs from `concept`
+  add: // @derive VanishedColor: <plausibility> <verdict>
+  or:  // @ignore: derive VanishedColor — <reason>
+
+  separator: `separator=SharedColor` fits and has no `@derive` or `@ignore: derive` line
+  separator: `separator=VanishedColor` fits and has no `@derive` or `@ignore: derive` line
+
+$StoredSeparator & separator=stored: emits nothing
+
+7 witnessed cases of 36, 1 distinct grid(s)
+
+wrote witness `separator=SharedColor` to <out>/gate/wit/cur/a096bf4d.wit.json; its groups name `separator=SharedColor`, so add `// @derive SharedColor: <plausibility> <verdict>` above `.decl separator(c: Color)`, its verdict read from this witness
+
+input:
+  3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 1 1 8 1 3 1 1 4 1 3 1 1 8 1 3 1 1 8 1 3
+  3 1 8 2 1 3 1 8 8 1 3 1 8 8 1 3 1 8 2 1 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 1 1 8 1 3 1 1 8 1 3 1 1 8 1 3 1 1 8 1 3
+  3 1 8 8 1 3 1 8 8 1 3 1 8 8 1 3 1 8 8 1 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 1 1 8 1 3 1 1 8 1 3 1 1 8 1 3 1 1 8 1 3
+  3 1 8 8 1 3 1 8 8 1 3 1 8 8 1 3 1 8 8 1 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 1 1 8 1 3 1 1 4 1 3 1 1 8 1 3 1 1 8 1 3
+  3 1 8 8 1 3 1 8 8 1 3 1 8 8 1 3 1 8 8 1 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3
+
+$DerivedSeparator, separator=SharedColor:
+  3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 1 1 8 1 3 1 1 4 1 3 1 1 8 1 3 1 1 8 1 3
+  3 1 8 2 1 3 1 8 2 1 3 1 8 2 1 3 1 8 2 1 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 1 1 8 1 3 1 1 4 1 3 1 1 8 1 3 1 1 8 1 3
+  3 1 8 8 1 3 1 8 8 1 3 1 8 8 1 3 1 8 8 1 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 1 1 8 1 3 1 1 4 1 3 1 1 8 1 3 1 1 8 1 3
+  3 1 8 8 1 3 1 8 8 1 3 1 8 8 1 3 1 8 8 1 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 1 1 8 1 3 1 1 4 1 3 1 1 8 1 3 1 1 8 1 3
+  3 1 8 8 1 3 1 8 8 1 3 1 8 8 1 3 1 8 8 1 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3
+
+$StoredSeparator & separator=stored: emits nothing
+
+7 witnessed cases of 36, 1 distinct grid(s)
+
+wrote witness `separator=VanishedColor` to <out>/gate/wit/cur/a096bf4d.wit.json; its groups name `separator=VanishedColor`, so add `// @derive VanishedColor: <plausibility> <verdict>` above `.decl separator(c: Color)`, its verdict read from this witness
+
+input:
+  3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 1 1 8 1 3 1 1 4 1 3 1 1 8 1 3 1 1 8 1 3
+  3 1 8 2 1 3 1 8 8 1 3 1 8 8 1 3 1 8 2 1 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 1 1 8 1 3 1 1 8 1 3 1 1 8 1 3 1 1 8 1 3
+  3 1 8 8 1 3 1 8 8 1 3 1 8 8 1 3 1 8 8 1 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 1 1 8 1 3 1 1 8 1 3 1 1 8 1 3 1 1 8 1 3
+  3 1 8 8 1 3 1 8 8 1 3 1 8 8 1 3 1 8 8 1 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 1 1 8 1 3 1 1 4 1 3 1 1 8 1 3 1 1 8 1 3
+  3 1 8 8 1 3 1 8 8 1 3 1 8 8 1 3 1 8 8 1 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3
+
+$DerivedSeparator, separator=VanishedColor:
+  3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 1 1 8 1 3 1 1 4 1 3 1 1 8 1 3 1 1 8 1 3
+  3 1 8 2 1 3 1 8 2 1 3 1 8 2 1 3 1 8 2 1 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 1 1 8 1 3 1 1 4 1 3 1 1 8 1 3 1 1 8 1 3
+  3 1 8 8 1 3 1 8 8 1 3 1 8 8 1 3 1 8 8 1 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 1 1 8 1 3 1 1 4 1 3 1 1 8 1 3 1 1 8 1 3
+  3 1 8 8 1 3 1 8 8 1 3 1 8 8 1 3 1 8 8 1 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 1 1 8 1 3 1 1 4 1 3 1 1 8 1 3 1 1 8 1 3
+  3 1 8 8 1 3 1 8 8 1 3 1 8 8 1 3 1 8 8 1 3
+  3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3 1 1 1 1 3
+  3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3

@@ -1,0 +1,5 @@
+no actions
+
+the value is covered on this task's examples, so no determination relation is needed:
+  bg (DominantColor exact)
+  rail (SharedColor narrowed(2))

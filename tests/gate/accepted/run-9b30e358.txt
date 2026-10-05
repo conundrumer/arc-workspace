@@ -1,0 +1,9 @@
+train 0: PASS (4 witnessed cases)
+train 1: PASS (4 witnessed cases)
+test 0: PASS (4 witnessed cases)
+
+--- 1 hint(s) ---
+  9b30e358.dl:102: case section: by the program's rules, not by a run, `$Toward` read `case_axis`, which the clause feeds, and the marker `// --- $Both ---` above it does not list them; see "Case markers" in [Cases](docs/handbook/solver-file.md#cases); an `@ignore` directive can keep the relation it fires on
+
+lint: ok, 1 hint
+determination: no Determine comp

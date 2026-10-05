@@ -1,0 +1,5 @@
+halo_color: unique = (1) ✓
+background: unique = (0) ✓
+block_color: unique = (3) ✓
+mark_color: unique = (2) ✓
+time limit 300s; elapsed Ns

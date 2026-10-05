@@ -151,9 +151,16 @@ TIMES_FILE = "times.json"
 DEPS_FILE = checkout.scratch().relative_to(checkout.ROOT) / "gate" / "deps.json"
 """The dependency record, under the main worktree (`deps_file`)."""
 
-STEMS = ("ac0c5833", "a934301b", "abbfd121")
+STEMS = ("9c1e755f", "9b30e358", "9b2a60aa", "a61ba2ce", "a04b2602", "a096bf4d",
+         "9b4c17c4", "a5f85a15")
 """The stems every command runs on, but for those that read a grid input."""
-RECORD_STEM = "ac0c5833"
+SWEEP_STEM = "a934301b"
+"""The stem `sweep` runs on besides `STEMS`, whose sweep marks the gaps of
+a parameter under a case marker."""
+BRANCH_STEM = "abbfd121"
+"""The stem `audit` and `derive` run on besides `STEMS`, whose branches
+render with their recorded witnesses."""
+RECORD_STEM = "a61ba2ce"
 """The stem the commands that read a grid input run on, whose witness file
 the inputs fit."""
 LIB_STEMS = ("6e453dd6", "33067df9", "97a05b5b", "6d1d5c90", "99306f82", "6165ea8f",
@@ -281,26 +288,25 @@ def named_readers() -> list[tuple[str, str]]:
 
 
 COMMANDS: dict[str, GateCommand] = {c.name: c for c in (
-    Command("run", "run", stems=(*STEMS, *LIB_STEMS)),
+    Command("run", "run", stems=(*STEMS, SWEEP_STEM, BRANCH_STEM, *LIB_STEMS)),
     Command("lint", "lint"),
     Command("witness", "witness"),
     Command("witnesseverycase", "witness", extra=("--every-case",)),
-    Command("derive", "derive"),
+    Command("derive", "derive", stems=(*STEMS, BRANCH_STEM)),
     Command("store", "store"),
-    Command("audit", "audit"),
-    _record("record52", "rarest-bg", "rarest_bg.txt", "--separates",
-            "Three markers hold nine 4 cells and the solid 4x4 template sixteen 2 cells, so the rarest color is the marker color: background=RarestColor drops 4 from the marker candidates and is undefined, while the stored background keeps 4 and the copies land at the empty corners (12, 5) and (12, 14)."),
-    _record("record62", "exact=stored", "stray.txt", "--separates", "test"),
-    _record("record67", "exact=stored", "exact_stored.txt", "--separates",
-            "At side bounds 6 to 8 the 4 cells (8, 3), (2, 3), (8, 5) form a second triple, whose empty corner is the template marker's (2, 5), so they share cells with the marker at (10, 3): $RectMarker finds the split inexact there and is undefined, while exact=stored keeps color 4 at every bound and draws the copy at (10, 3)."),
-    _record("recordassign", "stride-three-side-8", "w_stride3.txt",
-            "--assign", '{"marker_max_side": [[8]]}', "--separates",
-            "The stride-three input with marker_max_side reassigned to 8 alone: $RectMarker reads the two 4x4 markers and draws the copy at (12, 5); marker_max_side=TileCount also reads side 2, at which no triple forms, and is undefined."),
-    Command("sweep", "sweep"),
+    Command("audit", "audit", stems=(*STEMS, BRANCH_STEM)),
+    _record("recordnew", "touching-pieces", "a61ba2ce_edge-touch.txt", "--separates",
+            "The edge-touch input under a new id."),
+    _record("recordreplace", "two-color-l", "a61ba2ce_edge-touch.txt", "--separates", "test"),
+    _record("recordassign", "gap-outward", "a61ba2ce_gap-outward.txt", "--assign",
+            '{"corner_quadrant": [["DIAG_TL", "DIAG_BR"], ["DIAG_TR", "DIAG_BL"], '
+            '["DIAG_BL", "DIAG_TR"], ["DIAG_BR", "DIAG_TL"]]}', "--separates",
+            "The gap-outward input with the stored map sending each missing corner to the opposite quadrant, as the concept does."),
+    Command("sweep", "sweep", stems=(*STEMS, SWEEP_STEM)),
     Command("determination-plan", "determination-plan"),
     Command("deletions", "deletions"),
-    Command("grid", "grid", (str(INPUTS / "rarest_bg.txt"),), stems=(RECORD_STEM,)),
-    Command("relation", "relation", ("out", str(INPUTS / "rarest_bg.txt")),
+    Command("grid", "grid", (str(INPUTS / "a61ba2ce_two-color-l.txt"),), stems=(RECORD_STEM,)),
+    Command("relation", "relation", ("out", str(INPUTS / "a61ba2ce_two-color-l.txt")),
             stems=(RECORD_STEM,)),
     Command("drop-one", "drop-one"),
     Command("derived-constant", "derived-constant"),

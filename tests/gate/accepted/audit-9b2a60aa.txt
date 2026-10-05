@@ -1,0 +1,17 @@
+--- witness ---
+`@witness` lines:
+  cross: foreign concept
+    relaxed: line
+  overlap: borderline concept
+
+2 witness grids run
+witness: ok
+
+--- dropped cases ---
+dropped cases: ok
+
+--- derive ---
+  bg: `bg=DominantColor` fits and has no `@derive` or `@ignore: derive` line
+
+--- store ---
+store: ok

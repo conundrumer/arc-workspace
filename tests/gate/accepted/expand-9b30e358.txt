@@ -1,0 +1,130 @@
+#include "lib.dl"
+// 9b30e358
+// @draft
+// @keywords: wallpaper lines
+// @scene ink: the commoner color is the background and the rest is the ink
+// @scene block: the lines across params.dir that hold ink are contiguous, and
+//  the last of them lies on the edge opposite params.dir
+// @rule repeat: the lines within the ink's extent along params.dir are one
+//  unit, and that unit repeats toward params.dir until the edge, each copy
+//  one unit's extent from the last
+// @rule keep: every cell no copy covers keeps its color
+
+// where the unit ends on the side away from params.dir
+.type Scope =
+    // @claim repeat
+    Ink {}
+    // @rule repeat: the lines from the ink's nearest line toward params.dir
+    //  to the edge opposite it are one unit, and that unit repeats toward
+    //  params.dir until the edge, each copy one unit's extent from the last
+    // @witness gap-below: borderline concept
+    //     @relaxed block
+  | Edge {}
+
+// which way the unit repeats
+.type Spread =
+    // @claim repeat
+    Toward {}
+    // @rule repeat: the lines within the ink's extent along params.axis are
+    //  one unit, and that unit repeats along params.axis in both directions,
+    //  each copy one unit's extent from the last
+    // @witness gap-below: borderline concept
+  | Both {}
+
+// how the background is read
+.type Ground =
+    // @claim ink
+    Majority {}
+    // @scene ink: the line on the edge toward params.dir is one color, the
+    //  background, and the rest is the ink
+    // @witness dense-ink: borderline $EdgeLine
+    //     @relaxed ink
+  | EdgeLine {}
+
+// the three decisions cross, except that a unit ending at the edge has no
+// room to repeat both ways, and repeating both ways names no edge to read
+// the background from
+.type Choice = [scope: Scope, spread: Spread, ground: Ground]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // --- $Toward ---
+    // the direction the unit repeats toward, and the edge the background is
+    // read from
+    .decl dir(d: Dir) dir(DIR_T).
+
+    // --- $Both ---
+    // the axis the unit repeats along
+    .decl axis(a: Axis) axis(AXIS_V).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice([$Ink(), $Toward(), $Majority()]). impl_choice([$Edge(), $Toward(), $Majority()]).
+impl_choice([$Ink(), $Both(), $Majority()]).
+impl_choice([$Ink(), $Toward(), $EdgeLine()]). impl_choice([$Edge(), $Toward(), $EdgeLine()]).
+
+.decl bg(g: Ground, col: Color)
+
+// --- $Majority ---
+// @claim ink
+.init palette = Mode<Unit, Color, Position>
+palette.item($U(), Col, P) :- in(P, Col).
+
+bg($Majority(), Col) :- palette.mode($U(), Col).
+
+// --- $EdgeLine ---
+// @claim ink
+.init edge_line = Unanimous<Unit, Color>
+edge_line.item($U(), Col) :- params.dir(D), in(P, Col), dist(P, D, 0).
+
+bg($EdgeLine(), Col) :- edge_line.value($U(), Col).
+
+// --- $Majority, $EdgeLine ---
+
+// The ink's extent.
+// @claim repeat
+.init ink_box = Bbox<Ground>
+ink_box.cell(G, P) :- bg(G, _), in(P, Col), !bg(G, Col).
+
+// The directions the copies step in.
+.decl step_dir(ch: Choice, d: Dir)
+
+// --- $Toward ---
+step_dir([S, $Toward(), G], D) :- impl_choice([S, $Toward(), G]), params.dir(D).
+
+// --- $Both ---
+step_dir([S, $Both(), G], D) :- impl_choice([S, $Both(), G]), params.axis(A), axis_of(D, A).
+
+// The axis the unit repeats along.
+.decl case_axis(ch: Choice, a: Axis)
+case_axis(Ch, A) :- step_dir(Ch, D), axis_of(D, A).
+
+// The unit: a band of lines across the axis.
+.decl unit_box(ch: Choice, b: Box)
+
+// --- $Ink ---
+// The ink's extent along the axis.
+unit_box([$Ink(), Sp, G], B) :-
+    case_axis([$Ink(), Sp, G], A), ink_box.box(G, B_ink), split(B_ink, A, B, _).
+
+// --- $Edge ---
+// From the ink's nearest line toward params.dir to the opposite edge.
+unit_box([$Edge(), Sp, G], B) :-
+    impl_choice([$Edge(), Sp, G]), params.dir(D),
+    ink_box.box(G, B_ink), dist(B_ink, D, K), edge_inset(D, K, B).
+
+// --- $Ink, $Edge ---
+
+// The copies of the unit: the unit itself, then each cell repeating the one
+// a unit's extent back.
+.decl fill(ch: Choice, p: Position, col: Color)
+fill(Ch, P, Col) :- in(P, Col), unit_box(Ch, B), inside(P, B).
+fill(Ch, P2, Col) :-
+    fill(Ch, P, Col), unit_box(Ch, B), case_axis(Ch, A), box_extent(B, P, A, K),
+    step_dir(Ch, D), jump(P, D, K, P2), in(P2, _).
+
+out(P, Col, Ch) :- fill(Ch, P, Col).
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), !fill(Ch, P, _).

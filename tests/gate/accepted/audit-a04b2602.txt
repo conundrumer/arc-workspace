@@ -1,0 +1,22 @@
+--- witness ---
+`@witness` lines:
+  split-narrow: borderline $NonzeroBox
+    under @approximated: of inside-mark
+  corner-touch: borderline concept
+  split-narrow: borderline $NonzeroBox
+  flush-strays: borderline concept
+  gap-row-stray: ordinary concept
+  yellow-blocks: variant $DerivedRoles
+    relaxed: blocks
+
+6 witness grids run
+witness: ok
+
+--- dropped cases ---
+dropped cases: ok
+
+--- derive ---
+derive: ok
+
+--- store ---
+store: ok

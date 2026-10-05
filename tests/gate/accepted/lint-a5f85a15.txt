@@ -1,0 +1,7 @@
+
+--- hints: 4 across 1 solver(s) ---
+  a5f85a15.dl:89: case section: by the program's rules, not by a run, `$DerivedAxis` read `params.line_dir`, which the clause feeds, and the marker `// --- $StoredStep ---` above it does not list them; see "Case markers" in [Cases](docs/handbook/solver-file.md#cases); an `@ignore` directive can keep the relation it fires on
+  a5f85a15.dl:94: case section: by the program's rules, not by a run, `$StoredStep` read `params.start_edge`, which the clause feeds, and the marker `// --- $DerivedAxis ---` above it does not list them; see "Case markers" in [Cases](docs/handbook/solver-file.md#cases); an `@ignore` directive can keep the relation it fires on
+  a5f85a15.dl:152: case section: by the program's rules, not by a run, `$DerivedAxis` read `heading`, which the clause feeds, and the marker `// --- $StoredStep ---` above it does not list them; see "Case markers" in [Cases](docs/handbook/solver-file.md#cases); an `@ignore` directive can keep the relation it fires on
+  a5f85a15.dl:155: case section: by the program's rules, not by a run, `$StoredStep` read `heading`, which the clause feeds, and the marker `// --- $DerivedAxis ---` above it does not list them; see "Case markers" in [Cases](docs/handbook/solver-file.md#cases); an `@ignore` directive can keep the relation it fires on
+lint: ok, 4 hints

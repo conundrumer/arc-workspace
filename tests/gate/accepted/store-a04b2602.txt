@@ -1,0 +1,16 @@
+roles: one color on every input: (3, 2)
+  stored already: the value reads back the stored rows of `block_color`, `mark_color`
+block_ink.item: one color on every input: 3; under `$DerivedRoles`
+  stored already: the value reads back the stored rows of `block_color`
+block_ink.value: one color on every input: 3; under `$DerivedRoles`
+  stored already: the value reads back the stored rows of `block_color`
+ink_mode.mode: one color on every input: 3; under `$DerivedRoles`
+  stored already: the value reads back the stored rows of `block_color`
+mark_ink.item: one color on every input: 2; under `$DerivedRoles`
+  stored already: the value reads back the stored rows of `mark_color`
+mark_ink.value: one color on every input: 2; under `$DerivedRoles`
+  stored already: the value reads back the stored rows of `mark_color`
+ink[col]: 2 values, one per `p`
+  no case: the value varies by `p`, an id the runner stores nothing under
+ink_mode.item[m]: 2 values, one per `t`
+  no case: the value varies by `t`, an id the runner stores nothing under

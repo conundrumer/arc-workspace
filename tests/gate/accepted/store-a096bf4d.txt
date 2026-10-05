@@ -1,0 +1,42 @@
+in_scope: one cell set on every input; case `$WholeTile & $CommonColor & $EveryTile`
+  # # # #
+  # # # #
+  # # # #
+  # # # #
+  no witness: on no D4 image or color swap of a train input that changes the value does the branch's model `in_scope=stored` give an output other than `concept`; a `@store` line needs a witness whose id is `in_scope=stored`
+  add: // @store: <plausibility> <verdict>
+  or:  // @ignore: store — <reason>
+line_color.value[v]: one color on every input: 0
+  stored already: the value reads back the stored rows of `separator`
+separator: one color on every input: 0
+  stored already: the value reads back the stored rows of `separator`
+span.axis[a]: one value on every input: AXIS_V, AXIS_H
+  no witness: no D4 image or color swap of a train input changes the value; a `@store` line needs a witness whose id is `span.axis=stored`
+  add above `.init span`: // @store axis: <plausibility> <verdict>
+  or:  // @ignore axis: store — <reason>
+lattice.divider[a]: 2 values, one per `l`
+  no case: the value varies by `l`, an id the runner stores nothing under
+lattice.tile_of[p]: one cell set up to translation on every input
+  # # # #
+  # # # #
+  # # # #
+  # # # #
+  no case: the value stands at another place on each input, and the runner picks no anchor
+tile_box.cell[p]: one cell set up to translation on every input
+  # # # #
+  # # # #
+  # # # #
+  # # # #
+  no case: the value stands at another place on each input, and the runner picks no anchor
+tile_cell[p_intile]: 16 values, one per `p_tile`, `p_grid`, `col`
+  no case: the value varies by `p_tile`, `p_grid`, `col`, an id the runner stores nothing under
+in_scope: one cell set on every input; case `$Interior`
+  # #
+  # #
+  no witness: the relation has the value at no case that reads it
+  add: // @store: <plausibility> <verdict>
+  or:  // @ignore: store — <reason>
+border.item: one color on every input: 0; under `$DerivedSeparator`
+  stored already: the value reads back the stored rows of `separator`
+border.value: one color on every input: 0; under `$DerivedSeparator`
+  stored already: the value reads back the stored rows of `separator`

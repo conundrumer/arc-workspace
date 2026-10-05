@@ -1,0 +1,2 @@
+field.node[key]: 2 values, one per `p`
+  no case: the value varies by `p`, an id the runner stores nothing under

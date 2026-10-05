@@ -1,0 +1,172 @@
+// a61ba2ce
+// @draft
+// @keywords: objects tile-arrangement crop lookup
+// @scene four-corners: on a field of params.bg, four one-color 4-connected
+//  objects of distinct colors, each a params.side×params.side box with one
+//  corner cell missing
+// @rule frame: the output is a 2×2 arrangement of the objects' boxes
+// @rule place-by-gap: each object's box goes, unchanged in orientation and
+//  color, to the output quadrant diagonally opposite its missing corner
+// @rule background: the missing cells are params.bg
+
+// what one piece is
+.type Grouping =
+    // @claim four-corners
+    ColorComponent {}
+    // @scene four-corners: the objects are 4-connected components of
+    //  non-params.bg cells of any colors, and each cell keeps its color;
+    //  undefined where two objects touch along an edge
+    // @witness two-color-l: variant $MulticolorObjects & $SizeFromBox
+    //     @relaxed four-corners
+    // @witness edge-touch: variant concept
+  | MulticolorObjects {}
+
+// which quadrant a missing corner sends its box to
+.type Placement =
+    // @claim place-by-gap
+    OppositeCorner {}
+    // @rule place-by-gap: each object's box goes, unchanged, to the output
+    //  quadrant that params.corner_quadrant gives for its missing corner
+    // @witness gap-outward: variant $StoredCornerMap & $SizeFromBox
+    //     @reassigned corner_quadrant
+  | StoredCornerMap {}
+
+// where the side of the boxes comes from
+.type BoxSize =
+    // @claim four-corners
+    StoredSide {}
+    // @scene four-corners: each object is an s×s box with one corner cell
+    //  missing, where s is the one side of every object's box; undefined
+    //  where the sides differ
+    // @witness big-boxes: variant $SizeFromBox
+    //     @relaxed four-corners
+  | SizeFromBox {}
+
+.type Choice = [unit: Grouping, place: Placement, size: BoxSize]
+
+.type Piece = [g: Grouping, id: Ident]
+
+.decl out(p: Position, col: Color, ch: Choice)
+
+.comp Params {
+    // @derive DominantColor: variant derived
+    // @ignore: derive $StoredSide — subsumed by SizeFromBox & bg=DominantColor, which reads the same side wherever every box has the stored side
+    .decl bg(c: Color) bg(0).
+
+    // --- $StoredSide ---
+    .decl side(k: number) side(2).
+
+    // --- $StoredCornerMap ---
+    // the output quadrant of a box with missing corner d
+    .decl corner_quadrant(d: DiagDir, q: DiagDir)
+    corner_quadrant(DIAG_TL, DIAG_BR).
+    corner_quadrant(DIAG_TR, DIAG_BL).
+    corner_quadrant(DIAG_BL, DIAG_TR).
+    corner_quadrant(DIAG_BR, DIAG_TL).
+}
+
+.init params = Params
+
+.decl impl_choice(ch: Choice)
+impl_choice([$ColorComponent(), $OppositeCorner(), $StoredSide()]).
+impl_choice([$ColorComponent(), $OppositeCorner(), $SizeFromBox()]).
+impl_choice([$ColorComponent(), $StoredCornerMap(), $SizeFromBox()]).
+impl_choice([$MulticolorObjects(), $OppositeCorner(), $SizeFromBox()]).
+impl_choice([$MulticolorObjects(), $StoredCornerMap(), $SizeFromBox()]).
+
+.decl ink(p: Position, col: Color)
+ink(P, Col) :- in(P, Col), !params.bg(Col).
+
+// --- the pieces ---
+
+.decl piece(pc: Piece, p: Position)
+
+// --- $ColorComponent ---
+// @claim four-corners
+.init comp4 = Components<Color>
+comp4.node(Col, P) :- ink(P, Col).
+
+piece([$ColorComponent(), Id], P) :- comp4.label(_, P, Id).
+
+// --- $MulticolorObjects ---
+// @claim four-corners
+.init blob = Components<Unit>
+blob.node($U(), P) :- ink(P, _).
+
+piece([$MulticolorObjects(), Id], P) :- blob.label($U(), P, Id).
+
+// --- the boxes ---
+
+// @claim four-corners
+.init piece_box = Bbox<Piece>
+piece_box.cell(Pc, P) :- piece(Pc, P).
+
+// The side of every piece's box.
+.decl side(g: Grouping, s: BoxSize, k: number)
+
+// --- $StoredSide ---
+side(G, $StoredSide(), K) :- piece([G, _], _), params.side(K).
+
+// --- $SizeFromBox ---
+// @claim four-corners
+.init box_side = Unanimous<Grouping, number>
+box_side.item(G, K) :-
+    piece_box.box([G, Id], B), piece([G, Id], P), box_extent(B, P, _, K).
+
+side(G, $SizeFromBox(), K) :- box_side.value(G, K).
+
+// --- shared ---
+
+// The piece misses a cell of its box other than corner d.
+.decl other_hole(pc: Piece, d: DiagDir)
+other_hole(Pc, D) :-
+    piece_box.box(Pc, B), in(P, _), inside(P, B), !piece(Pc, P),
+    diag_dir_elem(D), !box_corner(P, B, D).
+
+// The piece's box is a square of the case's side, and corner d is the one
+// cell of that box the piece does not hold.
+.decl gap(s: BoxSize, pc: Piece, d: DiagDir)
+gap(S, [G, Id], D) :-
+    side(G, S, K), piece_box.box([G, Id], B),
+    box_corner(P, B, D), in(P, _), !piece([G, Id], P), !other_hole([G, Id], D),
+    perp(A, A2), box_extent(B, P, A, K), box_extent(B, P, A2, K).
+
+// Some piece has no such missing corner.
+.decl misfit(g: Grouping, s: BoxSize)
+misfit(G, S) :- side(G, S, _), piece([G, Id], _), !gap(S, [G, Id], _).
+
+// The output quadrant of each piece.
+.decl quadrant(ch: Choice, pc: Piece, q: DiagDir)
+
+// --- $OppositeCorner ---
+quadrant([G, $OppositeCorner(), S], [G, Id], Q) :- gap(S, [G, Id], D), diag_opposite(D, Q).
+
+// --- $StoredCornerMap ---
+quadrant([G, $StoredCornerMap(), S], [G, Id], Q) :-
+    gap(S, [G, Id], D), params.corner_quadrant(D, Q).
+
+// --- shared ---
+
+out(P_grid_out, Col, Ch) :-
+    impl_choice(Ch), quadrant(Ch, [G, Id], Q), Ch = [G, _, S], !misfit(G, S), side(G, S, K),
+    diag_opposite(Q, Q2), edge_inset(Q2, K, B_out),       // the box at corner q of the output
+    piece_box.box([G, Id], B), in(P_grid_in, Col_in), crop(P_grid_in, B, P_inner),
+    compose(B_out, P_inner, P_grid_out),
+    ( piece([G, Id], P_grid_in), Col = Col_in
+    ; !piece([G, Id], P_grid_in), params.bg(Col)
+    ).
+
+.comp Determine {
+    .type ExColor = [e: Example, col: Color]
+
+    .init in_box = Bbox<ExColor>
+    in_box.cell([E, Col], P) :- ex_in(E, P, Col), !params.bg(Col).
+
+    .init out_box = Bbox<ExColor>
+    out_box.cell([E, Col], P) :- ex_out(E, P, Col), !params.bg(Col).
+
+    .decl corner_quadrant(d: DiagDir, q: DiagDir)
+    corner_quadrant(D, Q) :-
+        in_box.box([E, Col], B), ex_in(E, P, _), box_corner(P, B, D), !ex_in(E, P, Col),  // missing corner
+        out_box.box([E, Col], B_out), corner_dist(B_out, Q, 0).     // the output corner its box sits at
+}

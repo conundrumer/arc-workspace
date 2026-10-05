@@ -1,0 +1,4 @@
+no actions
+
+the value is covered on this task's examples, so no determination relation is needed:
+  separator (SharedColor narrowed(2))

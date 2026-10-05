@@ -1,0 +1,24 @@
+--- witness ---
+`@witness` lines:
+  ring-mark: variant concept
+  frame-colored-interior: variant concept
+  frame-color-mark: borderline concept
+  lone-between: borderline $KeepMarks
+    relaxed: every-mark-paired
+  separator-1: variant $DerivedSeparator
+    relaxed: tile-lattice
+
+5 witness grids run
+witness: ok
+
+--- dropped cases ---
+dropped cases: ok
+
+--- derive ---
+  separator: `separator=SharedColor` fits and has no `@derive` or `@ignore: derive` line
+  separator: `separator=VanishedColor` fits and has no `@derive` or `@ignore: derive` line
+
+--- store ---
+  in_scope: one value on every input and no `@store` or `@ignore: store` line; case `$Interior`
+  in_scope: one value on every input and no `@store` or `@ignore: store` line; case `$WholeTile & $CommonColor & $EveryTile`
+  span.axis: one value on every input and no `@store` or `@ignore: store` line

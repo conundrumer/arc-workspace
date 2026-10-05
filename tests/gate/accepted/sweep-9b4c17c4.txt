@@ -1,0 +1,3 @@
+ink: unique = (2) ✓
+slide: stored {(1, DIR_R), (8, DIR_L)} (its value is a set of rows, and a case stores one set; every single-row change swept); the train pairs do not pin the set: single-row changes of it that give every train output: 4
+time limit 300s; elapsed Ns

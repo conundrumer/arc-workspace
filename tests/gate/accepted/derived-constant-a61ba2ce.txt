@@ -1,0 +1,6 @@
+25 relations read `in` and feed `out`
+
+3 relation(s) hold the same tuples on every train and test example:
+  side: 4 tuple(s) — $ColorComponent, $SizeFromBox, 2, $ColorComponent, $StoredSide, 2, $MulticolorObjects, $SizeFromBox, 2, $MulticolorObjects, $StoredSide, 2
+  box_side.item: 2 tuple(s) — $ColorComponent, 2, $MulticolorObjects, 2
+  box_side.value: 2 tuple(s) — $ColorComponent, 2, $MulticolorObjects, 2
