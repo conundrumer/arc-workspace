@@ -1,8 +1,8 @@
-fill: DominantColor — the most frequent color of every input
+fill: DominantColor — each color whose cell count in every input is the highest of that input's colors, ties included
   witness: the input of `oblique-hidden` at its assignment; there `$HiddenFill & $TieFirst & fill=DominantColor` differs from `$HiddenFill & $TieFirst`
   add: // @derive DominantColor: <plausibility> <verdict>
   or:  // @ignore: derive DominantColor — <reason>
-fill: RarestColor — the rarest color of every input
+fill: RarestColor — each color whose cell count in every input is the lowest of that input's colors, ties included
   witness: the input of `oblique-hidden` at its assignment; there `$HiddenFill & $TieFirst & fill=RarestColor` differs from `$HiddenFill & $TieFirst`
   add: // @derive RarestColor: <plausibility> <verdict>
   or:  // @ignore: derive RarestColor — <reason>

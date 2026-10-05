@@ -1,4 +1,4 @@
-bg: DominantColor — the most frequent color of every input
+bg: DominantColor — each color whose cell count in every input is the highest of that input's colors, ties included
   witness: `bg=DominantColor` in the witness file
   line 77: @derive DominantColor: variant derived
 

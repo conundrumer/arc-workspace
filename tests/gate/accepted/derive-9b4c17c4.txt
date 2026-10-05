@@ -1,4 +1,4 @@
-ink: RarestColor — the rarest color of every input
+ink: RarestColor — each color whose cell count in every input is the lowest of that input's colors, ties included
   witness: train 0 with 2 and 0 swapped; there `ink=RarestColor` differs from `concept`
   add: // @derive RarestColor: <plausibility> <verdict>
   or:  // @ignore: derive RarestColor — <reason>

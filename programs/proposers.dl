@@ -63,7 +63,8 @@
     propose(C) :- uniform(_, C).
 }
 
-// The most frequent color of every input.
+// Each color whose cell count in every input is the highest of that
+// input's colors, ties included.
 .comp DominantColor : Uniform<Unit, Color> {
     .init counts = ColorCounts
     .init pick = ArgExtremes<Example, Color>
@@ -75,7 +76,8 @@
     propose(C) :- uniform(_, C).
 }
 
-// The rarest color of every input.
+// Each color whose cell count in every input is the lowest of that
+// input's colors, ties included.
 .comp RarestColor : Uniform<Unit, Color> {
     .init counts = ColorCounts
     .init pick = ArgExtremes<Example, Color>
@@ -133,14 +135,16 @@
     propose(C) :- ex_in(E, _, C), ex_out(E, _, _), !lost(C).
 }
 
-// The color mapping read off aligned cells that change.
+// The color mapping read off cells that change: each input color of a
+// cell, with that cell's output color where the two differ.
 .comp ChangedPairs {
     .decl propose(c_from: Color, c_to: Color)
     propose(C1, C2) :- ex_in(E, P, C1), ex_out(E, P, C2), C1 != C2.
 }
 
-// The color mapping read off whole examples: each example's vanished
-// input color pairs with its new output color. The position-free form of
+// The color mapping read off whole examples: each input color an
+// example's output lacks, paired with each output color that example's
+// input lacks. The position-free form of
 // ChangedPairs for mappings that recolor by presence, not by cell.
 .comp VanishedNewPairs {
     .decl propose(c_from: Color, c_to: Color)
@@ -149,8 +153,8 @@
         ex_out(E, _, C2), !ex_in(E, _, C2).
 }
 
-// The factor from input dims to output dims on an axis, uniform across
-// pairs.
+// Each whole number k such that, on one axis, every pair's output dim is
+// k times its input dim.
 .comp ScaleRatio : Uniform<Axis, number> {
     .init dims = PairDims
     holds(E, A, No / Ni) :- dims.in_dim(E, A, Ni), dims.out_dim(E, A, No), No % Ni = 0.
@@ -160,8 +164,9 @@
     propose(K) :- uniform(_, K).
 }
 
-// The factor from input dims to output dims per axis, uniform across
-// pairs. Stack-ups and mirrors: the factor is the arrangement.
+// Each axis on which every pair's output dim is a whole number k times
+// its input dim, with that k. Stack-ups and mirrors: the factor is the
+// arrangement.
 .comp ScaleRatioAxis : Uniform<Axis, number> {
     .init dims = PairDims
     holds(E, A, No / Ni) :- dims.in_dim(E, A, Ni), dims.out_dim(E, A, No), No % Ni = 0.
@@ -171,8 +176,8 @@
     propose(A, K) :- uniform(A, K).
 }
 
-// The factor from output dims to input dims on an axis, uniform across
-// pairs. Decomposes and crops.
+// Each whole number k such that, on one axis, every pair's input dim is
+// k times its output dim. Decomposes and crops.
 .comp DivisorRatio : Uniform<Axis, number> {
     .init dims = PairDims
     holds(E, A, Ni / No) :- dims.in_dim(E, A, Ni), dims.out_dim(E, A, No), Ni % No = 0.
@@ -182,8 +187,9 @@
     propose(K) :- uniform(_, K).
 }
 
-// The factor from output dims to input dims per axis, uniform across
-// pairs. Gap-0 panel decomposes: the factor is the arrangement.
+// Each axis on which every pair's input dim is a whole number k times
+// its output dim, with that k. Gap-0 panel decomposes: the factor is the
+// arrangement.
 .comp DivisorRatioAxis : Uniform<Axis, number> {
     .init dims = PairDims
     holds(E, A, Ni / No) :- dims.in_dim(E, A, Ni), dims.out_dim(E, A, No), Ni % No = 0.
@@ -193,8 +199,8 @@
     propose(A, K) :- uniform(A, K).
 }
 
-// The dimension change from input to output on an axis, uniform across
-// pairs. Proposed as a magnitude.
+// Each d > 0 such that, on one axis, every pair's output dim differs
+// from its input dim by d.
 .comp DimDiff : Uniform<Axis, number> {
     .init dims = PairDims
     holds(E, A, Ni - No) :- dims.in_dim(E, A, Ni), dims.out_dim(E, A, No), Ni > No.
@@ -269,8 +275,8 @@
     propose(D) :- uniform(_, D).
 }
 
-// The least positive shift under which every input repeats along an
-// axis, where both cells exist.
+// On each axis, the least positive shift under which every input
+// repeats along that axis, where both cells exist.
 .comp Period : Uniform<Axis, number> {
     .init dims = PairDims
 
@@ -385,8 +391,9 @@
     propose(C, R) :- uniform(C, R).
 }
 
-// The D4 seating each output tile from the whole input, for outputs that
-// are an arrangement of transformed input copies.
+// Each output tile, with each D4 transform of the whole input that gives
+// that tile in every pair, for outputs that are an arrangement of
+// transformed input copies.
 .comp TileD4 : Uniform<Position, D4> {
     .init dims = PairDims
 
@@ -423,8 +430,9 @@
 }
 
 // The 2-panel combine table: input splits into two panels along an axis,
-// each panel the output's frame; rows map aligned panel color pairs to
-// the output color. c1 is the top or left panel.
+// each panel the output's frame; each output cell gives a row of the
+// colors of the two panel cells aligned with it and its own color. c1 is
+// the top or left panel.
 .comp PanelCombine {
     .init dims = PairDims
 

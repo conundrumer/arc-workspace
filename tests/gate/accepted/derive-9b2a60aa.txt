@@ -1,4 +1,4 @@
-bg: DominantColor — the most frequent color of every input
+bg: DominantColor — each color whose cell count in every input is the highest of that input's colors, ties included
   witness: train 0 with 0 and 1 swapped; there `bg=DominantColor` differs from `concept`
   add: // @derive DominantColor: <plausibility> <verdict>
   or:  // @ignore: derive DominantColor — <reason>

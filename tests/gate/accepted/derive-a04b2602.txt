@@ -1,4 +1,4 @@
-mark_color: RarestColor — the rarest color of every input
+mark_color: RarestColor — each color whose cell count in every input is the lowest of that input's colors, ties included
   witness: `mark_color=RarestColor` in the witness file
   line 78: @derive RarestColor: variant derived
 
