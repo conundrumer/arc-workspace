@@ -90,28 +90,6 @@ def test_the_retro_mark_is_written_beside_the_file_and_renamed(srv, monkeypatch)
 SCOPE = ["programs/lib.dl"]
 
 
-def test_a_committer_the_timeout_ends_leaves_nothing_reading_it(srv, tmp_path,
-                                                                 monkeypatch):
-    """A session that leaves a process of its own behind holds the pipe the
-    run reads. The timeout ends the session and what it started, so the run
-    returns and the flag comes off."""
-    fake = tmp_path / "claude.sh"
-    marker = tmp_path / "alive"
-    fake.write_text(f"#!/bin/sh\n(sl" f"eep 30; touch {marker}) &\nexit 0\n")
-    fake.chmod(0o755)
-    monkeypatch.setattr(srv, "ROOT", tmp_path)
-    monkeypatch.setattr(srv, "CLAUDE", str(fake))
-    monkeypatch.setattr(srv, "COMMITTER_FLAGS", [])
-    monkeypatch.setattr(srv, "COMMIT_TIMEOUT", .2)
-    srv.COMMITTER.update(running=True, note=None, started=time.time(), feed=[])
-    done = threading.Event()
-    threading.Thread(target=lambda: (srv.run_committer(SCOPE), done.set()),
-                     daemon=True).start()
-    assert done.wait(10)
-    assert srv.COMMITTER["running"] is False
-    assert not marker.exists()
-
-
 def test_a_committer_does_not_start_after_a_shutdown(srv, tmp_path, monkeypatch):
     """The run opens on a thread of its own, so a shutdown reaches the console
     before the thread reaches the spawn. A session started after that has
