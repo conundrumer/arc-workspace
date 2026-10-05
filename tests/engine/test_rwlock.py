@@ -18,7 +18,7 @@ import sys, time
 from pathlib import Path
 from engine import rwlock
 hold, directory, log, name, seconds = sys.argv[1:]
-with rwlock.lock_files(rwlock.Hold(hold), Path(directory)):
+with rwlock.lock_files(rwlock.Hold(hold), Path(directory), rwlock.Notice()):
     with open(log, "a") as fh:
         fh.write(f"start {name}\\n")
     time.sleep(float(seconds))

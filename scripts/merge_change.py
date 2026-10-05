@@ -16,8 +16,8 @@ once the commits are made, the script holds the merge lock
 invocation that finds it held waits for it. So each rebase is onto the
 `master` the merge before it left, and the checks run on the changes as
 they land. The kernel releases the lock when its holder ends, however it
-ends. The merge lock is taken before the shared hold of the heavy
-commands' lock that the gate takes for itself.
+ends. The merge lock is taken before the shared holds of the heavy
+commands' lock that the gate takes for its commands.
 
 The script then rebases the branches, in the order given, onto `master` as
 one stack: the first onto `master`, and each next one onto the one before
@@ -86,14 +86,22 @@ The script refuses a change, and says why, where:
   the worktree's own copies of the submodules' repositories, so the commit
   would then exist nowhere. The refusal puts the index back as it was.
 - the rebase onto `master` conflicts, in which case it aborts the rebase
-  and leaves the worktree as it was before the commit.
+  and leaves the worktree as it was before the commit;
+- another merge holds the merge lock, and the script runs under a hold of
+  the heavy commands' lock it inherited, under which it does not wait
+  (`engine.rwlock.MergeHeld`), in which case every change is refused, and
+  each branch is moved back to the commit it stood on before the script's
+  commit, with the change left uncommitted in the worktree and nothing
+  staged.
 
 A change refused before the stack is rebased is left out of the stack, and
 the others merge.
 
 It pushes nothing and moves no branch but `master` and the worktrees' own.
 It prints a line per step on stdout, and a refusal, and a wait for the
-merge lock with what its holder merges, on stderr.
+merge lock with what its holder merges, on stderr. Each line a check writes
+on stderr reaches its stderr as the check writes it, so a wait of the gate
+for the heavy commands' lock shows while it lasts.
 
 Exit status: 0 when every change is merged, 1 on a refusal of any change or
 a failed step, 2 when the call itself is malformed.
@@ -105,6 +113,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -236,10 +245,34 @@ def check(tree: Path, main: Path, base: str, touched: set[str]) -> Path:
     return Path(gate_out)
 
 
+def tree_env() -> dict[str, str]:
+    """The environment in which a `uv run` command runs in its tree's own
+    environment."""
+    return {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+
+
 def run_in(tree: Path, argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
     """A `uv run` command in `tree`, in that tree's own environment."""
-    env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
-    return subprocess.run(list(argv), cwd=tree, env=env, capture_output=True, text=True)
+    return subprocess.run(list(argv), cwd=tree, env=tree_env(), capture_output=True,
+                          text=True)
+
+
+def run_check(tree: Path, argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
+    """A check run as `run_in` runs a command, each line it writes on stderr
+    written on this script's stderr as it comes."""
+    proc = subprocess.Popen(list(argv), cwd=tree, env=tree_env(), stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, text=True)
+    assert proc.stdout is not None and proc.stderr is not None
+    stdout = proc.stdout
+    out: list[str] = []
+    reader = threading.Thread(target=lambda: out.append(stdout.read()))
+    reader.start()
+    err: list[str] = []
+    for line in proc.stderr:
+        print(line, end="", file=sys.stderr, flush=True)
+        err.append(line)
+    reader.join()
+    return subprocess.CompletedProcess(list(argv), proc.wait(), "".join(out), "".join(err))
 
 
 def run_checks(tree: Path, checks: Sequence[Check]) -> None:
@@ -248,7 +281,7 @@ def run_checks(tree: Path, checks: Sequence[Check]) -> None:
     for s in shown:
         print(mctx("merge_change: running {s}").format(s=s), flush=True)
     with ThreadPoolExecutor(max_workers=max(1, len(checks))) as pool:
-        dones = list(pool.map(lambda c: run_in(tree, c.argv), checks))
+        dones = list(pool.map(lambda c: run_check(tree, c.argv), checks))
     failed = [mctx("the check `{s}` failed:").format(s=s) + "\n" + said(done)
               for s, done in zip(shown, dones, strict=True) if done.returncode != 0]
     if failed:
@@ -584,9 +617,16 @@ def merge(pairs: Sequence[tuple[Path, str]]) -> bool:
         holder = mctx("pid {pid}, since {since}, merging {branches}").format(
             pid=os.getpid(), since=time.strftime("%H:%M:%S"),
             branches=", ".join(c.branch for c in changes))
-        with rwlock.merge_lock(checkout.git_common_dir(main), holder):
-            print("merge_change: holding the merge lock", flush=True)
-            return land_all(main, changes) and every
+        try:
+            with rwlock.merge_lock(checkout.git_common_dir(main), holder):
+                print("merge_change: holding the merge lock", flush=True)
+                return land_all(main, changes) and every
+        except rwlock.MergeHeld as exc:
+            for c in changes:
+                checkout.git_out(c.worktree, "reset", "-q", "--mixed", c.before)
+            raise Refused(mctx("{exc} Each branch is moved back to the commit it stood on "
+                               "before, and its change stands uncommitted in its "
+                               "worktree.").format(exc=exc)) from exc
 
 
 def land_all(main: Path, changes: Sequence[Change]) -> bool:

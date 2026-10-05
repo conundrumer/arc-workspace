@@ -38,12 +38,18 @@ outputs then depend on the load it runs under only where the load stretches
 it to `TIME_LIMIT`, or a sweep to its own time limit, and either gives a
 `DIFF` line.
 
-A timed run holds the heavy commands' lock (`engine.rwlock`) exclusively,
-and an `--outputs-only` run holds it shared, so a timed run shares the
-machine with no other heavy command, of this checkout or of another
-worktree of the repository. Within a timed run, a cold command holds the
-gate's lock file exclusively and a warm command holds it shared, so a cold
-command never shares the machine with another command of the run.
+A run holds the heavy commands' lock (`engine.rwlock`) for each command,
+and holds nothing between two commands, so a heavy command outside the run
+waits at most for the run's commands in flight. In a timed run, a cold
+command holds it exclusively and a warm command holds it shared, so a cold
+command shares the machine with no other heavy command, of this checkout or
+of another worktree of the repository. In an `--outputs-only` run, each
+command holds it shared. Within a timed run, a cold command holds the
+gate's lock file exclusively and a warm command holds it shared, so a
+command of the run waits for another command of the run there, and waits
+for the heavy commands' lock only for commands outside the run. Where a
+command has to wait for the heavy commands' lock, the run says so on
+stderr once for each hold, shared or exclusive, for all its commands.
 
 `--outputs-only` runs the cold pass alone, and compares its outputs alone:
 it prints `DIFF` lines, and no `SLOW` or `NOTIME` line, and writes no
@@ -767,9 +773,12 @@ class Gate:
         self.shown = f"{checkout.shown(self.dir)}/"
         self.lock = lock_file()
         self.log_lock = threading.Lock()
+        self.notices = {hold: rwlock.Notice() for hold in rwlock.Hold}
+        """The run's wait line for each hold of the heavy commands' lock."""
 
-    def env(self, cache: Path) -> dict[str, str]:
+    def env(self, cache: Path, hold: rwlock.Hold) -> dict[str, str]:
         return {**os.environ,
+                rwlock.HOLD_ENV: hold,
                 checkout.CACHE_ENV: str(cache),
                 checkout.SOLVER_FILES_ENV: str(SOLVERS),
                 checkout.WITNESSES_ENV: str(WITNESSES),
@@ -785,17 +794,24 @@ class Gate:
         text = FOOTER_RE.sub("", _ELAPSED_RE.sub(" ---", text))
         return _LIMIT_RE.sub(r"\1Ns", text)
 
+    def hold(self, cold: bool) -> rwlock.Hold:
+        """The hold of the heavy commands' lock a command of the run takes."""
+        return rwlock.Hold.EXCLUSIVE if self.timed and cold else rwlock.Hold.SHARED
+
     @contextlib.contextmanager
-    def locked(self, cold: bool) -> Iterator[None]:
-        if not self.timed:
-            yield
-            return
-        with open(self.lock, "a") as fh:
-            fcntl.flock(fh, fcntl.LOCK_EX if cold else fcntl.LOCK_SH)
-            yield
+    def locked(self, cold: bool) -> Iterator[rwlock.Hold]:
+        """The gate's lock file, in a timed run, and then the heavy
+        commands' lock, held for one command; the hold the command runs
+        under."""
+        with contextlib.ExitStack() as stack:
+            if self.timed:
+                fh = stack.enter_context(open(self.lock, "a"))
+                fcntl.flock(fh, fcntl.LOCK_EX if cold else fcntl.LOCK_SH)
+            hold = self.hold(cold)
+            yield stack.enter_context(rwlock.taken(hold, self.notices[hold]))
 
     def run_one(self, cmd: GateCommand, stem: str, cold: bool, cache: Path) -> tuple[int, float]:
-        """`cmd` on `stem` under the lock, its normalized output, witness
+        """`cmd` on `stem` under the locks, its normalized output, witness
         file and exit code written to the pass's directory; the exit code
         and wall time."""
         wf = self.wit / f"{stem}.wit.json"
@@ -808,9 +824,9 @@ class Gate:
                       str(self.cov / f".coverage.{key}"), *script]
         argv = ["uv", "run", "--project", str(checkout.ROOT), "python", *script]
         base = (self.new if cold else self.warm) / key
-        with self.locked(cold):
+        with self.locked(cold) as hold:
             start = time.time()
-            proc = subprocess.Popen(argv, cwd=checkout.ROOT, env=self.env(cache),
+            proc = subprocess.Popen(argv, cwd=checkout.ROOT, env=self.env(cache, hold),
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             try:
                 raw, _ = proc.communicate(timeout=TIME_LIMIT)
@@ -1033,12 +1049,12 @@ def run_gate(argv: Sequence[str]) -> int:
         if gate.dir.exists():
             ap.error(f"{gate.dir} exists; give an empty out-dir")
         a.accepted.mkdir(parents=True, exist_ok=True)
-    with rwlock.held(rwlock.Hold.EXCLUSIVE if gate.timed else rwlock.Hold.SHARED):
-        if a.accept:
-            print(f"load before: {load()}", flush=True)
-        lines = gate.run(cmds, keys)
-        if a.accept:
-            print(f"load after: {load()}")
+    rwlock.outer(gate.hold(cold=True))
+    if a.accept:
+        print(f"load before: {load()}", flush=True)
+    lines = gate.run(cmds, keys)
+    if a.accept:
+        print(f"load after: {load()}")
     for ln in lines:
         print(ln)
     counts = {k: sum(ln.kind is k for ln in lines) for k in gate.kinds()}

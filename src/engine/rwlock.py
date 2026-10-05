@@ -1,8 +1,11 @@
 """The readers-writer lock over the repository's heavy commands, which
 every worktree of the repository and every session on the machine share. A
-`run_dl.py` command, a pytest run and an `--outputs-only` gate run hold it
-shared, and run alongside each other. A timed gate run holds it
-exclusively, so that it shares the machine with no other heavy command.
+`run_dl.py` command, a pytest run, each command of an `--outputs-only` gate
+run and each warm command of a timed gate run hold it shared, and run
+alongside each other. Each cold command of a timed gate run holds it
+exclusively, so that it shares the machine with no other heavy command. A
+gate run holds it for each command it runs, and holds nothing between two
+commands.
 
 The writer has priority: a writer that waits marks itself pending, and a
 reader that asks after the mark waits until the writer is done, so that a
@@ -18,10 +21,12 @@ files themselves mean nothing.
 A wait lasts as long as the holders it waits for: a writer waits for every
 reader that holds the lock, and every reader that asks after it waits for
 the writer too. A command that has to wait says so on stderr, once, before
-it waits.
+it waits, and a gate run says so once for each hold, for all its commands
+(`Notice`), since the text of a wait names its holders.
 
 A holder names its hold in `HOLD_ENV`, which every process it starts
-inherits. A process that starts under a hold runs under it and takes no
+inherits, and a gate run names each command's hold in that command's
+environment. A process that starts under a hold runs under it and takes no
 hold of its own, since a hold it waited for could wait behind a writer that
 waits for its parent. A process that starts under a shared hold and asks
 for the exclusive one is a fault (`NestedWriter`), since its parent's hold
@@ -41,6 +46,7 @@ import contextlib
 import fcntl
 import os
 import sys
+import threading
 from collections.abc import Callable, Iterator
 from enum import StrEnum
 from pathlib import Path
@@ -71,8 +77,8 @@ class MergeHeld(Exception):
 
 
 WAITS = {
-    Hold.SHARED: mctx("A timed gate run holds {path} or waits for it, so this command "
-                      "waits until that run is done."),
+    Hold.SHARED: mctx("A cold command of a timed gate run holds {path} or waits for it, "
+                      "so this command waits until that command is done."),
     Hold.EXCLUSIVE: mctx("Other heavy commands hold {path}, so this timed gate run waits "
                          "until they are done."),
 }
@@ -85,50 +91,85 @@ def inherited() -> Hold | None:
     return None if raw is None else Hold(raw)
 
 
-def _take(fh: IO[str], op: int, said: list[bool], wait: Callable[[], str]) -> None:
+class Notice:
+    """A wait line printed on stderr before the first wait of the holds
+    that share it, and not again."""
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.said = False
+
+    def say(self, line: Callable[[], str]) -> None:
+        with self.lock:
+            if self.said:
+                return
+            self.said = True
+        print(line(), file=sys.stderr, flush=True)
+
+
+def _take(fh: IO[str], op: int, notice: Notice, line: Callable[[], str]) -> None:
     try:
         fcntl.flock(fh, op | fcntl.LOCK_NB)
     except BlockingIOError:
-        if not said[0]:
-            print(wait(), file=sys.stderr, flush=True)
-            said[0] = True
+        notice.say(line)
         fcntl.flock(fh, op)
 
 
 @contextlib.contextmanager
-def lock_files(hold: Hold, directory: Path) -> Iterator[None]:
-    """`hold` on the lock whose files stand in `directory`."""
+def lock_files(hold: Hold, directory: Path, notice: Notice) -> Iterator[None]:
+    """`hold` on the lock whose files stand in `directory`, its wait said
+    through `notice`."""
     path = directory / LOCK_FILE
     text = WAITS[hold].format(path=path)
 
-    def wait() -> str:
+    def line() -> str:
         return text
 
-    said = [False]
     with open(directory / PENDING_FILE, "a") as pending, open(path, "a") as lock:
-        _take(pending, fcntl.LOCK_EX, said, wait)
+        _take(pending, fcntl.LOCK_EX, notice, line)
         if hold is Hold.SHARED:
-            _take(lock, fcntl.LOCK_SH, said, wait)
+            _take(lock, fcntl.LOCK_SH, notice, line)
             fcntl.flock(pending, fcntl.LOCK_UN)
         else:
-            _take(lock, fcntl.LOCK_EX, said, wait)
+            _take(lock, fcntl.LOCK_EX, notice, line)
         yield
+
+
+def outer(hold: Hold) -> Hold | None:
+    """The hold the process started under, which a request for `hold` runs
+    under, or None where it started under none. A request for the exclusive
+    hold under the shared one is a fault."""
+    started = inherited()
+    if started is Hold.SHARED and hold is Hold.EXCLUSIVE:
+        raise NestedWriter(mctx("This command asks for the heavy commands' lock "
+                                "exclusively, and it runs under a command that holds it "
+                                "shared."))
+    return started
+
+
+@contextlib.contextmanager
+def taken(hold: Hold, notice: Notice) -> Iterator[Hold]:
+    """`hold` on the repository's lock, its wait said through `notice`, or
+    the hold the process started under; the hold that the processes started
+    under it run under."""
+    started = outer(hold)
+    if started is not None:
+        yield started
+        return
+    with lock_files(hold, checkout.git_common_dir(checkout.ROOT), notice):
+        yield hold
 
 
 @contextlib.contextmanager
 def held(hold: Hold) -> Iterator[None]:
     """`hold` on the repository's lock, named in `HOLD_ENV` while it lasts,
     or the hold the process started under."""
-    outer = inherited()
-    if outer is Hold.SHARED and hold is Hold.EXCLUSIVE:
-        raise NestedWriter(mctx("This command asks for the heavy commands' lock "
-                                "exclusively, and it runs under a command that holds it "
-                                "shared."))
-    if outer is not None:
-        yield
-        return
-    with lock_files(hold, checkout.git_common_dir(checkout.ROOT)):
-        os.environ[HOLD_ENV] = hold
+    started = inherited()
+    with taken(hold, Notice()) as under:
+        if started is not None:
+            yield
+            return
+        os.environ[HOLD_ENV] = under
         try:
             yield
         finally:
@@ -153,7 +194,7 @@ def merge_lock(directory: Path, holder: str) -> Iterator[None]:
 
     with open(path, "a") as fh:
         if inherited() is None:
-            _take(fh, fcntl.LOCK_EX, [False], lambda: wait(MERGE_WAIT.format(path=path)))
+            _take(fh, fcntl.LOCK_EX, Notice(), lambda: wait(MERGE_WAIT.format(path=path)))
         else:
             try:
                 fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
