@@ -55,7 +55,7 @@ HELP = mctx("""
     - `uv run python scripts/file_ticket.py index` prints the index of your session.
     - The command reserves the ticket's number, names the ticket `<number>_<domain>_<subject>_<agent>.md`, writes it under `tickets/draft/` for a `change` and `tickets/open/` for any other kind in the main tree, with the filing time in the first line of its `## Log`, and prints the path it wrote.
     - Run from a worktree, the command files with the main tree's copy of `scripts/file_ticket.py`, and refuses where the main tree has none.
-    - Each `<number>` in `depends-on` is the number of a ticket the track holds.
+    - Each `<number>` in `depends-on` is the number of a ticket the ticket tracker holds.
     - The command refuses, and writes nothing, where the text on stdin does not have the form above.
     - `uv run python scripts/file_ticket.py path <number>` prints the path of the ticket with that number, in whichever status it stands. It takes the name of a ticket filed before tickets had numbers in place of `<number>` too.
     - `uv run python scripts/file_ticket.py log <number> <status> <agent> --from <current status> [--id <agent id>] [<note>]` makes a transition of the ticket with that number and writes its log line, or writes a log line that moves nothing, and prints the ticket's path:
@@ -65,7 +65,7 @@ HELP = mctx("""
         - The command appends `<time> <status> [<agent>]: <note>` to the file's `{log}`, with the time in UTC in the form `{time_form}`, and with `<agent> <agent id>` in the bracket where `--id` gives an agent id. A line with no `<note>` ends at the bracket.
         - An `assigned` line takes, in `--id`, the agent id of the agent that writes it.
         - On a ticket that already stands in `assigned`, the command refuses an `assigned` line unless its `--id` holds the ticket. The holder is the agent id of the last `assigned` line that gives one, in its bracket or as the first word of its note, among the log's final run of `assigned` lines. Where none of them gives one, the ticket has no holder.
-        - The note of a line that moves a ticket into `{blocked}` opens with what the ticket waits on: `{user}`, or `{change} <number>`, with `<number>` the number of a `change` ticket the track holds.
+        - The note of a line that moves a ticket into `{blocked}` opens with what the ticket waits on: `{user}`, or `{change} <number>`, with `<number>` the number of a `change` ticket the ticket tracker holds.
         - The note of a line that moves a ticket into `closed` opens with its resolution, one of {resolutions}.
         - The command refuses, and neither moves nor writes, where `{log}` is not the file's last section or the note spans more than one line.
     """)
@@ -258,7 +258,8 @@ LEGACY_FORM = re.compile(r"---\nkind: (?P<kind>\S+)\n---\n# .+: .+\n\n## Effect\
 tickets."""
 
 LEGACY_KINDS = {"undecided": Kind.QUESTION, "gap": Kind.QUESTION}
-"""The kinds an issue filed before tickets gives that the track renamed."""
+"""The kinds an issue filed before tickets gives, mapped to the kind a ticket
+gives in their place."""
 
 NAME_PART = re.compile(r"[^\s/]+")
 
@@ -273,7 +274,7 @@ def statuses(tickets: Path) -> list[Path]:
 
 def check_depends_on(tickets: Path, value: str) -> None:
     """Refuses a `depends-on` value that is not a list of numbers of
-    tickets the track holds."""
+    tickets the ticket tracker holds."""
     for n in (part.strip() for part in value.split(",")):
         if not TICKET_NUMBER.fullmatch(n):
             raise Refused(mctx("`{n}` in `depends-on` is not a ticket number").format(n=n))
@@ -434,7 +435,7 @@ def add_session(path: Path, session: str) -> None:
 
 def check_subject(tickets: Path, domain: Domain, subject: str) -> None:
     """Refuses a `subject` that is no id of a thing of `domain`: a task
-    with no file, a ticket the track does not hold, a hash of no commit, or
+    with no file, a ticket the ticket tracker does not hold, a hash of no commit, or
     no agent id."""
     match domain:
         case Domain.TASK:
@@ -620,8 +621,8 @@ def write_log(tickets: Path, ref: str, status: str, agent: str, source: str, age
 
 def file_legacy(tickets: Path, unix_time: str, source: str, agent: str, text: str) -> Path:
     """Writes an issue in the form `scripts/file_issue.py` takes as a
-    ticket under `tickets/open/`, with the kind and section the track
-    renamed given their new names, and returns its path."""
+    ticket under `tickets/open/`, with the kind and section an issue gives
+    under the names a ticket gives them, and returns its path."""
     if not unix_time.isdigit():
         raise Refused(mctx("the unix time `{time}` is not a number").format(time=unix_time))
     for part in (source, agent):
