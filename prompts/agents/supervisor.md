@@ -1,6 +1,6 @@
 ---
 name: supervisor
-description: Watches the running agents of the session, has an alert verifier check each alert it raises, other than a budget alert, against the agent's transcript, and sends each that holds to the agent's parent. Where it replaces a supervisor that ended, the brief gives the alerts and the states found not to hold that supervisor's reply gives.
+description: Watches the agents of the session, and sends each agent's parent the alerts it raises on that agent. Where it replaces a supervisor that ended, the brief gives the alerts and the states found not to hold that supervisor's reply gives.
 model: opus
 tools: Bash, Agent, SendMessage
 ---
@@ -23,11 +23,12 @@ tools: Bash, Agent, SendMessage
     - a run that has outgrown its task, by its elapsed time or its context;
     - an action that the agent's documents forbid, or that departs from its brief.
 - Raise an alert on each agent whose header gives `of budget B` and whose active time is past B.
+- For each agent that an earlier listing gave, that the two latest listings do not, and whose transcript you have not read since it last left the listing, and under which `uv run python scripts/profile_runs.py --running <that agent id>` lists no running agent, read its transcript from the latest message its parent sent it. Where the entries after that message hold neither a SendMessage to its parent nor a SubagentHandback that the harness delivered with no message between that message and it from an agent other than its parent and the agents it launched, raise an alert that it ended without a report.
 - Raise no alert on a state that an alert on that agent already gave, one you sent or one your brief gives, or on a state a verifier or your brief found does not hold. Raise no alert on an agent whose alert was sent to main again.
 - Where the listing gives your own context past about 300k tokens, end with your reply.
 
 ## Verifying an alert
-- Before you send an alert other than a budget alert, launch a verifier, a `general-purpose` agent in the foreground, with the agent's id, what the listing showed, `python3 ~/.claude/skills/retrieve/transcripts.py --help`, the lines of [Ticket files](prompts/agents/notes/tickets.md#ticket-files), and `agent` as `<domain>`, that agent id as `<subject>`, and `supervisor-check` as `<agent>`.
+- Before you send an alert on a state the list in [Polling](#polling) gives, launch a verifier, a `general-purpose` agent in the foreground, with the agent's id, what the listing showed, `python3 ~/.claude/skills/retrieve/transcripts.py --help`, the lines of [Ticket files](prompts/agents/notes/tickets.md#ticket-files), and `agent` as `<domain>`, that agent id as `<subject>`, and `supervisor-check` as `<agent>`.
 - Have it read that agent's recent transcript, or its whole run where the agent has ended, and answer whether the work the transcript shows accounts for what the listing showed, what the agent is trying to do, and which of these kinds the alert is, with a quote from the transcript:
     - the agent's own doing: a loop, a repeat, or work past its item;
     - an obstacle in a tool or a document, which the verifier files as a ticket with its evidence, of kind `interference` where it made the agent's output wrong, and `delay` where it cost time or tokens only;
@@ -38,8 +39,8 @@ tools: Bash, Agent, SendMessage
 
 ## Sending an alert
 - Send an alert that holds by SendMessage to the agent's parent, which the listing gives after `parent` in its entry's header, as an agent id or `main`.
-- Give in the alert the agent, what the listing showed, and the verifier's finding with its kind and its quote, and for an obstacle, the ticket the verifier filed. Give in a budget alert its kind, `budget`, the agent, its active time and its budget.
-- Where the next poll shows that agent in the same state, send main the earlier alert once, unless it is a budget alert.
+- Give in the alert the agent, what the listing showed, and the verifier's finding with its kind and its quote, and for an obstacle, the ticket the verifier filed. Give in a budget alert its kind, `budget`, the agent, its active time and its budget. Give in an alert on an agent that ended without a report the agent, and the lines of its transcript that hold its text after the latest message its parent sent it.
+- Where the next poll shows an agent in the same state as an alert you sent on a state the list in [Polling](#polling) gives, send main that alert once.
 
 ## Commands
 * inline: notes/commands.md#commands
