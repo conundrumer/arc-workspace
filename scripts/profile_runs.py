@@ -32,7 +32,8 @@ WINDOW_RUNS = 5
 LOW_WAIT_PCT = 10
 # The number of a running agent's last calls that `--running` prints.
 RECENT_CALLS = 8
-# The characters of a call's command that `--running` prints.
+# The characters of a call's command or of an agent's text output that
+# `--running` prints.
 COMMAND_WIDTH = 160
 
 HELP = mctx("""
@@ -55,12 +56,13 @@ HELP = mctx("""
     - More than one run also prints the budget of each agent type, which is {factor} times a median wall time, printed with the runs it is taken over:
         - With `--since DATE`, an ISO date or datetime read in local time where it gives no offset, the window is the runs whose first entry is at or after DATE. Where the window holds at least {window_runs} runs of the type, the median is taken over them.
         - Otherwise it is taken over the type's runs whose `waits` and `idle` together are under {low_wait_pct}% of wall time. A type with no such run gets no budget, and an `undecided` line on stderr names it.
-    - `--running ID` lists the agents that the run ID launched and that have not completed, where ID is a session id or an agent id. An agent has completed when its turn has ended, or when the run ID has its result or a notification of it. For each agent it prints:
-        - its agent id, type and launch description, the time since its first entry, and its context size in tokens, which is the input of its last request;
+    - `--running ID` lists the running agents under the run ID, where ID is a session id or an agent id: the agents the run launched, the agents those launched, and so on, whether or not their launcher has completed. An agent has completed when its turn has ended, when its last entry is the harness's note that the user interrupted it, or when its launcher has its result or a notification of it and its transcript has not changed since. The agents are listed in launch order, each launcher's agents after it. For each agent it prints:
+        - its agent id, type and launch description, its parent, which is the agent id of its launcher or `main`, the time since its first entry, and its context size in tokens, which is the input of its last request;
+        - its last text output, the end of the text of its last assistant entry that gives text;
         - each call it has in flight, with its label, its command and the time since the call;
         - each command or agent it backgrounded that is still running, with its label, its command and the time since the call;
         - its last {recent} calls in order, each with its label, its command and its duration, or `pending`.
-    - A call's command is printed on one line, cut at {width} characters. It is the command of a Bash call, the description of an Agent call, and for any other call nothing past its label.
+    - A call's command and an agent's text output are printed on one line, a command cut to its first {width} characters and a text output to its last {width}. A call's command is the command of a Bash call, the description of an Agent call, and for any other call nothing past its label.
     - A run whose agent type is unknown is refused, and so is an ID that names transcripts that differ. A call whose agent type is unknown is labelled `agent ?`, and a Bash call with no command is labelled `shell`; an `undecided` line on stderr names each.
     """).format(factor=BUDGET_FACTOR, window_runs=WINDOW_RUNS,
                 low_wait_pct=LOW_WAIT_PCT, recent=RECENT_CALLS,
@@ -95,6 +97,9 @@ WRAPPER_OPTIONS = {"--env-file", "--with", "--python", "-p", "--project",
 OPENERS = {"do", "then", "else", "elif", "if", "while", "until", "!", "{", "("}
 CLOSERS = {"for", "case", "done", "fi", "esac", "}"}
 POLL = "poll"
+# The start of the text of the entry the harness writes where the user
+# interrupts a run.
+INTERRUPTED = "[Request interrupted by user"
 # Ways a Bash result says the harness, not the call, moved it to the
 # background after it had run in the foreground.
 MOVED = ("timedOutAfterMs", "assistantAutoBackgrounded", "backgroundedByUser")
@@ -140,8 +145,11 @@ class Run:
     spans: list[Span]
     in_flight: list[Span]
     backgrounded: list[Span]
+    # Whether the run's turn has ended, or its last entry is the harness's
+    # note that the user interrupted it.
     ended: bool
     context: int | None
+    said: str | None
 
     @property
     def active(self) -> float:
@@ -554,6 +562,7 @@ def profile(path: Path, undecided: list[str]) -> Run:
     by_task: dict[str, str] = {}                # task id -> tool-use id
     spans: dict[str, Span] = {}
     context: int | None = None
+    said: str | None = None
     idle = False
     prev: float | None = None
     first: float | None = None
@@ -588,6 +597,8 @@ def profile(path: Path, undecided: list[str]) -> Run:
             idle = False
             tokens = request_input(e)
             context = context if tokens is None else tokens
+            text = "\n".join(b.get("text", "") for b in blocks(e, "text")).strip()
+            said = text or said
             for b in blocks(e, "tool_use"):
                 tid = b.get("id", "")
                 c = calls[tid] = classify(b, results.get(tid), session,
@@ -619,6 +630,10 @@ def profile(path: Path, undecided: list[str]) -> Run:
                 k, start = running.pop(tid)
                 group(k).ran += t - start
     end = prev or 0.0
+    last_message = [e for e in entries if e.get("type") in ("user", "assistant")][-1:]
+    interrupted = any(e.get("type") == "user" and text_of(
+        (e.get("message") or {}).get("content")).startswith(INTERRUPTED)
+        for e in last_message)
     in_flight = [spans[tid] for tid in pending if tid in spans]
     backgrounded = [spans[tid] for tid in running if tid in spans]
     for k, start in running.values():
@@ -629,7 +644,7 @@ def profile(path: Path, undecided: list[str]) -> Run:
                               "is unknown").format(run=label))
     return Run(label, agent_type, description, first, wall, parts,
                {k: g for k, g in groups.items() if g.time or g.calls},
-               list(spans.values()), in_flight, backgrounded, idle, context)
+               list(spans.values()), in_flight, backgrounded, idle or interrupted, context, said)
 
 
 # Output.
@@ -737,22 +752,35 @@ def print_types(runs: list[Run], pct: float, top: int) -> None:
 
 # Running agents.
 
-def running_agents(ident: str, undecided: list[str]) -> list[Path]:
-    """The transcripts of the agents the run `ident` launched that the run
-    holds no notification of, nor a result that does not say the agent runs
-    in the background, in the order of their launch."""
-    path = find(ident)
-    entries = read_entries(path)
-    results = results_by_call(entries)
-    answered = {b.get("tool_use_id") for e in entries if e.get("type") == "user"
-                for b in blocks(e, "tool_result")}
-    told = {v for e in entries if e.get("type") != "assistant" for v in notified(e)}
+@cache
+def session_launches(session: Path) -> tuple[dict[str, Path], frozenset[str]]:
+    """The transcripts of a session's agents by the Agent call that launched
+    each, and the agent ids of the agents that launched any, as their
+    `.meta.json` files give them."""
     by_call: dict[str, Path] = {}
-    for p in session_agents(session_of(path)).values():
-        meta = read_meta(p)
-        if meta and meta.get("toolUseId"):
+    parents: set[str] = set()
+    for p in session_agents(session).values():
+        meta = read_meta(p) or {}
+        if meta.get("toolUseId"):
             by_call[meta["toolUseId"]] = p
-    out: list[Path] = []
+        if meta.get("parentAgentId"):
+            parents.add(meta["parentAgentId"])
+    return by_call, frozenset(parents)
+
+
+def launched(path: Path, undecided: list[str]) -> list[tuple[Path, float | None]]:
+    """The transcripts of the agents the run at `path` launched, in the
+    order of their launch, each with the time of the run's last notification
+    of it, or of a result that does not say the agent runs in the
+    background, or None where the run holds neither."""
+    entries = [e for e in read_entries(path) if e.get("timestamp")]
+    results = results_by_call(entries)
+    answered = {b.get("tool_use_id"): epoch(e["timestamp"]) for e in entries
+                if e.get("type") == "user" for b in blocks(e, "tool_result")}
+    told = {v: epoch(e["timestamp"]) for e in entries
+            if e.get("type") != "assistant" for v in notified(e)}
+    by_call = session_launches(session_of(path))[0]
+    out: list[tuple[Path, float | None]] = []
     for e in entries:
         if e.get("type") != "assistant":
             continue
@@ -761,21 +789,45 @@ def running_agents(ident: str, undecided: list[str]) -> list[Path]:
                 continue
             tid = b.get("id", "")
             result = results.get(tid) or {}
-            launched = result.get("status") == "async_launched"
-            if tid in told or result.get("agentId") in told or (
-                    tid in answered and not launched):
-                continue
-            if tid not in by_call:
+            background = result.get("status") == "async_launched"
+            signs = [told.get(tid), told.get(result.get("agentId", "")),
+                     None if background else answered.get(tid)]
+            done = max((t for t in signs if t is not None), default=None)
+            if tid in by_call:
+                out.append((by_call[tid], done))
+            elif done is None:
                 undecided.append(mctx("{run}: no transcript gives call {call} as "
                                       "its launch").format(run=path.stem, call=tid))
-                continue
-            out.append(by_call[tid])
     return out
 
 
-def one_line(command: str) -> str:
-    line = " ".join(command.split())
-    return line if len(line) <= COMMAND_WIDTH else line[:COMMAND_WIDTH - 3] + "..."
+def parent_label(path: Path) -> str:
+    return agent_id(path) if is_subagent(path) else MAIN
+
+
+def running_agents(path: Path, undecided: list[str]) -> list[tuple[str, Path]]:
+    """The agents under the run at `path` whose launcher holds no sign that
+    they completed, or whose transcript changed after the last sign, each
+    with its parent, each launcher's agents after it."""
+    parents = session_launches(session_of(path))[1]
+    out: list[tuple[str, Path]] = []
+    for child, done in launched(path, undecided):
+        if done is None or child.stat().st_mtime > done:
+            out.append((parent_label(path), child))
+        if agent_id(child) in parents:
+            out.extend(running_agents(child, undecided))
+    return out
+
+
+def one_line(text: str, tail: bool = False) -> str:
+    """`text` on one line, cut to its first COMMAND_WIDTH characters, or
+    with `tail` to its last."""
+    line = " ".join(text.split())
+    if len(line) <= COMMAND_WIDTH:
+        return line
+    if tail:
+        return "..." + line[3 - COMMAND_WIDTH:]
+    return line[:COMMAND_WIDTH - 3] + "..."
 
 
 def print_span(m: Span, time_text: str) -> None:
@@ -783,12 +835,13 @@ def print_span(m: Span, time_text: str) -> None:
     print(f"    {time_text:>8}  {m.label}{command}")
 
 
-def print_running(runs: list[Run], now: float) -> None:
-    for r in runs:
+def print_running(runs: list[tuple[str, Run]], now: float) -> None:
+    for parent, r in runs:
         since = minutes(now - r.start) if r.start is not None else "?"
         context = f"{r.context:,}" if r.context is not None else "?"
-        print(f"{r.label} {r.agent_type}  {since}  context {context} tokens: "
-              f"{r.description}")
+        print(f"{r.label} {r.agent_type}  parent {parent}  {since}  "
+              f"context {context} tokens: {r.description}")
+        print(f"  said: {one_line(r.said, tail=True) if r.said is not None else '-'}")
         for title, spans in (("in flight", r.in_flight), ("running", r.backgrounded)):
             if spans:
                 print(f"  {title}:")
@@ -827,14 +880,15 @@ def main(argv: list[str]) -> int:
     types = set(args.type.split(",")) if args.type else None
     undecided: list[str] = []
     runs: list[Run] = []
+    listed: list[tuple[str, Run]] = []
     if bool(args.ids) == bool(args.running):
         print(mctx("refused: give either IDs or `--running ID`"), file=sys.stderr)
         return 2
     try:
         if args.running:
-            runs = [r for r in (profile(p, undecided) for p in
-                                running_agents(args.running, undecided))
-                    if not r.ended]
+            profiled = ((parent, profile(p, undecided)) for parent, p in
+                        running_agents(find(args.running), undecided))
+            listed = [(parent, r) for parent, r in profiled if not r.ended]
         else:
             paths = [p for ident in args.ids for p in transcripts(ident)]
             runs = [profile(p, undecided) for p in paths
@@ -843,7 +897,7 @@ def main(argv: list[str]) -> int:
         print(mctx("refused: {reason}").format(reason=e), file=sys.stderr)
         return 2
     if args.running:
-        print_running(runs, time.time())
+        print_running(listed, time.time())
     elif not runs:
         print(mctx("refused: no run to profile"), file=sys.stderr)
         return 2
