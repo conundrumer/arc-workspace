@@ -19,7 +19,7 @@
 
     .decl bg(c: Color) bg(0).
 
-    // --- $Table, Size decompose data ---
+    // --- $Table, $Size: decompose data ---
     .decl tile_dim(a: Axis, n: number)
     tile_dim(AXIS_V, 5). tile_dim(AXIS_H, 11).
 
@@ -37,7 +37,7 @@
     .decl divisor(n: number)
     divisor(2).
 
-    // --- $Count, Size decompose data ---
+    // --- $Count, $Size: decompose data ---
     .decl divide_axis(a: Axis)
     divide_axis(AXIS_V).
 

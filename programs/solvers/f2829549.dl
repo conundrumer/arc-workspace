@@ -48,7 +48,7 @@
     .decl divisor(n: number)
     divisor(2).
 
-    // --- $Count, Size decompose data ---
+    // --- $Count, $Size: decompose data ---
     .decl divide_axis(a: Axis)
     divide_axis(AXIS_H).
 

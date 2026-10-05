@@ -38,7 +38,7 @@
         arr_dim(AXIS_V, Av), arr_dim(AXIS_H, Ah), frame_dim(K), gap(G),
         helpers.tile_pos([Av, Ah], [K, K], [G, 0], P_grid, P_tile, P_intile).
 
-    // --- $Count, Size decompose data ---
+    // --- $Count, $Size: decompose data ---
     .decl divide_axis(a: Axis)
     divide_axis(AXIS_V).
 
