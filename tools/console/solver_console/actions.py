@@ -434,6 +434,38 @@ def kill_session(proc: subprocess.Popen) -> None:
         proc.kill()
 
 
+# Seconds between the group kills that end a timed-out committer session, and
+# between the run's checks for the session's exit.
+SESSION_TICK = .05
+
+
+def end_session(proc: subprocess.Popen, lock: threading.Lock) -> None:
+    """End a timed-out session: kill its group, and again each `SESSION_TICK`
+    until the session is waited for.
+
+    One kill can miss a process: a process the group forks while the kill
+    lands comes out of the fork alive, and it holds the pipe the run reads.
+    The run waits for the session only under `lock`, so no kill reaches a pid
+    the wait has freed.
+    """
+    while True:
+        with lock:
+            if proc.returncode is not None:
+                return
+            kill_session(proc)
+        time.sleep(SESSION_TICK)
+
+
+def reap_session(proc: subprocess.Popen, lock: threading.Lock) -> None:
+    """Wait for the session, each check under the lock `end_session` kills
+    under."""
+    while True:
+        with lock:
+            if proc.poll() is not None:
+                return
+        time.sleep(SESSION_TICK)
+
+
 def run_committer(paths: list[str]) -> None:
     """One-shot session that commits `paths` with judged messages: the files
     the items recorded as worker writes.
@@ -483,7 +515,9 @@ def run_committer(paths: list[str]) -> None:
                 store.COMMITTER_PROC = proc
                 if store.SHUTTING_DOWN:
                     kill_session(proc)
-            timer = threading.Timer(config.COMMIT_TIMEOUT, kill_session, args=(proc,))
+            kill_lock = threading.Lock()
+            timer = threading.Timer(config.COMMIT_TIMEOUT, end_session,
+                                    args=(proc, kill_lock))
             timer.start()
             try:
                 for line in proc.stdout:
@@ -501,8 +535,8 @@ def run_committer(paths: list[str]) -> None:
                         with store.LOCK:
                             store.COMMITTER["feed"].extend(entries)
                         store.bump()
-                proc.wait()
             finally:
+                reap_session(proc, kill_lock)
                 timer.cancel()
         out = subprocess.run(["git", "log", "--format=%s", f"{before}..HEAD"],
                              cwd=config.ROOT, capture_output=True, text=True).stdout

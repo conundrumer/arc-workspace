@@ -126,8 +126,10 @@ def test_two_callers_building_the_appendix_at_once_each_get_it_whole(srv):
     threads = [threading.Thread(target=build) for _ in range(6)]
     for t in threads:
         t.start()
+    # Six builds of this appendix take seconds each under load, so the join
+    # waits each one out rather than reading the list mid-build.
     for t in threads:
-        t.join(20)
+        t.join()
     assert out == [text] * 6
 
 
