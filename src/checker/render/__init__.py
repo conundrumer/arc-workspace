@@ -110,7 +110,14 @@ from solver.problems import (
 from solver.problems import (
     Undecided as UndecidedDetail,
 )
-from solver.solve import Grids, Outcome, PairId
+from solver.solve import (
+    VARIANT_CPU_FACTOR,
+    VARIANT_CPU_FLOOR_SECONDS,
+    Grids,
+    Outcome,
+    PairId,
+    VariantBound,
+)
 from solver.vocabulary import TIEBREAK_RESOLUTION
 from solver.witness import GroupGrid, RejectedOutput, Resolutions, Undefined
 
@@ -325,12 +332,20 @@ def cases_run_failed(failure: RunFailure) -> str:
     return f"{CASES_RUN_FAILED}: {failure_text(failure)}"
 
 
-def _limit(failure: RunFailure) -> float:
+def _limit(p: NoResultPayload) -> str:
     """The limit a run reached, which a `TIMEOUT` finding's failure
-    holds."""
-    if not is_timeout(failure):
+    holds: a variant's CPU limit by the rule that set it, so that the
+    same inputs print the same limit."""
+    if not is_timeout(p.failure):
         raise ValueError("a run that reached no limit has no limit's seconds")
-    return failure.seconds
+    match p.bound:
+        case VariantBound.MULTIPLE:
+            return mctx("{n} times the CPU time of the solver's own "
+                        "run").format(n=VARIANT_CPU_FACTOR)
+        case VariantBound.FLOOR:
+            return f"{VARIANT_CPU_FLOOR_SECONDS:g}s"
+        case None:
+            return f"{p.failure.seconds:g}s"
 
 
 def _no_result_lines(solver: Solver, f: Finding, p: NoResultPayload,
@@ -339,17 +354,17 @@ def _no_result_lines(solver: Solver, f: Finding, p: NoResultPayload,
     command prints for a run a limit ended, or a failure."""
     at = where_text(solver, f.where, form)
     if f.kind == Kind.TIMEOUT:
-        limit = f"{_limit(p.failure):g}"
+        limit = _limit(p)
         if p.run not in (RunKind.CASE, RunKind.PAIR, RunKind.WITNESS):
-            return [mctx("{entry}: the {run} run timed out after {limit}s, "
+            return [mctx("{entry}: the {run} run timed out after {limit}, "
                          "so no finding rests on its outcome").format(
                 entry=at, run=p.run.value, limit=limit)]
         if p.case is not None:
-            return [mctx("{entry}: case `{case}` timed out after {limit}s, "
+            return [mctx("{entry}: case `{case}` timed out after {limit}, "
                          "so no finding rests on its outcome there").format(
                 entry=at, case=names.name(solver, p.case), limit=limit)]
         return [mctx("{entry}: the run of the solver's cases timed out "
-                     "after {limit}s, so no finding rests on their outcomes "
+                     "after {limit}, so no finding rests on their outcomes "
                      "there").format(entry=at, limit=limit)]
     error = failure_text(p.failure)
     kind_run = mctx("{kind} run").format(kind=p.run.value)

@@ -22,6 +22,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
+from typing import IO
 
 from engine.engine import (
     CompileError,
@@ -52,6 +53,7 @@ from engine.program import (
 )
 from engine.text import PREFIX, fact_text
 from souffle.expand import expand
+from souffle.grounding import ungrounded
 from souffle.index import Hit, Tree, tree_of
 from souffle.render import lines_text, rendered_for_run
 from souffle.runkey import included_files, reached
@@ -66,6 +68,8 @@ CARET_RE = re.compile(r"^-*\^-*$")
 the error points at."""
 UNGROUNDED_VARIABLE_RE = re.compile(r"^Ungrounded variable (?P<var>\S+)$")
 PROGRAM_NAME = "program.dl"
+CPU_FIELD = "cpu_seconds"
+"""The field of a stored record that holds the CPU seconds of its run."""
 
 CACHE_CAP_BYTES = 20 << 30
 """What the stored runs may take on disk. Now and then a write removes the
@@ -94,11 +98,14 @@ def _size(got: Tuples) -> int:
 
 @dataclass(frozen=True)
 class Ran:
-    """What one Souffle process left: its exit code and what it wrote."""
+    """What one Souffle process left: its exit code, what it wrote, and
+    the CPU seconds it spent, user and system, with those of the processes
+    it waited for."""
 
     code: int
     stdout: str
     stderr: str
+    cpu_seconds: float
 
 
 def grid_rows(grid: Grid, lead: tuple[int, ...] = ()) -> list[str]:
@@ -259,6 +266,18 @@ _STATEMENTS: ByIdentity[Program, tuple[list[tuple[str, int | None]], str]] \
 on every input."""
 
 
+_UNGROUNDED: ByIdentity[Program, tuple[UngroundedVariable | None]] = ByIdentity()
+"""`_ungrounded` of each program while it lives, held in a tuple, since
+None is a value of it."""
+
+
+def _ungrounded(program: Program) -> UngroundedVariable | None:
+    """`souffle.grounding.ungrounded` of `program` with its macros
+    expanded, which Souffle would reject, so that no process starts for
+    it; computed once per program while it lives."""
+    return _UNGROUNDED.compute(program, lambda: (ungrounded(expand(program)),))[0]
+
+
 def _statements(program: Program) -> tuple[list[tuple[str, int | None]], str]:
     """The lines a run of `program` gives Souffle before its directives,
     each with its origin line (`rendered_for_run` of the program with its
@@ -318,7 +337,11 @@ class Runner:
                 directives += lines_of_copy
         named = [hit.decl.id for rel in (*inputs, *outputs)
                  if (hit := tree.resolve(rel, Scope(()))) is not None]
-        lines, statements = _statements(reached(program, named))
+        kept = reached(program, named)
+        bad = _ungrounded(kept)
+        if bad is not None:
+            return bad
+        lines, statements = _statements(kept)
         text = statements + lines_text(directives)
         if self.functor_dir is not None:
             build_functors(self.functor_dir)
@@ -338,7 +361,8 @@ class Runner:
             return ran
         if ran.code != 0:
             return _failure(ran, [o for _, o in lines] + [None] * len(directives))
-        got = Tuples(_Printed(ran.stdout, outputs, tree, printed_as, capped))
+        got = Tuples(_Printed(ran.stdout, outputs, tree, printed_as, capped),
+                     ran.cpu_seconds)
         self._done.put(key, got)
         return got
 
@@ -412,11 +436,13 @@ class Runner:
 
     def _cached(self, key: str, text: str, facts: dict[str, str],
                 limits: Limits) -> Ran | CpuLimit | WallLimit:
-        """The stored run under `key`, else the run of `text`."""
+        """The stored run under `key`, else the run of `text`. A record
+        stored with no CPU seconds is no record, so its run is made again
+        once."""
         cpu = max(1, math.ceil(limits.cpu_seconds))
         hit = self._read(key)
-        if hit is not None:
-            return Ran(hit["code"], hit["stdout"], hit["stderr"])
+        if hit is not None and CPU_FIELD in hit:
+            return Ran(hit["code"], hit["stdout"], hit["stderr"], hit[CPU_FIELD])
         over = _cpu_limit_key(key, cpu)
         if self._read(over) is not None:
             return CpuLimit(limits.cpu_seconds)
@@ -425,7 +451,8 @@ class Runner:
             self._write(over, {"cpu": cpu})
             return CpuLimit(limits.cpu_seconds)
         if isinstance(ran, Ran) and ran.code >= 0:
-            self._write(key, {"code": ran.code, "stdout": ran.stdout, "stderr": ran.stderr})
+            self._write(key, {"code": ran.code, "stdout": ran.stdout, "stderr": ran.stderr,
+                              CPU_FIELD: ran.cpu_seconds})
         if isinstance(ran, WallLimit):
             return WallLimit(limits.wall_seconds)
         return ran
@@ -440,16 +467,53 @@ class Runner:
             cmd = ["souffle", "-D-", *self.flags(), *preprocessor_flags(),
                    "-F", str(d), str(d / PROGRAM_NAME)]
             with _running():
-                try:
-                    result = subprocess.run(
-                        ["/bin/sh", "-c", f'ulimit -t {cpu}; exec "$0" "$@"', *cmd],
-                        input="", capture_output=True, text=True, timeout=wall, cwd=d)
-                except subprocess.TimeoutExpired:
-                    return WallLimit(wall)
-            if result.returncode == -signal.SIGXCPU:
+                ended = _measured(
+                    ["/bin/sh", "-c", f'ulimit -t {cpu}; exec "$0" "$@"', *cmd],
+                    wall, d)
+            if ended is None:
+                return WallLimit(wall)
+            code, stdout, stderr, cpu_seconds = ended
+            if code == -signal.SIGXCPU:
                 return CpuLimit(cpu)
-            stderr = result.stderr.replace(str(d / PROGRAM_NAME), PROGRAM_NAME)
-            return Ran(result.returncode, result.stdout, stderr)
+            stderr = stderr.replace(str(d / PROGRAM_NAME), PROGRAM_NAME)
+            return Ran(code, stdout, stderr, cpu_seconds)
+
+
+def _measured(argv: list[str], wall: float, cwd: Path
+              ) -> tuple[int, str, str, float] | None:
+    """The process of `argv` run to its end with no input: its exit code,
+    negative for the signal that ended it, its stdout, its stderr and the
+    CPU seconds `os.wait4` gives it, user and system; None where it was
+    still writing at `wall` seconds and was killed. The process is reaped
+    here alone, so the kill reaches no other process that took its id."""
+    proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, text=True, cwd=cwd)
+    assert proc.stdout is not None and proc.stderr is not None
+    texts: dict[str, str] = {}
+
+    def read(name: str, stream: IO[str]) -> None:
+        texts[name] = stream.read()
+
+    readers = [threading.Thread(target=read, args=(n, f), daemon=True)
+               for n, f in (("stdout", proc.stdout), ("stderr", proc.stderr))]
+    for t in readers:
+        t.start()
+    deadline = time.monotonic() + wall
+    for t in readers:
+        t.join(max(0.0, deadline - time.monotonic()))
+    killed = any(t.is_alive() for t in readers)
+    if killed:
+        proc.kill()
+    _pid, status, usage = os.wait4(proc.pid, 0)
+    proc.returncode = os.waitstatus_to_exitcode(status)
+    for t in readers:
+        t.join()
+    proc.stdout.close()
+    proc.stderr.close()
+    if killed:
+        return None
+    return (proc.returncode, texts["stdout"], texts["stderr"],
+            usage.ru_utime + usage.ru_stime)
 
 
 def prune(cache_dir: Path, cap: int, now: float | None = None) -> None:

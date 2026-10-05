@@ -50,6 +50,7 @@ from solver.solve import (
     Grids,
     PairId,
     PairRuns,
+    VariantBound,
     as_grid,
     by_base,
     is_result,
@@ -68,17 +69,23 @@ def is_timeout(failure: object) -> TypeGuard[CpuLimit | WallLimit]:
 
 
 def no_result(failure: RunFailure, run: RunKind, case: Case | None,
-              where: Where) -> Finding:
+              where: Where, bound: VariantBound | None = None) -> Finding:
     """The finding for a run that gives no result: `TIMEOUT` where it
-    reached either limit, `RUN_FAILED` for every other failure."""
+    reached either limit, `RUN_FAILED` for every other failure. `bound` is
+    the rule that set a variant's CPU limit, which the finding holds where
+    the run reached that limit."""
     kind = Kind.TIMEOUT if is_timeout(failure) else Kind.RUN_FAILED
-    return Finding(kind, where, NoResultPayload(run, case, failure))
+    return Finding(kind, where, NoResultPayload(
+        run, case, failure,
+        bound if isinstance(failure, CpuLimit) else None))
 
 
-def enumeration_failed(failure: RunFailure) -> Finding:
+def enumeration_failed(failure: RunFailure,
+                       bound: VariantBound | None = None) -> Finding:
     """The finding for the run that enumerates the solver's cases where
-    it gives no result."""
-    return no_result(failure, RunKind.CASE, None, AtFile(WholeFile.SOLVER))
+    it gives no result (`no_result`)."""
+    return no_result(failure, RunKind.CASE, None, AtFile(WholeFile.SOLVER),
+                     bound)
 
 
 NO_TASK = Finding(Kind.NO_TASK, AtFile(WholeFile.SOLVER), NoTaskPayload())

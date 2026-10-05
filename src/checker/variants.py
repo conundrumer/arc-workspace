@@ -33,6 +33,9 @@ from solver.solve import (
     TaskSection,
     as_grid,
     at_once,
+    VariantBound,
+    variant_bound,
+    variant_limits,
     candidates,
     determine,
     examples,
@@ -91,17 +94,21 @@ def with_program(solver: Solver, program: Program) -> Solver:
     return replace(solver, program=program)
 
 
-def timed_out(failure: RunFailure, run: RunKind, where: Where) -> TimedOut:
-    """A run of `run`'s kind that reached a limit, as a survey holds it."""
-    return TimedOut(no_result(failure, run, None, where))
+def timed_out(failure: RunFailure, run: RunKind, where: Where,
+              bound: VariantBound | None = None) -> TimedOut:
+    """A run of `run`'s kind that reached a limit, as a survey holds it;
+    `bound` is the rule that set a variant's CPU limit (`no_result`)."""
+    return TimedOut(no_result(failure, run, None, where, bound))
 
 
-def _timed(failure: RunFailure, pair: PairId | None) -> TimedOut:
+def _timed(failure: RunFailure, pair: PairId | None,
+           bound: VariantBound | None = None) -> TimedOut:
     where = AtPair(pair) if pair is not None else AtFile(WholeFile.SOLVER)
-    return timed_out(failure, RunKind.PAIR, where)
+    return timed_out(failure, RunKind.PAIR, where, bound)
 
 
-def _unresulted(failed: Sequence[RunFailure], count: int, pair: PairId
+def _unresulted(failed: Sequence[RunFailure], count: int, pair: PairId,
+                bound: VariantBound | None = None
                 ) -> Fails | TimedOut | None:
     """Of the runs of `count` cases on the pair, those of `failed` gave
     no result: the first of them that reached a limit, else, where every
@@ -109,25 +116,27 @@ def _unresulted(failed: Sequence[RunFailure], count: int, pair: PairId
     otherwise."""
     timed = next((o for o in failed if is_timeout(o)), None)
     if timed is not None:
-        return _timed(timed, pair)
+        return _timed(timed, pair, bound)
     if failed and len(failed) == count:
         return Fails(pair, failed[0])
     return None
 
 
 class _HeldEntry(frozenset[tuple[Case, tuple[Grid, ...]]]):
-    """An entry that holds the runs it was read from and each case's
-    outcome, so that an entry of another program can be compared with it
-    run by run (`entry`)."""
+    """An entry that holds the runs it was read from, each case's outcome,
+    and the CPU seconds of the costliest of its runs, so that an entry of
+    another program can be compared with it run by run (`entry`), and a
+    variant's runs on its pair limited by it (`variant_limits`)."""
 
     runs: GroupRuns
     outcomes: dict[Case, Outcome]
+    cpu_seconds: float
 
 
 def entry(engine: Engine, solver: Solver, cases: Sequence[Case],
           pair: PairId, ex: Example, limits: Limits,
-          reference: Entry | None = None, held: bool = False
-          ) -> Entry | Fails | TimedOut:
+          reference: Entry | None = None, held: bool = False,
+          within: Entry | None = None) -> Entry | Fails | TimedOut:
     """The pair's profile entry under the solver's program, from the runs
     `solve.outcomes` groups the cases into. A run that reaches a limit is
     no result; a run that fails otherwise gives its cases no grid, and
@@ -136,12 +145,18 @@ def entry(engine: Engine, solver: Solver, cases: Sequence[Case],
 
     Where `reference` holds its runs, the entry is compared with it run by
     run (`_compared`), and an entry that differs from it may hold only the
-    cases read up to the difference."""
+    cases read up to the difference. Where `within`, or else `reference`,
+    holds its runs, the runs take `variant_limits` of its CPU seconds."""
+    own = within if within is not None else reference
+    bound = None
+    if isinstance(own, _HeldEntry):
+        limits = variant_limits(limits, own.cpu_seconds)
+        bound = variant_bound(own.cpu_seconds)
     runs = group_runs(engine, solver, cases, as_grid(ex.input),
                       Assignment(()), limits)
     if isinstance(reference, _HeldEntry) \
             and reference.runs.columns == runs.columns:
-        return _compared(runs, cases, pair, reference)
+        return _compared(runs, cases, pair, reference, bound)
     by_case: dict[Case, Outcome] = {}
     for run in runs.runs:
         by_case.update(read_run(runs.columns, run))
@@ -156,7 +171,7 @@ def entry(engine: Engine, solver: Solver, cases: Sequence[Case],
                 pass
             case _:
                 failures.append(o)
-    stop = _unresulted(failures, len(got), pair)
+    stop = _unresulted(failures, len(got), pair, bound)
     if stop is not None:
         return stop
     cands = candidates(ex)
@@ -167,6 +182,8 @@ def entry(engine: Engine, solver: Solver, cases: Sequence[Case],
     out = _HeldEntry(grids)
     out.runs = runs
     out.outcomes = got
+    out.cpu_seconds = max(r.result.cpu_seconds for r in runs.runs
+                          if isinstance(r.result, Tuples))
     return out
 
 
@@ -185,12 +202,14 @@ def restricted(reference: Profile, cases: Collection[Case]) -> Profile:
         held.runs = GroupRuns(e.runs.columns, tuple(
             r for r in e.runs.runs if any(c in cases for c in r.cases)))
         held.outcomes = {c: o for c, o in e.outcomes.items() if c in cases}
+        held.cpu_seconds = e.cpu_seconds
         out.append(held)
     return tuple(out)
 
 
 def _compared(runs: GroupRuns, cases: Sequence[Case], pair: PairId,
-              reference: _HeldEntry) -> Entry | Fails | TimedOut:
+              reference: _HeldEntry, bound: VariantBound | None
+              ) -> Entry | Fails | TimedOut:
     """`entry` from `runs`, where it equals `reference`, else an entry that
     differs from it: a run that reached a limit and a pair whose every run
     failed come first, as in `entry`, from the runs' results alone; then a
@@ -207,7 +226,7 @@ def _compared(runs: GroupRuns, cases: Sequence[Case], pair: PairId,
         if not isinstance(run.result, Tuples | Undefined):
             unread.update(dict.fromkeys(run.cases, run.result))
     stop = _unresulted([unread[c] for c in order if c in unread],
-                       len(order), pair)
+                       len(order), pair, bound)
     if stop is not None:
         return stop
 
@@ -243,8 +262,8 @@ def profile(engine: Engine, solver: Solver,
             cases: tuple[Case, ...] | RunFailure,
             pairs: Sequence[tuple[PairId, Example]], limits: Limits,
             reference: Profile | None = None, held: bool = True,
-            stop: Callable[[Sequence[Entry]], bool] | None = None
-            ) -> ProfileResult:
+            stop: Callable[[Sequence[Entry]], bool] | None = None,
+            within: Profile | None = None) -> ProfileResult:
     """The profile of `cases` under the solver's program on `pairs`, read
     in pair order, `cases` the witnessed cases or the failure of the run
     that enumerates them (`checker.runs.Runs.cases`):
@@ -258,7 +277,9 @@ def profile(engine: Engine, solver: Solver,
     With `reference`, each pair's runs are compared with the reference's
     first (`entry`), and values are read only from the runs that differ.
     With none, the entries hold their runs, for a later profile to compare
-    with, unless `held` is False."""
+    with, unless `held` is False. The runs on a pair take the limits of a
+    variant of the solver whose profile `within`, or else `reference`,
+    is (`entry`)."""
     if not isinstance(cases, tuple):
         if is_timeout(cases):
             return _timed(cases, pairs[0][0] if pairs else None)
@@ -267,8 +288,10 @@ def profile(engine: Engine, solver: Solver,
     for i, (pair, ex) in enumerate(pairs):
         ref = reference[i] if reference is not None \
             and i < len(reference) else None
+        bound = within[i] if within is not None and i < len(within) \
+            else None
         e = entry(engine, solver, cases, pair, ex, limits, ref,
-                  held and reference is None)
+                  held and reference is None, bound)
         if not isinstance(e, frozenset):
             return e
         out.append(e)
@@ -287,20 +310,25 @@ def ungrounded(result: ProfileResult) -> bool:
         and isinstance(result.failure, UngroundedVariable)
 
 
-def determines(engine: Engine, solver: Solver, limits: Limits
+def determines(engine: Engine, solver: Solver, limits: Limits,
+               measured: float | None = None
                ) -> bool | NoDetermine | NoTask | TimedOut:
-    """`reproduces` of the solver's determination run."""
+    """`reproduces` of the solver's determination run; of a variant's,
+    where the stored program's determination spent `measured` CPU seconds
+    (`solver.solve.determine`)."""
     return reproduces(NoTask() if solver.task is None
-                      else determine(engine, solver, limits))
+                      else determine(engine, solver, limits, measured),
+                      None if measured is None else variant_bound(measured))
 
 
-def reproduces(got: DetermineResult | NoTask
+def reproduces(got: DetermineResult | NoTask,
+               bound: VariantBound | None = None
                ) -> bool | NoDetermine | NoTask | TimedOut:
     """Whether the determination run `got` reproduces every determined
     parameter's stored value; `NoDetermine` where the solver has no
     Determine comp, and `NoTask` where its task has no task file, so no
     determination is checked; where its run reached a limit, that run's
-    finding."""
+    finding, with `bound`, the rule that set a variant's CPU limit."""
     match got:
         case Determined():
             return not got.diffs
@@ -309,7 +337,7 @@ def reproduces(got: DetermineResult | NoTask
         case _:
             if is_timeout(got):
                 return timed_out(got, RunKind.DETERMINATION,
-                                 AtFile(WholeFile.SOLVER))
+                                 AtFile(WholeFile.SOLVER), bound)
             return False
 
 

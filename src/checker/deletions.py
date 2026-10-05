@@ -33,6 +33,7 @@ from engine import (
     RemoveUnit,
     RunFailure,
     Scope,
+    Tuples,
     UngroundedVariable,
 )
 from engine.program import (
@@ -55,15 +56,19 @@ from solver.model import (
     enumerated,
     enumerates,
     own,
+    run_empty,
 )
 from solver.solve import (
+    Determined,
     NoDetermine,
     Remove,
     at_once,
     case_groups,
+    variant_bound,
+    variant_limits,
     variation,
 )
-from solver.vocabulary import DETERMINE, OUTPUT
+from solver.vocabulary import DETERMINE, IMPL, OUTPUT
 
 
 class DeletionKind(StrEnum):
@@ -357,10 +362,13 @@ def survey_deletions(solver: Solver, runs: Runs) -> DeletionResult:
         return BaselineFails()
     if isinstance(reference, TimedOut):
         return reference
-    base = reproduces(runs.determined)
+    determined = runs.determined
+    base = reproduces(determined)
     if isinstance(base, TimedOut):
         return base
     stored_holds = base is True
+    measured = determined.cpu_seconds \
+        if isinstance(determined, Determined) else None
     dels = [d for d in deletions(solver, runs)
             if not d.determine or stored_holds]
     dels = [d for d in dels if d.determine] + [d for d in dels
@@ -370,17 +378,28 @@ def survey_deletions(solver: Solver, runs: Runs) -> DeletionResult:
     bases = frozenset(choice_bases(cases)) \
         if enumerates(solver.program) else frozenset()
 
+    own_enumeration = None
+    if bases:
+        own_enumeration = run_empty(engine, solver.program, [IMPL], limits)
+        if not isinstance(own_enumeration, Tuples):
+            raise ValueError("the solver's cases ran, and its own run of "
+                             "`impl_choice` gives no rows")
+
     def _enumerates(variant: Solver, bases: frozenset[object]
                     ) -> bool | TimedOut | RunFailure:
         """Whether the variant's `impl_choice` still enumerates each of
         `bases`, the bases of the solver's cases, on the empty input; a
-        variant that loses a case changes something. The failure of that
-        run where it fails."""
+        variant that loses a case changes something. The run takes
+        `variant_limits` of the solver's own run of `impl_choice`. The
+        failure of that run where it fails."""
         if not bases:
             return True
-        got = enumerated(engine, variant.program, limits)
+        assert own_enumeration is not None
+        spent = own_enumeration.cpu_seconds
+        got = enumerated(engine, variant.program,
+                         variant_limits(limits, spent))
         if not isinstance(got, tuple):
-            return TimedOut(enumeration_failed(got)) \
+            return TimedOut(enumeration_failed(got, variant_bound(spent))) \
                 if is_timeout(got) else got
         return bases <= set(got)
 
@@ -427,7 +446,7 @@ def survey_deletions(solver: Solver, runs: Runs) -> DeletionResult:
                     return None
             if not stored_holds:
                 return row(d.kind, False)
-        holds = determines(engine, variant, limits)
+        holds = determines(engine, variant, limits, measured)
         if isinstance(holds, TimedOut):
             return timed(holds)
         return row(d.kind, d.determine) if holds is True else None

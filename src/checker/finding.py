@@ -40,7 +40,7 @@ from solver.annotations import CaseMarker, DirectiveWord, IgnoreLine
 from solver.category import Category
 from solver.model import Case
 from solver.problems import Fault, ProblemKind, WitnessFileRole
-from solver.solve import PairId
+from solver.solve import PairId, VariantBound
 
 
 class Kind(StrEnum):
@@ -469,6 +469,9 @@ class NoResultPayload:
     run: RunKind
     case: Case | None
     failure: RunFailure
+    bound: VariantBound | None = None
+    """The rule that set the CPU limit a variant's run reached; None for a
+    run under the command's limits, or one that reached another limit."""
 
 
 @quotes("principles.md", "Stored or derived",

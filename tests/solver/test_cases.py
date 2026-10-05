@@ -71,7 +71,7 @@ def _cases(bg_ignore: str, fg_ignore: str) -> tuple[Case, ...]:
         ])
     impl = RelationName((), "impl_choice")
     engine = FakeEngine(parsed, lambda _p, _i, outputs: Tuples(
-        {impl: ((A,), (B,))} if list(outputs) == [impl] else {}))
+        {impl: ((A,), (B,))} if list(outputs) == [impl] else {}, 0.0))
     solver = model.load("0000aaaa", engine)
     assert solver.problems == ()
     assert StoredAtDerive("bg") in solver.branches

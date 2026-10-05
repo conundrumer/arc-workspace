@@ -2,7 +2,7 @@
 rewrites that return a new program, run, expand and render."""
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Protocol
@@ -249,9 +249,12 @@ class Limits:
 
 @dataclass(frozen=True)
 class Tuples:
-    """A run's result: the rows of each output relation asked for."""
+    """A run's result: the rows of each output relation asked for, and the
+    CPU seconds the run spent, the same on a stored run as on the run that
+    stored it. Two results with the same rows are equal."""
 
     relations: Mapping[RelationName, Rows]
+    cpu_seconds: float = field(compare=False)
 
 
 @dataclass(frozen=True)

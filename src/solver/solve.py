@@ -844,6 +844,43 @@ def over_examples(limits: Limits, task: Task) -> Limits:
     return scaled(limits, len(task.train) + len(task.test))
 
 
+VARIANT_CPU_FACTOR = 10
+"""How many times the CPU seconds of the solver's own run a variant's run
+of the same inputs may spend (`variant_limits`)."""
+VARIANT_CPU_FLOOR_SECONDS = 2.0
+"""The least CPU limit of a variant's run (`variant_limits`)."""
+
+
+class VariantBound(Enum):
+    """The rule that sets a variant's CPU limit (`variant_limits`)."""
+
+    MULTIPLE = "multiple"
+    """`VARIANT_CPU_FACTOR` times the CPU seconds of the solver's own run."""
+    FLOOR = "floor"
+    """`VARIANT_CPU_FLOOR_SECONDS`."""
+
+
+def variant_bound(measured: float) -> VariantBound:
+    """The rule that sets the CPU limit of a variant's run, where the
+    solver's own run of the same inputs spent `measured` CPU seconds: the
+    multiple, where it is over the floor."""
+    return VariantBound.MULTIPLE \
+        if VARIANT_CPU_FACTOR * measured > VARIANT_CPU_FLOOR_SECONDS \
+        else VariantBound.FLOOR
+
+
+def variant_limits(limits: Limits, measured: float) -> Limits:
+    """The limits of a variant's run, where the solver's own run of the
+    same inputs spent `measured` CPU seconds: the CPU limit
+    `variant_bound` gives, and the wall limit of `limits`."""
+    match variant_bound(measured):
+        case VariantBound.MULTIPLE:
+            cpu = VARIANT_CPU_FACTOR * measured
+        case VariantBound.FLOOR:
+            cpu = VARIANT_CPU_FLOOR_SECONDS
+    return Limits(cpu_seconds=cpu, wall_seconds=limits.wall_seconds)
+
+
 def restricted(engine: Engine, solver: Solver, bases: tuple[Base, ...]
             ) -> Program:
     """The solver's program with `impl_choice` holding `bases`, where the
@@ -2172,6 +2209,9 @@ class Determined:
     """Each group of determined parameters whose determinations read each
     other's stored values: every read inside the group, by parameter and
     the parameter it reads."""
+    cpu_seconds: float
+    """The CPU seconds of the runs it took, none where no parameter is
+    determined."""
 
 
 @dataclass(frozen=True)
@@ -2182,8 +2222,8 @@ class NoDetermine:
 type DetermineResult = Determined | NoDetermine | RunFailure
 
 
-def determine(engine: Engine, solver: Solver, limits: Limits
-              ) -> DetermineResult:
+def determine(engine: Engine, solver: Solver, limits: Limits,
+              measured: float | None = None) -> DetermineResult:
     """The Determine comp over the examples, diffed against the stored values
     (solver-file.md, under "Determination"). The parameters with an `Ident`
     column compare together modulo a renaming of ids (solver-file.md, under
@@ -2197,9 +2237,10 @@ def determine(engine: Engine, solver: Solver, limits: Limits
     parameters agree where some pose of one side gives the rows of every
     parameter of the block that the other side gives at some pose
     (`_same_pose_orbits`). A diff of such a parameter holds its placed rows.
-    The runs take `limits` once per example. A solver whose task has no task
-    file is a caller's error:
-    `ValueError`."""
+    The runs take `limits` once per example; a variant's runs, where the
+    solver's own determination spent `measured` CPU seconds, take
+    `variant_limits` of those. A solver whose task has no task file is a
+    caller's error: `ValueError`."""
     program = solver.program
     if not has_determine(solver):
         return NoDetermine()
@@ -2214,17 +2255,20 @@ def determine(engine: Engine, solver: Solver, limits: Limits
         program = engine.instantiate(program, DETERMINE, det_name)
     determined = [p for p in solver.params.parameters if p.determined]
     if params_inst is None or not determined:
-        return Determined((), (), ())
+        return Determined((), (), (), 0.0)
     outputs: list[RelationName] = []
     for p in determined:
         outputs += [RelationName((det_name,), p.name),
                     parameter(solver, p.name)]
     inputs: dict[RelationName, InputValue] = {INPUT: (),
                                               **example_inputs(task)}
-    got = engine.run(program, inputs, outputs,
-                     over_examples(limits, task))
+    each = over_examples(limits, task)
+    if measured is not None:
+        each = variant_limits(each, measured)
+    got = engine.run(program, inputs, outputs, each)
     if not isinstance(got, Tuples):
         return got
+    spent = got.cpu_seconds
     stored = {p.name: got.relations[parameter(solver, p.name)]
               for p in determined}
     derived = {p.name: got.relations[RelationName((det_name,), p.name)]
@@ -2241,10 +2285,10 @@ def determine(engine: Engine, solver: Solver, limits: Limits
                 placed, parameter(solver, chart),
                 derived[name])
         again = engine.run(placed, inputs, [
-            parameter(solver, n) for n in charts],
-            over_examples(limits, task))
+            parameter(solver, n) for n in charts], each)
         if not isinstance(again, Tuples):
             return again
+        spent += again.cpu_seconds
         for name in charts:
             derived[name] = again.relations[
                 parameter(solver, name)]
@@ -2268,7 +2312,7 @@ def determine(engine: Engine, solver: Solver, limits: Limits
             p.name in rigid))
     return Determined(tuple(diffs), tuple(reproduced),
                       cycles(solver, params_inst.name,
-                             [p.name for p in determined]))
+                             [p.name for p in determined]), spent)
 
 
 def stored_facts(engine: Engine, solver: Solver, p: Parameter) -> list[Row]:

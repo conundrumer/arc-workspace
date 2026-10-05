@@ -541,6 +541,13 @@ class _Sweeper:
     def program(self, fix: _Fix, rows: Sequence[Row]) -> Program:
         return fix.program(self.engine, self.solver, rows)
 
+    @property
+    def within(self) -> Profile | None:
+        """The stored program's train profile, whose runs limit a
+        variant's (`checker.variants.profile`); None where it has none."""
+        got = self.runs.train_profile
+        return got if isinstance(got, tuple) else None
+
     def run(self, fix: _Fix, rows: Sequence[Row], reference: Profile,
             by_case: frozenset[Case]) -> Profile | Fails | TimedOut:
         """The profile under `rows`, read until it differs from
@@ -553,7 +560,8 @@ class _Sweeper:
         return profile(
             self.engine, program, self.runs.cases, self.train, self.limits,
             held=False,
-            stop=lambda read: not by_case & self.passing(tuple(read)))
+            stop=lambda read: not by_case & self.passing(tuple(read)),
+            within=self.within)
 
     def passing(self, read: Profile) -> frozenset[Case]:
         """The cases that pass every pair the profile `read` reads, the
@@ -632,7 +640,8 @@ class _Sweeper:
                 | TimedOut:
             return marked_of(profile(
                 self.engine, with_program(self.solver, program),
-                self.runs.cases, self.train, self.limits, held=False))
+                self.runs.cases, self.train, self.limits, held=False,
+                within=self.within))
 
         base = marked_of(self.runs.train_profile)
         if isinstance(base, TimedOut):

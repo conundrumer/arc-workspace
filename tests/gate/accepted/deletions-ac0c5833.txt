@@ -41,5 +41,5 @@
     - The run says nothing about the pairs.
 
 - the runs below timed out:
-    - ac0c5833.dl:162: atom `jump(P, D, K, Q)` in `arm(Ky, Col, P, D, K, Q)`: train 0: the run of the solver's cases timed out after 20s, so no finding rests on their outcomes there
-    - ac0c5833.dl:370: atom `params.marker_color(Col)` in `parse.cand(E, Col)`: ac0c5833.dl: the determination run timed out after 80s, so no finding rests on its outcome
+    - ac0c5833.dl:162: atom `jump(P, D, K, Q)` in `arm(Ky, Col, P, D, K, Q)`: train 0: the run of the solver's cases timed out after 10 times the CPU time of the solver's own run, so no finding rests on their outcomes there
+    - ac0c5833.dl:370: atom `params.marker_color(Col)` in `parse.cand(E, Col)`: ac0c5833.dl: the determination run timed out after 2s, so no finding rests on its outcome
