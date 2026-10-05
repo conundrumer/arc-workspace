@@ -5,6 +5,7 @@
 - An issue is a doc line or a tool behavior that cost the pass time or tokens, or that made its output wrong; a problem in the task's own files is not one.
 - As each issue happens, note it in `.scratch/<task_id>/progress.md`, under a heading that is the name of this pass's report.
 - When the report's other sections are settled, file each issue noted under that heading, whether or not an earlier pass hit it, with the task id as `<source>` and your agent's name as `<agent>`.
+    - Give each issue the kind `interference` or `delay`.
     - Cite the target as a link as this rendering shows it, a step and the phrase quoted, or a command.
     - Write under `Effect` what the issue cost the pass, and for `interference`, what was wrong in the output and whether it still is.
 
