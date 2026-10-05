@@ -220,6 +220,7 @@
     - Run the solver against the Analyze file, as [Witness](#witness) says.
     - A departure holds when what it rests on is true and each case it adds or keeps meets every case condition, and each case it drops fails one in a `witness --every-case` run with that case restored.
     - Revert a departure that does not hold, make the solver follow the docs on each open item they decide, and run again each operation these changes and each applied fix touch.
+- **Checks.** Run the solver (`uv run python scripts/run_dl.py <task_id>`) and the audit (`uv run python scripts/run_dl.py audit <task_id>`), and handle what each reports as the operation from [Develop](#develop) through [Witness](#witness) that it belongs to says.
 - An overridden, reverted, or applied item, a `## Fixes elsewhere` item judged in the latest report, or an open item the docs decide, is not formed or judged again.
 
 ### Promote
