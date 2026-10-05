@@ -58,6 +58,7 @@ HELP = mctx("""
     - Calls that are pending at once share an interval in equal parts. While the model works, backgrounded work that runs goes to `model`.
     - A poll is a Bash call that runs `sleep` and none of the known commands, in a loop or not. A command the harness moves to the background on its timeout counts under its own label up to then, and under `bg LABEL` after.
     - One run prints its parts and its labels by time, with each label's share of the wall time and its calls, and for backgrounded work the time it ran from launch to its notification.
+    - One run of a subagent, completed or not, also prints each message from its launcher, as `--running` defines those messages: the time it arrived, its active time, which is the run's wall time less `idle` from that message to the next such message or to the run's last entry, and the budget in force for it, which is the budget `--running` gives from the messages up to it. A message whose active time is past its budget is marked `past budget`. A message with no budget in force prints none, and a run with an unknown message prints no active time and no budget.
     - More than one run prints, per agent type, the number of runs, the minimum, median, P-th percentile and maximum of wall time, the total, the median and P-th percentile of active time, which is wall time less `idle`, and each part's share of the total, then each type's labels by time, with the number of runs each appears in.
     - More than one run also prints the budget of each agent type, which is {factor} times a median wall time, printed with the runs it is taken over:
         - The window of a type that has an agent document under `prompts/agents/` is the runs whose first entry is at or after the last commit that changed that document, a document it includes or inlines, a lib file its rendered prompt holds, a script under `scripts/` its rendered prompt names, or a package under `src/` its rendered prompt runs with `-m`, and not a module such a script or package imports. `--since DATE`, an ISO date or datetime read in local time where it gives no offset, sets the window of every type to the runs whose first entry is at or after DATE. Where the window holds at least {window_runs} runs of the type, the median is taken over them.
@@ -209,16 +210,30 @@ class Run:
     def active(self) -> float:
         return self.wall - self.parts[Part.IDLE]
 
+    def active_from(self, i: int) -> float | None:
+        """The active time from the `i`-th message from the run's launcher
+        to the next one, or to the run's last entry. None where its start or
+        a message is unknown."""
+        if self.start is None or self.unknown:
+            return None
+        m = self.messages[i]
+        if i + 1 < len(self.messages):
+            nxt = self.messages[i + 1]
+            return (nxt.time - m.time) - (nxt.idle - m.idle)
+        end = self.start + self.wall
+        return (end - m.time) - (self.parts[Part.IDLE] - m.idle)
+
     def active_at(self, now: float) -> float | None:
         """The active time of a run whose turn has not ended, since the
         latest message from its launcher to `now`: the time since its last
         entry goes to a pending call or to the model, so it is active. None
         where its start or that message is unknown."""
-        if self.start is None or not self.messages or self.unknown:
+        if self.start is None or not self.messages:
             return None
-        m = self.messages[-1]
-        end = self.start + self.wall
-        return (end - m.time) - (self.parts[Part.IDLE] - m.idle) + max(0.0, now - end)
+        active = self.active_from(len(self.messages) - 1)
+        if active is None:
+            return None
+        return active + max(0.0, now - (self.start + self.wall))
 
     @property
     def low_wait(self) -> bool:
@@ -996,14 +1011,16 @@ def message_name(r: Run, m: Message) -> str:
     return mctx("the message at {time}").format(time=clock(m.time))
 
 
-def stated_budget(r: Run, undecided: list[str]) -> float | None:
-    """The budget in minutes that the messages from the launcher of `r`
-    state, as HELP gives it, or None."""
+def budgets_in_force(r: Run, undecided: list[str]) -> list[float | None]:
+    """The budget in minutes in force for each message from the launcher of
+    `r`, which the latest message up to it states, as HELP gives it, or
+    None."""
     for text in r.unknown:
         undecided.append(mctx("{run}: the sender of the message `{text}` is "
                               "unknown, so the run has no active time and no "
                               "budget").format(run=r.label, text=one_line(text)))
     budget: float | None = None
+    budgets: list[float | None] = []
     for m in r.messages:
         stated: set[float] = set()
         for line in budget_openings(m.text):
@@ -1022,7 +1039,13 @@ def stated_budget(r: Run, undecided: list[str]) -> float | None:
                 values=", ".join(f"{v:g}" for v in sorted(stated))))
         if stated:
             budget = next(iter(stated)) if len(stated) == 1 else None
-    return None if r.unknown else budget
+        budgets.append(None if r.unknown else budget)
+    return budgets
+
+
+def of_budget(budget: float | None) -> str:
+    """The text that follows an active time to give its budget in minutes."""
+    return f" of budget {minutes(budget * 60)}" if budget is not None else ""
 
 
 def print_span(m: Span, time_text: str) -> None:
@@ -1038,11 +1061,10 @@ def print_running(runs: list[tuple[str, Run]], now: float,
         active = (mctx("{active} since {time}").format(
             active=minutes(active_time), time=clock(r.messages[-1].time))
             if active_time is not None else "?")
-        budget = stated_budget(r, undecided)
-        of_budget = f" of budget {minutes(budget * 60)}" if budget is not None else ""
+        budget = next(reversed(budgets_in_force(r, undecided)), None)
         context = f"{r.context:,}" if r.context is not None else "?"
         print(f"{r.label} {r.agent_type}  parent {parent}  {since}  "
-              f"active {active}{of_budget}  "
+              f"active {active}{of_budget(budget)}  "
               f"context {context} tokens: {r.description}")
         print(f"  cwd: {r.cwd or '?'}")
         print(f"  said: {one_line(r.said, tail=True) if r.said is not None else '-'}")
@@ -1054,6 +1076,21 @@ def print_running(runs: list[tuple[str, Run]], now: float,
         print("  recent:")
         for m in r.spans[-RECENT_CALLS:]:
             print_span(m, minutes(m.end - m.start) if m.end is not None else "pending")
+
+
+def print_messages(r: Run, undecided: list[str]) -> None:
+    """Print each message from the launcher of `r` with its active time and
+    the budget in force for it, marking each active time past its budget."""
+    if r.agent_type == MAIN:
+        return
+    print("  messages from the launcher:")
+    budgets = budgets_in_force(r, undecided)
+    for i, (m, budget) in enumerate(zip(r.messages, budgets, strict=True)):
+        active = r.active_from(i)
+        past = ("  past budget" if active is not None and budget is not None
+                and active > budget * 60 else "")
+        active_text = minutes(active) if active is not None else "?"
+        print(f"    {clock(m.time)}  active {active_text}{of_budget(budget)}{past}")
 
 
 def iso_date(text: str) -> float:
@@ -1111,6 +1148,7 @@ def main(argv: list[str]) -> int:
             print(f"{r.label} {r.agent_type} {clock(r.start)}: {r.description}\n"
                   f"  wall {minutes(r.wall)}  {part_split(r.parts)}")
         if len(runs) == 1:
+            print_messages(runs[0], undecided)
             print_groups(runs[0].groups, args.top, runs[0].wall)
         else:
             print()
