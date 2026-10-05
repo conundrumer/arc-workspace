@@ -1,6 +1,0 @@
-`@witness` lines:
-  shared-line: borderline $Pack
-    relaxed: lane
-
-1 witness grid run
-witness: ok

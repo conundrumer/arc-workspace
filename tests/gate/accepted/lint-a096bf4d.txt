@@ -1,4 +1,0 @@
-
---- hints: 1 across 1 solver(s) ---
-  a096bf4d.dl:223: case section: by the program's rules, not by a run, `$EveryTile` read `out`, which the clause feeds, and the marker `// --- $KeepMarks ---` above it does not list them; see "Case markers" in [Cases](docs/handbook/solver-file.md#cases); an `@ignore` directive can keep the relation it fires on
-lint: ok, 1 hint

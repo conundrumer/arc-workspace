@@ -1,6 +1,0 @@
-41 relations read `in` and feed `out`
-
-3 relation(s) hold the same tuples on every train and test example:
-  separator: 2 tuple(s) — $DerivedSeparator, 0, $StoredSeparator, 0
-  border.item: 1 tuple(s) — $U, 0
-  border.value: 1 tuple(s) — $U, 0

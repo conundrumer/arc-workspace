@@ -1,2 +1,0 @@
-separator: unique = (0) ✓
-time limit 300s; elapsed Ns

@@ -167,12 +167,16 @@ RECORD_OUT = "record.json"
 
 STEMS = ("9c1e755f", "9b30e358", "9b2a60aa", "a61ba2ce", "a04b2602", "a096bf4d",
          "9b4c17c4", "a5f85a15")
-"""The stems every command runs on, but for those that read a grid input."""
+"""The stems `run` runs on, of which each other command that reads no grid
+input runs on those with the least accepted time whose runs together cover
+every line of `src/` and `scripts/` that its runs on all of them cover, but
+the lines of the run cache's pruning, which a run reaches by a random draw.
+`sweep` also runs on 9b30e358, whose swept parameters' values are symbols."""
 SWEEP_STEM = "a934301b"
-"""The stem `sweep` runs on besides `STEMS`, whose sweep marks the gaps of
-a parameter under a case marker."""
+"""The stem `sweep` runs on besides those of `STEMS`, whose sweep marks the
+gaps of a parameter under a case marker."""
 BRANCH_STEM = "abbfd121"
-"""The stem `audit` and `derive` run on besides `STEMS`, whose branches
+"""The stem `audit` and `derive` run on besides those of `STEMS`, whose branches
 render with their recorded witnesses."""
 RECORD_STEM = "a61ba2ce"
 """The stem the commands that read a grid input run on, whose witness file
@@ -303,12 +307,18 @@ def named_readers() -> list[tuple[str, str]]:
 
 COMMANDS: dict[str, GateCommand] = {c.name: c for c in (
     Command("run", "run", stems=(*STEMS, SWEEP_STEM, BRANCH_STEM, *LIB_STEMS)),
-    Command("lint", "lint"),
-    Command("witness", "witness"),
-    Command("witnesseverycase", "witness", extra=("--every-case",)),
-    Command("derive", "derive", stems=(*STEMS, BRANCH_STEM)),
-    Command("store", "store"),
-    Command("audit", "audit", stems=(*STEMS, BRANCH_STEM)),
+    Command("lint", "lint", stems=("9b30e358", "9b2a60aa", "a61ba2ce", "a04b2602", "9b4c17c4",
+                                   "a5f85a15")),
+    Command("witness", "witness", stems=("9c1e755f", "9b30e358", "9b2a60aa", "a61ba2ce",
+                                         "a04b2602", "a5f85a15")),
+    Command("witnesseverycase", "witness", extra=("--every-case",),
+            stems=("9c1e755f", "9b30e358", "9b2a60aa", "a61ba2ce", "a04b2602", "a5f85a15")),
+    Command("derive", "derive", stems=("9c1e755f", "9b30e358", "9b2a60aa", "a61ba2ce", "a04b2602",
+                                       "a096bf4d", "a5f85a15", BRANCH_STEM)),
+    Command("store", "store", stems=("9c1e755f", "9b30e358", "9b2a60aa", "a61ba2ce", "a04b2602",
+                                     "a096bf4d", "a5f85a15")),
+    Command("audit", "audit", stems=("9c1e755f", "9b30e358", "9b2a60aa", "a61ba2ce", "a04b2602",
+                                     "a096bf4d", "a5f85a15", BRANCH_STEM)),
     _record("recordnew", "touching-pieces", "a61ba2ce_edge-touch.txt", "--separates",
             "The edge-touch input under a new id."),
     _record("recordreplace", "two-color-l", "a61ba2ce_edge-touch.txt", "--separates", "test"),
@@ -316,17 +326,24 @@ COMMANDS: dict[str, GateCommand] = {c.name: c for c in (
             '{"corner_quadrant": [["DIAG_TL", "DIAG_BR"], ["DIAG_TR", "DIAG_BL"], '
             '["DIAG_BL", "DIAG_TR"], ["DIAG_BR", "DIAG_TL"]]}', "--separates",
             "The gap-outward input with the stored map sending each missing corner to the opposite quadrant, as the concept does."),
-    Command("sweep", "sweep", stems=(*STEMS, SWEEP_STEM)),
-    Command("determination-plan", "determination-plan"),
-    Command("deletions", "deletions"),
+    Command("sweep", "sweep", stems=("9c1e755f", "9b30e358", "9b2a60aa", "a61ba2ce", "a04b2602",
+                                     "a5f85a15", SWEEP_STEM)),
+    Command("determination-plan", "determination-plan",
+            stems=("9c1e755f", "9b30e358", "9b2a60aa", "a61ba2ce", "a04b2602", "9b4c17c4",
+                   "a5f85a15")),
+    Command("deletions", "deletions", stems=("9b30e358", "9b2a60aa", "a61ba2ce", "a04b2602",
+                                             "a096bf4d", "9b4c17c4", "a5f85a15")),
     Command("grid", "grid", (str(INPUTS / "a61ba2ce_two-color-l.txt"),), stems=(RECORD_STEM,)),
     Command("relation", "relation", ("out", str(INPUTS / "a61ba2ce_two-color-l.txt")),
             stems=(RECORD_STEM,)),
-    Command("drop-one", "drop-one"),
-    Command("derived-constant", "derived-constant"),
-    Command("expand", "expand"),
-    Command("size", "size"),
-    Command("keywords", "keywords"),
+    Command("drop-one", "drop-one", stems=("9c1e755f", "9b2a60aa", "a61ba2ce", "a04b2602",
+                                           "9b4c17c4", "a5f85a15")),
+    Command("derived-constant", "derived-constant",
+            stems=("9b2a60aa", "a61ba2ce", "a04b2602", "9b4c17c4", "a5f85a15")),
+    Command("expand", "expand", stems=("9b2a60aa", "a61ba2ce", "a04b2602", "9b4c17c4", "a5f85a15")),
+    Command("size", "size", stems=("9c1e755f", "9b2a60aa", "a61ba2ce", "a04b2602", "a5f85a15")),
+    Command("keywords", "keywords", stems=("9c1e755f", "9b2a60aa", "a61ba2ce", "a04b2602",
+                                           "a5f85a15")),
     ContextCommand("context", (("session",), ("codex",), *named_readers())),
 )}
 """Every gate command, in the order a pass runs them."""
