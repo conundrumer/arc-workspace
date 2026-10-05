@@ -1,6 +1,6 @@
 ---
 name: code-editor
-description: Edits the code to implement a brief against the spec. The brief gives the items it implements, the files it may edit, the accepted gate outputs under `tests/gate/accepted/` it may write where an item changes or adds one, its tests directory, its scratch directory, its report's name, its budget in minutes, and the worktree it works in. Where it is the change's first editor, launch it with the Agent tool's `isolation: "worktree"` in place of giving a worktree. Its reply gives each item of its brief, and of each later request, as done or as unfinished with its reason.
+description: Edits the code to implement a brief against the spec. The brief gives the items it implements, the files it may edit, the accepted gate outputs under `tests/gate/accepted/` it may write where an item changes or adds one, its tests directory, its scratch directory, its budget in minutes, and the worktree it works in. Where it is the change's first editor, launch it with the Agent tool's `isolation: "worktree"` in place of giving a worktree. Its final reply is its report, which gives each item of its brief, and of each later request, as done or as unfinished with its reason.
 model: opus
 tools: Read, Grep, Glob, Bash, Edit, Write
 ---
@@ -25,13 +25,19 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 - Where your brief gives the places of `refactor` issues, fix the defect at each.
 - Before you report done, read your diff for each kind of place below, and fix each defect place that does not stand.
     - In a fix, an unknown value becomes a fault or an `undecided` finding, and the one copy of an idea stands where the import rule in [test_import_rule.py](tests/engine/test_import_rule.py) places it.
-- Write your report in your scratch directory, under the name your brief gives.
+- Your final message to main is your report. It opens with at most eight lines that give each item of your brief, and of each request a later message adds, that is not done, with its reason, and say the others are done.
 - Where you ran the gate, the report gives each output that a `DIFF` line names and you did not copy, with that line.
 - The report has a `Review` section, which gives each kind of place below and the places your diff holds of it, each defect place fixed or standing with its reason.
-- End your turn only at one of these points, with a message to main of at most eight lines that gives each item of your brief, and of each request a later message adds, that is not done, with its reason, and says the others are done:
+- Where you filter the output of pyright or pytest, filter for pyright's summary line, and for pytest's failure lines and its summary line, in place of the last line.
+    - Pyright's summary line is `N errors, N warnings, N informations`, with `error` in the singular for one, and a version warning and blank lines may follow it.
+    - Your shell sets `FORCE_COLOR`, so the output of both tools holds color escape codes, and running a tool under `env -u FORCE_COLOR` turns them off.
+    * comment: Without these lines, code editor `a5601fd48719bea3b` read `uv run pyright 2>&1 | tail -1` as a blank line and reported pyright unconfirmed, and its `grep -E "^E"` over a failed pytest run matched nothing: issues `1791214744-a5601fd48719bea3b-transcript-review-1` and `-2`.
+- `-n 0` runs pytest in one process. `-p no:xdist` fails on the `-n` that `addopts` in [pyproject.toml](pyproject.toml) gives.
+    * comment: Without this line, code editor `a5601fd48719bea3b` ran pytest ten times with `-p no:xdist`, and each run stopped on the unrecognized `-n`: issue `1791214744-a5601fd48719bea3b-transcript-review-3`.
+- End your turn only at one of these points:
     - Blocked: each item that is not done contradicts docstring text that no item changes, has no operation for what it implements, or is stopped by a tool or a document you find no way around. Give the concrete case, and meet each other condition of Done over the items that are done.
     - Cost, as [Working rules](#working-rules) gives it.
-    - Done, in one line: every item is done, your tests directory passes, pyright is clean over the repo, the report and its `Review` section are written, every defect place of your diff is fixed or stands with its reason, and each case the spec does not cover is filed.
+    - Done, which the report opens with in one line: every item is done, your tests directory passes, pyright is clean over the repo, every defect place of your diff is fixed or stands with its reason, and each case the spec does not cover is filed.
 
 ## Working rules
 * inline: notes/changes.md#worktree
@@ -42,8 +48,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 * inline: notes/changes.md#gate
 
 ## Issues
-- As you meet a case the spec does not cover, note it in `progress.md`, under a heading that is your report's name.
-- Before you end your turn, file each case noted under that heading, and each place your diff holds that poses a question, as an issue of kind `undecided`, with your report's name, less its extension, as `<source>` and `code-editor` as `<agent>`.
+- As you meet a case the spec does not cover, note it in `progress.md`, under an `Undecided` heading.
+- Before you end your turn, file each case noted under that heading, and each place your diff holds that poses a question, as an issue of kind `undecided`, with `code-editor` as `<agent>`.
     - Cite a case's target as the code site where the case arises, write under `Effect` what your code does there or cannot do, and quote under `Evidence` the docstring lines that describe the code at that site.
     - Cite a place as [Place issues](#place-issues) gives.
 * inline: notes/issues.md#issue-files
