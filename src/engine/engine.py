@@ -332,7 +332,7 @@ class Classed:
 
 class Engine(Protocol):
     """The interface between a language and the rest. Every rewrite returns
-    a new program; no caller touches program text."""
+    a new program, and no caller reads the text a program renders to."""
 
     def parse(self, text: str, base_dir: Path) -> Program | ParseFailure:
         """The program `text` states, with each `#include` resolved against
