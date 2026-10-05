@@ -32,12 +32,12 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 - Launch an assignee with the tickets a code reviewer filed.
 
 ## Change tickets
-- At launch, move each ticket under `tickets/assigned/` whose holder is an operator your brief gives as ended, and whose log's last note does not open with `awaiting-user`, back to `tickets/open/`. A ticket's holder is the agent id that the note of its log's last line into `assigned` gives.
+- At launch, move each ticket under `tickets/assigned/` whose holder is an operator your brief gives as ended, and whose log's last note does not open with `awaiting-user`, back to `tickets/open/`. A ticket's holder is the agent id of the last `assigned` line that gives one, in its bracket or as the first word of its note, among its log's final run of `assigned` lines.
 - Where your brief or a message from main gives tickets as open, take each `change` under `tickets/open/` whose every `depends-on` ticket stands under `tickets/closed/`, in order of `priority`, highest first and 50 where it gives none, then of number, lowest first, and take again each time a change you took closes.
-    - Take a ticket by moving it to `tickets/assigned/` with `mv`, with your agent id as the note of its log line, and leave alone each ticket whose move fails.
+    - Take a ticket by moving it to `tickets/assigned/`, and leave alone each ticket whose move fails.
 - Run each change you take as [Changes](#changes) gives, with its Intent, Motivation and Scope as the change, and give its number in the brief of each agent that works on it.
 - Where [Changes](#changes) leaves a change unmerged for a decision that goes to the user, leave its ticket under `tickets/assigned/`, with a log line whose note opens with `awaiting-user` and gives the decision, the branch and the worktree.
-- Where main sends you a ticket whose log's last note opens with `awaiting-user`, take it by appending a log line with `assigned` as its status and your agent id as its note, continue the change in the worktree its `awaiting-user` line gives, and merge it.
+- Where main sends you a ticket whose log's last note opens with `awaiting-user`, take it by writing a log line with `assigned` as its status, continue the change in the worktree its `awaiting-user` line gives, and merge it.
 - Once a change is merged, move to `tickets/closed/` its ticket, each ticket its Motivation gives as settled that still stands under `tickets/assigned/`, and each `question` ticket filed on it, with `fixed`, the change's number and the hash `master` stands at after the merge as the note.
 - Before your final reply, move each other change you took that is not merged back to `tickets/open/`, with the reason, and the worktree and the branch where it has them, as the note.
 

@@ -1,6 +1,6 @@
 """File a ticket under the main tree's `tickets/`, from the main tree or any
-worktree of it, and print a ticket's path. `HELP`, which `--help` prints,
-says how an agent calls it."""
+worktree of it, print a ticket's path, and make a ticket's transitions and
+write its log lines. `HELP`, which `--help` prints, says how an agent calls it."""
 
 import os
 import re
@@ -8,7 +8,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -44,6 +44,15 @@ HELP = mctx("""
     - Each `<n>` in `depends-on` is the number of a ticket the track holds.
     - The command refuses, and writes nothing, where the text on stdin does not have the form above.
     - `uv run python scripts/file_ticket.py path <n>` prints the path of ticket `<n>`, in whichever status it stands. It takes the name of a ticket filed before tickets had numbers in place of `<n>` too.
+    - `uv run python scripts/file_ticket.py log <n> <status> <agent> --from <current status> [--id <agent id>] [<note>]` makes a transition of ticket `<n>` and writes its log line, or writes a log line that moves nothing, and prints the ticket's path:
+        - `<status>` and `<current status>` are each one of {statuses}. `<current status>` is the status you saw the ticket in.
+        - The command refuses, and neither moves nor writes, where the ticket stands in another status than `<current status>`, or where its file moves before the command moves it.
+        - Where `<status>` differs from `<current status>`, the command moves the ticket's file to the directory of `<status>`.
+        - The command appends `<time> <status> [<agent>]: <note>` to the file's `{log}`, with the time in UTC in the form `{time_form}`, and with `<agent> <agent id>` in the bracket where `--id` gives an agent id. A line with no `<note>` ends at the bracket.
+        - An operator's `assigned` line takes its agent id in `--id`.
+        - On a ticket that already stands in `assigned`, the command refuses an `assigned` line that gives `--id` unless that id holds the ticket or the log's last note opens with `{awaiting_user}`. The holder is the agent id of the last `assigned` line that gives one, in its bracket or as the first word of its note, among the log's final run of `assigned` lines. Where none of them gives one, the ticket has no holder.
+        - The note of a line that moves a ticket into `closed` opens with its resolution, one of {resolutions}.
+        - The command refuses, and neither moves nor writes, where `{log}` is not the file's last section or the note spans more than one line.
     """)
 
 LEGACY_HELP = mctx("""
@@ -75,6 +84,15 @@ class Status(StrEnum):
     OPEN = "open"
     ASSIGNED = "assigned"
     CLOSED = "closed"
+
+
+class Resolution(StrEnum):
+    """The words the note of a line into `closed` opens with."""
+    FIXED = "fixed"
+    DUPLICATE = "duplicate"
+    CANNOT_REPRODUCE = "cannot-reproduce"
+    WONTFIX = "wontfix"
+    INVALID = "invalid"
 
 
 IDS = "ids"
@@ -140,11 +158,15 @@ FILER_KINDS: dict[str, frozenset[Kind]] = {
 """The kinds each filing agent, by its name, may file."""
 
 
+def is_agent(agent: str, name: str) -> bool:
+    return agent == name or agent.startswith(f"{name}-")
+
+
 def filer_kinds(agent: str) -> frozenset[Kind]:
     """The kinds `agent` may file: those of its name, or of the longest
     name it extends with `-<suffix>`. Any other name is refused."""
     for name in sorted(FILER_KINDS, key=len, reverse=True):
-        if agent == name or agent.startswith(f"{name}-"):
+        if is_agent(agent, name):
             return FILER_KINDS[name]
     raise Refused(mctx("the document of `{agent}` gives it no ticket kinds: the agents that file are {names}").format(
         agent=agent, names=ticked(FILER_KINDS)))
@@ -180,6 +202,23 @@ FIELDS = {Kind.CHANGE: frozenset({"depends-on", "priority"})}
 """The front matter fields besides `kind` that each kind may give."""
 
 LOG = "## Log"
+
+TIME_FORM = "%Y-%m-%dT%H:%M:%SZ"
+"""The form of a log line's time, in UTC."""
+
+HEADING = re.compile(r"^## .*$", re.MULTILINE)
+
+RESOLUTION_WORD = re.compile(r"[a-z]+(?:-[a-z]+)*")
+
+OPERATOR = "operator"
+
+AWAITING_USER = "awaiting-user"
+"""The word an operator's note opens with on a ticket it leaves under
+`assigned` for a decision that goes to the user."""
+
+LOG_LINE = re.compile(rf"^.*? (?P<status>{'|'.join(Status)}) \[(?P<agent>[^\]\s]+)"
+                      rf"(?: (?P<id>{AGENT_ID.pattern}))?\](?:: (?P<note>.*))?$", re.MULTILINE)
+"""A log line, of whatever time form, as the command or a hand wrote it."""
 
 LEGACY_FORM = re.compile(r"---\nkind: (?P<kind>\S+)\n---\n# .+: .+\n\n## Effect\n(?:.*\n)*## Evidence(?:\n|$)")
 """The form `scripts/file_issue.py` takes, from agents launched before
@@ -247,8 +286,14 @@ def checked_kind(tickets: Path, agent: str, text: str) -> Kind:
 
 def logged(text: str, status: Status, agent: str) -> str:
     """`text` with a `## Log` that gives its filing time."""
-    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    return f"{text.rstrip(chr(10))}\n\n{LOG}\n{stamp} {status} [{agent}]: filed\n"
+    return f"{text.rstrip(chr(10))}\n\n{LOG}\n{log_line(status, agent, None, 'filed')}"
+
+
+def log_line(status: Status, agent: str, agent_id: str | None, note: str | None) -> str:
+    """A log line, stamped now."""
+    holder = f"{agent} {agent_id}" if agent_id else agent
+    line = f"{time.strftime(TIME_FORM, time.gmtime())} {status} [{holder}]"
+    return f"{line}: {note}\n" if note else f"{line}\n"
 
 
 def reserve(tickets: Path) -> int:
@@ -351,6 +396,108 @@ def ticket_path(tickets: Path, ref: str) -> Path:
     raise Refused(mctx("no ticket is `{ref}`").format(ref=ref))
 
 
+def check_line(status: Status, moves: bool, agent: str, agent_id: str | None,
+               note: str | None) -> None:
+    """Refuses a log line the ticket notes do not give."""
+    if not FIELD.fullmatch(agent):
+        raise Refused(mctx("`{agent}` is not kebab words").format(agent=agent))
+    if agent_id is not None and not AGENT_ID.fullmatch(agent_id):
+        raise Refused(mctx("`{id}` is no agent id").format(id=agent_id))
+    if agent_id is None and status is Status.ASSIGNED and is_agent(agent, OPERATOR):
+        raise Refused(mctx("an operator's `assigned` line takes its agent id in `--id`"))
+    if note is not None and (not note.strip() or "\n" in note or "\r" in note):
+        raise Refused(mctx("the note is not one line of text"))
+    if moves and status is Status.CLOSED:
+        word = RESOLUTION_WORD.match(note or "")
+        if not word or word.group() not in set(Resolution):
+            raise Refused(mctx("the note of a move into `closed` opens with one of {resolutions}").format(
+                resolutions=ticked(Resolution)))
+
+
+def log_lines(text: str) -> list[re.Match[str]]:
+    """The lines of `text`'s log that have the form of a log line."""
+    log = [m for m in HEADING.finditer(text) if m.group() == LOG]
+    return list(LOG_LINE.finditer(text, log[-1].end())) if log else []
+
+
+def holder(text: str) -> str | None:
+    """The agent id of the holder of the ticket `text`: the id of the last
+    `assigned` line that gives one, in its bracket or, in a line written
+    before the bracket held it, as its note's first word, among the lines
+    of the log's final run of `assigned` lines. None where none of them
+    gives one."""
+    for line in reversed(log_lines(text)):
+        if line["status"] != Status.ASSIGNED:
+            break
+        if line["id"]:
+            return line["id"]
+        first = (line["note"] or "").split(" ", 1)[0].rstrip(";,.:")
+        if AGENT_ID.fullmatch(first):
+            return first
+    return None
+
+
+def check_take(text: str, agent_id: str) -> None:
+    """Refuses an `assigned` line that gives `agent_id` on a ticket already
+    under `assigned`, unless `agent_id` holds it or the log's last note
+    opens with `awaiting-user`: such a line on a ticket another operator
+    took is the move that fails."""
+    lines = log_lines(text)
+    if lines and (lines[-1]["note"] or "").startswith(AWAITING_USER):
+        return
+    held = holder(text)
+    if held != agent_id:
+        raise Refused(mctx("the ticket stands under `assigned`, held by {holder}").format(
+            holder=f"`{held}`" if held else "no operator"))
+
+
+def status_of(word: str) -> Status:
+    try:
+        return Status(word)
+    except ValueError:
+        raise Refused(mctx("`{status}` is no status: the statuses are {statuses}").format(
+            status=word, statuses=ticked(Status)))
+
+
+def write_log(tickets: Path, ref: str, status: str, agent: str, source: str, agent_id: str | None,
+              note: str | None) -> Path:
+    """Moves ticket `ref` from `source`'s directory to `status`'s where
+    they differ, then appends a log line to it, and returns its path. The
+    move is a rename, and a call refuses where the ticket no longer stands
+    in `source`, so of two calls that move one file, the later one is
+    refused, as `mv` from `source`'s directory would be."""
+    to, origin = status_of(status), status_of(source)
+    path = ticket_path(tickets, ref)
+    if path.parent.name != origin:
+        raise Refused(mctx("ticket `{ref}` stands in `{actual}`, not `{origin}`").format(
+            ref=ref, actual=path.parent.name, origin=origin))
+    moves = origin != to
+    check_line(to, moves, agent, agent_id, note)
+    try:
+        text = path.read_text()
+    except FileNotFoundError:
+        raise Refused(mctx("{path} moved before this call could read it").format(path=path))
+    headings = HEADING.findall(text)
+    if not headings or headings[-1] != LOG:
+        raise Refused(mctx("`{log}` is not the last section of {path}").format(log=LOG, path=path))
+    if not moves and to is Status.ASSIGNED and agent_id:
+        check_take(text, agent_id)
+    if moves:
+        target = tickets / to / path.name
+        target.parent.mkdir(exist_ok=True)
+        try:
+            os.rename(path, target)
+        except FileNotFoundError:
+            raise Refused(mctx("{path} moved before this call could move it").format(path=path))
+        path = target
+    with path.open("a") as f:
+        # A line written by hand may lack its newline.
+        if not path.read_text().endswith("\n"):
+            f.write("\n")
+        f.write(log_line(to, agent, agent_id, note))
+    return path
+
+
 def file_legacy(tickets: Path, unix_time: str, source: str, agent: str, text: str) -> Path:
     """Writes an issue in the form `scripts/file_issue.py` takes as a
     ticket under `tickets/open/`, with the kind and section the track
@@ -411,11 +558,11 @@ def filed_in_main(filing: Filing, args: list[str]) -> int | None:
                           env=env).returncode
 
 
-def run(args: list[str], help_text: str, count: int, act: Callable[..., Path],
-        filing: Filing | None) -> int:
+def run(args: Sequence[str | None], help_text: str, count: int, act: Callable[..., Path],
+        filing: Filing | None, argv: list[str]) -> int:
     """Runs a command that takes `count` arguments, and stdin where `act`
     reads it, printing the path `act` returns. A `filing` runs in the main
-    tree's copy of its script."""
+    tree's copy of its script, given `argv`, the call's arguments."""
     if args and args[0] in ("--help", "-h"):
         print(help_text)
         return 0
@@ -423,7 +570,7 @@ def run(args: list[str], help_text: str, count: int, act: Callable[..., Path],
         print(help_text, file=sys.stderr)
         return 2
     try:
-        status = filed_in_main(filing, args) if filing else None
+        status = filed_in_main(filing, argv) if filing else None
         if status is not None:
             return status
         print(act(*args))
@@ -433,19 +580,39 @@ def run(args: list[str], help_text: str, count: int, act: Callable[..., Path],
     return 0
 
 
+def log_args(args: list[str]) -> list[str | None]:
+    """The arguments of `log` as `write_log` takes them after `tickets`,
+    with None for an agent id or a note the call does not give. Arguments
+    in another form come back as given, which `run` refuses by their
+    count."""
+    head, rest = args[:3], args[3:]
+    options: dict[str, str] = {}
+    while rest[:1] in (["--from"], ["--id"]) and len(rest) >= 2 and rest[0] not in options:
+        options[rest[0]] = rest[1]
+        rest = rest[2:]
+    if len(head) < 3 or "--from" not in options or len(rest) > 1 or rest[:1] in (["--from"], ["--id"]):
+        return list(args)
+    return [*head, options["--from"], options.get("--id"), rest[0] if rest else None]
+
+
 def main(args: list[str]) -> int:
     help_text = HELP.format(domains=ticked(Domain),
                             defect_sections=sections_example(DEFECT_SECTIONS),
-                            change_sections=sections_example(SECTIONS[Kind.CHANGE]))
+                            change_sections=sections_example(SECTIONS[Kind.CHANGE]),
+                            statuses=ticked(Status), log=LOG, time_form=TIME_FORM,
+                            resolutions=ticked(Resolution), awaiting_user=AWAITING_USER)
     if args[:1] == ["path"]:
-        return run(args[1:], help_text, 1, lambda ref: ticket_path(main_tickets(), ref), None)
+        return run(args[1:], help_text, 1, lambda ref: ticket_path(main_tickets(), ref), None, args)
+    if args[:1] == ["log"]:
+        return run(log_args(args[1:]), help_text, 6, lambda *a: write_log(main_tickets(), *a),
+                   TICKET_FILING, args)
     return run(args, help_text, 3, lambda domain, subject, agent: file_ticket(
-        main_tickets(), domain, subject, agent, sys.stdin.read()), TICKET_FILING)
+        main_tickets(), domain, subject, agent, sys.stdin.read()), TICKET_FILING, args)
 
 
 def legacy_main(args: list[str]) -> int:
     return run(args, LEGACY_HELP, 3, lambda unix_time, source, agent: file_legacy(
-        main_tickets(), unix_time, source, agent, sys.stdin.read()), LEGACY_FILING)
+        main_tickets(), unix_time, source, agent, sys.stdin.read()), LEGACY_FILING, args)
 
 
 if __name__ == "__main__":

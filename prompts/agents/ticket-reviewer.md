@@ -13,7 +13,7 @@ tools: Read, Grep, Glob, Bash, Edit
 - Main or an operator gives you each draft in your brief or by SendMessage, as an operator's launch brief, or as the number of a ticket under `tickets/draft/`. Your replies go to main.
 - Review each draft against the tree and this session's state as they are now, by [Checks](#checks), and against the instructions of the drafts you passed that have not yet run, with those the reply your brief gives lists.
 - Change no word of a draft.
-- Where a finding stands on a ticket, append to its log a line with `draft` as its status for each finding, and leave it under `tickets/draft/`. Where none stands, move it to `tickets/open/`.
+- Where a finding stands on a ticket, write a log line with `draft` as its status for each finding, and leave it under `tickets/draft/`. Where none stands, move it to `tickets/open/`.
 - Where no finding stands on a launch brief, reply that no finding stands.
 - Where the running listing of [Checks](#checks) gives your own context past about 300k tokens, its entry being the one whose call in flight is that listing command, end with your reply on the drafts you are reviewing, and give in it that you ended for your context and each instruction of the drafts you passed that has not yet run.
 

@@ -27,12 +27,10 @@
 ## tracking
 - `tickets/` is in the main tree, the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints, and in no other worktree.
 - The directories `tickets/draft/`, `tickets/open/`, `tickets/assigned/` and `tickets/closed/` are a ticket's statuses, and moving its file between them is its transition. `uv run python scripts/file_ticket.py path <n>` prints the path of ticket `<n>`.
-- After each transition, append a line to the file's log, in the form `<time> <status> [<agent>]: <note>`, with your agent's name as `<agent>`.
-    - The log is the file's last section, `## Log`.
-    - Lead the note of the line into `closed` with the resolution: `fixed`, `duplicate`, `cannot-reproduce`, `wontfix` or `invalid`.
-        - The resolution of a place that is judged and kept is `wontfix`, and the note gives the judgment.
+- Make each transition, and write each other line of a ticket's log, with `uv run python scripts/file_ticket.py log`, in the form its `--help` gives, with your agent's name as `<agent>`.
+- Close the ticket of a place that is judged and kept with `wontfix`, and give the judgment in the note after it.
 
 ## change-tickets
 - A `change` takes `change` as `<domain>`, and as `<subject>` the namespace its Scope touches most, or the one it creates, then two or three words, joined by `-`.
     - A namespace takes its existing name, with `-` in place of `_`: a package under `src/`, a script under `scripts/` without `.py`, `lib`, `solver-<task_id>`, `witnesses`, `handbook`, `agents`, `notes`, `tickets` or `tests`.
-- When you revise a ticket under `tickets/draft/`, append a log line with `draft` as its status and `revised` as its note.
+- When you revise a ticket under `tickets/draft/`, write a log line with `draft` as its status and `revised` as its note.
