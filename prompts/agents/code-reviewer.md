@@ -15,6 +15,7 @@ tools: Read, Grep, Glob, Bash, Write
     ```
     export GIT_INDEX_FILE=<scratch directory>/index && git read-tree HEAD && git add -A src scripts tests && git tag scan/<n> $(git commit-tree $(git write-tree) -p HEAD -m scan<n>)
     ```
+    - Where `git tag` refuses `scan/<n>`, run the call again with `<n>` plus one as this scan's number, until a call succeeds.
 - Read each baseline, this scan's included, through `git worktree add` on its tag, in your scratch directory, and remove each such worktree with `git worktree remove` when you are done.
 - Run no other git command that changes state.
 - Diff `src/`, `scripts/` and `tests/` of the earlier baseline against `scan/<n>`.
