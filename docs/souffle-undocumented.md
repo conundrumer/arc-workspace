@@ -11,13 +11,13 @@ Source: PR [#2282](https://github.com/souffle-lang/souffle/pull/2282) (merged 20
 ### Syntax
 
 ```
-result = @@<functor> <expr> : <init>, { <body> }
+result = @@<functor> <var> : <init>, { <body> }
 ```
 
 The `@@` (double-at) prefix distinguishes a user-defined aggregate from a normal user-defined functor call (`@functor(...)`).
 
 - `<functor>` is a previously declared `.functor`.
-- `<expr>` is the per-tuple expression accumulated into the result.
+- `<var>` is the per-tuple variable accumulated into the result. Any other expression there aborts Souffle 2.5 at compile time with an assertion in `SimplifyAggregateTargetExpression.cpp`, so bind the expression to a variable in a relation `<body>` reads.
 - `<init>` is the initial value of the accumulator.
 - `<body>` is a normal aggregate body — a conjunction of literals — that ranges over the tuples being folded.
 
@@ -26,13 +26,13 @@ Operationally:
 ```
 acc = init
 for each solution of body:
-    acc = functor(acc, expr)
+    acc = functor(acc, var)
 return acc
 ```
 
 ### Functor requirements
 
-The functor must be declared `stateful` and take exactly two arguments. The first argument is the accumulator; the second is the per-tuple expression. The return type and second-argument type need not match the accumulator type — only the first argument and the return have to share a type.
+The functor must be declared `stateful` and take exactly two arguments. The first argument is the accumulator; the second is the per-tuple variable. The return type and second-argument type need not match the accumulator type — only the first argument and the return have to share a type.
 
 ```
 .functor lub(acc:Interval, x:Interval):Interval stateful
