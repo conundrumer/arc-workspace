@@ -15,17 +15,20 @@ def command_args(argv: list[str], names: Collection[str]) -> list[str]:
 
 
 def main(argv: list[str]) -> int:
-    """Run the command `argv` names, as `command_args` reads it. The stamp
-    of the code the process loaded goes to stderr after the command, so
-    that what a command writes for a program stays as it is."""
+    """Run the command `argv` names, as `command_args` reads it, under the
+    shared hold of the heavy commands' lock. The stamp of the code the
+    process loaded goes to stderr after the command, so that what a command
+    writes for a program stays as it is."""
     from checker.render import commands
     from cli.common import stamp
     from cli.parser import parser
+    from engine import rwlock
 
     taken = stamp()
     top, names = parser()
     args = top.parse_args(command_args(argv, names))
-    code = args.handler(args)
+    with rwlock.held(rwlock.Hold.SHARED):
+        code = args.handler(args)
     sys.stdout.flush()
     print(commands.STAMP.format(stamp=taken), file=sys.stderr)
     return code

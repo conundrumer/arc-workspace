@@ -1,6 +1,8 @@
-"""The checkout a test runs the commands in, and the `data/upstream/`
-submodules a test of the upstream tasks reads."""
+"""The hold of the heavy commands' lock a run takes, the checkout a test
+runs the commands in, and the `data/upstream/` submodules a test of the
+upstream tasks reads."""
 
+import contextlib
 import fcntl
 import importlib.util
 import sys
@@ -9,11 +11,20 @@ from types import ModuleType
 
 import pytest
 
-from engine import checkout
+from engine import checkout, rwlock
 
 UPSTREAM_LOCK = "arc-upstream.lock"
 """The lock file, in the repository's common git directory, that one
 submodule setup at a time holds."""
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """The run holds the heavy commands' lock shared from its start to its
+    end. A worker of the run, and every command a test starts, runs under
+    that hold."""
+    hold = contextlib.ExitStack()
+    hold.enter_context(rwlock.held(rwlock.Hold.SHARED))
+    config.add_cleanup(hold.close)
 
 
 def script(name: str) -> ModuleType:

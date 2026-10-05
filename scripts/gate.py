@@ -34,18 +34,19 @@ outputs then depend on the load it runs under only where the load stretches
 it to `TIME_LIMIT`, or a sweep to its own time limit, and either gives a
 `DIFF` line.
 
-In a timed run, a cold command holds the lock file exclusively and a warm
-command holds it shared, so a cold command never shares the machine with
-another command of a timed run, of this checkout or of another worktree of
-the repository. An `--outputs-only` run takes no lock.
+A timed run holds the heavy commands' lock (`engine.rwlock`) exclusively,
+and an `--outputs-only` run holds it shared, so a timed run shares the
+machine with no other heavy command, of this checkout or of another
+worktree of the repository. Within a timed run, a cold command holds the
+gate's lock file exclusively and a warm command holds it shared, so a cold
+command never shares the machine with another command of the run.
 
 `--outputs-only` runs the cold pass alone, and compares its outputs alone:
 it prints `DIFF` lines, and no `SLOW` or `NOTIME` line, and writes no
-times to `new/`. A gate run shares the machine with whatever else runs on
-it, and its times measure that load as much as the change, so times are
-judged by one timed gate run on `master` after a batch of merges, with no
-other agent running. A `SLOW` line of that run is filed as a `delay` issue,
-and blocks no merge.
+times to `new/`. An `--outputs-only` run shares the machine with the other
+heavy commands, and its times measure that load as much as the change, so
+times are judged by one timed gate run on `master` after a batch of merges.
+A `SLOW` line of that run is filed as a `delay` issue, and blocks no merge.
 
 `--coverage` traces each cold command: it records the lines of each Python
 file under `src/` and `scripts/` the command runs, through coverage.py, and
@@ -128,7 +129,7 @@ from coverage.sysmon import SysMonitor
 
 from cli.common import WALL_LIMIT_ENV
 from controlled_markdown import mctx
-from engine import checkout
+from engine import checkout, rwlock
 from engine.memo import write_whole
 from handbook.context import CONTEXT_READERS, ArgumentForm
 from handbook.paths import DOCUMENTS_ENV
@@ -900,8 +901,12 @@ def main(argv: Sequence[str]) -> int:
         if gate.dir.exists():
             ap.error(f"{gate.dir} exists; give an empty out-dir")
         a.accepted.mkdir(parents=True, exist_ok=True)
-        print(f"load before: {load()}", flush=True)
-    lines = gate.run(cmds, keys)
+    with rwlock.held(rwlock.Hold.EXCLUSIVE if gate.timed else rwlock.Hold.SHARED):
+        if a.accept:
+            print(f"load before: {load()}", flush=True)
+        lines = gate.run(cmds, keys)
+        if a.accept:
+            print(f"load after: {load()}")
     for ln in lines:
         print(ln)
     counts = {k: sum(ln.kind is k for ln in lines) for k in gate.kinds()}
@@ -911,7 +916,6 @@ def main(argv: Sequence[str]) -> int:
         print(mctx("deps: the dependencies of {n} commands are written to {path}").format(
             n=len(keys), path=deps_file()))
     if a.accept:
-        print(f"load after: {load()}")
         times, outputs = gate.accept(a.replace)
         print(f"baseline: {times} accepted times written to {gate.times_file}, "
               f"and {outputs} new accepted outputs to {a.accepted}")
