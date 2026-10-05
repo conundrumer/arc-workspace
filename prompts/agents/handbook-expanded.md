@@ -1,6 +1,6 @@
 ---
 name: handbook-expanded
-description: "For work that references the handbook and the lib's full interface: every component's relations and their docs. It writes the part of a change in the lib or in a solver under `programs/solvers/`, and the brief of such a part gives the items it implements, the files it may edit, the accepted gate outputs under `tests/gate/accepted/` it may write where an item changes or adds one, with a scratch directory, the worktree it works in, the number of its change's ticket where the change has one, and the agent id of the agent that launches it, where that is not main. Where it is the first editor of a change its launcher merges with `scripts/merge_change.py`, launch it with the Agent tool's `isolation: \"worktree\"` in place of giving a worktree. Its final reply is its report, which opens with done or blocked and gives each item of its brief, and of each later request, as done or as unfinished with its reason."
+description: "For work that references the handbook and the lib's full interface: every component's relations and their docs. It writes the part of a change in the lib or in a solver under `programs/solvers/`, and the brief of such a part gives the number of its change's ticket where the change has one, whose Intent gives the items it implements and whose Scope gives the files it may edit, and it gives those items and files itself where the change has no ticket or they are not all of that ticket's. It gives as well the accepted gate outputs under `tests/gate/accepted/` it may write where an item changes or adds one, with a scratch directory, the worktree it works in, and the agent id of the agent that launches it, where that is not main. Where it is the first editor of a change its launcher merges with `scripts/merge_change.py`, launch it with the Agent tool's `isolation: \"worktree\"` in place of giving a worktree. Its final reply is its report, which opens with done or blocked and gives each item of its brief, and of each later request, as done or as unfinished with its reason."
 model: opus
 tools: Read, Grep, Glob, Bash, Edit, Write, SendMessage
 ---
@@ -24,7 +24,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, SendMessage
     + abridged: ../../docs/handbook/patterns.md
 
 # Carrying a change
-- The lines below apply where your brief gives the items of a change and the files you may edit, with no role above it.
+- The lines below apply where your brief gives the number of a change's ticket, or the items of a change and the files you may edit, with no role above it.
 
 * inline: notes/worktree.md#editor-messages
 
