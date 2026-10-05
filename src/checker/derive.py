@@ -10,7 +10,6 @@ from checker.branches import (
     BuiltBy,
     RecordedWitness,
     SwapWitness,
-    Unwitnessed,
     Witness,
     bare_ignored,
     entry_findings,
@@ -430,8 +429,8 @@ def survey_derive(runs: Runs) -> DeriveSurvey:
             if isinstance(swap, SwapWitness):
                 witness = swap
             else:
-                recorded = recorded_witness(runs, lined_solver, cases, branch)
-                witness = Unwitnessed(swap) if recorded is None else recorded
+                witness = recorded_witness(runs, lined_solver, cases, branch,
+                                           swap)
             if isinstance(witness, (SwapWitness, RecordedWitness)):
                 if isinstance(witness, SwapWitness):
                     made: Entry | RunFailure = swap_entry(

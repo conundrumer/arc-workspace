@@ -602,7 +602,7 @@ def derive_lines(solver: Solver, survey: object) -> list[str]:
                 other=case_name(solver, w.other)))
         else:
             lines.append("  " + mctx("no witness: {reason}").format(
-                reason=_no_witness_text(w)))
+                reason=_no_witness_text(solver, w)))
             lines.append("  " + _needs_witness(at_word(DirectiveWord.DERIVE), name))
         if d.line is not None:
             lines.append("  " + mctx("{line}: {directive}").format(
@@ -617,12 +617,19 @@ def derive_lines(solver: Solver, survey: object) -> list[str]:
     return lines
 
 
-def _no_witness_text(w: object) -> str:
+def _no_witness_text(solver: Solver, w: object) -> str:
     from checker.branches import FailedOn, NoWitness, Unwitnessed
 
     recorded = mctx("no input of the witness file shows the branch's model "
                     "defined and giving an output other than the output of "
                     "the stored value's model")
+    if isinstance(w, Unwitnessed) and w.pair is not None:
+        recorded = mctx(
+            "no input of the witness file shows the branch's model `{case}` "
+            "defined and giving an output other than `{other}`, the case "
+            "that differs from it by this branch alone").format(
+            case=case_name(solver, w.pair[0]),
+            other=case_name(solver, w.pair[1]))
     match w:
         case Unwitnessed(swap=NoWitness.NOT_ONE_COLOR):
             return mctx("the parameter is not one color, and ") + recorded

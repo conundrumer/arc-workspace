@@ -7,12 +7,12 @@ fill: RarestColor — each color whose cell count in every input is the lowest o
   add: // @derive RarestColor: <plausibility> <verdict>
   or:  // @ignore: derive RarestColor — <reason>
 fill: SharedColor — a color present in every input
-  no witness: the parameter is not one color, and no input of the witness file shows the branch's model defined and giving an output other than the output of the stored value's model
+  no witness: the parameter is not one color, and no input of the witness file shows the branch's model `$HiddenFill & $TieFirst & fill=SharedColor` defined and giving an output other than `$HiddenFill & $TieFirst`, the case that differs from it by this branch alone
   a `@derive` line needs a witness whose id is `fill=SharedColor`
   add: // @derive SharedColor: <plausibility> <verdict>
   or:  // @ignore: derive SharedColor — <reason>
 fill: VanishedColor — a color in every input and no train output
-  no witness: the parameter is not one color, and no input of the witness file shows the branch's model defined and giving an output other than the output of the stored value's model
+  no witness: the parameter is not one color, and no input of the witness file shows the branch's model `$HiddenFill & $TieFirst & fill=VanishedColor` defined and giving an output other than `$HiddenFill & $TieFirst`, the case that differs from it by this branch alone
   a `@derive` line needs a witness whose id is `fill=VanishedColor`
   add: // @derive VanishedColor: <plausibility> <verdict>
   or:  // @ignore: derive VanishedColor — <reason>

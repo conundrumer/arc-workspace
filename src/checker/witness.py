@@ -6,7 +6,7 @@ witness file is the evidence for (principles.md, under "Cases"), with what
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
-from checker.branches import groups_of, untaken_lines
+from checker.branches import groups_of, shows_apart, untaken_lines
 from checker.finding import (
     AtCase,
     AtEntry,
@@ -290,17 +290,17 @@ def _agree(inputs: Inputs, a: Case, b: Case) -> bool | None:
 
 
 def _subsumes(inputs: Inputs, a: Case, b: Case) -> bool:
-    """No input shows `a` defined and differing from `b`, and some input
-    shows `a` undefined where `b` is defined, so the two are not
-    equivalent there (principles.md, under "Equivalence and subsumption"). An
-    input with no result for either shows nothing, and then no subsumption is
-    found."""
+    """No input shows `a` defined and differing from `b` (`shows_apart`),
+    and some input shows `a` undefined where `b` is defined, so the two
+    are not equivalent there (principles.md, under "Equivalence and
+    subsumption"). An input with no result for either shows nothing, and
+    then no subsumption is found."""
     apart = False
     for got in inputs:
         x, y = got[a], got[b]
         if not is_result(x) or not is_result(y):
             return False
-        if _defined(x) and differ(x, y):
+        if shows_apart(x, y):
             return False
         if not _defined(x) and _defined(y):
             apart = True

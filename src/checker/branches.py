@@ -318,9 +318,18 @@ def diverges(runs: Runs, solver: Solver, cases: Sequence[Case],
         for o in (a, b):
             if not is_result(o):
                 failed = failed or o
-        if differ(a, b) and (not defined or isinstance(a, Grids)):
+        if shows_apart(a, b) if defined else differ(a, b):
             return case, other
     return failed
+
+
+def shows_apart(a: object, b: object) -> bool:
+    """A run shows `a` defined and differing from `b` (`differ`): what a
+    branch's witness needs of a case against its counterpart
+    (`witness_divergence`), and what a run shows of no case that `b`
+    subsumes (principles.md, under "Witnesses" and "Equivalence and
+    subsumption")."""
+    return isinstance(a, Grids) and differ(a, b)
 
 
 def witness_divergence(runs: Runs, solver: Solver, cases: Sequence[Case],
@@ -350,9 +359,12 @@ class RecordedWitness:
 class Unwitnessed:
     """No input the survey looks on witnesses the branch: why no color
     swap serves, or the swap run that failed, where no input of the
-    witness file serves either."""
+    witness file serves either; and the first case the survey looks with
+    (`witness_targets`), with its counterpart, which no input shows apart
+    (`shows_apart`), None where it looks with no case."""
 
     swap: NoWitness | FailedOn
+    pair: tuple[Case, Case] | None
 
 
 type Witness = SwapWitness | RecordedWitness | Unwitnessed
@@ -431,25 +443,27 @@ def swap_witness(runs: Runs, solver: Solver, cases: Sequence[Case],
 
 
 def recorded_witness(runs: Runs, solver: Solver, cases: Sequence[Case],
-                     branch: DeriveBranch | StoreBranch
-                     ) -> RecordedWitness | None:
+                     branch: DeriveBranch | StoreBranch,
+                     swap: NoWitness | FailedOn
+                     ) -> RecordedWitness | Unwitnessed:
     """The first input of the witness file, each at its entry's
     assignment, on which a case the survey looks with
     (`witness_targets`) gives the output a witness needs
     (`witness_divergence`, principles.md, under "Witnesses"): the
-    recorded inputs a survey looks on beside the color swaps. None
-    where none does; an entry whose `assign` names nothing is the fault
-    `fault_findings` reports, and is passed over."""
+    recorded inputs a survey looks on beside the color swaps, `swap`
+    saying why no color swap serves. `Unwitnessed` where none does; an
+    entry whose `assign` names nothing is the fault `fault_findings`
+    reports, and is passed over."""
     models = witness_targets(runs, solver, cases, branch)
     if not models:
-        return None
+        return Unwitnessed(swap, None)
     for e, assign in entry_assignments(runs.engine, runs.solver, runs.entries,
                                        runs.file_role):
         got = witness_divergence(runs, solver, models, branch, e.input,
                                  assign)
         if isinstance(got, tuple):
             return RecordedWitness(e, *got)
-    return None
+    return Unwitnessed(swap, (models[0], counterpart(models[0], branch)))
 
 
 def witness_entry(runs: Runs, solver: Solver, name: str, separates: str,

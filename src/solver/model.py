@@ -1661,10 +1661,14 @@ def dependence(engine: Engine, solver: Solver, bases: Sequence[Base | None]
     that hold that value there, whatever the base holds, and the units it
     reaches are read for the base with that value at that point
     (`_Cases.demand`); so `near_arm($Clear(), P, D) :- near_arm($Any(), P, D)`
-    reads the `$Any()` clauses for a base that takes `$Clear`. A read whose
-    case-typed place holds a wildcard, or a variable that no case variable of
-    the unit's head fills, is a read at every value, and every unit that heads
-    its relation is read through it (`_Cases.every_value`). A read of a
+    reads the `$Any()` clauses for a base that takes `$Clear`. A read is at
+    every value at each case-typed place where it holds a wildcard, or a
+    variable that no case variable of the unit's head fills: there, a unit
+    that heads its relation admits the base whatever term it holds. At the
+    read's other case-typed places, the base's value still bounds which units
+    the read reaches (`_Cases.bounded`), so `crowded(A, Id, Ch)` in a clause
+    whose head fills `Ch` and not `A` reaches only the clauses whose head can
+    hold the base's value in the column of `Ch`. A read of a
     relation of an instance of a lib component reads every unit that feeds the
     instance. A base's derivation depends on a parameter where it depends on a
     unit that reads it, and on a relation where it depends on a unit that reads
@@ -1690,10 +1694,11 @@ def dependence(engine: Engine, solver: Solver, bases: Sequence[Base | None]
     return _DEPENDENCE_ONCE.get(key, make)[1]
 
 
-type _Wanted = tuple[Base | None, bool]
+type _Wanted = tuple[Base | None, tuple[CasePlace, ...] | None]
 """What a read asks for in `dependence`'s walk: the base whose value the
-reached units hold, and whether the read is at every value, so that
-every feeder of its relation is read through it."""
+reached units hold, and the case-typed places of the read at which that
+value bounds them, where the read is at every value at some other place
+(`_Cases.bounded`); None where it is at every value at none."""
 
 
 def _dependence(engine: Engine, expanded: Program, solver: Solver,
@@ -1707,12 +1712,13 @@ def _dependence(engine: Engine, expanded: Program, solver: Solver,
     section_at = _sections(solver)
     listing = _listing(solver)
     marker_of: dict[UnitId, CaseMarker | None] = {}
-    terms_of: dict[Placed, list[tuple[str, Term]]] = {}
+    columns_of: dict[Placed, dict[int, tuple[str, Term]]] = {}
+    impl_of: dict[Placed, list[Term]] = {}
     for u in graph.units:
         assert u.span is not None, "a unit of the solver's own text"
         section = section_at(u.scope, u.span.first)
         for at in graph.paths_of(u):
-            _column, terms_of[(u, at)] = cases.checks(u, at)
+            columns_of[(u, at)], impl_of[(u, at)] = cases.checks(u, at)
         marker_of[u.id] = section.marker if isinstance(
             section, UnderMarker) and listing[section.marker.line] else None
     markers = sorted({m.line: m for m in marker_of.values()
@@ -1721,26 +1727,34 @@ def _dependence(engine: Engine, expanded: Program, solver: Solver,
     by_param: dict[str, list[Base | None]] = {}
     by_relation: dict[RelationName, list[Base | None]] = {}
     by_stranded: dict[tuple[UnitId, Node], list[Base | None]] = {}
-    held: dict[tuple[int, bool], _Wanted] = {}
+    held: dict[tuple[int, tuple[CasePlace, ...] | None], _Wanted] = {}
 
-    def wanted(base: Base | None, every: bool) -> _Wanted:
-        """What a read asks for, one object per base and kind, as
-        `Graph.read` keys a request by its identity."""
-        got = held.get((id(base), every))
+    def wanted(base: Base | None, bounded: tuple[CasePlace, ...] | None
+               ) -> _Wanted:
+        """What a read asks for, one object per base and bounded places,
+        as `Graph.read` keys a request by its identity."""
+        got = held.get((id(base), bounded))
         if got is None or got[0] is not base:
-            got = held[(id(base), every)] = (base, every)
+            got = held[(id(base), bounded)] = (base, bounded)
         return got
 
     def demand(placed: Placed, atom: Atom, asked: _Wanted) -> _Wanted:
         return wanted(cases.demand(placed, atom, asked[0]),
-                      cases.every_value(placed, atom))
+                      cases.bounded(placed, atom))
 
     for base in bases:
         listed = {m.line: marker_lists(solver, m, base) for m in markers}
 
         def admits(placed: Placed, wanted: _Wanted) -> bool:
-            return wanted[1] or all(cases.admits(placed, t, term, wanted[0])
-                                    for t, term in terms_of[placed])
+            base, bounded = wanted
+            columns = columns_of[placed]
+            return all(cases.admits(placed, CHOICE, term, (), base)
+                       for term in impl_of[placed]) and (
+                all(cases.admits(placed, t, term, (), base)
+                    for t, term in columns.values())
+                if bounded is None else
+                all(cases.admits(placed, t, columns[i][1], path, base)
+                    for i, path, t in bounded))
 
         def unlisted(placed: Placed,
                      listed: Mapping[int, bool] = listed) -> bool:
@@ -1748,7 +1762,7 @@ def _dependence(engine: Engine, expanded: Program, solver: Solver,
             return m is not None and not listed[m.line]
 
         units, nodes, names, stranded = graph.read(
-            admits, wanted(base, False), demand, unlisted)
+            admits, wanted(base, None), demand, unlisted)
         for key in stranded:
             by_stranded.setdefault(key, []).append(base)
         for uid in units:
@@ -1818,6 +1832,11 @@ class Node:
 
 type Placed = tuple[Unit, InstancePath]
 """A unit of the solver's own text at an instance path it runs at."""
+
+
+type CasePlace = tuple[int, tuple[int, ...], str]
+"""A case-typed place of an atom's terms (`_Cases`): its column, the
+record fields that lead to it in that column, and its type."""
 
 
 @dataclass(frozen=True)
@@ -2424,78 +2443,88 @@ class _Cases:
                                  str, Base], bool] = {}
         self._fixed: dict[tuple[UnitId, InstancePath, int], tuple[
             tuple[tuple[str, ...] | None, Base], ...]] = {}
+        self._bounded: dict[tuple[UnitId, InstancePath, int],
+                            tuple[CasePlace, ...] | None] = {}
         self._demanded: dict[tuple[tuple[UnitId, InstancePath, int], int],
                              tuple[Base, Base]] = {}
-        self._every: dict[tuple[UnitId, InstancePath, int], bool] = {}
         """`demand`'s result by read and by the identity of the base,
         which the entry holds alive, so that equal requests give one
         object."""
 
     def checks(self, unit: Unit, at: InstancePath
-               ) -> tuple[bool, list[tuple[str, Term]]]:
-        """Whether the unit's head has a case column, and each term where
-        the unit holds a case value, with its type: each term of its head
-        in a column of a case type, and each term of an `impl_choice` atom
-        of its body."""
-        out: list[tuple[str, Term]] = []
-        column = False
-        for t, term in self._typed(at, unit.head):
-            if t in self.types.types:
-                column = True
-                out.append((t, term))
-        for lit in unit.body or ():
-            if isinstance(lit, AtomLiteral) and not lit.negated \
-                    and lit.atom.relation == IMPL \
-                    and len(lit.atom.args) == 1:
-                out.append((CHOICE, lit.atom.args[0]))
-        return column, out
+               ) -> tuple[dict[int, tuple[str, Term]], list[Term]]:
+        """Each term where the unit holds a case value: each term of its
+        head in a column of a case type, by the column, with its type, and
+        each term of an `impl_choice` atom of its body, of type `Choice`."""
+        columns = {i: (t, term)
+                   for i, (t, term) in enumerate(self._typed(at, unit.head))
+                   if t in self.types.types}
+        impl = [lit.atom.args[0] for lit in unit.body or ()
+                if isinstance(lit, AtomLiteral) and not lit.negated
+                and lit.atom.relation == IMPL and len(lit.atom.args) == 1]
+        return columns, impl
 
-    def every_value(self, placed: Placed, atom: Atom) -> bool:
-        """Whether a body atom of the placed unit reads its relation at
-        every value: a case-typed place of its terms holds a wildcard, or
+    def bounded(self, placed: Placed, atom: Atom
+                ) -> tuple[CasePlace, ...] | None:
+        """The case-typed places at which the base's value bounds the units
+        a body atom of the placed unit reads, where the atom reads its
+        relation at every value at some other place; None where it reads
+        it at every value at none (`dependence`). The atom reads at every
+        value at a case-typed place of its terms that holds a wildcard, or
         a variable that no case variable of the unit's head fills, a
         variable an equality sets to a term with a filled variable being
-        filled too (`dependence`)."""
+        filled too. A read of a relation of an instance of a lib component
+        that is at every value at some place is bounded at none, since the
+        units that feed the instance head other relations than the one it
+        reads."""
         key = (placed[0].id, placed[1], id(atom))
-        got = self._every.get(key)
-        if got is None:
-            unit, at = placed
-            filled: set[str] = set()
-            for t, term in self._typed(at, unit.head):
-                if t in self.types.types:
-                    filled |= _variables(term)
-            eq = self._equalities(unit)
-            grown = True
-            while grown:
-                grown = False
-                for v, term in eq.items():
-                    if v in filled:
-                        more = _variables(term) - filled
-                    elif _variables(term) <= filled and not _wild(term):
-                        more = {v}
-                    else:
-                        more = set()
-                    if more:
-                        filled |= more
-                        grown = True
-            got = self._every[key] = any(
-                not isinstance(leaf, ConstructorTerm)
-                and not (isinstance(leaf, Variable) and leaf.name in filled)
-                for t, term in self._typed(at, atom)
-                for leaf in self._case_leaves(term, t))
+        if key in self._bounded:
+            return self._bounded[key]
+        unit, at = placed
+        filled: set[str] = set()
+        for t, term in self._typed(at, unit.head):
+            if t in self.types.types:
+                filled |= _variables(term)
+        eq = self._equalities(unit)
+        grown = True
+        while grown:
+            grown = False
+            for v, term in eq.items():
+                if v in filled:
+                    more = _variables(term) - filled
+                elif _variables(term) <= filled and not _wild(term):
+                    more = {v}
+                else:
+                    more = set()
+                if more:
+                    filled |= more
+                    grown = True
+        places = [((i, path, t), isinstance(leaf, ConstructorTerm) or (
+                      isinstance(leaf, Variable) and leaf.name in filled))
+                  for i, (column, term) in enumerate(self._typed(at, atom))
+                  for path, t, leaf in self._case_leaves(term, column, ())]
+        got: tuple[CasePlace, ...] | None = None
+        if not all(bounds for _place, bounds in places):
+            node = self.graph.resolve(at, atom.relation)
+            got = () if node is None or node.kind is not NodeKind.RELATION \
+                else tuple(place for place, bounds in places if bounds)
+        self._bounded[key] = got
         return got
 
-    def _case_leaves(self, term: Term, type: str) -> list[Term]:
-        """The terms at the case-typed places of a term of `type`, records
-        opened by their fields' types (`CaseTypes.term_fields`)."""
+    def _case_leaves(self, term: Term, type: str, path: tuple[int, ...]
+                     ) -> list[tuple[tuple[int, ...], str, Term]]:
+        """The terms at the case-typed places of a term of `type` that
+        stands at `path`, each with its own path and type, records opened
+        by their fields' types (`CaseTypes.term_fields`)."""
         if type not in self.types.types:
             return []
         fields = self.types.term_fields(type)
         if isinstance(term, RecordTerm) and fields is not None \
                 and len(fields) == len(term.args):
-            return [x for a, f in zip(term.args, fields, strict=True)
-                    for x in self._case_leaves(a, f)]
-        return [term]
+            return [x for j, (a, f) in enumerate(
+                        zip(term.args, fields, strict=True))
+                    for x in self._case_leaves(a, f, (*path, j))]
+        return [(path, type, term)]
 
     def _typed(self, at: InstancePath, atom: Atom
                ) -> list[tuple[str, Term]]:
@@ -2559,10 +2588,11 @@ class _Cases:
         return tuple(out)
 
     def admits(self, placed: Placed, type: str, term: Term,
-               base: Base | None) -> bool:
-        """Whether `base`'s value can stand in `term` of type `type`, the
-        variables of `term` read in the placed unit."""
-        return self._admits_in(placed, type, term, (), base, frozenset())
+               path: tuple[int, ...], base: Base | None) -> bool:
+        """Whether `base`'s value can stand at the place of type `type`
+        that the record fields `path` lead to in `term`, the variables of
+        `term` read in the placed unit."""
+        return self._admits_in(placed, type, term, path, base, frozenset())
 
     def _admits_in(self, placed: Placed, type: str, term: Term,
                    path: tuple[int, ...], base: Base | None,
