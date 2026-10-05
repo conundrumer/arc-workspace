@@ -300,12 +300,18 @@ def _report(checked: Sequence[Checked], timed: bool) -> list[ReportSection]:
     return out
 
 
+def any_missing(stems: list[str]) -> bool:
+    """Whether no solver file stands at one of `stems`, the first such in
+    sorted order given its line on stderr (`missing`)."""
+    return any(missing(s) for s in sorted(set(stems)))
+
+
 def cmd_all(hints: bool = True, timed: bool = False,
             stems: list[str] | None = None, as_json: bool = False) -> int:
     """The report over `stems`, or over every solver: the verdict lines,
     then each section, then the summary; with `as_json`, one JSON
     object."""
-    if stems is not None and any(missing(s) for s in sorted(set(stems))):
+    if stems is not None and any_missing(stems):
         return 2
     eng = engine()
     solvers = [load_solver(s, eng)
@@ -343,14 +349,15 @@ def _json(checked: Sequence[Checked], sections: Sequence[ReportSection]
 # `lint`
 
 
-def cmd_lint(arg: str | None, hints: bool = True) -> int:
-    """Lint only: no pair runs and no determination check. Each solver's
-    lines stand under one header per kind, then the pass line."""
-    if arg is not None and missing(arg):
+def cmd_lint(stems: list[str] | None, hints: bool = True) -> int:
+    """Lint only, over `stems`, or over every solver: no pair runs and no
+    determination check. Each solver's lines stand under one header per
+    kind, then the pass line."""
+    if stems is not None and any_missing(stems):
         return 2
     eng = engine()
     found: list[tuple[Solver, list[Finding]]] = []
-    for stem in [arg] if arg is not None else all_stems():
+    for stem in stems if stems is not None else all_stems():
         solver = load_solver(stem, eng)
         found.append((solver, lint_findings(
             solver, Runs(eng, solver, LIMITS), hints)))

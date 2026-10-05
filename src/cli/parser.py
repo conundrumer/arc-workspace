@@ -53,19 +53,15 @@ type Handler = Callable[[argparse.Namespace], int]
 
 def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
     """The parser, and the command names its subparsers take. Each
-    subparser carries, as `handler`, the function its command runs, and, as
-    `writes_footer`, whether the command writes the duration footer
-    (`engine.duration`): each command that runs a solver over its cases or
-    over many solvers does, and `relation` and `expand` do not."""
+    subparser carries, as `handler`, the function its command runs."""
     top = argparse.ArgumentParser(
         description=mctx("Run Souffle solvers and their checks."),
     )
     sub = top.add_subparsers(dest="cmd", required=True)
 
-    def command(name: str, handler: Handler, writes_footer: bool = True,
-                **kwargs: Any) -> argparse.ArgumentParser:
+    def command(name: str, handler: Handler, **kwargs: Any) -> argparse.ArgumentParser:
         p = sub.add_parser(name, **kwargs)
-        p.set_defaults(handler=handler, writes_footer=writes_footer)
+        p.set_defaults(handler=handler)
         return p
 
     run_p = command(
@@ -76,7 +72,7 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     lint = command(
-        "lint", lambda a: run.cmd_lint(a.stem, a.hints),
+        "lint", lambda a: run.cmd_lint(a.stems or None, a.hints),
         help=mctx("lint only, no pair runs"),
         description=mctx("A hint changes neither the verdict nor the exit "
                          "code."),
@@ -87,7 +83,9 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                                  "check; several give the report of a run "
                                  "over every solver, over those solvers; none "
                                  "runs every solver.").format(stem=STEM_HELP))
-    lint.add_argument("stem", nargs="?", help=STEM_OR_ALL_HELP)
+    lint.add_argument("stems", nargs="*",
+                      help=mctx("the solvers to lint, each {stem}; every "
+                                "solver when omitted").format(stem=STEM_HELP))
     for p in (run_p, lint):
         p.add_argument("--hints", action=argparse.BooleanOptionalAction,
                        default=True, help=mctx("include the hints section"))
@@ -150,7 +148,6 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
 
     relation = command(
         "relation", lambda a: record.cmd_relation(a.stem, a.args, a.assign),
-        writes_footer=False,
         help=mctx("run one solver on a grid you write, printing the rows of "
                   "each relation the arguments give"),
         description=mctx("Prints each relation's rows as Souffle writes "
@@ -411,7 +408,7 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                                          '"2026-09-08 14:30"'))
 
     command(
-        "expand", lambda a: survey.cmd_expand(a.stem), writes_footer=False,
+        "expand", lambda a: survey.cmd_expand(a.stem),
         help=mctx("the source after GRID and RIGID expansion, as Souffle "
                   "sees it"),
         description=mctx("Print the solver source with each GRID call and "

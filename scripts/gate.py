@@ -64,6 +64,18 @@ the other files of the checkout it opens to read and the directories it
 lists, through an audit hook. `<out-dir>/gate/cov/` then holds each
 command's coverage data, which `coverage combine` reads, and
 `<out-dir>/gate/deps/` each command's dependencies.
+With `--coverage`, each command given that runs on a stem list chosen from
+`STEMS` (`dropped_stems`), and runs on each of its own stems, also runs,
+traced, on each stem of `STEMS` it drops, at its place in the stem's
+sequence, its outputs, coverage data and dependencies written under
+`<out-dir>/gate/dropped/` and compared with none. Above the last line, a
+`coverage:` line then gives, for each such command, the lines of `src/` and
+`scripts/` that its runs on all of `STEMS` cover and its runs on its own
+stems do not, the run cache's pruning lines (`pruning_lines`) left out.
+A traced run that wrote no dependencies counts as covering no line, and a
+`coverage:` line names the command and each stem of such a run.
+One more `coverage:` line names each command that runs on only part of
+its own stems, as `--affected` may run it, and so gets none.
 
 `--record-deps` traces every command as `--coverage` does, and writes their
 dependencies, with the `HEAD` commit, to the dependency record
@@ -145,6 +157,7 @@ from pathlib import Path
 from typing import ClassVar, Literal
 
 import coverage
+import souffle.run
 from coverage.sysmon import SysMonitor
 
 from cli.common import WALL_LIMIT_ENV
@@ -261,6 +274,12 @@ class Command(Named):
     def exts(self) -> tuple[Ext, ...]:
         return tuple(e for e in EXTS if e != "wit.json" or self.takes_witness_file)
 
+    @property
+    def reads_input(self) -> bool:
+        """Whether one of the command's arguments is a grid input under
+        `INPUTS`."""
+        return any(Path(a).is_relative_to(INPUTS) for a in self.args)
+
     script = "run_dl.py"
     """The script under `scripts/` the command runs."""
 
@@ -360,6 +379,34 @@ COMMANDS: dict[str, GateCommand] = {c.name: c for c in (
 
 def keys_of(cmds: Iterable[GateCommand]) -> set[str]:
     return {c.key(s) for c in cmds for s in c.stems}
+
+
+def dropped_stems(cmd: GateCommand) -> tuple[str, ...]:
+    """The stems of `STEMS` that `cmd` does not run on, where it is a
+    command that reads no grid input and so runs on a stem list chosen
+    from `STEMS`; none for any other command."""
+    if not isinstance(cmd, Command) or cmd.reads_input:
+        return ()
+    return tuple(s for s in STEMS if s not in cmd.stems)
+
+
+def pruning_lines() -> dict[str, frozenset[int]]:
+    """The lines of the run cache's pruning, by their file from the
+    checkout's root: those of `souffle.run.prune` and of each call to it in
+    its module."""
+    path = Path(souffle.run.__file__)
+    rel = _in_checkout(path)
+    if rel is None:
+        raise RuntimeError(f"{path} stands outside the checkout")
+    name = souffle.run.prune.__name__
+    lines: set[int] = set()
+    for n in ast.walk(ast.parse(path.read_text())):
+        if (isinstance(n, ast.FunctionDef) and n.name == name) or (
+                isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == name):
+            lines.update(range(n.lineno, (n.end_lineno or n.lineno) + 1))
+    if not lines:
+        raise RuntimeError(f"{rel} holds no function {name}")
+    return {rel: frozenset(lines)}
 
 
 def stems_listing() -> str:
@@ -752,13 +799,17 @@ def affected(cmds: Sequence[GateCommand], base: str) -> tuple[set[str], str]:
 class Gate:
     """One gate run into `out/gate/`."""
 
-    def __init__(self, out: Path, accepted: Path, timed: bool, traced: bool) -> None:
+    def __init__(self, out: Path, accepted: Path, timed: bool, traced: bool,
+                 covers: bool) -> None:
         self.dir = out.resolve() / "gate"
         self.new = self.dir / "new"
         self.warm = self.new / "warm"
         self.wit = self.dir / "wit" / "cur"
         self.deps = self.dir / "deps"
         self.cov = self.dir / "cov"
+        self.dropped = self.dir / "dropped"
+        """The outputs, coverage data and dependencies of the runs on the
+        stems of `STEMS` the commands drop."""
         self.documents = self.dir / "documents"
         """The copy of `DOCUMENTS` the context commands render."""
         self.accepted = accepted
@@ -767,6 +818,9 @@ class Gate:
         `--outputs-only` clears it."""
         self.traced = traced
         """Whether each cold command runs under `trace`."""
+        self.covers = covers
+        """Whether each command also runs on the stems of `STEMS` it drops,
+        as `--coverage` gives."""
         self.times_file = times_file(accepted)
         self.times: dict[str, float] = (
             json.loads(self.times_file.read_text()) if self.times_file.exists() else {})
@@ -787,10 +841,11 @@ class Gate:
 
     def normalize(self, raw: str) -> str:
         """`raw` with the lines naming the runner and lib dropped, the out
-        directory written as `OUT_MARK`, and the times and the duration footer
+        directory written as `OUT_MARK`, whether absolute or from the
+        checkout's root, and the times and the duration footer
         dropped."""
         lines = [ln for ln in raw.splitlines(keepends=True) if _DROPPED not in ln]
-        text = "".join(lines).replace(self.shown, OUT_MARK)
+        text = "".join(lines).replace(f"{self.dir}/", OUT_MARK).replace(self.shown, OUT_MARK)
         text = FOOTER_RE.sub("", _ELAPSED_RE.sub(" ---", text))
         return _LIMIT_RE.sub(r"\1Ns", text)
 
@@ -810,20 +865,23 @@ class Gate:
             hold = self.hold(cold)
             yield stack.enter_context(rwlock.taken(hold, self.notices[hold]))
 
-    def run_one(self, cmd: GateCommand, stem: str, cold: bool, cache: Path) -> tuple[int, float]:
+    def run_one(self, cmd: GateCommand, stem: str, cold: bool, cache: Path,
+                dropped: bool = False) -> tuple[int, float]:
         """`cmd` on `stem` under the locks, its normalized output, witness
-        file and exit code written to the pass's directory; the exit code
-        and wall time."""
+        file and exit code written to the pass's directory, or to `dropped`
+        for a stem of `STEMS` it drops; the exit code and wall time."""
         wf = self.wit / f"{stem}.wit.json"
         if cmd.takes_witness_file:
             shutil.copyfile(frozen_witness(stem), wf)
         key = cmd.key(stem)
         script = [str(checkout.scripts() / cmd.script), *cmd.argv(stem, wf)]
+        deps, cov = ((self.dropped / "deps", self.dropped / "cov") if dropped
+                     else (self.deps, self.cov))
         if self.traced and cold:
-            script = [str(Path(__file__).resolve()), TRACE, str(self.deps / f"{key}.json"),
-                      str(self.cov / f".coverage.{key}"), *script]
+            script = [str(Path(__file__).resolve()), TRACE, str(deps / f"{key}.json"),
+                      str(cov / f".coverage.{key}"), *script]
         argv = ["uv", "run", "--project", str(checkout.ROOT), "python", *script]
-        base = (self.new if cold else self.warm) / key
+        base = (self.dropped if dropped else self.new if cold else self.warm) / key
         with self.locked(cold) as hold:
             start = time.time()
             proc = subprocess.Popen(argv, cwd=checkout.ROOT, env=self.env(cache, hold),
@@ -846,7 +904,8 @@ class Gate:
             shutil.copyfile(wf, f"{base}.wit.json")
         Path(f"{base}.rc").write_text(f"{rc}\n")
         with self.log_lock, open(self.dir / "times.txt", "a") as fh:
-            fh.write(f"{cmd.name} {stem} pass{1 if cold else 2} rc={rc} wall={wall}s\n")
+            fh.write(f"{cmd.name} {stem} {'dropped' if dropped else 'pass1' if cold else 'pass2'}"
+                     f" rc={rc} wall={wall}s\n")
         return rc, wall
 
     def compare(self, cmd: GateCommand, stem: str, wall: float) -> list[Line]:
@@ -874,9 +933,11 @@ class Gate:
         return [Line(LineKind.DIFF, cmd.name, stem, f"{ext} warm") for ext in cmd.exts
                 if not _same(self.new / f"{key}.{ext}", self.warm / f"{key}.{ext}")]
 
-    def stem_sequence(self, stem: str, cmds: Sequence[GateCommand]) -> list[Line]:
+    def stem_sequence(self, stem: str, cmds: Sequence[GateCommand],
+                      dropped: set[str]) -> list[Line]:
         """Both passes of `cmds` on `stem`, their lines written to the
-        stem's log."""
+        stem's log; a command whose key is in `dropped` runs in the cold
+        pass alone, and gives no line."""
         cache = self.dir / "cache" / stem
         shutil.rmtree(cache, ignore_errors=True)
         cache.mkdir(parents=True)
@@ -884,6 +945,10 @@ class Gate:
         try:
             for cold in (True, False) if self.timed else (True,):
                 for cmd in cmds:
+                    if cmd.key(stem) in dropped:
+                        if cold:
+                            self.run_one(cmd, stem, cold, cache, dropped=True)
+                        continue
                     _, wall = self.run_one(cmd, stem, cold, cache)
                     lines += (self.compare(cmd, stem, wall) if cold
                               else self.compare_warm(cmd, stem))
@@ -892,19 +957,74 @@ class Gate:
             shutil.rmtree(cache, ignore_errors=True)
         return lines
 
+    def dropped_keys(self, cmd: GateCommand, keys: set[str]) -> list[str]:
+        """The keys of the runs of `cmd` on the stems of `STEMS` it drops,
+        where the run covers them and `keys` holds the command's key on
+        each of its own stems."""
+        if not self.covers or not keys_of([cmd]) <= keys:
+            return []
+        return [cmd.key(s) for s in dropped_stems(cmd)]
+
+    def coverage_lines(self, cmds: Sequence[GateCommand], keys: set[str]) -> list[str]:
+        """The `coverage:` line of each command of `cmds` that ran on the
+        stems of `STEMS` it drops, after one naming the stems of its traced
+        runs that wrote no dependencies, then one naming the commands that ran on
+        only part of their own stems and so got none."""
+        if not self.covers:
+            return []
+        pruning = pruning_lines()
+        out: list[str] = []
+        for c in cmds:
+            dropped = self.dropped_keys(c, keys)
+            if not dropped:
+                continue
+            own_deps = {s: self.deps / f"{c.key(s)}.json" for s in c.stems}
+            dropped_deps = {s: self.dropped / "deps" / f"{c.key(s)}.json"
+                            for s in dropped_stems(c)}
+            no_data = [s for s, d in (*own_deps.items(), *dropped_deps.items())
+                       if not d.exists()]
+            if no_data:
+                out.append(mctx("coverage: {cmd}: its runs on {stems} gave no coverage data, "
+                                "and count as covering no line").format(
+                    cmd=c.name, stems=", ".join(no_data)))
+            own = _lines_of(own_deps.values())
+            every = _lines_of(dropped_deps.values())
+            gaps = {p: rest for p in sorted(every)
+                    if (rest := every[p] - own.get(p, frozenset()) - pruning.get(p, frozenset()))}
+            if not gaps:
+                out.append(mctx("coverage: {cmd}: its runs on its own stems cover every line "
+                                "its runs on all of STEMS cover").format(cmd=c.name))
+                continue
+            out.append(mctx("coverage: {cmd}: its runs on all of STEMS cover these lines, "
+                            "and its runs on its own stems do not: {lines}").format(
+                cmd=c.name, lines="; ".join(
+                    f"{p} {', '.join(str(a) if a == b else f'{a}-{b}' for a, b in _ranges(ns))}"
+                    for p, ns in gaps.items())))
+        partial = [c.name for c in cmds if dropped_stems(c)
+                   and keys_of([c]) & keys and not keys_of([c]) <= keys]
+        if partial:
+            out.append(mctx("coverage: {cmds}: no coverage line, since not every one of "
+                            "their own stems ran").format(cmds=", ".join(partial)))
+        return out
+
     def run(self, cmds: Sequence[GateCommand], keys: set[str]) -> list[Line]:
         for d in (self.new, self.warm, self.wit, self.deps, self.cov):
             d.mkdir(parents=True, exist_ok=True)
+        dropped = {k for c in cmds for k in self.dropped_keys(c, keys)}
+        if dropped:
+            for d in (self.dropped / "deps", self.dropped / "cov"):
+                d.mkdir(parents=True, exist_ok=True)
         shutil.rmtree(self.documents, ignore_errors=True)
         shutil.copytree(DOCUMENTS, self.documents)
-        stems = sorted({s for c in cmds for s in c.stems})
+        stems = sorted({s for c in cmds for s in (*c.stems, *dropped_stems(c))
+                        if c.key(s) in keys | dropped})
         lines: dict[str, list[Line]] = {}
         errors: list[BaseException] = []
 
         def sequence(stem: str) -> None:
             try:
                 lines[stem] = self.stem_sequence(
-                    stem, [c for c in cmds if stem in c.stems and c.key(stem) in keys])
+                    stem, [c for c in cmds if c.key(stem) in keys | dropped], dropped)
             except BaseException as e:
                 errors.append(e)
                 raise
@@ -917,8 +1037,14 @@ class Gate:
         if errors:
             raise RuntimeError(f"{len(errors)} stem sequences failed") from errors[0]
         out = [ln for s in stems for ln in lines[s]]
-        (self.dir / "log.txt").write_text("".join(f"{ln}\n" for ln in out))
+        (self.dir / "log.txt").write_text("")
+        self.log(out)
         return out
+
+    def log(self, lines: Iterable[object]) -> None:
+        """`lines` added to the run's log, one per line."""
+        with open(self.dir / "log.txt", "a") as fh:
+            fh.write("".join(f"{ln}\n" for ln in lines))
 
     def kinds(self) -> tuple[LineKind, ...]:
         """The kinds of line the run makes, which the last line counts."""
@@ -953,6 +1079,18 @@ def _writes(replace: bool, stands: bool) -> bool:
     """Whether `--accept` writes a time or output: where none of its name
     stands, and over one that stands with `--replace`."""
     return replace or not stands
+
+
+def _lines_of(paths: Iterable[Path]) -> dict[str, frozenset[int]]:
+    """The lines the traced runs whose dependencies `paths` hold ran
+    together, by their file; a path that does not stand adds no line."""
+    out: dict[str, frozenset[int]] = {}
+    for p in paths:
+        if not p.exists():
+            continue
+        for f, ns in Deps.from_json(json.loads(p.read_text())).lines.items():
+            out[f] = out.get(f, frozenset()) | ns
+    return out
 
 
 def _same(a: Path, b: Path) -> bool:
@@ -1008,7 +1146,8 @@ def run_gate(argv: Sequence[str]) -> int:
                              "dependency record")
     ap.add_argument("--coverage", action="store_true",
                     help="with --outputs-only, trace every command run, writing its coverage "
-                         "data and dependencies under the out-dir")
+                         "data and dependencies under the out-dir, and report the lines its "
+                         "runs on the stems of STEMS it drops alone cover")
     ap.add_argument("--accepted", type=Path, default=ACCEPTED,
                     help="the accepted directory (default: tests/gate/accepted)")
     ap.add_argument("--adopt-record", action="store_true",
@@ -1044,7 +1183,7 @@ def run_gate(argv: Sequence[str]) -> int:
         print(said, flush=True)
     records = a.affected is not None and keys == keys_of(COMMANDS.values()) and head_clean()
     gate = Gate(a.out, a.accepted.resolve(), timed=not a.outputs_only,
-                traced=a.record_deps or a.coverage or records)
+                traced=a.record_deps or a.coverage or records, covers=a.coverage)
     if a.accept:
         if gate.dir.exists():
             ap.error(f"{gate.dir} exists; give an empty out-dir")
@@ -1057,6 +1196,10 @@ def run_gate(argv: Sequence[str]) -> int:
         print(f"load after: {load()}")
     for ln in lines:
         print(ln)
+    covered = gate.coverage_lines(cmds, keys)
+    for ln in covered:
+        print(ln)
+    gate.log(covered)
     counts = {k: sum(ln.kind is k for ln in lines) for k in gate.kinds()}
     print("gate: " + ", ".join(f"{n} {k}" for k, n in counts.items()))
     record_to = deps_file() if a.record_deps else gate.dir / RECORD_OUT if records else None
