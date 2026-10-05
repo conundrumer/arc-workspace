@@ -25,13 +25,20 @@ inherits. A process that starts under a hold runs under it and takes no
 hold of its own, since a hold it waited for could wait behind a writer that
 waits for its parent. A process that starts under a shared hold and asks
 for the exclusive one is a fault (`NestedWriter`), since its parent's hold
-is one it would wait for."""
+is one it would wait for.
+
+Beside it stands the merge lock, `MERGE_FILE` in the same directory, which
+`scripts/merge_change.py` holds exclusively through `flock`, so that one
+merge at a time moves `master`. Its holder writes into the file what it
+merges, and a merge that has to wait says on stderr, once, that it waits
+and what the holder wrote. The kernel releases that hold too when its
+holder ends."""
 
 import contextlib
 import fcntl
 import os
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from enum import StrEnum
 from pathlib import Path
 from typing import IO
@@ -41,6 +48,7 @@ from engine import checkout
 
 LOCK_FILE = "arc-heavy.lock"
 PENDING_FILE = "arc-heavy.pending"
+MERGE_FILE = "arc-merge.lock"
 
 HOLD_ENV = "ARC_HEAVY_HOLD"
 """The environment variable that names the hold a process runs under."""
@@ -70,12 +78,12 @@ def inherited() -> Hold | None:
     return None if raw is None else Hold(raw)
 
 
-def _take(fh: IO[str], op: int, said: list[bool], wait: str) -> None:
+def _take(fh: IO[str], op: int, said: list[bool], wait: Callable[[], str]) -> None:
     try:
         fcntl.flock(fh, op | fcntl.LOCK_NB)
     except BlockingIOError:
         if not said[0]:
-            print(wait, file=sys.stderr, flush=True)
+            print(wait(), file=sys.stderr, flush=True)
             said[0] = True
         fcntl.flock(fh, op)
 
@@ -84,7 +92,11 @@ def _take(fh: IO[str], op: int, said: list[bool], wait: str) -> None:
 def lock_files(hold: Hold, directory: Path) -> Iterator[None]:
     """`hold` on the lock whose files stand in `directory`."""
     path = directory / LOCK_FILE
-    wait = WAITS[hold].format(path=path)
+    text = WAITS[hold].format(path=path)
+
+    def wait() -> str:
+        return text
+
     said = [False]
     with open(directory / PENDING_FILE, "a") as pending, open(path, "a") as lock:
         _take(pending, fcntl.LOCK_EX, said, wait)
@@ -114,3 +126,24 @@ def held(hold: Hold) -> Iterator[None]:
             yield
         finally:
             del os.environ[HOLD_ENV]
+
+
+MERGE_WAIT = mctx("Another merge holds {path}, so this merge waits until it is done. "
+                  "The holder wrote: {holder}")
+
+
+@contextlib.contextmanager
+def merge_lock(directory: Path, holder: str) -> Iterator[None]:
+    """The merge lock whose file stands in `directory`, held exclusively,
+    with `holder` written into the file while it lasts."""
+    path = directory / MERGE_FILE
+
+    def wait() -> str:
+        return MERGE_WAIT.format(path=path, holder=path.read_text().strip())
+
+    with open(path, "a") as fh:
+        _take(fh, fcntl.LOCK_EX, [False], wait)
+        fh.truncate(0)
+        fh.write(holder + "\n")
+        fh.flush()
+        yield

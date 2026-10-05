@@ -10,6 +10,15 @@ with every transport but the local one refused, so that the setup uses no
 network. It then stages the worktree's uncommitted changes and commits them
 on its branch with its message.
 
+One invocation at a time merges, across every worktree of the repository:
+once the commits are made, the script holds the merge lock
+(`engine.rwlock.merge_lock`) until the changes are landed or refused, and an
+invocation that finds it held waits for it. So each rebase is onto the
+`master` the merge before it left, and the checks run on the changes as
+they land. The kernel releases the lock when its holder ends, however it
+ends. The merge lock is taken before the shared hold of the heavy
+commands' lock that the gate takes for itself.
+
 The script then rebases the branches, in the order given, onto `master` as
 one stack: the first onto `master`, and each next one onto the one before
 it. It sets up the submodules of the top of the stack again, for the
@@ -73,7 +82,8 @@ A change refused before the stack is rebased is left out of the stack, and
 the others merge.
 
 It pushes nothing and moves no branch but `master` and the worktrees' own.
-It prints a line per step on stdout, and a refusal on stderr.
+It prints a line per step on stdout, and a refusal, and a wait for the
+merge lock with what its holder merges, on stderr.
 
 Exit status: 0 when every change is merged, 1 on a refusal of any change or
 a failed step, 2 when the call itself is malformed.
@@ -85,6 +95,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -92,7 +103,7 @@ from pathlib import Path
 
 from cli.common import SOURCES
 from controlled_markdown import mctx
-from engine import checkout
+from engine import checkout, rwlock
 
 MASTER = "master"
 """The branch a change merges into."""
@@ -528,8 +539,8 @@ def print_refusal(exc: Refused) -> None:
 
 def merge(pairs: Sequence[tuple[Path, str]]) -> bool:
     """Merge each worktree's change into `MASTER`, committed with its
-    message: as one stack, or, where the stack is refused, one at a time.
-    Whether every change merged."""
+    message, under the merge lock (`land_all`). Whether every change
+    merged."""
     try:
         mains = [checkout.main_worktree(w) for w, _ in pairs]
     except checkout.GitFailed as exc:
@@ -551,21 +562,35 @@ def merge(pairs: Sequence[tuple[Path, str]]) -> bool:
             except Refused as exc:
                 print_refusal(exc)
                 every = False
-        if len(changes) > 1:
-            try:
-                stack(main, changes)
-            except Refused as exc:
-                print(mctx("merge_change: the stack is refused, so the changes merge one "
-                           "at a time:") + "\n" + str(exc), flush=True)
-            else:
-                land(main, changes)
-                return every
-        for c in changes:
-            try:
-                merge_alone(main, c)
-            except Refused as exc:
-                print_refusal(exc)
-                every = False
+        if not changes:
+            return every
+        holder = mctx("pid {pid}, since {since}, merging {branches}").format(
+            pid=os.getpid(), since=time.strftime("%H:%M:%S"),
+            branches=", ".join(c.branch for c in changes))
+        with rwlock.merge_lock(checkout.git_common_dir(main), holder):
+            print("merge_change: holding the merge lock", flush=True)
+            return land_all(main, changes) and every
+
+
+def land_all(main: Path, changes: Sequence[Change]) -> bool:
+    """Merge the committed `changes` into `MASTER`: as one stack, or, where
+    the stack is refused, one at a time. Whether every change merged."""
+    if len(changes) > 1:
+        try:
+            stack(main, changes)
+        except Refused as exc:
+            print(mctx("merge_change: the stack is refused, so the changes merge one "
+                       "at a time:") + "\n" + str(exc), flush=True)
+        else:
+            land(main, changes)
+            return True
+    every = True
+    for c in changes:
+        try:
+            merge_alone(main, c)
+        except Refused as exc:
+            print_refusal(exc)
+            every = False
     return every
 
 
