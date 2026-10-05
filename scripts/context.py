@@ -7,6 +7,8 @@ import sys
 
 from controlled_markdown import mctx
 from handbook.context import (
+    context_at,
+    context_diff,
     context_text,
     contexts_text,
     agent_paths,
@@ -33,6 +35,8 @@ HELP = mctx("""
         uv run python scripts/context.py workflow <name>  # print every role, as JSON
         uv run python scripts/context.py contexts         # list the readers
         uv run python scripts/context.py context <reader> [args]  # one reader's context
+        uv run python scripts/context.py context --at <commit> <reader> [args]    # that context at a commit
+        uv run python scripts/context.py context --diff <commit> <reader> [args]  # its diff since a commit
         ```
     - With no argument, the command prints the handbook, the passes a session runs, and the lib. That form and `--write` also write the lib's interface files: the `.md` beside each lib source, which the handbook's lib index points to.
     - `--write` first checks the lib's sources, prints what the checks find and exits 1 when they find anything. Otherwise it writes the files below, which git does not track. A session reads them only when they were written before it started.
@@ -49,7 +53,11 @@ HELP = mctx("""
     - `workflow <name>` prints, as JSON, the text of every role under `prompts/roles/`, from which a run of that workflow takes the ones it uses. A name with no script under `.claude/workflows/` is an error.
     - `contexts` lists each reader the `context` command knows, with the argument it takes and that argument's values.
     - `context <reader> [args]` prints that reader's context, each part under a `==== <what follows> ====` line.
+    - `context --at <commit> <reader> [args]` prints that context as the commit's tree renders it, with the commit's own code, and `context --diff <commit> <reader> [args]` prints the unified diff from that render to the one of the worktree. Neither changes the worktree: git writes the commit's tree into a temporary directory, and the render runs there.
     """)
+
+# The forms of the `context` command that render at a commit.
+AT_COMMIT = {"--at": context_at, "--diff": context_diff}
 
 # A print form run under `head` ends when the reader closes the pipe.
 signal.signal(signal.SIGPIPE, signal.SIG_DFL)
@@ -76,12 +84,17 @@ if __name__ == "__main__":
         print(json.dumps(workflow_bundle(args[1])))
     elif args == ["contexts"]:
         print(contexts_text(), end="")
+    elif args[:1] == ["context"] and args[1:2] and args[1] in AT_COMMIT:
+        if len(args) < 4:
+            sys.exit(f"usage: {sys.argv[0]} context {args[1]} <commit> <reader> [args]")
+        print(AT_COMMIT[args[1]](args[2], args[3], args[4:]), end="")
     elif args and args[0] == "context":
         print(context_text(args[1] if args[1:] else "", args[2:]), end="")
     elif args:
         sys.exit(f"usage: {sys.argv[0]} "
                  f"[--help | --write | role <name> | section <where> "
-                 f"| workflow <name> | contexts | context <reader> [args]]")
+                 f"| workflow <name> | contexts "
+                 f"| context [--at <commit> | --diff <commit>] <reader> [args]]")
     else:
         write_interfaces()
         print(session_text(), end="")

@@ -24,12 +24,13 @@ GRID_HELP = mctx("Grid format: one line per row, one digit 0-9 per cell. "
                  "`[` is read as JSON.")
 
 STEM_HELP = mctx("a task id, or the path to a solver file whose name starts "
-                 "with the task id")
+                 "with the task id; a solver file anywhere runs with the "
+                 "lib, as a solver does")
 
 ASSIGN_HELP = mctx("an `assign` object, in the witness file's shape")
 
-STEM_OR_ALL_HELP = mctx("a task id, or the path to a solver file whose name "
-                        "starts with the task id; every solver when omitted")
+STEM_OR_ALL_HELP = mctx("{stem}; every solver when omitted").format(
+    stem=STEM_HELP)
 
 RUN_HELP = mctx("""
     - To profile one grid by hand, write a file beside the solvers, so that `#include "../lib.dl"` resolves, and link the functor library that the lib's relations call:
@@ -78,12 +79,11 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                          "code."),
     )
     run_p.add_argument("stems", nargs="*",
-                       help=mctx("the solvers to run, each a stem or a path to "
-                                 "a solver file whose name starts with the task "
-                                 "id. One solver runs its pairs, lint and "
-                                 "determination check; several give the report "
-                                 "of a run over every solver, over those "
-                                 "solvers; none runs every solver."))
+                       help=mctx("the solvers to run, each {stem}. One solver "
+                                 "runs its pairs, lint and determination "
+                                 "check; several give the report of a run "
+                                 "over every solver, over those solvers; none "
+                                 "runs every solver.").format(stem=STEM_HELP))
     lint.add_argument("stem", nargs="?", help=STEM_OR_ALL_HELP)
     for p in (run_p, lint):
         p.add_argument("--hints", action=argparse.BooleanOptionalAction,
@@ -151,7 +151,8 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                          "attribute names. A column of type `Choice` holds "
                          "each case by its shortest name. The last argument "
                          "is the grid file when it is `-` or the path of a "
-                         "file; otherwise the grid is read from stdin."),
+                         "file; otherwise the grid is read from stdin. The "
+                         "command writes nothing but the run cache."),
         epilog=GRID_HELP,
     )
     relation.add_argument("stem", help=STEM_HELP)

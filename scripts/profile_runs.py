@@ -20,6 +20,7 @@ from handbook.paths import console_importable
 
 console_importable()
 
+from cli import command_args  # noqa: E402
 from cli.parser import parser as run_dl_parser  # noqa: E402
 from quota import epoch  # noqa: E402
 from solver_console import config  # noqa: E402
@@ -32,12 +33,12 @@ HELP = mctx("""
     - An ID is an agent id, a session id, or the path of a `.jsonl` transcript. A session brings its main transcript, as type `main`, and each of its subagents' transcripts. Each transcript is a run.
     - A run's wall time, from its first entry to its last, is cut at each entry's time, and each interval goes to one part:
         - `tools`: a tool call is pending. A Bash call is labelled by the known commands it runs, joined by ` + `: `gate`, `merge_change.py`, `materialize.py`, `pytest`, `pyright`, and `run_dl.py` with its subcommand. A Bash call that runs none is labelled by the first program it runs past setup, and any other call by its tool.
-        - `waits`: a foreground Agent, Monitor or TaskOutput call or a poll loop is pending, or the turn has ended while an agent or command the run backgrounded is running. These are labelled `agent TYPE`, `poll` and `bg LABEL`.
+        - `waits`: a foreground Agent, Monitor or TaskOutput call or a poll is pending, or the turn has ended while an agent or command the run backgrounded is running. These are labelled `agent TYPE`, `poll` and `bg LABEL`.
         - `model`: no call is pending and the turn has not ended.
         - `idle`: the turn has ended and nothing the run launched is running, so the run waits on the user or on a message.
     - A turn starts at a message the model answers, so a local command such as `/compact` starts none. It ends at the model's last entry, or at the result of a call that ends it, such as SubagentHandback.
     - Calls that are pending at once share an interval in equal parts. While the model works, backgrounded work that runs goes to `model`.
-    - A poll loop is a Bash loop that runs `sleep`. A command the harness moves to the background on its timeout counts under its own label up to then, and under `bg LABEL` after.
+    - A poll is a Bash call that runs `sleep` and none of the known commands, in a loop or not. A command the harness moves to the background on its timeout counts under its own label up to then, and under `bg LABEL` after.
     - One run prints its parts and its labels by time, with each label's share of the wall time and its calls, and for backgrounded work the time it ran from launch to its notification.
     - More than one run prints, per agent type, the number of runs, the minimum, median, P-th percentile and maximum of wall time, the total, the median and P-th percentile of active time, which is wall time less `idle`, and each part's share of the total, then each type's labels by time, with the number of runs each appears in.
     - A run whose agent type is unknown is refused, and so is an ID that names transcripts that differ. A call whose agent type is unknown is labelled `agent ?`, and a Bash call with no command is labelled `shell`; an `undecided` line on stderr names each.
@@ -71,7 +72,6 @@ WRAPPER_OPTIONS = {"--env-file", "--with", "--python", "-p", "--project",
                    "-s", "-k"}
 OPENERS = {"do", "then", "else", "elif", "if", "while", "until", "!", "{", "("}
 CLOSERS = {"for", "case", "done", "fi", "esac", "}"}
-LOOPS = {"while", "until", "for"}
 POLL = "poll"
 # Ways a Bash result says the harness, not the call, moved it to the
 # background after it had run in the foreground.
@@ -293,10 +293,10 @@ def split_words(seg: str) -> list[str]:
         return [w.strip("'\"") for w in seg.split()]
 
 
-def simple_commands(cmd: str) -> Iterator[tuple[str | None, list[str]]]:
-    """Each simple command of a Bash command line as (keyword, words): the
-    loop keyword that opens it or None, and its words, with the values of
-    the shell variables set before it put in place of their names."""
+def simple_commands(cmd: str) -> Iterator[list[str]]:
+    """The words of each simple command of a Bash command line, past the
+    keywords that open it, with the values of the shell variables set
+    before it put in place of their names."""
     cmd = REDIRECT.sub(" ", HEREDOC.sub(" ", cmd)).replace("\\\n", " ")
     values: dict[str, str] = {}
 
@@ -306,12 +306,8 @@ def simple_commands(cmd: str) -> Iterator[tuple[str | None, list[str]]]:
 
     for seg in shell_segments(cmd):
         words = split_words(seg)
-        keyword = None
         while words and words[0] in OPENERS:
-            keyword = keyword or (words[0] if words[0] in LOOPS else None)
             words.pop(0)
-        if words and words[0] in LOOPS:
-            keyword = words[0]
         if words and words[0] == "export":
             words.pop(0)
         sets = [ASSIGNMENT.match(w) for w in words]
@@ -320,7 +316,7 @@ def simple_commands(cmd: str) -> Iterator[tuple[str | None, list[str]]]:
                 if m:
                     values[m.group(1)] = expand(m.group(2))
             continue
-        yield keyword, [expand(w) for w in words]
+        yield [expand(w) for w in words]
 
 
 @cache
@@ -329,19 +325,20 @@ def run_dl_commands() -> frozenset[str]:
 
 
 def run_dl_command(args: list[str]) -> str:
-    return args[0] if args and args[0] in run_dl_commands() else "run"
+    """The command a run of `run_dl.py` with the arguments `args` runs, or
+    the help flag it gives."""
+    return command_args(args, run_dl_commands())[0]
 
 
 def command_label(cmd: str) -> str:
     """The known commands a Bash command runs, joined by " + ", or else
-    `poll` for a loop that runs sleep, or else the first program it runs
+    `poll` for one that runs sleep, or else the first program it runs
     past setup, or else the first program it runs."""
     known: list[str] = []
     first: str | None = None
     setup: str | None = None
-    looped = slept = False
-    for keyword, words in simple_commands(cmd):
-        looped = looped or keyword is not None
+    slept = False
+    for words in simple_commands(cmd):
         if not words or words[0] in CLOSERS:
             continue
         prog, rest = segment_program(words)
@@ -357,7 +354,7 @@ def command_label(cmd: str) -> str:
             first = first or prog
     if known:
         return " + ".join(known)
-    if looped and slept:
+    if slept:
         return POLL
     return first or setup or "shell"
 

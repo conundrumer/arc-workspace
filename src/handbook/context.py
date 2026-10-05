@@ -15,8 +15,15 @@ all. Read those documents for what each agent gets.
 
 from __future__ import annotations
 
+import difflib
+import io
 import json
+import os
 import re
+import subprocess
+import sys
+import tarfile
+import tempfile
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -1357,3 +1364,41 @@ def context_text(reader: str, args: list[str]) -> str:
     if not form and args:
         raise SystemExit(f"usage: context {reader}")
     return known.context(args)
+
+
+CONTEXT_SCRIPT = (checkout.scripts() / "context.py").relative_to(checkout.ROOT)
+"""The command that prints a reader's context, from a checkout's root."""
+
+
+def context_at(commit: str, reader: str, args: list[str]) -> str:
+    """One reader's whole context as the tree of `commit` renders it, with
+    that tree's own code. The tree is written to a temporary directory, so
+    that the checkout stays as it is."""
+    archived = subprocess.run(["git", "archive", "--format=tar", commit],
+                              cwd=REPO_ROOT, capture_output=True)
+    if archived.returncode != 0:
+        raise SystemExit(archived.stderr.decode().strip())
+    with tempfile.TemporaryDirectory() as tmp:
+        tree = Path(tmp)
+        with tarfile.open(fileobj=io.BytesIO(archived.stdout)) as tar:
+            tar.extractall(tree, filter="data")
+        paths = [str(tree / "src"), os.environ.get("PYTHONPATH", "")]
+        env = {**os.environ, "PYTHONPATH": os.pathsep.join(p for p in paths if p)}
+        done = subprocess.run(
+            [sys.executable, str(tree / CONTEXT_SCRIPT), "context", reader, *args],
+            cwd=tree, env=env, capture_output=True, text=True)
+    if done.returncode != 0:
+        failed = mctx("The render at {commit} failed.").format(commit=commit)
+        raise SystemExit(f"{failed}\n{done.stderr.strip()}")
+    return done.stdout
+
+
+def context_diff(commit: str, reader: str, args: list[str]) -> str:
+    """The unified diff from one reader's context at `commit`, as
+    `context_at` renders it, to its context in the checkout. Empty where
+    the two are the same."""
+    head = " ".join(["context", reader, *args])
+    return "".join(difflib.unified_diff(
+        context_at(commit, reader, args).splitlines(keepends=True),
+        context_text(reader, args).splitlines(keepends=True),
+        fromfile=f"{head} at {commit}", tofile=head))
