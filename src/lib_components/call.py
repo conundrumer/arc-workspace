@@ -4,7 +4,10 @@ run cache.
 
 A `Position` value crosses as the `(row, column)` of its cell, and its
 place in the lib (`engine.program.cell_place`) is computed from the size of
-the grid of the row's key."""
+the grid of the row's key. In a relation with no key column, a cell lies
+in the one grid the call is given a size for.
+
+An `Offset` value crosses as its `(row, column)` displacement."""
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -13,7 +16,8 @@ from functools import cache
 
 from cli.common import LIMITS
 from engine.engine import ParseFailure, Tuples
-from engine.program import AdtValue, RecordValue, RelationName, Value, cell_place
+from engine.program import (AdtValue, RecordValue, RelationName, Value, cell_place,
+                            offset_place)
 from handbook.context import LIB_SRC
 from souffle import SouffleEngine
 
@@ -29,6 +33,14 @@ type Size = tuple[int, int]
 class CallError(RuntimeError):
     """A component call the engine or the values given cannot run: the
     failure the engine returned, or the value that cannot cross."""
+
+
+@dataclass(frozen=True)
+class GridTypes:
+    """The lib's types of a cell and of a translation."""
+
+    position: StrEnum
+    offset: StrEnum
 
 
 @dataclass(frozen=True)
@@ -85,12 +97,17 @@ def _value_out(v: Value) -> PyValue:
 
 def _size(name: str, columns: Columns, row: PyRow,
           sizes: Mapping[PyValue, Size] | None) -> Size:
-    """The size of the grid of `row`'s key, for a relation with a
-    `Position` column."""
-    if not columns.keyed:
-        raise CallError(f"`{name}` has a Position column and no key column")
+    """The size of the grid of the cells of `row`, a row of the relation
+    `name`, which has a `Position` column: the grid of the row's key, or,
+    in a relation with no key column, the one grid `sizes` gives."""
     if sizes is None:
         raise CallError(f"`{name}` has a Position column and no sizes are given")
+    if not columns.keyed:
+        if len(sizes) != 1:
+            raise CallError(f"`{name}` has a Position column and no key column, "
+                            f"and the call gives sizes for {len(sizes)} grids, "
+                            f"not one")
+        return next(iter(sizes.values()))
     if row[0] not in sizes:
         raise CallError(f"no size is given for the key {row[0]!r} of `{name}`")
     return sizes[row[0]]
@@ -104,44 +121,56 @@ def _ints(v: PyValue, n: int) -> tuple[int, ...] | None:
     return ints if len(ints) == n else None
 
 
-def _row_in(name: str, columns: Columns, row: PyRow, position: StrEnum,
+def _row_in(name: str, columns: Columns, row: PyRow, grid: GridTypes,
             sizes: Mapping[PyValue, Size] | None) -> tuple[Value, ...]:
     out = [_value_in(v) for v in row]
     for i, t in enumerate(columns.types):
-        if t == position:
+        if t == grid.position:
             h, w = _size(name, columns, row, sizes)
             cell = _ints(row[i], 2)
             if cell is None:
                 raise CallError(f"`{name}` takes a cell as (row, column), "
                                 f"not {row[i]!r}")
             out[i] = RecordValue(cell_place(cell[0], cell[1], h, w))
+        elif t == grid.offset:
+            move = _ints(row[i], 2)
+            if move is None:
+                raise CallError(f"`{name}` takes an offset as (row, column), "
+                                f"not {row[i]!r}")
+            out[i] = RecordValue(offset_place(move[0], move[1]))
     return tuple(out)
 
 
-def _row_out(name: str, columns: Columns, row: Sequence[Value], position: StrEnum,
+def _row_out(name: str, columns: Columns, row: Sequence[Value], grid: GridTypes,
              sizes: Mapping[PyValue, Size] | None) -> PyRow:
     out = [_value_out(v) for v in row]
     for i, t in enumerate(columns.types):
-        if t == position:
+        if t == grid.position:
             h, w = _size(name, columns, tuple(out), sizes)
             place = _ints(out[i], 4)
             if place is None or place != cell_place(place[0], place[2], h, w):
                 raise CallError(f"`{name}` gives {out[i]!r}, which is no cell of a "
                                 f"{h}x{w} grid")
             out[i] = (place[0], place[2])
+        elif t == grid.offset:
+            place = _ints(out[i], 4)
+            if place is None or place != offset_place(place[0], place[2]):
+                raise CallError(f"`{name}` gives {out[i]!r}, which is no "
+                                f"translation")
+            out[i] = (place[0], place[2])
     return tuple(out)
 
 
-def call(component: str, type_args: Sequence[StrEnum], position: StrEnum,
+def call(component: str, type_args: Sequence[StrEnum], grid: GridTypes,
          columns: Mapping[str, Columns],
          inputs: Mapping[str, Iterable[PyRow] | None], outputs: Sequence[str],
          sizes: Mapping[PyValue, Size] | None) -> dict[str, Relation]:
     """The rows of each of the instance's relations `outputs`, after a run
     of `component` instantiated at `type_args` over the rows of each of its
-    relations `inputs` that is not None. A column whose type is `position`
-    crosses as a cell of the grid `sizes` gives for the row's key. Raises
-    `CallError` where the program fails to parse, the run fails, or a value
-    cannot cross."""
+    relations `inputs` that is not None. A column whose type is
+    `grid.position` crosses as a cell of the frame `_size` gives, and one
+    whose type is `grid.offset` as a displacement. Raises `CallError` where
+    the program fails to parse, the run fails, or a value cannot cross."""
     engine = _engine()
     args = ", ".join(type_args)
     text = (f'#include "{LIB_SRC.name}"\n'
@@ -150,13 +179,13 @@ def call(component: str, type_args: Sequence[StrEnum], position: StrEnum,
     if isinstance(program, ParseFailure):
         raise CallError(program)
     facts = {RelationName((INSTANCE,), name):
-             tuple(_row_in(name, columns[name], row, position, sizes) for row in rows)
+             tuple(_row_in(name, columns[name], row, grid, sizes) for row in rows)
              for name, rows in inputs.items() if rows is not None}
     wanted = [RelationName((INSTANCE,), name) for name in outputs]
     result = engine.run(program, facts, wanted, LIMITS)
     if not isinstance(result, Tuples):
         raise CallError(result)
     return {rel.name: Relation(frozenset(
-                _row_out(rel.name, columns[rel.name], row, position, sizes)
+                _row_out(rel.name, columns[rel.name], row, grid, sizes)
                 for row in result.relations[rel]))
             for rel in wanted}

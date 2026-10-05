@@ -19,6 +19,7 @@ from engine.program import (
     UnitId,
     Wildcard,
     cell_place,
+    offset_place,
 )
 from souffle import printer
 from souffle.layout import (
@@ -85,8 +86,7 @@ def grid_facts(call: GridCall) -> list[tuple[int, Atom]]:
             if not form.full and isinstance(cell, Wildcard):
                 continue
             if form.stamp:
-                dr, dc = r - anchor[0], c - anchor[1]
-                place = (dr, -dr, dc, -dc)
+                place = offset_place(r - anchor[0], c - anchor[1])
             else:
                 place = cell_place(r, c, h, w)
             args: tuple[Term, ...] = (*call.keys, RecordTerm(tuple(NumberTerm(v) for v in place)))

@@ -7,6 +7,7 @@ from enum import StrEnum
 
 from arc.task import Task
 from engine import RecordValue, Row, Value
+from engine.program import offset_place
 from solver.model import Lib
 from solver.solve import row_key, value_key
 from solver.vocabulary import BOX, COLOR, NUMBER, OFFSET
@@ -110,7 +111,7 @@ def position_domain(type_name: str, stored: list[Value], nums: list[int]
     if type_name == OFFSET:
         comps = {c for v in vals for c in v}
         span = sorted(set(line) | comps | {-c for c in comps})
-        return [RecordValue((t, -t, l, -l)) for t in span for l in span]
+        return [RecordValue(offset_place(t, l)) for t in span for l in span]
     out = _move_domain(vals)
     if type_name == BOX:
         for v in vals:

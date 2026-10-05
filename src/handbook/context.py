@@ -37,7 +37,7 @@ from pathlib import Path
 import controlled_markdown as nm
 from controlled_markdown import mctx
 from engine import checkout
-from engine.program import Primitive
+from engine.program import Primitive, Qualifier
 from engine.memo import write_whole
 from souffle.layout import written_lines
 from handbook import paths
@@ -696,11 +696,13 @@ def _upper_snake(name: str) -> str:
 @dataclass(frozen=True)
 class _WrappedDecl:
     """A relation of a component as its wrapper passes it: its name,
-    whether it is an input, and its column names and types, each type
+    whether it is an input, whether it is declared `inline`, and its
+    column names and types, each type
     written in the component's own type parameters."""
 
     name: str
     input: bool
+    inline: bool
     column_names: tuple[str, ...]
     column_types: tuple[str, ...]
 
@@ -711,6 +713,7 @@ def _comp_decls(comp: Comp, comps: dict[str, tuple[Comp, list[str]]]
     base, its own before its base's."""
     _, lines = comps[comp.name]
     out = [_WrappedDecl(it.name, _is_input(it, lines),
+                        Qualifier.INLINE in it.qualifiers,
                         tuple(c.name for c in it.columns),
                         tuple(c.type for c in it.columns))
            for it in comp.items if isinstance(it, Decl) and not _hidden(it)]
@@ -721,7 +724,7 @@ def _comp_decls(comp: Comp, comps: dict[str, tuple[Comp, list[str]]]
         base = comps[comp.base][0]
         given = dict(zip(base.type_params, comp.base_type_args, strict=True))
         names = {d.name for d in out}
-        out += [_WrappedDecl(d.name, d.input, d.column_names,
+        out += [_WrappedDecl(d.name, d.input, d.inline, d.column_names,
                              tuple(given.get(t, t) for t in d.column_types))
                 for d in _comp_decls(base, comps) if d.name not in names]
     return out
@@ -744,8 +747,10 @@ def _type_expr(t: str, comp: Comp, types: list[str]) -> str | None:
 def wrappers_text(lib: Path = LIB_SRC) -> str:
     """The Python module of the lib's wrappers: the lib's types as an enum,
     and for each public top-level component whose columns are of the
-    lib's types a function that runs it through `lib_components.call.call`,
-    with a tuple type of its output relations."""
+    lib's types a function that runs it through `lib_components.call.call`
+    over the relations it does not declare `inline`, with a tuple type of
+    its output relations. A component that declares every relation
+    `inline` gets no function."""
     types: list[str] = []
     comps: dict[str, tuple[Comp, list[str]]] = {}
     order: list[tuple[Path, Comp]] = []
@@ -762,14 +767,17 @@ def wrappers_text(lib: Path = LIB_SRC) -> str:
            "from enum import StrEnum",
            "from typing import NamedTuple", "",
            "from engine.program import Primitive",
-           "from lib_components.call import Columns, PyRow, PyValue, Relation, Size, call",
+           "from lib_components.call import (Columns, GridTypes, PyRow, PyValue, Relation, Size,",
+           "                                  call)",
            "", "",
            "class LibType(StrEnum):",
            '    """The types the lib declares, by name."""', ""]
     out += [f'    {_upper_snake(t)} = "{t}"' for t in types]
     out += ["", "", "type TypeArg = Primitive | LibType"]
     for path, comp in order:
-        decls = _comp_decls(comp, comps)
+        decls = [d for d in _comp_decls(comp, comps) if not d.inline]
+        if not decls:
+            continue
         exprs = {d.name: [_type_expr(t, comp, types) for t in d.column_types]
                  for d in decls}
         if any(None in e for e in exprs.values()):
@@ -794,9 +802,11 @@ def wrappers_text(lib: Path = LIB_SRC) -> str:
         out += ["", "", f"def {comp.name}({', '.join(params)}) -> {rows}:",
                 f'    """Runs `{comp.name}` ({repo_label(path)}) over the rows '
                 f'given, a cell of each `Position` column in the grid of '
-                f'`sizes` for its key."""',
+                f'`sizes` for its key, or in the one grid of `sizes` where '
+                f'the relation has no key, and each `Offset` column as a '
+                f'(row, column) displacement."""',
                 f"    got = call({comp.name!r}, [{', '.join(comp.type_params)}],",
-                "               LibType.POSITION,",
+                "               GridTypes(LibType.POSITION, LibType.OFFSET),",
                 "               {" + columns + "},",
                 "               {" + ", ".join(f"{i!r}: {i}" for i in ins) + "},",
                 f"               {outs!r}, sizes)",

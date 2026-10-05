@@ -151,6 +151,13 @@ def cell_place(r: int, c: int, h: int, w: int) -> tuple[int, int, int, int]:
     return (r, h - 1 - r, c, w - 1 - c)
 
 
+def offset_place(dr: int, dc: int) -> tuple[int, int, int, int]:
+    """The place of the translation by `dr` rows and `dc` columns: the
+    amounts it adds to the distances to the top, bottom, left and right
+    edges."""
+    return (dr, -dr, dc, -dc)
+
+
 def grid_size(grid: Grid) -> tuple[int, int]:
     """The height and width of `grid`, a grid of one row or more, as a task
     file and a witness file give it."""

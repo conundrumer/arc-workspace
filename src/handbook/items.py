@@ -14,6 +14,7 @@ from engine.program import (
     AdtType,
     AliasType,
     Column,
+    Qualifier,
     RecordType,
     Scope,
     SubtypeType,
@@ -61,6 +62,7 @@ class Decl:
     line: int
     end_line: int
     columns: tuple[Column, ...]
+    qualifiers: tuple[Qualifier, ...]
 
 
 @dataclass
@@ -159,7 +161,7 @@ def _view(p: Parsed) -> Program:
         if own(r.span):
             placed.append((r.span.first, r.scope,
                            Decl(r.name, r.span.first, r.span.last,
-                                r.columns)))
+                                r.columns, r.qualifiers)))
     for i in p.instances:
         if i.span is not None and own(i.span):
             placed.append((i.span.first, i.scope,

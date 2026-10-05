@@ -5,7 +5,8 @@ from enum import StrEnum
 from typing import NamedTuple
 
 from engine.program import Primitive
-from lib_components.call import Columns, PyRow, PyValue, Relation, Size, call
+from lib_components.call import (Columns, GridTypes, PyRow, PyValue, Relation, Size,
+                                  call)
 
 
 class LibType(StrEnum):
@@ -41,9 +42,9 @@ class TallyRows(NamedTuple):
 
 
 def Tally(Key: TypeArg, Member: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, item: Iterable[PyRow] | None = None, domain: Iterable[PyRow] | None = None) -> TallyRows:
-    """Runs `Tally` (programs/lib/sets.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `Tally` (programs/lib/sets.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Tally', [Key, Member],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'item': Columns((Key, Member, ), True), 'domain': Columns((Key, ), True), 'tally': Columns((Key, Primitive.NUMBER, ), True)},
                {'item': item, 'domain': domain},
                ['tally'], sizes)
@@ -57,9 +58,9 @@ class ExcessRows(NamedTuple):
 
 
 def Excess(Key: TypeArg, Member: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, plus: Iterable[PyRow] | None = None, minus: Iterable[PyRow] | None = None) -> ExcessRows:
-    """Runs `Excess` (programs/lib/sets.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `Excess` (programs/lib/sets.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Excess', [Key, Member],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'plus': Columns((Key, Member, ), True), 'minus': Columns((Key, Member, ), True), 'excess': Columns((Key, Primitive.NUMBER, ), True)},
                {'plus': plus, 'minus': minus},
                ['excess'], sizes)
@@ -74,9 +75,9 @@ class ModeRows(NamedTuple):
 
 
 def Mode(Key: TypeArg, Member: TypeArg, Token: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, item: Iterable[PyRow] | None = None) -> ModeRows:
-    """Runs `Mode` (programs/lib/sets.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `Mode` (programs/lib/sets.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Mode', [Key, Member, Token],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'item': Columns((Key, Member, Token, ), True), 'tally': Columns((Key, Member, Primitive.NUMBER, ), True), 'mode': Columns((Key, Member, ), True)},
                {'item': item},
                ['tally', 'mode'], sizes)
@@ -91,9 +92,9 @@ class UnanimousRows(NamedTuple):
 
 
 def Unanimous(Key: TypeArg, Val: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, item: Iterable[PyRow] | None = None) -> UnanimousRows:
-    """Runs `Unanimous` (programs/lib/sets.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `Unanimous` (programs/lib/sets.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Unanimous', [Key, Val],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'item': Columns((Key, Val, ), True), 'clash': Columns((Key, ), True), 'value': Columns((Key, Val, ), True)},
                {'item': item},
                ['clash', 'value'], sizes)
@@ -108,9 +109,9 @@ class ExtremesRows(NamedTuple):
 
 
 def Extremes(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, cand: Iterable[PyRow] | None = None) -> ExtremesRows:
-    """Runs `Extremes` (programs/lib/sets.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `Extremes` (programs/lib/sets.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Extremes', [Key],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'cand': Columns((Key, Primitive.NUMBER, ), True), 'high': Columns((Key, Primitive.NUMBER, ), True), 'low': Columns((Key, Primitive.NUMBER, ), True)},
                {'cand': cand},
                ['high', 'low'], sizes)
@@ -125,9 +126,9 @@ class ArgExtremesRows(NamedTuple):
 
 
 def ArgExtremes(Key: TypeArg, Val: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, cand: Iterable[PyRow] | None = None) -> ArgExtremesRows:
-    """Runs `ArgExtremes` (programs/lib/sets.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `ArgExtremes` (programs/lib/sets.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('ArgExtremes', [Key, Val],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'cand': Columns((Key, Val, Primitive.NUMBER, ), True), 'high': Columns((Key, Val, Primitive.NUMBER, ), True), 'low': Columns((Key, Val, Primitive.NUMBER, ), True)},
                {'cand': cand},
                ['high', 'low'], sizes)
@@ -143,9 +144,9 @@ class KeyedSetCompareRows(NamedTuple):
 
 
 def KeyedSetCompare(Key: TypeArg, Pat: TypeArg, Member: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, pattern_member: Iterable[PyRow] | None = None, observed_member: Iterable[PyRow] | None = None) -> KeyedSetCompareRows:
-    """Runs `KeyedSetCompare` (programs/lib/sets.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `KeyedSetCompare` (programs/lib/sets.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('KeyedSetCompare', [Key, Pat, Member],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'pattern_member': Columns((Pat, Member, ), False), 'observed_member': Columns((Key, Member, ), False), 'pattern_size': Columns((Pat, Primitive.NUMBER, ), False), 'covers': Columns((Key, Pat, ), False), 'equals': Columns((Key, Pat, ), False)},
                {'pattern_member': pattern_member, 'observed_member': observed_member},
                ['pattern_size', 'covers', 'equals'], sizes)
@@ -159,9 +160,9 @@ class IdentOfRows(NamedTuple):
 
 
 def IdentOf(T: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, value: Iterable[PyRow] | None = None) -> IdentOfRows:
-    """Runs `IdentOf` (programs/lib/sets.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `IdentOf` (programs/lib/sets.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('IdentOf', [T],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'value': Columns((T, ), False), 'id': Columns((T, LibType.IDENT, ), False)},
                {'value': value},
                ['id'], sizes)
@@ -176,9 +177,9 @@ class CanonRows(NamedTuple):
 
 
 def Canon(T: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, equiv: Iterable[PyRow] | None = None) -> CanonRows:
-    """Runs `Canon` (programs/lib/sets.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `Canon` (programs/lib/sets.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Canon', [T],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'equiv': Columns((T, T, ), False), 'rep': Columns((T, T, ), False), 'id': Columns((T, LibType.IDENT, ), False)},
                {'equiv': equiv},
                ['rep', 'id'], sizes)
@@ -193,9 +194,9 @@ class OrdinalRows(NamedTuple):
 
 
 def Ordinal(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, idx_set: Iterable[PyRow] | None = None) -> OrdinalRows:
-    """Runs `Ordinal` (programs/lib/orders.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `Ordinal` (programs/lib/orders.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Ordinal', [Key],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'idx_set': Columns((Key, Primitive.NUMBER, ), True), 'rank': Columns((Key, Primitive.NUMBER, Primitive.NUMBER, ), True), 'rank_desc': Columns((Key, Primitive.NUMBER, Primitive.NUMBER, ), True)},
                {'idx_set': idx_set},
                ['rank', 'rank_desc'], sizes)
@@ -213,9 +214,9 @@ class OrderRows(NamedTuple):
 
 
 def Order(Key: TypeArg, T: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, elem: Iterable[PyRow] | None = None, before: Iterable[PyRow] | None = None) -> OrderRows:
-    """Runs `Order` (programs/lib/orders.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `Order` (programs/lib/orders.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Order', [Key, T],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'elem': Columns((Key, T, ), True), 'before': Columns((Key, T, T, ), True), 'rank': Columns((Key, T, Primitive.NUMBER, ), True), 'rank_desc': Columns((Key, T, Primitive.NUMBER, ), True), 'first': Columns((Key, T, ), True), 'last': Columns((Key, T, ), True), 'next': Columns((Key, T, T, ), True)},
                {'elem': elem, 'before': before},
                ['rank', 'rank_desc', 'first', 'last', 'next'], sizes)
@@ -230,9 +231,9 @@ class GraphDistanceRows(NamedTuple):
 
 
 def GraphDistance(Key: TypeArg, Node: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, edge: Iterable[PyRow] | None = None, seed: Iterable[PyRow] | None = None) -> GraphDistanceRows:
-    """Runs `GraphDistance` (programs/lib/orders.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `GraphDistance` (programs/lib/orders.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('GraphDistance', [Key, Node],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'edge': Columns((Key, Node, Node, ), True), 'seed': Columns((Key, Node, ), True), 'distance': Columns((Key, Node, Primitive.NUMBER, ), True), 'pred': Columns((Key, Node, Node, ), True)},
                {'edge': edge, 'seed': seed},
                ['distance', 'pred'], sizes)
@@ -246,9 +247,9 @@ class IndexCycleRows(NamedTuple):
 
 
 def IndexCycle(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, idx: Iterable[PyRow] | None = None) -> IndexCycleRows:
-    """Runs `IndexCycle` (programs/lib/orders.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `IndexCycle` (programs/lib/orders.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('IndexCycle', [Key],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'idx': Columns((Key, Primitive.NUMBER, ), True), 'succ': Columns((Key, Primitive.NUMBER, Primitive.NUMBER, ), True)},
                {'idx': idx},
                ['succ'], sizes)
@@ -262,9 +263,9 @@ class CycleWalkRows(NamedTuple):
 
 
 def CycleWalk(Key: TypeArg, T: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, succ: Iterable[PyRow] | None = None, step: Iterable[PyRow] | None = None) -> CycleWalkRows:
-    """Runs `CycleWalk` (programs/lib/orders.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `CycleWalk` (programs/lib/orders.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('CycleWalk', [Key, T],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'succ': Columns((Key, T, T, ), True), 'step': Columns((Key, Primitive.NUMBER, ), True), 'walk': Columns((Key, T, Primitive.NUMBER, T, ), True)},
                {'succ': succ, 'step': step},
                ['walk'], sizes)
@@ -279,9 +280,9 @@ class TakeRows(NamedTuple):
 
 
 def Take(Key: TypeArg, T: TypeArg, Item: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, start: Iterable[PyRow] | None = None, step: Iterable[PyRow] | None = None, take: Iterable[PyRow] | None = None, init_taken: Iterable[PyRow] | None = None, init_untaken: Iterable[PyRow] | None = None) -> TakeRows:
-    """Runs `Take` (programs/lib/orders.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `Take` (programs/lib/orders.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Take', [Key, T, Item],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'start': Columns((Key, T, ), True), 'step': Columns((Key, T, T, ), True), 'take': Columns((Key, T, Item, ), True), 'init_taken': Columns((Key, Item, ), True), 'init_untaken': Columns((Key, Item, ), True), 'taken': Columns((Key, T, Item, ), True), 'untaken': Columns((Key, T, Item, ), True)},
                {'start': start, 'step': step, 'take': take, 'init_taken': init_taken, 'init_untaken': init_untaken},
                ['taken', 'untaken'], sizes)
@@ -292,17 +293,16 @@ class DirFrameRows(NamedTuple):
     """The output relations of `DirFrame` (programs/lib/box.dl)."""
 
     extent: Relation
-    pos: Relation
 
 
 def DirFrame(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, dir: Iterable[PyRow] | None = None, dist_set: Iterable[PyRow] | None = None) -> DirFrameRows:
-    """Runs `DirFrame` (programs/lib/box.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `DirFrame` (programs/lib/box.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('DirFrame', [Key],
-               LibType.POSITION,
-               {'dir': Columns((LibType.DIR, ), False), 'dist_set': Columns((Key, Primitive.NUMBER, ), True), 'extent': Columns((Key, Primitive.NUMBER, ), True), 'pos': Columns((Key, Primitive.NUMBER, LibType.POSITION, ), True)},
+               GridTypes(LibType.POSITION, LibType.OFFSET),
+               {'dir': Columns((LibType.DIR, ), False), 'dist_set': Columns((Key, Primitive.NUMBER, ), True), 'extent': Columns((Key, Primitive.NUMBER, ), True)},
                {'dir': dir, 'dist_set': dist_set},
-               ['extent', 'pos'], sizes)
-    return DirFrameRows(got['extent'], got['pos'])
+               ['extent'], sizes)
+    return DirFrameRows(got['extent'])
 
 
 class AxisFrameRows(NamedTuple):
@@ -312,9 +312,9 @@ class AxisFrameRows(NamedTuple):
 
 
 def AxisFrame(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, extent: Iterable[PyRow] | None = None) -> AxisFrameRows:
-    """Runs `AxisFrame` (programs/lib/box.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `AxisFrame` (programs/lib/box.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('AxisFrame', [Key],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'extent': Columns((Key, LibType.AXIS, Primitive.NUMBER, ), True), 'cell': Columns((Key, LibType.AXIS, LibType.POSITION, ), True)},
                {'extent': extent},
                ['cell'], sizes)
@@ -328,9 +328,9 @@ class Frame2DRows(NamedTuple):
 
 
 def Frame2D(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, extent: Iterable[PyRow] | None = None) -> Frame2DRows:
-    """Runs `Frame2D` (programs/lib/box.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `Frame2D` (programs/lib/box.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Frame2D', [Key],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'extent': Columns((Key, LibType.AXIS, Primitive.NUMBER, ), True), 'cell': Columns((Key, LibType.POSITION, ), True)},
                {'extent': extent},
                ['cell'], sizes)
@@ -345,9 +345,9 @@ class DirPackRows(NamedTuple):
 
 
 def DirPack(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, edge: Iterable[PyRow] | None = None) -> DirPackRows:
-    """Runs `DirPack` (programs/lib/box.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `DirPack` (programs/lib/box.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('DirPack', [Key],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'edge': Columns((Key, LibType.DIR, Primitive.NUMBER, ), True), 'axis_pos': Columns((Key, LibType.AXIS, LibType.BOX, ), True), 'box': Columns((Key, LibType.BOX, ), True)},
                {'edge': edge},
                ['axis_pos', 'box'], sizes)
@@ -361,9 +361,9 @@ class Divide2DRows(NamedTuple):
 
 
 def Divide2D(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, cell: Iterable[PyRow] | None = None, dim: Iterable[PyRow] | None = None, gap: Iterable[PyRow] | None = None) -> Divide2DRows:
-    """Runs `Divide2D` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `Divide2D` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Divide2D', [Key],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'cell': Columns((LibType.POSITION, ), False), 'dim': Columns((Key, LibType.AXIS, Primitive.NUMBER, ), True), 'gap': Columns((Primitive.NUMBER, ), False), 'tile': Columns((Key, LibType.POSITION, LibType.POSITION, LibType.POSITION, ), True)},
                {'cell': cell, 'dim': dim, 'gap': gap},
                ['tile'], sizes)
@@ -377,9 +377,9 @@ class Tile2DRows(NamedTuple):
 
 
 def Tile2D(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, cell: Iterable[PyRow] | None = None, dim: Iterable[PyRow] | None = None, gap: Iterable[PyRow] | None = None) -> Tile2DRows:
-    """Runs `Tile2D` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `Tile2D` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Tile2D', [Key],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'cell': Columns((LibType.POSITION, ), False), 'dim': Columns((Key, LibType.AXIS, Primitive.NUMBER, ), True), 'gap': Columns((Primitive.NUMBER, ), False), 'tile': Columns((Key, LibType.POSITION, LibType.POSITION, LibType.POSITION, ), True)},
                {'cell': cell, 'dim': dim, 'gap': gap},
                ['tile'], sizes)
@@ -397,9 +397,9 @@ class DividerTilesRows(NamedTuple):
 
 
 def DividerTiles(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, cell: Iterable[PyRow] | None = None, divider: Iterable[PyRow] | None = None) -> DividerTilesRows:
-    """Runs `DividerTiles` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `DividerTiles` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('DividerTiles', [Key],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'cell': Columns((Key, LibType.POSITION, ), True), 'divider': Columns((Key, LibType.AXIS, LibType.POSITION, ), True), 'div_dist': Columns((Key, LibType.AXIS, LibType.DIR, Primitive.NUMBER, ), True), 'on_divider': Columns((Key, LibType.POSITION, LibType.AXIS, ), True), 'part_idx': Columns((Key, LibType.POSITION, LibType.DIR, Primitive.NUMBER, ), True), 'part_of': Columns((Key, LibType.POSITION, LibType.AXIS, LibType.POSITION, ), True), 'tile_of': Columns((Key, LibType.POSITION, LibType.POSITION, ), True)},
                {'cell': cell, 'divider': divider},
                ['div_dist', 'on_divider', 'part_idx', 'part_of', 'tile_of'], sizes)
@@ -413,9 +413,9 @@ class DiagonalRows(NamedTuple):
 
 
 def Diagonal(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, cell: Iterable[PyRow] | None = None, corner: Iterable[PyRow] | None = None) -> DiagonalRows:
-    """Runs `Diagonal` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `Diagonal` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Diagonal', [Key],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'cell': Columns((Key, LibType.POSITION, ), True), 'corner': Columns((Key, LibType.DIAG_DIR, ), True), 'diagonal': Columns((Key, LibType.POSITION, Primitive.NUMBER, ), True)},
                {'cell': cell, 'corner': corner},
                ['diagonal'], sizes)
@@ -431,9 +431,9 @@ class DiagPlacementRows(NamedTuple):
 
 
 def DiagPlacement(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, cell: Iterable[PyRow] | None = None) -> DiagPlacementRows:
-    """Runs `DiagPlacement` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `DiagPlacement` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('DiagPlacement', [Key],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'cell': Columns((Key, LibType.POSITION, ), True), 'nearer': Columns((Key, LibType.POSITION, LibType.DIR, ), True), 'quadrant': Columns((Key, LibType.POSITION, LibType.DIAG_DIR, ), True), 'diag_cell': Columns((Key, LibType.POSITION, LibType.DIAG_DIR, Primitive.NUMBER, ), True)},
                {'cell': cell},
                ['nearer', 'quadrant', 'diag_cell'], sizes)
@@ -451,9 +451,9 @@ class RayRows(NamedTuple):
 
 
 def Ray(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, dir: Iterable[PyRow] | None = None, cell: Iterable[PyRow] | None = None, mark: Iterable[PyRow] | None = None, blocked: Iterable[PyRow] | None = None) -> RayRows:
-    """Runs `Ray` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `Ray` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Ray', [Key],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'dir': Columns((Key, LibType.DIR8, ), True), 'cell': Columns((Key, LibType.POSITION, ), True), 'mark': Columns((Key, LibType.POSITION, ), True), 'blocked': Columns((Key, LibType.POSITION, ), True), 'cast': Columns((Key, LibType.POSITION, LibType.DIR8, Primitive.NUMBER, LibType.POSITION, ), True), 'ray': Columns((Key, LibType.POSITION, LibType.DIR8, Primitive.NUMBER, LibType.POSITION, ), True), 'clear_cast': Columns((Key, LibType.POSITION, LibType.DIR8, Primitive.NUMBER, LibType.POSITION, ), True), 'clear': Columns((Key, LibType.POSITION, LibType.DIR8, Primitive.NUMBER, LibType.POSITION, ), True), 'stop': Columns((Key, LibType.POSITION, LibType.DIR8, Primitive.NUMBER, LibType.POSITION, ), True)},
                {'dir': dir, 'cell': cell, 'mark': mark, 'blocked': blocked},
                ['cast', 'ray', 'clear_cast', 'clear', 'stop'], sizes)
@@ -472,9 +472,9 @@ class BetweenRows(NamedTuple):
 
 
 def Between(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, axis: Iterable[PyRow] | None = None, dir: Iterable[PyRow] | None = None, cell: Iterable[PyRow] | None = None, mark: Iterable[PyRow] | None = None, blocked: Iterable[PyRow] | None = None) -> BetweenRows:
-    """Runs `Between` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `Between` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Between', [Key],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'axis': Columns((Key, LibType.AXIS4, ), True), 'between': Columns((Key, LibType.POSITION, ), True), 'dir': Columns((Key, LibType.DIR8, ), True), 'cell': Columns((Key, LibType.POSITION, ), True), 'mark': Columns((Key, LibType.POSITION, ), True), 'blocked': Columns((Key, LibType.POSITION, ), True), 'cast': Columns((Key, LibType.POSITION, LibType.DIR8, Primitive.NUMBER, LibType.POSITION, ), True), 'ray': Columns((Key, LibType.POSITION, LibType.DIR8, Primitive.NUMBER, LibType.POSITION, ), True), 'clear_cast': Columns((Key, LibType.POSITION, LibType.DIR8, Primitive.NUMBER, LibType.POSITION, ), True), 'clear': Columns((Key, LibType.POSITION, LibType.DIR8, Primitive.NUMBER, LibType.POSITION, ), True), 'stop': Columns((Key, LibType.POSITION, LibType.DIR8, Primitive.NUMBER, LibType.POSITION, ), True)},
                {'axis': axis, 'dir': dir, 'cell': cell, 'mark': mark, 'blocked': blocked},
                ['between', 'cast', 'ray', 'clear_cast', 'clear', 'stop'], sizes)
@@ -491,9 +491,9 @@ class SlideRows(NamedTuple):
 
 
 def Slide(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, node: Iterable[PyRow] | None = None, dir: Iterable[PyRow] | None = None) -> SlideRows:
-    """Runs `Slide` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `Slide` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Slide', [Key],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'node': Columns((Key, LibType.POSITION, ), True), 'dir': Columns((Key, LibType.DIR8, ), True), 'run': Columns((Key, LibType.POSITION, LibType.DIR8, LibType.POSITION, ), True), 'rim_dir': Columns((Key, LibType.POSITION, LibType.DIR8, ), True), 'halt': Columns((Key, LibType.POSITION, LibType.DIR8, LibType.POSITION, ), True), 'rest': Columns((Key, LibType.POSITION, LibType.DIR8, LibType.POSITION, ), True)},
                {'node': node, 'dir': dir},
                ['run', 'rim_dir', 'halt', 'rest'], sizes)
@@ -507,9 +507,9 @@ class GravityRows(NamedTuple):
 
 
 def Gravity(Key: TypeArg, Body: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, cell: Iterable[PyRow] | None = None, dir: Iterable[PyRow] | None = None, blocked: Iterable[PyRow] | None = None) -> GravityRows:
-    """Runs `Gravity` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `Gravity` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Gravity', [Key, Body],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'cell': Columns((Key, Body, LibType.POSITION, ), True), 'dir': Columns((Key, LibType.DIR, ), True), 'blocked': Columns((Key, LibType.POSITION, ), True), 'travel': Columns((Key, Body, LibType.OFFSET, ), True)},
                {'cell': cell, 'dir': dir, 'blocked': blocked},
                ['travel'], sizes)
@@ -525,9 +525,9 @@ class OrderFrameRows(NamedTuple):
 
 
 def OrderFrame(Key: TypeArg, T: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, axis: Iterable[PyRow] | None = None, member: Iterable[PyRow] | None = None) -> OrderFrameRows:
-    """Runs `OrderFrame` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `OrderFrame` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('OrderFrame', [Key, T],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'axis': Columns((Key, LibType.AXIS, ), True), 'member': Columns((Key, T, LibType.POSITION, ), True), 'nearer': Columns((Key, LibType.DIR, T, T, ), True), 'mem': Columns((Key, T, ), True), 'pos': Columns((Key, T, LibType.POSITION, ), True)},
                {'axis': axis, 'member': member},
                ['nearer', 'mem', 'pos'], sizes)
@@ -545,9 +545,9 @@ class LexOrderRows(NamedTuple):
 
 
 def LexOrder(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, corner: Iterable[PyRow] | None = None, axis: Iterable[PyRow] | None = None, cell: Iterable[PyRow] | None = None, elem: Iterable[PyRow] | None = None, before: Iterable[PyRow] | None = None) -> LexOrderRows:
-    """Runs `LexOrder` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `LexOrder` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('LexOrder', [Key],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'corner': Columns((Key, LibType.DIAG_DIR, ), True), 'axis': Columns((Key, LibType.AXIS, ), True), 'cell': Columns((Key, LibType.POSITION, ), True), 'elem': Columns((Key, LibType.POSITION, ), True), 'before': Columns((Key, LibType.POSITION, LibType.POSITION, ), True), 'rank': Columns((Key, LibType.POSITION, Primitive.NUMBER, ), True), 'rank_desc': Columns((Key, LibType.POSITION, Primitive.NUMBER, ), True), 'first': Columns((Key, LibType.POSITION, ), True), 'last': Columns((Key, LibType.POSITION, ), True), 'next': Columns((Key, LibType.POSITION, LibType.POSITION, ), True)},
                {'corner': corner, 'axis': axis, 'cell': cell, 'elem': elem, 'before': before},
                ['rank', 'rank_desc', 'first', 'last', 'next'], sizes)
@@ -561,9 +561,9 @@ class BboxRows(NamedTuple):
 
 
 def Bbox(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, cell: Iterable[PyRow] | None = None) -> BboxRows:
-    """Runs `Bbox` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `Bbox` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Bbox', [Key],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'cell': Columns((Key, LibType.BOX, ), True), 'box': Columns((Key, LibType.BOX, ), True)},
                {'cell': cell},
                ['box'], sizes)
@@ -577,9 +577,9 @@ class OutlinesRows(NamedTuple):
 
 
 def Outlines(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, node: Iterable[PyRow] | None = None) -> OutlinesRows:
-    """Runs `Outlines` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `Outlines` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Outlines', [Key],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'node': Columns((Key, LibType.POSITION, ), True), 'box': Columns((Key, LibType.BOX, ), True)},
                {'node': node},
                ['box'], sizes)
@@ -594,9 +594,9 @@ class ComponentsRows(NamedTuple):
 
 
 def Components(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, node: Iterable[PyRow] | None = None, step: Iterable[PyRow] | None = None) -> ComponentsRows:
-    """Runs `Components` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `Components` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Components', [Key],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'node': Columns((Key, LibType.POSITION, ), True), 'step': Columns((LibType.OFFSET, ), False), 'label': Columns((Key, LibType.POSITION, LibType.IDENT, ), True), 'conn': Columns((Key, LibType.POSITION, LibType.POSITION, ), True)},
                {'node': node, 'step': step},
                ['label', 'conn'], sizes)
@@ -611,9 +611,9 @@ class Components8Rows(NamedTuple):
 
 
 def Components8(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, node: Iterable[PyRow] | None = None, step: Iterable[PyRow] | None = None) -> Components8Rows:
-    """Runs `Components8` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `Components8` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Components8', [Key],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'node': Columns((Key, LibType.POSITION, ), True), 'step': Columns((LibType.OFFSET, ), False), 'label': Columns((Key, LibType.POSITION, LibType.IDENT, ), True), 'conn': Columns((Key, LibType.POSITION, LibType.POSITION, ), True)},
                {'node': node, 'step': step},
                ['label', 'conn'], sizes)
@@ -629,9 +629,9 @@ class ReachRows(NamedTuple):
 
 
 def Reach(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, seed: Iterable[PyRow] | None = None, node: Iterable[PyRow] | None = None, step: Iterable[PyRow] | None = None) -> ReachRows:
-    """Runs `Reach` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `Reach` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Reach', [Key],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'seed': Columns((Key, LibType.POSITION, ), True), 'reach': Columns((Key, LibType.POSITION, ), True), 'node': Columns((Key, LibType.POSITION, ), True), 'step': Columns((LibType.OFFSET, ), False), 'label': Columns((Key, LibType.POSITION, LibType.IDENT, ), True), 'conn': Columns((Key, LibType.POSITION, LibType.POSITION, ), True)},
                {'seed': seed, 'node': node, 'step': step},
                ['reach', 'label', 'conn'], sizes)
@@ -647,9 +647,9 @@ class RimRows(NamedTuple):
 
 
 def Rim(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, cell: Iterable[PyRow] | None = None) -> RimRows:
-    """Runs `Rim` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `Rim` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Rim', [Key],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'cell': Columns((Key, LibType.POSITION, ), True), 'rim_dir': Columns((Key, LibType.POSITION, LibType.DIR8, ), True), 'rim': Columns((Key, LibType.POSITION, ), True), 'depth': Columns((Key, LibType.POSITION, Primitive.NUMBER, ), True)},
                {'cell': cell},
                ['rim_dir', 'rim', 'depth'], sizes)
@@ -665,9 +665,9 @@ class Rim8Rows(NamedTuple):
 
 
 def Rim8(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, cell: Iterable[PyRow] | None = None) -> Rim8Rows:
-    """Runs `Rim8` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `Rim8` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Rim8', [Key],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'cell': Columns((Key, LibType.POSITION, ), True), 'rim_dir': Columns((Key, LibType.POSITION, LibType.DIR8, ), True), 'rim': Columns((Key, LibType.POSITION, ), True), 'depth': Columns((Key, LibType.POSITION, Primitive.NUMBER, ), True)},
                {'cell': cell},
                ['rim_dir', 'rim', 'depth'], sizes)
@@ -681,9 +681,9 @@ class ClosedRows(NamedTuple):
 
 
 def Closed(Key: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, cell: Iterable[PyRow] | None = None) -> ClosedRows:
-    """Runs `Closed` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `Closed` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Closed', [Key],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'cell': Columns((Key, LibType.POSITION, ), True), 'region': Columns((Key, LibType.POSITION, LibType.IDENT, ), True)},
                {'cell': cell},
                ['region'], sizes)
@@ -701,9 +701,9 @@ class D4MapRows(NamedTuple):
 
 
 def D4Map(Key: TypeArg, Val: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, src: Iterable[PyRow] | None = None, dst: Iterable[PyRow] | None = None) -> D4MapRows:
-    """Runs `D4Map` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `D4Map` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('D4Map', [Key, Val],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'src': Columns((Key, LibType.POSITION, Val, ), True), 'dst': Columns((Key, LibType.POSITION, Val, ), True), 'mismatch': Columns((Key, LibType.D4, ), True), 'map': Columns((Key, LibType.D4, ), True), 'conflict': Columns((Key, LibType.D4, ), True), 'compatible': Columns((Key, LibType.D4, ), True), 'has_sym': Columns((Key, ), True)},
                {'src': src, 'dst': dst},
                ['mismatch', 'map', 'conflict', 'compatible', 'has_sym'], sizes)
@@ -722,9 +722,9 @@ class OffsetInvarianceRows(NamedTuple):
 
 
 def OffsetInvariance(Key: TypeArg, Val: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, cell: Iterable[PyRow] | None = None) -> OffsetInvarianceRows:
-    """Runs `OffsetInvariance` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `OffsetInvariance` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('OffsetInvariance', [Key, Val],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'cell': Columns((Key, LibType.POSITION, Val, ), True), 'cand': Columns((Key, LibType.AXIS, Primitive.NUMBER, LibType.OFFSET, ), True), 'pair': Columns((Key, LibType.AXIS, Primitive.NUMBER, LibType.POSITION, LibType.POSITION, ), True), 'mismatch': Columns((Key, LibType.AXIS, Primitive.NUMBER, ), True), 'line_mismatch': Columns((Key, LibType.AXIS, Primitive.NUMBER, LibType.POSITION, LibType.POSITION, ), True), 'period': Columns((Key, LibType.AXIS, Primitive.NUMBER, ), True), 'min_period': Columns((Key, LibType.AXIS, Primitive.NUMBER, ), True)},
                {'cell': cell},
                ['cand', 'pair', 'mismatch', 'line_mismatch', 'period', 'min_period'], sizes)
@@ -740,9 +740,9 @@ class OccurrencesRows(NamedTuple):
 
 
 def Occurrences(Key: TypeArg, Val: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, cell: Iterable[PyRow] | None = None, shape: Iterable[PyRow] | None = None) -> OccurrencesRows:
-    """Runs `Occurrences` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `Occurrences` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Occurrences', [Key, Val],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'cell': Columns((Key, LibType.POSITION, Val, ), True), 'shape': Columns((Key, LibType.POSITION, Val, ), True), 'placement': Columns((Key, LibType.POSITION, ), True), 'mismatch': Columns((Key, LibType.POSITION, ), True), 'occurrence': Columns((Key, LibType.POSITION, ), True)},
                {'cell': cell, 'shape': shape},
                ['placement', 'mismatch', 'occurrence'], sizes)
@@ -757,9 +757,9 @@ class CoverForcingRows(NamedTuple):
 
 
 def CoverForcing(Key: TypeArg, Piece: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, covers: Iterable[PyRow] | None = None, conflict: Iterable[PyRow] | None = None) -> CoverForcingRows:
-    """Runs `CoverForcing` (programs/lib/constraints.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `CoverForcing` (programs/lib/constraints.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('CoverForcing', [Key, Piece],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'covers': Columns((Key, Piece, LibType.POSITION, ), True), 'conflict': Columns((Key, Piece, Piece, ), True), 'forced': Columns((Key, Piece, ), True), 'ruled_out': Columns((Key, Piece, ), True)},
                {'covers': covers, 'conflict': conflict},
                ['forced', 'ruled_out'], sizes)
@@ -774,27 +774,10 @@ class PlacementPruningRows(NamedTuple):
 
 
 def PlacementPruning(Key: TypeArg, Cand: TypeArg, Piece: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, cand: Iterable[PyRow] | None = None, conflict: Iterable[PyRow] | None = None) -> PlacementPruningRows:
-    """Runs `PlacementPruning` (programs/lib/constraints.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
+    """Runs `PlacementPruning` (programs/lib/constraints.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('PlacementPruning', [Key, Cand, Piece],
-               LibType.POSITION,
+               GridTypes(LibType.POSITION, LibType.OFFSET),
                {'cand': Columns((Key, Cand, Piece, ), True), 'conflict': Columns((Key, Cand, Cand, ), True), 'dead': Columns((Key, Cand, ), True), 'alive': Columns((Key, Cand, Piece, ), True)},
                {'cand': cand, 'conflict': conflict},
                ['dead', 'alive'], sizes)
     return PlacementPruningRows(got['dead'], got['alive'])
-
-
-class ParamsHelpersRows(NamedTuple):
-    """The output relations of `ParamsHelpers` (programs/lib/params.dl)."""
-
-    frame_pos: Relation
-    tile_pos: Relation
-
-
-def ParamsHelpers(*, sizes: Mapping[PyValue, Size] | None = None) -> ParamsHelpersRows:
-    """Runs `ParamsHelpers` (programs/lib/params.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key."""
-    got = call('ParamsHelpers', [],
-               LibType.POSITION,
-               {'frame_pos': Columns((LibType.DIM, LibType.POSITION, ), False), 'tile_pos': Columns((LibType.DIM, LibType.DIM, LibType.DIM, LibType.POSITION, LibType.POSITION, LibType.POSITION, ), False)},
-               {},
-               ['frame_pos', 'tile_pos'], sizes)
-    return ParamsHelpersRows(got['frame_pos'], got['tile_pos'])
