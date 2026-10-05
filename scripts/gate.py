@@ -22,9 +22,14 @@ command stopped at `TIME_LIMIT` has the exit code `TIMEOUT_RC`.
 
 The cold pass is compared with the accepted outputs and the accepted times,
 so a command's exit code is compared with the accepted one.
-A `DIFF` line names an output file that differs, a `SLOW` line a time over
-1.25 times the accepted time plus 1 s, and a `NOTIME` line a command with no
-accepted time. A command's time depends on what the commands before it
+A `DIFF` line names an output file that differs, and a `NOTIME` line a
+command with no accepted time. A time over 1.25 times the accepted time plus
+1 s gives a `SLOW` or a `LOADED` line, which gives the outside CPU: the CPU
+time that processes outside the gate's process tree used over the command's
+run, the machine's busy CPU time less the gate tree's own. Where the outside
+CPU is over one core on average, the line is a `LOADED` line, and otherwise
+a `SLOW` line. With `--accept`, a line above the last line gives the outside
+CPU over the whole run. A command's time depends on what the commands before it
 cached, so times compare only when the full sequence runs. The warm pass is
 compared with the cold pass: a `DIFF` line ending in `warm` names an output
 file that differs between them. The last line counts the lines of each kind,
@@ -52,11 +57,12 @@ command has to wait for the heavy commands' lock, the run says so on
 stderr once for each hold, shared or exclusive, for all its commands.
 
 `--outputs-only` runs the cold pass alone, and compares its outputs alone:
-it prints `DIFF` lines, and no `SLOW` or `NOTIME` line, and writes no
+it prints `DIFF` lines, and no `SLOW`, `LOADED` or `NOTIME` line, and writes no
 times to `new/`. An `--outputs-only` run shares the machine with the other
 heavy commands, and its times measure that load as much as the change, so
 times are judged by one timed gate run on `master` after a batch of merges.
 A `SLOW` line of that run is filed as a `delay` issue, and blocks no merge.
+A `LOADED` line is not filed as a `delay` issue.
 
 `--coverage` traces each cold command: it records the lines of each Python
 file under `src/` and `scripts/` the command runs, through coverage.py, and
@@ -139,10 +145,12 @@ outputs are written.
 import argparse
 import ast
 import contextlib
+import ctypes
 import fcntl
 import json
 import os
 import re
+import resource
 import runpy
 import shutil
 import subprocess
@@ -424,12 +432,16 @@ class LineKind(StrEnum):
     DIFF = "DIFF"
     """An output file that differs."""
     SLOW = "SLOW"
-    """A time over the accepted one."""
+    """A time over the accepted one, where the outside CPU is at most one
+    core."""
+    LOADED = "LOADED"
+    """A time over the accepted one, where the outside CPU is over one
+    core."""
     NOTIME = "NOTIME"
     """A command with no accepted time."""
 
 
-TIME_KINDS = frozenset({LineKind.SLOW, LineKind.NOTIME})
+TIME_KINDS = frozenset({LineKind.SLOW, LineKind.LOADED, LineKind.NOTIME})
 """The kinds of line that judge a time."""
 
 
@@ -482,9 +494,77 @@ def head() -> str:
     return checkout.git_out(checkout.ROOT, "rev-parse", "HEAD").strip()
 
 
-def load() -> str:
-    """The machine's load averages over 1, 5 and 15 minutes."""
-    return " ".join(f"{x:.2f}" for x in os.getloadavg())
+_TICKS = 2 ** 32
+"""The modulus of the CPU tick counters, which on darwin are 32-bit and
+wrap."""
+_HOST_CPU_LOAD_INFO = 3
+_CPU_STATE_MAX = 4
+_CPU_STATE_IDLE = 2
+_PROC_STAT_BUSY = (0, 1, 2, 5, 6)
+"""The user, nice, system, irq and softirq fields of the `cpu` line of
+`/proc/stat`; its user and nice fields include its guest fields."""
+
+
+def _busy_ticks() -> tuple[int, ...]:
+    """The machine's CPU ticks spent not idle, summed over its CPUs, one
+    counter per CPU state."""
+    if sys.platform == "darwin":
+        libc = ctypes.CDLL("/usr/lib/libSystem.dylib")
+        libc.mach_host_self.restype = ctypes.c_uint
+        info = (ctypes.c_uint * _CPU_STATE_MAX)()
+        count = ctypes.c_uint(_CPU_STATE_MAX)
+        kr = libc.host_statistics(libc.mach_host_self(), _HOST_CPU_LOAD_INFO,
+                                  info, ctypes.byref(count))
+        if kr != 0:
+            raise OSError(f"host_statistics returned {kr}")
+        return tuple(t for i, t in enumerate(info) if i != _CPU_STATE_IDLE)
+    if sys.platform == "linux":
+        fields = Path("/proc/stat").read_text().splitlines()[0].split()[1:]
+        return tuple(int(fields[i]) for i in _PROC_STAT_BUSY)
+    raise NotImplementedError(f"no system-wide CPU total on {sys.platform}")
+
+
+def _tree_cpu() -> float:
+    """The CPU seconds of the gate's process and of its children it has
+    waited for, with theirs."""
+    return sum(r.ru_utime + r.ru_stime for r in (resource.getrusage(resource.RUSAGE_SELF),
+                                                 resource.getrusage(resource.RUSAGE_CHILDREN)))
+
+
+@dataclass(frozen=True)
+class CpuSample:
+    """The machine's busy CPU ticks, the gate tree's CPU seconds, and the
+    monotonic clock, at one moment."""
+    busy: tuple[int, ...]
+    tree: float
+    at: float
+
+    @classmethod
+    def now(cls) -> "CpuSample":
+        return cls(_busy_ticks(), _tree_cpu(), time.monotonic())
+
+    def outside(self, end: "CpuSample") -> "OutsideCpu":
+        """The CPU that processes outside the gate's process tree used from
+        this sample to `end`, where the gate has waited for each child it
+        started since this sample."""
+        ticks = sum((b - a) % _TICKS for a, b in zip(self.busy, end.busy, strict=True))
+        busy = ticks / os.sysconf("SC_CLK_TCK")
+        return OutsideCpu(busy - (end.tree - self.tree), end.at - self.at)
+
+
+@dataclass(frozen=True)
+class OutsideCpu:
+    """The CPU seconds processes outside the gate's process tree used over
+    an interval, and the interval's seconds."""
+    cpu: float
+    interval: float
+
+    @property
+    def cores(self) -> float:
+        return self.cpu / self.interval
+
+    def __str__(self) -> str:
+        return f"outside-cpu={self.cpu:.1f}s ({self.cores:.1f} cores on average)"
 
 
 # The dependencies
@@ -866,10 +946,12 @@ class Gate:
             yield stack.enter_context(rwlock.taken(hold, self.notices[hold]))
 
     def run_one(self, cmd: GateCommand, stem: str, cold: bool, cache: Path,
-                dropped: bool = False) -> tuple[int, float]:
+                dropped: bool = False) -> tuple[int, float, OutsideCpu | None]:
         """`cmd` on `stem` under the locks, its normalized output, witness
         file and exit code written to the pass's directory, or to `dropped`
-        for a stem of `STEMS` it drops; the exit code and wall time."""
+        for a stem of `STEMS` it drops; the exit code, the wall time, and,
+        where it runs under an exclusive hold, the outside CPU over its
+        run."""
         wf = self.wit / f"{stem}.wit.json"
         if cmd.takes_witness_file:
             shutil.copyfile(frozen_witness(stem), wf)
@@ -883,6 +965,7 @@ class Gate:
         argv = ["uv", "run", "--project", str(checkout.ROOT), "python", *script]
         base = (self.dropped if dropped else self.new if cold else self.warm) / key
         with self.locked(cold) as hold:
+            sample = CpuSample.now() if hold is rwlock.Hold.EXCLUSIVE else None
             start = time.time()
             proc = subprocess.Popen(argv, cwd=checkout.ROOT, env=self.env(cache, hold),
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -898,6 +981,7 @@ class Gate:
                     raw, _ = proc.communicate()
                 rc = TIMEOUT_RC
             wall = round(time.time() - start, 1)
+            outside = None if sample is None else sample.outside(CpuSample.now())
         Path(f"{base}.raw").write_bytes(raw)
         Path(f"{base}.txt").write_text(self.normalize(raw.decode()))
         if "wit.json" in cmd.exts:
@@ -906,24 +990,28 @@ class Gate:
         with self.log_lock, open(self.dir / "times.txt", "a") as fh:
             fh.write(f"{cmd.name} {stem} {'dropped' if dropped else 'pass1' if cold else 'pass2'}"
                      f" rc={rc} wall={wall}s\n")
-        return rc, wall
+        return rc, wall, outside
 
-    def compare(self, cmd: GateCommand, stem: str, wall: float) -> list[Line]:
+    def compare(self, cmd: GateCommand, stem: str, wall: float,
+                outside: OutsideCpu | None) -> list[Line]:
         """The cold run's lines: a `DIFF` line per output file that differs
-        from the accepted one, and in a timed run a `SLOW` or `NOTIME` line
-        for its time."""
+        from the accepted one, and in a timed run a `SLOW`, `LOADED` or
+        `NOTIME` line for its time."""
         key = cmd.key(stem)
         lines = [Line(LineKind.DIFF, cmd.name, stem, ext) for ext in cmd.exts
                  if not _same(self.accepted / f"{key}.{ext}", self.new / f"{key}.{ext}")]
         if not self.timed:
             return lines
+        if outside is None:
+            raise ValueError(f"the cold run of {key} in a timed run has no outside CPU")
         Path(self.new / f"{key}{TIME_EXT}").write_text(f"{wall}\n")
         accepted = self.times.get(key)
         if accepted is None:
             lines.append(Line(LineKind.NOTIME, cmd.name, stem, f"time={wall}s"))
         elif wall > SLOW_FACTOR * accepted + SLOW_MARGIN:
-            lines.append(Line(LineKind.SLOW, cmd.name, stem,
-                              f"time={wall}s accepted={accepted}s load={load()}"))
+            kind = LineKind.LOADED if outside.cores > 1 else LineKind.SLOW
+            lines.append(Line(kind, cmd.name, stem,
+                              f"time={wall}s accepted={accepted}s {outside}"))
         return lines
 
     def compare_warm(self, cmd: GateCommand, stem: str) -> list[Line]:
@@ -949,8 +1037,8 @@ class Gate:
                         if cold:
                             self.run_one(cmd, stem, cold, cache, dropped=True)
                         continue
-                    _, wall = self.run_one(cmd, stem, cold, cache)
-                    lines += (self.compare(cmd, stem, wall) if cold
+                    _, wall, outside = self.run_one(cmd, stem, cold, cache)
+                    lines += (self.compare(cmd, stem, wall, outside) if cold
                               else self.compare_warm(cmd, stem))
         finally:
             (self.dir / f"log-{stem}.txt").write_text("".join(f"{ln}\n" for ln in lines))
@@ -1189,11 +1277,10 @@ def run_gate(argv: Sequence[str]) -> int:
             ap.error(f"{gate.dir} exists; give an empty out-dir")
         a.accepted.mkdir(parents=True, exist_ok=True)
     rwlock.outer(gate.hold(cold=True))
-    if a.accept:
-        print(f"load before: {load()}", flush=True)
+    sample = CpuSample.now() if a.accept else None
     lines = gate.run(cmds, keys)
-    if a.accept:
-        print(f"load after: {load()}")
+    if sample is not None:
+        print(f"run: {sample.outside(CpuSample.now())}")
     for ln in lines:
         print(ln)
     covered = gate.coverage_lines(cmds, keys)
