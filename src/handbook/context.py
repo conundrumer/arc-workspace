@@ -1407,13 +1407,13 @@ def context_at(commit: str, reader: str, args: list[str]) -> str:
     """One reader's whole context as the tree of `commit` renders it, with
     that tree's own code. The tree is written to a temporary directory, so
     that the checkout stays as it is."""
-    archived = subprocess.run(["git", "archive", "--format=tar", commit],
-                              cwd=REPO_ROOT, capture_output=True)
-    if archived.returncode != 0:
-        raise SystemExit(archived.stderr.decode().strip())
+    try:
+        archived = checkout.git_bytes(REPO_ROOT, "archive", "--format=tar", commit)
+    except checkout.GitFailed as e:
+        raise SystemExit(e.stderr.strip())
     with tempfile.TemporaryDirectory() as tmp:
         tree = Path(tmp)
-        with tarfile.open(fileobj=io.BytesIO(archived.stdout)) as tar:
+        with tarfile.open(fileobj=io.BytesIO(archived)) as tar:
             tar.extractall(tree, filter="data")
         paths = [str(tree / "src"), os.environ.get("PYTHONPATH", "")]
         env = {**os.environ, "PYTHONPATH": os.pathsep.join(p for p in paths if p)}
