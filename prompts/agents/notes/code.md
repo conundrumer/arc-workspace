@@ -10,6 +10,7 @@
 ## place-kinds
 - Defects:
     - One idea in two places: a computation, selection, rule, rendering or sentence written twice, in one module or across modules.
+    - Many ideas in one place: a module whose docstring has to describe more than one subject.
     - Solver text read or written outside the `souffle` package.
     - A lookup that defaults where the value could be unknown, or a closed vocabulary held as `str`.
     - An iteration whose order reaches output, run in hash order.
@@ -27,4 +28,5 @@
 ## place-tickets
 - Cite a place's target as every location of the place. For one idea in two places, the locations include those outside the diff.
 - Write under `Impact` what the code does there, and quote each location under `Evidence`.
+    - For many ideas in one place, write `many ideas in one place` as what is wrong in the module, write under `Impact` each subject it splits into, with the section banners or the classes that hold it, and quote under `Evidence` the module's line count as `wc -l` prints it.
 - In the title of a `question` ticket, write the question it poses after the target, in place of what is wrong in it.
