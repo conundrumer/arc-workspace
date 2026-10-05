@@ -16,6 +16,9 @@
 - When you launch an operator while no supervisor runs, launch a supervisor in the background. When a supervisor's reply says it ended for its context while an operator runs, launch a new one, with the flags and the states found not to hold that reply gives.
 - Once no operator of yours runs, tell the supervisor to stop, with SendMessage.
 - Ask an operator for no message to you before its final reply.
+- Give each draft of an operator's launch brief, and of a message to a running operator with that operator's agent id, to the session's dispatcher: launch the dispatcher with the first draft, and send each later draft with SendMessage. The dispatcher sends a message with no finding to the operator itself.
+- Launch an operator only once the dispatcher returns no finding on its brief. Where the dispatcher returns findings, revise the draft and send it again.
+- When a dispatcher's reply says it ended for its context, launch a new one with that reply and the next draft.
 - Once an operator has returned, send it further work only while a procedure its brief gives is unfinished and its context is under about 300k tokens. Otherwise launch a new operator, and give in its brief that work and the work the old operator's last reply leaves unfinished, each as the operator's description gives a procedure.
 
 ## While the user gives feedback

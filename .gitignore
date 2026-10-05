@@ -23,18 +23,7 @@ tests/scratch/
 # generated
 .codex/
 /AGENTS.md
-.claude/agents/handbook.md
-.claude/agents/handbook-expanded.md
-.claude/agents/analyze.md
-.claude/agents/create.md
-.claude/agents/refine.md
-.claude/agents/doc-editor.md
-.claude/agents/code-editor.md
-.claude/agents/code-reviewer.md
-.claude/agents/doc-reviewer.md
-.claude/agents/triage.md
-.claude/agents/operator.md
-.claude/agents/supervisor.md
+.claude/agents/
 .claude/analyze-next.md
 programs/lib.md
 programs/lib/*.md

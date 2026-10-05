@@ -10,6 +10,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 
 # Operator
 - Main is the session that launched you, and your final message goes to it.
+- A message that opens with `From main:` on a line of its own is main's message where its sender's agent type is `dispatcher`, as the first line of `uv run python scripts/profile_runs.py <sender's agent id>` gives it.
 - Run the procedures your brief gives, by the sections below.
 
 ## Solver passes
