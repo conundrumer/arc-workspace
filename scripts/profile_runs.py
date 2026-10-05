@@ -8,6 +8,7 @@ import math
 import re
 import shlex
 import sys
+import time
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from enum import Enum
@@ -25,10 +26,15 @@ from cli.parser import parser as run_dl_parser  # noqa: E402
 from quota import epoch  # noqa: E402
 from solver_console import config  # noqa: E402
 
+# The terms of a type's budget, which HELP states.
+BUDGET_FACTOR = 2
+WINDOW_RUNS = 5
+LOW_WAIT_PCT = 10
+
 HELP = mctx("""
     - Usage:
         ```
-        uv run python scripts/profile_runs.py ID [ID ...] [--type TYPE[,TYPE]] [--pct P] [--top N] [--runs]
+        uv run python scripts/profile_runs.py ID [ID ...] [--type TYPE[,TYPE]] [--pct P] [--top N] [--runs] [--since DATE]
         ```
     - An ID is an agent id, a session id, or the path of a `.jsonl` transcript. A session brings its main transcript, as type `main`, and each of its subagents' transcripts. Each transcript is a run.
     - A run's wall time, from its first entry to its last, is cut at each entry's time, and each interval goes to one part:
@@ -41,8 +47,12 @@ HELP = mctx("""
     - A poll is a Bash call that runs `sleep` and none of the known commands, in a loop or not. A command the harness moves to the background on its timeout counts under its own label up to then, and under `bg LABEL` after.
     - One run prints its parts and its labels by time, with each label's share of the wall time and its calls, and for backgrounded work the time it ran from launch to its notification.
     - More than one run prints, per agent type, the number of runs, the minimum, median, P-th percentile and maximum of wall time, the total, the median and P-th percentile of active time, which is wall time less `idle`, and each part's share of the total, then each type's labels by time, with the number of runs each appears in.
+    - The budget of each agent type is {factor} times a median wall time, printed with the runs it is taken over:
+        - With `--since DATE`, an ISO date or datetime read in local time where it gives no offset, the window is the runs whose first entry is at or after DATE. Where the window holds at least {window_runs} runs of the type, the median is taken over them.
+        - Otherwise it is taken over the type's runs whose `waits` and `idle` together are under {low_wait_pct}% of wall time. A type with no such run gets no budget, and an `undecided` line on stderr names it.
     - A run whose agent type is unknown is refused, and so is an ID that names transcripts that differ. A call whose agent type is unknown is labelled `agent ?`, and a Bash call with no command is labelled `shell`; an `undecided` line on stderr names each.
-    """)
+    """).format(factor=BUDGET_FACTOR, window_runs=WINDOW_RUNS,
+                low_wait_pct=LOW_WAIT_PCT)
 
 
 class Part(Enum):
@@ -101,6 +111,7 @@ class Run:
     label: str
     agent_type: str
     description: str
+    start: float | None
     wall: float
     parts: dict[Part, float]
     groups: dict[Key, Group]
@@ -108,6 +119,13 @@ class Run:
     @property
     def active(self) -> float:
         return self.wall - self.parts[Part.IDLE]
+
+    @property
+    def low_wait(self) -> bool:
+        """Whether the run's `waits` and `idle` are under LOW_WAIT_PCT% of
+        its wall time."""
+        waited = self.parts[Part.WAITS] + self.parts[Part.IDLE]
+        return waited * 100 < self.wall * LOW_WAIT_PCT
 
 
 @dataclass
@@ -543,7 +561,10 @@ def profile(path: Path, undecided: list[str]) -> Run:
     for k, start in running.values():
         group(k).ran += end - start
     wall = end - first if first is not None else 0.0
-    return Run(label, agent_type, description, wall, parts,
+    if first is None:
+        undecided.append(mctx("{run}: no entry gives a time, so its start "
+                              "is unknown").format(run=label))
+    return Run(label, agent_type, description, first, wall, parts,
                {k: g for k, g in groups.items() if g.time or g.calls})
 
 
@@ -557,6 +578,47 @@ def percentile(values: list[float], p: float) -> float:
     """The nearest-rank percentile of a list of numbers."""
     v = sorted(values)
     return v[max(0, min(len(v) - 1, math.ceil(len(v) * p / 100) - 1))]
+
+
+def clock(t: float | None) -> str:
+    return time.strftime("%Y-%m-%d %H:%M", time.localtime(t)) if t is not None else "?"
+
+
+def by_agent_type(runs: list[Run]) -> dict[str, list[Run]]:
+    by_type: dict[str, list[Run]] = {}
+    for r in runs:
+        by_type.setdefault(r.agent_type, []).append(r)
+    return by_type
+
+
+def print_budgets(runs: list[Run], since: float | None,
+                  undecided: list[str]) -> None:
+    """Print each agent type's budget, its basis, and the runs it is taken
+    over."""
+    by_type = by_agent_type(runs)
+    print(f"{'type':<18} {'budget':>7} {'runs':>4}  basis")
+    for kind in sorted(by_type):
+        rs = by_type[kind]
+        window: list[Run] = []
+        if since is not None:
+            for r in rs:
+                if r.start is None:
+                    undecided.append(mctx("{run}: its start is unknown, so it is "
+                                          "left out of the window").format(run=r.label))
+                elif r.start >= since:
+                    window.append(r)
+        if len(window) >= WINDOW_RUNS:
+            basis, chosen = mctx("since {date}").format(date=clock(since)), window
+        else:
+            basis = mctx("waits and idle under {pct}% of wall").format(pct=LOW_WAIT_PCT)
+            chosen = [r for r in rs if r.low_wait]
+        if not chosen:
+            undecided.append(mctx("{kind}: no run has waits and idle under "
+                                  "{pct}% of wall, so it has no budget").format(
+                kind=kind, pct=LOW_WAIT_PCT))
+            continue
+        budget = BUDGET_FACTOR * percentile([r.wall for r in chosen], 50)
+        print(f"{kind:<18} {minutes(budget):>7} {len(chosen):>4}  {basis}")
 
 
 def part_split(parts: dict[Part, float]) -> str:
@@ -574,9 +636,7 @@ def print_groups(groups: dict[Key, Group], top: int, wall: float,
 
 
 def print_types(runs: list[Run], pct: float, top: int) -> None:
-    by_type: dict[str, list[Run]] = {}
-    for r in runs:
-        by_type.setdefault(r.agent_type, []).append(r)
+    by_type = by_agent_type(runs)
     order = sorted(by_type, key=lambda k: (-sum(r.wall for r in by_type[k]), k))
     print(f"{'type':<18} {'runs':>4} {'min':>7} {'p50':>7} {f'p{pct:g}':>7} "
           f"{'max':>7} {'total':>8} {'act p50':>8} {f'act p{pct:g}':>8}  "
@@ -611,6 +671,10 @@ def print_types(runs: list[Run], pct: float, top: int) -> None:
         print_groups(merged, top, total, present)
 
 
+def iso_date(text: str) -> float:
+    return epoch(text)
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=HELP,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -624,6 +688,10 @@ def main(argv: list[str]) -> int:
                               "none per type and all for one run"))
     ap.add_argument("--runs", action="store_true",
                     help=mctx("also print one line per run"))
+    ap.add_argument("--since", type=iso_date, metavar="DATE",
+                    help=mctx("start of the window of runs a type's budget "
+                              "is taken over: an ISO date or datetime, in "
+                              "local time where it gives no offset"))
     args = ap.parse_args(argv)
     types = set(args.type.split(",")) if args.type else None
     undecided: list[str] = []
@@ -642,7 +710,7 @@ def main(argv: list[str]) -> int:
         return 2
     if len(runs) == 1 or args.runs:
         for r in runs:
-            print(f"{r.label} {r.agent_type}: {r.description}\n"
+            print(f"{r.label} {r.agent_type} {clock(r.start)}: {r.description}\n"
                   f"  wall {minutes(r.wall)}  {part_split(r.parts)}")
         if len(runs) == 1:
             print_groups(runs[0].groups, args.top, runs[0].wall)
@@ -650,6 +718,8 @@ def main(argv: list[str]) -> int:
             print()
     if len(runs) > 1:
         print_types(runs, args.pct, args.top)
+    print()
+    print_budgets(runs, args.since, undecided)
     for line in undecided:
         print(mctx("undecided: {line}").format(line=line), file=sys.stderr)
     return 0
