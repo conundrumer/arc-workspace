@@ -49,7 +49,7 @@ HELP = mctx("""
         uv run python scripts/profile_runs.py --running ID
         uv run python scripts/profile_runs.py --pending ID
         ```
-    - An ID is an agent id, a session id, or the path of a `.jsonl` transcript. A session brings its main transcript, as type `main`, and each of its subagents' transcripts. Each transcript is a run.
+    - An ID is an agent id, a session id, or the path of a `.jsonl` transcript. A session brings its main transcript, as type `main`, and the run of each of its subagents. A run is the transcript of one agent, or where the top-level session takes a new session id while a subagent runs, that subagent's transcripts under each session's directory: each one under a later session goes on from the one before it, its first entry answering that one's last. A run's agent type, description and launching call are those the earliest of its transcripts' `.meta.json` files that gives each gives.
     - A run's wall time, from its first entry to its last, is cut at each entry's time, and each interval goes to one part:
         - `tools`: a tool call is pending. A Bash call is labelled by the known commands it runs, joined by ` + `: `gate`, `merge_change.py`, `materialize.py`, `pytest`, `pyright`, and `run_dl.py` with its subcommand. A Bash call that runs none is labelled by the first program it runs past setup, and any other call by its tool.
         - `waits`: a foreground Agent, Monitor or TaskOutput call or a poll is pending, or the turn has ended while an agent or command the run backgrounded is running. These are labelled `agent TYPE`, `poll` and `bg LABEL`.
@@ -65,7 +65,7 @@ HELP = mctx("""
         - The window of a type that has an agent document under `prompts/agents/` is the runs whose first entry is at or after the last commit that changed that document, a document it includes or inlines, a lib file its rendered prompt holds, a script under `scripts/` its rendered prompt names, or a package under `src/` its rendered prompt runs with `-m`, and not a module such a script or package imports. `--since DATE`, an ISO date or datetime read in local time where it gives no offset, sets the window of every type to the runs whose first entry is at or after DATE. Where the window holds at least {window_runs} runs of the type, the median is taken over them.
         - A type with no agent document has a window only with `--since`, and a type whose paths no commit changed has none, and an `undecided` line on stderr names it.
         - Otherwise it is taken over the type's runs whose `waits` and `idle` together are under {low_wait_pct}% of wall time. A type with no such run gets no budget, and an `undecided` line on stderr names it.
-    - `--running ID` lists the running agents under the run ID, where ID is a session id or an agent id: the agents the run launched, the agents those launched, and so on, whether or not their parent has completed. An agent has completed when its turn has ended, when its last entry is the harness's note that the user interrupted it, or when its parent has its result or a notification of it and its transcript has not changed since. The agents are listed in launch order, each parent's agents after it. In an agent's shell, `$CLAUDE_CODE_SESSION_ID` holds the id of the top-level session, in a subagent as well, so `--running $CLAUDE_CODE_SESSION_ID` lists the running agents of the whole session. For each agent it prints:
+    - `--running ID` lists the running agents under the run ID, where ID is a session id or an agent id, and a run that goes on under a later session is listed under that session's id: the agents the run launched, the agents those launched, and so on, whether or not their parent has completed. An agent has completed when its turn has ended, when its last entry is the harness's note that the user interrupted it, or when its parent has its result or a notification of it and its transcript has not changed since. The agents are listed in launch order, each parent's agents after it. In an agent's shell, `$CLAUDE_CODE_SESSION_ID` holds the id of the top-level session, in a subagent as well, so `--running $CLAUDE_CODE_SESSION_ID` lists the running agents of the whole session. For each agent it prints:
         - its agent id, type and launch description, its parent, which is the agent id of the agent that launched it or `main`, the time since its first entry, its active time with the time of the message it is measured from and, where that message's period has ended, the time it ended, its budget, and its context size in tokens, which is the input of its last request;
         - its working directory, as its first entry gives it;
         - its last text output, the end of the text of its last assistant entry that gives text;
@@ -84,7 +84,7 @@ HELP = mctx("""
         - for a SendMessage call, its recipient, as `to R:`, and its message;
         - for a SubagentHandback call, its message;
         - for any other call, nothing past its label.
-    - A run whose agent type is unknown is refused, and so is an ID that names transcripts that differ. A call whose agent type is unknown is labelled `agent ?`, and a Bash call with no command is labelled `shell`; an `undecided` line on stderr names each.
+    - A run whose agent type is unknown is refused, and so is an ID that names transcripts that differ and are not the transcripts of one run. A call whose agent type is unknown is labelled `agent ?`, and a Bash call with no command is labelled `shell`; an `undecided` line on stderr names each.
     """).format(factor=BUDGET_FACTOR, window_runs=WINDOW_RUNS,
                 low_wait_pct=LOW_WAIT_PCT, recent=RECENT_CALLS,
                 width=COMMAND_WIDTH)
@@ -287,25 +287,49 @@ def project_dirs() -> list[Path]:
     return dirs
 
 
+def distinct(found: list[Path]) -> list[Path]:
+    """`found` less each transcript identical to one before it."""
+    out: list[Path] = []
+    for p in found:
+        if not any(filecmp.cmp(p, q, shallow=False) for q in out):
+            out.append(p)
+    return out
+
+
 def one_of(ident: str, found: list[Path]) -> Path | None:
+    """The transcript `ident` names among `found`, less identical copies:
+    the one transcript, or the last of the transcripts of one run."""
+    found = distinct(found)
     if not found:
         return None
-    if all(filecmp.cmp(found[0], p, shallow=False) for p in found[1:]):
-        return found[0]
+    run = chain(found[0])
+    if sorted(run) == sorted(found):
+        return run[-1]
     raise Refused(mctx("`{ident}` names more than one transcript, and they "
                        "differ; give the path of one of {paths}").format(
         ident=ident, paths=", ".join(str(p) for p in found)))
 
 
+@cache
+def agent_transcripts() -> dict[str, list[Path]]:
+    """The subagent transcripts under the project directories, by agent id."""
+    out: dict[str, list[Path]] = {}
+    for p in sorted(p for d in project_dirs()
+                    for p in d.glob("*/*/subagents/**/agent-*.jsonl")):
+        out.setdefault(agent_id(p), []).append(p)
+    return out
+
+
 def find(ident: str) -> Path:
+    """The transcript `ident` names, and for a run of more than one
+    transcript, its last."""
     if ident.endswith(".jsonl"):
         path = Path(ident).expanduser()
         if not path.is_file():
             raise Refused(mctx("no file `{path}`").format(path=path))
         return path
-    name = ident.removeprefix("agent-")
-    for pattern in (f"*/{ident}.jsonl", f"*/*/subagents/**/agent-{name}.jsonl"):
-        found = sorted(p for d in project_dirs() for p in d.glob(pattern))
+    for found in (sorted(p for d in project_dirs() for p in d.glob(f"*/{ident}.jsonl")),
+                  agent_transcripts().get(ident.removeprefix("agent-"), [])):
         path = one_of(ident, found)
         if path:
             return path
@@ -319,21 +343,70 @@ def is_subagent(path: Path) -> bool:
 
 
 def transcripts(ident: str) -> list[Path]:
+    """The last transcript of each run `ident` names."""
     path = find(ident)
     if is_subagent(path):
         return [path]
-    return [path, *sorted(path.with_suffix("").glob("subagents/**/agent-*.jsonl"))]
+    return [path, *dict.fromkeys(chain(p)[-1] for p in sorted(
+        path.with_suffix("").glob("subagents/**/agent-*.jsonl")))]
 
 
 def agent_id(path: Path) -> str:
     return path.stem.removeprefix("agent-")
 
 
+@cache
+def ends(path: Path) -> tuple[str | None, str | None]:
+    """The `parentUuid` of the first entry of the transcript at `path`, and
+    the `uuid` of its last entry that gives one."""
+    first: str | None = None
+    last: str | None = None
+    for i, e in enumerate(read_entries(path)):
+        if i == 0:
+            first = e.get("parentUuid")
+        last = e.get("uuid") or last
+    return first, last
+
+
+def chain(path: Path) -> list[Path]:
+    """The transcripts of the run of the agent whose transcript is at
+    `path`, earliest first: each after the first goes on from the one
+    before it, its first entry answering that one's last."""
+    if not is_subagent(path):
+        return [path]
+    others = [p for p in distinct(agent_transcripts().get(agent_id(path), []))
+              if not filecmp.cmp(p, path, shallow=False)]
+    run = [path]
+    while True:
+        before = [p for p in others if p not in run
+                  and ends(run[0])[0] is not None
+                  and ends(p)[1] == ends(run[0])[0]]
+        after = [p for p in others if p not in run
+                 and ends(run[-1])[1] is not None
+                 and ends(p)[0] == ends(run[-1])[1]]
+        if len(before) > 1 or len(after) > 1:
+            raise Refused(mctx("more than one transcript of agent `{agent}` "
+                               "goes on from {path}, or {path} goes on from "
+                               "more than one: {paths}").format(
+                agent=agent_id(path), path=run[0] if len(before) > 1 else run[-1],
+                paths=", ".join(str(p) for p in before + after)))
+        if not before and not after:
+            return run
+        run = before + run + after
+
+
 def read_meta(path: Path) -> dict[str, Any] | None:
-    meta = path.with_suffix(".meta.json")
-    if not meta.is_file():
+    """The `.meta.json` of the run of the subagent whose transcript is at
+    `path`: each key as the earliest of its transcripts' `.meta.json` files
+    that gives the key gives it, or None where none of them has one."""
+    metas = [json.loads(m.read_text()) for p in chain(path)
+             if (m := p.with_suffix(".meta.json")).is_file()]
+    if not metas:
         return None
-    return json.loads(meta.read_text())
+    out: dict[str, Any] = {}
+    for meta in reversed(metas):
+        out.update(meta)
+    return out
 
 
 def subagent_meta(path: Path) -> dict[str, Any]:
@@ -372,6 +445,12 @@ def read_entries(path: Path, naming: set[str] | None = None) -> list[Entry]:
             except json.JSONDecodeError:
                 continue
     return entries
+
+
+def run_entries(path: Path) -> list[Entry]:
+    """The entries of the run of the agent whose transcript is at `path`,
+    across its transcripts."""
+    return [e for p in chain(path) for e in read_entries(p)]
 
 
 def blocks(entry: Entry, kind: str) -> list[dict[str, Any]]:
@@ -735,14 +814,14 @@ def profile(path: Path, undecided: list[str]) -> Run:
     agent_type, description = run_type(path)
     label = agent_id(path) if is_subagent(path) else path.stem
     session = session_of(path)
-    entries = read_entries(path)
+    entries = run_entries(path)
     results = results_by_call(entries)
     starts, ends = turns(entries)
     # The index of the prompt the model first answers: the brief is the
     # prompts up to it.
     briefed = min(starts, default=len(entries))
     parent = parent_id(path) if is_subagent(path) else None
-    children = session_launches(session)[1].get(label, frozenset())
+    children = run_launches(path)[1].get(label, frozenset())
     messages: list[Message] = []
     others: list[Message] = []
     unknown: list[str] = []
@@ -986,10 +1065,23 @@ def session_launches(session: Path) -> tuple[dict[str, Path], dict[str, frozense
     for aid, p in session_agents(session).items():
         meta = read_meta(p) or {}
         if meta.get("toolUseId"):
-            by_call[meta["toolUseId"]] = p
+            by_call[meta["toolUseId"]] = chain(p)[-1]
         if meta.get("parentAgentId"):
             children.setdefault(meta["parentAgentId"], set()).add(aid)
     return by_call, {k: frozenset(v) for k, v in children.items()}
+
+
+def run_launches(path: Path) -> tuple[dict[str, Path], dict[str, frozenset[str]]]:
+    """`session_launches` over the sessions of the transcripts of the run
+    at `path`."""
+    by_call: dict[str, Path] = {}
+    children: dict[str, frozenset[str]] = {}
+    for p in chain(path):
+        calls, kids = session_launches(session_of(p))
+        by_call.update(calls)
+        for k, v in kids.items():
+            children[k] = children.get(k, frozenset()) | v
+    return by_call, children
 
 
 @dataclass
@@ -1034,7 +1126,7 @@ def launched(path: Path, undecided: list[str]) -> list[Launch]:
     A sign that an agent reported is the run's notification of it, or a
     result of its launch that does not say the agent runs in the
     background."""
-    entries = [e for e in read_entries(path) if e.get("timestamp")]
+    entries = [e for e in run_entries(path) if e.get("timestamp")]
     results = results_by_call(entries)
     answered = {b.get("tool_use_id"): epoch(e["timestamp"]) for e in entries
                 if e.get("type") == "user" for b in blocks(e, "tool_result")}
@@ -1045,7 +1137,7 @@ def launched(path: Path, undecided: list[str]) -> list[Launch]:
                for b in blocks(e, "tool_use") if b.get("name") == "SendMessage"
                if (aid := resumed(results.get(b.get("id", "")) or {}, path.stem,
                                   b.get("id", ""), undecided))}
-    by_call = session_launches(session_of(path))[0]
+    by_call = run_launches(path)[0]
     out: list[Launch] = []
     for e in entries:
         if e.get("type") != "assistant":
@@ -1110,7 +1202,7 @@ def running_agents(path: Path, undecided: list[str]) -> list[tuple[str, Path]]:
     """The agents under the run at `path` whose parent holds no sign that
     they completed, or whose transcript changed after the last sign, each
     with its parent, each parent's agents after it."""
-    parents = session_launches(session_of(path))[1]
+    parents = run_launches(path)[1]
     out: list[tuple[str, Path]] = []
     for a in launched(path, undecided):
         child = a.path
@@ -1276,7 +1368,8 @@ def main(argv: list[str]) -> int:
                         running_agents(find(args.running), undecided))
             listed = [(parent, r) for parent, r in profiled if not r.ended]
         else:
-            paths = [p for ident in args.ids for p in transcripts(ident)]
+            paths = list(dict.fromkeys(p for ident in args.ids
+                                       for p in transcripts(ident)))
             runs = [profile(p, undecided) for p in paths
                     if not types or run_type(p)[0] in types]
     except Refused as e:
