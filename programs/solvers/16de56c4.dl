@@ -9,7 +9,6 @@
 //  instead, repainting the pair.
 
 .type Line = [a: Axis, across: Position]
-.type LineColor = [ln: Line, col: Color]
 // how far the intruder's paint reaches
 .type Choice =
     // the rhythm advances from the pair and halts at the intruder
@@ -35,12 +34,11 @@ mark([A, Across], P, Col) :-
     in(P, Col), !params.bg(Col),                             // ink cell
     axis_elem(A), split(P, A, _, Across).                    // its line on each axis
 
-.init ink = Tally<LineColor, Position>
-ink.item([Ln, Col], P) :- mark(Ln, P, Col).
-
 // A color with three cells on the line: none of its pairs is a seed.
 .decl tripled(ln: Line, col: Color)
-tripled(Ln, Col) :- ink.tally([Ln, Col], N), N > 2.
+tripled(Ln, Col) :-
+    mark(Ln, P1, Col), mark(Ln, P2, Col), mark(Ln, P3, Col),
+    P1 != P2, P1 != P3, P2 != P3.
 
 // Two cells that are the whole of a color's ink on the line: the pair a rhythm
 // grows from.
@@ -48,14 +46,12 @@ tripled(Ln, Col) :- ink.tally([Ln, Col], N), N > 2.
 seed(Ln, Col, P1, P2) :-
     mark(Ln, P1, Col), mark(Ln, P2, Col), P1 != P2, !tripled(Ln, Col).
 
-// The line's ink outside a candidate seed's color.
-.init other_ink = Tally<LineColor, Position>
-other_ink.item([Ln, Col], P) :-
-    seed(Ln, Col, _, _), mark(Ln, P, Col2), Col2 != Col.
-
 // Two cells outside the seed color leave the line with no rhythm.
 .decl crowded(ln: Line)
-crowded(Ln) :- other_ink.tally([Ln, _], N), N > 1.
+crowded(Ln) :-
+    seed(Ln, Col, _, _),
+    mark(Ln, P1, Col1), Col1 != Col, mark(Ln, P2, Col2), Col2 != Col,
+    P1 != P2.
 
 .decl rhythm(ln: Line, col: Color, p1: Position, p2: Position)
 rhythm(Ln, Col, P1, P2) :- seed(Ln, Col, P1, P2), !crowded(Ln).
