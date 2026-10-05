@@ -708,8 +708,9 @@ def _write_whole(path: Path, text: str) -> Path:
     return path
 
 
-WRAPPERS_PATH = REPO_ROOT / "src" / "lib_components" / "components.py"
-"""The Python module of the lib's component wrappers."""
+WRAPPERS_PATH = document(REPO_ROOT / "src" / "lib_components" / "components.py")
+"""The Python module of the lib's component wrappers, at its place in the
+checkout under the documents root, the root `LIB_SRC` is read under."""
 
 
 def write_interfaces(lib: Path = LIB_SRC,
