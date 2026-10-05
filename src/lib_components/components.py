@@ -731,6 +731,23 @@ def OffsetInvariance(Key: TypeArg, Val: TypeArg, *, sizes: Mapping[PyValue, Size
     return OffsetInvarianceRows(got['cand'], got['pair'], got['mismatch'], got['line_mismatch'], got['period'], got['min_period'])
 
 
+class WallpaperRows(NamedTuple):
+    """The output relations of `Wallpaper` (programs/lib/cells.dl)."""
+
+    symmetry: Relation
+    action: Relation
+
+
+def Wallpaper(Key: TypeArg, Val: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, transform: Iterable[PyRow] | None = None, cell: Iterable[PyRow] | None = None, grid: Iterable[PyRow] | None = None, period: Iterable[PyRow] | None = None) -> WallpaperRows:
+    """Runs `Wallpaper` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
+    got = call('Wallpaper', [Key, Val],
+               GridTypes(LibType.POSITION, LibType.OFFSET),
+               {'transform': Columns((LibType.D4, ), False), 'cell': Columns((Key, LibType.POSITION, Val, ), True), 'grid': Columns((Key, LibType.POSITION, ), True), 'period': Columns((Key, LibType.AXIS, Primitive.NUMBER, ), True), 'symmetry': Columns((Key, LibType.D4, LibType.OFFSET, ), True), 'action': Columns((Key, LibType.POSITION, LibType.POSITION, ), True)},
+               {'transform': transform, 'cell': cell, 'grid': grid, 'period': period},
+               ['symmetry', 'action'], sizes)
+    return WallpaperRows(got['symmetry'], got['action'])
+
+
 class OccurrencesRows(NamedTuple):
     """The output relations of `Occurrences` (programs/lib/cells.dl)."""
 

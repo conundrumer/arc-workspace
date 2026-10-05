@@ -559,6 +559,104 @@
     min_period(Ky, A, K) <= min_period(Ky, A, K2) :- K > K2.
 }
 
+/// The isometries of a valued cell set read as a wallpaper pattern, quotiented
+/// by its translation lattice: each candidate is a D4 transform composed with
+/// a shift from the lattice's fundamental domain, one per coset. A candidate
+/// is a symmetry when it takes some cell onto another cell and takes no cell
+/// onto a cell of another value.
+.comp Wallpaper<Key, Val> {
+    /// The candidates include those whose transform is d.
+    .decl transform(d: D4)  // @input
+
+    /// The cell at p holds v.
+    .decl cell(key: Key, p: Position, v: Val)  // @input
+
+    /// p is a position of the frame.
+    .decl grid(key: Key, p: Position)  // @input
+
+    /// k is the pattern's translation period along axis a.
+    .decl period(key: Key, a: Axis, k: number)  // @input
+
+    // d is the edge of the bottom-right corner on axis a.
+    .decl _canon(a: Axis, d: Dir)
+    _canon(A, D) :- dir_of(DIAG_BR, A, D).
+
+    // delta is a shift along axis a that lies in the fundamental domain:
+    // zero, or less than one period toward the bottom or right edge.
+    .decl _dom_ax(key: Key, a: Axis, delta: Offset)
+    _dom_ax(Key, A, Delta) :-
+        grid(Key, P), axis_elem(A),
+        ( Delta = ZERO
+        ; sub_extent(P, A, K), period(Key, A, Kp), K < Kp,
+          _canon(A, D), jump_offset(D, K, Delta)
+        ).
+
+    // delta is a shift in the fundamental domain.
+    .decl _dom(key: Key, delta: Offset)
+    _dom(Key, Delta) :-
+        _dom_ax(Key, A, D1), _dom_ax(Key, A2, D2), perp(A, A2),
+        compose(D1, D2, Delta).
+
+    // delta is a lattice element along axis a that a self-inverse
+    // candidate's square is tested against: zero, or one period toward the
+    // bottom or right edge.
+    .decl _lat_ax(key: Key, a: Axis, delta: Offset)
+    _lat_ax(Key, A, Delta) :-
+        grid(Key, _), axis_elem(A),
+        ( Delta = ZERO
+        ; period(Key, A, K), _canon(A, D), jump_offset(D, K, Delta)
+        ).
+
+    // delta is a lattice element that a self-inverse candidate's square is
+    // tested against: the sum of one `_lat_ax` element on each axis.
+    .decl _lat(key: Key, delta: Offset)
+    _lat(Key, Delta) :-
+        _lat_ax(Key, A, D1), _lat_ax(Key, A2, D2), perp(A, A2),
+        compose(D1, D2, Delta).
+
+    // Transform d followed by shift delta is a candidate isometry. Where d
+    // is its own inverse, the candidate squares to a translation, which must
+    // be a row of `_lat`.
+    .decl _cand(key: Key, d: D4, delta: Offset)
+    _cand(Key, D, Delta) :-
+        transform(D), _dom(Key, Delta),
+        ( !d4_inverse(D, D)
+        ; d4_inverse(D, D),
+          apply(D, Delta, DD), compose(Delta, DD, S), _lat(Key, S)
+        ).
+
+    // The candidate (d, delta) takes the cell at p, holding v1, onto the
+    // cell at q, holding v2.
+    .decl _pair(key: Key, d: D4, delta: Offset, p: Position, q: Position,
+                v1: Val, v2: Val)
+    _pair(Key, D, Delta, P, Q, V1, V2) :-
+        cell(Key, P, V1), _cand(Key, D, Delta), apply(D, P, P1),
+        compose(P1, Delta, Q), cell(Key, Q, V2).
+
+    // The candidate (d, delta) takes some cell onto a cell of another value.
+    .decl _mismatch(key: Key, d: D4, delta: Offset)
+    _mismatch(Key, D, Delta) :- _pair(Key, D, Delta, _, _, V1, V2), V1 != V2.
+
+    // The candidate (d, delta) takes some cell onto a different cell.
+    .decl _witnessed(key: Key, d: D4, delta: Offset)
+    _witnessed(Key, D, Delta) :- _pair(Key, D, Delta, P, Q, _, _), P != Q.
+
+    /// Transform d followed by shift delta is a symmetry of the pattern.
+    .decl symmetry(key: Key, d: D4, delta: Offset)
+    symmetry(Key, D, Delta) :-
+        _witnessed(Key, D, Delta), !_mismatch(Key, D, Delta).
+
+    /// A symmetry or a period shift takes the frame position p onto the frame
+    /// position q.
+    .decl action(key: Key, p: Position, q: Position)
+    action(Key, P, Q) :-
+        symmetry(Key, D, Delta), grid(Key, P), apply(D, P, P1),
+        compose(P1, Delta, Q), grid(Key, Q).
+    action(Key, P, Q) :-
+        period(Key, A, K), axis_of(D, A),
+        grid(Key, P), jump(P, D, K, Q), grid(Key, Q).
+}
+
 /// Occurrences of one valued cell set, the shape, among another: a placement
 /// occurs where every shape member lands on a cell carrying that member's
 /// value. A placement that runs off the grid contradicts itself, so the

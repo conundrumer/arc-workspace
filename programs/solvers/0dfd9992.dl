@@ -14,90 +14,6 @@
 
 .init params = Params
 
-// Proposal comp: the isometry peer of OffsetInvariance, quotiented by a
-// translation lattice. Given a keyed valued cell set, its per-axis
-// periods, and the isometry kinds in play, candidates are the isometries
-// of the frame — a kind composed with a shift from the lattice's
-// fundamental domain, one representative per coset. `sym` holds the
-// candidates witnessed by some pair of cells (vacuous overlap is no
-// evidence) and contradicted by none; `step` maps each grid position one
-// step along an admitted isometry or a lattice shift.
-.comp Wallpaper<Key, Val> {
-    .decl kind(d: D4)                           // input
-    .decl cell(key: Key, p: Position, v: Val)   // input
-    .decl grid(key: Key, p: Position)           // input
-    .decl period(key: Key, a: Axis, k: number)  // input
-
-    // Internal canonical corner for fundamental-domain shifts; the choice
-    // is unobservable — every corner yields the same cosets and maps.
-    .decl canon(a: Axis, d: Dir)
-    canon(AXIS_V, DIR_B). canon(AXIS_H, DIR_R).
-
-    // Fundamental-domain shifts: per axis, zero and 0 < k < period toward
-    // the canonical corner, composed across the two axes.
-    .decl dom_ax(key: Key, a: Axis, delta: Offset)
-    dom_ax(Key, A, Delta) :-
-        grid(Key, P), axis_elem(A),
-        ( Delta = ZERO
-        ; sub_extent(P, A, K), period(Key, A, Kp), K < Kp,
-          canon(A, D), jump_offset(D, K, Delta)
-        ).
-
-    .decl dom(key: Key, delta: Offset)
-    dom(Key, Delta) :-
-        dom_ax(Key, A, D1), dom_ax(Key, A2, D2), perp(A, A2),
-        compose(D1, D2, Delta).
-
-    // Lattice elements a candidate's square can reach: per axis, zero and
-    // one period toward the canonical corner, composed across the two axes.
-    .decl lat_ax(key: Key, a: Axis, delta: Offset)
-    lat_ax(Key, A, Delta) :-
-        grid(Key, _), axis_elem(A),
-        ( Delta = ZERO
-        ; period(Key, A, K), canon(A, D), jump_offset(D, K, Delta)
-        ).
-
-    .decl lat(key: Key, delta: Offset)
-    lat(Key, Delta) :-
-        lat_ax(Key, A, D1), lat_ax(Key, A2, D2), perp(A, A2),
-        compose(D1, D2, Delta).
-
-    // Candidates per kind: fundamental-domain shifts. A kind that is its
-    // own inverse squares to the identity, so its candidate's square is a
-    // translation, and that translation must land in the lattice.
-    .decl cand(key: Key, d: D4, delta: Offset)
-    cand(Key, D, Delta) :-
-        kind(D), dom(Key, Delta),
-        ( !d4_inverse(D, D)
-        ; d4_inverse(D, D),
-          apply(D, Delta, DD), compose(Delta, DD, S), lat(Key, S)
-        ).
-
-    // Valued cell pairs under each candidate isometry.
-    .decl pair(key: Key, d: D4, delta: Offset, p: Position, q: Position,
-               v1: Val, v2: Val)
-    pair(Key, D, Delta, P, Q, V1, V2) :-
-        cell(Key, P, V1), cand(Key, D, Delta), apply(D, P, P1),
-        compose(P1, Delta, Q), cell(Key, Q, V2).
-
-    .decl mismatch(key: Key, d: D4, delta: Offset)
-    mismatch(Key, D, Delta) :- pair(Key, D, Delta, _, _, V1, V2), V1 != V2.
-
-    .decl witnessed(key: Key, d: D4, delta: Offset)
-    witnessed(Key, D, Delta) :- pair(Key, D, Delta, P, Q, _, _), P != Q.
-
-    .decl sym(key: Key, d: D4, delta: Offset)
-    sym(Key, D, Delta) :- witnessed(Key, D, Delta), !mismatch(Key, D, Delta).
-
-    .decl step(key: Key, p: Position, q: Position)
-    step(Key, P, Q) :-
-        sym(Key, D, Delta), grid(Key, P), apply(D, P, P1),
-        compose(P1, Delta, Q), grid(Key, Q).
-    step(Key, P, Q) :-
-        period(Key, A, K), axis_of(D, A),
-        grid(Key, P), jump(P, D, K, Q), grid(Key, Q).
-}
-
 .decl intact(p: Position, col: Color)
 intact(P, Col) :- in(P, Col), !params.hole(Col).
 
@@ -105,10 +21,10 @@ intact(P, Col) :- in(P, Col), !params.hole(Col).
 si.cell($U(), P, Col) :- intact(P, Col).
 
 .init wp = Wallpaper<Unit, Color>
-wp.kind(D) :- d4_elem(D).
+wp.transform(D) :- d4_elem(D).
 wp.cell($U(), P, Col) :- intact(P, Col).
 wp.grid($U(), P) :- in(P, _).
 wp.period($U(), A, K) :- si.min_period($U(), A, K).
 
 out(P, Col) :- intact(P, Col).
-out(Q, Col) :- out(P, Col), wp.step($U(), P, Q).
+out(Q, Col) :- out(P, Col), wp.action($U(), P, Q).

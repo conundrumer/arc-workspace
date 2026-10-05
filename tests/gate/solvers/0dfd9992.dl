@@ -1,0 +1,30 @@
+// 0dfd9992
+// @keywords: wallpaper symmetry repair color-class
+// input: A wallpaper pattern, damaged by holes of one color.
+// output: The surviving cells identify the pattern's symmetries: the
+//  per-axis translation periods, and the isometries that some surviving pair
+//  witnesses and none contradicts. Colors propagate from the survivors along
+//  those symmetries, so each cell takes its orbit's color.
+
+.decl out(p: Position, col: Color)
+
+.comp Params {
+    .decl hole(col: Color) hole(0).
+}
+
+.init params = Params
+
+.decl intact(p: Position, col: Color)
+intact(P, Col) :- in(P, Col), !params.hole(Col).
+
+.init si = OffsetInvariance<Unit, Color>
+si.cell($U(), P, Col) :- intact(P, Col).
+
+.init wp = Wallpaper<Unit, Color>
+wp.transform(D) :- d4_elem(D).
+wp.cell($U(), P, Col) :- intact(P, Col).
+wp.grid($U(), P) :- in(P, _).
+wp.period($U(), A, K) :- si.min_period($U(), A, K).
+
+out(P, Col) :- intact(P, Col).
+out(Q, Col) :- out(P, Col), wp.action($U(), P, Q).
