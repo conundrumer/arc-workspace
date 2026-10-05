@@ -31,8 +31,11 @@ Beside it stands the merge lock, `MERGE_FILE` in the same directory, which
 `scripts/merge_change.py` holds exclusively through `flock`, so that one
 merge at a time moves `master`. Its holder writes into the file what it
 merges, and a merge that has to wait says on stderr, once, that it waits
-and what the holder wrote. The kernel releases that hold too when its
-holder ends."""
+and what the holder wrote, where the holder has written it yet. A process
+that starts under a hold of the heavy commands' lock does not wait for the
+merge lock, for the reason it takes no heavy hold of its own: where another
+merge holds it, the process stops (`MergeHeld`). The kernel releases that
+hold too when its holder ends."""
 
 import contextlib
 import fcntl
@@ -60,6 +63,10 @@ class Hold(StrEnum):
 
 
 class NestedWriter(Exception):
+    pass
+
+
+class MergeHeld(Exception):
     pass
 
 
@@ -128,8 +135,10 @@ def held(hold: Hold) -> Iterator[None]:
             del os.environ[HOLD_ENV]
 
 
-MERGE_WAIT = mctx("Another merge holds {path}, so this merge waits until it is done. "
-                  "The holder wrote: {holder}")
+MERGE_WAIT = mctx("Another merge holds {path}, so this merge waits until it is done.")
+MERGE_HOLDER = mctx("The holder wrote: {holder}")
+MERGE_HELD = mctx("Another merge holds {path}, and this merge cannot wait for it, "
+                  "since it runs under an inherited hold of the heavy commands' lock.")
 
 
 @contextlib.contextmanager
@@ -138,11 +147,18 @@ def merge_lock(directory: Path, holder: str) -> Iterator[None]:
     with `holder` written into the file while it lasts."""
     path = directory / MERGE_FILE
 
-    def wait() -> str:
-        return MERGE_WAIT.format(path=path, holder=path.read_text().strip())
+    def wait(text: str) -> str:
+        written = path.read_text().strip()
+        return text if not written else f"{text} {MERGE_HOLDER.format(holder=written)}"
 
     with open(path, "a") as fh:
-        _take(fh, fcntl.LOCK_EX, [False], wait)
+        if inherited() is None:
+            _take(fh, fcntl.LOCK_EX, [False], lambda: wait(MERGE_WAIT.format(path=path)))
+        else:
+            try:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise MergeHeld(wait(MERGE_HELD.format(path=path))) from None
         fh.truncate(0)
         fh.write(holder + "\n")
         fh.flush()

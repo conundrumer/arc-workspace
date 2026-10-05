@@ -27,7 +27,8 @@ with rwlock.merge_lock(Path(directory), f"merging {name}"):
 
 
 def start(tmp_path: Path, name: str, seconds: float) -> subprocess.Popen[str]:
-    env = {**os.environ, "PYTHONPATH": str(SRC)}
+    env = {k: v for k, v in os.environ.items() if k != rwlock.HOLD_ENV}
+    env["PYTHONPATH"] = str(SRC)
     return subprocess.Popen([sys.executable, "-c", HOLDER, str(tmp_path),
                              str(tmp_path / "log"), name, str(seconds)],
                             env=env, stderr=subprocess.PIPE, text=True)
@@ -49,6 +50,6 @@ def test_a_second_merge_waits_for_the_first_and_says_what_it_merges(tmp_path: Pa
     _, said = second.communicate(timeout=30)
     assert first.wait(timeout=30) == 0 and second.returncode == 0
     assert log.read_text().split("\n")[:4] == ["start a", "end a", "start b", "end b"]
-    assert said == rwlock.MERGE_WAIT.format(path=tmp_path / rwlock.MERGE_FILE,
-                                            holder="merging a") + "\n"
+    wait = rwlock.MERGE_WAIT.format(path=tmp_path / rwlock.MERGE_FILE)
+    assert said == f"{wait} {rwlock.MERGE_HOLDER.format(holder='merging a')}\n"
 
