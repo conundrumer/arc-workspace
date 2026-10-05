@@ -18,7 +18,7 @@
 - Launch an assignee with each ticket you file for an obstacle or a drop, as the lines above give, before you end your turn with no other work. Where you are an assignee, in place of filing those tickets, find the cause of each obstacle or drop yourself and file a `change` ticket for its resolution.
 - In your reply, give each item an agent you launched left unfinished that you have not finished, as unfinished with its reason.
 - A transcript review is a `general-purpose` agent that reviews a run's transcript. Give it the run's agent id, `python3 ~/.claude/skills/retrieve/transcripts.py --help`, the lines of [Ticket files](prompts/agents/notes/tickets.md#ticket-files), the `<domain>` and `<subject>` [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields) gives a transcript review of that run, and `transcript-review` as `<agent>`. Have it file a ticket of kind `delay` for each place where the run explored to find what a docstring or a document line could have led it to.
-- Where a completed run's active time, its wall time less its `idle` time as `uv run python scripts/profile_runs.py <agent id>` prints them, is past its agent type's budget, and the run is no Analyze, Create or Refine pass, launch a transcript review of it.
+- Launch a transcript review of each completed run that is no Analyze, Create or Refine pass and that `uv run python scripts/profile_runs.py <agent id>` shows past its budget: where a message from its parent has a `Budget: N minutes` line, by a message that command marks `past budget`, and otherwise by its active time, its wall time less its `idle` time as that command prints them, past its agent type's budget.
 - Pause or serialize agents only where the user agreed to it.
 
 ## Operators

@@ -58,22 +58,23 @@ HELP = mctx("""
     - Calls that are pending at once share an interval in equal parts. While the model works, backgrounded work that runs goes to `model`.
     - A poll is a Bash call that runs `sleep` and none of the known commands, in a loop or not. A command the harness moves to the background on its timeout counts under its own label up to then, and under `bg LABEL` after.
     - One run prints its parts and its labels by time, with each label's share of the wall time and its calls, and for backgrounded work the time it ran from launch to its notification.
-    - One run of a subagent, completed or not, also prints each message from its launcher, as `--running` defines those messages: the time it arrived, its active time, which is the run's wall time less `idle` from that message to the next such message or to the run's last entry, and the budget in force for it, which is the budget `--running` gives from the messages up to it. A message whose active time is past its budget is marked `past budget`. A message with no budget in force prints none, and a run with an unknown message prints no active time and no budget.
+    - One run of a subagent, completed or not, also prints each message from its parent, as `--running` defines those messages: the time it arrived, its active time, which is the run's wall time less `idle` over that message's period, and the budget in force for it, which is the budget `--running` gives from the messages up to it. A message whose active time is past its budget is marked `past budget`. A message with no budget in force prints none, and a run with an unknown message prints no active time and no budget.
     - More than one run prints, per agent type, the number of runs, the minimum, median, P-th percentile and maximum of wall time, the total, the median and P-th percentile of active time, which is wall time less `idle`, and each part's share of the total, then each type's labels by time, with the number of runs each appears in.
     - More than one run also prints the budget of each agent type, which is {factor} times a median wall time, printed with the runs it is taken over:
         - The window of a type that has an agent document under `prompts/agents/` is the runs whose first entry is at or after the last commit that changed that document, a document it includes or inlines, a lib file its rendered prompt holds, a script under `scripts/` its rendered prompt names, or a package under `src/` its rendered prompt runs with `-m`, and not a module such a script or package imports. `--since DATE`, an ISO date or datetime read in local time where it gives no offset, sets the window of every type to the runs whose first entry is at or after DATE. Where the window holds at least {window_runs} runs of the type, the median is taken over them.
         - A type with no agent document has a window only with `--since`, and a type whose paths no commit changed has none, and an `undecided` line on stderr names it.
         - Otherwise it is taken over the type's runs whose `waits` and `idle` together are under {low_wait_pct}% of wall time. A type with no such run gets no budget, and an `undecided` line on stderr names it.
-    - `--running ID` lists the running agents under the run ID, where ID is a session id or an agent id: the agents the run launched, the agents those launched, and so on, whether or not their launcher has completed. An agent has completed when its turn has ended, when its last entry is the harness's note that the user interrupted it, or when its launcher has its result or a notification of it and its transcript has not changed since. The agents are listed in launch order, each launcher's agents after it. In an agent's shell, `$CLAUDE_CODE_SESSION_ID` holds the id of the top-level session, in a subagent as well, so `--running $CLAUDE_CODE_SESSION_ID` lists the running agents of the whole session. For each agent it prints:
-        - its agent id, type and launch description, its parent, which is the agent id of its launcher or `main`, the time since its first entry, its active time with the time it is measured from, its budget, and its context size in tokens, which is the input of its last request;
+    - `--running ID` lists the running agents under the run ID, where ID is a session id or an agent id: the agents the run launched, the agents those launched, and so on, whether or not their parent has completed. An agent has completed when its turn has ended, when its last entry is the harness's note that the user interrupted it, or when its parent has its result or a notification of it and its transcript has not changed since. The agents are listed in launch order, each parent's agents after it. In an agent's shell, `$CLAUDE_CODE_SESSION_ID` holds the id of the top-level session, in a subagent as well, so `--running $CLAUDE_CODE_SESSION_ID` lists the running agents of the whole session. For each agent it prints:
+        - its agent id, type and launch description, its parent, which is the agent id of the agent that launched it or `main`, the time since its first entry, its active time with the time of the message it is measured from and, where that message's period has ended, the time it ended, its budget, and its context size in tokens, which is the input of its last request;
         - its working directory, as its first entry gives it;
         - its last text output, the end of the text of its last assistant entry that gives text;
         - each call it has in flight, with its label, its command and the time since the call;
         - each command or agent it backgrounded that is still running, with its label, its command and the time since the call;
         - its last {recent} calls in order, each with its label, its command and its duration, or `pending`.
-    - The messages from a running agent's launcher are its brief, the messages its first turn answers, and each later message its launcher sent: one the harness gives as from the launcher's agent id, or, for an agent `main` launched, as from the coordinator or queued with no tag. A notification of the agent's own backgrounded work, a message from the user or from another agent, and a note of the harness are none. A later message whose sender is none of these is unknown, and an `undecided` line on stderr names it.
-    - A running agent's active time is its wall time less `idle` since the latest message from its launcher, with its wall time running to now. An agent with an unknown message has no active time and no budget.
-    - Its budget is the N of the line of the form `Budget: N minutes` in the latest message from its launcher that has a line of that form, and an agent none of whose launcher's messages has one gets no budget. A line that opens with `Budget:` in another form gives no budget, and a message with lines of more than one N gives none, and an `undecided` line on stderr names each.
+    - The messages from a running agent's parent are its brief, the messages its first turn answers, and each later message its parent sent: one the harness gives as from the parent's agent id, or, for an agent `main` launched, as from the coordinator or queued with no tag. The origin the harness gives a queued message is the one its attachment gives. A notification of the agent's own backgrounded work, a message from an agent it launched, from the user, from another agent, or, for an agent `main` did not launch, from the coordinator or queued with no tag, and a note of the harness are none. A message from another agent is one the harness gives as from an agent id other than the parent's and those of the agents it launched. A later message whose sender is none of these is unknown, and an `undecided` line on stderr names it.
+    - The period of a message from the parent runs from it to the next message from the parent or from another agent, or to the run's last entry.
+    - A running agent's active time is its wall time less `idle` over the period of the latest message from its parent, with its wall time running to now where that period has not ended. An agent with an unknown message has no active time and no budget.
+    - Its budget is the N of the line of the form `Budget: N minutes` in the latest message from its parent that has a line of that form, and an agent none of whose parent's messages has one gets no budget. A line that opens with `Budget:` in another form gives no budget, and a message with lines of more than one N gives none, and an `undecided` line on stderr names each.
     - A call's command and an agent's text output are printed on one line, a command cut to its first {width} characters and a text output to its last {width}. A call's command is:
         - for a Bash call, its command, led by the kind of each ticket it files, as `kind K:`;
         - for an Agent call, its description;
@@ -159,8 +160,9 @@ class Span:
 
 @dataclass
 class Message:
-    """A message from a run's launcher: its time, its text, and the run's
-    `idle` time before it."""
+    """A message to a run: the index of its entry, its time, its text, and
+    the run's `idle` time before it."""
+    index: int
     time: float
     text: str
     idle: float
@@ -178,7 +180,8 @@ class Origin(Enum):
 
 class Sender(Enum):
     """Who a message after a run's brief is from, as HELP gives it."""
-    LAUNCHER = "launcher"
+    PARENT = "parent"
+    AGENT = "agent"
     OTHER = "other"
     UNKNOWN = "unknown"
 
@@ -200,9 +203,11 @@ class Run:
     ended: bool
     context: int | None
     said: str | None
-    # The messages from the run's launcher, the brief first, and the text
-    # of each later message whose sender is unknown.
+    # The messages from the run's parent, the brief first, the messages
+    # from other agents, and the text of each later message whose sender is
+    # unknown.
     messages: list[Message]
+    others: list[Message]
     unknown: list[str]
     cwd: str | None
 
@@ -210,29 +215,38 @@ class Run:
     def active(self) -> float:
         return self.wall - self.parts[Part.IDLE]
 
+    def period_end(self, i: int) -> Message | None:
+        """The message that ends the period of the `i`-th message from the
+        run's parent, or None where the period runs to the run's last entry."""
+        m = self.messages[i]
+        later = [n for n in (*self.messages[i + 1:i + 2], *self.others)
+                 if n.index > m.index]
+        return min(later, key=lambda n: n.index, default=None)
+
     def active_from(self, i: int) -> float | None:
-        """The active time from the `i`-th message from the run's launcher
-        to the next one, or to the run's last entry. None where its start or
-        a message is unknown."""
+        """The active time over the period of the `i`-th message from the
+        run's parent. None where its start or a message is unknown."""
         if self.start is None or self.unknown:
             return None
         m = self.messages[i]
-        if i + 1 < len(self.messages):
-            nxt = self.messages[i + 1]
+        nxt = self.period_end(i)
+        if nxt is not None:
             return (nxt.time - m.time) - (nxt.idle - m.idle)
         end = self.start + self.wall
         return (end - m.time) - (self.parts[Part.IDLE] - m.idle)
 
     def active_at(self, now: float) -> float | None:
-        """The active time of a run whose turn has not ended, since the
-        latest message from its launcher to `now`: the time since its last
-        entry goes to a pending call or to the model, so it is active. None
-        where its start or that message is unknown."""
+        """The active time of a run whose turn has not ended, over the period
+        of the latest message from its parent, to `now` where that period has
+        not ended: the time since its last entry goes to a pending call or
+        to the model, so it is active. None where its start or that message
+        is unknown."""
         if self.start is None or not self.messages:
             return None
-        active = self.active_from(len(self.messages) - 1)
-        if active is None:
-            return None
+        last = len(self.messages) - 1
+        active = self.active_from(last)
+        if active is None or self.period_end(last) is not None:
+            return active
         return active + max(0.0, now - (self.start + self.wall))
 
     @property
@@ -328,8 +342,8 @@ def run_type(path: Path) -> tuple[str, str]:
     return meta["agentType"], meta.get("description", "")
 
 
-def launcher_id(path: Path) -> str:
-    """The agent id of the launcher of the agent whose transcript is at
+def parent_id(path: Path) -> str:
+    """The agent id of the parent of the agent whose transcript is at
     `path`, or `main`, which its `.meta.json` gives by naming no parent."""
     return subagent_meta(path).get("parentAgentId") or MAIN
 
@@ -647,31 +661,42 @@ def message_text(entry: Entry) -> str:
     return text_of((entry.get("message") or {}).get("content"))
 
 
-def sender(entry: Entry, launcher: str) -> Sender:
-    """Who a message after a run's brief is from, where `launcher` is the
-    agent id of the run's launcher or `main`."""
+def sender(entry: Entry, parent: str, children: frozenset[str]) -> Sender:
+    """Who a message after a run's brief is from, where `parent` is the
+    agent id of the run's parent or `main`, and `children` the agent ids of
+    the agents the run launched."""
     text = message_text(entry)
-    kind = (entry.get("origin") or {}).get("kind")
+    queued = entry.get("type") == "attachment"
+    given = (entry.get("attachment") or {}) if queued else entry
+    kind = (given.get("origin") or {}).get("kind")
     if kind is not None and kind not in Origin:
         return Sender.UNKNOWN
     origin = None if kind is None else Origin(kind)
-    queued = entry.get("type") == "attachment"
+    from_main = Sender.PARENT if parent == MAIN else Sender.OTHER
     if origin is Origin.TASK_NOTIFICATION or NOTIFICATION.search(text):
         return Sender.OTHER
     if origin is Origin.COORDINATOR:
-        return Sender.LAUNCHER if launcher == MAIN else Sender.OTHER
+        return from_main
     if origin is Origin.HUMAN:
         return Sender.OTHER
     if origin is Origin.PEER or queued:
         m = AGENT_MESSAGE.search(text)
         if m:
-            return Sender.LAUNCHER if m.group(1) == launcher else Sender.OTHER
+            return sent_by(m.group(1), parent, children)
         if queued:
-            return Sender.LAUNCHER if launcher == MAIN else Sender.OTHER
+            return from_main
         return Sender.UNKNOWN
     if entry.get("isMeta") or entry.get("isCompactSummary") or text.startswith(INTERRUPTED):
         return Sender.OTHER
     return Sender.UNKNOWN
+
+
+def sent_by(agent: str, parent: str, children: frozenset[str]) -> Sender:
+    """Who a message the agent `agent` sent is from, for a run whose parent
+    is `parent` and which launched the agents `children`."""
+    if agent == parent:
+        return Sender.PARENT
+    return Sender.OTHER if agent in children else Sender.AGENT
 
 
 def notified(entry: Entry) -> list[str]:
@@ -689,8 +714,10 @@ def profile(path: Path, undecided: list[str]) -> Run:
     # The index of the prompt the model first answers: the brief is the
     # prompts up to it.
     briefed = min(starts, default=len(entries))
-    launcher = launcher_id(path) if is_subagent(path) else None
+    parent = parent_id(path) if is_subagent(path) else None
+    children = session_launches(session)[1].get(label, frozenset())
     messages: list[Message] = []
+    others: list[Message] = []
     unknown: list[str] = []
 
     parts = dict.fromkeys(Part, 0.0)
@@ -732,10 +759,12 @@ def profile(path: Path, undecided: list[str]) -> Run:
         prev = t if prev is None else max(t, prev)
         first = t if first is None else first
         etype = e.get("type")
-        if launcher is not None and i > briefed and is_prompt(e):
-            who = sender(e, launcher)
-            if who is Sender.LAUNCHER:
-                messages.append(Message(t, message_text(e), parts[Part.IDLE]))
+        if parent is not None and i > briefed and is_prompt(e):
+            who = sender(e, parent, children)
+            if who is Sender.PARENT:
+                messages.append(Message(i, t, message_text(e), parts[Part.IDLE]))
+            elif who is Sender.AGENT:
+                others.append(Message(i, t, message_text(e), parts[Part.IDLE]))
             elif who is Sender.UNKNOWN:
                 unknown.append(message_text(e))
         if etype == "assistant":
@@ -781,7 +810,7 @@ def profile(path: Path, undecided: list[str]) -> Run:
         for e in last_message)
     brief = [message_text(e) for e in entries[:briefed + 1] if is_prompt(e)]
     if brief and first is not None:
-        messages.insert(0, Message(first, "\n".join(brief), 0.0))
+        messages.insert(0, Message(briefed, first, "\n".join(brief), 0.0))
     cwd = next((e["cwd"] for e in entries if e.get("cwd")), None)
     in_flight = [spans[tid] for tid in pending if tid in spans]
     backgrounded = [spans[tid] for tid in running if tid in spans]
@@ -794,7 +823,7 @@ def profile(path: Path, undecided: list[str]) -> Run:
     return Run(label, agent_type, description, first, wall, parts,
                {k: g for k, g in groups.items() if g.time or g.calls},
                list(spans.values()), in_flight, backgrounded, idle or interrupted, context, said,
-               messages, unknown, cwd)
+               messages, others, unknown, cwd)
 
 
 # Output.
@@ -921,19 +950,19 @@ def print_types(runs: list[Run], pct: float, top: int) -> None:
 # Running agents.
 
 @cache
-def session_launches(session: Path) -> tuple[dict[str, Path], frozenset[str]]:
+def session_launches(session: Path) -> tuple[dict[str, Path], dict[str, frozenset[str]]]:
     """The transcripts of a session's agents by the Agent call that launched
-    each, and the agent ids of the agents that launched any, as their
-    `.meta.json` files give them."""
+    each, and the agent ids of the agents each subagent launched, by its
+    agent id, as their `.meta.json` files give them."""
     by_call: dict[str, Path] = {}
-    parents: set[str] = set()
-    for p in session_agents(session).values():
+    children: dict[str, set[str]] = {}
+    for aid, p in session_agents(session).items():
         meta = read_meta(p) or {}
         if meta.get("toolUseId"):
             by_call[meta["toolUseId"]] = p
         if meta.get("parentAgentId"):
-            parents.add(meta["parentAgentId"])
-    return by_call, frozenset(parents)
+            children.setdefault(meta["parentAgentId"], set()).add(aid)
+    return by_call, {k: frozenset(v) for k, v in children.items()}
 
 
 def launched(path: Path, undecided: list[str]) -> list[tuple[Path, float | None]]:
@@ -974,9 +1003,9 @@ def parent_label(path: Path) -> str:
 
 
 def running_agents(path: Path, undecided: list[str]) -> list[tuple[str, Path]]:
-    """The agents under the run at `path` whose launcher holds no sign that
+    """The agents under the run at `path` whose parent holds no sign that
     they completed, or whose transcript changed after the last sign, each
-    with its parent, each launcher's agents after it."""
+    with its parent, each parent's agents after it."""
     parents = session_launches(session_of(path))[1]
     out: list[tuple[str, Path]] = []
     for child, done in launched(path, undecided):
@@ -1005,14 +1034,14 @@ def budget_openings(text: str) -> list[str]:
 
 
 def message_name(r: Run, m: Message) -> str:
-    """How an `undecided` line names a message from the launcher of `r`."""
+    """How an `undecided` line names a message from the parent of `r`."""
     if m is r.messages[0]:
         return mctx("the brief")
     return mctx("the message at {time}").format(time=clock(m.time))
 
 
 def budgets_in_force(r: Run, undecided: list[str]) -> list[float | None]:
-    """The budget in minutes in force for each message from the launcher of
+    """The budget in minutes in force for each message from the parent of
     `r`, which the latest message up to it states, as HELP gives it, or
     None."""
     for text in r.unknown:
@@ -1058,8 +1087,10 @@ def print_running(runs: list[tuple[str, Run]], now: float,
     for parent, r in runs:
         since = minutes(now - r.start) if r.start is not None else "?"
         active_time = r.active_at(now)
-        active = (mctx("{active} since {time}").format(
-            active=minutes(active_time), time=clock(r.messages[-1].time))
+        ended = r.period_end(len(r.messages) - 1) if r.messages else None
+        to = " " + mctx("to {time}").format(time=clock(ended.time)) if ended else ""
+        active = (mctx("{active} since {time}{to}").format(
+            active=minutes(active_time), time=clock(r.messages[-1].time), to=to)
             if active_time is not None else "?")
         budget = next(reversed(budgets_in_force(r, undecided)), None)
         context = f"{r.context:,}" if r.context is not None else "?"
@@ -1079,11 +1110,11 @@ def print_running(runs: list[tuple[str, Run]], now: float,
 
 
 def print_messages(r: Run, undecided: list[str]) -> None:
-    """Print each message from the launcher of `r` with its active time and
+    """Print each message from the parent of `r` with its active time and
     the budget in force for it, marking each active time past its budget."""
     if r.agent_type == MAIN:
         return
-    print("  messages from the launcher:")
+    print("  messages from the parent:")
     budgets = budgets_in_force(r, undecided)
     for i, (m, budget) in enumerate(zip(r.messages, budgets, strict=True)):
         active = r.active_from(i)
