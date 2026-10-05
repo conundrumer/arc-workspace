@@ -1,445 +1,198 @@
 // a934301b
 // @draft
-// @keywords: objects count select lookup rank
-// @scene blocks: on a params.background field stand solid rectangular blocks
-//  of cells of other colors; no two blocks touch
-// @scene connect: a block is a 4-connected piece of its cells
-// @scene mark-color: the mark color is params.mark
-// @scene body-and-marks: each block is one body color with some cells of the
-//  mark color scattered inside it; a block may hold no mark cell
-// @rule mark-count: a block's mark count is its number of mark cells
-// @rule keep-few-marks: a block whose mark count is at most params.max_marks is
-//  copied to the output unchanged
-// @rule drop-many-marks: a block whose mark count is greater than
-//  params.max_marks becomes params.background
-// @rule background: every other cell is params.background
+// @keywords: objects count select lookup
+// @scene rectangles: the input is a params.background field holding solid
+//  rectangles, each made of cells of 1 and params.mark cells, and no two
+//  rectangles touch, so each rectangle is one connected component of
+//  non-params.background cells
+// @rule count-marks: an object is one rectangle, and its mark count is the
+//  number of its params.mark cells
+//     @approximated: an object is a 4-connected component of
+//      non-params.background cells, and its mark count is the number of its
+//      params.mark cells
+//     @witness touching-rectangles: borderline other
+//         @relaxed rectangles
+// @rule erase-crowded: an object whose mark count exceeds params.max_marks
+//  becomes params.background
+// @rule keep-rest: every other cell of the output is the input cell
 
-// how the cells of a block connect
+// which cells join one object
 .type Adjacency =
-    // @claim connect
-    EdgeConnect {}
-    // @scene connect: a block is an 8-connected piece of its cells
-    // @witness diagonal-touch: borderline concept
-    //     @relaxed blocks
-  | DiagConnect {}
+    // @claim count-marks
+    FourAdjacent {}
+    // @rule count-marks: an object is an 8-connected component of
+    //  non-params.background cells
+    // @witness corner-contact: borderline concept
+    //     @relaxed rectangles
+  | EightAdjacent {}
 
-// which cells form blocks
-.type Pieces =
-    // @claim blocks
-    AnyInk {}
-    // @scene blocks: on a params.background field stand solid rectangular
-    //  blocks of params.body cells and mark-color cells; no two blocks touch
-    // @witness lone-other-color: borderline concept
-    //     @relaxed body-and-marks
-    // @witness lone-other-fewest: borderline concept
-    //     @relaxed body-and-marks
-    // @witness other-body-color: variant concept
-    // @witness swapped-roles: variant $GridMinority
-    //     @relaxed body-and-marks
-  | BodyMarkOnly {other: Other}
+// which cells of an object count as marks
+.type MarkKind =
+    // @claim count-marks
+    MarkColor {}
+    // @rule count-marks: a mark is any object cell not of params.body
+    // @witness third-color: borderline $NonBody
+    //     @relaxed rectangles
+  | NonBody {}
 
-// what a cell outside the blocks becomes
-.type Other =
-    // @claim background
-    EraseOther {}
-    // @rule background: every other cell keeps its input color
-    // @witness other-color-on-dropped: borderline $CopyOther
-    //     @relaxed body-and-marks
-    // @witness other-body-color: variant concept
-  | CopyOther {}
-
-// which cells of a block are marks
-.type MarkColor =
-    // @claim mark-color body-and-marks
-    StoredMark {}
-    // @scene mark-color: the mark color is the rarer of the grid's two colors
-    //  other than params.background; undefined where the grid holds other than
-    //  two such colors, or where the two tie
-    // @witness mark-majority-grid: borderline concept
-    //     @relaxed body-and-marks
-    // @witness grid-majority-small: borderline concept
-    //     @relaxed body-and-marks
-    // @witness grid-majority-pieces: borderline concept
-    //     @relaxed body-and-marks
-    // @witness rare-background: borderline concept
-    //     @relaxed body-and-marks
-    // @witness rare-background-small: variant concept
-    // @witness third-color-rarest: borderline concept
-    //     @relaxed body-and-marks
-    // @witness swapped-roles: variant $GridMinority
-  | GridMinority {}
-    // @scene body-and-marks: a block's mark cells are its cells that are not
-    //  of its most frequent color; where two colors tie for the most frequent,
-    //  the mark count is the one each of them gives, and undefined where they
-    //  give different counts
-    // @witness mark-majority-block: borderline concept
-    //     @relaxed body-and-marks
-    // @witness minority-cells: borderline concept
-    //     @relaxed body-and-marks
-    // @witness minority-pieces: borderline concept
-    //     @relaxed body-and-marks
-  | BlockMinority {}
-
-// what is counted of a block's marks
-.type Measure =
-    // @claim mark-count
+// what the mark count counts
+.type MarkUnit =
+    // @claim count-marks
     MarkCells {}
-    // @rule mark-count: a block's mark count is its number of 4-connected
-    //  pieces of mark cells
-    // @witness adjacent-marks: ordinary concept
-    // @witness clustered-marks: ordinary concept
-  | MarkPieces {}
+    // @rule count-marks: the mark count is the number of 4-connected groups
+    //  of mark cells in the object
+    // @witness mark-domino: ordinary concept
+  | MarkGroups {}
 
-// which mark counts keep a block
-.type Keep =
-    // @claim keep-few-marks drop-many-marks
-    MaxMarks {}
-    // @rule keep-few-marks: a block whose mark count is in params.kept_count is
-    //  copied to the output unchanged
-    // @rule drop-many-marks: a block whose mark count is in
-    //  params.dropped_count becomes params.background; undefined where a count
-    //  is in neither table
-    // @witness non-monotone-table: ordinary $CountTable
-    //     @reassigned kept_count
-    //     @reassigned dropped_count
+// which mark counts erase an object
+.type Selection =
+    // @claim erase-crowded
+    Threshold {}
+    // @rule erase-crowded: an object whose mark count is in params.drop_count
+    //  becomes params.background, one whose count is in params.keep_count
+    //  stays, and an object whose count is in neither leaves the output
+    //  undefined
     // @witness five-marks: ordinary concept
+    //     @reassigned keep_count
   | CountTable {}
-    // @rule keep-few-marks: a block whose mark count is below the median mark
-    //  count of the grid's blocks is copied to the output unchanged
-    // @rule drop-many-marks: every other block becomes params.background
-    // @witness high-median: ordinary concept
-  | BelowMedian {}
-    // @rule keep-few-marks: the params.keep_count blocks with the fewest marks
-    //  are copied to the output unchanged; undefined where the last of them
-    //  ties with the next
-    // @rule drop-many-marks: every other block becomes params.background
-    // @witness two-few-mark-blocks: variant concept
-  | FewestThree {}
 
-.type Choice = [adj: Adjacency, pieces: Pieces, mark: MarkColor, measure: Measure, keep: Keep]
-
-// The readings a block's cells depend on.
-.type PieceView = [adj: Adjacency, pieces: Pieces, mark: MarkColor]
-
-// The readings a block's mark count depends on.
-.type CountView = [v: PieceView, measure: Measure]
-.type Counted = [cv: CountView, id: Ident]
+.type Choice = [a: Adjacency, k: MarkKind, u: MarkUnit, s: Selection]
 
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
     // @derive DominantColor: variant derived
-    //     @relaxed blocks
-    // With the dominant color as background, the rarest color is the mark
-    // GridMinority reads wherever GridMinority is defined.
-    // @ignore: derive $DiagConnect & $GridMinority & $BelowMedian — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $GridMinority & $CountTable — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $GridMinority & $FewestThree — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $GridMinority — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $GridMinority & $MarkPieces & $BelowMedian — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $GridMinority & $MarkPieces & $CountTable — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $GridMinority & $MarkPieces & $FewestThree — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $GridMinority & $MarkPieces — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $BelowMedian & $CopyOther — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $CountTable & $CopyOther — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $FewestThree & $CopyOther — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $CopyOther — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $MarkPieces & $BelowMedian & $CopyOther — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $MarkPieces & $CountTable & $CopyOther — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $MarkPieces & $FewestThree & $CopyOther — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $MarkPieces & $CopyOther — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $BelowMedian — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $CountTable — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $FewestThree — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $MarkPieces & $BelowMedian — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $MarkPieces & $CountTable — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $MarkPieces & $FewestThree — subsumed by its mark=RarestColor case
-    // @ignore: derive $DiagConnect & $BodyMarkOnly & $GridMinority & $MarkPieces — subsumed by its mark=RarestColor case
-    // @ignore: derive $GridMinority & $BelowMedian — subsumed by its mark=RarestColor case
-    // @ignore: derive $GridMinority & $CountTable — subsumed by its mark=RarestColor case
-    // @ignore: derive $GridMinority & $FewestThree — subsumed by its mark=RarestColor case
-    // @ignore: derive $GridMinority — subsumed by its mark=RarestColor case
-    // @ignore: derive $GridMinority & $MarkPieces & $BelowMedian — subsumed by its mark=RarestColor case
-    // @ignore: derive $GridMinority & $MarkPieces & $CountTable — subsumed by its mark=RarestColor case
-    // @ignore: derive $GridMinority & $MarkPieces & $FewestThree — subsumed by its mark=RarestColor case
-    // @ignore: derive $GridMinority & $MarkPieces — subsumed by its mark=RarestColor case
-    // @ignore: derive $BodyMarkOnly & $GridMinority & $BelowMedian & $CopyOther — subsumed by its mark=RarestColor case
-    // @ignore: derive $BodyMarkOnly & $GridMinority & $CountTable & $CopyOther — subsumed by its mark=RarestColor case
-    // @ignore: derive $BodyMarkOnly & $GridMinority & $FewestThree & $CopyOther — subsumed by its mark=RarestColor case
-    // @ignore: derive $BodyMarkOnly & $GridMinority & $CopyOther — subsumed by its mark=RarestColor case
-    // @ignore: derive $BodyMarkOnly & $GridMinority & $MarkPieces & $BelowMedian & $CopyOther — subsumed by its mark=RarestColor case
-    // @ignore: derive $BodyMarkOnly & $GridMinority & $MarkPieces & $CountTable & $CopyOther — subsumed by its mark=RarestColor case
-    // @ignore: derive $BodyMarkOnly & $GridMinority & $MarkPieces & $FewestThree & $CopyOther — subsumed by its mark=RarestColor case
-    // @ignore: derive $BodyMarkOnly & $GridMinority & $MarkPieces & $CopyOther — subsumed by its mark=RarestColor case
-    // @ignore: derive $BodyMarkOnly & $GridMinority & $BelowMedian — subsumed by its mark=RarestColor case
-    // @ignore: derive $BodyMarkOnly & $GridMinority & $CountTable — subsumed by its mark=RarestColor case
-    // @ignore: derive $BodyMarkOnly & $GridMinority & $FewestThree — subsumed by its mark=RarestColor case
-    // @ignore: derive $BodyMarkOnly & $GridMinority — subsumed by its mark=RarestColor case
-    // @ignore: derive $BodyMarkOnly & $GridMinority & $MarkPieces & $BelowMedian — subsumed by its mark=RarestColor case
-    // @ignore: derive $BodyMarkOnly & $GridMinority & $MarkPieces & $CountTable — subsumed by its mark=RarestColor case
-    // @ignore: derive $BodyMarkOnly & $GridMinority & $MarkPieces & $FewestThree — subsumed by its mark=RarestColor case
-    // @ignore: derive $BodyMarkOnly & $GridMinority & $MarkPieces — subsumed by its mark=RarestColor case
-    .decl background(col: Color) background(0).
+    //     @relaxed rectangles
+    .decl background(c: Color) background(0).
 
-    // --- $MaxMarks ---
-    // the largest mark count a kept block holds
+    // --- $MarkColor ---
+    // @derive RarestColor: variant derived
+    //     @relaxed rectangles
+    .decl mark(c: Color) mark(8).
+
+    // --- $NonBody ---
+    .decl body(c: Color) body(1).
+
+    // --- $Threshold ---
+    // the largest mark count an object keeps
     .decl max_marks(n: number) max_marks(1).
 
     // --- $CountTable ---
-    .decl kept_count(n: number) kept_count(0). kept_count(1).
-    .decl dropped_count(n: number) dropped_count(2). dropped_count(3). dropped_count(4).
-
-    // --- $FewestThree ---
-    // the number of blocks kept
-    .decl keep_count(n: number) keep_count(3).
-
-    // --- $BodyMarkOnly ---
-    .decl body(col: Color) body(1).
-
-    // --- $StoredMark, $BodyMarkOnly ---
-    // @derive RarestColor: variant derived
-    //     @relaxed mark-color
-    .decl mark(col: Color) mark(8).
+    .decl keep_count(n: number)
+    keep_count(0). keep_count(1).
+    // @derive TileCount: ordinary concept
+    .decl drop_count(n: number)
+    drop_count(2). drop_count(3). drop_count(4).
 }
 
 .init params = Params
 
 .decl adjacency_choice(a: Adjacency)
-adjacency_choice($EdgeConnect()). adjacency_choice($DiagConnect()).
+adjacency_choice($FourAdjacent()). adjacency_choice($EightAdjacent()).
 
-.decl other_choice(o: Other)
-other_choice($EraseOther()). other_choice($CopyOther()).
+.decl mark_kind_choice(kind: MarkKind)
+mark_kind_choice($MarkColor()). mark_kind_choice($NonBody()).
 
-.decl pieces_choice(pc: Pieces)
-pieces_choice($AnyInk()).
-pieces_choice($BodyMarkOnly(O)) :- other_choice(O).
+.decl mark_unit_choice(u: MarkUnit)
+mark_unit_choice($MarkCells()). mark_unit_choice($MarkGroups()).
 
-.decl mark_color_choice(mc: MarkColor)
-mark_color_choice($StoredMark()). mark_color_choice($GridMinority()). mark_color_choice($BlockMinority()).
-
-.decl measure_choice(ms: Measure)
-measure_choice($MarkCells()). measure_choice($MarkPieces()).
-
-.decl keep_choice(k: Keep)
-keep_choice($MaxMarks()). keep_choice($CountTable()).
-keep_choice($BelowMedian()). keep_choice($FewestThree()).
+.decl selection_choice(s: Selection)
+selection_choice($Threshold()). selection_choice($CountTable()).
 
 .decl impl_choice(ch: Choice)
-impl_choice([A, Pc, Mc, Ms, K]) :-
-    adjacency_choice(A), pieces_choice(Pc), mark_color_choice(Mc),
-    measure_choice(Ms), keep_choice(K).
+impl_choice([A, Kind, U, S]) :-
+    adjacency_choice(A), mark_kind_choice(Kind), mark_unit_choice(U), selection_choice(S).
 
+// The objects of a grid, and their mark counts under each reading.
 .comp Parse<Key> {
-    .type KeyColor = [k: Key, col: Color]
-    .type View = [k: Key, v: PieceView]
-    .type Block = [k: Key, v: PieceView, id: Ident]
+    // One object with one reading of its marks.
+    .type Marked = [k: Key, a: Adjacency, id: Ident, kind: MarkKind]
 
-    // A block read against one reference color: its mark color, or under
-    // BlockMinority one of its most frequent colors.
-    .type Reading = [b: Block, ref: Color]
-
-    .type Count = [k: Key, cv: CountView, id: Ident]
+    .type KeyKind = [k: Key, kind: MarkKind]
 
     .decl cell(k: Key, p: Position, col: Color)
 
-    // The mark color under each MarkColor branch that has one.
-    .decl mark_color(k: Key, mc: MarkColor, col: Color)
+    .decl ink(k: Key, p: Position, col: Color)
+    ink(K, P, Col) :- cell(K, P, Col), !params.background(Col).
 
-    // --- $StoredMark ---
-    mark_color(K, $StoredMark(), Col) :- cell(K, _, _), params.mark(Col).
+    .decl object(k: Key, a: Adjacency, id: Ident, p: Position)
 
-    // --- $GridMinority ---
-    // @claim mark-color
-    .init grid_colors = Tally<KeyColor, Position>
-    grid_colors.item([K, Col], P) :- cell(K, P, Col), !params.background(Col).
+    .decl mark(k: Key, kind: MarkKind, p: Position)
 
-    // @claim mark-color
-    .init grid_rank = ArgExtremes<Key, Color>
-    grid_rank.cand(K, Col, N) :- grid_colors.tally([K, Col], N).
+    .decl mark_count(m: Marked, u: MarkUnit, n: number)
 
-    // @claim mark-color
-    .init rarest = Unanimous<Key, Color>
-    rarest.item(K, Col) :- grid_rank.low(K, Col, _).
+    // --- $FourAdjacent ---
+    // @claim count-marks
+    .init objects4 = Components<Key>
+    objects4.node(K, P) :- ink(K, P, _).
+    object(K, $FourAdjacent(), Id, P) :- objects4.label(K, P, Id).
 
-    // The colors other than the rarest: one when the grid holds two colors.
-    // @claim mark-color
-    .init rest_colors = Unanimous<Key, Color>
-    rest_colors.item(K, Col) :- grid_colors.tally([K, Col], _), !grid_rank.low(K, Col, _).
+    // --- $EightAdjacent ---
+    // @claim count-marks
+    .init objects8 = Components8<Key>
+    objects8.node(K, P) :- ink(K, P, _).
+    object(K, $EightAdjacent(), Id, P) :- objects8.label(K, P, Id).
 
-    mark_color(K, $GridMinority(), Col) :- rarest.value(K, Col), rest_colors.value(K, _).
+    // --- $MarkColor ---
+    mark(K, $MarkColor(), P) :- cell(K, P, Col), params.mark(Col).
 
-    // The cells that form blocks.
-    .decl ink(v: View, p: Position)
-
-    // --- $AnyInk ---
-    ink([K, [A, $AnyInk(), Mc]], P) :-
-        adjacency_choice(A), mark_color_choice(Mc), cell(K, P, Col), !params.background(Col).
-
-    // --- $BodyMarkOnly ---
-    ink([K, [A, $BodyMarkOnly(O), Mc]], P) :-
-        adjacency_choice(A), other_choice(O), mark_color_choice(Mc), cell(K, P, Col),
-        ( params.body(Col) ; mark_color(K, Mc, Col) ).
-
-    // --- $BodyMarkOnly & $BlockMinority ---
-    // Under BlockMinority, params.mark is the other color that forms blocks.
-    ink([K, [A, $BodyMarkOnly(O), $BlockMinority()]], P) :-
-        adjacency_choice(A), other_choice(O), cell(K, P, Col), params.mark(Col).
-
-    // The cell's block.
-    .decl piece(b: Block, p: Position)
-
-    // --- $EdgeConnect ---
-    // @claim blocks connect
-    .init blocks4 = Components<View>
-    blocks4.node([K, [$EdgeConnect(), Pc, Mc]], P) :- ink([K, [$EdgeConnect(), Pc, Mc]], P).
-
-    piece([K, V, Id], P) :- blocks4.label([K, V], P, Id).
-
-    // --- $DiagConnect ---
-    // @claim blocks connect
-    .init blocks8 = Components8<View>
-    blocks8.node([K, [$DiagConnect(), Pc, Mc]], P) :- ink([K, [$DiagConnect(), Pc, Mc]], P).
-
-    piece([K, V, Id], P) :- blocks8.label([K, V], P, Id).
-
-    // Each reading of a block, and its mark cells under that reading.
-    .decl reading(r: Reading)
-    .decl mark(r: Reading, p: Position)
-
-    // --- $StoredMark, $GridMinority ---
-    reading([[K, [A, Pc, Mc], Id], Col]) :- piece([K, [A, Pc, Mc], Id], _), mark_color(K, Mc, Col).
-    mark([[K, [A, Pc, Mc], Id], Col], P) :-
-        piece([K, [A, Pc, Mc], Id], P), cell(K, P, Col), mark_color(K, Mc, Col).
-
-    // --- $BlockMinority ---
-    // @claim body-and-marks
-    .init block_colors = Mode<Block, Color, Position>
-    block_colors.item([K, [A, Pc, $BlockMinority()], Id], Col, P) :-
-        piece([K, [A, Pc, $BlockMinority()], Id], P), cell(K, P, Col).
-
-    reading([X, Body]) :- block_colors.mode(X, Body).
-    mark([[K, V, Id], Body], P) :-
-        block_colors.mode([K, V, Id], Body), piece([K, V, Id], P), cell(K, P, Col), Col != Body.
-
-    // The mark count of a block under each reading.
-    .decl per_reading(c: Count, n: number)
+    // --- $NonBody ---
+    mark(K, $NonBody(), P) :- ink(K, P, Col), !params.body(Col).
 
     // --- $MarkCells ---
-    // @claim mark-count
-    .init mark_cells = Tally<Reading, Position>
-    mark_cells.item(R, P) :- mark(R, P).
-    mark_cells.domain(R) :- reading(R).
+    // @claim count-marks
+    .init mark_cells = Tally<Marked, Position>
+    mark_cells.domain([K, A, Id, Kind]) :- object(K, A, Id, _), mark_kind_choice(Kind).
+    mark_cells.item([K, A, Id, Kind], P) :- object(K, A, Id, P), mark(K, Kind, P).
+    mark_count(M, $MarkCells(), N) :- mark_cells.tally(M, N).
 
-    per_reading([K, [V, $MarkCells()], Id], N) :- mark_cells.tally([[K, V, Id], _], N).
+    // --- $MarkGroups ---
+    // @claim count-marks
+    .init groups = Components<KeyKind>
+    groups.node([K, Kind], P) :- mark(K, Kind, P).
 
-    // --- $MarkPieces ---
-    // @claim mark-count
-    .init mark_blobs = Components<Reading>
-    mark_blobs.node(R, P) :- mark(R, P).
-
-    // @claim mark-count
-    .init mark_pieces = Tally<Reading, Ident>
-    mark_pieces.item(R, Id) :- mark_blobs.label(R, _, Id).
-    mark_pieces.domain(R) :- reading(R).
-
-    per_reading([K, [V, $MarkPieces()], Id], N) :- mark_pieces.tally([[K, V, Id], _], N).
-
-    // A block's mark count: the count every reading of it gives.
-    // @claim mark-count
-    .init marks = Unanimous<Count, number>
-    marks.item(C, N) :- per_reading(C, N).
+    // @claim count-marks
+    .init group_count = Tally<Marked, Ident>
+    group_count.domain([K, A, Id, Kind]) :- object(K, A, Id, _), mark_kind_choice(Kind).
+    group_count.item([K, A, Id, Kind], G) :- object(K, A, Id, P), groups.label([K, Kind], P, G).
+    mark_count(M, $MarkGroups(), N) :- group_count.tally(M, N).
 }
 
 .init parse = Parse<Unit>
 parse.cell($U(), P, Col) :- in(P, Col).
 
-// A block's mark count.
-.decl marks(c: Counted, n: number)
-marks([Cv, Id], N) :- parse.marks.value([$U(), Cv, Id], N).
+// The objects a selection erases, and those it keeps.
+.decl crowded(a: Adjacency, id: Ident, kind: MarkKind, u: MarkUnit, s: Selection)
+.decl spared(a: Adjacency, id: Ident, kind: MarkKind, u: MarkUnit, s: Selection)
 
-// The blocks each keep reading keeps, and those it drops.
-.decl kept(c: Counted, k: Keep)
-.decl dropped(c: Counted, k: Keep)
+out(P, Col, Ch) :- impl_choice(Ch), in(P, Col), params.background(Col).
+out(P, Col, [A, Kind, U, S]) :-
+    parse.object($U(), A, Id, P), crowded(A, Id, Kind, U, S), params.background(Col).
+out(P, Col, [A, Kind, U, S]) :- parse.object($U(), A, Id, P), spared(A, Id, Kind, U, S), in(P, Col).
 
-// What a cell outside the blocks becomes.
-.decl rest(pc: Pieces, p: Position, col: Color)
-
-out(P, Col, [A, Pc, Mc, Ms, K]) :-
-    parse.piece([$U(), [A, Pc, Mc], Id], P),
-    ( kept([[[A, Pc, Mc], Ms], Id], K), in(P, Col)                      // kept block: copied
-    ; dropped([[[A, Pc, Mc], Ms], Id], K), params.background(Col)       // dropped block: erased
-    ).
-
-out(P, Col, [A, Pc, Mc, Ms, K]) :-
-    impl_choice([A, Pc, Mc, Ms, K]), rest(Pc, P, Col), !parse.ink([$U(), [A, Pc, Mc]], P).
-
-// --- $AnyInk, $EraseOther ---
-rest($AnyInk(), P, Col) :- in(P, _), params.background(Col).
-rest($BodyMarkOnly($EraseOther()), P, Col) :- in(P, _), params.background(Col).
-
-// --- $CopyOther ---
-rest($BodyMarkOnly($CopyOther()), P, Col) :- in(P, Col).
-
-// --- $MaxMarks ---
-kept(C, $MaxMarks()) :- marks(C, N), params.max_marks(M), N <= M.
-dropped(C, $MaxMarks()) :- marks(C, N), params.max_marks(M), N > M.
+// --- $Threshold ---
+crowded(A, Id, Kind, U, $Threshold()) :-
+    parse.mark_count([$U(), A, Id, Kind], U, N), params.max_marks(Max), N > Max.
+spared(A, Id, Kind, U, $Threshold()) :-
+    parse.mark_count([$U(), A, Id, Kind], U, N), params.max_marks(Max), N <= Max.
 
 // --- $CountTable ---
-kept(C, $CountTable()) :- marks(C, N), params.kept_count(N).
-dropped(C, $CountTable()) :- marks(C, N), params.dropped_count(N).
-
-// --- $BelowMedian, $FewestThree ---
-// The blocks of X's grid with at most X's mark count, X included.
-.decl at_most(c: Counted, j: Ident)
-at_most([Cv, X], J) :- marks([Cv, X], N), marks([Cv, J], M), M <= N.
-
-// --- $BelowMedian ---
-// The blocks of X's grid with more marks than X.
-.decl above(c: Counted, j: Ident)
-above([Cv, X], J) :- marks([Cv, X], N), marks([Cv, J], M), M > N.
-
-// X's count is below the median unless the blocks with at most X's count
-// outnumber those with more.
-// @claim keep-few-marks drop-many-marks
-.init median_test = Excess<Counted, Ident>
-median_test.plus(C, J) :- at_most(C, J).
-median_test.minus(C, J) :- above(C, J).
-
-kept(C, $BelowMedian()) :- marks(C, _), !median_test.excess(C, _).
-dropped(C, $BelowMedian()) :- median_test.excess(C, _).
-
-// --- $FewestThree ---
-// @claim keep-few-marks
-.init upto_rank = Tally<Counted, Ident>
-upto_rank.item(C, J) :- at_most(C, J).
-
-// The blocks with fewer marks than X.
-// @claim drop-many-marks
-.init fewer_rank = Tally<Counted, Ident>
-fewer_rank.item([Cv, X], J) :- marks([Cv, X], N), marks([Cv, J], M), M < N.
-
-kept(C, $FewestThree()) :- upto_rank.tally(C, N), params.keep_count(K), N <= K.
-dropped(C, $FewestThree()) :- fewer_rank.tally(C, N), params.keep_count(K), N >= K.
+crowded(A, Id, Kind, U, $CountTable()) :-
+    parse.mark_count([$U(), A, Id, Kind], U, N), params.drop_count(N).
+spared(A, Id, Kind, U, $CountTable()) :-
+    parse.mark_count([$U(), A, Id, Kind], U, N), params.keep_count(N).
 
 .comp Determine {
     .init parse = Parse<Example>
     parse.cell(E, P, Col) :- ex_in(E, P, Col).
 
-    // The mark count of each block the concept reads.
-    .decl mark_count(e: Example, id: Ident, n: number)
-    mark_count(E, Id, N) :-
-        parse.marks.value([E, [[$EdgeConnect(), $AnyInk(), $StoredMark()], $MarkCells()], Id], N).
+    // An object with a cell the output changes.
+    .decl changed(e: Example, a: Adjacency, id: Ident)
+    changed(E, A, Id) :-
+        parse.object(E, A, Id, P), ex_in(E, P, Col), ex_out(E, P, Col2), Col != Col2.
 
-    // A block a train output erases: some cell of it is background there.
-    .decl erased(e: Example, id: Ident)
-    erased(E, Id) :-
-        parse.piece([E, [$EdgeConnect(), $AnyInk(), $StoredMark()], Id], P),
-        ex_out(E, P, Col), params.background(Col).
-
-    .decl kept_count(n: number)
-    kept_count(N) :- mark_count(E, Id, N), ex_out(E, _, _), !erased(E, Id).
-
-    .decl dropped_count(n: number)
-    dropped_count(N) :- mark_count(E, Id, N), erased(E, Id).
+    .decl keep_count(n: number)
+    keep_count(N) :-
+        parse.mark_count([E, A, Id, _], _, N), ex_out(E, _, _),   // a train object's count
+        !changed(E, A, Id).                                       // the output keeps it
 }

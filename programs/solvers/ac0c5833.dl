@@ -94,6 +94,7 @@
 .decl out(p: Position, col: Color, ch: Choice)
 
 .comp Params {
+    // --- $DerivedMarkerColor, $AnyColorTemplate, $BoxStamp ---
     // @derive DominantColor: variant derived
     //     @relaxed markers
     .decl bg(c: Color) bg(0).
@@ -188,11 +189,11 @@ parse.hue($U(), [Ext, Mc], Col) :- hue_cand(Mc, Col), extent_choice(Ext).
 .decl extent_choice(ext: Extent)
 extent_choice($StoredStride()). extent_choice($DerivedStride()). extent_choice($RectMarker()).
 
-.decl mcolor_choice(mc: MarkerHue)
-mcolor_choice($StoredMarkerColor()). mcolor_choice($DerivedMarkerColor()).
+.decl marker_hue_choice(mc: MarkerHue)
+marker_hue_choice($StoredMarkerColor()). marker_hue_choice($DerivedMarkerColor()).
 
-.decl tcolor_choice(tc: TemplateHue)
-tcolor_choice($StoredTemplateColor()). tcolor_choice($AnyColorTemplate()).
+.decl template_hue_choice(tc: TemplateHue)
+template_hue_choice($StoredTemplateColor()). template_hue_choice($AnyColorTemplate()).
 
 .decl transform_choice(tr: Transform)
 transform_choice($Mirror()). transform_choice($Rotate()).
@@ -204,7 +205,7 @@ stamp_choice($InkOnly()). stamp_choice($BoxStamp()).
 // and DerivedMarkerColor.
 .decl impl_choice(ch: Choice)
 impl_choice([Ext, Mc, Tc, Tr, Sk]) :-
-    extent_choice(Ext), mcolor_choice(Mc), tcolor_choice(Tc), transform_choice(Tr),
+    extent_choice(Ext), marker_hue_choice(Mc), template_hue_choice(Tc), transform_choice(Tr),
     stamp_choice(Sk),
     ( Ext != $DerivedStride() ; Mc != $DerivedMarkerColor() ).
 
@@ -283,7 +284,8 @@ out(P, Col, [Ext, Mc, Tc, Tr, Sk]) :-
     ).
 
 // --- $StoredStride ---
-parse.admits($U(), [$StoredStride(), Mc], S, S, S) :- params.marker_stride(S), mcolor_choice(Mc).
+parse.admits($U(), [$StoredStride(), Mc], S, S, S) :-
+    params.marker_stride(S), marker_hue_choice(Mc).
 
 // --- $StoredStride & $StoredMarkerColor ---
 reading_cand($StoredStride(), $StoredMarkerColor(), N, Col) :-
@@ -294,7 +296,7 @@ reading_cand($StoredStride(), $DerivedMarkerColor(), N, Col) :-
     parse.exact_split($U(), [$StoredStride(), $DerivedMarkerColor()], N, Col).
 
 // --- $DerivedStride ---
-parse.admits($U(), [$DerivedStride(), Mc], K, K, K) :- parse.side($U(), K), mcolor_choice(Mc).
+parse.admits($U(), [$DerivedStride(), Mc], K, K, K) :- parse.side($U(), K), marker_hue_choice(Mc).
 
 reading_cand($DerivedStride(), Mc, N, Col) :-
     parse.exact_split($U(), [$DerivedStride(), Mc], N, Col).
@@ -304,7 +306,7 @@ rival($DerivedStride(), Mc, N) :-
 
 // --- $RectMarker ---
 parse.admits($U(), [$RectMarker(), Mc], M, K1, K2) :-
-    params.marker_max_side(M), mcolor_choice(Mc),
+    params.marker_max_side(M), marker_hue_choice(Mc),
     parse.side($U(), K1), K1 <= M, parse.side($U(), K2), K2 <= M.
 
 reading_cand($RectMarker(), Mc, N, Col) :-
@@ -312,7 +314,7 @@ reading_cand($RectMarker(), Mc, N, Col) :-
 
 // Some open value of the bound reads no markers.
 split_reading($RectMarker(), Mc) :-
-    params.marker_max_side(M), mcolor_choice(Mc), !reading($RectMarker(), Mc, M, _).
+    params.marker_max_side(M), marker_hue_choice(Mc), !reading($RectMarker(), Mc, M, _).
 
 // --- $StoredMarkerColor ---
 hue_cand($StoredMarkerColor(), Col) :- params.marker_color(Col).
