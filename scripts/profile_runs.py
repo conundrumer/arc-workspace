@@ -30,11 +30,16 @@ from solver_console import config  # noqa: E402
 BUDGET_FACTOR = 2
 WINDOW_RUNS = 5
 LOW_WAIT_PCT = 10
+# The number of a running agent's last calls that `--running` prints.
+RECENT_CALLS = 8
+# The characters of a call's command that `--running` prints.
+COMMAND_WIDTH = 160
 
 HELP = mctx("""
     - Usage:
         ```
         uv run python scripts/profile_runs.py ID [ID ...] [--type TYPE[,TYPE]] [--pct P] [--top N] [--runs] [--since DATE]
+        uv run python scripts/profile_runs.py --running ID
         ```
     - An ID is an agent id, a session id, or the path of a `.jsonl` transcript. A session brings its main transcript, as type `main`, and each of its subagents' transcripts. Each transcript is a run.
     - A run's wall time, from its first entry to its last, is cut at each entry's time, and each interval goes to one part:
@@ -50,9 +55,16 @@ HELP = mctx("""
     - More than one run also prints the budget of each agent type, which is {factor} times a median wall time, printed with the runs it is taken over:
         - With `--since DATE`, an ISO date or datetime read in local time where it gives no offset, the window is the runs whose first entry is at or after DATE. Where the window holds at least {window_runs} runs of the type, the median is taken over them.
         - Otherwise it is taken over the type's runs whose `waits` and `idle` together are under {low_wait_pct}% of wall time. A type with no such run gets no budget, and an `undecided` line on stderr names it.
+    - `--running ID` lists the agents that the run ID launched and that have not completed, where ID is a session id or an agent id. An agent has completed when its turn has ended, or when the run ID has its result or a notification of it. For each agent it prints:
+        - its agent id, type and launch description, the time since its first entry, and its context size in tokens, which is the input of its last request;
+        - each call it has in flight, with its label, its command and the time since the call;
+        - each command or agent it backgrounded that is still running, with its label, its command and the time since the call;
+        - its last {recent} calls in order, each with its label, its command and its duration, or `pending`.
+    - A call's command is printed on one line, cut at {width} characters. It is the command of a Bash call, the description of an Agent call, and for any other call nothing past its label.
     - A run whose agent type is unknown is refused, and so is an ID that names transcripts that differ. A call whose agent type is unknown is labelled `agent ?`, and a Bash call with no command is labelled `shell`; an `undecided` line on stderr names each.
     """).format(factor=BUDGET_FACTOR, window_runs=WINDOW_RUNS,
-                low_wait_pct=LOW_WAIT_PCT)
+                low_wait_pct=LOW_WAIT_PCT, recent=RECENT_CALLS,
+                width=COMMAND_WIDTH)
 
 
 class Part(Enum):
@@ -107,6 +119,16 @@ class Group:
 
 
 @dataclass
+class Span:
+    """A call's span: its label, its command, the time of the call
+    and the time of its result."""
+    label: str
+    command: str
+    start: float
+    end: float | None = None
+
+
+@dataclass
 class Run:
     label: str
     agent_type: str
@@ -115,6 +137,11 @@ class Run:
     wall: float
     parts: dict[Part, float]
     groups: dict[Key, Group]
+    spans: list[Span]
+    in_flight: list[Span]
+    backgrounded: list[Span]
+    ended: bool
+    context: int | None
 
     @property
     def active(self) -> float:
@@ -379,6 +406,27 @@ def command_label(cmd: str) -> str:
 
 # Profiles.
 
+def call_command(block: dict[str, Any]) -> str:
+    """The command of a call: a Bash call's command, an Agent call's
+    description, and for any other call none."""
+    name, inp = block.get("name"), block.get("input") or {}
+    if name == "Bash":
+        return str(inp.get("command", ""))
+    if name in AGENT_TOOLS:
+        return str(inp.get("description", ""))
+    return ""
+
+
+def request_input(entry: Entry) -> int | None:
+    """The input tokens of the request an assistant entry answers, or None
+    where the entry gives no usage."""
+    usage = (entry.get("message") or {}).get("usage")
+    if not isinstance(usage, dict):
+        return None
+    return sum(usage.get(k) or 0 for k in (
+        "input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+
+
 def results_by_call(entries: list[Entry]) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     for e in entries:
@@ -400,6 +448,14 @@ def launched_type(inp: dict[str, Any], result: dict[str, Any] | None,
     path = session_agents(session).get(aid) if aid else None
     meta = read_meta(path) if path else None
     return meta.get("agentType") if meta else None
+
+
+def session_of(path: Path) -> Path:
+    """The session directory a transcript belongs to."""
+    session = path.parents[1] if is_subagent(path) else path.with_suffix("")
+    while is_subagent(session):
+        session = session.parent
+    return session
 
 
 @cache
@@ -485,9 +541,7 @@ def notified(entry: Entry) -> list[str]:
 def profile(path: Path, undecided: list[str]) -> Run:
     agent_type, description = run_type(path)
     label = agent_id(path) if is_subagent(path) else path.stem
-    session = path.parents[1] if is_subagent(path) else path.with_suffix("")
-    while is_subagent(session):
-        session = session.parent
+    session = session_of(path)
     entries = read_entries(path)
     results = results_by_call(entries)
     starts, ends = turns(entries)
@@ -498,6 +552,8 @@ def profile(path: Path, undecided: list[str]) -> Run:
     pending: dict[str, Key] = {}
     running: dict[str, tuple[Key, float]] = {}   # tool-use id -> key, start
     by_task: dict[str, str] = {}                # task id -> tool-use id
+    spans: dict[str, Span] = {}
+    context: int | None = None
     idle = False
     prev: float | None = None
     first: float | None = None
@@ -530,16 +586,21 @@ def profile(path: Path, undecided: list[str]) -> Run:
         etype = e.get("type")
         if etype == "assistant":
             idle = False
+            tokens = request_input(e)
+            context = context if tokens is None else tokens
             for b in blocks(e, "tool_use"):
                 tid = b.get("id", "")
                 c = calls[tid] = classify(b, results.get(tid), session,
                                           undecided, label)
                 pending[tid] = c.pending
+                spans[tid] = Span(c.pending[1], call_command(b), t)
                 group(c.pending).calls += 1
         elif etype == "user":
             for b in blocks(e, "tool_result"):
                 tid = b.get("tool_use_id", "")
                 pending.pop(tid, None)
+                if tid in spans:
+                    spans[tid].end = t
                 c = calls.get(tid)
                 if c and c.background:
                     if c.background != c.pending:
@@ -558,6 +619,8 @@ def profile(path: Path, undecided: list[str]) -> Run:
                 k, start = running.pop(tid)
                 group(k).ran += t - start
     end = prev or 0.0
+    in_flight = [spans[tid] for tid in pending if tid in spans]
+    backgrounded = [spans[tid] for tid in running if tid in spans]
     for k, start in running.values():
         group(k).ran += end - start
     wall = end - first if first is not None else 0.0
@@ -565,7 +628,8 @@ def profile(path: Path, undecided: list[str]) -> Run:
         undecided.append(mctx("{run}: no entry gives a time, so its start "
                               "is unknown").format(run=label))
     return Run(label, agent_type, description, first, wall, parts,
-               {k: g for k, g in groups.items() if g.time or g.calls})
+               {k: g for k, g in groups.items() if g.time or g.calls},
+               list(spans.values()), in_flight, backgrounded, idle, context)
 
 
 # Output.
@@ -671,6 +735,70 @@ def print_types(runs: list[Run], pct: float, top: int) -> None:
         print_groups(merged, top, total, present)
 
 
+# Running agents.
+
+def running_agents(ident: str, undecided: list[str]) -> list[Path]:
+    """The transcripts of the agents the run `ident` launched that the run
+    holds no notification of, nor a result that does not say the agent runs
+    in the background, in the order of their launch."""
+    path = find(ident)
+    entries = read_entries(path)
+    results = results_by_call(entries)
+    answered = {b.get("tool_use_id") for e in entries if e.get("type") == "user"
+                for b in blocks(e, "tool_result")}
+    told = {v for e in entries if e.get("type") != "assistant" for v in notified(e)}
+    by_call: dict[str, Path] = {}
+    for p in session_agents(session_of(path)).values():
+        meta = read_meta(p)
+        if meta and meta.get("toolUseId"):
+            by_call[meta["toolUseId"]] = p
+    out: list[Path] = []
+    for e in entries:
+        if e.get("type") != "assistant":
+            continue
+        for b in blocks(e, "tool_use"):
+            if b.get("name") not in AGENT_TOOLS:
+                continue
+            tid = b.get("id", "")
+            result = results.get(tid) or {}
+            launched = result.get("status") == "async_launched"
+            if tid in told or result.get("agentId") in told or (
+                    tid in answered and not launched):
+                continue
+            if tid not in by_call:
+                undecided.append(mctx("{run}: no transcript gives call {call} as "
+                                      "its launch").format(run=path.stem, call=tid))
+                continue
+            out.append(by_call[tid])
+    return out
+
+
+def one_line(command: str) -> str:
+    line = " ".join(command.split())
+    return line if len(line) <= COMMAND_WIDTH else line[:COMMAND_WIDTH - 3] + "..."
+
+
+def print_span(m: Span, time_text: str) -> None:
+    command = f": {one_line(m.command)}" if m.command else ""
+    print(f"    {time_text:>8}  {m.label}{command}")
+
+
+def print_running(runs: list[Run], now: float) -> None:
+    for r in runs:
+        since = minutes(now - r.start) if r.start is not None else "?"
+        context = f"{r.context:,}" if r.context is not None else "?"
+        print(f"{r.label} {r.agent_type}  {since}  context {context} tokens: "
+              f"{r.description}")
+        for title, spans in (("in flight", r.in_flight), ("running", r.backgrounded)):
+            if spans:
+                print(f"  {title}:")
+            for m in spans:
+                print_span(m, minutes(now - m.start))
+        print("  recent:")
+        for m in r.spans[-RECENT_CALLS:]:
+            print_span(m, minutes(m.end - m.start) if m.end is not None else "pending")
+
+
 def iso_date(text: str) -> float:
     return epoch(text)
 
@@ -678,7 +806,10 @@ def iso_date(text: str) -> float:
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=HELP,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("ids", nargs="+", metavar="ID")
+    ap.add_argument("ids", nargs="*", metavar="ID")
+    ap.add_argument("--running", metavar="ID",
+                    help=mctx("list the agents the run ID launched that have "
+                              "not completed"))
     ap.add_argument("--type", help=mctx("profile only runs of these agent "
                                         "types, separated by commas"))
     ap.add_argument("--pct", type=float, default=90,
@@ -696,19 +827,27 @@ def main(argv: list[str]) -> int:
     types = set(args.type.split(",")) if args.type else None
     undecided: list[str] = []
     runs: list[Run] = []
+    if bool(args.ids) == bool(args.running):
+        print(mctx("refused: give either IDs or `--running ID`"), file=sys.stderr)
+        return 2
     try:
-        paths = [p for ident in args.ids for p in transcripts(ident)]
-        for path in paths:
-            if types and run_type(path)[0] not in types:
-                continue
-            runs.append(profile(path, undecided))
+        if args.running:
+            runs = [r for r in (profile(p, undecided) for p in
+                                running_agents(args.running, undecided))
+                    if not r.ended]
+        else:
+            paths = [p for ident in args.ids for p in transcripts(ident)]
+            runs = [profile(p, undecided) for p in paths
+                    if not types or run_type(p)[0] in types]
     except Refused as e:
         print(mctx("refused: {reason}").format(reason=e), file=sys.stderr)
         return 2
-    if not runs:
+    if args.running:
+        print_running(runs, time.time())
+    elif not runs:
         print(mctx("refused: no run to profile"), file=sys.stderr)
         return 2
-    if len(runs) == 1 or args.runs:
+    elif len(runs) == 1 or args.runs:
         for r in runs:
             print(f"{r.label} {r.agent_type} {clock(r.start)}: {r.description}\n"
                   f"  wall {minutes(r.wall)}  {part_split(r.parts)}")
@@ -716,7 +855,7 @@ def main(argv: list[str]) -> int:
             print_groups(runs[0].groups, args.top, runs[0].wall)
         else:
             print()
-    if len(runs) > 1:
+    if len(runs) > 1 and not args.running:
         print_types(runs, args.pct, args.top)
         print()
         print_budgets(runs, args.since, undecided)
