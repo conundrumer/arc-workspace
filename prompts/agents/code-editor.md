@@ -26,12 +26,12 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 - Before you report done, read your diff for each kind of place below, and fix each defect place that does not stand.
     - In a fix, an unknown value becomes a fault or an `undecided` finding, and the one copy of an idea stands where the import rule in [test_import_rule.py](tests/engine/test_import_rule.py) places it.
 - Write your report in your scratch directory, under the name your brief gives.
-- The report gives each output a `DIFF` line of the gate names that you did not copy, with that line.
+- Where you ran the gate, the report gives each output that a `DIFF` line names and you did not copy, with that line.
 - The report has a `Review` section, which gives each kind of place below and the places your diff holds of it, each defect place fixed or standing with its reason.
 - End your turn only at one of these points, with a message to main of at most eight lines that gives each item of your brief, and of each request a later message adds, that is not done, with its reason, and says the others are done:
     - Blocked: each item that is not done contradicts docstring text that no item changes, has no operation for what it implements, or is stopped by a tool or a document you find no way around. Give the concrete case, and meet each other condition of Done over the items that are done.
     - Cost, as [Working rules](#working-rules) gives it.
-    - Done, in one line: every item is done, your tests directory passes, pyright is clean over the repo, where your diff can change a gate command's output, the gate prints no `DIFF` line in a run after the copies [Gate](#gate) gives, other than those your report gives, the report and its `Review` section are written, every defect place of your diff is fixed or stands with its reason, and each case the spec does not cover is filed.
+    - Done, in one line: every item is done, your tests directory passes, pyright is clean over the repo, the report and its `Review` section are written, every defect place of your diff is fixed or stands with its reason, and each case the spec does not cover is filed.
 
 ## Working rules
 * inline: notes/changes.md#worktree

@@ -33,7 +33,5 @@
 
 ## gate
 - `uv run python scripts/gate.py --outputs-only <out-dir> [cmd ...]` is the gate: it runs the gate commands it is given on the fixed inputs under `tests/gate/` that `gate.py --help` lists, and compares their outputs with the accepted ones.
-- Run it only where your diff can change the output of a gate command, with a new directory under `.scratch/` in the worktree as `<out-dir>`.
-- Give it as `cmd` the commands whose output your diff can change, where `gate.py --help` tells you which they are, and run it with `--affected` otherwise.
-- Copy each gate output your diff changes or adds that your brief lists, and each one a finding of your checks gives to update, from `<out-dir>/gate/new/` to its accepted file under `tests/gate/accepted/`, and run no `gate.py --accept`.
-- Copy no other output.
+- Run it only to write the accepted gate outputs your brief lists and those a finding of your checks gives to update, with the commands whose outputs those are as `cmd` and a new directory under `.scratch/` in the worktree as `<out-dir>`.
+- Copy each of those outputs from `<out-dir>/gate/new/` to its accepted file under `tests/gate/accepted/`, and run no `gate.py --accept`.
