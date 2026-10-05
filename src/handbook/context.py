@@ -16,14 +16,12 @@ all. Read those documents for what each agent gets.
 from __future__ import annotations
 
 import difflib
-import io
 import json
 import keyword
 import os
 import re
 import subprocess
 import sys
-import tarfile
 import tempfile
 import time
 from collections.abc import Callable, Iterator
@@ -1643,17 +1641,22 @@ def _command(reader: str, args: list[str]) -> str:
 
 @contextmanager
 def _tree_at(commit: str) -> Iterator[Path]:
-    """The tree of `commit`, written to a temporary directory, so that the
-    checkout stays as it is."""
-    try:
-        archived = checkout.git_bytes(REPO_ROOT, "archive", "--format=tar", commit)
-    except checkout.GitFailed as e:
-        raise SystemExit(e.stderr.strip())
+    """The tree of `commit`, checked out as a detached git worktree of the
+    repository in a temporary directory, so that the checkout stays as it
+    is and the commit's own code finds the main worktree as in any other
+    checkout. The worktree is removed on every exit of the block and leaves
+    no entry in `git worktree list`."""
     with tempfile.TemporaryDirectory() as tmp:
-        tree = Path(tmp)
-        with tarfile.open(fileobj=io.BytesIO(archived)) as tar:
-            tar.extractall(tree, filter="data")
-        yield tree
+        tree = Path(tmp) / "tree"
+        try:
+            checkout.git_out(REPO_ROOT, "worktree", "add", "--detach",
+                             str(tree), commit)
+        except checkout.GitFailed as e:
+            raise SystemExit(e.stderr.strip())
+        try:
+            yield tree
+        finally:
+            checkout.git_out(REPO_ROOT, "worktree", "remove", "--force", str(tree))
 
 
 def _run_in(tree: Path, commit: str, argv: list[str]) -> str:
@@ -1678,19 +1681,20 @@ def _render_in(tree: Path, commit: str, reader: str, args: list[str]) -> str:
 
 def context_at(commit: str, reader: str, args: list[str]) -> str:
     """One reader's whole context as the tree of `commit` renders it, with
-    that tree's own code (`_tree_at`)."""
+    that tree's own code, run in a detached worktree of `commit`
+    (`_tree_at`)."""
     with _tree_at(commit) as tree:
         return _render_in(tree, commit, reader, args)
 
 
 def context_diff(commit: str, reader: str, args: list[str]) -> str:
     """The unified diff from one reader's context at `commit`, as
-    `context_at` renders it, to its context in the checkout. Empty where
-    the two are the same. A side that does not define the reader, as
-    `contexts_diff` finds it, gives an empty context, so the diff of an
-    added reader gains every line and that of a removed one loses every
-    line. A reader neither side defines, and a render that fails, are
-    faults."""
+    `context_at` renders it in a detached worktree of `commit`, to its
+    context in the checkout. Empty where the two are the same. A side that
+    does not define the reader, as `contexts_diff` finds it, gives an empty
+    context, so the diff of an added reader gains every line and that of a
+    removed one loses every line. A reader neither side defines, and a
+    render that fails, are faults."""
     call = (reader, args)
     with _tree_at(commit) as tree:
         then = call in _calls_in(tree, commit)
@@ -1741,8 +1745,9 @@ def contexts_diff(commit: str) -> str:
     """Each reader, with its arguments, whose context the change since
     `commit` alters, one per line, marked with its `ReaderChange` where
     only one side defines it. A reader both sides define is altered where
-    its context at `commit`, as `context_at` renders it, differs from its
-    context in the checkout; a render at `commit` that fails is a fault.
+    its context at `commit`, as `context_at` renders it in a detached
+    worktree of `commit`, differs from its context in the checkout; a
+    render at `commit` that fails is a fault.
     The checkout's readers come first, in `reader_calls` order, then the
     ones only the commit defines."""
     now = reader_calls()
