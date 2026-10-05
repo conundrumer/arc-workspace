@@ -13,6 +13,8 @@
 - Where a doc review reports a finding on one of those comments that a code editor wrote, send that finding to a doc editor in place of the code editor, with SendMessage. Where the change has no doc editor, first launch one in the change's worktree, with an Intent that says what those comments' readers need to know, taken from the items of the code editor's brief.
 - In each message that sends a reviewer fixes, give what has been settled about the change since its brief, and each request the user added to the change since its brief.
 - Launch the first editor of a change with the Agent tool's `isolation: "worktree"`, and take the change's worktree from the Agent tool's completion notification for that editor.
+    - The harness removes that worktree, with its untracked files, when that editor ends a turn with no change to a tracked file. Launch the editor that continues such a change as a new first editor, and send no editor to a worktree you add yourself.
+        * comment: A code editor whose first worktree was removed after a turn with no edit had no worktree to continue in, and its notes under `.scratch/` were gone: issue `1791209231-worktree-cleanup-operator-1`. The operator then sent that editor to a worktree it added with `git worktree add`, and the permission classifier refused the editor's edits to [src](src) and [scripts](scripts) there: issue `1791209668-classifier-refusal-operator-1`.
 - Give that worktree, by its path, in the brief of each later agent that works on the change.
 - Run the changes you launch at the same time.
 
