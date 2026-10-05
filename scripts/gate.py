@@ -7,11 +7,13 @@ times.
     uv run python scripts/gate.py --accept [--replace] <out-dir> [cmd ...]
     uv run python scripts/gate.py --adopt-record <out-dir>
 
-A command runs on the stems its `Command.stems` gives. The stems run in
-parallel. On each stem, the commands run in the order given, which is the
-order a pass runs them, sharing one run cache from empty: this is the cold
-pass. Then the same sequence runs again with every result cached: this is
-the warm pass.
+A command runs on the stems its `Command.stems` gives, which the end of
+`--help` lists for each command. Every command reads the solver files from
+`tests/gate/solvers/` and the witness files from `tests/gate/witnesses/`.
+The stems run in parallel. On each stem, the commands run in the order
+given, which is the order a pass runs them, sharing one run cache from
+empty: this is the cold pass. Then the same sequence runs again with every
+result cached: this is the warm pass.
 
 A command's outputs are its output, in `<key>.txt`, the witness file, in
 `<key>.wit.json`, where its subcommand is in `WITNESS_FILE_SUBS`, and its
@@ -78,12 +80,10 @@ is another.
 Where no `RECORD_OUT` stands, it says so and leaves the dependency record
 as it is.
 
-Every command reads the solver files from `tests/gate/solvers/` and the
-witness files from `tests/gate/witnesses/`. A command that takes a witness
-file is given one at `<out-dir>/gate/wit/cur/`, copied from
-`tests/gate/frozen/` before the command runs. The `record` commands, `grid`
-and `relation` read their input files from `tests/gate/inputs/`. The
-`context` command renders each of its readers' contexts from
+A command that takes a witness file is given one at
+`<out-dir>/gate/wit/cur/`, copied from `tests/gate/frozen/` before the
+command runs. The `record` commands, `grid` and `relation` read their
+input files from `tests/gate/inputs/`. The `context` command renders each of its readers' contexts from
 `<out-dir>/gate/documents/`, copied from `tests/gate/documents/` before the
 commands run, so a change to the checkout's own documents changes none of
 its outputs. Its readers are the session, codex, and each name
@@ -129,6 +129,7 @@ import runpy
 import shutil
 import subprocess
 import sys
+import textwrap
 import threading
 import time
 from collections.abc import Iterable, Iterator, Sequence
@@ -353,6 +354,15 @@ COMMANDS: dict[str, GateCommand] = {c.name: c for c in (
 
 def keys_of(cmds: Iterable[GateCommand]) -> set[str]:
     return {c.key(s) for c in cmds for s in c.stems}
+
+
+def stems_listing() -> str:
+    """Each gate command, in the order a pass runs them, with the stems it
+    runs on, for the end of `--help`."""
+    return "The stems each command runs on:\n\n" + "\n".join(
+        textwrap.fill(" ".join(c.stems), width=78, initial_indent=f"  {c.name}: ",
+                      subsequent_indent=" " * 4, break_on_hyphens=False)
+        for c in COMMANDS.values())
 
 
 class LineKind(StrEnum):
@@ -962,7 +972,7 @@ def main(argv: Sequence[str]) -> int:
 
 
 def run_gate(argv: Sequence[str]) -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
+    ap = argparse.ArgumentParser(description=__doc__, epilog=stems_listing(),
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("out", type=Path, help="the output directory")
     ap.add_argument("cmds", nargs="*", metavar="cmd",
