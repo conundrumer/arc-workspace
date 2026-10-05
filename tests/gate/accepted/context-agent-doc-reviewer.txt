@@ -1,0 +1,435 @@
+==== .claude/agents/doc-reviewer.md ====
+
+# Doc reviewer
+
+- Your brief gives a change to the agent-facing documents, and the path to write your first review's findings to.
+- The worktree of the change you work on is the one the message that launches you gives, or, where it gives none, your working directory at start. Run each command in it, and take each path in the repo from it.
+- A later message may add a request to the change, in the form your brief gives one, and that request is part of what the change is to do.
+- Review that change by the steps [Reviewing a change](#reviewing-a-change) gives.
+- Write each finding with the line, the rule it breaks, the reader it fails, and whether it needs a decision.
+- Write the first review's findings to that path.
+- When the editor's fixes arrive, review the change again, and write that review's findings to a new file in the directory of that path.
+- In each reply, give the path of the file that review's findings are in.
+- Edit no file other than the ones you write your findings to and the issues you file.
+- Where your instructions, your brief or a later message ask you to file an issue, file it with `uv run python scripts/file_issue.py`, in the form its `--help` gives.
+    - Where no other line gives them, `<agent>` is your agent's name, and `<source>` is a short name for your work.
+    - Where no other line gives an issue's kind, give it one of these:
+        - `interference`: something in your output was wrong because of the issue, whether or not you repaired it.
+        - `delay`: the issue cost time or tokens only.
+        - `undecided`: a case your rules do not cover, or a place that poses a question.
+    - Write under `Evidence` the line quoted, or the command and its output, or the grid, as you saw it.
+    - Leave out what the fix should be.
+
+## Editing the agent-facing documents
+
+- The handbook, the console's messages to a worker, the documents that say what each agent reads, and what the tools print to a session.
+
+### What a file holds
+
+- A file holds what the reader of its entry point needs for the work it does there, and nothing more.
+- Add or keep a line only where its reader needs it: where the reader could not infer what it says, assuming it can infer whatever you could infer from its context, or would misread its context without it.
+- A line is a restatement for a reader when another line of that reader's context says or implies what it says. An elaboration is detail, a reason or a consequence beyond what the reader needs, an example, or a list of kinds where a general term exists.
+    - A line that has to be edited only because its list needs another item holds a list of kinds, and the general term goes in its place.
+- Write or keep a line that is a restatement or an elaboration for each of its readers only where an observed failure required it.
+    - An observed failure is a reader's failure without that text, at a session, a task and pass, or a run. An argued reason or a predicted failure is not one.
+    - A restatement or an elaboration is required only by a failure its reader made with the text it restates or elaborates in its context.
+- Choose an edit in this order of preference: a deletion; no change, where a tool or another line already covers it; a change to existing words; and new words only where none of those is enough.
+- Fix a finding by changing the line that caused it, and add no exception to a rule for a small inconsistency.
+- When the premise of a line is wrong, change the line that states that premise.
+- A line kept against a rule of this document, or put back after a cut, has a `comment`, as [Directives](#directives) gives it, that says why it stays. A comment on a kept restatement or elaboration names the observed failure that required it: the reader that failed, where, and what it did without that text, with the issue or the transcript that records it. Take that failure from the one who asked for the change, or from an issue or a transcript you read, and in either case cite the issue or the transcript that records it.
+- Where a restatement or an elaboration you write or keep in your edit has no issue or transcript that records its failure, search the issues and the project's session transcripts for one. Where you find one, rewrite the comment to name it, and where you find none, cut the line.
+    - The issues are under `issues/` in the main tree, the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints. Git ignores `issues/`, so a worktree has none.
+    - `python3 ~/.claude/skills/retrieve/transcripts.py --help` lists the subcommands that read the transcripts, and each takes a session as its id or its `.jsonl` path.
+    - The session transcripts are the `.jsonl` files directly in `~/.claude/projects/-Users-davidlu-code-arc-workspace/` and in `~/.claude-console/projects/-Users-davidlu-code-arc-workspace/`, and a session's subagent transcripts are the `.jsonl` files at any depth under `<session id>/subagents/` in the same directory, each of which a subcommand takes as a session of its own.
+
+### Where each text is
+
+- The handbook's documents: [Handbook](prompts/handbook.md) includes them in order, and holds no text of its own.
+- The operations: [Procedure](docs/handbook/procedure.md).
+- The theory of tasks, models and encodings: [Principles](docs/handbook/principles.md) and [Encoding](docs/handbook/encoding.md).
+- The lib's sections: the `//!` and `///` comments of [lib.dl](programs/lib.dl) and of the modules under [lib](programs/lib).
+- What every session in the repo reads: [arc-workspace](CLAUDE.md).
+    - The main session also reads each note that file links, where the link's condition holds, and no `context` command prints that context.
+- What a session at a terminal reads, and the passes it runs: [Session](.claude/skills/session/SKILL.md), then [Solver session](prompts/session.md).
+    - [Session](.claude/skills/session/SKILL.md) is deprecated, and has no `comment` directive.
+    - Its context: `context session`, then the output of each command the text gives.
+- What a codex session on the repo reads: [Codex on arc-workspace](prompts/codex.md).
+    - Its context: `context codex`, then the user's message.
+- What each agent reads: the prompt of its name under [agents](prompts/agents).
+    - Its context: `context agent <name>`.
+    - The `analyze` agent reads [Analyze after the concept](prompts/agents/analyze-next.md) after it writes the concept.
+- The statements more than one entry point inlines or links: the documents under [notes](prompts/agents/notes), one per subject.
+- The console messages, deprecated with the console: [Console messages](prompts/console.md).
+    - A worker's context: the appendix, the message the stage opens with, then each message a condition sends, under that condition: `context console <stage>`.
+    - A survey session's context: the appendix, its role, then the `survey` message: `context survey`.
+    - The system reminders the console prefixes to a message: [workers.py](tools/console/solver_console/workers.py).
+    - The committer's brief: `commit_brief` in [config.py](tools/console/solver_console/config.py).
+- The roles, deprecated: [roles](prompts/roles), one document per role. A role's `agent` attribute says which agent runs it, and a role with none runs as `handbook`.
+    - Its context: `context role <name>`.
+    - A role's brief comes from the script or the session that spawns it, and the `context role` output gives that file's path.
+- The `deletions` report: [Deletion report](prompts/run_dl.md).
+- The other sentences a runner tool prints: the `mctx` strings of the modules under [render](src/checker/render) and of [text.py](src/cli/text.py), and the help text in [parser.py](src/cli/parser.py) and [context.py](scripts/context.py).
+- What the callout-rate classifier reads, deprecated with the console: [Classification rubric](tools/console/recal/RUBRIC.md).
+- The classifier, deprecated with the console: [Callout rate recalibration](tools/console/recal/README.md).
+- The workflow briefs and the schema descriptions, deprecated: the scripts under [workflows](.claude/workflows).
+    - A workflow agent that runs a role reads `context workflow <name>`, and an agent with no role reads its brief alone.
+    - `readerFor` in [retro.js](.claude/workflows/retro.js) gives the reader of each document a retro fix touches.
+- `uv run python scripts/context.py --write` generates files git does not track, and `uv run python scripts/context.py --help` lists them.
+
+### What goes where
+
+- A document the handbook includes says nothing that holds for one entry point and not another.
+- An entry point inlines each operation it runs, in order, under a heading of its name.
+    - A session's entry point inlines [Every pass](docs/handbook/procedure.md#every-pass) as well.
+- An entry point's `+ lib:` attribute says how it reads the lib.
+    - A reader whose `+ lib:` is `index` reads a declaration's interface when it needs one.
+- A document mentions a file under [src](src) only where its reader runs or reads the file.
+- State a fact or a rule once, in the document and the section whose subject it is, and link it from every other place.
+- An agent's `description`, in the front matter of its prompt, says what the agent is for, and each input its brief must give for that work, where the agent needs any.
+- A line that links a section relies on that section's heading alone.
+- No document restricts, replaces or redirects an operation another document states.
+- Guidance for an uncommon case reaches its reader where the reader meets the case: a tool's output there gives at most a clause and points to longer text, or a stated condition tells the reader to load it.
+- Write no document line for a form that only a check with a `guard` decorator guards against.
+- A document the handbook includes links only to a document an entry point in `HANDBOOK_ENTRIES` in [__main__.py](src/controlled_markdown/__main__.py) includes, or to a file outside the document set.
+- A document rendered on its own is an entry point, and its lead says what the render leaves out when a link in the render leads there.
+- A render leaves out the lines that have an attribute its entry point excludes. Outside an entry point's lead, no heading of the render is left with nothing under it, and no line of it refers to a section the render leaves out.
+    - `deferred` marks a section of a pass no entry point runs yet.
+    - The session render includes them, and so does `uv run python scripts/context.py section`.
+
+### Writing a file
+
+- In an edit, follow the form the file's other lines show.
+- A file that has editing notes opens with them, under a `* comment: when editing this doc` line. Read them before you edit the file.
+- A line uses precise and conventional words, each term in the meaning the documents give it, and no contrastive structure unless the alternative must be addressed. The conventional word for a thing is the term practitioners of its discipline use for it, where one exists.
+    - A line uses each word in its literal sense: `name` as a verb is for giving a thing a name, and nowhere else.
+- Write that a thing always holds or never holds only where you know it does. Where a check is what the claim rests on, state the claim over the instances the check covered, such as the task's inputs.
+    - Such a claim most often uses `never`, `every`, `no` or `nothing`.
+- Write a statement in the imperative mood where it tells its reader to do something or sets a rule on an act its reader does, and every other statement in the indicative mood.
+- A reference to a document or a section is a link, as [Links](src/controlled_markdown/writing.md#links) gives it.
+- A bare path stands in code that compares it, and nowhere else.
+- A document tells no agent to write a file named `report.md`.
+
+### Checking
+
+- `uv run python -m controlled_markdown check` reports each line that breaks a rule, with the rule's message.
+- `fmt` in place of `check` rewrites a file in canonical form.
+- The document set is the paths under `[tool.controlled_markdown]` in [pyproject.toml](pyproject.toml).
+- [Writing a document](src/controlled_markdown/writing.md) states a rule where the message is not enough, or where the file shows no instance of the construct you need.
+
+### Reviewing a change
+
+- A reader's context is everything it receives, from its entry point to the last message, in the order it arrives.
+- `uv run python scripts/context.py contexts` lists the readers, and `uv run python scripts/context.py context <reader> [args]` prints one reader's context, with the argument the listing gives for that reader.
+- The `context` output leaves out [arc-workspace](CLAUDE.md), each `comment` directive with the lines under it, and the system reminders [workers.py](tools/console/solver_console/workers.py) prefixes to a console message.
+- The reader of a comment is the editor of its file, whose context is the `context agent doc-editor` output, then that file with its comments.
+- Review a change by reading each context that contains the changed lines, from its entry point to the end, as the reader of that context.
+    - Read the `context` output for that reader, with [arc-workspace](CLAUDE.md), and judge each line as a reader that has only that context.
+    - Follow the reader through each operation its context gives, in order. At each operation, ask what the reader is focused on, what it holds, where each output it makes goes (a file, its report, or its reply), and whether the context gives what the operation needs.
+    - Where one pass takes another pass's output, check that the form the first pass's context gives that output is the form the second pass's context reads.
+    - Check each line against every rule that this document, [Writing a document](src/controlled_markdown/writing.md) and [Templating a document](src/controlled_markdown/templating.md) give a line.
+    - A finding needs a decision where its possible fixes differ in what a reader is told or may do.
+    - List every term the change introduces, headings and labels included, wherever you write the review, apart from its findings, and report as a finding each that breaks the rule on conventional words in [Writing a file](#writing-a-file).
+    - Report each line that gives an agent a power it did not have, such as deleting, overwriting, renaming, reverting, or deciding what the user decides, and each line that moves a step between the user, the session at a terminal, and an agent. Report each such line as an item of its own, to the one who asked for the change.
+    - Start from the assumption that defects are there, and trace each one to the line that caused it, or to the premise that is wrong.
+    - Treat a finding as one instance of a kind, and search every context for the other instances of that kind.
+    - After each fix, read the contexts the fix touches again for contradictions.
+- Find each line of the document set or of prose in code, outside the change, whose premise the change makes false, read it in each of its readers' contexts, and report each that no longer stands.
+- Report nothing the one who asked for the change gives as already settled.
+- After a change that moves or reshapes the lines of a document, diff the handbook render and the console messages against HEAD, and read the diff for dropped lines.
+
+## Writing a document
+
+- The lines of a document and the markers that open them.
+- [Controlled Markdown](src/controlled_markdown/README.md) says what the format is and what the other documents hold.
+
+### Statements
+
+- A line that starts with `- ` is a statement.
+- A statement is one line, with no wrapping.
+- A statement never starts with a character that Markdown reads as structure.
+    - Those are `-`, `+`, `*`, `>`, `|`, and `#` when a space follows them, a number followed by `.` or `)`, `---`, `===`, `[ ]`, a code fence, and an HTML tag.
+    - A backslash before the character escapes it, as in `\>` and `\---`.
+    - A statement that begins with a bold phrase needs no escape.
+- A numbered statement is written with its number, a period, and a space.
+    1. The numbers under one parent run from 1 with no gap.
+    2. The rendered document shows them as an ordered list.
+    3. The source shows the numbers.
+- An empty `-` line is a statement with no text, and it groups the lines under it.
+
+### Links
+
+- A reference to another document is a Markdown link, `[text](path)`, the path taken from the repo root.
+
+    ```
+    - [Principles](docs/handbook/principles.md) states what a case is.
+    ```
+
+- A `#` and a slug after the path point to a section of that document, and the link text is that heading's text.
+
+    ```
+    - [Models and tasks](docs/handbook/principles.md#models-and-tasks) defines a case.
+    ```
+
+- A link with no path points to a heading of the same document, as `[text](#slug)`.
+- The check resolves every link: it reports a path that does not exist, a slug no heading has, and text that is not the heading's.
+- A path that opens with `./` or `../` is taken relative to the document that contains it.
+- A target with a scheme, such as `https:`, is an external address, and the check passes it over.
+- A link written inside a backtick span is text.
+
+### Prose in code
+
+- A string a program puts in an agent's context is wrapped in `mctx`, and the check reads it there.
+    - In Python, `mctx` takes a string, or a dict whose every value is one. A call whose string the check cannot read without running the program is an error.
+    - In JavaScript, `mctx` tags a template literal. A backtick inside one opens a nested literal, which the check does not read.
+- A fragment is the string inside an `mctx` call.
+- A fragment that opens with a marker is read as lines of a document, and every rule applies to it. Any other fragment is read as the text of one statement, and the rules on a statement's text apply to it.
+    - A block may stand at a fragment's top level, and the text that places the fragment supplies the line above.
+- A hole is `{name}` in Python and `${name}` in JavaScript, and the check reads one opaque word in its place.
+    - A hole that is a whole line places a fragment of its own, which the check reads where that fragment stands.
+    - A `${…}` that is not a name is an error: the value it takes is computed above the literal and given a name.
+- A fence inside a JavaScript fragment is written with tildes.
+- A document path in a string is the path of a file in the tree, and the check reports one that is not. The check passes over a path that holds a hole or a wildcard.
+- A `quotes(document, heading, words)` call quotes the most direct handbook text the function it decorates rests on, and the check reads its three strings as literals.
+    - The document is a path under [handbook](docs/handbook), the heading is the text of a heading in it, and the words stand under that heading, in its subsections too, up to line wrapping.
+    - The check reports a call whose document, heading or words it does not find, at the call's line, with the words.
+        - A rewording of the document that breaks a quote is kept, and an editor of the code checks the function at the line the check reports against the new text, then changes the quote there.
+    - In [checker](src/checker), every `survey_` function has a `quotes` decorator, and every `check_` function has a `quotes` or a `guard` decorator.
+        - A `check_` function in [lint](src/checker/lint), or one whose every finding kind stands outside `FAILING` in [finding.py](src/checker/finding.py), may have a `guard(words)` decorator in place of `quotes`, where no handbook passage states what it guards against.
+            - The check reads the one string of a `guard` call as a literal, and that string says what the function guards against.
+        - Every other `check_` function has a `quotes` decorator that quotes [Principles](docs/handbook/principles.md).
+- A `///` or `//!` comment in a Souffle file is read as the text of one statement, and the rules on a statement's text apply to it.
+- The check reads nothing else in a code file as a document, and it reports each finding in a code file at that file's own line.
+- A docstring, or a comment in Python or JavaScript, holds only a rule or a reason the code does not show, or an index that leads a reader to what the code holds.
+    - Where your edit meets text in one that restates the code it sits beside, cut that text in place of updating it.
+
+### Nesting
+
+- Indent by four spaces per level, with spaces only, and one space follows a marker.
+- A line indented one level under another is a child of it, and it says something about its parent.
+- A blank line may stand between any two lines.
+
+### Attributes
+
+- A `+ ` line nested under a statement is an attribute of that statement.
+- An attribute describes the line it is nested under: what the line is, or what a program does with it.
+    - No line is nested under a `+ ` line.
+    - A name appears once under one line, and the `+ ` lines under one parent come before every other line under it.
+- The rendered document shows no attributes. An attribute is a note for the editor, and a render may act on it.
+- An attribute is a name, or a name and a value after a colon and a space. A name may hold spaces.
+    - An attribute with no value says what the line is.
+
+        ```
+        - The claim the line makes.
+            + unverified
+        ```
+
+    - In an attribute with a value, the name says what the value is.
+
+        ```
+        * code: task
+            + language: json
+        ```
+
+- Any name is allowed, and a program reads the names it knows.
+
+### Directives
+
+- A line that starts with `* ` is a directive: an instruction on the lines under it, with no statement of its own.
+- The rendered document shows the lines under a directive where the directive stands, and no line for the directive itself.
+- A `+ ` line under a `* ` line is another attribute of the same directive, which is how a directive takes an option.
+- `comment` is the directive every editor uses: it heads a note for the editor, and no render shows the lines under it.
+    - A note of one line is the value.
+
+        ```
+        * comment: Sent in place of `handoff` when the worker refuses that ask.
+        ```
+
+    - A note of several lines goes under a bare `comment`, or under one whose value says when the lines apply.
+- The rest of the directives compose a document and fill it with values, and [Templating a document](src/controlled_markdown/templating.md) states them.
+
+### Quotes
+
+- A line that starts with `> ` is a quoted line, and consecutive quoted lines at one indent are one quote.
+- Quoted lines hold prose taken from elsewhere. A blank line ends a quote.
+- A quote sits under a statement or under a heading, and nothing goes under it.
+- Code inside a quote goes in a code node instead.
+
+### Code
+
+- A line that opens with a fence, three or more backticks or tildes, opens a code node, and the lines up to the closing fence are its content.
+- A code node holds what is read verbatim: code, a header, or an example of a document.
+
+    ~~~
+    - The header of a solver:
+        ```
+        // <task_id>
+        // @draft
+        ```
+    ~~~
+
+- An example that holds a fence takes a longer fence, or a tilde fence, so the inner fence does not close it.
+- A code node sits under a statement or under a heading, and nothing goes under it.
+- One line has one block at most, a block being a code node, a quote, or a table. A second example goes under a statement of its own, as the ones in this document do.
+
+### Tables
+
+- A line that starts with `| ` is a table line, and consecutive table lines at one indent are one table.
+- A table goes on its own lines under its parent, with no `>` and no fence, and nothing goes under it.
+
+    ~~~
+    ## Terms
+    | Former | Current |
+    | --- | --- |
+    | Shift | Offset |
+    ~~~
+
+- A table holds records of one shape whose every cell is one value the reader takes in while scanning the column: a name, a number, a short phrase, or a short sentence where that is the value.
+    - A record with a cell that needs a second clause, a list, or a qualification goes in a list of lists.
+- A list of lists holds a record with a field of prose. The record's name or its definition is the statement, and its other fields are the statements under it.
+    - A field may be a sentence, and it may nest further.
+
+    ```
+    - Offset: the distance a shape moves between the input and the output.
+        - Written as a pair of signed integers.
+    ```
+
+- A record that is one sentence with one datum at most goes in one statement. A record with a second datum goes in a list of lists.
+
+### Headings
+
+- A line that starts with `# ` is a heading, and a heading is a statement.
+- A heading stands at column zero, and so do the lines under it.
+    - The lines under a heading run to the next heading of the same depth or a shallower one.
+- The count of `#` follows the tree: the document's heading is `#`, its sections are `##`, and theirs are `###`.
+- A `+ ` line on the line after a heading is an attribute of that heading.
+- A heading's id is the slug of its text: lower case, each run of spaces as one hyphen, and every character other than a letter, a digit, an underscore, a space or a hyphen dropped.
+    - Only a heading has an id. Two headings of one document with the same slug are an error, and renaming one of them settles it.
+- The lines above the first heading are the document's lead, and they belong to the document.
+    - A `+ ` line there is an attribute of the document as a whole.
+
+### Front matter
+
+- A document may open with a front matter block, `---`, the lines under it, and a closing `---`.
+    - The block stays as it is written, and the rendered document leaves it out.
+    - Structured data goes in that block, where a program reads it.
+
+## Templating a document
+
+- The directives that build a document out of others and fill it with values, for anyone editing the prompts.
+
+### Include
+
+- An `include` directive names a path, and the whole document at that path takes the place of the directive.
+    - The path is relative to the file the directive sits in.
+    - The included document's title heading and its sections sit one level deeper than that line.
+    - It names a file and nothing inside one.
+- Attributes under an `include` are its options.
+    - `exclude` names the attributes to drop, throughout the included document and what it includes. A node that carries one goes with its subtree.
+    - `abridged: all` renders every included document as its `index` attribute says. A list of paths, relative to the including file, abridges those documents alone.
+        - A document with no `index` attribute renders in full.
+    - A document included with no `abridged` renders in full.
+
+        ```
+        * include: ../handbook.md
+            + exclude: draft, gloss
+            + abridged: all
+        ```
+
+- A document's `index` attribute says what it abridges to, and it gives the title heading and the lines above the first section, then the lines the attribute asks for.
+    - Above those lines, the index names the command that prints a section in full.
+    - `index: headings` gives one line per heading.
+    - `index: entries` gives one line per `## ` section: its text and the first sentence of its first statement.
+- A heading's rendered level comes from its depth in the rendered tree, and not from the count of `#` it carries in the source.
+    - A heading that is a direct child of a console message section renders at the top level.
+
+### Inline
+
+- An `inline` directive names a section by `#<id>`, or by `<path>#<id>` on another document, and the lines under that heading take the place of the directive.
+- The heading stays behind, so a heading those lines need is written at the site, with the inline under it.
+
+    ```
+    ### Reference solver
+    * inline: #reference
+    ```
+
+- A heading inside the body lands under the section the inline stands in.
+- An inline stands where a statement stands, and it takes no options.
+- A section written to be inlined is headed by its own slug.
+
+    ```
+    ### prior-reports
+    - The reports the sessions before you left.
+    ```
+
+- The sections under a `Partials` heading are the document's partials, the runs of lines more than one site inlines.
+- A section a reader reads keeps a prose heading.
+
+### Links
+
+- A render rewrites a target taken from the document, one that opens with `./` or `../`, to stand from the repo root.
+
+    ```
+    - [Principles](../docs/handbook/principles.md), in a doc under prompts/, renders as [Principles](docs/handbook/principles.md).
+    ```
+
+- A link to a section the render carries whole, with none of its lines left out, under a heading whose slug no other heading of the render has, takes `#` and that slug as its target.
+- Every other target taken from the root stands as it is, and so do an external target and a slug.
+
+### Variables
+
+- A statement's text may hold a variable: a name between double braces, which the render replaces with the value the caller gives for that name.
+
+    ```
+    - Task: {{tid}}
+    ```
+
+- A heading and a quote take one too. A code node and a table are literal.
+- A backtick span is literal, so a variable written inside one is text, as the ones in this document are.
+- A value is a string, and one that holds a line break is an error. Line breaks reach a render through `code`, `quote`, and `text`.
+- A double brace with no name between the braces is text.
+
+### Conditions
+
+- `if` keeps the lines under it when the value its name gives holds something, and drops them when it does not.
+- `unless` is the reverse.
+
+    ```
+    * if: reports
+        - The sessions before you left the reports above.
+    * unless: reports
+        - The sessions before you left no report.
+    ```
+
+### Blocks from a value
+
+- `code` renders the value its name gives as a code node, and a `+ language` attribute on the directive gives the fence its info string.
+
+    ```
+    #### data/tasks/{{tid}}.json
+    * code: task
+        + language: json
+    ```
+
+- `quote` renders the value its name gives as a quote.
+
+    ```
+    * if: notes
+        * quote: notes
+    ```
+
+- `text` renders the value its name gives as it stands, with no fence and no quote marker, so a value that carries its own markup reaches the reader unchanged.
+
+    ```
+    * if: reports
+        * text: reports
+    ```
+
+- Each of the three stands where a statement stands, and the value it names may hold line breaks.
+
+### The names a document reads
+
+- The names a document reads are declared nowhere: a render reads them off the lines the document inlines and includes.
+- A render given values takes the names given to equal the names read.
+    - A name missing, and a name nothing reads, are both errors.
+- A render given no values fills nothing, and the text stands as written.
+- Both branches of an `if` count.

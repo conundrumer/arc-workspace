@@ -1,5 +1,6 @@
 """What the forced removal of a merged worktree would lose, which the script
-refuses before the commit: files inside its submodules, and submodule
+refuses before the commit and fails on before the removal: files inside
+its submodules, and, before the commit alone, submodule
 commits that only the worktree's own copies of the submodules' repositories
 hold."""
 
@@ -108,3 +109,12 @@ def test_change_refused_in_a_stack_reaches_master_through_no_other(
     assert git(main, "ls-tree", "--name-only", "master").split() == [
         ".gitmodules", "a", "good", "s"]
     assert git(first, "status", "--porcelain").split() == ["??", "bad"]
+
+
+def test_untracked_file_in_submodule_keeps_the_worktree(merge_change, trees):
+    main, worktree = trees
+    (worktree / "s" / "new").write_text("new")
+    change = merge_change.Change(worktree, "change", frozenset(), "", None, "")
+    with pytest.raises(merge_change.Failed, match="s/new"):
+        merge_change.remove(main, change)
+    assert (worktree / "s" / "new").exists()

@@ -55,7 +55,14 @@ from handbook.paths import DOCUMENTS_ROOT, REPO_ROOT, document
 # The handbook's own files. Nothing here reads them as a directory: the
 # composition document lists each one, and the registry reads it from there.
 DOCS_DIR = document(checkout.handbook())
-ROLE_DIR = document(checkout.prompts()) / "roles"
+
+
+def role_dir(root: Path = DOCUMENTS_ROOT) -> Path:
+    """`prompts/roles/` under the documents root `root`."""
+    return document(checkout.prompts(), root) / "roles"
+
+
+ROLE_DIR = role_dir()
 LIB_SRC = document(paths.lib_src())
 
 # The agent documents, one per handbook agent: front matter holding the
@@ -65,7 +72,12 @@ LIB_SRC = document(paths.lib_src())
 # under `.claude/agents/` are generated at each entry point and not tracked. A
 # role's document states its agent in an `agent` attribute. A role with no such
 # attribute runs as the handbook agent.
-AGENT_DIR = document(checkout.prompts()) / "agents"
+def agent_dir(root: Path = DOCUMENTS_ROOT) -> Path:
+    """`prompts/agents/` under the documents root `root`."""
+    return document(checkout.prompts(), root) / "agents"
+
+
+AGENT_DIR = agent_dir()
 # The session's own entry document: the handbook, and the passes it runs.
 SESSION_DOC = document(checkout.prompts()) / "session.md"
 # The codex session's entry document, composed the same way.
@@ -801,7 +813,14 @@ SAMPLE_SCRATCH = ".scratch/survey/<run>"
 # handbook.
 SESSION_SKILL = document(checkout.skills()) / "session" / "SKILL.md"
 CONSOLE_DIR = document(checkout.console())
-WORKFLOW_DIR = document(checkout.workflows())
+
+
+def workflow_dir(root: Path = DOCUMENTS_ROOT) -> Path:
+    """`.claude/workflows/` under the documents root `root`."""
+    return document(checkout.workflows(), root)
+
+
+WORKFLOW_DIR = workflow_dir()
 # The scripts that build a role's brief. A file here that states the role on a
 # line about roles spawns that role.
 SPAWN_GLOBS = ((WORKFLOW_DIR, "*.js"), (document(checkout.scripts()), "*.py"),
@@ -1316,27 +1335,39 @@ class ArgumentForm(StrEnum):
 @dataclass(frozen=True)
 class Reader:
     """A reader the `context` command knows: the form of the argument it
-    takes, None where it takes none; the values that argument takes; and
-    its context, from the arguments."""
+    takes, None where it takes none; the values that argument takes, from
+    the documents root they are listed under; and its context, from the
+    arguments."""
 
     form: ArgumentForm | None
-    values: Callable[[], list[str]]
+    values: Callable[[Path], list[str]]
     context: Callable[[list[str]], str]
 
 
-def _no_values() -> list[str]:
+def _no_values(_root: Path) -> list[str]:
     return []
+
+
+def _console_stages(root: Path) -> list[str]:
+    """The console's stages, which `console_stages` lists only under
+    `DOCUMENTS_ROOT`: another root is a fault."""
+    if root != DOCUMENTS_ROOT:
+        raise ValueError(f"the console's stages are listed under {DOCUMENTS_ROOT} alone, "
+                         f"not under {root}")
+    return console_stages()
 
 
 CONTEXT_READERS = {
     "session": Reader(None, _no_values, lambda _a: session_context()),
     "codex": Reader(None, _no_values, lambda _a: codex_context()),
-    "agent": Reader(ArgumentForm.NAME, agent_names, lambda a: agent_context(a[0])),
-    "role": Reader(ArgumentForm.NAME, role_stems, lambda a: role_context(a[0])),
-    "console": Reader(ArgumentForm.STAGE, console_stages,
+    "agent": Reader(ArgumentForm.NAME, lambda r: agent_names(agent_dir(r)),
+                    lambda a: agent_context(a[0])),
+    "role": Reader(ArgumentForm.NAME, lambda r: role_stems(role_dir(r)),
+                   lambda a: role_context(a[0])),
+    "console": Reader(ArgumentForm.STAGE, _console_stages,
                       lambda a: console_context(a[0])),
     "survey": Reader(None, _no_values, lambda _a: survey_context()),
-    "workflow": Reader(ArgumentForm.NAME, workflow_names,
+    "workflow": Reader(ArgumentForm.NAME, lambda r: workflow_names(workflow_dir(r)),
                        lambda a: workflow_context(a[0])),
 }
 """Each reader the `context` command knows, by name."""
@@ -1349,7 +1380,7 @@ def contexts_text() -> str:
     for name, reader in CONTEXT_READERS.items():
         form = reader.form
         head = f"context {name}" + (f" {form}" if form else "")
-        names = reader.values()
+        names = reader.values(DOCUMENTS_ROOT)
         out.append(f"{head:<24}{', '.join(names)}".rstrip())
     return "\n".join(out) + "\n"
 

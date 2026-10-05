@@ -239,16 +239,24 @@ def refuse_main_touched(main: Path, touched: set[str]) -> None:
                       "would touch:\n" + "\n".join(hit))
 
 
-def refuse_dirty_submodules(worktree: Path) -> None:
-    """Refuse where a submodule of the worktree holds changes or untracked
-    files. A commit of the superproject records only the commit a submodule
-    stands on, so that content would not merge, and the removal of the
-    worktree would delete it."""
+def submodule_changes(worktree: Path) -> list[str]:
+    """Each path, from the worktree's root, that a submodule of the worktree
+    changes against the commit it stands on, untracked files among them. A
+    commit of the superproject records only the commit a submodule stands
+    on, so that content would not merge, and the removal of the worktree
+    would delete it. A submodule that is not checked out is a fault."""
     held: list[str] = []
     for sub in submodules(worktree):
         if not checked_out(worktree, sub):
             raise Failed(f"the submodule {sub.path} is not checked out in {worktree}")
         held += sorted(f"{sub.path}/{c.path}" for c in checkout.changed_paths(worktree / sub.path, "HEAD"))
+    return held
+
+
+def refuse_dirty_submodules(worktree: Path) -> None:
+    """Refuse where a submodule of the worktree holds changes or untracked
+    files (`submodule_changes`)."""
+    held = submodule_changes(worktree)
     if held:
         raise Refused("the worktree's submodules hold changes or untracked files, "
                       "which no commit of its branch can hold:\n" + "\n".join(held))
@@ -450,7 +458,8 @@ def lock_reasons(main: Path) -> dict[Path, str | None]:
 
 def remove(main: Path, change: Change) -> None:
     """Remove the change's worktree and branch, or fail where the worktree
-    holds a change against its branch."""
+    holds a change against its branch, or a submodule of it holds changes
+    or untracked files."""
     worktree, branch = change.worktree, change.branch
     print(mctx("merge_change: removing {worktree} and {branch}").format(
         worktree=worktree, branch=branch), flush=True)
@@ -461,6 +470,7 @@ def remove(main: Path, change: Change) -> None:
             master=MASTER, why=why, worktree=worktree, branch=branch))
 
     left = sorted(c.path for c in checkout.changed_paths(worktree, "HEAD"))
+    left += submodule_changes(worktree)
     if left:
         raise stays(mctx("the worktree holds changes made after the commit, in {left}")
                     .format(left=", ".join(left)))

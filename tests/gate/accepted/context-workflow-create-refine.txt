@@ -1,0 +1,26 @@
+==== the roles .claude/workflows/create-refine.js reaches ====
+
+
+
+==== the phases with no role ====
+
+Phases with no role: Create, Refine
+
+==== the workflow's briefs ====
+
+Brief: built by .claude/workflows/create-refine.js, in its briefs region.
+
+.claude/workflows/create-refine.js:33
+
+- Before anything else, write the marker line your agent file gives, or `none`, to `.scratch/${id}/marker-${pass}`.
+
+.claude/workflows/create-refine.js:37
+
+- Task: ${id}.
+- If `concept.md`, `analyze.md`, or `witnesses.json` is missing under `.scratch/${id}/`, reply `missing: <file>` and stop.
+${markerLine(id, 'create')}
+
+.claude/workflows/create-refine.js:43
+
+- Task: ${id}.
+${markerLine(id, 'refine')}

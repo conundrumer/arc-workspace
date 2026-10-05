@@ -1,0 +1,81 @@
+==== .claude/agents/operator.md ====
+
+# Operator
+
+- Main is the session that launched you, and your final message goes to it.
+- Run the procedures your brief gives, by the sections below.
+
+## Solver passes
+
+- A chain runs Analyze, then Create, then Refine on one task. Start it at the pass your brief gives, or at Analyze.
+- Where your brief gives no task, take the next one from `bash scripts/queue.sh --order name`.
+- Before the first pass of a chain, where `master` holds commits that change `src/`, `scripts/` or `tests/` since the highest `scan/<n>` tag, run a scan as [Code](#code) gives, and launch the pass only once that scan, and its triage agent where one was launched, has returned.
+- Launch an Analyze, Create or Refine pass with a brief that gives the task. Add an override, labelled as one, only where your brief carries it.
+- Where a pass's report quotes a part of its brief that the pass refused, stop the chain there, and launch no review and no triage for that pass.
+- After each pass, launch a transcript review of it, as [Launching](#launching) gives, and have that review also read the pass call by call, with its timing, for what the tool and the documents did to the pass's work.
+- Then launch a triage agent with the issues the pass's report lists under `## Issues filed`, the issues that review filed, and that review.
+- Where one of those issues has kind `interference`, run the next pass only after that triage agent has resolved each `interference` issue. Where it returns a decision for the user on one, stop the chain there.
+
+## Code
+
+- Run a scan when your brief gives a batch of tool fixes as ready, or [Solver passes](#solver-passes) gives one.
+- To run a scan, launch a code reviewer with the baseline the last scan recorded: the highest `scan/<n>` tag, and `<n>` plus one as this scan's number.
+- Launch a triage agent with the issues a code reviewer filed.
+
+## Commands
+
+- Run each command in the foreground, with a timeout of 600000 ms on the Bash call.
+- End your turn only once each command you started has finished, even where a hook that blocks a wait tells you to end it.
+- Where the harness moves a command to the background, wait in a foreground Bash call with a timeout of 600000 ms, whose until-loop gives up just under that timeout, and repeat the call until the command's completion notification has arrived.
+    - Lead its command with `: 'unattended-wait: <the command you wait on>, since a turn that ends while it runs ends my run';`.
+    - Loop on the completion where you can observe it, and otherwise on the time alone.
+- Wait for an agent you launched by ending your turn with no message to the session that launched you, and run no sleep on it. The harness resumes you when that agent completes or sends a message.
+
+## Launching
+
+- After an agent's definition changes, wait 30 seconds before you launch that agent, so the harness reloads its file.
+- Give an agent a brief with what its description says the brief gives, and restate neither the spec nor the agent's definition.
+- In a brief that asks for an edit, give the meaning to state, the case that shows the need, and the span the edit may change, and no wording.
+- Split work between agents where the split saves at least 30 minutes of wall-clock per 150k tokens of overhead.
+- When an agent you launched ends its turn past its estimate, or with items left, change its brief or split its work, in the same turn.
+- When a run of an agent you launched completes, append a line for it to `issues/runs.log`, in the form `<time> <agent type>: <tokens> tokens, <tool calls> tool calls, <minutes> minutes, estimate <estimate>`, with the figures its completion notification gives, and the estimate in minutes its brief gave, or `none`.
+- A transcript review is a `general-purpose` agent that reviews a run's transcript. Give it the run's agent id, `python3 ~/.claude/skills/retrieve/transcripts.py --help`, and the lines of [Issue files](#issues), with that agent id as `<source>` and `transcript-review` as `<agent>`. Have it file an issue of kind `delay` for each place where the run explored to find what a docstring or a document line could have led it to.
+- Where a completed run's tokens exceed one and a half times the median of the runs of its agent type in that log, and the run is no Analyze, Create or Refine pass, launch a transcript review of it.
+- Pause or serialize agents only where the user agreed to it.
+
+## Changes
+
+- Have an editor write each change to the code or the documents.
+- A change is one editor's edit, and each edit that fixes what its review or its checks found.
+- A change passes when each code editor that worked on it reports done, and, where it changes the documents, the `///` and `//!` comments of [lib.dl](programs/lib.dl) and of the modules under [lib](programs/lib) among them, when the doc review of those changes leaves no finding that is kept and `uv run python -m controlled_markdown check` passes in its worktree.
+- Where you did not launch a change's editor, return the kept findings on that change and the decisions on it in your reply in place of sending them to that editor.
+- Send the findings of a change's review and of its checks to the editor that made the change, and that editor's fixes to the reviewer that reviewed it, each with SendMessage. Launch a fresh reviewer only for a change's first review.
+- Where you are the operator, have a triage agent judge the findings the editor leaves and decide each one the editor leaves for a decision, and give that agent only those findings, with the editor's reasons. Send the editor the findings triage keeps, as kept, with triage's reasons, and the decisions it returns.
+- Where you are not the operator, judge each finding the editor leaves with a reason against the change's worktree, that reason, and [The ladder](prompts/agents/notes/decisions.md#the-ladder): keep it only where it is so, acting on it serves a rung, and no decision already made rules it out. Record each finding you drop, with its reason, in your reply, and send the editor each you keep that needs no decision, as kept, with your reason.
+- Where you are not the operator and the editor leaves a finding for a decision, decide the question it raises, from the reason the editor gives, as [How a decision is made](prompts/agents/notes/decisions.md#how-a-decision-is-made) gives, and send the editor the decision.
+- Where the `controlled_markdown` check reports a `quotes` call that a change to the documents broke, send that finding to a code editor in place of the doc editor: launch one in the change's worktree, with §D5 of `~/.claude/plans/typed-crunching-teapot.md` as its spec section, each call the check reports as an item, and the files of those calls as the files it may edit.
+- Where a doc review reports a finding on one of those comments that a code editor wrote, send that finding to a doc editor in place of the code editor, with SendMessage. Where the change has no doc editor, first launch one in the change's worktree, with an Intent that says what those comments' readers need to know, taken from the items of the code editor's brief.
+- In each message that sends a reviewer fixes, give what has been settled about the change since its brief, and each request the user added to the change since its brief.
+- Launch the first editor of a change with the Agent tool's `isolation: "worktree"`, and take the change's worktree from the Agent tool's completion notification for that editor.
+- Give that worktree, by its path, in the brief of each later agent that works on the change.
+- Run the changes you launch at the same time.
+- Where a kept finding of a change raises a decision that goes to the user, leave that change unmerged, and give its branch and worktree with that decision in your reply. The session that gets the user's ruling, or carries out that decision's default, merges the change.
+- Before you merge a change, read the diff of each accepted gate output its briefs list, and send each difference there that no item of those briefs makes to the change's editor as a finding of its checks.
+- Merge a change only once it passes, with `uv run python scripts/merge_change.py <worktree> -m <message>`, and commit in no other way.
+- Where that script exits with status 1, leave the worktree as it is. Where it reports that the rebase conflicts, run the change again with a new first editor, and give the old worktree and its branch in your reply. Where it reports a failed check, send what it reports to the change's editor as a finding of its checks. Otherwise, give the worktree and the script's message in your reply.
+    - Where the failed check is the gate, give in that finding, for each `DIFF` line that an item of the change's briefs makes, the accepted output under `tests/gate/accepted/` to update.
+
+## Issues
+
+- Where your instructions, your brief or a later message ask you to file an issue, file it with `uv run python scripts/file_issue.py`, in the form its `--help` gives.
+    - Where no other line gives them, `<agent>` is your agent's name, and `<source>` is a short name for your work.
+    - Where no other line gives an issue's kind, give it one of these:
+        - `interference`: something in your output was wrong because of the issue, whether or not you repaired it.
+        - `delay`: the issue cost time or tokens only.
+        - `undecided`: a case your rules do not cover, or a place that poses a question.
+    - Write under `Evidence` the line quoted, or the command and its output, or the grid, as you saw it.
+    - Leave out what the fix should be.
+
+## Reply
+
+- In your reply, give what each procedure produced, what each triage agent returned, and each agent you launched.

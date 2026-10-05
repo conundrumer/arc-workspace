@@ -20,10 +20,10 @@ DOCUMENTS_ROOT = checkout.from_env(DOCUMENTS_ENV, checkout.ROOT)
 """The root the documents the contexts are rendered from are read under."""
 
 
-def document(path: Path) -> Path:
-    """`path`, a path in the checkout, as the contexts read it: at the
-    same place under `DOCUMENTS_ROOT`."""
-    return DOCUMENTS_ROOT / path.relative_to(checkout.ROOT)
+def document(path: Path, root: Path = DOCUMENTS_ROOT) -> Path:
+    """`path`, a path in the checkout, as the contexts read it under the
+    documents root `root`: at the same place under it."""
+    return root / path.relative_to(checkout.ROOT)
 
 
 def console_importable() -> None:

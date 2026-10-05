@@ -67,10 +67,13 @@ runs.
 Every command reads the solver files from `tests/gate/solvers/` and the
 witness files from `tests/gate/witnesses/`. A command that takes a witness
 file is given one at `<out-dir>/gate/wit/cur/`, copied from
-`tests/gate/frozen/` before the command runs. The `context` command renders
-each of its readers' contexts from `<out-dir>/gate/documents/`, copied from
-`tests/gate/documents/` before the commands run, so a change to the
-checkout's own documents changes none of its outputs. In an output, the path of
+`tests/gate/frozen/` before the command runs. The `record` commands, `grid`
+and `relation` read their input files from `tests/gate/inputs/`. The
+`context` command renders each of its readers' contexts from
+`<out-dir>/gate/documents/`, copied from `tests/gate/documents/` before the
+commands run, so a change to the checkout's own documents changes none of
+its outputs. Its readers are the session, codex, and each name
+`tests/gate/documents/` defines for a reader that takes a name. In an output, the path of
 `<out-dir>/gate/` is written as `<out>/gate/`, and a time the command prints
 is dropped.
 
@@ -126,6 +129,7 @@ from cli.common import WALL_LIMIT_ENV
 from controlled_markdown import mctx
 from engine import checkout
 from engine.memo import write_whole
+from handbook.context import CONTEXT_READERS, ArgumentForm
 from handbook.paths import DOCUMENTS_ENV
 
 GATE = checkout.ROOT / "tests" / "gate"
@@ -266,6 +270,13 @@ def _record(name: str, label: str, input_file: str, *extra: str) -> Command:
                    stems=(RECORD_STEM,))
 
 
+def named_readers() -> list[tuple[str, str]]:
+    """Each reader the `context` command takes by name, with each name
+    `DOCUMENTS` defines for it."""
+    return [(reader, name) for reader, known in CONTEXT_READERS.items()
+            if known.form is ArgumentForm.NAME for name in known.values(DOCUMENTS)]
+
+
 COMMANDS: dict[str, GateCommand] = {c.name: c for c in (
     Command("run", "run", stems=(*STEMS, *LIB_STEMS)),
     Command("lint", "lint"),
@@ -293,8 +304,7 @@ COMMANDS: dict[str, GateCommand] = {c.name: c for c in (
     Command("expand", "expand"),
     Command("size", "size"),
     Command("keywords", "keywords"),
-    ContextCommand("context", (("session",), ("codex",), ("agent", "code-editor"),
-                               ("role", "solver"), ("workflow", "retro"))),
+    ContextCommand("context", (("session",), ("codex",), *named_readers())),
 )}
 """Every gate command, in the order a pass runs them."""
 

@@ -47,7 +47,7 @@ HELP = mctx("""
     - A poll is a Bash call that runs `sleep` and none of the known commands, in a loop or not. A command the harness moves to the background on its timeout counts under its own label up to then, and under `bg LABEL` after.
     - One run prints its parts and its labels by time, with each label's share of the wall time and its calls, and for backgrounded work the time it ran from launch to its notification.
     - More than one run prints, per agent type, the number of runs, the minimum, median, P-th percentile and maximum of wall time, the total, the median and P-th percentile of active time, which is wall time less `idle`, and each part's share of the total, then each type's labels by time, with the number of runs each appears in.
-    - The budget of each agent type is {factor} times a median wall time, printed with the runs it is taken over:
+    - More than one run also prints the budget of each agent type, which is {factor} times a median wall time, printed with the runs it is taken over:
         - With `--since DATE`, an ISO date or datetime read in local time where it gives no offset, the window is the runs whose first entry is at or after DATE. Where the window holds at least {window_runs} runs of the type, the median is taken over them.
         - Otherwise it is taken over the type's runs whose `waits` and `idle` together are under {low_wait_pct}% of wall time. A type with no such run gets no budget, and an `undecided` line on stderr names it.
     - A run whose agent type is unknown is refused, and so is an ID that names transcripts that differ. A call whose agent type is unknown is labelled `agent ?`, and a Bash call with no command is labelled `shell`; an `undecided` line on stderr names each.
@@ -718,8 +718,8 @@ def main(argv: list[str]) -> int:
             print()
     if len(runs) > 1:
         print_types(runs, args.pct, args.top)
-    print()
-    print_budgets(runs, args.since, undecided)
+        print()
+        print_budgets(runs, args.since, undecided)
     for line in undecided:
         print(mctx("undecided: {line}").format(line=line), file=sys.stderr)
     return 0

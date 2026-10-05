@@ -96,13 +96,14 @@ class Changed:
 def changed_paths(tree: Path, base: str, *pathspec: str) -> list[Changed]:
     """Each path that `pathspec` matches whose content in `tree` differs
     from the commit `base`: first the tracked ones, each side of a rename
-    and each submodule whose checkout differs from its commit, holds
-    changes or holds untracked files among them, then the untracked ones
-    git does not ignore, each in git's order. With no `pathspec`, every
-    path."""
+    and each submodule whose checkout differs from its commit or holds
+    changes among them, then the untracked ones git does not ignore, each
+    in git's order. A submodule whose only difference from its commit is
+    untracked files inside it is no changed path. With no `pathspec`,
+    every path."""
     spec = ["--", *pathspec] if pathspec else []
     named = git_out(tree, "diff", "--name-status", "--no-renames",
-                    "--ignore-submodules=none", "-z", base, *spec).split("\0")
+                    "--ignore-submodules=untracked", "-z", base, *spec).split("\0")
     out = [Changed(path, Change(status))
            for status, path in zip(named[0:-1:2], named[1::2], strict=True)]
     untracked = git_out(tree, "ls-files", "--others", "--exclude-standard", "-z",
