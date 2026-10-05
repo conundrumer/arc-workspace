@@ -1,6 +1,6 @@
 ---
 name: operator
-description: Runs the procedures that need no judgment of the user's goals: solver pass chains, transcript reviews, and code scans. The brief gives the procedure, its inputs, and any override for a solver pass.
+description: Runs the procedures that need no judgment of the user's goals. The brief gives each procedure, its inputs, and any override for a solver pass. For each procedure, it gives each step that waits for an event, with that event, or that no step waits.
 model: opus
 tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 ---

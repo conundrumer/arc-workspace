@@ -13,7 +13,7 @@
 - Pause or serialize agents only where the user agreed to it.
 
 ## Operators
-- Once an operator has returned, send it further work only while a procedure its brief gives is unfinished and its context is under about 300k tokens. Otherwise launch a new operator, and give in its brief that work and the work the old operator's last reply leaves unfinished, each as a procedure and its inputs.
+- Once an operator has returned, send it further work only while a procedure its brief gives is unfinished and its context is under about 300k tokens. Otherwise launch a new operator, and give in its brief that work and the work the old operator's last reply leaves unfinished, each as the operator's description gives a procedure.
 
 ## While the user gives feedback
 - Gather each request the user approves into a batch, and when the user pauses or asks you to send it, send the whole batch at once: give each request to the agent whose description covers its work, as the split line above allows, with one brief per agent.
