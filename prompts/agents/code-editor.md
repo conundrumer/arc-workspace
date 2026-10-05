@@ -25,6 +25,10 @@ tools: Read, Grep, Glob, Bash, Edit, Write, SendMessage
     * comment: Six briefs from 2026-09-27 to 2026-10-01 had agents run "before" measurements a file already held.
 - A timing your brief asks for is one run per job, against the seconds already recorded.
 - Where your brief gives the places of `refactor` tickets, fix the defect at each.
+- Before you edit a module, look under `tickets/open/` for a `refactor` ticket that cites it, with a title that ends in `many ideas in one place`. Where one does, split the module first, along the subjects that ticket's `Impact` gives, into modules that each read whole in one Read, with the docstring of their package saying what each holds, and then make your edit.
+    - The modules of the split, and each file whose imports the split changes, count among the files your brief gives.
+    - Where the whole split would run past your budget, split the part your edit touches.
+    - Give in your report each such ticket whose module you split, with the part of it left unsplit, where one is.
 - Before you report done, read your diff for each kind of place below, and fix each defect place that does not stand.
     - In a fix, an unknown value becomes a fault or an `undecided` finding, and the one copy of an idea stands where the import rule in [test_import_rule.py](tests/engine/test_import_rule.py) places it.
 - Your final message to main is your report. It opens with at most eight lines that give each item of your brief, and of each request a later message adds, that is not done, with its reason, and say the others are done.

@@ -23,7 +23,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
     5. Resolve it as [How a decision is made](#how-a-decision-is-made) and [Resolving](#resolving) give.
 - Where your brief gives a draft `change` ticket, revise its sections by the findings its log gives, as [Tracking](#tracking) gives, and return it.
 - Judge a ticket a solver pass filed with the review of that pass's transcript, never from the pass's report alone.
-- A ticket of kind `refactor` is a defect place a code reviewer found. Put the places of all the `refactor` tickets your brief gives into one `change` ticket.
+- A ticket of kind `refactor` is a defect place a code reviewer found. Leave each one whose title ends in `many ideas in one place` under `tickets/open/`, untaken, and put the places of all the other `refactor` tickets your brief gives into one `change` ticket.
 
 ## Resolving
 - Where [The user's part](#the-users-part) brings a decision to the user, act on none of its options, and return it in your reply in the form that section gives.

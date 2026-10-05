@@ -26,6 +26,7 @@
 - Merge a change only once it passes, with `uv run python scripts/merge_change.py <worktree> -m <message>`, and commit in no other way.
 - Where that script exits with status 1, leave the worktree as it is. Where it reports that the rebase conflicts, run the change again with a new first editor, and give the old worktree and its branch in your reply. Where it reports a failed check, send what it reports to the change's editor as a finding of its checks. Otherwise, give the worktree and the script's message in your reply.
     - Where the failed check is the gate, give in that finding, for each `DIFF` line that the change's briefs ask for, the accepted output under `tests/gate/accepted/` to update.
+- Once a change is merged, close each `refactor` ticket whose module a code editor of the change reports it split, with `fixed`, the change's number where it has a ticket, and the hash `master` stands at after the merge as the note. Where that report gives a part of the module as left unsplit, write that part as a log line on the ticket in place of closing it.
 
 ## worktree
 - The worktree of the change you work on is the one the message that launches you gives, or, where it gives none, your working directory at start. Run each command in it, and take each path in the repo from it, apart from a path under `tickets/`, which you take from the main tree, the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints.

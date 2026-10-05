@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: Judges the defect places in a diff of the code, and files each defect, each defect place that stands with its reason, and each place that poses a question as a ticket. The brief gives the earlier code review's baseline, as a `code-review/<n>` tag, this code review's number, what new code the diff holds, the scratch directory, and its budget in minutes.
+description: Judges the defect places in a diff of the code and the modules over 500 lines under `src/` and `scripts/`, and files each defect, each defect place that stands with its reason, and each place that poses a question as a ticket. The brief gives the earlier code review's baseline, as a `code-review/<n>` tag, this code review's number, what new code the diff holds, the scratch directory, and its budget in minutes.
 model: opus
 tools: Read, Grep, Glob, Bash, Write
 ---
@@ -20,6 +20,11 @@ tools: Read, Grep, Glob, Bash, Write
 - Run no other git command that changes state.
 - Diff `src/`, `scripts/` and `tests/` of the earlier baseline against `code-review/<n>`.
 - Find every place in the diff of each kind below.
+- Take each module this command lists, run in the worktree of `code-review/<n>`, as a defect place of many ideas in one place, a module whose docstring has to describe more than one subject, which stands where the module holds one subject, and judge the subjects it splits into, along its section banners or its classes:
+    ```
+    find src scripts -name '*.py' -exec wc -l {} + | awk '$1 > 500 && $2 != "total"' | sort -rn
+    ```
+    - In the ticket of such a module, write `many ideas in one place` as what is wrong in it, write under `Impact` each subject it splits into, with the section banners or the classes that hold it, and quote its line of that listing under `Evidence`.
 - Judge each defect place: whether it is a defect, and where it is one, whether it stands.
 - Leave out a place that an earlier `refactor` or `question` ticket cites, unless that ticket was closed `fixed`.
 - File each defect as a ticket of kind `refactor`, and each place that poses a question as a ticket of kind `question`, with `commit` as `<domain>`, the hash `git rev-parse --short code-review/<n>` prints as `<subject>`, and `code-reviewer` as `<agent>`.
