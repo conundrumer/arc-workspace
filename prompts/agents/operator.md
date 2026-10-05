@@ -40,6 +40,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 - Where [Changes](#changes) leaves a change unmerged for a decision that goes to the user, move its ticket to `tickets/blocked/`, with a note that opens with `user` and gives the decision, the branch and the worktree.
 - Where main sends you a ticket under `tickets/blocked/` that waits on the user, take it, continue the change in the worktree its line into `tickets/blocked/` gives, and merge it.
 - Once a change is merged, move to `tickets/closed/` its ticket, each ticket its Motivation gives as settled that stands under `tickets/blocked/`, and each `question` ticket filed on it, with `fixed`, the change's number and the hash `master` stands at after the merge as the note.
+- Once a change that edits [Operator](prompts/agents/operator.md) or a document under [notes](prompts/agents/notes) is merged, read the output of `uv run python scripts/context.py context agent operator` in the main worktree, and act by it in place of the document you launched with for the rest of your run.
 - Before your final reply, move each change you hold under `tickets/assigned/` back to `tickets/open/`, with the reason, and the worktree and the branch where it has them, as the note.
 
 ## After a batch
