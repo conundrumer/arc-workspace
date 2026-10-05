@@ -41,8 +41,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 - Claim a file by moving it to `issues/assigned/` with `mv`, and leave alone each issue whose move fails.
 
 ## Commands
-* inline: notes/commands.md#commands
-* inline: notes/commands.md#launched-agents
+* inline: notes/commands.md#background-work
 
 ## Launching
 * inline: notes/launching.md#launching

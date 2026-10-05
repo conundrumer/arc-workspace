@@ -29,6 +29,9 @@ tools: Read, Grep, Glob, Bash, Write
 ## Grids
 * inline: ../console.md#grids
 
+## Commands
+* inline: notes/commands.md#commands
+
 ## Issues
 * inline: notes/issues.md#pass-issues
 

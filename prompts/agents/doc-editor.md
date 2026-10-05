@@ -33,3 +33,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 * include: ../../src/controlled_markdown/writing.md
 
 * include: ../../src/controlled_markdown/templating.md
+
+## Commands
+* inline: notes/commands.md#commands

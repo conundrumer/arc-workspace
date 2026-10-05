@@ -40,8 +40,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
     5. Launch a triage agent with the issues these steps filed. After the last procedure your brief gives, wait for that triage agent to return, and run no After a batch for its merges.
 
 ## Commands
-* inline: notes/commands.md#commands
-* inline: notes/commands.md#launched-agents
+* inline: notes/commands.md#background-work
 
 ## Launching
 * inline: notes/launching.md#launching

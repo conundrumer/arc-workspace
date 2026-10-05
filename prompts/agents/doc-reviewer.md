@@ -24,3 +24,6 @@ tools: Read, Grep, Glob, Bash, Write
 * include: ../../src/controlled_markdown/writing.md
 
 * include: ../../src/controlled_markdown/templating.md
+
+## Commands
+* inline: notes/commands.md#commands

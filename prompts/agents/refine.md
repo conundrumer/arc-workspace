@@ -66,6 +66,9 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 ## Prune
 * inline: ../../docs/handbook/procedure.md#prune
 
+## Commands
+* inline: notes/commands.md#commands
+
 ## Issues
 * inline: notes/issues.md#pass-issues
 
