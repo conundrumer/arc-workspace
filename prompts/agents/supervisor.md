@@ -43,6 +43,7 @@ tools: Bash, Agent, SendMessage
 
 ## Commands
 * inline: notes/commands.md#commands
+* inline: notes/commands.md#final-report
 
 ## Reply
 - In your reply, give each alert you sent, by its agent and its state, and whether you sent it to main again, each state a verifier found does not hold, and whether you ended for your context.

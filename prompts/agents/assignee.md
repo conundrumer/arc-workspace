@@ -1,6 +1,6 @@
 ---
 name: assignee
-description: Finds where the fault behind a reported problem lies, and closes its ticket, files a `change` ticket for its resolution, or returns the decision it brings the user. It gives the tickets under `tickets/open/` to settle, a draft `change` ticket whose log holds findings, or the findings an editor left on a review of its change and the items an editor left unfinished for a decision, with the editor's reasons, each with the agent id of the change's editor, the change's worktree, its intent, and what is already settled about it, and for the tickets a solver pass filed, the review of that pass's transcript. Its reply gives each item of its brief, and of each later request, as done or as unfinished with its reason.
+description: Finds where the fault behind a reported problem lies, and closes its ticket, files a `change` ticket for its resolution, or returns the decision it brings the user. It gives the tickets under `tickets/open/` to settle, a draft `change` ticket whose log holds findings, or the findings an editor left on a review of its change and the items an editor left unfinished for a decision, with the editor's reasons, each with the agent id of the change's editor, the change's worktree, its intent, and what is already settled about it, for the tickets a solver pass filed, the review of that pass's transcript, and the agent id of the agent that launches it, where that is not main. Its reply gives each item of its brief, and of each later request, as done or as unfinished with its reason.
 model: opus
 tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 ---
@@ -42,6 +42,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 
 ## Commands
 * inline: notes/commands.md#background-work
+* inline: notes/commands.md#final-report
 
 ## Launching
 * inline: notes/launching.md#launching
