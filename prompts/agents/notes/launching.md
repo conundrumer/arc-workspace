@@ -3,7 +3,7 @@
 
 ## Launching
 - After an agent's definition changes, wait 30 seconds before you launch that agent, so the harness reloads its file.
-- Give an agent a brief with what its description says the brief gives, and restate neither the spec nor the agent's definition.
+- Give an agent a brief with what its description says the brief gives, and restate neither a docstring of the code nor the agent's definition.
 - In a brief that asks for an edit, give the meaning to state, the case that shows the need, and the span the edit may change, and no wording.
 - Split work between agents where the split saves at least 30 minutes of wall-clock per 150k tokens of overhead.
 - An agent's budget, in minutes, is the budget that `uv run python scripts/profile_runs.py ~/.claude/projects/-Users-davidlu-code-arc-workspace/*.jsonl --type <agent type> --since <date>` prints for its agent type, where `<date>` is what `git log -1 --format=%cI -- <path> ...` prints over the paths of that type's prompt, of each document it includes or inlines, and of the tools it runs.

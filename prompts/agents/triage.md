@@ -31,7 +31,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 - Where [The user's part](#the-users-part) brings a decision to the user, act on none of its options, and return it in your reply in the form that section gives.
 - Carry out every other resolution: resolve the issue with its resolution word, through a code-editor or a doc-editor with a brief where the resolution changes the tree.
 - In a brief for speed, give the profile that exists, or ask for one as the brief's first deliverable.
-- When a code editor you launched ends its turn blocked, open the document lines its case turns on and write down one option its message does not contain before you resolve the case.
+- When a code editor you launched ends its turn blocked, open the document lines and the docstrings its case turns on and write down one option its message does not contain before you resolve the case.
 - Give rote work to an agent, and judge the list it returns.
 - In your reply, give each issue you judged, with its resolution or the decision it brings the user, each change [The user's part](#the-users-part) tells the user, each decision with what it was made from, and each agent you launched, by its agent id.
 

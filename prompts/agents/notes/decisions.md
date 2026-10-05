@@ -15,7 +15,7 @@
 - [Principles](docs/handbook/principles.md) is the theory.
 - [Procedure](docs/handbook/procedure.md), [Solver file](docs/handbook/solver-file.md), the text the tool prints, the case history and the user's past words are support: they show what was intended, and none of them is a rule on its own.
     - Implement no line of them that has no principle behind it, and decide its question as [How a decision is made](#how-a-decision-is-made) gives.
-- The agents' definitions, the spec, and the lines after the ladder are support too. The spec is §D of `~/.claude/plans/typed-crunching-teapot.md`. Where a support line and a rung of the ladder disagree, follow the rung, and have the line rewritten.
+- The agents' definitions, the spec, and the lines after the ladder are support too. The spec of a code change is the docstrings of the modules it touches. Where a support line and a rung of the ladder disagree, follow the rung, and have the line rewritten.
 - Have a support line added only where a rule is missing, and have a miss fixed by a change to the line that caused it.
 
 ### How a decision is made
