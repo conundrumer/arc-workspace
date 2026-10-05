@@ -69,6 +69,8 @@ worktree locked by a Claude agent, whose lock reason begins with
 `AGENT_LOCK`, is removed with the force that a locked worktree needs, after
 the same check.
 
+The script ends its output with the duration footer (`engine.duration`).
+
 The script refuses a change, and says why, where:
 
 - the submodule setup fails;
@@ -112,6 +114,7 @@ from pathlib import Path
 from cli.common import SOURCES
 from controlled_markdown import mctx
 from engine import checkout, rwlock
+from engine.duration import footer
 
 MASTER = "master"
 """The branch a change merges into."""
@@ -609,6 +612,11 @@ def land_all(main: Path, changes: Sequence[Change]) -> bool:
 
 
 def main(argv: Sequence[str]) -> int:
+    with footer("merge_change"):
+        return merge_main(argv)
+
+
+def merge_main(argv: Sequence[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("worktree", type=Path, nargs="+", help="the worktree of a change")

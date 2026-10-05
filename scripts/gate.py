@@ -25,7 +25,8 @@ A `DIFF` line names an output file that differs, a `SLOW` line a time over
 accepted time. A command's time depends on what the commands before it
 cached, so times compare only when the full sequence runs. The warm pass is
 compared with the cold pass: a `DIFF` line ending in `warm` names an output
-file that differs between them. The last line counts the lines of each kind.
+file that differs between them. The last line counts the lines of each kind,
+and the duration footer (`engine.duration`) follows it on stderr.
 
 `LIMITS` in `src/cli/common.py` gives a case run a CPU limit and a wall
 limit, and under load the wall limit is reached first. The gate sets the
@@ -142,6 +143,7 @@ from coverage.sysmon import SysMonitor
 from cli.common import WALL_LIMIT_ENV
 from controlled_markdown import mctx
 from engine import checkout, rwlock
+from engine.duration import FOOTER_RE, footer
 from engine.memo import write_whole
 from handbook.context import CONTEXT_READERS, ArgumentForm
 from handbook.paths import DOCUMENTS_ENV
@@ -766,10 +768,11 @@ class Gate:
 
     def normalize(self, raw: str) -> str:
         """`raw` with the lines naming the runner and lib dropped, the out
-        directory written as `OUT_MARK`, and the times dropped."""
+        directory written as `OUT_MARK`, and the times and the duration footer
+        dropped."""
         lines = [ln for ln in raw.splitlines(keepends=True) if _DROPPED not in ln]
         text = "".join(lines).replace(self.shown, OUT_MARK)
-        text = _ELAPSED_RE.sub(" ---", text)
+        text = FOOTER_RE.sub("", _ELAPSED_RE.sub(" ---", text))
         return _LIMIT_RE.sub(r"\1Ns", text)
 
     @contextlib.contextmanager
@@ -954,6 +957,11 @@ def main(argv: Sequence[str]) -> int:
     if argv[:1] == [TRACE]:
         deps_out, cov_out, script, *args = argv[1:]
         return trace(Path(deps_out), Path(cov_out), Path(script), args)
+    with footer("gate"):
+        return run_gate(argv)
+
+
+def run_gate(argv: Sequence[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("out", type=Path, help="the output directory")
