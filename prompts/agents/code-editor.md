@@ -36,7 +36,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 * inline: notes/commands.md#commands
 
 ## Gate
-- `uv run python scripts/gate.py --outputs-only <out-dir> [cmd ...]` is the gate: it runs the gate commands it is given on the solvers under `tests/gate/solvers/`, and compares their outputs with the accepted ones.
+- `uv run python scripts/gate.py --outputs-only <out-dir> [cmd ...]` is the gate: it runs the gate commands it is given on the fixed inputs under `tests/gate/` that `gate.py --help` lists, and compares their outputs with the accepted ones.
 - Give it the gate commands your diff affects, and run it only where your diff affects one.
 - Where an item of your brief changes or adds a gate output, or a finding of your checks gives one to update, copy that output from `<out-dir>/gate/new/` to its accepted file under `tests/gate/accepted/`, and run no `gate.py --accept`.
 
