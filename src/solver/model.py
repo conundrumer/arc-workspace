@@ -2400,16 +2400,29 @@ class _Cases:
     bases that take `$AnchorMinority`. Else, for each
     positive atom of the body that reads it in a column, or in a field of
     a record there, the variable holds one of the terms the rows of that
-    column can hold there, read in the unit that heads them: the terms
-    each clause of the relation heads in that column, or, for a relation
-    of an instance of a lib component, the terms each clause that feeds
-    the instance heads in a column of the same type, since a lib
-    component builds no value of a type its instance passes it. So
-    `cut_choice(S)` with facts `cut_choice($Separator())` and
-    `cut_choice($Mirror())` admits only the bases whose value there is
-    one of the two, and so does a read of `cut.tile_of(S, _, _)` where
+    column can hold there, read in the unit that heads them. For a
+    relation, these are the terms one clause of the relation heads at
+    every place the atom reads the variable, together. For a relation of
+    an instance of a lib component, they are the terms each clause that
+    feeds the instance heads in a column of the same type, each place on
+    its own, since a lib component builds no value of a type its instance
+    passes it. So `cut_choice(S)` with facts `cut_choice($Separator())`
+    and `cut_choice($Mirror())` admits only the bases whose value there
+    is one of the two, and so does a read of `cut.tile_of(S, _, _)` where
     `cut.cell(S, P) :- cut_choice(S)` feeds the instance. An atom where
-    some such clause holds no term there sets no bound."""
+    some such clause holds no term there sets no bound.
+
+    One clause also ties the places of an atom to one another: where the
+    atom holds a variable filled by the base's value (`bounded`) at some
+    places, and each clause of the relation that the atom joins heads, at
+    another case-typed place, only variables that its head's terms at the
+    filled places hold, or that an equality of its body sets from those,
+    the atom's variable at that other place is filled too. So, where each clause of `crowded` heads
+    `crowded(A, Id, [A, Kind, U, $Threshold()])`, a read
+    `crowded(A, Id, Ch)` in a unit whose head fills `Ch` fills `A`, and
+    a read `parse.object($U(), A, Id, P)` beside it reaches only the
+    clauses of `parse.object` whose head can hold the base's value in the
+    column of `A`."""
 
     def __init__(self, graph: Graph, choice: Choice | None) -> None:
         self.graph = graph
@@ -2437,8 +2450,9 @@ class _Cases:
         self._cycles = 0
         """How many reads of a place being read already have been met; a
         result that met none, or holds, is final."""
-        self._alts: dict[tuple[UnitId, InstancePath, str], list[list[
-            tuple[Placed, Term, tuple[int, ...], str]]]] = {}
+        self._alts: dict[tuple[UnitId, InstancePath, str], list[list[list[
+            tuple[Placed, Term, tuple[int, ...], str]]]]] = {}
+        self._filled: dict[tuple[UnitId, InstancePath], frozenset[str]] = {}
         self._admits: dict[tuple[UnitId, InstancePath, str, tuple[int, ...],
                                  str, Base], bool] = {}
         self._fixed: dict[tuple[UnitId, InstancePath, int], tuple[
@@ -2472,19 +2486,60 @@ class _Cases:
         it at every value at none (`dependence`). The atom reads at every
         value at a case-typed place of its terms that holds a wildcard, or
         a variable that no case variable of the unit's head fills, a
-        variable an equality sets to a term with a filled variable being
-        filled too. A read of a relation of an instance of a lib component
+        variable an equality sets to a term with a filled variable, and a
+        variable a body atom ties to filled ones (`_Cases`), being filled
+        too. A read of a relation of an instance of a lib component
         that is at every value at some place is bounded at none, since the
         units that feed the instance head other relations than the one it
         reads."""
         key = (placed[0].id, placed[1], id(atom))
         if key in self._bounded:
             return self._bounded[key]
+        at = placed[1]
+        filled = self._fills(placed)
+        places = [((i, path, t), isinstance(leaf, ConstructorTerm) or (
+                      isinstance(leaf, Variable) and leaf.name in filled))
+                  for i, (column, term) in enumerate(self._typed(at, atom))
+                  for path, t, leaf in self._case_leaves(term, column, ())]
+        got: tuple[CasePlace, ...] | None = None
+        if not all(bounds for _place, bounds in places):
+            node = self.graph.resolve(at, atom.relation)
+            got = () if node is None or node.kind is not NodeKind.RELATION \
+                else tuple(place for place, bounds in places if bounds)
+        self._bounded[key] = got
+        return got
+
+    def _fills(self, placed: Placed) -> frozenset[str]:
+        """The variables of the placed unit that a case variable of its
+        head fills (`bounded`): those of its head's case-typed terms, and
+        those the equalities of its body (`_through_equalities`) and its
+        positive atoms (`_tied`) give from filled ones."""
         unit, at = placed
+        key = (unit.id, at)
+        if key in self._filled:
+            return self._filled[key]
         filled: set[str] = set()
-        for t, term in self._typed(at, unit.head):
-            if t in self.types.types:
-                filled |= _variables(term)
+        for _t, term in self.checks(unit, at)[0].values():
+            filled |= _variables(term)
+        atoms = [lit.atom for lit in unit.body or ()
+                 if isinstance(lit, AtomLiteral) and not lit.negated]
+        grown = True
+        while grown:
+            size = len(filled)
+            filled = self._through_equalities(unit, filled)
+            for atom in atoms:
+                filled |= self._tied(at, atom, filled)
+            grown = len(filled) > size
+        self._filled[key] = frozenset(filled)
+        return self._filled[key]
+
+    def _through_equalities(self, unit: Unit, filled: set[str]
+                            ) -> set[str]:
+        """`filled` with each variable of the unit that an equality of its
+        body sets to a term with no wildcard whose variables all stand in
+        it, and each variable of a term an equality sets a variable of it
+        to, to a fixpoint."""
+        filled = set(filled)
         eq = self._equalities(unit)
         grown = True
         while grown:
@@ -2499,17 +2554,80 @@ class _Cases:
                 if more:
                     filled |= more
                     grown = True
-        places = [((i, path, t), isinstance(leaf, ConstructorTerm) or (
-                      isinstance(leaf, Variable) and leaf.name in filled))
+        return filled
+
+    def _tied(self, at: InstancePath, atom: Atom, filled: set[str]
+              ) -> set[str]:
+        """The variables at the case-typed places of a positive body atom,
+        read at `at`, that the atom ties to the variables of `filled` it
+        holds (`_Cases`): those where each clause of its relation that the
+        atom joins (`_joined_heads`) heads a term whose case-typed places
+        hold only variables of the head's terms at the atom's places of
+        `filled`, or variables an equality of the clause's body sets from
+        them (`_through_equalities`). A relation that no clause heads, and
+        a relation of a lib instance, tie none."""
+        node = self.graph.resolve(at, atom.relation)
+        heads = [] if node is None or node.kind is not NodeKind.RELATION \
+            else self.graph.heads.get(node, [])
+        if not heads:
+            return set()
+        leaves = [(i, path, t, leaf)
                   for i, (column, term) in enumerate(self._typed(at, atom))
-                  for path, t, leaf in self._case_leaves(term, column, ())]
-        got: tuple[CasePlace, ...] | None = None
-        if not all(bounds for _place, bounds in places):
-            node = self.graph.resolve(at, atom.relation)
-            got = () if node is None or node.kind is not NodeKind.RELATION \
-                else tuple(place for place, bounds in places if bounds)
-        self._bounded[key] = got
-        return got
+                  for path, t, leaf in self._case_leaves(term, column, ())
+                  if isinstance(leaf, Variable)]
+        given = [(i, path) for i, path, _t, leaf in leaves
+                 if leaf.name in filled]
+        open_ = {leaf.name for _i, _path, _t, leaf in leaves
+                 if leaf.name not in filled}
+        if not given or not open_:
+            return set()
+        for h, typed in self._joined_heads(heads, atom):
+            fixes: set[str] = set()
+            for i, path in given:
+                got = self._head_at(typed, i, path)
+                if got is not None and not got[2]:
+                    fixes |= {x.name for _p, _t, x in self._case_leaves(
+                        got[1], got[0], ()) if isinstance(x, Variable)}
+            fixes = self._through_equalities(h[0], fixes)
+            open_ = {v for v in open_
+                     if any(self._fixed_at(typed, i, path, fixes)
+                            for i, path, _t, leaf in leaves
+                            if leaf.name == v)}
+        return open_
+
+    def _head_at(self, typed: Sequence[tuple[str, Term]], column: int,
+                 path: tuple[int, ...]
+                 ) -> tuple[str, Term, tuple[int, ...]] | None:
+        """The term a clause's head, `typed` as `_joined_heads` gives it,
+        holds at the record fields `path` of a column, with its type and
+        the part of `path` that leads on into it where it holds no record
+        there; None where the head holds no term of that column."""
+        if column >= len(typed):
+            return None
+        type, term = typed[column]
+        while path and isinstance(term, RecordTerm):
+            fields = self.types.term_fields(type)
+            if fields is None or len(fields) != len(term.args) \
+                    or path[0] >= len(fields):
+                return None
+            type, term, path = fields[path[0]], term.args[path[0]], path[1:]
+        return type, term, path
+
+    def _fixed_at(self, typed: Sequence[tuple[str, Term]], column: int,
+                  path: tuple[int, ...], fixes: set[str]) -> bool:
+        """Whether a clause's head, `typed` as `_joined_heads` gives it,
+        holds at the record fields `path` of a column a term each of whose
+        case-typed places holds a variable of `fixes`."""
+        got = self._head_at(typed, column, path)
+        if got is None:
+            return False
+        type, term, rest = got
+        if rest:
+            return isinstance(term, Variable) and term.name in fixes
+        leaves = self._case_leaves(term, type, ())
+        return bool(leaves) and all(
+            isinstance(x, Variable) and x.name in fixes
+            for _p, _t, x in leaves)
 
     def _case_leaves(self, term: Term, type: str, path: tuple[int, ...]
                      ) -> list[tuple[tuple[int, ...], str, Term]]:
@@ -2633,10 +2751,12 @@ class _Cases:
                 inner = open_ | {key}
                 cycles = self._cycles
                 got = all(
-                    any(self._admits_in(h, type, alt, (*to, *path), base,
-                                        inner)
-                        for h, alt, to, column in alts
-                        if self._may_hold(column, (*to, *path), type))
+                    any(all(self._admits_in(h, type, alt, (*to, *path), base,
+                                            inner)
+                            for h, alt, to, _column in clause)
+                        for clause in alts
+                        if all(self._may_hold(column, (*to, *path), type)
+                               for _h, _alt, to, column in clause))
                     for alts in self._alternatives(placed, term.name))
                 if got or cycles == self._cycles:
                     self._admits[memo] = got
@@ -2714,16 +2834,20 @@ class _Cases:
             or type not in self.declared
 
     def _alternatives(self, placed: Placed, var: str
-                      ) -> list[list[tuple[Placed, Term, tuple[int, ...],
-                                           str]]]:
-        """For each place a positive atom of a unit's body reads `var`,
-        the terms the rows can hold in that column, each with the unit
-        that heads it, the place of `var` in the column, and the column's
-        type as that unit types it (`_Cases`)."""
+                      ) -> list[list[list[tuple[Placed, Term, tuple[int, ...],
+                                                str]]]]:
+        """For each positive atom of a unit's body that reads `var`, the
+        alternatives its rows give `var` (`_Cases`): for a relation, one
+        per clause, with the term the clause heads at each place the atom
+        reads `var`; for a relation of a lib instance, one per term and
+        place. Each term stands with the unit that heads it, the place of
+        `var` in its column, and the column's type as that unit types
+        it."""
         unit, at = placed
         key = (unit.id, at, var)
         if key not in self._alts:
-            out: list[list[tuple[Placed, Term, tuple[int, ...], str]]] = []
+            out: list[list[list[tuple[Placed, Term, tuple[int, ...],
+                                      str]]]] = []
             for lit in unit.body or ():
                 if not isinstance(lit, AtomLiteral) or lit.negated:
                     continue
@@ -2733,40 +2857,52 @@ class _Cases:
                 heads = self.graph.heads.get(node, [])
                 if not heads:
                     continue
-                for i, arg in enumerate(lit.atom.args):
-                    for path in _paths(arg, var):
-                        got = self._held_at(node, heads, i, at, lit.atom)
-                        if got is not None:
-                            out.append([(h, t, path, c) for h, t, c in got])
+                places = [(i, path) for i, arg in enumerate(lit.atom.args)
+                          for path in _paths(arg, var)]
+                if not places:
+                    continue
+                if node.kind is NodeKind.RELATION:
+                    clauses = self._joined_heads(heads, lit.atom)
+                    if all(i < len(typed) for _h, typed in clauses
+                           for i, _path in places):
+                        out.append([[(h, typed[i][1], path, typed[i][0])
+                                     for i, path in places]
+                                    for h, typed in clauses])
+                    continue
+                for i, path in places:
+                    got = self._fed_terms(heads, i, at, lit.atom)
+                    if got is not None:
+                        out.append([[(h, t, path, c)] for h, t, c in got])
             self._alts[key] = out
         return self._alts[key]
 
-    def _held_at(self, node: Node, heads: Sequence[Placed], column: int,
-                 at: InstancePath, read: Atom
-                 ) -> list[tuple[Placed, Term, str]] | None:
-        """The terms the clauses `heads` of `node` hold in a column of a
-        read, the read's unit running at `at`, each with the column's type
-        as its clause types it (`_alternatives`); None where one holds
-        none. A clause of a relation joins the read (`joined`): a value
-        the read fixes wholly in a column sets the variable the clause's
-        head holds there, and a clause whose head holds another value
-        there gives the read no row and no term. A read of a relation of
-        a lib instance joins the clauses that feed that relation
-        (`Graph.feeding`) alike, and gives no term where none meets it."""
-        out: list[tuple[Placed, Term, str]] = []
-        row = tuple(_known(t) for t in read.args)
-        if node.kind is NodeKind.RELATION:
-            for h in heads:
-                typed = self._typed(h[1], h[0].head)
-                if column >= len(typed):
-                    return None
-                held = joined(h[0].head.args, row, _no_name)
-                if held is None:
-                    continue
-                out.append((h, substituted(typed[column][1], {
-                    v: term_of(x) for v, x in held.items() if fixed(x)}),
-                    typed[column][0]))
-            return out
+    def _joined_heads(self, heads: Sequence[Placed], read: Atom
+                      ) -> list[tuple[Placed, list[tuple[str, Term]]]]:
+        """The clauses `heads` of a relation that a read joins
+        (`joined`), each with the terms of its head and their columns'
+        types as it types them: a value the read fixes wholly in a column
+        sets the variable the clause's head holds there, and a clause
+        whose head holds another value there gives the read no row."""
+        row = _row(read)
+        out: list[tuple[Placed, list[tuple[str, Term]]]] = []
+        for h in heads:
+            held = joined(h[0].head.args, row, _no_name)
+            if held is None:
+                continue
+            terms = {v: term_of(x) for v, x in held.items() if fixed(x)}
+            out.append((h, [(t, substituted(term, terms))
+                            for t, term in self._typed(h[1], h[0].head)]))
+        return out
+
+    def _fed_terms(self, heads: Sequence[Placed], column: int,
+                   at: InstancePath, read: Atom
+                   ) -> list[tuple[Placed, Term, str]] | None:
+        """The terms the clauses `heads` that feed a lib instance hold in
+        a column of the type of a read's column, the read's unit running
+        at `at`, each with its type (`_alternatives`); none where no
+        clause that feeds the relation the read reads (`Graph.feeding`)
+        meets it, and None where the read's column has no type or no
+        clause holds a term of its type."""
         typed_read = self._typed(at, read)
         if column >= len(typed_read):
             return None
@@ -2774,11 +2910,13 @@ class _Cases:
         if place is None:
             raise ValueError(f"`{read.relation.text}` has column types and "
                              "no place")
+        row = _row(read)
         feeding = self.graph.feeding(place)
         if feeding and all(joined(u.head.args, row, _no_name) is None
                            for u, _at in feeding):
             return []
         type = typed_read[column][0]
+        out: list[tuple[Placed, Term, str]] = []
         for h in heads:
             out += [(h, term, t) for t, term in self._typed(h[1], h[0].head)
                     if t == type]
@@ -2788,6 +2926,11 @@ class _Cases:
 def _no_name(_name: str) -> Value | None:
     """The value `_Cases` reads a defined name as: none."""
     return None
+
+
+def _row(read: Atom) -> "Pattern":
+    """What a read's terms fix of the rows it reads (`_known`)."""
+    return tuple(_known(t) for t in read.args)
 
 
 def _known(term: Term) -> Value | None:
