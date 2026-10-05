@@ -47,6 +47,7 @@ HELP = mctx("""
         ```
         uv run python scripts/profile_runs.py ID [ID ...] [--type TYPE[,TYPE]] [--pct P] [--top N] [--runs] [--since DATE]
         uv run python scripts/profile_runs.py --running ID
+        uv run python scripts/profile_runs.py --pending ID
         ```
     - An ID is an agent id, a session id, or the path of a `.jsonl` transcript. A session brings its main transcript, as type `main`, and each of its subagents' transcripts. Each transcript is a run.
     - A run's wall time, from its first entry to its last, is cut at each entry's time, and each interval goes to one part:
@@ -71,6 +72,7 @@ HELP = mctx("""
         - each call it has in flight, with its label, its command and the time since the call;
         - each command or agent it backgrounded that is still running, with its label, its command and the time since the call;
         - its last {recent} calls in order, each with its label, its command and its duration, or `pending`.
+    - `--pending ID` prints the agent id of each agent pending to the run ID, one per line, in launch order, where ID is a session id or an agent id. An agent is pending to the run that launched it from the Agent call that launched it, or from the run's last SendMessage call that resumed it, until the run holds the result of that Agent call, where the result does not say the agent runs in the background, or until any transcript of the session holds a notification of the agent, a notification that it stopped with work of its own still running among them. A SendMessage call to an agent whose result says neither that it resumed the agent nor that it queued the message resumes none, and an `undecided` line on stderr names it.
     - The messages from a running agent's parent are its brief, the messages its first turn answers, and each later message its parent sent: one the harness gives as from the parent's agent id, or, for an agent `main` launched, as from the coordinator or queued with no tag. The origin the harness gives a queued message is the one its attachment gives. A notification of the agent's own backgrounded work, a message from an agent it launched, from the user, from another agent, or, for an agent `main` did not launch, from the coordinator or queued with no tag, and a note of the harness are none. A message from another agent is one the harness gives as from an agent id other than the parent's and those of the agents it launched. A later message whose sender is none of these is unknown, and an `undecided` line on stderr names it.
     - The period of a message from the parent runs from it to the next message from the parent or from another agent, or to the run's last entry.
     - A running agent's active time is its wall time less `idle` over the period of the latest message from its parent, with its wall time running to now where that period has not ended. An agent with an unknown message has no active time and no budget.
@@ -124,6 +126,10 @@ POLL = "poll"
 # The start of the text of the entry the harness writes where the user
 # interrupts a run.
 INTERRUPTED = "[Request interrupted by user"
+# The openings of the message of a SendMessage result where the call resumed
+# the agent it was sent to, and where it queued the message to a running one.
+RESUMING = "Resuming agent"
+QUEUED = "Message queued"
 # Ways a Bash result says the harness, not the call, moved it to the
 # background after it had run in the foreground.
 MOVED = ("timedOutAfterMs", "assistantAutoBackgrounded", "backgroundedByUser")
@@ -348,10 +354,14 @@ def parent_id(path: Path) -> str:
     return subagent_meta(path).get("parentAgentId") or MAIN
 
 
-def read_entries(path: Path) -> list[Entry]:
+def read_entries(path: Path, naming: set[str] | None = None) -> list[Entry]:
+    """The entries of the transcript at `path`, or with `naming` only those
+    whose line holds one of its words, which spares parsing the rest."""
     entries: list[Entry] = []
     with path.open() as fh:
         for line in fh:
+            if naming is not None and not any(w in line for w in naming):
+                continue
             try:
                 entries.append(json.loads(line))
             except json.JSONDecodeError:
@@ -497,14 +507,7 @@ def command_label(cmd: str) -> str:
     known: list[str] = []
     first: str | None = None
     setup: str | None = None
-    slept = False
-    for words in simple_commands(cmd):
-        if not words or words[0] in CLOSERS:
-            continue
-        prog, rest = segment_program(words)
-        if not prog:
-            continue
-        slept = slept or prog == "sleep"
+    for prog, rest in programs(cmd):
         label = f"{RUN_DL} {run_dl_command(rest)}" if prog == RUN_DL else KNOWN.get(prog)
         if label and label not in known:
             known.append(label)
@@ -514,9 +517,26 @@ def command_label(cmd: str) -> str:
             first = first or prog
     if known:
         return " + ".join(known)
-    if slept:
+    if runs_sleep(cmd):
         return POLL
     return first or setup or "shell"
+
+
+def programs(cmd: str) -> Iterator[tuple[str, list[str]]]:
+    """The program each simple command of a Bash command runs, with its
+    arguments, as `segment_program` gives them."""
+    for words in simple_commands(cmd):
+        if not words or words[0] in CLOSERS:
+            continue
+        prog, rest = segment_program(words)
+        if prog:
+            yield prog, rest
+
+
+def runs_sleep(cmd: str) -> bool:
+    """Whether a simple command of a Bash command runs `sleep`: the call
+    waits by timer."""
+    return any(prog == "sleep" for prog, _ in programs(cmd))
 
 
 # Profiles.
@@ -965,19 +985,61 @@ def session_launches(session: Path) -> tuple[dict[str, Path], dict[str, frozense
     return by_call, {k: frozenset(v) for k, v in children.items()}
 
 
-def launched(path: Path, undecided: list[str]) -> list[tuple[Path, float | None]]:
-    """The transcripts of the agents the run at `path` launched, in the
-    order of their launch, each with the time of the run's last notification
-    of it, or of a result that does not say the agent runs in the
-    background, or None where the run holds neither."""
+@dataclass
+class Launch:
+    """An agent a run launched: its agent id, where the run's transcript
+    gives it, its transcript, where one gives the call as its launch, the
+    time of the run's last call that launched or resumed it, and the time
+    of the run's last sign that it reported, or None where the run holds
+    none."""
+    agent: str | None
+    path: Path | None
+    since: float
+    done: float | None
+
+    @property
+    def pending(self) -> bool:
+        """Whether the agent is pending to the run: the run holds no sign
+        that it reported since the call that launched or last resumed it."""
+        return self.done is None or self.since > self.done
+
+
+def resumed(result: dict[str, Any], run: str, call: str,
+            undecided: list[str]) -> str | None:
+    """The agent id of the agent a SendMessage call resumed, as its result
+    gives it, or None where the call resumed none or its result is of an
+    unknown form."""
+    if result.get("resumedAgentId"):
+        return str(result["resumedAgentId"])
+    message = str(result.get("message", ""))
+    if message.startswith(RESUMING):
+        return (result.get("pin") or {}).get("id")
+    if result.get("pin") and not message.startswith(QUEUED):
+        undecided.append(mctx("{run}: the result of SendMessage call {call} "
+                              "says neither that it resumed an agent nor "
+                              "that it queued the message").format(
+            run=run, call=call))
+    return None
+
+
+def launched(path: Path, undecided: list[str]) -> list[Launch]:
+    """The agents the run at `path` launched, in the order of their launch.
+    A sign that an agent reported is the run's notification of it, or a
+    result of its launch that does not say the agent runs in the
+    background."""
     entries = [e for e in read_entries(path) if e.get("timestamp")]
     results = results_by_call(entries)
     answered = {b.get("tool_use_id"): epoch(e["timestamp"]) for e in entries
                 if e.get("type") == "user" for b in blocks(e, "tool_result")}
     told = {v: epoch(e["timestamp"]) for e in entries
             if e.get("type") != "assistant" for v in notified(e)}
+    resumes = {aid: epoch(e["timestamp"]) for e in entries
+               if e.get("type") == "assistant"
+               for b in blocks(e, "tool_use") if b.get("name") == "SendMessage"
+               if (aid := resumed(results.get(b.get("id", "")) or {}, path.stem,
+                                  b.get("id", ""), undecided))}
     by_call = session_launches(session_of(path))[0]
-    out: list[tuple[Path, float | None]] = []
+    out: list[Launch] = []
     for e in entries:
         if e.get("type") != "assistant":
             continue
@@ -990,11 +1052,46 @@ def launched(path: Path, undecided: list[str]) -> list[tuple[Path, float | None]
             signs = [told.get(tid), told.get(result.get("agentId", "")),
                      None if background else answered.get(tid)]
             done = max((t for t in signs if t is not None), default=None)
-            if tid in by_call:
-                out.append((by_call[tid], done))
-            elif done is None:
+            child = by_call.get(tid)
+            aid = agent_id(child) if child else result.get("agentId")
+            since = max(epoch(e["timestamp"]), resumes.get(aid or "", 0.0))
+            if child is None and done is None:
                 undecided.append(mctx("{run}: no transcript gives call {call} as "
                                       "its launch").format(run=path.stem, call=tid))
+            out.append(Launch(aid, child, since, done))
+    return out
+
+
+def pending_agents(path: Path, undecided: list[str]) -> list[str]:
+    """The agent ids of the agents pending to the run at `path`, in the
+    order of their launch, as HELP gives them."""
+    own = [a for a in launched(path, undecided) if a.pending and a.agent]
+    if not own:
+        return []
+    told = session_notified(session_of(path), {a.agent for a in own if a.agent},
+                            min(a.since for a in own))
+    out: list[str] = []
+    for a in own:
+        last = told.get(a.agent or "")
+        if a.agent and (last is None or last <= a.since):
+            out.append(a.agent)
+    return out
+
+
+def session_notified(session: Path, agents: set[str],
+                     since: float) -> dict[str, float]:
+    """The time of the last notification of each of `agents` that a
+    transcript of `session` changed at or after `since` holds."""
+    out: dict[str, float] = {}
+    for p in [session.with_suffix(".jsonl"), *session_agents(session).values()]:
+        if not p.is_file() or p.stat().st_mtime < since:
+            continue
+        for e in read_entries(p, naming=agents):
+            if not e.get("timestamp") or e.get("type") == "assistant":
+                continue
+            for v in notified(e):
+                if v in agents:
+                    out[v] = max(out.get(v, 0.0), epoch(e["timestamp"]))
     return out
 
 
@@ -1008,8 +1105,11 @@ def running_agents(path: Path, undecided: list[str]) -> list[tuple[str, Path]]:
     with its parent, each parent's agents after it."""
     parents = session_launches(session_of(path))[1]
     out: list[tuple[str, Path]] = []
-    for child, done in launched(path, undecided):
-        if done is None or child.stat().st_mtime > done:
+    for a in launched(path, undecided):
+        child = a.path
+        if child is None:
+            continue
+        if a.done is None or child.stat().st_mtime > a.done:
             out.append((parent_label(path), child))
         if agent_id(child) in parents:
             out.extend(running_agents(child, undecided))
@@ -1135,6 +1235,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--running", metavar="ID",
                     help=mctx("list the agents the run ID launched that have "
                               "not completed"))
+    ap.add_argument("--pending", metavar="ID",
+                    help=mctx("list the agents pending to the run ID"))
     ap.add_argument("--type", help=mctx("profile only runs of these agent "
                                         "types, separated by commas"))
     ap.add_argument("--pct", type=float, default=90,
@@ -1154,11 +1256,15 @@ def main(argv: list[str]) -> int:
     undecided: list[str] = []
     runs: list[Run] = []
     listed: list[tuple[str, Run]] = []
-    if bool(args.ids) == bool(args.running):
-        print(mctx("refused: give either IDs or `--running ID`"), file=sys.stderr)
+    if [bool(args.ids), bool(args.running), bool(args.pending)].count(True) != 1:
+        print(mctx("refused: give one of IDs, `--running ID` and `--pending ID`"),
+              file=sys.stderr)
         return 2
     try:
-        if args.running:
+        if args.pending:
+            for agent in pending_agents(find(args.pending), undecided):
+                print(agent)
+        elif args.running:
             profiled = ((parent, profile(p, undecided)) for parent, p in
                         running_agents(find(args.running), undecided))
             listed = [(parent, r) for parent, r in profiled if not r.ended]
@@ -1171,7 +1277,7 @@ def main(argv: list[str]) -> int:
         return 2
     if args.running:
         print_running(listed, time.time(), undecided)
-    elif not runs:
+    elif not runs and not args.pending:
         print(mctx("refused: no run to profile"), file=sys.stderr)
         return 2
     elif len(runs) == 1 or args.runs:

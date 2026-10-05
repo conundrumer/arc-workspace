@@ -1,5 +1,6 @@
 """The split of a transcript's wall time into parts, which a misread entry
-shifts without any failure."""
+shifts without any failure, and the agents pending to a run, which a hook
+reads to deny a wait and which a misread entry drops without any failure."""
 
 import json
 from pathlib import Path
@@ -77,3 +78,65 @@ def test_labels(run) -> None:
     sweep = run.groups[(Part.WAITS, "bg run_dl.py sweep")]
     assert (sweep.time, sweep.ran) == (101, 102)
     assert run.groups[(Part.WAITS, "poll")].time == 20
+
+
+def agent_call(tid: str, background: bool = True) -> dict:
+    return {"type": "tool_use", "id": tid, "name": "Agent",
+            "input": {"description": tid, "subagent_type": "editor",
+                      "run_in_background": background}}
+
+
+def send(tid: str, to: str) -> dict:
+    return {"type": "tool_use", "id": tid, "name": "SendMessage",
+            "input": {"to": to, "message": "more"}}
+
+
+def told(aid: str, tid: str, note: str = "") -> str:
+    return (f"<task-notification>\n<task-id>{aid}</task-id>\n<tool-use-id>{tid}"
+            f"</tool-use-id>\n<status>completed</status>\n{note}</task-notification>")
+
+
+A1, A2, A3, A4 = (f"a{n:016x}" for n in (1, 2, 3, 4))
+
+
+def test_pending(tmp_path: Path) -> None:
+    """An agent is pending from its launch, or from a SendMessage call that
+    resumed it, to its report. A notification that it stopped with work of
+    its own running is a report, and so is a later notification in another
+    transcript of the session, and a message queued to it resumes none."""
+    entries = [
+        user(0, "brief"),
+        assistant(1, agent_call("c1"), agent_call("c2")),
+        user(2, answer("c1"), {"status": "async_launched", "agentId": A1}),
+        user(2, answer("c2"), {"status": "async_launched", "agentId": A2}),
+        assistant(3, agent_call("c3", background=False)),
+        user(20, answer("c3"), {"status": "completed", "agentId": A3}),
+        user(30, told(A1, "c1"), isMeta=True),
+        assistant(40, send("s1", A1)),
+        user(41, answer("s1"), {"success": True, "message": "Resuming agent a000000",
+                                "pin": {"id": A1}}),
+        user(50, told(A2, "c2", "<note>This agent stopped with background work of "
+                      "its own still running.</note>"), isMeta=True),
+        assistant(55, send("s2", A2)),
+        user(56, answer("s2"), {"success": True, "pin": {"id": A2},
+                                "message": f"Message queued for delivery to {A2}"}),
+        assistant(60, agent_call("c4")),
+        user(61, answer("c4"), {"status": "async_launched", "agentId": A4}),
+        assistant(70, send("s3", A3)),
+        user(71, answer("s3"), {"success": True, "message": "Resuming agent a000000",
+                                "resumedAgentId": A3, "pin": {"id": A3}}),
+    ]
+    path = tmp_path / "s.jsonl"
+    path.write_text("".join(json.dumps(e) + "\n" for e in entries))
+    agents = tmp_path / "s" / "subagents"
+    agents.mkdir(parents=True)
+    elsewhere = [user(35, told(A1, "x1"), isMeta=True),
+                 user(80, told(A3, "x3"), isMeta=True)]
+    for aid, tid in ((A1, "c1"), (A2, "c2"), (A3, "c3")):
+        (agents / f"agent-{aid}.jsonl").write_text("")
+        (agents / f"agent-{aid}.meta.json").write_text(json.dumps(
+            {"agentType": "editor", "toolUseId": tid}))
+    assert profile_runs.pending_agents(path, []) == [A1, A3, A4]
+    (agents / f"agent-{A2}.jsonl").write_text(
+        "".join(json.dumps(e) + "\n" for e in elsewhere))
+    assert profile_runs.pending_agents(path, []) == [A1, A4]
