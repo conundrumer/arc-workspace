@@ -13,6 +13,7 @@ from engine import Program as Parsed
 from engine.program import (
     AdtType,
     AliasType,
+    Column,
     RecordType,
     Scope,
     SubtypeType,
@@ -59,6 +60,7 @@ class Decl:
     name: str
     line: int
     end_line: int
+    columns: tuple[Column, ...]
 
 
 @dataclass
@@ -93,6 +95,10 @@ class Comp:
     name: str
     line: int
     end_line: int
+    type_params: tuple[str, ...]
+    base: str | None
+    """The component it extends; None where it extends none."""
+    base_type_args: tuple[str, ...]
     items: list[Item] = field(default_factory=list)
 
 
@@ -136,7 +142,8 @@ def _view(p: Parsed) -> Program:
     for c in p.components:
         if c.span is None or not own(c.span):
             continue
-        comp = Comp(c.name, c.span.first, c.span.last)
+        comp = Comp(c.name, c.span.first, c.span.last, c.type_params,
+                    c.base, c.base_type_args)
         comps[(*c.scope.components, c.name)] = comp
         placed.append((c.span.first, c.scope, comp))
     for t in p.types:
@@ -151,7 +158,8 @@ def _view(p: Parsed) -> Program:
     for r in p.relations:
         if own(r.span):
             placed.append((r.span.first, r.scope,
-                           Decl(r.name, r.span.first, r.span.last)))
+                           Decl(r.name, r.span.first, r.span.last,
+                                r.columns)))
     for i in p.instances:
         if i.span is not None and own(i.span):
             placed.append((i.span.first, i.scope,

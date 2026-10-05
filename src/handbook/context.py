@@ -18,6 +18,7 @@ from __future__ import annotations
 import difflib
 import io
 import json
+import keyword
 import os
 import re
 import subprocess
@@ -34,6 +35,7 @@ from pathlib import Path
 import controlled_markdown as nm
 from controlled_markdown import mctx
 from engine import checkout
+from engine.program import Primitive
 from engine.memo import write_whole
 from souffle.layout import written_lines
 from handbook import paths
@@ -672,12 +674,138 @@ def _write_whole(path: Path, text: str) -> Path:
 
 def write_interfaces(lib: Path = LIB_SRC) -> list[Path]:
     """Write the interface file beside each of the lib's sources, each under
-    a line saying it's generated, and return the paths."""
+    a line saying it's generated, and the module of the lib's wrappers
+    (`write_wrappers`), and return the paths."""
     return [_write_whole(
         interface_path(path),
         mctx("<!-- Generated from {name} by scripts/context.py. -->").format(
             name=path.name) + "\n\n" + lib_doc(text))
         for path, text in lib_sources(lib)]
+
+
+WRAPPERS_PATH = REPO_ROOT / "src" / "lib_components" / "components.py"
+"""The Python module of the lib's component wrappers."""
+
+
+def _upper_snake(name: str) -> str:
+    return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name).upper()
+
+
+@dataclass(frozen=True)
+class _WrappedDecl:
+    """A relation of a component as its wrapper passes it: its name,
+    whether it is an input, and its column names and types, each type
+    written in the component's own type parameters."""
+
+    name: str
+    input: bool
+    column_names: tuple[str, ...]
+    column_types: tuple[str, ...]
+
+
+def _comp_decls(comp: Comp, comps: dict[str, tuple[Comp, list[str]]]
+                ) -> list[_WrappedDecl]:
+    """The public relations a component declares or inherits from its
+    base, its own before its base's."""
+    _, lines = comps[comp.name]
+    out = [_WrappedDecl(it.name, _is_input(it, lines),
+                        tuple(c.name for c in it.columns),
+                        tuple(c.type for c in it.columns))
+           for it in comp.items if isinstance(it, Decl) and not _hidden(it)]
+    if comp.base is not None:
+        if comp.base not in comps:
+            raise SystemExit(f"`{comp.name}` extends `{comp.base}`, which no "
+                             f"lib file declares")
+        base = comps[comp.base][0]
+        given = dict(zip(base.type_params, comp.base_type_args, strict=True))
+        names = {d.name for d in out}
+        out += [_WrappedDecl(d.name, d.input, d.column_names,
+                             tuple(given.get(t, t) for t in d.column_types))
+                for d in _comp_decls(base, comps) if d.name not in names]
+    return out
+
+
+def _type_expr(t: str, comp: Comp, types: list[str]) -> str | None:
+    """The Python expression of the column type `t` in a wrapper of
+    `comp`: its type parameter, or the member of `Primitive` or `LibType`
+    that names it. None for a type the calling program declares, which
+    no Python call can declare."""
+    if t in comp.type_params:
+        return t
+    if (prim := Primitive.named(t)) is not None:
+        return f"Primitive.{prim.name}"
+    if t in types:
+        return f"LibType.{_upper_snake(t)}"
+    return None
+
+
+def wrappers_text(lib: Path = LIB_SRC) -> str:
+    """The Python module of the lib's wrappers: the lib's types as an enum,
+    and for each public top-level component whose columns are of the
+    lib's types a function that runs it through `lib_components.call.call`,
+    with a tuple type of its output relations."""
+    types: list[str] = []
+    comps: dict[str, tuple[Comp, list[str]]] = {}
+    order: list[tuple[Path, Comp]] = []
+    for path, text in lib_sources(lib):
+        program = parse(text)
+        for it in program.items:
+            if isinstance(it, TypeDecl) and not _hidden(it):
+                types.append(it.name)
+            elif isinstance(it, Comp) and not _hidden(it):
+                comps[it.name] = (it, text.splitlines())
+                order.append((path, it))
+    out = [mctx("\"\"\"Generated from the lib by scripts/context.py.\"\"\""), "",
+           "from collections.abc import Iterable, Mapping",
+           "from enum import StrEnum",
+           "from typing import NamedTuple", "",
+           "from engine.program import Primitive",
+           "from lib_components.call import Columns, PyRow, PyValue, Relation, Size, call",
+           "", "",
+           "class LibType(StrEnum):",
+           '    """The types the lib declares, by name."""', ""]
+    out += [f'    {_upper_snake(t)} = "{t}"' for t in types]
+    out += ["", "", "type TypeArg = Primitive | LibType"]
+    for path, comp in order:
+        decls = _comp_decls(comp, comps)
+        exprs = {d.name: [_type_expr(t, comp, types) for t in d.column_types]
+                 for d in decls}
+        if any(None in e for e in exprs.values()):
+            continue
+        for d in decls:
+            if keyword.iskeyword(d.name):
+                raise SystemExit(f"`{comp.name}.{d.name}` is a Python keyword")
+        ins = [d.name for d in decls if d.input]
+        outs = [d.name for d in decls if not d.input]
+        rows = f"{comp.name}Rows"
+        out += ["", "", f"class {rows}(NamedTuple):",
+                f'    """The output relations of `{comp.name}` '
+                f'({repo_label(path)})."""', ""]
+        out += [f"    {o}: Relation" for o in outs] or ["    pass"]
+        params = [f"{t}: TypeArg" for t in comp.type_params]
+        params += ["*", "sizes: Mapping[PyValue, Size] | None = None"]
+        params += [f"{i}: Iterable[PyRow] | None = None" for i in ins]
+        columns = ", ".join(
+            f"{d.name!r}: Columns(("
+            + "".join(f"{e}, " for e in exprs[d.name])
+            + f"), {d.column_names[:1] == ('key',)})" for d in decls)
+        out += ["", "", f"def {comp.name}({', '.join(params)}) -> {rows}:",
+                f'    """Runs `{comp.name}` ({repo_label(path)}) over the rows '
+                f'given, a cell of each `Position` column in the grid of '
+                f'`sizes` for its key."""',
+                f"    got = call({comp.name!r}, [{', '.join(comp.type_params)}],",
+                "               LibType.POSITION,",
+                "               {" + columns + "},",
+                "               {" + ", ".join(f"{i!r}: {i}" for i in ins) + "},",
+                f"               {outs!r}, sizes)",
+                f"    return {rows}(" + ", ".join(f"got[{o!r}]" for o in outs) + ")"]
+    return "\n".join(out) + "\n"
+
+
+def write_wrappers(lib: Path = LIB_SRC) -> Path:
+    """Write the module of the lib's wrappers (`wrappers_text`), and return
+    its path."""
+    return _write_whole(WRAPPERS_PATH, wrappers_text(lib))
 
 
 def agent_names(agents: Path = AGENT_DIR) -> list[str]:
