@@ -7,13 +7,15 @@ from handbook.context import (AGENT_MANIFEST, StaleAgents, remove_stale_agents,
 def test_the_agent_file_is_written_whole_and_left_alone_when_unchanged(tmp_path):
     lib = tmp_path / "lib.dl"
     lib.write_text(".decl out(p: Position)\n")
-    path = write_agent(tmp_path / "agents" / "handbook.md", lib=lib)
+    wrappers = tmp_path / "components.py"
+    path = write_agent(tmp_path / "agents" / "handbook.md", lib=lib,
+                       wrappers=wrappers)
     assert not list((tmp_path / "agents").glob("*.tmp"))
     stamp = path.stat().st_mtime_ns
-    assert write_agent(path, lib=lib) == path
+    assert write_agent(path, lib=lib, wrappers=wrappers) == path
     assert path.stat().st_mtime_ns == stamp    # the same definition is left alone
     lib.write_text("/// The output.\n.decl out(p: Position, col: Color)\n")
-    write_agent(path, lib=lib)
+    write_agent(path, lib=lib, wrappers=wrappers)
     assert "- **out** — The output." in path.read_text()
 
 

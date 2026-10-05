@@ -708,19 +708,20 @@ def _write_whole(path: Path, text: str) -> Path:
     return path
 
 
-def write_interfaces(lib: Path = LIB_SRC) -> list[Path]:
+WRAPPERS_PATH = REPO_ROOT / "src" / "lib_components" / "components.py"
+"""The Python module of the lib's component wrappers."""
+
+
+def write_interfaces(lib: Path = LIB_SRC,
+                     wrappers: Path = WRAPPERS_PATH) -> list[Path]:
     """Write the interface file beside each of the lib's sources, each under
     a line saying it's generated, and the module of the lib's wrappers
-    (`write_wrappers`), and return the paths."""
-    return [_write_whole(
+    (`write_wrappers`) at `wrappers`, and return the paths."""
+    return [*(_write_whole(
         interface_path(path),
         mctx("<!-- Generated from {name} by scripts/context.py. -->").format(
             name=path.name) + "\n\n" + lib_doc(text))
-        for path, text in lib_sources(lib)]
-
-
-WRAPPERS_PATH = REPO_ROOT / "src" / "lib_components" / "components.py"
-"""The Python module of the lib's component wrappers."""
+        for path, text in lib_sources(lib)), write_wrappers(lib, wrappers)]
 
 
 def _upper_snake(name: str) -> str:
@@ -848,10 +849,10 @@ def wrappers_text(lib: Path = LIB_SRC) -> str:
     return "\n".join(out) + "\n"
 
 
-def write_wrappers(lib: Path = LIB_SRC) -> Path:
-    """Write the module of the lib's wrappers (`wrappers_text`), and return
-    its path."""
-    return _write_whole(WRAPPERS_PATH, wrappers_text(lib))
+def write_wrappers(lib: Path = LIB_SRC, path: Path = WRAPPERS_PATH) -> Path:
+    """Write the module of the lib's wrappers (`wrappers_text`) at `path`,
+    and return `path`."""
+    return _write_whole(path, wrappers_text(lib))
 
 
 def agent_names(agents: Path = AGENT_DIR) -> list[str]:
@@ -862,12 +863,13 @@ def agent_names(agents: Path = AGENT_DIR) -> list[str]:
 
 
 def write_agent(path: Path = AGENT_PATH, lib: Path = LIB_SRC,
-                agents: Path = AGENT_DIR) -> Path:
+                agents: Path = AGENT_DIR,
+                wrappers: Path = WRAPPERS_PATH) -> Path:
     """Write every agent definition under `agents`, the lib's interface
-    files, and the manifest (`AGENT_MANIFEST`), and return the handbook
-    agent's path. `path` is the handbook agent's file, and each agent's file
+    files and its wrappers module at `wrappers`, and the manifest
+    (`AGENT_MANIFEST`), and return the handbook agent's path. `path` is the handbook agent's file, and each agent's file
     stands beside it under the agent's name."""
-    write_interfaces(lib)
+    write_interfaces(lib, wrappers)
     written = agent_paths(path, agents)
     for name, out in written:
         _write_whole(out, agent_definition(agent_document(name, agents),
