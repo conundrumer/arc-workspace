@@ -18,6 +18,7 @@ class Category(StrEnum):
     SHADOWED_TYPE = "shadowed type"
     LIB_NAME = "lib name"
     LIB_INTERNAL = "lib internal"
+    ENUMERATOR_NAME = "enumerator name"
     COMP_WITHOUT_ENTRY = "comp without entry"
     PROPOSAL_COMP = "proposal comp"
     PARSE_UNSHARED_WITH_DETERMINE = "parse unshared with determine"

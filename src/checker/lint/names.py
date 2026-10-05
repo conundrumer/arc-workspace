@@ -1,6 +1,7 @@
 """The lint checks on the names a solver declares and reads: the
 collisions Souffle reports with a message that misleads, the lib's
-private names, and the charts only a `RIGID` expansion writes."""
+private names, the charts only a `RIGID` expansion writes, and the names
+of a record `Choice`'s enumerators."""
 
 from enum import StrEnum
 
@@ -35,6 +36,8 @@ from engine.program import (
 from engine.quotes import guard, quotes
 from solver.category import Category
 from solver.model import Solver
+from solver.names import camel_words
+from solver.vocabulary import CHOICE, ENUMERATOR
 
 RESERVED_WORDS = frozenset({
     "count", "sum", "min", "max", "mean",
@@ -258,3 +261,43 @@ def check_rigid_chart(solver: Solver, runs: Runs) -> list[Finding]:
                 out.append(lint(atom.line, LintFragment(
                     Category.RIGID_CHART, atom.relation.name)))
     return out
+
+
+ENUMERATOR_SUFFIX = "_choice"
+"""What an enumerator's name appends to its field type's name, unless that
+name ends in `Choice` already (`enumerator_name`)."""
+
+
+def enumerator_name(type_name: str) -> str:
+    """The name solver-file.md gives the enumerator of a record `Choice`'s
+    field of type `type_name`: the type's name in snake_case, with
+    `ENUMERATOR_SUFFIX` appended unless the type's name ends in
+    `Choice` (`dec_choice(dc: DecChoice)`)."""
+    snake = "_".join(camel_words(type_name))
+    return snake if type_name.endswith(CHOICE) else snake + ENUMERATOR_SUFFIX
+
+
+@quotes("solver-file.md", "Cases",
+        "A record-typed `Choice` gets one enumerator per field a clause "
+        "enumerates, named for the field's type, as in `.decl "
+        "locate_choice(l: Locate)`.")
+def check_enumerator_name(solver: Solver, runs: Runs) -> list[Finding]:
+    """An enumerator of a record `Choice`'s field whose name is not the one
+    the field's type gives it (`enumerator_name`). An enumerator is a
+    top-level relation of the solver, other than `impl_choice`, whose every
+    clause is a fact of one argument (`View.enumerators`), and it is a
+    field's where its one column's type is a field's type. Serves
+    readability: the enumerator's name says which field it ranges over."""
+    choice = solver.choice
+    if choice is None or choice.record is None:
+        return []
+    v = view(solver, runs)
+    fields = {f.type for f in choice.record}
+    enums = v.enumerators - {ENUMERATOR}
+    return [lint(d.span.first, LintNamed(
+                Category.ENUMERATOR_NAME, LintSentence.ENUMERATOR_NAME,
+                (d.name, t, enumerator_name(t))))
+            for d in sorted(v.written_relations, key=lambda d: d.span.first)
+            if d.scope == TOP and d.name in enums and len(d.columns) == 1
+            and (t := d.columns[0].type) in fields
+            and d.name != enumerator_name(t)]

@@ -11,7 +11,6 @@ from enum import Enum, auto
 
 from checker.domains import candidate_rows, param_domains
 from checker.drop_one import sweeps_values
-from checker.lint.rewrites import case_reads, never_reads
 from checker.runs import NoCases, Runs
 from checker.variants import (
     Entry,
@@ -287,7 +286,8 @@ class CaseSets[V: (Row, SetValue)]:
     """A parameter above the case markers, whose bases admit different
     values: each base's admitted values, at its base case
     (`solver.model.base_case`, `_passing_every`), the candidates run, and the
-    cases the program never reads the parameter under (`never_reads`). A value
+    cases the program never reads the parameter under
+    (`solver.model.Dependence.reads_parameter`). A value
     is a row (`ValueSweep`), or a set of rows (`SetSweep`), whose entry is
     `SetCases`."""
 
@@ -318,7 +318,8 @@ class SetCases:
     differ in which single-row changes of the stored set give their train
     outputs: per base case, how many of those changes do (`CaseSets`), of
     the `swept` changes, and the cases at which every swept change does and
-    which the program never reads the parameter under (`never_reads`)."""
+    which the program never reads the parameter under
+    (`solver.model.Dependence.reads_parameter`)."""
 
     per_case: tuple[tuple[Case, int], ...]
     swept: int
@@ -476,11 +477,11 @@ def _case_sets[V: (Row, SetValue)](
         for c in sorted(cases, key=lambda c: case_label(solver, c)))
     if len({s for _, s in per_case}) <= 1:
         return None
-    reads = case_reads(solver, sw.runs)
+    rd = dependence(sw.runs.engine, solver, bases_of(c for c, _s in per_case))
     return CaseSets(
         p.name, types, per_case, frozenset(values),
-        frozenset(c for c, _s in per_case if c.base is not None
-                  and never_reads(solver, reads, p.declaration, c.base)))
+        frozenset(c for c, _s in per_case
+                  if not rd.reads_parameter(c.base, p.name)))
 
 
 @dataclass(frozen=True)

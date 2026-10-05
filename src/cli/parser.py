@@ -285,10 +285,11 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                                    "whose name starts with the task id; a "
                                    "path run reads that task id's witness "
                                    "file too"))
-    witness.add_argument("--file", metavar="PATH",
-                         help=mctx("a witness file to read in place of the "
-                                   "task's; the report has only the findings "
-                                   "on its witnesses"))
+    file_or_every = witness.add_mutually_exclusive_group()
+    file_or_every.add_argument(
+        "--file", metavar="PATH",
+        help=mctx("a witness file to read in place of the task's; the "
+                  "report has only the findings on its witnesses"))
     witness.add_argument("--witness-file", metavar="PATH",
                          dest="witness_file",
                          help=mctx("a witness file to read in place of the "
@@ -303,14 +304,13 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                                    "and the subsumed ones whose pairs it "
                                    "shows defined and differing; nothing "
                                    "is written"))
-    witness.add_argument("--every-case", action="store_true",
-                         help=mctx("run with `impl_choice` holding every "
-                                   "case of `Choice`; for each case the "
-                                   "solver drops, print the first of these "
-                                   "the runs show: it fails Fit, no witness "
-                                   "separates it from another case, it "
-                                   "fails Subsumption, or it fails none of "
-                                   "them"))
+    file_or_every.add_argument(
+        "--every-case", action="store_true",
+        help=mctx("run with `impl_choice` holding every case of `Choice`; "
+                  "for each case the solver drops, print the first of these "
+                  "the runs show: it fails Fit, no witness separates it from "
+                  "another case, it fails Subsumption, or it fails none of "
+                  "them"))
     derive = command(
         "derive", partial(audit.derive_or_store, audit.cmd_derive),
         help=mctx("the built-in derivations of stored parameters that fit, "

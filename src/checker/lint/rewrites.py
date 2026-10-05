@@ -16,6 +16,7 @@ from checker.finding import (
     LintNamed,
     LintSentence,
 )
+from checker.judged import base_names
 from checker.lint.form import case_column_facts
 from checker.lint.view import (
     TOP,
@@ -37,9 +38,7 @@ from checker.lint.view import (
 from checker.runs import Runs
 from engine import Resolved
 from engine.program import (
-    Scope,
     AdtType,
-    AdtValue,
     AggregateOperator,
     Atom,
     AtomLiteral,
@@ -71,8 +70,8 @@ from solver.model import (
     compared,
     substituted_atom,
     substituted_literal,
-    Base,
-    based_choice,
+    bases_of,
+    dependence,
     Section,
     Solver,
     UnderMarker,
@@ -80,7 +79,6 @@ from solver.model import (
     lists_case,
     Parameter,
     section_at,
-    value_at,
 )
 from solver.solve import per_case
 from solver.vocabulary import (
@@ -635,127 +633,6 @@ class InstanceNode:
     decl: DeclId
 
 
-@dataclass(frozen=True)
-class ExternNode:
-    """A relation name that resolves to no declaration."""
-
-    name: RelationName
-
-
-type Node = RelNode | InstanceNode | ExternNode
-"""A node of the dataflow walk."""
-
-
-def _node(v: View, unit: Unit, atom: Atom) -> Node:
-    """The dataflow node an atom reads or writes (`_named_node`)."""
-    return _named_node(v, atom.relation, unit.scope)
-
-
-def _named_node(v: View, name: RelationName, scope: Scope) -> Node:
-    """The dataflow node of a relation name read in `scope`: its relation,
-    or, for a relation under an instance of a lib component, that
-    instance, which the walk reads as opaque."""
-    r = v.index.resolve(name, scope)
-    if not isinstance(r, Resolved):
-        return ExternNode(name)
-    for inst_id in r.through:
-        inst = v.decls.get(inst_id)
-        if isinstance(inst, Instance) and inst.component in v.lib_components:
-            return InstanceNode(inst_id)
-    return RelNode(r.declaration)
-
-
-def _live(v: View, tags: set[str], cases: frozenset[str]
-          ) -> dict[str, set[Node]]:
-    """The nodes each case's derivation of `out` reads: a rule joins the
-    walk when its head is reached and its tags admit the case; an untagged
-    rule takes the tags of the relations it reads, to a fixpoint."""
-    rules = [(_node(v, u, u.head),
-              {_node(v, u, a) for a in atoms_read(u)},
-              head_ctors(u) & tags)
-             for u in v.program.units if u.span is None or own(u.span)]
-    rules = [(h, b - {h}, t) for h, b, t in rules]
-    tagged = [t & cases for _, _, t in rules]
-    rule_tags = [set(t) for t in tagged]
-    rel_tags: dict[Node, set[str]] = {}
-    changed = True
-    while changed:
-        changed = False
-        for i, (head, body, _t) in enumerate(rules):
-            new = set(tagged[i])
-            if not tagged[i]:
-                for n in body:
-                    new |= rel_tags.get(n, set())
-            if new != rule_tags[i]:
-                rule_tags[i] = new
-                changed = True
-            tags = rel_tags.setdefault(head, set())
-            if not new <= tags:
-                tags |= new
-                changed = True
-    start = _named_node(v, OUTPUT, TOP)
-    live: dict[str, set[Node]] = {}
-    for case in cases:
-        reached: set[Node] = {start}
-        grew = True
-        while grew:
-            grew = False
-            for i, (head, body, _t) in enumerate(rules):
-                if head not in reached:
-                    continue
-                if rule_tags[i] and case not in rule_tags[i]:
-                    continue
-                for n in body:
-                    if n not in reached:
-                        reached.add(n)
-                        grew = True
-        live[case] = reached
-    return live
-
-
-@dataclass(frozen=True)
-class PointReads:
-    """The nodes each constructor's derivation of `out` reads (`_live`)
-    at the choice point of `path`."""
-
-    path: tuple[str, ...]
-    live: dict[str, set[Node]]
-
-
-def case_reads(solver: Solver, runs: Runs) -> list[PointReads]:
-    """For each choice point a case is named by (`Choice.points`, nested
-    ones included) with more than one constructor, the nodes each
-    constructor's derivation of `out` reads (`_live`). With no `Choice`
-    there is no such point."""
-    choice = solver.choice
-    if choice is None:
-        return []
-    v = view(solver, runs)
-    tags = set(_tags(solver, v))
-    return [PointReads(pt.path, _live(v, tags, frozenset(
-                c.name for c in pt.constructors)))
-            for pt in choice.points if len(pt.constructors) > 1]
-
-
-def never_reads(solver: Solver, reads: Sequence[PointReads], decl: DeclId,
-                base: Base) -> bool:
-    """Whether the case `base` never reads the relation `decl`: the
-    constructor it takes at a point of `reads` (`solver.model.value_at`)
-    reads no path to it. A point the base does not reach gives no
-    constructor. Raises `ValueError` for a solver with no `Choice`, which
-    has no base."""
-    choice = based_choice(solver)
-    for r in reads:
-        at = value_at(choice, base, r.path)
-        if at is None:
-            continue
-        if not isinstance(at, AdtValue):
-            raise ValueError(f"`{at}` at a choice point is no constructor")
-        if RelNode(decl) not in r.live[at.constructor]:
-            return True
-    return False
-
-
 @quotes("solver-file.md", "Cases",
         "**Case markers.** Cases do not interleave: each case's Params and "
         "clauses are under its marker.")
@@ -771,13 +648,13 @@ def check_shared_read(solver: Solver, runs: Runs) -> list[Finding]:
     """A parameter under a marker that lists no case, below a marker that
     lists one; a fact under a marker of a shared parameter with no case
     column (`solver.solve.per_case`); a fact of a parameter with a case
-    column outside the marker of its case (`case_column_facts`), judged
-    where the run that enumerates the solver's cases gives a result; and a
-    shared parameter some case never reads. A marker that lists no case
-    above every marker that lists one leaves the parameters under it
-    shared. The reads come from a dataflow walk back from `out`
-    under each case, which reads a lib instance as opaque and so
-    over-approximates the reads. Every relation `Params` declares is read, a
+    column outside the marker of its case (`case_column_facts`); and a
+    shared parameter some case of the solver never reads
+    (`solver.model.Dependence.reads_parameter`), or that no case reads,
+    which no marker of a case is the place of. The last two are judged
+    where the run that enumerates the solver's cases gives a result. A
+    marker that lists no case above every marker that lists one leaves the
+    parameters under it shared. Every relation `Params` declares is read, a
     derived one too, since the rule is about what cases share, whatever
     feeds the relation. Where one stands is `Parameter.section` or
     `DerivedRelation.section`. Serves the concept's form."""
@@ -787,14 +664,14 @@ def check_shared_read(solver: Solver, runs: Runs) -> list[Finding]:
         return []
     written = {d.id: d for d in v.written_relations}
     out: list[Finding] = []
-    shared: list[RelationDecl] = []
+    shared: list[tuple[str, RelationDecl]] = []
     for p in (*solver.params.parameters, *solver.params.derived):
         d = written.get(p.declaration)
         if d is None:
             continue
         match p.section:
             case Unmarked():
-                shared.append(d)
+                shared.append((p.name, d))
                 if isinstance(p, Parameter) and \
                         per_case(solver, p.name) is None:
                     out += [lint(line, LintMarked(
@@ -808,19 +685,22 @@ def check_shared_read(solver: Solver, runs: Runs) -> list[Finding]:
             case UnderMarker():
                 pass
     every = runs.solver_cases
-    if isinstance(every, tuple):
-        out += case_column_facts(solver, v, every)
-    tags = _tags(solver, v)
-    for reads in case_reads(solver, runs):
-        live = reads.live
-        for d in sorted(shared, key=lambda d: d.name):
-            node: Node = RelNode(d.id)
-            missing = sorted(c for c in live if node not in live[c])
-            if missing:
-                out.append(lint(d.span.first, LintCode(
-                    Category.SHARED_READ, LintSentence.SHARED_UNREAD,
-                    tuple(_tag(c, tags[c]) for c in missing), (),
-                    (d.name,))))
+    if not isinstance(every, tuple):
+        return out
+    out += case_column_facts(solver, v, every)
+    bases = bases_of(every)
+    rd = dependence(runs.engine, solver, bases)
+    for name, d in sorted(shared, key=lambda s: s[1].name):
+        unread = [b for b in bases if not rd.reads_parameter(b, name)]
+        if len(unread) == len(bases):
+            out.append(lint(d.span.first, LintMarked(
+                Category.SHARED_READ, LintSentence.SHARED_NO_READER, d.name,
+                None)))
+        elif unread:
+            out.append(lint(d.span.first, LintMarked(
+                Category.SHARED_READ, LintSentence.SHARED_UNREAD_BY_ONE
+                if len(unread) == 1 else LintSentence.SHARED_UNREAD, d.name,
+                None, cases=base_names(solver, unread, bases))))
     return out
 
 

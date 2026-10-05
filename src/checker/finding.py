@@ -200,6 +200,7 @@ class LintSentence(StrEnum):
     sentence's text."""
 
     RESERVED_WORD = "reserved word"
+    ENUMERATOR_NAME = "enumerator name"
     SHADOWED_TYPE = "shadowed type"
     LIB_NAME = "lib name"
     LIB_PRIVATE = "lib private"
@@ -249,6 +250,8 @@ class LintSentence(StrEnum):
     CHOICE_DOMAIN = "choice domain"
     MARKER_LISTS_NO_CASE = "marker lists no case"
     SHARED_UNREAD = "shared unread"
+    SHARED_UNREAD_BY_ONE = "shared unread by one"
+    SHARED_NO_READER = "shared no reader"
     SHARED_FACT_MARKED = "shared fact marked"
     CHOICE_TAG = "choice tag"
     CROSS_CHOICE = "cross choice"

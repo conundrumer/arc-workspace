@@ -230,8 +230,10 @@ def _alone_outcomes(runs: Runs, cases: Sequence[Case]
 
 def _reads_inputs(runs: Runs) -> bool:
     """The equivalence and subsumption checks compare cases over the
-    inputs: a solver with no witness file compares none."""
-    return runs.witness_file is not None
+    inputs of the task's witness file: a solver with no witness file
+    compares none, and neither do the runs of a given file (`witness
+    --file`), whose report has only the findings at its witnesses."""
+    return runs.given is None and runs.solver.witness_file is not None
 
 
 def _failures(got: Sequence[tuple[Case, Outcome | Fault]], run: RunKind,

@@ -155,6 +155,12 @@ def constructors_fixed(solver: Solver, ctors: Sequence[str]
     return tuple(found)
 
 
+def camel_words(name: str) -> list[str]:
+    """The words of a PascalCase name, split before each capital but the
+    first, in lower case: `MarkerHue` gives `marker`, `hue`."""
+    return [w.lower() for w in re.split(r"(?<!^)(?=[A-Z])", name)]
+
+
 def names_a_constructor(solver: Solver, text: str) -> bool:
     """Whether a name in no listed form (`denote`) writes a constructor of
     the solver without its prefix: some piece between its `&`s starts with
@@ -165,7 +171,7 @@ def names_a_constructor(solver: Solver, text: str) -> bool:
     if choice is None:
         return False
     words = {c.name for p in choice.points for c in p.constructors}
-    words |= {re.sub(r"(?<!^)(?=[A-Z])", "-", w).lower() for w in words}
+    words |= {"-".join(camel_words(w)) for w in words}
     return any(
         (m := re.match(r"\$?([\w-]+)", piece.strip())) is not None
         and m[1] in words

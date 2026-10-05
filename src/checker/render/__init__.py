@@ -462,6 +462,9 @@ LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
                                        str]] = {
     LintSentence.RESERVED_WORD: lambda n, _: mctx(
         "`{0}` is a Souffle reserved word; rename it").format(*n),
+    LintSentence.ENUMERATOR_NAME: lambda n, _: mctx(
+        "`{0}` enumerates the `Choice` field type `{1}`; name it "
+        "`{2}`").format(*n),
     LintSentence.SHADOWED_TYPE: lambda n, _: mctx(
         "`{0}` is also a type name inside `{1}`, so the instance takes that "
         "name for its own type; rename it").format(*n),
@@ -601,11 +604,6 @@ CODE_TEXT: dict[LintSentence, Callable[[LintCode], str]] = {
     LintSentence.NEGATED_USE: lambda p: mctx(
         "`{code}` ⇒ `{parts}`").format(
         code=_codes(p.code), parts=_codes(p.rewritten)),
-    LintSentence.SHARED_UNREAD: lambda p: mctx(
-        "`{name}` is shared, and {cases} never reads it; move it under the "
-        "marker of the cases that read it").format(
-        name=p.names[0], cases=", ".join(f"`{code_text(c)}`"
-                                         for c in p.code)),
     LintSentence.CHOICE_TAG: lambda p: mctx(
         "same body under `{one}` and `{other}`; one clause ranges over the "
         "tags").format(one=code_text(p.code[0]), other=code_text(p.code[1])),
@@ -662,6 +660,19 @@ def marker_text(m: CaseMarker) -> str:
 
 def _marked_text(p: LintMarked) -> str:
     match p.sentence:
+        case LintSentence.SHARED_UNREAD:
+            return mctx("`{name}` is shared, and the cases {cases} never "
+                        "read it; move it under the marker of the cases "
+                        "that read it").format(name=p.name,
+                                               cases=_ticked(p.cases))
+        case LintSentence.SHARED_UNREAD_BY_ONE:
+            return mctx("`{name}` is shared, and the case {case} never "
+                        "reads it; move it under the marker of the cases "
+                        "that read it").format(name=p.name,
+                                               case=_ticked(p.cases))
+        case LintSentence.SHARED_NO_READER:
+            return mctx("`{name}` is shared, and no case reads it").format(
+                name=p.name)
         case LintSentence.CASE_SECTION_READ:
             return mctx("by the program's rules, not by a run, {cases} "
                         "read `{rel}`, which the clause feeds, and the "
