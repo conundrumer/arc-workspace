@@ -27,8 +27,8 @@
 - A running server re-execs itself when `server.py` or a module under `solver_console/` changes, at its next quiet moment (`solver_console/reload.py`), so a code change needs no restart.
 - The page and `ui/` are served from disk on each request.
 
-## Issues
-- `issues/` is the track of the issues agents file, and [Ticket notes](prompts/agents/notes/tickets.md) states its conventions.
+## Tickets
+- `tickets/` is the track of the tickets agents file, and [Ticket notes](prompts/agents/notes/tickets.md) states its conventions.
 
 ## Decisions
 - When the user talks with you and you run no solver pass, read [Decision notes](prompts/agents/notes/decisions.md) before you make a decision on the solver tools or the agents' documents.
@@ -36,6 +36,8 @@
 ## Changes
 - Before you launch an agent, read [Launching notes](prompts/agents/notes/launching.md).
 - When the user talks with you and you run no solver pass, read [Changes](prompts/agents/notes/changes.md#changes) before you change the code or the documents.
+- When the user talks with you and an operator of yours runs, file each change as a `change` ticket in place of running it.
+- When the user talks with you and the log of a draft `change` ticket that you did not file holds findings, launch an assignee with that ticket's number.
 
 ## Cards
 - When the user requests a card to help make a decision regarding a solver, send a handbook agent and tell it to make one based on [card_spec.py](src/study/card_spec.py).
