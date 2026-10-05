@@ -860,15 +860,65 @@ def agent_names(agents: Path = AGENT_DIR) -> list[str]:
 
 def write_agent(path: Path = AGENT_PATH, lib: Path = LIB_SRC,
                 agents: Path = AGENT_DIR) -> Path:
-    """Write every agent definition under `agents` and the lib's interface
-    files, and return the handbook agent's path. `path` is the handbook
-    agent's file, and each agent's file stands beside it under the agent's
-    name."""
+    """Write every agent definition under `agents`, the lib's interface
+    files, and the manifest (`AGENT_MANIFEST`), and return the handbook
+    agent's path. `path` is the handbook agent's file, and each agent's file
+    stands beside it under the agent's name."""
     write_interfaces(lib)
-    for name, out in agent_paths(path, agents):
+    written = agent_paths(path, agents)
+    for name, out in written:
         _write_whole(out, agent_definition(agent_document(name, agents),
                                            render(name, lib, agents)))
+    _write_manifest(path.parent, [*generated_agents(path.parent),
+                                  *(out.name for _name, out in written)])
     return path
+
+
+# The file `write_agent` keeps beside the agent files: the name of each file
+# there it wrote, one per line. `remove_stale_agents` removes no file this
+# list leaves out, so a hand-written agent file stays.
+AGENT_MANIFEST = ".manifest"
+
+
+def generated_agents(out: Path) -> list[str]:
+    """The files under `out` that `write_agent` wrote and that still stand,
+    by name, as its manifest lists them."""
+    manifest = out / AGENT_MANIFEST
+    if not manifest.exists():
+        return []
+    return [name for name in manifest.read_text().splitlines()
+            if (out / name).exists()]
+
+
+def _write_manifest(out: Path, names: list[str]) -> None:
+    _write_whole(out / AGENT_MANIFEST,
+                 "".join(f"{name}\n" for name in sorted(set(names))))
+
+
+@dataclass(frozen=True)
+class StaleAgents:
+    """The agent files under one directory that have no document."""
+
+    removed: list[Path]
+    """The files `write_agent` wrote, which `remove_stale_agents` removed."""
+    unlisted: list[Path]
+    """The files its manifest does not list, left in place."""
+
+
+def remove_stale_agents(path: Path = AGENT_PATH, agents: Path = AGENT_DIR
+                        ) -> StaleAgents:
+    """Remove each file beside `path` that `write_agent` wrote and whose
+    document under `agents` no longer exists."""
+    out = path.parent
+    current = {file.name for _name, file in agent_paths(path, agents)}
+    listed = generated_agents(out)
+    removed = [out / name for name in listed if name not in current]
+    for file in removed:
+        file.unlink(missing_ok=True)
+    _write_manifest(out, [name for name in listed if name in current])
+    unlisted = [file for file in sorted(out.glob(f"*{path.suffix}"))
+                if file.name not in current and file.name not in listed]
+    return StaleAgents(removed, unlisted)
 
 
 def agent_paths(path: Path = AGENT_PATH, agents: Path = AGENT_DIR

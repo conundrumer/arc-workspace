@@ -12,7 +12,9 @@ from handbook.context import (
     context_text,
     contexts_diff,
     contexts_text,
+    AGENT_MANIFEST,
     agent_paths,
+    remove_stale_agents,
     role_text,
     section_text,
     session_text,
@@ -42,9 +44,10 @@ HELP = mctx("""
         ```
     - With no argument, the command prints the handbook, the passes a session runs, and the lib. That form and `--write` also write the lib's interface files: the `.md` beside each lib source, which the handbook's lib index points to.
     - `--write` first checks the lib's sources, prints what the checks find and exits 1 when they find anything. Otherwise it writes the files below, which git does not track. A session reads them only when they were written before it started.
-        - One agent under `.claude/agents/` per document under `prompts/agents/`, with the context its document composes as its system prompt.
+        - One agent under `.claude/agents/` per document under `prompts/agents/`, with the context its document composes as its system prompt, and `.claude/agents/.manifest`, which lists the agent files written there.
         - `.claude/analyze-next.md`, the steps the `analyze` agent reads after it writes the concept.
         - The files a codex session on the repo reads: `AGENTS.md`, [Codex on arc-workspace](prompts/codex.md) rendered, and `.codex/config.toml`, with `docs/codex-style.md` as its developer instructions.
+    - `--write` then removes each agent file that manifest lists whose document under `prompts/agents/` no longer exists, and prints it after `removed`. It leaves in place any file the manifest does not list, and names each such file that has no document on stderr.
     - `role <name>` prints a role's prompt.
     - `section <where>` prints one section in full, for a reader whose handbook shows that section as a heading alone. `<where>` takes three forms:
         ```
@@ -77,10 +80,17 @@ if __name__ == "__main__":
             sys.exit(1)
         interfaces = write_interfaces()
         write_agent()
+        stale = remove_stale_agents()
         agents = [out for _name, out in agent_paths()]
         for out in (*interfaces, *agents, write_analyze_next(),
                     *write_codex()):
             print(out.relative_to(REPO_ROOT))
+        for out in stale.removed:
+            print(f"removed {out.relative_to(REPO_ROOT)}")
+        for out in stale.unlisted:
+            print(f"{out.relative_to(REPO_ROOT)}: no document under "
+                  f"prompts/agents/ and not in {AGENT_MANIFEST}; left in place",
+                  file=sys.stderr)
     elif len(args) == 2 and args[0] == "role":
         print(role_text(args[1]), end="")
     elif len(args) == 2 and args[0] == "section":
