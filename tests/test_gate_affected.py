@@ -3,6 +3,7 @@ the merge in silence."""
 
 import pytest
 
+from engine import checkout
 from tests.conftest import script
 
 SOURCE = '''import os
@@ -58,7 +59,7 @@ def test_a_change_affects_a_command_through_what_it_read_listed_or_ran(gate):
     def affects(*touched):
         return gate.affects(cmd, "ac0c5833", deps, touched, recorded)
 
-    S = gate.Status
+    S = checkout.Change
     T = gate.Touched
     assert affects(T("programs/lib.dl", S.MODIFIED))
     assert not affects(T("programs/other.dl", S.MODIFIED))

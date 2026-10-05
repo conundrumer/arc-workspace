@@ -67,7 +67,10 @@ runs.
 Every command reads the solver files from `tests/gate/solvers/` and the
 witness files from `tests/gate/witnesses/`. A command that takes a witness
 file is given one at `<out-dir>/gate/wit/cur/`, copied from
-`tests/gate/frozen/` before the command runs. In an output, the path of
+`tests/gate/frozen/` before the command runs. The `context` command renders
+each of its readers' contexts from `<out-dir>/gate/documents/`, copied from
+`tests/gate/documents/` before the commands run, so a change to the
+checkout's own documents changes none of its outputs. In an output, the path of
 `<out-dir>/gate/` is written as `<out>/gate/`, and a time the command prints
 is dropped.
 
@@ -115,7 +118,7 @@ from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal
+from typing import ClassVar, Literal
 
 import coverage
 
@@ -123,6 +126,7 @@ from cli.common import WALL_LIMIT_ENV
 from controlled_markdown import mctx
 from engine import checkout
 from engine.memo import write_whole
+from handbook.paths import DOCUMENTS_ENV
 
 GATE = checkout.ROOT / "tests" / "gate"
 SOLVERS = GATE / "solvers"
@@ -130,6 +134,8 @@ WITNESSES = GATE / "witnesses"
 FROZEN = GATE / "frozen"
 INPUTS = GATE / "inputs"
 ACCEPTED = GATE / "accepted"
+DOCUMENTS = GATE / "documents"
+"""The documents a context command renders, laid out as the checkout is."""
 TIME_EXT = ".time"
 """The extension of the file in `new/` holding a cold run's time."""
 TIMES_FILE = "times.json"
@@ -174,12 +180,28 @@ EXTS: tuple[Ext, ...] = ("txt", "wit.json", "rc")
 """Every output file's extension, in the order a command's are compared."""
 
 
+def frozen_witness(stem: str) -> Path:
+    """The frozen witness file of `stem`, which a command that takes a
+    witness file is given a copy of."""
+    return FROZEN / f"{stem}.wit.json"
+
+
 @dataclass(frozen=True)
-class Command:
+class Named:
+    """A gate command's name in output file names."""
+    name: str
+
+    def key(self, stem: str) -> str:
+        """The name of the command's output files and accepted time on
+        `stem`, less the extension."""
+        return f"{self.name}-{stem}"
+
+
+@dataclass(frozen=True)
+class Command(Named):
     """A gate command: its name in output file names, the `run_dl.py`
     subcommand, the arguments between the stem and the witness file, the
     arguments after the witness file, and the stems it runs on."""
-    name: str
     sub: Sub
     args: tuple[str, ...] = ()
     extra: tuple[str, ...] = ()
@@ -194,14 +216,47 @@ class Command:
         wf = ["--witness-file", str(witness_file)] if self.takes_witness_file else []
         return [self.sub, stem, *self.args, *wf, *self.extra]
 
-    def key(self, stem: str) -> str:
-        """The name of the command's output files and accepted time on
-        `stem`, less the extension."""
-        return f"{self.name}-{stem}"
-
     @property
     def exts(self) -> tuple[Ext, ...]:
         return tuple(e for e in EXTS if e != "wit.json" or self.takes_witness_file)
+
+    script = "run_dl.py"
+    """The script under `scripts/` the command runs."""
+
+    def copied(self, stem: str) -> tuple[Path, ...]:
+        """The files and directories the gate copies for the command on
+        `stem` before it runs: the frozen witness file it is given."""
+        return (frozen_witness(stem),) if self.takes_witness_file else ()
+
+
+@dataclass(frozen=True)
+class ContextCommand(Named):
+    """A gate command that prints readers' contexts through
+    `scripts/context.py context`, rendered from a copy of `DOCUMENTS`: its
+    name in output file names, and each reader with its arguments. Its
+    stems are its readers, each its arguments joined by `-`."""
+    readers: tuple[tuple[str, ...], ...]
+
+    takes_witness_file = False
+    exts: ClassVar[tuple[Ext, ...]] = ("txt", "rc")
+    script = "context.py"
+    """The script under `scripts/` the command runs."""
+
+    @property
+    def stems(self) -> tuple[str, ...]:
+        return tuple("-".join(r) for r in self.readers)
+
+    def argv(self, stem: str, witness_file: Path) -> list[str]:
+        """The `context.py` arguments of the command on the reader `stem`."""
+        return ["context", *dict(zip(self.stems, self.readers, strict=True))[stem]]
+
+    def copied(self, stem: str) -> tuple[Path, ...]:
+        """The files and directories the gate copies for the command
+        before it runs: `DOCUMENTS`."""
+        return (DOCUMENTS,)
+
+
+type GateCommand = Command | ContextCommand
 
 
 def _record(name: str, label: str, input_file: str, *extra: str) -> Command:
@@ -211,7 +266,7 @@ def _record(name: str, label: str, input_file: str, *extra: str) -> Command:
                    stems=(RECORD_STEM,))
 
 
-COMMANDS = {c.name: c for c in (
+COMMANDS: dict[str, GateCommand] = {c.name: c for c in (
     Command("run", "run", stems=(*STEMS, *LIB_STEMS)),
     Command("lint", "lint"),
     Command("witness", "witness"),
@@ -238,11 +293,13 @@ COMMANDS = {c.name: c for c in (
     Command("expand", "expand"),
     Command("size", "size"),
     Command("keywords", "keywords"),
+    ContextCommand("context", (("session",), ("codex",), ("agent", "code-editor"),
+                               ("role", "solver"), ("workflow", "retro"))),
 )}
 """Every gate command, in the order a pass runs them."""
 
 
-def keys_of(cmds: Iterable[Command]) -> set[str]:
+def keys_of(cmds: Iterable[GateCommand]) -> set[str]:
     return {c.key(s) for c in cmds for s in c.stems}
 
 
@@ -302,14 +359,6 @@ def deps_file() -> Path:
 def load() -> str:
     """The machine's load averages over 1, 5 and 15 minutes."""
     return " ".join(f"{x:.2f}" for x in os.getloadavg())
-
-
-def _git(*argv: str) -> str:
-    """The stdout of a git command in the checkout, which must succeed."""
-    done = subprocess.run(["git", *argv], cwd=checkout.ROOT, capture_output=True, text=True)
-    if done.returncode != 0:
-        raise RuntimeError(f"git {' '.join(argv)} failed: {done.stderr.strip()}")
-    return done.stdout
 
 
 # The dependencies
@@ -435,23 +484,14 @@ def trace(deps_out: Path, cov_out: Path, script: Path, args: Sequence[str]) -> i
     return status
 
 
-class Status(StrEnum):
-    """How a change since the recorded commit touches a path."""
-
-    ADDED = "A"
-    DELETED = "D"
-    MODIFIED = "M"
-    TYPE_CHANGED = "T"
-
-
 @dataclass(frozen=True)
 class Touched:
-    """A path the changes since the recorded commit touch, and, for a
-    modified Python file, the line ranges of its recorded text they replace,
-    each its first line and its count, a count of 0 an insertion after the
-    first line."""
+    """A path the changes since the recorded commit touch, how they touch
+    it, and, for a modified Python file, the line ranges of its recorded
+    text they replace, each its first line and its count, a count of 0 an
+    insertion after the first line."""
     path: str
-    status: Status
+    status: checkout.Change
     hunks: tuple[tuple[int, int], ...] = ()
 
 
@@ -465,19 +505,15 @@ def hunks_of(diff: str) -> tuple[tuple[int, int], ...]:
 
 
 def touched_since(commit: str) -> list[Touched]:
-    """Each path whose content in the checkout differs from `commit`: the
-    tracked ones, each side of a rename, and the untracked ones git does
-    not ignore."""
-    named = _git("diff", "--name-status", "--no-renames", "-z", commit).split("\0")
+    """Each path whose content in the checkout differs from `commit`
+    (`checkout.changed_paths`)."""
     out: list[Touched] = []
-    for status, path in zip(named[0:-1:2], named[1::2], strict=True):
+    for c in checkout.changed_paths(checkout.ROOT, commit):
         hunks: tuple[tuple[int, int], ...] = ()
-        if Status(status) is Status.MODIFIED and Path(path).suffix in PY_SUFFIXES:
-            diff = _git("diff", "-U0", "--no-color", "--no-ext-diff", commit, "--", path)
-            hunks = hunks_of(diff)
-        out.append(Touched(path, Status(status), hunks))
-    untracked = _git("ls-files", "--others", "--exclude-standard", "-z").split("\0")
-    out += [Touched(p, Status.ADDED) for p in untracked if p]
+        if c.change is checkout.Change.MODIFIED and Path(c.path).suffix in PY_SUFFIXES:
+            hunks = hunks_of(checkout.git_out(checkout.ROOT, "diff", "-U0", "--no-color",
+                                              "--no-ext-diff", commit, "--", c.path))
+        out.append(Touched(c.path, c.change, hunks))
     return out
 
 
@@ -523,30 +559,30 @@ def runs_hunks(source: str, hunks: Sequence[tuple[int, int]], ran: frozenset[int
     return False
 
 
-def affects(cmd: Command, stem: str, deps: Deps, touched: Sequence[Touched],
+def affects(cmd: GateCommand, stem: str, deps: Deps, touched: Sequence[Touched],
             recorded: dict[str, str]) -> bool:
     """Whether the changes `touched` can affect `cmd` on `stem`, which
     depends on `deps`, with `recorded` the recorded text of each Python file
     they modify or delete. A change affects it where it touches a
-    file of `GATE_READS`, the command's accepted outputs, the frozen
-    witness file it is given, or a file it opened to read; where it adds or
+    file of `GATE_READS`, the command's accepted outputs, a file the gate
+    copies for it (`copied`), or a file it opened to read; where it adds or
     deletes a file in a directory it listed; and where it changes a Python
     file part of which it runs, as `runs_hunks` decides. A Python file
     affects it through the lines it runs alone (`PY_SUFFIXES`), so a Python
     file the change adds affects it through the lines that import it."""
     accepted = ACCEPTED.relative_to(checkout.ROOT)
     own = {*GATE_READS, *(str(accepted / f"{cmd.key(stem)}.{e}") for e in cmd.exts)}
-    if cmd.takes_witness_file:
-        own.add(str(FROZEN.relative_to(checkout.ROOT) / f"{stem}.wit.json"))
+    copied = [p.relative_to(checkout.ROOT) for p in cmd.copied(stem)]
     for t in touched:
-        if t.path in own:
+        if t.path in own or any(Path(t.path).is_relative_to(p) for p in copied):
             return True
         if Path(t.path).suffix not in PY_SUFFIXES:
-            if t.path in deps.reads or (t.status in (Status.ADDED, Status.DELETED)
+            if t.path in deps.reads or ((t.status.added or t.status is checkout.Change.DELETED)
                                         and str(Path(t.path).parent) in deps.listed):
                 return True
-        elif t.path in deps.lines and t.status is not Status.ADDED:
-            if runs_hunks(recorded[t.path], t.hunks if t.status is Status.MODIFIED else (),
+        elif t.path in deps.lines and not t.status.added:
+            if runs_hunks(recorded[t.path],
+                          t.hunks if t.status is checkout.Change.MODIFIED else (),
                           deps.lines[t.path]):
                 return True
     return False
@@ -572,7 +608,7 @@ class Record:
         write_whole(path, (json.dumps(body) + "\n").encode())
 
 
-def affected(cmds: Sequence[Command]) -> tuple[set[str], str]:
+def affected(cmds: Sequence[GateCommand]) -> tuple[set[str], str]:
     """The keys of `cmds` on their stems that the changes since the
     recorded commit can affect, each key with no dependency record among
     them, and the first line `--affected` prints."""
@@ -583,8 +619,8 @@ def affected(cmds: Sequence[Command]) -> tuple[set[str], str]:
                           "the {n} commands runs").format(path=path, n=len(keys))
     record = Record.read(path)
     touched = touched_since(record.commit)
-    recorded = {t.path: _git("show", f"{record.commit}:{t.path}") for t in touched
-                if Path(t.path).suffix in PY_SUFFIXES and t.status is not Status.ADDED}
+    recorded = {t.path: checkout.git_out(checkout.ROOT, "show", f"{record.commit}:{t.path}")
+                for t in touched if Path(t.path).suffix in PY_SUFFIXES and not t.status.added}
     run = {k for c in cmds for s in c.stems for k in [c.key(s)]
            if k not in record.deps or affects(c, s, record.deps[k], touched, recorded)}
     return run, mctx("affected: {run} of the {n} commands run, by the dependency record of "
@@ -601,6 +637,8 @@ class Gate:
         self.wit = self.dir / "wit" / "cur"
         self.deps = self.dir / "deps"
         self.cov = self.dir / "cov"
+        self.documents = self.dir / "documents"
+        """The copy of `DOCUMENTS` the context commands render."""
         self.accepted = accepted
         self.timed = timed
         """Whether the run makes the warm pass and judges the cold times;
@@ -619,6 +657,7 @@ class Gate:
                 checkout.CACHE_ENV: str(cache),
                 checkout.SOLVER_FILES_ENV: str(SOLVERS),
                 checkout.WITNESSES_ENV: str(WITNESSES),
+                DOCUMENTS_ENV: str(self.documents),
                 WALL_LIMIT_ENV: str(TIME_LIMIT)}
 
     def normalize(self, raw: str) -> str:
@@ -638,19 +677,19 @@ class Gate:
             fcntl.flock(fh, fcntl.LOCK_EX if cold else fcntl.LOCK_SH)
             yield
 
-    def run_one(self, cmd: Command, stem: str, cold: bool, cache: Path) -> tuple[int, float]:
+    def run_one(self, cmd: GateCommand, stem: str, cold: bool, cache: Path) -> tuple[int, float]:
         """`cmd` on `stem` under the lock, its normalized output, witness
         file and exit code written to the pass's directory; the exit code
         and wall time."""
         wf = self.wit / f"{stem}.wit.json"
         if cmd.takes_witness_file:
-            shutil.copyfile(FROZEN / f"{stem}.wit.json", wf)
+            shutil.copyfile(frozen_witness(stem), wf)
         key = cmd.key(stem)
-        run_dl = [str(checkout.scripts() / "run_dl.py"), *cmd.argv(stem, wf)]
+        script = [str(checkout.scripts() / cmd.script), *cmd.argv(stem, wf)]
         if self.traced and cold:
-            run_dl = [str(Path(__file__).resolve()), TRACE, str(self.deps / f"{key}.json"),
-                      str(self.cov / f".coverage.{key}"), *run_dl]
-        argv = ["uv", "run", "--project", str(checkout.ROOT), "python", *run_dl]
+            script = [str(Path(__file__).resolve()), TRACE, str(self.deps / f"{key}.json"),
+                      str(self.cov / f".coverage.{key}"), *script]
+        argv = ["uv", "run", "--project", str(checkout.ROOT), "python", *script]
         base = (self.new if cold else self.warm) / key
         with self.locked(cold):
             start = time.time()
@@ -677,7 +716,7 @@ class Gate:
             fh.write(f"{cmd.name} {stem} pass{1 if cold else 2} rc={rc} wall={wall}s\n")
         return rc, wall
 
-    def compare(self, cmd: Command, stem: str, wall: float) -> list[Line]:
+    def compare(self, cmd: GateCommand, stem: str, wall: float) -> list[Line]:
         """The cold run's lines: a `DIFF` line per output file that differs
         from the accepted one, and in a timed run a `SLOW` or `NOTIME` line
         for its time."""
@@ -695,14 +734,14 @@ class Gate:
                               f"time={wall}s accepted={accepted}s load={load()}"))
         return lines
 
-    def compare_warm(self, cmd: Command, stem: str) -> list[Line]:
+    def compare_warm(self, cmd: GateCommand, stem: str) -> list[Line]:
         """The warm run's lines: a `DIFF` line ending in `warm` per output
         file that differs from the cold run's."""
         key = cmd.key(stem)
         return [Line(LineKind.DIFF, cmd.name, stem, f"{ext} warm") for ext in cmd.exts
                 if not _same(self.new / f"{key}.{ext}", self.warm / f"{key}.{ext}")]
 
-    def stem_sequence(self, stem: str, cmds: Sequence[Command]) -> list[Line]:
+    def stem_sequence(self, stem: str, cmds: Sequence[GateCommand]) -> list[Line]:
         """Both passes of `cmds` on `stem`, their lines written to the
         stem's log."""
         cache = self.dir / "cache" / stem
@@ -720,9 +759,11 @@ class Gate:
             shutil.rmtree(cache, ignore_errors=True)
         return lines
 
-    def run(self, cmds: Sequence[Command], keys: set[str]) -> list[Line]:
+    def run(self, cmds: Sequence[GateCommand], keys: set[str]) -> list[Line]:
         for d in (self.new, self.warm, self.wit, self.deps, self.cov):
             d.mkdir(parents=True, exist_ok=True)
+        shutil.rmtree(self.documents, ignore_errors=True)
+        shutil.copytree(DOCUMENTS, self.documents)
         stems = sorted({s for c in cmds for s in c.stems})
         lines: dict[str, list[Line]] = {}
         errors: list[BaseException] = []
@@ -755,7 +796,7 @@ class Gate:
         commit."""
         deps = {p.stem: Deps.from_json(json.loads(p.read_text()))
                 for p in sorted(self.deps.glob("*.json"))}
-        return Record(_git("rev-parse", "HEAD").strip(), deps)
+        return Record(checkout.git_out(checkout.ROOT, "rev-parse", "HEAD").strip(), deps)
 
     def accept(self, replace: bool) -> tuple[int, int]:
         """Each cold time and output written as accepted where none of its
@@ -826,7 +867,8 @@ def main(argv: Sequence[str]) -> int:
         ap.error(f"no gate command named {', '.join(unknown)}")
     if a.record_deps and a.cmds:
         ap.error(mctx("--record-deps records every command, so it takes no command"))
-    if a.record_deps and _git("status", "--porcelain", "--untracked-files=no"):
+    if a.record_deps and any(c.change is not checkout.Change.UNTRACKED
+                             for c in checkout.changed_paths(checkout.ROOT, "HEAD")):
         ap.error(mctx("--record-deps records the lines of HEAD, and the checkout changes "
                       "a tracked file against it"))
     cmds = [COMMANDS[c] for c in a.cmds] or list(COMMANDS.values())

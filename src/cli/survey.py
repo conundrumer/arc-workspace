@@ -3,10 +3,8 @@
 `size`, `keywords`, `since` and `expand`."""
 
 import re
-import subprocess
 import sys
 from collections import defaultdict
-from dataclasses import dataclass
 
 from checker import Runs
 from checker.deletions import DeletionReport, survey_deletions
@@ -211,58 +209,32 @@ def cmd_keywords(args: list[str] | None = None) -> int:
 
 # `since`
 
-SOLVERS = checkout.solvers().relative_to(checkout.ROOT).as_posix()
-"""The solvers directory as git names it, from the checkout's root."""
-SOLVER_PATH_RE = re.compile(re.escape(SOLVERS) + r"/([^/]+)\.dl$")
 REWRITE_SHARE = 0.5
 """The share of the corpus above which commits count as a mechanical
 rewrite rather than solver work."""
 
 
-@dataclass(frozen=True)
-class GitFailed:
-    """A git call that exited with an error, and what git wrote on
-    stderr."""
-
-    stderr: str
-
-
-def _git(*args: str) -> str | GitFailed:
-    """Git's stdout, or what git wrote on stderr where the call fails."""
-    ran = subprocess.run(["git", *args], cwd=checkout.ROOT, capture_output=True,
-                         text=True)
-    return ran.stdout if ran.returncode == 0 else GitFailed(ran.stderr)
+def _solver_stem(path: str, solvers: str) -> str | None:
+    """The stem of the solver file at `path`, a path from the checkout's
+    root, with `solvers` the solvers directory as git names it; None where
+    `path` is no solver file."""
+    m = re.fullmatch(re.escape(solvers) + r"/([^/]+)\.dl", path)
+    return m.group(1) if m else None
 
 
-def _git_failed(got: GitFailed) -> int:
-    """The exit code of `since` where a git call fails, with git's error
-    on stderr."""
-    print(text.GIT_FAILED.format(error=got.stderr.strip()), file=sys.stderr)
-    return 1
-
-
-def _commit_stems(log: str) -> list[tuple[str, set[str]]]:
+def _commit_stems(log: str, solvers: str) -> list[tuple[str, set[str]]]:
     """Each commit as its hash and the solver stems it touches."""
     commits: list[tuple[str, set[str]]] = []
     for line in log.splitlines():
         if line.startswith("commit "):
             commits.append((line.split(" ", 1)[1].strip(), set()))
-        elif (m := SOLVER_PATH_RE.match(line.strip())) and commits:
-            commits[-1][1].add(m.group(1))
+        elif (stem := _solver_stem(line.strip(), solvers)) and commits:
+            commits[-1][1].add(stem)
     return commits
 
 
 def _rewrite(touched: set[str], corpus: set[str]) -> bool:
     return len(touched) > REWRITE_SHARE * len(corpus)
-
-
-def _worktree_stems(status: str) -> set[str]:
-    stems: set[str] = set()
-    for line in status.splitlines():
-        path = line[3:].strip().split(" -> ")[-1].strip('"')
-        if m := SOLVER_PATH_RE.match(path):
-            stems.add(m.group(1))
-    return stems
 
 
 def cmd_since(when: str) -> int:
@@ -271,17 +243,25 @@ def cmd_since(when: str) -> int:
     gives under "The sequence" for a survey of an entry whose newest
     `Survey:` time is `when`; a commit that rewrites more
     than half the corpus gives none, and a window whose commits together
-    do keeps only the solvers they add."""
-    log = _git("log", f"--since={when}", "--name-only",
-               "--pretty=format:commit %H", "--", SOLVERS)
-    if isinstance(log, GitFailed):
-        return _git_failed(log)
-    status = _git("status", "--porcelain", "--", SOLVERS)
-    if isinstance(status, GitFailed):
-        return _git_failed(status)
+    do keeps only the solvers they add. A git call that fails exits 1
+    with git's error."""
+    try:
+        return _since(when)
+    except checkout.GitFailed as e:
+        print(text.GIT_FAILED.format(error=e.stderr.strip()), file=sys.stderr)
+        return 1
+
+
+def _since(when: str) -> int:
+    root = checkout.ROOT
+    solvers = checkout.solvers().relative_to(root).as_posix()
+    log = checkout.git_out(root, "log", f"--since={when}", "--name-only",
+                           "--pretty=format:commit %H", "--", solvers)
+    worktree = {stem for c in checkout.changed_paths(root, "HEAD", solvers)
+                if (stem := _solver_stem(c.path, solvers))}
     corpus = set(all_stems())
     committed: set[str] = set()
-    for sha, touched in _commit_stems(log):
+    for sha, touched in _commit_stems(log, solvers):
         if _rewrite(touched, corpus):
             print(commands.SKIPPED_REWRITE.format(
                 sha=sha, n=len(touched), total=len(corpus),
@@ -289,17 +269,15 @@ def cmd_since(when: str) -> int:
         else:
             committed |= touched
     if _rewrite(committed, corpus):
-        added = _git("log", f"--since={when}", "--diff-filter=A",
-                     "--name-only", "--pretty=format:commit %H", "--",
-                     SOLVERS)
-        if isinstance(added, GitFailed):
-            return _git_failed(added)
-        kept = committed & {s for _, t in _commit_stems(added) for s in t}
+        added = checkout.git_out(root, "log", f"--since={when}", "--diff-filter=A",
+                                 "--name-only", "--pretty=format:commit %H", "--",
+                                 solvers)
+        kept = committed & {s for _, t in _commit_stems(added, solvers) for s in t}
         print(commands.WINDOW_REWRITE.format(
             n=len(committed), total=len(corpus), share=REWRITE_SHARE,
             kept=len(kept)), file=sys.stderr)
         committed = kept
-    in_scope = sorted((committed | _worktree_stems(status)) & corpus)
+    in_scope = sorted((committed | worktree) & corpus)
     for stem in in_scope:
         print(stem)
     print(commands.IN_SCOPE.format(n=len(in_scope)), file=sys.stderr)

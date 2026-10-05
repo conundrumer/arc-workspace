@@ -32,7 +32,6 @@ itself is malformed.
 import argparse
 import json
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 
@@ -48,41 +47,21 @@ PATHSPEC = [".", ":(exclude).scratch"]
 TAIL = 2000
 
 
-def git(cwd: Path, *argv: str, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
-    """One git command in `cwd`."""
-    return subprocess.run(["git", *argv], cwd=cwd, input=stdin,
-                          capture_output=True, text=True)
-
-
-def new_files(worktree: Path) -> list[str]:
-    """The files the worktree holds that git does not track."""
-    done = git(worktree, "ls-files", "--others", "--exclude-standard", "--", *PATHSPEC)
-    if done.returncode != 0:
-        raise RuntimeError(f"listing the new files of {worktree} failed: {done.stderr.strip()}")
-    return [line for line in done.stdout.splitlines() if line]
-
-
-def tracked_patch(worktree: Path) -> tuple[str, list[str]]:
-    """The change to the tracked files against HEAD, and the paths it covers."""
-    diff = git(worktree, "diff", "HEAD", "--binary", "--", *PATHSPEC)
-    if diff.returncode != 0:
-        raise RuntimeError(f"diffing {worktree} against HEAD failed: {diff.stderr.strip()}")
-    names = git(worktree, "diff", "--name-only", "HEAD", "--", *PATHSPEC)
-    return diff.stdout, [line for line in names.stdout.splitlines() if line]
-
-
 def patch_text(worktree: Path) -> tuple[str, list[str]]:
     """The worktree's whole change as one patch, and the paths it covers. A
     new file carries no HEAD side, so it takes a diff against `/dev/null`."""
-    patch, files = tracked_patch(worktree)
-    for path in new_files(worktree):
+    changed = checkout.changed_paths(worktree, "HEAD", *PATHSPEC)
+    patch = checkout.git_out(worktree, "diff", "HEAD", "--binary", "--", *PATHSPEC)
+    for c in changed:
+        if c.change is not checkout.Change.UNTRACKED:
+            continue
         # git reports a difference with status 1, and a failure with 2.
-        done = git(worktree, "diff", "--no-index", "--binary", "--", "/dev/null", path)
+        done = checkout.git(worktree, "diff", "--no-index", "--binary", "--",
+                            "/dev/null", c.path)
         if done.returncode > 1:
-            raise RuntimeError(f"diffing the new file {path} failed: {done.stderr.strip()}")
+            raise RuntimeError(f"diffing the new file {c.path} failed: {done.stderr.strip()}")
         patch += done.stdout
-        files.append(path)
-    return patch, sorted(set(files))
+    return patch, sorted({c.path for c in changed})
 
 
 def apply_patch(into: Path, patch: str, check: bool = False) -> str:
@@ -91,7 +70,7 @@ def apply_patch(into: Path, patch: str, check: bool = False) -> str:
     if not patch.strip():
         return ""
     argv = ["apply", "--whitespace=nowarn"] + (["--check"] if check else [])
-    done = git(into, *argv, "-", stdin=patch)
+    done = checkout.git(into, *argv, "-", stdin=patch)
     if done.returncode == 0:
         return ""
     said = (done.stderr + done.stdout).strip()
@@ -120,7 +99,7 @@ def copy_diffs(worktree: Path, into: Path) -> list[str]:
 def remove_worktree(owner: Path, worktree: Path) -> str:
     """Remove the worktree from the repo that holds it. The return is what
     git reported when it refused, and empty when it did not."""
-    done = git(owner, "worktree", "remove", "--force", str(worktree))
+    done = checkout.git(owner, "worktree", "remove", "--force", str(worktree))
     return "" if done.returncode == 0 else (done.stderr + done.stdout).strip()[-TAIL:]
 
 

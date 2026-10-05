@@ -1,0 +1,91 @@
+//! Shared types and relations for ARC solvers in Souffle.
+//!
+//! Reading a component:
+//!
+//! - A relation marked `// @input` is one the caller populates, and the facts
+//!   under it are its default. Every other relation derives.
+//! - In a keyed component, the first column of a relation is its key, and each
+//!   key is one independent instance of the component.
+//! - A `Requires:` sentence states a precondition the component does not check,
+//!   and what happens when it does not hold.
+//!
+//! Using a component:
+//!
+//! - `ord`, `count`, and `match` are Souffle reserved words, so no name can
+//!   be one of them.
+//! - A caller populates the inputs that the outputs it reads derive from.
+//! - An `inline` relation sits under negation only when its clauses
+//!   introduce no variable and the use binds every column. A record literal
+//!   under negation binds every field. No inline relation can appear inside
+//!   an aggregate; a non-inline relation wraps it.
+//! - The anchor relations (`same_dist`, `corner_anchor`, `slab_anchor`, and
+//!   relations built from them) require every position argument to be bound.
+//!
+//! The runner contract: the solver declares `out`, and no other IO relation,
+//! total over the expected output grid.
+
+// A name with a leading `_` is private to the lib.
+
+// Open a public component's doc with a sentence that states the reading it
+// computes: what it finds or does in a grid, or the conventional name of its
+// concept. For a component a solver uses as machinery, state there what it
+// produces for the solver. A variant that directly follows its base may state
+// that sentence against the base. Put the inputs, the outputs and the
+// mechanics after that sentence.
+
+.type Color <: number
+.type Dir <: number
+.type Axis <: number
+.type DiagDir <: number
+.type DiagAxis <: number
+.type D4 <: number
+.type Sym <: number
+.type Sense <: number
+
+/// The rotation subgroup of D4.
+.type C4 <: D4
+
+.type Dir8 = Dir | DiagDir
+
+.type Axis4 = Axis | DiagAxis
+
+/// An opaque label.
+.type Ident <: number
+
+/// Index of a task example.
+.type Example <: number
+
+/// The edge-margin record; box.dl holds its algebra.
+.type Box = [t: number, b: number, l: number, r: number]
+
+/// The (V, H) extents of a frame, for ParamsHelpers only.
+.type Dim = [v: number, h: number]
+
+/// A cell.
+.type Position = Box
+/// A translation.
+.type Offset = Box
+
+.type Unit = U {}
+
+/// The task input grid.
+.decl in(p: Position, col: Color)  // @input
+
+/// Train and test inputs, which the runner gives as facts in determination
+/// mode.
+.decl ex_in(e: Example, p: Position, col: Color)  // @input
+
+/// Train outputs, which the runner gives as facts in determination mode.
+.decl ex_out(e: Example, p: Position, col: Color)  // @input
+
+// Per-parameter diff between determine.<parameter> and params.<parameter>;
+// the runner synthesizes the clauses, and a nonempty diff is a violation.
+.decl _determination_diff(param: symbol)
+
+#include "lib/sets.dl"
+#include "lib/orders.dl"
+#include "lib/orientation.dl"
+#include "lib/box.dl"
+#include "lib/cells.dl"
+#include "lib/constraints.dl"
+#include "lib/params.dl"

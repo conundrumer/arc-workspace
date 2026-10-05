@@ -50,13 +50,13 @@ from handbook.items import (
     TypeDecl,
 )
 from handbook.items import parse as parse_file
-from handbook.paths import REPO_ROOT
+from handbook.paths import DOCUMENTS_ROOT, REPO_ROOT, document
 
 # The handbook's own files. Nothing here reads them as a directory: the
 # composition document lists each one, and the registry reads it from there.
-DOCS_DIR = checkout.handbook()
-ROLE_DIR = checkout.prompts() / "roles"
-LIB_SRC = paths.lib_src()
+DOCS_DIR = document(checkout.handbook())
+ROLE_DIR = document(checkout.prompts()) / "roles"
+LIB_SRC = document(paths.lib_src())
 
 # The agent documents, one per handbook agent: front matter holding the
 # agent's definition, a `lib` attribute saying how the lib renders, and an
@@ -65,11 +65,11 @@ LIB_SRC = paths.lib_src()
 # under `.claude/agents/` are generated at each entry point and not tracked. A
 # role's document states its agent in an `agent` attribute. A role with no such
 # attribute runs as the handbook agent.
-AGENT_DIR = checkout.prompts() / "agents"
+AGENT_DIR = document(checkout.prompts()) / "agents"
 # The session's own entry document: the handbook, and the passes it runs.
-SESSION_DOC = checkout.prompts() / "session.md"
+SESSION_DOC = document(checkout.prompts()) / "session.md"
 # The codex session's entry document, composed the same way.
-CODEX_DOC = checkout.prompts() / "codex.md"
+CODEX_DOC = document(checkout.prompts()) / "codex.md"
 AGENT_OUT = checkout.agents()
 """Where the agent definitions are written."""
 
@@ -80,9 +80,11 @@ def agent_file(name: str) -> Path:
 
 
 def repo_label(path: Path) -> str:
-    """A path of the checkout as the context prints it: from the
-    checkout's root (`engine.checkout.shown`)."""
-    return str(checkout.shown(path))
+    """A path as the context prints it: from `DOCUMENTS_ROOT` where it
+    stands under it, else from the checkout's root
+    (`engine.checkout.shown`)."""
+    under = checkout.shown(path, DOCUMENTS_ROOT)
+    return str(checkout.shown(path) if under.is_absolute() else under)
 
 
 def agent_doc(name: str, agents: Path = AGENT_DIR) -> Path:
@@ -108,8 +110,8 @@ ANALYZE_NEXT_PATH = checkout.claude() / "analyze-next.md"
 def parse(text: str, base_dir: Path | None = None) -> Program:
     """One lib file's items and comments (`handbook.items.parse`), each
     `#include` in it resolved against `base_dir`, the programs directory
-    where none is given."""
-    return parse_file(text, base_dir or checkout.programs())
+    as the contexts read it where none is given."""
+    return parse_file(text, base_dir or document(checkout.programs()))
 
 
 APPENDIX = mctx("the system-prompt appendix")
@@ -118,10 +120,10 @@ APPENDIX = mctx("the system-prompt appendix")
 
 def lib_sources(root: Path | None = None) -> list[tuple[Path, str]]:
     """The lib's files in include order, each with its text: the root, the
-    lib the runner reads (`handbook.paths.lib_src`) when none is given, then the
+    lib the runner reads as the contexts read it (`LIB_SRC`) when none is given, then the
     file of each `#include` in it, resolved against the root's
     directory."""
-    root = paths.lib_src() if root is None else root
+    root = LIB_SRC if root is None else root
     text = root.read_text()
     out = [(root, text)]
     for it in parse(text, root.parent).items:
@@ -398,7 +400,7 @@ def lib_part(lib: Path = LIB_SRC, kind: LibForm = LibForm.INTERFACE) -> str:
 
 def agent_document(name: str, agents: Path = AGENT_DIR) -> nm.Node:
     """One agent document, parsed."""
-    return nm.Registry(REPO_ROOT).load(agent_doc(name, agents))
+    return nm.Registry(DOCUMENTS_ROOT).load(agent_doc(name, agents))
 
 
 def agent_meta(name: str, agents: Path = AGENT_DIR) -> dict[str, str]:
@@ -421,7 +423,7 @@ def render(name: str = "handbook-expanded", lib: Path = LIB_SRC,
 def entry_text(doc: Path, lib: Path = LIB_SRC) -> str:
     """One entry document as its reader gets it: the document rendered, then
     the lib as the document's `lib` attribute says."""
-    registry = nm.Registry(REPO_ROOT)
+    registry = nm.Registry(DOCUMENTS_ROOT)
     document = registry.load(doc)
     after = lib_part(lib, lib_form(document))
     return nm.render(document, registry, after=after) + after
@@ -512,11 +514,11 @@ def section_text(where: str, docs: Path = DOCS_DIR) -> str:
     name, sep, ident = where.partition("#")
     name, ident = name.strip(), ident.strip()
     if name.endswith(".dl"):
-        src = REPO_ROOT / name
+        src = DOCUMENTS_ROOT / name
         if not src.exists():
             raise SystemExit(f"no lib source named `{name}`")
         return lib_component(src, ident)
-    registry = nm.Registry(REPO_ROOT)
+    registry = nm.Registry(DOCUMENTS_ROOT)
     heading = (ident if sep and not name
                else name if not sep and not name.endswith(".md") else None)
     if heading is not None:
@@ -615,7 +617,7 @@ def _takes_brief(document: nm.Node) -> bool:
 def role_body(name: str, roles: Path = ROLE_DIR) -> str:
     """One role document under `roles`, as the agent running it reads it: the
     text the agent's prompt opens with, and nothing above."""
-    registry = nm.Registry(REPO_ROOT)
+    registry = nm.Registry(DOCUMENTS_ROOT)
     return nm.role(registry.load(role_file(name, roles)), registry)[1]
 
 
@@ -623,7 +625,7 @@ def role_text(name: str, roles: Path = ROLE_DIR) -> str:
     """One role document under `roles`, as the session that spawns the role
     reads it: `Agent: <name>` on the first line, then the text the agent's
     prompt opens with."""
-    registry = nm.Registry(REPO_ROOT)
+    registry = nm.Registry(DOCUMENTS_ROOT)
     agent, text = nm.role(registry.load(role_file(name, roles)), registry)
     return f"Agent: {agent}\n\n{text}"
 
@@ -797,17 +799,17 @@ SAMPLE_SCRATCH = ".scratch/survey/<run>"
 
 # The session's own skill, which a session at a terminal reads beside the
 # handbook.
-SESSION_SKILL = checkout.skills() / "session" / "SKILL.md"
-CONSOLE_DIR = checkout.console()
-WORKFLOW_DIR = checkout.workflows()
+SESSION_SKILL = document(checkout.skills()) / "session" / "SKILL.md"
+CONSOLE_DIR = document(checkout.console())
+WORKFLOW_DIR = document(checkout.workflows())
 # The scripts that build a role's brief. A file here that states the role on a
 # line about roles spawns that role.
-SPAWN_GLOBS = ((WORKFLOW_DIR, "*.js"), (checkout.scripts(), "*.py"),
+SPAWN_GLOBS = ((WORKFLOW_DIR, "*.js"), (document(checkout.scripts()), "*.py"),
                (CONSOLE_DIR, "*.py"), (CONSOLE_DIR / "solver_console", "*.py"))
 # The documents that tell a session to spawn a role. A session that reads one
 # of them briefs the role itself.
 SPAWN_DOC_GLOBS = ((DOCS_DIR, "*.md"),
-                   (checkout.prompts(), "**/*.md"))
+                   (document(checkout.prompts()), "**/*.md"))
 
 
 def _section(what: str, text: str) -> str:
@@ -881,7 +883,7 @@ def agent_context(name: str) -> str:
 def _role_agent(name: str, roles: Path = ROLE_DIR) -> str:
     """The agent a role runs on: its `agent` attribute, or the handbook
     agent."""
-    registry = nm.Registry(REPO_ROOT)
+    registry = nm.Registry(DOCUMENTS_ROOT)
     return nm.role(registry.load(role_file(name, roles)), registry)[0]
 
 
