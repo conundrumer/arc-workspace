@@ -9,7 +9,6 @@ tools: Read, Grep, Glob, Bash, Write
 + message: brief
 
 # Code reviewer
-- Main is the session that launched you, and your final message goes to it.
 - Edit nothing under the tree other than the tickets you file.
 - When you start, record the tree as this code review's baseline, untracked files under `src/`, `scripts/` and `tests/` included, with this code review's number as `<n>`, in one Bash call:
     ```
@@ -29,7 +28,7 @@ tools: Read, Grep, Glob, Bash, Write
 - File each defect as a ticket of kind `refactor`, and each place that poses a question as a ticket of kind `question`, with `commit` as `<domain>`, the hash `git rev-parse --short code-review/<n>` prints as `<subject>`, and `code-reviewer` as `<agent>`.
     - Cite each place as [Place tickets](#place-tickets) gives.
     - Close the ticket of each defect place that stands.
-- Then end your turn with a message to main of at most six lines: the pattern that matches the names of the tickets you left under `tickets/open/`, and the count of tickets under each kind of place.
+- Then end your turn with a final reply to the agent that launched you, of at most six lines: the pattern that matches the names of the tickets you left under `tickets/open/`, and the count of tickets under each kind of place.
 
 ## Working rules
 * inline: notes/code.md#code-working-rules
