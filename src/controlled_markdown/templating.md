@@ -54,7 +54,8 @@
     ```
     - [Principles](../docs/handbook/principles.md), in a doc under prompts/, renders as [Principles](docs/handbook/principles.md).
     ```
-- A target already taken from the root stands as it is, and so do an external target and a slug.
+- A link to a section the render carries whole, with none of its lines left out, under a heading whose slug no other heading of the render has, takes `#` and that slug as its target.
+- Every other target taken from the root stands as it is, and so do an external target and a slug.
 
 ## Variables
 

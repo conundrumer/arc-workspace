@@ -416,8 +416,8 @@ def entry_text(doc: Path, lib: Path = LIB_SRC) -> str:
     the lib as the document's `lib` attribute says."""
     registry = nm.Registry(REPO_ROOT)
     document = registry.load(doc)
-    return (nm.render(document, registry)
-            + lib_part(lib, lib_form(document)))
+    after = lib_part(lib, lib_form(document))
+    return nm.render(document, registry, after=after) + after
 
 
 def session_text(doc: Path = SESSION_DOC, lib: Path = LIB_SRC) -> str:

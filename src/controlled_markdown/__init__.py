@@ -247,11 +247,7 @@ def parse(text: str, source: str = "<input>", fragment: bool = False) -> Node:
                                    "a code line sits at the fence's indent")
             body = line[code_indent:]
             code.text += "\n" + body
-            m = FENCE_RE.match(body)
-            if m is not None and len(lead) == code_indent \
-                    and m.group(1)[0] == code_fence[0] \
-                    and len(m.group(1)) >= len(code_fence) \
-                    and not m.group(2).strip():
+            if len(lead) == code_indent and _closes(body, code_fence):
                 # A closed code node still holds its place, so a deeper line
                 # after it reads as nesting under it.
                 block, block_level, block_parent = code, code_level, code_parent
@@ -409,6 +405,15 @@ def parse(text: str, source: str = "<input>", fragment: bool = False) -> Node:
     _check_numbers(document)
     _mark_blank(document, blank_before)
     return document
+
+
+def _closes(line: str, fence: str) -> bool:
+    """Whether a line, its indent taken off, closes the code block `fence`
+    opened: a run of the fence's character at least as long, and nothing
+    after it."""
+    m = FENCE_RE.match(line)
+    return (m is not None and m.group(1)[0] == fence[0]
+            and len(m.group(1)) >= len(fence) and not m.group(2).strip())
 
 
 def _mark_blank(node: Node, blank_before: set[int]) -> None:
@@ -1255,11 +1260,23 @@ def gist(text: str) -> str:
     return re.split(r"(?<=\.)\s+", " ".join(text.split()), maxsplit=1)[0]
 
 
+# A section a render carries: its document's file and the section's id.
+type SectionKey = tuple[Path, str]
+
+
 @dataclass
 class _State:
     reg: Registry
     values: dict
     given: bool = False     # whether the caller gave values at all
+    # How many times so far the render has left lines out of what it
+    # expands, by an `exclude` or by an abridgement. A section expanded with
+    # the count unchanged is carried whole.
+    left_out: int = 0
+    # Each section the render carries whole, with each copy's heading in the
+    # render: the heading written at the site of an `inline` that is the one
+    # line under it, or None where the copy has no heading of its own.
+    whole: dict[SectionKey, list[Node | None]] = field(default_factory=dict)
 
 
 def _index_kind(document: Node) -> str | None:
@@ -1301,24 +1318,29 @@ def _fill(text: str, node: Node, st: _State) -> str:
 
 def _expand(nodes: list[Node], st: _State, seen: tuple[str, ...],
             rel: str, drop: tuple[str, ...],
-            abridged: set[Path] | str | None = None) -> list[Node]:
+            abridged: set[Path] | str | None = None,
+            site: Node | None = None) -> list[Node]:
     """A child list with its includes put in place, its directives applied,
     and its variables filled. `rel` is the path of the document the nodes come
     from. `drop` names the attributes an enclosing `include` excludes, and
     `abridged` the documents it renders as their `index` says. Both reach the
-    documents this one includes."""
+    documents this one includes. `site` is the rendered heading the nodes
+    stand under where they are one `inline` directive (`_sole_inline`)."""
     out: list[Node] = []
     for node in nodes:
         if node.kind == ATTRIBUTE:
             out.append(node)
             continue
-        if node.has(COMMENT) or any(node.has(name) for name in drop):
+        if node.has(COMMENT):
+            continue
+        if any(node.has(name) for name in drop):
+            st.left_out += 1
             continue
         if node.has(INCLUDE):
             out.extend(_include(node, st, seen, drop, abridged))
             continue
         if node.has(INLINE):
-            out.extend(_inline(node, st, seen, drop, abridged))
+            out.extend(_inline(node, st, seen, drop, abridged, site))
             continue
         if node.has("if") and not _bound(node, "if", st):
             continue
@@ -1333,9 +1355,32 @@ def _expand(nodes: list[Node], st: _State, seen: tuple[str, ...],
                     number=node.number)
         if copy.text and node.kind != CODE:
             copy.text = _rooted(_fill(copy.text, node, st), node, st)
-        copy.children = _expand(node.children, st, seen, rel, drop, abridged)
+        left_out = st.left_out
+        copy.children = _expand(
+            node.children, st, seen, rel, drop, abridged,
+            copy if node.kind == HEADING and _sole_inline(node) else None)
+        if node.kind == HEADING and st.left_out == left_out:
+            _carry(node.source, slug(node.text), copy, st)
         out.append(copy)
     return out
+
+
+def _sole_inline(heading: Node) -> bool:
+    """Whether the lines a render carries under a heading are one `inline`
+    directive, which makes the heading the inlined section's heading."""
+    lines = [c for c in heading.children
+             if c.kind != ATTRIBUTE and not c.has(COMMENT)]
+    return len(lines) == 1 and lines[0].has(INLINE)
+
+
+def _carry(source: str, ident: str, heading: Node | None, st: _State) -> None:
+    """Note that the render carries the section `ident` of the document read
+    as `source` whole, under `heading`. No link names a document read from no
+    file, so nothing is noted for one."""
+    file = st.reg.file(source)
+    if file is None or not ident:
+        return
+    st.whole.setdefault((file, ident), []).append(heading)
 
 
 def _names(nodes: list[Node], st: _State, seen: tuple[str, ...],
@@ -1472,12 +1517,15 @@ def _include(node: Node, st: _State, seen: tuple[str, ...],
 
 def _inline(node: Node, st: _State, seen: tuple[str, ...],
             drop: tuple[str, ...],
-            abridged: set[Path] | str | None = None) -> list[Node]:
+            abridged: set[Path] | str | None = None,
+            site: Node | None = None) -> list[Node]:
     """A section's body, in place of the `inline` directive that names it.
 
     `#<id>` names a section of the directive's own document and
     `<path>#<id>` one of the document at that path. The section's heading
-    stays behind: a heading the lines need is written at the site.
+    stays behind: a heading the lines need is written at the site, and
+    `site` is that heading as rendered, where the directive is the one line
+    under it.
     """
     value = (node.attr(INLINE) or "").strip()
     where, hashed, ident = value.partition("#")
@@ -1497,8 +1545,12 @@ def _inline(node: Node, st: _State, seen: tuple[str, ...],
         raise ControlledMarkdownError(node.source, node.line, "inline-missing",
                                   f"no section in {st.reg.rel(document)} "
                                   f"carries the id `{ident}`")
-    return _expand(target.children, st, seen + (key,),
-                   st.reg.rel(document), drop, abridged)
+    left_out = st.left_out
+    out = _expand(target.children, st, seen + (key,),
+                  st.reg.rel(document), drop, abridged)
+    if st.left_out == left_out:
+        _carry(document.source, ident, site, st)
+    return out
 
 
 def _abridged(node: Node, st: _State) -> set[Path] | str | None:
@@ -1539,6 +1591,7 @@ def _document_nodes(document: Node, st: _State, seen: tuple[str, ...],
     names when the including directive asks for that."""
     kind = _index_kind(document)
     if kind is not None and _is_abridged(document, st, abridged):
+        st.left_out += 1
         return _index_nodes(document, st, seen, kind, drop, abridged)
     return _expand(document.children, st, seen, st.reg.rel(document), drop,
                    abridged)
@@ -1629,11 +1682,11 @@ def _index_nodes(document: Node, st: _State, seen: tuple[str, ...],
 
 
 def _emit(nodes: list[Node], out: list[str], pad: str, hdepth: int,
-          in_list: bool) -> None:
+          in_list: bool, shown: list[Node] | None = None) -> None:
     """A child list as Markdown lines. A directive puts its children in its
     own place, in the list its own line stood in. A heading takes its depth
     from where it lands, so an included document's headings sit under the
-    including point."""
+    including point. `shown` takes each node written as a heading."""
     for node in nodes:
         if node.kind == ATTRIBUTE:
             continue
@@ -1643,7 +1696,9 @@ def _emit(nodes: list[Node], out: list[str], pad: str, hdepth: int,
             head = "#" * (hdepth + 1)
             out.append(f"{head} {node.text}" if node.text else head)
             out.append("")
-            _emit(node.children, out, "", hdepth + 1, False)
+            if shown is not None:
+                shown.append(node)
+            _emit(node.children, out, "", hdepth + 1, False, shown)
             continue
         if node.kind in (QUOTE, TABLE, CODE):
             if out and out[-1] != "":
@@ -1654,15 +1709,15 @@ def _emit(nodes: list[Node], out: list[str], pad: str, hdepth: int,
             out.append("")
             continue
         if node.anonymous():
-            _emit(node.children, out, pad, hdepth, in_list)
+            _emit(node.children, out, pad, hdepth, in_list, shown)
             continue
         if node.number:
             mark = f"{node.number}. "
             out.append(f"{pad}{mark}{escape(node.text)}".rstrip())
-            _emit(node.children, out, pad + " " * INDENT, hdepth, True)
+            _emit(node.children, out, pad + " " * INDENT, hdepth, True, shown)
             continue
         out.append(f"{pad}- {escape(node.text)}".rstrip())
-        _emit(node.children, out, pad + " " * INDENT, hdepth, True)
+        _emit(node.children, out, pad + " " * INDENT, hdepth, True, shown)
 
 
 def _tidy(out: list[str]) -> str:
@@ -1671,10 +1726,89 @@ def _tidy(out: list[str]) -> str:
     return text + "\n"
 
 
-def _lay_out(nodes: list[Node]) -> str:
+# A line of ordinary Markdown that is an ATX heading, with its text, its
+# indent taken off. A fence or a heading stands at an indent of three spaces
+# at most.
+MD_HEADING_RE = re.compile(r"^#{1,6}(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$")
+MD_INDENT = 3
+
+
+def markdown_headings(text: str) -> list[str]:
+    """The text of each ATX heading in ordinary Markdown, the lines of its
+    fenced code blocks left out."""
+    out: list[str] = []
+    fence = ""
+    for line in text.split("\n"):
+        lead = len(line) - len(line.lstrip(" "))
+        if lead > MD_INDENT:
+            continue
+        body = line[lead:]
+        if fence:
+            if _closes(body, fence):
+                fence = ""
+        elif (m := FENCE_RE.match(body)) is not None:
+            fence = m.group(1)
+        elif (h := MD_HEADING_RE.match(body)) is not None:
+            out.append(h.group(1) or "")
+    return out
+
+
+def _lay_out(nodes: list[Node], st: _State, after: str = "") -> str:
+    """The nodes as Markdown, each link to a section they carry whole pointed
+    at that section's heading (`_anchored`). `after` is the Markdown a caller
+    sets after this text, whose headings take anchors too."""
+    shown: list[Node] = []
+    _emit(nodes, [], "", 0, False, shown)
+    anchors: dict[str, int] = {}
+    for text in (*(h.text for h in shown), *markdown_headings(after)):
+        anchors[slug(text)] = anchors.get(slug(text), 0) + 1
+    shown_ids = {id(h) for h in shown}
+    for node in _walk_all(nodes):
+        if node.text and node.kind not in (CODE, ATTRIBUTE):
+            node.text = _anchored(node, st, shown_ids, anchors)
     out: list[str] = []
     _emit(nodes, out, "", 0, False)
     return _tidy(out)
+
+
+def _walk_all(nodes: list[Node]) -> Iterator[Node]:
+    """Every node of a child list, at every depth."""
+    for node in nodes:
+        yield node
+        yield from _walk(node)
+
+
+def _anchored(node: Node, st: _State, shown: set[int],
+              anchors: dict[str, int]) -> str:
+    """A node's text with each link to a section the render carries whole
+    pointing at that section's heading in the render, as `#<anchor>`. A link
+    stays as it is where the render gives its section no one heading of its
+    own, written as a heading whose anchor no other heading of the render
+    repeats. `shown` holds the headings the render writes as headings, by
+    `id`, and `anchors` counts the headings of each anchor."""
+    base = st.reg.file(node.source)
+
+    def one(m: re.Match[str]) -> str:
+        target = m.group(2)
+        path, _, ident = target.partition("#")
+        if SCHEME_RE.match(target) or not ident:
+            return m.group(0)
+        if base is None and path.startswith(("./", "../")):
+            raise ControlledMarkdownError(
+                node.source, node.line, "link-anchor",
+                f"`{target}` is relative to a document read from no file")
+        file = target_of(path, base or Path(node.source), st.reg.root)
+        copies = st.whole.get((file, ident))
+        if copies is None:
+            return m.group(0)
+        heading = copies[0] if len(copies) == 1 else None
+        if (heading is None or id(heading) not in shown
+                or anchors.get(slug(heading.text)) != 1):
+            return m.group(0)
+        return f"[{m.group(1)}](#{slug(heading.text)})"
+
+    return "".join(part if part.startswith("`") else LINK_RE.sub(one, part)
+                   for part in SPAN_RE.split(node.text))
 
 
 def _state(reg: Registry | None, values: dict | None) -> _State:
@@ -1715,12 +1849,14 @@ def _listed(names: list[str]) -> str:
 
 
 def full(document: Node, reg: Registry | None = None,
-         values: dict | None = None) -> str:
+         values: dict | None = None, after: str = "") -> str:
     """A document as ordinary Markdown: headings as headings, statements as
-    nested lists, quotes as blockquotes, code nodes as fenced blocks."""
+    nested lists, quotes as blockquotes, code nodes as fenced blocks.
+    `after` is the Markdown a caller sets after it (`_lay_out`)."""
     st = _state(reg, values)
     _require(document, st)
-    return _lay_out(_expand(document.children, st, (), st.reg.rel(document), ()))
+    return _lay_out(_expand(document.children, st, (), st.reg.rel(document), ()),
+                    st, after)
 
 
 def headings(document: Node, reg: Registry | None = None,
@@ -1729,7 +1865,7 @@ def headings(document: Node, reg: Registry | None = None,
     line per heading."""
     st = _state(reg, values)
     _require(document, st)
-    return _lay_out(_index_nodes(document, st, (), "headings"))
+    return _lay_out(_index_nodes(document, st, (), "headings"), st)
 
 
 def entries(document: Node, reg: Registry | None = None,
@@ -1739,7 +1875,7 @@ def entries(document: Node, reg: Registry | None = None,
     statement."""
     st = _state(reg, values)
     _require(document, st)
-    return _lay_out(_index_nodes(document, st, (), "entries"))
+    return _lay_out(_index_nodes(document, st, (), "entries"), st)
 
 
 def role(document: Node, reg: Registry | None = None,
@@ -1755,10 +1891,11 @@ def brief(document: Node, reg: Registry | None = None,
 
 
 def render(document: Node, reg: Registry | None = None,
-           values: dict | None = None) -> str:
+           values: dict | None = None, after: str = "") -> str:
     """A document in full. An `index` attribute picks an index rendering only
-    where an `include` asks for it."""
-    return full(document, reg, values)
+    where an `include` asks for it. `after` is the Markdown a caller sets
+    after it (`_lay_out`)."""
+    return full(document, reg, values, after)
 
 
 
