@@ -49,8 +49,9 @@ HELP = mctx("""
         - The command refuses, and neither moves nor writes, where the ticket stands in another status than `<current status>`, or where its file moves before the command moves it.
         - Where `<status>` differs from `<current status>`, the command moves the ticket's file to the directory of `<status>`.
         - The command appends `<time> <status> [<agent>]: <note>` to the file's `{log}`, with the time in UTC in the form `{time_form}`, and with `<agent> <agent id>` in the bracket where `--id` gives an agent id. A line with no `<note>` ends at the bracket.
-        - An operator's `assigned` line takes its agent id in `--id`.
-        - On a ticket that already stands in `assigned`, the command refuses an `assigned` line that gives `--id` unless that id holds the ticket or the log's last note opens with `{awaiting_user}`. The holder is the agent id of the last `assigned` line that gives one, in its bracket or as the first word of its note, among the log's final run of `assigned` lines. Where none of them gives one, the ticket has no holder.
+        - An `assigned` line takes, in `--id`, the agent id of the agent that writes it.
+        - On a ticket that already stands in `assigned`, the command refuses an `assigned` line unless its `--id` holds the ticket. The holder is the agent id of the last `assigned` line that gives one, in its bracket or as the first word of its note, among the log's final run of `assigned` lines. Where none of them gives one, the ticket has no holder.
+        - The note of a line that moves a ticket into `{blocked}` opens with what the ticket waits on: `{user}`, or `{change} <n>`, with `<n>` the number of a `change` ticket the track holds.
         - The note of a line that moves a ticket into `closed` opens with its resolution, one of {resolutions}.
         - The command refuses, and neither moves nor writes, where `{log}` is not the file's last section or the note spans more than one line.
     """)
@@ -83,6 +84,7 @@ class Status(StrEnum):
     DRAFT = "draft"
     OPEN = "open"
     ASSIGNED = "assigned"
+    BLOCKED = "blocked"
     CLOSED = "closed"
 
 
@@ -210,11 +212,16 @@ HEADING = re.compile(r"^## .*$", re.MULTILINE)
 
 RESOLUTION_WORD = re.compile(r"[a-z]+(?:-[a-z]+)*")
 
-OPERATOR = "operator"
 
-AWAITING_USER = "awaiting-user"
-"""The word an operator's note opens with on a ticket it leaves under
-`assigned` for a decision that goes to the user."""
+class Wait(StrEnum):
+    """What a ticket under `blocked` waits on, the word the note of the line
+    into `blocked` opens with."""
+    USER = "user"
+    CHANGE = "change"
+
+
+WAIT = re.compile(rf"(?:{Wait.USER}|{Wait.CHANGE} (?P<change>{TICKET_NUMBER.pattern}))(?![\w-])")
+"""The opening of the note of a line into `blocked`."""
 
 LOG_LINE = re.compile(rf"^.*? (?P<status>{'|'.join(Status)}) \[(?P<agent>[^\]\s]+)"
                       rf"(?: (?P<id>{AGENT_ID.pattern}))?\](?:: (?P<note>.*))?$", re.MULTILINE)
@@ -396,6 +403,15 @@ def ticket_path(tickets: Path, ref: str) -> Path:
     raise Refused(mctx("no ticket is `{ref}`").format(ref=ref))
 
 
+def read_ticket(path: Path) -> str:
+    """The text of the ticket at `path`, refused where its file moved after
+    `ticket_path` found it."""
+    try:
+        return path.read_text()
+    except FileNotFoundError:
+        raise Refused(mctx("{path} moved before this call could read it").format(path=path))
+
+
 def check_line(status: Status, moves: bool, agent: str, agent_id: str | None,
                note: str | None) -> None:
     """Refuses a log line the ticket notes do not give."""
@@ -403,8 +419,8 @@ def check_line(status: Status, moves: bool, agent: str, agent_id: str | None,
         raise Refused(mctx("`{agent}` is not kebab words").format(agent=agent))
     if agent_id is not None and not AGENT_ID.fullmatch(agent_id):
         raise Refused(mctx("`{id}` is no agent id").format(id=agent_id))
-    if agent_id is None and status is Status.ASSIGNED and is_agent(agent, OPERATOR):
-        raise Refused(mctx("an operator's `assigned` line takes its agent id in `--id`"))
+    if agent_id is None and status is Status.ASSIGNED:
+        raise Refused(mctx("an `assigned` line takes your agent id in `--id`"))
     if note is not None and (not note.strip() or "\n" in note or "\r" in note):
         raise Refused(mctx("the note is not one line of text"))
     if moves and status is Status.CLOSED:
@@ -412,6 +428,22 @@ def check_line(status: Status, moves: bool, agent: str, agent_id: str | None,
         if not word or word.group() not in set(Resolution):
             raise Refused(mctx("the note of a move into `closed` opens with one of {resolutions}").format(
                 resolutions=ticked(Resolution)))
+
+
+def check_wait(tickets: Path, note: str | None) -> None:
+    """Refuses the note of a line into `blocked` that does not open with
+    what the ticket waits on, or that names as the change it waits on a
+    ticket that is no `change`."""
+    wait = WAIT.match(note or "")
+    if wait is None:
+        raise Refused(mctx("the note of a move into `{blocked}` opens with `{user}` or `{change} <n>`").format(
+            blocked=Status.BLOCKED, user=Wait.USER, change=Wait.CHANGE))
+    if wait["change"] is None:
+        return
+    path = ticket_path(tickets, wait["change"])
+    head = re.match(FRONT, read_ticket(path))
+    if not head or head["kind"] != Kind.CHANGE:
+        raise Refused(mctx("ticket `{n}` is no `change`").format(n=wait["change"]))
 
 
 def log_lines(text: str) -> list[re.Match[str]]:
@@ -439,16 +471,12 @@ def holder(text: str) -> str | None:
 
 def check_take(text: str, agent_id: str) -> None:
     """Refuses an `assigned` line that gives `agent_id` on a ticket already
-    under `assigned`, unless `agent_id` holds it or the log's last note
-    opens with `awaiting-user`: such a line on a ticket another operator
-    took is the move that fails."""
-    lines = log_lines(text)
-    if lines and (lines[-1]["note"] or "").startswith(AWAITING_USER):
-        return
+    under `assigned`, unless `agent_id` holds it: such a line on a ticket
+    another agent took is the move that fails."""
     held = holder(text)
     if held != agent_id:
         raise Refused(mctx("the ticket stands under `assigned`, held by {holder}").format(
-            holder=f"`{held}`" if held else "no operator"))
+            holder=f"`{held}`" if held else "no agent"))
 
 
 def status_of(word: str) -> Status:
@@ -473,10 +501,9 @@ def write_log(tickets: Path, ref: str, status: str, agent: str, source: str, age
             ref=ref, actual=path.parent.name, origin=origin))
     moves = origin != to
     check_line(to, moves, agent, agent_id, note)
-    try:
-        text = path.read_text()
-    except FileNotFoundError:
-        raise Refused(mctx("{path} moved before this call could read it").format(path=path))
+    if moves and to is Status.BLOCKED:
+        check_wait(tickets, note)
+    text = read_ticket(path)
     headings = HEADING.findall(text)
     if not headings or headings[-1] != LOG:
         raise Refused(mctx("`{log}` is not the last section of {path}").format(log=LOG, path=path))
@@ -600,7 +627,8 @@ def main(args: list[str]) -> int:
                             defect_sections=sections_example(DEFECT_SECTIONS),
                             change_sections=sections_example(SECTIONS[Kind.CHANGE]),
                             statuses=ticked(Status), log=LOG, time_form=TIME_FORM,
-                            resolutions=ticked(Resolution), awaiting_user=AWAITING_USER)
+                            resolutions=ticked(Resolution), blocked=Status.BLOCKED,
+                            user=Wait.USER, change=Wait.CHANGE)
     if args[:1] == ["path"]:
         return run(args[1:], help_text, 1, lambda ref: ticket_path(main_tickets(), ref), None, args)
     if args[:1] == ["log"]:

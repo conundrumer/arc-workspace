@@ -26,7 +26,8 @@
 
 ## tracking
 - `tickets/` is in the main tree, the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints, and in no other worktree. Git ignores it.
-- The directories `tickets/draft/`, `tickets/open/`, `tickets/assigned/` and `tickets/closed/` are a ticket's statuses, and moving its file between them is its transition. `uv run python scripts/file_ticket.py path <n>` prints the path of ticket `<n>`.
+- The directories `tickets/draft/`, `tickets/open/`, `tickets/assigned/`, `tickets/blocked/` and `tickets/closed/` are a ticket's statuses, and moving its file between them is its transition. `uv run python scripts/file_ticket.py path <n>` prints the path of ticket `<n>`.
+- A ticket under `tickets/blocked/` waits on the user or on a `change`, and no agent holds it.
 - Make each transition, and write each other line of a ticket's log, with `uv run python scripts/file_ticket.py log`, in the form its `--help` gives, with your agent's name as `<agent>`.
 - Close the ticket of a place that is judged and kept with `wontfix`, and give the judgment in the note after it.
 

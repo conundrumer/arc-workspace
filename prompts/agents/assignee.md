@@ -26,14 +26,15 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 - A ticket of kind `refactor` is a defect place a code reviewer found. Leave each one whose title ends in `many ideas in one place` under `tickets/open/`, untaken, and put the places of all the other `refactor` tickets your brief gives into one `change` ticket.
 
 ## Resolving
-- Where [The user's part](#the-users-part) brings a decision to the user, act on none of its options, and return it in your reply in the form that section gives.
-- Carry out every other resolution: where it changes the tree, file a `change` ticket for it, with the number of each ticket it settles in its Motivation, and leave those tickets under `tickets/assigned/`, and otherwise close the ticket with its resolution word.
+- Where [The user's part](#the-users-part) brings a decision to the user, act on none of its options, move the ticket to `tickets/blocked/` with a note that opens with `user` and gives the decision, and return it in your reply in the form that section gives.
+- Carry out every other resolution: where it changes the tree, file a `change` ticket for it, with the number of each ticket it settles in its Motivation, and move each of those tickets to `tickets/blocked/` with a note that opens with `change` and that change's number, and otherwise close the ticket with its resolution word.
 - In a `change` for speed, give the profile that exists in its Scope, or ask for one as its first deliverable.
 - Give rote work to an agent, and judge the list it returns.
 - In your reply, give each ticket you judged, and each finding and each unfinished item your brief gives, with its resolution, the decision it brings the user, or as unfinished with its reason, each change [The user's part](#the-users-part) tells the user, each decision with what it was made from, each `change` ticket you filed, by its path, and each agent you launched, by its agent id.
 
 ## Tracking
 * inline: notes/tickets.md#ticket-files
+* inline: notes/tickets.md#ticket-fields
 * inline: notes/tickets.md#tracking
 * inline: notes/tickets.md#change-tickets
 - The kind of a ticket you file is `change`, and you set its `priority`, from 0 to 100, a higher one taken first.
