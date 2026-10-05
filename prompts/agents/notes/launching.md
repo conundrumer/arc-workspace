@@ -8,7 +8,7 @@
 - Split work between agents where the split saves at least 30 minutes of wall-clock per 150k tokens of overhead.
 - An agent's budget is the N of the `Budget: N minutes` line of its brief, or of your latest message to it that has one, which replaces the brief's. Set it from the budget that `uv run python scripts/profile_runs.py ~/.claude/projects/-Users-davidlu-code-arc-workspace/*.jsonl --type <agent type>` prints for its agent type, over the window that command's `--help` gives, and change it for the work the brief or that message asks for. An agent that runs until you tell it to stop has no budget.
 - When an agent you launched ends a turn more than its budget after its brief or your latest message to it arrived, change its brief or split its work, in the same turn.
-- When a supervisor's flag of kind `budget` reaches you, tell the agent to do what its documents say it does when its budget passes, where they say it, and otherwise tell it what to finish and to end, and kill or retry no agent. The agent reads your message only when its current command ends.
+- When a supervisor's alert of kind `budget` reaches you, tell the agent to do what its documents say it does when its budget passes, where they say it, and otherwise tell it what to finish and to end, and kill or retry no agent. The agent reads your message only when its current command ends.
 - Act on each item that an agent you launched gives as unfinished, by its reason:
     - Where it needs more work or more budget, change that agent's brief or split its work, and send the item again, in the same turn.
     - Where a tool or a document stopped it, file that obstacle as a ticket of the kind that fits it, and send the item again once that ticket is closed, or at once by a way around the obstacle where one exists.
@@ -21,7 +21,7 @@
 - Pause or serialize agents only where the user agreed to it.
 
 ## Operators
-- When you launch an operator while no supervisor runs, launch a supervisor in the background. When a supervisor's reply says it ended for its context while an operator runs, launch a new one, with the flags and the states found not to hold that reply gives.
+- When you launch an operator while no supervisor runs, launch a supervisor in the background. When a supervisor's reply says it ended for its context while an operator runs, launch a new one, with the alerts and the states found not to hold that reply gives.
 - Once no operator of yours runs, tell the supervisor to stop, with SendMessage.
 - Ask an operator for no message to you before its final reply.
 - Give each draft of an operator's launch brief, and the number of each `change` ticket you file or revise, or that a reply you receive gives as filed or revised, to the session's ticket reviewer: launch the `ticket-reviewer` with the first, and send each later one with SendMessage.

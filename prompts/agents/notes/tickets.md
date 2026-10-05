@@ -22,7 +22,7 @@
     - `change` and the number of the change's ticket: an editor's or a doc reviewer's ticket on its change where its brief gives that number, and a transcript review's ticket on such an editor's run.
     - `commit` and the commit's hash: a code reviewer's ticket, on the commit its baseline tag names, and an operator's ticket from its After a batch, on `master` at that commit.
     - `ticket` and the ticket's number: a ticket on another ticket.
-    - `agent` and the agent's id: the supervisor's checker's ticket on the agent it checked, and every ticket no entry above fits, on the agent it concerns, your own included.
+    - `agent` and the agent's id: the ticket of a supervisor's alert verifier, on the agent it checked, and every ticket no entry above fits, on the agent it concerns, your own included.
 
 ## tracking
 - `tickets/` is in the main tree, the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints, and in no other worktree.

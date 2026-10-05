@@ -13,17 +13,17 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 - Run the procedures your brief gives, by the sections below.
 
 ## Solver passes
-- A chain runs Analyze, then Create, then Refine on one task. Start it at the pass your brief gives, or at Analyze.
+- A pipeline runs Analyze, then Create, then Refine on one task. Start it at the pass your brief gives, or at Analyze.
 - Where your brief gives no task, take the next one from `bash scripts/queue.sh --order name`.
-- Before the first pass of a chain, claim its task: run `mkdir -p .scratch/<task_id> && (set -C; echo "$CLAUDE_CODE_SESSION_ID" > .scratch/<task_id>/claim)` in the main worktree. Where it fails, run no chain on that task, and where you took it from the queue, take the next task after it from the queue, with `-n` to list more than one.
-- When the chain ends, remove that claim file.
-- Before the first pass of a chain, where `master` holds commits that change `src/`, `scripts/` or `tests/` since the highest `code-review/<n>` tag, run a code review as [Code](#code) gives, and launch the pass only once that code review, and its assignee where one was launched, has returned.
+- Before the first pass of a pipeline, claim its task: run `mkdir -p .scratch/<task_id> && (set -C; echo "$CLAUDE_CODE_SESSION_ID" > .scratch/<task_id>/claim)` in the main worktree. Where it fails, run no pipeline on that task, and where you took it from the queue, take the next task after it from the queue, with `-n` to list more than one.
+- When the pipeline ends, remove that claim file.
+- Before the first pass of a pipeline, where `master` holds commits that change `src/`, `scripts/` or `tests/` since the highest `code-review/<n>` tag, run a code review as [Code](#code) gives, and launch the pass only once that code review, and its assignee where one was launched, has returned.
 - Launch an Analyze, Create or Refine pass with a brief that gives the task. Add an override, labelled as one, only where your brief carries it.
-- Where a pass's report quotes a part of its brief that the pass refused, stop the chain there, and launch no review and no assignee for that pass.
+- Where a pass's report quotes a part of its brief that the pass refused, stop the pipeline there, and launch no review and no assignee for that pass.
 - After each pass, launch a transcript review of it, as [Launching](#launching) gives, and have that review also read the pass call by call, with its timing, for what the tool and the documents did to the pass's work, and file a ticket of kind `interference` where they made the pass's output wrong, and of kind `delay` where they cost it time or tokens alone.
 - Then launch an assignee with the tickets the pass's report lists under `## Tickets filed`, the tickets that review filed, and that review.
-- Where the assignee returns `change` drafts that settle an `interference` ticket of the chain, send their numbers to the ticket reviewer your brief gives, with SendMessage. Then wait in a foreground Bash call with a timeout of 600000 ms, led by `: 'unattended-wait: ticket review of <numbers>';`, whose until-loop ends when each of those drafts stands under `tickets/open/` or its log's last line is a `draft` line the ticket reviewer wrote, and gives up just under that timeout, and repeat the call until that holds. Take each such change ahead of the order [Change tickets](#change-tickets) gives, and run it.
-- Run the next pass once each `interference` ticket of the chain stands under `tickets/closed/`. Stop the chain there, with the reason in your reply, where a draft gains a finding, where the assignee returns a decision for the user on one of those tickets, or where it neither files a change for one nor closes it.
+- Where the assignee returns `change` drafts that settle an `interference` ticket of the pipeline, send their numbers to the ticket reviewer your brief gives, with SendMessage. Then wait in a foreground Bash call with a timeout of 600000 ms, led by `: 'unattended-wait: ticket review of <numbers>';`, whose until-loop ends when each of those drafts stands under `tickets/open/` or its log's last line is a `draft` line the ticket reviewer wrote, and gives up just under that timeout, and repeat the call until that holds. Take each such change ahead of the order [Change tickets](#change-tickets) gives, and run it.
+- Run the next pass once each `interference` ticket of the pipeline stands under `tickets/closed/`. Stop the pipeline there, with the reason in your reply, where a draft gains a finding, where the assignee returns a decision for the user on one of those tickets, or where it neither files a change for one nor closes it.
 
 ## Code
 - Run a code review when your brief gives a batch of tool fixes as ready, or [Solver passes](#solver-passes) gives one.
