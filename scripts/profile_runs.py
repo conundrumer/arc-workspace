@@ -116,10 +116,15 @@ SETUP = {"cd", "echo", "export", "set", "true", ":", "printf", "date",
          "source", ".", "uptime", "[", "[[", "test"}
 WRAPPERS = {"timeout", "time", "nice", "env", "exec", "command", "sudo", "uv",
             "run"}
-# Options of the wrappers that take the next word as their value.
-WRAPPER_OPTIONS = {"--env-file", "--with", "--python", "-p", "--project",
-                   "--directory", "--package", "--extra", "--group", "--from",
-                   "-s", "-k"}
+# Options that take the next word as their value, by the wrapper they follow.
+# A wrapper not listed takes no such option.
+UV_OPTIONS = frozenset({"--env-file", "--with", "--python", "-p", "--project",
+                        "--directory", "--package", "--extra", "--group",
+                        "--from"})
+WRAPPER_OPTIONS = {"timeout": frozenset({"-s", "-k"}),
+                   "env": frozenset({"-u", "--unset", "-C", "--chdir", "-S",
+                                     "--split-string"}),
+                   "uv": UV_OPTIONS, "run": UV_OPTIONS}
 OPENERS = {"do", "then", "else", "elif", "if", "while", "until", "!", "{", "("}
 CLOSERS = {"for", "case", "done", "fi", "esac", "}"}
 POLL = "poll"
@@ -392,12 +397,14 @@ def segment_program(words: list[str]) -> tuple[str | None, list[str]]:
     environment assignments, wrappers such as timeout and uv run, and an
     interpreter given a script or module."""
     toks = [t for t in (t.strip("(){}") for t in words) if t]
-    i, interp = 0, None
+    i, interp, wrapper = 0, None, None
     while i < len(toks):
         t = toks[i]
         base = Path(t).name
-        if interp is None and (ASSIGNMENT.match(t) or base in WRAPPERS
-                               or re.fullmatch(r"\d+[smh]?", t)):
+        if interp is None and base in WRAPPERS:
+            wrapper, i = base, i + 1
+        elif interp is None and (ASSIGNMENT.match(t)
+                                 or re.fullmatch(r"\d+[smh]?", t)):
             i += 1
         elif interp is None and re.fullmatch(r"python[\d.]*|bash|sh|zsh", base):
             interp, i = base, i + 1
@@ -411,7 +418,7 @@ def segment_program(words: list[str]) -> tuple[str | None, list[str]]:
             return base, toks[i + 1:]
         elif interp:
             return interp, toks[i + 1:]
-        elif t in WRAPPER_OPTIONS:
+        elif wrapper and t in WRAPPER_OPTIONS.get(wrapper, frozenset()):
             i += 2
         elif t.startswith("-"):
             i += 1
