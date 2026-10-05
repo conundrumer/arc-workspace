@@ -13,6 +13,7 @@
 - Act on each item that an agent you launched gives as unfinished, by its reason:
     - Where it needs more work or more budget, change that agent's brief or split its work, and send the item again, in the same turn.
     - Where a tool or a document stopped it, file that obstacle as a ticket of the kind that fits it, and send the item again once that ticket is closed, or at once by a way around the obstacle where one exists.
+        - Where the harness refused the agent's Bash calls after a merge removed a worktree, send the item again at once.
     - Where it needs a decision, act on it as that decision rules, once the decision is made.
 - Where an agent whose description says its reply gives each item of its brief as done or as unfinished has replied, and gives an item you sent it as neither, send that item again, file its drop as a ticket, and leave finding the drop's cause to the assignee that takes that ticket.
 - Launch an assignee with each ticket you file for an obstacle or a drop, as the lines above give, before you end your turn with no other work. Where you are an assignee, in place of filing those tickets, find the cause of each obstacle or drop yourself and file a `change` ticket for its resolution.
