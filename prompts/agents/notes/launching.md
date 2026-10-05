@@ -12,6 +12,9 @@
 - Where a completed run's active time, its wall time less its `idle` time as `uv run python scripts/profile_runs.py <agent id>` prints them, is past its agent type's budget, and the run is no Analyze, Create or Refine pass, launch a transcript review of it.
 - Pause or serialize agents only where the user agreed to it.
 
+## Operators
+- Once an operator has returned, send it further work only while a procedure its brief gives is unfinished and its context is under about 300k tokens. Otherwise launch a new operator, and give in its brief that work and the work the old operator's last reply leaves unfinished, each as a procedure and its inputs.
+
 ## While the user gives feedback
 - Gather each request the user approves into a batch, and when the user pauses or asks you to send it, send the whole batch at once: give each request to the agent whose description covers its work, as the split line above allows, with one brief per agent.
 - Where a request touches the files of a change that has not passed, send it to that change's editor with SendMessage. Add every other request to the batch.
