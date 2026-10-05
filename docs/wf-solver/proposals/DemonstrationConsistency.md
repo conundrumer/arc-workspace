@@ -1,6 +1,6 @@
 # `DemonstrationConsistency<Demonstrated, Object, Index, Value>` — the choices consistent with a demonstrated pair of objects
 
-The choices, out of a catalog, whose prediction for the first object of a caller-supplied demonstrated pair holds the second object's value at every index of the second object. Each object is an indexed family: its value at each index. The program states each choice's prediction under that choice; the demonstrated pairs say which choice the input teaches, so nothing about the choice is stored. Which pairs are demonstrated, whether every demonstrated pair must agree, and what a consistent choice is then applied to, are the caller's: a caller that knows a pair but not its direction supplies both orders, and a caller that wants every pair of a chain to agree negates `consistent` over its own demonstration relation.
+The choices, out of a catalog, whose prediction for the first object of a caller-supplied demonstrated pair holds the second object's value at every index of the second object. The program states each choice's prediction under that choice; the demonstrated pairs say which choice the input teaches, so nothing about the choice is stored. Which pairs are demonstrated, whether every demonstrated pair must agree, and what a consistent choice is then applied to, are the caller's: a caller that knows a pair but not its direction supplies both orders, and a caller that wants every pair of a chain to agree negates `consistent` over its own demonstration relation.
 
 Code form:
 
@@ -31,8 +31,6 @@ Code form:
 }
 ```
 
-A prediction that reaches an index the second object lacks is not contradicted: the comp reads consistency at the second object's indices.
-
 Why it is lib. The operation is not a property over a domain; it is the structure of a task kind. In a subtask task each input holds the observed data of a task of its own, a demonstrated pair and an object left to complete, and the output is that inner task's test output. The handbook's determination, which keeps the values no example contradicts, runs inside the program on the pair the input carries, and the catalog is the inner task's choice, settled by the demonstration instead of left open. The comp is that inner determination. It stands with `TiebreakResolutions` as what a task kind needs: a comp, a solver-declared type, and solver-file rules, justified together by the kind and not by a count of callers. In the chain callers the input holds a sequence instead of a pair and a remainder: every consecutive pair demonstrates one value, and nothing is held out. The operation is the same.
 
 The catalog may hold distinct rules or one parameter's values; both are the same operation, and in the second the type argument is the parameter's type. Distinct rules are named by a solver-declared ADT, `DemonstratedChoice`, the second solver-declared ADT beside `Choice`:
@@ -41,7 +39,7 @@ The catalog may hold distinct rules or one parameter's values; both are the same
 .type DemonstratedChoice = Extend {} | Span {} | Reflect {}
 ```
 
-The solver-file rules for it, under a section "Demonstrated choice" beside "Alt outputs": the constructors of `DemonstratedChoice` name the rules the input may demonstrate; each rule's prediction is written under its constructor; no parameter stores which rule applies; the choice is derived from the pair it is consistent with. An ADT whose constructors are joined to predictions with no demonstration selecting among them is a disjunction, and is written as one.
+[Demonstrated choice](docs/handbook/solver-file.md#demonstrated-choice) states the solver-file rules for it.
 
 Not: a rule the task's own train pairs fix, which is stored as a parameter; `Choice` cases, which are peer models of one task rather than a catalog the input selects from; a best-match or closest choice, where counterexamples are counted instead of negated; matching by resemblance (`Occurrences`, `D4Map`); `KeyedSetCompare.equals`, which states the exact match of one set against one pattern and stops there; a candidate tested against the one object it then renders, with no second object; a catalog ADT that dispatches a disjunction, with nothing demonstrated.
 

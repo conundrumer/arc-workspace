@@ -185,9 +185,7 @@
 ## Demonstrated choice
 - `DemonstratedChoice` is the `Demonstrated` type argument of a `DemonstrationConsistency` instance.
 - Its constructors name the rules the input may demonstrate.
-- A rule's prediction is the instance's `prediction` relation at that rule's constructor.
-- No parameter stores which rule applies.
-- The program derives the rule that applies to an input from the instance's `consistent` relation, on a demonstrated pair in that input: two of its objects, the second showing what the rule makes of the first.
+- The rule that applies to an input is a rule for which the instance's `consistent` relation holds on a demonstrated pair of that input, and no parameter stores it.
 - An ADT whose constructors are joined to predictions with no demonstration selecting among them is a disjunction, and is written as one.
 
 ## Witness file

@@ -145,10 +145,7 @@
 
 /// The alternatives, the entries of a catalog, whose prediction for the first
 /// object of a demonstrated pair holds the second object's value at every
-/// index of the second object. Each object is an indexed family: its value
-/// at each index. A prediction that reaches an index the second object lacks
-/// is not a counterexample: consistency is read at the second object's
-/// indices.
+/// index of the second object.
 .comp DemonstrationConsistency<Demonstrated, Object, Index, Value> {
     /// Each object's value at each index, total over the object's index set.
     .decl value(o: Object, i: Index, v: Value)  // @input
