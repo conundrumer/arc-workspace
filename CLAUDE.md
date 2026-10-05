@@ -37,7 +37,7 @@
 - Before you launch an agent, read [Launching notes](prompts/agents/notes/launching.md).
 - When the user talks with you and you run no solver pass, read [Changes](prompts/agents/notes/changes.md#changes) before you change the code or the documents.
 - When the user talks with you and an operator of yours runs, file each change as a `change` ticket in place of running it.
-- When the user talks with you and the log of a draft `change` ticket that you did not file holds findings, launch an assignee with that ticket's number.
+- When the user talks with you and the log of a draft `change` ticket that you did not file holds findings, where it is of your session, or has a bare number and this conversation shows your session filed or worked on it, launch an assignee with that ticket's number.
 
 ## Cards
 - When the user requests a card to help make a decision regarding a solver, send a handbook agent and tell it to make one based on [card_spec.py](src/study/card_spec.py).

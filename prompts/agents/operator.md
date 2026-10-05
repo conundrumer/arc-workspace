@@ -32,9 +32,9 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 - Launch an assignee with the tickets a code reviewer filed.
 
 ## Change tickets
-- At launch, release the tickets: move back to `tickets/open/` each ticket under `tickets/assigned/` that has no holder or whose holder has ended, and each ticket under `tickets/blocked/` whose line into `tickets/blocked/` gives `change <n>`, where ticket `<n>` stands under `tickets/closed/` with a resolution other than `fixed`.
+- At launch, release your session's tickets and those main names to you: move back to `tickets/open/` each of them under `tickets/assigned/` that has no holder or whose holder has ended, and each of them under `tickets/blocked/` whose line into `tickets/blocked/` gives `change <number>`, where the ticket with that number stands under `tickets/closed/` with a resolution other than `fixed`.
     - A ticket's holder is the one the `--help` of `log` defines, and it has ended where `uv run python scripts/profile_runs.py --running $CLAUDE_CODE_SESSION_ID` lists neither the holder nor an agent whose parent is the holder.
-- Where your brief or a message from main gives tickets as open, take each `change` under `tickets/open/` whose every `depends-on` ticket stands under `tickets/closed/`, in order of `priority`, highest first and 50 where it gives none, then of number, lowest first, and take again each time a change you took closes.
+- Where your brief or a message from main gives tickets as open, take each `change` of your session under `tickets/open/`, and each one main names to you, whose every `depends-on` ticket stands under `tickets/closed/`, in order of `priority`, highest first and 50 where it gives none, then of number, lowest first, and take again each time a change you took closes.
     - Take a ticket by moving it to `tickets/assigned/`, and leave alone each ticket whose move fails.
 - Run each change you take as [Changes](#changes) gives, with its Intent, Motivation and Scope as the change, and give its number in the brief of each agent that works on it.
 - Where [Changes](#changes) leaves a change unmerged for a decision that goes to the user, move its ticket to `tickets/blocked/`, with a note that opens with `user` and gives the decision, the branch and the worktree.
@@ -52,7 +52,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
         - A step for a `DIFF` line ending in `warm` is `uv run python scripts/gate.py <out> <cmd ...>`, with the commands of that commit's gate in the order its `--help` lists them, up to and including that line's command, and you pass over each line it prints on a command's time. Each other step is `uv run python scripts/gate.py --outputs-only <out> <cmd>`, with that line's command. A step at a commit whose gate has no such command counts as before the change.
         - File a `DIFF` line unbisected where it stands at the recorded commit, where no dependency record stood, or where it ends in `warm` and its step at `master` does not print it, and say which in the ticket.
     5. Release the tickets, as [Change tickets](#change-tickets) gives.
-    6. Launch an assignee with every ticket under `tickets/open/` whose kind is not `change`, other than the `question` tickets filed on a change not yet merged. After the last procedure your brief gives, wait for that assignee to return.
+    6. Launch an assignee with every ticket of your session, and each one main names to you, under `tickets/open/` whose kind is not `change`, other than the `question` tickets filed on a change not yet merged. After the last procedure your brief gives, wait for that assignee to return.
 
 ## Commands
 * inline: notes/commands.md#background-work

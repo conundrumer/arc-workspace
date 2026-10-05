@@ -6,21 +6,27 @@ taken, in any status, must not be replaced."""
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import pytest
+
 from tests.conftest import script
 
 TICKET = "---\nkind: bug\n---\n# t: w\n\n## Impact\ne\n\n## Evidence\nv\n"
 ISSUE = "---\nkind: undecided\n---\n# t: w\n\n## Effect\ne\n\n## Evidence\nv\n"
 
 
-def test_racing_filers_get_distinct_numbers(tmp_path: Path) -> None:
+def test_racing_filers_get_distinct_numbers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     module = script("file_ticket")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "session-a")
+    (tmp_path / "sessions").mkdir()
+    (tmp_path / "sessions" / "2").write_text("session-a\n")
     (tmp_path / "ids").mkdir()
-    (tmp_path / "ids" / "3").touch()
+    (tmp_path / "ids" / "2-3").touch()
     with ThreadPoolExecutor(8) as pool:
         paths = list(pool.map(lambda i: module.file_ticket(
             tmp_path, "agent", "a" + "0" * 16, "code-editor", TICKET + f"{i}\n"), range(16)))
-    numbers = sorted(int(p.name.split("_")[0]) for p in paths)
-    assert numbers == list(range(4, 20))
+    numbers = [module.TICKET_NUMBER.fullmatch(p.name.split("_")[0]) for p in paths]
+    assert {m["session"] for m in numbers} == {"2"}
+    assert sorted(int(m["n"]) for m in numbers) == list(range(4, 20))
     assert sorted(p.name for p in (tmp_path / "open").iterdir()) == sorted(p.name for p in paths)
     assert {p.read_text().split("\n\n## Log\n")[0] for p in paths} == {TICKET + f"{i}" for i in range(16)}
 

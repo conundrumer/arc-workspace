@@ -31,7 +31,7 @@
 - Launch an operator only once the ticket reviewer returns no finding on its brief. Where the ticket reviewer returns findings, revise the draft and send it again.
 - When a ticket reviewer's reply says it ended for its context, launch a new one with that reply and the next draft.
 - When a ticket reviewer that ended for its context replies with drafts it was sent after it ended, give each to the current ticket reviewer, launching one as the line above gives where none has replaced the old one, and send the current ticket reviewer's agent id to each sender that reply gives.
-- When a `change` ticket stands under `tickets/open/`, tell an operator that tickets are open: send that line to a running operator, or launch one with it.
+- When a `change` ticket of your session, or a ticket with a bare number that this conversation shows your session filed or worked on, stands under `tickets/open/`, tell an operator that tickets are open, with the number of each ticket with a bare number that this conversation shows your session filed or worked on and that stands outside `tickets/closed/`: send that line to a running operator, or launch one with it.
 - Give in an operator's launch brief the agent id of the session's ticket reviewer, and the agent id of each operator of this session whose run has ended, by its final reply or by being stopped.
 - Once an operator has returned, send it further work only while a procedure its brief gives is unfinished and its context is under about 300k tokens. Otherwise launch a new operator, and give in its brief that work and the work the old operator's last reply leaves unfinished, each as the operator's description gives a procedure.
 

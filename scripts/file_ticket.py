@@ -2,13 +2,15 @@
 worktree of it, print a ticket's path, and make a ticket's transitions and
 write its log lines. `HELP`, which `--help` prints, says how an agent calls it."""
 
+import fcntl
 import os
 import re
 import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -16,6 +18,13 @@ from pathlib import Path
 from arc.task import task_file
 from controlled_markdown import mctx
 from engine import checkout
+from handbook.paths import importable
+
+# `scripts/` is no package: a test loads this module by its path, with
+# `scripts/` off `sys.path`, and `transcripts` imports from there.
+importable(checkout.scripts())
+
+from transcripts import Refused, find, forked_from  # noqa: E402
 
 HELP = mctx("""
     - Usage:
@@ -31,27 +40,32 @@ HELP = mctx("""
         ```
         ---
         kind: change
-        depends-on: <n>, <n>
+        depends-on: <number>, <number>
         priority: <0 to 100>
         ---
         # <title>{change_sections}
         EOF
         ```
-    - `<domain>` is one of {domains}, and `<subject>` is the id of the thing it names: a task id for `task`, a ticket number for `change` and `ticket`, a commit hash for `commit`, an agent id for `agent`. A `change` takes `change` as `<domain>` and `<namespace>-<short-title>` as `<subject>`, and each `_` in that `<subject>`, as in a namespace name such as `run_dl`, becomes `-`.
+    - `<domain>` is one of {domains}, and `<subject>` is the id of the thing it names: a task id for `task`, a ticket's number for `change` and `ticket`, a commit hash for `commit`, an agent id for `agent`. A `change` takes `change` as `<domain>` and `<namespace>-<short-title>` as `<subject>`, and each `_` in that `<subject>`, as in a namespace name such as `run_dl`, becomes `-`.
     - `<agent>` is your agent's name, which may end in `-<suffix>`. The command refuses a kind your agent may not file, and names the kinds it may.
-    - The command reserves the ticket's number `<n>`, names the ticket `<n>_<domain>_<subject>_<agent>.md`, writes it under `tickets/draft/` for a `change` and `tickets/open/` for any other kind in the main tree, with the filing time in the first line of its `## Log`, and prints the path it wrote.
+    - A ticket's number is `<session>-<n>`: `<session>` is the index of the session that filed it, and `<n>` counts that session's tickets from 1. A ticket filed before a number gave the filing session's index has a bare number, and the command takes either form wherever it takes a number.
+    - Numbers order with every bare number before every `<session>-<n>` number. Bare numbers compare as integers, and `<session>-<n>` numbers compare by `<session>`, then by `<n>`, each as an integer.
+    - The session that files is the one whose id the filing agent's shell holds in `{session_var}`, in a subagent as in the main session. The command refuses a filing where the shell holds none.
+    - A session's index has a file under `tickets/{sessions}/`, named by the index, that holds the session's id. A session forked from another takes the index of the session it was forked from, and the file then holds both ids, one per line.
+    - `uv run python scripts/file_ticket.py index` prints the index of your session.
+    - The command reserves the ticket's number, names the ticket `<number>_<domain>_<subject>_<agent>.md`, writes it under `tickets/draft/` for a `change` and `tickets/open/` for any other kind in the main tree, with the filing time in the first line of its `## Log`, and prints the path it wrote.
     - Run from a worktree, the command files with the main tree's copy of `scripts/file_ticket.py`, and refuses where the main tree has none.
-    - Each `<n>` in `depends-on` is the number of a ticket the track holds.
+    - Each `<number>` in `depends-on` is the number of a ticket the track holds.
     - The command refuses, and writes nothing, where the text on stdin does not have the form above.
-    - `uv run python scripts/file_ticket.py path <n>` prints the path of ticket `<n>`, in whichever status it stands. It takes the name of a ticket filed before tickets had numbers in place of `<n>` too.
-    - `uv run python scripts/file_ticket.py log <n> <status> <agent> --from <current status> [--id <agent id>] [<note>]` makes a transition of ticket `<n>` and writes its log line, or writes a log line that moves nothing, and prints the ticket's path:
+    - `uv run python scripts/file_ticket.py path <number>` prints the path of the ticket with that number, in whichever status it stands. It takes the name of a ticket filed before tickets had numbers in place of `<number>` too.
+    - `uv run python scripts/file_ticket.py log <number> <status> <agent> --from <current status> [--id <agent id>] [<note>]` makes a transition of the ticket with that number and writes its log line, or writes a log line that moves nothing, and prints the ticket's path:
         - `<status>` and `<current status>` are each one of {statuses}. `<current status>` is the status you saw the ticket in.
         - The command refuses, and neither moves nor writes, where the ticket stands in another status than `<current status>`, or where its file moves before the command moves it.
         - Where `<status>` differs from `<current status>`, the command moves the ticket's file to the directory of `<status>`.
         - The command appends `<time> <status> [<agent>]: <note>` to the file's `{log}`, with the time in UTC in the form `{time_form}`, and with `<agent> <agent id>` in the bracket where `--id` gives an agent id. A line with no `<note>` ends at the bracket.
         - An `assigned` line takes, in `--id`, the agent id of the agent that writes it.
         - On a ticket that already stands in `assigned`, the command refuses an `assigned` line unless its `--id` holds the ticket. The holder is the agent id of the last `assigned` line that gives one, in its bracket or as the first word of its note, among the log's final run of `assigned` lines. Where none of them gives one, the ticket has no holder.
-        - The note of a line that moves a ticket into `{blocked}` opens with what the ticket waits on: `{user}`, or `{change} <n>`, with `<n>` the number of a `change` ticket the track holds.
+        - The note of a line that moves a ticket into `{blocked}` opens with what the ticket waits on: `{user}`, or `{change} <number>`, with `<number>` the number of a `change` ticket the track holds.
         - The note of a line that moves a ticket into `closed` opens with its resolution, one of {resolutions}.
         - The command refuses, and neither moves nor writes, where `{log}` is not the file's last section or the note spans more than one line.
     """)
@@ -99,7 +113,14 @@ class Resolution(StrEnum):
 
 IDS = "ids"
 """The directory under `tickets/` that holds one empty file per reserved
-ticket number, named by the bare number."""
+ticket number, named by the number."""
+
+SESSIONS = "sessions"
+"""The directory under `tickets/` that holds one file per reserved session
+index, named by the index, whose lines are the ids of its sessions."""
+
+SESSION_VAR = "CLAUDE_CODE_SESSION_ID"
+"""The variable of an agent's shell that holds its session's id."""
 
 
 class Domain(StrEnum):
@@ -115,7 +136,12 @@ FIELD = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 """A field of a ticket's name: kebab words, with no `_`, which separates
 the fields."""
 
-TICKET_NUMBER = re.compile(r"[1-9]\d*")
+COUNT = re.compile(r"[1-9]\d*")
+"""A session's index, the `<n>` of a ticket's number, or a bare number."""
+
+TICKET_NUMBER = re.compile(rf"(?:(?P<session>{COUNT.pattern})-)?(?P<n>{COUNT.pattern})")
+"""A ticket's number, `<session>-<n>`, or the bare number of a ticket filed
+before a number gave the filing session's index."""
 
 COMMIT = re.compile(r"[0-9a-f]{7,40}")
 
@@ -237,10 +263,6 @@ LEGACY_KINDS = {"undecided": Kind.QUESTION, "gap": Kind.QUESTION}
 NAME_PART = re.compile(r"[^\s/]+")
 
 
-class Refused(Exception):
-    """A call the command does not carry out, with the reason."""
-
-
 def ticked(names: Iterable[str]) -> str:
     return ", ".join(f"`{n}`" for n in names)
 
@@ -303,40 +325,111 @@ def log_line(status: Status, agent: str, agent_id: str | None, note: str | None)
     return f"{line}: {note}\n" if note else f"{line}\n"
 
 
-def reserve(tickets: Path) -> int:
-    """Reserves the next ticket number by an exclusive create of its file
-    under `tickets/ids/`, moving to the next number where another call
-    created that file first."""
+def reserve(tickets: Path, session: int) -> str:
+    """Reserves the next number of a ticket of the session with index
+    `session` by an exclusive create of its file under `tickets/ids/`,
+    moving to the next number where another call created that file
+    first."""
     ids = tickets / IDS
     ids.mkdir(parents=True, exist_ok=True)
-    n = max((int(p.name) for p in ids.iterdir() if TICKET_NUMBER.fullmatch(p.name)), default=0) + 1
+    n = max((int(m["n"]) for p in ids.iterdir()
+             if (m := TICKET_NUMBER.fullmatch(p.name)) and m["session"] == str(session)), default=0) + 1
     while True:
+        number = f"{session}-{n}"
         try:
-            os.close(os.open(ids / str(n), os.O_CREAT | os.O_EXCL | os.O_WRONLY))
-            return n
+            os.close(os.open(ids / number, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            return number
         except FileExistsError:
             n += 1
+
+
+@contextmanager
+def staged(directory: Path, text: str) -> Iterator[Path]:
+    """A file under `directory` that holds `text` whole, for `link_new` to
+    give its names, removed on exit."""
+    directory.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=directory, prefix=".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(text)
+        yield Path(tmp)
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+
+
+def link_new(source: Path, path: Path) -> bool:
+    try:
+        os.link(source, path)
+        return True
+    except FileExistsError:
+        return False
 
 
 def write_new(directory: Path, text: str, names: Iterable[str]) -> Path:
     """Writes `text` under `directory` at the first name `names` yields
     that no file holds, and returns its path. The file appears whole or not
     at all, and an existing file is never replaced."""
-    directory.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=directory, prefix=".", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w") as f:
-            f.write(text)
+    with staged(directory, text) as tmp:
         for name in names:
-            path = directory / name
-            try:
-                os.link(tmp, path)
+            if link_new(tmp, path := directory / name):
                 return path
-            except FileExistsError:
-                continue
         raise AssertionError("`names` ended")
-    finally:
-        Path(tmp).unlink(missing_ok=True)
+
+
+def session_id() -> str:
+    session = os.environ.get(SESSION_VAR)
+    if not session:
+        raise Refused(mctx("the shell holds no session id in `{var}`").format(var=SESSION_VAR))
+    return session
+
+
+def indexes(tickets: Path) -> dict[int, list[str]]:
+    directory = tickets / SESSIONS
+    if not directory.is_dir():
+        return {}
+    return {int(p.name): p.read_text().split() for p in directory.iterdir() if COUNT.fullmatch(p.name)}
+
+
+def indexed(reserved: dict[int, list[str]], session: str) -> int | None:
+    held = [i for i, ids in reserved.items() if session in ids]
+    if len(held) > 1:
+        raise Refused(mctx("session `{session}` has more than one index: {held}").format(
+            session=session, held=ticked(str(i) for i in sorted(held))))
+    return held[0] if held else None
+
+
+def session_index(tickets: Path, session: str) -> int:
+    """The index of the session with id `session`, reserved where it has
+    none: the index of the session it was forked from, with `session`
+    added to that index's file, or else the next index, by a file created
+    whole that holds `session`. Where another call created the file of the
+    index tried first, the call looks again for an index of `session`
+    before it tries the next."""
+    found = indexed(indexes(tickets), session)
+    if found is not None:
+        return found
+    parent = forked_from(find(session))
+    if parent is not None:
+        index = session_index(tickets, parent)
+        add_session(tickets / SESSIONS / str(index), session)
+        return index
+    directory = tickets / SESSIONS
+    with staged(directory, f"{session}\n") as tmp:
+        while True:
+            reserved = indexes(tickets)
+            found = indexed(reserved, session)
+            if found is not None:
+                return found
+            n = max(reserved, default=0) + 1
+            if link_new(tmp, directory / str(n)):
+                return n
+
+
+def add_session(path: Path, session: str) -> None:
+    with path.open("a") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        if session not in path.read_text().split():
+            f.write(f"{session}\n")
 
 
 def check_subject(tickets: Path, domain: Domain, subject: str) -> None:
@@ -359,8 +452,8 @@ def check_subject(tickets: Path, domain: Domain, subject: str) -> None:
 
 
 def file_ticket(tickets: Path, domain: str, subject: str, agent: str, text: str) -> Path:
-    """Writes `text` as ticket `<n>` under its first status and returns its
-    path."""
+    """Writes `text` as a ticket of the agent's session under its first
+    status and returns its path."""
     try:
         dom = Domain(domain)
     except ValueError:
@@ -379,8 +472,8 @@ def file_ticket(tickets: Path, domain: str, subject: str, agent: str, text: str)
     else:
         check_subject(tickets, dom, subject)
     status = Status.DRAFT if kind is Kind.CHANGE else Status.OPEN
-    n = reserve(tickets)
-    name = f"{n}_{dom}_{subject}_{agent}.md"
+    number = reserve(tickets, session_index(tickets, session_id()))
+    name = f"{number}_{dom}_{subject}_{agent}.md"
     return write_new(tickets / status, logged(text, status, agent), [name])
 
 
@@ -436,7 +529,7 @@ def check_wait(tickets: Path, note: str | None) -> None:
     ticket that is no `change`."""
     wait = WAIT.match(note or "")
     if wait is None:
-        raise Refused(mctx("the note of a move into `{blocked}` opens with `{user}` or `{change} <n>`").format(
+        raise Refused(mctx("the note of a move into `{blocked}` opens with `{user}` or `{change} <number>`").format(
             blocked=Status.BLOCKED, user=Wait.USER, change=Wait.CHANGE))
     if wait["change"] is None:
         return
@@ -585,10 +678,10 @@ def filed_in_main(filing: Filing, args: list[str]) -> int | None:
                           env=env).returncode
 
 
-def run(args: Sequence[str | None], help_text: str, count: int, act: Callable[..., Path],
+def run(args: Sequence[str | None], help_text: str, count: int, act: Callable[..., Path | int],
         filing: Filing | None, argv: list[str]) -> int:
     """Runs a command that takes `count` arguments, and stdin where `act`
-    reads it, printing the path `act` returns. A `filing` runs in the main
+    reads it, printing what `act` returns. A `filing` runs in the main
     tree's copy of its script, given `argv`, the call's arguments."""
     if args and args[0] in ("--help", "-h"):
         print(help_text)
@@ -628,9 +721,13 @@ def main(args: list[str]) -> int:
                             change_sections=sections_example(SECTIONS[Kind.CHANGE]),
                             statuses=ticked(Status), log=LOG, time_form=TIME_FORM,
                             resolutions=ticked(Resolution), blocked=Status.BLOCKED,
-                            user=Wait.USER, change=Wait.CHANGE)
+                            user=Wait.USER, change=Wait.CHANGE, session_var=SESSION_VAR,
+                            sessions=SESSIONS)
     if args[:1] == ["path"]:
         return run(args[1:], help_text, 1, lambda ref: ticket_path(main_tickets(), ref), None, args)
+    if args[:1] == ["index"]:
+        return run(args[1:], help_text, 0, lambda: session_index(main_tickets(), session_id()),
+                   TICKET_FILING, args)
     if args[:1] == ["log"]:
         return run(log_args(args[1:]), help_text, 6, lambda *a: write_log(main_tickets(), *a),
                    TICKET_FILING, args)
