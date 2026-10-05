@@ -96,7 +96,7 @@ def test_change_refused_in_a_stack_reaches_master_through_no_other(
     (first / "bad").write_text("bad")
     (second / "good").write_text("good")
 
-    def check(tree: Path, main: Path, touched: set[str]) -> None:
+    def check(tree: Path, main: Path, base: str, touched: set[str]) -> None:
         if (tree / "bad").exists():
             raise merge_change.Refused("bad")
 

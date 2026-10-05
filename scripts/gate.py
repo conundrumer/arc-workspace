@@ -3,7 +3,7 @@ accepted outputs under `tests/gate/accepted/` and the machine's accepted
 times.
 
     uv run python scripts/gate.py <out-dir> [cmd ...]
-    uv run python scripts/gate.py --outputs-only [--affected | --record-deps] [--coverage] <out-dir> [cmd ...]
+    uv run python scripts/gate.py --outputs-only [--affected <base> | --record-deps] [--coverage] <out-dir> [cmd ...]
     uv run python scripts/gate.py --accept [--replace] <out-dir> [cmd ...]
 
 A command runs on the stems its `Command.stems` gives. The stems run in
@@ -60,10 +60,11 @@ dependencies, with the `HEAD` commit, to the dependency record
 (`deps_file`). It runs on a checkout with no change to a tracked file
 against `HEAD`, so that the lines it records are the lines of that commit.
 
-`--affected` runs only the commands the changes since the recorded commit
-can affect, as `affects` decides, and every command where no dependency
-record stands. Its first line names the record and counts the commands it
-runs.
+`--affected` runs only the commands that the change can affect, as
+`affects` decides, and every command where no dependency record stands. The
+change is the difference between the commit `<base>`, which the change
+branched from, and the checkout. Its first line names the record and the
+base, and counts the commands it runs.
 
 Every command reads the solver files from `tests/gate/solvers/` and the
 witness files from `tests/gate/witnesses/`. A command that takes a witness
@@ -505,13 +506,16 @@ def trace(deps_out: Path, cov_out: Path, script: Path, args: Sequence[str]) -> i
 
 @dataclass(frozen=True)
 class Touched:
-    """A path the changes since the recorded commit touch, how they touch
-    it, and, for a modified Python file, the line ranges of its recorded
-    text they replace, each its first line and its count, a count of 0 an
-    insertion after the first line."""
+    """A path the change touches, how it touches it, and, for a modified
+    Python file, the line ranges of its recorded text it replaces, each its
+    first line and its count, a count of 0 an insertion after the first
+    line. `unrecorded` is a Python file that stands at the change's base
+    and not at the recorded commit, whose lines no command's record
+    holds."""
     path: str
     status: checkout.Change
     hunks: tuple[tuple[int, int], ...] = ()
+    unrecorded: bool = False
 
 
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+", re.M)
@@ -523,16 +527,43 @@ def hunks_of(diff: str) -> tuple[tuple[int, int], ...]:
     return tuple((int(a), int(b) if b else 1) for a, b in _HUNK_RE.findall(diff))
 
 
-def touched_since(commit: str) -> list[Touched]:
-    """Each path whose content in the checkout differs from `commit`
-    (`checkout.changed_paths`)."""
+def between(old: str, new: str, *flags: str) -> set[str]:
+    """The paths whose content differs between the commits `old` and `new`,
+    of the statuses that `flags` filter."""
+    return set(filter(None, checkout.git_out(checkout.ROOT, "diff", "--name-only",
+                                             "--no-renames", "-z", *flags, old, new,
+                                             ).split("\0")))
+
+
+def touched_from(base: str, recorded: str) -> list[Touched]:
+    """Each path whose content in the checkout differs from the commit
+    `base` (`checkout.changed_paths`), as the commit `recorded` sees it. A
+    path that stands at `base` and not at `recorded` is `unrecorded` where
+    it is a Python file, and is otherwise added, or deleted where the change
+    deletes it; a path that stands at `recorded` and
+    not at `base` is modified where the change adds it. A modified Python
+    file that differs between the two commits has no hunk, since its hunks
+    number the lines of `base` and not the recorded lines."""
+    moved = between(recorded, base)
+    absent = between(recorded, base, "--diff-filter=A")
+    gone = between(recorded, base, "--diff-filter=D")
     out: list[Touched] = []
-    for c in checkout.changed_paths(checkout.ROOT, commit):
+    for c in checkout.changed_paths(checkout.ROOT, base):
+        status = c.change
+        if c.path in absent:
+            if Path(c.path).suffix in PY_SUFFIXES:
+                out.append(Touched(c.path, status, unrecorded=True))
+                continue
+            if status is not checkout.Change.DELETED:
+                status = checkout.Change.ADDED
+        elif c.path in gone:
+            status = checkout.Change.MODIFIED
         hunks: tuple[tuple[int, int], ...] = ()
-        if c.change is checkout.Change.MODIFIED and Path(c.path).suffix in PY_SUFFIXES:
+        if (status is checkout.Change.MODIFIED and Path(c.path).suffix in PY_SUFFIXES
+                and c.path not in moved):
             hunks = hunks_of(checkout.git_out(checkout.ROOT, "diff", "-U0", "--no-color",
-                                              "--no-ext-diff", commit, "--", c.path))
-        out.append(Touched(c.path, c.change, hunks))
+                                              "--no-ext-diff", base, "--", c.path))
+        out.append(Touched(c.path, status, hunks))
     return out
 
 
@@ -560,7 +591,7 @@ def runs_hunks(source: str, hunks: Sequence[tuple[int, int]], ran: frozenset[int
     imported, so it is run where any line of the file ran. An insertion
     after a function's last line may stand in its body or after it, so it
     is taken to stand after it. A file with no
-    hunk, whose change git shows as no lines, is run where any line ran."""
+    hunk is run where any line ran."""
     if not ran:
         return False
     if not hunks:
@@ -588,11 +619,15 @@ def affects(cmd: GateCommand, stem: str, deps: Deps, touched: Sequence[Touched],
     deletes a file in a directory it listed; and where it changes a Python
     file part of which it runs, as `runs_hunks` decides. A Python file
     affects it through the lines it runs alone (`PY_SUFFIXES`), so a Python
-    file the change adds affects it through the lines that import it."""
+    file the change adds affects it through the lines that import it. An
+    `unrecorded` file affects every command, since the record cannot say
+    which commands run it."""
     accepted = ACCEPTED.relative_to(checkout.ROOT)
     own = {*GATE_READS, *(str(accepted / f"{cmd.key(stem)}.{e}") for e in cmd.exts)}
     copied = [p.relative_to(checkout.ROOT) for p in cmd.copied(stem)]
     for t in touched:
+        if t.unrecorded:
+            return True
         if t.path in own or any(Path(t.path).is_relative_to(p) for p in copied):
             return True
         if Path(t.path).suffix not in PY_SUFFIXES:
@@ -627,23 +662,25 @@ class Record:
         write_whole(path, (json.dumps(body) + "\n").encode())
 
 
-def affected(cmds: Sequence[GateCommand]) -> tuple[set[str], str]:
-    """The keys of `cmds` on their stems that the changes since the
-    recorded commit can affect, each key with no dependency record among
-    them, and the first line `--affected` prints."""
+def affected(cmds: Sequence[GateCommand], base: str) -> tuple[set[str], str]:
+    """The keys of `cmds` on their stems that the change from the commit
+    `base` can affect, each key with no dependency record among them, and
+    the first line `--affected` prints."""
     keys = keys_of(cmds)
     path = deps_file()
     if not path.exists():
         return keys, mctx("affected: no dependency record stands at {path}, so every one of "
                           "the {n} commands runs").format(path=path, n=len(keys))
     record = Record.read(path)
-    touched = touched_since(record.commit)
+    touched = touched_from(base, record.commit)
     recorded = {t.path: checkout.git_out(checkout.ROOT, "show", f"{record.commit}:{t.path}")
-                for t in touched if Path(t.path).suffix in PY_SUFFIXES and not t.status.added}
+                for t in touched if Path(t.path).suffix in PY_SUFFIXES
+                and not (t.status.added or t.unrecorded)}
     run = {k for c in cmds for s in c.stems for k in [c.key(s)]
            if k not in record.deps or affects(c, s, record.deps[k], touched, recorded)}
     return run, mctx("affected: {run} of the {n} commands run, by the dependency record of "
-                     "{commit}").format(run=len(run), n=len(keys), commit=record.commit[:12])
+                     "{commit} and the change from {base}").format(
+        run=len(run), n=len(keys), commit=record.commit[:12], base=base)
 
 
 class Gate:
@@ -861,9 +898,9 @@ def main(argv: Sequence[str]) -> int:
     ap.add_argument("--outputs-only", action="store_true",
                     help="run the cold pass alone and compare its outputs, judging no time")
     picked = ap.add_mutually_exclusive_group()
-    picked.add_argument("--affected", action="store_true",
-                        help="with --outputs-only, run only the commands the changes since "
-                             "the dependency record can affect")
+    picked.add_argument("--affected", metavar="BASE",
+                        help="with --outputs-only, run only the commands that the change "
+                             "from the commit BASE, which it branched from, can affect")
     picked.add_argument("--record-deps", action="store_true",
                         help="with --outputs-only, trace every command and write the "
                              "dependency record")
@@ -877,7 +914,7 @@ def main(argv: Sequence[str]) -> int:
         ap.error("--replace is given without --accept")
     if a.accept and a.outputs_only:
         ap.error("--accept writes the cold times, which --outputs-only does not judge")
-    if (a.affected or a.record_deps or a.coverage) and not a.outputs_only:
+    if (a.affected is not None or a.record_deps or a.coverage) and not a.outputs_only:
         ap.error(mctx("--affected, --record-deps and --coverage each run a part or a trace "
                       "of the sequence, whose times do not compare, so each needs "
                       "--outputs-only"))
@@ -894,8 +931,8 @@ def main(argv: Sequence[str]) -> int:
     gate = Gate(a.out, a.accepted.resolve(), timed=not a.outputs_only,
                 traced=a.record_deps or a.coverage)
     keys = keys_of(cmds)
-    if a.affected:
-        keys, said = affected(cmds)
+    if a.affected is not None:
+        keys, said = affected(cmds, a.affected)
         print(said, flush=True)
     if a.accept:
         if gate.dir.exists():

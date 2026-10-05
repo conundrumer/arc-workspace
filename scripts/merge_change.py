@@ -17,7 +17,7 @@ commits its branch records, and runs the checks there, on the changes as
 they will merge:
 
     uv run python -m controlled_markdown check     always
-    uv run python scripts/gate.py --outputs-only --affected <out>
+    uv run python scripts/gate.py --outputs-only --affected <base> <out>
                                                    always
     uv run pyright                                 where a change touches
     uv run pytest -q                               a path whose content
@@ -28,7 +28,8 @@ names every check that fails. The paths whose content the results of
 pyright and pytest can depend on are those under src/, scripts/, tests/
 and data/tasks/, those `cli.common.SOURCES` matches, pyproject.toml and
 uv.lock. The gate's dependency record decides which of its commands a
-change affects, so the gate runs on every change. It writes into a new
+change affects, so the gate runs on every change, with `<base>` the
+`master` commit the stack is rebased onto. It writes into a new
 temporary directory, which a failing gate names. Its `--help` says which
 commands `--affected` runs and how the gate's times are judged.
 
@@ -201,11 +202,12 @@ def code_paths(tree: Path, main: Path, touched: set[str]) -> set[str]:
             or any(p.startswith(f"{d}/") for d in CODE_DIRS)}
 
 
-def check(tree: Path, main: Path, touched: set[str]) -> None:
-    """Run in `tree` the checks of changes that touch `touched`, or refuse."""
+def check(tree: Path, main: Path, base: str, touched: set[str]) -> None:
+    """Run in `tree` the checks of changes from the commit `base` that touch
+    `touched`, or refuse."""
     gate_out = tempfile.mkdtemp(prefix="merge-change-gate-")
     gate = Check(("uv", "run", "python", "scripts/gate.py", "--outputs-only", "--affected",
-                  gate_out))
+                  base, gate_out))
     code = ([Check(("uv", "run", "pyright")), Check(("uv", "run", "pytest", "-q"))]
             if code_paths(tree, main, touched) else [])
     run_checks(tree, [MARKDOWN_CHECK, gate, *code])
@@ -392,7 +394,7 @@ def stack(main: Path, changes: Sequence[Change]) -> None:
     """Rebase the branches of `changes`, in order, onto `MASTER` as one
     stack, and run the checks on its top, or refuse. A refusal leaves each
     branch at `committed`."""
-    onto = checkout.git_out(main, "rev-parse", MASTER).strip()
+    base = onto = checkout.git_out(main, "rev-parse", MASTER).strip()
     names = [MASTER, *(c.branch for c in changes[:-1])]
     try:
         for c, onto_name in zip(changes, names, strict=True):
@@ -400,7 +402,7 @@ def stack(main: Path, changes: Sequence[Change]) -> None:
             onto = checkout.git_out(c.worktree, "rev-parse", "HEAD").strip()
         top = changes[-1].worktree
         set_up_submodules(top, main)
-        check(top, main, touched_by(changes))
+        check(top, main, base, touched_by(changes))
     except Refused:
         for c in changes:
             unstack(c)
@@ -428,7 +430,7 @@ def merge_alone(main: Path, change: Change) -> None:
     rebase(change, onto, MASTER, restore=True)
     try:
         set_up_submodules(change.worktree, main)
-        check(change.worktree, main, set(change.touched))
+        check(change.worktree, main, onto, set(change.touched))
     except Refused as exc:
         checkout.git_out(change.worktree, "reset", "-q", "--mixed", onto)
         raise Refused(f"{exc}\n{change.branch} is moved back to {MASTER}'s commit "
