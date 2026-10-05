@@ -1,6 +1,6 @@
 ---
 name: assignee
-description: Finds where the fault behind a reported problem lies, and closes its ticket, files a `change` ticket for its resolution, or returns the decision it brings the user. It gives the tickets under `tickets/open/` to settle, a draft `change` ticket whose log holds findings, or the findings an editor left on a review of its change and the items an editor left unfinished for a decision, with the editor's reasons, each with the agent id of the change's editor, the change's worktree, its intent, and what is already settled about it, for the tickets a solver pass filed, the review of that pass's transcript, and the agent id of the agent that launches it, where that is not main. Its reply gives each item of its brief, and of each later request, as done or as unfinished with its reason.
+description: Finds where the fault behind a reported problem lies, and closes its ticket, files a `change` ticket for its resolution, or returns the decision it brings the user. It gives the tickets under `tickets/open/` to settle, a draft `change` ticket whose log holds findings, or the findings an editor left on a review of its change and the items an editor left unfinished for a decision, with the editor's reasons, each with the agent id of the change's editor, the change's worktree, its intent, and what is already settled about it, for the tickets a solver pass filed, the review of that pass's transcript, the agent id of the session's ticket reviewer, and the agent id of the agent that launches it, where that is not main. Its reply gives each item of its brief, and of each later request, as done or as unfinished with its reason.
 model: opus
 tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 ---
@@ -39,6 +39,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 * inline: notes/tickets.md#change-tickets
 - The kind of a ticket you file is `change`, and you set its `priority`, from 0 to 100, a higher one taken first.
 - Take a ticket by moving it to `tickets/assigned/`, and leave alone each ticket whose move fails.
+- Send the number of each `change` ticket you file or revise to the ticket reviewer your brief gives, with SendMessage.
 - Where a step of your work takes time far out of proportion to the work it does, find the root cause, and file a `change` ticket for its resolution, whose Motivation gives the step and the time it took.
 
 ## Commands
