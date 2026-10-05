@@ -34,8 +34,8 @@
 - A later message may add a request to the change, in the form your brief gives one, and that request is part of what the change is to do.
 
 ## worktree-isolation
-- The harness may refuse a compound Bash command that writes a file through a heredoc or runs `printf` with a computed format. Write such a file with the Write or Edit tool, and run the rest of the command in a Bash call of its own.
-    * comment: The refusal message reaches an agent only after the refused call. Without this line, code editor `a16cb9e50afdd6691` had five such commands refused and retried each split: issue `1791218737-a16cb9e50afdd6691-transcript-review-3`.
+- The harness may refuse a compound Bash command that it cannot verify runs git only inside the worktree, such as one that writes a file through a heredoc, runs `printf` with a computed format, or runs git inside a command substitution. Write such a file with the Write or Edit tool, run such a git call as a simple command in a Bash call of its own, and run the rest of the command in a Bash call of its own.
+    * comment: The refusal message reaches an agent only after the refused call. Without this line, code editor `a16cb9e50afdd6691` had five such commands refused and retried each split: issue `1791218737-a16cb9e50afdd6691-transcript-review-3`. With only the heredoc and `printf` forms named, doc editor `a0c48e5b4d30194d1` had a command with git inside a command substitution refused and split it: issue `1791220161-a0c48e5b4d30194d1-transcript-review-1`. The forms after "such as" stay because a reader cannot tell from the condition alone which commands the harness cannot verify.
 
 ## budget
 - Do each step your documents give, and finish the work, even where it runs past the budget a `Budget: N minutes` line of your brief or a later message gives.
