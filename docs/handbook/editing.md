@@ -96,7 +96,8 @@
 - The `context` output leaves out [arc-workspace](CLAUDE.md), each `comment` directive with the lines under it, and the system reminders [workers.py](tools/console/solver_console/workers.py) prefixes to a console message.
 - The reader of a comment is the editor of its file, whose context is the `context agent doc-editor` output, then that file with its comments.
 - Review a change by reading each context that contains the changed lines, from its entry point to the end, as the reader of that context.
-    - Read the `context` output for that reader, with [arc-workspace](CLAUDE.md), and judge each line as a reader that has only that context.
+    - `uv run python scripts/context.py contexts --diff <commit>`, with `git merge-base HEAD master` as the commit, lists the readers of those contexts.
+    - Read the `context` output for each reader that listing gives, other than one it marks `(removed)`, with [arc-workspace](CLAUDE.md), and judge each line as a reader that has only that context.
     - Follow the reader through each operation its context gives, in order. At each operation, ask what the reader is focused on, what it holds, where each output it makes goes (a file, its report, or its reply), and whether the context gives what the operation needs.
     - Where one pass takes another pass's output, check that the form the first pass's context gives that output is the form the second pass's context reads.
     - Check each line against every rule that this document, [Writing a document](src/controlled_markdown/writing.md) and [Templating a document](src/controlled_markdown/templating.md) give a line.
@@ -109,7 +110,7 @@
     - After each fix, read the contexts the fix touches again for contradictions.
 - Find each line of the document set or of prose in code, outside the change, whose premise the change makes false, read it in each of its readers' contexts, and report each that no longer stands.
 - For each line the change cuts or moves in a document, or drops from a render, check that every reader whose context contained that line still gets what it said, and report each reader that loses a meaning.
-- Run `uv run python scripts/context.py context --diff HEAD <reader> [args]` for each context rendered from a document the change edits. Read the diff for the lines that reader lost, and judge each line it gained against the operations that reader's context gives it.
+- Run `uv run python scripts/context.py context --diff <commit> <reader> [args]` for each reader that `contexts --diff` lists, with the commit it took. Read the diff for the lines that reader lost, and judge each line it gained against the operations that reader's context gives it.
     - Report each gained line that does not fit those operations. Where the change's intent puts that line on that reader, report it to the one who asked for the change.
         * comment: On 2026-10-04, in session `dc433af1-cf87-408d-ab9d-9a1ede6b1b2a`, the doc-reviewer `a628be02072210fa7` read the whole context of [Operator](prompts/agents/operator.md), judged the foreground command rule it gained against the change's scope, "the agents that run commands", and did not report that the rule does not fit an agent that launches agents. On 2026-10-05, the operator `a37be74e20c8008ae` polled up to 10 minutes on a backgrounded merge.
 - Report nothing on a decision the one who asked for the change gives as already settled. A meaning that carrying out that decision drops for a reader, other than one the decision states, is a finding.

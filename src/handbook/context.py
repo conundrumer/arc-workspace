@@ -26,7 +26,9 @@ import sys
 import tarfile
 import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum, StrEnum
 from engine.memo import kept_recent
@@ -1501,6 +1503,18 @@ CONTEXT_READERS = {
 """Each reader the `context` command knows, by name."""
 
 
+def reader_calls() -> list[tuple[str, list[str]]]:
+    """Each reader the `context` command knows, with each argument list it
+    takes."""
+    calls: list[tuple[str, list[str]]] = []
+    for name, reader in CONTEXT_READERS.items():
+        if reader.form:
+            calls += [(name, [value]) for value in reader.values(DOCUMENTS_ROOT)]
+        else:
+            calls.append((name, []))
+    return calls
+
+
 def contexts_text() -> str:
     """Every reader the `context` command knows, one per line: its name, its
     argument form, and the values that argument takes."""
@@ -1531,10 +1545,15 @@ CONTEXT_SCRIPT = (checkout.scripts() / "context.py").relative_to(checkout.ROOT)
 """The command that prints a reader's context, from a checkout's root."""
 
 
-def context_at(commit: str, reader: str, args: list[str]) -> str:
-    """One reader's whole context as the tree of `commit` renders it, with
-    that tree's own code. The tree is written to a temporary directory, so
-    that the checkout stays as it is."""
+def _command(reader: str, args: list[str]) -> str:
+    """The `context` command line that prints one reader's context."""
+    return " ".join(["context", reader, *args])
+
+
+@contextmanager
+def _tree_at(commit: str) -> Iterator[Path]:
+    """The tree of `commit`, written to a temporary directory, so that the
+    checkout stays as it is."""
     try:
         archived = checkout.git_bytes(REPO_ROOT, "archive", "--format=tar", commit)
     except checkout.GitFailed as e:
@@ -1543,23 +1562,114 @@ def context_at(commit: str, reader: str, args: list[str]) -> str:
         tree = Path(tmp)
         with tarfile.open(fileobj=io.BytesIO(archived)) as tar:
             tar.extractall(tree, filter="data")
-        paths = [str(tree / "src"), os.environ.get("PYTHONPATH", "")]
-        env = {**os.environ, "PYTHONPATH": os.pathsep.join(p for p in paths if p)}
-        done = subprocess.run(
-            [sys.executable, str(tree / CONTEXT_SCRIPT), "context", reader, *args],
-            cwd=tree, env=env, capture_output=True, text=True)
+        yield tree
+
+
+def _run_in(tree: Path, commit: str, argv: list[str]) -> str:
+    """The output of `scripts/context.py` with `argv`, run in `tree`, the
+    tree of `commit`, with that tree's own code."""
+    paths = [str(tree / "src"), os.environ.get("PYTHONPATH", "")]
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(p for p in paths if p)}
+    done = subprocess.run([sys.executable, str(tree / CONTEXT_SCRIPT), *argv],
+                          cwd=tree, env=env, capture_output=True, text=True)
     if done.returncode != 0:
-        failed = mctx("The render at {commit} failed.").format(commit=commit)
+        failed = mctx("The run of `{command}` at {commit} failed.").format(
+            command=" ".join(argv), commit=commit)
         raise SystemExit(f"{failed}\n{done.stderr.strip()}")
     return done.stdout
+
+
+def _render_in(tree: Path, commit: str, reader: str, args: list[str]) -> str:
+    """One reader's whole context as `tree`, the tree of `commit`, renders
+    it."""
+    return _run_in(tree, commit, ["context", reader, *args])
+
+
+def context_at(commit: str, reader: str, args: list[str]) -> str:
+    """One reader's whole context as the tree of `commit` renders it, with
+    that tree's own code (`_tree_at`)."""
+    with _tree_at(commit) as tree:
+        return _render_in(tree, commit, reader, args)
 
 
 def context_diff(commit: str, reader: str, args: list[str]) -> str:
     """The unified diff from one reader's context at `commit`, as
     `context_at` renders it, to its context in the checkout. Empty where
-    the two are the same."""
-    head = " ".join(["context", reader, *args])
+    the two are the same. A side that does not define the reader, as
+    `contexts_diff` finds it, gives an empty context, so the diff of an
+    added reader gains every line and that of a removed one loses every
+    line. A reader neither side defines, and a render that fails, are
+    faults."""
+    call = (reader, args)
+    with _tree_at(commit) as tree:
+        then = call in _calls_in(tree, commit)
+        before = _render_in(tree, commit, reader, args) if then else ""
+    now = call in reader_calls()
+    after = context_text(reader, args) if now or not then else ""
+    head = _command(reader, args)
     return "".join(difflib.unified_diff(
-        context_at(commit, reader, args).splitlines(keepends=True),
-        context_text(reader, args).splitlines(keepends=True),
+        before.splitlines(keepends=True), after.splitlines(keepends=True),
         fromfile=f"{head} at {commit}", tofile=head))
+
+
+CONTEXTS_LINE_RE = re.compile(r"context (\S+)(?: (<[^>]*>))? *(.*)")
+"""A line of `contexts_text`: the reader, its argument form, and the values
+that argument takes."""
+
+
+def _calls_in(tree: Path, commit: str) -> list[tuple[str, list[str]]]:
+    """Each reader the `context` command of `tree`, the tree of `commit`,
+    knows, with each argument list it takes, read from that tree's
+    `contexts` output, the one form a commit's own code is known to
+    give them in."""
+    calls: list[tuple[str, list[str]]] = []
+    for line in _run_in(tree, commit, ["contexts"]).splitlines():
+        match = CONTEXTS_LINE_RE.fullmatch(line)
+        if not match:
+            raise SystemExit(mctx("A line of `contexts` at {commit} is not a "
+                                  "reader: {line}").format(commit=commit, line=line))
+        name, form, values = match.groups()
+        if form:
+            calls += [(name, [v]) for v in values.split(", ") if v]
+        else:
+            calls.append((name, []))
+    return calls
+
+
+class ReaderChange(StrEnum):
+    """How a change alters a reader's context: only the checkout defines
+    the reader, only the commit does, or both do and its contexts
+    differ."""
+
+    ADDED = "added"
+    REMOVED = "removed"
+    CHANGED = "changed"
+
+
+def contexts_diff(commit: str) -> str:
+    """Each reader, with its arguments, whose context the change since
+    `commit` alters, one per line, marked with its `ReaderChange` where
+    only one side defines it. A reader both sides define is altered where
+    its context at `commit`, as `context_at` renders it, differs from its
+    context in the checkout; a render at `commit` that fails is a fault.
+    The checkout's readers come first, in `reader_calls` order, then the
+    ones only the commit defines."""
+    now = reader_calls()
+    with _tree_at(commit) as tree:
+        then = _calls_in(tree, commit)
+        both = [c for c in now if c in then]
+        with ThreadPoolExecutor() as pool:
+            befores = list(pool.map(lambda c: _render_in(tree, commit, *c), both))
+    rendered = {_command(*c): before for c, before in zip(both, befores, strict=True)}
+    changes = [(c, ReaderChange.ADDED if c not in then else ReaderChange.CHANGED)
+               for c in now]
+    changes += [(c, ReaderChange.REMOVED) for c in then if c not in now]
+    out = []
+    for (reader, args), change in changes:
+        command = _command(reader, args)
+        if change is ReaderChange.CHANGED:
+            if rendered[command] != context_text(reader, args):
+                out.append(f"{command}\n")
+        else:
+            out.append(f"{command} ({change})\n")
+    return "".join(out)
