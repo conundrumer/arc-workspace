@@ -17,12 +17,18 @@ from pathlib import Path
 from typing import Any
 
 from controlled_markdown import mctx
+from engine import checkout
 from handbook.paths import console_importable
 
 console_importable()
+# `scripts/` is no package: a test loads this module by its path, with
+# `scripts/` off `sys.path`, and `file_issue` imports from there.
+if str(checkout.scripts()) not in sys.path:
+    sys.path.insert(0, str(checkout.scripts()))
 
 from cli import command_args  # noqa: E402
 from cli.parser import parser as run_dl_parser  # noqa: E402
+from file_issue import FORM as ISSUE_FORM  # noqa: E402
 from quota import epoch  # noqa: E402
 from solver_console import config  # noqa: E402
 
@@ -57,12 +63,20 @@ HELP = mctx("""
         - With `--since DATE`, an ISO date or datetime read in local time where it gives no offset, the window is the runs whose first entry is at or after DATE. Where the window holds at least {window_runs} runs of the type, the median is taken over them.
         - Otherwise it is taken over the type's runs whose `waits` and `idle` together are under {low_wait_pct}% of wall time. A type with no such run gets no budget, and an `undecided` line on stderr names it.
     - `--running ID` lists the running agents under the run ID, where ID is a session id or an agent id: the agents the run launched, the agents those launched, and so on, whether or not their launcher has completed. An agent has completed when its turn has ended, when its last entry is the harness's note that the user interrupted it, or when its launcher has its result or a notification of it and its transcript has not changed since. The agents are listed in launch order, each launcher's agents after it. In an agent's shell, `$CLAUDE_CODE_SESSION_ID` holds the id of the top-level session, in a subagent as well, so `--running $CLAUDE_CODE_SESSION_ID` lists the running agents of the whole session. For each agent it prints:
-        - its agent id, type and launch description, its parent, which is the agent id of its launcher or `main`, the time since its first entry, and its context size in tokens, which is the input of its last request;
+        - its agent id, type and launch description, its parent, which is the agent id of its launcher or `main`, the time since its first entry, its active time and its budget, and its context size in tokens, which is the input of its last request;
+        - its working directory, as its first entry gives it;
         - its last text output, the end of the text of its last assistant entry that gives text;
         - each call it has in flight, with its label, its command and the time since the call;
         - each command or agent it backgrounded that is still running, with its label, its command and the time since the call;
         - its last {recent} calls in order, each with its label, its command and its duration, or `pending`.
-    - A call's command and an agent's text output are printed on one line, a command cut to its first {width} characters and a text output to its last {width}. A call's command is the command of a Bash call, the description of an Agent call, and for any other call nothing past its label.
+    - A running agent's active time is its wall time less `idle`, with its wall time running to now. Its budget is the N of a line of its brief, the messages its first turn answers, of the form `Budget: N minutes`. An agent whose brief has no line that opens with `Budget:` gets no budget. A brief line that opens with `Budget:` in another form, a brief with lines of more than one N, and a later message with a line that opens with `Budget:` give no budget, and an `undecided` line on stderr names each.
+    - A call's command and an agent's text output are printed on one line, a command cut to its first {width} characters and a text output to its last {width}. A call's command is:
+        - for a Bash call, its command, led by the kind of each issue it files, as `kind K:`;
+        - for an Agent call, its description;
+        - for a Write, Edit or NotebookEdit call, the path of the file it writes;
+        - for a SendMessage call, its recipient, as `to R:`, and its message;
+        - for a SubagentHandback call, its message;
+        - for any other call, nothing past its label.
     - A run whose agent type is unknown is refused, and so is an ID that names transcripts that differ. A call whose agent type is unknown is labelled `agent ?`, and a Bash call with no command is labelled `shell`; an `undecided` line on stderr names each.
     """).format(factor=BUDGET_FACTOR, window_runs=WINDOW_RUNS,
                 low_wait_pct=LOW_WAIT_PCT, recent=RECENT_CALLS,
@@ -80,6 +94,11 @@ type Key = tuple[Part, str]
 type Entry = dict[str, Any]
 
 MAIN = "main"
+WRITE_TOOLS = ("Write", "Edit", "NotebookEdit")
+# A brief line that states a budget, and the opening of a line that words one.
+BUDGET_LINE = re.compile(r"Budget: (\d+(?:\.\d+)?) minutes\.?")
+BUDGET_OPENING = re.compile(r"budget\s*:", re.I)
+LIST_MARKER = re.compile(r"^\s*(?:[-*+]|\d+[.)])?\s*")
 WAIT_TOOLS = ("Monitor", "TaskOutput")
 AGENT_TOOLS = ("Agent", "Task")
 KNOWN = {"gate.py": "gate", "merge_change.py": "merge_change.py",
@@ -150,10 +169,21 @@ class Run:
     ended: bool
     context: int | None
     said: str | None
+    # The text of the messages each turn answers, the brief first.
+    prompts: list[str]
+    cwd: str | None
 
     @property
     def active(self) -> float:
         return self.wall - self.parts[Part.IDLE]
+
+    def active_at(self, now: float) -> float | None:
+        """The active time of a run whose turn has not ended, to `now`:
+        the time since its last entry goes to a pending call or to the
+        model, so it is active. None where its start is unknown."""
+        if self.start is None:
+            return None
+        return self.active + max(0.0, now - (self.start + self.wall))
 
     @property
     def low_wait(self) -> bool:
@@ -415,13 +445,21 @@ def command_label(cmd: str) -> str:
 # Profiles.
 
 def call_command(block: dict[str, Any]) -> str:
-    """The command of a call: a Bash call's command, an Agent call's
-    description, and for any other call none."""
+    """The command of a call, as HELP gives it."""
     name, inp = block.get("name"), block.get("input") or {}
     if name == "Bash":
-        return str(inp.get("command", ""))
+        command = str(inp.get("command", ""))
+        kinds = "".join(f"kind {m.group('kind')}: "
+                        for m in ISSUE_FORM.finditer(command))
+        return kinds + command
     if name in AGENT_TOOLS:
         return str(inp.get("description", ""))
+    if name in WRITE_TOOLS:
+        return str(inp.get("file_path") or inp.get("notebook_path") or "")
+    if name == "SendMessage":
+        return f"to {inp.get('to', '?')}: {inp.get('message', '')}"
+    if name == "SubagentHandback":
+        return str(inp.get("message", ""))
     return ""
 
 
@@ -537,12 +575,17 @@ def turns(entries: list[Entry]) -> tuple[set[int], set[int]]:
     return starts, ends
 
 
-def notified(entry: Entry) -> list[str]:
+def message_text(entry: Entry) -> str:
+    """The text of a user entry, or of a message queued while the model
+    worked."""
     if entry.get("type") == "attachment":
         a = entry.get("attachment") or {}
-        text = text_of(a.get("prompt")) if a.get("type") == "queued_command" else ""
-    else:
-        text = text_of((entry.get("message") or {}).get("content"))
+        return text_of(a.get("prompt")) if a.get("type") == "queued_command" else ""
+    return text_of((entry.get("message") or {}).get("content"))
+
+
+def notified(entry: Entry) -> list[str]:
+    text = message_text(entry)
     return [v for body in NOTIFICATION.findall(text) for _, v in TAG.findall(body)]
 
 
@@ -634,6 +677,15 @@ def profile(path: Path, undecided: list[str]) -> Run:
     interrupted = any(e.get("type") == "user" and text_of(
         (e.get("message") or {}).get("content")).startswith(INTERRUPTED)
         for e in last_message)
+    prompts: list[str] = []
+    asked: list[str] = []
+    for i, e in enumerate(entries):
+        if is_prompt(e):
+            asked.append(message_text(e))
+        if i in starts:
+            prompts.append("\n".join(asked))
+            asked = []
+    cwd = next((e["cwd"] for e in entries if e.get("cwd")), None)
     in_flight = [spans[tid] for tid in pending if tid in spans]
     backgrounded = [spans[tid] for tid in running if tid in spans]
     for k, start in running.values():
@@ -644,7 +696,8 @@ def profile(path: Path, undecided: list[str]) -> Run:
                               "is unknown").format(run=label))
     return Run(label, agent_type, description, first, wall, parts,
                {k: g for k, g in groups.items() if g.time or g.calls},
-               list(spans.values()), in_flight, backgrounded, idle or interrupted, context, said)
+               list(spans.values()), in_flight, backgrounded, idle or interrupted, context, said,
+               prompts, cwd)
 
 
 # Output.
@@ -830,17 +883,57 @@ def one_line(text: str, tail: bool = False) -> str:
     return line[:COMMAND_WIDTH - 3] + "..."
 
 
+def budget_openings(text: str) -> list[str]:
+    """The lines of `text` that open with `Budget:`, past a list marker."""
+    lines = (LIST_MARKER.sub("", line).strip() for line in text.splitlines())
+    return [line for line in lines if BUDGET_OPENING.match(line)]
+
+
+def stated_budget(r: Run, undecided: list[str]) -> float | None:
+    """The budget in minutes that the brief of `r` states, as HELP gives
+    it, or None."""
+    if not r.prompts:
+        return None
+    stated: set[float] = set()
+    for line in budget_openings(r.prompts[0]):
+        m = BUDGET_LINE.fullmatch(line)
+        if m:
+            stated.add(float(m.group(1)))
+        else:
+            undecided.append(mctx("{run}: the brief line `{line}` is not of the "
+                                  "form `Budget: N minutes`, so it gives no "
+                                  "budget").format(run=r.label, line=line))
+    later = [line for text in r.prompts[1:] for line in budget_openings(text)]
+    for line in later:
+        undecided.append(mctx("{run}: a later message gives the line `{line}`, "
+                              "so the run has no budget").format(run=r.label, line=line))
+    if len(stated) > 1:
+        undecided.append(mctx("{run}: the brief states more than one budget, "
+                              "{values}, so it has no budget").format(
+            run=r.label, values=", ".join(f"{v:g}" for v in sorted(stated))))
+    if len(stated) != 1 or later:
+        return None
+    return next(iter(stated))
+
+
 def print_span(m: Span, time_text: str) -> None:
     command = f": {one_line(m.command)}" if m.command else ""
     print(f"    {time_text:>8}  {m.label}{command}")
 
 
-def print_running(runs: list[tuple[str, Run]], now: float) -> None:
+def print_running(runs: list[tuple[str, Run]], now: float,
+                  undecided: list[str]) -> None:
     for parent, r in runs:
         since = minutes(now - r.start) if r.start is not None else "?"
+        active_time = r.active_at(now)
+        active = minutes(active_time) if active_time is not None else "?"
+        budget = stated_budget(r, undecided)
+        of_budget = f" of budget {minutes(budget * 60)}" if budget is not None else ""
         context = f"{r.context:,}" if r.context is not None else "?"
         print(f"{r.label} {r.agent_type}  parent {parent}  {since}  "
+              f"active {active}{of_budget}  "
               f"context {context} tokens: {r.description}")
+        print(f"  cwd: {r.cwd or '?'}")
         print(f"  said: {one_line(r.said, tail=True) if r.said is not None else '-'}")
         for title, spans in (("in flight", r.in_flight), ("running", r.backgrounded)):
             if spans:
@@ -897,7 +990,7 @@ def main(argv: list[str]) -> int:
         print(mctx("refused: {reason}").format(reason=e), file=sys.stderr)
         return 2
     if args.running:
-        print_running(listed, time.time())
+        print_running(listed, time.time(), undecided)
     elif not runs:
         print(mctx("refused: no run to profile"), file=sys.stderr)
         return 2

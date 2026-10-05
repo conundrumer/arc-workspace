@@ -36,7 +36,7 @@ HELP = mctx("""
 STATUSES = ("new", "assigned", "resolved")
 """The directories under `issues/` that an issue's file moves between."""
 
-FORM = re.compile(r"---\nkind: \S+\n---\n# .+: .+\n\n## Effect\n(?:.*\n)*## Evidence(?:\n|$)")
+FORM = re.compile(r"---\nkind: (?P<kind>\S+)\n---\n# .+: .+\n\n## Effect\n(?:.*\n)*## Evidence(?:\n|$)")
 """The front matter, title and sections an issue opens with."""
 
 NAME_PART = re.compile(r"[^\s/]+")
