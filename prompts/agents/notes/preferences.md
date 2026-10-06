@@ -128,6 +128,8 @@
     > Resume I mean. Usage limit was hit
 - The Create and Refine passes read the full lib interface up front by a conscious decision.
     > it was a conscious decision to load  the full lib interface up front
+- The user is told each change that affects the user directly.
+    > things that affect my CC sesions. or just anything that affect me directly?
 - A session the user launches with the handbook appended is intentional, and its cost is not waste.
     > i intentionally launched a handbook session bc i wanted to talk about things that rely on the handbook being in context.
 

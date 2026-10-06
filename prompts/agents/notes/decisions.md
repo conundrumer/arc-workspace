@@ -49,7 +49,12 @@
 - Bring the user a decision only where every option, after you reframe the problem, still has a defensible reason against it.
     - Give one line per option, the default first, with the option's consequence for the rungs, and where a rung is judged by reading solver code, that solver's code before and after.
     - Where the user does not rule on the decision, carry out its default.
-- Tell the user each change to what the user reads or judges, without waiting on them: solver code, a concept an Analyze pass wrote, [Principles](docs/handbook/principles.md), and a document or a brief the user reads. Give each change in one line, with the solver's code before and after where the user judges it by that code.
+- Tell the user, without waiting on them, each change that affects the user directly, in one line, with the solver's code before and after where the user judges it by that code. A change affects the user directly where it does one of these:
+    - It changes what the user reads, judges or uses. The user judges solver code, a concept an Analyze pass wrote and [Principles](docs/handbook/principles.md).
+    - It changes how the user's own Claude Code sessions behave.
+    - It changes what the user must learn or do.
+    - It moves or loses a persistent working file, or rewrites git history.
+    - It clearly moves token or rate-limit use, machine load, or the time the process takes.
 - Bring the user nothing else unless the user asks for it.
 
 ### The user's preferences
