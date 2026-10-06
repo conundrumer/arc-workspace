@@ -24,6 +24,11 @@
 ## denied-calls
 - Where the harness or the permission classifier denies a call your documents give and you leave its work unfinished, give the call and the denial's text in your reply.
 
+## resumed-agents
+- An agent you resume by SendMessage counts as one you launched until it next stops: while it runs, the harness does not deliver your report, and its completion notification comes to you.
+- The harness delivers as your report the text of the last turn you end. Where a notification resumes you after your final reply, end that turn with the report you gave at your final reply: your final reply in full, or the one line that says where it went.
+
 ## final-report
 * inline: #denied-calls
 - Where your latest resumption came from a message of an agent other than the one that launched you, or the harness refuses your SubagentHandback because a report of yours was already delivered, send your final reply by SendMessage to the agent that launched you, at the agent id your brief gives for it, or to `main` where your brief gives none, and to no other agent. Then give, as the report the harness asks for, one line that says your final reply went to that agent: your SubagentHandback, or plain text where the harness says SubagentHandback is not available.
+* inline: #resumed-agents
