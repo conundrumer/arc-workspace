@@ -64,6 +64,7 @@ class Decl:
     end_line: int
     columns: tuple[Column, ...]
     qualifiers: tuple[Qualifier, ...]
+    choice_domain: tuple[str, ...]
     input: bool
     """The declaration bears the lib's `// @input` mark."""
 
@@ -165,7 +166,8 @@ def _view(p: Parsed) -> Program:
         if own(r.span):
             placed.append((r.span.first, r.scope,
                            Decl(r.name, r.span.first, r.span.last,
-                                r.columns, r.qualifiers, input_marked(r.span, marks))))
+                                r.columns, r.qualifiers, r.choice_domain,
+                                input_marked(r.span, marks))))
     for i in p.instances:
         if i.span is not None and own(i.span):
             placed.append((i.span.first, i.scope,

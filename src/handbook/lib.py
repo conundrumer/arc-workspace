@@ -191,7 +191,8 @@ def lib_entries(text: str) -> str:
         if block is None:
             it = run[0]
             if isinstance(it, Decl) and len(run) == 1:
-                names = f"**{it.name}**" + printer.signature(it.columns, it.qualifiers, ())
+                names = f"**{it.name}**" + printer.signature(
+                    it.columns, it.qualifiers, it.choice_domain)
             out.append(f"- {names}")
             continue
         para = " ".join(_prose(lines[block[0] - 1:block[1]], ITEM_DOC).split("\n\n")[0].split())
