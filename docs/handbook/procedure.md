@@ -168,7 +168,7 @@
     - On a branch's witness with no `@reassigned` line, on which no open values disagree and no approximation disagrees with its rule, an `other` verdict identifies a problem with the concept case, and so does a verdict denoting that branch at `ordinary` plausibility; the concept case is fixed to give the judged output, the verdict becomes `concept`, and the fix goes in the review as a departure.
 - **Divergence witness.**
     - Replace each name that has no case of the solver with names for the cases `witness` lists for it, or remove it when `witness` lists none, rewrite a `separates` text that mentions it, and remove a witness that then separates nothing.
-    - Rewrite each name and each `assign` in a form the [Witness file](docs/handbook/solver-file.md#witness-file) does not give into one it gives, and remove each witness that duplicates the one `derive` or `store` records.
+    - Rewrite each name and each `assign` in a form the [Witness file](docs/handbook/solver-file.md#witness-file) does not give into one it gives, and remove each witness of a `@derive` or `@store` branch that duplicates the one `derive` or `store` records for that branch.
     - Rewrite the groups of every witness of the witness file: `uv run python scripts/run_dl.py record <task_id> --all`.
     - For a branch added in Develop, build the witness its `@witness` line needs.
     - Judge the plausibility and verdict of a witness you build, and put that judgment in the review.
