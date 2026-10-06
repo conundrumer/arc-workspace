@@ -51,10 +51,11 @@ class Option:
     where the options are competing readings."""
 
     text: str
-    # Each by its name as `Card.dropped` gives it. The page labels each such
-    # case's grid with this option's number. Where any option of a card
-    # names cases, the render fails on a name the run on a witness does not
-    # give, and on a case that run gives that no option names. Naming them
+    # Each by its name as `Card.dropped` gives it, and only those whose
+    # grids stand for this option. A case may stand for several options,
+    # and a case the run gives may stand for none. The page labels each
+    # case's grid with the number of each option that names it. The render
+    # fails on a name the run on a witness does not give. Naming them
     # filters no witness. A card names them or gives `dropped`, not both.
     cases: list[str] = field(default_factory=list[str])
 
@@ -159,20 +160,20 @@ def _option(entry: object) -> Option:
     return Option(text, list(cases))
 
 
-def option_of(card: Card, case: str) -> int | None:
-    return next((number for number, option in enumerate(card.options, 1)
-                 if case in option.cases), None)
+def options_of(card: Card, case: str) -> list[int]:
+    return [number for number, option in enumerate(card.options, 1)
+            if case in option.cases]
+
+
+def options_phrase(numbers: list[int]) -> str:
+    listed = ", ".join(map(str, numbers))
+    return f"options {listed}" if len(numbers) > 1 else f"option {listed}"
 
 
 def _check_option_cases(card: Card) -> None:
     if card.dropped and any(o.cases for o in card.options):
         raise ValueError("a card gives `dropped` or the cases of its "
                          "options, not both")
-    twice = [f"{case!r} under options {option_of(card, case)} and {number}"
-             for number, option in enumerate(card.options, 1)
-             for case in option.cases if option_of(card, case) != number]
-    if twice:
-        raise ValueError("cases named under two options: " + "; ".join(twice))
 
 
 def load_card(path: str | Path) -> Card:

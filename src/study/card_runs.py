@@ -17,7 +17,7 @@ from solver.names import name
 from solver.problems import Fault, WitnessFileRole
 from solver.solve import Assignment, Grids, examples, outcomes, witnessed
 from solver.witness import Undefined
-from study.card_spec import Card, from_root, option_of
+from study.card_spec import Card, from_root, options_of, options_phrase
 
 
 @dataclass(frozen=True)
@@ -200,17 +200,14 @@ def check_captions(card: Card, runs: list[Run]) -> None:
 
 def check_option_cases(card: Card, runs: list[Run]) -> None:
     """Fails as the comment of `Option.cases` gives."""
-    named = [case for option in card.options for case in option.cases]
-    if not named:
-        return
+    named = dict.fromkeys(case for option in card.options
+                          for case in option.cases)
     wrong = []
     for run in runs:
-        wrong.extend(f"option {option_of(card, case)} names {line}"
-                     for case, line in cases_not_given(run, named))
-        wrong.extend(
-            f"{_case_on(case, run)}: no option names it"
-            for case in given_cases(run) if case not in named
-        )
+        for case, line in cases_not_given(run, named):
+            numbers = options_of(card, case)
+            verb = "name" if len(numbers) > 1 else "names"
+            wrong.append(f"{options_phrase(numbers)} {verb} {line}")
     if wrong:
-        raise ValueError("the cases of the options do not match the cases "
-                         "of the run:\n" + "\n".join(wrong))
+        raise ValueError("the options name cases the run does not give:\n"
+                         + "\n".join(wrong))

@@ -20,7 +20,8 @@ from engine import checkout
 from solver.solve import examples
 from study.card_runs import (Candidate, Run, check_captions,
                              check_option_cases, drawn_runs)
-from study.card_spec import Card, CodeSlice, Table, from_root, option_of
+from study.card_spec import (Card, CodeSlice, Table, from_root, options_of,
+                             options_phrase)
 
 CARDS_DIR = checkout.work() / "cards"
 
@@ -152,9 +153,9 @@ def _candidate_html(cand: Candidate, card: Card, witness: str) -> str:
     label = cand.label
     if card.dropped:
         label += " · dropped" if cand.label in card.dropped else " · kept"
-    option = option_of(card, cand.label)
-    if option is not None:
-        label += f" · option {option}"
+    numbers = options_of(card, cand.label)
+    if numbers:
+        label += f" · {options_phrase(numbers)}"
     if cand.error:
         parts = [
             f'<div class="glabel">{html.escape(label)}</div>'
