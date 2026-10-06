@@ -32,6 +32,7 @@
 - The directories `tickets/draft/`, `tickets/open/`, `tickets/assigned/`, `tickets/blocked/` and `tickets/closed/` are a ticket's statuses, and moving its file between them is its transition. `uv run python scripts/file_ticket.py path <number>` prints the path of the ticket with that number.
 - A ticket under `tickets/blocked/` waits on the user or on a `change`, and no agent holds it.
 - Make each transition, and write each other line of a ticket's log, with `uv run python scripts/file_ticket.py log`, in the form its `--help` gives, with your agent's name as `<agent>`.
+- Take a ticket with its transition to `assigned`, and leave alone each ticket whose transition the command refuses.
 - Close the ticket of a place that is judged and kept with `wontfix`, and give the judgment in the note after it.
 
 ## change-tickets

@@ -40,7 +40,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 * inline: notes/tickets.md#tracking
 * inline: notes/tickets.md#change-tickets
 - The kind of a ticket you file is `change`, and you set its `priority`, from 0 to 100, a higher one taken first.
-- Take a ticket by moving it to `tickets/assigned/`, and leave alone each ticket whose move fails.
 - Send the number of each `change` ticket you file or revise to the ticket reviewer your brief gives, with SendMessage.
 - Where a step of your work takes time far out of proportion to the work it does, find the root cause, and file a `change` ticket for its resolution, whose Motivation gives the step and the time it took.
 
