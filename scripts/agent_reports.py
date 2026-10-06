@@ -8,9 +8,9 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 from quota import epoch
-from run_reads import (MAIN, LaunchStatus, Status, agent_messages, blocks, is_prompt,
-                       launch_status, notifications, notified, parent_id, read_meta,
-                       session_agents, session_of, text_of)
+from run_reads import (MAIN, LaunchStatus, Notification, Status, agent_messages, blocks,
+                       is_prompt, launch_status, notifications, notified, parent_id,
+                       read_meta, session_agents, session_of, text_of)
 from transcripts import Entry, agent_id, chain, main_transcript, read_entries
 
 # The opening of the note of a notification that the agent stopped with work
@@ -38,14 +38,30 @@ class Report:
     text: str
 
 
+def entries_after(entries: Iterable[Entry], since: float) -> Iterable[Entry]:
+    """The entries of `entries` timestamped after `since` that are not the
+    model's, the entries that can give a report of an agent or a
+    notification of it."""
+    return (e for e in entries if e.get("timestamp") and e.get("type") != "assistant"
+            and epoch(e["timestamp"]) > since)
+
+
 def reports_after(entries: Iterable[Entry], since: float, aid: str | None,
                   call: str | None, undecided: list[str]) -> list[Report]:
     """The reports of the agent `aid`, launched by call `call`, among
     `entries` of its parent's transcripts."""
-    return sorted((r for e in entries
-                   if e.get("timestamp") and epoch(e["timestamp"]) > since
+    return sorted((r for e in entries_after(entries, since)
                    for r in entry_reports(e, aid, call, undecided)),
                   key=lambda r: r.time)
+
+
+def stopped_after(entries: Iterable[Entry], since: float, aid: str | None,
+                  call: str | None, undecided: list[str]) -> bool:
+    """Whether `entries` of the parent's transcripts of the agent `aid`,
+    launched by call `call`, hold a notification after `since` that it
+    stopped, as `is_stop` gives one."""
+    return any(is_stop(n) for e in entries_after(entries, since)
+               for n in agent_notifications(e, aid, call, undecided))
 
 
 def parent_transcripts(path: Path) -> list[Path]:
@@ -93,15 +109,12 @@ def report_ids(entry: Entry) -> list[str]:
     return list(dict.fromkeys(ids))
 
 
-def entry_reports(e: Entry, aid: str | None, call: str | None,
-                  undecided: list[str]) -> list[Report]:
-    """The reports of the agent `aid`, launched by call `call`, that the
-    timestamped entry `e` of its parent's transcripts gives, as HELP gives
-    them."""
-    if e.get("type") == "assistant":
-        return []
-    t = epoch(e["timestamp"])
-    out: list[Report] = []
+def agent_notifications(e: Entry, aid: str | None, call: str | None,
+                        undecided: list[str]) -> list[Notification]:
+    """The notifications of the agent `aid`, launched by call `call`, that
+    the timestamped entry `e` gives, other than one whose status is of no
+    known form, which an `undecided` line names."""
+    out: list[Notification] = []
     for n in notifications(e):
         if (aid is None or aid not in n.ids) and call not in n.ids:
             continue
@@ -109,9 +122,28 @@ def entry_reports(e: Entry, aid: str | None, call: str | None,
             undecided.append(mctx("{run}: a notification of it at {time} gives "
                                   "the status `{status}`, of no known form").format(
                 run=aid, time=e["timestamp"], status=n.status_text))
-        elif (n.status is Status.COMPLETED and n.result is not None
-                and not (n.note or "").startswith(STILL_RUNNING)):
-            out.append(Report(ReportKind.NOTIFICATION, t, n.result.strip()))
+        else:
+            out.append(n)
+    return out
+
+
+def is_stop(n: Notification) -> bool:
+    """Whether `n` says the agent stopped: a notification of a known status
+    other than `running`, other than one that says the agent stopped with
+    background work of its own still running."""
+    return (n.status not in (None, Status.RUNNING)
+            and not (n.note or "").startswith(STILL_RUNNING))
+
+
+def entry_reports(e: Entry, aid: str | None, call: str | None,
+                  undecided: list[str]) -> list[Report]:
+    """The reports of the agent `aid`, launched by call `call`, that the
+    timestamped entry `e` of its parent's transcripts gives, as HELP gives
+    them."""
+    t = epoch(e["timestamp"])
+    out = [Report(ReportKind.NOTIFICATION, t, n.result.strip())
+           for n in agent_notifications(e, aid, call, undecided)
+           if n.status is Status.COMPLETED and n.result is not None and is_stop(n)]
     if is_prompt(e):
         out.extend(Report(ReportKind.MESSAGE, t, text)
                    for who, text in agent_messages(e) if aid is not None and who == aid)
