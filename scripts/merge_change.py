@@ -138,9 +138,6 @@ from change_checks import (MARKDOWN_CHECK, Check, code_paths,  # noqa: E402
 MASTER = "master"
 """The branch a change merges into."""
 
-GITLINK_MODE = "160000"
-"""The mode git gives an index entry that records a submodule's commit."""
-
 
 class Refused(Exception):
     """A reason the script does not merge the change."""
@@ -265,7 +262,7 @@ def gitlinks(tree: Path) -> list[tuple[str, str]]:
     for entry in filter(None, checkout.git_out(tree, "ls-files", "-s", "-z").split("\0")):
         meta, path = entry.split("\t", 1)
         mode, commit, _stage = meta.split(" ")
-        if mode == GITLINK_MODE:
+        if mode == checkout.GITLINK_MODE:
             found.append((path, commit))
     return found
 

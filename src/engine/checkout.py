@@ -145,7 +145,9 @@ def changed_paths(tree: Path, base: str, *pathspec: str) -> list[Changed]:
             + [Changed(p, Change.UNTRACKED) for p in untracked if p])
 
 
-_GITLINK = "160000"
+GITLINK_MODE = "160000"
+"""The mode git gives an index entry that records a submodule's commit."""
+
 _SYMLINK = "120000"
 
 
@@ -158,7 +160,7 @@ def _skip_worktree(tree: Path, spec: Sequence[str]) -> list[str]:
         if not entry.startswith("S "):
             continue
         meta, path = entry[2:].split("\t", 1)
-        if meta.split(" ")[0] == _GITLINK:
+        if meta.split(" ")[0] == GITLINK_MODE:
             raise ValueError(f"the submodule {path} in {tree} is marked skip-worktree")
         marked.append(path)
     return marked
