@@ -34,8 +34,8 @@ SHELL_CHANGERS = frozenset({
     "integer", "float", "unset", "set", "setopt", "unsetopt", "emulate",
     "trap"})
 """Commands that can change what a later `cat` resolves to, where the
-shell's output goes, or the working directory. A command with an assignment or a
-name that is not literal before it can too."""
+shell's output goes, or the working directory. A command with an assignment
+or a name that is not literal before it can too."""
 
 
 def check(hook: dict[str, Any], notes: list[str]) -> str | None:

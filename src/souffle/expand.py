@@ -21,6 +21,7 @@ from engine.program import (
     cell_place,
     offset_place,
 )
+from engine.text import columns
 from souffle import printer
 from souffle.layout import (
     CompBlock,
@@ -212,7 +213,7 @@ class _Expander:
         generated = []
         for chart in self.charts(macro):
             rel = chart.name.removeprefix(self.prefix(macro))
-            fields = ", ".join(f"{c.name}: {c.type}" for c in chart.columns)
+            fields = columns(chart.columns)
             generated += [
                 f".decl {placed_name(macro.block, rel)}(d4: D4, {fields})",
                 rigid_rule(placed_name(macro.block, rel), chart.name, [c.type for c in chart.columns]),

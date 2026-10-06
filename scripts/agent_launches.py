@@ -11,8 +11,8 @@ from typing import Any
 from command_labels import AGENT_TOOLS
 from controlled_markdown import mctx
 from quota import epoch
-from run_reads import (BACKGROUND, FOREGROUND_DONE, MAIN, Status, agent_messages, blocks, is_prompt,
-                       notifications, notified, parent_id,
+from run_reads import (MAIN, LaunchStatus, Status, agent_messages, blocks, is_prompt,
+                       in_background, launch_status, notifications, notified, parent_id,
                        parent_label, read_meta, results_by_call, run_entries,
                        session_agents, session_of, session_transcripts, text_of)
 from transcripts import Entry, agent_id, chain, main_transcript, read_entries
@@ -153,8 +153,10 @@ def launched(path: Path, undecided: list[str]) -> list[Launch]:
             if b.get("name") not in AGENT_TOOLS:
                 continue
             tid = b.get("id", "")
-            result = results.get(tid) or {}
-            background = result.get("status") == BACKGROUND
+            given = results.get(tid)
+            background = given is not None and in_background(given, undecided,
+                                                             agent_id(path), tid)
+            result = given or {}
             signs = [told.get(tid), told.get(result.get("agentId", "")),
                      None if background else answered.get(tid)]
             done = max((t for t in signs if t is not None), default=None)
@@ -270,6 +272,9 @@ def reports(path: Path, since: float, undecided: list[str]) -> list[Report] | No
                               "whether a report reached it is unknown").format(run=aid))
         return None
     call = (read_meta(path) or {}).get("toolUseId")
+    if not call:
+        undecided.append(mctx("{run}: no `.meta.json` of its run gives a `toolUseId`, "
+                              "so the result of its launch cannot be matched").format(run=aid))
     out: list[Report] = []
     for e in (e for p in found for e in read_entries(p)):
         if not e.get("timestamp") or e.get("type") == "assistant":
@@ -293,12 +298,12 @@ def reports(path: Path, since: float, undecided: list[str]) -> list[Report] | No
         result = e.get("toolUseResult")
         if call and isinstance(result, dict) and any(
                 b.get("tool_use_id") == call for b in blocks(e, "tool_result")):
-            status = result.get("status")
-            if status == FOREGROUND_DONE:
+            status = launch_status(result)
+            if status is LaunchStatus.COMPLETED:
                 out.append(Report(ReportKind.RESULT, t,
                                   text_of(result.get("content")).strip()))
-            elif status != BACKGROUND:
+            elif status is None:
                 undecided.append(mctx("{run}: the result of its launch gives the "
                                       "status `{status}`, of no known form").format(
-                    run=aid, status=status))
+                    run=aid, status=result.get("status")))
     return sorted(out, key=lambda r: r.time)

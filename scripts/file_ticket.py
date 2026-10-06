@@ -26,15 +26,15 @@ importable(checkout.scripts())
 
 from ticket_numbers import (IDS, SESSION_VAR, SESSIONS,  # noqa: E402
                             TICKET_NUMBER, reserve, session_id, session_index,
-                            write_after, write_new)
+                            write_new)
 from transcripts import Refused  # noqa: E402
 
 HELP = mctx("""
-    - `uv run python scripts/file_ticket.py <domain> <subject> <agent>` files the ticket on its stdin under the main tree's `tickets/`, and prints the path it wrote.
+    - `{invocation} <domain> <subject> <agent>` files the ticket on its stdin under the main tree's `tickets/`, and prints the path it wrote.
     {subcommands}
     - Usage:
         ```
-        uv run python scripts/file_ticket.py <domain> <subject> <agent> <<'EOF'
+        {invocation} <domain> <subject> <agent> <<'EOF'
         ---
         kind: <kind>
         ---
@@ -57,11 +57,11 @@ HELP = mctx("""
 """The help of filing, which `--help` with no subcommand prints."""
 
 SUBCOMMAND_LINE = mctx("""
-    - `{name}` {purpose}: `uv run python scripts/file_ticket.py {name} --help` prints its form.
+    - `{name}` {purpose}: `{invocation} {name} --help` prints its form.
     """)
 
 SUBCOMMAND_HELP = mctx("""
-    - `uv run python scripts/file_ticket.py {name}{args}` {purpose}.
+    - `{invocation} {name}{args}` {purpose}.
     {detail}
     """)
 
@@ -83,27 +83,7 @@ LOG_HELP = mctx("""
     - The command refuses, and neither moves nor writes, where `{log}` is not the file's last section or the note spans more than one line.
     """)
 
-LEGACY_HELP = mctx("""
-    - Usage:
-        ```
-        uv run python scripts/file_issue.py <unix time> <source> <agent> <<'EOF'
-        ---
-        kind: <kind>
-        ---
-        # <target>: <what is wrong in it>
 
-        ## Effect
-        <its effect>
-
-        ## Evidence
-        <the evidence>
-        EOF
-        ```
-    - The command reads one issue from stdin, names it `<unix time>-<source>-<agent>-<i>.md`, writes it under `tickets/open/` in the main tree, and prints the path it wrote.
-    - `<i>` is 1 more than the largest `<i>` of a file under `tickets/` with the same time, source and agent, so the issues of one `date +%s` count from 1.
-    - Give one `date +%s` as `<unix time>` to every call that files your issues.
-    - The command refuses, and writes nothing, where the text on stdin does not have the form above.
-    """)
 
 
 class Status(StrEnum):
@@ -273,14 +253,6 @@ WAIT = re.compile(rf"(?:{Wait.USER}|{Wait.CHANGE} (?P<change>{TICKET_NUMBER.patt
 LOG_LINE = re.compile(rf"^.*? (?P<status>{'|'.join(Status)}) \[(?P<agent>[^\]\s]+)"
                       rf"(?: (?P<id>{AGENT_ID.pattern}))?\](?:: (?P<note>.*))?$", re.MULTILINE)
 """A log line, of whatever time form, as the command or a hand wrote it."""
-
-LEGACY_FORM = re.compile(r"---\nkind: (?P<kind>\S+)\n---\n# .+: .+\n\n## Effect\n(?:.*\n)*## Evidence(?:\n|$)")
-"""The form `scripts/file_issue.py` takes, from agents launched before
-tickets."""
-
-LEGACY_KINDS = {"undecided": Kind.QUESTION, "gap": Kind.QUESTION}
-"""The kinds an issue filed before tickets gives, mapped to the kind a ticket
-gives in their place."""
 
 NAME_PART = re.compile(r"[^\s/]+")
 
@@ -533,32 +505,6 @@ def write_log(tickets: Path, ref: str, status: str, agent: str, source: str, age
     return path
 
 
-def file_legacy(tickets: Path, unix_time: str, source: str, agent: str, text: str) -> Path:
-    """Writes an issue in the form `scripts/file_issue.py` takes as a
-    ticket under `tickets/open/`, with the kind and section an issue gives
-    under the names a ticket gives them, and returns its path."""
-    if not unix_time.isdigit():
-        raise Refused(mctx("the unix time `{time}` is not a number").format(time=unix_time))
-    for part in (source, agent):
-        if not NAME_PART.fullmatch(part):
-            raise Refused(mctx("`{part}` is not one word without `/`").format(part=part))
-    form = LEGACY_FORM.match(text)
-    if not form:
-        raise Refused(mctx("the issue on stdin does not have the form `--help` shows"))
-    old = form.group("kind")
-    try:
-        kind = LEGACY_KINDS.get(old) or Kind(old)
-    except ValueError:
-        raise Refused(mctx("`{kind}` is no issue kind").format(kind=old))
-    text = text.replace(f"kind: {old}\n", f"kind: {kind}\n", 1).replace("\n## Effect\n", "\n## Impact\n", 1)
-    prefix = f"{unix_time}-{source}-{agent}-"
-    taken = (int(m.group(1)) for d in statuses(tickets)
-             for p in d.glob(f"{prefix}*.md")
-             if (m := re.fullmatch(re.escape(prefix) + r"(\d+)\.md", p.name)))
-    return write_after(tickets / Status.OPEN, logged(text, Status.OPEN, agent), taken,
-                       lambda n: f"{prefix}{n}.md")
-
-
 def main_tickets() -> Path:
     return checkout.main_worktree(checkout.ROOT) / "tickets"
 
@@ -570,9 +516,14 @@ class Filing:
     script: str
     fallback: str
 
+    @property
+    def invocation(self) -> str:
+        """The command that runs the script, as a help text writes it."""
+        return f"uv run python scripts/{self.script}"
+
 
 TICKET_FILING = Filing("file_ticket.py", "file_issue.py")
-LEGACY_FILING = Filing("file_issue.py", "file_ticket.py")
+
 
 
 def filed_in_main(filing: Filing, args: list[str]) -> int | None:
@@ -663,16 +614,17 @@ def help_values() -> dict[str, str]:
                 statuses=ticked(Status), log=LOG, time_form=TIME_FORM,
                 resolutions=ticked(Resolution), blocked=Status.BLOCKED,
                 user=Wait.USER, change=Wait.CHANGE, session_var=SESSION_VAR,
-                sessions=SESSIONS,
-                subcommands="\n".join(SUBCOMMAND_LINE.format(name=name, purpose=sub.purpose)
-                                       for name, sub in SUBCOMMANDS.items()))
+                sessions=SESSIONS, invocation=TICKET_FILING.invocation,
+                subcommands="\n".join(SUBCOMMAND_LINE.format(
+                    invocation=TICKET_FILING.invocation, name=name, purpose=sub.purpose)
+                    for name, sub in SUBCOMMANDS.items()))
 
 
 def subcommand_help(name: str, sub: Subcommand, values: dict[str, str]) -> str:
     """The help of `sub`, which `<name> --help` prints."""
     detail = textwrap.indent(sub.detail.format(**values), "    ")
-    return SUBCOMMAND_HELP.format(name=name, args=sub.args, purpose=sub.purpose,
-                                  detail=detail).rstrip("\n")
+    return SUBCOMMAND_HELP.format(invocation=values["invocation"], name=name, args=sub.args,
+                                  purpose=sub.purpose, detail=detail).rstrip("\n")
 
 
 def main(args: list[str]) -> int:
@@ -684,9 +636,6 @@ def main(args: list[str]) -> int:
         main_tickets(), domain, subject, agent, sys.stdin.read()), TICKET_FILING, args)
 
 
-def legacy_main(args: list[str]) -> int:
-    return run(args, LEGACY_HELP, 3, lambda unix_time, source, agent: file_legacy(
-        main_tickets(), unix_time, source, agent, sys.stdin.read()), LEGACY_FILING, args)
 
 
 if __name__ == "__main__":

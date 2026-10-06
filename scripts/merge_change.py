@@ -228,10 +228,9 @@ def gitlinks(tree: Path) -> list[tuple[str, str]]:
     the index's order."""
     found: list[tuple[str, str]] = []
     for entry in filter(None, checkout.git_out(tree, "ls-files", "-s", "-z").split("\0")):
-        meta, path = entry.split("\t", 1)
-        mode, commit, _stage = meta.split(" ")
-        if mode == checkout.GITLINK_MODE:
-            found.append((path, commit))
+        e = checkout.index_entry(entry)
+        if e.mode == checkout.Mode.GITLINK:
+            found.append((e.path, e.object_name))
     return found
 
 

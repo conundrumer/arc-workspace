@@ -149,6 +149,6 @@ def test_pending(tmp_path: Path) -> None:
                                        "pin": {"id": A2}})]
     (agents / f"agent-{A5}.jsonl").write_text(
         "".join(json.dumps(e) + "\n" for e in resumer))
-    profile_runs.session_agents.cache_clear()
+    sys.modules["run_reads"].session_agents.cache_clear()
     transcripts.snapshot.cache_clear()
     assert profile_runs.pending_agents(path, []) == [A1, A2, A4]

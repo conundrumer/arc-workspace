@@ -19,11 +19,12 @@ MAIN = "main"
 AGENT_MESSAGE = re.compile(r'<agent-message from="([^"]+)"')
 AGENT_MESSAGE_END = "</agent-message>"
 NOTIFICATION = re.compile(r"<task-notification>(.*?)</task-notification>", re.S)
-# The statuses of an Agent call's result where the agent runs in the
-# background, and where it ran in the foreground and reported.
-BACKGROUND = "async_launched"
-FOREGROUND_DONE = "completed"
 TAG = re.compile(r"<(task-id|tool-use-id)>([^<]+)</\1>")
+
+
+def member[E: Enum](kind: type[E], value: object) -> E | None:
+    """The member of `kind` whose value is `value`, or None where none is."""
+    return next((m for m in kind if m.value == value), None)
 
 
 class Status(Enum):
@@ -33,6 +34,34 @@ class Status(Enum):
     KILLED = "killed"
     STOPPED = "stopped"
     RUNNING = "running"
+
+
+class LaunchStatus(Enum):
+    """The statuses the harness gives the result of an Agent call."""
+    ASYNC_LAUNCHED = "async_launched"
+    """The agent runs in the background."""
+    COMPLETED = "completed"
+    """The agent ran in the foreground and reported."""
+
+
+def launch_status(result: dict[str, Any]) -> LaunchStatus | None:
+    """The status of the result of an Agent call, or None where it gives
+    none or one of no known form."""
+    return member(LaunchStatus, result.get("status"))
+
+
+def in_background(result: dict[str, Any], undecided: list[str], run: str,
+                  call: str) -> bool:
+    """Whether `result`, the result of the Agent call `call` of the run
+    `run`, says the agent runs in the background. A status of no known form
+    counts as not, and an `undecided` line names the run and the call."""
+    status = launch_status(result)
+    if status is None:
+        undecided.append(mctx("{run}: the result of call {call} gives the status "
+                              "`{status}`, of no known form, so it counts as not "
+                              "in the background").format(
+            run=run, call=call, status=result.get("status")))
+    return status is LaunchStatus.ASYNC_LAUNCHED
 
 
 @dataclass
@@ -48,8 +77,7 @@ class Notification:
     @property
     def status(self) -> Status | None:
         """Its status, or None where it gives none or one of no known form."""
-        known = {s.value: s for s in Status}
-        return known.get(self.status_text or "")
+        return member(Status, self.status_text)
 
 
 def read_meta(path: Path) -> dict[str, Any] | None:

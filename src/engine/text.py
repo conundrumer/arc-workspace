@@ -2,6 +2,8 @@
 atom, a body literal, a value or a relation's declaration, as the solver
 writes it."""
 
+from collections.abc import Iterable
+
 from engine.program import (
     AdtValue,
     Aggregate,
@@ -11,6 +13,7 @@ from engine.program import (
     BodyLiteral,
     BoolLiteral,
     Cast,
+    Column,
     Comparison,
     ConstructorTerm,
     DefinedName,
@@ -52,6 +55,12 @@ GRID_FORM_SEGMENT: dict[GridForm, str] = {
 before the size."""
 
 
+def columns(cs: Iterable[Column]) -> str:
+    """A relation's columns as its `.decl` line writes them between the
+    parentheses."""
+    return ", ".join(f"{c.name}: {c.type}" for c in cs)
+
+
 def text(part: Part) -> str:
     """`part` as the solver writes it: a term with the parentheses it was
     written with and a constructor with its argument list, `$X()`, the
@@ -64,9 +73,8 @@ def text(part: Part) -> str:
             return _value(part, quoted=True)
         case Atom(relation=relation, args=args):
             return f"{relation.text}({_joined(args)})"
-        case RelationDecl(name=name, columns=columns):
-            cols = ", ".join(f"{c.name}: {c.type}" for c in columns)
-            return f".decl {name}({cols})"
+        case RelationDecl(name=name, columns=cs):
+            return f".decl {name}({columns(cs)})"
         case AtomLiteral(atom=atom, negated=negated):
             return ("!" if negated else "") + text(atom)
         case Comparison(op=op, lhs=lhs, rhs=rhs):

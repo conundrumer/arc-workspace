@@ -32,7 +32,7 @@ def test_racing_filers_get_distinct_numbers(tmp_path: Path, monkeypatch: pytest.
 
 
 def test_legacy_taken_names_are_kept(tmp_path: Path) -> None:
-    module = script("file_ticket")
+    module = script("file_issue")
     (tmp_path / "assigned").mkdir()
     (tmp_path / "assigned" / "7-s-a-1.md").write_text("assigned")
     first = module.file_legacy(tmp_path, "7", "s", "a", ISSUE)

@@ -38,7 +38,7 @@ from engine.program import (
     Variable,
     Wildcard,
 )
-from engine.text import PREFIX
+from engine.text import PREFIX, columns
 from engine.text import text as layout_name
 from souffle.parser import BINARY, UNARY_PRECEDENCE, chart_prefix
 
@@ -139,10 +139,6 @@ def fields(fs: tuple[TypeField, ...]) -> str:
 
 def type_args(args: tuple[str, ...]) -> str:
     return f"<{', '.join(args)}>" if args else ""
-
-
-def columns(cs: tuple[Column, ...]) -> str:
-    return ", ".join(f"{c.name}: {c.type}" for c in cs)
 
 
 def signature(cs: tuple[Column, ...], qualifiers: tuple[Qualifier, ...],

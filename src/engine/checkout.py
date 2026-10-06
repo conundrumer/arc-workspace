@@ -145,10 +145,34 @@ def changed_paths(tree: Path, base: str, *pathspec: str) -> list[Changed]:
             + [Changed(p, Change.UNTRACKED) for p in untracked if p])
 
 
-GITLINK_MODE = "160000"
-"""The mode git gives an index entry that records a submodule's commit."""
+class Mode(StrEnum):
+    """The mode git gives an entry of the index or of a tree."""
 
-_SYMLINK = "120000"
+    REGULAR = "100644"
+    EXECUTABLE = "100755"
+    SYMLINK = "120000"
+    GITLINK = "160000"
+    """An entry that records a submodule's commit."""
+    TREE = "040000"
+    """A directory, which a tree gives and the index does not."""
+
+
+@dataclass(frozen=True)
+class IndexEntry:
+    """An entry of the index: its mode, its object name, which for a
+    gitlink is the submodule's commit, and its path."""
+
+    mode: Mode
+    object_name: str
+    path: str
+
+
+def index_entry(entry: str) -> IndexEntry:
+    """An entry as `git ls-files -s -z` prints it, with no tag before it.
+    A mode of no known form is a fault (`ValueError`)."""
+    meta, path = entry.split("\t", 1)
+    mode, object_name, _stage = meta.split(" ")
+    return IndexEntry(Mode(mode), object_name, path)
 
 
 def _skip_worktree(tree: Path, spec: Sequence[str]) -> list[str]:
@@ -159,10 +183,10 @@ def _skip_worktree(tree: Path, spec: Sequence[str]) -> list[str]:
     for entry in git_out(tree, "ls-files", "-v", "-s", "-z", *spec).split("\0"):
         if not entry.startswith("S "):
             continue
-        meta, path = entry[2:].split("\t", 1)
-        if meta.split(" ")[0] == GITLINK_MODE:
-            raise ValueError(f"the submodule {path} in {tree} is marked skip-worktree")
-        marked.append(path)
+        found = index_entry(entry.removeprefix("S "))
+        if found.mode == Mode.GITLINK:
+            raise ValueError(f"the submodule {found.path} in {tree} is marked skip-worktree")
+        marked.append(found.path)
     return marked
 
 
@@ -172,7 +196,7 @@ def _marked_changes(tree: Path, base: str, marked: Sequence[str]) -> dict[str, C
     each side."""
     if not marked:
         return {}
-    at_base = {path: (meta.split(" ")[0] == _SYMLINK, meta.split(" ")[2])
+    at_base = {path: (Mode(meta.split(" ")[0]) == Mode.SYMLINK, meta.split(" ")[2])
                for entry in git_out(tree, "--literal-pathspecs", "ls-tree", "-z", base,
                                     "--", *marked).split("\0") if entry
                for meta, path in [entry.split("\t", 1)]}

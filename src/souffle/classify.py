@@ -7,6 +7,7 @@ from pathlib import Path
 from engine.engine import Classed
 from engine.memo import ByIdentity
 from engine.program import DeclId, Program, RelationName, Scope, UnitId
+from engine.text import columns
 from souffle import parser
 from souffle.index import tree_of
 from souffle.layout import next_decl, next_unit
@@ -82,7 +83,7 @@ def _classify(program: Program, relation: RelationName, column: int
         args=", ".join(names),
         args_r=", ".join("R" if i == column else names[i]
                          for i in range(len(cols))),
-        columns=", ".join(f"{c.name}: {c.type}" for c in cols))
+        columns=columns(cols))
     parsed = parser.parse(text, Path("."))
     if not isinstance(parsed, Program):
         raise ValueError(f"the classing rules do not parse: {parsed}")

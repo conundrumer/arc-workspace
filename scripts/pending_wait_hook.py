@@ -12,9 +12,9 @@ output, slack included. It allows the call where the read's standard
 output is piped or redirected, where an operand is not literal or refers to
 no file that exists, where an option of `cat` can shorten its output, where
 a relative operand follows a `cd`, `pushd` or `popd`, where a command before
-the read can change what `cat` resolves to, where the shell's output goes or
-the working directory, and where no command is joined to the read. It allows the call
-as well where `shell_parse` cannot split the command line.
+the read can change the shell as the docstring of `joined_read.SHELL_CHANGERS`
+gives, and where no command is joined to the read. It allows the call as well
+where `shell_parse` cannot split the command line.
 
 Where a check allows a call on a case it cannot judge, or fails on its own
 error, the hook says why on stderr, so it can fail to deny a call but never
