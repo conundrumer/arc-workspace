@@ -11,6 +11,7 @@ from engine.program import (
     BodyLiteral,
     BoolLiteral,
     Cast,
+    Column,
     Comparison,
     Component,
     ConstructorTerm,
@@ -22,6 +23,7 @@ from engine.program import (
     Instance,
     IntrinsicCall,
     NumberTerm,
+    Qualifier,
     RecordTerm,
     RecordType,
     RelationDecl,
@@ -139,10 +141,26 @@ def type_args(args: tuple[str, ...]) -> str:
     return f"<{', '.join(args)}>" if args else ""
 
 
+def columns(cs: tuple[Column, ...]) -> str:
+    return ", ".join(f"{c.name}: {c.type}" for c in cs)
+
+
+def signature(cs: tuple[Column, ...], qualifiers: tuple[Qualifier, ...],
+              domain: tuple[str, ...]) -> str:
+    """A relation declaration after its name."""
+    quals = "".join(f" {q.value}" for q in qualifiers)
+    dom = f" choice-domain {', '.join(domain)}" if domain else ""
+    return f"({columns(cs)}){quals}{dom}"
+
+
+def subtypes(names: tuple[str, ...], base: str) -> str:
+    return f".type {', '.join(names)} <: {base}"
+
+
 def declaration(d: object) -> str:
     match d:
         case SubtypeType(_, name, _, base):
-            return f".type {name} <: {base}"
+            return subtypes((name,), base)
         case AliasType(_, name, _, target):
             return f".type {name} = {target}"
         case UnionType(_, name, _, members):
@@ -152,11 +170,8 @@ def declaration(d: object) -> str:
         case AdtType(_, name, _, ctors):
             return f".type {name} = " + " | ".join(
                 f"{c.name} {{{fields(c.fields)}}}" for c in ctors)
-        case RelationDecl(_, name, _, columns, qualifiers, domain):
-            cols = ", ".join(f"{c.name}: {c.type}" for c in columns)
-            quals = "".join(f" {q.value}" for q in qualifiers)
-            dom = f" choice-domain {', '.join(domain)}" if domain else ""
-            return f".decl {name}({cols}){quals}{dom}"
+        case RelationDecl(_, name, _, cs, qualifiers, domain):
+            return f".decl {name}{signature(cs, qualifiers, domain)}"
         case Instance(_, name, _, comp, args):
             return f".init {name} = {comp}{type_args(args)}"
         case FunctorDecl(_, name, params, result):
@@ -184,8 +199,7 @@ def rigid_call(call: RigidCall, charts: list[RelationDecl], body: list[str],
     inner = indent + INDENT
     lines = [f"RIGID({call.block},"]
     for d in charts:
-        cols = ", ".join(f"{c.name}: {c.type}" for c in d.columns)
-        lines.append(f"{inner}.decl {d.name.removeprefix(prefix)}({cols})")
+        lines.append(f"{inner}.decl {d.name.removeprefix(prefix)}({columns(d.columns)})")
     lines += [inner + b.replace(prefix, "") for b in body]
     lines.append(f"{indent})")
     return "\n".join(lines)

@@ -10,6 +10,7 @@ from pathlib import Path
 import controlled_markdown as nm
 from engine import checkout
 from engine.memo import kept_recent
+from souffle import printer
 from souffle.layout import written_lines
 from handbook import paths
 from handbook.items import (
@@ -190,8 +191,7 @@ def lib_entries(text: str) -> str:
         if block is None:
             it = run[0]
             if isinstance(it, Decl) and len(run) == 1:
-                decl = " ".join(" ".join(lines[it.line - 1:it.end_line]).split())
-                names = f"**{it.name}**" + decl.removeprefix(".decl " + it.name)
+                names = f"**{it.name}**" + printer.signature(it.columns, it.qualifiers, ())
             out.append(f"- {names}")
             continue
         para = " ".join(_prose(lines[block[0] - 1:block[1]], ITEM_DOC).split("\n\n")[0].split())
@@ -218,7 +218,7 @@ def lib_doc(text: str) -> str:
     def emit_prose(p: str) -> None:
         nonlocal code
         if code:
-            parts.append("```\n" + "\n".join(code) + "\n```")
+            parts.append(_code_block(code))
         code = None
         parts.append(p)
 
@@ -258,11 +258,15 @@ def _run_code(run: list[Documented], lines: list[str],
         return [" ".join(_name(d) for d in run)]
     if len(run) > 1 and isinstance(it, TypeDecl) \
             and isinstance(it.form, SubtypeForm):
-        return [f".type {', '.join(_name(t) for t in run)} <: {it.form.base}"]
+        return [printer.subtypes(tuple(_name(t) for t in run), it.form.base)]
     if isinstance(it, Comp):
         return _comp_block(it, lines, docs)
     end = it.end_line if isinstance(it, Decl) else it.line
     return written_lines(lines, it.line, end)
+
+
+def _code_block(code: list[str]) -> str:
+    return "```\n" + "\n".join(code) + "\n```"
 
 
 def interface_path(src: Path) -> Path:
@@ -284,6 +288,6 @@ def lib_component(src: Path, name: str) -> str:
         it = run[0]
         block = docs.get(it.line - 1)
         prose = _prose(lines[block[0] - 1:block[1]], ITEM_DOC) if block else ""
-        code = "```\n" + "\n".join(_run_code(run, lines, docs)) + "\n```"
+        code = _code_block(_run_code(run, lines, docs))
         return "\n\n".join(p for p in (f"# {name}", prose, code) if p) + "\n"
     raise SystemExit(f"no component `{name}` in `{repo_label(src)}`")

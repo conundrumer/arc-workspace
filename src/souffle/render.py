@@ -34,7 +34,6 @@ from souffle.lexer import LINE_DIRECTIVE_RE
 
 
 def include(path: str) -> str:
-    """The `#include` directive of the file at `path`."""
     return f'#include "{path}"'
 
 

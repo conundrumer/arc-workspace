@@ -58,17 +58,14 @@ SUBAGENTS = "subagents/**/agent-*.jsonl"
 
 
 def main_transcript(session: Path) -> Path:
-    """The main transcript of the session whose directory is `session`."""
     return session.with_suffix(".jsonl")
 
 
 def session_directory(main: Path) -> Path:
-    """The directory of the session whose main transcript is `main`."""
     return main.with_suffix("")
 
 
 def subagent_transcripts(session: Path) -> list[Path]:
-    """The subagent transcripts under the directory `session`."""
     return sorted(session.glob(SUBAGENTS))
 
 
@@ -181,8 +178,7 @@ class Snapshot:
         return self.agents
 
     def holding(self, word: str) -> frozenset[int]:
-        """The indexes of the lines that hold `word`."""
-        # `file_ticket` imports this module.
+        #`file_ticket` imports this module.
         from file_ticket import AGENT_ID
 
         if word not in self.found:

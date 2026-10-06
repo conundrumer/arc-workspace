@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import sys
+import textwrap
 import time
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
@@ -59,25 +60,27 @@ SUBCOMMAND_LINE = mctx("""
     - `{name}` {purpose}: `uv run python scripts/file_ticket.py {name} --help` prints its form.
     """)
 
-INDEX_HELP = mctx("""
-    - `uv run python scripts/file_ticket.py index` prints the index of your session.
+SUBCOMMAND_HELP = mctx("""
+    - `uv run python scripts/file_ticket.py {name}{args}` {purpose}.
+    {detail}
     """)
 
 PATH_HELP = mctx("""
-    - `uv run python scripts/file_ticket.py path <number>` prints the path of the ticket with that number, in whichever status it stands. It takes the name of a ticket filed before tickets had numbers in place of `<number>` too.
+    - The ticket is the one with that number, in whichever status it stands.
+    - The command takes the name of a ticket filed before tickets had numbers in place of `<number>` too.
     """)
 
 LOG_HELP = mctx("""
-    - `uv run python scripts/file_ticket.py log <number> <status> <agent> --from <current status> [--id <agent id>] [<note>]` makes a transition of the ticket with that number and writes its log line, or writes a log line that moves nothing, and prints the ticket's path:
-        - `<status>` and `<current status>` are each one of {statuses}. `<current status>` is the status you saw the ticket in.
-        - The command refuses, and neither moves nor writes, where the ticket stands in another status than `<current status>`, or where its file moves before the command moves it.
-        - Where `<status>` differs from `<current status>`, the command moves the ticket's file to the directory of `<status>`.
-        - The command appends `<time> <status> [<agent>]: <note>` to the file's `{log}`, with the time in UTC in the form `{time_form}`, and with `<agent> <agent id>` in the bracket where `--id` gives an agent id. A line with no `<note>` ends at the bracket.
-        - An `assigned` line takes, in `--id`, the agent id of the agent that writes it.
-        - On a ticket that already stands in `assigned`, the command refuses an `assigned` line unless its `--id` holds the ticket. The holder is the agent id of the last `assigned` line that gives one, in its bracket or as the first word of its note, among the log's final run of `assigned` lines. Where none of them gives one, the ticket has no holder.
-        - The note of a line that moves a ticket into `{blocked}` opens with what the ticket waits on: `{user}`, or `{change} <number>`, with `<number>` the number of a `change` ticket the ticket tracker holds.
-        - The note of a line that moves a ticket into `closed` opens with its resolution, one of {resolutions}.
-        - The command refuses, and neither moves nor writes, where `{log}` is not the file's last section or the note spans more than one line.
+    - The ticket is the one with that number, and the command prints its path.
+    - `<status>` and `<current status>` are each one of {statuses}. `<current status>` is the status you saw the ticket in.
+    - The command refuses, and neither moves nor writes, where the ticket stands in another status than `<current status>`, or where its file moves before the command moves it.
+    - Where `<status>` differs from `<current status>`, the command moves the ticket's file to the directory of `<status>`. Where they are the same, the log line moves nothing.
+    - The command appends `<time> <status> [<agent>]: <note>` to the file's `{log}`, with the time in UTC in the form `{time_form}`, and with `<agent> <agent id>` in the bracket where `--id` gives an agent id. A line with no `<note>` ends at the bracket.
+    - An `assigned` line takes, in `--id`, the agent id of the agent that writes it.
+    - On a ticket that already stands in `assigned`, the command refuses an `assigned` line unless its `--id` holds the ticket. The holder is the agent id of the last `assigned` line that gives one, in its bracket or as the first word of its note, among the log's final run of `assigned` lines. Where none of them gives one, the ticket has no holder.
+    - The note of a line that moves a ticket into `{blocked}` opens with what the ticket waits on: `{user}`, or `{change} <number>`, with `<number>` the number of a `change` ticket the ticket tracker holds.
+    - The note of a line that moves a ticket into `closed` opens with its resolution, one of {resolutions}.
+    - The command refuses, and neither moves nor writes, where `{log}` is not the file's last section or the note spans more than one line.
     """)
 
 LEGACY_HELP = mctx("""
@@ -223,8 +226,11 @@ SECTIONS = {Kind.CHANGE: ("Intent", "Motivation", "Scope")}
 DEFECT_SECTIONS = ("Impact", "Evidence")
 
 
+HEADING_MARK = "## "
+
+
 def heading(section: str) -> str:
-    return f"## {section}"
+    return f"{HEADING_MARK}{section}"
 
 
 def sections_example(sections: tuple[str, ...]) -> str:
@@ -244,12 +250,12 @@ def body_form(kind: Kind) -> re.Pattern[str]:
 FIELDS = {Kind.CHANGE: frozenset({"depends-on", "priority"})}
 """The front matter fields besides `kind` that each kind may give."""
 
-LOG = "## Log"
+LOG = heading("Log")
 
 TIME_FORM = "%Y-%m-%dT%H:%M:%SZ"
 """The form of a log line's time, in UTC."""
 
-HEADING = re.compile(r"^## .*$", re.MULTILINE)
+HEADING = re.compile(rf"^{re.escape(HEADING_MARK)}.*$", re.MULTILINE)
 
 RESOLUTION_WORD = re.compile(r"[a-z]+(?:-[a-z]+)*")
 
@@ -623,10 +629,12 @@ def log_args(args: list[str]) -> list[str | None]:
 
 @dataclass(frozen=True)
 class Subcommand:
-    """A subcommand: what it does, as its line in `HELP` says it, its own
-    help, and how `run` runs it."""
+    """A subcommand: what it does, which its line in `HELP` and its own help
+    both say, the arguments and the detail its own help adds, and how `run`
+    runs it."""
     purpose: str
-    help: str
+    args: str
+    detail: str
     count: int
     act: Callable[..., Path | int]
     filing: Filing | None
@@ -634,11 +642,12 @@ class Subcommand:
 
 
 SUBCOMMANDS = {
-    "log": Subcommand(mctx("makes a transition of a ticket and writes its log line"), LOG_HELP, 6,
-                      lambda *a: write_log(main_tickets(), *a), TICKET_FILING, log_args),
-    "path": Subcommand(mctx("prints the path of a ticket"), PATH_HELP, 1,
+    "log": Subcommand(mctx("makes a transition of a ticket and writes its log line"),
+                      " <number> <status> <agent> --from <current status> [--id <agent id>] [<note>]",
+                      LOG_HELP, 6, lambda *a: write_log(main_tickets(), *a), TICKET_FILING, log_args),
+    "path": Subcommand(mctx("prints the path of a ticket"), " <number>", PATH_HELP, 1,
                        lambda ref: ticket_path(main_tickets(), ref), None),
-    "index": Subcommand(mctx("prints the index of your session"), INDEX_HELP, 0,
+    "index": Subcommand(mctx("prints the index of your session"), "", "", 0,
                         lambda: session_index(main_tickets(), session_id()), TICKET_FILING),
 }
 """Each subcommand, by the word that calls it, in the order `HELP` gives
@@ -659,11 +668,18 @@ def help_values() -> dict[str, str]:
                                        for name, sub in SUBCOMMANDS.items()))
 
 
+def subcommand_help(name: str, sub: Subcommand, values: dict[str, str]) -> str:
+    """The help of `sub`, which `<name> --help` prints."""
+    detail = textwrap.indent(sub.detail.format(**values), "    ")
+    return SUBCOMMAND_HELP.format(name=name, args=sub.args, purpose=sub.purpose,
+                                  detail=detail).rstrip("\n")
+
+
 def main(args: list[str]) -> int:
     values = help_values()
     if args[:1] and (sub := SUBCOMMANDS.get(args[0])):
-        return run(sub.parse(args[1:]), sub.help.format(**values), sub.count, sub.act,
-                   sub.filing, args)
+        return run(sub.parse(args[1:]), subcommand_help(args[0], sub, values), sub.count,
+                   sub.act, sub.filing, args)
     return run(args, HELP.format(**values), 3, lambda domain, subject, agent: file_ticket(
         main_tickets(), domain, subject, agent, sys.stdin.read()), TICKET_FILING, args)
 

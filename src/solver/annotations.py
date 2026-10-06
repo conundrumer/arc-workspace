@@ -604,8 +604,6 @@ def input_mark_lines(comments: Iterable[Comment]) -> frozenset[int]:
 
 
 def input_marked(span: Span, marks: frozenset[int]) -> bool:
-    """A declaration over `span` bears one of the `// @input` marks on the
-    lines `marks`."""
     return not marks.isdisjoint(range(span.first, span.last + 1))
 
 
