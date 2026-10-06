@@ -45,6 +45,7 @@ class Kind(StrEnum):
     PERFORMANCE = "performance"
     REFACTOR = "refactor"
     CHANGE = "change"
+    REQUEST = "request"
 
 
 PASS_KINDS = frozenset({Kind.INTERFERENCE, Kind.DELAY})
@@ -85,7 +86,7 @@ FILER_KINDS: dict[Filer, frozenset[Kind]] = {
     Filer.DOC_REVIEWER: REVIEW_KINDS,
     Filer.TICKET_REVIEWER: REVIEW_KINDS,
     Filer.CODE_REVIEWER: REVIEW_KINDS | {Kind.REFACTOR, Kind.QUESTION},
-    Filer.COORDINATOR: frozenset({Kind.CHANGE, Kind.BUG}),
+    Filer.COORDINATOR: frozenset({Kind.REQUEST, Kind.BUG}),
     Filer.TICKET_ANALYST: frozenset({Kind.CHANGE}),
 }
 """The kinds each filing agent, by its name, may file."""

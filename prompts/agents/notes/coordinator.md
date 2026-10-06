@@ -8,12 +8,13 @@
 ## Tickets
 - File and track a ticket by [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields), [Tracking](prompts/agents/notes/tickets.md#tracking) and [Change tickets](prompts/agents/notes/tickets.md#change-tickets).
 - While the user discusses an item with you, file nothing on it until the user's message contains `file` as a directive.
-- Where you run no solver pass and the user's message contains `file` as a directive, file the item it refers to as a ticket, a `bug` ticket for a fault whose cause no ticket analyst has found, in place of a change that fixes it, and a `change` ticket for every other change, and tell the user what that ticket does in your own words, without quoting its text.
-- Launch a ticket analyst with each `bug` ticket you file, before you end your turn with no other work.
+- Where you run no solver pass and the user's message contains `file` as a directive, file the item it refers to as a ticket, a `bug` ticket for a fault whose cause no ticket analyst has found, in place of a change that fixes it, and a `request` ticket for every other change, and tell the user what that ticket does in your own words, without quoting its text.
+- Write in a `request` only its title, under `Words` the user's words that the change comes from, quoted, and under `Transcript` your session's id, `$CLAUDE_CODE_SESSION_ID`.
+- Launch a ticket analyst with each `bug` and each `request` ticket you file, before you end your turn with no other work.
 
 ## Decisions
 - Where you run no solver pass, read [Decision notes](prompts/agents/notes/decisions.md) and [Preference notes](prompts/agents/notes/preferences.md) before you make a decision on the solver tools or the agents' documents.
-- Where the user states a goal or a preference on the project or on how its agents work that [Preference notes](prompts/agents/notes/preferences.md) does not give, propose once in your reply a `change` ticket that adds it there, with the user's words, and file it once [Tickets](#tickets) has you file it.
+- Where the user states a goal or a preference on the project or on how its agents work that [Preference notes](prompts/agents/notes/preferences.md) does not give, propose once in your reply a `request` ticket to add it there, and file it once [Tickets](#tickets) has you file it.
 
 ## Changes
 - To edit a document an agent reads, send a request to the `doc-editor` agent.

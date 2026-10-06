@@ -17,7 +17,7 @@
 ## Ticket fields
 - `<agent>` is your agent's name, or `coordinator` where you are the coordinator.
 - Your agent id is the id of your own entry in the listing `uv run python scripts/profile_runs.py --running $CLAUDE_CODE_SESSION_ID` prints, the entry whose call in flight is that command.
-- `<domain>` and `<subject>` give what a ticket of another kind than `change` is about:
+- `<domain>` and `<subject>` give what a ticket of another kind than `change` and `request` is about:
     - `task` and the task id: a solver pass's ticket, and a transcript review's ticket on a pass.
     - `change` and the number of the change's ticket: an editor's or a doc reviewer's ticket on its change where its brief gives that number, and a transcript review's ticket on such an editor's run.
     - `commit` and the commit's hash: a code reviewer's ticket, on the commit its baseline tag names, and an operator's ticket from its After a batch, on `master` at that commit.
@@ -36,6 +36,6 @@
 - Close the ticket of a place that is judged and kept with `wontfix`, and give the judgment in the note after it.
 
 ## Change tickets
-- A `change` takes `change` as `<domain>`, and as `<subject>` the namespace its Scope touches most, or the one it creates, then two or three words, joined by `-`.
+- A ticket that asks for a change, a `change` or a `request`, takes `change` as `<domain>`, and as `<subject>` the namespace a `change`'s Scope touches most, or the one it creates, or the one a `request`'s target lies in, then two or three words, joined by `-`.
     - A namespace takes its existing name, with `-` in place of `_`: a package under `src/`, a script under `scripts/` without `.py`, `lib`, `solver-<task_id>`, `witnesses`, `handbook`, `agents`, `notes`, `tickets` or `tests`.
 - When you revise a ticket under `tickets/draft/`, write a log line with `draft` as its status and `revised` as its note.

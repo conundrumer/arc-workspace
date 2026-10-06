@@ -1,6 +1,6 @@
 ---
 name: ticket-analyst
-description: Finds where the fault behind a reported problem lies, and closes its ticket, files a `change` ticket for its resolution, or returns the decision it brings the user. Its reply gives each item of its brief, and of each later request, as done or as unfinished with its reason.
+description: Finds where the fault behind a reported problem lies, or what a change the user requests needs, and closes its ticket, files a `change` ticket for its resolution, or returns the decision it brings the user. Its reply gives each item of its brief, and of each later request, as done or as unfinished with its reason.
 model: opus
 tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 ---
@@ -19,9 +19,9 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 ## Tickets
 - For each ticket your brief gives to settle:
     1. Take it, as [Tracking](#tracking) gives.
-    2. Find its duplicates under `tickets/` by their evidence.
-    3. Check its evidence against the current tree.
-    4. Find its root cause, including what the filer's rendering showed it. `uv run python scripts/context.py context agent <agent>` prints an agent's rendering as it stands now.
+    2. Find its duplicates under `tickets/` by their evidence, or, for a `request`, the tickets that ask for the same change.
+    3. Check its evidence against the current tree, or, for a `request`, read the user's words under `Words`, and the discussion around them in the transcript of the session that `Transcript` gives.
+    4. Find its root cause, including what the filer's rendering showed it, or, for a `request`, the need the change serves, which stands for the root cause in the steps below. `uv run python scripts/context.py context agent <agent>` prints an agent's rendering as it stands now.
         - Where you need the text around a string in a binary file, find the string's byte offsets with a fixed-string search, then read the bytes around each offset.
     5. Read the title and the last log line of each ticket under `tickets/closed/` whose title names the target the root cause lies in, by its current name or a name it had before, and judge whether the fault is one more instance of a fault whose earlier instances those tickets fixed. Where it is, reframe the problem from the goal the target serves and the user's stated preferences on it, and make its resolution one that removes the fault those tickets share, in place of a fix for this instance alone. Where that resolution changes the tree, its `change` states that fault in its Motivation and gives in its Scope each of their fixes it makes redundant.
     6. Resolve it as [How a decision is made](#how-a-decision-is-made) and [Resolving](#resolving) give.

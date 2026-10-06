@@ -44,8 +44,9 @@ HELP = mctx("""
         EOF
         ```
     - A `change` takes `kind: change`, may add `depends-on: <number>, <number>` and `priority: <0 to 100>` to the front matter, has `# <title>` as its title, and has the sections {change_sections} in place of {defect_headings}.
+    - A `request` has `# <target>: <what the user asks for>` as its title, and the sections {request_sections} in place of {defect_headings}.
     - The rules of `<domain>`, `<subject>`, `<agent>`, numbers and filing follow.
-    - `<domain>` is one of {domains}, and `<subject>` is the id of the thing it names: a task id for `task`, a ticket's number for `change` and `ticket`, a commit hash for `commit`, an agent id for `agent`. A `change` takes `change` as `<domain>` and `<namespace>-<short-title>` as `<subject>`, and each `_` in that `<subject>`, as in a namespace name such as `run_dl`, becomes `-`.
+    - `<domain>` is one of {domains}, and `<subject>` is the id of the thing it names: a task id for `task`, a ticket's number for `change` and `ticket`, a commit hash for `commit`, an agent id for `agent`. A ticket that asks for a change, a `change` or a `request`, takes `change` as `<domain>` and `<namespace>-<short-title>` as `<subject>`, and each `_` in that `<subject>`, as in a namespace name such as `run_dl`, becomes `-`.
     - `<agent>` is your agent's name, which may end in `-<suffix>`. The command refuses a kind your agent may not file, and names the kinds it may.
     - A ticket's number is `<session>-<n>`: `<session>` is the index of the session that filed it, and `<n>` counts that session's tickets from 1. A ticket filed before a number gave the filing session's index has a bare number, and the command takes either form wherever it takes a number.
     - Numbers order with every bare number before every `<session>-<n>` number. Bare numbers compare as integers, and `<session>-<n>` numbers compare by `<session>`, then by `<n>`, each as an integer.
@@ -97,7 +98,12 @@ COMMIT = re.compile(r"[0-9a-f]{7,40}")
 AGENT_ID = re.compile(r"a[0-9a-f]{16}")
 
 CHANGE_SUBJECT = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)+")
-"""A `change` ticket's own subject: its namespace, then kebab words."""
+"""The subject of a ticket that asks for a change: its namespace, then
+kebab words."""
+
+ASKS_CHANGE = frozenset({Kind.CHANGE, Kind.REQUEST})
+"""The kinds of a ticket that asks for a change, which takes `change` and
+`CHANGE_SUBJECT` as its domain and subject."""
 
 
 FRONT = r"---\nkind: (?P<kind>\S+)\n(?P<fields>(?:[a-z-]+: .*\n)*)---\n"
@@ -106,7 +112,8 @@ TICKET_HEAD = re.compile(FRONT + "# ")
 """The front matter and title mark of a ticket, or of an issue filed before
 tickets, in the text of a filing command."""
 
-SECTIONS = {Kind.CHANGE: ("Intent", "Motivation", "Scope")}
+SECTIONS = {Kind.CHANGE: ("Intent", "Motivation", "Scope"),
+            Kind.REQUEST: ("Words", "Transcript")}
 """The sections of each kind that has its own; every other kind has
 `DEFECT_SECTIONS`."""
 
@@ -252,13 +259,13 @@ def file_ticket(tickets: Path, domain: str, subject: str, agent: str, text: str)
     if not FIELD.fullmatch(agent):
         raise Refused(mctx("`{agent}` is not kebab words").format(agent=agent))
     kind = checked_kind(tickets, agent, text)
-    if kind is Kind.CHANGE:
+    if kind in ASKS_CHANGE:
         subject = subject.replace("_", "-")
     if not FIELD.fullmatch(subject):
         raise Refused(mctx("`{subject}` is not kebab words").format(subject=subject))
-    if kind is Kind.CHANGE:
+    if kind in ASKS_CHANGE:
         if dom is not Domain.CHANGE or not CHANGE_SUBJECT.fullmatch(subject):
-            raise Refused(mctx("a `change` takes `change` and `<namespace>-<short-title>`"))
+            raise Refused(mctx("a `{kind}` takes `change` and `<namespace>-<short-title>`").format(kind=kind))
     else:
         check_subject(tickets, dom, subject)
     status = Status.DRAFT if kind is Kind.CHANGE else Status.OPEN
@@ -514,6 +521,7 @@ def help_values() -> dict[str, str]:
                 defect_sections=sections_example(DEFECT_SECTIONS),
                 defect_headings=ticked(map(heading, DEFECT_SECTIONS)),
                 change_sections=ticked(map(heading, SECTIONS[Kind.CHANGE])),
+                request_sections=ticked(map(heading, SECTIONS[Kind.REQUEST])),
                 statuses=ticked(Status), log=LOG, time_form=TIME_FORM,
                 resolutions=ticked(Resolution), blocked=Status.BLOCKED,
                 user=Wait.USER, change=Wait.CHANGE, session_var=SESSION_VAR,
