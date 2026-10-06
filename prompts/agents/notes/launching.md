@@ -79,7 +79,6 @@
     2. Write the output of `git diff HEAD -- programs/solvers/<task_id>.dl programs/witnesses/<task_id>.wit.json` to `uncommitted.diff` in it.
     3. Move into it the task's solver and its witness file, each where it exists, and, before an Analyze pass, each entry of `work/task/<task_id>/` other than `claim` and the numbered directories, or, before a Create pass, `create.md`, each `refine-<n>.md` and `progress.md`.
     4. Run `git update-index --skip-worktree <path>` on the path of each of those two files that `git ls-files <path>` lists.
-- Before you launch solver work into an existing worktree other than the main worktree, where nothing stands at that worktree's `work`, make that worktree's `work` a symbolic link to the main worktree's `work/`, with `ln -s <main worktree>/work <worktree>/work`.
 - Once each pass you launch on the task for one request or one procedure has ended:
     1. Move the solver and the witness file you set aside back to their paths, each where nothing stands at its path.
     2. Run `git update-index --no-skip-worktree <path>` on each path you marked.

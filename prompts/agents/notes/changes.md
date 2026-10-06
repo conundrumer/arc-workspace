@@ -27,13 +27,13 @@
 - Merge a change only once it passes, with `uv run python scripts/merge_change.py <worktree> -m <message>`, and commit in no other way.
 - Where that script exits with status 1, leave the worktree as it is. Where it reports that the rebase conflicts, run the change again with a new first editor, and give the old worktree and its branch in your reply. Where it reports a failed check, send what it reports to the change's editor as a finding of its checks. Otherwise, give the worktree and the script's message in your reply.
     - Where the failed check is the gate, give in that finding, for each `DIFF` line that the change's briefs ask for, the accepted output under `tests/gate/accepted/` to update.
-- Where the harness or the permission classifier denies the merge call, give the worktree in your reply with the merge as unfinished.
 - Once a change is merged, and before you close its ticket, run each check its ticket's Scope places after the merge, and file each check that fails as a `bug` ticket on the change. Give each such check whose subject is an event that has not happened at the merge in your reply as unfinished, with that reason. Run a check of what a running Claude Code session reads only at its start, such as its hooks, in a `claude -p` session you start in the main worktree after the merge, and not in an agent you launch.
 - Once a change is merged, move to `tickets/closed/` its ticket, then each `question` ticket filed on it that still stands outside `tickets/closed/`, with `fixed`, the change's number and the hash `master` stands at after the merge as the note.
 - Once a change is merged, close each `refactor` ticket outside `tickets/closed/` whose title ends in `many ideas in one place` and cites a module that a code editor of the change reports it split, with `fixed`, the change's number where it has a ticket, and the hash `master` stands at after the merge as the note. Where that report gives a part of the module as left unsplit, write that part as a log line on the ticket in place of closing it.
 
-### A merge an agent was denied
-- Where you run the merge of a change whose merge call an agent you launched gave as denied, and your merge is denied too, move the change's ticket to `tickets/blocked/`, with a note that opens with `user` and gives the call, the denial's text and the worktree. Where your merge goes through, send the change to an operator for its [After a batch](prompts/agents/operator.md#after-a-batch): to an operator that runs, or in the brief of the next one you launch.
+### A denied merge
+- Where your merge call of a change is denied, move the change's ticket to `tickets/blocked/`, with a note that opens with `user` and gives the call, the denial's text and the worktree.
+- Where your merge of a change whose merge call an agent you launched gave as denied goes through, send the change to an operator for its [After a batch](prompts/agents/operator.md#after-a-batch): to an operator that runs, or in the brief of the next one you launch.
 
 ## budget
 - Do each step your documents give, and finish the work, even where it runs past the budget a `Budget: N minutes` line of your brief or a later message gives.
