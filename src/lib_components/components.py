@@ -752,6 +752,7 @@ class WallpaperRows(NamedTuple):
     """The output relations of `Wallpaper` (programs/lib/cells.dl)."""
 
     symmetry: Relation
+    transform_used: Relation
     action: Relation
 
 
@@ -759,10 +760,10 @@ def Wallpaper(Key: TypeArg, Val: TypeArg, *, sizes: Mapping[PyValue, Size] | Non
     """Runs `Wallpaper` (programs/lib/cells.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
     got = call('Wallpaper', [Key, Val],
                GridTypes(LibType.POSITION, LibType.OFFSET),
-               {'transform': Columns((LibType.D4, ), False), 'cell': Columns((Key, LibType.POSITION, Val, ), True), 'grid': Columns((Key, LibType.POSITION, ), True), 'period': Columns((Key, LibType.AXIS, Primitive.NUMBER, ), True), 'symmetry': Columns((Key, LibType.D4, LibType.OFFSET, ), True), 'action': Columns((Key, LibType.POSITION, LibType.POSITION, ), True)},
+               {'transform': Columns((LibType.D4, ), False), 'cell': Columns((Key, LibType.POSITION, Val, ), True), 'grid': Columns((Key, LibType.POSITION, ), True), 'period': Columns((Key, LibType.AXIS, Primitive.NUMBER, ), True), 'symmetry': Columns((Key, LibType.D4, LibType.OFFSET, ), True), 'transform_used': Columns((Key, LibType.D4, ), True), 'action': Columns((Key, LibType.POSITION, LibType.POSITION, ), True)},
                {'transform': transform, 'cell': cell, 'grid': grid, 'period': period},
-               ['symmetry', 'action'], sizes)
-    return WallpaperRows(got['symmetry'], got['action'])
+               ['symmetry', 'transform_used', 'action'], sizes)
+    return WallpaperRows(got['symmetry'], got['transform_used'], got['action'])
 
 
 class OccurrencesRows(NamedTuple):

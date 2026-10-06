@@ -574,21 +574,30 @@
     /// p is a position of the frame.
     .decl grid(key: Key, p: Position)  // @input
 
-    /// k is the pattern's translation period along axis a.
+    /// k is the pattern's translation period along axis a. An axis with no
+    /// row has no period.
     .decl period(key: Key, a: Axis, k: number)  // @input
+
+    // p is the top-left cell of the frame.
+    .decl _origin(key: Key, p: Position)
+    _origin(Key, P) :- grid(Key, P), corner_dist(P, DIAG_TL, 0).
 
     // d is the edge of the bottom-right corner on axis a.
     .decl _canon(a: Axis, d: Dir)
     _canon(A, D) :- dir_of(DIAG_BR, A, D).
 
     // delta is a shift along axis a that lies in the fundamental domain:
-    // zero, or less than one period toward the bottom or right edge.
+    // zero; on an axis with a period, less than one period toward the
+    // bottom or right edge; on an axis with none, any shift the frame
+    // admits toward either edge.
     .decl _dom_ax(key: Key, a: Axis, delta: Offset)
     _dom_ax(Key, A, Delta) :-
-        grid(Key, P), axis_elem(A),
+        _origin(Key, P), axis_elem(A),
         ( Delta = ZERO
         ; sub_extent(P, A, K), period(Key, A, Kp), K < Kp,
           _canon(A, D), jump_offset(D, K, Delta)
+        ; sub_extent(P, A, K), !period(Key, A, _),
+          axis_of(D, A), jump_offset(D, K, Delta)
         ).
 
     // delta is a shift in the fundamental domain.
@@ -602,7 +611,7 @@
     // bottom or right edge.
     .decl _lat_ax(key: Key, a: Axis, delta: Offset)
     _lat_ax(Key, A, Delta) :-
-        grid(Key, _), axis_elem(A),
+        _origin(Key, _), axis_elem(A),
         ( Delta = ZERO
         ; period(Key, A, K), _canon(A, D), jump_offset(D, K, Delta)
         ).
@@ -625,26 +634,67 @@
           apply(D, Delta, DD), compose(Delta, DD, S), _lat(Key, S)
         ).
 
-    // The candidate (d, delta) takes the cell at p, holding v1, onto the
-    // cell at q, holding v2.
-    .decl _pair(key: Key, d: D4, delta: Offset, p: Position, q: Position,
-                v1: Val, v2: Val)
-    _pair(Key, D, Delta, P, Q, V1, V2) :-
-        cell(Key, P, V1), _cand(Key, D, Delta), apply(D, P, P1),
-        compose(P1, Delta, Q), cell(Key, Q, V2).
+    // The candidate (d, delta) takes the cell at p onto a cell of another
+    // value.
+    .decl _breaks(key: Key, d: D4, delta: Offset, p: Position) inline
+    _breaks(Key, D, Delta, P) :-
+        cell(Key, P, V1), apply(D, P, P1), compose(P1, Delta, Q),
+        cell(Key, Q, V2), V1 != V2.
+
+    // The cells the candidates are tested on before the whole set: a frame
+    // corner, a cell within 2 of one by taxicab distance, and a cell on the
+    // frame's border. Where the transform maps the frame onto itself, the
+    // candidate's image of the frame is a translate of the frame, so the
+    // positions it takes into the frame form a rectangle that holds a frame
+    // corner and runs along the border from it. A test drops only a
+    // candidate that takes some cell onto a cell of another value, which is
+    // no symmetry.
+    .decl _corner(key: Key, p: Position)
+    _corner(Key, P) :- cell(Key, P, _), corner_dist(P, _, 0).
+    .decl _near(key: Key, p: Position)
+    _near(Key, P) :- cell(Key, P, _), corner_dist(P, _, K), K <= 2.
+    .decl _rim(key: Key, p: Position)
+    _rim(Key, P) :- cell(Key, P, _), dir_elem(D), dist(P, D, 0).
+
+    // The candidates no corner cell breaks, then those no near cell
+    // breaks, then those no rim cell breaks.
+    .decl _past_corner(key: Key, d: D4, delta: Offset)
+    _past_corner(Key, D, Delta) :-
+        _cand(Key, D, Delta), !_corner_breaks(Key, D, Delta).
+    .decl _corner_breaks(key: Key, d: D4, delta: Offset)
+    _corner_breaks(Key, D, Delta) :-
+        _cand(Key, D, Delta), _corner(Key, P), _breaks(Key, D, Delta, P).
+
+    .decl _past_near(key: Key, d: D4, delta: Offset)
+    _past_near(Key, D, Delta) :-
+        _past_corner(Key, D, Delta), !_near_breaks(Key, D, Delta).
+    .decl _near_breaks(key: Key, d: D4, delta: Offset)
+    _near_breaks(Key, D, Delta) :-
+        _past_corner(Key, D, Delta), _near(Key, P), _breaks(Key, D, Delta, P).
+
+    .decl _past_rim(key: Key, d: D4, delta: Offset)
+    _past_rim(Key, D, Delta) :-
+        _past_near(Key, D, Delta), !_rim_breaks(Key, D, Delta).
+    .decl _rim_breaks(key: Key, d: D4, delta: Offset)
+    _rim_breaks(Key, D, Delta) :-
+        _past_near(Key, D, Delta), _rim(Key, P), _breaks(Key, D, Delta, P).
 
     // The candidate (d, delta) takes some cell onto a cell of another value.
     .decl _mismatch(key: Key, d: D4, delta: Offset)
-    _mismatch(Key, D, Delta) :- _pair(Key, D, Delta, _, _, V1, V2), V1 != V2.
-
-    // The candidate (d, delta) takes some cell onto a different cell.
-    .decl _witnessed(key: Key, d: D4, delta: Offset)
-    _witnessed(Key, D, Delta) :- _pair(Key, D, Delta, P, Q, _, _), P != Q.
+    _mismatch(Key, D, Delta) :-
+        _past_rim(Key, D, Delta), cell(Key, P, _), _breaks(Key, D, Delta, P).
 
     /// Transform d followed by shift delta is a symmetry of the pattern.
     .decl symmetry(key: Key, d: D4, delta: Offset)
     symmetry(Key, D, Delta) :-
-        _witnessed(Key, D, Delta), !_mismatch(Key, D, Delta).
+        _past_rim(Key, D, Delta), !_mismatch(Key, D, Delta),
+        cell(Key, P, _), apply(D, P, P1), compose(P1, Delta, Q),
+        cell(Key, Q, _), P != Q.
+
+    /// d is the identity, or the transform of some symmetry.
+    .decl transform_used(key: Key, d: D4)
+    transform_used(Key, D4_ID) :- _origin(Key, _).
+    transform_used(Key, D) :- symmetry(Key, D, _).
 
     /// A symmetry or a period shift takes the frame position p onto the frame
     /// position q.
