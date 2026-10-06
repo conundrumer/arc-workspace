@@ -15,12 +15,12 @@ from solver.model import (
     base_case,
     DeriveBranch,
     Solver,
-    cases,
     choice_bases,
     enumerates,
     every_base,
     is_concept,
 )
+from solver.cases import cases
 from solver.names import Denoted, branch_text, name as case_name
 from solver.problems import Fault, WitnessFileRole
 from solver.outcome import Assignment, Outcome
@@ -138,7 +138,7 @@ class Runs:
 
     @cached_property
     def solver_cases(self) -> tuple[Case, ...] | RunFailure:
-        """The solver's cases (`solver.model.cases`)."""
+        """The solver's cases (`solver.cases.cases`)."""
         return cases(self.solver, self.engine, self.limits)
 
     @property

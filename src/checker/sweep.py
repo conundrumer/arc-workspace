@@ -40,10 +40,10 @@ from solver.model import (
     UnderMarker,
     Unmarked,
     declaration_of,
-    dependence,
     derived_parameters,
     lists_case,
 )
+from solver.dependence import dependence
 from solver.names import marker_lists
 from solver.names import name as case_label
 from solver.outcome import Grids
@@ -287,7 +287,7 @@ class CaseSets[V: (Row, SetValue)]:
     values: each base's admitted values, at its base case
     (`solver.model.base_case`, `_passing_every`), the candidates run, and the
     cases the program never reads the parameter under
-    (`solver.model.Dependence.reads_parameter`). A value
+    (`solver.dependence.Dependence.reads_parameter`). A value
     is a row (`ValueSweep`), or a set of rows (`SetSweep`), whose entry is
     `SetCases`."""
 
@@ -319,7 +319,7 @@ class SetCases:
     outputs: per base case, how many of those changes do (`CaseSets`), of
     the `swept` changes, and the cases at which every swept change does and
     which the program never reads the parameter under
-    (`solver.model.Dependence.reads_parameter`)."""
+    (`solver.dependence.Dependence.reads_parameter`)."""
 
     per_case: tuple[tuple[Case, int], ...]
     swept: int
@@ -867,7 +867,7 @@ def _holders(solver: Solver) -> dict[str, Parameter]:
         "that grid.")
 def values_giving(solver: Solver, runs: Runs) -> tuple[GivingValues, ...]:
     """For each case that gives no output on a train pair, each parameter
-    its base reads (`solver.model.dependence`) as stored, its case taking
+    its base reads (`solver.dependence.dependence`) as stored, its case taking
     no `@derive` branch on it, that holds several values at the case
     (`_fixes`): which of those values alone, the parameter's other cases
     at their stored values, give the case an output that is a candidate

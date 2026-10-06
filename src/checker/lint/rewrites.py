@@ -67,11 +67,7 @@ from engine.program import (
 from engine.quotes import quotes
 from solver.category import Category
 from solver.model import (
-    compared,
-    substituted_atom,
-    substituted_literal,
     bases_of,
-    dependence,
     Section,
     Solver,
     UnderMarker,
@@ -80,6 +76,12 @@ from solver.model import (
     Parameter,
     section_at,
 )
+from solver.case_types import (
+    compared,
+    substituted_atom,
+    substituted_literal,
+)
+from solver.dependence import dependence
 from solver.solve import per_case
 from solver.vocabulary import (
     COMPOSE,
@@ -650,7 +652,7 @@ def check_shared_read(solver: Solver, runs: Runs) -> list[Finding]:
     column (`solver.solve.per_case`); a fact of a parameter with a case
     column outside the marker of its case (`case_column_facts`); and a
     shared parameter some case of the solver never reads
-    (`solver.model.Dependence.reads_parameter`), or that no case reads,
+    (`solver.dependence.Dependence.reads_parameter`), or that no case reads,
     which no marker of a case is the place of. The last two are judged
     where the run that enumerates the solver's cases gives a result. A
     marker that lists no case above every marker that lists one leaves the

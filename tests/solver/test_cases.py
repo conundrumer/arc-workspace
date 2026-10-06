@@ -8,7 +8,7 @@ import pytest
 
 from engine import AdtValue, DeclId, Limits, RelationName, Tuples
 from engine.program import AtomLiteral, ConstructorTerm, Variable
-from solver import model
+from solver import cases as solver_cases
 from solver.load import load
 from solver.model import Case, DeriveBranch, StoredAtDerive
 from tests.solver.fake import (
@@ -76,7 +76,7 @@ def _cases(bg_ignore: str, fg_ignore: str) -> tuple[Case, ...]:
     solver = load("0000aaaa", engine)
     assert solver.problems == ()
     assert StoredAtDerive("bg") in solver.branches
-    got = model.cases(solver, engine, Limits(5.0, 10.0))
+    got = solver_cases.cases(solver, engine, Limits(5.0, 10.0))
     assert isinstance(got, tuple)
     return got
 

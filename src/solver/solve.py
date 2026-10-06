@@ -87,15 +87,10 @@ from solver.model import (
     StoredGrid,
     row_value,
     enumerates,
-    case_values,
-    case_columns,
     parameter_case_columns,
     parameter_columns,
     parameter,
     every_base,
-    case_types,
-    cases as cases_of,
-    dependence,
     has_determine,
     instance_of,
     own,
@@ -104,11 +99,18 @@ from solver.model import (
     ColumnTypes,
     column_names,
     column_reading,
-    holds_at,
     arg_value,
     ArgOffType,
     ArgUnknown,
 )
+from solver.case_types import (
+    case_values,
+    case_columns,
+    case_types,
+    holds_at,
+)
+from solver.dependence import dependence
+from solver.cases import cases as cases_of
 from solver.problems import (
     InWitnessFile,
     Named,
@@ -993,7 +995,7 @@ class PerCase:
     a parameter's, `solver.model.parameter_case_columns`), and each case
     column of a record type with fields outside the case, with the places
     of those fields (`CaseTypes.kept`). A fact holds at each base that
-    holds its case values (`solver.model.holds_at`), and the relation's
+    holds its case values (`solver.case_types.holds_at`), and the relation's
     value at a base is the facts that hold there, each without its case
     part (`value`). Every reading of a parameter's value, the runs, the
     sweep, the determination, `derive`, `store` and the lint, reads each
@@ -1013,7 +1015,7 @@ class PerCase:
 
     def field_types(self, solver: Solver, column: int) -> tuple[str, ...]:
         """The types of the fields of the case column `column`, of a record
-        type (`solver.model.CaseTypes.records`), in order."""
+        type (`solver.case_types.CaseTypes.records`), in order."""
         return tuple(case_types(solver).records[self.types[column]])
 
     def kept_types(self, solver: Solver, column: int) -> tuple[str, ...]:
@@ -1078,14 +1080,14 @@ class PerCase:
 
     def holds(self, solver: Solver, base: Base | None, row: Row) -> bool:
         """Whether `base` holds the fact's case values
-        (`solver.model.holds_at`)."""
+        (`solver.case_types.holds_at`)."""
         return holds_at(solver, base, self.types, self.case, self.key(row))
 
     def written(self, solver: Solver, choice: Choice, base: Base,
                 value: Row) -> list[Row]:
         """The facts that give `value`, a fact without its case part
         (`value`), at `base`: each case column and each case field holds
-        what the base holds at its type (`solver.model.case_values`).
+        what the base holds at its type (`solver.case_types.case_values`).
         Raises `ValueError` where a case column with fields outside the
         case holds no record of those fields, which `value` never
         gives."""

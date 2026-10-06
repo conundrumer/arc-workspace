@@ -39,7 +39,8 @@ from engine.program import (
 from engine.quotes import quotes
 from solver.annotations import IgnoreForm, IgnoreLine
 from solver.category import HINTS, Category
-from solver.model import Solver, bases_of, dependence, dependent_bases
+from solver.model import Solver, bases_of
+from solver.dependence import dependence, dependent_bases
 
 type Check = Callable[[Solver, Runs], list[Finding]]
 
@@ -222,7 +223,7 @@ BANNED_FORMS = frozenset({
 def _branch_forms(solver: Solver, runs: Runs, findings: list[Finding]
                   ) -> list[Finding]:
     """Each banned-form finding whose units some case reads and
-    no derivation of the concept case reads (`solver.model.dependence`),
+    no derivation of the concept case reads (`solver.dependence.dependence`),
     as a `LintBranchForm` naming the relations the line feeds and, through
     `cover`, the cases that read them; the others as given. Nothing is
     judged where the run that enumerates the solver's cases gives no

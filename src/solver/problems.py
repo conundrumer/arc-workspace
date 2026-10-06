@@ -405,7 +405,7 @@ class CaseColumnOffForm:
 
 class OffFormType(StrEnum):
     """What a column that carries the case is, other than `Choice`
-    (`solver.model.case_columns`)."""
+    (`solver.case_types.case_columns`)."""
 
     ADT = "adt"
     """An ADT in `Choice`."""

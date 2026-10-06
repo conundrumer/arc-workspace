@@ -87,14 +87,16 @@ from solver.model import (
     Case,
     Choice,
     ChoicePoint,
-    Node,
     Solver,
     branch_witnesses,
     concept_branch,
-    dependence,
     marker_at,
     row_value,
     other_branches,
+)
+from solver.graph import Node
+from solver.dependence import (
+    dependence,
     dependent_bases,
 )
 from solver.names import (
@@ -519,7 +521,7 @@ def check_comp_without_entry(solver: Solver, runs: Runs) -> list[Finding]:
     """A proposal comp with no entry under docs/wf-solver/proposals/, a
     hint. Serves the purest form: the comp is lib code on its way out of the
     solver. A proposal comp whose relations no derivation of the concept
-    case reads (`solver.model.dependence`) is a `proposal comp` lint in
+    case reads (`solver.dependence.dependence`) is a `proposal comp` lint in
     place of that hint, naming through `cover` the cases whose derivations
     read them."""
     v = view(solver, runs)
@@ -544,7 +546,7 @@ def check_comp_without_entry(solver: Solver, runs: Runs) -> list[Finding]:
 def _comp_dependents(solver: Solver, runs: Runs, comps: Sequence[str]
                      ) -> dict[str, tuple[str, ...]]:
     """Each of `comps` whose units no derivation of the concept case
-    depends on (`solver.model.dependence`), with the fewest names that
+    depends on (`solver.dependence.dependence`), with the fewest names that
     cover the cases whose derivations depend on one of them; none where
     the run that enumerates the solver's cases gives no result."""
     every = runs.solver_cases
@@ -1011,9 +1013,9 @@ def check_case_section(solver: Solver, runs: Runs) -> list[Finding]:
 def check_case_section_read(solver: Solver, runs: Runs) -> list[Finding]:
     """A clause that feeds a relation some cases read, where the clause
     stands under a marker that does not list them
-    (`solver.model.Dependence.stranded`): the program runs the clause for
+    (`solver.dependence.Dependence.stranded`): the program runs the clause for
     those cases, so its marker does not list every case that reads it. The
-    marker finding of `solver.model.dependence`, which the `store` report
+    marker finding of `solver.dependence.dependence`, which the `store` report
     prints too. One finding per solver line, relation and marker: the clauses
     on one line that feed one relation under one marker give one finding, on
     that line, naming through `cover` the cases that read any of them. Where

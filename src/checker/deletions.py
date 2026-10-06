@@ -48,14 +48,16 @@ from solver.model import (
     bases_of,
     choice_bases,
     Case,
-    Dependence,
     Solver,
-    case_columns,
-    dependence,
     enumerated,
     enumerates,
     own,
     run_empty,
+)
+from solver.case_types import case_columns
+from solver.dependence import (
+    Dependence,
+    dependence,
 )
 from solver.solve import (
     Determined,
@@ -288,7 +290,7 @@ def _depending(solver: Solver, groups: Sequence[tuple[Case, ...]],
                read: Dependence, d: Deletion) -> tuple[Case, ...]:
     """The cases of each of `groups` that holds a case whose derivation of
     `out` depends on a unit or a column the deletion removes (`read`,
-    `solver.model.dependence`): a unit it removes or removes a part of,
+    `solver.dependence.dependence`): a unit it removes or removes a part of,
     or the relation a column of which it removes."""
     bases: set[object] = set()
     for t in d.targets:

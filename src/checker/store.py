@@ -114,26 +114,32 @@ from solver.model import (
     Base,
     Case,
     base_case,
-    CaseTypes,
-    Dependence,
-    Graph,
-    InstancePath,
-    Pattern,
-    joined,
-    known,
-    NodeKind,
     Solver,
     StoreBranch,
-    case_types,
-    dependence,
     every_base,
     ident_keyed,
-    holds_at,
     is_concept,
     lists_case,
     marker_at,
     non_concept_at,
     own,
+)
+from solver.graph import (
+    Graph,
+    InstancePath,
+    NodeKind,
+)
+from solver.case_types import (
+    CaseTypes,
+    Pattern,
+    joined,
+    known,
+    case_types,
+    holds_at,
+)
+from solver.dependence import (
+    Dependence,
+    dependence,
     dependent_bases,
 )
 from solver.names import branch_text, cover, marker_lists
@@ -195,7 +201,7 @@ def between(solver: Solver, index: Index, rd: Dependence
     """The relations between `in` and `out`: each relation a base's
     derivation of `out` depends on (`dependence`) whose rows depend on
     `in` by dataflow, relation by relation, a lib instance's relations
-    each on their own (`solver.model.Graph.reads_input`), by the name a
+    each on their own (`solver.graph.Graph.reads_input`), by the name a
     top-level clause reads it by, but the run's own relations and the
     inline ones."""
     graph = Graph(solver.program, solver.engine)
@@ -887,7 +893,7 @@ def _literals(body: Sequence[BodyLiteral] | None) -> Iterator[BodyLiteral]:
 
 type Place = tuple[InstancePath, DeclId]
 """A relation at the instance it stands at: the instance path that
-declares it (`solver.model.Graph.place`), and its declaration."""
+declares it (`solver.graph.Graph.place`), and its declaration."""
 
 
 @dataclass(frozen=True)
@@ -912,7 +918,7 @@ class StoredAlready:
     term with no variable, a literal fact's among them, is not stored
     already, nor is a value read on a cycle of the relations. A relation
     is read at each instance it stands at (`Place`), with the clauses
-    that feed it there (`solver.model.Graph.feeding`)."""
+    that feed it there (`solver.graph.Graph.feeding`)."""
 
     def __init__(self, solver: Solver, index: Index) -> None:
         self.solver = solver

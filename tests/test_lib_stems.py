@@ -8,7 +8,8 @@ from pathlib import Path
 from engine import checkout
 from engine.program import Program
 from gating import commands
-from solver.model import Graph, component_chain, parse_with_lib
+from solver.model import parse_with_lib
+from solver.graph import Graph, component_chain
 from souffle.engine import SouffleEngine
 
 
@@ -18,7 +19,7 @@ def used(engine: SouffleEngine, solver: Path) -> set[str]:
     program = parse_with_lib(engine, solver.read_text())
     assert isinstance(program, Program), f"{solver} does not parse: {program}"
     components = {c.name: c for c in program.components}
-    return {name for comp in Graph(program, engine)._tree().values()
+    return {name for comp in Graph(program, engine).tree.values()
             for name in component_chain(components, comp) if name is not None}
 
 

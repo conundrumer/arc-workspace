@@ -4,4 +4,11 @@ and solving over an engine.
 Each type of the model carries, through `engine.quotes`, the handbook words
 that define it, quoted as written. The package has no private module:
 every module that `checker` reads is public, with a docstring, and no
-module is kept only to re-export another."""
+module is kept only to re-export another.
+
+The modules that read a solver's program as the model stand in an order,
+and each imports only those before it: `solver.graph`, the relations of the
+program at each instance; `solver.model`, the model and its load;
+`solver.case_types`, where the program holds a case value;
+`solver.dependence`, which parts of the solver's own text each base's
+derivation of `out` depends on; and `solver.cases`, the solver's cases."""

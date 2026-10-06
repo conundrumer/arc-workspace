@@ -138,7 +138,6 @@
     // --- $StoredEnd ---
     // The corner whose edge on the strip's axis ends the strip at the empty
     // panel.
-    // @ignore: case section — only the $StoredEnd key of layout reads it
     .decl empty_corner(d: DiagDir) empty_corner(DIAG_BR).
 
     // --- $StoredColorPeriod ---
@@ -200,7 +199,6 @@ ground.item([A, N, E, D], Col) :-
 // The split and empty panel of each case. The relations below take each
 // split a case reads, so that the cases share them.
 // @claim stage-order
-// @ignore: case section — each case reads the value under its own key
 .init layout = Unanimous<EmptyPanel, Layout>
 
 // --- $ByContent ---

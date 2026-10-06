@@ -16,7 +16,6 @@ from solver.model import (
     instance_faults,
     lists_case,
     name_problems,
-    off_form_case_columns,
     parse_with_lib,
     proposer_names,
     proposers_program,
@@ -27,6 +26,7 @@ from solver.model import (
     read_witness,
     solver_file,
 )
+from solver.case_types import off_form_case_columns
 from solver.problems import (
     Fault,
     InSolver,

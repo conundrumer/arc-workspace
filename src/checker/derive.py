@@ -65,9 +65,9 @@ from solver.model import (
     declaration_of,
     own,
     proposer_names,
-    Graph,
     proposers_program,
 )
+from solver.graph import Graph
 from solver.names import branch_text
 from solver.problems import (
     Fault,

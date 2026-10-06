@@ -49,10 +49,10 @@ from solver.model import (
     StoreBranch,
     StoredAtDerive,
     branch_under,
-    cases,
     ignore_targets,
     takes,
 )
+from solver.cases import cases
 from solver.names import Denoted, denote, denoted_cases
 from solver.problems import Fault, NameFault, WitnessFileRole
 from solver.outcome import Assignment, Grids, Outcome, group_grid, is_result
