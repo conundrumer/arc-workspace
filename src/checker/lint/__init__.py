@@ -71,7 +71,8 @@ REWRITE_CHECKS: tuple[Check, ...] = (
     bans.check_long_clause, rewrites.check_decl_placement, rewrites.check_pass_through,
     rewrites.check_chain_join, rewrites.check_single_consumer,
     rewrites.check_argmax, rewrites.check_const_join,
-    rewrites.check_comp_idiom, idioms.check_domain_enumerator,
+    rewrites.check_comp_idiom, idioms.check_lib_idiom,
+    idioms.check_domain_enumerator,
     rewrites.check_common_subexpr,
 )
 """The checks on shapes the corpus's edits rewrite away."""
