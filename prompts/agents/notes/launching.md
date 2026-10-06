@@ -75,6 +75,18 @@
 - Read no solver to write a brief for solver work.
 - Solver work other than a pass is a change, which an editor carries as it carries any other, whether or not a `change` ticket gives it. Where one does, its brief has the form [A change's brief](#a-changes-brief) gives.
 
+## Passes on a task
+- Before you launch a pass on a task whose claim you do not hold, claim the task: run `mkdir -p work/task/<task_id> && (set -C; echo "$CLAUDE_CODE_SESSION_ID" > work/task/<task_id>/claim)` in the main worktree. Where it fails, launch no pass on that task.
+- Where that pass is an Analyze or a Create pass, set aside the task's earlier work in the main worktree:
+    1. Make a new directory `work/task/<task_id>/<n>/`, with `n` one more than the highest numbered directory there, and 1 where there is none.
+    2. Write the output of `git diff HEAD -- programs/solvers/<task_id>.dl programs/witnesses/<task_id>.wit.json` to `uncommitted.diff` in it.
+    3. Move into it the task's solver and its witness file, each where it exists, and, before an Analyze pass, each entry of `work/task/<task_id>/` other than `claim` and the numbered directories, or, before a Create pass, `create.md`, each `refine-<n>.md` and `progress.md`.
+    4. Run `git update-index --skip-worktree <path>` on the path of each of those two files that `git ls-files <path>` lists.
+- Once each pass you launch on the task for one request or one procedure has ended:
+    1. Move the solver and the witness file you set aside back to their paths, each where nothing stands at its path.
+    2. Run `git update-index --no-skip-worktree <path>` on each path you marked.
+    3. Remove the claim file.
+
 ## Operators
 - When you launch an operator while no supervisor runs, launch a supervisor in the background. When a supervisor's reply says it ended for its context while an operator runs, launch a new one, with the alerts and the states found not to hold that reply gives.
 - Once no operator of yours runs, tell the supervisor to stop, with SendMessage.

@@ -15,9 +15,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 ## Solver passes
 - A pipeline runs Analyze, then Create, then Refine on one task. Start it at the pass your brief gives, or at Analyze.
 - Where your brief gives no task, take the next one from `bash scripts/queue.sh --order name`.
-- Before the first pass of a pipeline, claim its task: run `mkdir -p work/task/<task_id> && (set -C; echo "$CLAUDE_CODE_SESSION_ID" > work/task/<task_id>/claim)` in the main worktree. Where it fails, run no pipeline on that task, and where you took it from the queue, take the next task after it from the queue, with `-n` to list more than one.
-- Then, where the pipeline starts at Analyze, move each entry of `work/task/<task_id>/` other than `claim` and the numbered directories into a new directory `work/task/<task_id>/<n>/`, with `n` one more than the highest numbered directory there, and 1 where there is none. Where it starts at Create, move `create.md`, each `refine-<n>.md` and `progress.md` there in the same way.
-- When the pipeline ends, remove that claim file.
+* inline: notes/launching.md#passes-on-a-task
+- Where the claim fails on a task you took from the queue, take the next task after it from the queue, with `-n` to list more than one.
 - Before the first pass of a pipeline, where `master` holds commits that change `src/`, `scripts/` or `tests/` since the highest `code-review/<n>` tag, run a code review as [Code](#code) gives, and launch the pass only once that code review, and its assignee where one was launched, has returned.
 - Give an override in the brief of an Analyze, Create or Refine pass only where your brief carries it.
 - Where a pass's report quotes a part of its brief that the pass refused, stop the pipeline there, and launch no review and no assignee for that pass.
