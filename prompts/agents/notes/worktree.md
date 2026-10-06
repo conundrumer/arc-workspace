@@ -3,7 +3,6 @@
 
 ## editor-messages
 - Your final reply goes to the agent that launched you: the agent whose id your brief gives for it, or main where your brief gives none.
-- Where your brief gives the number of your change's ticket and no items, the ticket's Intent gives the items of your brief, and its Scope gives the files your brief gives, limited to the part your brief gives as yours where it gives one.
 - A later message may give a doc reviewer's findings on your change. Check each against the worktree, fix each one that holds and needs no decision, and give each other one in your report, with why you left it. Fix each finding a later message gives as kept, and carry out each decision it gives.
 - Where a doc reviewer has sent findings on your change, send that reviewer your fixes with SendMessage before each report to a later message, to the agent id its message came from, with each finding a later message gave as kept, each it gave as dropped with its reason, each finding you left for a decision, each decision you carried out, and each request a later message added. Message no other agent, apart from the agent that launched you, with your final reply alone.
 - Run no git command that changes state.

@@ -19,7 +19,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 - Then, where the pipeline starts at Analyze, move each entry of `work/task/<task_id>/` other than `claim` and the numbered directories into a new directory `work/task/<task_id>/<n>/`, with `n` one more than the highest numbered directory there, and 1 where there is none. Where it starts at Create, move `create.md`, each `refine-<n>.md` and `progress.md` there in the same way.
 - When the pipeline ends, remove that claim file.
 - Before the first pass of a pipeline, where `master` holds commits that change `src/`, `scripts/` or `tests/` since the highest `code-review/<n>` tag, run a code review as [Code](#code) gives, and launch the pass only once that code review, and its assignee where one was launched, has returned.
-- Launch an Analyze, Create or Refine pass with a brief that gives the task. Add an override, labelled as one, only where your brief carries it.
+- Give an override in the brief of an Analyze, Create or Refine pass only where your brief carries it.
 - Where a pass's report quotes a part of its brief that the pass refused, stop the pipeline there, and launch no review and no assignee for that pass.
 - After each pass, launch a transcript review of it, as [Launching](#launching) gives, and have that review also read the pass call by call, with its timing, for what the tool and the documents did to the pass's work, and file a ticket of kind `interference` where they made the pass's output wrong, and of kind `delay` where they cost it time or tokens alone.
 - Then launch an assignee with the tickets the pass's report lists under `## Tickets filed`, the tickets that review filed, and that review.
@@ -36,7 +36,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
     - A ticket's holder is the one the `--help` of `log` defines, and it has ended where `uv run python scripts/profile_runs.py --running $CLAUDE_CODE_SESSION_ID` lists neither the holder nor an agent whose parent is the holder.
 - Where your brief or a message from main gives tickets as open, take each `change` of your session under `tickets/open/`, and each one main names to you, whose every `depends-on` ticket stands under `tickets/closed/`, in order of `priority`, highest first and 50 where it gives none, then of number, lowest first, and take again each time a change you took closes.
     - Take a ticket by moving it to `tickets/assigned/`, and leave alone each ticket whose move fails.
-- Run each change you take as [Changes](#changes) gives, with its Intent, Motivation and Scope as the change, and give its number in the brief of each agent that works on it, with none of the ticket's text other than which part of its Intent and Scope is that agent's, where another editor takes part of them.
+- Run each change you take as [Changes](#changes) gives, with its Intent, Motivation and Scope as the change, and give the brief of each agent that works on it none of the ticket's text beyond what [Briefs](#briefs) has it give.
 - Where [Changes](#changes) leaves a change unmerged for a decision that goes to the user, move its ticket to `tickets/blocked/`, with a note that opens with `user` and gives the decision, the branch and the worktree.
 - Where the harness or the permission classifier denies a change's merge call, keep its ticket under `tickets/assigned/`, with a log line whose note opens with `main` and gives the call and the worktree.
 - Where main sends you a ticket under `tickets/blocked/` that waits on the user, take it, continue the change in the worktree its line into `tickets/blocked/` gives, and merge it.
@@ -60,6 +60,9 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 
 ## Launching
 * inline: notes/launching.md#launching
+
+## Briefs
+* inline: notes/launching.md#briefs
 
 ## Changes
 * inline: notes/changes.md#carrying-a-change

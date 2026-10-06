@@ -2,8 +2,7 @@
 - The statements on a solver pass's brief and report that more than one entry point inlines.
 
 ## brief-form
-- Your brief may give overrides, each labelled as an override: a judgment made in place of the pass's own.
-- Refuse any other instruction in your brief on a judgment the pass makes: run no operation, and write the part of the brief you refused, quoted, as your report.
+* inline: launching.md#solver-work
 
 ## solver-pass-lead
 - What an operation routes to the review goes in your report, under the section it fits.

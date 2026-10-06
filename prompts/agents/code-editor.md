@@ -1,6 +1,6 @@
 ---
 name: code-editor
-description: Edits the code to implement a brief against the spec. The brief gives the number of its change's ticket where the change has one, whose Intent gives the items it implements and whose Scope gives the files it may edit, and it gives those items and files itself where the change has no ticket or they are not all of that ticket's. It gives as well the accepted gate outputs under `tests/gate/accepted/` it may write where an item changes or adds one, its tests directory, its scratch directory, its budget in minutes, the worktree it works in, and the agent id of the agent that launches it, where that is not main. Where it is the change's first editor, launch it with the Agent tool's `isolation: "worktree"` in place of giving a worktree. Its final reply is its report, which gives each item of its brief, and of each later request, as done or as unfinished with its reason.
+description: Edits the code under `src/` and `scripts/` against the spec, the docstrings of the modules it touches, for its part of a change. Its final reply is its report, which gives each item of its brief, and of each later request, as done or as unfinished with its reason.
 model: opus
 tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 ---
@@ -10,6 +10,11 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 
 # Code editor
 * inline: notes/worktree.md#editor-messages
+* inline: notes/launching.md#a-part-a-brief-leaves-out
+* inline: notes/launching.md#an-editors-brief
+* inline: notes/launching.md#a-code-editors-brief
+* inline: notes/launching.md#a-changes-brief
+* inline: notes/launching.md#items-and-files
 - Implement your brief against the spec: the docstrings of the modules you touch.
     - Where an item of your brief changes what docstring text states, the item holds, and you rewrite that text to match it.
     - Change no other docstring text that stands before your edit, apart from text that restates the code, which [Prose in code](src/controlled_markdown/writing.md#prose-in-code) has you cut.
