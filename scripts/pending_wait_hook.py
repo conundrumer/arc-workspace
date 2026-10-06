@@ -21,8 +21,9 @@ def deny(agents: list[str]) -> None:
 
     reason = mctx(
         "Blocked: this call waits on {agents}, which you launched and which "
-        "has not reported to you since you launched or last resumed it, so "
-        "end your turn now, and the harness re-invokes you when it reports."
+        "has not reported since its launch or its last resume, by you or by "
+        "another agent, so end your turn now, and the harness re-invokes you "
+        "when it reports."
     ).format(agents=", ".join(agents))
     print(json.dumps({"hookSpecificOutput": {
         "hookEventName": "PreToolUse",

@@ -73,7 +73,7 @@ HELP = mctx("""
         - each call it has in flight, with its label, its command and the time since the call;
         - each command or agent it backgrounded that is still running, with its label, its command and the time since the call;
         - its last {recent} calls in order, each with its label, its command and its duration, or `pending`.
-    - `--pending ID` prints the agent id of each agent pending to the run ID, one per line, in launch order, where ID is a session id or an agent id. An agent is pending to the run that launched it from the Agent call that launched it, or from the run's last SendMessage call that resumed it, until the run holds the result of that Agent call, where the result does not say the agent runs in the background, or until any transcript of the session holds a notification of the agent, a notification that it stopped with work of its own still running among them. A SendMessage call to an agent whose result says neither that it resumed the agent nor that it queued the message resumes none, and an `undecided` line on stderr names it.
+    - `--pending ID` prints the agent id of each agent pending to the run ID, one per line, in launch order, where ID is a session id or an agent id. An agent is pending to the run that launched it from the Agent call that launched it, or from the last SendMessage call that resumed it, by the run or by any agent of the run's sessions, main among them, until the run holds the result of that Agent call, where the result does not say the agent runs in the background, or until any transcript of the session holds a notification of the agent, a notification that it stopped with work of its own still running among them. A SendMessage call to an agent whose result says neither that it resumed the agent nor that it queued the message resumes none, and an `undecided` line on stderr names it.
     - The messages from a running agent's parent are its brief, the messages its first turn answers, and each later message its parent sent: one the harness gives as from the parent's agent id, or, for an agent `main` launched, as from the coordinator or queued with no tag. The origin the harness gives a queued message is the one its attachment gives. A notification of the agent's own backgrounded work, a message from an agent it launched, from the user, from another agent, or, for an agent `main` did not launch, from the coordinator or queued with no tag, and a note of the harness are none. A message from another agent is one the harness gives as from an agent id other than the parent's and those of the agents it launched. A later message whose sender is none of these is unknown, and an `undecided` line on stderr names it.
     - The period of a message from the parent runs from it to the next message from the parent or from another agent, or to the run's last entry.
     - A running agent's active time is its wall time less `idle` over the period of the latest message from its parent, with its wall time running to now where that period has not ended. An agent with an unknown message has no active time and no budget.
@@ -555,6 +555,13 @@ def session_agents(session: Path) -> dict[str, Path]:
     return {agent_id(p): p for p in session.glob("subagents/**/agent-*.jsonl")}
 
 
+def session_transcripts(session: Path) -> list[Path]:
+    """The transcripts of `session`: its main transcript, where it has one,
+    and those of its subagents."""
+    main = session.with_suffix(".jsonl")
+    return [*([main] if main.is_file() else []), *session_agents(session).values()]
+
+
 def classify(block: dict[str, Any], result: dict[str, Any] | None,
              session: Path, undecided: list[str], run: str) -> Call:
     name, inp = block.get("name"), block.get("input") or {}
@@ -951,9 +958,9 @@ def run_launches(path: Path) -> tuple[dict[str, Path], dict[str, frozenset[str]]
 class Launch:
     """An agent a run launched: its agent id, where the run's transcript
     gives it, its transcript, where one gives the call as its launch, the
-    time of the run's last call that launched or resumed it, and the time
-    of the run's last sign that it reported, or None where the run holds
-    none."""
+    time of the run's call that launched it or of the last call that resumed
+    it, by the run or by any agent of the run's sessions, and the time of
+    the run's last sign that it reported, or None where the run holds none."""
     agent: str | None
     path: Path | None
     since: float
@@ -984,6 +991,50 @@ def resumed(result: dict[str, Any], run: str, call: str,
     return None
 
 
+def note_latest(times: dict[str, float], agent: str, t: float) -> None:
+    """Keep in `times` the later of the time it gives `agent` and `t`."""
+    times[agent] = max(times.get(agent, t), t)
+
+
+def resumes(entries: list[Entry], run: str, agents: set[str] | None,
+            undecided: list[str]) -> dict[str, float]:
+    """The time of the last SendMessage call among `entries` that resumed
+    each agent, or with `agents` each of those agents."""
+    results = results_by_call(entries)
+    out: dict[str, float] = {}
+    for e in entries:
+        if e.get("type") != "assistant" or not e.get("timestamp"):
+            continue
+        for b in blocks(e, "tool_use"):
+            if b.get("name") != "SendMessage":
+                continue
+            aid = resumed(results.get(b.get("id", "")) or {}, run,
+                          b.get("id", ""), undecided)
+            if aid and (agents is None or aid in agents):
+                note_latest(out, aid, epoch(e["timestamp"]))
+    return out
+
+
+def session_resumes(path: Path, agents: set[str], since: float,
+                    undecided: list[str]) -> dict[str, float]:
+    """The time of the last SendMessage call that resumed each of `agents`,
+    among the calls of each agent of the sessions of the run at `path`, main
+    among them, other than that run, whose transcript changed at or after
+    `since`."""
+    own = chain(path)
+    sessions = dict.fromkeys(session_of(p) for p in own)
+    out: dict[str, float] = {}
+    for session in sessions:
+        for p in session_transcripts(session):
+            if p in own or p.stat().st_mtime < since:
+                continue
+            entries = read_entries(p, naming=agents | {"SendMessage"})
+            for aid, t in resumes(entries, parent_label(p), agents,
+                                  undecided).items():
+                note_latest(out, aid, t)
+    return out
+
+
 def launched(path: Path, undecided: list[str]) -> list[Launch]:
     """The agents the run at `path` launched, in the order of their launch.
     A sign that an agent reported is the run's notification of it, or a
@@ -995,11 +1046,6 @@ def launched(path: Path, undecided: list[str]) -> list[Launch]:
                 if e.get("type") == "user" for b in blocks(e, "tool_result")}
     told = {v: epoch(e["timestamp"]) for e in entries
             if e.get("type") != "assistant" for v in notified(e)}
-    resumes = {aid: epoch(e["timestamp"]) for e in entries
-               if e.get("type") == "assistant"
-               for b in blocks(e, "tool_use") if b.get("name") == "SendMessage"
-               if (aid := resumed(results.get(b.get("id", "")) or {}, path.stem,
-                                  b.get("id", ""), undecided))}
     by_call = run_launches(path)[0]
     out: list[Launch] = []
     for e in entries:
@@ -1016,11 +1062,17 @@ def launched(path: Path, undecided: list[str]) -> list[Launch]:
             done = max((t for t in signs if t is not None), default=None)
             child = by_call.get(tid)
             aid = agent_id(child) if child else result.get("agentId")
-            since = max(epoch(e["timestamp"]), resumes.get(aid or "", 0.0))
             if child is None and done is None:
                 undecided.append(mctx("{run}: no transcript gives call {call} as "
                                       "its launch").format(run=path.stem, call=tid))
-            out.append(Launch(aid, child, since, done))
+            out.append(Launch(aid, child, epoch(e["timestamp"]), done))
+    own = resumes(entries, path.stem, None, undecided)
+    agents = {a.agent for a in out if a.agent}
+    others = (session_resumes(path, agents, min(a.since for a in out), undecided)
+              if agents else {})
+    for a in out:
+        a.since = max(a.since, own.get(a.agent or "", 0.0),
+                      others.get(a.agent or "", 0.0))
     return out
 
 
@@ -1045,15 +1097,15 @@ def session_notified(session: Path, agents: set[str],
     """The time of the last notification of each of `agents` that a
     transcript of `session` changed at or after `since` holds."""
     out: dict[str, float] = {}
-    for p in [session.with_suffix(".jsonl"), *session_agents(session).values()]:
-        if not p.is_file() or p.stat().st_mtime < since:
+    for p in session_transcripts(session):
+        if p.stat().st_mtime < since:
             continue
         for e in read_entries(p, naming=agents):
             if not e.get("timestamp") or e.get("type") == "assistant":
                 continue
             for v in notified(e):
                 if v in agents:
-                    out[v] = max(out.get(v, 0.0), epoch(e["timestamp"]))
+                    note_latest(out, v, epoch(e["timestamp"]))
     return out
 
 

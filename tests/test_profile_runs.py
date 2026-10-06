@@ -96,14 +96,15 @@ def told(aid: str, tid: str, note: str = "") -> str:
             f"</tool-use-id>\n<status>completed</status>\n{note}</task-notification>")
 
 
-A1, A2, A3, A4 = (f"a{n:016x}" for n in (1, 2, 3, 4))
+A1, A2, A3, A4, A5 = (f"a{n:016x}" for n in (1, 2, 3, 4, 5))
 
 
 def test_pending(tmp_path: Path) -> None:
     """An agent is pending from its launch, or from a SendMessage call that
-    resumed it, to its report. A notification that it stopped with work of
-    its own running is a report, and so is a later notification in another
-    transcript of the session, and a message queued to it resumes none."""
+    resumed it, by the run or by another agent of the session, to its
+    report. A notification that it stopped with work of its own running is
+    a report, and so is a later notification in another transcript of the
+    session, and a message queued to it resumes none."""
     entries = [
         user(0, "brief"),
         assistant(1, agent_call("c1"), agent_call("c2")),
@@ -140,3 +141,10 @@ def test_pending(tmp_path: Path) -> None:
     (agents / f"agent-{A2}.jsonl").write_text(
         "".join(json.dumps(e) + "\n" for e in elsewhere))
     assert profile_runs.pending_agents(path, []) == [A1, A4]
+    resumer = [assistant(90, send("r1", "editor")),
+               user(91, answer("r1"), {"success": True, "message": "Resuming agent a000000",
+                                       "pin": {"id": A2}})]
+    (agents / f"agent-{A5}.jsonl").write_text(
+        "".join(json.dumps(e) + "\n" for e in resumer))
+    profile_runs.session_agents.cache_clear()
+    assert profile_runs.pending_agents(path, []) == [A1, A2, A4]
