@@ -11,7 +11,7 @@ from pathlib import Path
 from checker import Runs
 from checker.branches import entry_outcomes
 from checker.render import commands
-from checker.render.branches import record_lines
+from checker.render.branch_blocks import record_lines
 from cli import text
 from cli.common import (
     LIMITS,

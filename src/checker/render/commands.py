@@ -260,7 +260,7 @@ def _drawn_outputs(solver: Solver, cases: Sequence[CaseOnPair],
     or none, are no candidate of the pair (`_reasons`), its grids against
     the stored output, or why it is undefined (`undefined_lines`), under
     the fewest names of the cases that give it (`pair_failure_lines`)."""
-    from checker.render.branches import undefined_lines
+    from checker.render.branch_blocks import undefined_lines
 
     by: dict[object, tuple[Grids | Undefined, list[Case]]] = {}
     for c in cases:

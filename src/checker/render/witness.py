@@ -350,7 +350,7 @@ def try_lines(solver: Solver, result: "TryResult") -> list[str]:
     prints them, the unseparated branch differences whose pairs it
     separates, and the subsumed ones whose pairs it shows defined and
     differing; it writes nothing."""
-    from checker.render.branches import record_lines
+    from checker.render.branch_blocks import record_lines
 
     lines = record_lines(result.entry, solver, result.cases,
                          result.of) + [""]

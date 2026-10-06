@@ -8,17 +8,18 @@ work/decks/<name>.html in the form the Artifact tool publishes as it
 stands."""
 
 import html
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from arc.task import Example
 from engine import Grid, checkout
-from engine.program import as_grid
+from engine.program import as_grid, grid_size
 from solver.solve import examples
-from study.deck_grids import Cell, contested, size, svg
-from study.deck_runs import (CardRuns, NoGrid, Output, Slot, Witness,
-                             witness_root)
+from study.cards import card_id, page, page_path, write_page
+from study.deck_grids import Cell, contested, svg
+from study.deck_runs import (CardRuns, NoGrid, NoGridKind, Output, Slot,
+                             Witness, witness_root)
 from study.deck_spec import Option
 
 DECKS_DIR = checkout.work() / "decks"
@@ -159,7 +160,7 @@ def same(a: Slot, b: Slot) -> bool:
     if isinstance(a, Output) and isinstance(b, Output):
         return a.grids == b.grids
     return isinstance(a, NoGrid) and isinstance(b, NoGrid) \
-        and a.kind == b.kind == "undefined"
+        and a.kind is b.kind is NoGridKind.UNDEFINED
 
 
 def spans(slots: Sequence[Slot]) -> list[Span]:
@@ -180,11 +181,10 @@ def agree(slots: Sequence[Slot]) -> bool:
 
 
 def defined(slots: Sequence[Slot]) -> list[Grid]:
-    """The first grid of each option that gives one."""
     return [s.grids[0] for s in slots if isinstance(s, Output)]
 
 
-def marks(slots: Sequence[Slot], judged: Grid | None
+def marks(slots: Sequence[Slot], judged: Output | None
           ) -> frozenset[Cell] | None:
     """The cells outlined on this row's outputs where no output is judged:
     those on which the defined outputs differ, where two or more are
@@ -196,24 +196,36 @@ def marks(slots: Sequence[Slot], judged: Grid | None
     return contested(grids) if len(grids) > 1 else None
 
 
-def marks_against(slot: Slot, judged: Grid | None) -> frozenset[Cell] | None:
-    """The cells on which an option's output differs from the judged one,
-    where both are of one size."""
-    if judged is None or not isinstance(slot, Output):
+def marks_against(grid: Grid, judged: Output) -> frozenset[Cell] | None:
+    """The cells at which an option's grid holds a value that no
+    resolution of the judged output of its size holds there; None where no
+    resolution is of its size."""
+    alike = [g for g in judged.grids if grid_size(g) == grid_size(grid)]
+    if not alike:
         return None
-    return contested([slot.grids[0], judged])
+    h, w = grid_size(grid)
+    return frozenset((r, c) for r in range(h) for c in range(w)
+                     if all(g[r][c] != grid[r][c] for g in alike))
 
 
-def hits(slot: Slot, judged: Grid | None) -> bool:
-    """Whether an option's output is the judged one."""
+def hits(slot: Slot, judged: Output | None) -> bool:
+    """Whether each grid an option gives is one of the judged output's."""
     return judged is not None and isinstance(slot, Output) \
-        and slot.grids == (judged,)
+        and all(g in judged.grids for g in slot.grids)
 
 
-_NOGRID_WORD = {"undefined": "undefined", "failed": "no result",
-                "inapplicable": "not applicable"}
-_NOGRID_PHRASE = {"undefined": "undefined for", "failed": "no result for",
-                  "inapplicable": "not applicable to"}
+def no_grid_words(kind: NoGridKind) -> tuple[str, str]:
+    """The word of a box for no grid of `kind`, and the phrase before the
+    numbers of the options that give it."""
+    match kind:
+        case NoGridKind.UNDEFINED:
+            return "undefined", "undefined for"
+        case NoGridKind.FAILED:
+            return "no result", "no result for"
+        case NoGridKind.INAPPLICABLE:
+            return "not applicable", "not applicable to"
+        case NoGridKind.UNKNOWN:
+            return "unknown", "unknown for"
 
 
 def difference(slots: Sequence[Slot]) -> str:
@@ -231,31 +243,37 @@ def difference(slots: Sequence[Slot]) -> str:
             parts.append("1 cell differs")
         elif cells:
             parts.append(f"{len(cells)} cells differ")
-    for kind, phrase in _NOGRID_PHRASE.items():
+    for kind in NoGridKind:
         numbers = [str(i + 1) for i, s in enumerate(slots)
-                   if isinstance(s, NoGrid) and s.kind == kind]
+                   if isinstance(s, NoGrid) and s.kind is kind]
         if numbers:
-            parts.append(f"{phrase} {', '.join(numbers)}")
+            parts.append(f"{no_grid_words(kind)[1]} {', '.join(numbers)}")
     return " · ".join(parts)
 
 
 def grid_html(grid: Grid, marked: frozenset[Cell] | None, label: str = ""
               ) -> str:
-    h, w = size(grid)
+    h, w = grid_size(grid)
     m = marked if marked is not None else frozenset[Cell]()
     sz = f"{h}×{w}" + (f" · {label}" if label else "")
     return f'<div class="slot">{svg(grid, m)}<span class="sz">{sz}</span></div>'
 
 
-def slot_html(slot: Slot, marked: frozenset[Cell] | None) -> str:
+def slot_html(slot: Slot,
+              marked: Callable[[Grid], frozenset[Cell] | None]) -> str:
+    """An output, each grid outlined at the cells `marked` gives it."""
     if isinstance(slot, NoGrid):
-        return (f'<div class="nog {slot.kind}"><span>{_NOGRID_WORD[slot.kind]}'
-                f'</span><small>{esc(slot.text)}</small></div>')
-    first = size(slot.grids[0])
+        return (f'<div class="nog {slot.kind.value}"><span>'
+                f'{no_grid_words(slot.kind)[0]}</span>'
+                f'<small>{esc(slot.text)}</small></div>')
     return "".join(
-        grid_html(g, marked if size(g) == first else None,
+        grid_html(g, marked(g),
                   f"resolution {k + 1}" if len(slot.grids) > 1 else "")
         for k, g in enumerate(slot.grids))
+
+
+def _unmarked(_grid: Grid) -> None:
+    return None
 
 
 def row_html(witness: Witness, slots: Sequence[Slot], columns: int,
@@ -265,11 +283,12 @@ def row_html(witness: Witness, slots: Sequence[Slot], columns: int,
     label = (f'<tr class="lab"><td colspan="{columns}">'
              f'<span class="id">{esc(witness.id)}</span>'
              f'<span class="d">{esc(difference(slots))}</span>{tags}</td></tr>')
-    judged = witness.judged
+    judged = judged_output(witness)
     mutual = marks(slots, judged)
     cells = [f'<td class="in">{grid_html(witness.input, None)}</td>']
     if with_judged:
-        shown = grid_html(judged, None) if judged is not None \
+        shown = slot_html(witness.judged, _unmarked) \
+            if witness.judged is not None \
             else '<div class="nog"><span>no verdict</span></div>'
         cells.append(f'<td class="judged">{shown}</td>')
     for span in spans(slots):
@@ -280,14 +299,36 @@ def row_html(witness: Witness, slots: Sequence[Slot], columns: int,
         who = f'<div class="who">{span.numbers}{eq}{mark}</div>'
         classes = (["same"] if span.count > 1 else []) + (["hit"] if hit else [])
         cls = f' class="{" ".join(classes)}"' if classes else ""
-        marked = mutual if judged is None else marks_against(span.slot, judged)
         cells.append(f'<td colspan="{span.count}"{cls}>{who}'
-                     f'{slot_html(span.slot, marked)}</td>')
+                     f'{slot_html(span.slot, _marking(span.slot, mutual, judged))}'
+                     '</td>')
     return label + f'<tr class="out">{"".join(cells)}</tr>'
+
+
+def _marking(slot: Slot, mutual: frozenset[Cell] | None,
+             judged: Output | None) -> Callable[[Grid], frozenset[Cell] | None]:
+    """How an option's grids are outlined: against the judged output where
+    there is one, else at `mutual` on each grid of the size of its first."""
+    if judged is not None:
+        return lambda g: marks_against(g, judged)
+    if not isinstance(slot, Output):
+        return _unmarked
+    first = grid_size(slot.grids[0])
+    return lambda g: mutual if grid_size(g) == first else None
+
+
+def judged_output(witness: Witness) -> Output | None:
+    return witness.judged if isinstance(witness.judged, Output) else None
 
 
 def has_judged(runs: CardRuns) -> bool:
     return any(w.judged is not None for w in runs.witnesses)
+
+
+def column_count(runs: CardRuns) -> int:
+    """The columns of the card's witness table: the input, the verdict
+    where any witness has one, and one per option."""
+    return len(runs.spec.options) + 1 + has_judged(runs)
 
 
 def judged_by(runs: CardRuns) -> str:
@@ -304,7 +345,7 @@ def judged_by(runs: CardRuns) -> str:
 def table_html(runs: CardRuns) -> str:
     options = runs.spec.options
     judged = has_judged(runs)
-    columns = len(options) + 1 + judged
+    columns = column_count(runs)
     note = (f'<p class="note">The verdict is the output {judged_by(runs)} '
             'judged the generator to pair with the input.</p>' if judged else "")
     head = '<th class="in">input</th>' + (
@@ -325,8 +366,8 @@ def table_html(runs: CardRuns) -> str:
 
 def pair_html(label: str, ex: Example) -> str:
     inp, out = as_grid(ex.input), as_grid(ex.output)
-    hi, wi = size(inp)
-    ho, wo = size(out)
+    hi, wi = grid_size(inp)
+    ho, wo = grid_size(out)
     return (f'<figure class="pair">{svg(inp)}<span class="arrow">→</span>{svg(out)}'
             f'<figcaption>{esc(label)} · {hi}×{wi} → {ho}×{wo}</figcaption></figure>')
 
@@ -351,20 +392,23 @@ def cell_size(runs: CardRuns) -> tuple[int, int, int, int]:
     about 1150px. The page shrinks it further where the viewport is
     narrower than that."""
     grids: list[Grid] = [w.input for w in runs.witnesses]
-    grids += [w.judged for w in runs.witnesses if w.judged is not None]
+    grids += [g for w in runs.witnesses if (o := judged_output(w)) is not None
+              for g in o.grids]
     for _, ex in examples(runs.task):
         grids += [as_grid(ex.input), as_grid(ex.output)]
     for row in runs.slots:
         grids += [g for s in row if isinstance(s, Output) for g in s.grids]
-    dim = max(max(size(g)) for g in grids)
-    columns = len(runs.spec.options) + 1 + has_judged(runs)
+    dim = max(max(grid_size(g)) for g in grids)
+    columns = column_count(runs)
     widest = [0] * columns
     for witness, row in zip(runs.witnesses, runs.slots, strict=True):
-        widths = [size(witness.input)[1]]
+        widths = [grid_size(witness.input)[1]]
         if has_judged(runs):
-            widths.append(size(witness.judged)[1] if witness.judged else 0)
+            judged = judged_output(witness)
+            widths.append(max(grid_size(g)[1] for g in judged.grids)
+                          if judged is not None else 0)
         for span in spans(row):
-            width = max(size(g)[1] for g in span.slot.grids) \
+            width = max(grid_size(g)[1] for g in span.slot.grids) \
                 if isinstance(span.slot, Output) else 0
             widths += [width] * span.count
         widest = [max(a, b) for a, b in zip(widest, widths, strict=True)]
@@ -392,7 +436,7 @@ def card_html(number: int, runs: CardRuns) -> str:
     # The width beside the grids of a row: the body's and the card's
     # padding, each cell's, and room for a cell's labels.
     chrome = f"calc(6vw + 100px + {24 * columns}px)"
-    return (f'<section class="card" id="card-{number}" '
+    return (f'<section class="card" id="{card_id(number)}" '
             f'style="--cell-max:{cell}px;--task-max:{task}px;--dim:{dim};'
             f'--row:{row};--chrome:{chrome}">'
             f'<div class="eyebrow">Card {number} · {esc(spec.task_id)}</div>'
@@ -407,12 +451,12 @@ def card_html(number: int, runs: CardRuns) -> str:
 
 def render_deck(title: str, cards: Sequence[CardRuns]) -> str:
     toc = "".join(
-        f'<li><a href="#card-{i + 1}"><span class="n">{i + 1}</span>'
+        f'<li><a href="#{card_id(i + 1)}"><span class="n">{i + 1}</span>'
         f'{esc(c.spec.task_id)}</a><span class="q">{esc(c.spec.question)}</span></li>'
         for i, c in enumerate(cards))
     body = "".join(card_html(i + 1, c) for i, c in enumerate(cards))
-    return (f"<title>{esc(title)}</title>\n<style>{STYLE}</style>\n{FONTS}\n"
-            f'<div class="deck"><h1>{esc(title)}</h1>'
+    return page(esc(title), STYLE,
+                f'{FONTS}\n<div class="deck"><h1>{esc(title)}</h1>'
             '<p class="lede">Answer each card by the number of the option whose model '
             'is the task’s concept. Option 1 is the model the solver has today. '
             'The verdict column is the output the annotator of a pass judged the '
@@ -421,19 +465,8 @@ def render_deck(title: str, cards: Sequence[CardRuns]) -> str:
             'the verdict’s output is marked, and outlines mark the cells on '
             'which an output differs from it, or from the other options where '
             'there is no verdict.</p>'
-            f'<ol class="toc">{toc}</ol>{body}</div>\n')
-
-
-def deck_path(name: str) -> Path:
-    """work/decks/<name>.html. A name that is not one file name is a
-    `ValueError`."""
-    if Path(name).name != name or name in ("", ".", ".."):
-        raise ValueError(f"{name!r}: a deck's name is one file name")
-    return DECKS_DIR / f"{name}.html"
+            f'<ol class="toc">{toc}</ol>{body}</div>')
 
 
 def write_deck(name: str, title: str, cards: Sequence[CardRuns]) -> Path:
-    path = deck_path(name)
-    DECKS_DIR.mkdir(parents=True, exist_ok=True)
-    path.write_text(render_deck(title, cards))
-    return path
+    return write_page(page_path(DECKS_DIR, name), render_deck(title, cards))

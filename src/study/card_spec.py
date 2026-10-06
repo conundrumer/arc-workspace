@@ -19,7 +19,8 @@ OPTION_FORM = 'an option is its text or {"text": ..., "cases": [...]}'
 
 
 def from_root(path: str) -> Path:
-    """A path a card spec gives: from the repository root, or absolute."""
+    """A path a spec gives: from the root of the checkout the command runs
+    in (`checkout.ROOT`), or absolute."""
     return checkout.ROOT / path
 
 

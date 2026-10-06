@@ -21,7 +21,7 @@ from checker.render import (
     exit_code,
     render,
 )
-from checker.render.branches import derive_lines, record_lines, store_lines
+from checker.render.branch_blocks import derive_lines, record_lines, store_lines
 from checker.render.witness import try_lines
 from checker.store import Found
 from checker.witness import (

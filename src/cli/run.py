@@ -27,7 +27,7 @@ from checker import Finding, Kind, Runs, fault_findings, check_lint
 from checker.branches import check_stored_assignment
 from checker.finding import LINT_SHAPES, is_hint
 from checker.render import Section, commands, exit_code, pass_line, passes
-from checker.render.branches import determination_lines
+from checker.render.determination import determination_lines
 from checker.sweep import GivingValues, values_giving
 from cli import text
 from cli.common import (

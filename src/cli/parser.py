@@ -6,7 +6,7 @@ from collections.abc import Callable, Collection
 from functools import partial
 from typing import Any
 
-from checker.render.branches import GROUP_WIDTH
+from checker.render.branch_blocks import GROUP_WIDTH
 from checker.render.commands import SLOWEST
 from checker.store import ROW_CAP
 from checker.sweep import MAX_CANDIDATES, TIME_LIMIT_SECONDS

@@ -10,10 +10,6 @@ stands. The tool wraps the file in its own document skeleton, so the page
 opens with its `<title>` and its `<style>`, and holds no `<html>`, `<head>`
 or `<body>` tag. The ARC palette and the grid CSS are copied from the
 console's UI into the page.
-
-A bundle composes card pages as they stand and runs no solver, so it takes
-only a page the current renderer wrote: one in `PAGE_FORM` under the
-current `STYLE`.
 """
 
 import html
@@ -24,6 +20,7 @@ from pathlib import Path
 from arc.task import Example
 from arc.task import load as load_task
 from engine import checkout
+from engine.program import grid_size
 from solver.solve import examples
 from study.card_runs import (Candidate, Run, check_captions,
                              check_option_cases, drawn_runs)
@@ -96,8 +93,7 @@ def _cell_px(w: int, h: int) -> int:
 
 def render_grid(grid: Sequence[Sequence[int]], label: str) -> str:
     """One grid as colored cells. A cell of -1 is missing, and is hatched."""
-    h = len(grid)
-    w = len(grid[0]) if h else 0
+    h, w = grid_size(grid)
     px = _cell_px(w, h)
     cells = []
     for row in grid:
@@ -205,7 +201,6 @@ def witness_section(card: Card) -> list[str]:
 
 
 def render(card: Card) -> str:
-    """The card as one page in `PAGE_FORM`, titled by the card's name."""
     body = [
         f"<h1>{html.escape(card.name)}</h1>",
         f'<div class="meta">{html.escape(card.kind)} · task {html.escape(card.task_id)}</div>',
@@ -230,8 +225,8 @@ def render(card: Card) -> str:
         body.append("<h2>Options</h2><ol>")
         body.extend(f"<li>{html.escape(o.text)}</li>" for o in card.options)
         body.append("</ol>")
-    return _page(html.escape(card.name),
-                 f"{CARD_OPEN}{''.join(body)}{CARD_CLOSE}")
+    return page(html.escape(card.name), STYLE,
+                f"{CARD_OPEN}{''.join(body)}{CARD_CLOSE}")
 
 
 CARD_OPEN = '<article class="card">'
@@ -247,35 +242,41 @@ one `CARD_OPEN` ... `CARD_CLOSE`, and a bundle's opens with its list of
 cards."""
 
 
-def _page(title: str, body: str) -> str:
-    """A page in `PAGE_FORM` under `STYLE`, from its escaped title."""
-    return f"<title>{title}</title>\n<style>{STYLE}</style>\n{body}\n"
+def page(title: str, style: str, body: str) -> str:
+    """A page in `PAGE_FORM`, from its escaped title."""
+    return f"<title>{title}</title>\n<style>{style}</style>\n{body}\n"
 
 
-def page_path(name: str) -> Path:
-    """The file work/cards/<name>.html. A name that is not one file name is
-    an error, since its file would stand outside work/cards/."""
+def page_path(folder: Path, name: str) -> Path:
+    """The file <folder>/<name>.html. A name that is not one file name is
+    an error, since its file would stand outside `folder`."""
     if Path(name).name != name or name in ("", ".", ".."):
         raise ValueError(f"{name!r}: a page's name is one file name")
-    return CARDS_DIR / f"{name}.html"
+    return folder / f"{name}.html"
 
 
-def write(card: Card) -> Path:
-    """Render `card` to work/cards/<name>.html and return that path."""
-    path = page_path(card.name)
-    return _write(path, render(card))
-
-
-def _write(path: Path, text: str) -> Path:
-    CARDS_DIR.mkdir(parents=True, exist_ok=True)
+def write_page(path: Path, text: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)
     return path
 
 
+def card_id(n: int) -> str:
+    """The id of the `n`th card of a page of several cards, which a link
+    to it takes as `#card-<n>`, the one fragment form the Artifact tool's
+    viewer passes on."""
+    return f"card-{n}"
+
+
+def write(card: Card) -> Path:
+    return write_page(page_path(CARDS_DIR, card.name), render(card))
+
+
 def _card_of(path: Path) -> tuple[str, str]:
-    """The escaped title and the body of the card page at `path`. A page
-    this renderer did not write in `PAGE_FORM`, a bundle among them, is an
-    error that names the page."""
+    """The escaped title and the body of the card page at `path`. A bundle
+    composes card pages as they stand and runs no solver, so a page this
+    renderer did not write in `PAGE_FORM` under the current `STYLE`, a
+    bundle among them, is an error that names the page."""
     try:
         text = path.read_text()
     except OSError as e:
@@ -291,31 +292,28 @@ def _card_of(path: Path) -> tuple[str, str]:
 
 def bundle(name: str, paths: Sequence[Path]) -> str:
     """The pages at `paths` as one page titled `name`: a list of links to
-    the cards by `#card-<n>`, the one fragment form the Artifact tool's
-    viewer passes on, then each card in the order of `paths`. A bundle
-    takes two pages or more, since the tool publishes one card's page as
-    it stands."""
+    the cards (`card_id`), then each card in the order of `paths`."""
     if len(paths) < 2:
         raise ValueError("a bundle takes two card pages or more: publish "
                          "one card's page as it stands")
     cards = [_card_of(p) for p in paths]
     links = "".join(
-        f'<li><a href="#card-{n}">{title}</a></li>'
+        f'<li><a href="#{card_id(n)}">{title}</a></li>'
         for n, (title, _) in enumerate(cards, 1)
     )
     sections = "".join(
-        f'<section id="card-{n}">{body}</section>'
+        f'<section id="{card_id(n)}">{body}</section>'
         for n, (_, body) in enumerate(cards, 1)
     )
-    return _page(html.escape(name),
-                 f'<div class="bundle"><ol>{links}</ol>{sections}</div>')
+    return page(html.escape(name), STYLE,
+                f'<div class="bundle"><ol>{links}</ol>{sections}</div>')
 
 
 def write_bundle(name: str, paths: Sequence[Path]) -> Path:
     """Bundle the pages at `paths` into work/cards/<name>.html and return
     that path. A name whose file is one of those pages is an error."""
-    path = page_path(name)
+    path = page_path(CARDS_DIR, name)
     for p in paths:
         if p.resolve() == path.resolve():
             raise ValueError(f"{p}: the bundle {name!r} would overwrite it")
-    return _write(path, bundle(name, paths))
+    return write_page(path, bundle(name, paths))

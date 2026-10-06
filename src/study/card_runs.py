@@ -69,11 +69,11 @@ def run_solver(solver: Solver, grid: Grid) -> list[Candidate] | RunFailure:
             out.append(Candidate(case, label, (), "undefined"))
         else:
             out.append(Candidate(case, label, (),
-                                 _failure_text(solver, outcome)))
+                                 run_failure_text(solver, outcome)))
     return out
 
 
-def _failure_text(solver: Solver, failure: RunFailure | Fault) -> str:
+def run_failure_text(solver: Solver, failure: RunFailure | Fault) -> str:
     """What the page prints for a run that gave no result, or for a solver
     that does not parse."""
     return "\n".join(failure_lines(solver, failure))
@@ -132,7 +132,7 @@ def run_witnesses(card: Card) -> list[Run]:
         if isinstance(got, list):
             runs.append(Run(label, grid, got))
         else:
-            runs.append(Run(label, grid, error=_failure_text(solver, got)))
+            runs.append(Run(label, grid, error=run_failure_text(solver, got)))
     return runs
 
 

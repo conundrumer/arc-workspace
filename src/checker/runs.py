@@ -97,6 +97,13 @@ class Judged:
     shown: tuple[Case, ...]
 
 
+def witness_file_role(given: object | None) -> WitnessFileRole:
+    """`given` is the witness file the command names, None where it names
+    none."""
+    return WitnessFileRole.GIVEN if given is not None \
+        else WitnessFileRole.TASK
+
+
 class Runs:
     """The runs the checks of one command read, built once per command,
     for one program: the solver, the solver with every case restored
@@ -335,10 +342,8 @@ class Runs:
 
     @property
     def file_role(self) -> WitnessFileRole:
-        """The witness file the checks read (`witness_file`): the given
-        file where the command names one, else the solver's."""
-        return WitnessFileRole.GIVEN if self.given is not None \
-            else WitnessFileRole.TASK
+        """The role of the witness file the checks read (`witness_file`)."""
+        return witness_file_role(self.given)
 
     @property
     def entries(self) -> tuple[Entry, ...]:

@@ -22,10 +22,12 @@ A spec is a JSON object:
 `options` are numbered in the order given; the model the solver has today
 goes first, so the first answer keeps it.
 Each names the case that gives its output, as the witness file writes a
-name, and the checkout whose solver and lib run it, a path from the main
-tree or absolute, the main tree where it gives none. `witnesses` is the
-file whose entries the card draws, from the main tree or absolute; without
-it, the task's witness file in the first option's checkout. `witness_ids`
+name, and the checkout whose solver and lib run it, a path from the root
+of the checkout the command runs in or absolute, that checkout where it
+gives none. `witnesses` is the file whose entries the card draws, from
+that root or absolute, which stands under `programs/witnesses/` of the
+checkout whose solver's `@witness` lines hold its verdicts; without it,
+the task's witness file in the first option's checkout. `witness_ids`
 picks entries of that file, in the order given; without it, every entry in
 file order that reassigns nothing and is no `@derive` or `@store` branch's
 witness, since those test a parameterization and not the concept."""
@@ -35,6 +37,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from engine import checkout
+from study.card_spec import from_root
 
 
 @dataclass(frozen=True)
@@ -52,19 +55,14 @@ class Option:
 @dataclass(frozen=True)
 class CardSpec:
     """One card: the task, its question, its options in order, the witness
-    file whose entries it draws, None for the task's file in the first
-    option's checkout, and the entries drawn, None for every one."""
+    file whose entries it draws and the entries drawn, each None where the
+    spec gives none."""
 
     task_id: str
     question: str
     options: tuple[Option, ...]
     witness_file: Path | None
     witness_ids: tuple[str, ...] | None
-
-
-def from_main(path: str) -> Path:
-    """A path a spec gives: from the main tree, or absolute."""
-    return checkout.ROOT / path
 
 
 def load_spec(path: Path) -> CardSpec:
@@ -107,7 +105,7 @@ def load_spec(path: Path) -> CardSpec:
         options.append(Option(
             text("name", option, at), text("text", option, at),
             text("case", option, at),
-            from_main(root) if root else checkout.ROOT))
+            from_root(root) if root else checkout.ROOT))
     witnesses = spec.get("witnesses")
     if witnesses is not None and not isinstance(witnesses, str):
         raise ValueError(f"{path}: `witnesses` is a path")
@@ -117,7 +115,7 @@ def load_spec(path: Path) -> CardSpec:
         raise ValueError(f"{path}: `witness_ids` lists witness ids")
     return CardSpec(
         text("task", spec, ""), text("question", spec, ""), tuple(options),
-        from_main(witnesses) if witnesses else None,
+        from_root(witnesses) if witnesses else None,
         tuple(ids) if ids else None)
 
 

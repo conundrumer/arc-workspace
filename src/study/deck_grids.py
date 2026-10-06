@@ -5,20 +5,16 @@ from collections.abc import Sequence
 from itertools import groupby
 
 from engine import Grid
+from engine.program import grid_size
 from study.cards import ARC
 
 type Cell = tuple[int, int]
 
 
-def size(grid: Grid) -> tuple[int, int]:
-    """(rows, columns)."""
-    return len(grid), len(grid[0]) if grid else 0
-
-
 def contested(grids: Sequence[Grid]) -> frozenset[Cell] | None:
     """The cells at which `grids`, all of one size, do not all hold one
     color; None where they are not all of one size."""
-    sizes = {size(g) for g in grids}
+    sizes = {grid_size(g) for g in grids}
     if len(sizes) != 1:
         return None
     h, w = next(iter(sizes))
@@ -29,7 +25,7 @@ def contested(grids: Sequence[Grid]) -> frozenset[Cell] | None:
 def svg(grid: Grid, marked: frozenset[Cell] = frozenset()) -> str:
     """`grid` as an SVG of unit cells, one path per color, its lines one
     pixel at any size, with the boundary of `marked` outlined."""
-    h, w = size(grid)
+    h, w = grid_size(grid)
     parts = [f'<svg class="g" viewBox="0 0 {w} {h}" '
              f'style="width:calc(var(--cell) * {w})" '
              f'role="img" aria-label="{h} by {w} grid">']
