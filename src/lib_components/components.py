@@ -193,11 +193,11 @@ class DemonstrationConsistencyRows(NamedTuple):
     consistent: Relation
 
 
-def DemonstrationConsistency(Demonstrated: TypeArg, Object: TypeArg, Index: TypeArg, Value: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, value: Iterable[PyRow] | None = None, prediction: Iterable[PyRow] | None = None, demonstration: Iterable[PyRow] | None = None) -> DemonstrationConsistencyRows:
+def DemonstrationConsistency(Key: TypeArg, Demonstrated: TypeArg, Object: TypeArg, Index: TypeArg, Value: TypeArg, *, sizes: Mapping[PyValue, Size] | None = None, value: Iterable[PyRow] | None = None, prediction: Iterable[PyRow] | None = None, demonstration: Iterable[PyRow] | None = None) -> DemonstrationConsistencyRows:
     """Runs `DemonstrationConsistency` (programs/lib/sets.dl) over the rows given, a cell of each `Position` column in the grid of `sizes` for its key, or in the one grid of `sizes` where the relation has no key, and each `Offset` column as a (row, column) displacement."""
-    got = call('DemonstrationConsistency', [Demonstrated, Object, Index, Value],
+    got = call('DemonstrationConsistency', [Key, Demonstrated, Object, Index, Value],
                GridTypes(LibType.POSITION, LibType.OFFSET),
-               {'value': Columns((Object, Index, Value, ), False), 'prediction': Columns((Demonstrated, Object, Index, Value, ), False), 'demonstration': Columns((Object, Object, ), False), 'counterexample': Columns((Demonstrated, Object, Object, ), False), 'consistent': Columns((Demonstrated, Object, Object, ), False)},
+               {'value': Columns((Key, Object, Index, Value, ), True), 'prediction': Columns((Key, Demonstrated, Object, Index, Value, ), True), 'demonstration': Columns((Key, Object, Object, ), True), 'counterexample': Columns((Key, Demonstrated, Object, Object, ), True), 'consistent': Columns((Key, Demonstrated, Object, Object, ), True)},
                {'value': value, 'prediction': prediction, 'demonstration': demonstration},
                ['counterexample', 'consistent'], sizes)
     return DemonstrationConsistencyRows(got['counterexample'], got['consistent'])

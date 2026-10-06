@@ -81,9 +81,9 @@ own(Pan, Col) :- mark(Pan, _, Col), content(Pan2), Pan != Pan2, !mark(Pan2, _, C
 // The completion rules the input may demonstrate.
 .type DemonstratedChoice = Extend {} | Span {} | Reflect {}
 
-.init catalog = DemonstrationConsistency<DemonstratedChoice, Box, Position, Color>
-catalog.value(Pan, P_inner, Col) :- content(Pan), pval(Pan, P_inner, Col).
-catalog.demonstration(Pan, Pan2) :- content(Pan), content(Pan2), Pan != Pan2.
+.init catalog = DemonstrationConsistency<Unit, DemonstratedChoice, Box, Position, Color>
+catalog.value($U(), Pan, P_inner, Col) :- content(Pan), pval(Pan, P_inner, Col).
+catalog.demonstration($U(), Pan, Pan2) :- content(Pan), content(Pan2), Pan != Pan2.
 
 // --- extend ---
 
@@ -97,7 +97,7 @@ spread(Pan, Q, Col) :-
 .init canvas = Unanimous<PanelCell, Color>
 canvas.item([Pan, P_inner], Col) :- spread(Pan, P_inner, Col).
 
-catalog.prediction($Extend(), Pan, P_inner, Col) :-
+catalog.prediction($U(), $Extend(), Pan, P_inner, Col) :-
     pval(Pan, P_inner, V), params.hole(H),
     ( V = H, canvas.value([Pan, P_inner], Col)                   // unfilled: the canvas
     ; V != H, Col = H ).                                          // a mark: unfilled
@@ -109,8 +109,8 @@ flank.cell(Pan, P_inner) :- pval(Pan, P_inner, _).
 flank.mark(Pan, P_inner) :- mark(Pan, P_inner, _).
 flank.axis(Pan, A) :- panel(Pan), axis_elem(A).
 
-catalog.prediction($Span(), Pan, P_inner, Col) :- mark(Pan, P_inner, Col).
-catalog.prediction($Span(), Pan, P_inner, Col) :-
+catalog.prediction($U(), $Span(), Pan, P_inner, Col) :- mark(Pan, P_inner, Col).
+catalog.prediction($U(), $Span(), Pan, P_inner, Col) :-
     pval(Pan, P_inner, H), params.hole(H),
     ( flank.between(Pan, P_inner), own(Pan, Col)                 // flanked: the panel's own color
     ; !flank.between(Pan, P_inner), Col = H ).                   // else it stays unfilled
@@ -130,7 +130,7 @@ repeat(Pan, Q, Col) :-
 .init image = Unanimous<PanelCell, Color>
 image.item([Pan, P_inner], Col) :- repeat(Pan, P_inner, Col).
 
-catalog.prediction($Reflect(), Pan, P_inner, Col) :-
+catalog.prediction($U(), $Reflect(), Pan, P_inner, Col) :-
     pval(Pan, P_inner, _),
     ( image.value([Pan, P_inner], Col)                           // an image of the window
     ; !repeat(Pan, P_inner, _), own(Pan, Col) ).                 // out of every image's reach
@@ -139,4 +139,4 @@ catalog.prediction($Reflect(), Pan, P_inner, Col) :-
 
 out(P_inner, Col) :-
     content(Pan), Pan != Pan1, Pan != Pan2,
-    catalog.consistent(R, Pan1, Pan2), catalog.prediction(R, Pan, P_inner, Col).
+    catalog.consistent($U(), R, Pan1, Pan2), catalog.prediction($U(), R, Pan, P_inner, Col).

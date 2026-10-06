@@ -1,0 +1,596 @@
+{
+  "id": "351d6448",
+  "witnesses": [{
+    "id": "front-start",
+    "separates": "the 3 edge starts one column later than in the test, so the first change misses row 0: the concept moves that change and leaves (0,6) 2; $ObjectMotion advances the edge and recolors (0,6) 3",
+    "input": [
+      [0,0,3,0,0,0,2,0,0,0,2,0,0],
+      [0,3,3,2,0,2,2,2,0,2,2,2,0],
+      [3,3,3,2,2,2,2,2,2,2,2,2,2],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,3,0,0,0,2,0,0,0,2,0,0],
+      [0,3,3,3,0,2,2,2,0,2,2,2,0],
+      [3,3,3,3,2,2,2,2,2,2,2,2,2],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,3,0,0,0,2,0,0,0,2,0,0],
+      [0,3,3,3,0,2,2,2,0,2,2,2,0],
+      [3,3,3,3,3,2,2,2,2,2,2,2,2],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,3,0,0,0,2,0,0,0,2,0,0],
+      [0,3,3,3,0,3,2,2,0,2,2,2,0],
+      [3,3,3,3,3,3,2,2,2,2,2,2,2]
+    ],
+    "output": [{
+      "cases": ["$ObjectMotion & $EveryStep"],
+      "grid": [
+        [0,0,3,0,0,0,3,0,0,0,2,0,0],
+        [0,3,3,3,0,3,3,2,0,2,2,2,0],
+        [3,3,3,3,3,3,3,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": ["$FirstChange & $EveryStep","$FirstChange & $WholePanel"],
+      "grid": [
+        [0,0,3,0,0,0,2,0,0,0,2,0,0],
+        [0,3,3,3,0,3,3,2,0,2,2,2,0],
+        [3,3,3,3,3,3,3,2,2,2,2,2,2]
+      ]
+    }, {
+      "cases": ["$StepFromFirstTwo & $StepPerLine"],
+      "grid": null
+    }, {
+      "cases": ["$ObjectMotion & $StepFromFirstTwo"],
+      "grid": null
+    }]
+  }, {
+    "id": "uneven-steps",
+    "separates": "train0 with the last frame's object one column further, so the steps are 1, 1, 2: the concept finds no step every frame follows and is undefined; $StepFromFirstTwo takes step 1 from the first two changes and returns the last frame unchanged; $ObjectMotion & $StepFromFirstTwo translates the last frame's object one column on",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,2,2,3,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,2,2,3,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,2,2,3,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,2,2,3,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$EveryStep & $WholePanel"],
+      "grid": null
+    }, {
+      "cases": ["$EveryStep & $StepPerLine"],
+      "grid": null
+    }, {
+      "cases": ["$FirstChange & $StepFromFirstTwo"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,2,2,3,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$ObjectMotion & $StepFromFirstTwo"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,2,2,3,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "two-speeds",
+    "separates": "row 1 holds an object moving one column per frame and row 3 a run of 1 growing two columns per frame: the concept finds no one step and is undefined; $StepPerLine steps each row by its own count",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,2,2,3,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [1,1,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,2,2,3,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [1,1,1,1,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,2,2,3,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [1,1,1,1,1,1,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,2,2,3,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [1,1,1,1,1,1,1,1,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$WholePanel"],
+      "grid": null
+    }, {
+      "cases": ["$StepPerLine"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,2,2,3,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [1,1,1,1,1,1,1,1,1,1,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "divider_color=SharedColor",
+    "separates": "train0 with dividers of 8: the concept finds no full line of 5 and is undefined; divider_color=SharedColor cuts at the lines of 8",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,2,2,3,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [8,8,8,8,8,8,8,8,8,8,8,8,8],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,2,2,3,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [8,8,8,8,8,8,8,8,8,8,8,8,8],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,2,2,3,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [8,8,8,8,8,8,8,8,8,8,8,8,8],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,2,2,3,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["divider_color=stored & valid_cut=derived"],
+      "grid": null
+    }, {
+      "cases": ["valid_cut=stored","divider_color=SharedColor"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,2,2,3,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "side-by-side",
+    "separates": "train0 transposed, the panels side by side: the concept finds no full row of 5 and is undefined; $PanelAxisFromLines, with time running toward R, cuts at the full columns",
+    "input": [
+      [0,0,0,5,0,0,0,5,0,0,0,5,0,0,0],
+      [0,2,0,5,0,0,0,5,0,0,0,5,0,0,0],
+      [0,2,0,5,0,2,0,5,0,0,0,5,0,0,0],
+      [0,3,0,5,0,2,0,5,0,2,0,5,0,0,0],
+      [0,0,0,5,0,3,0,5,0,2,0,5,0,2,0],
+      [0,0,0,5,0,0,0,5,0,3,0,5,0,2,0],
+      [0,0,0,5,0,0,0,5,0,0,0,5,0,3,0],
+      [0,0,0,5,0,0,0,5,0,0,0,5,0,0,0],
+      [0,0,0,5,0,0,0,5,0,0,0,5,0,0,0],
+      [0,0,0,5,0,0,0,5,0,0,0,5,0,0,0],
+      [0,0,0,5,0,0,0,5,0,0,0,5,0,0,0],
+      [0,0,0,5,0,0,0,5,0,0,0,5,0,0,0],
+      [0,0,0,5,0,0,0,5,0,0,0,5,0,0,0]
+    ],
+    "assign": {
+      "time_corner": [
+        ["DIAG_BR"]
+      ]
+    },
+    "output": [{
+      "cases": ["$StoredAxis"],
+      "grid": null
+    }, {
+      "cases": ["$PanelAxisFromLines"],
+      "grid": [
+        [0,0,0],
+        [0,0,0],
+        [0,0,0],
+        [0,0,0],
+        [0,0,0],
+        [0,2,0],
+        [0,2,0],
+        [0,3,0],
+        [0,0,0],
+        [0,0,0],
+        [0,0,0],
+        [0,0,0],
+        [0,0,0]
+      ]
+    }]
+  }, {
+    "id": "divider-2-wide",
+    "separates": "train0 with each divider two rows wide: the concept is undefined; $DividerWidthFromLines cuts at the two-row dividers",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,2,2,3,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,2,2,3,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,2,2,3,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,2,2,3,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$StoredWidth"],
+      "grid": null
+    }, {
+      "cases": ["$DividerWidthFromLines"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,2,2,3,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "five-panels",
+    "separates": "train0 with a fifth frame: the concept expects four panels and is undefined; $AnyPanelCount continues the motion past the fifth",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,2,2,3,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,2,2,3,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,2,2,3,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,2,2,3,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,2,2,3,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$StoredCount"],
+      "grid": null
+    }, {
+      "cases": ["$AnyPanelCount"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,2,2,3,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "front-gap",
+    "separates": "the 3 front reaches row 1 one step after row 2, so the first change holds row 2 alone: the concept is undefined, since the second step recolors (1,2) too; $ObjectMotion advances the front of 3 over the whole column and recolors (0,4) 3",
+    "input": [
+      [0,0,0,0,2,2,0,0,0,0,0,0,0],
+      [3,0,2,2,2,2,0,0,0,0,0,0,0],
+      [3,2,2,2,2,2,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,2,2,0,0,0,0,0,0,0],
+      [3,0,2,2,2,2,0,0,0,0,0,0,0],
+      [3,3,2,2,2,2,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,2,2,0,0,0,0,0,0,0],
+      [3,0,3,2,2,2,0,0,0,0,0,0,0],
+      [3,3,3,2,2,2,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,2,2,0,0,0,0,0,0,0],
+      [3,0,3,3,2,2,0,0,0,0,0,0,0],
+      [3,3,3,3,2,2,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$ObjectMotion & $EveryStep"],
+      "grid": [
+        [0,0,0,0,3,2,0,0,0,0,0,0,0],
+        [3,0,3,3,3,2,0,0,0,0,0,0,0],
+        [3,3,3,3,3,2,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$StepPerLine"],
+      "grid": null
+    }, {
+      "cases": ["$FirstChange & $WholePanel","$StepFromFirstTwo & $WholePanel"],
+      "grid": null
+    }]
+  }, {
+    "id": "valid_cut=stored",
+    "separates": "`valid_cut=stored` from the derived value: train 0 with 5 and 1 swapped",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,2,2,3,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [1,1,1,1,1,1,1,1,1,1,1,1,1],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,2,2,3,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [1,1,1,1,1,1,1,1,1,1,1,1,1],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,2,2,3,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [1,1,1,1,1,1,1,1,1,1,1,1,1],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,2,2,3,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["divider_color=stored & valid_cut=derived"],
+      "grid": null
+    }, {
+      "cases": ["valid_cut=stored","divider_color=SharedColor"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,2,2,3,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "broken-divider",
+    "separates": "train0 with one cell of the middle divider 0: no color fills that line, so the concept and divider_color=SharedColor find no cut and are undefined; valid_cut=stored cuts at the pairs' divider rows and gives the next frame",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,2,2,3,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,2,2,3,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,0,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,2,2,3,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,2,2,3,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["valid_cut=derived"],
+      "grid": null
+    }, {
+      "cases": ["valid_cut=stored"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,2,2,3,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "stored-width-2",
+    "separates": "train0 with each divider two rows wide, at a stored divider width of 2: the cuts derived from the lines take the two-row dividers and give the next frame; valid_cut=stored keeps the pairs' one-row cut, which the stored width does not match, and is undefined",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,2,2,3,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,2,2,3,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,2,2,3,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,2,2,3,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "assign": {
+      "divider_width": [
+        [2]
+      ]
+    },
+    "output": [{
+      "cases": ["valid_cut=derived"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,2,2,3,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["valid_cut=stored"],
+      "grid": null
+    }]
+  }, {
+    "id": "static-tail",
+    "separates": "a 1 at (1,4) turns 7 between the first two frames and nothing changes after: the concept finds no front that advances and is undefined; under $FirstChange, steps toward R and the step of one column toward L all follow the frames and disagree at (1,1), so $FirstChange is undefined; $FirstChange & step_dir=stored keeps the steps toward R alone and gives the last frame",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,1,7,0,1,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,1,7,0,7,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,1,7,0,7,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,1,7,0,7,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$ObjectMotion"],
+      "grid": null
+    }, {
+      "cases": ["$FirstChange & step_dir=derived"],
+      "grid": null
+    }, {
+      "cases": ["$FirstChange & step_dir=stored"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,1,7,0,7,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "step_dir=stored",
+    "separates": "a 3 region advances one column per frame over a 2 shape whose top edge rises one row per column, so the front of each step's recolorings advances toward T as well as toward R: the concept reads both sides and no motion matches every step, so it is undefined; step_dir=stored keeps the side R and advances the 3 region one more column",
+    "input": [
+      [0,0,0,0,2,2,2,2,2,2,2,2,2],
+      [0,0,0,2,2,2,2,2,2,2,2,2,2],
+      [0,0,2,2,2,2,2,2,2,2,2,2,2],
+      [0,2,2,2,2,2,2,2,2,2,2,2,2],
+      [3,2,2,2,2,2,2,2,2,2,2,2,2],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,2,2,2,2,2,2,2,2,2],
+      [0,0,0,2,2,2,2,2,2,2,2,2,2],
+      [0,0,2,2,2,2,2,2,2,2,2,2,2],
+      [0,3,2,2,2,2,2,2,2,2,2,2,2],
+      [3,3,2,2,2,2,2,2,2,2,2,2,2],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,2,2,2,2,2,2,2,2,2],
+      [0,0,0,2,2,2,2,2,2,2,2,2,2],
+      [0,0,3,2,2,2,2,2,2,2,2,2,2],
+      [0,3,3,2,2,2,2,2,2,2,2,2,2],
+      [3,3,3,2,2,2,2,2,2,2,2,2,2],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,2,2,2,2,2,2,2,2,2],
+      [0,0,0,3,2,2,2,2,2,2,2,2,2],
+      [0,0,3,3,2,2,2,2,2,2,2,2,2],
+      [0,3,3,3,2,2,2,2,2,2,2,2,2],
+      [3,3,3,3,2,2,2,2,2,2,2,2,2]
+    ],
+    "output": [{
+      "cases": ["$FirstChange & $WholePanel","$WholePanel & step_dir=derived"],
+      "grid": null
+    }, {
+      "cases": ["$EveryStep & $StepPerLine"],
+      "grid": null
+    }, {
+      "cases": ["$StepFromFirstTwo & $StepPerLine"],
+      "grid": null
+    }, {
+      "cases": ["$ObjectMotion & step_dir=stored"],
+      "grid": [
+        [0,0,0,0,3,2,2,2,2,2,2,2,2],
+        [0,0,0,3,3,2,2,2,2,2,2,2,2],
+        [0,0,3,3,3,2,2,2,2,2,2,2,2],
+        [0,3,3,3,3,2,2,2,2,2,2,2,2],
+        [3,3,3,3,3,2,2,2,2,2,2,2,2]
+      ]
+    }]
+  }, {
+    "id": "line-tail",
+    "separates": "row 1 holds an object moving one column per frame, and row 3 a 1 at (3,4) that turns 7 between the first two frames, with nothing changing there after: the concept finds no motion that matches every step and is undefined; $FirstChange takes the one step that row 1 pins and leaves row 3 as it is; $FirstChange & $StepPerLine reads row 3 alone, where steps toward R and the step of one column toward L all follow the frames and disagree at (3,1), so it is undefined",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,2,2,3,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,1,7,0,1,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,2,2,3,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,1,7,0,7,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,2,2,3,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,1,7,0,7,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,2,2,3,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,1,7,0,7,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$ObjectMotion"],
+      "grid": null
+    }, {
+      "cases": ["$StepPerLine"],
+      "grid": null
+    }, {
+      "cases": ["$FirstChange & $WholePanel"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,2,2,3,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,1,7,0,7,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0]
+      ]
+    }]
+  }, {
+    "id": "moving-left",
+    "separates": "train0 mirrored, the object moving one column toward L per frame: the steps derived from the frames move it one more column toward L; the cases that store the side R find no step toward R that the frames follow and are undefined",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,3,2,2,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,0,3,2,2,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,0,3,2,2,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,0,0,0,0,3,2,2,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["step_dir=derived"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,3,2,2,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["step_dir=stored"],
+      "grid": null
+    }]
+  }, {
+    "id": "late-refutation",
+    "separates": "row 1 recolors 1 to 7 at columns 2 and 5, then at column 6, then at column 7: the first change moved one column toward R and moved four columns toward R both give the second step, and only the third step refutes the move of four; $FirstChange checks every step and recolors (1,8) 7; $FirstChange & $StepFromFirstTwo keeps both moves, which disagree at (1,8), so it is undefined; the concept finds no motion that matches every step and is undefined",
+    "input": [
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,1,0,0,1,1,1,1,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,7,0,0,7,1,1,1,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,7,0,0,7,7,1,1,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [5,5,5,5,5,5,5,5,5,5,5,5,5],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0],
+      [0,0,7,0,0,7,7,7,1,0,0,0,0],
+      [0,0,0,0,0,0,0,0,0,0,0,0,0]
+    ],
+    "output": [{
+      "cases": ["$ObjectMotion"],
+      "grid": null
+    }, {
+      "cases": ["$FirstChange & $EveryStep"],
+      "grid": [
+        [0,0,0,0,0,0,0,0,0,0,0,0,0],
+        [0,0,7,0,0,7,7,7,7,0,0,0,0],
+        [0,0,0,0,0,0,0,0,0,0,0,0,0]
+      ]
+    }, {
+      "cases": ["$FirstChange & $StepFromFirstTwo"],
+      "grid": null
+    }]
+  }]
+}

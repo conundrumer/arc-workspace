@@ -1,114 +1,606 @@
 // 351d6448
 // @draft
 // @keywords: decompose induce move
-// input: Panels stacked along one axis hold the successive frames of an
-//  animation.
-// output: Each frame differs from the one before by a fixed set of
-//  recolorings — the wave — and the wave travels the same relative between
-//  every pair of frames. Every recoloring a step shows is a sighting of the
-//  wave. A cell takes a recoloring only where it still holds the color that
-//  recoloring replaces, so a step can show less than the whole wave. The
-//  output is the next frame: the last one with the wave advanced over it once
-//  more.
+// @scene panels: full lines of params.divider_color, params.divider_width
+//  wide, cut the grid along the axis of params.time_dir into
+//  params.panel_count panels of one size, and no line inside a panel is full
+//  of that color; the panels are the frames of an animation, in time order
+//  toward params.time_dir
+// @scene steady-step: the frames show one motion of a kind the steps between
+//  them demonstrate, toward the side and by the count of cells that every
+//  step advances the front of its recolorings: the frame's content
+//  translating, with the one color of the frame's back edge entering behind
+//  it; each run of a recoloring's new color growing from its end over the
+//  color the recoloring replaces; or the front of each recoloring's new color
+//  advancing over the color it replaces; the frames show at least two steps
+// @rule next-frame: the output is the last frame with the motion made once
+//  more; undefined where the steps advance no front by one count, where no
+//  motion matches every step, or where two motions that match every step
+//  disagree on the next frame
 
-// what the cut into panels reads
-.type Choice =
-    // the panels along the axis
-    Count {}
-    // a panel's extent
-  | Size {}
+// what the frames show
+.type Reading =
+    // @claim steady-step
+    ObjectMotion {}
+    // @scene steady-step: each frame is the one before it with one change
+    //  applied: the change from the first frame to the second, moved a fixed
+    //  count of cells across the time axis, toward one end, once per frame;
+    //  moved, the change recolors a cell only where the cell holds the color it
+    //  recolors from
+    // @rule next-frame: the output is the last frame with the change moved one
+    //  step further and applied once more; undefined where no frame changes, or
+    //  where two steps that every frame follows disagree on it
+    // @witness front-start: ordinary concept
+  | FirstChange {}
+
+// which steps the step is checked against
+.type StepCheck =
+    // @claim steady-step
+    EveryStep {}
+    // @scene steady-step: the motion and its count are the ones the first two
+    //  steps demonstrate, and the later frames are not checked
+    // @witness uneven-steps: foreign $StepFromFirstTwo
+    //     @relaxed steady-step
+  | StepFromFirstTwo {}
+
+// what the step is read over
+.type StepScope =
+    // @claim steady-step
+    WholePanel {}
+    // @scene steady-step: each line across the time axis has its own motion
+    //  and its own count; a line that no step recolors stays as it is
+    // @witness two-speeds: variant $StepPerLine
+    //     @relaxed steady-step
+  | StepPerLine {}
+
+// where the axis the panels stack along comes from
+.type PanelAxis =
+    // @claim panels
+    StoredAxis {}
+    // @scene panels: the panels stack along whichever axis the full lines of
+    //  the divider color cut so, in time order toward the end
+    //  params.time_corner has on that axis; undefined where no axis's lines
+    //  cut the grid so
+    // @witness side-by-side: variant $PanelAxisFromLines
+    //     @relaxed panels
+    //     @reassigned time_corner
+  | PanelAxisFromLines {}
+
+// where the divider width comes from
+.type DividerWidth =
+    // @claim panels
+    StoredWidth {}
+    // @scene panels: the dividers are as wide as the runs of full lines of
+    //  the divider color; undefined where the runs differ in width
+    // @witness divider-2-wide: variant $DividerWidthFromLines
+    //     @relaxed panels
+  | DividerWidthFromLines {}
+
+// where the panel count comes from
+.type PanelCount =
+    // @claim panels
+    StoredCount {}
+    // @scene panels: the full lines of the divider color cut the grid into
+    //  any count of panels of one size
+    // @witness five-panels: variant $AnyPanelCount
+    //     @relaxed panels
+  | AnyPanelCount {}
+
+.type Choice = [reading: Reading, check: StepCheck, scope: StepScope, axis: PanelAxis,
+                width: DividerWidth, panels: PanelCount]
 
 .decl out(p: Position, col: Color, ch: Choice)
 
-.comp Params {
-    .decl panel_gap(g: number) panel_gap(1).
+.decl reading_choice(r: Reading)
+reading_choice($ObjectMotion()). reading_choice($FirstChange()).
 
+.decl step_check_choice(ck: StepCheck)
+step_check_choice($EveryStep()). step_check_choice($StepFromFirstTwo()).
+
+.decl step_scope_choice(sc: StepScope)
+step_scope_choice($WholePanel()). step_scope_choice($StepPerLine()).
+
+.decl panel_axis_choice(ab: PanelAxis)
+panel_axis_choice($StoredAxis()). panel_axis_choice($PanelAxisFromLines()).
+
+.decl divider_width_choice(wb: DividerWidth)
+divider_width_choice($StoredWidth()). divider_width_choice($DividerWidthFromLines()).
+
+.decl panel_count_choice(nb: PanelCount)
+panel_count_choice($StoredCount()). panel_count_choice($AnyPanelCount()).
+
+// $ObjectMotion read per line fails Fit at test0, where the front of row 1
+// stops at a 0 cell and shows no steady advance.
+.decl impl_choice(ch: Choice)
+impl_choice([R, Ck, Sc, Ab, Wb, Nb]) :-
+    reading_choice(R), step_check_choice(Ck), step_scope_choice(Sc),
+    panel_axis_choice(Ab), divider_width_choice(Wb), panel_count_choice(Nb),
+    ( R = $FirstChange() ; Sc = $WholePanel() ).
+
+.comp Params {
+    // @derive SharedColor: variant derived
+    //     @relaxed panels
+    // @ignore: derive VanishedColor — on one input it gives every color of the
+    //  input, as SharedColor does, so its cases are equivalent to theirs
+    .decl divider_color(c: Color) divider_color(5).
+
+    // --- $StoredWidth ---
+    // @ignore: derive SepThickness — subsumed by $DividerWidthFromLines: where
+    //  the width it gives cuts the grid, it is the width of the full lines of
+    //  the divider color, which $DividerWidthFromLines finds among every count
+    // @ignore: derive TileDim — subsumed by $DividerWidthFromLines, for the
+    //  same reason
+    .decl divider_width(g: number) divider_width(1).
+
+    // --- $StoredAxis ---
     // Time runs toward this edge, so the last frame sits on it.
     .decl time_dir(d: Dir) time_dir(DIR_B).
 
-    // --- $Count ---
-    .decl panel_count(n: number) panel_count(4).
+    // --- $PanelAxisFromLines ---
+    // Time runs toward this corner's edge on the axis the panels stack along.
+    // Every pair stacks its panels top to bottom, so the corner's side on the
+    // other axis is open.
+    .decl time_corner(d: DiagDir) time_corner(DIAG_BL). time_corner(DIAG_BR).
 
-    // --- $Size ---
-    .decl panel_size(k: number) panel_size(3).
+    // --- $StoredCount ---
+    // @ignore: derive SepTileCount — subsumed by $AnyPanelCount: where the
+    //  count it gives cuts the grid, it is the count the full lines of the
+    //  divider color cut, which $AnyPanelCount finds among every count
+    // @ignore: derive TileCount — subsumed by $AnyPanelCount, for the same
+    //  reason
+    .decl panel_count(n: number) panel_count(4).
 }
 
 .init params = Params
 
-// --- panels ---
+// The frames under one cut: time runs toward t, and lines of color c, g wide,
+// cut the grid into n panels.
+.type Frames = [t: Dir, c: Color, g: number, n: number]
 
-.decl panel(ch: Choice, p_tile: Position, p_intile: Position, col: Color)
+// A step's motion read over one scope of the frames.
+.type MotionKey = [k: Frames, ck: StepCheck, sc: StepScope, s: Position]
 
-// --- $Count ---
-panel($Count(), P_tile, P_intile, Col) :-
-    in(P_grid, Col),
-    params.time_dir(D), axis_of(D, A),                  // frames run along this axis
-    params.panel_count(N), params.panel_gap(G),
-    divide_slab(P_grid, A, N, G, P_tile, P_intile).
+// The motions a step between frames may show.
+.type DemonstratedChoice = Translate {} | Extend {} | Advance {}
 
-// --- $Size ---
-panel($Size(), P_tile, P_intile, Col) :-
-    in(P_grid, Col),
-    params.time_dir(D), axis_of(D, A),                  // frames run along this axis
-    params.panel_size(K), params.panel_gap(G),
-    divide_by_size_slab(P_grid, A, K, G, P_tile, P_intile).
+// The cuts a grid admits, the frames each cut gives, the motion the steps
+// between them show, and the first change moved by each step the frames
+// follow.
+.comp Parse<Key> {
+    .decl cell(key: Key, p: Position, col: Color)  // @input
 
-// --- shared ---
+    // The frames to read: the caller picks them among the valid cuts.
+    .decl frames(key: Key, k: Frames)  // @input
 
-.decl succ_panel(ch: Choice, p_tile: Position, p_tile2: Position)
-succ_panel(Ch, P_tile, P_tile2) :-
-    panel(Ch, P_tile, _, _), params.time_dir(D),
-    neighbor(P_tile, D, P_tile2), panel(Ch, P_tile2, _, _).
+    // A count of cells the grid admits.
+    // @ignore: store — the stored counts are those of the pairs' frame: a
+    //  count past a grid's extent cuts nothing, and a count a larger grid
+    //  needs is missing only where the case is undefined, so the base
+    //  subsumes it
+    .decl admitted(key: Key, n: number)
+    admitted(Ky, N) :- cell(Ky, P, _), dir_elem(D), dist(P, D, N), N > 0.
 
-// A cell the next frame recolors.
-.decl change(ch: Choice, p_tile: Position, p_intile: Position, from: Color, to: Color)
-change(Ch, P_tile, P_intile, Col, Col2) :-
-    succ_panel(Ch, P_tile, P_tile2),
-    panel(Ch, P_tile, P_intile, Col), panel(Ch, P_tile2, P_intile, Col2), Col != Col2.
+    .type Line = [k: Key, a: Axis, l: Position]
 
-// --- the wave ---
+    // The color of a line all of one color.
+    // @claim panels
+    .init line_color = Unanimous<Line, Color>
+    line_color.item([Ky, A, L], Col) :- cell(Ky, P, Col), axis_elem(A), split(P, A, L, _).
 
-// Candidate velocities: the displacements a frame admits, each with the
-// relative that undoes it.
-.decl cand(ch: Choice, v: Offset, v_back: Offset)
-cand(Ch, V, V_back) :-
-    panel(Ch, _, P_intile, _), panel(Ch, _, P_intile2, _),
-    relative(P_intile, P_intile2, V), relative(P_intile2, P_intile, V_back).
+    // A line inside a panel when dividers g wide cut the grid along axis a
+    // into n panels.
+    // @ignore: store — the stored lines are those of the pairs' frame: on a
+    //  grid of that frame they are the derived ones, and on another they are
+    //  no line of the grid, so no cut holds and the base subsumes the case
+    .decl panel_line(key: Key, a: Axis, g: number, n: number, l: Position)
+    panel_line(Ky, A, G, N, L) :-
+        line_color.item([Ky, A, L], _), admitted(Ky, G), admitted(Ky, N),
+        divide_slab(L, A, N, G, _, _).
 
-// Where the wave stands frame by frame: the velocity carries each sighting to
-// the frames after and before.
-.decl wave(ch: Choice, v: Offset, p_tile: Position, p_intile: Position,
-           from: Color, to: Color)
-wave(Ch, V, P_tile, P_intile, Col, Col2) :-
-    cand(Ch, V, _), change(Ch, P_tile, P_intile, Col, Col2).
-wave(Ch, V, P_tile2, P_intile2, Col, Col2) :-
-    wave(Ch, V, P_tile, P_intile, Col, Col2),
-    succ_panel(Ch, P_tile, P_tile2), compose(P_intile, V, P_intile2).
-wave(Ch, V, P_tile, P_intile, Col, Col2) :-
-    wave(Ch, V, P_tile2, P_intile2, Col, Col2),
-    succ_panel(Ch, P_tile, P_tile2), cand(Ch, V, V_back),
-    compose(P_intile2, V_back, P_intile).
+    // A cut whose dividers are not the full lines of color c.
+    .decl cut_defect(key: Key, a: Axis, c: Color, g: number, n: number)
+    cut_defect(Ky, A, C, G, N) :-
+        panel_line(Ky, A, G, N, _), cell(Ky, _, C), line_color.item([Ky, A, L], _),
+        ( !panel_line(Ky, A, G, N, L), !line_color.value([Ky, A, L], C)  // a divider line not full of c
+        ; panel_line(Ky, A, G, N, L), line_color.value([Ky, A, L], C)    // a full line inside a panel
+        ).
 
-// The recoloring a frame's step makes: the wave stands over a cell that still
-// holds the color it replaces there.
-.decl paint(ch: Choice, v: Offset, p_tile: Position, p_intile: Position, col: Color)
-paint(Ch, V, P_tile, P_intile, Col2) :-
-    wave(Ch, V, P_tile, P_intile, Col, Col2), panel(Ch, P_tile, P_intile, Col).
+    // @store: variant stored
+    //     @relaxed panels
+    // @ignore: store $PanelAxisFromLines — the stored cut fixes the axis, so
+    //  these cases are equivalent to those that take $StoredAxis
+    // @ignore: store $DividerWidthFromLines — the stored cut fixes the width,
+    //  so these cases are equivalent to those that take $StoredWidth
+    // @ignore: store $AnyPanelCount — the stored cut fixes the count, so these
+    //  cases are equivalent to those that take $StoredCount
+    // @ignore: store divider_color=SharedColor — the stored cut fixes the
+    //  color, so these cases are equivalent to those that store it
+    .decl valid_cut(key: Key, a: Axis, c: Color, g: number, n: number)
+    valid_cut(Ky, A, C, G, N) :-
+        panel_line(Ky, A, G, N, _),
+        line_color.item([Ky, A, L], _), !panel_line(Ky, A, G, N, L),     // the cut has a divider
+        cell(Ky, _, C), !cut_defect(Ky, A, C, G, N).
 
-// A velocity the frames refute. Over every step they show, the wave must
-// recolor nothing the step leaves alone, and the frame must hold every cell of
-// the wave.
-.decl refuted(ch: Choice, v: Offset)
-refuted(Ch, V) :-
-    succ_panel(Ch, P_tile, _),
-    paint(Ch, V, P_tile, P_intile, Col), !change(Ch, P_tile, P_intile, _, Col).
-refuted(Ch, V) :-
-    succ_panel(Ch, P_tile, _), wave(Ch, V, P_tile, P_intile, _, _),
-    !panel(Ch, P_tile, P_intile, _).
+    .decl panel(key: Key, k: Frames, p_tile: Position, p_intile: Position, col: Color)
+    panel(Ky, [T, C, G, N], P_tile, P_intile, Col) :-
+        frames(Ky, [T, C, G, N]), axis_of(T, A),
+        cell(Ky, P_grid, Col), divide_slab(P_grid, A, N, G, P_tile, P_intile).
 
-out(P_intile, Col, Ch) :-
-    cand(Ch, V, _), !refuted(Ch, V),                                // the velocity left standing
-    panel(Ch, P_tile, P_intile, Col0), !succ_panel(Ch, P_tile, _),  // a cell of the last frame
-    ( paint(Ch, V, P_tile, P_intile, Col)                           // the wave recolors it
-    ; Col = Col0, !paint(Ch, V, P_tile, P_intile, _)                // the wave passes it by
-    ).
+    // @ignore: store — the stored tiles are the pairs' four panels in time
+    //  order: on four panels they are the derived ones, and on another count
+    //  they name tiles the grid lacks, so the base subsumes the case
+    .decl succ_panel(key: Key, k: Frames, p_tile: Position, p_tile2: Position)
+    succ_panel(Ky, [T, C, G, N], P_tile, P_tile2) :-
+        panel(Ky, [T, C, G, N], P_tile, _, _), neighbor(P_tile, T, P_tile2),
+        panel(Ky, [T, C, G, N], P_tile2, _, _).
+
+    // @ignore: store — a stored tile of the pairs' four panels, so the base
+    //  subsumes the case, as for succ_panel
+    .decl first_step(key: Key, k: Frames, p_tile: Position)
+    first_step(Ky, K, P_tile) :- succ_panel(Ky, K, P_tile, _), !succ_panel(Ky, K, _, P_tile).
+
+    // @ignore: store — a stored tile of the pairs' four panels, so the base
+    //  subsumes the case, as for succ_panel
+    .decl last_frame(key: Key, k: Frames, p_tile: Position)
+    last_frame(Ky, K, P_tile) :- succ_panel(Ky, K, _, P_tile), !succ_panel(Ky, K, P_tile, _).
+
+    // A cell the next frame recolors.
+    .decl change(key: Key, k: Frames, p_tile: Position, p_intile: Position, from: Color, to: Color)
+    change(Ky, K, P_tile, P_intile, Col, Col2) :-
+        succ_panel(Ky, K, P_tile, P_tile2),
+        panel(Ky, K, P_tile, P_intile, Col), panel(Ky, K, P_tile2, P_intile, Col2), Col != Col2.
+
+    // The steps whose changes a check compares.
+    // @ignore: store — stored tiles of the pairs' four panels, so the base
+    //  subsumes the case, as for succ_panel
+    .decl checked(key: Key, k: Frames, ck: StepCheck, p_tile: Position)
+
+    // The scope s a cell's step is read over.
+    // @ignore: store — the stored cells are those of the pairs' panels: on
+    //  panels of that frame they are the derived ones, and on others they name
+    //  cells the panels lack, so the base subsumes the case
+    .decl scope(key: Key, k: Frames, sc: StepScope, p_intile: Position, s: Position)
+
+    // --- $EveryStep ---
+    checked(Ky, K, $EveryStep(), P_tile) :- succ_panel(Ky, K, P_tile, _).
+
+    // --- $StepFromFirstTwo ---
+    checked(Ky, K, $StepFromFirstTwo(), P_tile) :- first_step(Ky, K, P_tile).
+    checked(Ky, K, $StepFromFirstTwo(), P_tile2) :-
+        first_step(Ky, K, P_tile), succ_panel(Ky, K, P_tile, P_tile2), succ_panel(Ky, K, P_tile2, _).
+
+    // --- $WholePanel ---
+    scope(Ky, K, $WholePanel(), P_intile, ZERO) :- panel(Ky, K, _, P_intile, _).
+
+    // --- $StepPerLine ---
+    scope(Ky, [T, C, G, N], $StepPerLine(), P_intile, S) :-
+        panel(Ky, [T, C, G, N], _, P_intile, _), axis_of(T, A), split(P_intile, A, S, _).
+
+    // --- $ObjectMotion ---
+
+    // A motion read over one scope of a grid's frames.
+    .type Motion = [ky: Key, m: MotionKey]
+
+    // A recoloring's runs in one frame of a motion.
+    .type RunKey = [mo: Motion, p_tile: Position, from: Color, to: Color]
+
+    // The sides a motion may move toward.
+    // @ignore: store — the stored side is the one step_dir=stored stores, so the
+    //  case is equivalent to that one
+    .decl side(key: Key, ck: StepCheck, sc: StepScope, d: Dir)  // @input
+
+    // A cell of a step's recolorings with another cell of them in its scope
+    // nearer edge d.
+    .decl change_behind(key: Key, k: Frames, sc: StepScope, p_tile: Position, d: Dir,
+                        p_intile: Position)
+    change_behind(Ky, K, Sc, P_tile, D, P) :-
+        change(Ky, K, P_tile, P, _, _), scope(Ky, K, Sc, P, S),
+        change(Ky, K, P_tile, Q, _, _), scope(Ky, K, Sc, Q, S),
+        dir_elem(D), nearer(D, Q, P).
+
+    // The front of a step's recolorings toward d: its cells nearest edge d.
+    .decl change_front(key: Key, k: Frames, sc: StepScope, p_tile: Position, d: Dir,
+                       p_intile: Position)
+    change_front(Ky, K, Sc, P_tile, D, P) :-
+        change(Ky, K, P_tile, P, _, _), scope(Ky, K, Sc, P, _), dir_elem(D),
+        !change_behind(Ky, K, Sc, P_tile, D, P).
+
+    // The front of the recolorings in scope s advances j cells toward d from
+    // this step to the next.
+    // @ignore: store — the stored side is the motion's, which step_dir=stored
+    //  stores, and the stored tiles are the pairs' four panels, so the case is
+    //  equivalent to that one or subsumed by its base
+    .decl front_shift(key: Key, k: Frames, sc: StepScope, s: Position, p_tile: Position, d: Dir,
+                      j: number)
+    front_shift(Ky, K, Sc, S, P_tile, D, J) :-
+        succ_panel(Ky, K, P_tile, P_tile2),
+        change_front(Ky, K, Sc, P_tile, D, P), scope(Ky, K, Sc, P, S),
+        change_front(Ky, K, Sc, P_tile2, D, P2), scope(Ky, K, Sc, P2, S),
+        panel(Ky, K, _, Q, _), dist(Q, D, J), J > 0,                  // a count the frame admits
+        jump(P, D, J, P_far), same_dist(D, P_far, P2).
+
+    // A checked step whose next step does not advance the front by j toward d.
+    .decl shift_defect(key: Key, k: Frames, ck: StepCheck, sc: StepScope, s: Position, d: Dir,
+                       j: number)
+    shift_defect(Ky, K, Ck, Sc, S, D, J) :-
+        front_shift(Ky, K, Sc, S, _, D, J),
+        checked(Ky, K, Ck, P_tile), succ_panel(Ky, K, P_tile, P_tile2), checked(Ky, K, Ck, P_tile2),
+        !front_shift(Ky, K, Sc, S, P_tile, D, J).
+
+    // Every checked step advances the front of the recolorings in scope s by j
+    // cells toward d.
+    // @ignore: store — the stored side is the motion's, which step_dir=stored
+    //  stores, so the case is equivalent to that one
+    .decl front_step(key: Key, k: Frames, ck: StepCheck, sc: StepScope, s: Position, d: Dir,
+                     j: number)
+    front_step(Ky, K, Ck, Sc, S, D, J) :-
+        front_shift(Ky, K, Sc, S, _, D, J), checked(Ky, K, Ck, _),
+        !shift_defect(Ky, K, Ck, Sc, S, D, J).
+
+    // The motion's side and count.
+    // @ignore: store — the stored side is the motion's, which step_dir=stored
+    //  stores, so the case is equivalent to that one
+    .decl shift(key: Key, m: MotionKey, d: Dir, j: number)
+    shift(Ky, [K, Ck, Sc, S], D, J) :- front_step(Ky, K, Ck, Sc, S, D, J), side(Ky, Ck, Sc, D).
+
+    // A cell of the motion's scope in a frame.
+    .decl motion_cell(key: Key, m: MotionKey, p_tile: Position, p_intile: Position, col: Color)
+    motion_cell(Ky, [K, Ck, Sc, S], P_tile, P_intile, Col) :-
+        shift(Ky, [K, Ck, Sc, S], _, _), panel(Ky, K, P_tile, P_intile, Col),
+        scope(Ky, K, Sc, P_intile, S).
+
+    // A recoloring some step of the scope shows.
+    .decl recoloring(key: Key, m: MotionKey, from: Color, to: Color)
+    recoloring(Ky, [K, Ck, Sc, S], Col, Col2) :-
+        shift(Ky, [K, Ck, Sc, S], _, _), change(Ky, K, _, P_intile, Col, Col2),
+        scope(Ky, K, Sc, P_intile, S).
+
+    // @claim steady-step next-frame
+    // @ignore consistent: store — the stored pairs are the pairs' four panels in
+    //  time order, so the base subsumes the case, as for succ_panel
+    // @ignore demonstration: store — the stored pairs are the pairs' four panels
+    //  in time order, so the base subsumes the case, as for succ_panel
+    .init catalog = DemonstrationConsistency<Motion, DemonstratedChoice, Position, Position, Color>
+    catalog.value([Ky, M], P_tile, P_intile, Col) :- motion_cell(Ky, M, P_tile, P_intile, Col).
+    catalog.demonstration([Ky, [K, Ck, Sc, S]], P_tile, P_tile2) :-
+        shift(Ky, [K, Ck, Sc, S], _, _), checked(Ky, K, Ck, P_tile), succ_panel(Ky, K, P_tile, P_tile2).
+
+    // A frame whose back edge, the edge the motion leaves, holds more than one
+    // color.
+    .decl back_mixed(key: Key, m: MotionKey, p_tile: Position)
+    back_mixed(Ky, M, P_tile) :-
+        shift(Ky, M, D, _), opposite(D, D_back),
+        motion_cell(Ky, M, P_tile, P, Col), dist(P, D_back, 0),
+        motion_cell(Ky, M, P_tile, Q, Col2), dist(Q, D_back, 0), Col != Col2.
+
+    // The ground: the one color of a frame's back edge.
+    // @ignore: store — the stored tiles are the pairs' four panels, so the base
+    //  subsumes the case, as for succ_panel
+    .decl back_ground(key: Key, m: MotionKey, p_tile: Position, col: Color)
+    back_ground(Ky, M, P_tile, Col) :-
+        shift(Ky, M, D, _), opposite(D, D_back),
+        motion_cell(Ky, M, P_tile, P, Col), dist(P, D_back, 0), !back_mixed(Ky, M, P_tile).
+
+    // The frame's content moves j cells toward d, and the ground enters behind
+    // it.
+    catalog.prediction([Ky, M], $Translate(), P_tile, Q, Col) :-
+        shift(Ky, M, D, J), motion_cell(Ky, M, P_tile, Q, _),
+        opposite(D, D_back), jump(Q, D_back, J, P),                       // the cell that moves onto q
+        ( motion_cell(Ky, M, P_tile, P, Col)                              // a frame cell moves onto q
+        ; !motion_cell(Ky, M, P_tile, P, _), back_ground(Ky, M, P_tile, Col)  // ground enters onto q
+        ).
+
+    // The cells of a recoloring's new color cast toward d over the color it
+    // replaces.
+    // @claim next-frame
+    // @ignore cell: store — the stored cells are those of the pairs' panels, so
+    //  the base subsumes the case, as for scope
+    // @ignore dir: store — the stored side is the motion's, which step_dir=stored
+    //  stores, so the case is equivalent to that one
+    // @ignore clear: store — the stored side is the motion's, which
+    //  step_dir=stored stores, so the case is equivalent to that one
+    .init run = Ray<RunKey>
+    run.dir([[Ky, M], P_tile, Col, Col2], D) :-
+        shift(Ky, M, D, _), recoloring(Ky, M, Col, Col2), motion_cell(Ky, M, P_tile, _, _).
+    run.cell([[Ky, M], P_tile, Col, Col2], P) :-
+        recoloring(Ky, M, Col, Col2), motion_cell(Ky, M, P_tile, P, _).
+    run.mark([[Ky, M], P_tile, Col, Col2], P) :-
+        recoloring(Ky, M, Col, Col2), motion_cell(Ky, M, P_tile, P, Col2).
+    run.blocked([[Ky, M], P_tile, Col, Col2], P) :-
+        recoloring(Ky, M, Col, Col2), motion_cell(Ky, M, P_tile, P, Col3), Col3 != Col.
+
+    // A cell that a run of a recoloring's new color reaches within j cells
+    // toward d.
+    .decl run_reach(key: Key, m: MotionKey, p_tile: Position, p_intile: Position, col: Color)
+    run_reach(Ky, M, P_tile, Q, Col2) :-
+        shift(Ky, M, D, J), run.clear([[Ky, M], P_tile, _, Col2], Q, D, J2, _), J2 > 0, J2 <= J.
+
+    // Each run of a recoloring's new color grows j cells from its end toward
+    // d, over the color the recoloring replaces.
+    catalog.prediction([Ky, M], $Extend(), P_tile, Q, Col) :-
+        motion_cell(Ky, M, P_tile, Q, Col0),
+        ( run_reach(Ky, M, P_tile, Q, Col)                                // a run grows over q
+        ; Col = Col0, !run_reach(Ky, M, P_tile, Q, _)                     // no run reaches q
+        ).
+
+    // q lies level with or behind some cell of a recoloring's new color, seen
+    // from side d.
+    .decl behind_front(key: Key, m: MotionKey, p_tile: Position, col: Color, p_intile: Position)
+    behind_front(Ky, M, P_tile, Col2, Q) :-
+        shift(Ky, M, D, _), recoloring(Ky, M, _, Col2),
+        motion_cell(Ky, M, P_tile, P, Col2), motion_cell(Ky, M, P_tile, Q, _), !nearer(D, Q, P).
+
+    // A cell of a recoloring's replaced color past the front of its new color
+    // toward d, within j lines of it: the front advances over it.
+    .decl advance(key: Key, m: MotionKey, p_tile: Position, p_intile: Position, col: Color)
+    advance(Ky, M, P_tile, Q, Col2) :-
+        shift(Ky, M, D, J), recoloring(Ky, M, Col, Col2),
+        motion_cell(Ky, M, P_tile, P, Col2), jump(P, D, J, P_far),
+        motion_cell(Ky, M, P_tile, Q, Col), !nearer(D, Q, P_far),         // within j lines of a cell of col2
+        !behind_front(Ky, M, P_tile, Col2, Q).                            // past every cell of col2
+
+    // The front of each recoloring's new color advances j lines toward d over
+    // the color the recoloring replaces.
+    catalog.prediction([Ky, M], $Advance(), P_tile, Q, Col) :-
+        motion_cell(Ky, M, P_tile, Q, Col0),
+        ( advance(Ky, M, P_tile, Q, Col)                                  // a front reaches q
+        ; Col = Col0, !advance(Ky, M, P_tile, Q, _)                       // no front reaches q
+        ).
+
+    // A motion that some demonstrated step does not show.
+    .decl unshown(key: Key, m: MotionKey, c: DemonstratedChoice)
+    unshown(Ky, M, C) :-
+        catalog.prediction([Ky, M], C, _, _, _), catalog.demonstration([Ky, M], P_tile, P_tile2),
+        !catalog.consistent([Ky, M], C, P_tile, P_tile2).
+
+    // The last frame with the motion made once more.
+    .decl motion_next(key: Key, m: MotionKey, p_intile: Position, col: Color)
+    motion_next(Ky, [K, Ck, Sc, S], P_intile, Col) :-
+        catalog.prediction([Ky, [K, Ck, Sc, S]], C, P_tile, P_intile, Col),
+        !unshown(Ky, [K, Ck, Sc, S], C), last_frame(Ky, K, P_tile).
+
+    // --- $FirstChange ---
+
+    // The first change, moved j cells toward d, across the time axis, once
+    // per frame; the frames show at least two steps.
+    .decl placed(key: Key, k: Frames, d: Dir, j: number, p_tile: Position, p_intile: Position,
+                 from: Color, to: Color)
+    placed(Ky, [T, C, G, N], D, J, P_tile, P_intile, Col, Col2) :-
+        first_step(Ky, [T, C, G, N], P_tile), change(Ky, [T, C, G, N], P_tile, P_intile, Col, Col2),
+        succ_panel(Ky, [T, C, G, N], P_tile, P_tile2), succ_panel(Ky, [T, C, G, N], P_tile2, _),
+        perp_dir(T, D), panel(Ky, [T, C, G, N], _, Q, _), dist(Q, D, J), J > 0.
+    placed(Ky, K, D, J, P_tile2, Q, Col, Col2) :-
+        placed(Ky, K, D, J, P_tile, P, Col, Col2), succ_panel(Ky, K, P_tile, P_tile2), jump(P, D, J, Q).
+
+    // The moved change recolors a cell that holds the color it recolors from.
+    .decl paint(key: Key, k: Frames, d: Dir, j: number, p_tile: Position, p_intile: Position,
+                col: Color)
+    paint(Ky, K, D, J, P_tile, P_intile, Col2) :-
+        placed(Ky, K, D, J, P_tile, P_intile, Col, Col2), panel(Ky, K, P_tile, P_intile, Col).
+
+    // A cell where a step's change is not the moved first change.
+    .decl defect(key: Key, k: Frames, d: Dir, j: number, p_tile: Position, p_intile: Position)
+    defect(Ky, K, D, J, P_tile, P_intile) :-
+        paint(Ky, K, D, J, P_tile, P_intile, Col), !change(Ky, K, P_tile, P_intile, _, Col).
+    defect(Ky, K, D, J, P_tile, P_intile) :-
+        change(Ky, K, P_tile, P_intile, _, Col), placed(Ky, K, D, J, P_tile, _, _, _),
+        !paint(Ky, K, D, J, P_tile, P_intile, Col).
+
+    // @ignore: store — the stored scope is ZERO, the one scope $WholePanel
+    //  reads on every input, so the case is equivalent to its base
+    .decl refuted(key: Key, k: Frames, ck: StepCheck, sc: StepScope, s: Position, d: Dir, j: number)
+    refuted(Ky, K, Ck, Sc, S, D, J) :-
+        defect(Ky, K, D, J, P_tile, P_intile), checked(Ky, K, Ck, P_tile),
+        scope(Ky, K, Sc, P_intile, S).
+
+    // The last frame with the change moved by a step every checked frame of
+    // the scope follows, the step's side kept.
+    // @ignore: store — the stored side is the step's, which step_dir=stored
+    //  stores, so the case is equivalent to that one
+    .decl next_frame(key: Key, k: Frames, ck: StepCheck, sc: StepScope, d: Dir, p_intile: Position,
+                     col: Color)
+    next_frame(Ky, K, Ck, Sc, D, P_intile, Col) :-
+        last_frame(Ky, K, P_tile), panel(Ky, K, P_tile, P_intile, Col0),
+        scope(Ky, K, Sc, P_intile, S), checked(Ky, K, Ck, _),
+        placed(Ky, K, D, J, P_tile, _, _, _), !refuted(Ky, K, Ck, Sc, S, D, J),
+        ( paint(Ky, K, D, J, P_tile, P_intile, Col)                // the moved change recolors it
+        ; Col = Col0, !paint(Ky, K, D, J, P_tile, P_intile, _)     // the moved change passes it by
+        ).
+}
+
+.init parse = Parse<Unit>
+parse.cell($U(), P, Col) :- in(P, Col).
+parse.frames($U(), K) :- frames_of(_, _, _, K).
+
+// The time direction each reading of the panel axis takes.
+.decl time_read(ab: PanelAxis, t: Dir)
+
+// @ignore: store — the stored counts are those of parse.admitted, so the case
+//  that derives them subsumes it, as there
+.decl width_read(wb: DividerWidth, g: number)
+
+// @ignore: store — the stored counts are those of parse.admitted, so the case
+//  that derives them subsumes it, as there
+.decl count_read(nb: PanelCount, n: number)
+
+// The frames each reading of the cut takes, one per time direction it reads.
+.decl frames_of(ab: PanelAxis, wb: DividerWidth, nb: PanelCount, k: Frames)
+frames_of(Ab, Wb, Nb, [T, C, G, N]) :-
+    time_read(Ab, T), axis_of(T, A),
+    params.divider_color(C), width_read(Wb, G), count_read(Nb, N),
+    parse.valid_cut($U(), A, C, G, N).
+
+// The side each step moves toward.
+// @store: variant stored
+//     @relaxed steady-step
+.decl step_dir(r: Reading, ck: StepCheck, sc: StepScope, d: Dir)
+
+// Each reading's next frame.
+.decl result(r: Reading, ck: StepCheck, sc: StepScope, k: Frames, p_intile: Position, col: Color)
+
+out(P_intile, Col, [R, Ck, Sc, Ab, Wb, Nb]) :-
+    frames_of(Ab, Wb, Nb, K), result(R, Ck, Sc, K, P_intile, Col).
+
+// --- $StoredAxis ---
+time_read($StoredAxis(), T) :- params.time_dir(T).
+
+// --- $PanelAxisFromLines ---
+time_read($PanelAxisFromLines(), T) :- params.time_corner(Dc), dir_of(Dc, _, T).
+
+// --- $StoredWidth ---
+width_read($StoredWidth(), G) :- params.divider_width(G).
+
+// --- $DividerWidthFromLines ---
+width_read($DividerWidthFromLines(), G) :- parse.admitted($U(), G).
+
+// --- $StoredCount ---
+count_read($StoredCount(), N) :- params.panel_count(N).
+
+// --- $AnyPanelCount ---
+count_read($AnyPanelCount(), N) :- parse.admitted($U(), N).
+
+// --- $ObjectMotion ---
+parse.side($U(), Ck, Sc, D) :- step_dir($ObjectMotion(), Ck, Sc, D).
+step_dir($ObjectMotion(), Ck, Sc, D) :- parse.front_step($U(), _, Ck, Sc, _, D, _).
+
+result($ObjectMotion(), Ck, Sc, K, P_intile, Col) :-
+    parse.motion_next($U(), [K, Ck, Sc, _], P_intile, Col).
+
+// --- $FirstChange ---
+step_dir($FirstChange(), Ck, Sc, D) :- parse.next_frame($U(), _, Ck, Sc, D, _, _).
+
+result($FirstChange(), Ck, Sc, K, P_intile, Col) :-
+    parse.next_frame($U(), K, Ck, Sc, D, P_intile, Col), step_dir($FirstChange(), Ck, Sc, D).
+
+.comp Determine {
+    .init parse = Parse<Example>
+    parse.cell(E, P, Col) :- ex_in(E, P, Col).
+
+    // Each pair's frames under the stored cut, with time running toward
+    // either end of its axis.
+    parse.frames(E, [T, C, G, N]) :-
+        ex_out(E, _, _), parse.valid_cut(E, A, C, G, N), axis_of(T, A),
+        params.divider_color(C), params.divider_width(G), params.panel_count(N).
+
+    // The concept's motion may move toward any side its fronts advance toward.
+    parse.side(E, $EveryStep(), $WholePanel(), D) :-
+        parse.front_step(E, _, $EveryStep(), $WholePanel(), _, D, _).
+
+    // The concept's next frame with time running toward t.
+    .decl next(e: Example, t: Dir, p: Position, col: Color)
+    next(E, T, P, Col) :-
+        parse.motion_next(E, [[T, _, _, _], $EveryStep(), $WholePanel(), _], P, Col).
+
+    // A time direction under which a pair's output is not the next frame.
+    .decl time_defect(e: Example, t: Dir)
+    time_defect(E, T) :- next(E, T, P, Col), ex_out(E, P, Col2), Col != Col2.
+    time_defect(E, T) :- parse.frames(E, [T, _, _, _]), ex_out(E, P, _), !next(E, T, P, _).
+
+    // A corner whose edge on a pair's time axis is not the edge time runs
+    // toward there.
+    .decl corner_defect(d: DiagDir)
+    corner_defect(Dc) :- time_defect(E, T), dir_of(Dc, _, T).
+
+    .decl time_corner(d: DiagDir)
+    time_corner(Dc) :- diag_dir_elem(Dc), !corner_defect(Dc).
+}
