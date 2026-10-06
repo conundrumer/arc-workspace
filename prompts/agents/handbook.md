@@ -19,6 +19,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Artifact
 
 - File a `delay` ticket for each step of your work whose run time is far out of proportion to the work the step does.
 
+* inline: notes/commands.md#commands
+
 * inline: notes/reading.md#lib-index
 
 * include: ../handbook.md
