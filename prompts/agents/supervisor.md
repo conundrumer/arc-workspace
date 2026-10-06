@@ -25,6 +25,7 @@ tools: Bash, Agent, SendMessage
 - Raise an alert on the work of each other agent the listing gives, where its entry shows a sign that that work may not advance, may advance at a cost out of proportion to it, or may depart from the agent's documents or its brief, and neither the entry, read against the work its task and its commands do, nor a verifier's finding on the same call, command or turn rules that out. Look in its entry for these signs, among others:
     - a call whose time is out of proportion to the work its command does;
         - A `sleep` that an entry gives under `running`, led by `: 'unattended-wait: budget timer';`, is the agent's budget timer, which runs for the agent's budget.
+        - A `sleep` that an entry gives under `running`, led by `: 'unattended-wait: keep-alive timer';`, is the agent's keep-alive timer, which the agent starts again while an agent it launched runs.
     - a command repeated with nothing changed between the repeats;
     - a claim in the agent's `said:` line that the rest of the listing contradicts;
     - a turn that has ended, at the time its `turn ended:` line gives, while nothing it backgrounded runs;
