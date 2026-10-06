@@ -43,6 +43,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 - Send the number of each `change` ticket you file or revise to the ticket reviewer your brief gives, with SendMessage.
 - When that reviewer's findings on a ticket you sent it reach you, revise and return that ticket as [Tickets](#tickets) gives for a draft your brief gives, and where you cannot, give the revision in your reply as unfinished, with its reason.
 - Where a step of your work takes time far out of proportion to the work it does, find the root cause, and file a `change` ticket for its resolution, whose Motivation gives the step and the time it took.
+- Reply only once each ticket you sent the ticket reviewer stands under `tickets/open/` or has a revision you give as unfinished. Until then, wait in a foreground Bash call with a timeout of 600000 ms, led by `: 'unattended-wait: ticket review of <numbers>';`, whose until-loop ends when each of those tickets stands under `tickets/open/` or its log's last line is a `draft` line the ticket reviewer wrote, and gives up just under that timeout, and repeat the call until that holds.
+- Where a message gives you the agent id of a new ticket reviewer, send it each later ticket in place of the one your brief gives.
 
 ## Commands
 * inline: notes/commands.md#background-work
