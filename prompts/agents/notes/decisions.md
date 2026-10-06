@@ -13,7 +13,7 @@
 
 ### Rule and intent
 - [Principles](docs/handbook/principles.md) is the theory.
-- [Procedure](docs/handbook/procedure.md), [Solver file](docs/handbook/solver-file.md), the text the tool prints, the case history and the user's past words are support: they show what was intended, and none of them is a rule on its own.
+- [Procedure](docs/handbook/procedure.md), [Solver file](docs/handbook/solver-file.md), the text the tool prints, the case history, [The user's preferences](#the-users-preferences) and the user's other past words are support: they show what was intended, and none of them is a rule on its own.
     - Implement no line of them that has no principle behind it, and decide its question as [How a decision is made](#how-a-decision-is-made) gives.
 - The agents' definitions, the spec, and the lines after the ladder are support too. The spec of a code change is the docstrings of the modules it touches. Where a support line and a rung of the ladder disagree, follow the rung, and have the line rewritten.
 - Have a support line added only where a rule is missing, and have a miss fixed by a change to the line that caused it.
@@ -25,7 +25,7 @@
 - Churn is no reason against an option, and a risk to behavior is one.
 - Before you make a decision, write in one line the rung it bears on and what each option does to that rung.
 - Check a reported problem against the state that produced it.
-- Prefer the general option, the one that settles the other instances of the question too, and where tooling can enforce the rule, the tooling change.
+- Prefer the general option, the one that settles the other instances of the question too, and the tooling change only where the problem needs the rule enforced.
 - Make no option the default that fits only the instance that raised the decision.
 - Where a default breaks a line of [Principles](docs/handbook/principles.md), the decision becomes whether to amend that line.
 - Before you act on a default, write down the strongest reason against it. Where that reason is defensible, drop the default and reframe the problem: ask why the need arises, then decide where its answer goes.
@@ -51,3 +51,6 @@
     - Where the user does not rule on the decision, carry out its default.
 - Tell the user each change to what the user reads or judges, without waiting on them: solver code, a concept an Analyze pass wrote, [Principles](docs/handbook/principles.md), and a document or a brief the user reads. Give each change in one line, with the solver's code before and after where the user judges it by that code.
 - Bring the user nothing else unless the user asks for it.
+
+### The user's preferences
+* inline: preferences.md#the-users-preferences
