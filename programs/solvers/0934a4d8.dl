@@ -50,45 +50,25 @@ out(P_inner, Col) :-
     .decl cell(e: Example, p: Position, col: Color)
     cell(E, P, Col) :- ex_in(E, P, Col), !params.mask(Col).
 
-    // The axis positions the inputs occupy.
-    .decl apos(a: Axis, along: Position)
-    apos(A, Along) :- ex_in(_, P, _), axis_elem(A), split(P, A, Along, _).
+    // The axis flips, each followed by a shift, that fix each input's clean
+    // cells.
+    .init wp = Wallpaper<Example, Color>
+    wp.transform(F) :- flip_of(_, F).
+    wp.cell(E, P, Col) :- cell(E, P, Col).
+    wp.grid(E, P) :- ex_in(E, P, _).
 
-    .decl cell_split(e: Example, a: Axis, along: Position, across: Position, col: Color)
-    cell_split(E, A, Along, Across, Col) :-
-        cell(E, P, Col), axis_elem(A), split(P, A, Along, Across).
+    // A symmetry of some example that another example lacks.
+    .decl unshared(d: D4, v: Offset)
+    unshared(D, V) :- wp.symmetry(_, D, V), wp.grid(E, _), !wp.symmetry(E, D, V).
 
-    // One-sided frame-extension candidates per axis: k cells past edge d.
-    .decl ext_cand(a: Axis, b: Box)
-    ext_cand(A, B) :- apos(A, Along), sub_extent(Along, A, K), axis_of(D, A), edge_inset(D, K, B).
-
-    // The candidate's mirror, as a map on axis positions.
-    .decl ext_map(a: Axis, b: Box, along: Position, along2: Position)
-    ext_map(A, B, L, L2) :-
-        ext_cand(A, B), apos(A, L), flip_of(A, F),
-        compose(L, B, Lm),                          // extended-frame position
-        apply(F, Lm, L_img),                        // mirror image
-        apos(A, L2), compose(L2, B, L_img).         // back in-grid
-
-    // The extension's mirror maps a clean pair to different colors.
-    .decl ext_mismatch(a: Axis, b: Box)
-    ext_mismatch(A, B) :-
-        ext_map(A, B, L1, L2),
-        cell_split(E, A, L1, X, C1),
-        cell_split(E, A, L2, X, C2), C2 != C1.
-
-    // The extension's mirror relates two distinct clean cells, so the
-    // examples exercise it.
-    .decl ext_pair(a: Axis, b: Box)
-    ext_pair(A, B) :-
-        ext_map(A, B, L1, L2), L1 != L2,
-        cell_split(E, A, L1, X, _),
-        cell_split(E, A, L2, X, _).
-
-    // Per axis, the witnessed unbroken extension; the margin composes the
-    // two axes.
+    // Per axis, the extension k cells past edge d whose flip every example
+    // admits: the axis's flip shifted k toward d. The margin composes the two
+    // axes.
     .decl axis_ext(a: Axis, b: Box)
-    axis_ext(A, B) :- ext_pair(A, B), !ext_mismatch(A, B).
+    axis_ext(A, B) :-
+        flip_of(A, F), wp.symmetry(_, F, V), !unshared(F, V),
+        axis_of(D, A), opposite(D, D_far), dist(V, D_far, K), K > 0,
+        edge_inset(D, K, B).
 
     .decl mosaic_margin(b: Box)
     mosaic_margin(B) :- axis_ext(A1, B1), perp(A1, A2), axis_ext(A2, B2), compose(B1, B2, B).

@@ -36,42 +36,21 @@ out(P, Col) :- in(P, Col), !masked(P).
 out(P, Col) :- masked(P), mirror(P, Q), !masked(Q), in(Q, Col).
 
 .comp Determine {
-    // Axis positions the examples' cells occupy, and visible cells split by
-    // axis (materialized once — the mirror sweep joins on the components).
-    .decl apos(a: Axis, along: Position)
-    apos(A, Along) :- ex_in(_, P, _), axis_elem(A), split(P, A, Along, _).
+    // The axis flips, each followed by a shift, that fix each input's
+    // visible cells.
+    .init wp = Wallpaper<Example, Color>
+    wp.transform(F) :- flip_of(_, F).
+    wp.cell(E, P, Col) :- ex_in(E, P, Col), !params.mask(Col).
+    wp.grid(E, P) :- ex_in(E, P, _).
 
-    .decl cell_split(e: Example, a: Axis, along: Position, across: Position, col: Color)
-    cell_split(E, A, Along, Across, Col) :-
-        ex_in(E, P, Col), !params.mask(Col), axis_elem(A), split(P, A, Along, Across).
+    // A symmetry of some example that another example lacks.
+    .decl unshared(d: D4, v: Offset)
+    unshared(D, V) :- wp.symmetry(_, D, V), wp.grid(E, _), !wp.symmetry(E, D, V).
 
-    // Candidate mirrors per axis: flush dir, inset k from the opposite edge.
-    .decl cand(a: Axis, flush: Dir, k: number)
-    cand(A, D, K) :-
-        apos(A, Along), axis_of(D, A),
-        ( K = 0 ; sub_extent(Along, A, K) ).
-
-    // The candidate's map on axis positions: flip, shift onto the band.
-    .decl band_map(a: Axis, flush: Dir, k: number, along: Position, along2: Position)
-    band_map(A, D, K, L, L2) :-
-        cand(A, D, K), apos(A, L),            // candidate and axis position
-        flip_of(A, F), apply(F, L, L_flip),   // flip the axis
-        jump(L_flip, D, K, L2), apos(A, L2).  // image is on the grid
-
-    // The candidate maps two visible cells to different colors...
-    .decl broken(a: Axis, flush: Dir, k: number)
-    broken(A, D, K) :-
-        band_map(A, D, K, L1, L2),
-        cell_split(E, A, L1, X, C1),
-        cell_split(E, A, L2, X, C2), C1 != C2.
-
-    // ...or relates no two distinct visible cells.
-    .decl witnessed(a: Axis, flush: Dir, k: number)
-    witnessed(A, D, K) :-
-        band_map(A, D, K, L1, L2), L1 != L2,
-        cell_split(E, A, L1, X, _),
-        cell_split(E, A, L2, X, _).
-
+    // The band of an axis whose flip, shifted k toward the flush edge, every
+    // example admits.
     .decl mirror_band(a: Axis, flush: Dir, k: number)
-    mirror_band(A, D, K) :- witnessed(A, D, K), !broken(A, D, K).
+    mirror_band(A, D, K) :-
+        flip_of(A, F), wp.symmetry(_, F, V), !unshared(F, V),
+        axis_of(D, A), opposite(D, D_far), dist(V, D_far, K), K >= 0.
 }
