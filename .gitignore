@@ -19,7 +19,7 @@ scripts/.queue-cache
 tools/console/state/
 .scratch
 /.cache/
-/work/
+/work
 tests/scratch/
 /issues/*
 /tickets/

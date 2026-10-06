@@ -63,6 +63,7 @@
 - Solver work is a solver pass, or an edit of a solver or of the lib for one task.
 - Its brief may give overrides, each labelled as an override: a judgment made in place of the agent's own.
 - The agent refuses any other instruction in its brief on a judgment its work makes: it does none of the work, and writes the part of the brief it refused, quoted, as its report.
+- Where the agent works in a worktree other than the main worktree and nothing stands at `work` in that worktree, the agent runs `ln -s <main worktree>/work work` there before it reads or writes under `work/`, with the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints as `<main worktree>`.
 
 ### A solver work brief
 - Where no `change` ticket gives solver work, its brief gives the task id, and, for work other than a pass, the work in words. It gives no items and no files, and the agent determines them.
@@ -78,6 +79,7 @@
     2. Write the output of `git diff HEAD -- programs/solvers/<task_id>.dl programs/witnesses/<task_id>.wit.json` to `uncommitted.diff` in it.
     3. Move into it the task's solver and its witness file, each where it exists, and, before an Analyze pass, each entry of `work/task/<task_id>/` other than `claim` and the numbered directories, or, before a Create pass, `create.md`, each `refine-<n>.md` and `progress.md`.
     4. Run `git update-index --skip-worktree <path>` on the path of each of those two files that `git ls-files <path>` lists.
+- Before you launch solver work into an existing worktree other than the main worktree, where nothing stands at that worktree's `work`, make that worktree's `work` a symbolic link to the main worktree's `work/`, with `ln -s <main worktree>/work <worktree>/work`.
 - Once each pass you launch on the task for one request or one procedure has ended:
     1. Move the solver and the witness file you set aside back to their paths, each where nothing stands at its path.
     2. Run `git update-index --no-skip-worktree <path>` on each path you marked.

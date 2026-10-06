@@ -73,6 +73,19 @@ worktree locked by a Claude agent, whose lock reason begins with
 `AGENT_LOCK`, is removed with the force that a locked worktree needs, after
 the same check.
 
+The main tree's `work/` holds the files the sessions share. The script
+does not stage a worktree's `work`, a link or a directory, or anything
+under it, and does not count it as a change of the worktree, whatever the
+worktree's `.gitignore` gives. Git ignores `work`, so the removal would
+delete the files under a worktree's own `work/`. Before it removes a
+worktree whose `work` is a directory, the script moves each file under it
+to the same path under the main tree's `work/`, where nothing stands there.
+Where a file stands at one of those paths, or at a directory above one,
+the worktree and its branch stay, and the script names each file that
+stays. Where a move fails, or the worktree's `work` is neither a directory
+nor a link, they stay as well, and the script says why. A `work` that is
+a link is removed as the link alone.
+
 The script ends its output with the duration footer (`engine.duration`).
 
 The script refuses a change, and says why, where:
@@ -143,6 +156,12 @@ from worktree_submodules import (checked_out, main_gitdir,  # noqa: E402
 
 MASTER = "master"
 """The branch a change merges into."""
+
+
+def outside_work() -> tuple[str, str]:
+    """The pathspec of every path of a worktree but `work` and what lies
+    under it (`checkout.work`)."""
+    return (".", f":(exclude,top){checkout.work().name}")
 
 
 class Refused(Exception):
@@ -267,11 +286,12 @@ def index_file(worktree: Path) -> Path:
 
 
 def stage(worktree: Path, main: Path, backup: Path) -> None:
-    """Stage every uncommitted change of the worktree, with a copy of its
+    """Stage every uncommitted change of the worktree outside `work`
+    (`outside_work`), with a copy of its
     index kept at `backup` first, and refuse where `refuse_gitlinks` does,
     with the index put back."""
     shutil.copy2(index_file(worktree), backup)
-    checkout.git_out(worktree, "add", "-A")
+    checkout.git_out(worktree, "add", "-A", "--", *outside_work())
     try:
         refuse_gitlinks(worktree, main)
     except Refused:
@@ -327,7 +347,7 @@ def commit(worktree: Path, message: str, main: Path, backup: Path) -> Change:
     if branch == MASTER:
         raise Refused(f"{worktree} stands on {MASTER}")
     base = checkout.git_out(worktree, "merge-base", MASTER, "HEAD").strip()
-    touched = {c.path for c in checkout.changed_paths(worktree, base)}
+    touched = {c.path for c in checkout.changed_paths(worktree, base, *outside_work())}
     if not touched:
         raise Refused(f"{branch} holds no change against {MASTER}")
     refuse_main_touched(main, touched)
@@ -335,7 +355,7 @@ def commit(worktree: Path, message: str, main: Path, backup: Path) -> Change:
     set_up_submodules(worktree, main)
     refuse_dirty_submodules(worktree)
     before = checkout.git_out(worktree, "rev-parse", "HEAD").strip()
-    committing = bool(checkout.changed_paths(worktree, "HEAD"))
+    committing = bool(checkout.changed_paths(worktree, "HEAD", *outside_work()))
     stage(worktree, main, backup)
     if committing:
         print(f"merge_change: committing on {branch}", flush=True)
@@ -375,7 +395,8 @@ def unstack(change: Change) -> None:
     hard reset loses none where it holds no change against the branch."""
     if checkout.git_out(change.worktree, "rev-parse", "HEAD").strip() == change.committed:
         return
-    left = sorted(c.path for c in checkout.changed_paths(change.worktree, "HEAD"))
+    left = sorted(c.path for c in checkout.changed_paths(change.worktree, "HEAD",
+                                                         *outside_work()))
     if left:
         raise Failed(mctx("{worktree} holds changes made after the stack's rebase, so "
                           "{branch} stays rebased:").format(
@@ -418,10 +439,55 @@ def lock_reasons(main: Path) -> dict[Path, str | None]:
     return reasons
 
 
+def files_under(top: Path) -> list[Path]:
+    """Each file under the directory `top`, from `top`, sorted: each entry
+    that is no directory, a link to a directory among them."""
+    found: list[Path] = []
+    for entry in os.scandir(top):
+        if entry.is_dir(follow_symlinks=False):
+            found += [Path(entry.name) / p for p in files_under(Path(entry.path))]
+        else:
+            found.append(Path(entry.name))
+    return sorted(found)
+
+
+def move_work(main: Path, worktree: Path) -> list[str]:
+    """Move each file under the worktree's `work/` to the same path under
+    the main tree's `work/` (`checkout.work`), where nothing stands there;
+    each path, from the worktree's root, of a file that stays, since a file
+    or a link stands at its path under the main tree's `work/`, or a file
+    at a directory above it. The file comes to stand there whole or not at
+    all, and a file another process puts there first stays where it is. A
+    `work` that is a link is left to the removal, which deletes the link and
+    nothing it leads to. A `work` that is neither a directory nor a link is
+    a fault (`ValueError`)."""
+    name = checkout.work().name
+    work = worktree / name
+    if work.is_symlink() or not os.path.lexists(work):
+        return []
+    if not work.is_dir():
+        raise ValueError(f"{work} is neither a directory nor a link")
+    stays: list[str] = []
+    for rel in files_under(work):
+        src, dst = work / rel, main / name / rel
+        try:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if src.is_symlink():
+                os.symlink(os.readlink(src), dst)
+            else:
+                os.link(src, dst)
+        except (FileExistsError, NotADirectoryError):
+            stays.append(f"{name}/{rel}")
+            continue
+        src.unlink()
+    return stays
+
+
 def remove(main: Path, change: Change) -> None:
     """Remove the change's worktree and branch, or fail where the worktree
     holds a change against its branch, or a submodule of it holds changes
-    or untracked files."""
+    or untracked files, or where a file under its `work/` stays
+    (`move_work`)."""
     worktree, branch = change.worktree, change.branch
     print(mctx("merge_change: removing {worktree} and {branch}").format(
         worktree=worktree, branch=branch), flush=True)
@@ -431,7 +497,7 @@ def remove(main: Path, change: Change) -> None:
                            "{branch} stay").format(
             master=MASTER, why=why, worktree=worktree, branch=branch))
 
-    left = sorted(c.path for c in checkout.changed_paths(worktree, "HEAD"))
+    left = sorted(c.path for c in checkout.changed_paths(worktree, "HEAD", *outside_work()))
     left += submodule_changes(worktree)
     if left:
         raise stays(mctx("the worktree holds changes made after the commit, in {left}")
@@ -446,6 +512,14 @@ def remove(main: Path, change: Change) -> None:
             raise stays(mctx("the worktree is locked for a reason no Claude agent gives: "
                              "`{reason}`").format(reason=reason))
         force = ["--force", "--force"]
+    try:
+        kept = move_work(main, worktree)
+    except (OSError, ValueError) as exc:
+        raise stays(mctx("moving the files under its work/ to the main tree's failed: "
+                         "{exc}").format(exc=exc)) from exc
+    if kept:
+        raise stays(mctx("a file stands in the main tree at the path of each of {kept}, "
+                         "or at a directory above it").format(kept=", ".join(kept)))
     checkout.git_out(main, "worktree", "remove", *force, str(worktree))
     checkout.git_out(main, "branch", "-q", "-d", branch)
 

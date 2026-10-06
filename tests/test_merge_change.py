@@ -2,7 +2,9 @@
 refuses before the commit and fails on before the removal: files inside
 its submodules, and, before the commit alone, submodule
 commits that only the worktree's own copies of the submodules' repositories
-hold."""
+hold. Before the removal, the script also moves the files under its
+`work/` to the main tree's, and fails on a file whose path there is
+taken."""
 
 import os
 import subprocess
@@ -118,3 +120,45 @@ def test_untracked_file_in_submodule_keeps_the_worktree(merge_change, trees):
     with pytest.raises(merge_change.Failed, match="s/new"):
         merge_change.remove(main, change)
     assert (worktree / "s" / "new").exists()
+
+
+def ignore_work(main: Path) -> None:
+    with (main / ".git" / "info" / "exclude").open("a") as f:
+        f.write("/work\n")
+
+
+def test_work_files_move_to_the_main_tree_or_keep_the_worktree(merge_change, trees):
+    main, worktree = trees
+    ignore_work(main)
+    for tree, name in ((main, "old"), (worktree, "old"), (worktree, "new")):
+        (tree / "work" / "t").mkdir(parents=True, exist_ok=True)
+        (tree / "work" / "t" / name).write_text(str(tree))
+    change = merge_change.Change(worktree, "change", frozenset(), "", None, "")
+    with pytest.raises(merge_change.Failed, match="work/t/old"):
+        merge_change.remove(main, change)
+    assert (main / "work" / "t" / "new").read_text() == str(worktree)
+    assert (main / "work" / "t" / "old").read_text() == str(main)
+    assert (worktree / "work" / "t" / "old").read_text() == str(worktree)
+    (worktree / "work" / "t" / "old").unlink()
+    merge_change.remove(main, change)
+    assert not worktree.exists()
+
+
+def test_work_is_never_staged(merge_change, trees, tmp_path):
+    main, worktree = trees
+    (main / "work").mkdir()
+    (worktree / "work").symlink_to(main / "work")
+    (worktree / "b").write_text("b")
+    merge_change.stage(worktree, main, tmp_path / "index")
+    assert git(worktree, "diff", "--cached", "--name-only").split() == ["b"]
+
+
+def test_work_link_is_removed_alone(merge_change, trees):
+    main, worktree = trees
+    ignore_work(main)
+    (main / "work").mkdir()
+    (main / "work" / "kept").write_text("kept")
+    (worktree / "work").symlink_to(main / "work")
+    merge_change.remove(main, merge_change.Change(worktree, "change", frozenset(), "", None, ""))
+    assert not worktree.exists()
+    assert (main / "work" / "kept").read_text() == "kept"
