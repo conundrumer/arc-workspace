@@ -1,58 +1,87 @@
-"""PreToolUse hook on Bash and Monitor, which denies a call on two checks.
+"""PreToolUse hook on Bash and Monitor: denies a timed wait whose text names,
+by agent id, an agent pending to the caller, as `profile_runs.py --pending`
+gives the agents pending to a run.
 
-The wait check, `pending_wait`, denies a timed wait whose text gives, by
-agent id, an agent pending to the caller. Where it cannot tell the caller,
-it allows the call.
+Where the hook cannot tell the caller, or its check fails on its own error,
+it allows the call and says why on stderr, so it can fail to deny a wait but
+never denies one wrongly. A hook input inside a subagent gives the
+subagent's agent id, and one that gives none is main's where the main
+transcript holds the call."""
 
-The read check, `joined_read`, denies a Bash command that joins another
-command with `;`, `&&`, `||`, `&` or a newline to a whole-file read: a
-simple command named `cat` whose operands are files that exist and whose
-text together is longer than the Bash tool's cap on a failed command's
-output, slack included. It allows the call where the read's standard
-output is piped or redirected, where an operand is not literal or refers to
-no file that exists, where an option of `cat` can shorten its output, where
-a relative operand follows a `cd`, `pushd` or `popd`, where a command before
-the read can change the shell as the docstring of `joined_read.SHELL_CHANGERS`
-gives, and where no command is joined to the read. It allows the call as well
-where `shell_parse` cannot split the command line.
-
-Where a check allows a call on a case it cannot judge, or fails on its own
-error, the hook says why on stderr, so it can fail to deny a call but never
-denies one wrongly."""
-
-import importlib
 import json
 import sys
+from pathlib import Path
+from typing import Any
 
 HOOK = "pending_wait_hook"
 
 
-def deny(reason: str) -> None:
+def deny(agents: list[str]) -> None:
+    from controlled_markdown import mctx
+
+    reason = mctx(
+        "Blocked: this call waits on {agents}, which you launched and which "
+        "has not reported since its launch or its last resume, by you or by "
+        "another agent, so end your turn now, and the harness re-invokes you "
+        "when it reports."
+    ).format(agents=", ".join(agents))
     print(json.dumps({"hookSpecificOutput": {
         "hookEventName": "PreToolUse",
         "permissionDecision": "deny",
         "permissionDecisionReason": reason}}))
 
 
+def check(hook: dict[str, Any]) -> None:
+    """Deny the call `hook` gives where it waits on an agent pending to its
+    caller."""
+    from agent_launches import pending_agents
+    from command_labels import runs_sleep
+    from file_ticket import AGENT_ID
+    from run_reads import blocks, session_agents, session_of
+    from transcripts import main_transcript, read_entries
+
+    tool, inp = hook["tool_name"], hook["tool_input"]
+    if tool == "Bash":
+        text = inp["command"]
+        if not runs_sleep(text):
+            return
+    elif tool == "Monitor":
+        text = f"{inp['command']}\n{inp['description']}"
+    else:
+        raise ValueError(f"the hook is registered on Bash and Monitor, and "
+                         f"the input gives tool `{tool}`")
+    named = set(AGENT_ID.findall(text))
+    if not named:
+        return
+    session = session_of(Path(hook["transcript_path"]))
+    caller = hook.get("agent_id")
+    if caller:
+        path = session_agents(session).get(caller)
+        if path is None:
+            raise ValueError(f"no transcript of agent {caller} under {session}")
+    else:
+        path = main_transcript(session)
+        call = hook["tool_use_id"]
+        if not any(b.get("id") == call for e in read_entries(path)
+                   for b in blocks(e, "tool_use")):
+            print(f"{HOOK}: allowed: the hook input gives no agent id, and the "
+                  f"main transcript {path} does not hold call {call}, so the "
+                  "caller is unknown", file=sys.stderr)
+            return
+    undecided: list[str] = []
+    waited = [a for a in pending_agents(path, undecided) if a in named]
+    for line in undecided:
+        print(f"{HOOK}: undecided: {line}", file=sys.stderr)
+    if waited:
+        deny(waited)
+
+
 def main() -> int:
     try:
-        hook = json.loads(sys.stdin.read())
-    except ValueError as e:
-        print(f"{HOOK}: allowed: the hook input is no JSON: {e}", file=sys.stderr)
-        return 0
-    for name, module in (("read", "joined_read"), ("wait", "pending_wait")):
-        notes: list[str] = []
-        try:
-            reason = importlib.import_module(module).check(hook, notes)
-        except Exception as e:
-            reason = None
-            notes.append(f"allowed: the {name} check failed: "
-                         f"{type(e).__name__}: {e}")
-        for note in notes:
-            print(f"{HOOK}: {note}", file=sys.stderr)
-        if reason:
-            deny(reason)
-            break
+        check(json.loads(sys.stdin.read()))
+    except Exception as e:
+        print(f"{HOOK}: allowed: the check failed: {type(e).__name__}: {e}",
+              file=sys.stderr)
     return 0
 
 
