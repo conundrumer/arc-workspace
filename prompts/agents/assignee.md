@@ -22,6 +22,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
     2. Find its duplicates under `tickets/` by their evidence.
     3. Check its evidence against the current tree.
     4. Find its root cause, including what the filer's rendering showed it. `uv run python scripts/context.py context agent <agent>` prints an agent's rendering as it stands now.
+        - Where you need the text around a string in a binary file, find the string's byte offsets with a fixed-string search, then read the bytes around each offset.
     5. Resolve it as [How a decision is made](#how-a-decision-is-made) and [Resolving](#resolving) give.
 - Where your brief gives a draft `change` ticket, revise its sections by the findings its log gives, as [Tracking](#tracking) gives, and return it.
 - Judge a ticket a solver pass filed with the review of that pass's transcript, never from the pass's report alone.
