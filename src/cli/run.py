@@ -24,7 +24,7 @@ from arc.task import (
     spelled,
 )
 from checker import Finding, Kind, Runs, fault_findings, check_lint
-from checker.branches import check_stored_assignment
+from checker.branches.checks import check_stored_assignment
 from checker.finding import LINT_SHAPES, is_hint
 from checker.render import Section, commands, exit_code, pass_line, passes, run_pairs
 from checker.render.determination import determination_lines

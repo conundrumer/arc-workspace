@@ -6,7 +6,8 @@ witness file is the evidence for (principles.md, under "Cases"), with what
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
-from checker.branches import groups_of, shows_apart, untaken_lines
+from checker.branches.cases import untaken_lines
+from checker.branches.witnesses import groups_of, shows_apart
 from checker.finding import (
     AtCase,
     AtEntry,

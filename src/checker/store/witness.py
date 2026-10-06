@@ -6,19 +6,17 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
-from checker.branches import (
+from checker.branches.cases import counterpart, ordered, with_line
+from checker.branches.witnesses import (
     BuiltBy,
-    counterpart,
-    ordered,
     swap_entry,
     witness_divergence,
     witness_targets,
-    with_line,
 )
 from checker.finding import AtRelation, Finding, RunKind
 from checker.judged import Swap, no_result, swaps
 from checker.runs import Runs
-from checker.store.survey import Found, case_key, projection
+from checker.store.survey import Found, SearchEnd, case_key, projection
 from engine import Grid, RunFailure
 from engine.quotes import quotes
 from solver.aggregate import Solver
@@ -96,25 +94,25 @@ def find_witness(runs: Runs, solver: Solver, f: Found) -> Finding | None:
     gives the output a witness needs (`witness_divergence`): the D4 images
     of each train input in turn, then a color swap of each. A grid the
     relation stands empty on holds no value. It sets `Found.unseparated`
-    and `Found.failed`. It sets `Found.no_witness` where the run that
-    enumerates the cases gives them, a case it looks with takes the
-    value, and it runs on every grid, with no run failed and no grid that
-    gives a witness. The failure of the run that enumerates the cases
-    with the branch standing, where it fails."""
+    and `Found.failed`, and records in `Found.ended` how it ended
+    (`SearchEnd`). The failure of the run that enumerates the cases with
+    the branch standing, where it fails."""
     task = solver.task
     assert task is not None
     branch = f.name
     lined = solver if f.line is not None else with_line(solver, branch)
     every = runs.cases if f.line is not None else runs.lined(lined)
     if not isinstance(every, tuple):
+        f.ended = SearchEnd.CASES_FAILED
         return no_result(every, RunKind.CASE, None, AtRelation(f.relation))
     cases = [c for c in ordered(solver, every, branch)
              if not f.case_values or c.base in f.bases]
     if not cases:
-        f.untaken = True
+        f.ended = SearchEnd.UNTAKEN
         return None
     models = witness_targets(runs, lined, cases, branch)
     if not models:
+        f.ended = SearchEnd.NO_FIT
         return None
     model = models[0]
     other = counterpart(model, branch)
@@ -148,6 +146,7 @@ def find_witness(runs: Runs, solver: Solver, f: Found) -> Finding | None:
         out = runs.outcomes_of(lined, [other], grid, Assignment(()))[other]
         f.move = Move(index, change, grid,
                       isinstance(out, Grids) and out.grids == (grid,))
+        f.ended = SearchEnd.FOUND
         made = swap_entry(runs, lined, f.case_id, branch, index, change,
                           grid, every)
         f.built = made if isinstance(made, Entry) else None
@@ -156,6 +155,11 @@ def find_witness(runs: Runs, solver: Solver, f: Found) -> Finding | None:
             return no_result(made, RunKind.WITNESS, None,
                              AtRelation(f.relation))
         return None
-    f.no_witness = f.failed is None
+    if f.failed is not None:
+        f.ended = SearchEnd.FAILED
+    elif f.unseparated is not None:
+        f.ended = SearchEnd.UNSEPARATED
+    else:
+        f.ended = SearchEnd.UNCHANGED
     return None
 

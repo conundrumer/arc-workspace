@@ -7,13 +7,12 @@ from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 
 from checker import Finding, Kind, Runs, fault_findings
-from checker.branches import (
-    BuiltBy,
+from checker.branches.checks import (
     check_color_structure_stored,
     check_stored_or_derived,
     check_two_parameterizations,
-    unnamed,
 )
+from checker.branches.witnesses import BuiltBy, unnamed
 from checker.derive import Derivation
 from checker.render import (
     Section,

@@ -17,7 +17,7 @@ on every grid with no run failed and found no witness
 
 from collections.abc import Mapping, Sequence
 
-from checker.branches import bare_ignored
+from checker.branches.ignores import bare_ignored
 from checker.finding import AtFile, AtPair, Finding, Kind, RunKind, WholeFile
 from checker.judged import (
     NO_TASK,

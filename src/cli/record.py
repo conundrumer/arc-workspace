@@ -9,7 +9,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from checker import Runs
-from checker.branches import entry_outcomes
+from checker.branches.witnesses import entry_outcomes
 from checker.render import commands, recording
 from checker.render.branch_blocks import record_lines
 from cli import text

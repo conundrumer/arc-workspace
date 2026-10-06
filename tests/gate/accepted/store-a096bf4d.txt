@@ -4,7 +4,7 @@ line_color.value[v]: one color on every input: 0
 separator: one color on every input: 0
   stored already: the value reads back the stored rows of `separator`
 span.axis[a]: one value on every input: AXIS_V, AXIS_H
-  no witness: no D4 image or color swap of a train input changes the value; a `@store` line needs a witness whose id is `span.axis=stored`
+  no witness: no case that takes the value fits the pairs along with the case that differs from it by this branch alone; a `@store` line needs a witness whose id is `span.axis=stored`
   add above `.init span`: // @store axis: <plausibility> <verdict>
   or:  // @ignore axis: store — <reason>
 lattice.divider[a]: 2 values, one per `l`

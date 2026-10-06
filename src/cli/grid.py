@@ -7,7 +7,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from checker import Runs
-from checker.branches import entry_outcomes
+from checker.branches.witnesses import entry_outcomes
 from checker.render import recording, relation, run_pairs
 from cli import text
 from cli.common import (

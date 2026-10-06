@@ -6,24 +6,23 @@ import threading
 from dataclasses import dataclass, replace
 
 from arc.task import Example, Task
-from checker.branches import (
+from checker.branches.cases import model_fit, ordered, taking, with_line
+from checker.branches.ignores import (
+    bare_ignored,
+    excluded_finding,
+    idle_ignores,
+    without_named_ignores,
+)
+from checker.branches.witnesses import (
     BuiltBy,
     RecordedWitness,
     SwapWitness,
     Witness,
-    bare_ignored,
     entry_findings,
-    excluded_finding,
-    idle_ignores,
-    model_fit,
-    ordered,
     recorded_entry,
     recorded_witness,
     swap_entry,
     swap_witness,
-    taking,
-    with_line,
-    without_named_ignores,
 )
 from checker.finding import (
     AtFile,

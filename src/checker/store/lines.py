@@ -4,13 +4,9 @@ the values the `store` survey finds."""
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 
-from checker.branches import (
-    entry_findings,
-    excluded_finding,
-    idle_ignores,
-    ordered,
-    untaken,
-)
+from checker.branches.cases import ordered, untaken
+from checker.branches.ignores import excluded_finding, idle_ignores
+from checker.branches.witnesses import entry_findings
 from checker.finding import (
     AtLine,
     AtRelation,

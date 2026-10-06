@@ -8,7 +8,7 @@ from checker.judged import NoResult
 from checker.payloads.branches import HomonymsPayload, Unread
 from checker.render import finding_lines, in_line_order
 from checker.render.locations import line_text
-from checker.render.no_result import failure_text
+from checker.render.no_result import CASES_RUN_FAILED, failure_text
 from checker.render.values import _ticked, resolution_lines
 from checker.render.branches import (
     NOT_BETWEEN,
@@ -34,6 +34,7 @@ from checker.store.survey import (
     POSITION_TYPES,
     ROW_CAP,
     Found,
+    SearchEnd,
     StoreSurvey,
     ValueKind,
     corner,
@@ -182,7 +183,7 @@ def derive_lines(solver: Solver, survey: object) -> list[str]:
     ([Develop](docs/handbook/procedure.md#develop)): one block per
     derivation whose model does not miss Fit, then each witness the
     command built, as `record` prints it."""
-    from checker.branches import RecordedWitness, SwapWitness
+    from checker.branches.witnesses import RecordedWitness, SwapWitness
     from checker.derive import DeriveSurvey, Excluded, Unplaced
 
     assert isinstance(survey, DeriveSurvey)
@@ -254,31 +255,46 @@ def derive_lines(solver: Solver, survey: object) -> list[str]:
     return lines
 
 
-def _no_witness_text(solver: Solver, w: object) -> str:
-    from checker.branches import FailedOn, NoWitness, Unwitnessed
+_COUNTERPART = mctx("the case that differs from it by this branch alone")
+"""The counterpart of a case that takes a branch, as a block names it."""
 
-    recorded = mctx("no input of the witness file shows the branch's model "
-                    "defined and giving an output other than the output of "
-                    "the stored value's model")
-    if isinstance(w, Unwitnessed) and w.pair is not None:
-        recorded = mctx(
-            "no input of the witness file shows the branch's model `{case}` "
-            "defined and giving an output other than `{other}`, the case "
-            "that differs from it by this branch alone").format(
-            case=case_name(solver, w.pair[0]),
-            other=case_name(solver, w.pair[1]))
-    match w:
-        case Unwitnessed(swap=NoWitness.NOT_ONE_COLOR):
+
+def _no_fit_text(taken: str) -> str:
+    """That no case that takes `taken`, the branch or the value, fits the
+    pairs with its counterpart, so the witness search ran on no input."""
+    return mctx("no case that takes the {taken} fits the pairs along with "
+                "{counterpart}").format(taken=taken, counterpart=_COUNTERPART)
+
+
+def _no_witness_text(solver: Solver, w: object) -> str:
+    from checker.branches.witnesses import FailedOn, NoWitness, Unwitnessed
+
+    if not isinstance(w, Unwitnessed):
+        raise ValueError(f"a branch with no witness holds {w!r}")
+    if w.swap is NoWitness.NO_FIT:
+        return _no_fit_text(mctx("branch"))
+    if w.pair is None:
+        raise ValueError("a witness search that looked with a case names "
+                         "no case")
+    recorded = mctx(
+        "no input of the witness file shows the branch's model `{case}` "
+        "defined and giving an output other than `{other}`, {counterpart}"
+    ).format(case=case_name(solver, w.pair[0]),
+             other=case_name(solver, w.pair[1]), counterpart=_COUNTERPART)
+    match w.swap:
+        case NoWitness.NOT_ONE_COLOR:
             return mctx("the parameter is not one color, and ") + recorded
-        case Unwitnessed(swap=NoWitness.NO_FREE_COLOR):
+        case NoWitness.NO_FREE_COLOR:
             return mctx("no train input has a free color, and ") + recorded
-        case Unwitnessed(swap=FailedOn(train=train, failure=failure)):
+        case FailedOn(train=train, failure=failure):
             return mctx("the run fails on {grid} with the stored color "
                         "swapped for a free color: {error}; and ").format(
                 grid=train_text(train), error=failure_text(failure)) \
                 + recorded
-        case _:
+        case NoWitness.ONE_OUTPUT:
             return mctx("no color swap of a train input and ") + recorded
+        case _:
+            raise ValueError(f"a branch's witness search gives {w.swap!r}")
 
 
 # The `store` block
@@ -420,12 +436,16 @@ def _witness_line(solver: Solver, f: Found) -> str:
                                                       *f.homonyms)))
     if f.entry:
         return _filed_witness(f.case_id)
-    if f.untaken:
+    if f.ended is SearchEnd.UNTAKEN:
         return untaken_text()
-    ask = needs_witness(at_word(DirectiveWord.STORE), f.case_id)
-    if f.move is None:
+    if f.ended is SearchEnd.CASES_FAILED:
+        return CASES_RUN_FAILED
+    if f.ended is not SearchEnd.FOUND:
         return mctx("no witness: {why}; {ask}").format(
-            why=_no_witness_why(solver, f), ask=ask)
+            why=_no_witness_why(solver, f),
+            ask=needs_witness(at_word(DirectiveWord.STORE), f.case_id))
+    if f.move is None:
+        raise ValueError(f"a witness search of {f.case_id} found no grid")
     line = _moved_witness(f.move.index, f.move.change)
     if f.move.identity and f.read:
         line += mctx("; the concept case gives the input unchanged")
@@ -436,20 +456,28 @@ def _witness_line(solver: Solver, f: Found) -> str:
 
 
 def _no_witness_why(solver: Solver, f: Found) -> str:
-    if f.failed is not None:
-        return mctx("the run fails on {grid}: {error}").format(
-            grid=f"{train_text(f.failed.index)} "
-                 f"{transform_text(f.failed.change)}",
-            error=failure_text(f.failed.failure))
-    if f.unseparated is not None:
-        model, other = f.unseparated
-        return mctx("on no D4 image or color swap of a train input that "
-                    "changes the value does the branch's model `{case}` "
-                    "give an output other than `{other}`").format(
-            case=case_name(solver, model),
-            other=case_name(solver, other))
-    return mctx("no D4 image or color swap of a train input changes the "
-                "value")
+    """Why the witness search of a value found no witness, by how it
+    ended (`Found.ended`)."""
+    match f.ended, f.failed, f.unseparated:
+        case SearchEnd.NO_FIT, _, _:
+            return _no_fit_text(mctx("value"))
+        case SearchEnd.FAILED, failed, _ if failed is not None:
+            return mctx("the run fails on {grid}: {error}").format(
+                grid=f"{train_text(failed.index)} "
+                     f"{transform_text(failed.change)}",
+                error=failure_text(failed.failure))
+        case SearchEnd.UNSEPARATED, _, (model, other):
+            return mctx("on no D4 image or color swap of a train input that "
+                        "changes the value does the branch's model `{case}` "
+                        "give an output other than `{other}`").format(
+                case=case_name(solver, model),
+                other=case_name(solver, other))
+        case SearchEnd.UNCHANGED, _, _:
+            return mctx("no D4 image or color swap of a train input changes "
+                        "the value")
+        case _:
+            raise ValueError(f"the witness search of {f.case_id} ended "
+                             f"{f.ended!r} with no reason it found no witness")
 
 
 def _store_hints(f: Found, alone: bool = False) -> list[str]:

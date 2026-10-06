@@ -13,7 +13,7 @@ from enum import StrEnum
 from itertools import combinations, permutations
 from typing import TYPE_CHECKING
 
-from checker.branches import BuiltBy
+from checker.branches.witnesses import BuiltBy
 from checker.finding import Finding
 from checker.lint.view import literal_vars, term_vars
 from checker.runs import Runs
@@ -289,6 +289,29 @@ def member_key(member: Member) -> tuple[object, ...]:
                  else (4, v) for v in member)
 
 
+class SearchEnd(StrEnum):
+    """How the witness search of a value ended (`find_witness`)."""
+
+    CASES_FAILED = "cases failed"
+    """The run that enumerates the cases failed, so the search looked
+    with no case and ran on no grid."""
+    UNTAKEN = "untaken"
+    """No case takes the value, so the search ran on no grid."""
+    NO_FIT = "no fit"
+    """No case that takes the value fits the pairs with its counterpart
+    (`witness_targets`), so the search ran on no grid."""
+    FOUND = "found"
+    """A grid gave a witness (`Found.move`)."""
+    FAILED = "failed"
+    """No grid gave a witness, and a run failed (`Found.failed`)."""
+    UNSEPARATED = "unseparated"
+    """The search ran on every grid with no run failed, and some grid
+    changes the value but gives no witness (`Found.unseparated`)."""
+    UNCHANGED = "unchanged"
+    """The search ran on every grid with no run failed, and no grid
+    changes the value."""
+
+
 @dataclass
 class Found:
     """One column subset of one relation whose projected value repeats on
@@ -350,7 +373,9 @@ class Found:
     line: StoreBranch | None = None
     ignored: bool = False
     homonyms: tuple[RelationName, ...] = ()
-    untaken: bool = False
+    ended: SearchEnd | None = None
+    """How its witness search ended; None where no search ran, as on a
+    value with homonyms or with an entry of its name."""
     move: "Move | None" = None
     unseparated: tuple[Case, Case] | None = None
     """Where some grid the witness search tries changes the value and on
@@ -358,13 +383,22 @@ class Found:
     witness needs (`witness_divergence`): the first case it looks with
     and that case's counterpart (`find_witness`)."""
     failed: "FailedRun | None" = None
-    no_witness: bool = False
-    """The witness search ran on every grid, no run failed, and no grid
-    gave a witness (`find_witness`)."""
     entry: bool = False
     built: Entry | None = None
     built_by: BuiltBy | None = None
     """What `built` was built from."""
+
+    @property
+    def untaken(self) -> bool:
+        """No case takes the value (`SearchEnd.UNTAKEN`)."""
+        return self.ended is SearchEnd.UNTAKEN
+
+    @property
+    def no_witness(self) -> bool:
+        """The witness search ran on every grid, no run failed, and no
+        grid gave a witness (`SearchEnd.UNSEPARATED`,
+        `SearchEnd.UNCHANGED`)."""
+        return self.ended in (SearchEnd.UNSEPARATED, SearchEnd.UNCHANGED)
 
     @property
     def one(self) -> ValueSet:
