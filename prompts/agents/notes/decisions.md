@@ -13,13 +13,13 @@
 
 ### Rule and intent
 - [Principles](docs/handbook/principles.md) is the theory.
-- [Procedure](docs/handbook/procedure.md), [Solver file](docs/handbook/solver-file.md), the text the tool prints, the case history, [The user's preferences](#the-users-preferences) and the user's other past words are support: they show what was intended, and none of them is a rule on its own.
+- [Procedure](docs/handbook/procedure.md), [Solver file](docs/handbook/solver-file.md), the text the tool prints, [Case inclusion: the decision history](docs/wf-solver/case-rule-history.md), [The user's preferences](#the-users-preferences) and the user's other past words are support: they show what was intended, and none of them is a rule on its own.
     - Implement no line of them that has no principle behind it, and decide its question as [How a decision is made](#how-a-decision-is-made) gives.
 - The agents' definitions, the spec, and the lines after the ladder are support too. The spec of a code change is the docstrings of the modules it touches. Where a support line and a rung of the ladder disagree, follow the rung, and have the line rewritten.
 - Have a support line added only where a rule is missing, and have a miss fixed by a change to the line that caused it.
 
 ### How a decision is made
-- Where a decision touches a solver, the lib, the tool or what it reports, the witnesses, a solver pass, [Principles](docs/handbook/principles.md) or the case history, read [Decisions on solver work](prompts/agents/notes/decisions.md#decisions-on-solver-work) as well.
+- Where a decision touches a solver, the lib, the tool or what it reports, the witnesses, a solver pass, [Principles](docs/handbook/principles.md) or [Case inclusion: the decision history](docs/wf-solver/case-rule-history.md), read [Decisions on solver work](prompts/agents/notes/decisions.md#decisions-on-solver-work) as well.
 - Where a decision touches a document an agent or a session reads, read [Decisions on the agents' documents](prompts/agents/notes/decisions.md#decisions-on-the-agents-documents) as well.
 - A ground is a source that is quotable or checkable.
 - Before you state a reason, verify each claim it depends on. State with each reason its ground, or where it has none, its assumption.
