@@ -44,9 +44,10 @@ tools: Read, Grep, Glob, Bash, Edit, Agent, SendMessage
 * inline: notes/commands.md#commands
 * inline: notes/worktree.md#re-invoked-in-another-agents-worktree
 * inline: notes/commands.md#denied-calls
+* inline: notes/commands.md#resumed-agents
 
 ## Reply
 - Send your reply on a draft that an agent other than main gave you to the agent that gave it, by SendMessage.
-- Give your replies to main as your final message. Where your latest resumption came from a message of an agent other than main, or the harness refuses your SubagentHandback because a report of yours was already delivered, send them to main by SendMessage in its place.
-- Where you have no reply to main to give as your final message, give as the report the harness asks for one line that says which agents your replies went to: your SubagentHandback, or plain text where the harness says SubagentHandback is not available.
+- Give your replies to main as your final reply. Where your latest resumption came from a message of an agent other than main, or the harness refuses your SubagentHandback because a report of yours was already delivered, send them to main by SendMessage in its place.
+- Where you have no reply to main to give as your final reply, give as your final reply one line that says which agents your replies went to: your SubagentHandback, or plain text where the harness says SubagentHandback is not available.
 - In your reply, give each ticket you moved to `tickets/open/`, each finding by its ticket or its launch brief, and that no finding stands on a launch brief where none does.
