@@ -69,13 +69,19 @@ for _ in range(150):
 
 
 def test_concurrent_writers_never_leave_a_partial_entry(tmp_path: Path):
+    import fcntl
     import subprocess
     import sys
+
+    from souffle import run
 
     procs = [subprocess.Popen([sys.executable, "-c", WORKER, str(tmp_path)],
                               stderr=subprocess.PIPE, text=True)
              for _ in range(20)]
     failed = [err for p in procs if (err := p.communicate()[1]) or p.returncode]
     assert failed == []
+    # A prune runs on past its writer, and holds its lock until it ends.
+    with open(tmp_path / run.CACHE_PRUNE_LOCK) as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
     # 50 entries of about 26 KB each overrun the cap, so the prune evicted.
     assert len(list(tmp_path.glob("*.json.z"))) < 50

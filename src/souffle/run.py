@@ -4,6 +4,7 @@ back per output relation, and each run stored under the hash of all it
 reads."""
 
 import contextlib
+import fcntl
 import gc
 import hashlib
 import json
@@ -14,6 +15,7 @@ import re
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -72,14 +74,21 @@ CPU_FIELD = "cpu_seconds"
 """The field of a stored record that holds the CPU seconds of its run."""
 
 CACHE_CAP_BYTES = 20 << 30
-"""What the stored runs may take on disk. Now and then a write removes the
-least recently used runs past it."""
+"""What the stored runs may take on disk. Now and then a write starts a
+prune (`prune`) that removes the least recently used runs past it."""
 CACHE_PRUNE_EVERY = 200
 """One write in this many prunes."""
 CACHE_PRUNE_INTERVAL_SECONDS = 300
 """At most one prune in this interval across processes, which the marker
 file's mtime records."""
 CACHE_PRUNE_MARKER = ".pruned"
+CACHE_PRUNE_LOCK = ".prune.lock"
+"""The file a prune holds through `flock`, from its check of the marker
+in the writer to the end of the process that removes the runs, so that one
+prune at a time runs across processes."""
+CACHE_PRUNE_ERRORS = ".prune.err"
+"""Where the process of the latest prune writes its stderr, since no
+command waits on it."""
 CACHE_STALE_TEMP_SECONDS = 3600
 """A temp file older than this lost its writer before the rename."""
 DONE_CAP_ROWS = 2_000_000
@@ -516,18 +525,43 @@ def _measured(argv: list[str], wall: float, cwd: Path
             usage.ru_utime + usage.ru_stime)
 
 
-def prune(cache_dir: Path, cap: int, now: float | None = None) -> None:
-    """Remove the least recently used runs under `cache_dir` past `cap`
-    bytes, and temp files their writers left, at most once per interval
-    across processes."""
-    now = time.time() if now is None else now
-    marker = cache_dir / CACHE_PRUNE_MARKER
-    try:
-        if now - marker.stat().st_mtime < CACHE_PRUNE_INTERVAL_SECONDS:
+_EVICT = ("import sys; sys.path.insert(0, sys.argv[3]); from pathlib import Path; "
+          "from souffle.run import evict; evict(Path(sys.argv[1]), int(sys.argv[2]))")
+"""The program of a prune's process, given the cache directory, the cap,
+and the directory this module's package stands in, so that it runs this
+code."""
+
+
+def prune(cache_dir: Path, cap: int) -> None:
+    """Start a prune of `cache_dir` down to `cap` bytes (`evict`), where no
+    prune runs and none started in the interval, and return without waiting
+    on it. The prune runs in a process of its own, in a session of its own,
+    so that it runs to its end after the writer exits, and holds
+    `CACHE_PRUNE_LOCK` until it ends."""
+    with open(cache_dir / CACHE_PRUNE_LOCK, "a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
             return
-    except OSError:
-        pass
-    marker.touch()
+        marker = cache_dir / CACHE_PRUNE_MARKER
+        try:
+            if time.time() - marker.stat().st_mtime < CACHE_PRUNE_INTERVAL_SECONDS:
+                return
+        except FileNotFoundError:
+            pass
+        marker.touch()
+        with open(cache_dir / CACHE_PRUNE_ERRORS, "w") as err:
+            subprocess.run(["/bin/sh", "-c", '"$@" &', "sh", sys.executable, "-c", _EVICT,
+                            str(cache_dir), str(cap), str(Path(__file__).resolve().parents[1])],
+                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=err,
+                           pass_fds=(lock.fileno(),), start_new_session=True,
+                           check=True)
+
+
+def evict(cache_dir: Path, cap: int) -> None:
+    """Remove the least recently used runs under `cache_dir` past `cap`
+    bytes, and temp files their writers left."""
+    now = time.time()
     entries: list[tuple[float, int, Path]] = []
     for path in cache_dir.iterdir():
         try:
