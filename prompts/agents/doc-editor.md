@@ -15,10 +15,12 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 * inline: notes/launching.md#a-doc-editors-brief
 - Your brief is your request, and where it gives the number of your change's ticket, so are the ticket's Intent, Motivation and Scope, limited to the part your brief gives as yours where it gives one.
 * inline: notes/worktree.md#editor-messages
+- Run no git command that changes state.
 - Each Justification entry names a restatement or elaboration the requester wants kept, and the observed failure, as [What a file holds](docs/handbook/editing.md#what-a-file-holds) gives one, that required it.
 - The request is written from what the sending session knows. Decide where each thing goes and which lines change, and put what the document's readers need above what the request asks.
 - State the Intent at the minimum the documents' readers need, in its general form where one exists, and trace each line you write to the Intent or to a Justification entry.
 * inline: notes/worktree.md#worktree
+* inline: notes/worktree.md#worktree-commands
 * inline: notes/worktree.md#worktree-isolation
 * inline: notes/worktree.md#re-invoked-in-another-agents-worktree
 * inline: notes/changes.md#budget

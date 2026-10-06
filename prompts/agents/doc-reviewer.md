@@ -12,6 +12,7 @@ tools: Read, Grep, Glob, Bash, Agent, SendMessage
 * inline: notes/launching.md#a-part-a-brief-leaves-out
 * inline: notes/launching.md#a-doc-reviewers-brief
 * inline: notes/worktree.md#worktree
+* inline: notes/worktree.md#worktree-commands
 * inline: notes/worktree.md#re-invoked-in-another-agents-worktree
 * inline: notes/changes.md#budget
 - Review that change by the steps [Reviewing a change](docs/handbook/editing.md#reviewing-a-change) gives.

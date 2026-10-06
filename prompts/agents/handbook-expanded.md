@@ -33,6 +33,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 * inline: notes/launching.md#a-solver-work-brief
 
 * inline: notes/worktree.md#editor-messages
+- Run no git command that changes state.
 
 * inline: notes/launching.md#an-editors-brief
 
@@ -41,6 +42,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 * inline: notes/launching.md#items-and-files
 
 * inline: notes/worktree.md#worktree
+* inline: notes/worktree.md#worktree-commands
 
 * inline: notes/worktree.md#worktree-isolation
 
