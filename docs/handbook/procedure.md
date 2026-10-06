@@ -6,7 +6,7 @@
 
 ## Every pass
 - **One operation at a time.** Finish each operation before you start the next.
-- **Reading files.** Read the task with `cat data/tasks/<task_id>.json`, and each other file you need whole, with no other command piped or chained to the read.
+- **Reading files.** Read the task with `cat data/tasks/<task_id>.json`, and each other file you need whole, with no other command piped to the read.
 - **Lib protocol.** Apply [Lib addition protocol](docs/handbook/lib-protocol.md) where its trigger holds.
 - **Source reading.**
     - Do not read `src/` during a pass.
@@ -32,9 +32,9 @@
 ## Operations
 
 ### Analyze
-1. Read the task whole with `cat data/tasks/<task_id>.json`, with no other command piped or chained to it; a script you write may load the file.
+1. Read the task whole with `cat data/tasks/<task_id>.json`, with no other command piped to it; a script you write may load the file.
     * comment:
-        - The command and the rule on piping and chaining are here as well as under Every pass because the Analyze render does not carry Every pass.
+        - The command and the rule on piping are here as well as under Every pass because the Analyze render does not carry Every pass.
     - A pair's `alt` of kind `rule` is a second candidate, and of kind `tiebreak` a tiebreak.
 2. Write the concept to `work/task/<task_id>/concept.md`, in this form:
     ```
