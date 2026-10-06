@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: Judges the defect places in a diff of the code and the modules over 500 lines under `src/` and `scripts/`, and files each defect, each defect place that stands with its reason, and each place that poses a question as a ticket. The brief gives the earlier code review's baseline, as a `code-review/<n>` tag, this code review's number, what new code the diff holds, the scratch directory, and its budget in minutes.
+description: Judges the defect places in a diff of the code and the modules over 500 lines under `src/` and `scripts/`, and files each defect, each defect place that stands with its reason, and each place that poses a question as a ticket.
 model: opus
 tools: Read, Grep, Glob, Bash, Write
 ---
@@ -9,6 +9,8 @@ tools: Read, Grep, Glob, Bash, Write
 + message: brief
 
 # Code reviewer
+* inline: notes/launching.md#a-part-a-brief-leaves-out
+* inline: notes/launching.md#a-code-reviewers-brief
 - Edit nothing under the tree other than the tickets you file.
 - When you start, record the tree as this code review's baseline, untracked files under `src/`, `scripts/` and `tests/` included, with this code review's number as `<n>`, in one Bash call:
     ```

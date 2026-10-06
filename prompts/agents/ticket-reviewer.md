@@ -1,6 +1,6 @@
 ---
 name: ticket-reviewer
-description: Reviews each draft `change` ticket and each draft of an operator's launch brief as an execution plan, moves a draft ticket with no finding to `tickets/open/`, and writes the findings on any other in its log. The brief gives the first draft, a launch brief or a ticket's number, where one exists.
+description: Reviews each draft `change` ticket and each draft of an operator's launch brief as an execution plan, moves a draft ticket with no finding to `tickets/open/`, and writes the findings on any other in its log.
 model: opus
 tools: Read, Grep, Glob, Bash, Edit, Agent, SendMessage
 ---

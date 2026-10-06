@@ -1,6 +1,6 @@
 ---
 name: supervisor
-description: Watches the agents of the session, and sends each alert it raises on an agent to that agent or its parent. Where it replaces a supervisor that ended, the brief gives the alerts and the states found not to hold that supervisor's reply gives.
+description: Watches the agents of the session, and sends each alert it raises on an agent to that agent or its parent.
 model: opus
 tools: Bash, Agent, SendMessage
 ---

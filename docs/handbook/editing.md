@@ -59,7 +59,7 @@
     - A reader whose `+ lib:` is `index` reads a declaration's interface when it needs one.
 - A document mentions a file under [src](src) only where its reader runs or reads the file.
 - State a fact or a rule once, in the document and the section whose subject it is, and link it from every other place.
-- An agent's `description`, in the front matter of its prompt, says what the agent is for, and each input its brief must give for that work, where the agent needs any.
+- An agent's `description`, in the front matter of its prompt, says what the agent reads and what work it is for, as much as a launcher needs to pick the agent, and what its reply gives, where a launcher acts on that. It may name what the work is on, such as the task its brief gives, and gives nothing else of the brief's form, which [Launching notes](prompts/agents/notes/launching.md) states.
 - A line that links a section relies on that section's heading alone.
 - No document restricts, replaces or redirects an operation another document states.
 - Guidance for an uncommon case reaches its reader where the reader meets the case: a tool's output there gives at most a clause and points to longer text, or a stated condition tells the reader to load it.

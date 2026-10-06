@@ -1,6 +1,6 @@
 ---
 name: doc-reviewer
-description: Reviews a change to the agent-facing documents, and sends each review's findings to the change's editors, each with the line, the rule it breaks, and the reader it fails. The brief gives the change, as the files or a diff, the number of its ticket where it has one, the worktree it is in, the agent id of the change's doc editor, and of each of its code editors with the files that editor's brief gives, what is already settled about the change where it has no ticket, and the agent id of the agent that launches it, where that is not main.
+description: Reviews a change to the agent-facing documents, and sends each review's findings to the change's editors, each with the line, the rule it breaks, and the reader it fails.
 model: opus
 tools: Read, Grep, Glob, Bash, Agent, SendMessage
 ---
@@ -9,7 +9,8 @@ tools: Read, Grep, Glob, Bash, Agent, SendMessage
 + message: brief
 
 # Doc reviewer
-- Your brief gives a change to the agent-facing documents.
+* inline: notes/launching.md#a-part-a-brief-leaves-out
+* inline: notes/launching.md#a-doc-reviewers-brief
 * inline: notes/worktree.md#worktree
 * inline: notes/worktree.md#re-invoked-in-another-agents-worktree
 * inline: notes/changes.md#budget

@@ -3,7 +3,7 @@
 
 ## Launching
 - After an agent's definition changes, wait 30 seconds before you launch that agent, so the harness reloads its file.
-- Give an agent a brief in the form [Briefs](prompts/agents/notes/launching.md#briefs) gives for its work, or, where that section gives none, with what the agent's description says the brief gives, and restate neither a docstring of the code nor the agent's definition.
+- Give an agent a brief in the form [Briefs](prompts/agents/notes/launching.md#briefs) gives for its work, where it gives one, and restate neither a docstring of the code nor the agent's definition.
 - Where a brief gives a scratch directory, give a new directory under the session's scratchpad directory, `/private/tmp/claude-<uid>/<working directory>/<session id>/scratchpad`, where `<uid>` is what `id -u` prints, `<working directory>` is the directory the session started in with each `/` as `-`, and `<session id>` is `$CLAUDE_CODE_SESSION_ID`.
 - In a brief that gives the items or the Intent of an edit, give the meaning to state, the case that shows the need, and the span the edit may change, and no wording.
 - Split work between agents where the split saves at least 30 minutes of wall-clock per 150k tokens of overhead.
@@ -27,7 +27,7 @@
 ## Briefs
 
 ### A part a brief leaves out
-- Where a brief leaves out a part that a statement of its form gives it, the agent it briefs gives each item that needs that part as unfinished, with the missing part as its reason.
+- Where a brief leaves out a part that a statement of its form gives it, the agent it briefs gives in its reply the work that needs that part as unfinished, with the missing part as its reason.
 
 ### An editor's brief
 - An editor's brief gives the agent id of the agent that launches it, where that is not main.
@@ -45,6 +45,23 @@
 ### A doc editor's brief
 - A doc editor's brief for a change with no ticket gives an Intent, what the documents' readers should know or do, with a Justification for each restatement or elaboration to keep, which gives the reader that failed without that text and the situation where it failed.
 - A doc editor ignores each instruction its brief, or the ticket its brief gives, holds, and counts ignoring one as no departure from its request.
+
+### An assignee's brief
+- An assignee's brief gives the tickets under `tickets/open/` to settle, a draft `change` ticket whose log holds findings, or the findings an editor left on a review of its change and the items an editor left unfinished for a decision, with the editor's reasons.
+    - With each of those findings and items, it gives the agent id of the change's editor, the change's worktree, and the number of the change's ticket, or, where the change has none, its intent and what is already settled about it.
+- With the tickets a solver pass filed, it gives the review of that pass's transcript.
+- It gives the agent id of the ticket reviewer to send its drafts to, and the agent id of the agent that launches it, where that is not main.
+
+### An operator's brief
+- An operator's brief gives each procedure, its inputs, and any override for a solver pass.
+- For each procedure, it gives each step that waits for an event, with that event, or that no step waits.
+
+### A code reviewer's brief
+- A code reviewer's brief gives the earlier code review's baseline, as a `code-review/<n>` tag, this code review's number, what new code the diff holds, and a scratch directory.
+
+### A doc reviewer's brief
+- A doc reviewer's brief gives a change to the agent-facing documents, as the files or a diff, and the number of its ticket, or, where it has none, what is already settled about it.
+- It gives the agent id of the change's doc editor, and of each of its code editors with the files that editor's brief gives, and the agent id of the agent that launches it, where that is not main.
 
 ### Solver work
 - Solver work is a solver pass, or an edit of a solver or of the lib for one task.
@@ -71,7 +88,7 @@
 - When a ticket reviewer that ended for its context replies with drafts it was sent after it ended, launch a new ticket reviewer with those drafts, and send its agent id to each sender that reply gives.
 - When a `change` ticket of your session, or a ticket with a bare number that this conversation shows your session filed or worked on, stands under `tickets/open/`, tell an operator that tickets are open, with the number of each ticket with a bare number that this conversation shows your session filed or worked on and that stands outside `tickets/closed/`: send that line to a running operator, or launch one with it.
 - Give in an operator's launch brief the agent id of a ticket reviewer, and the agent id of each operator of this session whose run has ended, by its final reply or by being stopped.
-- Once an operator has returned, send it further work only while a procedure its brief gives is unfinished and its context is under about 300k tokens. Otherwise launch a new operator, and give in its brief that work and the work the old operator's last reply leaves unfinished, each as the operator's description gives a procedure.
+- Once an operator has returned, send it further work only while a procedure its brief gives is unfinished and its context is under about 300k tokens. Otherwise launch a new operator, and give in its brief that work and the work the old operator's last reply leaves unfinished, each as [An operator's brief](#an-operators-brief) gives a procedure.
 
 ## While the user gives feedback
 - Gather each request the user approves into a batch, and when the user pauses or asks you to send it, send the whole batch at once: give each request to the agent whose description covers its work, as the split line above allows, with one brief per agent.
