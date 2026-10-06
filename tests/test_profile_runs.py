@@ -20,6 +20,10 @@ transcripts = sys.modules["transcripts"]
 Part = sys.modules["run_profile"].Part
 
 
+def write_jsonl(path: Path, entries: list[dict]) -> None:
+    path.write_text("".join(json.dumps(e) + "\n" for e in entries))
+
+
 def at(s: float) -> str:
     return f"2026-10-04T00:{int(s) // 60:02d}:{int(s) % 60:02d}.000Z"
 
@@ -70,7 +74,7 @@ def run(tmp_path: Path):
         assistant(210, {"type": "text", "text": "an answer"}, stop="end_turn"),
     ]
     path = tmp_path / "s.jsonl"
-    path.write_text("".join(json.dumps(e) + "\n" for e in entries))
+    write_jsonl(path, entries)
     return profile_runs.profile(path, [])
 
 
@@ -135,7 +139,7 @@ def test_pending(tmp_path: Path) -> None:
                                 "resumedAgentId": A3, "pin": {"id": A3}}),
     ]
     path = tmp_path / "s.jsonl"
-    path.write_text("".join(json.dumps(e) + "\n" for e in entries))
+    write_jsonl(path, entries)
     agents = tmp_path / "s" / "subagents"
     agents.mkdir(parents=True)
     elsewhere = [user(35, told(A1, "x1"), isMeta=True),
@@ -145,15 +149,13 @@ def test_pending(tmp_path: Path) -> None:
         (agents / f"agent-{aid}.meta.json").write_text(json.dumps(
             {"agentType": "editor", "toolUseId": tid}))
     assert profile_runs.pending_agents(path, []) == [A1, A3, A4]
-    (agents / f"agent-{A2}.jsonl").write_text(
-        "".join(json.dumps(e) + "\n" for e in elsewhere))
+    write_jsonl(agents / f"agent-{A2}.jsonl", elsewhere)
     transcripts.snapshot.cache_clear()
     assert profile_runs.pending_agents(path, []) == [A1, A4]
     resumer = [assistant(90, send("r1", "editor")),
                user(91, answer("r1"), {"success": True, "message": "Resuming agent a000000",
                                        "pin": {"id": A2}})]
-    (agents / f"agent-{A5}.jsonl").write_text(
-        "".join(json.dumps(e) + "\n" for e in resumer))
+    write_jsonl(agents / f"agent-{A5}.jsonl", resumer)
     sys.modules["run_reads"].session_agents.cache_clear()
     transcripts.snapshot.cache_clear()
     assert profile_runs.pending_agents(path, []) == [A1, A2, A4]
@@ -170,7 +172,7 @@ def test_hook_denies(tmp_path: Path) -> None:
         assistant(3, wait),
     ]
     path = tmp_path / "s.jsonl"
-    path.write_text("".join(json.dumps(e) + "\n" for e in entries))
+    write_jsonl(path, entries)
     settings = json.loads((checkout.claude() / "settings.json").read_text())
     [command] = [h["command"] for m in settings["hooks"]["PreToolUse"]
                  for h in m["hooks"] if "pending_wait_hook.py" in h["command"]]

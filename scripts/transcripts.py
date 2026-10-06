@@ -204,9 +204,7 @@ class Snapshot:
 
 
 def epoch(iso: str) -> float:
-    """The seconds since the Unix epoch of `iso`, the ISO 8601 timestamp of
-    a transcript's entry."""
-    return datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp()
+    return datetime.fromisoformat(iso).timestamp()
 
 
 def parse(line: str | bytes) -> list[Entry]:
