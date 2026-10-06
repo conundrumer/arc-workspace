@@ -64,6 +64,10 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 
 ## Launching
 * inline: notes/launching.md#launching
+- An agent's budget is the N of the `Budget: N minutes` line of its brief, or of your latest message to it that has one, which replaces the brief's. Set it from the budget that `uv run python scripts/profile_runs.py ~/.claude/projects/-Users-davidlu-code-arc-workspace/*.jsonl --type <agent type>` prints for its agent type, over the window that command's `--help` gives, and change it for the work the brief or that message asks for. Where that command prints no budget for the type, set it from that work alone. Solver work, and an agent that runs until you tell it to stop, have no budget.
+- When an agent you launched ends a turn more than its budget after its brief or your latest message to it arrived, change its brief or split its work, in the same turn.
+- When a supervisor's alert of kind `budget` reaches you, tell the agent to do what its documents say it does when its budget passes, where they say it, and otherwise tell it what to finish and to end, and kill or retry no agent. The agent reads your message only when its current command ends.
+- Launch a transcript review of each completed run of a batch that is no solver work and that `uv run python scripts/profile_runs.py <agent id>` shows past its budget: where a message from its parent has a `Budget: N minutes` line, by a message that command marks `past budget`, and otherwise, where its agent type has a budget, by its active time, its wall time less its `idle` time as that command prints them, past that budget.
 
 ## Briefs
 * inline: notes/launching.md#briefs

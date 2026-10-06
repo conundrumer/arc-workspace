@@ -6,12 +6,12 @@
 - Launch no agent other than the ones your documents give.
 - Keep `progress.md` in your scratch directory, with what is done and what is next. After your context is compacted, read it before anything else.
 - Your budget is the N of the latest `Budget: N minutes` line in your brief or a later message from your parent.
-- Start your budget timer with your first command, and again at each later message from your parent, after you end the timer that runs: run this command in the background, with N times 60 as `<seconds>`:
+- While you have a budget, start your budget timer with your first command, and again at each later message from your parent, after you end the timer that runs: run this command in the background, with N times 60 as `<seconds>`:
     ```
     : 'unattended-wait: budget timer'; sleep <seconds> & echo $! > <scratch directory>/timer.pid; wait
     ```
 - When the notification that the timer completed reaches you, where you did not end it, finish the step you are on, write what is done and what is left in `progress.md`, and end your turn with a reply that says the budget is passed.
-- When the first message from a subagent other than your parent reaches you, and before your final reply, end the timer that runs: run `kill $(cat <scratch directory>/timer.pid)`, and give that reply only once `kill -0 $(cat <scratch directory>/timer.pid)` fails.
+- When the first message from a subagent other than your parent reaches you, and before your final reply, end the timer, where one runs: run `kill $(cat <scratch directory>/timer.pid)`, and give that reply only once `kill -0 $(cat <scratch directory>/timer.pid)` fails.
 
 ## place-kinds
 - Defects:

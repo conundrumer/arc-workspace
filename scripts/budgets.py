@@ -43,13 +43,13 @@ def type_window(kind: str, undecided: list[str]) -> float | None:
 
 def print_budgets(runs: list[Run], since_date: float | None,
                   undecided: list[str]) -> None:
-    """Print each agent type's budget, its basis, and the runs it is taken
-    over. `since_date` is the start of the window `--since` sets, where it
-    is given."""
+    """Print each agent type's budget, its basis, and the budgeted runs it
+    is taken over. `since_date` is the start of the window `--since` sets,
+    where it is given."""
     by_type = by_agent_type(runs)
     print(f"{'type':<18} {'budget':>7} {'runs':>4}  basis")
     for kind in sorted(by_type):
-        rs = by_type[kind]
+        rs = [r for r in by_type[kind] if budgeted(r, undecided)]
         since = since_date if since_date is not None else type_window(kind, undecided)
         window: list[Run] = []
         if since is not None:
@@ -60,13 +60,16 @@ def print_budgets(runs: list[Run], since_date: float | None,
                 elif r.start >= since:
                     window.append(r)
         if len(window) >= WINDOW_RUNS:
-            basis, chosen = mctx("since {date}").format(date=clock(since)), window
+            basis = mctx("budgeted since {date}").format(date=clock(since))
+            chosen = window
         else:
-            basis = mctx("waits and idle under {pct}% of wall").format(pct=LOW_WAIT_PCT)
+            basis = mctx("budgeted, waits and idle under {pct}% of "
+                         "wall").format(pct=LOW_WAIT_PCT)
             chosen = [r for r in rs if low_wait(r)]
         if not chosen:
-            undecided.append(mctx("{kind}: no run has waits and idle under "
-                                  "{pct}% of wall, so it has no budget").format(
+            undecided.append(mctx("{kind}: no budgeted run has waits and idle "
+                                  "under {pct}% of wall, so it has no "
+                                  "budget").format(
                 kind=kind, pct=LOW_WAIT_PCT))
             continue
         budget = BUDGET_FACTOR * percentile([r.wall for r in chosen], 50)
@@ -116,6 +119,11 @@ def budgets_in_force(r: Run, undecided: list[str]) -> list[float | None]:
             budget = next(iter(stated)) if len(stated) == 1 else None
         budgets.append(None if r.unknown else budget)
     return budgets
+
+
+def budgeted(r: Run, undecided: list[str]) -> bool:
+    """Whether `r` is a budgeted run, as HELP gives it."""
+    return any(b is not None for b in budgets_in_force(r, undecided))
 
 
 def of_budget(budget: float | None) -> str:

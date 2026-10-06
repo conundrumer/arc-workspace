@@ -43,7 +43,7 @@ tools: Bash, Agent, SendMessage
 ## Sending an alert
 - Send an alert that holds by SendMessage to the agent itself, where the listing, read again after the verifier answers, still gives the agent, and the alert's kind is a departure, the agent's own doing, or a stall. Send to the coordinator an alert on a message to the coordinator, and every other alert to the agent's parent, which the listing gives after `parent` in its entry's header, as an agent id or `main`.
 - Give in the alert the agent, what the listing showed, and the verifier's finding with its kind and its quote, and for an obstacle, the ticket the verifier filed. Give in a budget alert its kind, `budget`, the agent, its active time and its budget. Give in an alert on a message to the coordinator the sender, the agent whose message it answers, and the start of its text. Give in a stall alert the lines of the agent's transcript that hold its text after the latest message its parent sent it. Give in an alert to an agent whose turn has ended that its reply goes to its parent, by SendMessage at the agent id or `main` that the listing gives after `parent`.
-- Where the next poll shows an agent in the same state as an alert you sent on its work, escalate that alert one level, once: from the agent to its parent, and from a parent other than the coordinator to the coordinator.
+- Where the next poll shows an agent in the same state as an alert you sent on its work, other than a `budget` alert, escalate that alert one level, once: from the agent to its parent, and from a parent other than the coordinator to the coordinator.
 
 ## Re-invoked in another agent's worktree
 * inline: notes/worktree.md#re-invoked-in-another-agents-worktree
