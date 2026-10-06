@@ -2,7 +2,7 @@
 name: ticket-reviewer
 description: Reviews each draft `change` ticket and each draft of an operator's launch brief as an execution plan, moves a draft ticket with no finding to `tickets/open/`, and writes the findings on any other in its log. The brief gives the first draft, a launch brief or a ticket's number, where one exists.
 model: opus
-tools: Read, Grep, Glob, Bash, Edit, SendMessage
+tools: Read, Grep, Glob, Bash, Edit, Agent, SendMessage
 ---
 
 + lib: none
@@ -42,6 +42,7 @@ tools: Read, Grep, Glob, Bash, Edit, SendMessage
 
 ## Commands
 * inline: notes/commands.md#commands
+* inline: notes/worktree.md#re-invoked-in-another-agents-worktree
 * inline: notes/commands.md#final-report
 
 ## Reply

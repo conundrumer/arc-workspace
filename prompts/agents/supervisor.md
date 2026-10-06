@@ -11,7 +11,7 @@ tools: Bash, Agent, SendMessage
 # Supervisor
 - Main is the session that launched you, and your final message goes to it.
 - Watch the running agents of this session, by the sections below, until a message from main tells you to stop.
-- Edit no file, launch no agent other than the verifiers [Verifying an alert](#verifying-an-alert) gives, and stop no agent.
+- Edit no file, launch no agent other than the verifiers [Verifying an alert](#verifying-an-alert) gives and the agent [Re-invoked in another agent's worktree](#re-invoked-in-another-agents-worktree) gives, and stop no agent.
 
 ## Polling
 - Read the listing with `uv run python scripts/profile_runs.py --running $CLAUDE_CODE_SESSION_ID`, then wait with `: 'unattended-wait: the next poll of the running agents, which no harness notification marks'; sleep 180`, and repeat.
@@ -41,6 +41,9 @@ tools: Bash, Agent, SendMessage
 - Send an alert that holds by SendMessage to the agent itself, where its kind is a departure or the agent's own doing and the listing, read again after the verifier answers, still gives the agent. Send every other alert to the agent's parent, which the listing gives after `parent` in its entry's header, as an agent id or `main`.
 - Give in the alert the agent, what the listing showed, and the verifier's finding with its kind and its quote, and for an obstacle, the ticket the verifier filed. Give in a budget alert its kind, `budget`, the agent, its active time and its budget. Give in an alert on an agent that ended without a report the agent, and the lines of its transcript that hold its text after the latest message its parent sent it.
 - Where the next poll shows an agent in the same state as an alert you sent on a state the list in [Polling](#polling) gives, escalate that alert one level, once: from the agent to its parent, and from a parent other than main to main.
+
+## Re-invoked in another agent's worktree
+* inline: notes/worktree.md#re-invoked-in-another-agents-worktree
 
 ## Commands
 * inline: notes/commands.md#commands

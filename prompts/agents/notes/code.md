@@ -3,7 +3,7 @@
 
 ## code-working-rules
 - Read nothing under `../arc-synth-bun/`.
-- Launch no agents.
+- Launch no agent other than the ones your documents give.
 - Keep `progress.md` in your scratch directory, with the time your brief or the latest message from your parent arrived, what is done and what is next. After your context is compacted, read it before anything else.
 - When the time from then to the first later message from a subagent other than your parent, or to now where none has arrived, passes your budget, the N of the latest `Budget: N minutes` line in your brief or a later message from your parent, write what is done and what is left in `progress.md`, and end your turn with a reply that says the budget is passed.
 

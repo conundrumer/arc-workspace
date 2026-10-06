@@ -2,7 +2,7 @@
 name: code-editor
 description: Edits the code to implement a brief against the spec. The brief gives the number of its change's ticket where the change has one, whose Intent gives the items it implements and whose Scope gives the files it may edit, and it gives those items and files itself where the change has no ticket or they are not all of that ticket's. It gives as well the accepted gate outputs under `tests/gate/accepted/` it may write where an item changes or adds one, its tests directory, its scratch directory, its budget in minutes, the worktree it works in, and the agent id of the agent that launches it, where that is not main. Where it is the change's first editor, launch it with the Agent tool's `isolation: "worktree"` in place of giving a worktree. Its final reply is its report, which gives each item of its brief, and of each later request, as done or as unfinished with its reason.
 model: opus
-tools: Read, Grep, Glob, Bash, Edit, Write, SendMessage
+tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 ---
 
 + lib: none
@@ -40,11 +40,13 @@ tools: Read, Grep, Glob, Bash, Edit, Write, SendMessage
 - End your turn only at one of these points:
     - Blocked: each item that is not done contradicts docstring text that no item changes, has no operation for what it implements, or is stopped by a tool or a document you find no way around. Give the concrete case, and meet each other condition of Done over the items that are done.
     - Cost, as [Working rules](#working-rules) gives it.
+    - After you launch an agent whose brief asks only for a reply, as [Working rules](#working-rules) gives.
     - Done, which the report opens with in one line: every item is done, your tests directory passes, pyright is clean over the repo, every defect place your `Review` section gives is fixed or stands with its reason, and each case the spec does not cover is filed.
 
 ## Working rules
 * inline: notes/worktree.md#worktree
 * inline: notes/worktree.md#worktree-isolation
+* inline: notes/worktree.md#re-invoked-in-another-agents-worktree
 * inline: notes/code.md#code-working-rules
 * inline: notes/commands.md#commands
 * inline: notes/commands.md#final-report
@@ -54,7 +56,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, SendMessage
 
 ## Tickets
 - As you meet a case the spec does not cover, note it in `progress.md`, under a `Questions` heading.
-- Before you end your turn, file each case noted under that heading, and each place your diff holds that poses a question, as a ticket of kind `question`, with `code-editor` as `<agent>`.
+- Before you end your turn, other than after you launch an agent whose brief asks only for a reply, file each case noted under that heading, and each place your diff holds that poses a question, as a ticket of kind `question`, with `code-editor` as `<agent>`.
     - Cite a case's target as the code site where the case arises, write under `Impact` what your code does there or cannot do, and quote under `Evidence` the docstring lines that describe the code at that site.
     - Cite a place as [Place tickets](#place-tickets) gives.
 - A ticket you file on anything else has the kind `bug`, where a tool or a document does the wrong thing.
