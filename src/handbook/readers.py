@@ -23,7 +23,7 @@ from handbook.context import (agent_context, agent_dir, agent_names,
                               role_context, role_dir, role_stems,
                               session_context, survey_context,
                               workflow_context, workflow_dir, workflow_names)
-from handbook.main_document import main_context
+from handbook.coordinator_document import coordinator_context
 from handbook.paths import DOCUMENTS_ROOT, REPO_ROOT
 
 
@@ -61,7 +61,7 @@ def _console_stages(root: Path) -> list[str]:
 
 
 CONTEXT_READERS = {
-    "main": Reader(None, _no_values, lambda _a: main_context()),
+    "coordinator": Reader(None, _no_values, lambda _a: coordinator_context()),
     "session": Reader(None, _no_values, lambda _a: session_context()),
     "codex": Reader(None, _no_values, lambda _a: codex_context()),
     "agent": Reader(ArgumentForm.NAME, lambda r: agent_names(agent_dir(r)),

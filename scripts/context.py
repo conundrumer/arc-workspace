@@ -21,7 +21,7 @@ from handbook.context import (
     write_interfaces,
 )
 from handbook.libcheck import check
-from handbook.main_document import session_start_text, write_main
+from handbook.coordinator_document import session_start_text, write_coordinator
 from handbook.paths import REPO_ROOT
 from handbook.readers import (context_at, context_diff, context_text,
                               contexts_diff, contexts_text)
@@ -47,10 +47,10 @@ HELP = mctx("""
     - `--write` first checks the lib's sources, prints what the checks find and exits 1 when they find anything. Otherwise it writes the files below, which git does not track. A session reads them only when they were written before it started.
         - One agent under `.claude/agents/` per document under `prompts/agents/`, with the context its document composes as its system prompt, and `.claude/agents/.manifest`, which lists the agent files written there.
         - `.claude/analyze-next.md`, the steps the `analyze` agent reads after it writes the concept.
-        - `.claude/main.md`, the document of main, the session the user talks with, rendered from `prompts/agents/notes/main.md`.
+        - `.claude/coordinator.md`, the document of the coordinator, the session the user talks with, rendered from `prompts/agents/notes/coordinator.md`.
         - The files a codex session on the repo reads: `AGENTS.md`, [Codex on arc-workspace](prompts/codex.md) rendered, and `.codex/config.toml`, with `docs/codex-style.md` as its developer instructions.
     - `--write` then removes each agent file that manifest lists whose document under `prompts/agents/` no longer exists, and prints it after `removed`. It leaves in place any file the manifest does not list, and names each such file that has no document on stderr.
-    - `session-start` is the command the session-start hook in `.claude/settings.json` runs. Where Claude Code started the session for the user to talk with, it writes `.claude/main.md` and prints it, and in a `claude -p` session it prints nothing.
+    - `session-start` is the command the session-start hook in `.claude/settings.json` runs. Where Claude Code started the session for the user to talk with, it writes `.claude/coordinator.md` and prints it, and in a `claude -p` session it prints nothing.
     - `role <name>` prints a role's prompt.
     - `section <where>` prints one section in full, for a reader whose handbook shows that section as a heading alone. `<where>` takes three forms:
         ```
@@ -85,7 +85,7 @@ if __name__ == "__main__":
         write_agent()
         stale = remove_stale_agents()
         agents = [out for _name, out in agent_paths()]
-        for out in (*interfaces, *agents, write_analyze_next(), write_main(),
+        for out in (*interfaces, *agents, write_analyze_next(), write_coordinator(),
                     *write_codex()):
             print(out.relative_to(REPO_ROOT))
         for out in stale.removed:

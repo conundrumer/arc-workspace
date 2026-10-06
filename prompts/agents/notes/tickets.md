@@ -15,7 +15,7 @@
     - Where the ticket has an `Evidence` section, write under it the line quoted, or the command and its output, or the grid, as you saw it, and leave out what the fix should be.
 
 ## Ticket fields
-- `<agent>` is your agent's name, or `main` in the main session.
+- `<agent>` is your agent's name, or `coordinator` where you are the coordinator.
 - Your agent id is the id of your own entry in the listing `uv run python scripts/profile_runs.py --running $CLAUDE_CODE_SESSION_ID` prints, the entry whose call in flight is that command.
 - `<domain>` and `<subject>` give what a ticket of another kind than `change` is about:
     - `task` and the task id: a solver pass's ticket, and a transcript review's ticket on a pass.

@@ -67,8 +67,8 @@ class Filer(StrEnum):
     DOC_REVIEWER = "doc-reviewer"
     TICKET_REVIEWER = "ticket-reviewer"
     CODE_REVIEWER = "code-reviewer"
-    MAIN = "main"
-    ASSIGNEE = "assignee"
+    COORDINATOR = "coordinator"
+    TICKET_ANALYST = "ticket-analyst"
 
 
 FILER_KINDS: dict[Filer, frozenset[Kind]] = {
@@ -85,8 +85,8 @@ FILER_KINDS: dict[Filer, frozenset[Kind]] = {
     Filer.DOC_REVIEWER: REVIEW_KINDS,
     Filer.TICKET_REVIEWER: REVIEW_KINDS,
     Filer.CODE_REVIEWER: REVIEW_KINDS | {Kind.REFACTOR, Kind.QUESTION},
-    Filer.MAIN: frozenset({Kind.CHANGE, Kind.BUG}),
-    Filer.ASSIGNEE: frozenset({Kind.CHANGE}),
+    Filer.COORDINATOR: frozenset({Kind.CHANGE, Kind.BUG}),
+    Filer.TICKET_ANALYST: frozenset({Kind.CHANGE}),
 }
 """The kinds each filing agent, by its name, may file."""
 

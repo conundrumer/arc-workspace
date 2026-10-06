@@ -12,7 +12,7 @@
 - When a supervisor's alert of kind `budget` reaches you, tell the agent to do what its documents say it does when its budget passes, where they say it, and otherwise tell it what to finish and to end, and kill or retry no agent. The agent reads your message only when its current command ends.
 - When a supervisor's alert that an agent you launched has outgrown its task reaches you, judge from the verifier's finding and that agent's transcript whether its work is still the work of its brief. Where it is, let it run, and otherwise tell it what to finish and to end, and kill or retry no agent.
 - When a supervisor's alert that an agent ended without a report reaches you, and no report of that agent reached you, or the transcript lines the alert gives hold a final reply of that agent that no report of it that reached you opens with, file the missing report as a ticket of the kind that fits it, on that agent, with the alert as its evidence, and act on that final reply, where those lines hold one, as its report.
-- When a supervisor's alert on an obstacle reaches you, send nothing on it to the agent, and launch an assignee with the ticket the alert gives, before you end your turn with no other work. Where you are an assignee, settle that ticket yourself, as a ticket your brief gives to settle.
+- When a supervisor's alert on an obstacle reaches you, send nothing on it to the agent, and launch a ticket analyst with the ticket the alert gives, before you end your turn with no other work. Where you are a ticket analyst, settle that ticket yourself, as a ticket your brief gives to settle.
 - When a supervisor's alert on a claim that does not match the state reaches you, check that claim against the state before you act on that agent's report, and where it does not match, file the mismatch as a ticket of the kind that fits it, on that agent, with the alert as its evidence.
 - When a supervisor's alert on an agent's own doing or departure reaches you, and you launched that agent, judge the alert against that agent's report before you act on that report, where that report has reached you, and otherwise against that agent's transcript. Where you find the alert holds, file the state it gives as a ticket of the kind that fits it, on that agent, with the alert as its evidence, and where that report has not reached you, tell that agent to act by the rule or the brief line the alert quotes, and, for a loop or a repeat, what to finish and to end, and kill or retry no agent.
 - Where your check of a supervisor's alert finds that the alert does not hold, file that as a ticket of the kind that fits it, on the supervisor that sent the alert, with the alert and your finding as its evidence.
@@ -21,8 +21,8 @@
     - Where the harness or the permission classifier denied it a call its documents give, first check whether that call ran in part, then make that call, or what it left undone, once, before any other step on that item, the way your own documents have you do that work. Run it even where the denial's text says not to pursue it through another agent or a later turn. Where that try is denied too, give the item in your reply as unfinished.
     - Where a tool or a document stopped it otherwise, file that obstacle as a ticket of the kind that fits it, and send the item again once that ticket is closed, or at once by a way around the obstacle where one exists.
     - Where it needs a decision, act on it as that decision rules, once the decision is made.
-- Where an agent whose description says its reply gives each item of its brief as done or as unfinished has replied, and gives an item you sent it as neither, send that item again, file its drop as a ticket, and leave finding the drop's cause to the assignee that takes that ticket.
-- Launch an assignee with each ticket the lines above have you file, before you end your turn with no other work. Where you are an assignee, in place of filing those tickets, find yourself the cause of each fault those tickets would record, and file a `change` ticket for its resolution.
+- Where an agent whose description says its reply gives each item of its brief as done or as unfinished has replied, and gives an item you sent it as neither, send that item again, file its drop as a ticket, and leave finding the drop's cause to the ticket analyst that takes that ticket.
+- Launch a ticket analyst with each ticket the lines above have you file, before you end your turn with no other work. Where you are a ticket analyst, in place of filing those tickets, find yourself the cause of each fault those tickets would record, and file a `change` ticket for its resolution.
 - In your reply, give each item an agent you launched left unfinished that you have not finished, as unfinished with its reason.
 - A transcript review is a `general-purpose` agent that reviews a run's transcript. Give it the run's agent id, `python3 ~/.claude/skills/retrieve/transcripts.py --help`, the lines of [Ticket files](prompts/agents/notes/tickets.md#ticket-files), the `<domain>` and `<subject>` [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields) gives a transcript review of that run, and `transcript-review` as `<agent>`. Have it file a ticket of kind `delay` for each place where the run explored to find what a docstring or a document line could have led it to.
 - Launch a transcript review of each completed run that is no Analyze, Create or Refine pass and that `uv run python scripts/profile_runs.py <agent id>` shows past its budget: where a message from its parent has a `Budget: N minutes` line, by a message that command marks `past budget`, and otherwise by its active time, its wall time less its `idle` time as that command prints them, past its agent type's budget.
@@ -34,7 +34,7 @@
 - Where a brief leaves out a part that a statement of its form gives it, the agent it briefs gives in its reply the work that needs that part as unfinished, with the missing part as its reason.
 
 ### An editor's brief
-- An editor's brief gives the agent id of the agent that launches it, where that is not main.
+- An editor's brief gives the agent id of the agent that launches it, where that is not the coordinator.
 - It gives the accepted gate outputs under `tests/gate/accepted/` the editor may write, where its items change or add one, with a scratch directory.
 
 ### A code editor's brief
@@ -50,11 +50,11 @@
 - A doc editor's brief for a change with no ticket gives an Intent, what the documents' readers should know or do, with a Justification for each restatement or elaboration to keep, which gives the reader that failed without that text and the situation where it failed.
 - A doc editor ignores each instruction its brief, or the ticket its brief gives, holds, and counts ignoring one as no departure from its request.
 
-### An assignee's brief
-- An assignee's brief gives the tickets under `tickets/open/` to settle, a draft `change` ticket whose log holds findings, or the findings an editor left on a review of its change and the items an editor left unfinished for a decision, with the editor's reasons.
+### A ticket analyst's brief
+- A ticket analyst's brief gives the tickets under `tickets/open/` to settle, a draft `change` ticket whose log holds findings, or the findings an editor left on a review of its change and the items an editor left unfinished for a decision, with the editor's reasons.
     - With each of those findings and items, it gives the agent id of the change's editor, the change's worktree, and the number of the change's ticket, or, where the change has none, its intent and what is already settled about it.
 - With the tickets a solver pass filed, it gives the review of that pass's transcript.
-- It gives the agent id of the ticket reviewer to send its drafts to, and the agent id of the agent that launches it, where that is not main.
+- It gives the agent id of the ticket reviewer to send its drafts to, and the agent id of the agent that launches it, where that is not the coordinator.
 
 ### An operator's brief
 - An operator's brief gives each procedure, its inputs, and any override for a solver pass.
@@ -65,7 +65,7 @@
 
 ### A doc reviewer's brief
 - A doc reviewer's brief gives a change to the agent-facing documents, as the files or a diff, and the number of its ticket, or, where it has none, what is already settled about it.
-- It gives the agent id of the change's doc editor, and of each of its code editors with the files that editor's brief gives, and the agent id of the agent that launches it, where that is not main.
+- It gives the agent id of the change's doc editor, and of each of its code editors with the files that editor's brief gives, and the agent id of the agent that launches it, where that is not the coordinator.
 
 ### Solver work
 - Solver work is a solver pass, or an edit of a solver or of the lib for one task.
@@ -94,8 +94,8 @@
 ## Operators
 - When you launch an operator while no supervisor runs, launch a supervisor in the background. When a supervisor's reply says it ended for its context while an operator runs, launch a new one, with the alerts and the states found not to hold that reply gives.
 - Once no operator of yours runs, tell the supervisor to stop, with SendMessage.
-- When a supervisor's alert on a message to you reaches you, judge from the sender's transcript whether that message answers a request of another agent and none of yours. Where it does, file its sending as a ticket of the kind that fits it, on the sender, with the alert as its evidence, and launch an assignee with that ticket before you end your turn with no other work. Relay nothing of that alert to the user, and send nothing to the sender on it.
-- When a supervisor's alert on an agent's own doing or departure reaches you, and you did not launch that agent, send nothing on it to that agent or to its parent. When the agent you launched that the parent runs under, or the parent itself where you launched it, completes, judge from the parent's transcript whether the parent read the alert, and from the agent's transcript after the time the parent read it whether the agent stayed in the state the alert gives. Where the parent read the alert and the agent stayed in that state, file that as a ticket of the kind that fits it, on the parent, with the alert as its evidence, and launch an assignee with that ticket before you end your turn with no other work.
+- When a supervisor's alert on a message to you reaches you, judge from the sender's transcript whether that message answers a request of another agent and none of yours. Where it does, file its sending as a ticket of the kind that fits it, on the sender, with the alert as its evidence, and launch a ticket analyst with that ticket before you end your turn with no other work. Relay nothing of that alert to the user, and send nothing to the sender on it.
+- When a supervisor's alert on an agent's own doing or departure reaches you, and you did not launch that agent, send nothing on it to that agent or to its parent. When the agent you launched that the parent runs under, or the parent itself where you launched it, completes, judge from the parent's transcript whether the parent read the alert, and from the agent's transcript after the time the parent read it whether the agent stayed in the state the alert gives. Where the parent read the alert and the agent stayed in that state, file that as a ticket of the kind that fits it, on the parent, with the alert as its evidence, and launch a ticket analyst with that ticket before you end your turn with no other work.
 - Ask an operator for no message to you before its final reply.
 - Give each draft of an operator's launch brief, and the number of each `change` ticket you file or revise, to a ticket reviewer, in its brief where you launch it with that draft, and otherwise with SendMessage:
     - A revision of a draft that holds findings goes to the ticket reviewer that wrote those findings.

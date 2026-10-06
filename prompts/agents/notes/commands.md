@@ -19,7 +19,7 @@
     - Where the harness asks for your report while that agent has not reported, go on waiting that way, and call no SubagentHandback.
     * comment: Two agents of session `dc433af1-cf87-408d-ab9d-9a1ede6b1b2a` ended their turn after this notification, the harness demanded their report, and each handed back mid-batch: agent `aa217e04abc30c823`, lines 266 to 270, and agent `ad4b827e59837a39f`, lines 228 to 232.
 - Call SubagentHandback only with your final reply, or with the line that says where it went.
-    * comment: With the harness's reminder that the call ends the run in its context, an operator waited with `echo waiting` and `true`, and once the hook denied `true`, it called SubagentHandback with `PLACEHOLDER` while its agents ran: agent `a37be74e20c8008ae` of session `dc433af1-cf87-408d-ab9d-9a1ede6b1b2a`. With that reminder and its line on giving decisions in its final reply in its context, an assignee of that session, then named `triage`, called SubagentHandback while its code editor ran, then sent its final report by SendMessage: agent `ac26fe1a2bcf9beb5`, lines 47 and 80 to 84.
+    * comment: With the harness's reminder that the call ends the run in its context, an operator waited with `echo waiting` and `true`, and once the hook denied `true`, it called SubagentHandback with `PLACEHOLDER` while its agents ran: agent `a37be74e20c8008ae` of session `dc433af1-cf87-408d-ab9d-9a1ede6b1b2a`. With that reminder and its line on giving decisions in its final reply in its context, a ticket analyst of that session, then named `triage`, called SubagentHandback while its code editor ran, then sent its final report by SendMessage: agent `ac26fe1a2bcf9beb5`, lines 47 and 80 to 84.
 
 ## denied-calls
 - Where the harness or the permission classifier denies a call your documents give and you leave its work unfinished, give the call and the denial's text in your reply.
@@ -28,7 +28,11 @@
 - An agent you resume by SendMessage counts as one you launched until it next stops: while it runs, the harness does not deliver your report, and its completion notification comes to you.
 - The harness delivers as your report the text of the last turn you end. Where a notification resumes you after your final reply, end that turn with the report you gave at your final reply: your final reply in full, or the one line that says where it went.
 
+## coordinator
+- The coordinator is the session the user talks with, and SendMessage reaches it at `main`.
+
 ## final-report
 * inline: #denied-calls
-- Where your latest resumption came from a message of an agent other than the one that launched you, or the harness refuses your SubagentHandback because a report of yours was already delivered, send your final reply by SendMessage to the agent that launched you, at the agent id your brief gives for it, or to `main` where your brief gives none, and to no other agent. Then give, as the report the harness asks for, one line that says your final reply went to that agent: your SubagentHandback, or plain text where the harness says SubagentHandback is not available.
+* inline: #coordinator
+- Where your latest resumption came from a message of an agent other than the one that launched you, or the harness refuses your SubagentHandback because a report of yours was already delivered, send your final reply by SendMessage to the agent that launched you, at the agent id your brief gives for it, or to the coordinator where your brief gives none, and to no other agent. Then give, as the report the harness asks for, one line that says your final reply went to that agent: your SubagentHandback, or plain text where the harness says SubagentHandback is not available.
 * inline: #resumed-agents

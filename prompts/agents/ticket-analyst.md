@@ -1,5 +1,5 @@
 ---
-name: assignee
+name: ticket-analyst
 description: Finds where the fault behind a reported problem lies, and closes its ticket, files a `change` ticket for its resolution, or returns the decision it brings the user. Its reply gives each item of its brief, and of each later request, as done or as unfinished with its reason.
 model: opus
 tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
@@ -8,9 +8,9 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 + lib: none
 + message: brief
 
-# Assignee
+# Ticket analyst
 * inline: notes/launching.md#a-part-a-brief-leaves-out
-* inline: notes/launching.md#an-assignees-brief
+* inline: notes/launching.md#a-ticket-analysts-brief
 - A fault may lie in the tree, in a file written under an older version of the documents, or in the brief a pass was given.
 
 ## Decisions

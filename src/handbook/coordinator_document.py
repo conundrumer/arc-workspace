@@ -1,13 +1,14 @@
-"""Main's document: the text that instructs main, the session the user talks
-with, rendered from its source under `prompts/agents/notes/` as an agent
-document is, into `.claude/main.md`, which is generated and not tracked.
+"""The coordinator's document: the text that instructs the coordinator, the
+session the user talks with, rendered from its source under
+`prompts/agents/notes/` as an agent document is, into `.claude/coordinator.md`,
+which is generated and not tracked.
 
-The session-start hook gives the rendering to main at the session's start,
-at a resume, after a `/clear` and after each compaction. Claude Code fires
-that hook for each top-level session and for no subagent, and it states the
-session's entry point in `CLAUDE_CODE_ENTRYPOINT`: the hook gives the
-rendering to a session the user talks with, and nothing to a `claude -p`
-session. A `claude -p` session keeps the entry point it inherits where that
+The session-start hook gives the rendering to the coordinator at the
+session's start, at a resume, after a `/clear` and after each compaction.
+Claude Code fires that hook for each top-level session and for no subagent,
+and it states the session's entry point in `CLAUDE_CODE_ENTRYPOINT`: the
+hook gives the rendering to a session the user talks with, and nothing to a
+`claude -p` session. A `claude -p` session keeps the entry point it inherits where that
 is `claude-desktop`, so the hook also gives nothing to a session whose
 process, `CLAUDE_PID`, was started with `-p` or `--print`. The hook's text
 reaches the session whole only up to `HOOK_TEXT_CAP` characters, so a
@@ -25,8 +26,8 @@ from engine import checkout
 from handbook.context import _section, _write_whole, agent_dir, entry_text
 from handbook.paths import repo_label
 
-MAIN_DOC = agent_dir() / "notes" / "main.md"
-MAIN_PATH = checkout.claude() / "main.md"
+COORDINATOR_DOC = agent_dir() / "notes" / "coordinator.md"
+COORDINATOR_PATH = checkout.claude() / "coordinator.md"
 
 HOOK_TEXT_CAP = 10_000
 """The most characters of a hook's text that Claude Code puts in the
@@ -54,29 +55,31 @@ USER_ENTRY_POINTS = frozenset({EntryPoint.CLI, EntryPoint.DESKTOP})
 """The entry points of a session the user talks with."""
 
 
-def main_text(doc: Path = MAIN_DOC) -> str:
-    """Main's document, rendered from `doc` as an entry document is
-    (`entry_text`). A missing source, and a rendering longer than
+def coordinator_text(doc: Path = COORDINATOR_DOC) -> str:
+    """The coordinator's document, rendered from `doc` as an entry document
+    is (`entry_text`). A missing source, and a rendering longer than
     `HOOK_TEXT_CAP`, are faults."""
     if not doc.is_file():
-        raise SystemExit(f"main's document has no source at {repo_label(doc)}")
+        raise SystemExit("the coordinator's document has no source at "
+                         f"{repo_label(doc)}")
     text = entry_text(doc)
     if len(text) > HOOK_TEXT_CAP:
         raise SystemExit(
-            f"main's document, rendered from {repo_label(doc)}, holds "
+            f"the coordinator's document, rendered from {repo_label(doc)}, holds "
             f"{len(text)} characters; the session-start hook gives a session "
             f"{HOOK_TEXT_CAP} at most")
     return text
 
 
-def main_context() -> str:
-    """What reaches main from the session-start hook, as `session-start`
-    gives it."""
-    return _section(repo_label(MAIN_PATH), main_text())
+def coordinator_context() -> str:
+    """What reaches the coordinator from the session-start hook, as
+    `session-start` gives it."""
+    return _section(repo_label(COORDINATOR_PATH), coordinator_text())
 
 
-def write_main(path: Path = MAIN_PATH, doc: Path = MAIN_DOC) -> Path:
-    return _write_whole(path, main_text(doc))
+def write_coordinator(path: Path = COORDINATOR_PATH,
+                      doc: Path = COORDINATOR_DOC) -> Path:
+    return _write_whole(path, coordinator_text(doc))
 
 
 def entry_point(env: Mapping[str, str]) -> EntryPoint:
@@ -112,12 +115,12 @@ def print_session(env: Mapping[str, str]) -> bool:
     return not PRINT_FLAGS.isdisjoint(done.stdout.split())
 
 
-def session_start_text(env: Mapping[str, str], path: Path = MAIN_PATH,
-                       doc: Path = MAIN_DOC) -> str:
-    """What the session-start hook gives the session `env` describes: main's
-    document, written to `path` first, for a session the user talks with,
-    and nothing for a `claude -p` session."""
+def session_start_text(env: Mapping[str, str], path: Path = COORDINATOR_PATH,
+                       doc: Path = COORDINATOR_DOC) -> str:
+    """What the session-start hook gives the session `env` describes: the
+    coordinator's document, written to `path` first, for a session the user
+    talks with, and nothing for a `claude -p` session."""
     if entry_point(env) not in USER_ENTRY_POINTS or print_session(env):
         return ""
-    write_main(path, doc)
+    write_coordinator(path, doc)
     return path.read_text()
