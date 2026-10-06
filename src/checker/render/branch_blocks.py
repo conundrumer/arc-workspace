@@ -29,17 +29,17 @@ from checker.render.branches import (
 from checker.render.grids import grid_lines, shifted
 from checker.render.hints import Hint, HintKind, hint_line
 from solver.names import name as case_name
-from checker.store import (
+from checker.store.lines import shown_case_names
+from checker.store.survey import (
     POSITION_TYPES,
     ROW_CAP,
-    Change,
     Found,
     StoreSurvey,
     ValueKind,
     corner,
     member_key,
-    shown_case_names,
 )
+from checker.store.witness import Change
 from controlled_markdown import mctx
 from solver.annotations import DirectiveWord, IgnoreForm, at_word, derive_text, ignore_text
 from solver.model import Case
@@ -364,10 +364,14 @@ def under_text(names: Sequence[str]) -> str:
     return ", ".join(sorted(names))
 
 
+def _value_name(f: Found) -> str:
+    rel = f.relation.text
+    return f"{rel}[{', '.join(f.columns)}]" if f.sub else rel
+
+
 def _headline(solver: Solver, f: Found) -> str:
 
-    rel = f.relation.text
-    name = f"{rel}[{', '.join(f.columns)}]" if f.sub else rel
+    name = _value_name(f)
     if f.line is not None and f.line.line is not None \
             and f.kind is ValueKind.OWNED:
         return mctx("{name}: @store at {line}").format(
@@ -420,21 +424,8 @@ def _witness_line(solver: Solver, f: Found) -> str:
         return untaken_text()
     ask = needs_witness(at_word(DirectiveWord.STORE), f.case_id)
     if f.move is None:
-        why = mctx("no D4 image or color swap of a train input changes the "
-                   "value")
-        if f.failed is not None:
-            why = mctx("the run fails on {grid}: {error}").format(
-                grid=f"{train_text(f.failed.index)} "
-                     f"{transform_text(f.failed.change)}",
-                error=failure_text(f.failed.failure))
-        elif f.unseparated is not None:
-            model, other = f.unseparated
-            why = mctx("on no D4 image or color swap of a train input that "
-                       "changes the value does the branch's model `{case}` "
-                       "give an output other than `{other}`").format(
-                case=case_name(solver, model),
-                other=case_name(solver, other))
-        return mctx("no witness: {why}; {ask}").format(why=why, ask=ask)
+        return mctx("no witness: {why}; {ask}").format(
+            why=_no_witness_why(solver, f), ask=ask)
     line = _moved_witness(f.move.index, f.move.change)
     if f.move.identity and f.read:
         line += mctx("; the concept case gives the input unchanged")
@@ -442,6 +433,23 @@ def _witness_line(solver: Solver, f: Found) -> str:
         line += mctx("; the case under `{case}` gives the input unchanged"
                      ).format(case=under_text(f.used_in))
     return line
+
+
+def _no_witness_why(solver: Solver, f: Found) -> str:
+    if f.failed is not None:
+        return mctx("the run fails on {grid}: {error}").format(
+            grid=f"{train_text(f.failed.index)} "
+                 f"{transform_text(f.failed.change)}",
+            error=failure_text(f.failed.failure))
+    if f.unseparated is not None:
+        model, other = f.unseparated
+        return mctx("on no D4 image or color swap of a train input that "
+                    "changes the value does the branch's model `{case}` "
+                    "give an output other than `{other}`").format(
+            case=case_name(solver, model),
+            other=case_name(solver, other))
+    return mctx("no D4 image or color swap of a train input changes the "
+                "value")
 
 
 def _store_hints(f: Found, alone: bool = False) -> list[str]:
@@ -479,7 +487,11 @@ def store_lines(solver: Solver, survey: StoreSurvey) -> list[str]:
     ([Develop](docs/handbook/procedure.md#develop)): the inputs whose run
     fails, each `@store` line on a relation with an `Ident` column, one
     block per value some case reads, the relations over the row cap, then
-    each witness the command built, as `record` prints it."""
+    each witness the command built, as `record` prints it. A value with no
+    `@store` line whose witness search ran on every grid with no run
+    failed and found no witness (`Found.no_witness`) takes one line, which
+    names the value and says why no witness was found, with no drawn value
+    and no hint."""
 
     keyed = [f for f in survey.findings if f.kind == Kind.STORE_IDENT_KEY]
     if not survey.between:
@@ -501,6 +513,11 @@ def store_lines(solver: Solver, survey: StoreSurvey) -> list[str]:
                 f.relation.text, f.columns)
 
     for f in sorted(survey.listed, key=rank):
+        if f.no_witness and f.line is None:
+            lines.append(mctx("{name}: no witness: {why}").format(
+                name=_value_name(f), why=_no_witness_why(solver, f))
+                + cases_suffix(shown(f)))
+            continue
         lines.append(_headline(solver, f) + cases_suffix(shown(f)))
         if f.reads_back and f.line is None:
             lines.append("  " + mctx(

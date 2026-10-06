@@ -24,7 +24,7 @@ from checker.render import (
 )
 from checker.render.branch_blocks import derive_lines, record_lines, store_lines
 from checker.render.witness import try_lines
-from checker.store import Found
+from checker.store.survey import Found
 from checker.witness import (
     TRY_ID,
     WITNESS_CHECKS,

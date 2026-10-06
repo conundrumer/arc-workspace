@@ -27,7 +27,4 @@ dropped cases: ok
 derive: ok
 
 --- store ---
-  diagonal.dir: one value on every input and no `@store` or `@ignore: store` line
   diagonal.ray: one value on every input and no `@store` or `@ignore: store` line
-  run.clear: one value on every input and no `@store` or `@ignore: store` line
-  run.dir: one value on every input and no `@store` or `@ignore: store` line

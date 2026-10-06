@@ -75,7 +75,7 @@ from solver.witness import (
 )
 
 if TYPE_CHECKING:
-    from checker.store import Change
+    from checker.store.witness import Change
 
 # Runs of cases on the pairs
 

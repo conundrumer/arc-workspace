@@ -39,11 +39,8 @@ from checker.render.locations import LineForm, line_list, line_text, where_text
 from checker.render.no_result import cases_run_failed
 from checker.render.values import _ticked, arg_text
 from solver.names import name as case_name
-from checker.store import (
-    D4,
-    Change,
-    member_key,
-)
+from checker.store.survey import member_key
+from checker.store.witness import D4, Change
 from controlled_markdown import mctx
 from engine import AdtValue, RecordValue
 from solver.annotations import DirectiveWord, IgnoreForm, at_word

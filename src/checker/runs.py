@@ -45,7 +45,7 @@ from solver.witness import Entry, Undefined, WitnessFile
 
 if TYPE_CHECKING:
     from checker.derive import DeriveSurvey
-    from checker.store import StoreSurvey
+    from checker.store.survey import StoreSurvey
     from checker.variants import Fails, Profile, TimedOut
 
 

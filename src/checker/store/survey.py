@@ -1,87 +1,30 @@
-"""The `store` survey (procedure.md, under "Develop"): each program relation between
-`in` and `out` whose projection onto some of its columns is the same on
-every input of the task, with its witness, and the findings on the
-solver's `@store` lines and on those relations.
+"""The values the `store` survey finds, and what it judges of each.
 
 A relation's value is read per case where a column carries the case, and
 at each subset of its data columns: one value on every input (`OWNED`),
 one family of values keyed by the other columns (`CONSTANT`), or one
-value once each set is shifted to its own corner (`TRANSLATED`). The
-witness of a stored value is a train input turned or mirrored by a D4
-element, or with a stored color swapped for a free one, on which the
-relation's value differs."""
+value once each set is shifted to its own corner (`TRANSLATED`). Of each
+value the survey judges whether some case reads it, whether it is stored
+already, and where a line on it stands."""
 
-from collections import Counter
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from itertools import combinations, permutations
+from typing import TYPE_CHECKING
 
-from checker.branches import (
-    BuiltBy,
-    bare_ignored,
-    counterpart,
-    entry_findings,
-    excluded_finding,
-    witness_divergence,
-    witness_targets,
-    idle_ignores,
-    ordered,
-    swap_entry,
-    untaken,
-    with_line,
-)
-from checker.finding import (
-    AtFile,
-    AtLine,
-    AtPair,
-    AtRelation,
-    Finding,
-    Kind,
-    RunKind,
-    UndecidedPayload,
-    WholeFile,
-)
-from checker.judged import (
-    NO_TASK,
-    Swap,
-    base_names,
-    concept_among,
-    enumeration_failed,
-    no_result,
-    swaps,
-)
+from checker.branches import BuiltBy
+from checker.finding import Finding
 from checker.lint.view import literal_vars, term_vars
-from checker.payloads.branches import (
-    BranchPayload,
-    ColorAskPayload,
-    DiffersOn,
-    DuplicatePayload,
-    HomonymsPayload,
-    KeyedBy,
-    MissingLinePayload,
-    NoAnchor,
-    NoRows,
-    NotBetween,
-    NotCheckedPayload,
-    NoValue,
-    RelationPayload,
-    RowCapPayload,
-    StoreNoValuePayload,
-    StoreValuesPayload,
-    Unread,
-)
 from checker.runs import Runs
 from engine import (
     AdtValue,
     DeclId,
-    Grid,
     Index,
     RecordValue,
     RelationName,
     Resolved,
     Row,
-    RunFailure,
     Scope,
     Value,
 )
@@ -90,41 +33,26 @@ from engine.program import (
     Atom,
     AtomLiteral,
     BodyLiteral,
-    ConstructorTerm,
-    DefinedName,
     Disjunction,
     Instance,
-    NumberTerm,
     Qualifier,
-    RecordTerm,
     RelationDecl,
-    StringTerm,
     Term,
     Unit,
-    Variable,
     own,
 )
 from engine.quotes import quotes
-from solver.annotations import (
-    IgnoreForm,
-)
 from solver.model import (
-    bases_of,
     choice_values,
     Base,
     Case,
     base_case,
     StoreBranch,
-    every_base,
     non_concept_at,
 )
-from solver.aggregate import TOP, Solver, is_concept, lists_case, marker_at
+from solver.aggregate import TOP, Solver, lists_case, marker_at
 from solver.columns import ident_keyed
-from solver.graph import (
-    Graph,
-    InstancePath,
-    NodeKind,
-)
+from solver.graph import Graph, InstancePath
 from solver.case_types import (
     CaseTypes,
     Pattern,
@@ -133,21 +61,11 @@ from solver.case_types import (
     case_types,
     holds_at,
 )
-from solver.dependence import (
-    Dependence,
-    dependence,
-    dependent_bases,
-)
-from solver.names import branch_text, cover, marker_lists
-from solver.problems import ProblemKind
-from solver.outcome import Assignment, Grids
+from solver.dependence import Dependence, dependent_bases
+from solver.names import branch_text, marker_lists
 from solver.solve import (
-    PairId,
-    as_grid,
-    at_once,
     case_reading,
     parameter_reading,
-    examples,
     per_case,
     position,
     relation_decl,
@@ -168,6 +86,10 @@ from solver.vocabulary import (
     UNIT,
 )
 from solver.witness import Entry
+
+if TYPE_CHECKING:
+    from checker.store.witness import FailedRun, Move
+
 
 ROW_CAP = 20000
 """The most rows a relation holds on an input and is still checked: a
@@ -312,11 +234,11 @@ def _split(rows: Sequence[Row], key: Callable[[Row], tuple[Value, ...]]
 
 _MASKED: Value = ""
 """What a row's case values hold at a field of a record case column
-that carries no case (`_case_key`)."""
+that carries no case (`case_key`)."""
 
 
-def _case_key(reading: CaseTypes, types: Sequence[str],
-              case_cols: Sequence[int]) -> Callable[[Row], tuple[Value, ...]]:
+def case_key(reading: CaseTypes, types: Sequence[str],
+             case_cols: Sequence[int]) -> Callable[[Row], tuple[Value, ...]]:
     """A row's case values: each case column's value, a record's fields
     that carry no case masked, since a record column with a case field is
     a case column in that field and a key in its other fields."""
@@ -360,67 +282,6 @@ def rect(points: set[tuple[int, int]]) -> Rect | None:
     ls = [p[1] for p in points]
     h, w = max(ts) - min(ts) + 1, max(ls) - min(ls) + 1
     return Rect(h, w) if h * w == len(points) else None
-
-
-class D4(StrEnum):
-    """The seven D4 elements other than the identity."""
-
-    CW = "CW"
-    HT = "HT"
-    CC = "CC"
-    LR = "LR"
-    TB = "TB"
-    DG = "DG"
-    AD = "AD"
-
-
-type Change = D4 | Swap
-"""How a witness grid comes from a train input."""
-
-
-def d4_images(grid: Grid) -> list[tuple[D4, Grid]]:
-    """The seven other images of a grid under D4."""
-    g = [list(r) for r in grid]
-    h, w = len(g), len(g[0])
-    rot = [[g[h - 1 - r][c] for r in range(h)] for c in range(w)]
-
-    def lr(x: list[list[int]]) -> list[list[int]]:
-        return [row[::-1] for row in x]
-
-    def tb(x: list[list[int]]) -> list[list[int]]:
-        return x[::-1]
-
-    def tr(x: list[list[int]]) -> list[list[int]]:
-        return [list(c) for c in zip(*x)]
-
-    images = {D4.CW: rot, D4.HT: tb(lr(g)), D4.CC: tb(lr(rot)),
-              D4.LR: lr(g), D4.TB: tb(g), D4.DG: tr(g), D4.AD: tb(lr(tr(g)))}
-    return [(d, as_grid(images[d])) for d in D4]
-
-
-@dataclass(frozen=True)
-class Move:
-    """The grid on which a relation's value differs: the train input it
-    comes from, the D4 element or the color swap that made it, and
-    whether the first case that takes the value gives it unchanged with
-    the relation derived."""
-
-    index: int
-    change: Change
-    grid: Grid
-    identity: bool
-
-
-@dataclass(frozen=True)
-class FailedRun:
-    """The first run of the witness search that failed: the grid it ran
-    on, and the failure."""
-
-    index: int
-    change: Change
-    failure: RunFailure
-
-
 def member_key(member: Member) -> tuple[object, ...]:
     """An order on the members of a value, built from their parts."""
     return tuple(value_key(v) if isinstance(v, (int, float, str, AdtValue,
@@ -432,7 +293,10 @@ def member_key(member: Member) -> tuple[object, ...]:
 class Found:
     """One column subset of one relation whose projected value repeats on
     every input, at the `Choice` cases whose rows hold it where a column
-    carries the case."""
+    carries the case. Where it has no `@store` line and a `@store` branch
+    stores it (`store_branch`), the survey asks for a `@store` line or a
+    bare `@ignore: store` line on it, but where its witness search ran on
+    every grid with no run failed and found no witness (`no_witness`)."""
 
     relation: RelationName
     """The relation as a top-level clause reads it."""
@@ -470,7 +334,7 @@ class Found:
     concept_section: bool = True
     """Where no column carries the case: whether the concept case runs a
     clause that feeds the relation, as the case markers place it
-    (`_concept_section`); the store section's order reads it."""
+    (`concept_section`); the store section's order reads it."""
     concept_stored: bool = False
     """At the concept case's rows, the value is a parameter's already."""
     stored: bool = False
@@ -480,20 +344,23 @@ class Found:
     reads_back: tuple[str, ...] = ()
     """The stored parameters whose rows, or the product of whose rows,
     the value is on every input under a renaming of columns
-    (`_read_back`); empty where it is no such value."""
+    (`read_back`); empty where it is no such value."""
     read: bool = True
     used_in: tuple[str, ...] = ()
     line: StoreBranch | None = None
     ignored: bool = False
     homonyms: tuple[RelationName, ...] = ()
     untaken: bool = False
-    move: Move | None = None
+    move: "Move | None" = None
     unseparated: tuple[Case, Case] | None = None
     """Where some grid the witness search tries changes the value and on
     none does a case it looks with (`witness_targets`) give the output a
     witness needs (`witness_divergence`): the first case it looks with
-    and that case's counterpart (`_witness`)."""
-    failed: FailedRun | None = None
+    and that case's counterpart (`find_witness`)."""
+    failed: "FailedRun | None" = None
+    no_witness: bool = False
+    """The witness search ran on every grid, no run failed, and no grid
+    gave a witness (`find_witness`)."""
     entry: bool = False
     built: Entry | None = None
     built_by: BuiltBy | None = None
@@ -595,10 +462,10 @@ def site_of(solver: Solver, index: Index, path: RelationName,
             RelationName(parts[at + 1:], path.name).text)
 
 
-def _analyze(solver: Solver, runs: Runs, rels: Sequence[RelationName],
-             per_input: Sequence[Mapping[RelationName, tuple[Row, ...]]],
-             bases: Sequence[Base | None], rd: Dependence
-             ) -> tuple[list[Found], list[RelationName]]:
+def analyze(solver: Solver, runs: Runs, rels: Sequence[RelationName],
+            per_input: Sequence[Mapping[RelationName, tuple[Row, ...]]],
+            bases: Sequence[Base | None], rd: Dependence
+            ) -> tuple[list[Found], list[RelationName]]:
     """Each relation's repeating values at each case and each subset of
     its data columns, and the relations over the row cap. A row's case
     values stand for the bases that hold them (`holds_at`) and depend on
@@ -621,7 +488,7 @@ def _analyze(solver: Solver, runs: Runs, rels: Sequence[RelationName],
         held = case_types(solver)
         keyed = {i for i in case_cols if _keyed_too(held, types[i])}
         reading = set(rd.relations.get(path, ()))
-        by_case = [_split(rows, _case_key(held, types, case_cols))
+        by_case = [_split(rows, case_key(held, types, case_cols))
                    for rows in rows_per]
         common = set(by_case[0]).intersection(*by_case[1:])
         data_cols = [i for i, t in enumerate(types) if t in data]
@@ -738,12 +605,12 @@ def _merge(found: list[Found]) -> list[Found]:
     return out
 
 
-# The survey
+# A value on a grid
 
 
-def _projection(rows: Sequence[Row], f: Found,
-                key: Callable[[Row], tuple[Value, ...]],
-                types: Sequence[str]) -> Family | None:
+def projection(rows: Sequence[Row], f: Found,
+               key: Callable[[Row], tuple[Value, ...]],
+               types: Sequence[str]) -> Family | None:
     """The finding's value on a grid whose run gave `rows`: None where the
     relation stands empty there at the finding's cases."""
     mine = [r for r in rows
@@ -753,124 +620,6 @@ def _projection(rows: Sequence[Row], f: Found,
     fam, tfam = _families(mine, types, [f.subset])[f.subset]
     return tfam if f.kind is ValueKind.TRANSLATED and tfam is not None \
         else fam
-
-
-def _bases(solver: Solver, solver_cases: Sequence[Case]
-           ) -> tuple[list[Base | None], Base | None]:
-    """The bases of the solver's cases, and the concept case's base, added
-    where no case of the solver is the concept case."""
-    bases = bases_of(solver_cases)
-    concept = concept_among(solver, bases)
-    if concept is None and solver.choice is not None:
-        every = every_base(solver.choice) or ()
-        concept = concept_among(solver, every)
-        if concept is not None:
-            bases.append(concept)
-    elif solver.choice is None and not bases:
-        bases.append(None)
-    return bases, concept
-
-
-@quotes("procedure.md", "Develop",
-        "`uv run python scripts/run_dl.py store <task_id>` lists the derived "
-        "values that are the same on every input.")
-def survey_store(runs: Runs) -> StoreSurvey:
-    """The `store` report (procedure.md, under "Develop"), and the findings
-    the audit prints on the `@store` lines and on the values (`StoreSurvey`)."""
-    solver = runs.solver
-    solver_cases = runs.cases
-    if not isinstance(solver_cases, tuple):
-        stop = enumeration_failed(solver_cases)
-        return StoreSurvey((), (), (stop,), (stop,), True)
-    bases, concept = _bases(solver, solver_cases)
-    rd = dependence(runs.engine, solver, bases)
-    task = solver.task
-    rels = between(solver, runs.index, rd)
-    if not rels:
-        return StoreSurvey((), (), (), (Finding(
-            Kind.NOT_CHECKED, AtFile(WholeFile.SOLVER), NotCheckedPayload()),
-            *_line_findings(runs, solver, rels, [], [], set(), {},
-                            solver_cases)), False)
-    if task is None:
-        stop = NO_TASK
-        return StoreSurvey((), (), (stop,), (stop,), True)
-    failed: list[Finding] = []
-    per_input: list[Mapping[RelationName, tuple[Row, ...]]] = []
-    labels: list[PairId] = []
-    exs = list(examples(task))
-    values = at_once(lambda pe: runs.defined_relations(as_grid(pe[1].input),
-                                                   rels, ROW_CAP), exs)
-    for (pair, _ex), got in zip(exs, values, strict=True):
-        if isinstance(got, Mapping):
-            per_input.append(got)
-            labels.append(pair)
-        else:
-            failed.append(no_result(got, RunKind.STORE_SEARCH, None,
-                                    AtPair(pair)))
-    # A value is one value on every input only where every input ran: an
-    # input whose run failed or timed out leaves every relation unjudged.
-    if failed:
-        return StoreSurvey((), (), tuple(failed), tuple(failed), True)
-    found, capped = _analyze(solver, runs, rels, per_input, bases, rd)
-    differs = {p: next((labels[i] for i, g in enumerate(per_input)
-                        if set(g.get(p, ())) != set(per_input[0].get(p, ()))),
-                       None) for p in rels}
-    lines = {b.relation: b for b in solver.branches
-             if isinstance(b, StoreBranch)}
-    ignored = {t for t, _p in bare_ignored(solver, IgnoreForm.STORE)}
-    stored = StoredAlready(solver, runs.index)
-    graph = Graph(solver.program, solver.engine)
-    among = bases_of(solver_cases)
-    for f in found:
-        f.case_names = base_names(solver, [c.base for c in f.cases], among)
-        f.line = lines.get(f.relation)
-        if f.line is not None:
-            f.spelled = f.line.spelled
-        f.ignored = f.line is None and f.relation in ignored
-        by = rd.relations.get(f.relation, ())
-        f.read = concept in by or (solver.choice is None and bool(by))
-        f.used_in = () if f.read else base_names(solver, [
-            b for b in by if not is_concept(solver, b)], bases)
-        f.stored = _stored_already(solver, runs, stored, f)
-        if not f.stored and f.kind is ValueKind.OWNED:
-            f.reads_back = _read_back(solver, f)
-            f.stored = bool(f.reads_back)
-        if f.case_values:
-            f.concept = concept in f.bases
-            f.concept_stored = f.concept and _stored_already(
-                solver, runs, stored, f, concept, every=False)
-        else:
-            f.concept = _concept_runs(solver, runs, rd, f.decl, concept)
-            f.concept_stored = f.concept and f.stored
-            f.concept_section = _concept_section(solver, graph, f, concept)
-        if f.reads_back:
-            f.concept_stored = f.concept
-    wanted = [f for f in found if f.store_branch]
-    spelled: dict[str, set[RelationName]] = {}
-    for f in wanted:
-        spelled.setdefault(f.name.spelled, set()).add(f.relation)
-    for f in wanted:
-        f.homonyms = tuple(sorted(spelled[f.name.spelled] - {f.relation},
-                                  key=lambda p: p.text))
-    searched: list[Found] = []
-    for f in wanted:
-        if f.homonyms:
-            continue
-        if runs.branch_entry(f.name) is not None:
-            f.entry = True
-            continue
-        searched.append(f)
-    for stop in at_once(lambda f: _witness(runs, solver, f), searched):
-        if stop is not None:
-            failed.append(stop)
-    empty = {p for p in rels if all(not g.get(p) for g in per_input)}
-    findings = [*failed, *_line_findings(
-        runs, solver, rels, found, capped, empty, differs, solver_cases)]
-    if capped:
-        findings.append(Finding(Kind.STORE_ROW_CAP, AtFile(WholeFile.SOLVER),
-                                RowCapPayload(tuple(capped), ROW_CAP)))
-    return StoreSurvey(tuple(found), tuple(capped), tuple(failed),
-                       tuple(findings), True)
 
 
 # Stored already
@@ -1085,7 +834,7 @@ class StoredAlready:
         return Qualifier.INLINE in self.program.declared_relation(place[1]).qualifiers
 
 
-def _read_back(solver: Solver, f: Found) -> tuple[str, ...]:
+def read_back(solver: Solver, f: Found) -> tuple[str, ...]:
     """The stored parameters whose value the found value is on every
     input: the same rows as one parameter's, or as the product of several
     parameters' rows, under a renaming of columns, each column of the
@@ -1149,9 +898,9 @@ def _stored_reading(solver: Solver, name: str, rows: Sequence[Row],
     return pc.value_types, tuple(sorted(next(iter(values)), key=row_key))
 
 
-def _stored_already(solver: Solver, runs: Runs, stored: StoredAlready,
-                    f: Found, concept: Base | None = None,
-                    every: bool = True) -> bool:
+def stored_already(solver: Solver, runs: Runs, stored: StoredAlready,
+                   f: Found, concept: Base | None = None,
+                   every: bool = True) -> bool:
     """Whether the value is stored already (`StoredAlready`): at the rows
     of every case that holds it, and at every row where no column carries
     the case; with `every` false, at the concept case's rows alone."""
@@ -1177,8 +926,8 @@ def _stored_already(solver: Solver, runs: Runs, stored: StoredAlready,
     return True
 
 
-def _concept_section(solver: Solver, graph: Graph, f: Found,
-                     concept: Base | None) -> bool:
+def concept_section(solver: Solver, graph: Graph, f: Found,
+                    concept: Base | None) -> bool:
     """Whether the concept case runs a clause that feeds the value's
     relation at its instance path, as the case markers place the clause
     (solver-file.md, under "Cases"): a clause of the solver's own text under no
@@ -1201,8 +950,8 @@ def _concept_section(solver: Solver, graph: Graph, f: Found,
     return False
 
 
-def _concept_runs(solver: Solver, runs: Runs, rd: Dependence,
-                  decl: RelationDecl, concept: Base | None) -> bool:
+def concept_runs(solver: Solver, runs: Runs, rd: Dependence,
+                 decl: RelationDecl, concept: Base | None) -> bool:
     """Whether the concept case's derivation depends on a clause of the
     solver's own text that feeds the relation; true where no such clause
     feeds it."""
@@ -1215,225 +964,3 @@ def _lineless(f: Found) -> StoreBranch:
     the survey judges a value with its line standing."""
     return StoreBranch(f.relation, f.spelled, None)
 
-
-@quotes("principles.md", "Witnesses",
-        "A branch's witnesses are divergence witnesses between its model "
-        "and the concept branch's model.")
-def _witness(runs: Runs, solver: Solver, f: Found) -> Finding | None:
-    """The first grid on which the value differs and a case the survey
-    looks with (`witness_targets`, among the cases that take the value)
-    gives the output a witness needs (`witness_divergence`): the D4 images
-    of each train input in turn, then a color swap of each. A grid the
-    relation stands empty on holds no value. It sets `Found.unseparated`
-    and `Found.failed`. The failure of the run that enumerates the cases
-    with the branch standing, where it fails."""
-    task = solver.task
-    assert task is not None
-    branch = f.name
-    lined = solver if f.line is not None else with_line(solver, branch)
-    every = runs.cases if f.line is not None else runs.lined(lined)
-    if not isinstance(every, tuple):
-        return no_result(every, RunKind.CASE, None, AtRelation(f.relation))
-    cases = [c for c in ordered(solver, every, branch)
-             if not f.case_values or c.base in f.bases]
-    if not cases:
-        f.untaken = True
-        return None
-    models = witness_targets(runs, lined, cases, branch)
-    if not models:
-        return None
-    model = models[0]
-    other = counterpart(model, branch)
-    held_by_case = case_reading(solver, f.relation)
-    types, case_cols = held_by_case.types, held_by_case.case
-    grids: list[tuple[int, Change, Grid]] = []
-    for i, ex in enumerate(task.train):
-        grids += [(i, d, g) for d, g in d4_images(as_grid(ex.input))]
-    grids += [(s.index, s, s.grid) for s in swaps(runs.engine, solver, task, cases)]
-    for index, change, grid in grids:
-        got = runs.defined_relations(grid, [f.relation])
-        if isinstance(got, Mapping):
-            value = _projection(got[f.relation], f, _case_key(
-                case_types(solver), types, case_cols), types)
-            if value == f.family:
-                continue
-            apart = witness_divergence(runs, lined, models, branch, grid,
-                                       Assignment(()))
-            if apart is None:
-                f.unseparated = (model, other)
-                continue
-            if isinstance(apart, tuple):
-                failure = None
-            else:
-                failure = apart
-        else:
-            failure = got
-        if failure is not None:
-            f.failed = f.failed or FailedRun(index, change, failure)
-            continue
-        out = runs.outcomes_of(lined, [other], grid, Assignment(()))[other]
-        f.move = Move(index, change, grid,
-                      isinstance(out, Grids) and out.grids == (grid,))
-        made = swap_entry(runs, lined, f.case_id, branch, index, change,
-                          grid, every)
-        f.built = made if isinstance(made, Entry) else None
-        f.built_by = BuiltBy(lined, every)
-        if not isinstance(made, Entry):
-            return no_result(made, RunKind.WITNESS, None,
-                             AtRelation(f.relation))
-        return None
-    return None
-
-
-def _line_findings(runs: Runs, solver: Solver, rels: Sequence[RelationName],
-                   found: Sequence[Found], capped: Sequence[RelationName],
-                   empty: set[RelationName],
-                   differs: Mapping[RelationName, PairId | None],
-                   solver_cases: tuple[Case, ...]) -> list[Finding]:
-    """The findings the audit prints: on each `@store` line, a second
-    line on its relation, a relation that is also a parameter's name, a
-    relation that gives no value the runner can store and why, cases
-    that take two values of it, a name that denotes other relations too,
-    an entry that witnesses nothing, and a value no case that reads the
-    relation has; then the named `@ignore: store` lines that exclude no
-    case; then each value with no `@store` line, and each color the
-    concept case reads that asks for a Params parameter."""
-    out: list[Finding] = []
-    unread = {f.relation for f in found
-              if f.kind is ValueKind.OWNED and not f.depended}
-    first: dict[RelationName, StoreBranch] = {}
-    stores = sorted(((b, b.line.line) for b in solver.branches
-                     if isinstance(b, StoreBranch) and b.line is not None),
-                    key=lambda bl: bl[1])
-    first_line: dict[RelationName, int] = {}
-    for b, line in stores:
-        at = AtLine(line)
-        if b.relation in first:
-            out.append(Finding(Kind.DUPLICATE_BRANCH_LINE,
-                               AtLine(first_line[b.relation]),
-                               DuplicatePayload(first[b.relation],
-                                                first_line[b.relation],
-                                                line)))
-            continue
-        first[b.relation] = b
-        first_line[b.relation] = line
-        if solver.params.parameter(b.spelled) is not None:
-            out.append(Finding(Kind.STORE_PARAMETER_NAME, at,
-                               BranchPayload(b)))
-            continue
-        if ident_keyed(solver.engine, solver.program, b.relation):
-            out.append(Finding(Kind.STORE_IDENT_KEY, at,
-                               RelationPayload(b.relation)))
-            continue
-        if untaken(runs, solver, b):
-            excluded = excluded_finding(runs, solver, b, at)
-            if excluded is not None:
-                out.append(excluded)
-                continue
-        mine = [f for f in found if f.relation == b.relation]
-        owned = [f for f in mine if f.store_branch]
-        if not owned:
-            if b.relation in capped:
-                continue
-            why = _no_value(b.relation, rels, unread, empty, mine, differs)
-            if why is None:
-                out.append(Finding(Kind(ProblemKind.UNDECIDED), at,
-                                   UndecidedPayload(b.relation)))
-            else:
-                out += [Finding(Kind.STORE_NO_VALUE, at, StoreNoValuePayload(
-                    b.relation, w)) for w in why]
-            continue
-        out += _two_values(solver, b, line, [
-            f for f in mine if f.kind is ValueKind.OWNED], solver_cases)
-        for f in owned:
-            if f.homonyms:
-                out.append(Finding(Kind.STORE_HOMONYMS, at, HomonymsPayload(
-                    f.name, (f.relation, *f.homonyms))))
-            elif f.entry:
-                entry = runs.branch_entry(f.name)
-                if entry is not None:
-                    out += entry_findings(
-                        runs, solver, b, f.name, f.case_id,
-                        ordered(solver, solver_cases, b),
-                        entry)
-            elif f.untaken:
-                out.append(Finding(Kind.STORE_UNTAKEN, at,
-                                   RelationPayload(b.relation)))
-    out += idle_ignores(runs, IgnoreForm.STORE)
-    shown = shown_case_names(found)
-    for f in found:
-        if not f.depended or (f.stored and f.line is None):
-            continue
-        names = shown(f)
-        where = AtRelation(f.relation)
-        if f.store_branch and f.line is None:
-            out.append(Finding(Kind.MISSING_BRANCH_LINE, where,
-                               MissingLinePayload(f.name, names)))
-        if f.homonyms and f.line is None:
-            out.append(Finding(Kind.STORE_HOMONYMS, where, HomonymsPayload(
-                f.name, (f.relation, *f.homonyms))))
-        if f.asks_params:
-            out.append(Finding(Kind.STORE_PARAMS_ASK, where, ColorAskPayload(
-                f.relation, f.columns if f.sub else (), f.types,
-                tuple(sorted((tuple(m) for m in f.one),  # type: ignore[misc]
-                             key=row_key)),  # type: ignore[arg-type]
-                names)))
-    return out
-
-
-def _no_value(path: RelationName, rels: Sequence[RelationName],
-              unread: set[RelationName], empty: set[RelationName],
-              mine: Sequence[Found],
-              differs: Mapping[RelationName, PairId | None]
-              ) -> list[NoValue] | None:
-    """Why a `@store` line's relation gives no value the runner can
-    store: one reason per value of it that is not the same on every
-    input. None where no reason is known."""
-    if path not in rels:
-        return [NotBetween()]
-    if path in unread:
-        return [Unread()]
-    held_back = [f for f in mine if f.kind is not ValueKind.OWNED]
-    if held_back:
-        return [NoAnchor() if f.kind is ValueKind.TRANSLATED
-                else KeyedBy(f.keys) for f in held_back]
-    pair = differs.get(path)
-    if pair is not None:
-        return [DiffersOn(pair)]
-    if path in empty:
-        return [NoRows()]
-    return None
-
-
-def _two_values(solver: Solver, b: StoreBranch, line: int,
-                values: Sequence[Found], solver_cases: Sequence[Case]
-                ) -> list[Finding]:
-    """Where cases of the solver take two values or more of one relation: the
-    branch of the line at `line` then denotes a branch per value there. One finding per
-    number of values, with the cases that take that many."""
-    if len(values) < 2:
-        return []
-    counts: dict[Case, int] = {}
-    for f in values:
-        for c in solver_cases:
-            if c.branches or (f.case_values and c.base not in f.bases):
-                continue
-            counts[c] = counts.get(c, 0) + 1
-    out: list[Finding] = []
-    for n in sorted({k for k in counts.values() if k > 1}):
-        out.append(Finding(Kind.STORE_VALUES, AtLine(line),
-                           StoreValuesPayload(
-                               b.relation, b, n, cover(
-                                   solver, [c for c, k in counts.items()
-                                            if k == n], solver_cases))))
-    return out
-
-
-def shown_case_names(found: Sequence[Found]
-                     ) -> Callable[[Found], tuple[str, ...]]:
-    """The case names a value of `found` prints with: its `case_names`
-    where another value of `found` has its relation and columns, and
-    none where the relation and columns tell it apart."""
-    rows = Counter((f.relation, f.columns) for f in found)
-    return lambda f: f.case_names if rows[(f.relation, f.columns)] >= 2 \
-        else ()

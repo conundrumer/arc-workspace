@@ -146,7 +146,7 @@
     - Flag performance issues in the review.
     - When a performance issue prevents the principled form, make a temporary workaround, marked with the `@workaround` directive.
 3. Form each claim under the Analyze report's Not formed as a branch, with each reading of an item that names several as a claim of its own, and add as cases the combinations that take it and meet Fit and Relational form.
-4. Hold as a branch each built-in derivation that fits a parameter, and each stored reading of a value the program derives.
+4. Hold as a branch each built-in derivation that fits a parameter, and each stored reading of a derived value, other than one for which `store` finds that no grid gives a witness.
     - `uv run python scripts/run_dl.py derive <task_id>` lists the built-in derivations that fit.
     - `uv run python scripts/run_dl.py store <task_id>` lists the derived values that are the same on every input.
     - Write the directive line each prints, in the form the [`@derive`](docs/handbook/solver-file.md#params) or [`@store`](docs/handbook/solver-file.md#program) directive gives, with the plausibility and verdict of the witness it records.
