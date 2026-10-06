@@ -1,6 +1,6 @@
 // 50846271
 // @draft
-// @keywords: markers stamp induce
+// @keywords: markers stamp repair
 // input: placements — a plus at a center, reaching the marks within its
 //  arm; the arm is one that leaves every mark to a cross of its own
 // output: Plus-shaped crosses of one shared arm are drawn over the grid.

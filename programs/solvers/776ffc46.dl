@@ -1,6 +1,6 @@
 // 776ffc46
 // @draft
-// @keywords: objects border induce congruent
+// @keywords: objects border match congruent
 // input: Rectangles drawn in the frame color each hold a reference shape in
 //  one color.
 // output: Loose shapes outside the rectangles that are congruent to a
