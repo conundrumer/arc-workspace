@@ -35,7 +35,7 @@ from engine.program import (
 )
 from engine.quotes import guard, quotes
 from solver.category import Category
-from solver.model import Solver
+from solver.aggregate import Solver
 from solver.names import camel_words
 from solver.vocabulary import CHOICE, ENUMERATOR
 

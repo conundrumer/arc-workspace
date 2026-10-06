@@ -394,7 +394,7 @@ class AssignType:
 @dataclass(frozen=True)
 class CaseColumnOffForm:
     """A parameter's column that carries the case and is no case column
-    of a parameter (`solver.model.parameter_case_columns`): of `type`, as
+    of a parameter (`solver.columns.parameter_case_columns`): of `type`, as
     the declaration writes it, which is of the `kind` given."""
 
     relation: str

@@ -38,7 +38,8 @@ from engine import Grid, ParseFailure, RunFailure
 from engine.program import RelationDecl
 from engine.text import text as code_text
 from solver.annotations import verdict_text
-from solver.model import Case, Solver, takes_constructor
+from solver.model import Case, takes_constructor
+from solver.aggregate import Solver
 from solver.problems import Fault
 from solver.outcome import Grids, Outcome, is_result
 from solver.solve import (

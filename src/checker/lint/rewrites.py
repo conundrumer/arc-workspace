@@ -66,16 +66,8 @@ from engine.program import (
 )
 from engine.quotes import quotes
 from solver.category import Category
-from solver.model import (
-    bases_of,
-    Section,
-    Solver,
-    UnderMarker,
-    Unmarked,
-    lists_case,
-    Parameter,
-    section_at,
-)
+from solver.model import bases_of, Section, UnderMarker, Unmarked, Parameter
+from solver.aggregate import Solver, lists_case, section_at
 from solver.case_types import (
     compared,
     substituted_atom,
@@ -973,7 +965,7 @@ class InComp:
 
 @dataclass(frozen=True)
 class InSection:
-    """A top-level section (`solver.model.section_at`)."""
+    """A top-level section (`solver.aggregate.section_at`)."""
 
     section: Section
 
@@ -1253,7 +1245,7 @@ def _line(u: Unit) -> int:
 
 
 def _section(v: View, u: Unit) -> Section:
-    """The section a unit stands in (`solver.model.section_at`)."""
+    """The section a unit stands in (`solver.aggregate.section_at`)."""
     return section_at(v.solver, u.scope, _line(u))
 
 

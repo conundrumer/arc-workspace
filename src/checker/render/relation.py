@@ -7,7 +7,7 @@ from checker.judged import value_constructors
 from checker.render import arg_text, joined
 from controlled_markdown import mctx
 from engine import AdtValue, RecordValue, Value
-from solver.model import Solver
+from solver.aggregate import Solver
 from solver.names import name as case_name
 from solver.vocabulary import CHOICE
 

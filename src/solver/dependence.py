@@ -17,14 +17,9 @@ from solver.graph import (
     Placed,
     walked,
 )
-from solver.model import (
-    Base,
-    CaseMarker,
-    Solver,
-    UnderMarker,
-    marker_listing,
-    section_at,
-)
+from solver.annotations import CaseMarker
+from solver.model import Base, UnderMarker
+from solver.aggregate import Solver, marker_listing, section_at
 from solver.vocabulary import CHOICE, PARAMS, PARAMS_SCOPE
 
 

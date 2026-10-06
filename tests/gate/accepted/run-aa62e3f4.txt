@@ -2,9 +2,8 @@ train 0: PASS (13 witnessed cases)
 train 1: PASS (13 witnessed cases)
 test 0: PASS (13 witnessed cases)
 
---- 2 hint(s) ---
-  aa62e3f4.dl:254: case section: by the program's rules, not by a run, `$ObjectCount` read `parse.cell`, which the clause feeds, and the marker `// --- $RarestWithBackground ---` above it does not list them; see "Case markers" in [Cases](docs/handbook/solver-file.md#cases); an `@ignore` directive can keep the relation it fires on
+--- 1 hint(s) ---
   aa62e3f4.dl:265: common-subexpr: 3 literals shared with `seed` (line 261); an `@ignore` directive can keep the relation it fires on
 
-lint: ok, 2 hints
+lint: ok, 1 hint
 determination: ok (scan_order)

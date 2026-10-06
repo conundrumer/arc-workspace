@@ -7,8 +7,13 @@ every module that `checker` reads is public, with a docstring, and no
 module is kept only to re-export another.
 
 The modules that read a solver's program as the model stand in an order,
-and each imports only those before it: `solver.graph`, the relations of the
-program at each instance; `solver.model`, the model and its load;
+and each imports only those before it at its top level: `solver.graph`, the
+relations of the program at each instance; `solver.model`, the model's
+values, its case type, branches and cases; `solver.aggregate`, the
+aggregate `Solver` and its load; `solver.columns`, the column types of the
+program's relations and the reading of an `assign` argument;
 `solver.case_types`, where the program holds a case value;
 `solver.dependence`, which parts of the solver's own text each base's
-derivation of `out` depends on; and `solver.cases`, the solver's cases."""
+derivation of `out` depends on; and `solver.cases`, the solver's cases. A
+check of the solver's form that `load` runs imports a later module inside
+the function that reads it."""

@@ -48,7 +48,7 @@ from engine.program import literal_terms as top_terms
 from engine.program import subterms as direct_subterms
 from solver.annotations import CaseMarker
 from solver.category import HINTS
-from solver.model import TOP, Solver, marker_at
+from solver.aggregate import TOP, Solver, marker_at
 from solver.vocabulary import (
     DETERMINE,
     ENUMERATOR,
@@ -344,7 +344,7 @@ class View:
                      ) -> list[tuple[Unit, int, CaseMarker | None]]:
         """Each fact of `decl` (`defs`) on a line of the file, with that
         line and the case marker it stands under
-        (`solver.model.marker_at`), None above the first marker that lists
+        (`solver.aggregate.marker_at`), None above the first marker that lists
         a case. A fact an operation wrote stands on no line."""
         return [(u, u.span.first,
                  marker_at(self.solver, u.scope, u.span.first))

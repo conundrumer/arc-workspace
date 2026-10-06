@@ -67,7 +67,8 @@ from controlled_markdown import mctx
 from engine import AdtValue, RecordValue
 from engine.program import dotted
 from solver.annotations import DirectiveWord, IgnoreForm, at_word, derive_text, ignore_text
-from solver.model import Case, DeriveBranch, Solver, StoreBranch
+from solver.model import Case, DeriveBranch, StoreBranch
+from solver.aggregate import Solver
 from solver.names import Denoted, branch_text, denote
 from solver.solve import (
     Determined,

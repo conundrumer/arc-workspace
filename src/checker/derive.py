@@ -55,15 +55,13 @@ from checker.payloads.branches import (
 from checker.readable import finding_of
 from checker.runs import Runs
 from engine import Engine, Program, RunFailure
+from engine.program import own
 from engine.quotes import quotes
 from solver.annotations import DeriveLine, IgnoreForm
-from solver.model import (
-    Case,
-    DeriveBranch,
-    Parameter,
+from solver.model import Case, DeriveBranch, Parameter
+from solver.aggregate import (
     Solver,
     declaration_of,
-    own,
     proposer_names,
     proposers_program,
 )
@@ -101,7 +99,7 @@ class Proposer:
 
 def proposers(engine: Engine, program: Program) -> dict[str, Proposer]:
     """Each proposer of the proposers program by name
-    (`solver.model.proposer_names`)."""
+    (`solver.aggregate.proposer_names`)."""
     out: dict[str, Proposer] = {}
     graph = Graph(program, engine)
     for name in proposer_names(program):

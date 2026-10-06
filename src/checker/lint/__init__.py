@@ -39,7 +39,8 @@ from engine.program import (
 from engine.quotes import quotes
 from solver.annotations import IgnoreForm, IgnoreLine
 from solver.category import HINTS, Category
-from solver.model import Solver, bases_of
+from solver.model import bases_of
+from solver.aggregate import Solver
 from solver.dependence import dependence, dependent_bases
 
 type Check = Callable[[Solver, Runs], list[Finding]]

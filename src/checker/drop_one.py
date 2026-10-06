@@ -18,8 +18,8 @@ from checker.variants import (
 )
 from engine import Program, RemoveFact, Row, RunFailure
 from engine.quotes import quotes
-from solver.model import Solver
-from solver.model import parameter
+from solver.aggregate import Solver
+from solver.aggregate import parameter
 from solver.solve import (
     stored_facts,
     PerCase,
@@ -35,7 +35,7 @@ from solver.solve import (
 @dataclass(frozen=True)
 class Fact:
     """One stored fact of a parameter: the parameter, its column types
-    (`solver.model.column_types`), and the fact's row."""
+    (`solver.columns.column_types`), and the fact's row."""
 
     parameter: str
     types: tuple[str, ...]

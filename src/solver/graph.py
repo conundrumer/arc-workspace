@@ -14,6 +14,7 @@ from engine.program import (
     Atom,
     Component,
     Instance,
+    RecordType,
     RelationDecl,
     SubtypeType,
     TypeDecl,
@@ -141,36 +142,50 @@ class Graph:
         self.components = {c.name: c for c in program.components}
         self.relations = by_innermost(program.relations)
         self.instances = by_innermost(program.instances)
-        self.type_decls: dict[str, TypeDecl] = {}
-        """Each type the program declares by its key (`key_of`). Souffle
-        takes one declaration of a name in a scope, so a key has one
-        declaration."""
-        for t in program.types:
-            self.type_decls.setdefault(self.key_of(t), t)
-        self.aliases: dict[str, str] = {
-            k: self.link(t) for k, t in self.type_decls.items()
-            if isinstance(t, AliasType)}
-        """Each alias by its type key, with the type key its target names
-        (`link`)."""
         self.tree: dict[InstancePath, str] = {}
         """Every instance path to its component."""
         self.args: dict[InstancePath, dict[str, str]] = {(): {}}
         """The type arguments in force at each instance path by type
-        parameter, each as `resolve_type` reads it in the scope whose text
-        writes it."""
+        parameter, each as `type_at` reads it in the scope whose text
+        writes it, at the instance path the instance stands in."""
         self._at: dict[str, list[InstancePath]] = {}
         """Each component's instance paths, and those of each component
         that extends it, in the order of the instances."""
         for at, path, inst, comp in self._instance_tree():
             self.tree[path] = comp.name
-            self.args[path] = self._chain_args(comp, {
-                p: self._arg(self.args[at], a, inst.scope.components)
+            self.args[path] = self._chain_args(comp, at, {
+                p: self._arg(self.args[at], a, inst.scope.components, at)
                 for p, a in zip(comp.type_params, inst.type_args,
                                 strict=False)})
             for c in self._chain(comp.name):
                 if c is not None:
                     self._at.setdefault(c, []).append(path)
+        self.type_decls: dict[str, tuple[TypeDecl, InstancePath | None]] = {}
+        """Each type the program declares by each key a reading of a type
+        names it by (`key_at`), with the instance path its own text is read
+        at (`reading`): the top level for a type the top level declares, the
+        path that holds it for a record type of the solver's own text that a
+        component declares, under its key there, and none for any other
+        type a component declares, under its key (`key_of`). Souffle takes
+        one declaration of a name in a scope, so a key has one declaration.
+        Raises `ValueError` where a key names two declarations."""
+        for t in program.types:
+            self.type_decls.setdefault(
+                self.key_of(t), (t, None if t.scope.components else ()))
+        for t in program.types:
+            if t.scope.components and own(t.span) \
+                    and isinstance(t, RecordType):
+                for q in self._at.get(t.scope.components[-1], []):
+                    key = self.key_at(t, q)
+                    held = self.type_decls.get(key)
+                    if held is not None and held[0] is not t:
+                        raise ValueError(f"the type key `{key}` names two "
+                                         f"declarations")
+                    self.type_decls[key] = (t, q)
         self.units = [u for u in program.units if own(u.span)]
+        self._columns: dict[tuple[InstancePath, RelationName],
+                            list[str] | None] = {}
+        """`column_types`' results by path and name."""
         self._reach: frozenset[RelationName] | None = None
         self._heading: tuple[dict[Node, list[Placed]],
                              dict[Node, list[Placed]]] | None = None
@@ -225,12 +240,12 @@ class Graph:
                 front.append(path)
 
     def _arg(self, held: Mapping[str, str], arg: str,
-             scope: tuple[str, ...]) -> str:
-        """A type argument written in the text of `scope`, where `held`
-        gives the arguments in force by type parameter: the argument in
-        force where it names a type parameter, else the type it names
-        (`resolve_type`)."""
-        return held[arg] if arg in held else self.resolve_type(arg, scope)
+             scope: tuple[str, ...], at: InstancePath) -> str:
+        """A type argument written in the text of `scope`, read at the
+        instance path `at`, where `held` gives the arguments in force by
+        type parameter: the argument in force where it names a type
+        parameter, else the type it names (`type_at`)."""
+        return held[arg] if arg in held else self.type_at(arg, scope, at)
 
     def _locate(self, at: InstancePath, rel: RelationName, stop_at_lib: bool
                 ) -> tuple[InstancePath, Instance | None] | None:
@@ -240,9 +255,8 @@ class Graph:
         component, which is given. None where a qualifier names no
         instance."""
         for name in rel.instances:
-            found = next((q for q in enclosing(at)
-                          if self._instance(self.component_at(q), name)
-                          is not None), None)
+            found = self._innermost(
+                at, lambda c: self._instance(c, name) is not None)
             if found is None:
                 return None
             at = (*found, name)
@@ -256,22 +270,31 @@ class Graph:
                    ) -> InstancePath | None:
         """The innermost path at or around `path` whose component declares
         the relation `name`."""
-        return next((q for q in enclosing(path)
-                     if self._relation(self.component_at(q), name)
-                     is not None), None)
+        return self._innermost(
+            path, lambda c: self._relation(c, name) is not None)
 
-    def _chain_args(self, comp: Component, args: dict[str, str]
-                    ) -> dict[str, str]:
-        """The type arguments of an instance of `comp` by type parameter,
-        those of each component it extends included, each base's read in
-        the scope that declares the component that names it (`_arg`)."""
+    def _innermost(self, path: InstancePath,
+                   holds: Callable[[str | None], bool]
+                   ) -> InstancePath | None:
+        """The innermost path at or around `path` whose component, None
+        for the top level, `holds` accepts: where a name read at `path`
+        resolves."""
+        return next((q for q in enclosing(path)
+                     if holds(self.component_at(q))), None)
+
+    def _chain_args(self, comp: Component, at: InstancePath,
+                    args: dict[str, str]) -> dict[str, str]:
+        """The type arguments of an instance of `comp` that stands in the
+        instance path `at` by type parameter, those of each component it
+        extends included, each base's read in the scope that declares the
+        component that names it, at `at` (`_arg`)."""
         out = dict(args)
         seen = {comp.name}
         while comp.base is not None and comp.base not in seen:
             base = self.components.get(comp.base)
             if base is None:
                 break
-            out |= {p: self._arg(out, a, comp.scope.components)
+            out |= {p: self._arg(out, a, comp.scope.components, at)
                     for p, a in zip(base.type_params, comp.base_type_args,
                                     strict=False)}
             comp = base
@@ -331,17 +354,19 @@ class Graph:
     def column_types(self, at: InstancePath, rel: RelationName
                      ) -> list[str] | None:
         """The type of each column of the relation a unit at `at` names by
-        `rel`, as `key_of` names it: a column's own type resolved in the
-        scope that declares the relation, a type parameter's argument as
-        the instance holds it (`args`); None where it is no declaration the
-        solver can read."""
-        got = self.decl(at, rel)
-        if got is None:
-            return None
-        decl, args = got
-        return [args[c.type] if c.type in args
-                else self.resolve_type(c.type, decl.scope.components)
-                for c in decl.columns]
+        `rel`, read in the scope that declares the relation at the instance
+        path that declares it (`place`, `type_at`); None where it is no
+        declaration the solver can read. Computed once per path and
+        name."""
+        key = (at, rel)
+        if key not in self._columns:
+            q = self.place(at, rel)
+            d = None if q is None \
+                else self._relation(self.component_at(q.instances), q.name)
+            self._columns[key] = None if q is None or d is None else [
+                self.type_at(c.type, d.scope.components, q.instances)
+                for c in d.columns]
+        return self._columns[key]
 
     def key_of(self, t: TypeDecl) -> str:
         """A type declaration's key: for a type of the solver's own text,
@@ -352,13 +377,89 @@ class Graph:
             else t.name
 
     def resolve_type(self, name: str, scope: tuple[str, ...]) -> str:
-        """The type `name` denotes when read in `scope` (`scoped_key`), then
-        each alias followed to the type it names (`aliases`). The one
-        reading of a type that a comparison of types reads. Every type the
-        model reads, a component's record among them, resolves through
-        the engine's index of the program in the scope that reads it
-        (`Index.type_decl`), never by its bare name."""
-        return followed(self.aliases, self.scoped_key(name, scope))[-1]
+        """The type `name` denotes when read in `scope` at no instance
+        (`reading`): a type parameter reads as its own name, and a type a
+        component declares by its key (`key_of`)."""
+        return self.reading(name, scope, None)
+
+    def type_at(self, name: str, scope: tuple[str, ...], at: InstancePath
+                ) -> str:
+        """The type `name` denotes when read in the text of `scope` at
+        the instance path `at`, a path that text runs at (`reading`): a
+        type parameter reads as the argument in force at `at` (`args`), and
+        a type a component declares is read at the instance path that holds
+        it (`holder`). The one reading of a type that a comparison of types
+        reads."""
+        return self.reading(name, scope, at)
+
+    def reading(self, name: str, scope: tuple[str, ...],
+                at: InstancePath | None) -> str:
+        """The type `name` denotes when read in the text of `scope`, at
+        the instance path `at` where it is not None, then each alias
+        followed to the type it names, its target read in the scope that
+        declares the alias, at the path that holds it, to the end of the
+        chain or to the last alias before one met again. Every type the
+        model reads, a component's record among them, resolves through the
+        engine's index of the program in the scope that reads it
+        (`Index.type_decl`), never by its bare name; a name that denotes no
+        declaration and no type argument in force, as a primitive type
+        does, reads as itself. The type is named by its key at the path
+        that holds it (`key_at`)."""
+        last: str | None = None
+        seen: set[tuple[str, InstancePath | None]] = set()
+        while True:
+            t = self.index.type_decl(name, Scope(scope))
+            if t is None:
+                return self.args[at][name] \
+                    if at is not None and name in self.args[at] else name
+            path = None if at is None else self.holder(t, name, at)
+            if not isinstance(t, AliasType):
+                return self.key_at(t, path)
+            mark = (self.key_of(t), path)
+            if mark in seen and last is not None:
+                return last
+            seen.add(mark)
+            last = self.key_of(t)
+            name, scope, at = t.target, t.scope.components, path
+
+    def key_at(self, t: TypeDecl, path: InstancePath | None) -> str:
+        """The key of the type declaration `t` read at the instance path
+        `path` that holds it, or at no instance where `path` is None
+        (`reading`): its
+        key (`key_of`), but for a record type of the solver's own text that
+        a component declares, read at an instance path, the path and its
+        name joined by dots, as Souffle names it at that instance. Its
+        fields read through that instance's type arguments, so the record
+        takes one key per instance."""
+        if path is not None and t.scope.components and own(t.span) \
+                and isinstance(t, RecordType):
+            return dotted((*path, t.name))
+        return self.key_of(t)
+
+    def holder(self, t: TypeDecl, name: str, at: InstancePath
+               ) -> InstancePath:
+        """The instance path that holds the type declaration `t`, which
+        `name` denotes when read at `at`: the top level for a type the top
+        level declares; else the innermost path at or around `at`, or
+        around the instance path the qualifiers of `name` lead to from
+        `at`, whose component, or a component it extends, declares it.
+        Raises `ValueError` where no path of the instance tree does."""
+        if not t.scope.components:
+            return ()
+        *quals, last = name.split(".")
+        if quals:
+            got = self._locate(at, RelationName(tuple(quals), last), False)
+            if got is None:
+                raise ValueError(f"`{name}` names no instance at "
+                                 f"`{dotted(at)}`")
+            at = got[0]
+        comp = t.scope.components[-1]
+        found = self._innermost(at, lambda c: comp in self._chain(c))
+        if found is None:
+            raise ValueError(f"no instance at or around `{dotted(at)}` "
+                             f"holds `{name}`")
+        return found
+
 
     def link(self, t: AliasType | SubtypeType) -> str:
         """The type key an alias's target or a subtype's base names, read

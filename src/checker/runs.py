@@ -14,12 +14,10 @@ from solver.model import (
     Case,
     base_case,
     DeriveBranch,
-    Solver,
     choice_bases,
-    enumerates,
     every_base,
-    is_concept,
 )
+from solver.aggregate import Solver, enumerates, is_concept
 from solver.cases import cases
 from solver.names import Denoted, branch_text, name as case_name
 from solver.problems import Fault, WitnessFileRole

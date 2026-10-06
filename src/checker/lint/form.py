@@ -82,17 +82,19 @@ from solver.category import Category
 from solver.model import (
     bases_of,
     choice_bases,
-    choice_line,
     Base,
     Case,
     Choice,
     ChoicePoint,
+    concept_branch,
+    other_branches,
+)
+from solver.aggregate import (
+    choice_line,
     Solver,
     branch_witnesses,
-    concept_branch,
     marker_at,
     row_value,
-    other_branches,
 )
 from solver.graph import Node
 from solver.dependence import (

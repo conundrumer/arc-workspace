@@ -26,7 +26,8 @@ from solver.problems import (
 )
 
 if TYPE_CHECKING:
-    from solver.model import Case, Solver
+    from solver.model import Case
+    from solver.aggregate import Solver
 
 
 @quotes("principles.md", "Models and tasks",
@@ -508,7 +509,7 @@ def grouped(solver: "Solver", outcomes: Sequence[tuple["Case", GroupGrid]]
     holds the concept case first and the rest in the order the cases come
     in, naming its cases by the fewest names that denote exactly them
     (`solver.names.cover`; solver-file.md, under "Witness file")."""
-    from solver.model import is_concept_case
+    from solver.aggregate import is_concept_case
     from solver.names import cover
     among = [c for c, _g in outcomes]
     out: list[tuple[list["Case"], GroupGrid]] = []

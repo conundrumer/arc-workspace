@@ -84,13 +84,8 @@ from solver.annotations import (
     ignore_text,
 )
 from solver.category import HINTS, Category
-from solver.model import (
-    Case,
-    DeriveBranch,
-    Lib,
-    Solver,
-    solver_file,
-)
+from solver.model import Case, DeriveBranch, Lib
+from solver.aggregate import Solver, solver_file
 from solver.problems import (
     Detail,
     AnchorWithoutStamp,
@@ -373,7 +368,7 @@ def _no_result_lines(solver: Solver, f: Finding, p: NoResultPayload,
 
 
 def file_name(stem: str) -> str:
-    """A solver's file by its name (`solver.model.solver_file`), as every
+    """A solver's file by its name (`solver.aggregate.solver_file`), as every
     line gives it."""
     return solver_file(stem).name
 

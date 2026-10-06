@@ -8,11 +8,10 @@ from arc.task import Task
 from engine import Engine, ParseFailure, Program
 from solver import annotations as annotations_reader
 from solver import witness as witness_reader
-from solver.model import (
-    Params,
+from solver.model import Params, every_base
+from solver.aggregate import (
     Solver,
     choice_line,
-    every_base,
     instance_faults,
     lists_case,
     name_problems,

@@ -25,7 +25,7 @@ from engine.program import (
     body_atoms,
 )
 from engine.quotes import quotes
-from solver.model import TOP, Solver
+from solver.aggregate import TOP, Solver
 from solver.solve import as_grid, at_once, examples
 from solver.vocabulary import INPUT, OUTPUT, RUN_RELATIONS
 

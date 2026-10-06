@@ -33,16 +33,14 @@ from solver.model import (
     Case,
     base_case,
     bases_of,
-    ColumnTypes,
     DerivedRelation,
     Parameter,
-    Solver,
     UnderMarker,
     Unmarked,
-    declaration_of,
     derived_parameters,
-    lists_case,
 )
+from solver.aggregate import Solver, declaration_of, lists_case
+from solver.columns import ColumnTypes
 from solver.dependence import dependence
 from solver.names import marker_lists
 from solver.names import name as case_label

@@ -20,7 +20,8 @@ from engine import (
     Tuples,
     UngroundedVariable,
 )
-from solver.model import Case, Solver
+from solver.model import Case
+from solver.aggregate import Solver
 from solver.outcome import Assignment, Grids, Outcome
 from solver.solve import (
     Determined,

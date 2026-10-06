@@ -42,18 +42,11 @@ from engine.program import (
     Disjunction,
     Unit,
     literal_aggregates,
+    own,
 )
 from engine.quotes import quotes
-from solver.model import (
-    bases_of,
-    choice_bases,
-    Case,
-    Solver,
-    enumerated,
-    enumerates,
-    own,
-    run_empty,
-)
+from solver.model import bases_of, choice_bases, Case
+from solver.aggregate import Solver, enumerated, enumerates, run_empty
 from solver.case_types import case_columns
 from solver.dependence import (
     Dependence,

@@ -3,7 +3,7 @@
 from cli.common import all_stems
 from cli.common import engine as _engine
 from solver.load import load
-from solver.model import Solver
+from solver.aggregate import Solver
 from solver.vocabulary import NUMBER
 
 

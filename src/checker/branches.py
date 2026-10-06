@@ -45,13 +45,10 @@ from solver.model import (
     Branch,
     Case,
     DeriveBranch,
-    Solver,
     StoreBranch,
     StoredAtDerive,
-    branch_under,
-    ignore_targets,
-    takes,
 )
+from solver.aggregate import Solver, branch_under, ignore_targets, takes
 from solver.cases import cases
 from solver.names import Denoted, denote, denoted_cases
 from solver.problems import Fault, NameFault, WitnessFileRole
@@ -156,7 +153,7 @@ def counterpart(case: Case, branch: DeriveBranch | StoreBranch) -> Case:
 
 def taking(solver: Solver, cases: Sequence[Case], branch: Branch
            ) -> list[Case]:
-    """The cases of `cases` that take `branch` (`solver.model.takes`)."""
+    """The cases of `cases` that take `branch` (`solver.aggregate.takes`)."""
     return [c for c in cases if takes(solver, c, branch)]
 
 
@@ -230,7 +227,7 @@ def bare_ignored(solver: Solver, form: IgnoreForm
                  ) -> list[tuple[RelationName, str | None]]:
     """What the bare `@ignore: derive` or `@ignore: store` lines of `form`
     exclude: each target relation, with the line's proposer
-    (`solver.model.ignore_targets`)."""
+    (`solver.aggregate.ignore_targets`)."""
     return [(t, i.proposer) for i in solver.annotations.ignores
             if i.form is form and i.name is None
             for t in ignore_targets(solver.program, i)]

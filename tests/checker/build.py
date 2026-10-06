@@ -24,7 +24,8 @@ from engine.program import (
     Variable,
 )
 from solver.annotations import Annotations
-from solver.model import Lib, Params, Solver
+from solver.model import Lib, Params
+from solver.aggregate import Solver
 
 TOP = Scope(())
 

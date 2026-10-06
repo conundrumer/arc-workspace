@@ -52,7 +52,7 @@ from engine.text import text as code_text
 from engine.quotes import quotes
 from solver.annotations import TrailingWord
 from solver.category import Category
-from solver.model import Solver
+from solver.aggregate import Solver
 from solver.vocabulary import (
     COLOR,
     IDENT,

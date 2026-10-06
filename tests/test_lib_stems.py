@@ -8,7 +8,7 @@ from pathlib import Path
 from engine import checkout
 from engine.program import Program
 from gating import commands
-from solver.model import parse_with_lib
+from solver.aggregate import parse_with_lib
 from solver.graph import Graph, component_chain
 from souffle.engine import SouffleEngine
 

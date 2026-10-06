@@ -25,7 +25,6 @@ from solver.model import (
     ConstructorBranch,
     DeriveBranch,
     DerivedAtStore,
-    Solver,
     StoreBranch,
     StoredAtDerive,
     concept_branch,
@@ -33,14 +32,12 @@ from solver.model import (
     constructor_named,
     constructor_places,
     constructors_taken,
-    is_concept,
     is_concept_branch,
     non_concept_at,
     path_constructors,
-    store_branch,
-    takes,
     value_at,
 )
+from solver.aggregate import Solver, is_concept, store_branch, takes
 from solver.problems import Named, NameFault, ProblemKind
 
 

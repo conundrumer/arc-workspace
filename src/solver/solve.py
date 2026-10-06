@@ -55,19 +55,17 @@ from engine.program import (
     RelationDecl,
     RigidCall,
     Unit,
+    own,
 )
 from solver.annotations import VerdictWord
 from engine.program import as_grid, body_atoms, grid_lists, grid_size
 from engine.quotes import quotes
 from solver.outcome import Assignment, Grids, Outcome, is_result
 from solver.model import (
-    based_choice,
     choice_bases,
-    branch_witnesses,
     is_concept_branch,
     constructors_taken,
     path_constructors,
-    TOP,
     Base,
     Branch,
     Case,
@@ -76,26 +74,32 @@ from solver.model import (
     ConstructorBranch,
     DeriveBranch,
     derived_parameters,
-    assignable,
-    store_branch,
     constructor_named,
-    is_concept_case,
     other_branches,
-    Solver,
     StoreBranch,
     Parameter,
     StoredGrid,
+    every_base,
+)
+from solver.aggregate import (
+    based_choice,
+    branch_witnesses,
+    TOP,
+    assignable,
+    store_branch,
+    is_concept_case,
+    Solver,
     row_value,
     enumerates,
-    parameter_case_columns,
-    parameter_columns,
     parameter,
-    every_base,
     has_determine,
     instance_of,
-    own,
     proposer_names,
     proposers_program,
+)
+from solver.columns import (
+    parameter_case_columns,
+    parameter_columns,
     ColumnTypes,
     column_names,
     column_reading,
@@ -732,7 +736,7 @@ def _written_assign(solver: Solver, name: str,
     (`at_every_case`). Each argument is read as a value of its column's
     type, and a case column's record as the list of its fields outside the
     case, each read as a value of its field's type
-    (`solver.model.arg_value`). A row of another width than the columns
+    (`solver.columns.arg_value`). A row of another width than the columns
     outside the case part, a string that names nothing, and an argument
     of another type than its column's are the problem at `where`."""
     sb = store_branch(solver, name) \
@@ -977,7 +981,7 @@ def stored_value(engine: Engine, solver: Solver, program: Program,
 def relation_decl(engine: Engine, program: Program,
                   relation: RelationName) -> RelationDecl:
     """The declaration of `relation`, named from the top level; its
-    columns' types are `solver.model.column_types`. Raises `ValueError`
+    columns' types are `solver.columns.column_types`. Raises `ValueError`
     where it resolves to no declaration."""
     return program.declared_relation(
         resolved(engine.index(program), relation, TOP).declaration)
@@ -992,7 +996,7 @@ def relation_decl(engine: Engine, program: Program,
 class PerCase:
     """A relation's case reading: its column types as the model resolves
     them and as written (`column_reading`), its case columns (`case_columns`;
-    a parameter's, `solver.model.parameter_case_columns`), and each case
+    a parameter's, `solver.columns.parameter_case_columns`), and each case
     column of a record type with fields outside the case, with the places
     of those fields (`CaseTypes.kept`). A fact holds at each base that
     holds its case values (`solver.case_types.holds_at`), and the relation's
@@ -1141,7 +1145,7 @@ def case_reading(solver: Solver, relation: RelationName,
 def parameter_reading(solver: Solver, name: str) -> PerCase:
     """The case reading of the parameter `name`: its column types
     (`column_reading`) and its case columns, its columns of type `Choice`
-    (`solver.model.parameter_case_columns`)."""
+    (`solver.columns.parameter_case_columns`)."""
     columns = parameter_columns(solver, name)
     return PerCase(parameter(solver, name), columns.types, columns.written,
                    parameter_case_columns(columns.types))

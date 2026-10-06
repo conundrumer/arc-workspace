@@ -45,7 +45,8 @@ from cli.common import (
 from cli.record import absent, lined_solver, read_file, target, with_file
 from engine import RunFailure, checkout
 from solver import witness
-from solver.model import DeriveBranch, Solver, declaration_of
+from solver.model import DeriveBranch
+from solver.aggregate import Solver, declaration_of
 from solver.problems import WitnessFileRole
 from solver.witness import Entry, Groups, WitnessFile
 from souffle import SouffleEngine

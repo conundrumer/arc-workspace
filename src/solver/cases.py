@@ -12,15 +12,17 @@ from solver.model import (
     Branch,
     Case,
     DeriveBranch,
-    Solver,
     StoreBranch,
+    every_base,
+)
+from solver.aggregate import (
+    Solver,
     branch_under,
     enumerated,
     enumerates,
-    every_base,
-    ident_keyed,
     ignore_targets,
 )
+from solver.columns import ident_keyed
 
 
 

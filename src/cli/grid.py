@@ -23,7 +23,8 @@ from cli.record import assign_of, assignment, shown_lines
 from engine import Resolved
 from engine.program import RelationName, Scope
 from solver import solve, witness
-from solver.model import Case, Solver
+from solver.model import Case
+from solver.aggregate import Solver
 from solver.names import Denoted, denote, name
 from solver.witness import Entry, Group, Groups, Outcomes, grouped, members
 from souffle.parser import relation_name

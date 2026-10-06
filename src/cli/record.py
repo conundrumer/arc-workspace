@@ -28,7 +28,8 @@ from cli.common import (
 from souffle import SouffleEngine
 from engine import Engine, RunFailure, checkout
 from solver import witness
-from solver.model import Case, Solver, grid_stored, read_witness
+from solver.model import Case
+from solver.aggregate import Solver, grid_stored, read_witness
 from solver.problems import Fault, InWitnessFile, WitnessFileRole
 from solver.outcome import Assignment
 from solver.solve import assigned

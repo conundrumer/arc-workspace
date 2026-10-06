@@ -47,9 +47,7 @@ from solver.names import name as case_name
 from controlled_markdown import mctx
 from solver import names
 from solver.annotations import Slot, comment_text, verdict_text, witness_text
-from solver.model import (
-    Solver,
-)
+from solver.aggregate import Solver
 from solver.outcome import Grids, Outcome
 from solver.solve import PairId
 from solver.witness import (

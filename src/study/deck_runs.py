@@ -16,7 +16,8 @@ from engine.program import as_grid
 from solver import witness as witness_reader
 from solver.load import load
 from checker.judged import verdict_case
-from solver.model import Case, Solver, read_witness
+from solver.model import Case
+from solver.aggregate import Solver, read_witness
 from solver.cases import cases
 from solver.names import denote, model_of
 from solver.problems import Fault, NameFault, WitnessFileRole

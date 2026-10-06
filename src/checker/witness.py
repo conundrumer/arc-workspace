@@ -83,23 +83,25 @@ from solver.model import (
     ConstructorBranch,
     DeriveBranch,
     DerivedAtStore,
-    Solver,
     StoreBranch,
     StoredAtDerive,
-    assignable,
-    branch_witnesses,
     concept_branch,
     constructor_at,
     constructor_named,
     constructor_places,
-    enumerates,
     every_base,
     is_concept_branch,
-    is_concept_case,
     other_branches,
-    unknown_strings,
     point_at,
 )
+from solver.aggregate import (
+    Solver,
+    assignable,
+    branch_witnesses,
+    enumerates,
+    is_concept_case,
+)
+from solver.columns import unknown_strings
 from solver.names import (
     cover,
     denote,
@@ -386,7 +388,7 @@ def _placed(solver: Solver, runs: Runs, entry: Entry
 def _unknown_constants(solver: Solver, entry: Entry
                        ) -> tuple[tuple[str, str], ...] | None:
     """Each string of the entry's `assign` that names nothing
-    (`solver.model.unknown_strings`), with its key; None where a key names
+    (`solver.columns.unknown_strings`), with its key; None where a key names
     no parameter or stored relation, or every string names something."""
     out: list[tuple[str, str]] = []
     for key, value in entry.assign:

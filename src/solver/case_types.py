@@ -35,15 +35,15 @@ from solver.model import (
     Base,
     Choice,
     ChoicePoint,
-    Solver,
-    column_types,
-    declaration_of,
-    instance_of,
-    parameter_case_columns,
-    parameter_columns,
     points_of_type,
     value_at,
     with_value_at,
+)
+from solver.aggregate import Solver, declaration_of, instance_of
+from solver.columns import (
+    column_types,
+    parameter_case_columns,
+    parameter_columns,
 )
 from solver.problems import (
     CaseColumnOffForm,
@@ -65,7 +65,10 @@ class CaseTypes:
     """The types whose values carry a case (`CasePlaces`): `Choice`, each
     type that stands in it, and each record type of the solver's own text
     with a field of such a type; with each record type's field types, and
-    the type of each choice point as the model resolves it, by its path."""
+    the type of each choice point as the model resolves it, by its path.
+    A record type a component declares stands once for each instance path
+    that holds it, by its key there, its fields read through that
+    instance's type arguments (`Graph.key_at`)."""
 
     types: frozenset[str]
     records: Mapping[str, tuple[str, ...]]
@@ -248,13 +251,12 @@ class CasePlaces:
         self.graph = graph
         self.choice = choice
         points = {} if choice is None else {
-            p.path: graph.resolve_type(p.type, ()) for p in choice.points}
+            p.path: graph.type_at(p.type, (), ()) for p in choice.points}
         records: dict[str, tuple[str, ...]] = {
-            graph.key_of(t): tuple(
-                graph.resolve_type(f.type, t.scope.components)
-                for f in t.fields)
-            for t in graph.program.types
-            if isinstance(t, RecordType) and own(t.span)}
+            key: tuple(graph.type_at(f.type, t.scope.components, at)
+                       for f in t.fields)
+            for key, (t, at) in graph.type_decls.items()
+            if isinstance(t, RecordType) and own(t.span) and at is not None}
         carrying = {CHOICE, *points.values()}
         grown = True
         while grown:

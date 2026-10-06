@@ -102,6 +102,7 @@ from engine.program import (
     Term,
     Unit,
     Variable,
+    own,
 )
 from engine.quotes import quotes
 from solver.annotations import (
@@ -110,20 +111,15 @@ from solver.annotations import (
 from solver.model import (
     bases_of,
     choice_values,
-    TOP,
     Base,
     Case,
     base_case,
-    Solver,
     StoreBranch,
     every_base,
-    ident_keyed,
-    is_concept,
-    lists_case,
-    marker_at,
     non_concept_at,
-    own,
 )
+from solver.aggregate import TOP, Solver, is_concept, lists_case, marker_at
+from solver.columns import ident_keyed
 from solver.graph import (
     Graph,
     InstancePath,

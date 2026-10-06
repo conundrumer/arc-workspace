@@ -11,7 +11,7 @@ from checker.finding import (
     WholeFile,
 )
 from checker.runs import Runs
-from solver.model import Solver
+from solver.aggregate import Solver
 from solver.problems import Fault, InSolver, InWitnessFile, WitnessFileRole
 
 

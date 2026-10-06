@@ -43,7 +43,8 @@ from cli.common import (
 )
 from engine.program import as_grid
 from solver.category import Category
-from solver.model import Case, Solver, has_determine
+from solver.model import Case
+from solver.aggregate import Solver, has_determine
 from solver.problems import Fault
 from solver.outcome import Assignment, Outcome
 from solver.solve import (

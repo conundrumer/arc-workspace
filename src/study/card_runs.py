@@ -12,7 +12,8 @@ from cli.common import engine as _engine
 from engine import Grid, RunFailure, checkout
 from engine.program import as_grid
 from solver.load import load
-from solver.model import Case, Solver
+from solver.model import Case
+from solver.aggregate import Solver
 from solver.names import name
 from solver.problems import Fault, WitnessFileRole
 from solver.outcome import Assignment, Grids

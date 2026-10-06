@@ -6,12 +6,7 @@ from enum import StrEnum
 
 from engine import Grid
 from solver.annotations import ClaimKind, Verdict
-from solver.model import (
-    Branch,
-    Case,
-    ConstructorBranch,
-    DerivedAtStore,
-)
+from solver.model import Branch, Case, ConstructorBranch, DerivedAtStore
 from solver.outcome import Outcome
 from solver.solve import PairId
 from solver.witness import AssignValue, GroupGrid, RejectedOutput
@@ -269,7 +264,7 @@ class UnjustifiedDropPayload:
 @dataclass(frozen=True)
 class TaskAssignPayload:
     """An entry of a given file whose `assign` holds strings that name
-    nothing (`solver.model.unknown_strings`), each with its key in `values`, runs at `assign`, the
+    nothing (`solver.columns.unknown_strings`), each with its key in `values`, runs at `assign`, the
     `assign` of the task's witness file's entry of its id."""
 
     values: tuple[tuple[str, str], ...]

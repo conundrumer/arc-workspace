@@ -42,7 +42,7 @@ from engine.program import (
 )
 from engine.quotes import quotes
 from solver.category import Category
-from solver.model import Solver
+from solver.aggregate import Solver
 from solver.case_types import compared
 from solver.vocabulary import (
     COMPOSE,

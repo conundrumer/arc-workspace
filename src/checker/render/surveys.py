@@ -100,7 +100,8 @@ from controlled_markdown import mctx
 from engine import RecordValue, Row, RunFailure, checkout
 from engine.quotes import quotes
 from engine.text import text as code_text
-from solver.model import Case, Lib, Solver, has_determine
+from solver.model import Case, Lib
+from solver.aggregate import Solver, has_determine
 from solver.names import cover
 from solver.names import name as case_name
 from solver.solve import row_key

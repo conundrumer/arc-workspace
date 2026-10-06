@@ -35,14 +35,13 @@ from solver.model import (
     Branch,
     Case,
     DeriveBranch,
-    Solver,
     StoreBranch,
     choice_bases,
     choice_values,
-    is_concept_case,
 )
+from solver.aggregate import Solver, is_concept_case
 from solver.load import load
-from solver.model import is_concept as concept_base
+from solver.aggregate import is_concept as concept_base
 from solver.names import Denoted, cover, denote, model_of
 from solver.problems import Fault, Named, NameFault, ProblemKind
 from solver.outcome import Grids, is_result
@@ -239,7 +238,7 @@ def representative(solver: Solver, engine: Engine) -> Solver | None:
 
 def concept_case(solver: Solver, cases: Iterable[Case]) -> Case | None:
     """The concept case among `cases`: the concept base, with no
-    `@derive` or `@store` branch (`solver.model.is_concept_case`); None
+    `@derive` or `@store` branch (`solver.aggregate.is_concept_case`); None
     where none is it."""
     return next((c for c in cases if is_concept_case(solver, c)), None)
 
@@ -257,7 +256,7 @@ def base_names(solver: Solver, chosen: Sequence[Base | None],
 
 def concept_among(solver: Solver, bases: Iterable[Base | None]
                   ) -> Base | None:
-    """The concept case's base among `bases` (`solver.model.is_concept`),
+    """The concept case's base among `bases` (`solver.aggregate.is_concept`),
     None where none is it."""
     return next((b for b in bases if concept_base(solver, b)), None)
 

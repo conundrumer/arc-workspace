@@ -49,7 +49,7 @@ from engine.program import (
     own,
 )
 from solver.load import load
-from solver.model import Solver
+from solver.aggregate import Solver
 from souffle import SouffleEngine
 
 # The surveys

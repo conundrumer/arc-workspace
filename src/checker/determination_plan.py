@@ -28,13 +28,8 @@ from checker.variants import (
 )
 from engine import Program, Row, RunFailure, Value
 from engine.quotes import quotes
-from solver.model import (
-    Base,
-    Case,
-    base_case,
-    Solver,
-    proposers_program,
-)
+from solver.model import Base, Case, base_case
+from solver.aggregate import Solver, proposers_program
 from solver.solve import (
     stored_facts,
     Determined,
