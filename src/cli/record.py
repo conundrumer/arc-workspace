@@ -1,10 +1,10 @@
-"""The `grid`, `relation` and `record` commands: a run of one solver on a
-grid the caller writes, and the writes of `record` into the witness
-file."""
+"""The `record` command: the writes of `record` into the witness file,
+and the reading of the witness file and of `--assign` that the commands
+which run one solver on a grid the caller writes share."""
 
 import argparse
 import sys
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from dataclasses import replace
 from pathlib import Path
 
@@ -26,27 +26,20 @@ from cli.common import (
     written_grids,
 )
 from souffle import SouffleEngine
-from souffle.parser import relation_name
-from engine import Engine, Resolved, RunFailure, checkout
-from engine.program import RelationName, Scope
+from engine import Engine, RunFailure, checkout
 from solver import witness
 from solver.model import Case, Solver, grid_stored, read_witness
-from solver import solve
-from solver.names import Denoted, denote, name
 from solver.problems import Fault, InWitnessFile, WitnessFileRole
 from solver.solve import Assignment, assigned
 from solver.witness import (
     AssignValue,
     Entry,
-    Group,
     Groups,
-    Outcomes,
     PartitionChanged,
     RejectedOutput,
     WitnessFile,
     assign_with_grids,
     grouped,
-    members,
     rerecorded,
 )
 
@@ -108,7 +101,7 @@ ASSIGN_ID = "assign"
 """The witness entry a problem of an `--assign` object is placed at."""
 
 
-def _assignment(eng: Engine, solver: Solver,
+def assignment(eng: Engine, solver: Solver,
                 assign: tuple[tuple[str, AssignValue], ...]
                 ) -> Assignment | None:
     """The assignment an `--assign` object states; None, with the problem
@@ -122,13 +115,13 @@ def _assignment(eng: Engine, solver: Solver,
     return at
 
 
-def _assign_of(eng: Engine, solver: Solver, written: str | None
+def assign_of(eng: Engine, solver: Solver, written: str | None
                ) -> tuple[tuple[str, AssignValue], ...] | None:
     """The `--assign` object as an entry's `assign` (`assign_arg`); None,
     with the problem on stderr, where it is off its shape or names what
-    the solver lacks (`_assignment`)."""
+    the solver lacks (`assignment`)."""
     assign = assign_arg(written)
-    if assign is None or _assignment(eng, solver, assign) is None:
+    if assign is None or assignment(eng, solver, assign) is None:
         return None
     return assign
 
@@ -145,155 +138,12 @@ def _entry_failure(entry_id: str, solver: Solver, failure: Failure) -> str:
                                                                  failure)))
 
 
-def _shown(solver: Solver, entry: Entry, cases: Iterable[Case], of: int
+def shown_lines(solver: Solver, entry: Entry, cases: Iterable[Case], of: int
            ) -> list[str]:
     """A run as `record` prints it: the renderer's block without the
     blank line that leads it in a `derive` or `store` section; `cases`
     are the cases its groups were built from."""
     return record_lines(entry, solver, tuple(cases), of)
-
-
-# `grid`
-
-
-def _by_name(solver: Solver, outcomes: Outcomes, groups: Groups,
-             kept: set[Case] | None = None) -> Groups:
-    """The groups of `grouped(solver, outcomes)` with each case named by
-    its own name (`solver.names.name`); with `kept`, the cases of `kept`
-    alone, and the groups that hold one of them."""
-    out: list[Group] = []
-    for g in groups.groups:
-        cases = [c for c in members(outcomes, g) if kept is None or c in kept]
-        if cases:
-            out.append(Group(tuple(name(solver, c) for c in cases), g.grid))
-    return Groups(tuple(out))
-
-
-def cmd_grid(arg: str, path: str | None = None, every: bool = False,
-             only: list[str] | None = None,
-             assign_text: str | None = None) -> int:
-    """What each case of the solver gives on a grid the caller writes, by the name
-    `record` writes; with `every`, each case by its own name
-    (`solver.names.name`); with `only`, the
-    case each name denotes, or the solver's cases that stand for it. Then
-    each constructor of `Choice` that no case of the solver takes
-    (`commands.untaken_constructor_lines`)."""
-    eng = engine()
-    solver = command_solver(arg, eng, task=False)
-    if solver is None:
-        return 2
-    assign = _assign_of(eng, solver, assign_text)
-    if assign is None:
-        return 2
-    grids = written_grids(path, 1, text.GRID_ONE.format(command="grid"))
-    if grids is None:
-        return 2
-    grid = grids[0]
-    if not compiles(eng, solver):
-        return 1
-    runs = Runs(eng, solver, LIMITS)
-    solver_cases = runs.cases
-    if not isinstance(solver_cases, tuple):
-        print("\n".join(failure_lines(solver, solver_cases)), file=sys.stderr)
-        return 1
-    entry = Entry("grid", "", grid, assign, Groups(()))
-    outcomes = entry_outcomes(runs, entry)
-    if not isinstance(outcomes, tuple):
-        print("\n".join(failure_lines(solver, outcomes)), file=sys.stderr)
-        return 1
-    groups = grouped(solver, outcomes)
-    kept: set[Case] = set()
-    if only:
-        for value in only:
-            denoted = denote(solver, value)
-            if not isinstance(denoted, Denoted):
-                print(text.NO_CASE_NAMED.format(stem=solver.stem, name=value),
-                      file=sys.stderr)
-                return 2
-            stand_ins = solve.stand_ins(solver, solver_cases, denoted)
-            if not stand_ins:
-                print(text.NO_WITNESSED_TAKES.format(name=value), file=sys.stderr)
-                return 2
-            kept |= set(stand_ins)
-        groups = _by_name(solver, outcomes, groups, kept)
-    elif every:
-        groups = _by_name(solver, outcomes, groups)
-    shown = [c for c, _g in outcomes if not only or c in kept]
-    lines = _shown(solver, replace(entry, output=groups), shown,
-                   runs.case_count)
-    of_solver = runs.solver_cases
-    if not isinstance(of_solver, tuple):
-        print("\n".join(failure_lines(solver, of_solver)), file=sys.stderr)
-        return 1
-    untaken = commands.untaken_constructor_lines(solver, of_solver)
-    print("\n".join([*lines, *([""] + untaken if untaken else [])]))
-    return 0
-
-
-# `relation`
-
-
-def cmd_relation(arg: str, args: list[str],
-                 assign_text: str | None = None) -> int:
-    """The rows of each relation `args` names, on a grid the caller
-    writes; the last of `args` is the grid file where it is `-` or a
-    file."""
-    eng = engine()
-    solver = command_solver(arg, eng, task=False)
-    if solver is None:
-        return 2
-    path = None
-    if len(args) > 1 and (args[-1] == "-" or Path(args[-1]).is_file()):
-        args, path = args[:-1], args[-1]
-    assign = assign_arg(assign_text)
-    if assign is None:
-        return 2
-    at = _assignment(eng, solver, assign)
-    if at is None:
-        return 2
-    grids = written_grids(path, 1, text.GRID_ONE.format(command="relation"))
-    if grids is None:
-        return 2
-    grid = grids[0]
-    if not compiles(eng, solver):
-        return 1
-    runs = Runs(eng, solver, LIMITS)
-    index = runs.index
-    names: list[RelationName] = []
-    columns: list[tuple[tuple[str, ...], tuple[str, ...]]] = []
-    unknown = False
-    for a in args:
-        rel = relation_name(a)
-        got = index.resolve(rel, Scope(()))
-        decl = solver.program.relation(got.declaration) \
-            if isinstance(got, Resolved) else None
-        if decl is None:
-            print(text.NO_RELATION.format(name=a), file=sys.stderr)
-            unknown = True
-            continue
-        names.append(rel)
-        columns.append((tuple(c.name for c in decl.columns),
-                        tuple(c.type for c in decl.columns)))
-    if unknown:
-        return 2
-    ran = runs.relations_on(grid, names, at)
-    if isinstance(ran, witness.Undefined):
-        print(commands.NO_GRID, file=sys.stderr)
-        return 1
-    if not isinstance(ran, Mapping):
-        print("\n".join(failure_lines(solver, ran)), file=sys.stderr)
-        return 1
-    out: list[str] = []
-    for i, (rel, (cols, types)) in enumerate(zip(names, columns,
-                                                 strict=True)):
-        if i:
-            out.append("")
-        rows = [[commands.souffle_text(solver, v, t) for v, t in
-                 zip(r, types, strict=True)]
-                for r in ran[rel]]
-        out += commands.relation_lines(args[i], cols, rows)
-    print("\n".join(out))
-    return 0
 
 
 # `record`
@@ -443,7 +293,7 @@ def cmd_record(arg: str, entry_id: str, separates: str,
     solver = command_solver(arg, eng)
     if solver is None:
         return 2
-    assign = _assign_of(eng, solver, assign_text)
+    assign = assign_of(eng, solver, assign_text)
     if assign is None:
         return 2
     grids = written_grids(path, 2, text.ONE_SEPARATOR)
@@ -463,7 +313,7 @@ def cmd_record(arg: str, entry_id: str, separates: str,
         print("\n".join(failure_lines(solver, outcomes)), file=sys.stderr)
         return 1
     entry = replace(entry, output=grouped(solver, outcomes))
-    lines = _shown(solver, entry, (c for c, _g in outcomes), runs.case_count)
+    lines = shown_lines(solver, entry, (c for c, _g in outcomes), runs.case_count)
     if judged is not None:
         lines += commands.judged_lines(judged)
         entry = replace(entry, output=RejectedOutput(judged))
@@ -489,7 +339,7 @@ def cmd_rerecord(arg: str, entry_id: str,
         return 2
     solver, lined, at, old = got
     if assign_text is not None:
-        assign = _assign_of(eng, solver, assign_text)
+        assign = assign_of(eng, solver, assign_text)
         if assign is None:
             return 2
         old = replace(old, assign=assign)
@@ -505,7 +355,7 @@ def cmd_rerecord(arg: str, entry_id: str,
         return 1
     entry, change = got
     built = runs.cases_or_none if isinstance(entry.output, Groups) else ()
-    print("\n".join(_shown(lined, entry, built, runs.case_count)))
+    print("\n".join(shown_lines(lined, entry, built, runs.case_count)))
     if not _write(solver, at, [entry]):
         return 2
     print()

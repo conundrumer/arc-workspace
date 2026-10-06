@@ -1,7 +1,7 @@
 """The frame lines of the commands: what a command prints around the
 renderer's sections (a summary table, a section header, a wrote-witness
 line, a count line), the constructors no case takes after `grid`'s
-output, the pairs of `run`, the rows of `relation`, and the
+output, the pairs of `run`, and the
 lines of `record`, `keywords`, `since` and `size`."""
 
 from collections.abc import Sequence
@@ -9,7 +9,6 @@ from pathlib import Path
 
 from arc.task import Example
 from checker.finding import Finding
-from checker.judged import value_constructors
 from checker.sweep import GivingValues
 from checker.render import (
     GridRow,
@@ -26,7 +25,6 @@ from checker.render import (
     grid_lines,
     header_line,
     in_line_order,
-    joined,
     lint_line,
     noun,
     pass_line,
@@ -38,7 +36,7 @@ from checker.render.surveys import giving_text
 from solver.names import ctor_text
 from solver.names import name as case_name
 from controlled_markdown import mctx
-from engine import AdtValue, Grid, ParseFailure, RecordValue, RunFailure, Value
+from engine import Grid, ParseFailure, RunFailure
 from engine.program import RelationDecl
 from engine.text import text as code_text
 from solver.annotations import verdict_text
@@ -55,7 +53,6 @@ from solver.solve import (
     is_result,
     out_columns,
 )
-from solver.vocabulary import CHOICE
 from solver.witness import (
     GridChanged,
     GroupsKept,
@@ -410,7 +407,6 @@ def time_row(total: float, stem: str, pairs: float,
 
 # `grid`, `relation` and `record`
 
-NO_ROWS = mctx("{head}: no rows")
 JUDGED_OUTPUT = mctx("judged output:")
 WOULD_RECORD = mctx("would record witness `{id}`")
 def judgment_first(lines: Sequence[str]) -> list[str]:
@@ -557,15 +553,6 @@ def judged_lines(grid: Grid) -> list[str]:
     return ["", JUDGED_OUTPUT, *(shifted(r, "  ") for r in grid_lines(grid))]
 
 
-def relation_lines(name: str, columns: Sequence[str],
-                   rows: Sequence[Sequence[str]]) -> list[str]:
-    """One relation's rows as Souffle prints them, under its columns."""
-    head = f"{name}({', '.join(columns)})"
-    if not rows:
-        return [NO_ROWS.format(head=head)]
-    return [f"{head}:", *("  " + "\t".join(r) for r in rows)]
-
-
 # `witness`, `derive`, `store` and `audit`
 
 WITNESS_LINES = mctx("`@witness` lines:")
@@ -707,16 +694,3 @@ def entry_line(entry_id: str, what: object) -> str:
 def size_unread(stem: str, failure: ParseFailure) -> str:
     return SIZE_UNREAD.format(stem=stem, error=detail_text(failure))
 
-
-def souffle_text(solver: Solver, value: Value, type_name: str) -> str:
-    """A column's value of `relation` as Souffle prints it; a `Choice`
-    value by its case's name, and a value of an ADT at a choice point by
-    the branches of its constructors, each by its name, joined by
-    ` & `."""
-    if type_name == CHOICE and isinstance(value, AdtValue | RecordValue):
-        return case_name(solver, value)
-    points = set() if solver.choice is None \
-        else {p.type for p in solver.choice.points}
-    if type_name in points and isinstance(value, AdtValue):
-        return joined(value_constructors(value))
-    return code_text(value)

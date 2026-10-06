@@ -10,7 +10,7 @@ from checker.render.branches import GROUP_WIDTH
 from checker.render.commands import SLOWEST
 from checker.store import ROW_CAP
 from checker.sweep import MAX_CANDIDATES, TIME_LIMIT_SECONDS
-from cli import audit, record, run, survey
+from cli import audit, grid, record, run, survey
 from controlled_markdown import mctx
 
 SWEEP_LIMIT_HELP = mctx("wall-clock limit in seconds on the sweep's solver "
@@ -111,9 +111,9 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                                  'for a pair without "output", print the '
                                  "grids the solver emits"))
 
-    grid = command(
+    grid_p = command(
         "grid",
-        lambda a: record.cmd_grid(a.stem, a.file, a.every, a.cases, a.assign),
+        lambda a: grid.cmd_grid(a.stem, a.file, a.every, a.cases, a.assign),
         help=mctx("run one solver on a grid you write, printing what each "
                   "case the runner holds emits"),
         description=mctx("Prints the output of the concept case, of each "
@@ -139,10 +139,10 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                          ).format(width=GROUP_WIDTH, follows=GRID_FOLLOWS),
         epilog=GRID_HELP,
     )
-    grid.add_argument("stem", help=STEM_HELP)
-    grid.add_argument("file", nargs="?",
+    grid_p.add_argument("stem", help=STEM_HELP)
+    grid_p.add_argument("file", nargs="?",
                       help=mctx("grid file; stdin when omitted or `-`"))
-    shown = grid.add_mutually_exclusive_group()
+    shown = grid_p.add_mutually_exclusive_group()
     shown.add_argument("--all", action="store_true", dest="every",
                        help=mctx("name each case of the solver on its own, "
                                  "in place of the fewest names that cover "
@@ -151,17 +151,20 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                        metavar="CASE",
                        help=mctx("print only this case; repeat for each "
                                  "case"))
-    grid.add_argument("--assign", metavar="JSON", dest="assign",
+    grid_p.add_argument("--assign", metavar="JSON", dest="assign",
                       help=ASSIGN_HELP)
 
     relation = command(
-        "relation", lambda a: record.cmd_relation(a.stem, a.args, a.assign),
+        "relation", lambda a: grid.cmd_relation(a.stem, a.args, a.assign),
         help=mctx("run one solver on a grid you write, printing the rows of "
                   "each relation the arguments give"),
         description=mctx("Prints each relation's rows as Souffle writes "
                          "them, one fact per line, under the relation's "
                          "attribute names. A column of type `Choice` holds "
-                         "each case by its shortest name. The last argument "
+                         "each case by its shortest name, and a column of a "
+                         "lib orientation type, such as `D4` or `Dir8`, "
+                         "each value by the lib constant that names it. The "
+                         "last argument "
                          "is the grid file when it is `-` or the path of a "
                          "file; otherwise the grid is read from stdin. The "
                          "command writes nothing but the run cache."),

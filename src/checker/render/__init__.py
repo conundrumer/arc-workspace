@@ -4,7 +4,8 @@ result is a typed value of its own, not findings, holds its own timed-out
 and failed runs, and its render function prints them, so that the pass
 line and the exit code come from findings alone. A section's lines are
 ordered as typed values before they print, never by a match over printed
-text, and every printed case name goes through `solver.names`."""
+text, and every printed case name goes through `solver.names`. The rows of
+`relation` are in `relation`."""
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -225,7 +226,7 @@ def resolution_lines(solver: Solver, out: Resolutions) -> list[str]:
     """A `Resolutions` output drawn: each grid under its resolution value
     as Souffle prints it, and under `grid <i>` where the run gave none, as
     a witness file's grids are."""
-    from checker.render.commands import souffle_text
+    from checker.render.relation import souffle_text
     lines: list[str] = []
     for i, grid in enumerate(out.grids):
         head = souffle_text(solver, out.values[i], TIEBREAK_RESOLUTION) \
@@ -254,13 +255,16 @@ def joined(parts: Sequence[str]) -> str:
 
 
 def arg_text(value: Value, type_name: str, lib: Lib) -> str:
-    """One column's value: an orientation member by the constant that
-    names it, any other value as the solver writes it."""
-    if type_name in lib.orientation_types:
-        for member in lib.orientation_types.get(type_name, ()):
-            if lib.constants.get(member) == value:
-                return member
-    return code_text(value)
+    """One column's value: where the column's type is a lib orientation
+    type and exactly one of its members names the value, that member;
+    any other value as the solver writes it. The type is the one the
+    column declares, so a solver's own type, a subtype of an orientation
+    type included, gives numbers. The members are those the type's
+    `_elem` relation lists (`Lib.orientation_types`), so a `#define`
+    outside them names no value of the type."""
+    named = [m for m in lib.orientation_types.get(type_name, ())
+             if lib.constants.get(m) == value]
+    return named[0] if len(named) == 1 else code_text(value)
 
 
 
