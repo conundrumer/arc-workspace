@@ -50,12 +50,12 @@
     // @witness lattice-no-axis: borderline $LatticePeriod
     //     @relaxed wallpaper
   | LatticePeriod {}
-    // @rule recover: a hidden cell also takes the colors that maps carry to
-    //  it, where a map applies a D4 isometry and then a translation; a map
-    //  counts when it carries some visible cell onto a visible cell of its
-    //  color, its image of the frame lies within an axis period of every
-    //  edge, and it carries no cell's axis-period color onto a cell with
-    //  another color; undefined where a cell takes two colors
+    // @rule recover: where both axes have a period, a hidden cell also
+    //  takes the colors that maps and axis periods carry to it, where a map
+    //  applies a D4 isometry and then a translation; a map counts when it
+    //  carries some cell's axis-period color onto another cell of that color
+    //  and no cell's axis-period color onto a cell with another color;
+    //  undefined where a cell takes two colors
     // @witness mirror-hidden: borderline $IsometryOrbit
     // @witness mirror-wide: borderline $IsometryOrbit
     //     @reassigned fill
@@ -237,35 +237,13 @@ impl_choice([O, R, $HiddenFill(), Sel, $TieFirst()]) :-
     .decl aperiodic(ky: Key)
     aperiodic(Ky) :- visible(Ky, _, _), axis_elem(A), !period.min_period(Ky, A, _).
 
-    // Maps p -> apply(d, p) placed by x that carry some visible cell onto
-    // another visible cell of its color; x is the map's image of the frame.
-    .decl carried(ky: Key, d: D4, x: Box)
-    carried(Ky, D, X) :-
-        kind(_, D), visible(Ky, P, Col), apply(D, P, P1),
-        visible(Ky, Q, Col), P != Q, relative(P1, Q, X).
-
-    // The map's image of the frame lies more than a period in from some edge.
-    .decl far(ky: Key, d: D4, x: Box)
-    far(Ky, D, X) :-
-        carried(Ky, D, X), axis_of(E, A), dist(X, E, M), period.min_period(Ky, A, K), M > K.
-
-    .decl near(ky: Key, d: D4, x: Box)
-    near(Ky, D, X) :- carried(Ky, D, X), !aperiodic(Ky), !far(Ky, D, X).
-
-    // The map carries a cell's axis-period color onto a cell to which the
-    // axis periods give another color.
-    .decl contradicted(ky: Key, d: D4, x: Box)
-    contradicted(Ky, D, X) :-
-        near(Ky, D, X), axis_color(Ky, P, C1), apply(D, P, P1),
-        compose(P1, X, Q), axis_color(Ky, Q, C2), C1 != C2.
-
-    // The maps recovery r reads.
-    .decl map(ky: Key, r: Recovery, d: D4, x: Box)
+    // The translations that carry some visible cell onto another visible
+    // cell of its color.
+    .decl carried(ky: Key, x: Offset)
+    carried(Ky, X) :- visible(Ky, P, Col), visible(Ky, Q, Col), P != Q, relative(P, Q, X).
 
     // Hidden q is the image of p under a map of recovery r.
     .decl map_link(ky: Key, r: Recovery, p: Position, q: Position)
-    map_link(Ky, R, P, Q) :-
-        map(Ky, R, D, X), cell(Ky, P, _), apply(D, P, P1), compose(P1, X, Q), hidden(Ky, Q).
 
     // The colors each recovery gives a cell: those of the axis periods, and
     // those its maps carry into hidden cells.
@@ -349,13 +327,6 @@ impl_choice([O, R, $HiddenFill(), Sel, $TieFirst()]) :-
 .init parse = Parse<Scope>
 parse.cell(S, P, Col) :- scope(S), in(P, Col).
 
-// The linear parts each recovery's maps take.
-.decl kind(r: Recovery, d: D4)
-
-// A D4 element that moves some direction.
-.decl moves(d: D4)
-moves(D) :- apply_dir(D, X, Y), X != Y.
-
 // The axes each selection is read along.
 .decl reads_axis(sel: Selection, x: Axis)
 
@@ -416,20 +387,27 @@ parse.occluder([$ComponentRect(), K], B) :-
     part_box.box(Id, B), !part_gap(Id), params.min_side(K), !narrow(Id, K).
 
 // --- $LatticePeriod ---
-kind($LatticePeriod(), D) :- d4_elem(D), !moves(D).
-
 // The translation carries a visible cell onto a visible cell of another color.
-.decl clash(s: Scope, d: D4, x: Box)
-clash(S, D, X) :-
-    kind($LatticePeriod(), D), parse.carried(S, D, X),
-    parse.visible(S, P, C1), apply(D, P, P1), compose(P1, X, Q), parse.visible(S, Q, C2), C1 != C2.
+// @ignore: comp-idiom — OffsetInvariance tests the axis-aligned translations alone, and these include oblique ones
+.decl clash(s: Scope, x: Offset)
+clash(S, X) :-
+    parse.carried(S, X), parse.visible(S, P, C1),
+    compose(P, X, Q), parse.visible(S, Q, C2), C1 != C2.
 
-parse.map(S, $LatticePeriod(), D, X) :-
-    kind($LatticePeriod(), D), parse.carried(S, D, X), !clash(S, D, X).
+parse.map_link(S, $LatticePeriod(), P, Q) :-
+    parse.carried(S, X), !clash(S, X), parse.cell(S, P, _), compose(P, X, Q), parse.hidden(S, Q).
 
 // --- $IsometryOrbit ---
-kind($IsometryOrbit(), D) :- d4_elem(D).
-parse.map(S, $IsometryOrbit(), D, X) :- parse.near(S, D, X), !parse.contradicted(S, D, X).
+// The isometries of the axis-period colors, over the whole frame.
+// @claim recover
+.init wp = Wallpaper<Scope, Color>
+wp.transform(D) :- d4_elem(D).
+wp.cell(S, P, Col) :- parse.axis_color(S, P, Col).
+wp.grid(S, P) :- parse.cell(S, P, _).
+wp.period(S, A, K) :- parse.period.min_period(S, A, K).
+
+parse.map_link(S, $IsometryOrbit(), P, Q) :-
+    wp.action(S, P, Q), parse.hidden(S, Q), !parse.aperiodic(S).
 
 // --- $HiddenFill ---
 shade(S, R, $HiddenFill(), P, Col) :-
