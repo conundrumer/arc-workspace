@@ -12,7 +12,7 @@ from checker.finding import (
 )
 from checker.runs import Runs
 from solver.model import Solver
-from solver.problems import Fault, InSolver, InWitnessFile
+from solver.problems import Fault, InSolver, InWitnessFile, WitnessFileRole
 
 
 def where_of(problem: Fault) -> Where:
@@ -37,5 +37,17 @@ def fault_findings(solver: Solver, runs: Runs) -> list[Finding]:
     command reports them the same way. It is no check and carries no
     `quotes`. A fault's finding kind is its own kind
     (`Kind(problem.kind)`): the undecided one outside `FAILING`, every
-    other inside it."""
-    return [finding_of(p) for p in solver.problems]
+    other inside it. Where the runs read a given file (`witness
+    --file`), the faults at the solver's own witness file are left out."""
+    return [finding_of(p) for p in solver.problems
+            if not _in_unread_task_file(p, runs)]
+
+
+def _in_unread_task_file(problem: Fault, runs: Runs) -> bool:
+    """Whether `problem` stands in the solver's own witness file while
+    the runs read another file in its place."""
+    match problem.place:
+        case InWitnessFile(file=WitnessFileRole.TASK):
+            return runs.file_role is not WitnessFileRole.TASK
+        case InSolver() | InWitnessFile():
+            return False
