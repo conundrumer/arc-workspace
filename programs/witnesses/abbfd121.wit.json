@@ -2,7 +2,7 @@
   "id": "abbfd121",
   "witnesses": [{
     "id": "tall-thin",
-    "separates": "A 9x3 block beside a 5x6 block: area picks the 5x6 block; perimeter, extent along V then across, and longest side then shortest pick the 9x3 block.",
+    "separates": "A 9x3 block beside a 5x6 block: area picks the 5x6 block; perimeter and longest side then shortest pick the 9x3 block. The extent along an axis then across picks the 9x3 block along V and the 5x6 block along H, so at both open axes it has no output.",
     "input": [
       [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
       [4,2,2,2,6,5,4,6,5,4,6,5,4,6,5,4],
@@ -21,11 +21,6 @@
       [4,5,6,4,5,6,4,5,6,4,5,6,4,5,6,4],
       [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]
     ],
-    "assign": {
-      "primary_axis": [
-        ["AXIS_V"]
-      ]
-    },
     "output": [{
       "cases": ["$Area"],
       "grid": [
@@ -36,7 +31,10 @@
         [4,4,4,4,4,4]
       ]
     }, {
-      "cases": ["$AxisThenCross","$LongestThenShortest","$Perimeter"],
+      "cases": ["$AxisThenCross"],
+      "grid": null
+    }, {
+      "cases": ["$LongestThenShortest","$Perimeter"],
       "grid": [
         [6,5,4],
         [5,6,4],
@@ -51,7 +49,7 @@
     }]
   }, {
     "id": "wide-thin",
-    "separates": "The transpose of tall-thin, a 3x9 block beside a 6x5 block: area picks the 6x5 block; perimeter, extent along H then across, and longest side then shortest pick the 3x9 block.",
+    "separates": "The transpose of tall-thin, a 3x9 block beside a 6x5 block: area picks the 6x5 block; perimeter and longest side then shortest pick the 3x9 block. The extent along an axis then across picks the 6x5 block along V and the 3x9 block along H, so at both open axes it has no output.",
     "input": [
       [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
       [4,2,2,2,2,2,2,2,2,2,6,5,4,6,5,4],
@@ -70,11 +68,6 @@
       [4,5,6,4,5,6,4,5,6,4,5,6,4,5,6,4],
       [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]
     ],
-    "assign": {
-      "primary_axis": [
-        ["AXIS_H"]
-      ]
-    },
     "output": [{
       "cases": ["$Area"],
       "grid": [
@@ -86,7 +79,10 @@
         [4,4,4,4,4]
       ]
     }, {
-      "cases": ["$AxisThenCross","$LongestThenShortest","$Perimeter"],
+      "cases": ["$AxisThenCross"],
+      "grid": null
+    }, {
+      "cases": ["$LongestThenShortest","$Perimeter"],
       "grid": [
         [6,5,4,6,5,4,6,5,4],
         [5,6,4,5,6,4,5,6,4],
@@ -136,7 +132,7 @@
     }]
   }, {
     "id": "oblique-hidden",
-    "separates": "The pattern repeats along the diagonal step (1,2), so the axis periods are 5x5, and the axis phase of cell (4,4) occurs only at (4,4), under the 5x5 block. The axis periods leave that cell without a source; the translation lattice reaches it from a visible cell on the same diagonal, and with the fill set to 0, $HiddenFill paints it 0.",
+    "separates": "The pattern repeats along the diagonal step (1,2), so the axis periods are 5x5, and the axis phase of cell (4,4) occurs only at (4,4), under the 5x5 block. The axis periods leave that cell without a source; the translation lattice reaches it from a visible cell on the same diagonal, and so does a translation of the isometry reading.",
     "input": [
       [1,3,6,2,5,1,3,9,9],
       [2,5,1,3,6,2,5,9,9],
@@ -148,20 +144,30 @@
       [3,6,2,5,1,3,6,2,5],
       [5,1,3,6,2,5,1,3,6]
     ],
-    "assign": {
-      "fill": [
-        [0]
-      ]
-    },
     "output": [{
       "cases": ["concept"],
       "grid": null
     }, {
-      "cases": ["$ColorFill & $AxisPeriods & $HiddenFill","$MinTwoCells & $AxisPeriods"],
+      "cases": [
+        "$ColorFill & $AxisPeriods & $HiddenFill & fill=stored",
+        "$MinTwoCells & $AxisPeriods"
+      ],
+      "grid": null
+    }, {
+      "cases": ["$ColorFill & $AxisPeriods & fill=DominantColor"],
       "grid": [
         [2,5,1,3,6],
         [3,6,2,5,1],
-        [5,1,0,6,2],
+        [5,1,8,6,2],
+        [6,2,5,1,3],
+        [1,3,6,2,5]
+      ]
+    }, {
+      "cases": ["$ColorFill & $AxisPeriods & fill=RarestColor"],
+      "grid": [
+        [2,5,1,3,6],
+        [3,6,2,5,1],
+        [5,1,9,6,2],
         [6,2,5,1,3],
         [1,3,6,2,5]
       ]
@@ -169,7 +175,6 @@
       "cases": [
         "$ColorFill & $IsometryOrbit",
         "$ColorFill & $LatticePeriod",
-        "$MinTwoCells & $IsometryOrbit",
         "$MinTwoCells & $LatticePeriod"
       ],
       "grid": [
@@ -180,10 +185,13 @@
         [1,3,6,2,5]
       ]
     }, {
-      "cases": ["$ComponentRect & $AxisPeriods"],
+      "cases": [
+        "$ComponentRect & $AxisPeriods & fill=stored",
+        "$ComponentRect & $IsometryOrbit"
+      ],
       "grid": null
     }, {
-      "cases": ["$ComponentRect & $IsometryOrbit"],
+      "cases": ["$ComponentRect & fill=DominantColor","$ComponentRect & fill=RarestColor"],
       "grid": null
     }, {
       "cases": ["$ComponentRect & $LatticePeriod"],
@@ -191,7 +199,7 @@
     }]
   }, {
     "id": "mirror-hidden",
-    "separates": "Train0's tile on a 12x8 grid: every copy of the axis phase (1,3) lies under the two tall blocks. No translation reaches that phase from a visible cell; the tile's transpose symmetry reaches it from the phase (3,1).",
+    "separates": "Train0's tile on a 12x8 grid: every copy of the axis phase (1,3) lies under the two tall blocks. No translation reaches that phase from a visible cell; the tile's half-turn symmetry reaches it from the phase (3,1).",
     "input": [
       [3,3,3,3,3,3,3,3],
       [3,4,1,1,3,4,5,2],
@@ -210,10 +218,26 @@
       "cases": ["concept","$ComponentRect"],
       "grid": null
     }, {
-      "cases": ["$ColorFill & $AxisPeriods & $HiddenFill","$MinTwoCells & $AxisPeriods"],
+      "cases": [
+        "$ColorFill & $AxisPeriods & $HiddenFill & fill=stored",
+        "$MinTwoCells & $AxisPeriods"
+      ],
       "grid": null
     }, {
-      "cases": ["$ColorFill & $IsometryOrbit","$MinTwoCells & $IsometryOrbit"],
+      "cases": ["$ColorFill & $AxisPeriods & fill=DominantColor"],
+      "grid": [
+        [5,3],
+        [3,5],
+        [5,4],
+        [3,3],
+        [5,3],
+        [3,5],
+        [5,4],
+        [3,3],
+        [5,3]
+      ]
+    }, {
+      "cases": ["$ColorFill & $AxisPeriods & fill=RarestColor","$ColorFill & $IsometryOrbit"],
       "grid": [
         [5,6],
         [3,5],
@@ -254,11 +278,35 @@
       "cases": ["concept"],
       "grid": null
     }, {
-      "cases": ["$ColorFill & $AxisPeriods & $HiddenFill","$MinTwoCells & $AxisPeriods"],
+      "cases": [
+        "$ColorFill & $AxisPeriods & $HiddenFill & fill=stored",
+        "$MinTwoCells & $AxisPeriods"
+      ],
       "grid": null
     }, {
-      "cases": ["$ColorFill & $IsometryOrbit","$MinTwoCells & $IsometryOrbit"],
+      "cases": ["$ColorFill & $AxisPeriods & fill=DominantColor"],
+      "grid": [
+        [4,4,4,4],
+        [4,4,4,4],
+        [4,4,4,4]
+      ]
+    }, {
+      "cases": ["$ColorFill & $AxisPeriods & fill=RarestColor"],
+      "grid": [
+        [8,8,8,8],
+        [8,8,8,8],
+        [8,8,8,8]
+      ]
+    }, {
+      "cases": ["$ColorFill & $IsometryOrbit & fill=stored"],
       "grid": null
+    }, {
+      "cases": ["$IsometryOrbit & fill=RarestColor"],
+      "grid": [
+        [8,8,8,8],
+        [8,8,8,8],
+        [4,4,4,4]
+      ]
     }, {
       "cases": ["$ColorFill & $LatticePeriod","$MinTwoCells & $LatticePeriod"],
       "grid": [
@@ -351,8 +399,7 @@
       "cases": [
         "$ComponentRect & $AxisPeriods",
         "$ComponentRect & $IsometryOrbit",
-        "$MinTwoCells & $AxisPeriods",
-        "$MinTwoCells & $IsometryOrbit"
+        "$MinTwoCells & $AxisPeriods"
       ],
       "grid": [
         [6,5,4,6,5,4],
@@ -405,7 +452,7 @@
     }]
   }, {
     "id": "tall-beside-square",
-    "separates": "A 6x3 block beside a 5x5 block: area and perimeter pick the 5x5 block; the longest side, and the extent along V, pick the 6x3 block.",
+    "separates": "A 6x3 block beside a 5x5 block: area and perimeter pick the 5x5 block; the longest side picks the 6x3 block. The extent along an axis then across picks the 6x3 block along V and the 5x5 block along H, so at both open axes it has no output.",
     "input": [
       [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
       [4,6,5,4,6,5,4,6,5,4,6,5,4,6,5,4],
@@ -424,11 +471,6 @@
       [4,5,6,4,5,6,4,5,6,4,5,6,4,5,6,4],
       [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]
     ],
-    "assign": {
-      "primary_axis": [
-        ["AXIS_V"]
-      ]
-    },
     "output": [{
       "cases": ["$Area","$Perimeter"],
       "grid": [
@@ -439,7 +481,10 @@
         [4,4,4,4,4]
       ]
     }, {
-      "cases": ["$AxisThenCross","$LongestThenShortest"],
+      "cases": ["$AxisThenCross"],
+      "grid": null
+    }, {
+      "cases": ["$LongestThenShortest"],
       "grid": [
         [5,6,4],
         [4,4,4],
@@ -451,7 +496,7 @@
     }]
   }, {
     "id": "wide-beside-square",
-    "separates": "A 3x6 block beside a 5x5 block: area, perimeter, and the extent along V pick the 5x5 block; the longest side picks the 3x6 block.",
+    "separates": "A 3x6 block beside a 5x5 block: area and perimeter pick the 5x5 block; the longest side picks the 3x6 block. The extent along an axis then across picks the 5x5 block along V and the 3x6 block along H, so at both open axes it has no output.",
     "input": [
       [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
       [4,6,5,4,6,5,4,6,5,4,6,5,4,6,5,4],
@@ -470,13 +515,8 @@
       [4,5,6,4,5,6,4,5,6,4,5,6,4,5,6,4],
       [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]
     ],
-    "assign": {
-      "primary_axis": [
-        ["AXIS_V"]
-      ]
-    },
     "output": [{
-      "cases": ["$Area","$AxisThenCross","$Perimeter"],
+      "cases": ["$Area","$Perimeter"],
       "grid": [
         [6,4,5,6,4],
         [4,4,4,4,4],
@@ -484,6 +524,9 @@
         [6,4,5,6,4],
         [4,4,4,4,4]
       ]
+    }, {
+      "cases": ["$AxisThenCross"],
+      "grid": null
     }, {
       "cases": ["$LongestThenShortest"],
       "grid": [
@@ -494,7 +537,7 @@
     }]
   }, {
     "id": "oblique-wide",
-    "separates": "The oblique wallpaper of oblique-hidden with every block at least 3 on each side: the axis phases of (4,3) and (4,4) show only under the two blocks. The axis periods leave those cells without a source; the translation lattice reaches them, and with the fill set to 0 the fill paints them 0.",
+    "separates": "The oblique wallpaper of oblique-hidden with every block at least 3 on each side: the axis phases of (4,3) and (4,4) show only under the two blocks. The axis periods leave those cells without a source; the translation lattice reaches them.",
     "input": [
       [1,3,6,2,5,1,3,6,2,5,1,3,6],
       [2,5,1,3,6,2,5,1,3,6,2,5,1],
@@ -506,20 +549,27 @@
       [3,6,2,5,1,3,6,2,5,1,3,6,2],
       [5,1,3,6,2,5,1,3,6,2,5,1,3]
     ],
-    "assign": {
-      "fill": [
-        [0]
-      ]
-    },
     "output": [{
       "cases": ["concept"],
       "grid": null
     }, {
-      "cases": ["$AxisPeriods & $HiddenFill"],
+      "cases": ["$AxisPeriods & $HiddenFill & fill=stored"],
+      "grid": null
+    }, {
+      "cases": ["$AxisPeriods & fill=DominantColor"],
       "grid": [
         [2,5,1,3,6],
         [3,6,2,5,1],
-        [5,0,0,6,2],
+        [5,8,8,6,2],
+        [6,2,5,1,3],
+        [1,3,6,2,5]
+      ]
+    }, {
+      "cases": ["$AxisPeriods & fill=RarestColor"],
+      "grid": [
+        [2,5,1,3,6],
+        [3,6,2,5,1],
+        [5,9,9,6,2],
         [6,2,5,1,3],
         [1,3,6,2,5]
       ]
@@ -535,7 +585,7 @@
     }]
   }, {
     "id": "mirror-wide",
-    "separates": "Train0's tile under three 3-wide blocks: every copy of the axis phases (1,2) and (1,3) lies under a block. No translation reaches them; the tile's transpose symmetry reaches them from (2,1) and (3,1), and with the fill set to 0 the fill paints them 0.",
+    "separates": "Train0's tile under three 3-wide blocks: every copy of the axis phases (1,2) and (1,3) lies under a block. No translation reaches them; the tile's half-turn symmetry reaches them from (3,1) and (3,2).",
     "input": [
       [3,3,3,3,3,3,3,3,3,3,7,7,7,3],
       [3,4,1,1,1,4,2,2,2,4,7,7,7,4],
@@ -550,27 +600,40 @@
       [3,5,3,5,3,5,3,5,3,5,7,7,7,5],
       [3,6,5,4,3,6,5,4,3,6,5,4,3,6]
     ],
-    "assign": {
-      "fill": [
-        [0]
-      ]
-    },
     "output": [{
       "cases": ["concept"],
       "grid": null
     }, {
-      "cases": ["$AxisPeriods & $HiddenFill"],
+      "cases": ["$AxisPeriods & $HiddenFill & fill=stored"],
+      "grid": null
+    }, {
+      "cases": ["$AxisPeriods & fill=DominantColor"],
       "grid": [
         [3,3,3],
-        [0,0,3],
+        [3,3,3],
         [3,5,3],
         [5,4,3],
         [3,3,3],
-        [0,0,3],
+        [3,3,3],
         [3,5,3],
         [5,4,3],
         [3,3,3],
-        [0,0,3],
+        [3,3,3],
+        [3,5,3]
+      ]
+    }, {
+      "cases": ["$AxisPeriods & fill=RarestColor"],
+      "grid": [
+        [3,3,3],
+        [6,6,3],
+        [3,5,3],
+        [5,4,3],
+        [3,3,3],
+        [6,6,3],
+        [3,5,3],
+        [5,4,3],
+        [3,3,3],
+        [6,6,3],
         [3,5,3]
       ]
     }, {
@@ -589,7 +652,10 @@
         [3,5,3]
       ]
     }, {
-      "cases": ["$LatticePeriod"],
+      "cases": ["$LatticePeriod & fill=stored"],
+      "grid": null
+    }, {
+      "cases": ["$LatticePeriod & fill=DominantColor","$LatticePeriod & fill=RarestColor"],
       "grid": null
     }]
   }, {
@@ -657,20 +723,35 @@
       "cases": ["concept"],
       "grid": null
     }, {
-      "cases": ["$ColorFill & $AxisPeriods & $HiddenFill","$ColorFill & $LatticePeriod"],
+      "cases": [
+        "$ColorFill & $AxisPeriods & $HiddenFill & fill=stored",
+        "$ColorFill & $LatticePeriod & fill=stored"
+      ],
       "grid": null
+    }, {
+      "cases": ["$ColorFill & fill=DominantColor"],
+      "grid": [
+        [3,5,3,5,3,5,3],
+        [5,3,3,6,5,3,3],
+        [3,3,3,3,3,3,3]
+      ]
+    }, {
+      "cases": [
+        "$AxisPeriods & fill=RarestColor",
+        "$LatticePeriod & fill=RarestColor",
+        "$ComponentRect",
+        "$MinTwoCells"
+      ],
+      "grid": [
+        [3,5,3,5,3,5,3],
+        [5,7,3,6,5,7,3],
+        [3,3,3,3,3,3,3]
+      ]
     }, {
       "cases": ["$ColorFill & $IsometryOrbit"],
       "grid": [
         [3,5,3,5,3,5,3],
         [5,4,3,6,5,4,3],
-        [3,3,3,3,3,3,3]
-      ]
-    }, {
-      "cases": ["$ComponentRect","$MinTwoCells"],
-      "grid": [
-        [3,5,3,5,3,5,3],
-        [5,7,3,6,5,7,3],
         [3,3,3,3,3,3,3]
       ]
     }]
@@ -702,6 +783,486 @@
         [6,1,2,5],
         [7,2,3,6],
         [0,1,4,7]
+      ]
+    }]
+  }, {
+    "id": "oblique-fill",
+    "separates": "The input of oblique-hidden, with the fill set to 0: the axis phase of cell (4,4) occurs only at (4,4), under the 5x5 block. The fill paints that cell 0, the cases without the fill have no output under the axis periods, and the translation lattice reaches the cell from a visible cell on the same diagonal.",
+    "input": [
+      [1,3,6,2,5,1,3,9,9],
+      [2,5,1,3,6,2,5,9,9],
+      [3,6,8,8,8,8,8,2,5],
+      [5,1,8,8,8,8,8,3,6],
+      [6,2,8,8,8,8,8,5,1],
+      [1,3,8,8,8,8,8,6,2],
+      [2,5,8,8,8,8,8,1,3],
+      [3,6,2,5,1,3,6,2,5],
+      [5,1,3,6,2,5,1,3,6]
+    ],
+    "assign": {
+      "fill": [
+        [0]
+      ]
+    },
+    "output": [{
+      "cases": ["concept"],
+      "grid": null
+    }, {
+      "cases": [
+        "$ColorFill & $AxisPeriods & $HiddenFill & fill=stored",
+        "$MinTwoCells & $AxisPeriods"
+      ],
+      "grid": [
+        [2,5,1,3,6],
+        [3,6,2,5,1],
+        [5,1,0,6,2],
+        [6,2,5,1,3],
+        [1,3,6,2,5]
+      ]
+    }, {
+      "cases": ["$ColorFill & $AxisPeriods & fill=DominantColor"],
+      "grid": [
+        [2,5,1,3,6],
+        [3,6,2,5,1],
+        [5,1,8,6,2],
+        [6,2,5,1,3],
+        [1,3,6,2,5]
+      ]
+    }, {
+      "cases": ["$ColorFill & $AxisPeriods & fill=RarestColor"],
+      "grid": [
+        [2,5,1,3,6],
+        [3,6,2,5,1],
+        [5,1,9,6,2],
+        [6,2,5,1,3],
+        [1,3,6,2,5]
+      ]
+    }, {
+      "cases": [
+        "$ColorFill & $IsometryOrbit",
+        "$ColorFill & $LatticePeriod",
+        "$MinTwoCells & $LatticePeriod"
+      ],
+      "grid": [
+        [2,5,1,3,6],
+        [3,6,2,5,1],
+        [5,1,3,6,2],
+        [6,2,5,1,3],
+        [1,3,6,2,5]
+      ]
+    }, {
+      "cases": ["$ComponentRect & $AxisPeriods"],
+      "grid": null
+    }, {
+      "cases": ["$ComponentRect & $IsometryOrbit"],
+      "grid": null
+    }, {
+      "cases": ["$ComponentRect & $LatticePeriod"],
+      "grid": null
+    }]
+  }, {
+    "id": "tall-thin-v",
+    "separates": "The input of tall-thin, with the primary axis set to V: area picks the 5x6 block, and the extent along V then across picks the 9x3 block.",
+    "input": [
+      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
+      [4,2,2,2,6,5,4,6,5,4,6,5,4,6,5,4],
+      [4,2,2,2,5,6,4,8,8,8,8,8,8,5,6,4],
+      [4,2,2,2,4,4,4,8,8,8,8,8,8,4,4,4],
+      [4,2,2,2,6,5,4,8,8,8,8,8,8,6,5,4],
+      [4,2,2,2,5,6,4,8,8,8,8,8,8,5,6,4],
+      [4,2,2,2,4,4,4,8,8,8,8,8,8,4,4,4],
+      [4,2,2,2,6,5,4,6,5,4,6,5,4,6,5,4],
+      [4,2,2,2,5,6,4,5,6,4,5,6,4,5,6,4],
+      [4,2,2,2,4,4,4,4,4,4,4,4,4,4,4,4],
+      [4,6,5,4,6,5,4,6,5,4,6,5,4,6,5,4],
+      [4,5,6,4,5,6,4,5,6,4,5,6,4,5,6,4],
+      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
+      [4,6,5,4,6,5,4,6,5,4,6,5,4,6,5,4],
+      [4,5,6,4,5,6,4,5,6,4,5,6,4,5,6,4],
+      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]
+    ],
+    "assign": {
+      "primary_axis": [
+        ["AXIS_V"]
+      ]
+    },
+    "output": [{
+      "cases": ["$Area"],
+      "grid": [
+        [5,6,4,5,6,4],
+        [4,4,4,4,4,4],
+        [6,5,4,6,5,4],
+        [5,6,4,5,6,4],
+        [4,4,4,4,4,4]
+      ]
+    }, {
+      "cases": ["$AxisThenCross","$LongestThenShortest","$Perimeter"],
+      "grid": [
+        [6,5,4],
+        [5,6,4],
+        [4,4,4],
+        [6,5,4],
+        [5,6,4],
+        [4,4,4],
+        [6,5,4],
+        [5,6,4],
+        [4,4,4]
+      ]
+    }]
+  }, {
+    "id": "wide-thin-h",
+    "separates": "The input of wide-thin, with the primary axis set to H: area picks the 6x5 block, and the extent along H then across picks the 3x9 block.",
+    "input": [
+      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
+      [4,2,2,2,2,2,2,2,2,2,6,5,4,6,5,4],
+      [4,2,2,2,2,2,2,2,2,2,5,6,4,5,6,4],
+      [4,2,2,2,2,2,2,2,2,2,4,4,4,4,4,4],
+      [4,6,5,4,6,5,4,6,5,4,6,5,4,6,5,4],
+      [4,5,6,4,5,6,4,5,6,4,5,6,4,5,6,4],
+      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
+      [4,6,8,8,8,8,8,6,5,4,6,5,4,6,5,4],
+      [4,5,8,8,8,8,8,5,6,4,5,6,4,5,6,4],
+      [4,4,8,8,8,8,8,4,4,4,4,4,4,4,4,4],
+      [4,6,8,8,8,8,8,6,5,4,6,5,4,6,5,4],
+      [4,5,8,8,8,8,8,5,6,4,5,6,4,5,6,4],
+      [4,4,8,8,8,8,8,4,4,4,4,4,4,4,4,4],
+      [4,6,5,4,6,5,4,6,5,4,6,5,4,6,5,4],
+      [4,5,6,4,5,6,4,5,6,4,5,6,4,5,6,4],
+      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]
+    ],
+    "assign": {
+      "primary_axis": [
+        ["AXIS_H"]
+      ]
+    },
+    "output": [{
+      "cases": ["$Area"],
+      "grid": [
+        [5,4,6,5,4],
+        [6,4,5,6,4],
+        [4,4,4,4,4],
+        [5,4,6,5,4],
+        [6,4,5,6,4],
+        [4,4,4,4,4]
+      ]
+    }, {
+      "cases": ["$AxisThenCross","$LongestThenShortest","$Perimeter"],
+      "grid": [
+        [6,5,4,6,5,4,6,5,4],
+        [5,6,4,5,6,4,5,6,4],
+        [4,4,4,4,4,4,4,4,4]
+      ]
+    }]
+  }, {
+    "id": "fill=DominantColor",
+    "separates": "`fill=DominantColor` from the stored value: the input of `oblique-hidden`",
+    "input": [
+      [1,3,6,2,5,1,3,9,9],
+      [2,5,1,3,6,2,5,9,9],
+      [3,6,8,8,8,8,8,2,5],
+      [5,1,8,8,8,8,8,3,6],
+      [6,2,8,8,8,8,8,5,1],
+      [1,3,8,8,8,8,8,6,2],
+      [2,5,8,8,8,8,8,1,3],
+      [3,6,2,5,1,3,6,2,5],
+      [5,1,3,6,2,5,1,3,6]
+    ],
+    "output": [{
+      "cases": ["concept"],
+      "grid": null
+    }, {
+      "cases": [
+        "$ColorFill & $AxisPeriods & $HiddenFill & fill=stored",
+        "$MinTwoCells & $AxisPeriods"
+      ],
+      "grid": null
+    }, {
+      "cases": ["$ColorFill & $AxisPeriods & fill=DominantColor"],
+      "grid": [
+        [2,5,1,3,6],
+        [3,6,2,5,1],
+        [5,1,8,6,2],
+        [6,2,5,1,3],
+        [1,3,6,2,5]
+      ]
+    }, {
+      "cases": ["$ColorFill & $AxisPeriods & fill=RarestColor"],
+      "grid": [
+        [2,5,1,3,6],
+        [3,6,2,5,1],
+        [5,1,9,6,2],
+        [6,2,5,1,3],
+        [1,3,6,2,5]
+      ]
+    }, {
+      "cases": [
+        "$ColorFill & $IsometryOrbit",
+        "$ColorFill & $LatticePeriod",
+        "$MinTwoCells & $LatticePeriod"
+      ],
+      "grid": [
+        [2,5,1,3,6],
+        [3,6,2,5,1],
+        [5,1,3,6,2],
+        [6,2,5,1,3],
+        [1,3,6,2,5]
+      ]
+    }, {
+      "cases": [
+        "$ComponentRect & $AxisPeriods & fill=stored",
+        "$ComponentRect & $IsometryOrbit"
+      ],
+      "grid": null
+    }, {
+      "cases": ["$ComponentRect & fill=DominantColor","$ComponentRect & fill=RarestColor"],
+      "grid": null
+    }, {
+      "cases": ["$ComponentRect & $LatticePeriod"],
+      "grid": null
+    }]
+  }, {
+    "id": "fill=RarestColor",
+    "separates": "`fill=RarestColor` from the stored value: the input of `oblique-hidden`",
+    "input": [
+      [1,3,6,2,5,1,3,9,9],
+      [2,5,1,3,6,2,5,9,9],
+      [3,6,8,8,8,8,8,2,5],
+      [5,1,8,8,8,8,8,3,6],
+      [6,2,8,8,8,8,8,5,1],
+      [1,3,8,8,8,8,8,6,2],
+      [2,5,8,8,8,8,8,1,3],
+      [3,6,2,5,1,3,6,2,5],
+      [5,1,3,6,2,5,1,3,6]
+    ],
+    "output": [{
+      "cases": ["concept"],
+      "grid": null
+    }, {
+      "cases": [
+        "$ColorFill & $AxisPeriods & $HiddenFill & fill=stored",
+        "$MinTwoCells & $AxisPeriods"
+      ],
+      "grid": null
+    }, {
+      "cases": ["$ColorFill & $AxisPeriods & fill=DominantColor"],
+      "grid": [
+        [2,5,1,3,6],
+        [3,6,2,5,1],
+        [5,1,8,6,2],
+        [6,2,5,1,3],
+        [1,3,6,2,5]
+      ]
+    }, {
+      "cases": ["$ColorFill & $AxisPeriods & fill=RarestColor"],
+      "grid": [
+        [2,5,1,3,6],
+        [3,6,2,5,1],
+        [5,1,9,6,2],
+        [6,2,5,1,3],
+        [1,3,6,2,5]
+      ]
+    }, {
+      "cases": [
+        "$ColorFill & $IsometryOrbit",
+        "$ColorFill & $LatticePeriod",
+        "$MinTwoCells & $LatticePeriod"
+      ],
+      "grid": [
+        [2,5,1,3,6],
+        [3,6,2,5,1],
+        [5,1,3,6,2],
+        [6,2,5,1,3],
+        [1,3,6,2,5]
+      ]
+    }, {
+      "cases": [
+        "$ComponentRect & $AxisPeriods & fill=stored",
+        "$ComponentRect & $IsometryOrbit"
+      ],
+      "grid": null
+    }, {
+      "cases": ["$ComponentRect & fill=DominantColor","$ComponentRect & fill=RarestColor"],
+      "grid": null
+    }, {
+      "cases": ["$ComponentRect & $LatticePeriod"],
+      "grid": null
+    }]
+  }, {
+    "id": "wide-beside-square-v",
+    "separates": "The input of wide-beside-square, with the primary axis set to V: area, perimeter, and the extent along V then across pick the 5x5 block; the longest side picks the 3x6 block.",
+    "input": [
+      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
+      [4,6,5,4,6,5,4,6,5,4,6,5,4,6,5,4],
+      [4,5,2,2,2,2,2,5,6,4,5,6,4,5,6,4],
+      [4,4,2,2,2,2,2,4,4,4,4,4,4,4,4,4],
+      [4,6,2,2,2,2,2,6,5,4,6,5,4,6,5,4],
+      [4,5,2,2,2,2,2,5,6,4,5,6,4,5,6,4],
+      [4,4,2,2,2,2,2,4,4,4,4,4,4,4,4,4],
+      [4,6,5,4,6,5,4,6,5,4,6,5,4,6,5,4],
+      [4,5,6,4,5,6,4,5,6,4,5,6,4,5,6,4],
+      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
+      [4,6,5,4,6,5,4,6,8,8,8,8,8,8,5,4],
+      [4,5,6,4,5,6,4,5,8,8,8,8,8,8,6,4],
+      [4,4,4,4,4,4,4,4,8,8,8,8,8,8,4,4],
+      [4,6,5,4,6,5,4,6,5,4,6,5,4,6,5,4],
+      [4,5,6,4,5,6,4,5,6,4,5,6,4,5,6,4],
+      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]
+    ],
+    "assign": {
+      "primary_axis": [
+        ["AXIS_V"]
+      ]
+    },
+    "output": [{
+      "cases": ["$Area","$AxisThenCross","$Perimeter"],
+      "grid": [
+        [6,4,5,6,4],
+        [4,4,4,4,4],
+        [5,4,6,5,4],
+        [6,4,5,6,4],
+        [4,4,4,4,4]
+      ]
+    }, {
+      "cases": ["$LongestThenShortest"],
+      "grid": [
+        [5,4,6,5,4,6],
+        [6,4,5,6,4,5],
+        [4,4,4,4,4,4]
+      ]
+    }]
+  }, {
+    "id": "mirror-fill",
+    "separates": "The input of mirror-wide, with the fill set to 0: every copy of the axis phases (1,2) and (1,3) lies under a block. The tile's half-turn symmetry reaches them from (3,1) and (3,2); under the axis periods alone the fill paints them 0.",
+    "input": [
+      [3,3,3,3,3,3,3,3,3,3,7,7,7,3],
+      [3,4,1,1,1,4,2,2,2,4,7,7,7,4],
+      [3,5,1,1,1,5,2,2,2,5,7,7,7,5],
+      [3,6,1,1,1,6,2,2,2,6,7,7,7,6],
+      [3,3,1,1,1,3,2,2,2,3,7,7,7,3],
+      [3,4,1,1,1,4,2,2,2,4,7,7,7,4],
+      [3,5,1,1,1,5,2,2,2,5,7,7,7,5],
+      [3,6,1,1,1,6,2,2,2,6,7,7,7,6],
+      [3,3,1,1,1,3,2,2,2,3,7,7,7,3],
+      [3,4,1,1,1,4,2,2,2,4,7,7,7,4],
+      [3,5,3,5,3,5,3,5,3,5,7,7,7,5],
+      [3,6,5,4,3,6,5,4,3,6,5,4,3,6]
+    ],
+    "assign": {
+      "fill": [
+        [0]
+      ]
+    },
+    "output": [{
+      "cases": ["concept"],
+      "grid": null
+    }, {
+      "cases": ["$AxisPeriods & $HiddenFill & fill=stored"],
+      "grid": [
+        [3,3,3],
+        [0,0,3],
+        [3,5,3],
+        [5,4,3],
+        [3,3,3],
+        [0,0,3],
+        [3,5,3],
+        [5,4,3],
+        [3,3,3],
+        [0,0,3],
+        [3,5,3]
+      ]
+    }, {
+      "cases": ["$AxisPeriods & fill=DominantColor"],
+      "grid": [
+        [3,3,3],
+        [3,3,3],
+        [3,5,3],
+        [5,4,3],
+        [3,3,3],
+        [3,3,3],
+        [3,5,3],
+        [5,4,3],
+        [3,3,3],
+        [3,3,3],
+        [3,5,3]
+      ]
+    }, {
+      "cases": ["$AxisPeriods & fill=RarestColor"],
+      "grid": [
+        [3,3,3],
+        [6,6,3],
+        [3,5,3],
+        [5,4,3],
+        [3,3,3],
+        [6,6,3],
+        [3,5,3],
+        [5,4,3],
+        [3,3,3],
+        [6,6,3],
+        [3,5,3]
+      ]
+    }, {
+      "cases": ["$IsometryOrbit"],
+      "grid": [
+        [3,3,3],
+        [5,6,3],
+        [3,5,3],
+        [5,4,3],
+        [3,3,3],
+        [5,6,3],
+        [3,5,3],
+        [5,4,3],
+        [3,3,3],
+        [5,6,3],
+        [3,5,3]
+      ]
+    }, {
+      "cases": ["$LatticePeriod"],
+      "grid": null
+    }]
+  }, {
+    "id": "tall-beside-square-v",
+    "separates": "The input of tall-beside-square, with the primary axis set to V: area and perimeter pick the 5x5 block; the extent along V then across, and the longest side, pick the 6x3 block.",
+    "input": [
+      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
+      [4,6,5,4,6,5,4,6,5,4,6,5,4,6,5,4],
+      [4,5,2,2,2,2,2,5,6,4,8,8,8,5,6,4],
+      [4,4,2,2,2,2,2,4,4,4,8,8,8,4,4,4],
+      [4,6,2,2,2,2,2,6,5,4,8,8,8,6,5,4],
+      [4,5,2,2,2,2,2,5,6,4,8,8,8,5,6,4],
+      [4,4,2,2,2,2,2,4,4,4,8,8,8,4,4,4],
+      [4,6,5,4,6,5,4,6,5,4,8,8,8,6,5,4],
+      [4,5,6,4,5,6,4,5,6,4,5,6,4,5,6,4],
+      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
+      [4,6,5,4,6,5,4,6,5,4,6,5,4,6,5,4],
+      [4,5,6,4,5,6,4,5,6,4,5,6,4,5,6,4],
+      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
+      [4,6,5,4,6,5,4,6,5,4,6,5,4,6,5,4],
+      [4,5,6,4,5,6,4,5,6,4,5,6,4,5,6,4],
+      [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]
+    ],
+    "assign": {
+      "primary_axis": [
+        ["AXIS_V"]
+      ]
+    },
+    "output": [{
+      "cases": ["$Area","$Perimeter"],
+      "grid": [
+        [6,4,5,6,4],
+        [4,4,4,4,4],
+        [5,4,6,5,4],
+        [6,4,5,6,4],
+        [4,4,4,4,4]
+      ]
+    }, {
+      "cases": ["$AxisThenCross","$LongestThenShortest"],
+      "grid": [
+        [5,6,4],
+        [4,4,4],
+        [6,5,4],
+        [5,6,4],
+        [4,4,4],
+        [6,5,4]
       ]
     }]
   }]

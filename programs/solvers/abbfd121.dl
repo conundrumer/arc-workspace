@@ -44,9 +44,7 @@
     //  onto a visible cell of its color, and no visible cell onto a visible
     //  cell of another color; undefined where a cell takes two colors
     // @witness oblique-hidden: borderline $LatticePeriod
-    //     @reassigned fill
     // @witness oblique-wide: borderline $LatticePeriod
-    //     @reassigned fill
     // @witness lattice-no-axis: borderline $LatticePeriod
     //     @relaxed wallpaper
   | LatticePeriod {}
@@ -58,7 +56,6 @@
     //  undefined where a cell takes two colors
     // @witness mirror-hidden: borderline $IsometryOrbit
     // @witness mirror-wide: borderline $IsometryOrbit
-    //     @reassigned fill
     // @witness oblique-hidden: borderline $LatticePeriod
     // @witness oblique-wide: borderline $LatticePeriod
   | IsometryOrbit {}
@@ -69,8 +66,8 @@
     NoSource {}
     // @rule fill: a hidden cell that no visible cell reaches takes
     //  params.fill
-    // @witness oblique-hidden: borderline $LatticePeriod
-    // @witness mirror-wide: borderline $IsometryOrbit
+    // @witness oblique-fill: borderline $LatticePeriod
+    //     @reassigned fill
     // @witness asym-fill: borderline other
     //     @reassigned fill
   | HiddenFill {}
@@ -85,13 +82,9 @@
   | Perimeter {}
     // @rule select: the selected occluder has the greatest extent along
     //  params.primary_axis, then the greatest extent across it
-    // @witness tall-thin: ordinary concept
+    // @witness tall-thin-v: ordinary concept
     //     @reassigned primary_axis
-    // @witness wide-thin: ordinary concept
-    //     @reassigned primary_axis
-    // @witness tall-beside-square: ordinary concept
-    //     @reassigned primary_axis
-    // @witness wide-beside-square: ordinary concept
+    // @witness wide-thin-h: ordinary concept
     //     @reassigned primary_axis
   | AxisThenCross {}
     // @rule select: the selected occluder has the longest side, then the
@@ -136,6 +129,10 @@
     // --- $HiddenFill ---
     // The pairs hold no hidden cell without a source, so every color stays
     // open.
+    // @derive DominantColor: borderline $LatticePeriod
+    // @derive RarestColor: borderline $LatticePeriod
+    // @ignore: derive SharedColor — fails Subsumption: on one input it gives every color of that input, so it is undefined wherever a cell takes the fill, and elsewhere it gives the output of the stored fill
+    // @ignore: derive VanishedColor — fails Subsumption: on one input it gives every color of that input, so it is undefined wherever a cell takes the fill, and elsewhere it gives the output of the stored fill
     .decl fill(col: Color)
     fill(0). fill(1). fill(2). fill(3). fill(4). fill(5). fill(6). fill(7). fill(8). fill(9).
 
