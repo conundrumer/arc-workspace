@@ -55,7 +55,6 @@ MANIFEST = PurePosixPath(
 
 
 def manifest_path(root: Path = REPO_ROOT) -> Path:
-    """The manifest of the checkout at `root`."""
     return root / MANIFEST
 
 

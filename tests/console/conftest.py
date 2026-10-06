@@ -151,7 +151,7 @@ def srv(tmp_path, monkeypatch):
     monkeypatch.setattr(s, "AGENTS", agents)
     # The proposals dir is its own name, so the test tree sets it too.
     monkeypatch.setattr(s, "PROPS", s.DOCS / "proposals")
-    monkeypatch.setattr(s, "AGENT_PATH", tmp_path / "agents" / "handbook.md")
+    monkeypatch.setattr(s, "AGENT_OUT", tmp_path / "agents")
     monkeypatch.setattr(s, "queue_pick", fake_queue)
     s._test_stagger_launch = s.stagger_launch
     monkeypatch.setattr(s, "stagger_launch", lambda ids: None)

@@ -10,12 +10,10 @@ from controlled_markdown import mctx
 from handbook.agents import (agent_renderings, analyze_next_rendering,
                              unlisted_agents)
 from handbook.context import (codex_renderings, role_text, section_text,
-                              session_text, workflow_bundle, write_interfaces,
-                              write_wrappers)
+                              session_text, workflow_bundle, write_lib_output)
 from handbook.coordinator_document import (coordinator_rendering,
                                            session_start_text)
-from handbook.generated import MANIFEST, regenerate
-from handbook.lib import interface_renderings
+from handbook.generated import MANIFEST
 from handbook.libcheck import check
 from handbook.paths import REPO_ROOT
 from handbook.readers import (context_at, context_diff, context_text,
@@ -82,14 +80,11 @@ if __name__ == "__main__":
         if findings := check():
             print("\n".join(findings))
             sys.exit(1)
-        interfaces = interface_renderings()
         rest = [*agent_renderings(), analyze_next_rendering(),
                 coordinator_rendering(), *codex_renderings()]
         unlisted = unlisted_agents()
-        done = regenerate([*interfaces, *rest])
-        wrappers = write_wrappers()
-        for out in (*(r.path for r in interfaces), wrappers,
-                    *(r.path for r in rest)):
+        written, done = write_lib_output(rest, stale=True)
+        for out in written:
             print(out.relative_to(REPO_ROOT))
         for out in done.removed:
             print(f"removed {out.relative_to(REPO_ROOT)}")
@@ -122,5 +117,5 @@ if __name__ == "__main__":
     elif args:
         sys.exit(f"usage:\n{USAGE}")
     else:
-        write_interfaces()
+        write_lib_output()
         print(session_text(), end="")

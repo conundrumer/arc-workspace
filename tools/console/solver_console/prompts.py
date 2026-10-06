@@ -15,7 +15,7 @@ from pathlib import Path
 import controlled_markdown as nm
 from handbook.agents import (
     AGENT_NAMES,
-    AGENT_PATH,
+    AGENT_OUT,
     agent_meta,
     agent_prompt,
     render,
@@ -93,7 +93,7 @@ def append_path(index: bool = False) -> Path:
         finally:
             tmp.unlink(missing_ok=True)
         sweep_digests(path)
-    write_agent(AGENT_PATH, agents=config.AGENTS)
+    write_agent(AGENT_OUT, agents=config.AGENTS)
     return path
 
 

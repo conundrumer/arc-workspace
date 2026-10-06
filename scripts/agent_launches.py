@@ -136,7 +136,6 @@ def session_resumes(path: Path, agents: set[str], since: float,
 
 
 def timed_entries(path: Path) -> list[Entry]:
-    """The entries of the run at `path` that give a time."""
     return [e for e in run_entries(path) if e.get("timestamp")]
 
 
@@ -255,9 +254,8 @@ def turns(entries: list[Entry]) -> tuple[set[int], set[int]]:
 
 def idle_after(idle: bool, i: int, entry: Entry, starts: set[int],
                ends: set[int]) -> bool:
-    """Whether a run is idle after its `i`-th entry, from whether it was
-    before it: an entry that ends a turn makes it idle, and otherwise an
-    entry of the model or one that starts a turn makes it not."""
+    """Whether a run is idle after its `i`-th entry, from `idle`, whether it
+    was before it."""
     if i in ends:
         return True
     return idle and entry.get("type") != "assistant" and i not in starts
@@ -323,13 +321,10 @@ def turn_after(path: Path, t: float, undecided: list[str]) -> bool:
 
 
 def running_agents(path: Path, undecided: list[str]) -> list[tuple[str, Path]]:
-    """The agents under the run at `path` whose turn has not ended, and whose
-    parent holds no sign that they reported, or whose transcript holds a
-    `user` or `assistant` entry timestamped after the latest sign, each with
-    its parent, each parent's agents after it. An entry of either type is
-    the message that opens a turn or the work of one, so an attachment the
-    harness writes after a turn has ended is none. An agent is passed over
-    unread, with the agents under it, where it and each of them has ended."""
+    """The agents under the run at `path` that have not completed, as HELP
+    gives it, each with its parent, each parent's agents after it. An agent
+    is passed over unread, with the agents under it, where it and each of
+    them has ended."""
     parents = run_launches(path)[1]
     out: list[tuple[str, Path]] = []
     for a in launches(path, undecided):

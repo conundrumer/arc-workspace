@@ -17,6 +17,7 @@ from engine.memo import kept_recent
 from souffle import printer
 from souffle.layout import written_lines
 from handbook import paths
+from handbook.attributes import attr_form
 from handbook.generated import Rendering
 from handbook.items import (
     Comp,
@@ -318,17 +319,7 @@ class LibForm(Enum):
 
 
 def lib_form(document: nm.Node) -> LibForm:
-    """The form an entry document's `lib` attribute states: `interface`
-    where it states none, and an error where it states no form."""
-    value = document.attr("lib")
-    if value is None:
-        return LibForm.INTERFACE
-    try:
-        return LibForm(value.strip())
-    except ValueError:
-        raise SystemExit(
-            f"`lib: {value.strip()}` in {document.source} is no lib form; "
-            "the forms are " + ", ".join(f.value for f in LibForm)) from None
+    return attr_form(document, "lib", LibForm, LibForm.INTERFACE)
 
 
 def lib_part(lib: Path = LIB_SRC, kind: LibForm = LibForm.INTERFACE) -> str:

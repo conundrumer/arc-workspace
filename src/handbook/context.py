@@ -13,11 +13,13 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections.abc import Sequence
 from pathlib import Path
 
 import controlled_markdown as nm
 from engine import checkout
-from handbook.generated import Rendering, write_generated, write_whole_text
+from handbook.generated import (Regenerated, Rendering, regenerate,
+                                write_generated, write_whole_text)
 from handbook.lib import (LIB_SRC, LibForm, interface_renderings,
                           lib_component, lib_form, lib_part)
 from handbook.paths import DOCUMENTS_ROOT, REPO_ROOT, document, repo_label
@@ -203,12 +205,21 @@ def workflow_names(workflows: Path = WORKFLOW_DIR) -> list[str]:
     return sorted(p.stem for p in workflows.glob("*.js"))
 
 
+def no_item_named(kind: str, kinds: str, name: str,
+                  names: list[str]) -> SystemExit:
+    """The exit where no item of a kind, `kind` in the singular and `kinds`
+    in the plural, has the name a reader gave: the line that lists the
+    names there are."""
+    return SystemExit(f"no {kind} named `{name}`; the {kinds} are "
+                      + ", ".join(names))
+
+
 def workflow_file(name: str, workflows: Path = WORKFLOW_DIR) -> Path:
     """The script of the workflow `name`; an error where none stands."""
     path = workflows / f"{name}.js"
     if not path.is_file():
-        raise SystemExit(f"no workflow named `{name}`; the workflows are "
-                         + ", ".join(workflow_names(workflows)))
+        raise no_item_named("workflow", "workflows", name,
+                            workflow_names(workflows))
     return path
 
 
@@ -233,19 +244,19 @@ def role_stems(roles: Path = ROLE_DIR) -> list[str]:
     return sorted(p.stem for p in roles.glob("*.md"))
 
 
-def role_body(name: str, roles: Path = ROLE_DIR) -> str:
-    """One role document under `roles`, as the agent running it reads it: the
-    text the agent's prompt opens with, and nothing above."""
+def role_document(name: str, roles: Path = ROLE_DIR) -> tuple[str, str]:
+    """One role document under `roles`: the agent it runs on, its `agent`
+    attribute or the handbook agent, and the text the agent's prompt opens
+    with, as the agent running it reads it, with nothing above."""
     registry = nm.Registry(DOCUMENTS_ROOT)
-    return nm.role(registry.load(role_file(name, roles)), registry)[1]
+    return nm.role(registry.load(role_file(name, roles)), registry)
 
 
 def role_text(name: str, roles: Path = ROLE_DIR) -> str:
     """One role document under `roles`, as the session that spawns the role
     reads it: `Agent: <name>` on the first line, then the text the agent's
     prompt opens with."""
-    registry = nm.Registry(DOCUMENTS_ROOT)
-    agent, text = nm.role(registry.load(role_file(name, roles)), registry)
+    agent, text = role_document(name, roles)
     return f"Agent: {agent}\n\n{text}"
 
 
@@ -254,17 +265,26 @@ WRAPPERS_PATH = document(REPO_ROOT / "src" / "lib_components" / "components.py")
 checkout under the documents root, the root `LIB_SRC` is read under."""
 
 
-def write_interfaces(lib: Path = LIB_SRC,
-                     wrappers: Path = WRAPPERS_PATH) -> list[Path]:
-    """Write the interface file beside each of the lib's sources
-    (`interface_renderings`) and the module of the lib's wrappers
-    (`write_wrappers`) at `wrappers`, and return the paths."""
-    return [*write_generated(interface_renderings(lib)),
-            write_wrappers(lib, wrappers)]
-
-
-def write_wrappers(lib: Path = LIB_SRC, path: Path = WRAPPERS_PATH) -> Path:
-    return write_whole_text(path, wrappers_text(lib))
+def write_lib_output(renderings: Sequence[Rendering] = (),
+                     lib: Path = LIB_SRC, wrappers: Path = WRAPPERS_PATH,
+                     stale: bool = False) -> tuple[list[Path], Regenerated]:
+    """Write the lib's generated output with `renderings`: the interface
+    file beside each of the lib's sources (`interface_renderings`), written
+    with `renderings` in one `write_generated`, or under `stale` in one
+    `regenerate`, then the module of the lib's wrappers at `wrappers`, which
+    is tracked and so written outside the manifest. Return the paths, the
+    interface files first, then the wrappers module, then `renderings`, and
+    what `regenerate` removed and left."""
+    interfaces = interface_renderings(lib)
+    written = [*interfaces, *renderings]
+    if stale:
+        done = regenerate(written)
+    else:
+        write_generated(written)
+        done = Regenerated([], [])
+    module = write_whole_text(wrappers, wrappers_text(lib))
+    return ([*(r.path for r in interfaces), module,
+             *(r.path for r in renderings)], done)
 
 
 # The files every codex session on the repo reads, in the desktop app or the

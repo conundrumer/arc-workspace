@@ -15,17 +15,17 @@ with no such attribute runs as the handbook agent. The files under
 from __future__ import annotations
 
 import re
+from enum import Enum
 from pathlib import Path
 
 import controlled_markdown as nm
 from controlled_markdown import mctx
 from engine import checkout
+from handbook.attributes import attr_form
 from handbook.context import (ROLE_DIR, WRAPPERS_PATH, composed, entry_text,
-                              write_wrappers)
-from handbook.generated import (Rendering, in_checkout, read_manifest,
-                                write_generated)
-from handbook.lib import (LIB_SRC, LibForm, interface_renderings,
-                          lib_sources)
+                              write_lib_output)
+from handbook.generated import Rendering, in_checkout, read_manifest
+from handbook.lib import LIB_SRC, LibForm, lib_sources
 from handbook.paths import DOCUMENTS_ROOT, REPO_ROOT, document, repo_label
 
 
@@ -41,9 +41,9 @@ AGENT_OUT = checkout.agents()
 """Where the agent definitions are written."""
 
 
-def agent_file(name: str) -> Path:
-    """The definition file of the agent `name`."""
-    return AGENT_OUT / f"{name}.md"
+def agent_file(name: str, out: Path = AGENT_OUT) -> Path:
+    """The definition file of the agent `name` under `out`."""
+    return out / f"{name}.md"
 
 
 def agent_doc(name: str, agents: Path = AGENT_DIR) -> Path:
@@ -53,12 +53,13 @@ def agent_doc(name: str, agents: Path = AGENT_DIR) -> Path:
 
 HANDBOOK_AGENT = "handbook"
 """The agent a role with no `agent` attribute runs on."""
-AGENT_PATH = agent_file(HANDBOOK_AGENT)
 AGENT_NAMES = (HANDBOOK_AGENT, "handbook-expanded")
 # The steps the analyze agent reads after it writes the concept: a document
 # under `AGENT_DIR` with no front matter, rendered to its own file.
 ANALYZE_NEXT = "analyze-next"
 ANALYZE_NEXT_PATH = checkout.claude() / "analyze-next.md"
+ANALYZE_NEXT_READER = "analyze"
+"""The agent that reads `ANALYZE_NEXT`, and whose context shows it."""
 
 
 def agent_document(name: str, agents: Path = AGENT_DIR) -> nm.Node:
@@ -107,22 +108,19 @@ def agent_sources(name: str, lib: Path = LIB_SRC,
     return [*registry.files, *lib_files, *tools]
 
 
-BRIEF_MESSAGE = "brief"
-"""The one value of an agent document's `message` attribute."""
+class MessageForm(Enum):
+    """What an agent takes as its message, as its document's `message`
+    attribute states: under `role`, the form of a document that states
+    none, a brief or a role and then its brief; under `brief`, the brief
+    alone."""
+
+    ROLE = "role"
+    BRIEF = "brief"
 
 
 def _takes_brief(document: nm.Node) -> bool:
-    """Whether an agent document's `message` attribute is `brief`: it takes
-    the brief alone as its message. A document with no such attribute
-    takes a role as its message, and any other value is an error."""
-    value = document.attr("message")
-    if value is None:
-        return False
-    if value.strip() != BRIEF_MESSAGE:
-        raise SystemExit(f"`message: {value.strip()}` in {document.source} "
-                         f"is no message form; the one form is "
-                         f"`{BRIEF_MESSAGE}`")
-    return True
+    return attr_form(document, "message", MessageForm,
+                     MessageForm.ROLE) is MessageForm.BRIEF
 
 
 def agent_prompt(handbook: str) -> str:
@@ -159,42 +157,34 @@ def agent_names(agents: Path = AGENT_DIR) -> list[str]:
             if p.read_text().startswith("---\n")]
 
 
-def agent_paths(path: Path = AGENT_PATH, agents: Path = AGENT_DIR
-                ) -> list[tuple[str, Path]]:
-    """Each agent under `agents` with the file `write_agent` writes it to:
-    beside `path`, the handbook agent's file, under the agent's name."""
-    return [(name, path.with_name(f"{name}{path.suffix}"))
+def agent_renderings(out: Path = AGENT_OUT, lib: Path = LIB_SRC,
+                     agents: Path = AGENT_DIR) -> list[Rendering]:
+    """Each agent's definition under `agents`, at its file under `out`
+    (`agent_file`)."""
+    return [Rendering(agent_file(name, out),
+                      agent_definition(agent_document(name, agents),
+                                       render(name, lib, agents)))
             for name in agent_names(agents)]
 
 
-def agent_renderings(path: Path = AGENT_PATH, lib: Path = LIB_SRC,
-                     agents: Path = AGENT_DIR) -> list[Rendering]:
-    """Each agent's definition under `agents`, at its file (`agent_paths`)."""
-    return [Rendering(out, agent_definition(agent_document(name, agents),
-                                            render(name, lib, agents)))
-            for name, out in agent_paths(path, agents)]
-
-
-def write_agent(path: Path = AGENT_PATH, lib: Path = LIB_SRC,
+def write_agent(out: Path = AGENT_OUT, lib: Path = LIB_SRC,
                 agents: Path = AGENT_DIR,
                 wrappers: Path = WRAPPERS_PATH) -> Path:
-    """Write every agent definition under `agents`, the lib's interface
-    files and its wrappers module at `wrappers`, and return the handbook
-    agent's path, `path`."""
-    write_generated([*interface_renderings(lib),
-                     *agent_renderings(path, lib, agents)])
-    write_wrappers(lib, wrappers)
-    return path
+    """Write every agent definition under `agents` to `out`, with the lib's
+    generated output (`write_lib_output`), and return the handbook agent's
+    file."""
+    write_lib_output(agent_renderings(out, lib, agents), lib, wrappers)
+    return agent_file(HANDBOOK_AGENT, out)
 
 
-def unlisted_agents(path: Path = AGENT_PATH, agents: Path = AGENT_DIR,
+def unlisted_agents(out: Path = AGENT_OUT, agents: Path = AGENT_DIR,
                     root: Path = REPO_ROOT) -> list[Path]:
-    """Each file beside `path`, with its suffix, that no agent under
-    `agents` is written to and that the manifest at `root` does not list,
-    which no run removes."""
-    current = {out for _name, out in agent_paths(path, agents)}
+    """Each file under `out` of the form of an agent's file that no agent
+    under `agents` is written to and that the manifest at `root` does not
+    list, which no run removes."""
+    current = {agent_file(name, out) for name in agent_names(agents)}
     listed = set(read_manifest(root))
-    return [file for file in sorted(path.parent.glob(f"*{path.suffix}"))
+    return [file for file in sorted(out.glob(agent_file("*", out).name))
             if file not in current and in_checkout(file, root) not in listed]
 
 
