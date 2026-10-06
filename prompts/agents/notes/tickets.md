@@ -19,7 +19,6 @@
 
 ## Ticket fields
 - `<agent>` is your agent's name, or `coordinator` where you are the coordinator.
-- Your agent id is the id of your own entry in the listing `uv run python scripts/profile_runs.py --running $CLAUDE_CODE_SESSION_ID` prints, the entry whose call in flight is that command.
 - `<domain>` and `<subject>` give what a ticket of another kind than `change` and `request` is about:
     - `task` and the task id: a solver pass's ticket, and a transcript review's ticket on a pass.
     - `change` and the number of the change's ticket: an editor's or a doc reviewer's ticket on its change where its brief gives that number, and a transcript review's ticket on such an editor's run.
