@@ -32,6 +32,9 @@
 
 ## Cards
 - When the user requests a card to help make a decision regarding a solver, send a handbook agent and tell it to make one based on [card_spec.py](src/study/card_spec.py).
+- Publish each card a handbook agent reports as a private artifact, and give the user the artifact's link in place of the card's path.
+- Where you would give the user several cards in one message, first bundle them with `uv run python scripts/cards.py bundle <name> <page> ...` and publish the bundle alone.
+- Where a card or a bundle is rendered again, publish it again from the same file.
 
 ## Codex
 - Codex already has the handbook in context.

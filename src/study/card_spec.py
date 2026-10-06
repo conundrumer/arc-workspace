@@ -1,4 +1,5 @@
-"""The spec of a card: one question the user decides on, drawn as one HTML page.
+"""The spec of a card: one question the user decides on, drawn as one HTML
+page the Artifact tool publishes as it stands.
 
     uv run python scripts/cards.py render <spec>.json
 
@@ -62,7 +63,9 @@ class Option:
 
 @dataclass
 class Card:
-    # Names the file written to work/cards/<name>.html, and heads the page.
+    # One file name: it names the file written to work/cards/<name>.html,
+    # heads the page, and is the page's title, which the Artifact tool
+    # shows as its name.
     name: str
     # A free label shown under the title. A card of a family shares its kind.
     kind: str

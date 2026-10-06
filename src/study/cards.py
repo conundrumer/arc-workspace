@@ -1,4 +1,5 @@
-"""Standalone HTML cards the user rules on.
+"""The HTML pages of the cards the user rules on, and the page that bundles
+several of them.
 
 A card states one question, shows the task's pairs, shows the code slices
 the question is about, shows the grids a solver produces for a witness
@@ -6,11 +7,19 @@ input, and ends with a numbered list of options. The user answers by index.
 
 `study.card_spec` holds what a card spec may state.
 
-A card is one file under work/cards/ and needs no server: the ARC
-palette and the grid CSS are copied from the console's UI into the page.
+A card is one file under work/cards/ that the Artifact tool publishes as it
+stands. The tool wraps the file in its own document skeleton, so the page
+opens with its `<title>` and its `<style>`, and holds no `<html>`, `<head>`
+or `<body>` tag. The ARC palette and the grid CSS are copied from the
+console's UI into the page.
+
+A bundle composes card pages as they stand and runs no solver, so it takes
+only a page the current renderer wrote: one in `PAGE_FORM` under the
+current `STYLE`.
 """
 
 import html
+import re
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -32,10 +41,14 @@ ARC = [
 ]
 
 
+# At a phone's width the body never scrolls sideways: rows of grids wrap,
+# long words break, and a code slice or a table scrolls in its own box.
 STYLE = """
-:root { color-scheme: light; --well-line:#2A2F36; }
+:root { color-scheme: light; --well-line:#2A2F36; background:#F6F7F8; }
 body { margin:0; padding:24px 28px; background:#F6F7F8; color:#14171B;
-       font:13px/1.55 ui-sans-serif,system-ui,sans-serif; max-width:1000px; }
+       font:13px/1.55 ui-sans-serif,system-ui,sans-serif; max-width:1000px;
+       overflow-wrap:anywhere; }
+a { color:#0B5CAD; }
 h1 { font-size:16px; margin:0 0 2px; }
 h2 { font-size:12px; margin:26px 0 8px; letter-spacing:.06em;
      text-transform:uppercase; color:#5A636B; }
@@ -52,7 +65,7 @@ pre .ln.hl { background:#FFF3BF; }
 pre .num { display:inline-block; width:34px; text-align:right;
            margin-right:12px; color:#9AA3AB; }
 .grids { display:flex; flex-wrap:wrap; gap:18px; align-items:flex-start; }
-.pair { display:flex; gap:10px; align-items:flex-start; padding:7px 9px;
+.pair { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start; padding:7px 9px;
         background:#fff; border:1px solid #DDE1E5; border-radius:4px; }
 .gwrap { display:flex; flex-direction:column; gap:4px; }
 .glabel { font-size:9.5px; color:#7C8791; font-family:ui-monospace,Menlo,monospace;
@@ -64,7 +77,8 @@ pre .num { display:inline-block; width:34px; text-align:right;
 .cap { font-size:11.5px; color:#14171B; max-width:240px; }
 .err { border:1px solid #C2185B; border-radius:4px; padding:8px 10px;
        background:#FFF5F7; font-family:ui-monospace,Menlo,monospace; font-size:11px; }
-table { border-collapse:collapse; font-size:11.5px; }
+.scroll { overflow-x:auto; }
+table { border-collapse:collapse; font-size:11.5px; overflow-wrap:normal; }
 th, td { border:1px solid #DDE1E5; padding:3px 8px; text-align:left;
          font-family:ui-monospace,Menlo,monospace; }
 th { background:#EDEFF1; }
@@ -72,6 +86,8 @@ blockquote { margin:0 0 4px; padding:8px 12px; border-left:3px solid #C7CCD1;
              background:#fff; }
 ol { padding-left:22px; }
 ol li { margin:6px 0; }
+.bundle > section { margin-top:40px; padding-top:16px;
+                    border-top:2px solid #C7CCD1; }
 """
 
 
@@ -146,7 +162,8 @@ def render_table(table: Table) -> str:
     )
     return (
         f"<h2>{html.escape(table.title)}</h2>"
-        f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
+        f'<div class="scroll"><table><thead><tr>{head}</tr></thead>'
+        f"<tbody>{body}</tbody></table></div>"
     )
 
 def _candidate_html(cand: Candidate, card: Card, witness: str) -> str:
@@ -190,7 +207,7 @@ def witness_section(card: Card) -> list[str]:
 
 
 def render(card: Card) -> str:
-    """The card as one standalone HTML page."""
+    """The card as one page in `PAGE_FORM`, titled by the card's name."""
     body = [
         f"<h1>{html.escape(card.name)}</h1>",
         f'<div class="meta">{html.escape(card.kind)} · task {html.escape(card.task_id)}</div>',
@@ -215,16 +232,92 @@ def render(card: Card) -> str:
         body.append("<h2>Options</h2><ol>")
         body.extend(f"<li>{html.escape(o.text)}</li>" for o in card.options)
         body.append("</ol>")
-    return (
-        "<!doctype html>\n<html><head><meta charset=\"utf-8\">"
-        f"<title>{html.escape(card.name)}</title>"
-        f"<style>{STYLE}</style></head><body>{''.join(body)}</body></html>\n"
-    )
+    return _page(html.escape(card.name),
+                 f"{CARD_OPEN}{''.join(body)}{CARD_CLOSE}")
+
+
+CARD_OPEN = '<article class="card">'
+CARD_CLOSE = "</article>"
+
+PAGE_FORM = re.compile(
+    r"<title>(?P<title>[^<]*)</title>\n<style>(?P<style>.*?)</style>\n"
+    r"(?P<body>.*)\n",
+    re.DOTALL,
+)
+"""A page: its escaped title, its style, then its body. A card's body is
+one `CARD_OPEN` ... `CARD_CLOSE`, and a bundle's opens with its list of
+cards."""
+
+
+def _page(title: str, body: str) -> str:
+    """A page in `PAGE_FORM` under `STYLE`, from its escaped title."""
+    return f"<title>{title}</title>\n<style>{STYLE}</style>\n{body}\n"
+
+
+def page_path(name: str) -> Path:
+    """The file work/cards/<name>.html. A name that is not one file name is
+    an error, since its file would stand outside work/cards/."""
+    if Path(name).name != name or name in ("", ".", ".."):
+        raise ValueError(f"{name!r}: a page's name is one file name")
+    return CARDS_DIR / f"{name}.html"
 
 
 def write(card: Card) -> Path:
     """Render `card` to work/cards/<name>.html and return that path."""
+    path = page_path(card.name)
+    return _write(path, render(card))
+
+
+def _write(path: Path, text: str) -> Path:
     CARDS_DIR.mkdir(parents=True, exist_ok=True)
-    path = CARDS_DIR / f"{card.name}.html"
-    path.write_text(render(card))
+    path.write_text(text)
     return path
+
+
+def _card_of(path: Path) -> tuple[str, str]:
+    """The escaped title and the body of the card page at `path`. A page
+    this renderer did not write in `PAGE_FORM`, a bundle among them, is an
+    error that names the page."""
+    try:
+        text = path.read_text()
+    except OSError as e:
+        raise ValueError(f"{path}: {e.strerror}") from None
+    match = PAGE_FORM.fullmatch(text)
+    body = match["body"] if match else ""
+    if not (body.startswith(CARD_OPEN) and body.endswith(CARD_CLOSE)):
+        raise ValueError(f"{path}: not a card page this renderer writes")
+    if match is None or match["style"] != STYLE:
+        raise ValueError(f"{path}: a card page rendered under another style")
+    return match["title"], body
+
+
+def bundle(name: str, paths: Sequence[Path]) -> str:
+    """The pages at `paths` as one page titled `name`: a list of links to
+    the cards by `#card-<n>`, the one fragment form the Artifact tool's
+    viewer passes on, then each card in the order of `paths`. A bundle
+    takes two pages or more, since the tool publishes one card's page as
+    it stands."""
+    if len(paths) < 2:
+        raise ValueError("a bundle takes two card pages or more: publish "
+                         "one card's page as it stands")
+    cards = [_card_of(p) for p in paths]
+    links = "".join(
+        f'<li><a href="#card-{n}">{title}</a></li>'
+        for n, (title, _) in enumerate(cards, 1)
+    )
+    sections = "".join(
+        f'<section id="card-{n}">{body}</section>'
+        for n, (_, body) in enumerate(cards, 1)
+    )
+    return _page(html.escape(name),
+                 f'<div class="bundle"><ol>{links}</ol>{sections}</div>')
+
+
+def write_bundle(name: str, paths: Sequence[Path]) -> Path:
+    """Bundle the pages at `paths` into work/cards/<name>.html and return
+    that path. A name whose file is one of those pages is an error."""
+    path = page_path(name)
+    for p in paths:
+        if p.resolve() == path.resolve():
+            raise ValueError(f"{p}: the bundle {name!r} would overwrite it")
+    return _write(path, bundle(name, paths))
