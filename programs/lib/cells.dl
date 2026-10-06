@@ -560,10 +560,12 @@
 }
 
 /// The isometries of a valued cell set read as a wallpaper pattern, quotiented
-/// by its translation lattice: each candidate is a D4 transform composed with
-/// a shift from the lattice's fundamental domain, one per coset. A candidate
-/// is a symmetry when it takes some cell onto another cell and takes no cell
-/// onto a cell of another value.
+/// by the translations along an axis that its periods give: each candidate is
+/// a D4 transform composed with a shift from the fundamental domain of those
+/// translations, one per coset. A translation off both axes that the periods
+/// do not give is not quotiented out, so the identity with such a shift can
+/// be a symmetry. A candidate is a symmetry when it takes some cell onto
+/// another cell and takes no cell onto a cell of another value.
 .comp Wallpaper<Key, Val> {
     /// The candidates include those whose transform is d.
     .decl transform(d: D4)  // @input
@@ -606,9 +608,12 @@
         _dom_ax(Key, A, D1), _dom_ax(Key, A2, D2), perp(A, A2),
         compose(D1, D2, Delta).
 
-    // delta is a lattice element along axis a that a self-inverse
-    // candidate's square is tested against: zero, or one period toward the
-    // bottom or right edge.
+    // delta is a translation along axis a that a self-inverse candidate's
+    // square may be when that square lies along a: zero, or one period
+    // toward the bottom or right edge. Along an axis with a period, the
+    // lattice holds the multiples of the period and no other translation,
+    // and a square less than two periods long is a multiple only at these
+    // two; along an axis with none, the lattice holds zero alone.
     .decl _lat_ax(key: Key, a: Axis, delta: Offset)
     _lat_ax(Key, A, Delta) :-
         _origin(Key, _), axis_elem(A),
@@ -616,22 +621,21 @@
         ; period(Key, A, K), _canon(A, D), jump_offset(D, K, Delta)
         ).
 
-    // delta is a lattice element that a self-inverse candidate's square is
-    // tested against: the sum of one `_lat_ax` element on each axis.
-    .decl _lat(key: Key, delta: Offset)
-    _lat(Key, Delta) :-
-        _lat_ax(Key, A, D1), _lat_ax(Key, A2, D2), perp(A, A2),
-        compose(D1, D2, Delta).
-
     // Transform d followed by shift delta is a candidate isometry. Where d
-    // is its own inverse, the candidate squares to a translation, which must
-    // be a row of `_lat`.
+    // is its own inverse, the candidate squares to a translation. Where that
+    // translation lies along an axis, it must be a row of `_lat_ax`; where it
+    // lies off both axes, the periods do not determine whether the lattice
+    // holds it, and the cell tests decide.
     .decl _cand(key: Key, d: D4, delta: Offset)
     _cand(Key, D, Delta) :-
         transform(D), _dom(Key, Delta),
         ( !d4_inverse(D, D)
         ; d4_inverse(D, D),
-          apply(D, Delta, DD), compose(Delta, DD, S), _lat(Key, S)
+          apply(D, Delta, DD), compose(Delta, DD, S),
+          ( _lat_ax(Key, _, S)
+          ; axis_elem(A), split(S, A, Along, Across),
+            Along != ZERO, Across != ZERO
+          )
         ).
 
     // The candidate (d, delta) takes the cell at p onto a cell of another
