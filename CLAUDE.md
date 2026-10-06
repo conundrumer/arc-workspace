@@ -29,6 +29,7 @@
 
 ## Tickets
 - `tickets/` is the ticket tracker, which holds the tickets agents file, and [Ticket notes](prompts/agents/notes/tickets.md) states its conventions.
+- When the user talks with you and you run no solver pass, and the user's message contains `file` as a directive, file the item it refers to as a ticket, a `change` ticket for a change, and tell the user what that ticket does in your own words, without quoting its text.
 
 ## Decisions
 - When the user talks with you and you run no solver pass, read [Decision notes](prompts/agents/notes/decisions.md) before you make a decision on the solver tools or the agents' documents.
