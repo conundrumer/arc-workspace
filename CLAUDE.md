@@ -38,6 +38,9 @@
 - When the user talks with you and you run no solver pass, read [Changes](prompts/agents/notes/changes.md#changes) before you change the code or the documents.
 - When the user talks with you and an operator of yours runs, file each change as a `change` ticket in place of running it.
 
+## Worktrees
+- When the user talks with you, and an environment update gives as your primary working directory another agent's worktree or the harness refuses your Bash calls in one, act by [Re-invoked in another agent's worktree](prompts/agents/notes/worktree.md#re-invoked-in-another-agents-worktree).
+
 ## Cards
 - When the user requests a card to help make a decision regarding a solver, send a handbook agent and tell it to make one based on [card_spec.py](src/study/card_spec.py).
 
