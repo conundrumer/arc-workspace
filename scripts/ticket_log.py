@@ -4,12 +4,13 @@ moves between the directories of its statuses, and who holds it."""
 import os
 import re
 import time
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
 from controlled_markdown import mctx
 from ticket_form import FIELD, FRONT, HEADING, LOG
-from ticket_numbers import TICKET_NUMBER, ticket_path
+from ticket_numbers import TICKET_NUMBER, ticket_number, ticket_path
 from ticket_vocabulary import Kind, Resolution, Status, ticked
 from transcripts import Refused
 
@@ -21,6 +22,20 @@ TIME_FORM = "%Y-%m-%dT%H:%M:%SZ"
 
 
 RESOLUTION_WORD = re.compile(r"[a-z]+(?:-[a-z]+)*")
+
+
+CLOSED_BY = "{fixed} by {change} {number}: {note}"
+"""The note of the line that closes a ticket that waits on a change closed
+with `fixed`, with that change's number and note."""
+
+RELEASED_BY = "{change} {number} closed {resolution}"
+"""The note of the line that moves into `open` a ticket that waits on a
+change closed with another resolution, with that change's number and
+resolution."""
+
+
+class Moved(Refused):
+    """A refusal of a call whose ticket another call moved first."""
 
 
 class Wait(StrEnum):
@@ -57,7 +72,19 @@ def read_ticket(path: Path) -> str:
     try:
         return path.read_text()
     except FileNotFoundError:
-        raise Refused(mctx("{path} moved before this call could read it").format(path=path))
+        raise Moved(mctx("{path} moved before this call could read it").format(path=path))
+
+
+def resolution_of(note: str | None) -> Resolution | None:
+    """The resolution `note` opens with, None where it opens with none."""
+    word = RESOLUTION_WORD.match(note or "")
+    return Resolution(word.group()) if word and word.group() in set(Resolution) else None
+
+
+def is_change(path: Path) -> bool:
+    """Whether the ticket at `path` is a `change`."""
+    head = re.match(FRONT, read_ticket(path))
+    return head is not None and head["kind"] == Kind.CHANGE
 
 
 def check_line(status: Status, moves: bool, agent: str, agent_id: str | None,
@@ -71,11 +98,9 @@ def check_line(status: Status, moves: bool, agent: str, agent_id: str | None,
         raise Refused(mctx("an `assigned` line takes your agent id in `--id`"))
     if note is not None and (not note.strip() or "\n" in note or "\r" in note):
         raise Refused(mctx("the note is not one line of text"))
-    if moves and status is Status.CLOSED:
-        word = RESOLUTION_WORD.match(note or "")
-        if not word or word.group() not in set(Resolution):
-            raise Refused(mctx("the note of a move into `closed` opens with one of {resolutions}").format(
-                resolutions=ticked(Resolution)))
+    if moves and status is Status.CLOSED and resolution_of(note) is None:
+        raise Refused(mctx("the note of a move into `closed` opens with one of {resolutions}").format(
+            resolutions=ticked(Resolution)))
 
 
 def check_wait(tickets: Path, note: str | None) -> None:
@@ -88,9 +113,7 @@ def check_wait(tickets: Path, note: str | None) -> None:
             blocked=Status.BLOCKED, user=Wait.USER, change=Wait.CHANGE))
     if wait["change"] is None:
         return
-    path = ticket_path(tickets, wait["change"])
-    head = re.match(FRONT, read_ticket(path))
-    if not head or head["kind"] != Kind.CHANGE:
+    if not is_change(ticket_path(tickets, wait["change"])):
         raise Refused(mctx("ticket `{n}` is no `change`").format(n=wait["change"]))
 
 
@@ -98,6 +121,16 @@ def log_lines(text: str) -> list[re.Match[str]]:
     """The lines of `text`'s log that have the form of a log line."""
     log = [m for m in HEADING.finditer(text) if m.group() == LOG]
     return list(LOG_LINE.finditer(text, log[-1].end())) if log else []
+
+
+def waits_on(text: str) -> str | None:
+    """The number of the change the ticket `text` waits on, which the last
+    line of its log whose note opens with a wait gives. None where that
+    line gives `user`, or where no line's note opens with a wait."""
+    for line in reversed(log_lines(text)):
+        if wait := WAIT.match(line["note"] or ""):
+            return wait["change"]
+    return None
 
 
 def holder(text: str) -> str | None:
@@ -145,7 +178,7 @@ def write_log(tickets: Path, ref: str, status: str, agent: str, source: str, age
     to, origin = status_of(status), status_of(source)
     path = ticket_path(tickets, ref)
     if path.parent.name != origin:
-        raise Refused(mctx("ticket `{ref}` stands in `{actual}`, not `{origin}`").format(
+        raise Moved(mctx("ticket `{ref}` stands in `{actual}`, not `{origin}`").format(
             ref=ref, actual=path.parent.name, origin=origin))
     moves = origin != to
     check_line(to, moves, agent, agent_id, note)
@@ -163,7 +196,7 @@ def write_log(tickets: Path, ref: str, status: str, agent: str, source: str, age
         try:
             os.rename(path, target)
         except FileNotFoundError:
-            raise Refused(mctx("{path} moved before this call could move it").format(path=path))
+            raise Moved(mctx("{path} moved before this call could move it").format(path=path))
         path = target
     with path.open("a") as f:
         # A line written by hand may lack its newline.
@@ -171,3 +204,68 @@ def write_log(tickets: Path, ref: str, status: str, agent: str, source: str, age
             f.write("\n")
         f.write(log_line(to, agent, agent_id, note))
     return path
+
+
+@dataclass
+class Moves:
+    """What a call of `log_moves` did: the paths it moved tickets to, the
+    ticket the call names first, and each ticket that waits on a change it
+    closed whose move was refused, with its path and the reason."""
+    moved: list[Path] = field(default_factory=list[Path])
+    refused: list[tuple[Path, str]] = field(default_factory=list[tuple[Path, str]])
+
+    def add(self, other: "Moves") -> None:
+        self.moved += other.moved
+        self.refused += other.refused
+
+
+def log_moves(tickets: Path, ref: str, status: str, agent: str, source: str, agent_id: str | None,
+              note: str | None) -> Moves:
+    """Writes the log line as `write_log` does, refused as it refuses, and
+    returns the ticket's path, followed, where the line moves a `change`
+    into `closed`, by what `release` returns for it."""
+    to, origin = status_of(status), status_of(source)
+    closes = (to is Status.CLOSED and origin is not Status.CLOSED
+              and is_change(ticket_path(tickets, ref)))
+    moves = Moves([write_log(tickets, ref, status, agent, source, agent_id, note)])
+    if not closes:
+        return moves
+    resolution = resolution_of(note)
+    # `check_line` refuses a move into `closed` whose note opens with no resolution.
+    assert note is not None and resolution is not None
+    moves.add(release(tickets, moves.moved[0], agent, agent_id, resolution, note))
+    return moves
+
+
+def release(tickets: Path, change: Path, agent: str, agent_id: str | None, resolution: Resolution,
+            note: str) -> Moves:
+    """Moves each ticket under `blocked` that waits on the change at
+    `change`, closed with `resolution` and `note`, in the order of their
+    file names, and returns what it did: into `closed`, with the note
+    `CLOSED_BY` gives, where `resolution` is `fixed`, and else into `open`,
+    with the note `RELEASED_BY` gives. A ticket that another call moves
+    first is skipped. A ticket whose move is refused for another reason is
+    given among the refused, and the moves of the others go on. A ticket
+    closed this way that is a `change` moves the tickets that wait on it in
+    turn, and what that does is part of what this call returns. A change
+    filed before tickets had numbers has no ticket that waits on it, since
+    a wait gives a number."""
+    moves = Moves()
+    number = ticket_number(change)
+    if number is None:
+        return moves
+    if resolution is Resolution.FIXED:
+        to, line = Status.CLOSED, CLOSED_BY.format(fixed=resolution, change=Wait.CHANGE, number=number,
+                                                   note=note)
+    else:
+        to, line = Status.OPEN, RELEASED_BY.format(change=Wait.CHANGE, number=number,
+                                                   resolution=resolution)
+    for path in sorted((tickets / Status.BLOCKED).glob("*.md")):
+        try:
+            if waits_on(read_ticket(path)) == number:
+                moves.add(log_moves(tickets, path.name, to, agent, Status.BLOCKED, agent_id, line))
+        except Moved:
+            continue
+        except Refused as e:
+            moves.refused.append((path, str(e)))
+    return moves

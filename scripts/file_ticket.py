@@ -22,7 +22,8 @@ importable(checkout.scripts())
 
 from ticket_form import (DEFECT_SECTIONS, FIELD, LOG, SECTIONS,  # noqa: E402
                          checked_kind, heading, sections_example)
-from ticket_log import AGENT_ID, TIME_FORM, Wait, logged, write_log  # noqa: E402
+from ticket_log import (AGENT_ID, CLOSED_BY, RELEASED_BY, TIME_FORM, Wait,  # noqa: E402
+                        log_moves, logged)
 from ticket_numbers import (SESSION_VAR, SESSIONS, reserve,  # noqa: E402
                             session_id, session_index, ticket_path, write_new)
 from ticket_vocabulary import Domain, Kind, Resolution, Status, ticked  # noqa: E402
@@ -80,6 +81,11 @@ LOG_HELP = mctx("""
     - On a ticket that already stands in `assigned`, the command refuses an `assigned` line unless its `--id` holds the ticket. The holder is the agent id of the last `assigned` line that gives one, in its bracket or as the first word of its note, among the log's final run of `assigned` lines. Where none of them gives one, the ticket has no holder.
     - The note of a line that moves a ticket into `{blocked}` opens with what the ticket waits on: `{user}`, or `{change} <number>`, with `<number>` the number of a `change` ticket the ticket tracker holds.
     - The note of a line that moves a ticket into `closed` opens with its resolution, one of {resolutions}.
+    - Where the line moves a `{change}` ticket into `closed`, the command also moves each ticket under `{blocked}` that waits on that change, and prints the path of each one it moved, one per line, after the change's own path.
+    - A ticket waits on the change that the last line of its log whose note opens with what a ticket waits on gives as `{change} <number>`.
+    - Where the change's resolution is `{fixed}`, each ticket that waits on it moves into `closed`, with the note `{closed_by}`. Where the resolution is another, each moves into `open`, with the note `{released_by}`. Each such line takes the `<agent>` and the `--id` of the call.
+    - A ticket that waits on the change and that another call moves first, the command skips. A `{change}` ticket that the command moves into `closed` this way moves the tickets that wait on it in turn.
+    - The command moves those tickets in the order of their file names. Where the move of one is refused for another reason, the command moves the others, prints the path of each ticket it moved, and then refuses, with the change's path and the path of each ticket it did not move, with the reason. That holds as well for the tickets that wait on a `{change}` the command closes this way.
     - The command refuses, and neither moves nor writes, where `{log}` is not the file's last section or the note spans more than one line.
     """)
 
@@ -176,7 +182,7 @@ def filed_in_main(filing: Filing, args: list[str]) -> int | None:
                           env=checkout.tree_env()).returncode
 
 
-def run(args: Sequence[str | None], help_text: str, count: int, act: Callable[..., Path | int],
+def run(args: Sequence[str | None], help_text: str, count: int, act: Callable[..., Path | int | str],
         filing: Filing | None, argv: list[str]) -> int:
     """Runs a command that takes `count` arguments, and stdin where `act`
     reads it, printing what `act` returns. A `filing` runs in the main
@@ -199,7 +205,7 @@ def run(args: Sequence[str | None], help_text: str, count: int, act: Callable[..
 
 
 def log_args(args: list[str]) -> list[str | None]:
-    """The arguments of `log` as `write_log` takes them after `tickets`,
+    """The arguments of `log` as `log_moves` takes them after `tickets`,
     with None for an agent id or a note the call does not give. Arguments
     in another form come back as given, which `run` refuses by their
     count."""
@@ -213,6 +219,21 @@ def log_args(args: list[str]) -> list[str | None]:
     return [*head, options["--from"], options.get("--id"), rest[0] if rest else None]
 
 
+def log_command(ref: str, status: str, agent: str, source: str, agent_id: str | None,
+                note: str | None) -> str:
+    """Runs `log_moves` and returns the paths it moved tickets to, one per
+    line. Where it gives a refused ticket, prints those paths, then refuses
+    with the change's path and each refused ticket's path and reason."""
+    moves = log_moves(main_tickets(), ref, status, agent, source, agent_id, note)
+    paths = "\n".join(map(str, moves.moved))
+    if not moves.refused:
+        return paths
+    print(paths)
+    refused = "; ".join(f"{p}: {reason}" for p, reason in moves.refused)
+    raise Refused(mctx("{path} moved into `{closed}`, and these tickets that wait on it did not move: "
+                       "{refused}").format(path=moves.moved[0], closed=Status.CLOSED, refused=refused))
+
+
 @dataclass(frozen=True)
 class Subcommand:
     """A subcommand: what it does, which its line in `HELP` and its own help
@@ -222,7 +243,7 @@ class Subcommand:
     args: str
     detail: str
     count: int
-    act: Callable[..., Path | int]
+    act: Callable[..., Path | int | str]
     filing: Filing | None
     parse: Callable[[list[str]], Sequence[str | None]] = list
 
@@ -230,7 +251,8 @@ class Subcommand:
 SUBCOMMANDS = {
     "log": Subcommand(mctx("makes a transition of a ticket and writes its log line"),
                       " <number> <status> <agent> --from <current status> [--id <agent id>] [<note>]",
-                      LOG_HELP, 6, lambda *a: write_log(main_tickets(), *a), TICKET_FILING, log_args),
+                      LOG_HELP, 6, log_command,
+                      TICKET_FILING, log_args),
     "path": Subcommand(mctx("prints the path of a ticket"), " <number>", PATH_HELP, 1,
                        lambda ref: ticket_path(main_tickets(), ref), None),
     "index": Subcommand(mctx("prints the index of your session"), "", "", 0,
@@ -248,8 +270,12 @@ def help_values() -> dict[str, str]:
                 change_sections=ticked(map(heading, SECTIONS[Kind.CHANGE])),
                 request_sections=ticked(map(heading, SECTIONS[Kind.REQUEST])),
                 statuses=ticked(Status), log=LOG, time_form=TIME_FORM,
-                resolutions=ticked(Resolution), blocked=Status.BLOCKED,
+                resolutions=ticked(Resolution), fixed=Resolution.FIXED, blocked=Status.BLOCKED,
                 user=Wait.USER, change=Wait.CHANGE, session_var=SESSION_VAR,
+                closed_by=CLOSED_BY.format(fixed=Resolution.FIXED, change=Wait.CHANGE,
+                                           number="<number>", note="<note>"),
+                released_by=RELEASED_BY.format(change=Wait.CHANGE, number="<number>",
+                                               resolution="<resolution>"),
                 sessions=SESSIONS, invocation=TICKET_FILING.invocation,
                 subcommands="\n".join(SUBCOMMAND_LINE.format(
                     invocation=TICKET_FILING.invocation, name=name, purpose=sub.purpose)

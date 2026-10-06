@@ -146,6 +146,13 @@ def statuses(tickets: Path) -> list[Path]:
     return [tickets / s for s in Status]
 
 
+def ticket_number(path: Path) -> str | None:
+    """The number of the ticket at `path`, which its file name opens with.
+    None for a ticket filed before tickets had numbers."""
+    number = TICKET_NUMBER.fullmatch(path.name.split("_", 1)[0])
+    return number.group() if number else None
+
+
 def ticket_path(tickets: Path, ref: str) -> Path:
     """The path of the ticket numbered `ref`, or named `ref` where it was
     filed before tickets had numbers, in whichever status it stands."""

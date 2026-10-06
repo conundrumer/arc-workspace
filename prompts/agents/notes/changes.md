@@ -28,7 +28,7 @@
 - Where that script exits with status 1, leave the worktree as it is. Where it reports that the rebase conflicts, run the change again with a new first editor, and give the old worktree and its branch in your reply. Where it reports a failed check, send what it reports to the change's editor as a finding of its checks. Otherwise, give the worktree and the script's message in your reply.
     - Where the failed check is the gate, give in that finding, for each `DIFF` line that the change's briefs ask for, the accepted output under `tests/gate/accepted/` to update.
 - Where the harness or the permission classifier denies the merge call, give the worktree in your reply with the merge as unfinished.
-- Once a change is merged, move to `tickets/closed/` its ticket, each ticket its Motivation gives as settled that stands under `tickets/blocked/`, and each `question` ticket filed on it, with `fixed`, the change's number and the hash `master` stands at after the merge as the note.
+- Once a change is merged, move to `tickets/closed/` its ticket, then each `question` ticket filed on it that still stands outside `tickets/closed/`, with `fixed`, the change's number and the hash `master` stands at after the merge as the note.
 - Once a change is merged, close each `refactor` ticket whose module a code editor of the change reports it split, with `fixed`, the change's number where it has a ticket, and the hash `master` stands at after the merge as the note. Where that report gives a part of the module as left unsplit, write that part as a log line on the ticket in place of closing it.
 
 ### A merge an agent was denied
