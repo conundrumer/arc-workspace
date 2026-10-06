@@ -52,6 +52,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 
 ## Commands
 * inline: notes/commands.md#background-work
+* inline: notes/worktree.md#re-invoked-in-another-agents-worktree
 * inline: notes/commands.md#final-report
 
 ## Launching
