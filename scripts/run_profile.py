@@ -9,15 +9,15 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from agent_launches import MESSAGE_TYPES, run_launches
+from agent_launches import idle_after, run_launches, turns
 from command_labels import AGENT_TOOLS, POLL, call_command, command_label
 from controlled_markdown import mctx
 from quota import epoch
 from run_reads import (blocks, in_background, is_prompt,
                        message_text, notified, parent_id, read_meta,
                        results_by_call, run_entries, run_type, session_agents,
-                       session_of, text_of)
-from senders import INTERRUPTED, Sender, sender
+                       session_of)
+from senders import Sender, sender
 from transcripts import Entry, agent_id, is_subagent
 
 
@@ -79,9 +79,6 @@ class Run:
     spans: list[Span]
     in_flight: list[Span]
     backgrounded: list[Span]
-    # Whether the run's turn has ended, or its last entry is the harness's
-    # note that the user interrupted it.
-    ended: bool
     context: int | None
     said: str | None
     # The messages from the run's parent, the brief first, the messages
@@ -196,32 +193,6 @@ def classify(block: dict[str, Any], result: dict[str, Any] | None,
     return Call(pending, background if launched else None, task_ids)
 
 
-def turns(entries: list[Entry]) -> tuple[set[int], set[int]]:
-    """The indices of the entries that start a turn and of those that end
-    one. A prompt starts a turn when the next message entry is the model's;
-    a local command, such as /compact, gives the model none. An assistant
-    entry with no tool call ends a turn when it says so, or when the next
-    message entry is a prompt, and the result of a call that ends the turn,
-    such as SubagentHandback, ends one."""
-    starts: set[int] = set()
-    ends: set[int] = set()
-    nxt: Entry | None = None
-    for i in range(len(entries) - 1, -1, -1):
-        e = entries[i]
-        if is_prompt(e) and nxt is not None and nxt.get("type") == "assistant":
-            starts.add(i)
-        if e.get("type") == "assistant" and not blocks(e, "tool_use"):
-            stop = (e.get("message") or {}).get("stop_reason")
-            if stop in ("end_turn", "stop_sequence") or (
-                    nxt is not None and is_prompt(nxt)):
-                ends.add(i)
-        if e.get("toolEndsTurn"):
-            ends.add(i)
-        if e.get("type") in MESSAGE_TYPES or is_prompt(e):
-            nxt = e
-    return starts, ends
-
-
 def profile(path: Path, undecided: list[str]) -> Run:
     agent_type, description = run_type(path)
     label = agent_id(path) if is_subagent(path) else path.stem
@@ -286,7 +257,6 @@ def profile(path: Path, undecided: list[str]) -> Run:
             elif who is Sender.UNKNOWN:
                 unknown.append(message_text(e))
         if etype == "assistant":
-            idle = False
             tokens = request_input(e)
             context = context if tokens is None else tokens
             text = "\n".join(b.get("text", "") for b in blocks(e, "text")).strip()
@@ -311,10 +281,8 @@ def profile(path: Path, undecided: list[str]) -> Run:
                     running[tid] = (c.background, t)
                     for task in c.task_ids:
                         by_task[task] = tid
-        if i in starts:
-            idle = False
+        idle = idle_after(idle, i, e, starts, ends)
         if i in ends:
-            idle = True
             pending.clear()
         for ident in notified(e) if etype != "assistant" else []:
             tid = by_task.get(ident, ident)
@@ -322,10 +290,6 @@ def profile(path: Path, undecided: list[str]) -> Run:
                 k, start = running.pop(tid)
                 group(k).ran += t - start
     end = prev or 0.0
-    last_message = [e for e in entries if e.get("type") in MESSAGE_TYPES][-1:]
-    interrupted = any(e.get("type") == "user" and text_of(
-        (e.get("message") or {}).get("content")).startswith(INTERRUPTED)
-        for e in last_message)
     brief = [message_text(e) for e in entries[:briefed + 1] if is_prompt(e)]
     if brief and first is not None:
         messages.insert(0, Message(briefed, first, "\n".join(brief), 0.0))
@@ -340,7 +304,7 @@ def profile(path: Path, undecided: list[str]) -> Run:
                               "is unknown").format(run=label))
     return Run(label, agent_type, description, first, wall, parts,
                {k: g for k, g in groups.items() if g.time or g.calls},
-               list(spans.values()), in_flight, backgrounded, idle or interrupted, context, said,
+               list(spans.values()), in_flight, backgrounded, context, said,
                messages, others, unknown, cwd, path)
 
 

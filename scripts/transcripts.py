@@ -4,6 +4,7 @@ project directories, and read their entries."""
 import filecmp
 import json
 import re
+from collections.abc import Iterator
 from functools import cache
 from pathlib import Path
 from typing import Any
@@ -220,6 +221,14 @@ def read_entries(path: Path, naming: set[str] | None = None) -> list[Entry]:
         return [e for line in snap.lines for e in parse(line)]
     lines = sorted(frozenset[int]().union(*(snap.holding(w) for w in naming)))
     return [e for i in lines for e in snap.entry(i)]
+
+
+def entries_back(path: Path) -> Iterator[Entry]:
+    """The entries of the transcript at `path` as it stood when this process
+    first read it, last first, each line parsed only when it is reached."""
+    snap = snapshot(path)
+    for i in range(len(snap.lines) - 1, -1, -1):
+        yield from snap.entry(i)
 
 
 def forked_from(path: Path) -> str | None:

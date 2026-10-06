@@ -121,9 +121,8 @@ def main(argv: list[str]) -> int:
             for agent in pending_agents(find(args.pending), undecided):
                 print(agent)
         elif args.running:
-            profiled = ((parent, profile(p, undecided)) for parent, p in
-                        running_agents(find(args.running), undecided))
-            listed = [(parent, r) for parent, r in profiled if not r.ended]
+            listed = [(parent, profile(p, undecided)) for parent, p in
+                      running_agents(find(args.running), undecided)]
         else:
             paths = list(dict.fromkeys(p for ident in args.ids
                                        for p in transcripts(ident)))

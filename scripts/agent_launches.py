@@ -15,7 +15,8 @@ from run_reads import (MAIN, LaunchStatus, Status, agent_messages, blocks, is_pr
                        in_background, launch_status, notifications, notified, parent_id,
                        parent_label, read_meta, results_by_call, run_entries,
                        session_agents, session_of, session_transcripts, text_of)
-from transcripts import Entry, agent_id, chain, main_transcript, read_entries
+from senders import INTERRUPTED
+from transcripts import Entry, agent_id, chain, entries_back, main_transcript, read_entries
 
 # The openings of the message of a SendMessage result where the call resumed
 # the agent it was sent to, and where it queued the message to a running one.
@@ -56,9 +57,10 @@ def run_launches(path: Path) -> tuple[dict[str, Path], dict[str, frozenset[str]]
 class Launch:
     """An agent a run launched: its agent id, where the run's transcript
     gives it, its transcript, where one gives the call as its launch, the
-    time of the run's call that launched it or of the last call that resumed
-    it, by the run or by any agent of the run's sessions, and the time of
-    the run's last sign that it reported, or None where the run holds none."""
+    time of the run's call that launched it, or in `launched` of the last
+    call that resumed it, by the run or by any agent of the run's sessions,
+    and the time of the run's last sign that it reported, or None where the
+    run holds none."""
     agent: str | None
     path: Path | None
     since: float
@@ -133,12 +135,17 @@ def session_resumes(path: Path, agents: set[str], since: float,
     return out
 
 
-def launched(path: Path, undecided: list[str]) -> list[Launch]:
+def timed_entries(path: Path) -> list[Entry]:
+    """The entries of the run at `path` that give a time."""
+    return [e for e in run_entries(path) if e.get("timestamp")]
+
+
+def launches(path: Path, undecided: list[str]) -> list[Launch]:
     """The agents the run at `path` launched, in the order of their launch.
     A sign that an agent reported is the run's notification of it, or a
     result of its launch that does not say the agent runs in the
     background."""
-    entries = [e for e in run_entries(path) if e.get("timestamp")]
+    entries = timed_entries(path)
     results = results_by_call(entries)
     answered = {b.get("tool_use_id"): epoch(e["timestamp"]) for e in entries
                 if e.get("type") == "user" for b in blocks(e, "tool_result")}
@@ -166,7 +173,14 @@ def launched(path: Path, undecided: list[str]) -> list[Launch]:
                 undecided.append(mctx("{run}: no transcript gives call {call} as "
                                       "its launch").format(run=path.stem, call=tid))
             out.append(Launch(aid, child, epoch(e["timestamp"]), done))
-    own = resumes(entries, path.stem, None, undecided)
+    return out
+
+
+def launched(path: Path, undecided: list[str]) -> list[Launch]:
+    """`launches` of the run at `path`, each from the last call that resumed
+    it where one did."""
+    out = launches(path, undecided)
+    own = resumes(timed_entries(path), path.stem, None, undecided)
     agents = {a.agent for a in out if a.agent}
     others = (session_resumes(path, agents, min(a.since for a in out), undecided)
               if agents else {})
@@ -214,6 +228,83 @@ def session_notified(session: Path, agents: set[str],
 MESSAGE_TYPES = ("user", "assistant")
 
 
+def turns(entries: list[Entry]) -> tuple[set[int], set[int]]:
+    """The indices of the entries that start a turn and of those that end
+    one. A prompt starts a turn when the next message entry is the model's;
+    a local command, such as /compact, gives the model none. An assistant
+    entry with no tool call ends a turn when it says so, or when the next
+    message entry is a prompt, and the result of a call that ends the turn,
+    such as SubagentHandback, ends one."""
+    starts: set[int] = set()
+    ends: set[int] = set()
+    nxt: Entry | None = None
+    for i in range(len(entries) - 1, -1, -1):
+        e = entries[i]
+        if is_prompt(e) and nxt is not None and nxt.get("type") == "assistant":
+            starts.add(i)
+        if e.get("type") == "assistant" and not blocks(e, "tool_use"):
+            stop = (e.get("message") or {}).get("stop_reason")
+            if stop in ("end_turn", "stop_sequence") or (
+                    nxt is not None and is_prompt(nxt)):
+                ends.add(i)
+        if e.get("toolEndsTurn"):
+            ends.add(i)
+        if e.get("type") in MESSAGE_TYPES or is_prompt(e):
+            nxt = e
+    return starts, ends
+
+
+def idle_after(idle: bool, i: int, entry: Entry, starts: set[int],
+               ends: set[int]) -> bool:
+    """Whether a run is idle after its `i`-th entry, from whether it was
+    before it: an entry that ends a turn makes it idle, and otherwise an
+    entry of the model or one that starts a turn makes it not."""
+    if i in ends:
+        return True
+    return idle and entry.get("type") != "assistant" and i not in starts
+
+
+def turn_ended(entries: list[Entry]) -> bool:
+    """Whether the run whose entries are `entries`, or those from one of its
+    timestamped assistant entries on, has ended its turn, or its last
+    message entry is the harness's note that the user interrupted it. An
+    entry with no timestamp moves no turn."""
+    starts, ends = turns(entries)
+    idle = False
+    for i, e in enumerate(entries):
+        if e.get("timestamp"):
+            idle = idle_after(idle, i, e, starts, ends)
+    last = [e for e in entries if e.get("type") in MESSAGE_TYPES][-1:]
+    return idle or any(e.get("type") == "user" and text_of(
+        (e.get("message") or {}).get("content")).startswith(INTERRUPTED)
+        for e in last)
+
+
+@cache
+def has_ended(path: Path) -> bool:
+    """`turn_ended` over the run at `path`, read from its last entry back to
+    its last timestamped assistant entry, which settles it."""
+    tail: list[Entry] = []
+    for p in reversed(chain(path)):
+        for e in entries_back(p):
+            tail.append(e)
+            if e.get("type") == "assistant" and e.get("timestamp"):
+                return turn_ended(tail[::-1])
+    return turn_ended(tail[::-1])
+
+
+@cache
+def live(path: Path) -> bool:
+    """Whether the run at `path`, or a run under it, as the `.meta.json`
+    files of its sessions give them, has not ended."""
+    if not has_ended(path):
+        return True
+    under = run_launches(path)[1].get(agent_id(path), frozenset())
+    agents = {aid: p for s in dict.fromkeys(session_of(p) for p in chain(path))
+              for aid, p in session_agents(s).items()}
+    return any(live(chain(agents[aid])[-1]) for aid in sorted(under) if aid in agents)
+
+
 def turn_after(path: Path, t: float, undecided: list[str]) -> bool:
     """Whether the transcript at `path` holds an entry of a turn timestamped
     after `t`. An entry of a turn with no timestamp counts as not, and an
@@ -233,20 +324,22 @@ def turn_after(path: Path, t: float, undecided: list[str]) -> bool:
 
 
 def running_agents(path: Path, undecided: list[str]) -> list[tuple[str, Path]]:
-    """The agents under the run at `path` whose parent holds no sign that
-    they reported, or whose transcript holds a `user` or `assistant` entry
-    timestamped after the latest sign, each with its parent, each parent's
-    agents after it. An entry of either type is the message that opens a
-    turn or the work of one, so an attachment the harness writes after a
-    turn has ended is none."""
+    """The agents under the run at `path` whose turn has not ended, and whose
+    parent holds no sign that they reported, or whose transcript holds a
+    `user` or `assistant` entry timestamped after the latest sign, each with
+    its parent, each parent's agents after it. An entry of either type is
+    the message that opens a turn or the work of one, so an attachment the
+    harness writes after a turn has ended is none. An agent is passed over
+    unread, with the agents under it, where it and each of them has ended."""
     parents = run_launches(path)[1]
     out: list[tuple[str, Path]] = []
-    for a in launched(path, undecided):
+    for a in launches(path, undecided):
         child = a.path
-        if child is None:
+        if child is None or not live(child):
             continue
-        if a.done is None or (child.stat().st_mtime > a.done
-                              and turn_after(child, a.done, undecided)):
+        if not has_ended(child) and (
+                a.done is None or (child.stat().st_mtime > a.done
+                                   and turn_after(child, a.done, undecided))):
             out.append((parent_label(path), child))
         if agent_id(child) in parents:
             out.extend(running_agents(child, undecided))
