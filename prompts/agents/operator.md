@@ -17,7 +17,6 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 - Where your brief gives no task, take the next one from `bash scripts/queue.sh --order name`.
 * inline: notes/launching.md#passes-on-a-task
 - Where the claim fails on a task you took from the queue, take the next task after it from the queue, with `-n` to list more than one.
-- Before the first pass of a pipeline, where `master` holds commits that change `src/`, `scripts/` or `tests/` since the highest `code-review/<n>` tag, run a code review as [Code](#code) gives, and launch the pass only once that code review, and its assignee where one was launched, has returned.
 - Give an override in the brief of an Analyze, Create or Refine pass only where your brief carries it.
 - Where a pass's report quotes a part of its brief that the pass refused, stop the pipeline there, and launch no review and no assignee for that pass.
 - After each pass, launch a transcript review of it, as [Launching](#launching) gives, and have that review also read the pass call by call, with its timing, for what the tool and the documents did to the pass's work, and file a ticket of kind `interference` where they made the pass's output wrong, and of kind `delay` where they cost it time or tokens alone.
@@ -26,9 +25,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 - Run the next pass once each `interference` ticket of the pipeline stands under `tickets/closed/`. Stop the pipeline there, with the reason in your reply, where a draft gains a finding, where the assignee returns a decision for the user on one of those tickets, or where it neither files a change for one nor closes it.
 
 ## Code
-- Run a code review when your brief gives a batch of tool fixes as ready, or [Solver passes](#solver-passes) gives one.
 - To run a code review, launch a code reviewer with the baseline the last code review recorded: the highest `code-review/<n>` tag, and `<n>` plus one as this code review's number.
-- Launch an assignee with the tickets a code reviewer filed.
 
 ## Change tickets
 - At launch, release your session's tickets and those main names to you: move back to `tickets/open/` each of them under `tickets/assigned/` that has no holder or whose holder has ended, other than one whose last log line has a note that opens with `main`, and each of them under `tickets/blocked/` whose line into `tickets/blocked/` gives `change <number>`, where the ticket with that number stands under `tickets/closed/` with a resolution other than `fixed`.
@@ -43,7 +40,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 - Before your final reply, move back to `tickets/open/` each change you hold under `tickets/assigned/` whose last log line has a note that does not open with `main`, with the reason, and the worktree and the branch where it has them, as the note.
 
 ## After a batch
-- A batch is the agents you launch for one procedure your brief gives, or for the changes you take on one message that gives tickets as open, with the assignee step 6 launched after the batch before, the agents that each assignee of the batch launched, and the changes you merge for that procedure or those changes. A change main gives you as merged joins the batch that runs when its message arrives, and forms a batch of its own where none runs then or where your brief gives it. Once every agent of a batch has returned:
+- A batch is the agents you launch for one procedure your brief gives, or for the changes you take on one message that gives tickets as open, with the agents steps 6 and 7 launched after the batch before, the agents that each assignee of the batch launched, and the changes you merge for that procedure or those changes. A change main gives you as merged joins the batch that runs when its message arrives, and forms a batch of its own where none runs then or where your brief gives it. Once every agent of a batch has returned:
     1. Run `uv run python scripts/profile_runs.py` on each run of the batch alone, then on all of them in one call, taking the agent ids of the agents an assignee launched from its reply. File a `performance` ticket for each label or part of a run or of an agent type that you judge worth fixing, by the test that a change to a tool or a document could shorten it.
     2. Where the batch merged a change, add a worktree with `git worktree add --detach <dir> master`, and read the `commit` field of the dependency record, `.cache/gate/deps.json` in the main worktree. Run `uv run python scripts/gate.py --accept <out>` in that worktree, and file a `performance` ticket for each `SLOW` line it prints, and no ticket for a `LOADED` line.
     3. Then run `uv run python scripts/gate.py --outputs-only --record-deps <out>` there, with a new `<out>`, and remove that worktree.
@@ -51,7 +48,8 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
         - A step for a `DIFF` line ending in `warm` is `uv run python scripts/gate.py <out> <cmd ...>`, with the commands of that commit's gate in the order its `--help` lists them, up to and including that line's command, and you pass over each line it prints on a command's time. Each other step is `uv run python scripts/gate.py --outputs-only <out> <cmd>`, with that line's command. A step at a commit whose gate has no such command counts as before the change.
         - File a `DIFF` line unbisected where it stands at the recorded commit, where no dependency record stood, or where it ends in `warm` and its step at `master` does not print it, and say which in the ticket.
     5. Release the tickets, as [Change tickets](#change-tickets) gives.
-    6. Launch an assignee with every ticket of your session, and each one main names to you, under `tickets/open/` whose kind is not `change`, other than the `question` tickets filed on a change not yet merged. After the last procedure your brief gives, wait for that assignee to return.
+    6. Where a change the batch merged changes `src/`, `scripts/` or `tests/`, run a code review as [Code](#code) gives, and take the next step once the code reviewer has returned.
+    7. Launch an assignee with every ticket of your session, and each one main names to you, under `tickets/open/` whose kind is not `change`, other than the `question` tickets filed on a change not yet merged. After the last procedure your brief gives, wait for that assignee to return.
 
 ## Commands
 * inline: notes/commands.md#background-work
