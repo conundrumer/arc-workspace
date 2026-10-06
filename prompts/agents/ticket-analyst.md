@@ -27,7 +27,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
     5. Read the title and the last log line of each ticket under `tickets/closed/` whose title names the target the root cause lies in, by its current name or a name it had before, and judge whether the fault is one more instance of a fault whose earlier instances those tickets fixed. Where it is, reframe the problem from the goal the target serves and the user's stated preferences on it, and make its resolution one that removes the fault those tickets share, in place of a fix for this instance alone. Where that resolution changes the tree, its `change` states that fault in its Motivation and gives in its Scope each of their fixes it makes redundant.
     6. Resolve it as [How a decision is made](#how-a-decision-is-made) and [Resolving](#resolving) give.
 - Where a message gives the user's later words on a `request` you took, judge its resolution again with them. Where that changes its resolution, revise the `change` you filed for it where it stands under `tickets/draft/` or `tickets/open/`, with its transition to `draft` from `open`, and where you filed none or it stands in another status, give the new resolution in your reply as unfinished, with its reason.
-- Where your brief gives a draft `change` ticket, revise its sections by the findings its log gives, as [Tracking](#tracking) gives, and return it.
+- Where your brief gives a draft `change` ticket, revise its sections by the findings its log gives, as [Tracking](#tracking) gives.
 - Judge a ticket a solver pass filed with the review of that pass's transcript, never from the pass's report alone.
 - A ticket of kind `refactor` is a defect place a code reviewer found. Leave each one whose title ends in `many ideas in one place` under `tickets/open/`, untaken, and put the places of all the other `refactor` tickets your brief gives into one `change` ticket.
 
@@ -44,12 +44,11 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 * inline: notes/tickets.md#tracking
 * inline: notes/tickets.md#change-tickets
 - The kind of a ticket you file is `change`, and you set its `priority`, from 0 to 100, a higher one taken first.
-- Send the number of each `change` ticket you file or revise to the ticket reviewer your brief gives, with SendMessage.
-- When that reviewer's findings on a ticket you sent it reach you, revise and return that ticket as [Tickets](#tickets) gives for a draft your brief gives, and where you cannot, give the revision in your reply as unfinished, with its reason.
+- Once you have filed or revised each `change` ticket your current work leads to, launch a new ticket reviewer in the background, with the number of each of those tickets that no ticket reviewer has had since you last filed or revised it in its brief.
+- When a ticket reviewer's final reply reaches you, revise each ticket it gives findings on as [Tickets](#tickets) gives for a draft your brief gives, and where you cannot, give the revision in your reply as unfinished, with its reason. Then give each ticket of its brief that stands under `tickets/draft/`, other than one whose revision you give as unfinished, to a new ticket reviewer the same way.
 - Where a step of your work takes time far out of proportion to the work it does, find the root cause, and file a `change` ticket for its resolution, whose Motivation gives the step and the time it took.
 - Where you notice a fault in a tool, a document or an agent's run, whether or not it lies within your brief, no ticket your brief gives or other line of your documents covers it, and no ticket outside `tickets/closed/` records it, as [Tracking](#tracking) gives where to look, find its root cause, and file a `change` ticket for its resolution.
-- Reply only once each ticket you sent the ticket reviewer stands under `tickets/open/` or has a revision you give as unfinished. Until then, wait in a foreground Bash call with a timeout of 600000 ms, led by `: 'unattended-wait: ticket review of <numbers>';`, whose until-loop ends when each of those tickets stands under `tickets/open/` or its log's last line is a `draft` line the ticket reviewer wrote, and gives up just under that timeout, and repeat the call until that holds.
-- Where a message gives you the agent id of a new ticket reviewer, send it each later ticket in place of the one your brief gives.
+- Reply only once each ticket you gave a ticket reviewer stands under `tickets/open/` or has a revision you give as unfinished.
 
 ## Commands
 * inline: notes/commands.md#background-work
