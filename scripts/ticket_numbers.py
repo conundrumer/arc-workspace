@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from controlled_markdown import mctx
+from ticket_vocabulary import ticked
 from transcripts import Refused, find, forked_from
 
 IDS = "ids"
@@ -99,9 +100,6 @@ def indexes(tickets: Path) -> dict[int, list[str]]:
 
 
 def indexed(reserved: dict[int, list[str]], session: str) -> int | None:
-    # `file_ticket` imports this module.
-    from file_ticket import ticked
-
     held = [i for i, ids in reserved.items() if session in ids]
     if len(held) > 1:
         raise Refused(mctx("session `{session}` has more than one index: {held}").format(

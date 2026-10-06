@@ -14,9 +14,10 @@ from handbook.paths import importable
 # `scripts/` off `sys.path`, and `file_ticket` imports from there.
 importable(checkout.scripts())
 
-from file_ticket import (NAME_PART, Filing, Kind, Status, logged,  # noqa: E402
-                         main_tickets, run, statuses)
+from file_ticket import (NAME_PART, Filing, logged, main_tickets,  # noqa: E402
+                         run, statuses)
 from ticket_numbers import write_after  # noqa: E402
+from ticket_vocabulary import Kind, Status  # noqa: E402
 from transcripts import Refused  # noqa: E402
 
 LEGACY_HELP = mctx("""

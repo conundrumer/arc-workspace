@@ -9,7 +9,7 @@ import subprocess
 import sys
 import textwrap
 import time
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -20,13 +20,15 @@ from engine import checkout
 from handbook.paths import importable
 
 # `scripts/` is no package: a test loads this module by its path, with
-# `scripts/` off `sys.path`, and `ticket_numbers` and `transcripts` import
-# from there.
+# `scripts/` off `sys.path`, and `ticket_numbers`, `ticket_vocabulary` and
+# `transcripts` import from there.
 importable(checkout.scripts())
 
 from ticket_numbers import (IDS, SESSION_VAR, SESSIONS,  # noqa: E402
                             TICKET_NUMBER, reserve, session_id, session_index,
                             write_new)
+from ticket_vocabulary import (Domain, Kind, Resolution, Status,  # noqa: E402
+                               filer_kinds, ticked)
 from transcripts import Refused  # noqa: E402
 
 HELP = mctx("""
@@ -86,33 +88,6 @@ LOG_HELP = mctx("""
 
 
 
-class Status(StrEnum):
-    """The directories under `tickets/` that a ticket's file moves between."""
-    DRAFT = "draft"
-    OPEN = "open"
-    ASSIGNED = "assigned"
-    BLOCKED = "blocked"
-    CLOSED = "closed"
-
-
-class Resolution(StrEnum):
-    """The words the note of a line into `closed` opens with."""
-    FIXED = "fixed"
-    DUPLICATE = "duplicate"
-    CANNOT_REPRODUCE = "cannot-reproduce"
-    WONTFIX = "wontfix"
-    INVALID = "invalid"
-
-
-class Domain(StrEnum):
-    """What a ticket's subject is."""
-    TASK = "task"
-    CHANGE = "change"
-    COMMIT = "commit"
-    TICKET = "ticket"
-    AGENT = "agent"
-
-
 FIELD = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 """A field of a ticket's name: kebab words, with no `_`, which separates
 the fields."""
@@ -124,74 +99,6 @@ AGENT_ID = re.compile(r"a[0-9a-f]{16}")
 CHANGE_SUBJECT = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)+")
 """A `change` ticket's own subject: its namespace, then kebab words."""
 
-
-class Kind(StrEnum):
-    """What a ticket is."""
-    INTERFERENCE = "interference"
-    DELAY = "delay"
-    QUESTION = "question"
-    BUG = "bug"
-    PERFORMANCE = "performance"
-    REFACTOR = "refactor"
-    CHANGE = "change"
-
-
-PASS_KINDS = frozenset({Kind.INTERFERENCE, Kind.DELAY})
-EDITOR_KINDS = frozenset({Kind.QUESTION, Kind.BUG})
-REVIEW_KINDS = frozenset({Kind.BUG, Kind.PERFORMANCE})
-
-
-class Filer(StrEnum):
-    """A filing agent, by its name."""
-    ANALYZE = "analyze"
-    CREATE = "create"
-    REFINE = "refine"
-    TRANSCRIPT_REVIEW = "transcript-review"
-    SUPERVISOR_CHECK = "supervisor-check"
-    HANDBOOK = "handbook"
-    HANDBOOK_EXPANDED = "handbook-expanded"
-    CODE_EDITOR = "code-editor"
-    DOC_EDITOR = "doc-editor"
-    OPERATOR = "operator"
-    DOC_REVIEWER = "doc-reviewer"
-    TICKET_REVIEWER = "ticket-reviewer"
-    CODE_REVIEWER = "code-reviewer"
-    MAIN = "main"
-    ASSIGNEE = "assignee"
-
-
-FILER_KINDS: dict[Filer, frozenset[Kind]] = {
-    Filer.ANALYZE: PASS_KINDS,
-    Filer.CREATE: PASS_KINDS,
-    Filer.REFINE: PASS_KINDS,
-    Filer.TRANSCRIPT_REVIEW: PASS_KINDS,
-    Filer.SUPERVISOR_CHECK: PASS_KINDS,
-    Filer.HANDBOOK: PASS_KINDS,
-    Filer.HANDBOOK_EXPANDED: PASS_KINDS,
-    Filer.CODE_EDITOR: EDITOR_KINDS,
-    Filer.DOC_EDITOR: EDITOR_KINDS,
-    Filer.OPERATOR: REVIEW_KINDS,
-    Filer.DOC_REVIEWER: REVIEW_KINDS,
-    Filer.TICKET_REVIEWER: REVIEW_KINDS,
-    Filer.CODE_REVIEWER: REVIEW_KINDS | {Kind.REFACTOR, Kind.QUESTION},
-    Filer.MAIN: frozenset({Kind.CHANGE}),
-    Filer.ASSIGNEE: frozenset({Kind.CHANGE}),
-}
-"""The kinds each filing agent, by its name, may file."""
-
-
-def is_agent(agent: str, name: str) -> bool:
-    return agent == name or agent.startswith(f"{name}-")
-
-
-def filer_kinds(agent: str) -> frozenset[Kind]:
-    """The kinds `agent` may file: those of its name, or of the longest
-    name it extends with `-<suffix>`. Any other name is refused."""
-    for name in sorted(Filer, key=len, reverse=True):
-        if is_agent(agent, name):
-            return FILER_KINDS[name]
-    raise Refused(mctx("the document of `{agent}` gives it no ticket kinds: the agents that file are {names}").format(
-        agent=agent, names=ticked(Filer)))
 
 FRONT = r"---\nkind: (?P<kind>\S+)\n(?P<fields>(?:[a-z-]+: .*\n)*)---\n"
 
@@ -255,10 +162,6 @@ LOG_LINE = re.compile(rf"^.*? (?P<status>{'|'.join(Status)}) \[(?P<agent>[^\]\s]
 """A log line, of whatever time form, as the command or a hand wrote it."""
 
 NAME_PART = re.compile(r"[^\s/]+")
-
-
-def ticked(names: Iterable[str]) -> str:
-    return ", ".join(f"`{n}`" for n in names)
 
 
 def statuses(tickets: Path) -> list[Path]:

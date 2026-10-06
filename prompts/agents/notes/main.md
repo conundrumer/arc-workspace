@@ -8,7 +8,8 @@
 ## Tickets
 - File and track a ticket by [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields), [Tracking](prompts/agents/notes/tickets.md#tracking) and [Change tickets](prompts/agents/notes/tickets.md#change-tickets).
 - While the user discusses an item with you, file nothing on it until the user's message contains `file` as a directive.
-- Where you run no solver pass and the user's message contains `file` as a directive, file the item it refers to as a ticket, a `change` ticket for a change, and tell the user what that ticket does in your own words, without quoting its text.
+- Where you run no solver pass and the user's message contains `file` as a directive, file the item it refers to as a ticket, a `bug` ticket for a fault whose cause no assignee has found, in place of a change that fixes it, and a `change` ticket for every other change, and tell the user what that ticket does in your own words, without quoting its text.
+- Launch an assignee with each `bug` ticket you file, before you end your turn with no other work.
 
 ## Decisions
 - Where you run no solver pass, read [Decision notes](prompts/agents/notes/decisions.md) before you make a decision on the solver tools or the agents' documents.
@@ -17,7 +18,7 @@
 - To edit a document an agent reads, send a request to the `doc-editor` agent.
 - Before you launch an agent, read [Launching notes](prompts/agents/notes/launching.md).
 - Where you run no solver pass, read [Changes](prompts/agents/notes/changes.md#changes) before you change the code or the documents.
-- While an operator of yours runs, run no change yourself, and file it as a `change` ticket once [Tickets](#tickets) has you file it.
+- While an operator of yours runs, run no change yourself, and file it as a ticket once [Tickets](#tickets) has you file it.
 
 ## Worktrees
 - Where an environment update gives as your primary working directory another agent's worktree or the harness refuses your Bash calls in one, act by [Re-invoked in another agent's worktree](prompts/agents/notes/worktree.md#re-invoked-in-another-agents-worktree).
