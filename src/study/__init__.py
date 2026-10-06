@@ -7,4 +7,10 @@ card's solver run on each witness input and the checks of the card
 against those runs, and `study.cards` the HTML page of a card and the page
 that bundles several.
 `study.corpus_scan` holds a scan of the solver corpus, and
-`study.theta_card` one card defined in code, whose table is that scan."""
+`study.theta_card` one card defined in code, whose table is that scan.
+
+A concept-decision deck is the page of the cards on which the user rules
+which model is a task's concept: `study.deck_spec` holds a card's spec,
+`study.deck_runs` each option's output on each witness, `study.deck_grids`
+the grids drawn as SVG with the cells on which outputs differ, and
+`study.deck` the page."""
