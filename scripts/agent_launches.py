@@ -161,8 +161,7 @@ def launches(path: Path, undecided: list[str]) -> list[Launch]:
                 continue
             tid = b.get("id", "")
             given = results.get(tid)
-            background = given is not None and in_background(given, undecided,
-                                                             agent_id(path), tid)
+            background = given is not None and in_background(given, undecided, tid)
             result = given or {}
             signs = [told.get(tid), told.get(result.get("agentId", "")),
                      None if background else answered.get(tid)]
@@ -418,12 +417,7 @@ def reports(path: Path, since: float, undecided: list[str]) -> list[Report] | No
         result = e.get("toolUseResult")
         if call and isinstance(result, dict) and any(
                 b.get("tool_use_id") == call for b in blocks(e, "tool_result")):
-            status = launch_status(result)
-            if status is LaunchStatus.COMPLETED:
+            if launch_status(result, undecided, call) is LaunchStatus.COMPLETED:
                 out.append(Report(ReportKind.RESULT, t,
                                   text_of(result.get("content")).strip()))
-            elif status is None:
-                undecided.append(mctx("{run}: the result of its launch gives the "
-                                      "status `{status}`, of no known form").format(
-                    run=aid, status=result.get("status")))
     return sorted(out, key=lambda r: r.time)

@@ -21,8 +21,6 @@ LIST_MARKER = re.compile(r"^\s*(?:[-*+]|\d+[.)])?\s*")
 
 
 def low_wait(r: Run) -> bool:
-    """Whether the `waits` and `idle` of `r` are under LOW_WAIT_PCT% of its
-    wall time."""
     waited = r.parts[Part.WAITS] + r.parts[Part.IDLE]
     return waited * 100 < r.wall * LOW_WAIT_PCT
 

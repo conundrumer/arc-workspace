@@ -4,7 +4,7 @@ not launch, another sender, or one that is unknown, as the HELP of
 
 from enum import Enum
 
-from run_reads import AGENT_MESSAGE, MAIN, NOTIFICATION, message_text
+from run_reads import AGENT_MESSAGE, MAIN, NOTIFICATION, member, message_text
 from transcripts import Entry
 
 # The start of the text of the entry the harness writes where the user
@@ -38,9 +38,9 @@ def sender(entry: Entry, parent: str, children: frozenset[str]) -> Sender:
     queued = entry.get("type") == "attachment"
     given = (entry.get("attachment") or {}) if queued else entry
     kind = (given.get("origin") or {}).get("kind")
-    if kind is not None and kind not in Origin:
+    origin = member(Origin, kind)
+    if kind is not None and origin is None:
         return Sender.UNKNOWN
-    origin = None if kind is None else Origin(kind)
     from_main = Sender.PARENT if parent == MAIN else Sender.OTHER
     if origin is Origin.TASK_NOTIFICATION or NOTIFICATION.search(text):
         return Sender.OTHER

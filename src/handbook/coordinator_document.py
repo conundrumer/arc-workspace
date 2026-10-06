@@ -8,8 +8,10 @@ session's start, at a resume, after a `/clear` and after each compaction.
 Claude Code fires that hook for each top-level session and for no subagent,
 and it states the session's entry point in `CLAUDE_CODE_ENTRYPOINT`: the
 hook gives the rendering to a session the user talks with, and nothing to a
-`claude -p` session. A `claude -p` session keeps the entry point it inherits where that
-is `claude-desktop`, so the hook also gives nothing to a session whose
+`claude -p` session. A `claude -p` session takes `sdk-cli` where the entry
+point it inherits is `cli`, and keeps any other, such as `claude-desktop`.
+So a session whose entry point is `cli` is one the user talks with, and the
+hook gives nothing to a session whose entry point is a kept one and whose
 process, `CLAUDE_PID`, was started with `-p` or `--print`. The hook's text
 reaches the session whole only up to `HOOK_TEXT_CAP` characters, so a
 longer rendering is a fault.
@@ -57,6 +59,10 @@ class EntryPoint(StrEnum):
 USER_ENTRY_POINTS = frozenset({EntryPoint.CLI, EntryPoint.DESKTOP})
 """The entry points of a session the user talks with."""
 
+KEPT_ENTRY_POINTS = USER_ENTRY_POINTS - {EntryPoint.CLI}
+"""The entry points of a session the user talks with that a `claude -p`
+session started under it keeps."""
+
 
 def coordinator_text(doc: Path = COORDINATOR_DOC) -> str:
     """The coordinator's document, rendered from `doc` as an entry document
@@ -85,13 +91,18 @@ def coordinator_rendering(path: Path = COORDINATOR_PATH,
     return Rendering(path, coordinator_text(doc))
 
 
+def _claude_code_value(env: Mapping[str, str], name: str) -> str:
+    value = env.get(name)
+    if value is None:
+        raise SystemExit(f"{name} is not set: the session-start "
+                         "hook runs only under Claude Code")
+    return value
+
+
 def entry_point(env: Mapping[str, str]) -> EntryPoint:
     """The entry point `env` states. A missing one, and one no
     `EntryPoint` names, are faults."""
-    value = env.get(ENTRY_POINT_ENV)
-    if value is None:
-        raise SystemExit(f"{ENTRY_POINT_ENV} is not set: the session-start "
-                         "hook runs only under Claude Code")
+    value = _claude_code_value(env, ENTRY_POINT_ENV)
     try:
         return EntryPoint(value)
     except ValueError:
@@ -104,12 +115,12 @@ def entry_point(env: Mapping[str, str]) -> EntryPoint:
 def print_session(env: Mapping[str, str]) -> bool:
     """Whether the session's process, as `env` states it, was started with
     one of `PRINT_FLAGS`. `ps` gives the arguments joined by spaces, so an
-    argument that holds a space and a flag as a word reads as that flag. A
-    missing pid, and a process `ps` does not find, are faults."""
-    pid = env.get(SESSION_PID_ENV)
-    if pid is None:
-        raise SystemExit(f"{SESSION_PID_ENV} is not set: the session-start "
-                         "hook runs only under Claude Code")
+    argument that holds a space and a flag as a word reads as that flag.
+    The hook asks this only of a session whose entry point is one of
+    `KEPT_ENTRY_POINTS`, so a prompt the user gives as an argument of a
+    `cli` session never reads as a flag. A missing pid, and a process `ps`
+    does not find, are faults."""
+    pid = _claude_code_value(env, SESSION_PID_ENV)
     done = subprocess.run(["ps", "-ww", "-o", "args=", "-p", pid],
                           capture_output=True, text=True)
     if done.returncode != 0:
@@ -122,13 +133,17 @@ def session_start_text(env: Mapping[str, str], path: Path = COORDINATOR_PATH,
                        doc: Path = COORDINATOR_DOC) -> str:
     """What the session-start hook gives the session `env` describes: the
     coordinator's document, written to `path` first, for a session the user
-    talks with, and nothing for a `claude -p` session. Claude Code puts a
+    talks with, and nothing for a `claude -p` session: one whose entry
+    point is none of `USER_ENTRY_POINTS`, or is one of `KEPT_ENTRY_POINTS`
+    where `print_session` holds. Claude Code puts a
     hook's output in the session's context only where the hook exits 0, so
     where the write fails, the hook gives the failure's text and then the
     rendering. That text does not count against `HOOK_TEXT_CAP`: past the
     cap, the session's preview opens with it, and the file Claude Code
     names holds the rest."""
-    if entry_point(env) not in USER_ENTRY_POINTS or print_session(env):
+    point = entry_point(env)
+    if point not in USER_ENTRY_POINTS or (point in KEPT_ENTRY_POINTS
+                                          and print_session(env)):
         return ""
     rendering = coordinator_rendering(path, doc)
     try:

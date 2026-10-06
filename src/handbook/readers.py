@@ -77,16 +77,25 @@ CONTEXT_READERS = {
 """Each reader the `context` command knows, by name."""
 
 
+def _calls(name: str, form: str | None,
+           values: list[str]) -> list[tuple[str, list[str]]]:
+    return [(name, [v]) for v in values] if form else [(name, [])]
+
+
 def reader_calls() -> list[tuple[str, list[str]]]:
     """Each reader the `context` command knows, with each argument list it
     takes."""
-    calls: list[tuple[str, list[str]]] = []
-    for name, reader in CONTEXT_READERS.items():
-        if reader.form:
-            calls += [(name, [value]) for value in reader.values(DOCUMENTS_ROOT)]
-        else:
-            calls.append((name, []))
-    return calls
+    return [call for name, reader in CONTEXT_READERS.items()
+            for call in _calls(name, reader.form, reader.values(DOCUMENTS_ROOT))]
+
+
+def _command(reader: str, args: list[str]) -> str:
+    """The `context` command line that prints one reader's context."""
+    return " ".join(["context", reader, *args])
+
+
+def _usage(reader: str, form: ArgumentForm | None) -> str:
+    return _command(reader, [form] if form else [])
 
 
 def contexts_text() -> str:
@@ -94,8 +103,7 @@ def contexts_text() -> str:
     argument form, and the values that argument takes."""
     out = []
     for name, reader in CONTEXT_READERS.items():
-        form = reader.form
-        head = f"context {name}" + (f" {form}" if form else "")
+        head = _usage(name, reader.form)
         names = reader.values(DOCUMENTS_ROOT)
         out.append(f"{head:<24}{', '.join(names)}".rstrip())
     return "\n".join(out) + "\n"
@@ -108,20 +116,13 @@ def context_text(reader: str, args: list[str]) -> str:
                          f"`{reader}`\n{contexts_text()}".rstrip())
     known = CONTEXT_READERS[reader]
     form = known.form
-    if form and len(args) != 1:
-        raise SystemExit(f"usage: context {reader} {form}")
-    if not form and args:
-        raise SystemExit(f"usage: context {reader}")
+    if len(args) != (1 if form else 0):
+        raise SystemExit(f"usage: {_usage(reader, form)}")
     return known.context(args)
 
 
 CONTEXT_SCRIPT = (checkout.scripts() / "context.py").relative_to(checkout.ROOT)
 """The command that prints a reader's context, from a checkout's root."""
-
-
-def _command(reader: str, args: list[str]) -> str:
-    """The `context` command line that prints one reader's context."""
-    return " ".join(["context", reader, *args])
 
 
 @contextmanager
@@ -209,10 +210,7 @@ def _calls_in(tree: Path, commit: str) -> list[tuple[str, list[str]]]:
             raise SystemExit(mctx("A line of `contexts` at {commit} is not a "
                                   "reader: {line}").format(commit=commit, line=line))
         name, form, values = match.groups()
-        if form:
-            calls += [(name, [v]) for v in values.split(", ") if v]
-        else:
-            calls.append((name, []))
+        calls += _calls(name, form, [v for v in values.split(", ") if v])
     return calls
 
 

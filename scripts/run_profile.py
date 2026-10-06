@@ -169,7 +169,7 @@ def classify(block: dict[str, Any], result: dict[str, Any] | None,
     task_ids = [str(r[k]) for k in ("backgroundTaskId", "taskId", "agentId") if r.get(k)]
     launched = bool(r.get("backgroundTaskId")) or (
         name in AGENT_TOOLS and result is not None
-        and in_background(result, undecided, run, str(block.get("id"))))
+        and in_background(result, undecided, str(block.get("id"))))
     if name in AGENT_TOOLS:
         kind = launched_type(inp, result, session)
         if kind is None:

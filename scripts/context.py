@@ -63,6 +63,11 @@ HELP = mctx("""
     - `context --at <commit> <reader> [args]` prints that context as the commit's tree renders it, with the commit's own code, and `context --diff <commit> <reader> [args]` prints the unified diff from that render to the one of the worktree. Where only one side defines the reader, as `contexts --diff` marks it, `--diff` takes the other side's context as empty, so an added reader's diff gains every line and a removed one's loses every line. Any other failed render is an error. Neither form changes the worktree: git writes the commit's tree into a temporary directory, and the render runs there.
     """)
 
+# The lines of the usage block of HELP, which the command exits with on
+# arguments of no known form.
+USAGE = "\n".join(line.strip() for line in HELP.split("```")[1].splitlines()
+                  if line.strip())
+
 # The forms of the `context` command that render at a commit.
 AT_COMMIT = {"--at": context_at, "--diff": context_diff}
 
@@ -115,10 +120,7 @@ if __name__ == "__main__":
     elif args and args[0] == "context":
         print(context_text(args[1] if args[1:] else "", args[2:]), end="")
     elif args:
-        sys.exit(f"usage: {sys.argv[0]} "
-                 f"[--help | --write | session-start | role <name> | section <where> "
-                 f"| workflow <name> | contexts [--diff <commit>] "
-                 f"| context [--at <commit> | --diff <commit>] <reader> [args]]")
+        sys.exit(f"usage:\n{USAGE}")
     else:
         write_interfaces()
         print(session_text(), end="")

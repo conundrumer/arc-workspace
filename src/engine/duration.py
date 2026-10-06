@@ -17,7 +17,7 @@ import contextlib
 import re
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 from controlled_markdown import mctx
 
@@ -30,27 +30,23 @@ STEP = mctx("{tool}: {step} took {secs:.0f} s")
 """A step line, with the step after the tool."""
 
 
-@contextlib.contextmanager
-def footer(tool: str) -> Iterator[None]:
+def footer(tool: str) -> contextlib.AbstractContextManager[None]:
     """Run the block, then write the footer of `tool` on stderr, however the
     block ends."""
-    start = time.monotonic()
-    try:
-        yield
-    finally:
-        sys.stdout.flush()
-        print(FOOTER.format(tool=tool, secs=time.monotonic() - start), file=sys.stderr,
-              flush=True)
+    return _timed(lambda secs: FOOTER.format(tool=tool, secs=secs))
+
+
+def step(tool: str, name: str) -> contextlib.AbstractContextManager[None]:
+    """Run the block, then write the step line of step `name` of `tool` on
+    stderr, however the block ends."""
+    return _timed(lambda secs: STEP.format(tool=tool, step=name, secs=secs))
 
 
 @contextlib.contextmanager
-def step(tool: str, name: str) -> Iterator[None]:
-    """Run the block, then write the step line of step `name` of `tool` on
-    stderr, however the block ends."""
+def _timed(line: Callable[[float], str]) -> Iterator[None]:
     start = time.monotonic()
     try:
         yield
     finally:
         sys.stdout.flush()
-        print(STEP.format(tool=tool, step=name, secs=time.monotonic() - start),
-              file=sys.stderr, flush=True)
+        print(line(time.monotonic() - start), file=sys.stderr, flush=True)

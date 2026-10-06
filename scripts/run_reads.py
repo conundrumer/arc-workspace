@@ -23,7 +23,6 @@ TAG = re.compile(r"<(task-id|tool-use-id)>([^<]+)</\1>")
 
 
 def member[E: Enum](kind: type[E], value: object) -> E | None:
-    """The member of `kind` whose value is `value`, or None where none is."""
     return next((m for m in kind if m.value == value), None)
 
 
@@ -44,24 +43,23 @@ class LaunchStatus(Enum):
     """The agent ran in the foreground and reported."""
 
 
-def launch_status(result: dict[str, Any]) -> LaunchStatus | None:
-    """The status of the result of an Agent call, or None where it gives
-    none or one of no known form."""
-    return member(LaunchStatus, result.get("status"))
-
-
-def in_background(result: dict[str, Any], undecided: list[str], run: str,
-                  call: str) -> bool:
-    """Whether `result`, the result of the Agent call `call` of the run
-    `run`, says the agent runs in the background. A status of no known form
-    counts as not, and an `undecided` line names the run and the call."""
-    status = launch_status(result)
+def launch_status(result: dict[str, Any], undecided: list[str],
+                  call: str) -> LaunchStatus | None:
+    """The status of `result`, the result of the Agent call `call`. A status
+    of no known form gives an `undecided` line that names only the call, so
+    a result that several readers read gives one line."""
+    status = member(LaunchStatus, result.get("status"))
     if status is None:
-        undecided.append(mctx("{run}: the result of call {call} gives the status "
-                              "`{status}`, of no known form, so it counts as not "
-                              "in the background").format(
-            run=run, call=call, status=result.get("status")))
-    return status is LaunchStatus.ASYNC_LAUNCHED
+        undecided.append(mctx("Agent call {call}: its result gives the status "
+                              "`{status}`, of no known form").format(
+            call=call, status=result.get("status")))
+    return status
+
+
+def in_background(result: dict[str, Any], undecided: list[str], call: str) -> bool:
+    """Whether `result`, the result of the Agent call `call`, says the agent
+    runs in the background. A status of no known form counts as not."""
+    return launch_status(result, undecided, call) is LaunchStatus.ASYNC_LAUNCHED
 
 
 @dataclass

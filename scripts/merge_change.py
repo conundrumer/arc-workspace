@@ -166,7 +166,7 @@ def set_up_submodules(worktree: Path, main: Path) -> None:
     does. A failure is a refusal."""
     print("merge_change: setting up the submodules from the main tree", flush=True)
     try:
-        with timed(f"the submodule setup of {worktree}"):
+        with timed(mctx("the submodule setup of {worktree}").format(worktree=worktree)):
             update(worktree, main)
     except checkout.GitFailed as exc:
         raise Refused(f"setting up the submodules from {main} failed: {exc}") from exc
@@ -301,7 +301,7 @@ def rebase(change: Change, onto: str, onto_name: str, restore: bool) -> None:
     index at `backup`; and refuse."""
     print(mctx("merge_change: rebasing {branch} onto {onto}").format(
         branch=change.branch, onto=onto_name), flush=True)
-    with timed(f"the rebase of {change.branch}"):
+    with timed(mctx("the rebase of {branch}").format(branch=change.branch)):
         done = checkout.git(change.worktree, "rebase", onto)
     if done.returncode == 0:
         return
@@ -339,7 +339,7 @@ def commit(worktree: Path, message: str, main: Path, backup: Path) -> Change:
     stage(worktree, main, backup)
     if committing:
         print(f"merge_change: committing on {branch}", flush=True)
-        with timed(f"the commit on {branch}"):
+        with timed(mctx("the commit on {branch}").format(branch=branch)):
             checkout.git_out(worktree, "commit", "-q", "-m", message)
     return Change(worktree, branch, frozenset(touched), before,
                   backup if committing else None,
@@ -479,7 +479,7 @@ def land(main: Path, changes: Sequence[Change], gate_out: Path) -> None:
     failed: list[str] = []
     for c in changes:
         try:
-            with timed(f"the removal of {c.worktree}"):
+            with timed(mctx("the removal of {worktree}").format(worktree=c.worktree)):
                 remove(main, c)
         except (Failed, checkout.GitFailed) as exc:
             failed.append(str(exc))
