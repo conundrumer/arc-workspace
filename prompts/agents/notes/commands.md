@@ -2,8 +2,8 @@
 - The statements on running commands, waiting on them, and sending a final reply, that more than one entry point inlines.
 
 ## commands
-- Run each command in the foreground, with a timeout of 600000 ms on the Bash call.
-- End your turn only once each command you started has finished.
+- Run each command in the foreground, with a timeout of 600000 ms on the Bash call, other than a budget timer your documents have you start.
+- End your turn only once each command you started has finished, other than that timer.
 - Where the harness moves a command to the background, wait in a foreground Bash call with a timeout of 600000 ms, whose until-loop gives up just under that timeout, and repeat the call until the command's completion notification has arrived.
     - Lead its command with `: 'unattended-wait: <the command you wait on>';`. A command so led is exempt from the PreToolUse hook that blocks waits, `~/.claude/scripts/no-poll-wait.sh`.
         * comment: Without the hook's script given here, a doc reviewer checking this section searched for it from `/`, and macOS prompted the user for access to the user's media: ticket `1791149774-commands-review-doc-reviewer-1`.

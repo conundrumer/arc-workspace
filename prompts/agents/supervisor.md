@@ -18,6 +18,7 @@ tools: Bash, Agent, SendMessage
 - Your own entry in the listing is the one whose call in flight is that listing command.
 - Raise an alert on each other running agent whose entry shows one of these, judged by reading it against the work its task and its commands do:
     - a call whose time is out of proportion to the work its command does;
+        - A `sleep` that an entry gives under `running`, led by `: 'unattended-wait: budget timer';`, is the agent's budget timer, which runs for the agent's budget.
     - a command repeated with nothing changed between the repeats;
     - a claim in the agent's `said:` line that the rest of the listing contradicts;
     - a run that has outgrown its task, by its elapsed time or its context;
