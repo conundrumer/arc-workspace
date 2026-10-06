@@ -67,6 +67,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 - A ticket you file on anything else has the kind `bug`, where a tool or a document does the wrong thing.
 * inline: notes/tickets.md#ticket-files
 * inline: notes/tickets.md#ticket-fields
+* inline: notes/tickets.md#noticed-faults
 
 ## Place tickets
 * inline: notes/code.md#place-tickets

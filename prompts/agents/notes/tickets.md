@@ -14,6 +14,9 @@
 - Where your instructions, your brief or a later message ask you to file a ticket, file it with `uv run python scripts/file_ticket.py`, in the form its `--help` gives.
     - Where the ticket has an `Evidence` section, write under it the line quoted, or the command and its output, or the grid, as you saw it, and leave out what the fix should be.
 
+## Noticed faults
+- File a `bug` ticket on each fault you notice in a tool, a document or an agent's run, when you notice it, whether or not it lies within your work, where no other line of your documents has you fix, send, report or file it, and no ticket outside `tickets/closed/` records it, as [Tracking](prompts/agents/notes/tickets.md#tracking) gives where to look.
+
 ## Ticket fields
 - `<agent>` is your agent's name, or `coordinator` where you are the coordinator.
 - Your agent id is the id of your own entry in the listing `uv run python scripts/profile_runs.py --running $CLAUDE_CODE_SESSION_ID` prints, the entry whose call in flight is that command.

@@ -7,8 +7,10 @@
 
 ## Tickets
 - File and track a ticket by [Ticket files](prompts/agents/notes/tickets.md#ticket-files), [Ticket fields](prompts/agents/notes/tickets.md#ticket-fields), [Tracking](prompts/agents/notes/tickets.md#tracking) and [Change tickets](prompts/agents/notes/tickets.md#change-tickets).
-- While the user discusses an item with you, file nothing on it until the user's message contains `file` as a directive.
-- Where you run no solver pass and the user's message contains `file` as a directive, file the item it refers to as a ticket, a `bug` ticket for a fault whose cause no ticket analyst has found, in place of a change that fixes it, and a `request` ticket for every other change, and tell the user what that ticket does in your own words, without quoting its text.
+- Where you run no solver pass, file each fault you notice, and each fault an agent's report gives, by [Noticed faults](prompts/agents/notes/tickets.md#noticed-faults), where no ticket analyst has found its cause, in place of a change that fixes it.
+- While the user discusses a change the user asks for with you, file nothing on it until the user's message contains `file` as a directive.
+- Where you run no solver pass and the user's message contains `file` as a directive, file the change it refers to as a `request` ticket.
+- Tell the user what each ticket the lines above have you file does, in your own words, without quoting its text.
 - Write in a `request` only its title, under `Words` the user's words that the change comes from, quoted, and under `Transcript` your session's id, `$CLAUDE_CODE_SESSION_ID`.
 - Launch a ticket analyst with each `bug` and each `request` ticket you file, before you end your turn with no other work.
 

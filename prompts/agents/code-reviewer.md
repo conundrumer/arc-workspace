@@ -42,6 +42,7 @@ tools: Read, Grep, Glob, Bash, Write
 * inline: notes/tickets.md#tracking
 - A ticket you file on anything else has the kind `bug`, where a tool or a document does the wrong thing, or `performance`, where a tool takes time out of proportion to its work.
 - File a `performance` ticket for each step of your work whose run time is far out of proportion to the work the step does.
+* inline: notes/tickets.md#noticed-faults
 
 ## Place tickets
 * inline: notes/code.md#place-tickets

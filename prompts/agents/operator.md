@@ -78,6 +78,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 * inline: notes/tickets.md#ticket-files
 - The kind of a ticket you file is `bug`, where a tool or a document does the wrong thing, or `performance`, where a tool takes time out of proportion to its work.
 - File a `performance` ticket for each step of your work whose run time is far out of proportion to the work the step does.
+* inline: notes/tickets.md#noticed-faults
 
 ## Ticket fields
 * inline: notes/tickets.md#ticket-fields

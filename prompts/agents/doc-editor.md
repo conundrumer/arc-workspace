@@ -37,6 +37,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 * inline: notes/tickets.md#ticket-files
 * inline: notes/tickets.md#ticket-fields
 - The kind of a ticket you file is `question`, for a case your rules do not cover or a place that poses a question, or `bug`, where a tool or a document does the wrong thing.
+* inline: notes/tickets.md#noticed-faults
 
 * include: ../../docs/handbook/editing.md
 

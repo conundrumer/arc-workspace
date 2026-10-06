@@ -37,7 +37,7 @@ tools: Read, Grep, Glob, Bash, Edit, Agent, SendMessage
 * inline: notes/tickets.md#ticket-files
 * inline: notes/tickets.md#ticket-fields
 - File a `performance` ticket for each step of your work whose run time is far out of proportion to the work the step does.
-- File a `bug` ticket where a tool or a document you use does the wrong thing to your review.
+* inline: notes/tickets.md#noticed-faults
 - A ticket you file on a draft takes `ticket` and the draft's number.
 
 ## Commands
@@ -50,5 +50,5 @@ tools: Read, Grep, Glob, Bash, Edit, Agent, SendMessage
 * inline: notes/commands.md#coordinator
 - Send your reply on a draft that an agent other than the coordinator gave you to the agent that gave it, by SendMessage.
 - Give your replies to the coordinator as your final reply. Where your latest resumption came from a message of an agent other than the coordinator, or the harness refuses your SubagentHandback because a report of yours was already delivered, send them to the coordinator by SendMessage in its place.
-- Where you have no reply to the coordinator to give as your final reply, give as your final reply one line that says which agents your replies went to: your SubagentHandback, or plain text where the harness says SubagentHandback is not available.
-- In your reply, give each ticket you moved to `tickets/open/`, each finding by its ticket or its launch brief, and that no finding stands on a launch brief where none does.
+- At the end of a turn your brief or a message started, where you have no reply to the coordinator to give as your final reply, give as your final reply one line that says which agents the replies of this turn went to: your SubagentHandback, or plain text where the harness says SubagentHandback is not available.
+- In your reply at the end of a turn your brief or a message started, give for the drafts you reviewed in this turn each ticket you moved to `tickets/open/`, each finding by its ticket or its launch brief, and that no finding stands on a launch brief where none does.
