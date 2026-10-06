@@ -19,6 +19,8 @@
 - Have a support line added only where a rule is missing, and have a miss fixed by a change to the line that caused it.
 
 ### How a decision is made
+- Where a decision touches a solver, the lib, the tool or what it reports, the witnesses, a solver pass, [Principles](docs/handbook/principles.md) or the case history, read [Decisions on solver work](prompts/agents/notes/decisions.md#decisions-on-solver-work) as well.
+- Where a decision touches a document an agent or a session reads, read [Decisions on the agents' documents](prompts/agents/notes/decisions.md#decisions-on-the-agents-documents) as well.
 - A ground is a source that is quotable or checkable.
 - Before you state a reason, verify each claim it depends on. State with each reason its ground, or where it has none, its assumption.
 - Rest no default on an assumption a ground rules out.
@@ -28,7 +30,6 @@
 - Prefer the general option, the one that settles the other instances of the question too, and the tooling change only where the problem needs the rule enforced.
     * comment: With the lines of [Decision notes](prompts/agents/notes/decisions.md) "Make no option the default that fits only the instance that raised the decision." and "Prefer the general option, the one that settles the other instances of the question too, and where tooling can enforce the rule, the tooling change." in its context, an assignee added a hook that parsed every agent's Bash call to deny a harmless pattern, on the evidence of one solver read that cost one extra command: ticket 2-153, on ticket 3-4.
 - Make no option the default that fits only the instance that raised the decision.
-- Where a default breaks a line of [Principles](docs/handbook/principles.md), the decision becomes whether to amend that line.
 - Before you act on a default, write down the strongest reason against it. Where that reason is defensible, drop the default and reframe the problem: ask why the need arises, then decide where its answer goes.
 - Carry out no resolution whose need no output depends on, and anticipate only a practice that prevents a bad situation of the kind that prompted past changes, never a mechanical gap in the tooling.
 - Decide by [Principles](docs/handbook/principles.md) where it speaks, read for its intent: a line about one instance of a kind covers the kind when its reason does.
@@ -44,7 +45,6 @@
 - The history of a decision is in the session transcripts, and `python3 ~/.claude/skills/retrieve/transcripts.py --help` lists the subcommands that read them.
 - Take agents' reports as evidence of what is there, never of what the principles or the spec should be.
 - Leave the judgment of how the code is written to the agents that read it.
-- Where a check or survey runs slowly, change how its runs are made and batched before you reconsider what it computes.
 
 ### The user's part
 - Bring the user a decision only where every option, after you reframe the problem, still has a defensible reason against it.
@@ -67,22 +67,28 @@
 - Prefer simple mechanisms: watch an agent by reading what it does, with no classifier.
 - Think a design through for how it can fail before it is implemented, and tell the agent that implements it to do so.
 - Take an agent's position: review the tool by reading a pass's transcript call by call, check a claim that an agent wasted work against its procedure, and where an agent departed from a rule, ask it why before its document or the tool changes, and take its answer as the evidence.
-- Run a solver pass that ran under a wrong rule again once the rule is fixed, in place of patching its output.
 - The tooling serves the agents: decide each choice on its design, and each fix that removes an outdated rule for efficiency, without the user. The user reads no code other than solver code, and no tool output.
-- The tooling may come to serve generators or another frontend language as well as Souffle solvers, so divide it by what varies.
-- Let a witness entry reassign any parameter, a grid-valued one with its anchor included, unless a good reason constrains it.
 - The solver console, retro, the `.claude/workflows` scripts, the role prompts and the `/session` skill are deprecated: note each as deprecated, remove none, and let none get in the way.
 - Keep project content and ephemeral project state apart in git, lose no persistent working file in a migration, and scope the git permissions given to agents.
 - Make a change to the user's global Claude configuration as a project of its own: verify it first, and where it needs no judgment, have an agent make it on `~/code/claude-config`.
 - Resume an agent that the usage limit stopped by a message, in place of launching it again.
 - The full lib interface the Create and Refine passes read up front, and the handbook appended to a session the user launches, are intended, and their cost is no waste.
+- Keep in [arc-workspace](CLAUDE.md) only what every session needs, and in [Case inclusion: the decision history](docs/wf-solver/case-rule-history.md) only what helps decide case inclusion and related questions from the user's rulings.
+- Choose the best term for each name, with no weight given to an existing one: a name may be abstract where it is precise, within the domain and with a qualifier where needed, a mathematical word imprecise for the thing is vetoed, abbreviations follow the software convention, judicious and consistent, and "task" may name a work item.
+- Choose a label for its use in deciding how to act on what it labels.
+
+## Decisions on solver work
+- Where a default breaks a line of [Principles](docs/handbook/principles.md), the decision becomes whether to amend that line.
+- Where a check or survey runs slowly, change how its runs are made and batched before you reconsider what it computes.
+- Run a solver pass that ran under a wrong rule again once the rule is fixed, in place of patching its output.
+- The tooling may come to serve generators or another frontend language as well as Souffle solvers, so divide it by what varies.
+- Let a witness entry reassign any parameter, a grid-valued one with its anchor included, unless a good reason constrains it.
+- The lib is the authoritative vocabulary of the priors ARC tasks compose, with perfect interfaces and fast implementations, and it may be rewritten whole, in Souffle or not, with custom functors.
+- Keep no relation in the lib for convenience, a site count included, use no ADT as another way to write a disjunction, and count boilerplate in atoms.
+
+## Decisions on the agents' documents
 - Write the documents first to serve the agents that read them, and check new agent-facing text against each agent it reaches before a pass runs on it.
 - The user writes no text: an agent makes each edit, and checks it, and the text it touches, for a change of meaning it was not meant to make.
 - Keep instructions few, since a model follows a limited number of them: leave load-bearing text no misreading, add no verbosity in a rewrite, give an intuitive rule few words, restate no other document, and give no agent instructions on how to follow the document that is its body.
 - Structure the documents so that changes to them run in parallel, as changes to code do, and so that they make evident which agent takes a kind of work and lead each agent to what it needs.
 - Prime no test of agents' reading: its prompt gives the text under test and no gloss of its terms.
-- Keep in [arc-workspace](CLAUDE.md) only what every session needs, and in [Case inclusion: the decision history](docs/wf-solver/case-rule-history.md) only what helps decide case inclusion and related questions from the user's rulings.
-- Choose the best term for each name, with no weight given to an existing one: a name may be abstract where it is precise, within the domain and with a qualifier where needed, a mathematical word imprecise for the thing is vetoed, abbreviations follow the software convention, judicious and consistent, and "task" may name a work item.
-- Choose a label for its use in deciding how to act on what it labels.
-- The lib is the authoritative vocabulary of the priors ARC tasks compose, with perfect interfaces and fast implementations, and it may be rewritten whole, in Souffle or not, with custom functors.
-- Keep no relation in the lib for convenience, a site count included, use no ADT as another way to write a disjunction, and count boilerplate in atoms.

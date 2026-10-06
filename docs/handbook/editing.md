@@ -64,7 +64,7 @@
 - An agent's `description`, in the front matter of its prompt, says what the agent reads and what work it is for, as much as a launcher needs to pick the agent, and what its reply gives, where a launcher acts on that. It may name what the work is on, such as the task its brief gives, and gives nothing else of the brief's form, which [Launching notes](prompts/agents/notes/launching.md) states.
 - A line that links a section relies on that section's heading alone.
 - No document restricts, replaces or redirects an operation another document states.
-- Guidance for an uncommon case reaches its reader where the reader meets the case: a tool's output there gives at most a clause and points to longer text, or a stated condition tells the reader to load it.
+- Text that only part of an entry point's work needs, where splitting it off removes more from what the reader loads than the pointer to it adds, reaches its reader where the reader meets that part: a tool's output there gives at most a clause and points to longer text, or a stated condition that names that part tells the reader to load it.
 - Write no document line for a form that only a check with a `guard` decorator guards against.
 - A document the handbook includes links only to a document an entry point in `HANDBOOK_ENTRIES` in [__main__.py](src/controlled_markdown/__main__.py) includes, or to a file outside the document set.
 - A document rendered on its own is an entry point, and its lead says what the render leaves out when a link in the render leads there.
