@@ -15,7 +15,10 @@ from solver.category import Category
 from solver.problems import (
     Detail,
     InSolver,
+    FormPart,
     Named,
+    OffForm,
+    OffPart,
     ProblemKind,
     Quoted,
     Fault,
@@ -373,6 +376,21 @@ class DirectiveWord(StrEnum):
     WORKAROUND = "workaround"
 
 
+NESTS_UNDER: Annotated[dict[DirectiveWord, tuple[DirectiveWord | ClaimKind, ...]],
+    quotes("solver-file.md", "File structure",
+           "// @rule <slug>: <what the output takes from the input> // "
+           "@approximated: <the rule the program runs> // @witness <id>: "
+           "<plausibility> <verdict>")] = {
+    DirectiveWord.APPROXIMATED: (ClaimKind.RULE,),
+    DirectiveWord.WITNESS: (DirectiveWord.APPROXIMATED,),
+    DirectiveWord.RELAXED: (DirectiveWord.WITNESS, DirectiveWord.DERIVE,
+                            DirectiveWord.STORE),
+    DirectiveWord.REASSIGNED: (DirectiveWord.WITNESS,),
+}
+"""The lines each nested line nests under: a `@witness` line with two
+spaces or more after `//` among them."""
+
+
 HEADER_RANK: Annotated[dict[HeaderWord | ClaimKind, int],
     quotes("solver-file.md", "Header",
            "`@scene` and `@rule` are in dependency order."),
@@ -469,13 +487,15 @@ class Annotations:
 
 _DIRECTIVE_RE = re.compile(r"^@([\w-]+)(.*)$")
 _SLUG = r"[a-z0-9]+(?:-[a-z0-9]+)*"
-_CLAIM_TAIL_RE = re.compile(rf"^\s+({_SLUG}):\s*(\S.*)$")
+_SLUG_RE = re.compile(_SLUG)
 _REF_TAIL_RE = re.compile(rf"^(?:\s+{_SLUG})+$")
-_VERDICT = r"\S+(?:\s*&\s*\S+)*"
-_WITNESS_TAIL_RE = re.compile(rf"^\s+({_SLUG}):\s*(\S+)\s+({_VERDICT})$")
-_DERIVE_TAIL_RE = re.compile(rf"^\s+(\w+):\s*(\S+)\s+({_VERDICT})$")
-_STORE_TAIL_RE = re.compile(rf"^(?:\s+([\w.]+))?:\s*(\S+)\s+({_VERDICT})$")
-_IGNORE_TAIL_RE = re.compile(r"^(?:\s+([\w.]+))?:\s*(.*)$")
+_VERDICT_RE = re.compile(r"\S+(?:\s*&\s*\S+)*")
+_JUDGMENT_RE = re.compile(r"\s*(\S+)(?:\s+(\S.*))?")
+"""A plausibility, and the verdict after it."""
+_DERIVE_NAME_RE = re.compile(r"\w+")
+"""The proposer a `@derive` line names."""
+_RELATION_RE = re.compile(r"[\w.]+")
+"""The relation a `@store` or `@ignore` line names."""
 _PROPOSER_RE = re.compile(r"[A-Za-z_]\w*")
 """The `<Proposer>` of `@ignore: derive <Proposer>`: a bare word, which no
 case name is but `concept`, since a constructor's name carries `$` and a
@@ -553,6 +573,7 @@ class _OpenVerdict(_Open):
 
     plausibility: Plausibility
     verdict: Verdict
+    word: DirectiveWord = field(kw_only=True)
     relaxed: list[str] = field(default_factory=list, kw_only=True)
     reassigned: list[str] = field(default_factory=list, kw_only=True)
 
@@ -624,6 +645,63 @@ def _plausibility(text: str) -> Plausibility | None:
         return None
 
 
+def _colon(tail: str) -> tuple[str | None, list[OffPart]]:
+    """The text after the `:` that opens `tail`, and the parts off form
+    where none opens it."""
+    if tail.startswith(":"):
+        return tail[1:], []
+    if tail.lstrip().startswith(":"):
+        return None, [OffPart(FormPart.SPACING, None)]
+    return None, [OffPart(FormPart.COLON, None)]
+
+
+def _name_colon(tail: str, name: re.Pattern[str], part: FormPart,
+                optional: bool
+                ) -> tuple[str | None, str | None, list[OffPart]]:
+    """A name in `name`'s form, one or more spaces before it and none
+    between it and the `:` after it, then the `:`: the name, None where
+    `optional` and the line gives none; the text after the `:`, None where
+    no `:` stands; and the parts off form, the name's as `part`."""
+    head, colon, rest = tail.partition(":")
+    if not colon:
+        return None, None, [OffPart(FormPart.COLON, None)]
+    written = head.strip()
+    if not written:
+        if not head and optional:
+            return None, rest, []
+        return None, rest, [OffPart(FormPart.SPACING if optional else part,
+                                    None)]
+    if not name.fullmatch(written):
+        return written, rest, [OffPart(part, written)]
+    if not head[0].isspace() or head[-1].isspace():
+        return written, rest, [OffPart(FormPart.SPACING, written)]
+    return written, rest, []
+
+
+def _read_judgment(rest: str | None
+                   ) -> tuple[Plausibility | None, Verdict | None, list[OffPart]]:
+    """The plausibility and the verdict after the `:` of a `@witness`,
+    `@derive` or `@store` line, and the parts off form; no part where no
+    `:` stands, whose own part stands in its place."""
+    if rest is None:
+        return None, None, []
+    m = _JUDGMENT_RE.fullmatch(rest)
+    if m is None:
+        return None, None, [OffPart(FormPart.PLAUSIBILITY, None)]
+    off: list[OffPart] = []
+    plausibility = _plausibility(m[1])
+    if plausibility is None:
+        off.append(OffPart(FormPart.PLAUSIBILITY, m[1]))
+    written: str | None = m[2]
+    if written is None:
+        off.append(OffPart(FormPart.VERDICT, None))
+        return plausibility, None, off
+    if not _VERDICT_RE.fullmatch(written):
+        off.append(OffPart(FormPart.VERDICT, written))
+        return plausibility, None, off
+    return plausibility, _verdict(written), off
+
+
 def _marker(text: str, line: int) -> CaseMarker:
     """`<names>[: gloss]`: the names split at the commas that stand outside
     parentheses, each kept as written, for `names.denote` to read
@@ -684,13 +762,30 @@ def read(program: Program) -> tuple[Annotations, tuple[Fault, ...]]:
     on line 1 (solver-file.md, under "File structure"). A nested line carries
     two spaces or more after `//` (solver-file.md, under "File structure"); a
     line of two spaces or more that opens no directive continues the field or
-    claim above it (solver-file.md, under "File structure")."""
+    claim above it (solver-file.md, under "File structure"). A line off its
+    word's form gives one fault, with each part of it found off the form
+    (`OffForm`)."""
     problems: list[Fault] = []
+    off_at: dict[int, int] = {}
+    """The index in `problems` of the off-form fault of each line."""
 
     def problem(kind: ProblemKind, line: int, read: str | Detail) -> None:
         problems.append(Fault(
             kind, InSolver(line),
             Quoted(read) if isinstance(read, str) else read))
+
+    def off(line: int, text: str, word: DirectiveWord | HeaderWord | ClaimKind,
+            parts: Iterable[OffPart]) -> None:
+        """The parts of the line `line` off its word's form, joined to the
+        line's fault."""
+        if line not in off_at:
+            off_at[line] = len(problems)
+            problem(ProblemKind.OFF_FORM, line, OffForm(text, word, ()))
+        had = problems[off_at[line]]
+        assert isinstance(had.detail, OffForm)
+        problems[off_at[line]] = Fault(had.kind, had.place, OffForm(
+            had.detail.text, had.detail.word,
+            (*had.detail.parts, *parts)))
 
     owned = sorted((c for c in program.comments if own(c)),
                    key=lambda c: (c.line, c.column))
@@ -809,7 +904,8 @@ def read(program: Program) -> tuple[Annotations, tuple[Fault, ...]]:
             continue
         word, tail = d[1], d[2]
         if word in _NESTED_WORDS and spaces < 2:
-            problem(ProblemKind.OFF_FORM, line, content)
+            off(line, content, DirectiveWord(word),
+                [OffPart(FormPart.INDENT, None)])
         if word in _RETIRED:
             problem(ProblemKind.RETIRED_FORM, line, content)
             close()
@@ -818,55 +914,70 @@ def read(program: Program) -> tuple[Annotations, tuple[Fault, ...]]:
             close()
             fields.append(_OpenField(line, HeaderWord.DRAFT, "", True))
             if tail.strip():
-                problem(ProblemKind.OFF_FORM, line, content)
+                off(line, content, HeaderWord.DRAFT,
+                    [OffPart(FormPart.TRAILING, tail.strip())])
             continue
         if word in (HeaderWord.KEYWORDS, HeaderWord.REPRESENTATIVE,
                     HeaderWord.INPUT, HeaderWord.OUTPUT, HeaderWord.CONCEPT):
             close()
-            if not tail.startswith(":"):
-                problem(ProblemKind.OFF_FORM, line, content)
+            value, parts = _colon(tail)
+            if value is None:
+                off(line, content, HeaderWord(word), parts)
                 continue
-            fields.append(_OpenField(line, HeaderWord(word),
-                                     tail[1:].strip(), True))
+            fields.append(_OpenField(line, HeaderWord(word), value.strip(),
+                                     True))
             open_field = fields[-1]
             continue
         if word in (ClaimKind.SCENE, ClaimKind.RULE):
             close()
-            m = _CLAIM_TAIL_RE.match(tail)
-            if m is None:
-                kind = (ProblemKind.RETIRED_FORM
-                        if word == ClaimKind.RULE and _REF_TAIL_RE.match(tail)
-                        else ProblemKind.OFF_FORM)
-                problem(kind, line, content)
+            slug, rest, parts = _name_colon(tail, _SLUG_RE, FormPart.SLUG,
+                                            False)
+            if rest is not None and not rest.strip():
+                parts.append(OffPart(FormPart.TEXT, None))
+            if parts:
+                if word == ClaimKind.RULE and _REF_TAIL_RE.match(tail):
+                    problem(ProblemKind.RETIRED_FORM, line, content)
+                else:
+                    off(line, content, ClaimKind(word), parts)
                 continue
+            assert slug is not None and rest is not None
             claims.append(_OpenClaim(
-                line, ClaimKind(word), m[1], m[2].strip(),
+                line, ClaimKind(word), slug, rest.strip(),
                 None if in_header else _constructor_at(program, line)))
             open_field = open_claim = claims[-1]
             continue
         if word == DirectiveWord.CLAIM:
             close()
-            if not _REF_TAIL_RE.match(tail):
-                problem(ProblemKind.OFF_FORM, line, content)
+            slugs = tail.split()
+            parts = [OffPart(FormPart.SLUG, s) for s in slugs
+                     if not _SLUG_RE.fullmatch(s)]
+            if not slugs:
+                parts.append(OffPart(FormPart.SLUG, None))
+            if parts:
+                off(line, content, DirectiveWord.CLAIM, parts)
                 continue
-            claim_lines.append(ClaimLine(tuple(tail.split()), line, above))
+            claim_lines.append(ClaimLine(tuple(slugs), line, above))
             continue
         if word == DirectiveWord.WITNESS:
             nested = spaces >= 2
-            m = _WITNESS_TAIL_RE.match(tail)
-            plaus = None if m is None else _plausibility(m[2])
-            if m is None or plaus is None:
-                problem(ProblemKind.OFF_FORM, line, content)
+            wid, rest, parts = _name_colon(tail, _SLUG_RE, FormPart.ID,
+                                          False)
+            plaus, verdict, judged = _read_judgment(rest)
+            parts += judged
+            if nested and (open_approx is None or open_claim is None):
+                parts.append(OffPart(FormPart.PARENT, None))
+            if parts:
+                off(line, content, DirectiveWord.WITNESS, parts)
                 open_block = None
                 continue
+            assert wid is not None and plaus is not None \
+                and verdict is not None
             block = _OpenWitness(
-                line, plaus, _verdict(m[3]), m[1],
-                None if in_header else _constructor_at(program, line))
+                line, plaus, verdict, wid,
+                None if in_header else _constructor_at(program, line),
+                word=DirectiveWord.WITNESS)
             if nested:
-                if open_approx is None or open_claim is None:
-                    problem(ProblemKind.OFF_FORM, line, content)
-                    open_block = None
-                    continue
+                assert open_approx is not None and open_claim is not None
                 block.approximates = open_claim.slug
                 open_approx.witnesses.append(block)
                 open_field = None
@@ -877,44 +988,64 @@ def read(program: Program) -> tuple[Annotations, tuple[Fault, ...]]:
             continue
         if word in (DirectiveWord.DERIVE, DirectiveWord.STORE):
             close()
-            m = (_DERIVE_TAIL_RE if word == DirectiveWord.DERIVE
-                 else _STORE_TAIL_RE).match(tail)
-            plaus = None if m is None else _plausibility(m[2])
-            if m is None or plaus is None:
-                problem(ProblemKind.OFF_FORM, line, content)
+            directive = DirectiveWord(word)
+            target, rest, parts = (
+                _name_colon(tail, _DERIVE_NAME_RE, FormPart.PROPOSER, False)
+                if directive == DirectiveWord.DERIVE
+                else _name_colon(tail, _RELATION_RE, FormPart.RELATION, True))
+            plaus, verdict, judged = _read_judgment(rest)
+            parts += judged
+            if parts:
+                off(line, content, directive, parts)
                 continue
-            branch = _OpenBranch(line, plaus, _verdict(m[3]), m[1], above)
-            (derives if word == DirectiveWord.DERIVE else stores).append(branch)
+            assert plaus is not None and verdict is not None
+            branch = _OpenBranch(line, plaus, verdict, target, above,
+                                 word=directive)
+            (derives if directive == DirectiveWord.DERIVE
+             else stores).append(branch)
             open_block = branch
             continue
         if word == DirectiveWord.APPROXIMATED:
-            if not tail.startswith(":") or open_claim is None \
-                    or open_claim.kind != ClaimKind.RULE:
-                problem(ProblemKind.OFF_FORM, line, content)
+            value, parts = _colon(tail)
+            if open_claim is None or open_claim.kind \
+                    not in NESTS_UNDER[DirectiveWord.APPROXIMATED]:
+                parts.append(OffPart(FormPart.PARENT, None))
+            if parts:
+                off(line, content, DirectiveWord.APPROXIMATED, parts)
                 continue
-            approx = _OpenApproximated(line, tail[1:].strip())
+            assert value is not None and open_claim is not None
+            approx = _OpenApproximated(line, value.strip())
             open_claim.approximated.append(approx)
             open_approx = open_field = approx
             continue
         if word in (DirectiveWord.RELAXED, DirectiveWord.REASSIGNED):
+            directive = DirectiveWord(word)
             value = tail.strip()
-            if not value or " " in value or open_block is None \
-                    or (word == DirectiveWord.REASSIGNED
-                        and not isinstance(open_block, _OpenWitness)):
-                problem(ProblemKind.OFF_FORM, line, content)
+            parts = [] if value and " " not in value \
+                else [OffPart(FormPart.VALUE, value or None)]
+            if open_block is None \
+                    or open_block.word not in NESTS_UNDER[directive]:
+                parts.append(OffPart(FormPart.PARENT, None))
+            if parts:
+                off(line, content, directive, parts)
                 continue
-            (open_block.relaxed if word == DirectiveWord.RELAXED
+            assert open_block is not None
+            (open_block.relaxed if directive == DirectiveWord.RELAXED
              else open_block.reassigned).append(value)
             continue
         if word == DirectiveWord.IGNORE:
             _ignore(tail, content, line, above, last_of_block[line],
-                    ignores, problem)
+                    ignores, problem, off)
             continue
         if word == DirectiveWord.WORKAROUND:
-            if not tail.startswith(":") or not tail[1:].strip():
-                problem(ProblemKind.OFF_FORM, line, content)
+            value, parts = _colon(tail)
+            if value is not None and not value.strip():
+                parts.append(OffPart(FormPart.TEXT, None))
+            if parts:
+                off(line, content, DirectiveWord.WORKAROUND, parts)
             else:
-                workarounds.append(Workaround(tail[1:].strip(), line))
+                assert value is not None
+                workarounds.append(Workaround(value.strip(), line))
             continue
         if word == _INPUT_MARK:
             continue
@@ -926,7 +1057,10 @@ def read(program: Program) -> tuple[Annotations, tuple[Fault, ...]]:
             continue
         m = _REPRESENTATIVE_RE.match(f.value)
         if m is None:
-            problem(ProblemKind.OFF_FORM, f.line, f.value)
+            written = at_word(f.word) if f.prefixed else f.word.value
+            off(f.line, f"{written}: {f.value}", f.word,
+                [OffPart(FormPart.REPRESENTATIVE, f.value)
+                 if f.value else OffPart(FormPart.TEXT, None)])
         else:
             representatives.append(Representative(m[1], m[2], f.line))
     if len(representatives) > 1:
@@ -979,27 +1113,35 @@ def _as[T](value: object, kind: type[T]) -> T:
 
 def _ignore(tail: str, content: str, line: int, above: DeclId | None,
             last: bool, out: list[IgnoreLine],
-            problem: Callable[[ProblemKind, int, str | Detail], None]
+            problem: Callable[[ProblemKind, int, str | Detail], None],
+            off: Callable[[int, str, DirectiveWord, Iterable[OffPart]], None]
             ) -> None:
     """One `@ignore` line (solver-file.md, under "Params" and "Program"). The
     lint form stands on the declaration directly under it, with no other
     directive between (solver-file.md, under "Program"); the derive and store
     forms stand on the declaration their comment block stands above."""
-    m = _IGNORE_TAIL_RE.match(tail)
-    if m is None:
-        problem(ProblemKind.OFF_FORM, line, content)
+    relation, rest, parts = _name_colon(tail, _RELATION_RE,
+                                        FormPart.RELATION, True)
+    if rest is None or parts:
+        off(line, content, DirectiveWord.IGNORE, parts)
         return
-    relation, rest = m[1], m[2]
     given, dash, reason = rest.partition(_DASH)
     given, reason = " ".join(given.split()), reason.strip()
-    if not dash or not reason or not given:
-        problem(ProblemKind.OFF_FORM, line, content)
+    if not given:
+        parts.append(OffPart(FormPart.TEXT, None))
+    if not dash:
+        parts.append(OffPart(FormPart.DASH, None))
+    elif not reason:
+        parts.append(OffPart(FormPart.REASON, None))
+    if parts:
+        off(line, content, DirectiveWord.IGNORE, parts)
         if not given:
             return
     first, _sp, name = given.partition(" ")
     if first in (IgnoreForm.DERIVE, IgnoreForm.STORE):
         if first == IgnoreForm.DERIVE and relation is not None:
-            problem(ProblemKind.OFF_FORM, line, content)
+            off(line, content, DirectiveWord.IGNORE,
+                [OffPart(FormPart.DERIVE_RELATION, relation)])
             return
         name = name.strip()
         if first == IgnoreForm.DERIVE and _PROPOSER_RE.fullmatch(name) \

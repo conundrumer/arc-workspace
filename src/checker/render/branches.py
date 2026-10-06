@@ -33,8 +33,6 @@ from checker.payloads.branches import (
     Unread,
 )
 from checker.render import (
-    Hint,
-    HintKind,
     LineForm,
     _no_sentence,
     _ticked,
@@ -42,16 +40,15 @@ from checker.render import (
     cases_run_failed,
     failure_text,
     finding_lines,
-    grid_lines,
-    hint_line,
     in_line_order,
     line_list,
     line_text,
     resolution_lines,
-    shifted,
     under_case,
     where_text,
 )
+from checker.render.grids import grid_lines, shifted
+from checker.render.hints import Hint, HintKind, hint_line
 from solver.names import name as case_name
 from checker.runs import NoTask
 from checker.store import (

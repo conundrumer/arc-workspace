@@ -1,5 +1,8 @@
-"""The one rendering module: every command's text. Each survey result type
-gets one render function of its own here, beside `render`; a survey's
+"""Every command's text, each module of the package one subject of it.
+This module holds the sections of a command's report and the line forms
+and sentences of the findings' text.
+
+Each survey result type gets one render function of its own; a survey's
 result is a typed value of its own, not findings, holds its own timed-out
 and failed runs, and its render function prints them, so that the pass
 line and the exit code come from findings alone. A section's lines are
@@ -7,7 +10,6 @@ ordered as typed values before they print, never by a match over printed
 text, and every printed case name goes through `solver.names`."""
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
 from enum import StrEnum
 from typing import NoReturn
 
@@ -46,12 +48,12 @@ from checker.finding import (
     is_hint,
 )
 from checker.judged import is_timeout
+from checker.render.grids import grid_lines, shifted
 from controlled_markdown import mctx
 from engine import (
     CompileError,
     CpuLimit,
     Exited,
-    Grid,
     GridLayout,
     ParseFailure,
     RelationName,
@@ -67,20 +69,19 @@ from engine.quotes import quoted
 from solver import names
 from solver.annotations import (
     HEADER_RANK,
+    NESTS_UNDER,
     REVIEW_WORD,
     SIBLING_DROPS,
     CaseMarker,
+    ClaimKind,
     DirectiveWord,
-    IgnoreForm,
+    HeaderWord,
     MarkerPart,
+    Plausibility,
     marker_line,
-    Slot,
     at_word,
-    comment_text,
-    derive_text,
     header_word_text,
     ignore_text,
-    store_text,
 )
 from solver.category import HINTS, Category
 from solver.model import (
@@ -100,7 +101,9 @@ from solver.problems import (
     Expected,
     GridCellOffForm,
     GridOffLayout,
+    FormPart,
     Named,
+    OffForm,
     ProblemKind,
     Quoted,
     ShapeFault,
@@ -201,23 +204,6 @@ def pass_line(section: Section, findings: Sequence[Finding]) -> str | None:
 
 
 # Grids, values and code
-
-
-class GridRow(str):
-    """A line that draws a row of a grid (`grid_lines`), so that an order
-    of a section's lines reads what a line draws from its type."""
-
-
-def grid_lines(grid: Grid) -> list[str]:
-    """A grid drawn: one row per line, cells separated by spaces."""
-    if not grid or not grid[0]:
-        return ["(empty)"]
-    return [GridRow(" ".join(str(c) for c in row)) for row in grid]
-
-
-def shifted(line: str, by: str) -> str:
-    """`line` indented by `by`, a grid's row still a row (`GridRow`)."""
-    return GridRow(by + line) if isinstance(line, GridRow) else by + line
 
 
 def resolution_lines(solver: Solver, out: Resolutions) -> list[str]:
@@ -921,7 +907,7 @@ PROBLEM_TEXT: dict[ProblemKind, str] = {
         "`{text}` is no annotation form; see "
         "[File structure](docs/handbook/solver-file.md#file-structure)"),
     ProblemKind.OFF_FORM: mctx(
-        "`{text}` is off its annotation's form; see "
+        "{text}; see "
         "[File structure](docs/handbook/solver-file.md#file-structure)"),
     ProblemKind.UNKNOWN_IGNORE_CATEGORY: mctx(
         "`{text}` is no category a finding gives; see "
@@ -1008,11 +994,94 @@ SHAPE_TEXT: dict[Expected, str] = {
 """The sentence of each witness file shape fault, from the field's path."""
 
 
+SLUG_FORM = mctx("lowercase letters and digits, in words joined by single "
+                 "`-`")
+"""The form of a slug, which a witness id takes too."""
+
+OFF_PART_TEXT: dict[FormPart, str] = {
+    FormPart.SLUG: mctx("the slug `{read}` is off its form, ") + SLUG_FORM,
+    FormPart.ID: mctx("the id `{read}` is off a slug's form, ") + SLUG_FORM,
+    FormPart.PROPOSER: mctx("the proposer `{read}` is off its form, one word "
+                            "of letters, digits and `_`"),
+    FormPart.RELATION: mctx("the relation `{read}` is off its form, letters, "
+                            "digits, `_` and `.`"),
+    FormPart.SPACING: mctx("`{read}` takes one space or more before it, and "
+                           "none between it and the `:`"),
+    FormPart.TRAILING: mctx("`{word}` takes no text after it, and `{read}` "
+                            "follows it"),
+    FormPart.PLAUSIBILITY: mctx("`{read}` is no plausibility, and a "
+                                "plausibility is one of {plausibilities}"),
+    FormPart.VERDICT: mctx("the verdict `{read}` is off its form, one word, "
+                           "or names joined by `&`"),
+    FormPart.VALUE: mctx("`{word}` takes one word, and `{read}` is more than "
+                         "one"),
+    FormPart.REPRESENTATIVE: mctx("`{read}` is not a task id with at most one "
+                                  "case name after it"),
+    FormPart.DERIVE_RELATION: mctx("an `@ignore: derive` line names no "
+                                   "relation, and this one names `{read}`"),
+}
+"""The sentence of each part of an annotation line off its form, from the
+part as the line writes it."""
+
+MISSING_PART_TEXT: dict[FormPart, str] = {
+    FormPart.INDENT: mctx("`{word}` is a nested line, with two spaces or more "
+                          "after `//`"),
+    FormPart.PARENT: mctx("`{word}` nests under {under} line that is in its "
+                          "own form, and it stands under none"),
+    FormPart.SLUG: mctx("the slug is missing"),
+    FormPart.ID: mctx("the id is missing"),
+    FormPart.PROPOSER: mctx("the proposer is missing"),
+    FormPart.SPACING: mctx("the `:` takes no space before it"),
+    FormPart.COLON: mctx("the `:` is missing"),
+    FormPart.TEXT: mctx("no text follows the `:`"),
+    FormPart.PLAUSIBILITY: mctx("the plausibility is missing"),
+    FormPart.VERDICT: mctx("the verdict is missing"),
+    FormPart.VALUE: mctx("`{word}` takes one word, and none follows it"),
+    FormPart.DASH: mctx("the `—` before the reason is missing"),
+    FormPart.REASON: mctx("no reason follows the `—`"),
+}
+"""The sentence of each part of an annotation line off its form that the
+line does not write: missing, or a line's place."""
+
+
+def _either(words: Sequence[str]) -> str:
+    ticked = [f"`{w}`" for w in words]
+    if len(ticked) == 1:
+        return ticked[0]
+    return mctx("{some} or {last}").format(some=", ".join(ticked[:-1]),
+                                           last=ticked[-1])
+
+
+def off_form_text(detail: OffForm) -> str:
+    """An annotation line off its form, with each part of it that breaks
+    the form."""
+    word = (header_word_text(detail.word)
+            if isinstance(detail.word, HeaderWord | ClaimKind)
+            else at_word(detail.word))
+    parts: list[str] = []
+    for off in detail.parts:
+        text = MISSING_PART_TEXT[off.part] if off.read is None \
+            else OFF_PART_TEXT[off.part]
+        under = None
+        if off.part == FormPart.PARENT:
+            assert isinstance(detail.word, DirectiveWord)
+            parents = NESTS_UNDER[detail.word]
+            article = "an" if parents[0].value[0] in "aeiou" else "a"
+            under = f"{article} " + _either([at_word(w) for w in parents])
+        parts.append(text.format(
+            read=off.read, word=word, under=under,
+            plausibilities=_either([p.value for p in Plausibility])))
+    return mctx("`{text}` is off its annotation's form: {parts}").format(
+        text=detail.text, parts="; ".join(parts))
+
+
 def detail_text(detail: Detail) -> str:
     """The part of a fault its sentence names."""
     match detail:
         case Quoted(text=text):
             return text
+        case OffForm() as off:
+            return off_form_text(off)
         case Named(name=RelationName() as relation):
             return relation.text
         case Named(name=DeriveBranch() as branch):
@@ -1167,59 +1236,3 @@ def render(solver: Solver, section: Section,
     if verdict is not None:
         lines += ([""] if section == Section.LINT else []) + [verdict]
     return lines
-
-
-# Directive hints
-
-
-class HintKind(StrEnum):
-    """The line a `derive` or `store` report tells the session to add."""
-
-    DERIVE = "derive"
-    STORE = "store"
-    IGNORE_DERIVE = "ignore derive"
-    IGNORE_STORE = "ignore store"
-
-
-@dataclass(frozen=True)
-class Hint:
-    """A directive line to add: its kind, the proposer of a `@derive`
-    or `@ignore: derive <Proposer>` line, the relation a line on an instance names, and the site it goes
-    above: the instance of an `.init`, or the block of a `RIGID` call;
-    None for the relation's own `.decl`. `alone` says no `@derive` or
-    `@store` line stands above it in the report, so it states the
-    site."""
-
-    kind: HintKind
-    proposer: str | None = None
-    relation: str | None = None
-    site: str | None = None
-    alone: bool = False
-
-
-def derive_line_to_add(proposer: str) -> str:
-    """The `@derive` line of `proposer` for the agent to add, its
-    plausibility and verdict left as slots."""
-    return comment_text(derive_text(proposer, Slot.PLAUSIBILITY,
-                                    Slot.VERDICT))
-
-
-def hint_line(h: Hint) -> str:
-    """The line the session adds, as the `derive` and `store` reports
-    print it ([Program](docs/handbook/solver-file.md#program))."""
-    if h.kind == HintKind.DERIVE:
-        add = "add:" if h.site is None \
-            else f"add above `RIGID({h.site}, …)`:"
-        assert h.proposer is not None
-        return f"{add} " + derive_line_to_add(h.proposer)
-    named = h.relation if h.site is not None else None
-    add = "add:" if h.site is None else f"add above `.init {h.site}`:"
-    if h.kind == HintKind.STORE:
-        return f"{add} " + comment_text(store_text(
-            named, Slot.PLAUSIBILITY, Slot.VERDICT))
-    lead = f"{add} " if h.alone and h.site is not None else "or:  "
-    if h.kind == HintKind.IGNORE_DERIVE:
-        return lead + comment_text(ignore_text(
-            named, IgnoreForm.DERIVE, Slot.REASON, h.proposer))
-    return lead + comment_text(ignore_text(named, IgnoreForm.STORE,
-                                           Slot.REASON))

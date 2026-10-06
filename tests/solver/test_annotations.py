@@ -74,5 +74,4 @@ def test_forms_and_their_places() -> None:
         (ProblemKind.UNKNOWN_FORM, InSolver(22)),
         (ProblemKind.UNKNOWN_IGNORE_CATEGORY, InSolver(23)),
         (ProblemKind.OFF_FORM, InSolver(24)),
-        (ProblemKind.OFF_FORM, InSolver(24)),
     ]

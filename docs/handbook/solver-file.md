@@ -24,7 +24,6 @@
         // @scene <slug>: <what this branch changes in the claim, and where it is undefined>
         // @rule <slug>: <what this branch changes in the claim, and where it is undefined>
         // @rule <new slug>: <added claim, and where it is undefined>
-        //     @witness <id>: <plausibility> <verdict>
         // @witness <id>: <plausibility> <verdict>
         //     @relaxed <slug of the scene claim this witness breaks>
         //     @reassigned <parameter changed for this witness>

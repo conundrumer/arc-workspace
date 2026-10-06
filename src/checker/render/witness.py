@@ -38,12 +38,11 @@ from checker.render import (
     NO_ASSIGN_VALUE,
     _no_sentence,
     _ticked,
-    grid_lines,
     names_text,
     resolution_lines,
-    shifted,
     where_text,
 )
+from checker.render.grids import grid_lines, shifted
 from solver.names import name as case_name
 from controlled_markdown import mctx
 from solver import names

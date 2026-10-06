@@ -57,6 +57,7 @@
     - `<name>`: <its value, or each open value>
         - <what it holds, where the name does not say>
     ```
+    - A slug is lowercase letters and digits, in words joined by single `-`.
     - Write it from your reading of the pairs alone, before you write any script.
     - Then check that it fits every pair.
         - Where a script of this pass needs what a lib component computes, call the component in place of rebuilding it: `lib_components.components` has a function of the same name for each component with no column of a type its caller declares, which runs the component on the rows it is given.
@@ -89,7 +90,7 @@
     - The concept case: each witness with verdict `other` that no branch below lists, with the items below, and the rule restated as the generator applies it, which the concept file's rule approximates.
     - A branch that fails Fit: the pair it fails.
     - A branch that fits every pair: one of its witnesses, on which the branch's model is defined when such a witness exists, with:
-        - its id in the witness file
+        - its id in the witness file: the branch's name, for a branch that derives a parameter's value or stores a value the program derives, and a slug otherwise
         - the scene claim the witness breaks, when it breaks one
         - the assignment it stands at, when that is not the stored one
         - its plausibility and verdict

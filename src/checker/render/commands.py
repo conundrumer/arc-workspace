@@ -11,27 +11,25 @@ from arc.task import Example
 from checker.finding import Finding
 from checker.sweep import GivingValues
 from checker.render import (
-    GridRow,
     LineForm,
     Section,
     _ticked,
     cases_text,
     counted,
-    derive_line_to_add,
     detail_text,
     failure_text,
     file_name,
     finding_lines,
-    grid_lines,
     header_line,
     in_line_order,
     lint_line,
     noun,
     pass_line,
     render,
-    shifted,
     solver_name,
 )
+from checker.render.grids import GridRow, grid_lines, shifted
+from checker.render.hints import derive_line_to_add
 from checker.render.surveys import giving_text
 from solver.names import ctor_text
 from solver.names import name as case_name

@@ -9,7 +9,7 @@ from engine import GridLayout, ParseFailure, RelationName
 from engine.quotes import quotes
 
 if TYPE_CHECKING:
-    from solver.annotations import DirectiveWord
+    from solver.annotations import ClaimKind, DirectiveWord, HeaderWord
     from solver.model import DeriveBranch
 
 
@@ -27,7 +27,8 @@ class ProblemKind(StrEnum):
     UNKNOWN_FORM = "unknown-form"
     """An `@word` no annotation form has."""
     OFF_FORM = "off-form"
-    """An annotation of a known word whose text is not in the word's form."""
+    """An annotation of a known word whose text is not in the word's form,
+    with the parts that break the form (`OffForm`)."""
     UNKNOWN_IGNORE_CATEGORY = "unknown-ignore-category"
     """`@ignore: <text>` whose text is no `solver.category.Category`."""
     DIRECTIVE_UNPLACED = "directive-unplaced"
@@ -145,6 +146,78 @@ class Named:
     `DirectiveWord`."""
 
     name: "str | RelationName | DeriveBranch | DirectiveWord"
+
+
+@quotes("solver-file.md", "File structure",
+        "// @rule <slug>: <what the output takes from the input> // "
+        "@approximated: <the rule the program runs> // @witness <id>: "
+        "<plausibility> <verdict>")
+class FormPart(StrEnum):
+    """A part of an annotation line that breaks its word's form."""
+
+    INDENT = "indent"
+    """A nested word's line with fewer than two spaces after `//`."""
+    PARENT = "parent"
+    """A nested line with no line to nest under above it
+    (`solver.annotations.NESTS_UNDER`)."""
+    SLUG = "slug"
+    """A claim's slug, or a slug a `@claim` line lists, off the slug's
+    form: lowercase letters and digits, in words joined by single `-`."""
+    ID = "id"
+    """A `@witness` line's id, off the slug's form."""
+    PROPOSER = "proposer"
+    """A `@derive` line's proposer, which is one word of letters, digits
+    and `_`."""
+    RELATION = "relation"
+    """The relation a `@store` or `@ignore` line names, which is letters,
+    digits, `_` and `.`."""
+    SPACING = "spacing"
+    """The spaces around the name before a `:`: one or more before the
+    name, and none between it and the `:`; with no name, none before the
+    `:`."""
+    COLON = "colon"
+    """The `:` the form takes, missing."""
+    TEXT = "text"
+    """The text after the `:`, missing."""
+    TRAILING = "trailing"
+    """Text after a word that takes none, as `@draft` takes none."""
+    PLAUSIBILITY = "plausibility"
+    """A plausibility, missing or no `solver.annotations.Plausibility`."""
+    VERDICT = "verdict"
+    """A verdict, missing, or more than one word other than names joined
+    by `&`."""
+    VALUE = "value"
+    """The one word of a `@relaxed` or `@reassigned` line, missing or more
+    than one."""
+    REPRESENTATIVE = "representative"
+    """A `@representative:` value other than a task id with at most one
+    case name after it."""
+    DASH = "dash"
+    """The `—` before an `@ignore` line's reason, missing."""
+    REASON = "reason"
+    """An `@ignore` line's reason after its `—`, missing."""
+    DERIVE_RELATION = "derive-relation"
+    """A relation named on an `@ignore: derive` line, which names none."""
+
+
+@dataclass(frozen=True)
+class OffPart:
+    """A part of an annotation line that breaks its word's form: the part,
+    and its text as the line writes it; None for a part that is missing,
+    and for `INDENT` and `PARENT`."""
+
+    part: FormPart
+    read: str | None
+
+
+@dataclass(frozen=True)
+class OffForm:
+    """An annotation line off its word's form: the line's text, its word,
+    and each part of it that breaks the form."""
+
+    text: str
+    word: "DirectiveWord | HeaderWord | ClaimKind"
+    parts: tuple[OffPart, ...]
 
 
 @quotes("solver-file.md", "Witness file",
@@ -340,9 +413,9 @@ class OffFormType(StrEnum):
     """A record with a field of an ADT in `Choice`."""
 
 
-type Detail = (Quoted | Named | ShapeFault | Undecided | GridOffLayout
-               | AnchorWithoutStamp | GridCellOffForm | AssignArity
-               | AssignType | CaseColumnOffForm | ParseFailure)
+type Detail = (Quoted | Named | OffForm | ShapeFault | Undecided
+               | GridOffLayout | AnchorWithoutStamp | GridCellOffForm
+               | AssignArity | AssignType | CaseColumnOffForm | ParseFailure)
 
 
 @dataclass(frozen=True)
