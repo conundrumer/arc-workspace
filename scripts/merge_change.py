@@ -2,6 +2,10 @@
 
     uv run python scripts/merge_change.py <worktree> -m <message> [<worktree> -m <message> ...]
 
+The paragraphs below say how the script commits, rebases, checks and lands
+the changes, the merge lock it holds, the cases where it refuses a change,
+what it prints, and its exit status. The arguments and options follow them.
+
 Each worktree stands on a branch of its own, and the message given after
 it is the message of its commit. For each worktree in turn, the script
 first sets up the worktree's git submodules with `git submodule update

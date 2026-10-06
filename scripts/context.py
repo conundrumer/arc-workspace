@@ -42,6 +42,7 @@ HELP = mctx("""
         uv run python scripts/context.py context --at <commit> <reader> [args]    # that context at a commit
         uv run python scripts/context.py context --diff <commit> <reader> [args]  # its diff since a commit
         ```
+    - The items below say what each form does.
     - With no argument, the command prints the handbook, the passes a session runs, and the lib. That form and `--write` also write the lib's interface files: the `.md` beside each lib source, which the handbook's lib index points to.
     - `--write` first checks the lib's sources, prints what the checks find and exits 1 when they find anything. Otherwise it writes the files below, which git does not track. A session reads them only when they were written before it started.
         - One agent under `.claude/agents/` per document under `prompts/agents/`, with the context its document composes as its system prompt, and `.claude/agents/.manifest`, which lists the agent files written there.

@@ -7,6 +7,13 @@ times.
     uv run python scripts/gate.py --accept [--replace] <out-dir> [cmd ...]
     uv run python scripts/gate.py --adopt-record <out-dir>
 
+The paragraphs below say how the commands run and what they write, how
+their outputs and times are compared and what each line printed means, the
+locks a run holds, what each option does, where the accepted outputs, the
+accepted times and the dependency record are read, and the exit status.
+The arguments and options follow them, and then the stems each command runs
+on.
+
 A command runs on the stems its `Command.stems` gives, which the end of
 `--help` lists for each command. Every command reads the solver files from
 `tests/gate/solvers/` and the witness files from `tests/gate/witnesses/`.

@@ -23,6 +23,8 @@ GRID_HELP = mctx("Grid format: one line per row, one digit 0-9 per cell. "
                  "and lines starting with `#` are skipped. Text starting with "
                  "`[` is read as JSON.")
 
+GRID_FOLLOWS = mctx("The arguments and options follow, then the grid format.")
+
 STEM_HELP = mctx("a task id, or the path to a solver file whose name starts "
                  "with the task id; a solver file anywhere runs with the "
                  "lib, as a solver does")
@@ -55,7 +57,10 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
     """The parser, and the command names its subparsers take. Each
     subparser carries, as `handler`, the function its command runs."""
     top = argparse.ArgumentParser(
-        description=mctx("Run Souffle solvers and their checks."),
+        description=mctx("Run Souffle solvers and their checks. The commands "
+                         "follow, each with what it runs, and `uv run python "
+                         "scripts/run_dl.py <command> --help` prints a "
+                         "command's arguments."),
     )
     sub = top.add_subparsers(dest="cmd", required=True)
 
@@ -68,6 +73,8 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
         "run", run.dispatch,
         help=mctx("pairs, lint and determination checks; the command run when "
                   "the first argument is not a command"),
+        description=mctx("The arguments and options follow, then how to "
+                         "profile one grid by hand."),
         epilog=RUN_HELP,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -127,8 +134,9 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                          "`@derive` or `@store` branch and emits none. "
                          "After the count line comes `no case takes "
                          "$<Ctor>` for each constructor of `Choice`, at "
-                         "any depth, that no case of the solver takes."
-                         ).format(width=GROUP_WIDTH),
+                         "any depth, that no case of the solver takes. "
+                         "{follows}"
+                         ).format(width=GROUP_WIDTH, follows=GRID_FOLLOWS),
         epilog=GRID_HELP,
     )
     grid.add_argument("stem", help=STEM_HELP)
@@ -181,7 +189,8 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                          "its judged output. Where a witness keeps its "
                          "input, `--separates` alone keeps its groups and "
                          "takes the new text, and `--assign` runs it again "
-                         "at the new `assign`."),
+                         "at the new `assign`. {follows}"
+                         ).format(follows=GRID_FOLLOWS),
         epilog=GRID_HELP,
     )
     record_p.add_argument("stem", help=STEM_HELP)
