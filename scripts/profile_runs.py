@@ -2,7 +2,6 @@
 wall time goes. `--help` prints HELP."""
 
 import argparse
-import json
 import math
 import re
 import sys
@@ -10,7 +9,6 @@ import time
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum
-from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -21,15 +19,19 @@ from handbook.paths import console_importable, importable
 
 console_importable()
 # `scripts/` is no package: a test loads this module by its path, with
-# `scripts/` off `sys.path`, and `command_labels` and `transcripts` import
-# from there.
+# `scripts/` off `sys.path`, and the modules below import from there.
 importable(checkout.scripts())
 
+from agent_launches import (Report, pending_agents, reports,  # noqa: E402
+                            run_launches, running_agents)
 from command_labels import AGENT_TOOLS, POLL, call_command, command_label  # noqa: E402
 from quota import epoch  # noqa: E402
-from transcripts import (Entry, Refused, agent_id, chain, find,  # noqa: E402
-                         is_subagent, main_transcript, read_entries,
-                         session_directory, subagent_transcripts, transcripts)
+from run_reads import (AGENT_MESSAGE, BACKGROUND, MAIN, NOTIFICATION, blocks,  # noqa: E402
+                       is_prompt, message_text, notified, parent_id, read_meta,
+                       results_by_call, run_entries, run_type, session_agents,
+                       session_of, text_of)
+from transcripts import (Entry, Refused, agent_id, find,  # noqa: E402
+                         is_subagent, transcripts)
 
 # The terms of a type's budget, which HELP states.
 BUDGET_FACTOR = 2
@@ -60,6 +62,11 @@ HELP = mctx("""
     - A poll is a Bash call that runs `sleep` and none of the known commands, in a loop or not. A command the harness moves to the background on its timeout counts under its own label up to then, and under `bg LABEL` after.
     - One run prints its parts and its labels by time, with each label's share of the wall time and its calls, and for backgrounded work the time it ran from launch to its notification.
     - One run of a subagent, completed or not, also prints each message from its parent, as `--running` defines those messages: the time it arrived, its active time, which is the run's wall time less `idle` over that message's period, and the budget in force for it, which is the budget `--running` gives from the messages up to it. A message whose active time is past its budget is marked `past budget`. A message with no budget in force prints none, and a run with an unknown message prints no active time and no budget.
+    - One run of a subagent also prints, after `report to the parent:`, the latest entry of its parent's transcripts after the parent's latest message to it that gives a report of it, with the entry's time, its kind and the start of its text, or where none does, `none after the message at` and that message's time. The parent's transcripts are, under each session of the run, the main transcript where the parent is `main`, and otherwise the transcripts of the parent's run. An entry gives a report where it is:
+        - `notification`: a notification of the agent with the status `completed` and a result, other than one whose note says the agent stopped with background work of its own still running;
+        - `result`: the result of a foreground Agent call that launched the agent;
+        - `message`: a message from the agent.
+    - Where the latest message from the parent is unknown, or no transcript of the parent is found, it prints `?`. A notification or a launch result whose status is of no known form gives no report. An `undecided` line on stderr names each.
     - More than one run prints, per agent type, the number of runs, the minimum, median, P-th percentile and maximum of wall time, the total, the median and P-th percentile of active time, which is wall time less `idle`, and each part's share of the total, then each type's labels by time, with the number of runs each appears in.
     - More than one run also prints the budget of each agent type, which is {factor} times a median wall time, printed with the runs it is taken over:
         - The window of a type that has an agent document under `prompts/agents/` is the runs whose first entry is at or after the last commit that changed that document, a document it includes or inlines, a lib file its rendered prompt holds, a script under `scripts/` its rendered prompt names, or a package under `src/` its rendered prompt runs with `-m`, and not a module such a script or package imports. `--since DATE`, an ISO date or datetime read in local time where it gives no offset, sets the window of every type to the runs whose first entry is at or after DATE. Where the window holds at least {window_runs} runs of the type, the median is taken over them.
@@ -99,7 +106,6 @@ class Part(Enum):
 
 type Key = tuple[Part, str]
 
-MAIN = "main"
 # A brief line that states a budget, and the opening of a line that words one.
 BUDGET_LINE = re.compile(r"Budget: (\d+(?:\.\d+)?) minutes\.?")
 BUDGET_OPENING = re.compile(r"budget\s*:", re.I)
@@ -108,16 +114,9 @@ WAIT_TOOLS = ("Monitor", "TaskOutput")
 # The start of the text of the entry the harness writes where the user
 # interrupts a run.
 INTERRUPTED = "[Request interrupted by user"
-# The openings of the message of a SendMessage result where the call resumed
-# the agent it was sent to, and where it queued the message to a running one.
-RESUMING = "Resuming agent"
-QUEUED = "Message queued"
 # Ways a Bash result says the harness, not the call, moved it to the
 # background after it had run in the foreground.
 MOVED = ("timedOutAfterMs", "assistantAutoBackgrounded", "backgroundedByUser")
-AGENT_MESSAGE = re.compile(r'<agent-message from="([^"]+)"')
-NOTIFICATION = re.compile(r"<task-notification>(.*?)</task-notification>", re.S)
-TAG = re.compile(r"<(task-id|tool-use-id)>([^<]+)</\1>")
 
 
 @dataclass
@@ -189,6 +188,7 @@ class Run:
     others: list[Message]
     unknown: list[str]
     cwd: str | None
+    path: Path
 
     @property
     def active(self) -> float:
@@ -245,65 +245,6 @@ class Call:
     task_ids: list[str] = field(default_factory=list)
 
 
-def read_meta(path: Path) -> dict[str, Any] | None:
-    """The `.meta.json` of the run of the subagent whose transcript is at
-    `path`: each key as the earliest of its transcripts' `.meta.json` files
-    that gives the key gives it, or None where none of them has one."""
-    metas = [json.loads(m.read_text()) for p in chain(path)
-             if (m := p.with_suffix(".meta.json")).is_file()]
-    if not metas:
-        return None
-    out: dict[str, Any] = {}
-    for meta in reversed(metas):
-        out.update(meta)
-    return out
-
-
-def subagent_meta(path: Path) -> dict[str, Any]:
-    """The `.meta.json` of the subagent whose transcript is at `path`, which
-    must give its agent type."""
-    meta = read_meta(path)
-    if meta is None or "agentType" not in meta:
-        raise Refused(mctx("the agent type of `{path}` is unknown: its "
-                           ".meta.json is absent or gives none").format(path=path))
-    return meta
-
-
-def run_type(path: Path) -> tuple[str, str]:
-    if not is_subagent(path):
-        return MAIN, ""
-    meta = subagent_meta(path)
-    return meta["agentType"], meta.get("description", "")
-
-
-def parent_id(path: Path) -> str:
-    """The agent id of the parent of the agent whose transcript is at
-    `path`, or `main`, which its `.meta.json` gives by naming no parent."""
-    return subagent_meta(path).get("parentAgentId") or MAIN
-
-
-def run_entries(path: Path) -> list[Entry]:
-    """The entries of the run of the agent whose transcript is at `path`,
-    across its transcripts."""
-    return [e for p in chain(path) for e in read_entries(p)]
-
-
-def blocks(entry: Entry, kind: str) -> list[dict[str, Any]]:
-    content = (entry.get("message") or {}).get("content")
-    if not isinstance(content, list):
-        return []
-    return [b for b in content if isinstance(b, dict) and b.get("type") == kind]
-
-
-def text_of(content: Any) -> str:
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        return "\n".join(b.get("text", "") for b in content
-                         if isinstance(b, dict) and b.get("type") == "text")
-    return ""
-
-
 # Profiles.
 
 def request_input(entry: Entry) -> int | None:
@@ -314,17 +255,6 @@ def request_input(entry: Entry) -> int | None:
         return None
     return sum(usage.get(k) or 0 for k in (
         "input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
-
-
-def results_by_call(entries: list[Entry]) -> dict[str, dict[str, Any]]:
-    out: dict[str, dict[str, Any]] = {}
-    for e in entries:
-        r = e.get("toolUseResult")
-        if e.get("type") != "user" or not isinstance(r, dict):
-            continue
-        for b in blocks(e, "tool_result"):
-            out[b.get("tool_use_id", "")] = r
-    return out
 
 
 def launched_type(inp: dict[str, Any], result: dict[str, Any] | None,
@@ -339,32 +269,12 @@ def launched_type(inp: dict[str, Any], result: dict[str, Any] | None,
     return meta.get("agentType") if meta else None
 
 
-def session_of(path: Path) -> Path:
-    """The session directory a transcript belongs to."""
-    session = path.parents[1] if is_subagent(path) else session_directory(path)
-    while is_subagent(session):
-        session = session.parent
-    return session
-
-
-@cache
-def session_agents(session: Path) -> dict[str, Path]:
-    return {agent_id(p): p for p in subagent_transcripts(session)}
-
-
-def session_transcripts(session: Path) -> list[Path]:
-    """The transcripts of `session`: its main transcript, where it has one,
-    and those of its subagents."""
-    main = main_transcript(session)
-    return [*([main] if main.is_file() else []), *session_agents(session).values()]
-
-
 def classify(block: dict[str, Any], result: dict[str, Any] | None,
              session: Path, undecided: list[str], run: str) -> Call:
     name, inp = block.get("name"), block.get("input") or {}
     r = result or {}
     task_ids = [str(r[k]) for k in ("backgroundTaskId", "taskId", "agentId") if r.get(k)]
-    launched = bool(r.get("backgroundTaskId")) or r.get("status") == "async_launched"
+    launched = bool(r.get("backgroundTaskId")) or r.get("status") == BACKGROUND
     if name in AGENT_TOOLS:
         kind = launched_type(inp, result, session)
         if kind is None:
@@ -386,14 +296,6 @@ def classify(block: dict[str, Any], result: dict[str, Any] | None,
         return Call(background, None, task_ids)
     pending = (Part.WAITS, POLL) if label == POLL else (Part.TOOLS, label)
     return Call(pending, background if launched else None, task_ids)
-
-
-def is_prompt(entry: Entry) -> bool:
-    """Whether an entry gives the model a message: a user entry that answers
-    no tool call, or a message queued while the model worked."""
-    if entry.get("type") == "attachment":
-        return (entry.get("attachment") or {}).get("type") == "queued_command"
-    return entry.get("type") == "user" and not blocks(entry, "tool_result")
 
 
 def turns(entries: list[Entry]) -> tuple[set[int], set[int]]:
@@ -420,15 +322,6 @@ def turns(entries: list[Entry]) -> tuple[set[int], set[int]]:
         if e.get("type") in ("user", "assistant") or is_prompt(e):
             nxt = e
     return starts, ends
-
-
-def message_text(entry: Entry) -> str:
-    """The text of a user entry, or of a message queued while the model
-    worked."""
-    if entry.get("type") == "attachment":
-        a = entry.get("attachment") or {}
-        return text_of(a.get("prompt")) if a.get("type") == "queued_command" else ""
-    return text_of((entry.get("message") or {}).get("content"))
 
 
 def sender(entry: Entry, parent: str, children: frozenset[str]) -> Sender:
@@ -467,11 +360,6 @@ def sent_by(agent: str, parent: str, children: frozenset[str]) -> Sender:
     if agent == parent:
         return Sender.PARENT
     return Sender.OTHER if agent in children else Sender.AGENT
-
-
-def notified(entry: Entry) -> list[str]:
-    text = message_text(entry)
-    return [v for body in NOTIFICATION.findall(text) for _, v in TAG.findall(body)]
 
 
 def profile(path: Path, undecided: list[str]) -> Run:
@@ -593,7 +481,7 @@ def profile(path: Path, undecided: list[str]) -> Run:
     return Run(label, agent_type, description, first, wall, parts,
                {k: g for k, g in groups.items() if g.time or g.calls},
                list(spans.values()), in_flight, backgrounded, idle or interrupted, context, said,
-               messages, others, unknown, cwd)
+               messages, others, unknown, cwd, path)
 
 
 # Output.
@@ -717,213 +605,6 @@ def print_types(runs: list[Run], pct: float, top: int) -> None:
         print_groups(merged, top, total, present)
 
 
-# Running agents.
-
-@cache
-def session_launches(session: Path) -> tuple[dict[str, Path], dict[str, frozenset[str]]]:
-    """The transcripts of a session's agents by the Agent call that launched
-    each, and the agent ids of the agents each subagent launched, by its
-    agent id, as their `.meta.json` files give them."""
-    by_call: dict[str, Path] = {}
-    children: dict[str, set[str]] = {}
-    for aid, p in session_agents(session).items():
-        meta = read_meta(p) or {}
-        if meta.get("toolUseId"):
-            by_call[meta["toolUseId"]] = chain(p)[-1]
-        if meta.get("parentAgentId"):
-            children.setdefault(meta["parentAgentId"], set()).add(aid)
-    return by_call, {k: frozenset(v) for k, v in children.items()}
-
-
-def run_launches(path: Path) -> tuple[dict[str, Path], dict[str, frozenset[str]]]:
-    """`session_launches` over the sessions of the transcripts of the run
-    at `path`."""
-    by_call: dict[str, Path] = {}
-    children: dict[str, frozenset[str]] = {}
-    for p in chain(path):
-        calls, kids = session_launches(session_of(p))
-        by_call.update(calls)
-        for k, v in kids.items():
-            children[k] = children.get(k, frozenset()) | v
-    return by_call, children
-
-
-@dataclass
-class Launch:
-    """An agent a run launched: its agent id, where the run's transcript
-    gives it, its transcript, where one gives the call as its launch, the
-    time of the run's call that launched it or of the last call that resumed
-    it, by the run or by any agent of the run's sessions, and the time of
-    the run's last sign that it reported, or None where the run holds none."""
-    agent: str | None
-    path: Path | None
-    since: float
-    done: float | None
-
-    @property
-    def pending(self) -> bool:
-        """Whether the agent is pending to the run: the run holds no sign
-        that it reported since the call that launched or last resumed it."""
-        return self.done is None or self.since > self.done
-
-
-def resumed(result: dict[str, Any], run: str, call: str,
-            undecided: list[str]) -> str | None:
-    """The agent id of the agent a SendMessage call resumed, as its result
-    gives it, or None where the call resumed none or its result is of an
-    unknown form."""
-    if result.get("resumedAgentId"):
-        return str(result["resumedAgentId"])
-    message = str(result.get("message", ""))
-    if message.startswith(RESUMING):
-        return (result.get("pin") or {}).get("id")
-    if result.get("pin") and not message.startswith(QUEUED):
-        undecided.append(mctx("{run}: the result of SendMessage call {call} "
-                              "says neither that it resumed an agent nor "
-                              "that it queued the message").format(
-            run=run, call=call))
-    return None
-
-
-def note_latest(times: dict[str, float], agent: str, t: float) -> None:
-    """Keep in `times` the later of the time it gives `agent` and `t`."""
-    times[agent] = max(times.get(agent, t), t)
-
-
-def resumes(entries: list[Entry], run: str, agents: set[str] | None,
-            undecided: list[str]) -> dict[str, float]:
-    """The time of the last SendMessage call among `entries` that resumed
-    each agent, or with `agents` each of those agents."""
-    results = results_by_call(entries)
-    out: dict[str, float] = {}
-    for e in entries:
-        if e.get("type") != "assistant" or not e.get("timestamp"):
-            continue
-        for b in blocks(e, "tool_use"):
-            if b.get("name") != "SendMessage":
-                continue
-            aid = resumed(results.get(b.get("id", "")) or {}, run,
-                          b.get("id", ""), undecided)
-            if aid and (agents is None or aid in agents):
-                note_latest(out, aid, epoch(e["timestamp"]))
-    return out
-
-
-def session_resumes(path: Path, agents: set[str], since: float,
-                    undecided: list[str]) -> dict[str, float]:
-    """The time of the last SendMessage call that resumed each of `agents`,
-    among the calls of each agent of the sessions of the run at `path`, main
-    among them, other than that run, whose transcript changed at or after
-    `since`."""
-    own = chain(path)
-    sessions = dict.fromkeys(session_of(p) for p in own)
-    out: dict[str, float] = {}
-    for session in sessions:
-        for p in session_transcripts(session):
-            if p in own or p.stat().st_mtime < since:
-                continue
-            entries = read_entries(p, naming=agents | {"SendMessage"})
-            for aid, t in resumes(entries, parent_label(p), agents,
-                                  undecided).items():
-                note_latest(out, aid, t)
-    return out
-
-
-def launched(path: Path, undecided: list[str]) -> list[Launch]:
-    """The agents the run at `path` launched, in the order of their launch.
-    A sign that an agent reported is the run's notification of it, or a
-    result of its launch that does not say the agent runs in the
-    background."""
-    entries = [e for e in run_entries(path) if e.get("timestamp")]
-    results = results_by_call(entries)
-    answered = {b.get("tool_use_id"): epoch(e["timestamp"]) for e in entries
-                if e.get("type") == "user" for b in blocks(e, "tool_result")}
-    told = {v: epoch(e["timestamp"]) for e in entries
-            if e.get("type") != "assistant" for v in notified(e)}
-    by_call = run_launches(path)[0]
-    out: list[Launch] = []
-    for e in entries:
-        if e.get("type") != "assistant":
-            continue
-        for b in blocks(e, "tool_use"):
-            if b.get("name") not in AGENT_TOOLS:
-                continue
-            tid = b.get("id", "")
-            result = results.get(tid) or {}
-            background = result.get("status") == "async_launched"
-            signs = [told.get(tid), told.get(result.get("agentId", "")),
-                     None if background else answered.get(tid)]
-            done = max((t for t in signs if t is not None), default=None)
-            child = by_call.get(tid)
-            aid = agent_id(child) if child else result.get("agentId")
-            if child is None and done is None:
-                undecided.append(mctx("{run}: no transcript gives call {call} as "
-                                      "its launch").format(run=path.stem, call=tid))
-            out.append(Launch(aid, child, epoch(e["timestamp"]), done))
-    own = resumes(entries, path.stem, None, undecided)
-    agents = {a.agent for a in out if a.agent}
-    others = (session_resumes(path, agents, min(a.since for a in out), undecided)
-              if agents else {})
-    for a in out:
-        a.since = max(a.since, own.get(a.agent or "", 0.0),
-                      others.get(a.agent or "", 0.0))
-    return out
-
-
-def pending_agents(path: Path, undecided: list[str]) -> list[str]:
-    """The agent ids of the agents pending to the run at `path`, in the
-    order of their launch, as HELP gives them."""
-    own = [a for a in launched(path, undecided) if a.pending and a.agent]
-    if not own:
-        return []
-    told = session_notified(session_of(path), {a.agent for a in own if a.agent},
-                            min(a.since for a in own))
-    out: list[str] = []
-    for a in own:
-        last = told.get(a.agent or "")
-        if a.agent and (last is None or last <= a.since):
-            out.append(a.agent)
-    return out
-
-
-def session_notified(session: Path, agents: set[str],
-                     since: float) -> dict[str, float]:
-    """The time of the last notification of each of `agents` that a
-    transcript of `session` changed at or after `since` holds."""
-    out: dict[str, float] = {}
-    for p in session_transcripts(session):
-        if p.stat().st_mtime < since:
-            continue
-        for e in read_entries(p, naming=agents):
-            if not e.get("timestamp") or e.get("type") == "assistant":
-                continue
-            for v in notified(e):
-                if v in agents:
-                    note_latest(out, v, epoch(e["timestamp"]))
-    return out
-
-
-def parent_label(path: Path) -> str:
-    return agent_id(path) if is_subagent(path) else MAIN
-
-
-def running_agents(path: Path, undecided: list[str]) -> list[tuple[str, Path]]:
-    """The agents under the run at `path` whose parent holds no sign that
-    they completed, or whose transcript changed after the last sign, each
-    with its parent, each parent's agents after it."""
-    parents = run_launches(path)[1]
-    out: list[tuple[str, Path]] = []
-    for a in launched(path, undecided):
-        child = a.path
-        if child is None:
-            continue
-        if a.done is None or child.stat().st_mtime > a.done:
-            out.append((parent_label(path), child))
-        if agent_id(child) in parents:
-            out.extend(running_agents(child, undecided))
-    return out
-
-
 def one_line(text: str, tail: bool = False) -> str:
     """`text` on one line, cut to its first COMMAND_WIDTH characters, or
     with `tail` to its last."""
@@ -1032,6 +713,29 @@ def print_messages(r: Run, undecided: list[str]) -> None:
         print(f"    {clock(m.time)}  active {active_text}{of_budget(budget)}{past}")
 
 
+def print_report(r: Run, undecided: list[str]) -> None:
+    """Print the latest report of the subagent of `r` that reached its
+    parent after the parent's latest message to it, as HELP gives it."""
+    if r.agent_type == MAIN:
+        return
+    found: list[Report] | None = None
+    if r.unknown or not r.messages:
+        undecided.append(mctx("{run}: the latest message from its parent is "
+                              "unknown, so whether a report reached the parent "
+                              "after it is unknown").format(run=r.label))
+    else:
+        found = reports(r.path, r.messages[-1].time, undecided)
+    if found is None:
+        print("  " + mctx("report to the parent: ?"))
+    elif not found:
+        print("  " + mctx("report to the parent: none after the message at "
+                          "{time}").format(time=clock(r.messages[-1].time)))
+    else:
+        last = found[-1]
+        print("  " + mctx("report to the parent: {time} {kind}: {text}").format(
+            time=clock(last.time), kind=last.kind.value, text=one_line(last.text)))
+
+
 def iso_date(text: str) -> float:
     return epoch(text)
 
@@ -1095,6 +799,7 @@ def main(argv: list[str]) -> int:
                   f"  wall {minutes(r.wall)}  {part_split(r.parts)}")
         if len(runs) == 1:
             print_messages(runs[0], undecided)
+            print_report(runs[0], undecided)
             print_groups(runs[0].groups, args.top, runs[0].wall)
         else:
             print()

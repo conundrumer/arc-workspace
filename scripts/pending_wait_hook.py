@@ -34,9 +34,11 @@ def deny(agents: list[str]) -> None:
 def check(hook: dict[str, Any]) -> None:
     """Deny the call `hook` gives where it waits on an agent pending to its
     caller."""
-    import profile_runs as pr
+    from agent_launches import pending_agents
     from command_labels import runs_sleep
     from file_ticket import AGENT_ID
+    from run_reads import blocks, session_agents, session_of
+    from transcripts import main_transcript, read_entries
 
     tool, inp = hook["tool_name"], hook["tool_input"]
     if tool == "Bash":
@@ -51,23 +53,23 @@ def check(hook: dict[str, Any]) -> None:
     named = set(AGENT_ID.findall(text))
     if not named:
         return
-    session = pr.session_of(Path(hook["transcript_path"]))
+    session = session_of(Path(hook["transcript_path"]))
     caller = hook.get("agent_id")
     if caller:
-        path = pr.session_agents(session).get(caller)
+        path = session_agents(session).get(caller)
         if path is None:
             raise ValueError(f"no transcript of agent {caller} under {session}")
     else:
-        path = pr.main_transcript(session)
+        path = main_transcript(session)
         call = hook["tool_use_id"]
-        if not any(b.get("id") == call for e in pr.read_entries(path)
-                   for b in pr.blocks(e, "tool_use")):
+        if not any(b.get("id") == call for e in read_entries(path)
+                   for b in blocks(e, "tool_use")):
             print(f"{HOOK}: allowed: the hook input gives no agent id, and the "
                   f"main transcript {path} does not hold call {call}, so the "
                   "caller is unknown", file=sys.stderr)
             return
     undecided: list[str] = []
-    waited = [a for a in pr.pending_agents(path, undecided) if a in named]
+    waited = [a for a in pending_agents(path, undecided) if a in named]
     for line in undecided:
         print(f"{HOOK}: undecided: {line}", file=sys.stderr)
     if waited:
