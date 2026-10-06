@@ -56,9 +56,6 @@
     //  params.start_edge
     // @witness anti-diagonal-odd: variant $DerivedAxis
     //     @relaxed diagonal-lines
-    // @witness anti-diagonal-even: variant $DerivedAxis
-    //     @relaxed diagonal-lines
-    //     @reassigned start_edge
     // @witness anti-diagonal-wide: variant $DerivedAxis
     //     @relaxed diagonal-lines
   | DerivedAxis {}

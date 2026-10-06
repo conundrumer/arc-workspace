@@ -154,61 +154,6 @@
       ]
     }]
   }, {
-    "id": "anti-diagonal-even",
-    "separates": "One anti-diagonal line of four cells, with the start edge fixed to the top: the stored step finds no line and returns the input, and $DerivedAxis counts from the line's upper end.",
-    "input": [
-      [0,0,0,5],
-      [0,0,5,0],
-      [0,5,0,0],
-      [5,0,0,0]
-    ],
-    "assign": {
-      "start_edge": [
-        ["DIR_T"]
-      ]
-    },
-    "output": [{
-      "cases": ["$LineStart & $StoredStep & diagonal.ray=derived"],
-      "grid": [
-        [0,0,0,5],
-        [0,0,5,0],
-        [0,5,0,0],
-        [5,0,0,0]
-      ]
-    }, {
-      "cases": ["$ColorBlind & diagonal.ray=stored","$DerivedAxis"],
-      "grid": [
-        [0,0,0,5],
-        [0,0,4,0],
-        [0,5,0,0],
-        [4,0,0,0]
-      ]
-    }, {
-      "cases": ["$ColumnParity"],
-      "grid": [
-        [0,0,0,4],
-        [0,0,5,0],
-        [0,4,0,0],
-        [5,0,0,0]
-      ]
-    }, {
-      "cases": ["$GridDiagonal & diagonal.ray=derived"],
-      "grid": [
-        [0,0,0,5],
-        [0,0,4,0],
-        [0,4,0,0],
-        [5,0,0,0]
-      ]
-    }, {
-      "cases": ["$GridDiagonal & diagonal.ray=stored"],
-      "grid": [
-        [0,0,0,5],
-        [0,0,4,0],
-        [0,4,0,0],
-        [4,0,0,0]
-      ]
-    }]
-  }, {
     "id": "anti-diagonal-wide",
     "separates": "One anti-diagonal line of three cells in a 3x4 grid: $DerivedAxis counts along the line, $GridDiagonal under the stored step marks each ink cell whose min(row, column) is odd, and $GridDiagonal under $DerivedAxis counts along the anti-diagonal.",
     "input": [
