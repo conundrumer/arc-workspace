@@ -7,11 +7,10 @@ from enum import Enum
 from pathlib import Path
 
 from controlled_markdown import mctx
-from quota import epoch
 from run_reads import (MAIN, LaunchStatus, Notification, Status, agent_messages, blocks,
                        is_prompt, launch_status, notifications, notified, parent_id,
                        read_meta, session_agents, session_of, text_of)
-from transcripts import Entry, agent_id, chain, main_transcript, read_entries
+from transcripts import Entry, agent_id, chain, epoch, main_transcript, read_entries
 
 # The opening of the note of a notification that the agent stopped with work
 # of its own still running.

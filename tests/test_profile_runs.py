@@ -1,13 +1,18 @@
 """The split of a transcript's wall time into parts, which a misread entry
 shifts without any failure, and the agents pending to a run, which a hook
-reads to deny a wait and which a misread entry drops without any failure."""
+reads to deny a wait and which a misread entry drops without any failure.
+The hook allows a call where its check fails, so a check that fails on its
+own error is silent too."""
 
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
+from engine import checkout
 from tests.conftest import script
 
 profile_runs = script("profile_runs")
@@ -152,3 +157,28 @@ def test_pending(tmp_path: Path) -> None:
     sys.modules["run_reads"].session_agents.cache_clear()
     transcripts.snapshot.cache_clear()
     assert profile_runs.pending_agents(path, []) == [A1, A2, A4]
+
+
+def test_hook_denies(tmp_path: Path) -> None:
+    """The wait hook, run in a fresh process as the settings register it,
+    denies a `sleep` that names an agent pending to the caller."""
+    wait = bash("w1", f"sleep 30; ls /tmp/{A1}")
+    entries = [
+        user(0, "brief"),
+        assistant(1, agent_call("c1")),
+        user(2, answer("c1"), {"status": "async_launched", "agentId": A1}),
+        assistant(3, wait),
+    ]
+    path = tmp_path / "s.jsonl"
+    path.write_text("".join(json.dumps(e) + "\n" for e in entries))
+    settings = json.loads((checkout.claude() / "settings.json").read_text())
+    [command] = [h["command"] for m in settings["hooks"]["PreToolUse"]
+                 for h in m["hooks"] if "pending_wait_hook.py" in h["command"]]
+    hook = {"tool_name": "Bash", "tool_input": wait["input"],
+            "tool_use_id": "w1", "transcript_path": str(path)}
+    done = subprocess.run(command, shell=True, input=json.dumps(hook),
+                          capture_output=True, text=True, check=True,
+                          env={**os.environ, "CLAUDE_PROJECT_DIR": str(checkout.ROOT)})
+    assert done.stdout, done.stderr
+    decision = json.loads(done.stdout)["hookSpecificOutput"]
+    assert decision["permissionDecision"] == "deny", done.stderr

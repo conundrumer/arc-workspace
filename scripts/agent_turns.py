@@ -6,10 +6,9 @@ from functools import cache
 from pathlib import Path
 
 from controlled_markdown import mctx
-from quota import epoch
 from run_reads import blocks, is_prompt, text_of
 from senders import INTERRUPTED
-from transcripts import Entry, agent_id, chain, entries_back, read_entries
+from transcripts import Entry, agent_id, chain, entries_back, epoch, read_entries
 
 # The types of a transcript's message entries, the entries of a turn: the
 # message that opens it and its work.

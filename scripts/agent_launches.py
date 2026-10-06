@@ -9,11 +9,10 @@ from typing import Any
 from agent_reports import Report, report_ids, reports_after
 from command_labels import AGENT_TOOLS
 from controlled_markdown import mctx
-from quota import epoch
 from run_reads import (blocks, in_background, notified, parent_label, read_meta,
                        results_by_call, run_entries, session_agents, session_of,
                        session_transcripts)
-from transcripts import Entry, agent_id, chain, read_entries
+from transcripts import Entry, agent_id, chain, epoch, read_entries
 
 # The openings of the message of a SendMessage result where the call resumed
 # the agent it was sent to, and where it queued the message to a running one.

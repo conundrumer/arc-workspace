@@ -13,13 +13,12 @@ from agent_launches import run_launches
 from agent_turns import idle_after, turns
 from command_labels import AGENT_TOOLS, POLL, call_command, command_label
 from controlled_markdown import mctx
-from quota import epoch
 from run_reads import (blocks, in_background, is_prompt,
                        message_text, notified, parent_id, read_meta,
                        results_by_call, run_entries, run_type, session_agents,
                        session_of)
 from senders import Sender, sender
-from transcripts import Entry, agent_id, is_subagent
+from transcripts import Entry, agent_id, epoch, is_subagent
 
 
 class Part(Enum):

@@ -5,6 +5,7 @@ import filecmp
 import json
 import re
 from collections.abc import Iterator
+from datetime import datetime
 from functools import cache
 from pathlib import Path
 from typing import Any
@@ -200,6 +201,12 @@ class Snapshot:
         if i not in self.parsed:
             self.parsed[i] = parse(self.lines[i])
         return self.parsed[i]
+
+
+def epoch(iso: str) -> float:
+    """The seconds since the Unix epoch of `iso`, the ISO 8601 timestamp of
+    a transcript's entry."""
+    return datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp()
 
 
 def parse(line: str | bytes) -> list[Entry]:
