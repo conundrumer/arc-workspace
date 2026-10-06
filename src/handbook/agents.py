@@ -42,7 +42,6 @@ AGENT_OUT = checkout.agents()
 
 
 def agent_file(name: str, out: Path = AGENT_OUT) -> Path:
-    """The definition file of the agent `name` under `out`."""
     return out / f"{name}.md"
 
 

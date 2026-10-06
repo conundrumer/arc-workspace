@@ -8,7 +8,9 @@ import argparse
 import sys
 
 from study.card_spec import load_card
-from study.cards import outside_solvers, solver_file, theta_card, write
+from study.card_runs import outside_solvers, solver_file
+from study.cards import write
+from study.theta_card import theta_card
 
 
 def main(argv: list[str]) -> int:

@@ -110,8 +110,6 @@ def role_context(name: str, roles: Path = ROLE_DIR,
     already printed, and an agent it holds takes a marker line in place of its
     definition. `brief` set to False leaves out the line about the brief, for
     a caller that states the source itself."""
-    if not role_file(name, roles).is_file():
-        raise SystemExit(f"no role named `{name}`")
     agent, body = role_document(name, roles)
     path = repo_label(agent_file(agent))
     if seen is not None and agent in seen:

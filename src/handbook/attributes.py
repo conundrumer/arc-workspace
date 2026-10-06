@@ -10,8 +10,6 @@ import controlled_markdown as nm
 
 def attr_form[F: Enum](document: nm.Node, name: str, forms: type[F],
                        default: F) -> F:
-    """The form the attribute `name` of `document` states: `default` where
-    it states none, and an error where it states no form of `forms`."""
     value = document.attr(name)
     if value is None:
         return default

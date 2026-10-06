@@ -9,8 +9,17 @@ import json
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
+from engine import checkout
+
 type LineRange = tuple[int, int]
 type Captions = dict[str, dict[str, str]]
+
+OPTION_FORM = 'an option is its text or {"text": ..., "cases": [...]}'
+
+
+def from_root(path: str) -> Path:
+    """A path a card spec gives: from the repository root, or absolute."""
+    return checkout.ROOT / path
 
 
 @dataclass
@@ -69,7 +78,7 @@ class Card:
     # The user answers by index, so the options carry the whole decision:
     # each states a position rather than a direction, they exclude each
     # other, and together they cover the answers. The expected answer goes
-    # first. In JSON, an option is its text, or `{"text": ..., "cases": [...]}`.
+    # first. In JSON, `OPTION_FORM` gives an option's forms.
     options: list[Option] = field(default_factory=list[Option])
     tables: list[Table] = field(default_factory=list[Table])
     # The `.dl` file to run on each witness, defaulting to the task's own.
@@ -136,18 +145,17 @@ def card_from_dict(data: dict) -> Card:
 
 
 def _option(entry: object) -> Option:
-    """An Option from its JSON form. Any form but the two the `options`
-    comment gives is an error: a bare string as `cases` would read as one
-    case per character."""
+    """An Option from its JSON form. Any form but the two `OPTION_FORM`
+    gives is an error: a bare string as `cases` would read as one case per
+    character."""
     if isinstance(entry, str):
         return Option(entry)
-    form = 'an option is its text or {"text": ..., "cases": [...]}'
     if not isinstance(entry, dict) or set(entry) - {"text", "cases"}:
-        raise ValueError(f"{form}, not {entry!r}")
+        raise ValueError(f"{OPTION_FORM}, not {entry!r}")
     text, cases = entry.get("text"), entry.get("cases", [])
     if not isinstance(text, str) or not isinstance(cases, list) \
             or not all(isinstance(c, str) for c in cases):
-        raise ValueError(f"{form}, not {entry!r}")
+        raise ValueError(f"{OPTION_FORM}, not {entry!r}")
     return Option(text, list(cases))
 
 

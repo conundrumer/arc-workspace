@@ -21,7 +21,7 @@ from engine import checkout
 from handbook.generated import (Regenerated, Rendering, regenerate,
                                 write_generated, write_whole_text)
 from handbook.lib import (LIB_SRC, LibForm, interface_renderings,
-                          lib_component, lib_form, lib_part)
+                          lib_component, lib_form, lib_part, lib_sources)
 from handbook.paths import DOCUMENTS_ROOT, REPO_ROOT, document, repo_label
 from handbook.wrappers import wrappers_text
 
@@ -133,7 +133,8 @@ def section_text(where: str, docs: Path = DOCS_DIR) -> str:
     if name.endswith(".dl"):
         src = DOCUMENTS_ROOT / name
         if not src.exists():
-            raise SystemExit(f"no lib source named `{name}`")
+            raise no_item_named("lib source", "lib sources", name,
+                                [repo_label(p) for p, _ in lib_sources()])
         return lib_component(src, ident)
     registry = nm.Registry(DOCUMENTS_ROOT)
     heading = (ident if sep and not name
@@ -207,9 +208,6 @@ def workflow_names(workflows: Path = WORKFLOW_DIR) -> list[str]:
 
 def no_item_named(kind: str, kinds: str, name: str,
                   names: list[str]) -> SystemExit:
-    """The exit where no item of a kind, `kind` in the singular and `kinds`
-    in the plural, has the name a reader gave: the line that lists the
-    names there are."""
     return SystemExit(f"no {kind} named `{name}`; the {kinds} are "
                       + ", ".join(names))
 
@@ -248,6 +246,8 @@ def role_document(name: str, roles: Path = ROLE_DIR) -> tuple[str, str]:
     """One role document under `roles`: the agent it runs on, its `agent`
     attribute or the handbook agent, and the text the agent's prompt opens
     with, as the agent running it reads it, with nothing above."""
+    if not role_file(name, roles).is_file():
+        raise no_item_named("role", "roles", name, role_stems(roles))
     registry = nm.Registry(DOCUMENTS_ROOT)
     return nm.role(registry.load(role_file(name, roles)), registry)
 
@@ -268,13 +268,8 @@ checkout under the documents root, the root `LIB_SRC` is read under."""
 def write_lib_output(renderings: Sequence[Rendering] = (),
                      lib: Path = LIB_SRC, wrappers: Path = WRAPPERS_PATH,
                      stale: bool = False) -> tuple[list[Path], Regenerated]:
-    """Write the lib's generated output with `renderings`: the interface
-    file beside each of the lib's sources (`interface_renderings`), written
-    with `renderings` in one `write_generated`, or under `stale` in one
-    `regenerate`, then the module of the lib's wrappers at `wrappers`, which
-    is tracked and so written outside the manifest. Return the paths, the
-    interface files first, then the wrappers module, then `renderings`, and
-    what `regenerate` removed and left."""
+    """Write the lib's generated output with `renderings`. The module of the
+    lib's wrappers is tracked, and so is written outside the manifest."""
     interfaces = interface_renderings(lib)
     written = [*interfaces, *renderings]
     if stale:
