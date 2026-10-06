@@ -13,8 +13,7 @@
 - Launch a ticket analyst with each `bug` and each `request` ticket you file, before you end your turn with no other work.
 
 ## Decisions
-- Where you run no solver pass, read [Decision notes](prompts/agents/notes/decisions.md) and [Preference notes](prompts/agents/notes/preferences.md) before you make a decision on the solver tools or the agents' documents.
-- Where the user states a goal or a preference on the project or on how its agents work that [Preference notes](prompts/agents/notes/preferences.md) does not give, propose once in your reply a `request` ticket to add it there, and file it once [Tickets](#tickets) has you file it.
+- Where you run no solver pass, read [Decision notes](prompts/agents/notes/decisions.md) before you make a decision on the solver tools or the agents' documents.
 
 ## Changes
 - To edit a document an agent reads, send a request to the `doc-editor` agent.
