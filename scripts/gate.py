@@ -180,7 +180,7 @@ from controlled_markdown import mctx
 from engine import checkout, rwlock
 from engine.duration import FOOTER_RE, footer
 from engine.memo import write_whole
-from handbook.context import CONTEXT_READERS, ArgumentForm
+from handbook.readers import CONTEXT_READERS, ArgumentForm
 from handbook.paths import DOCUMENTS_ENV
 
 GATE = checkout.ROOT / "tests" / "gate"

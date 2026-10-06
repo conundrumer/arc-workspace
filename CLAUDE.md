@@ -15,7 +15,6 @@
 
 ## Handbook
 - The handbook is what a solver session reads.
-- To edit a document an agent reads, send a request to the `doc-editor` agent.
 
 ## Lib
 - When you work to speed up the lib, look in [Souffle: undocumented features](docs/souffle-undocumented.md) for Souffle features the official documentation leaves out.
@@ -29,24 +28,9 @@
 
 ## Tickets
 - `tickets/` is the ticket tracker, which holds the tickets agents file, and [Ticket notes](prompts/agents/notes/tickets.md) states its conventions.
-- When the user talks with you and you run no solver pass, and the user's message contains `file` as a directive, file the item it refers to as a ticket, a `change` ticket for a change, and tell the user what that ticket does in your own words, without quoting its text.
 
-## Decisions
-- When the user talks with you and you run no solver pass, read [Decision notes](prompts/agents/notes/decisions.md) before you make a decision on the solver tools or the agents' documents.
-
-## Changes
-- Before you launch an agent, read [Launching notes](prompts/agents/notes/launching.md).
-- When the user talks with you and you run no solver pass, read [Changes](prompts/agents/notes/changes.md#changes) before you change the code or the documents.
-- When the user talks with you and an operator of yours runs, file each change as a `change` ticket in place of running it.
-
-## Worktrees
-- When the user talks with you, and an environment update gives as your primary working directory another agent's worktree or the harness refuses your Bash calls in one, act by [Re-invoked in another agent's worktree](prompts/agents/notes/worktree.md#re-invoked-in-another-agents-worktree).
-
-## Reports to the user
-- When the user talks with you and an operator of yours runs, and you report to the user an agent's message, a completion notification or an event the harness reports that reached you meanwhile, open that report with a bold label that gives the agent the message is from or the notification concerns, by the full name of its kind and whether it is yours or an operator's, or the harness for an event it reports, and the route by which what you report reached you. Give no agent by its id.
-
-## Cards
-- When the user requests a card to help make a decision regarding a solver, send a handbook agent and tell it to make one based on [card_spec.py](src/study/card_spec.py).
+## Launching
+- Before you launch an agent, read [Launching](prompts/agents/notes/launching.md#launching).
 
 ## Conventions
 - **Patches are the source of truth** for corrections.
@@ -65,8 +49,3 @@
 - When a run would show what it guards, delete it; don't update it.
 - Assertions you need while you work go under `tests/scratch/`.
 - It is collected and not committed.
-
-## Codex
-- Codex already has the handbook in context.
-- When using Codex for prose editing tasks, the purpose is to avoid the prose being in your register, so ensure Codex uses its own words and does not copy yours.
-- When specifying an issue in prose to fix, also specify the span the fix may change.

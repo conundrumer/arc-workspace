@@ -24,7 +24,7 @@
     - `ticket` and the ticket's number: a ticket on another ticket.
     - `agent` and the agent's id: the ticket of a supervisor's alert verifier, on the agent it checked, and every ticket no entry above fits, on the agent it concerns, your own included.
 
-## tracking
+## Tracking
 - `tickets/` is in the main tree, the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints, and in no other worktree. Git ignores it.
 - Every session on the repository shares the ticket tracker. A ticket belongs to the session whose index its number gives before the `-`, and a ticket with a bare number belongs to no session. `uv run python scripts/file_ticket.py index` prints the index of your session.
 - Take, release, move and settle only your session's tickets and those your brief or a message names.
@@ -35,7 +35,7 @@
 - Take a ticket with its transition to `assigned`, and leave alone each ticket whose transition the command refuses.
 - Close the ticket of a place that is judged and kept with `wontfix`, and give the judgment in the note after it.
 
-## change-tickets
+## Change tickets
 - A `change` takes `change` as `<domain>`, and as `<subject>` the namespace its Scope touches most, or the one it creates, then two or three words, joined by `-`.
     - A namespace takes its existing name, with `-` in place of `_`: a package under `src/`, a script under `scripts/` without `.py`, `lib`, `solver-<task_id>`, `witnesses`, `handbook`, `agents`, `notes`, `tickets` or `tests`.
 - When you revise a ticket under `tickets/draft/`, write a log line with `draft` as its status and `revised` as its note.

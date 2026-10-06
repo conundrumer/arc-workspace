@@ -24,7 +24,9 @@
 - The theory of tasks, models and encodings: [Principles](docs/handbook/principles.md) and [Encoding](docs/handbook/encoding.md).
 - The lib's sections: the `//!` and `///` comments of [lib.dl](programs/lib.dl) and of the modules under [lib](programs/lib).
 - What every session in the repo reads: [arc-workspace](CLAUDE.md).
-    - The main session also reads each note that file links, where the link's condition holds, and no `context` command prints that context.
+- What main, the session the user talks with, reads: [Main](prompts/agents/notes/main.md), rendered to `.claude/main.md`.
+    - Its context: `context main`, then the user's messages.
+    - Main also reads each document or section a link of that document leads to, where the link's condition holds, and no `context` command prints those.
 - What a session at a terminal reads, and the passes it runs: [Session](.claude/skills/session/SKILL.md), then [Solver session](prompts/session.md).
     - [Session](.claude/skills/session/SKILL.md) is deprecated, and has no `comment` directive.
     - Its context: `context session`, then the output of each command the text gives.
