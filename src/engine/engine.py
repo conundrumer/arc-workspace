@@ -340,6 +340,12 @@ class Engine(Protocol):
         the grammar."""
         ...
 
+    def parse_including(self, text: str, included: str,
+                        base_dir: Path) -> Program | ParseFailure:
+        """`parse` of `text` with an `#include` of the file `included`
+        above it, each line of `text` at its own number."""
+        ...
+
     def index(self, program: Program) -> Index:
         """The feeds, reads and name resolution of `program`."""
         ...

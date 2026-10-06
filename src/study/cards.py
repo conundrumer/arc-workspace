@@ -27,7 +27,8 @@ from cli.common import (
 from cli.common import engine as _engine
 from engine import Grid, RunFailure, checkout
 from engine.program import as_grid
-from solver.model import Case, Solver, load
+from solver.load import load
+from solver.model import Case, Solver
 from solver.names import name
 from solver.problems import Fault, WitnessFileRole
 from solver.solve import Assignment, Grids, examples, outcomes, witnessed
@@ -228,7 +229,7 @@ def solver_file(card: Card) -> Path:
 
 def outside_solvers(path: Path) -> bool:
     """The file stands outside `programs/solvers/`, which
-    `solver.model.load` reads alone."""
+    `solver.load.load` reads alone."""
     return path.resolve().parent != checkout.solvers().resolve()
 
 

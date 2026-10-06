@@ -1,9 +1,8 @@
 """The model of a solver as the handbook defines it: its case type, its
 branches and cases, its parameters, the lib as the model reads it, and the
-aggregate `Solver` with its one entry, `load`; and the functions that build
-each part from a parsed program, which the checks read as well."""
+aggregate `Solver`; and the functions that build each part from a parsed
+program, which `solver.load` and the checks read as well."""
 
-import re
 from enum import Enum, auto
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, fields, is_dataclass, replace
@@ -11,7 +10,6 @@ from itertools import product
 from pathlib import Path
 from typing import Annotated
 
-from arc import task as arc_task
 from arc.task import Task
 from engine import checkout
 from engine.engine import unresolved
@@ -86,7 +84,6 @@ from engine.program import (
 )
 from engine.quotes import quotes
 from engine.text import prefixed
-from solver import annotations as annotations_reader
 from solver import witness as witness_reader
 from solver.annotations import (
     DirectiveWord,
@@ -525,12 +522,7 @@ def proposers_path() -> Path:
     return checkout.programs() / PROPOSERS_FILE
 
 
-LIB_INCLUDE = f'#include "{LIB_FILE}"\n#line 1\n'
-"""What `load` puts above a text that lacks the lib's include: the include,
-and a `#line 1` directive, so that the text's own lines keep their
-numbers."""
 TOP = Scope(())
-_STEM_RE = re.compile(r"^[0-9a-f]{8}")
 
 
 def parse_with_lib(engine: Engine, text: str) -> Program | ParseFailure:
@@ -540,7 +532,7 @@ def parse_with_lib(engine: Engine, text: str) -> Program | ParseFailure:
     if isinstance(parsed, Program) and any(
             Path(i.path).name == LIB_FILE for i in parsed.includes):
         return parsed
-    return engine.parse(LIB_INCLUDE + text, checkout.programs())
+    return engine.parse_including(text, LIB_FILE, checkout.programs())
 
 
 # Reading values
@@ -1311,17 +1303,6 @@ def proposer_names(program: Program) -> tuple[str, ...]:
 # Load
 
 
-def _empty_program() -> Program:
-    """A program with no part, for a solver whose text does not parse."""
-    return Program((), (), (), (), (), (), (), (), (), ())
-
-
-def task_id_of(stem: str) -> str:
-    """The task a solver's stem names: its leading eight hex digits."""
-    m = _STEM_RE.match(stem)
-    return m[0] if m else stem
-
-
 MAX_DEPTH = 8
 """How many instances deep an instance path the model follows goes."""
 
@@ -1391,81 +1372,6 @@ def instance_faults(program: Program) -> list[Fault]:
     return out
 
 
-def load(stem: str, engine: Engine, path: Path | None = None) -> Solver:
-    """The solver of `stem`, the one entry every command uses: the text of
-    `path`, a solver file anywhere whose name starts with the task id,
-    else of `<stem>.dl` under `checkout.solvers()`. Every solver reads the
-    lib: `load` adds the lib's `#include` to the text when the text lacks
-    it (`LIB_INCLUDE`), and parses it against `programs/`, wherever the
-    file stands.
-
-    A form the tool no longer reads gives a fault, never a reading of the
-    form it replaced, so a file fails as written until it is brought to
-    the form the tool reads."""
-    task_id = task_id_of(stem)
-    problems: list[Fault] = []
-    parsed = parse_with_lib(engine, (path or solver_file(stem)).read_text())
-    if isinstance(parsed, ParseFailure):
-        problems.append(Fault(ProblemKind.PARSE_FAILURE,
-                                       InSolver(parsed.line), parsed))
-        program = _empty_program()
-        lib_parse = engine.parse(LIB_INCLUDE, checkout.programs())
-        lib = read_lib(lib_parse if isinstance(lib_parse, Program)
-                       else _empty_program())
-    else:
-        program = parsed
-        lib = read_lib(program)
-    annotations, read_problems = annotations_reader.read(program)
-    problems += read_problems
-    declared = {c.name for c in program.components}
-    problems += [Fault(ProblemKind.INSTANCE_OF_NOTHING,
-                                InSolver(i.span.first), Named(i.component))
-                 for i in program.instances
-                 if own(i.span) and i.span is not None
-                 and i.component not in declared]
-    problems += instance_faults(program)
-    choice = read_choice(program, engine.index(program), problems)
-    if choice is not None and every_base(choice) is None:
-        problems.append(Fault(
-            ProblemKind.UNDECIDED,
-            InSolver(choice_line(program, choice)),
-            Undecided(UndecidedForm.CHOICE_NOT_ENUMERABLE, None)))
-    proposers: frozenset[str] | None = None
-    if annotations.derives:
-        probe_program = proposers_program(engine)
-        if isinstance(probe_program, Program):
-            proposers = frozenset(proposer_names(probe_program))
-    branches = read_branches(program, annotations, proposers, problems)
-    unread = Solver(stem, task_id, program, annotations, choice, branches,
-                    Params(()), None, None, lib, (), engine)
-    params = read_params(program, annotations, lib.constants,
-                         lambda m: lists_case(unread, m), problems)
-    try:
-        task: Task | None = arc_task.load(task_id)
-    except FileNotFoundError:
-        task = None
-    witness_file = None
-    wpath = witness_reader.path(task_id)
-    if wpath.exists():
-        witness_file, file_problems = read_witness(
-            wpath.read_text(), params, WitnessFileRole.TASK)
-        problems += file_problems
-    if annotations.representative is not None and not solver_file(
-            annotations.representative.task_id).exists():
-        problems.append(Fault(
-            ProblemKind.REPRESENTATIVE_MISSING,
-            InSolver(annotations.representative.line),
-            Named(annotations.representative.task_id)))
-    solver = Solver(stem, task_id, program, annotations, choice, branches,
-                    params, witness_file, task, lib, tuple(problems), engine)
-    named = (*_name_problems(solver), *_off_form_case_columns(solver))
-    if named:
-        solver = Solver(stem, task_id, program, annotations, choice,
-                        branches, params, witness_file, task, lib,
-                        tuple(problems) + named, engine)
-    return solver
-
-
 def branch_witnesses(solver: Solver, ctor: str) -> list[WitnessLine]:
     """The `@witness` lines the branch comment of the constructor named
     `ctor` holds, in file order."""
@@ -1514,7 +1420,7 @@ def lists_case(solver: Solver, marker: CaseMarker) -> bool:
                for p in marker.parts)
 
 
-def _name_problems(solver: Solver) -> Iterator[Fault]:
+def name_problems(solver: Solver) -> Iterator[Fault]:
     """The names the solver and its witness file hold that denote nothing:
     verdicts, markers, named `@ignore` lines, group names, and `assign`
     keys and the strings of `assign` values (`arg_value`)."""
@@ -3247,7 +3153,7 @@ def parameter_columns(solver: Solver, name: str) -> "ColumnTypes":
                           parameter(solver, name))
 
 
-def _off_form_case_columns(solver: Solver) -> Iterator[Fault]:
+def off_form_case_columns(solver: Solver) -> Iterator[Fault]:
     """Each parameter's column that carries the case (`case_columns`) and
     is no case column of a parameter (`parameter_case_columns`). With no
     `Choice` no column carries the case, and with no instance of `Params`

@@ -48,7 +48,8 @@ from engine.program import (
     literal_aggregates,
     own,
 )
-from solver.model import Solver, load
+from solver.load import load
+from solver.model import Solver
 from souffle import SouffleEngine
 
 # The surveys

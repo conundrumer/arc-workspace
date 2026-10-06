@@ -122,6 +122,10 @@ class FakeEngine:
     def parse(self, text: str, base_dir: Path) -> Program | ParseFailure:
         return self.parsed
 
+    def parse_including(self, text: str, included: str,
+                        base_dir: Path) -> Program | ParseFailure:
+        return self.parsed
+
     def index(self, program: Program) -> Index:
         return index_of(program)
 

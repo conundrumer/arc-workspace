@@ -40,8 +40,8 @@ from solver.model import (
     choice_bases,
     choice_values,
     is_concept_case,
-    load,
 )
+from solver.load import load
 from solver.model import is_concept as concept_base
 from solver.names import Denoted, cover, denote, model_of
 from solver.problems import Fault, Named, NameFault, ProblemKind

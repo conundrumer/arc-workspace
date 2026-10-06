@@ -6,7 +6,7 @@ structure. Grep misses those sites; a survey matches them with a script
 under its scratch path, over the parsed corpus:
 
     from cli.common import all_stems
-    from solver.model import load
+    from solver.load import load
     from souffle import SouffleEngine
 
     engine = SouffleEngine()

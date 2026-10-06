@@ -42,6 +42,11 @@ class SouffleEngine:
     def parse(self, text: str, base_dir: Path) -> Program | ParseFailure:
         return parser.parse(text, base_dir)
 
+    def parse_including(self, text: str, included: str,
+                        base_dir: Path) -> Program | ParseFailure:
+        return self.parse(f"{render.include(included)}\n#line 1\n{text}",
+                          base_dir)
+
     def lib_instance(self, lib: Path, instance: str, component: str,
                      type_arguments: Sequence[str]) -> Program | ParseFailure:
         """A program that includes the lib file `lib` and instantiates

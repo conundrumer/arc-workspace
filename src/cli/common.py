@@ -27,7 +27,8 @@ from engine import (
     checkout,
 )
 from engine.program import as_grid
-from solver.model import Solver, load, solver_file
+from solver.load import load
+from solver.model import Solver, solver_file
 from solver.problems import Fault
 from solver.solve import Assignment
 from solver.vocabulary import OUTPUT

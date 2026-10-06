@@ -4,4 +4,8 @@ and solving over an engine.
 Each type of the model carries, through `engine.quotes`, the handbook words
 that define it, quoted as written. The package has no private module:
 every module that `checker` reads is public, with a docstring, and no
-module is kept only to re-export another."""
+module is kept only to re-export another.
+
+`model` holds the model's types and the functions that build each part of
+a solver from a parsed program; `load` holds the one entry that builds a
+`Solver` from a solver's file."""
