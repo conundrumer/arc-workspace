@@ -201,7 +201,7 @@
                 | Grid                           // when the verdict is other: the annotator's judged output
       }] }
 
-    Group: { "cases": <name>[],           // the fewest names whose cases together are exactly the cases that give this output
+    Group: { "cases": <name>[],           // the fewest names whose cases together are exactly the cases that give this output; in work/task/<task_id>/witnesses.json, the branches whose models give it
              "grid": Grid | Grid[] | null }  // null for undefined; a list of the grids the cases give, one per tiebreak resolution, when they give more than one
     Grid: number[][]                      // rows of colors
     Fact: Arg[]                           // the arguments of one fact
@@ -211,7 +211,7 @@
 - An `assign` of a relation in [Params](docs/handbook/solver-file.md#params) or of a `@store` line's relation gives its facts without their case part, and every case reads those facts at its own value of the part left out. For a relation in Params, it leaves out the relation's case column. For a `@store` line's relation, it leaves out each column whose type is an ADT in `Choice` or a record built only of such ADTs, and writes a record column that has such fields beside others as the list, in order, of the others. Its key for the relation of a `@store` line above an `.init` is `<instance>.<relation>`.
 - [`GRID_HxW` for grid data](docs/handbook/patterns.md#grid_hxw-for-grid-data) states the form of a stored grid.
     - For a parameter that a `GRID_STAMP_HxW` or `GRID_STAMP_SPARSE_HxW` call stores, a grid of the call's size is read as a picture with the `@` on the cell that carries it in the call's layout, and `{"grid": Grid, "anchor": [row, col]}` is read as a picture of any size with the `@` on the cell at that row and column, counted from 0.
-- A `<name>` fixes the branch at some choice points, in one of these forms. Its model takes the fixed branches and the concept branch at every other point it takes; its cases are the cases of the solver that take the fixed branches ([Choice points and open parameters](docs/handbook/principles.md#choice-points-and-open-parameters) states both for one branch). A `@witness` verdict names its model; a case marker, an `@ignore: derive` or `@ignore: store` line and a group name its cases.
+- A `<name>` fixes the branch at some choice points, in one of these forms. Its model takes the fixed branches and the concept branch at every other point it takes; its cases are the cases of the solver that take the fixed branches ([Choice points and open parameters](docs/handbook/principles.md#choice-points-and-open-parameters) states both for one branch). A `@witness` verdict denotes its model; a case marker and an `@ignore: derive` or `@ignore: store` line denote its cases.
     - `concept`: the concept branch at every point the `Choice` encodes, the concept base; alone, its model and its one case are the concept case
     - a constructor's name with its prefix, such as `$Alt`: that branch at each point where the constructor stands, for a nested constructor too, whether or not `impl_choice` contains its model
     - `<name> & <name>`: what each fixes
