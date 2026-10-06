@@ -5,7 +5,7 @@
 
 ### The ladder
 1. ARC-AGI-2 tasks solved by principled solvers that agents produce, with less of the user over time.
-2. Each solver is principled and pure. It is principled when [Principles](docs/handbook/principles.md) or the user's case judgments in [Case inclusion: the decision history](docs/wf-solver/case-rule-history.md) justify each of its parts. It is pure when it reads as the concept, with nothing verbose and nothing shaped to one task.
+2. Each solver is principled and pure. It is principled when [Principles](docs/handbook/principles.md) justifies each of its parts. It is pure when it reads as the concept, with nothing verbose and nothing shaped to one task.
 3. Everything around the agents is arranged so that they produce the best solvers. In particular, the tool computes what the principles define, reports what an agent can act on, leaves judgments to the agent, runs fast, and never reports what is not so.
 4. The passes test that arrangement, and a fault a pass shows is fixed in the documents, the tool or the pass structure.
 5. The checker changes without breaking as the handbook changes.
@@ -73,7 +73,7 @@
 - Make a change to the user's global Claude configuration as a project of its own: verify it first, and where it needs no judgment, have an agent make it on `~/code/claude-config`.
 - Resume an agent that the usage limit stopped by a message, in place of launching it again.
 - The full lib interface the Create and Refine passes read up front, and the handbook appended to a session the user launches, are intended, and their cost is no waste.
-- Keep in [arc-workspace](CLAUDE.md) only what every session needs, and in [Case inclusion: the decision history](docs/wf-solver/case-rule-history.md) only what helps decide case inclusion and related questions from the user's rulings.
+- Keep in [arc-workspace](CLAUDE.md) only what every session needs, and in [Case inclusion: the decision history](docs/wf-solver/case-rule-history.md) only what helps decide, from the user's rulings, how [Principles](docs/handbook/principles.md) and the rules on a solver's cases are written.
 - Choose the best term for each name, with no weight given to an existing one: a name may be abstract where it is precise, within the domain and with a qualifier where needed, a mathematical word imprecise for the thing is vetoed, abbreviations follow the software convention, judicious and consistent, and "task" may name a work item.
 - Choose a label for its use in deciding how to act on what it labels.
 
