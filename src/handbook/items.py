@@ -21,6 +21,7 @@ from engine.program import (
     UnionType,
     own,
 )
+from solver.annotations import input_mark_lines, input_marked
 from souffle import SouffleEngine
 
 
@@ -63,6 +64,8 @@ class Decl:
     end_line: int
     columns: tuple[Column, ...]
     qualifiers: tuple[Qualifier, ...]
+    input: bool
+    """The declaration bears the lib's `// @input` mark."""
 
 
 @dataclass
@@ -157,11 +160,12 @@ def _view(p: Parsed) -> Program:
                           | UnionType)
         placed.append((t.span.first, t.scope,
                        TypeDecl(t.name, t.span.first, t.span.last, form)))
+    marks = input_mark_lines(p.comments)
     for r in p.relations:
         if own(r.span):
             placed.append((r.span.first, r.scope,
                            Decl(r.name, r.span.first, r.span.last,
-                                r.columns, r.qualifiers)))
+                                r.columns, r.qualifiers, input_marked(r.span, marks))))
     for i in p.instances:
         if i.span is not None and own(i.span):
             placed.append((i.span.first, i.scope,

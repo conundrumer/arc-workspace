@@ -33,6 +33,11 @@ from souffle.layout import (
 from souffle.lexer import LINE_DIRECTIVE_RE
 
 
+def include(path: str) -> str:
+    """The `#include` directive of the file at `path`."""
+    return f'#include "{path}"'
+
+
 def parts_of(program: Program) -> dict[Key, Part]:
     """Every part of `program` by its key."""
     out: dict[Key, Part] = {}
@@ -187,7 +192,7 @@ class _Renderer:
                     out.add(tail, tail_line if own else None, True)
                 case IncludeBlock(text, line, path, body):
                     if self.clean(body):
-                        directive = f'#include "{path}"' if self.absolute else text
+                        directive = include(path) if self.absolute else text
                         out.add(directive, line if own else None, True)
                     else:
                         self.segments(body, out, False, "")

@@ -5,10 +5,9 @@ import argparse
 import json
 import math
 import re
-import shlex
 import sys
 import time
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import cache
@@ -22,16 +21,15 @@ from handbook.paths import console_importable, importable
 
 console_importable()
 # `scripts/` is no package: a test loads this module by its path, with
-# `scripts/` off `sys.path`, and `file_ticket` and `transcripts` import from
-# there.
+# `scripts/` off `sys.path`, and `command_labels` and `transcripts` import
+# from there.
 importable(checkout.scripts())
 
-from cli import command_args  # noqa: E402
-from cli.parser import parser as run_dl_parser  # noqa: E402
-from file_ticket import TICKET_HEAD  # noqa: E402
+from command_labels import AGENT_TOOLS, POLL, call_command, command_label  # noqa: E402
 from quota import epoch  # noqa: E402
 from transcripts import (Entry, Refused, agent_id, chain, find,  # noqa: E402
-                         is_subagent, read_entries, transcripts)
+                         is_subagent, main_transcript, read_entries,
+                         session_directory, subagent_transcripts, transcripts)
 
 # The terms of a type's budget, which HELP states.
 BUDGET_FACTOR = 2
@@ -86,7 +84,7 @@ HELP = mctx("""
         - for a SendMessage call, its recipient, as `to R:`, and its message;
         - for a SubagentHandback call, its message;
         - for any other call, nothing past its label.
-    - A run whose agent type is unknown is refused, and so is an ID that names transcripts that differ and are not the transcripts of one run. A call whose agent type is unknown is labelled `agent ?`, and a Bash call with no command is labelled `shell`; an `undecided` line on stderr names each.
+    - A run whose agent type is unknown is refused, and so is an ID that names transcripts that differ and are not the transcripts of one run. A call whose agent type is unknown is labelled `agent ?`, a Bash call with no command is labelled `shell`, and a call whose input lacks a field its command reads, of those above but a SendMessage call's message, is printed without that field; an `undecided` line on stderr names each.
     """).format(factor=BUDGET_FACTOR, window_runs=WINDOW_RUNS,
                 low_wait_pct=LOW_WAIT_PCT, recent=RECENT_CALLS,
                 width=COMMAND_WIDTH)
@@ -102,33 +100,11 @@ class Part(Enum):
 type Key = tuple[Part, str]
 
 MAIN = "main"
-WRITE_TOOLS = ("Write", "Edit", "NotebookEdit")
 # A brief line that states a budget, and the opening of a line that words one.
 BUDGET_LINE = re.compile(r"Budget: (\d+(?:\.\d+)?) minutes\.?")
 BUDGET_OPENING = re.compile(r"budget\s*:", re.I)
 LIST_MARKER = re.compile(r"^\s*(?:[-*+]|\d+[.)])?\s*")
 WAIT_TOOLS = ("Monitor", "TaskOutput")
-AGENT_TOOLS = ("Agent", "Task")
-KNOWN = {"gate.py": "gate", "merge_change.py": "merge_change.py",
-         "materialize.py": "materialize.py", "pytest": "pytest",
-         "pyright": "pyright"}
-RUN_DL = "run_dl.py"
-SETUP = {"cd", "echo", "export", "set", "true", ":", "printf", "date",
-         "source", ".", "uptime", "[", "[[", "test"}
-WRAPPERS = {"timeout", "time", "nice", "env", "exec", "command", "sudo", "uv",
-            "run"}
-# Options that take the next word as their value, by the wrapper they follow.
-# A wrapper not listed takes no such option.
-UV_OPTIONS = frozenset({"--env-file", "--with", "--python", "-p", "--project",
-                        "--directory", "--package", "--extra", "--group",
-                        "--from"})
-WRAPPER_OPTIONS = {"timeout": frozenset({"-s", "-k"}),
-                   "env": frozenset({"-u", "--unset", "-C", "--chdir", "-S",
-                                     "--split-string"}),
-                   "uv": UV_OPTIONS, "run": UV_OPTIONS}
-OPENERS = {"do", "then", "else", "elif", "if", "while", "until", "!", "{", "("}
-CLOSERS = {"for", "case", "done", "fi", "esac", "}"}
-POLL = "poll"
 # The start of the text of the entry the harness writes where the user
 # interrupts a run.
 INTERRUPTED = "[Request interrupted by user"
@@ -142,11 +118,6 @@ MOVED = ("timedOutAfterMs", "assistantAutoBackgrounded", "backgroundedByUser")
 AGENT_MESSAGE = re.compile(r'<agent-message from="([^"]+)"')
 NOTIFICATION = re.compile(r"<task-notification>(.*?)</task-notification>", re.S)
 TAG = re.compile(r"<(task-id|tool-use-id)>([^<]+)</\1>")
-HEREDOC = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n.*?\n\s*\2[ \t]*(?=\n|$)",
-                     re.S)
-REDIRECT = re.compile(r"\d*>&\d+|&>")
-ASSIGNMENT = re.compile(r"^(\w+)=(.*)$", re.S)
-VARIABLE = re.compile(r"\$\{(\w+)\}|\$(\w+)")
 
 
 @dataclass
@@ -333,182 +304,7 @@ def text_of(content: Any) -> str:
     return ""
 
 
-# Bash commands.
-
-def segment_program(words: list[str]) -> tuple[str | None, list[str]]:
-    """The program a simple command runs, and its arguments, past
-    environment assignments, wrappers such as timeout and uv run, and an
-    interpreter given a script or module."""
-    toks = [t for t in (t.strip("(){}") for t in words) if t]
-    i, interp, wrapper = 0, None, None
-    while i < len(toks):
-        t = toks[i]
-        base = Path(t).name
-        if interp is None and base in WRAPPERS:
-            wrapper, i = base, i + 1
-        elif interp is None and (ASSIGNMENT.match(t)
-                                 or re.fullmatch(r"\d+[smh]?", t)):
-            i += 1
-        elif interp is None and re.fullmatch(r"python[\d.]*|bash|sh|zsh", base):
-            interp, i = base, i + 1
-        elif interp and t == "-c":
-            return interp, toks[i + 1:]
-        elif interp and t == "-m" and i + 1 < len(toks):
-            return toks[i + 1], toks[i + 2:]
-        elif interp and t.startswith("-") and t != "-":
-            i += 1
-        elif interp and t != "-" and not t.startswith("<"):
-            return base, toks[i + 1:]
-        elif interp:
-            return interp, toks[i + 1:]
-        elif wrapper and t in WRAPPER_OPTIONS.get(wrapper, frozenset()):
-            i += 2
-        elif t.startswith("-"):
-            i += 1
-        else:
-            return base, toks[i + 1:]
-    return interp, []
-
-
-def shell_segments(cmd: str) -> list[str]:
-    """The simple commands of a shell command line: split at ;, &, |, newlines,
-    and the openings of $( and backquotes, outside quotes."""
-    segs: list[str] = []
-    cur: list[str] = []
-    quote: str | None = None
-    i = 0
-    while i < len(cmd):
-        c = cmd[i]
-        if quote:
-            if c == quote:
-                quote = None
-            elif c == "\\" and quote == '"':
-                cur.append(c)
-                i += 1
-                c = cmd[i] if i < len(cmd) else ""
-            cur.append(c)
-        elif c in "'\"":
-            quote = c
-            cur.append(c)
-        elif c == "\\":
-            cur.append(cmd[i:i + 2])
-            i += 1
-        elif c in ";&|\n`" or cmd.startswith("$(", i):
-            segs.append("".join(cur))
-            cur = []
-            i += 1 if c == "$" else 0
-        else:
-            cur.append(c)
-        i += 1
-    segs.append("".join(cur))
-    return segs
-
-
-def split_words(seg: str) -> list[str]:
-    """The words of a simple command, with quotes removed and comments
-    dropped, or its blank-separated words where its quotes do not pair."""
-    try:
-        return shlex.split(seg, comments=True)
-    except ValueError:
-        return [w.strip("'\"") for w in seg.split()]
-
-
-def simple_commands(cmd: str) -> Iterator[list[str]]:
-    """The words of each simple command of a Bash command line, past the
-    keywords that open it, with the values of the shell variables set
-    before it put in place of their names."""
-    cmd = REDIRECT.sub(" ", HEREDOC.sub(" ", cmd)).replace("\\\n", " ")
-    values: dict[str, str] = {}
-
-    def expand(word: str) -> str:
-        return VARIABLE.sub(lambda m: values.get(m.group(1) or m.group(2), m.group(0)),
-                            word)
-
-    for seg in shell_segments(cmd):
-        words = split_words(seg)
-        while words and words[0] in OPENERS:
-            words.pop(0)
-        if words and words[0] == "export":
-            words.pop(0)
-        sets = [ASSIGNMENT.match(w) for w in words]
-        if words and all(sets):
-            for m in sets:
-                if m:
-                    values[m.group(1)] = expand(m.group(2))
-            continue
-        yield [expand(w) for w in words]
-
-
-@cache
-def run_dl_commands() -> frozenset[str]:
-    return frozenset(run_dl_parser()[1])
-
-
-def run_dl_command(args: list[str]) -> str:
-    """The command a run of `run_dl.py` with the arguments `args` runs, or
-    the help flag it gives."""
-    return command_args(args, run_dl_commands())[0]
-
-
-def command_label(cmd: str) -> str:
-    """The known commands a Bash command runs, joined by " + ", or else
-    `poll` for one that runs sleep, or else the first program it runs
-    past setup, or else the first program it runs."""
-    known: list[str] = []
-    first: str | None = None
-    setup: str | None = None
-    for prog, rest in programs(cmd):
-        label = f"{RUN_DL} {run_dl_command(rest)}" if prog == RUN_DL else KNOWN.get(prog)
-        if label and label not in known:
-            known.append(label)
-        if prog in SETUP:
-            setup = setup or prog
-        else:
-            first = first or prog
-    if known:
-        return " + ".join(known)
-    if runs_sleep(cmd):
-        return POLL
-    return first or setup or "shell"
-
-
-def programs(cmd: str) -> Iterator[tuple[str, list[str]]]:
-    """The program each simple command of a Bash command runs, with its
-    arguments, as `segment_program` gives them."""
-    for words in simple_commands(cmd):
-        if not words or words[0] in CLOSERS:
-            continue
-        prog, rest = segment_program(words)
-        if prog:
-            yield prog, rest
-
-
-def runs_sleep(cmd: str) -> bool:
-    """Whether a simple command of a Bash command runs `sleep`: the call
-    waits by timer."""
-    return any(prog == "sleep" for prog, _ in programs(cmd))
-
-
 # Profiles.
-
-def call_command(block: dict[str, Any]) -> str:
-    """The command of a call, as HELP gives it."""
-    name, inp = block.get("name"), block.get("input") or {}
-    if name == "Bash":
-        command = str(inp.get("command", ""))
-        kinds = "".join(f"kind {m.group('kind')}: "
-                        for m in TICKET_HEAD.finditer(command))
-        return kinds + command
-    if name in AGENT_TOOLS:
-        return str(inp.get("description", ""))
-    if name in WRITE_TOOLS:
-        return str(inp.get("file_path") or inp.get("notebook_path") or "")
-    if name == "SendMessage":
-        return f"to {inp.get('to', '?')}: {inp.get('message', '')}"
-    if name == "SubagentHandback":
-        return str(inp.get("message", ""))
-    return ""
-
 
 def request_input(entry: Entry) -> int | None:
     """The input tokens of the request an assistant entry answers, or None
@@ -545,7 +341,7 @@ def launched_type(inp: dict[str, Any], result: dict[str, Any] | None,
 
 def session_of(path: Path) -> Path:
     """The session directory a transcript belongs to."""
-    session = path.parents[1] if is_subagent(path) else path.with_suffix("")
+    session = path.parents[1] if is_subagent(path) else session_directory(path)
     while is_subagent(session):
         session = session.parent
     return session
@@ -553,13 +349,13 @@ def session_of(path: Path) -> Path:
 
 @cache
 def session_agents(session: Path) -> dict[str, Path]:
-    return {agent_id(p): p for p in session.glob("subagents/**/agent-*.jsonl")}
+    return {agent_id(p): p for p in subagent_transcripts(session)}
 
 
 def session_transcripts(session: Path) -> list[Path]:
     """The transcripts of `session`: its main transcript, where it has one,
     and those of its subagents."""
-    main = session.with_suffix(".jsonl")
+    main = main_transcript(session)
     return [*([main] if main.is_file() else []), *session_agents(session).values()]
 
 
@@ -581,9 +377,6 @@ def classify(block: dict[str, Any], result: dict[str, Any] | None,
         return Call((Part.WAITS, name), None, task_ids)
     if name != "Bash":
         return Call((Part.TOOLS, str(name)), None, task_ids)
-    if "command" not in inp:
-        undecided.append(mctx("{run}: Bash call {call} gives no command").format(
-            run=run, call=block.get("id")))
     label = command_label(inp.get("command", ""))
     background = (Part.WAITS, f"bg {label}")
     moved = launched and any(k in r for k in MOVED)
@@ -755,7 +548,7 @@ def profile(path: Path, undecided: list[str]) -> Run:
                 c = calls[tid] = classify(b, results.get(tid), session,
                                           undecided, label)
                 pending[tid] = c.pending
-                spans[tid] = Span(c.pending[1], call_command(b), t)
+                spans[tid] = Span(c.pending[1], call_command(b, undecided, label), t)
                 group(c.pending).calls += 1
         elif etype == "user":
             for b in blocks(e, "tool_result"):

@@ -3,15 +3,12 @@ worktree of it, print a ticket's path, and make a ticket's transitions and
 write its log lines. `HELP`, which `--help` prints, says how an agent files,
 and each subcommand's own help, which its `--help` prints, how an agent calls it."""
 
-import fcntl
 import os
 import re
 import subprocess
 import sys
-import tempfile
 import time
-from collections.abc import Callable, Iterable, Iterator, Sequence
-from contextlib import contextmanager
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -22,10 +19,14 @@ from engine import checkout
 from handbook.paths import importable
 
 # `scripts/` is no package: a test loads this module by its path, with
-# `scripts/` off `sys.path`, and `transcripts` imports from there.
+# `scripts/` off `sys.path`, and `ticket_numbers` and `transcripts` import
+# from there.
 importable(checkout.scripts())
 
-from transcripts import Refused, find, forked_from  # noqa: E402
+from ticket_numbers import (IDS, SESSION_VAR, SESSIONS,  # noqa: E402
+                            TICKET_NUMBER, reserve, session_id, session_index,
+                            write_after, write_new)
+from transcripts import Refused  # noqa: E402
 
 HELP = mctx("""
     - `uv run python scripts/file_ticket.py <domain> <subject> <agent>` files the ticket on its stdin under the main tree's `tickets/`, and prints the path it wrote.
@@ -120,18 +121,6 @@ class Resolution(StrEnum):
     INVALID = "invalid"
 
 
-IDS = "ids"
-"""The directory under `tickets/` that holds one empty file per reserved
-ticket number, named by the number."""
-
-SESSIONS = "sessions"
-"""The directory under `tickets/` that holds one file per reserved session
-index, named by the index, whose lines are the ids of its sessions."""
-
-SESSION_VAR = "CLAUDE_CODE_SESSION_ID"
-"""The variable of an agent's shell that holds its session's id."""
-
-
 class Domain(StrEnum):
     """What a ticket's subject is."""
     TASK = "task"
@@ -144,13 +133,6 @@ class Domain(StrEnum):
 FIELD = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 """A field of a ticket's name: kebab words, with no `_`, which separates
 the fields."""
-
-COUNT = re.compile(r"[1-9]\d*")
-"""A session's index, the `<n>` of a ticket's number, or a bare number."""
-
-TICKET_NUMBER = re.compile(rf"(?:(?P<session>{COUNT.pattern})-)?(?P<n>{COUNT.pattern})")
-"""A ticket's number, `<session>-<n>`, or the bare number of a ticket filed
-before a number gave the filing session's index."""
 
 COMMIT = re.compile(r"[0-9a-f]{7,40}")
 
@@ -175,22 +157,42 @@ PASS_KINDS = frozenset({Kind.INTERFERENCE, Kind.DELAY})
 EDITOR_KINDS = frozenset({Kind.QUESTION, Kind.BUG})
 REVIEW_KINDS = frozenset({Kind.BUG, Kind.PERFORMANCE})
 
-FILER_KINDS: dict[str, frozenset[Kind]] = {
-    "analyze": PASS_KINDS,
-    "create": PASS_KINDS,
-    "refine": PASS_KINDS,
-    "transcript-review": PASS_KINDS,
-    "supervisor-check": PASS_KINDS,
-    "handbook": PASS_KINDS,
-    "handbook-expanded": PASS_KINDS,
-    "code-editor": EDITOR_KINDS,
-    "doc-editor": EDITOR_KINDS,
-    "operator": REVIEW_KINDS,
-    "doc-reviewer": REVIEW_KINDS,
-    "ticket-reviewer": REVIEW_KINDS,
-    "code-reviewer": REVIEW_KINDS | {Kind.REFACTOR, Kind.QUESTION},
-    "main": frozenset({Kind.CHANGE}),
-    "assignee": frozenset({Kind.CHANGE}),
+
+class Filer(StrEnum):
+    """A filing agent, by its name."""
+    ANALYZE = "analyze"
+    CREATE = "create"
+    REFINE = "refine"
+    TRANSCRIPT_REVIEW = "transcript-review"
+    SUPERVISOR_CHECK = "supervisor-check"
+    HANDBOOK = "handbook"
+    HANDBOOK_EXPANDED = "handbook-expanded"
+    CODE_EDITOR = "code-editor"
+    DOC_EDITOR = "doc-editor"
+    OPERATOR = "operator"
+    DOC_REVIEWER = "doc-reviewer"
+    TICKET_REVIEWER = "ticket-reviewer"
+    CODE_REVIEWER = "code-reviewer"
+    MAIN = "main"
+    ASSIGNEE = "assignee"
+
+
+FILER_KINDS: dict[Filer, frozenset[Kind]] = {
+    Filer.ANALYZE: PASS_KINDS,
+    Filer.CREATE: PASS_KINDS,
+    Filer.REFINE: PASS_KINDS,
+    Filer.TRANSCRIPT_REVIEW: PASS_KINDS,
+    Filer.SUPERVISOR_CHECK: PASS_KINDS,
+    Filer.HANDBOOK: PASS_KINDS,
+    Filer.HANDBOOK_EXPANDED: PASS_KINDS,
+    Filer.CODE_EDITOR: EDITOR_KINDS,
+    Filer.DOC_EDITOR: EDITOR_KINDS,
+    Filer.OPERATOR: REVIEW_KINDS,
+    Filer.DOC_REVIEWER: REVIEW_KINDS,
+    Filer.TICKET_REVIEWER: REVIEW_KINDS,
+    Filer.CODE_REVIEWER: REVIEW_KINDS | {Kind.REFACTOR, Kind.QUESTION},
+    Filer.MAIN: frozenset({Kind.CHANGE}),
+    Filer.ASSIGNEE: frozenset({Kind.CHANGE}),
 }
 """The kinds each filing agent, by its name, may file."""
 
@@ -202,11 +204,11 @@ def is_agent(agent: str, name: str) -> bool:
 def filer_kinds(agent: str) -> frozenset[Kind]:
     """The kinds `agent` may file: those of its name, or of the longest
     name it extends with `-<suffix>`. Any other name is refused."""
-    for name in sorted(FILER_KINDS, key=len, reverse=True):
+    for name in sorted(Filer, key=len, reverse=True):
         if is_agent(agent, name):
             return FILER_KINDS[name]
     raise Refused(mctx("the document of `{agent}` gives it no ticket kinds: the agents that file are {names}").format(
-        agent=agent, names=ticked(FILER_KINDS)))
+        agent=agent, names=ticked(Filer)))
 
 FRONT = r"---\nkind: (?P<kind>\S+)\n(?P<fields>(?:[a-z-]+: .*\n)*)---\n"
 
@@ -337,113 +339,6 @@ def log_line(status: Status, agent: str, agent_id: str | None, note: str | None)
     holder = f"{agent} {agent_id}" if agent_id else agent
     line = f"{time.strftime(TIME_FORM, time.gmtime())} {status} [{holder}]"
     return f"{line}: {note}\n" if note else f"{line}\n"
-
-
-def reserve(tickets: Path, session: int) -> str:
-    """Reserves the next number of a ticket of the session with index
-    `session` by an exclusive create of its file under `tickets/ids/`,
-    moving to the next number where another call created that file
-    first."""
-    ids = tickets / IDS
-    ids.mkdir(parents=True, exist_ok=True)
-    n = max((int(m["n"]) for p in ids.iterdir()
-             if (m := TICKET_NUMBER.fullmatch(p.name)) and m["session"] == str(session)), default=0) + 1
-    while True:
-        number = f"{session}-{n}"
-        try:
-            os.close(os.open(ids / number, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
-            return number
-        except FileExistsError:
-            n += 1
-
-
-@contextmanager
-def staged(directory: Path, text: str) -> Iterator[Path]:
-    """A file under `directory` that holds `text` whole, for `link_new` to
-    give its names, removed on exit."""
-    directory.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=directory, prefix=".", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w") as f:
-            f.write(text)
-        yield Path(tmp)
-    finally:
-        Path(tmp).unlink(missing_ok=True)
-
-
-def link_new(source: Path, path: Path) -> bool:
-    try:
-        os.link(source, path)
-        return True
-    except FileExistsError:
-        return False
-
-
-def write_new(directory: Path, text: str, names: Iterable[str]) -> Path:
-    """Writes `text` under `directory` at the first name `names` yields
-    that no file holds, and returns its path. The file appears whole or not
-    at all, and an existing file is never replaced."""
-    with staged(directory, text) as tmp:
-        for name in names:
-            if link_new(tmp, path := directory / name):
-                return path
-        raise AssertionError("`names` ended")
-
-
-def session_id() -> str:
-    session = os.environ.get(SESSION_VAR)
-    if not session:
-        raise Refused(mctx("the shell holds no session id in `{var}`").format(var=SESSION_VAR))
-    return session
-
-
-def indexes(tickets: Path) -> dict[int, list[str]]:
-    directory = tickets / SESSIONS
-    if not directory.is_dir():
-        return {}
-    return {int(p.name): p.read_text().split() for p in directory.iterdir() if COUNT.fullmatch(p.name)}
-
-
-def indexed(reserved: dict[int, list[str]], session: str) -> int | None:
-    held = [i for i, ids in reserved.items() if session in ids]
-    if len(held) > 1:
-        raise Refused(mctx("session `{session}` has more than one index: {held}").format(
-            session=session, held=ticked(str(i) for i in sorted(held))))
-    return held[0] if held else None
-
-
-def session_index(tickets: Path, session: str) -> int:
-    """The index of the session with id `session`, reserved where it has
-    none: the index of the session it was forked from, with `session`
-    added to that index's file, or else the next index, by a file created
-    whole that holds `session`. Where another call created the file of the
-    index tried first, the call looks again for an index of `session`
-    before it tries the next."""
-    found = indexed(indexes(tickets), session)
-    if found is not None:
-        return found
-    parent = forked_from(find(session))
-    if parent is not None:
-        index = session_index(tickets, parent)
-        add_session(tickets / SESSIONS / str(index), session)
-        return index
-    directory = tickets / SESSIONS
-    with staged(directory, f"{session}\n") as tmp:
-        while True:
-            reserved = indexes(tickets)
-            found = indexed(reserved, session)
-            if found is not None:
-                return found
-            n = max(reserved, default=0) + 1
-            if link_new(tmp, directory / str(n)):
-                return n
-
-
-def add_session(path: Path, session: str) -> None:
-    with path.open("a") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        if session not in path.read_text().split():
-            f.write(f"{session}\n")
 
 
 def check_subject(tickets: Path, domain: Domain, subject: str) -> None:
@@ -651,12 +546,11 @@ def file_legacy(tickets: Path, unix_time: str, source: str, agent: str, text: st
         raise Refused(mctx("`{kind}` is no issue kind").format(kind=old))
     text = text.replace(f"kind: {old}\n", f"kind: {kind}\n", 1).replace("\n## Effect\n", "\n## Impact\n", 1)
     prefix = f"{unix_time}-{source}-{agent}-"
-    taken = [int(m.group(1)) for d in statuses(tickets)
+    taken = (int(m.group(1)) for d in statuses(tickets)
              for p in d.glob(f"{prefix}*.md")
-             if (m := re.fullmatch(re.escape(prefix) + r"(\d+)\.md", p.name))]
-    start = max(taken, default=0) + 1
-    names = (f"{prefix}{i}.md" for i in range(start, sys.maxsize))
-    return write_new(tickets / Status.OPEN, logged(text, Status.OPEN, agent), names)
+             if (m := re.fullmatch(re.escape(prefix) + r"(\d+)\.md", p.name)))
+    return write_after(tickets / Status.OPEN, logged(text, Status.OPEN, agent), taken,
+                       lambda n: f"{prefix}{n}.md")
 
 
 def main_tickets() -> Path:
@@ -686,10 +580,8 @@ def filed_in_main(filing: Filing, args: list[str]) -> int | None:
     if not copy.exists():
         raise Refused(mctx("the main tree has no `scripts/{script}`: file with `scripts/{fallback}`").format(
             script=filing.script, fallback=filing.fallback))
-    # This copy's environment, which `uv` would name as not the main tree's.
-    env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
     return subprocess.run(["uv", "run", "--project", str(main), "python", str(copy), *args],
-                          env=env).returncode
+                          env=checkout.tree_env()).returncode
 
 
 def run(args: Sequence[str | None], help_text: str, count: int, act: Callable[..., Path | int],

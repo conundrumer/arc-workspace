@@ -2,7 +2,7 @@
 engine's comment list gives it."""
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Annotated
@@ -587,6 +587,26 @@ def _content(comment: Comment) -> tuple[int, str] | None:
     body = comment.text
     stripped = body.lstrip(" ")
     return len(body) - len(stripped), stripped.rstrip()
+
+
+def input_mark_lines(comments: Iterable[Comment]) -> frozenset[int]:
+    """The lines on which a trailing comment of the parsed text's own
+    `comments` is the lib's `// @input` mark."""
+    out: set[int] = set()
+    for c in comments:
+        got = _content(c)
+        if got is None or c.own_line or not own(c):
+            continue
+        d = _DIRECTIVE_RE.match(got[1])
+        if d is not None and d[1] == _INPUT_MARK:
+            out.add(c.line)
+    return frozenset(out)
+
+
+def input_marked(span: Span, marks: frozenset[int]) -> bool:
+    """A declaration over `span` bears one of the `// @input` marks on the
+    lines `marks`."""
+    return not marks.isdisjoint(range(span.first, span.last + 1))
 
 
 def _verdict(text: str) -> Verdict:

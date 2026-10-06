@@ -4,7 +4,8 @@ every package reads. Each directory is computed from `ROOT` when asked, so
 a checkout that sets `ROOT` moves every one of them. The run cache, the
 solver files and the witness files each move to the directory an
 environment variable names, where it is set. Git runs in a tree through
-`git`, and `changed_paths` lists what a tree changes against a commit."""
+`git`, `changed_paths` lists what a tree changes against a commit, and a
+`uv run` in another tree runs in `tree_env`."""
 
 import functools
 import os
@@ -40,6 +41,12 @@ def from_env(var: str, default: Path | Callable[[], Path]) -> Path:
     if not value:
         raise ValueError(f"{var} is set but empty")
     return Path(value)
+
+
+def tree_env() -> dict[str, str]:
+    """The environment in which a `uv run` command runs in its tree's own
+    environment."""
+    return {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
 
 
 class GitFailed(RuntimeError):

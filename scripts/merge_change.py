@@ -114,35 +114,30 @@ a failed step, 2 when the call itself is malformed.
 import argparse
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
-import threading
 import time
 from collections.abc import Sequence
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-from cli.common import SOURCES
 from controlled_markdown import mctx
 from engine import checkout, rwlock
 from engine.duration import footer
+from handbook.paths import importable
+
+# `scripts/` is no package: a test loads this module by its path, with
+# `scripts/` off `sys.path`, and `change_checks` imports from there.
+importable(checkout.scripts())
+
+from change_checks import (MARKDOWN_CHECK, Check, code_paths,  # noqa: E402
+                           failures, run_in, said)
 
 MASTER = "master"
 """The branch a change merges into."""
 
-CODE_DIRS = ("src", "scripts", "tests", "data/tasks")
-"""The directories a change under which runs the code checks."""
-
-CODE_FILES = ("pyproject.toml", "uv.lock")
-"""The files that set the environment every code check runs in."""
-
 GITLINK_MODE = "160000"
 """The mode git gives an index entry that records a submodule's commit."""
-
-TAIL = 40
-"""Lines of a failed command's output a refusal shows."""
 
 
 class Refused(Exception):
@@ -151,17 +146,6 @@ class Refused(Exception):
 
 class Failed(Exception):
     """A step that did not complete, and what it left."""
-
-
-@dataclass(frozen=True)
-class Check:
-    argv: tuple[str, ...]
-
-
-def said(done: subprocess.CompletedProcess[str]) -> str:
-    """What a command wrote, its last `TAIL` lines."""
-    lines = (done.stdout + done.stderr).strip().splitlines()
-    return "\n".join(lines[-TAIL:]) or f"exit status {done.returncode}"
 
 
 def branch_of(tree: Path) -> str:
@@ -221,22 +205,6 @@ def checked_out(tree: Path, sub: Submodule) -> bool:
         path, "rev-parse", "--show-toplevel").strip()) == path
 
 
-MARKDOWN_CHECK = Check(("uv", "run", "python", "-m", "controlled_markdown", "check"))
-"""The check every change runs."""
-
-
-def code_paths(tree: Path, main: Path, touched: set[str]) -> set[str]:
-    """The paths of `touched` whose content the results of pyright and
-    pytest can depend on. A path `SOURCES` matches is found in `tree`, where the
-    change adds or edits it, or in the main worktree `main`, where the
-    change deletes it."""
-    sources = {str(p.relative_to(root)) for root in (tree, main)
-               for pattern in SOURCES for p in root.glob(pattern)}
-    return {p for p in touched
-            if p in CODE_FILES or p in sources
-            or any(p.startswith(f"{d}/") for d in CODE_DIRS)}
-
-
 def check(tree: Path, main: Path, base: str, touched: set[str]) -> Path:
     """Run in `tree` the checks of changes from the commit `base` that touch
     `touched`, or refuse; the gate's out-dir."""
@@ -249,45 +217,9 @@ def check(tree: Path, main: Path, base: str, touched: set[str]) -> Path:
     return Path(gate_out)
 
 
-def tree_env() -> dict[str, str]:
-    """The environment in which a `uv run` command runs in its tree's own
-    environment."""
-    return {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
-
-
-def run_in(tree: Path, argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
-    """A `uv run` command in `tree`, in that tree's own environment."""
-    return subprocess.run(list(argv), cwd=tree, env=tree_env(), capture_output=True,
-                          text=True)
-
-
-def run_check(tree: Path, argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
-    """A check run as `run_in` runs a command, each line it writes on stderr
-    written on this script's stderr as it comes."""
-    proc = subprocess.Popen(list(argv), cwd=tree, env=tree_env(), stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, text=True)
-    assert proc.stdout is not None and proc.stderr is not None
-    stdout = proc.stdout
-    out: list[str] = []
-    reader = threading.Thread(target=lambda: out.append(stdout.read()))
-    reader.start()
-    err: list[str] = []
-    for line in proc.stderr:
-        print(line, end="", file=sys.stderr, flush=True)
-        err.append(line)
-    reader.join()
-    return subprocess.CompletedProcess(list(argv), proc.wait(), "".join(out), "".join(err))
-
-
 def run_checks(tree: Path, checks: Sequence[Check]) -> None:
     """Run `checks` in `tree` concurrently, and refuse where any fails."""
-    shown = [" ".join(c.argv) for c in checks]
-    for s in shown:
-        print(mctx("merge_change: running {s}").format(s=s), flush=True)
-    with ThreadPoolExecutor(max_workers=max(1, len(checks))) as pool:
-        dones = list(pool.map(lambda c: run_check(tree, c.argv), checks))
-    failed = [mctx("the check `{s}` failed:").format(s=s) + "\n" + said(done)
-              for s, done in zip(shown, dones, strict=True) if done.returncode != 0]
+    failed = failures(tree, checks)
     if failed:
         raise Refused("\n".join(failed))
 

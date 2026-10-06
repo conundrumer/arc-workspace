@@ -53,12 +53,31 @@ def one_of(ident: str, found: list[Path]) -> Path | None:
         ident=ident, paths=", ".join(str(p) for p in found)))
 
 
+SUBAGENTS = "subagents/**/agent-*.jsonl"
+"""The glob of a session's subagent transcripts, under its directory."""
+
+
+def main_transcript(session: Path) -> Path:
+    """The main transcript of the session whose directory is `session`."""
+    return session.with_suffix(".jsonl")
+
+
+def session_directory(main: Path) -> Path:
+    """The directory of the session whose main transcript is `main`."""
+    return main.with_suffix("")
+
+
+def subagent_transcripts(session: Path) -> list[Path]:
+    """The subagent transcripts under the directory `session`."""
+    return sorted(session.glob(SUBAGENTS))
+
+
 @cache
 def agent_transcripts() -> dict[str, list[Path]]:
     """The subagent transcripts under the project directories, by agent id."""
     out: dict[str, list[Path]] = {}
-    for p in sorted(p for d in project_dirs()
-                    for p in d.glob("*/*/subagents/**/agent-*.jsonl")):
+    for p in sorted(p for d in project_dirs() for s in d.glob("*/*/")
+                    for p in subagent_transcripts(s)):
         out.setdefault(agent_id(p), []).append(p)
     return out
 
@@ -90,8 +109,8 @@ def transcripts(ident: str) -> list[Path]:
     path = find(ident)
     if is_subagent(path):
         return [path]
-    return [path, *dict.fromkeys(chain(p)[-1] for p in sorted(
-        path.with_suffix("").glob("subagents/**/agent-*.jsonl")))]
+    return [path, *dict.fromkeys(chain(p)[-1] for p in subagent_transcripts(
+        session_directory(path)))]
 
 
 def agent_id(path: Path) -> str:

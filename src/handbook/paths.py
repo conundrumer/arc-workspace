@@ -26,16 +26,20 @@ def document(path: Path, root: Path = DOCUMENTS_ROOT) -> Path:
     return root / path.relative_to(checkout.ROOT)
 
 
+def repo_label(path: Path) -> str:
+    """A path as the context prints it: from `DOCUMENTS_ROOT` where it
+    stands under it, else from the checkout's root
+    (`engine.checkout.shown`)."""
+    under = checkout.shown(path, DOCUMENTS_ROOT)
+    return str(checkout.shown(path) if under.is_absolute() else under)
+
+
 def importable(directory: Path) -> None:
-    """Puts `directory` on `sys.path`, once, so that the modules in it
-    import."""
     if str(directory) not in sys.path:
         sys.path.insert(0, str(directory))
 
 
 def console_importable() -> None:
-    """Puts the console's directory on `sys.path`, so that `solver_console`
-    imports."""
     importable(checkout.console())
 
 

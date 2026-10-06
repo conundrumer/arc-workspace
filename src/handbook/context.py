@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import difflib
 import json
-import keyword
 import os
 import re
 import subprocess
@@ -29,30 +28,17 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum, StrEnum
-from engine.memo import kept_recent
 from pathlib import Path
 
 import controlled_markdown as nm
 from controlled_markdown import mctx
 from engine import checkout
-from engine.program import Primitive, Qualifier
 from engine.memo import write_whole
-from souffle.layout import written_lines
 from handbook import paths
-from handbook.items import (
-    Comp,
-    Decl,
-    Define,
-    Include,
-    Init,
-    Item,
-    Program,
-    Rule,
-    SubtypeForm,
-    TypeDecl,
-)
-from handbook.items import parse as parse_file
-from handbook.paths import DOCUMENTS_ROOT, REPO_ROOT, document
+from handbook.lib import (LIB_SRC, interface_path, lib_component,
+                          lib_doc, lib_entries, lib_sources)
+from handbook.paths import DOCUMENTS_ROOT, REPO_ROOT, document, repo_label
+from handbook.wrappers import wrappers_text
 
 # The handbook's own files. Nothing here reads them as a directory: the
 # composition document lists each one, and the registry reads it from there.
@@ -65,7 +51,6 @@ def role_dir(root: Path = DOCUMENTS_ROOT) -> Path:
 
 
 ROLE_DIR = role_dir()
-LIB_SRC = document(paths.lib_src())
 
 # The agent documents, one per handbook agent: front matter holding the
 # agent's definition, a `lib` attribute saying how the lib renders, and an
@@ -93,14 +78,6 @@ def agent_file(name: str) -> Path:
     return AGENT_OUT / f"{name}.md"
 
 
-def repo_label(path: Path) -> str:
-    """A path as the context prints it: from `DOCUMENTS_ROOT` where it
-    stands under it, else from the checkout's root
-    (`engine.checkout.shown`)."""
-    under = checkout.shown(path, DOCUMENTS_ROOT)
-    return str(checkout.shown(path) if under.is_absolute() else under)
-
-
 def agent_doc(name: str, agents: Path = AGENT_DIR) -> Path:
     """The agent document of the agent `name` under `agents`."""
     return agents / f"{name}.md"
@@ -121,256 +98,8 @@ ANALYZE_NEXT = "analyze-next"
 ANALYZE_NEXT_PATH = checkout.claude() / "analyze-next.md"
 
 
-def parse(text: str, base_dir: Path | None = None) -> Program:
-    """One lib file's items and comments (`handbook.items.parse`), each
-    `#include` in it resolved against `base_dir`, the programs directory
-    as the contexts read it where none is given."""
-    return parse_file(text, base_dir or document(checkout.programs()))
-
-
 APPENDIX = mctx("the system-prompt appendix")
 """What the console worker's first section is called."""
-
-
-def lib_sources(root: Path | None = None) -> list[tuple[Path, str]]:
-    """The lib's files in include order, each with its text: the root, the
-    lib the runner reads as the contexts read it (`LIB_SRC`) when none is given, then the
-    file of each `#include` in it, resolved against the root's
-    directory."""
-    root = LIB_SRC if root is None else root
-    text = root.read_text()
-    out = [(root, text)]
-    for it in parse(text, root.parent).items:
-        if isinstance(it, Include):
-            path = root.parent / it.path
-            out.append((path, path.read_text()))
-    return out
-
-
-# The comment kinds. A `//!` line documents its file; a `///` block
-# documents the item under it; any other comment is for the maintainer.
-FILE_DOC = "//!"
-ITEM_DOC = "///"
-# The trailing directive on a `.decl` line that marks a relation the
-# caller populates.
-INPUT_MARK_RE = re.compile(r"//\s*@input\b")
-
-# The items a `///` block may document.
-DOCUMENTED = (Decl, Comp, Define, TypeDecl, Init)
-type Documented = Decl | Comp | Define | TypeDecl | Init
-
-
-def _prose(comment_lines: list[str], mark: str) -> str:
-    """Comment lines as the markdown they hold: the mark and one space
-    after it stripped from each."""
-    return "\n".join(line.strip()[len(mark):].removeprefix(" ")
-                     for line in comment_lines).strip("\n")
-
-
-def _doc_blocks(program: Program, mark: str) -> dict[int, tuple[int, int]]:
-    """The blocks of consecutive own-line `mark` comments, keyed by their
-    last line: (first line, last line)."""
-    doc_lines = sorted(c.line for c in program.comments
-                       if c.own_line and c.text.startswith(mark)
-                       and not c.text.startswith(mark + "/"))
-    blocks: dict[int, tuple[int, int]] = {}
-    start = None
-    for ln in doc_lines:
-        if start is None or (ln - 1) not in blocks:
-            start = ln
-        else:
-            blocks.pop(ln - 1)
-        blocks[ln] = (start, ln)
-    return blocks
-
-
-def _documented(items: list[Item]) -> list[Item]:
-    """The items a `///` block may document, at every depth."""
-    out: list[Item] = []
-    for it in items:
-        if isinstance(it, DOCUMENTED):
-            out.append(it)
-        if isinstance(it, Comp):
-            out.extend(_documented(it.items))
-    return out
-
-
-def _is_input(decl: Decl, lines: list[str]) -> bool:
-    return any(INPUT_MARK_RE.search(lines[ln - 1])
-               for ln in range(decl.line, decl.end_line + 1))
-
-
-def _name(it: Documented) -> str:
-    return it.inst if isinstance(it, Init) else it.name
-
-
-def _hidden(it: Documented) -> bool:
-    """A `_`-prefixed item is private to the lib."""
-    return _name(it).startswith("_")
-
-
-def _comp_block(comp: Comp, lines: list[str], docs: dict[int, tuple[int, int]]) -> list[str]:
-    """A comp as its interface: the header, each public inner declaration
-    under its doc as a `//` comment, the facts under an input-marked one,
-    and the closing brace."""
-    out = [lines[comp.line - 1].rstrip()]
-    facts: dict[str, list[int]] = {}
-    for it in comp.items:
-        if isinstance(it, Rule) and it.body is None:
-            facts.setdefault(it.head.name, []).extend(range(it.line, it.end_line + 1))
-    prev: tuple[bool, bool] | None = None   # (documented, input) of the last item
-    for it in comp.items:
-        if not isinstance(it, DOCUMENTED) or _hidden(it):
-            continue
-        block = docs.get(it.line - 1)
-        is_input = isinstance(it, Decl) and _is_input(it, lines)
-        cur = (block is not None, is_input)
-        if prev is not None and (cur[0] or prev[0] or cur[1] != prev[1]):
-            out.append("")
-        prev = cur
-        if block is not None:
-            for ln in range(block[0], block[1] + 1):
-                line = lines[ln - 1]
-                indent = line[:len(line) - len(line.lstrip())]
-                out.append(indent + "//" + line.lstrip()[len(ITEM_DOC):])
-        if isinstance(it, Comp):
-            out.extend(_comp_block(it, lines, docs))
-            continue
-        end = it.end_line if isinstance(it, Decl) else it.line
-        out += written_lines(lines, it.line, end)
-        if isinstance(it, Decl) and is_input:
-            out.extend(lines[ln - 1].rstrip() for ln in sorted(set(facts.get(it.name, []))))
-    out += written_lines(lines, comp.end_line, comp.end_line)
-    return out
-
-
-def _runs(items: list[Item], docs: dict[int, tuple[int, int]]) -> list[list[Documented]]:
-    """The top-level public items a `///` block may document, each in its
-    run. Undocumented siblings on consecutive lines fold into the item over
-    them: defines, or subtypes of one base."""
-    items = [it for it in items if not isinstance(it, (Include, Rule))]
-    out: list[list[Documented]] = []
-    i = 0
-    while i < len(items):
-        it = items[i]
-        if not isinstance(it, DOCUMENTED) or _hidden(it):
-            i += 1
-            continue
-        run: list[Documented] = [it]
-        j = i + 1
-        while j < len(items):
-            nxt = items[j]
-            if not (isinstance(nxt, DOCUMENTED) and type(nxt) is type(it)
-                    and nxt.line == run[-1].line + 1
-                    and docs.get(nxt.line - 1) is None and not _hidden(nxt)
-                    and (isinstance(it, Define)
-                         or (isinstance(it, TypeDecl) and isinstance(nxt, TypeDecl)
-                             and isinstance(it.form, SubtypeForm)
-                             and nxt.form == it.form))):
-                break
-            run.append(nxt)
-            j += 1
-        out.append(run)
-        i = j
-    return out
-
-
-def lib_entries(text: str) -> str:
-    """One lib file as an index: its `//!` lines as prose, then one line per
-    top-level public component, its name and the first sentence of its doc. A
-    unit with no doc gives its name alone, and a relation with no doc its
-    declaration. A run that folds in `lib_doc` gives its names on one line."""
-    program = parse(text)
-    lines = text.splitlines()
-    docs = _doc_blocks(program, ITEM_DOC)
-    file_docs = _doc_blocks(program, FILE_DOC)
-    prose = [_prose(lines[start - 1:end], FILE_DOC)
-             for _, (start, end) in sorted(file_docs.items())]
-    out: list[str] = []
-    for run in _runs(program.items, docs):
-        names = ", ".join(f"**{_name(it)}**" for it in run)
-        block = docs.get(run[0].line - 1)
-        if block is None:
-            it = run[0]
-            if isinstance(it, Decl) and len(run) == 1:
-                decl = " ".join(" ".join(lines[it.line - 1:it.end_line]).split())
-                names = f"**{it.name}**" + decl.removeprefix(".decl " + it.name)
-            out.append(f"- {names}")
-            continue
-        para = " ".join(_prose(lines[block[0] - 1:block[1]], ITEM_DOC).split("\n\n")[0].split())
-        out.append(f"- {names} — {nm.gist(para)}")
-    return "\n\n".join(p for p in (*prose, "\n".join(out)) if p) + "\n"
-
-
-@kept_recent(16)
-def lib_doc(text: str) -> str:
-    """One lib file as markdown: its `//!` lines as prose, then each public
-    item under its `///` prose in a code block. Rules, functors, and
-    plain comments do not render. Undocumented defines on consecutive
-    lines fold to one line of names, and undocumented subtypes of one base
-    on consecutive lines to one line."""
-    program = parse(text)
-    lines = text.splitlines()
-    docs = _doc_blocks(program, ITEM_DOC)
-    file_docs = _doc_blocks(program, FILE_DOC)
-    attached = {it.line - 1 for it in _documented(program.items)}
-
-    parts: list[str] = []          # prose paragraphs and code blocks, in order
-    code: list[str] | None = None  # the open code block
-
-    def emit_prose(p: str) -> None:
-        nonlocal code
-        if code:
-            parts.append("```\n" + "\n".join(code) + "\n```")
-        code = None
-        parts.append(p)
-
-    def emit_code(block_lines: list[str]) -> None:
-        nonlocal code
-        if code is None:
-            code = []
-        elif block_lines:
-            code.append("")
-        code.extend(block_lines)
-
-    for _, (start, end) in sorted(file_docs.items()):
-        emit_prose(_prose(lines[start - 1:end], FILE_DOC))
-
-    for run in _runs(program.items, docs):
-        it = run[0]
-        block = docs.get(it.line - 1)
-        if block is not None:
-            emit_prose(_prose(lines[block[0] - 1:block[1]], ITEM_DOC))
-        emit_code(_run_code(run, lines, docs))
-    # A block over no item renders where it stands.
-    for end, (start, _) in sorted(docs.items()):
-        if end not in attached:
-            emit_prose(_prose(lines[start - 1:end], ITEM_DOC))
-    emit_prose("")
-    return "\n\n".join(p for p in parts if p) + "\n"
-
-
-def _run_code(run: list[Documented], lines: list[str],
-              docs: dict[int, tuple[int, int]]) -> list[str]:
-    """The code lines a run of lib items renders as: consecutive defines
-    folded to one line of names, consecutive subtypes of one base to one
-    `.type … <:` line, a component as its block, any other item as its
-    source lines."""
-    it = run[0]
-    if len(run) > 1 and isinstance(it, Define):
-        return [" ".join(_name(d) for d in run)]
-    if len(run) > 1 and isinstance(it, TypeDecl) \
-            and isinstance(it.form, SubtypeForm):
-        return [f".type {', '.join(_name(t) for t in run)} <: {it.form.base}"]
-    if isinstance(it, Comp):
-        return _comp_block(it, lines, docs)
-    end = it.end_line if isinstance(it, Decl) else it.line
-    return written_lines(lines, it.line, end)
-
-
-def interface_path(src: Path) -> Path:
-    """The interface file beside a lib source: the `.md` of the same stem."""
-    return src.with_suffix(".md")
 
 
 class LibForm(Enum):
@@ -523,25 +252,6 @@ def _doc_names(path: Path) -> str:
     title = _doc_title(path)
     stem = f"`{path.stem}`"
     return stem if title is None else f"`{title}` ({stem})"
-
-
-def lib_component(src: Path, name: str) -> str:
-    """One component's interface, as the interface file beside `src` holds
-    it: the component's `///` prose, then its declarations in a code
-    block."""
-    text = src.read_text()
-    program = parse(text)
-    lines = text.splitlines()
-    docs = _doc_blocks(program, ITEM_DOC)
-    for run in _runs(program.items, docs):
-        if not any(_name(it) == name for it in run):
-            continue
-        it = run[0]
-        block = docs.get(it.line - 1)
-        prose = _prose(lines[block[0] - 1:block[1]], ITEM_DOC) if block else ""
-        code = "```\n" + "\n".join(_run_code(run, lines, docs)) + "\n```"
-        return "\n\n".join(p for p in (f"# {name}", prose, code) if p) + "\n"
-    raise SystemExit(f"no component `{name}` in `{repo_label(src)}`")
 
 
 def section_text(where: str, docs: Path = DOCS_DIR) -> str:
@@ -725,134 +435,7 @@ def write_interfaces(lib: Path = LIB_SRC,
         for path, text in lib_sources(lib)), write_wrappers(lib, wrappers)]
 
 
-def _upper_snake(name: str) -> str:
-    return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name).upper()
-
-
-@dataclass(frozen=True)
-class _WrappedDecl:
-    """A relation of a component as its wrapper passes it: its name,
-    whether it is an input, whether it is declared `inline`, and its
-    column names and types, each type
-    written in the component's own type parameters."""
-
-    name: str
-    input: bool
-    inline: bool
-    column_names: tuple[str, ...]
-    column_types: tuple[str, ...]
-
-
-def _comp_decls(comp: Comp, comps: dict[str, tuple[Comp, list[str]]]
-                ) -> list[_WrappedDecl]:
-    """The public relations a component declares or inherits from its
-    base, its own before its base's."""
-    _, lines = comps[comp.name]
-    out = [_WrappedDecl(it.name, _is_input(it, lines),
-                        Qualifier.INLINE in it.qualifiers,
-                        tuple(c.name for c in it.columns),
-                        tuple(c.type for c in it.columns))
-           for it in comp.items if isinstance(it, Decl) and not _hidden(it)]
-    if comp.base is not None:
-        if comp.base not in comps:
-            raise SystemExit(f"`{comp.name}` extends `{comp.base}`, which no "
-                             f"lib file declares")
-        base = comps[comp.base][0]
-        given = dict(zip(base.type_params, comp.base_type_args, strict=True))
-        names = {d.name for d in out}
-        out += [_WrappedDecl(d.name, d.input, d.inline, d.column_names,
-                             tuple(given.get(t, t) for t in d.column_types))
-                for d in _comp_decls(base, comps) if d.name not in names]
-    return out
-
-
-def _type_expr(t: str, comp: Comp, types: list[str]) -> str | None:
-    """The Python expression of the column type `t` in a wrapper of
-    `comp`: its type parameter, or the member of `Primitive` or `LibType`
-    that names it. None for a type the calling program declares, which
-    no Python call can declare."""
-    if t in comp.type_params:
-        return t
-    if (prim := Primitive.named(t)) is not None:
-        return f"Primitive.{prim.name}"
-    if t in types:
-        return f"LibType.{_upper_snake(t)}"
-    return None
-
-
-def wrappers_text(lib: Path = LIB_SRC) -> str:
-    """The Python module of the lib's wrappers: the lib's types as an enum,
-    and for each public top-level component whose columns are of the
-    lib's types a function that runs it through `lib_components.call.call`
-    over the relations it does not declare `inline`, with a tuple type of
-    its output relations. A component that declares every relation
-    `inline` gets no function."""
-    types: list[str] = []
-    comps: dict[str, tuple[Comp, list[str]]] = {}
-    order: list[tuple[Path, Comp]] = []
-    for path, text in lib_sources(lib):
-        program = parse(text)
-        for it in program.items:
-            if isinstance(it, TypeDecl) and not _hidden(it):
-                types.append(it.name)
-            elif isinstance(it, Comp) and not _hidden(it):
-                comps[it.name] = (it, text.splitlines())
-                order.append((path, it))
-    out = [mctx("\"\"\"Generated from the lib by scripts/context.py.\"\"\""), "",
-           "from collections.abc import Iterable, Mapping",
-           "from enum import StrEnum",
-           "from typing import NamedTuple", "",
-           "from engine.program import Primitive",
-           "from lib_components.call import (Columns, GridTypes, PyRow, PyValue, Relation, Size,",
-           "                                  call)",
-           "", "",
-           "class LibType(StrEnum):",
-           '    """The types the lib declares, by name."""', ""]
-    out += [f'    {_upper_snake(t)} = "{t}"' for t in types]
-    out += ["", "", "type TypeArg = Primitive | LibType"]
-    for path, comp in order:
-        decls = [d for d in _comp_decls(comp, comps) if not d.inline]
-        if not decls:
-            continue
-        exprs = {d.name: [_type_expr(t, comp, types) for t in d.column_types]
-                 for d in decls}
-        if any(None in e for e in exprs.values()):
-            continue
-        for d in decls:
-            if keyword.iskeyword(d.name):
-                raise SystemExit(f"`{comp.name}.{d.name}` is a Python keyword")
-        ins = [d.name for d in decls if d.input]
-        outs = [d.name for d in decls if not d.input]
-        rows = f"{comp.name}Rows"
-        out += ["", "", f"class {rows}(NamedTuple):",
-                f'    """The output relations of `{comp.name}` '
-                f'({repo_label(path)})."""', ""]
-        out += [f"    {o}: Relation" for o in outs] or ["    pass"]
-        params = [f"{t}: TypeArg" for t in comp.type_params]
-        params += ["*", "sizes: Mapping[PyValue, Size] | None = None"]
-        params += [f"{i}: Iterable[PyRow] | None = None" for i in ins]
-        columns = ", ".join(
-            f"{d.name!r}: Columns(("
-            + "".join(f"{e}, " for e in exprs[d.name])
-            + f"), {d.column_names[:1] == ('key',)})" for d in decls)
-        out += ["", "", f"def {comp.name}({', '.join(params)}) -> {rows}:",
-                f'    """Runs `{comp.name}` ({repo_label(path)}) over the rows '
-                f'given, a cell of each `Position` column in the grid of '
-                f'`sizes` for its key, or in the one grid of `sizes` where '
-                f'the relation has no key, and each `Offset` column as a '
-                f'(row, column) displacement."""',
-                f"    got = call({comp.name!r}, [{', '.join(comp.type_params)}],",
-                "               GridTypes(LibType.POSITION, LibType.OFFSET),",
-                "               {" + columns + "},",
-                "               {" + ", ".join(f"{i!r}: {i}" for i in ins) + "},",
-                f"               {outs!r}, sizes)",
-                f"    return {rows}(" + ", ".join(f"got[{o!r}]" for o in outs) + ")"]
-    return "\n".join(out) + "\n"
-
-
 def write_wrappers(lib: Path = LIB_SRC, path: Path = WRAPPERS_PATH) -> Path:
-    """Write the module of the lib's wrappers (`wrappers_text`) at `path`,
-    and return `path`."""
     return _write_whole(path, wrappers_text(lib))
 
 

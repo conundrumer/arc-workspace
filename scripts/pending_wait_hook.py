@@ -35,12 +35,13 @@ def check(hook: dict[str, Any]) -> None:
     """Deny the call `hook` gives where it waits on an agent pending to its
     caller."""
     import profile_runs as pr
+    from command_labels import runs_sleep
     from file_ticket import AGENT_ID
 
     tool, inp = hook["tool_name"], hook["tool_input"]
     if tool == "Bash":
         text = inp["command"]
-        if not pr.runs_sleep(text):
+        if not runs_sleep(text):
             return
     elif tool == "Monitor":
         text = f"{inp['command']}\n{inp['description']}"
@@ -57,7 +58,7 @@ def check(hook: dict[str, Any]) -> None:
         if path is None:
             raise ValueError(f"no transcript of agent {caller} under {session}")
     else:
-        path = session.with_suffix(".jsonl")
+        path = pr.main_transcript(session)
         call = hook["tool_use_id"]
         if not any(b.get("id") == call for e in pr.read_entries(path)
                    for b in pr.blocks(e, "tool_use")):

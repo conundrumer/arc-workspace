@@ -12,9 +12,10 @@ from pathlib import Path
 
 from engine import ParseFailure, checkout
 from engine.program import own
-from handbook.context import (FILE_DOC, INPUT_MARK_RE, ITEM_DOC, _doc_blocks,
-                              _documented, lib_sources, parse)
+from handbook.lib import (FILE_DOC, ITEM_DOC, _doc_blocks, _documented,
+                          lib_sources, parse)
 from handbook.items import Comp, Decl, Define, Functor, Item, TypeDecl
+from solver.annotations import input_mark_lines, input_marked
 from souffle import SouffleEngine
 from souffle.lexer import lex
 
@@ -27,7 +28,7 @@ def input_marks(path: Path, text: str) -> list[str]:
         text, checkout.programs())
     if isinstance(program, ParseFailure):
         return [f"{path.name}:{program.line}: {program.message}"]
-    lines = text.splitlines()
+    marks = input_mark_lines(program.comments)
     # A rule through an instance (`inst.rel(...) :- ...`) is not its scope's.
     derived = {(u.scope.components, u.head.relation.name)
                for u in program.units
@@ -39,8 +40,7 @@ def input_marks(path: Path, text: str) -> list[str]:
             continue
         scope = r.scope.components
         where = ".".join((*scope, r.name))
-        marked = any(INPUT_MARK_RE.search(lines[ln - 1])
-                     for ln in range(r.span.first, r.span.last + 1))
+        marked = input_marked(r.span, marks)
         rule = (scope, r.name) in derived
         if marked and rule:
             out.append(f"{path.name}:{r.span.first}: `{where}` has a rule "
