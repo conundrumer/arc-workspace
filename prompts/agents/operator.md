@@ -35,7 +35,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
 - Where main tells you to carry a change no further, tell each agent that runs on it, by SendMessage, to write nothing further on it until you tell it that its ticket is open again.
 - When you take a change that main moved back to `tickets/draft/` after it had left it, however you come to take it, continue it in the worktree your brief or a message from main gives for it, or else in the one the latest line of its ticket's log that gives a worktree gives, where that worktree stands, in place of launching a first editor:
     - Where you launched its editors and its reviewer, resume each by SendMessage, and tell each to read the ticket again before it goes on.
-    - Otherwise, launch in that worktree a new editor for each part [Changes](#changes) splits the change into, and a new reviewer for the change's next review.
+    - Otherwise, take it up as [Changes](#changes) gives for a change whose editors another agent launched.
 - Where you end while a change you held stands under `tickets/draft/`, give it in your reply as unfinished, with its worktree.
 - Where [Changes](#changes) leaves a change unmerged for a decision that goes to the user, move its ticket to `tickets/blocked/`, with a note that opens with `user` and gives the decision, the branch and the worktree.
 - Where the harness or the permission classifier denies a change's merge call, keep its ticket under `tickets/assigned/`, with a log line whose note opens with `main` and gives the call and the worktree.
