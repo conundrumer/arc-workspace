@@ -10,6 +10,7 @@ from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 type LineRange = tuple[int, int]
+type Captions = dict[str, dict[str, str]]
 
 
 @dataclass
@@ -71,6 +72,17 @@ class Card:
     quote_source: str = ""
     # Keeps every witness listed, so `dropped` filters none of them.
     all_witnesses: bool = False
+    # A sentence under a case's grid on a witness: what the grid shows, or
+    # that the grid on this witness says nothing about the question. Keyed
+    # by the witness label, then the case name, as the page prints them;
+    # the fallback witness by the label the page gives it. Where the case
+    # gives several grids, it stands under each; where it gives an error,
+    # under the error text. The render fails on a case the run on that
+    # witness does not give, and on a witness the page does not draw. A
+    # card with `dropped` and no `all_witnesses` cannot know which of its
+    # listed witnesses, or the fallback in their place, the page draws, so
+    # there a caption on one of those passes undrawn.
+    captions: Captions = field(default_factory=dict[str, dict[str, str]])
 
 
 def card_from_dict(data: dict) -> Card:
@@ -98,7 +110,11 @@ def card_from_dict(data: dict) -> Card:
               rows=[list(r) for r in t["rows"]])
         for t in values.pop("tables", [])
     ]
-    return Card(codes=codes, tables=tables, **values)
+    captions = {
+        witness: dict(cases)
+        for witness, cases in values.pop("captions", {}).items()
+    }
+    return Card(codes=codes, tables=tables, captions=captions, **values)
 
 
 def load_card(path: str | Path) -> Card:

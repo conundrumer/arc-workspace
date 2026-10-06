@@ -116,7 +116,7 @@ pre .num { display:inline-block; width:34px; text-align:right;
          border:1px solid var(--well-line); }
 .agrid div { width:var(--cell); height:var(--cell); }
 .agrid div.miss { background:repeating-linear-gradient(45deg,#fff 0 2px,#C2185B 2px 4px); }
-.cap { font-size:10px; color:#C2185B; font-family:ui-monospace,Menlo,monospace; }
+.cap { font-size:11.5px; color:#14171B; max-width:240px; }
 .err { border:1px solid #C2185B; border-radius:4px; padding:8px 10px;
        background:#FFF5F7; font-family:ui-monospace,Menlo,monospace; font-size:11px; }
 table { border-collapse:collapse; font-size:11.5px; }
@@ -262,18 +262,22 @@ def _failure_text(solver: Solver, failure: RunFailure | Fault) -> str:
     return "\n".join(failure_lines(solver, failure))
 
 
-def _candidate_html(cand: Candidate, card: Card) -> str:
+def _candidate_html(cand: Candidate, card: Card, witness: str) -> str:
+    """A case's grid on a witness, or its error text, with the card's
+    caption for that witness and case under it."""
     label = cand.label
     if card.dropped:
         label += " · dropped" if cand.label in card.dropped else " · kept"
     if cand.error:
-        return (
-            '<div class="gwrap">'
+        parts = [
             f'<div class="glabel">{html.escape(label)}</div>'
             f'<div class="err">{html.escape(cand.error)}</div>'
-            "</div>"
-        )
-    parts = [render_grid(cand.grid, label)]
+        ]
+    else:
+        parts = [render_grid(cand.grid, label)]
+    caption = card.captions.get(witness, {}).get(cand.label)
+    if caption is not None:
+        parts.append(f'<div class="cap">{html.escape(caption)}</div>')
     return '<div class="gwrap">' + "".join(parts) + "</div>"
 
 
@@ -291,16 +295,35 @@ def witness_grids(card: Card) -> list[tuple[str, Grid]]:
     """(label, grid) per witness. With no witness file listed, the task's
     first train input is the witness."""
     if not card.witnesses:
-        pair, example = next(examples(load_task(card.task_id)))
-        return [(f"{pair.text} input", as_grid(example.input))]
+        label, example = _fallback(card.task_id)
+        return [(label, as_grid(example.input))]
     grids = []
     for spec_path in card.witnesses:
         path = from_root(spec_path)
         grid = parse_grid(path.read_text())
         if grid is None:
             raise ValueError(f"{path} holds no grid")
-        grids.append((path.name, grid))
+        grids.append((_listed_label(spec_path), grid))
     return grids
+
+
+def _fallback(task_id: str) -> tuple[str, Example]:
+    """The fallback witness, the task's first train pair, with the label
+    the page gives its input."""
+    pair, example = next(examples(load_task(task_id)))
+    return f"{pair.text} input", example
+
+
+def _listed_label(spec_path: str) -> str:
+    """The label the page gives a listed witness file."""
+    return from_root(spec_path).name
+
+
+def drawable_labels(card: Card) -> list[str]:
+    """The label of each witness the page may draw: each listed witness,
+    then the fallback, which stands in for them under `dropped`."""
+    return [_listed_label(p) for p in card.witnesses] \
+        + [_fallback(card.task_id)[0]]
 
 
 def run_witnesses(card: Card) -> list[Run]:
@@ -331,25 +354,67 @@ def render_run(run: Run, card: Card) -> str:
     parts = [render_grid(run.grid, f"input · {run.label}")]
     if run.error:
         parts.append(f'<div class="err">{html.escape(run.error)}</div>')
-    parts.extend(_candidate_html(c, card) for c in run.candidates)
+    parts.extend(_candidate_html(c, card, run.label) for c in run.candidates)
     return '<div class="grids">' + "".join(parts) + "</div>"
+
+
+def filters_witnesses(card: Card) -> bool:
+    """Whether `dropped` decides which witnesses the page draws."""
+    return bool(card.dropped) and not card.all_witnesses
+
+
+def drawn_runs(card: Card) -> tuple[list[Run], bool]:
+    """The runs the page draws, and whether they are the fallback: for a
+    card with dropped cases, the task's first train input in place of the
+    listed witnesses when no witness input separates a dropped case from
+    the kept ones."""
+    runs = run_witnesses(card)
+    if not filters_witnesses(card):
+        return runs, False
+    diverging = [run for run in runs if diverges(run, card.dropped)]
+    if diverging:
+        return diverging, False
+    fallback = Card(**{**card.__dict__, "witnesses": []})
+    return run_witnesses(fallback), True
+
+
+def check_captions(card: Card, runs: list[Run]) -> None:
+    """Fails on each caption keyed to a case the run on its witness does
+    not give, or to a witness the page does not draw. Where `dropped`
+    decides the witnesses drawn, a witness the page may draw
+    (`drawable_labels`) passes undrawn."""
+    unsure = filters_witnesses(card)
+    labels = drawable_labels(card) if unsure else [r.label for r in runs]
+    wrong = []
+    for witness, cases in card.captions.items():
+        on = [run for run in runs if run.label == witness]
+        if not on and witness not in labels:
+            may = "may draw" if unsure else "draws"
+            wrong.append(f"witness {witness!r}: the page {may} "
+                         f"{', '.join(map(repr, labels))}")
+        for run in on:
+            given = list(dict.fromkeys(c.label for c in run.candidates))
+            gives = ", ".join(map(repr, given)) or "no case"
+            wrong.extend(
+                f"case {case!r} on witness {witness!r}: the run gives {gives}"
+                for case in cases if case not in given
+            )
+    if wrong:
+        raise ValueError("captions keyed to nothing the page draws:\n"
+                         + "\n".join(wrong))
 
 
 def witness_section(card: Card) -> list[str]:
     """The witness blocks, and for a card with dropped cases a note when no
     witness input separates a dropped case from the kept ones."""
-    runs = run_witnesses(card)
-    if not card.dropped or card.all_witnesses:
-        return [render_run(run, card) for run in runs]
-    diverging = [run for run in runs if diverges(run, card.dropped)]
-    if diverging:
-        return [render_run(run, card) for run in diverging]
+    runs, fell_back = drawn_runs(card)
+    check_captions(card, runs)
     note = (
         "<p>No candidate input separates the dropped case from the kept ones. "
         "The task's first train input follows.</p>"
     )
-    fallback = Card(**{**card.__dict__, "witnesses": []})
-    return [note] + [render_run(run, card) for run in run_witnesses(fallback)]
+    blocks = [render_run(run, card) for run in runs]
+    return [note] + blocks if fell_back else blocks
 
 
 def render(card: Card) -> str:
