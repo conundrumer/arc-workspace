@@ -183,6 +183,8 @@ pos($LineStart($Run(), S), D, P, K) :- run.clear([S, D], P, D, K, _).
 
 // --- $DiagonalClass, $GridDiagonal ---
 // Each grid diagonal along D, cast from its cell on the grid edge.
+// @store ray: variant other
+//     @relaxed diagonal-lines
 // @claim alternate-from-start
 .init diagonal = Ray<DiagDir>
 diagonal.dir(D, D) :- heading(_, D).

@@ -168,12 +168,20 @@
       ]
     },
     "output": [{
-      "cases": ["$LineStart & $StoredStep"],
+      "cases": ["$LineStart & $StoredStep & diagonal.ray=derived"],
       "grid": [
         [0,0,0,5],
         [0,0,5,0],
         [0,5,0,0],
         [5,0,0,0]
+      ]
+    }, {
+      "cases": ["$ColorBlind & diagonal.ray=stored","$DerivedAxis"],
+      "grid": [
+        [0,0,0,5],
+        [0,0,4,0],
+        [0,5,0,0],
+        [4,0,0,0]
       ]
     }, {
       "cases": ["$ColumnParity"],
@@ -184,7 +192,7 @@
         [5,0,0,0]
       ]
     }, {
-      "cases": ["$GridDiagonal & $StoredStep"],
+      "cases": ["$GridDiagonal & diagonal.ray=derived"],
       "grid": [
         [0,0,0,5],
         [0,0,4,0],
@@ -192,11 +200,11 @@
         [5,0,0,0]
       ]
     }, {
-      "cases": ["$DerivedAxis"],
+      "cases": ["$GridDiagonal & diagonal.ray=stored"],
       "grid": [
         [0,0,0,5],
         [0,0,4,0],
-        [0,5,0,0],
+        [0,4,0,0],
         [4,0,0,0]
       ]
     }]
@@ -223,7 +231,7 @@
         [0,4,0,0]
       ]
     }, {
-      "cases": ["$GridDiagonal & $StoredStep"],
+      "cases": ["$GridDiagonal"],
       "grid": [
         [0,0,0,5],
         [0,0,4,0],
@@ -246,13 +254,17 @@
       [1,1,2]
     ],
     "output": [{
-      "cases": [
-        "$LineStart & $StoredStep & bg=stored",
-        "$GridDiagonal & $StoredStep & bg=stored"
-      ],
+      "cases": ["$LineStart & $StoredStep & bg=stored","$GridDiagonal"],
       "grid": [
         [2,1,1],
         [1,4,4],
+        [1,4,2]
+      ]
+    }, {
+      "cases": ["$ColumnParity"],
+      "grid": [
+        [2,4,1],
+        [1,4,1],
         [1,4,2]
       ]
     }, {
@@ -263,14 +275,7 @@
         [1,1,2]
       ]
     }, {
-      "cases": ["$ColumnParity & bg=stored"],
-      "grid": [
-        [2,4,1],
-        [1,4,1],
-        [1,4,2]
-      ]
-    }, {
-      "cases": ["$DerivedAxis & bg=stored"],
+      "cases": ["$DerivedAxis"],
       "grid": null
     }]
   }, {
@@ -282,10 +287,17 @@
       [0,0,5]
     ],
     "output": [{
-      "cases": ["$LineStart & bg=stored","$GridDiagonal & bg=stored"],
+      "cases": ["$LineStart & bg=stored","$GridDiagonal"],
       "grid": [
         [5,5,0],
         [0,4,4],
+        [0,0,5]
+      ]
+    }, {
+      "cases": ["$ColumnParity"],
+      "grid": [
+        [5,4,0],
+        [0,4,5],
         [0,0,5]
       ]
     }, {
@@ -295,13 +307,29 @@
         [0,5,5],
         [0,4,5]
       ]
-    }, {
-      "cases": ["$ColumnParity & bg=stored"],
-      "grid": [
-        [5,4,0],
-        [0,4,5],
-        [0,0,5]
-      ]
     }]
+  }, {
+    "id": "diagonal.ray=stored",
+    "separates": "`diagonal.ray=stored` from the derived value: train 1 turned a quarter turn clockwise",
+    "input": [
+      [0,0,0,9,0,0,0,0],
+      [0,0,9,0,0,0,0,0],
+      [0,9,0,0,0,0,0,9],
+      [9,0,0,0,0,0,9,0],
+      [0,0,0,0,0,9,0,0],
+      [0,0,0,0,9,0,0,0],
+      [0,0,0,9,0,0,0,0],
+      [0,0,9,0,0,0,0,0]
+    ],
+    "output": [
+      [0,0,0,9,0,0,0,0],
+      [0,0,4,0,0,0,0,0],
+      [0,9,0,0,0,0,0,9],
+      [4,0,0,0,0,0,4,0],
+      [0,0,0,0,0,9,0,0],
+      [0,0,0,0,4,0,0,0],
+      [0,0,0,9,0,0,0,0],
+      [0,0,4,0,0,0,0,0]
+    ]
   }]
 }
