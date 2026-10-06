@@ -279,8 +279,7 @@ def enumerator_name(type_name: str) -> str:
 
 @quotes("solver-file.md", "Cases",
         "A record-typed `Choice` gets one enumerator per field a clause "
-        "enumerates, named for the field's type, as in `.decl "
-        "locate_choice(l: Locate)`.")
+        "enumerates, named for the field's type.")
 def check_enumerator_name(solver: Solver, runs: Runs) -> list[Finding]:
     """An enumerator of a record `Choice`'s field whose name is not the one
     the field's type gives it (`enumerator_name`). An enumerator is a

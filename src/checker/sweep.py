@@ -46,6 +46,7 @@ from solver.model import (
 )
 from solver.names import marker_lists
 from solver.names import name as case_label
+from solver.outcome import Grids
 from solver.solve import (
     stored_facts,
     PairId,
@@ -54,7 +55,6 @@ from solver.solve import (
     Candidate,
     Determined,
     FixParam,
-    Grids,
     PerCase,
     parameter_reading,
     by_base,

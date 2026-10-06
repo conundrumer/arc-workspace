@@ -117,15 +117,13 @@ from solver.problems import (
     ProblemKind,
     WitnessFileRole,
 )
+from solver.outcome import Grids, Outcome, is_result
 from solver.solve import (
-    Grids,
-    Outcome,
     PairRuns,
     at_once,
     branch_model,
     constructor_denoted,
     examples,
-    is_result,
     pairs,
     taken,
     task_inputs,

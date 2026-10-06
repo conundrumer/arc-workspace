@@ -12,7 +12,8 @@ from solver.model import (
     ConstructorBranch,
     DerivedAtStore,
 )
-from solver.solve import Outcome, PairId
+from solver.outcome import Outcome
+from solver.solve import PairId
 from solver.witness import AssignValue, GroupGrid, RejectedOutput
 
 type BranchRef = ConstructorBranch | Branch

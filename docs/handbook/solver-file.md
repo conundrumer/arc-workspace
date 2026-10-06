@@ -18,9 +18,9 @@
     //     @witness <id>: <plausibility> <verdict>
 
     // <what the choice is>
-    .type Choice =
+    .type Locate =
         // @claim <rule or scene slug>
-        CaseA {}
+        BranchA {}
         // @scene <slug>: <what this branch changes in the claim, and where it is undefined>
         // @rule <slug>: <what this branch changes in the claim, and where it is undefined>
         // @rule <new slug>: <added claim, and where it is undefined>
@@ -30,7 +30,17 @@
         //     @reassigned <parameter changed for this witness>
         // @witness <id>: <plausibility> <verdict>
         //     @relaxed <slug of the scene claim this witness breaks>
-      | CaseB {}
+      | BranchB {}
+
+    // <what the choice is>
+    .type Fill =
+        // @claim <rule or scene slug>
+        BranchC {}
+        // @rule <slug>: <what this branch changes in the claim, and where it is undefined>
+        //     @witness <id>: <plausibility> <verdict>
+      | BranchD {}
+
+    .type Choice = [l: Locate, f: Fill]
 
     .decl out(p: Position, col: Color, ch: Choice)
 
@@ -43,14 +53,23 @@
         recolor(3, 1).
         recolor(5, 4).
 
-        // --- CaseA ---
+        // --- $BranchA ---
         ...
 
-        // --- CaseB ---
+        // --- $BranchB ---
         ...
     }
 
     .init params = Params
+
+    .decl locate_choice(l: Locate)
+    locate_choice($BranchA()). locate_choice($BranchB()).
+
+    .decl fill_choice(f: Fill)
+    fill_choice($BranchC()). fill_choice($BranchD()).
+
+    .decl impl_choice(ch: Choice)
+    impl_choice([L, F]) :- locate_choice(L), fill_choice(F).
 
     .comp Parse<Key> { ... }
     .init parse = Parse<Unit>
@@ -68,11 +87,11 @@
     // @store box: <plausibility> <verdict>
     .init outline = Outlines<Unit>
 
-    // --- CaseA ---
-    out(..., $CaseA()) :- ...
+    // --- $BranchA ---
+    out(..., [$BranchA(), F]) :- impl_choice([$BranchA(), F]), ...
 
-    // --- CaseB ---
-    out(..., $CaseB()) :- ...
+    // --- $BranchB ---
+    out(..., [$BranchB(), F]) :- impl_choice([$BranchB(), F]), ...
 
     .comp Determine { ... }
     ```
@@ -94,7 +113,7 @@
     - Precise reading: a case's output is not the verdict's when its output on the grid differs from the output the verdict denotes: the output of the name's model for a name in one of the [Witness file](docs/handbook/solver-file.md#witness-file) forms, every case's for `other`, no case's for `any`.
 
 ### Cases
-- A case's model reads its output grids from `out` at that case, one grid per tiebreak resolution, and is undefined on an input where a grid's facts give two frame sizes.
+- A case's model reads its output grids from `out` at that case, one grid per tiebreak resolution, and is undefined on an input where it reads no grid, or facts that describe no total grid.
 - A case's base is its `Choice` value, its branch at each point the `Choice` encodes; a case is a base with a branch at each `@derive` and `@store` point its base reads.
 - A case is witnessed when it is the concept case or stands for a branch's model, or when an input of the task or of the witness file shows it giving an output that no case taking only part of its non-concept branches gives, where undefined counts as an output.
     - The case that stands for a branch's model is that model where the model is a case, and otherwise the case that takes the branch and differs from the concept case at the fewest points.
@@ -110,8 +129,8 @@
     - Cases that share facts or clauses are under one marker listing names whose cases they are, in the forms the [Witness file](docs/handbook/solver-file.md#witness-file) gives, `// --- $Box, $Erode ---`.
     - The comma separates names.
 - **`impl_choice`.** The relation that enumerates the cases is `impl_choice`, and its column is `ch`.
-    - A record-typed `Choice` gets one enumerator per field a clause enumerates, named for the field's type, as in `.decl locate_choice(l: Locate)`.
-    - `impl_choice` contains whole `Choice` values, for a record, as a clause over the enumerators that excludes each combination that is not a case, and it appears when a clause reads one or when the cases are not every combination of the fields.
+    - A record-typed `Choice` gets one enumerator per field a clause enumerates, named for the field's type.
+    - For a record-typed `Choice`, `impl_choice` excludes each combination of the fields that is not a case, and appears when a clause reads it or when the cases are not every combination of the fields.
 
 ## Params
 - Params contains the parameterization and what derives from it.

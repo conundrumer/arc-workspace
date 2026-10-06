@@ -138,9 +138,8 @@ from solver.model import (
 )
 from solver.names import branch_text, cover, marker_lists
 from solver.problems import ProblemKind
+from solver.outcome import Assignment, Grids
 from solver.solve import (
-    Assignment,
-    Grids,
     PairId,
     as_grid,
     at_once,

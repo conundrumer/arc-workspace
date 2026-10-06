@@ -15,7 +15,8 @@ from solver.load import load
 from solver.model import Case, Solver
 from solver.names import name
 from solver.problems import Fault, WitnessFileRole
-from solver.solve import Assignment, Grids, examples, outcomes, witnessed
+from solver.outcome import Assignment, Grids
+from solver.solve import examples, outcomes, witnessed
 from solver.witness import Undefined
 from study.card_spec import Card, from_root, options_of, options_phrase
 

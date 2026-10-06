@@ -45,10 +45,9 @@ from engine.program import as_grid
 from solver.category import Category
 from solver.model import Case, Solver, has_determine
 from solver.problems import Fault
+from solver.outcome import Assignment, Outcome
 from solver.solve import (
-    Assignment,
     CaseOnPair,
-    Outcome,
     candidates,
     examples,
     matching,

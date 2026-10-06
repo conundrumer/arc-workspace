@@ -42,15 +42,13 @@ from engine.text import text as code_text
 from solver.annotations import verdict_text
 from solver.model import Case, Solver, takes_constructor
 from solver.problems import Fault
+from solver.outcome import Grids, Outcome, is_result
 from solver.solve import (
     AltKind,
     Candidate,
     CaseOnPair,
-    Grids,
-    Outcome,
     alt_kind,
     as_grid,
-    is_result,
     out_columns,
 )
 from solver.witness import (

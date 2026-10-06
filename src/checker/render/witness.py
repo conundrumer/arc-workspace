@@ -51,7 +51,8 @@ from solver.annotations import Slot, comment_text, verdict_text, witness_text
 from solver.model import (
     Solver,
 )
-from solver.solve import Grids, Outcome, PairId
+from solver.outcome import Grids, Outcome
+from solver.solve import PairId
 from solver.witness import (
     AssignValue,
     GroupGrid,

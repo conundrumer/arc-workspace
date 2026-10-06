@@ -55,21 +55,17 @@ from solver.model import (
 )
 from solver.names import Denoted, denote, denoted_cases
 from solver.problems import Fault, NameFault, WitnessFileRole
+from solver.outcome import Assignment, Grids, Outcome, group_grid, is_result
 from solver.solve import (
-    Assignment,
     CaseOnPair,
     Determined,
-    Grids,
     NoDetermine,
-    Outcome,
     PairId,
     PairRuns,
     assignment,
     branch_model,
     entry_assignments,
     examples,
-    group_grid,
-    is_result,
     pair_on,
     task_inputs,
 )
@@ -491,8 +487,8 @@ def witness_entry(runs: Runs, solver: Solver, name: str, separates: str,
 def results(got: Sequence[tuple[Case, Outcome | Fault]]
             ) -> Outcomes | RunFailure | Fault:
     """Each case's outcome on an input as a witness file's group holds it
-    (`solver.solve.group_grid`), in the order of `got`; the first outcome
-    that is no result (`solver.solve.is_result`) in their place."""
+    (`solver.outcome.group_grid`), in the order of `got`; the first outcome
+    that is no result (`solver.outcome.is_result`) in their place."""
     found: list[tuple[Case, GroupGrid]] = []
     for case, o in got:
         if not is_result(o):

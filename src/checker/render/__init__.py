@@ -110,11 +110,10 @@ from solver.problems import (
 from solver.problems import (
     Undecided as UndecidedDetail,
 )
+from solver.outcome import Grids, Outcome
 from solver.solve import (
     VARIANT_CPU_FACTOR,
     VARIANT_CPU_FLOOR_SECONDS,
-    Grids,
-    Outcome,
     PairId,
     VariantBound,
 )

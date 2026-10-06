@@ -57,7 +57,7 @@
     - A parameter that some case never reads goes under the marker of the cases that read it.
 - **Derived data.** A clause inside Params writes no value as a literal.
 - Facts are not column-aligned across a block.
-- **Relative orientation.** If the family fixes an orientation value from another value, the stored form is relative: `Sense` via `turn` and `Axis` via `perp`.
+- **Relative orientation.** An orientation value that the family fixes from another value has no parameter of its own, and is derived from that value: a `Dir` through `turn`, with the `Sense` stored where the family varies it, and an `Axis` through `perp`.
 
 ## Types
 - [Types](docs/handbook/solver-file.md#types) lists the types a solver may define, and any other type is banned.

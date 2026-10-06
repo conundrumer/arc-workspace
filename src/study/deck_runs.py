@@ -19,7 +19,8 @@ from checker.judged import verdict_case
 from solver.model import Case, Solver, cases, read_witness
 from solver.names import denote, model_of
 from solver.problems import Fault, NameFault, WitnessFileRole
-from solver.solve import Grids, assignment, outcomes
+from solver.outcome import Grids
+from solver.solve import assignment, outcomes
 from solver.witness import (
     ConflictingCells,
     InconsistentBounds,

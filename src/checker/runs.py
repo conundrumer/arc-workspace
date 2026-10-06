@@ -23,10 +23,9 @@ from solver.model import (
 )
 from solver.names import Denoted, branch_text, name as case_name
 from solver.problems import Fault, WitnessFileRole
+from solver.outcome import Assignment, Outcome
 from solver.solve import (
-    Assignment,
     DetermineResult,
-    Outcome,
     PairRuns,
     ParamDiff,
     Restrict,

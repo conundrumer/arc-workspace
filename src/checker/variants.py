@@ -21,14 +21,12 @@ from engine import (
     UngroundedVariable,
 )
 from solver.model import Case, Solver
+from solver.outcome import Assignment, Grids, Outcome
 from solver.solve import (
-    Assignment,
     Determined,
     DetermineResult,
-    Grids,
     GroupRuns,
     NoDetermine,
-    Outcome,
     PairId,
     TaskSection,
     as_grid,

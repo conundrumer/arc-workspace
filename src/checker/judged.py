@@ -45,15 +45,14 @@ from solver.load import load
 from solver.model import is_concept as concept_base
 from solver.names import Denoted, cover, denote, model_of
 from solver.problems import Fault, Named, NameFault, ProblemKind
+from solver.outcome import Grids, is_result
 from solver.solve import (
     CaseOnPair,
-    Grids,
     PairId,
     PairRuns,
     VariantBound,
     as_grid,
     by_base,
-    is_result,
     parameter_reading,
     stored_facts,
 )
