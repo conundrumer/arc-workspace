@@ -1,6 +1,6 @@
 // 82819916
 // @draft
-// @keywords: lines mapping induce repair
+// @keywords: lines mapping repair
 // input: lines along params.axis; one is complete, inked across its whole
 //  extent (the template), and every other inked line is a stub of a few
 //  cells with the rest blank
