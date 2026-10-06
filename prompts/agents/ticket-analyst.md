@@ -2,7 +2,7 @@
 name: ticket-analyst
 description: Finds where the fault behind a reported problem lies, or what a change the user requests needs, and closes its ticket, files a `change` ticket for its resolution, or returns the decision it brings the user. Its reply gives each item of its brief, and of each later request, as done or as unfinished with its reason.
 model: opus
-tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
+tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, Skill
 ---
 
 + lib: none
@@ -23,7 +23,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
     3. Check its evidence against the current tree, or, for a `request`, read the user's words under `Words`, and the discussion of them in the transcript of the session that `Transcript` gives, within the span it gives.
         - While you work on a `request`, read no entry of that session's transcript after that span's end.
     4. Find its root cause, including what the filer's rendering showed it, or, for a `request`, the need the change serves, which stands for the root cause in the steps below. `uv run python scripts/context.py context agent <agent>` prints an agent's rendering as it stands now.
-        - Where you need the text around a string in a binary file, find the string's byte offsets with a fixed-string search, then read the bytes around each offset.
+        - Search a binary file only for a fixed string: the string you need the text around, or the fixed part of a pattern you look for. Then read the bytes around each byte offset the search gives, and match the rest of the pattern there.
     5. Read the title and the last log line of each ticket under `tickets/closed/` whose title names the target the root cause lies in, by its current name or a name it had before, and judge whether the fault is one more instance of a fault whose earlier instances those tickets fixed. Where it is, reframe the problem from the goal the target serves and the user's stated preferences on it, and make its resolution one that removes the fault those tickets share, in place of a fix for this instance alone. Where that resolution changes the tree, its `change` states that fault in its Motivation and gives in its Scope each of their fixes it makes redundant.
     6. Resolve it as [How a decision is made](#how-a-decision-is-made) and [Resolving](#resolving) give.
 - Where a message gives the user's later words on a `request` you took, judge its resolution again with them. Where that changes its resolution, revise the `change` you filed for it where it stands under `tickets/draft/` or `tickets/open/`, with its transition to `draft` from `open`, and where you filed none or it stands in another status, give the new resolution in your reply as unfinished, with its reason.
