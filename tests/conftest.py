@@ -46,11 +46,11 @@ def upstream() -> None:
     starts with them empty. Where the setup fails, the test fails with its
     cause."""
     merge_change = script("merge_change")
+    subs = script("worktree_submodules")
     root = checkout.ROOT
     with open(checkout.git_common_dir(root) / UPSTREAM_LOCK, "a") as fh:
         fcntl.flock(fh, fcntl.LOCK_EX)
-        if all(merge_change.checked_out(root, sub)
-               for sub in merge_change.submodules(root)):
+        if all(subs.checked_out(root, sub) for sub in subs.submodules(root)):
             return
         try:
             merge_change.set_up_submodules(root, checkout.main_worktree(root))

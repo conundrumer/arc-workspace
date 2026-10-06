@@ -105,8 +105,11 @@ the others merge.
 
 It pushes nothing and moves no branch but `master` and the worktrees' own.
 It prints a line per step on stdout, and a refusal, and a wait for the
-merge lock with what its holder merges, on stderr. Each line a check writes
-on stderr reaches its stderr as the check writes it, so a wait of the gate
+merge lock with what its holder merges, on stderr. As each submodule
+setup, commit, rebase, check, command in the main tree and removal of a
+worktree ends, it writes the step's step line (`engine.duration.STEP`),
+which says how long the step took, on stderr. Each line a check writes on
+stderr reaches its stderr as the check writes it, so a wait of the gate
 for the heavy commands' lock shows while it lasts.
 
 Exit status: 0 when every change is merged, 1 on a refusal of any change or
@@ -129,11 +132,14 @@ from engine.duration import footer
 from handbook.paths import importable
 
 # `scripts/` is no package: a test loads this module by its path, with
-# `scripts/` off `sys.path`, and `change_checks` imports from there.
+# `scripts/` off `sys.path`, and `change_checks` and `worktree_submodules`
+# import from there.
 importable(checkout.scripts())
 
 from change_checks import (MARKDOWN_CHECK, Check, code_paths,  # noqa: E402
-                           failures, run_in, said)
+                           failures, run_in, said, timed)
+from worktree_submodules import (checked_out, main_gitdir,  # noqa: E402
+                                 submodules, update)
 
 MASTER = "master"
 """The branch a change merges into."""
@@ -155,53 +161,15 @@ def branch_of(tree: Path) -> str:
     return done.stdout.strip()
 
 
-@dataclass(frozen=True)
-class Submodule:
-    """A submodule `.gitmodules` lists: its name, and its path in the tree."""
-
-    name: str
-    path: str
-
-
-def submodules(tree: Path) -> list[Submodule]:
-    """The submodules the `.gitmodules` of `tree` lists, in its order."""
-    listed = checkout.git_out(tree, "config", "-f", ".gitmodules", "-z",
-                     "--get-regexp", r"^submodule\..*\.path$")
-    found: list[Submodule] = []
-    for entry in filter(None, listed.split("\0")):
-        key, path = entry.split("\n", 1)
-        found.append(Submodule(key.removeprefix("submodule.").removesuffix(".path"), path))
-    return found
-
-
-def main_gitdir(main: Path, sub: Submodule) -> str:
-    """The git directory of submodule `sub` in the main tree, which holds
-    the main tree's copy of its repository."""
-    return checkout.git_out(main, "rev-parse", "--path-format=absolute",
-                   "--git-path", f"modules/{sub.name}").strip()
-
-
 def set_up_submodules(worktree: Path, main: Path) -> None:
-    """Run `git submodule update --init` in the worktree, with each
-    submodule's URL set to the main tree's copy of its repository, and every
-    transport but the local one refused. A failure is a refusal."""
+    """Set up the worktree's submodules as `worktree_submodules.update`
+    does. A failure is a refusal."""
     print("merge_change: setting up the submodules from the main tree", flush=True)
     try:
-        overrides: list[str] = []
-        for sub in submodules(worktree):
-            overrides += ["-c", f"submodule.{sub.name}.url={main_gitdir(main, sub)}"]
-        checkout.git_out(worktree, *overrides, "submodule", "update", "--init",
-                env={**os.environ, "GIT_ALLOW_PROTOCOL": "file"})
+        with timed(f"the submodule setup of {worktree}"):
+            update(worktree, main)
     except checkout.GitFailed as exc:
         raise Refused(f"setting up the submodules from {main} failed: {exc}") from exc
-
-
-def checked_out(tree: Path, sub: Submodule) -> bool:
-    """Whether submodule `sub` is checked out in `tree`: its path is the top
-    directory of a repository of its own."""
-    path = tree / sub.path
-    return path.is_dir() and Path(checkout.git_out(
-        path, "rev-parse", "--show-toplevel").strip()) == path
 
 
 def check(tree: Path, main: Path, base: str, touched: set[str]) -> Path:
@@ -334,7 +302,8 @@ def rebase(change: Change, onto: str, onto_name: str, restore: bool) -> None:
     index at `backup`; and refuse."""
     print(mctx("merge_change: rebasing {branch} onto {onto}").format(
         branch=change.branch, onto=onto_name), flush=True)
-    done = checkout.git(change.worktree, "rebase", onto)
+    with timed(f"the rebase of {change.branch}"):
+        done = checkout.git(change.worktree, "rebase", onto)
     if done.returncode == 0:
         return
     checkout.git_out(change.worktree, "rebase", "--abort")
@@ -371,7 +340,8 @@ def commit(worktree: Path, message: str, main: Path, backup: Path) -> Change:
     stage(worktree, main, backup)
     if committing:
         print(f"merge_change: committing on {branch}", flush=True)
-        checkout.git_out(worktree, "commit", "-q", "-m", message)
+        with timed(f"the commit on {branch}"):
+            checkout.git_out(worktree, "commit", "-q", "-m", message)
     return Change(worktree, branch, frozenset(touched), before,
                   backup if committing else None,
                   checkout.git_out(worktree, "rev-parse", "HEAD").strip())
@@ -498,7 +468,8 @@ def land(main: Path, changes: Sequence[Change], gate_out: Path) -> None:
         shown = " ".join(argv)
         print(mctx("merge_change: running {shown} in the main tree").format(shown=shown),
               flush=True)
-        done = run_in(main, ("uv", "run", "python", *argv))
+        with timed(shown):
+            done = run_in(main, ("uv", "run", "python", *argv))
         if done.returncode != 0:
             raise Failed(mctx("{master} is fast-forwarded, and {shown} failed in {main}; the "
                               "worktrees and branches of {branches} stay:").format(
@@ -509,7 +480,8 @@ def land(main: Path, changes: Sequence[Change], gate_out: Path) -> None:
     failed: list[str] = []
     for c in changes:
         try:
-            remove(main, c)
+            with timed(f"the removal of {c.worktree}"):
+                remove(main, c)
         except (Failed, checkout.GitFailed) as exc:
             failed.append(str(exc))
         else:

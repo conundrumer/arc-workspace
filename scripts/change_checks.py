@@ -1,6 +1,7 @@
 """The checks `merge_change.py` runs on a change: the commands, the paths
 that call for the code checks, and the runs of the checks in a tree."""
 
+import contextlib
 import subprocess
 import sys
 import threading
@@ -11,7 +12,7 @@ from pathlib import Path
 
 from cli.common import SOURCES
 from controlled_markdown import mctx
-from engine import checkout
+from engine import checkout, duration
 
 CODE_DIRS = ("src", "scripts", "tests", "data/tasks")
 """The directories a change under which runs the code checks."""
@@ -56,22 +57,30 @@ def run_in(tree: Path, argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
                           text=True)
 
 
-def run_check(tree: Path, argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
+def timed(step: str) -> contextlib.AbstractContextManager[None]:
+    """A step of `merge_change.py`, which writes its step line
+    (`engine.duration.STEP`) as it ends."""
+    return duration.step("merge_change", step)
+
+
+def run_check(tree: Path, argv: Sequence[str], shown: str) -> subprocess.CompletedProcess[str]:
     """A check run as `run_in` runs a command, each line it writes on stderr
-    written on this script's stderr as it comes."""
-    proc = subprocess.Popen(list(argv), cwd=tree, env=checkout.tree_env(), stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, text=True)
-    assert proc.stdout is not None and proc.stderr is not None
-    stdout = proc.stdout
-    out: list[str] = []
-    reader = threading.Thread(target=lambda: out.append(stdout.read()))
-    reader.start()
-    err: list[str] = []
-    for line in proc.stderr:
-        print(line, end="", file=sys.stderr, flush=True)
-        err.append(line)
-    reader.join()
-    return subprocess.CompletedProcess(list(argv), proc.wait(), "".join(out), "".join(err))
+    written on this script's stderr as it comes, timed as the step
+    `shown`."""
+    with timed(shown):
+        proc = subprocess.Popen(list(argv), cwd=tree, env=checkout.tree_env(), stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True)
+        assert proc.stdout is not None and proc.stderr is not None
+        stdout = proc.stdout
+        out: list[str] = []
+        reader = threading.Thread(target=lambda: out.append(stdout.read()))
+        reader.start()
+        err: list[str] = []
+        for line in proc.stderr:
+            print(line, end="", file=sys.stderr, flush=True)
+            err.append(line)
+        reader.join()
+        return subprocess.CompletedProcess(list(argv), proc.wait(), "".join(out), "".join(err))
 
 
 def failures(tree: Path, checks: Sequence[Check]) -> list[str]:
@@ -80,6 +89,6 @@ def failures(tree: Path, checks: Sequence[Check]) -> list[str]:
     for s in shown:
         print(mctx("merge_change: running {s}").format(s=s), flush=True)
     with ThreadPoolExecutor(max_workers=max(1, len(checks))) as pool:
-        dones = list(pool.map(lambda c: run_check(tree, c.argv), checks))
+        dones = list(pool.map(lambda c, s: run_check(tree, c.argv, s), checks, shown))
     return [mctx("the check `{s}` failed:").format(s=s) + "\n" + said(done)
             for s, done in zip(shown, dones, strict=True) if done.returncode != 0]
