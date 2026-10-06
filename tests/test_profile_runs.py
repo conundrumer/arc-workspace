@@ -12,7 +12,7 @@ from tests.conftest import script
 
 profile_runs = script("profile_runs")
 transcripts = sys.modules["transcripts"]
-Part = profile_runs.Part
+Part = sys.modules["run_profile"].Part
 
 
 def at(s: float) -> str:

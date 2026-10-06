@@ -3,13 +3,11 @@ wall time goes, the budget of each agent type, and the agents running under
 a run. `--help` prints HELP."""
 
 import argparse
-import re
 import sys
 import time
 
 from controlled_markdown import mctx
 from engine import checkout
-from handbook.agents import agent_names, agent_sources
 from handbook.paths import console_importable, importable
 
 console_importable()
@@ -17,24 +15,16 @@ console_importable()
 # `scripts/` off `sys.path`, and the modules below import from there.
 importable(checkout.scripts())
 
-from agent_launches import (Report, pending_agents, reports,  # noqa: E402
-                            running_agents)
+from agent_launches import pending_agents, running_agents  # noqa: E402
+from budgets import (BUDGET_FACTOR, LOW_WAIT_PCT, WINDOW_RUNS,  # noqa: E402
+                     print_budgets)
 from quota import epoch  # noqa: E402
-from run_profile import (Message, Part, Run, Span, by_agent_type,  # noqa: E402
-                         minutes, part_split, percentile, print_groups,
-                         print_types, profile)
-from run_reads import MAIN, run_type  # noqa: E402
+from run_prints import (RECENT_CALLS, print_messages,  # noqa: E402
+                        print_report, print_running)
+from run_profile import (COMMAND_WIDTH, Run, clock, minutes,  # noqa: E402
+                         part_split, print_groups, print_types, profile)
+from run_reads import run_type  # noqa: E402
 from transcripts import Refused, find, transcripts  # noqa: E402
-
-# The terms of a type's budget, which HELP states.
-BUDGET_FACTOR = 2
-WINDOW_RUNS = 5
-LOW_WAIT_PCT = 10
-# The number of a running agent's last calls that `--running` prints.
-RECENT_CALLS = 8
-# The characters of a call's command or of an agent's text output that
-# `--running` prints.
-COMMAND_WIDTH = 160
 
 HELP = mctx("""
     - Usage:
@@ -65,7 +55,7 @@ HELP = mctx("""
         - The window of a type that has an agent document under `prompts/agents/` is the runs whose first entry is at or after the last commit that changed that document, a document it includes or inlines, a lib file its rendered prompt holds, a script under `scripts/` its rendered prompt names, or a package under `src/` its rendered prompt runs with `-m`, and not a module such a script or package imports. `--since DATE`, an ISO date or datetime read in local time where it gives no offset, sets the window of every type to the runs whose first entry is at or after DATE. Where the window holds at least {window_runs} runs of the type, the median is taken over them.
         - A type with no agent document has a window only with `--since`, and a type whose paths no commit changed has none, and an `undecided` line on stderr names it.
         - Otherwise it is taken over the type's runs whose `waits` and `idle` together are under {low_wait_pct}% of wall time. A type with no such run gets no budget, and an `undecided` line on stderr names it.
-    - `--running ID` lists the running agents under the run ID, where ID is a session id or an agent id, and a run that goes on under a later session is listed under that session's id: the agents the run launched, the agents those launched, and so on, whether or not their parent has completed. An agent has completed when its turn has ended, when its last entry is the harness's note that the user interrupted it, or when its parent has its result or a notification of it and its transcript has not changed since. The agents are listed in launch order, each parent's agents after it. In an agent's shell, `$CLAUDE_CODE_SESSION_ID` holds the id of the top-level session, in a subagent as well, so `--running $CLAUDE_CODE_SESSION_ID` lists the running agents of the whole session. For each agent it prints:
+    - `--running ID` lists the running agents under the run ID, where ID is a session id or an agent id, and a run that goes on under a later session is listed under that session's id: the agents the run launched, the agents those launched, and so on, whether or not their parent has completed. An agent has completed when its turn has ended, when its last entry is the harness's note that the user interrupted it, or when its parent has its result or a notification of it and its transcript holds no `user` or `assistant` entry timestamped after the latest of those, so an attachment the harness writes after the turn has ended does not list it. The agents are listed in launch order, each parent's agents after it. In an agent's shell, `$CLAUDE_CODE_SESSION_ID` holds the id of the top-level session, in a subagent as well, so `--running $CLAUDE_CODE_SESSION_ID` lists the running agents of the whole session. For each agent it prints:
         - its agent id, type and launch description, its parent, which is the agent id of the agent that launched it or `main`, the time since its first entry, its active time with the time of the message it is measured from and, where that message's period has ended, the time it ended, its budget, and its context size in tokens, which is the input of its last request;
         - its working directory, as its first entry gives it;
         - its last text output, the end of the text of its last assistant entry that gives text;
@@ -88,204 +78,6 @@ HELP = mctx("""
     """).format(factor=BUDGET_FACTOR, window_runs=WINDOW_RUNS,
                 low_wait_pct=LOW_WAIT_PCT, recent=RECENT_CALLS,
                 width=COMMAND_WIDTH)
-
-
-# A brief line that states a budget, and the opening of a line that words one.
-BUDGET_LINE = re.compile(r"Budget: (\d+(?:\.\d+)?) minutes\.?")
-BUDGET_OPENING = re.compile(r"budget\s*:", re.I)
-LIST_MARKER = re.compile(r"^\s*(?:[-*+]|\d+[.)])?\s*")
-
-
-# Output.
-
-def clock(t: float | None) -> str:
-    return time.strftime("%Y-%m-%d %H:%M", time.localtime(t)) if t is not None else "?"
-
-
-def low_wait(r: Run) -> bool:
-    """Whether the `waits` and `idle` of `r` are under LOW_WAIT_PCT% of its
-    wall time."""
-    waited = r.parts[Part.WAITS] + r.parts[Part.IDLE]
-    return waited * 100 < r.wall * LOW_WAIT_PCT
-
-
-def type_window(kind: str, undecided: list[str]) -> float | None:
-    """The start of the window of the agent type `kind`, as HELP gives it:
-    the time of the last commit that changed its paths, or None where it
-    has no agent document or no commit changed them."""
-    if kind not in agent_names():
-        return None
-    paths = [str(checkout.shown(p)) for p in agent_sources(kind)]
-    out = checkout.git_out(checkout.ROOT, "log", "-1", "--format=%ct", "--",
-                           *paths).strip()
-    if not out:
-        undecided.append(mctx("{kind}: no commit changed its paths, so it has "
-                              "no window").format(kind=kind))
-        return None
-    return float(out)
-
-
-def print_budgets(runs: list[Run], since_date: float | None,
-                  undecided: list[str]) -> None:
-    """Print each agent type's budget, its basis, and the runs it is taken
-    over. `since_date` is the start of the window `--since` sets, where it
-    is given."""
-    by_type = by_agent_type(runs)
-    print(f"{'type':<18} {'budget':>7} {'runs':>4}  basis")
-    for kind in sorted(by_type):
-        rs = by_type[kind]
-        since = since_date if since_date is not None else type_window(kind, undecided)
-        window: list[Run] = []
-        if since is not None:
-            for r in rs:
-                if r.start is None:
-                    undecided.append(mctx("{run}: its start is unknown, so it is "
-                                          "left out of the window").format(run=r.label))
-                elif r.start >= since:
-                    window.append(r)
-        if len(window) >= WINDOW_RUNS:
-            basis, chosen = mctx("since {date}").format(date=clock(since)), window
-        else:
-            basis = mctx("waits and idle under {pct}% of wall").format(pct=LOW_WAIT_PCT)
-            chosen = [r for r in rs if low_wait(r)]
-        if not chosen:
-            undecided.append(mctx("{kind}: no run has waits and idle under "
-                                  "{pct}% of wall, so it has no budget").format(
-                kind=kind, pct=LOW_WAIT_PCT))
-            continue
-        budget = BUDGET_FACTOR * percentile([r.wall for r in chosen], 50)
-        print(f"{kind:<18} {minutes(budget):>7} {len(chosen):>4}  {basis}")
-
-
-def one_line(text: str, tail: bool = False) -> str:
-    """`text` on one line, cut to its first COMMAND_WIDTH characters, or
-    with `tail` to its last."""
-    line = " ".join(text.split())
-    if len(line) <= COMMAND_WIDTH:
-        return line
-    if tail:
-        return "..." + line[3 - COMMAND_WIDTH:]
-    return line[:COMMAND_WIDTH - 3] + "..."
-
-
-def budget_openings(text: str) -> list[str]:
-    """The lines of `text` that open with `Budget:`, past a list marker."""
-    lines = (LIST_MARKER.sub("", line).strip() for line in text.splitlines())
-    return [line for line in lines if BUDGET_OPENING.match(line)]
-
-
-def message_name(r: Run, m: Message) -> str:
-    """How an `undecided` line names a message from the parent of `r`."""
-    if m is r.messages[0]:
-        return mctx("the brief")
-    return mctx("the message at {time}").format(time=clock(m.time))
-
-
-def budgets_in_force(r: Run, undecided: list[str]) -> list[float | None]:
-    """The budget in minutes in force for each message from the parent of
-    `r`, which the latest message up to it states, as HELP gives it, or
-    None."""
-    for text in r.unknown:
-        undecided.append(mctx("{run}: the sender of the message `{text}` is "
-                              "unknown, so the run has no active time and no "
-                              "budget").format(run=r.label, text=one_line(text)))
-    budget: float | None = None
-    budgets: list[float | None] = []
-    for m in r.messages:
-        stated: set[float] = set()
-        for line in budget_openings(m.text):
-            match = BUDGET_LINE.fullmatch(line)
-            if match:
-                stated.add(float(match.group(1)))
-            else:
-                undecided.append(mctx("{run}: the line `{line}` of {message} is "
-                                      "not of the form `Budget: N minutes`, so "
-                                      "it gives no budget").format(
-                    run=r.label, line=line, message=message_name(r, m)))
-        if len(stated) > 1:
-            undecided.append(mctx("{run}: {message} states more than one budget, "
-                                  "{values}, so it gives none").format(
-                run=r.label, message=message_name(r, m),
-                values=", ".join(f"{v:g}" for v in sorted(stated))))
-        if stated:
-            budget = next(iter(stated)) if len(stated) == 1 else None
-        budgets.append(None if r.unknown else budget)
-    return budgets
-
-
-def of_budget(budget: float | None) -> str:
-    """The text that follows an active time to give its budget in minutes."""
-    return f" of budget {minutes(budget * 60)}" if budget is not None else ""
-
-
-def print_span(m: Span, time_text: str) -> None:
-    command = f": {one_line(m.command)}" if m.command else ""
-    print(f"    {time_text:>8}  {m.label}{command}")
-
-
-def print_running(runs: list[tuple[str, Run]], now: float,
-                  undecided: list[str]) -> None:
-    for parent, r in runs:
-        since = minutes(now - r.start) if r.start is not None else "?"
-        active_time = r.active_at(now)
-        ended = r.period_end(len(r.messages) - 1) if r.messages else None
-        to = " " + mctx("to {time}").format(time=clock(ended.time)) if ended else ""
-        active = (mctx("{active} since {time}{to}").format(
-            active=minutes(active_time), time=clock(r.messages[-1].time), to=to)
-            if active_time is not None else "?")
-        budget = next(reversed(budgets_in_force(r, undecided)), None)
-        context = f"{r.context:,}" if r.context is not None else "?"
-        print(f"{r.label} {r.agent_type}  parent {parent}  {since}  "
-              f"active {active}{of_budget(budget)}  "
-              f"context {context} tokens: {r.description}")
-        print(f"  cwd: {r.cwd or '?'}")
-        print(f"  said: {one_line(r.said, tail=True) if r.said is not None else '-'}")
-        for title, spans in (("in flight", r.in_flight), ("running", r.backgrounded)):
-            if spans:
-                print(f"  {title}:")
-            for m in spans:
-                print_span(m, minutes(now - m.start))
-        print("  recent:")
-        for m in r.spans[-RECENT_CALLS:]:
-            print_span(m, minutes(m.end - m.start) if m.end is not None else "pending")
-
-
-def print_messages(r: Run, undecided: list[str]) -> None:
-    """Print each message from the parent of `r` with its active time and
-    the budget in force for it, marking each active time past its budget."""
-    if r.agent_type == MAIN:
-        return
-    print("  messages from the parent:")
-    budgets = budgets_in_force(r, undecided)
-    for i, (m, budget) in enumerate(zip(r.messages, budgets, strict=True)):
-        active = r.active_from(i)
-        past = ("  past budget" if active is not None and budget is not None
-                and active > budget * 60 else "")
-        active_text = minutes(active) if active is not None else "?"
-        print(f"    {clock(m.time)}  active {active_text}{of_budget(budget)}{past}")
-
-
-def print_report(r: Run, undecided: list[str]) -> None:
-    """Print the latest report of the subagent of `r` that reached its
-    parent after the parent's latest message to it, as HELP gives it."""
-    if r.agent_type == MAIN:
-        return
-    found: list[Report] | None = None
-    if r.unknown or not r.messages:
-        undecided.append(mctx("{run}: the latest message from its parent is "
-                              "unknown, so whether a report reached the parent "
-                              "after it is unknown").format(run=r.label))
-    else:
-        found = reports(r.path, r.messages[-1].time, undecided)
-    if found is None:
-        print("  " + mctx("report to the parent: ?"))
-    elif not found:
-        print("  " + mctx("report to the parent: none after the message at "
-                          "{time}").format(time=clock(r.messages[-1].time)))
-    else:
-        last = found[-1]
-        print("  " + mctx("report to the parent: {time} {kind}: {text}").format(
-            time=clock(last.time), kind=last.kind.value, text=one_line(last.text)))
 
 
 def iso_date(text: str) -> float:

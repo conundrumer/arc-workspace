@@ -209,17 +209,44 @@ def session_notified(session: Path, agents: set[str],
     return out
 
 
+# The types of a transcript's message entries, the entries of a turn: the
+# message that opens it and its work.
+MESSAGE_TYPES = ("user", "assistant")
+
+
+def turn_after(path: Path, t: float, undecided: list[str]) -> bool:
+    """Whether the transcript at `path` holds an entry of a turn timestamped
+    after `t`. An entry of a turn with no timestamp counts as not, and an
+    `undecided` line names the run."""
+    out = False
+    for e in read_entries(path):
+        if e.get("type") not in MESSAGE_TYPES:
+            continue
+        if not e.get("timestamp"):
+            undecided.append(mctx("{run}: a `{type}` entry of its transcript has no "
+                                  "timestamp, so it counts as before its parent's "
+                                  "last sign that it reported").format(
+                run=agent_id(path), type=e.get("type")))
+        elif epoch(e["timestamp"]) > t:
+            out = True
+    return out
+
+
 def running_agents(path: Path, undecided: list[str]) -> list[tuple[str, Path]]:
     """The agents under the run at `path` whose parent holds no sign that
-    they completed, or whose transcript changed after the last sign, each
-    with its parent, each parent's agents after it."""
+    they reported, or whose transcript holds a `user` or `assistant` entry
+    timestamped after the latest sign, each with its parent, each parent's
+    agents after it. An entry of either type is the message that opens a
+    turn or the work of one, so an attachment the harness writes after a
+    turn has ended is none."""
     parents = run_launches(path)[1]
     out: list[tuple[str, Path]] = []
     for a in launched(path, undecided):
         child = a.path
         if child is None:
             continue
-        if a.done is None or child.stat().st_mtime > a.done:
+        if a.done is None or (child.stat().st_mtime > a.done
+                              and turn_after(child, a.done, undecided)):
             out.append((parent_label(path), child))
         if agent_id(child) in parents:
             out.extend(running_agents(child, undecided))

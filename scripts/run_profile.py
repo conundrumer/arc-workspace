@@ -2,13 +2,14 @@
 Code transcripts, and its print, as the HELP of `profile_runs` gives them."""
 
 import math
+import time
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from agent_launches import run_launches
+from agent_launches import MESSAGE_TYPES, run_launches
 from command_labels import AGENT_TOOLS, POLL, call_command, command_label
 from controlled_markdown import mctx
 from quota import epoch
@@ -34,6 +35,9 @@ WAIT_TOOLS = ("Monitor", "TaskOutput")
 # Ways a Bash result says the harness, not the call, moved it to the
 # background after it had run in the foreground.
 MOVED = ("timedOutAfterMs", "assistantAutoBackgrounded", "backgroundedByUser")
+# The characters of a call's command or of an agent's text output that
+# `--running` prints.
+COMMAND_WIDTH = 160
 
 
 @dataclass
@@ -213,7 +217,7 @@ def turns(entries: list[Entry]) -> tuple[set[int], set[int]]:
                 ends.add(i)
         if e.get("toolEndsTurn"):
             ends.add(i)
-        if e.get("type") in ("user", "assistant") or is_prompt(e):
+        if e.get("type") in MESSAGE_TYPES or is_prompt(e):
             nxt = e
     return starts, ends
 
@@ -318,7 +322,7 @@ def profile(path: Path, undecided: list[str]) -> Run:
                 k, start = running.pop(tid)
                 group(k).ran += t - start
     end = prev or 0.0
-    last_message = [e for e in entries if e.get("type") in ("user", "assistant")][-1:]
+    last_message = [e for e in entries if e.get("type") in MESSAGE_TYPES][-1:]
     interrupted = any(e.get("type") == "user" and text_of(
         (e.get("message") or {}).get("content")).startswith(INTERRUPTED)
         for e in last_message)
@@ -342,6 +346,21 @@ def profile(path: Path, undecided: list[str]) -> Run:
 
 def minutes(s: float) -> str:
     return f"{s / 60:.1f}m"
+
+
+def clock(t: float | None) -> str:
+    return time.strftime("%Y-%m-%d %H:%M", time.localtime(t)) if t is not None else "?"
+
+
+def one_line(text: str, tail: bool = False) -> str:
+    """`text` on one line, cut to its first COMMAND_WIDTH characters, or
+    with `tail` to its last."""
+    line = " ".join(text.split())
+    if len(line) <= COMMAND_WIDTH:
+        return line
+    if tail:
+        return "..." + line[3 - COMMAND_WIDTH:]
+    return line[:COMMAND_WIDTH - 3] + "..."
 
 
 def percentile(values: list[float], p: float) -> float:
