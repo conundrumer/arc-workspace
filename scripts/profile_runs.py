@@ -15,7 +15,7 @@ console_importable()
 # `scripts/` off `sys.path`, and the modules below import from there.
 importable(checkout.scripts())
 
-from agent_launches import pending_agents, running_agents  # noqa: E402
+from agent_launches import Listed, pending_agents, running_agents  # noqa: E402
 from budgets import (BUDGET_FACTOR, LOW_WAIT_PCT, WINDOW_RUNS,  # noqa: E402
                      print_budgets)
 from quota import epoch  # noqa: E402
@@ -55,17 +55,18 @@ HELP = mctx("""
         - The window of a type that has an agent document under `prompts/agents/` is the runs whose first entry is at or after the last commit that changed that document, a document it includes or inlines, a lib file its rendered prompt holds, a script under `scripts/` its rendered prompt names, or a package under `src/` its rendered prompt runs with `-m`, and not a module such a script or package imports. `--since DATE`, an ISO date or datetime read in local time where it gives no offset, sets the window of every type to the runs whose first entry is at or after DATE. Where the window holds at least {window_runs} runs of the type, the median is taken over them.
         - A type with no agent document has a window only with `--since`, and a type whose paths no commit changed has none, and an `undecided` line on stderr names it.
         - Otherwise it is taken over the type's runs whose `waits` and `idle` together are under {low_wait_pct}% of wall time. A type with no such run gets no budget, and an `undecided` line on stderr names it.
-    - `--running ID` lists the running agents under the run ID, where ID is a session id or an agent id, and a run that goes on under a later session is listed under that session's id: the agents the run launched, the agents those launched, and so on, whether or not their parent has completed. An agent has completed when its turn has ended, when its last entry is the harness's note that the user interrupted it, or when its parent has its result or a notification of it and its transcript holds no `user` or `assistant` entry timestamped after the latest of those, so an attachment the harness writes after the turn has ended does not list it. The agents are listed in launch order, each parent's agents after it. In an agent's shell, `$CLAUDE_CODE_SESSION_ID` holds the id of the top-level session, in a subagent as well, so `--running $CLAUDE_CODE_SESSION_ID` lists the running agents of the whole session. For each agent it prints:
+    - `--running ID` lists the agents under the run ID whose work is open, where ID is a session id or an agent id, and a run that goes on under a later session is listed under that session's id. Of the agents the run launched, the agents those launched, and so on, whether or not their parent's work is open, an agent's work is open where its turn is in progress, or where its turn has ended and no report of it reached its parent after the parent's latest message to it, as `report to the parent:` gives a report, read here from each transcript of the parent's run. An agent's turn counts as ended where it has ended, where its last entry is the harness's note that the user interrupted it, or where its parent has its result or a notification of it and its transcript holds no `user` or `assistant` entry timestamped after the latest of those, so an attachment the harness writes after the turn has ended does not count. A report after the latest message the agent received from anyone closes its work, whether or not the parent's latest message to it is known. Otherwise, an agent whose turn has ended is listed where the parent's latest message to it is unknown. The agents are listed in launch order, each parent's agents after it. In an agent's shell, `$CLAUDE_CODE_SESSION_ID` holds the id of the top-level session, in a subagent as well, so `--running $CLAUDE_CODE_SESSION_ID` lists the agents of the whole session whose work is open. For each agent it prints:
         - its agent id, type and launch description, its parent, which is the agent id of the agent that launched it or `main`, the time since its first entry, its active time with the time of the message it is measured from and, where that message's period has ended, the time it ended, its budget, and its context size in tokens, which is the input of its last request;
         - its working directory, as its first entry gives it;
+        - for an agent whose turn has ended, after `turn ended:`, the time of its last `user` or `assistant` entry, which is when the turn ended, and the time since, and after `report to the parent:` what one run prints there, from the same transcripts;
         - its last text output, the end of the text of its last assistant entry that gives text;
         - each call it has in flight, with its label, its command and the time since the call;
         - each command or agent it backgrounded that is still running, with its label, its command and the time since the call;
         - its last {recent} calls in order, each with its label, its command and its duration, or `pending`.
     - `--pending ID` prints the agent id of each agent pending to the run ID, one per line, in launch order, where ID is a session id or an agent id. An agent is pending to the run that launched it from the Agent call that launched it, or from the last SendMessage call that resumed it, by the run or by any agent of the run's sessions, main among them, until the run holds the result of that Agent call, where the result does not say the agent runs in the background, or until any transcript of the session holds a notification of the agent, a notification that it stopped with work of its own still running among them. A SendMessage call to an agent whose result says neither that it resumed the agent nor that it queued the message resumes none, and an `undecided` line on stderr names it.
-    - The messages from a running agent's parent are its brief, the messages its first turn answers, and each later message its parent sent: one the harness gives as from the parent's agent id, or, for an agent `main` launched, as from the coordinator or queued with no tag. The origin the harness gives a queued message is the one its attachment gives. A notification of the agent's own backgrounded work, a message from an agent it launched, from the user, from another agent, or, for an agent `main` did not launch, from the coordinator or queued with no tag, and a note of the harness are none. A message from another agent is one the harness gives as from an agent id other than the parent's and those of the agents it launched. A later message whose sender is none of these is unknown, and an `undecided` line on stderr names it.
+    - The messages from a listed agent's parent are its brief, the messages its first turn answers, and each later message its parent sent: one the harness gives as from the parent's agent id, or, for an agent `main` launched, as from the coordinator or queued with no tag. The origin the harness gives a queued message is the one its attachment gives. A notification of the agent's own backgrounded work, a message from an agent it launched, from the user, from another agent, or, for an agent `main` did not launch, from the coordinator or queued with no tag, and a note of the harness are none. A message from another agent is one the harness gives as from an agent id other than the parent's and those of the agents it launched. A later message whose sender is none of these is unknown, and an `undecided` line on stderr names it.
     - The period of a message from the parent runs from it to the next message from the parent or from another agent, or to the run's last entry.
-    - A running agent's active time is its wall time less `idle` over the period of the latest message from its parent, with its wall time running to now where that period has not ended. An agent with an unknown message has no active time and no budget.
+    - A listed agent's active time is its wall time less `idle` over the period of the latest message from its parent, with its wall time running to now where that period and its turn have not ended. An agent with an unknown message has no active time and no budget.
     - Its budget is the N of the line of the form `Budget: N minutes` in the latest message from its parent that has a line of that form, and an agent none of whose parent's messages has one gets no budget. A line that opens with `Budget:` in another form gives no budget, and a message with lines of more than one N gives none, and an `undecided` line on stderr names each.
     - A call's command and an agent's text output are printed on one line, a command cut to its first {width} characters and a text output to its last {width}. A call's command is:
         - for a Bash call, its command, led by the kind of each ticket it files, as `kind K:`;
@@ -89,8 +90,8 @@ def main(argv: list[str]) -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("ids", nargs="*", metavar="ID")
     ap.add_argument("--running", metavar="ID",
-                    help=mctx("list the agents the run ID launched that have "
-                              "not completed"))
+                    help=mctx("list the agents under the run ID whose work "
+                              "is open"))
     ap.add_argument("--pending", metavar="ID",
                     help=mctx("list the agents pending to the run ID"))
     ap.add_argument("--type", help=mctx("profile only runs of these agent "
@@ -111,7 +112,7 @@ def main(argv: list[str]) -> int:
     types = set(args.type.split(",")) if args.type else None
     undecided: list[str] = []
     runs: list[Run] = []
-    listed: list[tuple[str, Run]] = []
+    listed: list[tuple[Listed, Run]] = []
     if [bool(args.ids), bool(args.running), bool(args.pending)].count(True) != 1:
         print(mctx("refused: give one of IDs, `--running ID` and `--pending ID`"),
               file=sys.stderr)
@@ -121,7 +122,7 @@ def main(argv: list[str]) -> int:
             for agent in pending_agents(find(args.pending), undecided):
                 print(agent)
         elif args.running:
-            listed = [(parent, profile(p, undecided)) for parent, p in
+            listed = [(a, profile(a.path, undecided)) for a in
                       running_agents(find(args.running), undecided)]
         else:
             paths = list(dict.fromkeys(p for ident in args.ids

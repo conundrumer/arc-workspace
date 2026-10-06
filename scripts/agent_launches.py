@@ -1,7 +1,8 @@
 """The agents a run launched, the calls that resumed them, the agents
-pending to it and running under it, and the reports of an agent that reached
-its parent."""
+pending to it and those whose work is open under it, and the reports of an
+agent that reached its parent."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from functools import cache
@@ -59,12 +60,23 @@ class Launch:
     gives it, its transcript, where one gives the call as its launch, the
     time of the run's call that launched it, or in `launched` of the last
     call that resumed it, by the run or by any agent of the run's sessions,
-    and the time of the run's last sign that it reported, or None where the
-    run holds none."""
+    the time of the run's last sign that it reported, or None where the
+    run holds none, the id of the call that launched it, and the entries of
+    the run's transcripts to which `report_ids` gives its agent id or the
+    id of that call."""
     agent: str | None
     path: Path | None
     since: float
     done: float | None
+    call: str
+    entries: list[Entry]
+
+    def reports(self, since: float, undecided: list[str]) -> list["Report"]:
+        """The reports of the agent among `entries` after `since`, in the
+        order of their time."""
+        return sorted((r for e in self.entries if epoch(e["timestamp"]) > since
+                       for r in entry_reports(e, self.agent, self.call, undecided)),
+                      key=lambda r: r.time)
 
     @property
     def pending(self) -> bool:
@@ -150,6 +162,10 @@ def launches(path: Path, undecided: list[str]) -> list[Launch]:
                 if e.get("type") == "user" for b in blocks(e, "tool_result")}
     told = {v: epoch(e["timestamp"]) for e in entries
             if e.get("type") != "assistant" for v in notified(e)}
+    naming: dict[str, list[Entry]] = {}
+    for e in entries:
+        for v in report_ids(e):
+            naming.setdefault(v, []).append(e)
     by_call = run_launches(path)[0]
     out: list[Launch] = []
     for e in entries:
@@ -170,7 +186,10 @@ def launches(path: Path, undecided: list[str]) -> list[Launch]:
             if child is None and done is None:
                 undecided.append(mctx("{run}: no transcript gives call {call} as "
                                       "its launch").format(run=path.stem, call=tid))
-            out.append(Launch(aid, child, epoch(e["timestamp"]), done))
+            named = {id(n): n for v in (tid, *([aid] if aid else []))
+                     for n in naming.get(v, [])}
+            out.append(Launch(aid, child, epoch(e["timestamp"]), done, tid,
+                              list(named.values())))
     return out
 
 
@@ -290,18 +309,6 @@ def has_ended(path: Path) -> bool:
     return turn_ended(tail[::-1])
 
 
-@cache
-def live(path: Path) -> bool:
-    """Whether the run at `path`, or a run under it, as the `.meta.json`
-    files of its sessions give them, has not ended."""
-    if not has_ended(path):
-        return True
-    under = run_launches(path)[1].get(agent_id(path), frozenset())
-    agents = {aid: p for s in dict.fromkeys(session_of(p) for p in chain(path))
-              for aid, p in session_agents(s).items()}
-    return any(live(chain(agents[aid])[-1]) for aid in sorted(under) if aid in agents)
-
-
 def turn_after(path: Path, t: float, undecided: list[str]) -> bool:
     """Whether the transcript at `path` holds an entry of a turn timestamped
     after `t`. An entry of a turn with no timestamp counts as not, and an
@@ -320,21 +327,75 @@ def turn_after(path: Path, t: float, undecided: list[str]) -> bool:
     return out
 
 
-def running_agents(path: Path, undecided: list[str]) -> list[tuple[str, Path]]:
-    """The agents under the run at `path` that have not completed, as HELP
-    gives it, each with its parent, each parent's agents after it. An agent
-    is passed over unread, with the agents under it, where it and each of
-    them has ended."""
+def last_time(path: Path, holds: Callable[[Entry], bool] | None = None) -> float | None:
+    """The time of the last timestamped entry of the run at `path`, or with
+    `holds` the last that `holds` holds of, read from its end, or None where
+    none is."""
+    for p in reversed(chain(path)):
+        for e in entries_back(p):
+            if e.get("timestamp") and (holds is None or holds(e)):
+                return epoch(e["timestamp"])
+    return None
+
+
+def is_turn_entry(entry: Entry) -> bool:
+    return entry.get("type") in MESSAGE_TYPES
+
+
+@dataclass
+class Listed:
+    """An agent `running_agents` gives: the label of its parent, its
+    transcript, its launch, whether its turn has ended, and where it has,
+    the time of its last `user` or `assistant` entry, or None where none
+    gives a time."""
+    parent: str
+    path: Path
+    launch: Launch
+    ended: bool
+    end: float | None
+
+
+def reported_since(a: Launch, since: float | None,
+                   kinds: frozenset["ReportKind"]) -> bool:
+    """Whether the run that launched `a` holds a report of it of one of
+    `kinds` after `since`. The `undecided` lines of that read are dropped:
+    a report it finds settles the agent whatever they name, and where it
+    finds none, the agent's report is read again with them."""
+    return since is not None and any(r.kind in kinds for r in a.reports(since, []))
+
+
+def listing(parent: str, a: Launch, child: Path,
+            undecided: list[str]) -> Listed | None:
+    """The agent of `a`, whose transcript is at `child`, where its work may
+    be open: where its turn is in progress, or where it has ended and the
+    run that launched it holds no report of it after the latest message it
+    received from anyone, which is no earlier than its parent's latest
+    message to it, so its caller reads its report after that message. An
+    agent with a turn-ending report after its last timestamped entry has
+    ended its turn after every message it received, and only the end of its
+    transcript is read."""
+    if reported_since(a, last_time(child), TURN_ENDED):
+        return None
+    if not has_ended(child) and (
+            a.done is None or (child.stat().st_mtime > a.done
+                               and turn_after(child, a.done, undecided))):
+        return Listed(parent, child, a, False, None)
+    if reported_since(a, last_time(child, is_prompt), frozenset(ReportKind)):
+        return None
+    return Listed(parent, child, a, True, last_time(child, is_turn_entry))
+
+
+def running_agents(path: Path, undecided: list[str]) -> list[Listed]:
+    """The agents under the run at `path` whose work may be open, as
+    `listing` gives each, each parent's agents after it."""
     parents = run_launches(path)[1]
-    out: list[tuple[str, Path]] = []
+    out: list[Listed] = []
     for a in launches(path, undecided):
         child = a.path
-        if child is None or not live(child):
+        if child is None:
             continue
-        if not has_ended(child) and (
-                a.done is None or (child.stat().st_mtime > a.done
-                                   and turn_after(child, a.done, undecided))):
-            out.append((parent_label(path), child))
+        if (listed := listing(parent_label(path), a, child, undecided)):
+            out.append(listed)
         if agent_id(child) in parents:
             out.extend(running_agents(child, undecided))
     return out
@@ -353,6 +414,11 @@ class ReportKind(Enum):
     NOTIFICATION = "notification"
     RESULT = "result"
     MESSAGE = "message"
+
+
+# The kinds of report that the harness gives the parent once the agent's turn
+# has ended.
+TURN_ENDED = frozenset({ReportKind.NOTIFICATION, ReportKind.RESULT})
 
 
 @dataclass
@@ -378,7 +444,8 @@ def reports(path: Path, since: float, undecided: list[str]) -> list[Report] | No
     """The entries after `since` of the transcripts of the parent of the
     subagent at `path` that give a report of it, as HELP gives them, in the
     order of their time, or None where no transcript of its parent is
-    found."""
+    found. Only the lines that hold its agent id or the id of the call that
+    launched it are read, which every such entry's line holds one of."""
     aid = agent_id(path)
     found = parent_transcripts(path)
     if not found:
@@ -389,30 +456,53 @@ def reports(path: Path, since: float, undecided: list[str]) -> list[Report] | No
     if not call:
         undecided.append(mctx("{run}: no `.meta.json` of its run gives a `toolUseId`, "
                               "so the result of its launch cannot be matched").format(run=aid))
+    words = {aid, call} if call else {aid}
+    return sorted((r for p in found for e in read_entries(p, naming=words)
+                   if e.get("timestamp") and epoch(e["timestamp"]) > since
+                   for r in entry_reports(e, aid, call, undecided)),
+                  key=lambda r: r.time)
+
+
+def report_ids(entry: Entry) -> list[str]:
+    """The ids by which an entry of a parent's transcript may give a report
+    of an agent: the ids of each notification it gives, the agent id of
+    each message from an agent it gives, and the id of each call it gives
+    the result of. None for an entry with no timestamp or of the model."""
+    if not entry.get("timestamp") or entry.get("type") == "assistant":
+        return []
+    ids = [*notified(entry),
+           *(who for who, _ in (agent_messages(entry) if is_prompt(entry) else [])),
+           *(b["tool_use_id"] for b in blocks(entry, "tool_result")
+             if b.get("tool_use_id"))]
+    return list(dict.fromkeys(ids))
+
+
+def entry_reports(e: Entry, aid: str | None, call: str | None,
+                  undecided: list[str]) -> list[Report]:
+    """The reports of the agent `aid`, launched by call `call`, that the
+    timestamped entry `e` of its parent's transcripts gives, as HELP gives
+    them."""
+    if e.get("type") == "assistant":
+        return []
+    t = epoch(e["timestamp"])
     out: list[Report] = []
-    for e in (e for p in found for e in read_entries(p)):
-        if not e.get("timestamp") or e.get("type") == "assistant":
+    for n in notifications(e):
+        if (aid is None or aid not in n.ids) and call not in n.ids:
             continue
-        t = epoch(e["timestamp"])
-        if t <= since:
-            continue
-        for n in notifications(e):
-            if aid not in n.ids and call not in n.ids:
-                continue
-            if n.status is None:
-                undecided.append(mctx("{run}: a notification of it at {time} gives "
-                                      "the status `{status}`, of no known form").format(
-                    run=aid, time=e["timestamp"], status=n.status_text))
-            elif (n.status is Status.COMPLETED and n.result is not None
-                    and not (n.note or "").startswith(STILL_RUNNING)):
-                out.append(Report(ReportKind.NOTIFICATION, t, n.result.strip()))
-        if is_prompt(e):
-            out.extend(Report(ReportKind.MESSAGE, t, text)
-                       for who, text in agent_messages(e) if who == aid)
-        result = e.get("toolUseResult")
-        if call and isinstance(result, dict) and any(
-                b.get("tool_use_id") == call for b in blocks(e, "tool_result")):
-            if launch_status(result, undecided, call) is LaunchStatus.COMPLETED:
-                out.append(Report(ReportKind.RESULT, t,
-                                  text_of(result.get("content")).strip()))
-    return sorted(out, key=lambda r: r.time)
+        if n.status is None:
+            undecided.append(mctx("{run}: a notification of it at {time} gives "
+                                  "the status `{status}`, of no known form").format(
+                run=aid, time=e["timestamp"], status=n.status_text))
+        elif (n.status is Status.COMPLETED and n.result is not None
+                and not (n.note or "").startswith(STILL_RUNNING)):
+            out.append(Report(ReportKind.NOTIFICATION, t, n.result.strip()))
+    if is_prompt(e):
+        out.extend(Report(ReportKind.MESSAGE, t, text)
+                   for who, text in agent_messages(e) if aid is not None and who == aid)
+    result = e.get("toolUseResult")
+    if call and isinstance(result, dict) and any(
+            b.get("tool_use_id") == call for b in blocks(e, "tool_result")):
+        if launch_status(result, undecided, call) is LaunchStatus.COMPLETED:
+            out.append(Report(ReportKind.RESULT, t,
+                              text_of(result.get("content")).strip()))
+    return out
