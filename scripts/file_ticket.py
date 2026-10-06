@@ -1,6 +1,7 @@
 """File a ticket under the main tree's `tickets/`, from the main tree or any
 worktree of it, print a ticket's path, and make a ticket's transitions and
-write its log lines. `HELP`, which `--help` prints, says how an agent calls it."""
+write its log lines. `HELP`, which `--help` prints, says how an agent files,
+and each subcommand's own help, which its `--help` prints, how an agent calls it."""
 
 import fcntl
 import os
@@ -27,6 +28,8 @@ importable(checkout.scripts())
 from transcripts import Refused, find, forked_from  # noqa: E402
 
 HELP = mctx("""
+    - `uv run python scripts/file_ticket.py <domain> <subject> <agent>` files the ticket on its stdin under the main tree's `tickets/`, and prints the path it wrote.
+    {subcommands}
     - Usage:
         ```
         uv run python scripts/file_ticket.py <domain> <subject> <agent> <<'EOF'
@@ -36,28 +39,34 @@ HELP = mctx("""
         # <target>: <what is wrong in it>{defect_sections}
         EOF
         ```
-    - A `change` takes this form on stdin in place of the one above, and may leave out `depends-on` and `priority`:
-        ```
-        ---
-        kind: change
-        depends-on: <number>, <number>
-        priority: <0 to 100>
-        ---
-        # <title>{change_sections}
-        EOF
-        ```
+    - A `change` takes `kind: change`, may add `depends-on: <number>, <number>` and `priority: <0 to 100>` to the front matter, has `# <title>` as its title, and has the sections {change_sections} in place of {defect_headings}.
+    - The rules of `<domain>`, `<subject>`, `<agent>`, numbers and filing follow.
     - `<domain>` is one of {domains}, and `<subject>` is the id of the thing it names: a task id for `task`, a ticket's number for `change` and `ticket`, a commit hash for `commit`, an agent id for `agent`. A `change` takes `change` as `<domain>` and `<namespace>-<short-title>` as `<subject>`, and each `_` in that `<subject>`, as in a namespace name such as `run_dl`, becomes `-`.
     - `<agent>` is your agent's name, which may end in `-<suffix>`. The command refuses a kind your agent may not file, and names the kinds it may.
     - A ticket's number is `<session>-<n>`: `<session>` is the index of the session that filed it, and `<n>` counts that session's tickets from 1. A ticket filed before a number gave the filing session's index has a bare number, and the command takes either form wherever it takes a number.
     - Numbers order with every bare number before every `<session>-<n>` number. Bare numbers compare as integers, and `<session>-<n>` numbers compare by `<session>`, then by `<n>`, each as an integer.
     - The session that files is the one whose id the filing agent's shell holds in `{session_var}`, in a subagent as in the main session. The command refuses a filing where the shell holds none.
     - A session's index has a file under `tickets/{sessions}/`, named by the index, that holds the session's id. A session forked from another takes the index of the session it was forked from, and the file then holds both ids, one per line.
-    - `uv run python scripts/file_ticket.py index` prints the index of your session.
     - The command reserves the ticket's number, names the ticket `<number>_<domain>_<subject>_<agent>.md`, writes it under `tickets/draft/` for a `change` and `tickets/open/` for any other kind in the main tree, with the filing time in the first line of its `## Log`, and prints the path it wrote.
     - Run from a worktree, the command files with the main tree's copy of `scripts/file_ticket.py`, and refuses where the main tree has none.
     - Each `<number>` in `depends-on` is the number of a ticket the ticket tracker holds.
     - The command refuses, and writes nothing, where the text on stdin does not have the form above.
+    """)
+"""The help of filing, which `--help` with no subcommand prints."""
+
+SUBCOMMAND_LINE = mctx("""
+    - `{name}` {purpose}: `uv run python scripts/file_ticket.py {name} --help` prints its form.
+    """)
+
+INDEX_HELP = mctx("""
+    - `uv run python scripts/file_ticket.py index` prints the index of your session.
+    """)
+
+PATH_HELP = mctx("""
     - `uv run python scripts/file_ticket.py path <number>` prints the path of the ticket with that number, in whichever status it stands. It takes the name of a ticket filed before tickets had numbers in place of `<number>` too.
+    """)
+
+LOG_HELP = mctx("""
     - `uv run python scripts/file_ticket.py log <number> <status> <agent> --from <current status> [--id <agent id>] [<note>]` makes a transition of the ticket with that number and writes its log line, or writes a log line that moves nothing, and prints the ticket's path:
         - `<status>` and `<current status>` are each one of {statuses}. `<current status>` is the status you saw the ticket in.
         - The command refuses, and neither moves nor writes, where the ticket stands in another status than `<current status>`, or where its file moves before the command moves it.
@@ -212,18 +221,22 @@ SECTIONS = {Kind.CHANGE: ("Intent", "Motivation", "Scope")}
 DEFECT_SECTIONS = ("Impact", "Evidence")
 
 
+def heading(section: str) -> str:
+    return f"## {section}"
+
+
 def sections_example(sections: tuple[str, ...]) -> str:
     """`sections` as the form in `HELP` shows them after its title, at the
     indent of that form."""
-    return "".join(f"\n\n    ## {s}\n    <its {s.lower()}>" for s in sections)
+    return "".join(f"\n\n    {heading(s)}\n    <its {s.lower()}>" for s in sections)
 
 
 def body_form(kind: Kind) -> re.Pattern[str]:
     """The title and sections that follow a `kind` ticket's front matter."""
     title = r"# .+\n" if kind is Kind.CHANGE else r"# .+: .+\n"
     sections = SECTIONS.get(kind, DEFECT_SECTIONS)
-    middle = r"(?:.*\n)*".join(f"## {s}\n" for s in sections[:-1])
-    return re.compile(title + r"\n" + middle + r"(?:.*\n)*" + f"## {sections[-1]}" + r"(?:\n|$)")
+    middle = r"(?:.*\n)*".join(f"{heading(s)}\n" for s in sections[:-1])
+    return re.compile(title + r"\n" + middle + r"(?:.*\n)*" + heading(sections[-1]) + r"(?:\n|$)")
 
 
 FIELDS = {Kind.CHANGE: frozenset({"depends-on", "priority"})}
@@ -716,23 +729,50 @@ def log_args(args: list[str]) -> list[str | None]:
     return [*head, options["--from"], options.get("--id"), rest[0] if rest else None]
 
 
+@dataclass(frozen=True)
+class Subcommand:
+    """A subcommand: what it does, as its line in `HELP` says it, its own
+    help, and how `run` runs it."""
+    purpose: str
+    help: str
+    count: int
+    act: Callable[..., Path | int]
+    filing: Filing | None
+    parse: Callable[[list[str]], Sequence[str | None]] = list
+
+
+SUBCOMMANDS = {
+    "log": Subcommand(mctx("makes a transition of a ticket and writes its log line"), LOG_HELP, 6,
+                      lambda *a: write_log(main_tickets(), *a), TICKET_FILING, log_args),
+    "path": Subcommand(mctx("prints the path of a ticket"), PATH_HELP, 1,
+                       lambda ref: ticket_path(main_tickets(), ref), None),
+    "index": Subcommand(mctx("prints the index of your session"), INDEX_HELP, 0,
+                        lambda: session_index(main_tickets(), session_id()), TICKET_FILING),
+}
+"""Each subcommand, by the word that calls it, in the order `HELP` gives
+their lines."""
+
+
+def help_values() -> dict[str, str]:
+    """The values each help text of `file_ticket.py` is formatted with."""
+    return dict(domains=ticked(Domain),
+                defect_sections=sections_example(DEFECT_SECTIONS),
+                defect_headings=ticked(map(heading, DEFECT_SECTIONS)),
+                change_sections=ticked(map(heading, SECTIONS[Kind.CHANGE])),
+                statuses=ticked(Status), log=LOG, time_form=TIME_FORM,
+                resolutions=ticked(Resolution), blocked=Status.BLOCKED,
+                user=Wait.USER, change=Wait.CHANGE, session_var=SESSION_VAR,
+                sessions=SESSIONS,
+                subcommands="\n".join(SUBCOMMAND_LINE.format(name=name, purpose=sub.purpose)
+                                       for name, sub in SUBCOMMANDS.items()))
+
+
 def main(args: list[str]) -> int:
-    help_text = HELP.format(domains=ticked(Domain),
-                            defect_sections=sections_example(DEFECT_SECTIONS),
-                            change_sections=sections_example(SECTIONS[Kind.CHANGE]),
-                            statuses=ticked(Status), log=LOG, time_form=TIME_FORM,
-                            resolutions=ticked(Resolution), blocked=Status.BLOCKED,
-                            user=Wait.USER, change=Wait.CHANGE, session_var=SESSION_VAR,
-                            sessions=SESSIONS)
-    if args[:1] == ["path"]:
-        return run(args[1:], help_text, 1, lambda ref: ticket_path(main_tickets(), ref), None, args)
-    if args[:1] == ["index"]:
-        return run(args[1:], help_text, 0, lambda: session_index(main_tickets(), session_id()),
-                   TICKET_FILING, args)
-    if args[:1] == ["log"]:
-        return run(log_args(args[1:]), help_text, 6, lambda *a: write_log(main_tickets(), *a),
-                   TICKET_FILING, args)
-    return run(args, help_text, 3, lambda domain, subject, agent: file_ticket(
+    values = help_values()
+    if args[:1] and (sub := SUBCOMMANDS.get(args[0])):
+        return run(sub.parse(args[1:]), sub.help.format(**values), sub.count, sub.act,
+                   sub.filing, args)
+    return run(args, HELP.format(**values), 3, lambda domain, subject, agent: file_ticket(
         main_tickets(), domain, subject, agent, sys.stdin.read()), TICKET_FILING, args)
 
 
