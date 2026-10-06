@@ -21,7 +21,7 @@
 - `<agent>` is your agent's name, or `coordinator` where you are the coordinator.
 - `<domain>` and `<subject>` give what a ticket of another kind than `change` and `request` is about:
     - `task` and the task id: a solver pass's ticket, and a transcript review's ticket on a pass.
-    - `change` and the number of the change's ticket: an editor's or a doc reviewer's ticket on its change where its brief gives that number, and a transcript review's ticket on such an editor's run.
+    - `change` and the number of the change's ticket: an editor's or a doc reviewer's ticket on its change where its brief gives that number, the ticket the agent that merges a change files on that change, and a transcript review's ticket on such an editor's run.
     - `commit` and the commit's hash: a code reviewer's ticket, on the commit its baseline tag names, and an operator's ticket from its After a batch, on `master` at that commit.
     - `ticket` and the ticket's number: a ticket on another ticket.
     - `agent` and the agent's id: the ticket of a supervisor's alert verifier, on the agent it checked, and every ticket no entry above fits, on the agent it concerns, your own included.
