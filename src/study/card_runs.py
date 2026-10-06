@@ -17,7 +17,7 @@ from solver.names import name
 from solver.problems import Fault, WitnessFileRole
 from solver.solve import Assignment, Grids, examples, outcomes, witnessed
 from solver.witness import Undefined
-from study.card_spec import Card, from_root
+from study.card_spec import Card, from_root, option_of
 
 
 @dataclass(frozen=True)
@@ -77,11 +77,6 @@ def _failure_text(solver: Solver, failure: RunFailure | Fault) -> str:
     return "\n".join(failure_lines(solver, failure))
 
 
-def option_of(card: Card, case: str) -> int | None:
-    return next((number for number, option in enumerate(card.options, 1)
-                 if case in option.cases), None)
-
-
 @dataclass
 class Run:
     """One witness input with what the card's solver made of it."""
@@ -109,8 +104,6 @@ def witness_grids(card: Card) -> list[tuple[str, Grid]]:
 
 
 def _fallback(task_id: str) -> tuple[str, Example]:
-    """The fallback witness, the task's first train pair, with the label
-    the page gives its input."""
     pair, example = next(examples(load_task(task_id)))
     return f"{pair.text} input", example
 
@@ -145,6 +138,10 @@ def given_cases(run: Run) -> list[str]:
     return list(dict.fromkeys(c.label for c in run.candidates))
 
 
+def _listed(names: Iterable[str]) -> str:
+    return ", ".join(map(repr, names))
+
+
 def _case_on(case: str, run: Run) -> str:
     return f"case {case!r} on witness {run.label!r}"
 
@@ -152,7 +149,7 @@ def _case_on(case: str, run: Run) -> str:
 def cases_not_given(run: Run, cases: Iterable[str]) -> list[tuple[str, str]]:
     """Each of `cases` the run does not give, with its fault line."""
     given = given_cases(run)
-    gives = ", ".join(map(repr, given)) or "no case"
+    gives = _listed(given) or "no case"
     return [(case, f"{_case_on(case, run)}: the run gives {gives}")
             for case in cases if case not in given]
 
@@ -193,7 +190,7 @@ def check_captions(card: Card, runs: list[Run]) -> None:
         if not on and witness not in labels:
             may = "may draw" if unsure else "draws"
             wrong.append(f"witness {witness!r}: the page {may} "
-                         f"{', '.join(map(repr, labels))}")
+                         f"{_listed(labels)}")
         for run in on:
             wrong.extend(line for _, line in cases_not_given(run, cases))
     if wrong:

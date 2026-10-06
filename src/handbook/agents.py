@@ -6,9 +6,8 @@ all. Read those documents for what each agent gets. Each one holds front
 matter giving the agent's definition, a `lib` attribute saying how the lib
 renders, and an `include` of the composition document. An agent
 runs a role under prompts/roles/ with the rendered document as its system
-prompt. A role's document states its agent in an `agent` attribute. A role
-with no such attribute runs as the handbook agent. The files under
-`.claude/agents/` are generated and listed in the manifest of
+prompt. A role's document states its agent in an `agent` attribute. The
+files under `.claude/agents/` are generated and listed in the manifest of
 `handbook.generated`.
 """
 
@@ -22,8 +21,8 @@ import controlled_markdown as nm
 from controlled_markdown import mctx
 from engine import checkout
 from handbook.attributes import attr_form
-from handbook.context import (ROLE_DIR, WRAPPERS_PATH, composed, entry_text,
-                              write_lib_output)
+from handbook.context import (HANDBOOK_AGENT, ROLE_DIR, WRAPPERS_PATH,
+                              composed, entry_text, write_lib_output)
 from handbook.generated import Rendering, in_checkout, read_manifest
 from handbook.lib import LIB_SRC, LibForm, lib_sources
 from handbook.paths import DOCUMENTS_ROOT, REPO_ROOT, document, repo_label
@@ -50,8 +49,6 @@ def agent_doc(name: str, agents: Path = AGENT_DIR) -> Path:
     return agents / f"{name}.md"
 
 
-HANDBOOK_AGENT = "handbook"
-"""The agent a role with no `agent` attribute runs on."""
 AGENT_NAMES = (HANDBOOK_AGENT, "handbook-expanded")
 # The steps the analyze agent reads after it writes the concept: a document
 # under `AGENT_DIR` with no front matter, rendered to its own file.
@@ -158,8 +155,6 @@ def agent_names(agents: Path = AGENT_DIR) -> list[str]:
 
 def agent_renderings(out: Path = AGENT_OUT, lib: Path = LIB_SRC,
                      agents: Path = AGENT_DIR) -> list[Rendering]:
-    """Each agent's definition under `agents`, at its file under `out`
-    (`agent_file`)."""
     return [Rendering(agent_file(name, out),
                       agent_definition(agent_document(name, agents),
                                        render(name, lib, agents)))
@@ -169,9 +164,6 @@ def agent_renderings(out: Path = AGENT_OUT, lib: Path = LIB_SRC,
 def write_agent(out: Path = AGENT_OUT, lib: Path = LIB_SRC,
                 agents: Path = AGENT_DIR,
                 wrappers: Path = WRAPPERS_PATH) -> Path:
-    """Write every agent definition under `agents` to `out`, with the lib's
-    generated output (`write_lib_output`), and return the handbook agent's
-    file."""
     write_lib_output(agent_renderings(out, lib, agents), lib, wrappers)
     return agent_file(HANDBOOK_AGENT, out)
 

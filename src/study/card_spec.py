@@ -159,19 +159,18 @@ def _option(entry: object) -> Option:
     return Option(text, list(cases))
 
 
+def option_of(card: Card, case: str) -> int | None:
+    return next((number for number, option in enumerate(card.options, 1)
+                 if case in option.cases), None)
+
+
 def _check_option_cases(card: Card) -> None:
-    """Fails on a card that gives both `dropped` and an option's cases, and
-    on a case named under two options."""
     if card.dropped and any(o.cases for o in card.options):
         raise ValueError("a card gives `dropped` or the cases of its "
                          "options, not both")
-    seen: dict[str, int] = {}
-    twice = []
-    for number, option in enumerate(card.options, 1):
-        for case in option.cases:
-            if seen.get(case, number) != number:
-                twice.append(f"{case!r} under options {seen[case]} and {number}")
-            seen.setdefault(case, number)
+    twice = [f"{case!r} under options {option_of(card, case)} and {number}"
+             for number, option in enumerate(card.options, 1)
+             for case in option.cases if option_of(card, case) != number]
     if twice:
         raise ValueError("cases named under two options: " + "; ".join(twice))
 

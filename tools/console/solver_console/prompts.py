@@ -21,7 +21,7 @@ from handbook.agents import (
     render,
     write_agent,
 )
-from handbook.context import sweep_digests
+from handbook.context import agent_and_text, sweep_digests
 
 from . import config, solvers, store
 
@@ -121,7 +121,7 @@ def worker_agents(append: str) -> str:
 def role(name: str) -> tuple[str, str]:
     """A role's agent and its text, from its document under prompts/roles/."""
     reg, document = documents(config.ROLE_DIR / f"{name}.md")
-    return nm.role(document, reg)
+    return agent_and_text(document, reg)
 
 
 def role_text(name: str) -> str:

@@ -19,8 +19,8 @@ from arc.task import load as load_task
 from engine import checkout
 from solver.solve import examples
 from study.card_runs import (Candidate, Run, check_captions,
-                             check_option_cases, drawn_runs, option_of)
-from study.card_spec import Card, CodeSlice, Table, from_root
+                             check_option_cases, drawn_runs)
+from study.card_spec import Card, CodeSlice, Table, from_root, option_of
 
 CARDS_DIR = checkout.work() / "cards"
 

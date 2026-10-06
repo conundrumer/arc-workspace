@@ -242,14 +242,24 @@ def role_stems(roles: Path = ROLE_DIR) -> list[str]:
     return sorted(p.stem for p in roles.glob("*.md"))
 
 
+HANDBOOK_AGENT = "handbook"
+"""The agent a role with no `agent` attribute runs on."""
+
+
+def agent_and_text(document: nm.Node, registry: nm.Registry) -> tuple[str, str]:
+    """A role document as the agent it runs on and its text."""
+    return (document.attr("agent") or HANDBOOK_AGENT,
+            nm.render(document, registry))
+
+
 def role_document(name: str, roles: Path = ROLE_DIR) -> tuple[str, str]:
-    """One role document under `roles`: the agent it runs on, its `agent`
-    attribute or the handbook agent, and the text the agent's prompt opens
-    with, as the agent running it reads it, with nothing above."""
+    """One role document under `roles`: the agent it runs on, and the text
+    the agent's prompt opens with, as the agent running it reads it, with
+    nothing above."""
     if not role_file(name, roles).is_file():
         raise no_item_named("role", "roles", name, role_stems(roles))
     registry = nm.Registry(DOCUMENTS_ROOT)
-    return nm.role(registry.load(role_file(name, roles)), registry)
+    return agent_and_text(registry.load(role_file(name, roles)), registry)
 
 
 def role_text(name: str, roles: Path = ROLE_DIR) -> str:
