@@ -99,12 +99,15 @@
 - Ask an operator for no message to you before its final reply.
 - Give each draft of an operator's launch brief, and the number of each `change` ticket you file or revise, to a ticket reviewer, in its brief where you launch it with that draft, and otherwise with SendMessage:
     - A revision of a draft that holds findings goes to the ticket reviewer that wrote those findings.
+    - A revision of a ticket that had left `tickets/draft/` goes to the ticket reviewer whose line moved it to `tickets/open/`.
     - Any other draft of a batch goes to the ticket reviewer that reviewed that batch's other drafts.
     - A draft these lines give no ticket reviewer goes to a new one, and so does a draft whose ticket reviewer they give has a context past about 300k tokens.
 - Where a brief gives a ticket reviewer's agent id, give in it the agent id of the ticket reviewer the lines above on giving drafts give for the drafts that brief's agent will send, and where they give a new one, launch it before that agent.
 - Launch an operator only once the ticket reviewer returns no finding on its brief. Where the ticket reviewer returns findings, revise the draft and send it again.
 - When a ticket reviewer that ended for its context replies with drafts it was sent after it ended, launch a new ticket reviewer with those drafts, and send its agent id to each sender that reply gives.
 - When a `change` ticket that you filed, or that an agent you launched filed, stands under `tickets/open/`, tell an operator that tickets are open: send that line to a running operator, or launch one with it.
+- Revise a `change` ticket that stands under `tickets/open/`, `tickets/assigned/` or `tickets/blocked/` only once you have moved it back to `tickets/draft/`, with a log line whose note gives what you revise and on what ground. Where its holder runs, tell that holder to carry its change no further and to keep the worktree of that change and the agent ids of the agents that work on it until you tell it that the ticket is open again.
+- When such a ticket stands under `tickets/open/` again and the holder you told to keep its change runs, tell that holder that the ticket is open again, in place of the line that tickets are open.
 - Give in an operator's launch brief the agent id of a ticket reviewer.
 - Once an operator has returned, send it further work only while a procedure its brief gives is unfinished and its context is under about 300k tokens. Otherwise launch a new operator, and give in its brief that work and the work the old operator's last reply leaves unfinished, each as [An operator's brief](#an-operators-brief) gives a procedure.
 
