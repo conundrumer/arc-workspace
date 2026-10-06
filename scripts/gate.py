@@ -2,9 +2,9 @@
 accepted outputs under `tests/gate/accepted/` and the machine's accepted
 times.
 
-    uv run python scripts/gate.py <out-dir> [cmd ...]
+    uv run python scripts/gate.py [--affected <base>] <out-dir> [cmd ...]
     uv run python scripts/gate.py --outputs-only [--affected <base> | --record-deps] [--coverage] <out-dir> [cmd ...]
-    uv run python scripts/gate.py --accept [--replace] <out-dir> [cmd ...]
+    uv run python scripts/gate.py --accept [--replace] [--affected <base>] <out-dir> [cmd ...]
     uv run python scripts/gate.py --adopt-record <out-dir>
 
 The paragraphs below say how the commands run and what they write, how
@@ -17,10 +17,12 @@ on.
 A command runs on the stems its `Command.stems` gives, which the end of
 `--help` lists for each command. Every command reads the solver files from
 `tests/gate/solvers/` and the witness files from `tests/gate/witnesses/`.
-The stems run in parallel. On each stem, the commands run in the order
-given, which is the order a pass runs them, sharing one run cache from
-empty: this is the cold pass. Then the same sequence runs again with every
-result cached: this is the warm pass.
+On each stem, the commands run in the order given, which is the order a
+pass runs them, sharing one run cache from empty: this is the cold pass.
+Then the same sequence runs again with every result cached: this is the
+warm pass. The stems run in parallel, other than in the cold pass of a
+timed run, which runs one command at a time and starts the warm pass once
+it is done.
 
 A command's outputs are its output, in `<key>.txt`, the witness file, in
 `<key>.wit.json`, where its subcommand is in `WITNESS_FILE_SUBS`, and its
@@ -37,7 +39,9 @@ run, the machine's busy CPU time less the gate tree's own. Where the outside
 CPU is over one core on average, the line is a `LOADED` line, and otherwise
 a `SLOW` line. With `--accept`, a line above the last line gives the outside
 CPU over the whole run. A command's time depends on what the commands before it
-cached, so times compare only when the full sequence runs. The warm pass is
+on its stem cached, so times compare only where the sequence runs in full up
+to it: on each stem, a timed run runs each command given before the last one
+whose time it judges. The warm pass is
 compared with the cold pass: a `DIFF` line ending in `warm` names an output
 file that differs between them. The last line counts the lines of each kind,
 and the duration footer (`engine.duration`) follows it on stderr.
@@ -50,24 +54,24 @@ outputs then depend on the load it runs under only where the load stretches
 it to `TIME_LIMIT`, or a sweep to its own time limit, and either gives a
 `DIFF` line.
 
-A run holds the heavy commands' lock (`engine.rwlock`) for each command,
-and holds nothing between two commands, so a heavy command outside the run
-waits at most for the run's commands in flight. In a timed run, a cold
-command holds it exclusively and a warm command holds it shared, so a cold
-command shares the machine with no other heavy command, of this checkout or
-of another worktree of the repository. In an `--outputs-only` run, each
-command holds it shared. Within a timed run, a cold command holds the
-gate's lock file exclusively and a warm command holds it shared, so a
-command of the run waits for another command of the run there, and waits
-for the heavy commands' lock only for commands outside the run. Where a
-command has to wait for the heavy commands' lock, the run says so on
-stderr once for each hold, shared or exclusive, for all its commands.
+A timed run holds the heavy commands' lock (`engine.rwlock`) exclusively
+once, over its whole cold pass, so a cold command shares the machine with no
+other heavy command, of this checkout or of another worktree of the
+repository. Each warm command, and each command of an `--outputs-only` run,
+holds it shared for that command alone, and the run holds nothing between
+two such commands, so a heavy command outside the run waits at most for the
+run's commands in flight. The warm pass starts after the cold pass releases
+its hold, since a warm command that asked for a shared hold while the run
+holds the lock exclusively would wait for the run itself. Where the run has
+to wait for the lock, it says so on stderr once for the cold pass's hold,
+and once for its commands' shared holds.
 
 `--outputs-only` runs the cold pass alone, and compares its outputs alone:
 it prints `DIFF` lines, and no `SLOW`, `LOADED` or `NOTIME` line, and writes no
 times to `new/`. An `--outputs-only` run shares the machine with the other
 heavy commands, and its times measure that load as much as the change, so
-times are judged by one timed gate run on `master` after a batch of merges.
+times are judged by one timed gate run on `master` after a batch of merges,
+over the commands the batch can affect (`--affected`).
 A `SLOW` line of that run is filed as a `delay` issue, and blocks no merge.
 A `LOADED` line is not filed as a `delay` issue.
 
@@ -99,10 +103,15 @@ against `HEAD`, so that the lines it records are the lines of that commit.
 `affects` decides, and every command where no dependency record stands. The
 change is the difference between the commit `<base>`, which the change
 branched from, and the checkout. Its first line names the record and the
-base, and counts the commands it runs. Where it runs every command, on a
-checkout with no change to a tracked file against `HEAD`, it traces them as
-`--record-deps` does, and writes their dependencies, with the `HEAD`
-commit, to `<out-dir>/gate/record.json` (`RECORD_OUT`).
+base, and counts the commands it runs. In a timed run, it also judges each
+command that `loaded.json` keeps, whether or not the change can affect it,
+and a second line counts those the change cannot affect. A command it runs
+on a stem only for the cache state of a later command it judges gives no
+line, runs in the cold pass alone, and writes its outputs under
+`<out-dir>/gate/prefix/`. In an `--outputs-only` run, where it runs every
+command, on a checkout with no change to a tracked file against `HEAD`, it
+traces them as `--record-deps` does, and writes their dependencies, with
+the `HEAD` commit, to `<out-dir>/gate/record.json` (`RECORD_OUT`).
 
 `--adopt-record` runs no command: it writes the `RECORD_OUT` that an
 earlier run wrote under `<out-dir>` as the dependency record, where its
@@ -131,12 +140,15 @@ The accepted times depend on the machine, so every worktree of the
 repository reads them from one file: `times.json` under `.cache/gate/` of
 the main worktree, the directory that holds the repository's common git
 directory. The dependency record is read and written there too, as
-`deps.json`. The accepted outputs are read from the worktree the gate runs
-in.
+`deps.json`. So are the commands that a timed run gives a `LOADED` line, as
+`loaded.json`, until a later timed run judges their time and gives them no
+`LOADED` line; the cold pass writes it before it releases its hold. The
+accepted outputs are read from the worktree the gate runs in.
 
 `--accepted` names an accepted directory other than `tests/gate/accepted/`.
-Its accepted outputs and its accepted times, in its own `times.json`, are
-read in place of those above.
+Its accepted outputs, its accepted times, in its own `times.json`, and the
+commands kept for a timed run, in its own `loaded.json`, are read in place
+of those above.
 
 `--accept` takes an `<out-dir>` with no `gate/` under it, runs the gate, and
 then writes each cold time and output as accepted where no accepted time or
@@ -149,1078 +161,20 @@ kind, and 0 otherwise; with `--accept`, 0 once the accepted times and
 outputs are written.
 """
 
+
 import argparse
-import ast
-import contextlib
-import ctypes
-import fcntl
-import json
-import os
-import re
-import resource
-import runpy
-import shutil
-import subprocess
 import sys
-import textwrap
-import threading
-import time
-from collections.abc import Iterable, Iterator, Sequence
-from dataclasses import dataclass
-from enum import StrEnum
+from collections.abc import Sequence
 from pathlib import Path
-from typing import ClassVar, Literal
 
-import coverage
-import souffle.run
-from coverage.sysmon import SysMonitor
-
-from cli.common import WALL_LIMIT_ENV
 from controlled_markdown import mctx
-from engine import checkout, rwlock
-from engine.duration import FOOTER_RE, footer
-from engine.memo import write_whole
-from handbook.readers import CONTEXT_READERS, ArgumentForm
-from handbook.paths import DOCUMENTS_ENV
-
-GATE = checkout.ROOT / "tests" / "gate"
-SOLVERS = GATE / "solvers"
-WITNESSES = GATE / "witnesses"
-FROZEN = GATE / "frozen"
-INPUTS = GATE / "inputs"
-ACCEPTED = GATE / "accepted"
-DOCUMENTS = GATE / "documents"
-"""The documents a context command renders, laid out as the checkout is."""
-TIME_EXT = ".time"
-"""The extension of the file in `new/` holding a cold run's time."""
-TIMES_FILE = "times.json"
-"""The accepted times, a JSON object from `<name>-<stem>` to seconds
-(`times_file`)."""
-DEPS_FILE = "deps.json"
-"""The dependency record, under `records_dir` (`deps_file`)."""
-RECORD_OUT = "record.json"
-"""The file under `<out-dir>/gate/` that holds the dependencies an
-`--affected` run traced, as a dependency record."""
-
-STEMS = ("9c1e755f", "9b30e358", "9b2a60aa", "a61ba2ce", "a04b2602", "a096bf4d",
-         "9b4c17c4", "a5f85a15")
-"""The stems `run` runs on, of which each other command that reads no grid
-input runs on those with the least accepted time whose runs together cover
-every line of `src/` and `scripts/` that its runs on all of them cover, but
-the lines of the run cache's pruning, which a run reaches by a random draw.
-`sweep` also runs on 9b30e358, whose swept parameters' values are symbols."""
-SWEEP_STEM = "a934301b"
-"""The stem `sweep` runs on besides those of `STEMS`, whose sweep marks the
-gaps of a parameter under a case marker."""
-BRANCH_STEM = "abbfd121"
-"""The stem `audit` and `derive` run on besides those of `STEMS`, whose branches
-render with their recorded witnesses."""
-RECORD_STEM = "a61ba2ce"
-"""The stem the commands that read a grid input run on, whose witness file
-the inputs fit."""
-LIB_STEMS = ("6e453dd6", "33067df9", "97a05b5b", "6d1d5c90", "99306f82", "6165ea8f",
-             "ca8de6ea", "f8b3ba0a", "ff28f65a", "409aa875", "aa62e3f4", "50846271",
-             "89565ca0", "696d4842", "0dfd9992", "4c7dc4dd")
-"""The stems `run` runs on besides `STEMS`. A component is a `.comp` that a
-module under `programs/lib/` declares. A solver uses a component where its
-program instantiates it, directly, inside an instance of another component,
-or as the base of a component it so instantiates, so that the component runs
-when the solver runs. Every component that some solver under
-`programs/solvers/` uses is used by a solver of a stem `run` runs on."""
-
-TIME_LIMIT = 560
-KILL_AFTER = 5
-TIMEOUT_RC = 124
-"""The exit code of a command stopped at `TIME_LIMIT`, as `timeout` gives."""
-
-SLOW_FACTOR = 1.25
-SLOW_MARGIN = 1.0
-
-type Sub = Literal["run", "lint", "witness", "derive", "store", "audit",
-                   "record", "sweep", "determination-plan", "deletions", "grid",
-                   "relation", "drop-one", "derived-constant", "expand", "size",
-                   "keywords"]
-"""The `run_dl.py` subcommands the gate runs."""
-
-WITNESS_FILE_SUBS: frozenset[Sub] = frozenset({"derive", "audit", "store", "witness", "record"})
-"""The subcommands given a witness file, which is then one of the
-command's outputs."""
-
-type Ext = Literal["txt", "wit.json", "rc"]
-"""The extension of an output file: the normalized output, the witness file,
-and the exit code."""
-EXTS: tuple[Ext, ...] = ("txt", "wit.json", "rc")
-"""Every output file's extension, in the order a command's are compared."""
-
-
-def frozen_witness(stem: str) -> Path:
-    """The frozen witness file of `stem`, which a command that takes a
-    witness file is given a copy of."""
-    return FROZEN / f"{stem}.wit.json"
-
-
-@dataclass(frozen=True)
-class Named:
-    """A gate command's name in output file names."""
-    name: str
-
-    def key(self, stem: str) -> str:
-        """The name of the command's output files and accepted time on
-        `stem`, less the extension."""
-        return f"{self.name}-{stem}"
-
-
-@dataclass(frozen=True)
-class Command(Named):
-    """A gate command: its name in output file names, the `run_dl.py`
-    subcommand, the arguments between the stem and the witness file, the
-    arguments after the witness file, and the stems it runs on."""
-    sub: Sub
-    args: tuple[str, ...] = ()
-    extra: tuple[str, ...] = ()
-    stems: tuple[str, ...] = STEMS
-
-    @property
-    def takes_witness_file(self) -> bool:
-        return self.sub in WITNESS_FILE_SUBS
-
-    def argv(self, stem: str, witness_file: Path) -> list[str]:
-        """The `run_dl.py` arguments of the command on `stem`."""
-        wf = ["--witness-file", str(witness_file)] if self.takes_witness_file else []
-        return [self.sub, stem, *self.args, *wf, *self.extra]
-
-    @property
-    def exts(self) -> tuple[Ext, ...]:
-        return tuple(e for e in EXTS if e != "wit.json" or self.takes_witness_file)
-
-    @property
-    def reads_input(self) -> bool:
-        """Whether one of the command's arguments is a grid input under
-        `INPUTS`."""
-        return any(Path(a).is_relative_to(INPUTS) for a in self.args)
-
-    script = "run_dl.py"
-    """The script under `scripts/` the command runs."""
-
-    def copied(self, stem: str) -> tuple[Path, ...]:
-        """The files and directories the gate copies for the command on
-        `stem` before it runs: the frozen witness file it is given."""
-        return (frozen_witness(stem),) if self.takes_witness_file else ()
-
-
-@dataclass(frozen=True)
-class ContextCommand(Named):
-    """A gate command that prints readers' contexts through
-    `scripts/context.py context`, rendered from a copy of `DOCUMENTS`: its
-    name in output file names, and each reader with its arguments. Its
-    stems are its readers, each its arguments joined by `-`."""
-    readers: tuple[tuple[str, ...], ...]
-
-    takes_witness_file = False
-    exts: ClassVar[tuple[Ext, ...]] = ("txt", "rc")
-    script = "context.py"
-    """The script under `scripts/` the command runs."""
-
-    @property
-    def stems(self) -> tuple[str, ...]:
-        return tuple("-".join(r) for r in self.readers)
-
-    def argv(self, stem: str, witness_file: Path) -> list[str]:
-        """The `context.py` arguments of the command on the reader `stem`."""
-        return ["context", *dict(zip(self.stems, self.readers, strict=True))[stem]]
-
-    def copied(self, stem: str) -> tuple[Path, ...]:
-        """The files and directories the gate copies for the command
-        before it runs: `DOCUMENTS`."""
-        return (DOCUMENTS,)
-
-
-type GateCommand = Command | ContextCommand
-
-
-def _record(name: str, label: str, input_file: str, *extra: str) -> Command:
-    """A `record` command adding the entry `label` to the witness file, with
-    the inputs of a replay call read from `input_file` under `inputs/`."""
-    return Command(name, "record", (label, str(INPUTS / input_file), *extra),
-                   stems=(RECORD_STEM,))
-
-
-def named_readers() -> list[tuple[str, str]]:
-    """Each reader the `context` command takes by name, with each name
-    `DOCUMENTS` defines for it."""
-    return [(reader, name) for reader, known in CONTEXT_READERS.items()
-            if known.form is ArgumentForm.NAME for name in known.values(DOCUMENTS)]
-
-
-COMMANDS: dict[str, GateCommand] = {c.name: c for c in (
-    Command("run", "run", stems=(*STEMS, SWEEP_STEM, BRANCH_STEM, *LIB_STEMS)),
-    Command("lint", "lint", stems=("9b30e358", "9b2a60aa", "a61ba2ce", "a04b2602", "9b4c17c4",
-                                   "a5f85a15")),
-    Command("witness", "witness", stems=("9c1e755f", "9b30e358", "9b2a60aa", "a61ba2ce",
-                                         "a04b2602", "a5f85a15")),
-    Command("witnesseverycase", "witness", extra=("--every-case",),
-            stems=("9c1e755f", "9b30e358", "9b2a60aa", "a61ba2ce", "a04b2602", "a5f85a15")),
-    Command("derive", "derive", stems=("9c1e755f", "9b30e358", "9b2a60aa", "a61ba2ce", "a04b2602",
-                                       "a096bf4d", "a5f85a15", BRANCH_STEM)),
-    Command("store", "store", stems=("9c1e755f", "9b30e358", "9b2a60aa", "a61ba2ce", "a04b2602",
-                                     "a096bf4d", "a5f85a15")),
-    Command("audit", "audit", stems=("9c1e755f", "9b30e358", "9b2a60aa", "a61ba2ce", "a04b2602",
-                                     "a096bf4d", "a5f85a15", BRANCH_STEM)),
-    _record("recordnew", "touching-pieces", "a61ba2ce_edge-touch.txt", "--separates",
-            "The edge-touch input under a new id."),
-    _record("recordreplace", "two-color-l", "a61ba2ce_edge-touch.txt", "--separates", "test"),
-    _record("recordassign", "gap-outward", "a61ba2ce_gap-outward.txt", "--assign",
-            '{"corner_quadrant": [["DIAG_TL", "DIAG_BR"], ["DIAG_TR", "DIAG_BL"], '
-            '["DIAG_BL", "DIAG_TR"], ["DIAG_BR", "DIAG_TL"]]}', "--separates",
-            "The gap-outward input with the stored map sending each missing corner to the opposite quadrant, as the concept does."),
-    Command("sweep", "sweep", stems=("9c1e755f", "9b30e358", "9b2a60aa", "a61ba2ce", "a04b2602",
-                                     "a5f85a15", SWEEP_STEM)),
-    Command("determination-plan", "determination-plan",
-            stems=("9c1e755f", "9b30e358", "9b2a60aa", "a61ba2ce", "a04b2602", "9b4c17c4",
-                   "a5f85a15")),
-    Command("deletions", "deletions", stems=("9b30e358", "9b2a60aa", "a61ba2ce", "a04b2602",
-                                             "a096bf4d", "9b4c17c4", "a5f85a15")),
-    Command("grid", "grid", (str(INPUTS / "a61ba2ce_two-color-l.txt"),), stems=(RECORD_STEM,)),
-    Command("relation", "relation", ("out", str(INPUTS / "a61ba2ce_two-color-l.txt")),
-            stems=(RECORD_STEM,)),
-    Command("drop-one", "drop-one", stems=("9c1e755f", "9b2a60aa", "a61ba2ce", "a04b2602",
-                                           "9b4c17c4", "a5f85a15")),
-    Command("derived-constant", "derived-constant",
-            stems=("9b2a60aa", "a61ba2ce", "a04b2602", "9b4c17c4", "a5f85a15")),
-    Command("expand", "expand", stems=("9b2a60aa", "a61ba2ce", "a04b2602", "9b4c17c4", "a5f85a15")),
-    Command("size", "size", stems=("9c1e755f", "9b2a60aa", "a61ba2ce", "a04b2602", "a5f85a15")),
-    Command("keywords", "keywords", stems=("9c1e755f", "9b2a60aa", "a61ba2ce", "a04b2602",
-                                           "a5f85a15")),
-    ContextCommand("context", (("session",), ("codex",), *named_readers())),
-)}
-"""Every gate command, in the order a pass runs them."""
-
-
-def keys_of(cmds: Iterable[GateCommand]) -> set[str]:
-    return {c.key(s) for c in cmds for s in c.stems}
-
-
-def dropped_stems(cmd: GateCommand) -> tuple[str, ...]:
-    """The stems of `STEMS` that `cmd` does not run on, where it is a
-    command that reads no grid input and so runs on a stem list chosen
-    from `STEMS`; none for any other command."""
-    if not isinstance(cmd, Command) or cmd.reads_input:
-        return ()
-    return tuple(s for s in STEMS if s not in cmd.stems)
-
-
-def pruning_lines() -> dict[str, frozenset[int]]:
-    """The lines of the run cache's pruning, by their file from the
-    checkout's root: those of `souffle.run.prune` and of each call to it in
-    its module."""
-    path = Path(souffle.run.__file__)
-    rel = _in_checkout(path)
-    if rel is None:
-        raise RuntimeError(f"{path} stands outside the checkout")
-    name = souffle.run.prune.__name__
-    lines: set[int] = set()
-    for n in ast.walk(ast.parse(path.read_text())):
-        if (isinstance(n, ast.FunctionDef) and n.name == name) or (
-                isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == name):
-            lines.update(range(n.lineno, (n.end_lineno or n.lineno) + 1))
-    if not lines:
-        raise RuntimeError(f"{rel} holds no function {name}")
-    return {rel: frozenset(lines)}
-
-
-def stems_listing() -> str:
-    """Each gate command, in the order a pass runs them, with the stems it
-    runs on, for the end of `--help`."""
-    return "The stems each command runs on:\n\n" + "\n".join(
-        textwrap.fill(" ".join(c.stems), width=78, initial_indent=f"  {c.name}: ",
-                      subsequent_indent=" " * 4, break_on_hyphens=False)
-        for c in COMMANDS.values())
-
-
-class LineKind(StrEnum):
-    """The kinds of line the last line counts."""
-
-    DIFF = "DIFF"
-    """An output file that differs."""
-    SLOW = "SLOW"
-    """A time over the accepted one, where the outside CPU is at most one
-    core."""
-    LOADED = "LOADED"
-    """A time over the accepted one, where the outside CPU is over one
-    core."""
-    NOTIME = "NOTIME"
-    """A command with no accepted time."""
-
-
-TIME_KINDS = frozenset({LineKind.SLOW, LineKind.LOADED, LineKind.NOTIME})
-"""The kinds of line that judge a time."""
-
-
-@dataclass(frozen=True)
-class Line:
-    """A line the gate prints above the last line: its kind, the command,
-    the stem, and what follows them."""
-    kind: LineKind
-    cmd: str
-    stem: str
-    rest: str
-
-    def __str__(self) -> str:
-        return f"{self.kind} {self.cmd} {self.stem} {self.rest}"
-
-
-_ELAPSED_RE = re.compile(r" \([0-9.]+s\) ---$", re.M)
-_LIMIT_RE = re.compile(r"^(time limit [0-9]+s; elapsed )[0-9]+s$", re.M)
-_DROPPED = "runner and lib:"
-OUT_MARK = "<out>/gate/"
-
-
-def lock_file() -> Path:
-    """The lock file in the repository's common git directory, which every
-    worktree of the repository shares."""
-    return checkout.git_common_dir(checkout.ROOT) / "arc-gate.lock"
-
-
-def records_dir() -> Path:
-    """`gate/` under the main worktree's `.cache/`, where the machine's
-    accepted times and the dependency record stand."""
-    return checkout.caches() / "gate"
-
-
-def times_file(accepted: Path) -> Path:
-    """The accepted times of the accepted directory `accepted`: for
-    `ACCEPTED`, the machine's, `TIMES_FILE` under `records_dir`; for
-    another directory, its own `TIMES_FILE`."""
-    if accepted.resolve() != ACCEPTED.resolve():
-        return accepted / TIMES_FILE
-    return records_dir() / TIMES_FILE
-
-
-def deps_file() -> Path:
-    return records_dir() / DEPS_FILE
-
-
-def head_clean() -> bool:
-    """Whether the checkout changes no tracked file against `HEAD`, so that
-    a traced run records the lines of the `HEAD` commit."""
-    return all(c.change is checkout.Change.UNTRACKED
-               for c in checkout.changed_paths(checkout.ROOT, "HEAD"))
-
-
-def head() -> str:
-    return checkout.git_out(checkout.ROOT, "rev-parse", "HEAD").strip()
-
-
-_TICKS = 2 ** 32
-"""The modulus of the CPU tick counters, which on darwin are 32-bit and
-wrap."""
-_HOST_CPU_LOAD_INFO = 3
-_CPU_STATE_MAX = 4
-_CPU_STATE_IDLE = 2
-_PROC_STAT_BUSY = (0, 1, 2, 5, 6)
-"""The user, nice, system, irq and softirq fields of the `cpu` line of
-`/proc/stat`; its user and nice fields include its guest fields."""
-
-
-def _busy_ticks() -> tuple[int, ...]:
-    """The machine's CPU ticks spent not idle, summed over its CPUs, one
-    counter per CPU state."""
-    if sys.platform == "darwin":
-        libc = ctypes.CDLL("/usr/lib/libSystem.dylib")
-        libc.mach_host_self.restype = ctypes.c_uint
-        info = (ctypes.c_uint * _CPU_STATE_MAX)()
-        count = ctypes.c_uint(_CPU_STATE_MAX)
-        kr = libc.host_statistics(libc.mach_host_self(), _HOST_CPU_LOAD_INFO,
-                                  info, ctypes.byref(count))
-        if kr != 0:
-            raise OSError(f"host_statistics returned {kr}")
-        return tuple(t for i, t in enumerate(info) if i != _CPU_STATE_IDLE)
-    if sys.platform == "linux":
-        fields = Path("/proc/stat").read_text().splitlines()[0].split()[1:]
-        return tuple(int(fields[i]) for i in _PROC_STAT_BUSY)
-    raise NotImplementedError(f"no system-wide CPU total on {sys.platform}")
-
-
-def _tree_cpu() -> float:
-    """The CPU seconds of the gate's process and of its children it has
-    waited for, with theirs."""
-    return sum(r.ru_utime + r.ru_stime for r in (resource.getrusage(resource.RUSAGE_SELF),
-                                                 resource.getrusage(resource.RUSAGE_CHILDREN)))
-
-
-@dataclass(frozen=True)
-class CpuSample:
-    """The machine's busy CPU ticks, the gate tree's CPU seconds, and the
-    monotonic clock, at one moment."""
-    busy: tuple[int, ...]
-    tree: float
-    at: float
-
-    @classmethod
-    def now(cls) -> "CpuSample":
-        return cls(_busy_ticks(), _tree_cpu(), time.monotonic())
-
-    def outside(self, end: "CpuSample") -> "OutsideCpu":
-        """The CPU that processes outside the gate's process tree used from
-        this sample to `end`, where the gate has waited for each child it
-        started since this sample."""
-        ticks = sum((b - a) % _TICKS for a, b in zip(self.busy, end.busy, strict=True))
-        busy = ticks / os.sysconf("SC_CLK_TCK")
-        return OutsideCpu(busy - (end.tree - self.tree), end.at - self.at)
-
-
-@dataclass(frozen=True)
-class OutsideCpu:
-    """The CPU seconds processes outside the gate's process tree used over
-    an interval, and the interval's seconds."""
-    cpu: float
-    interval: float
-
-    @property
-    def cores(self) -> float:
-        return self.cpu / self.interval
-
-    def __str__(self) -> str:
-        return f"outside-cpu={self.cpu:.1f}s ({self.cores:.1f} cores on average)"
-
-
-# The dependencies
-
-TRACE = "--trace"
-"""The first argument of the gate's own call that runs one traced command
-(`trace`)."""
-
-GATE_READS = ("scripts/gate.py", "pyproject.toml", "uv.lock")
-"""The files every command depends on outside its traced run: the gate,
-which writes its arguments and normalizes its output, and the files that
-set the environment `uv run` gives it."""
-
-LIST_EVENTS = frozenset({"os.listdir", "os.scandir"})
-"""The audit events that list a directory."""
-
-PY_SUFFIXES = frozenset({".py", ".pyc"})
-"""The suffixes of the files a command depends on through the lines it
-runs alone. A command also reads Python files' bytes, to import them and
-to key the run cache, and the warm pass shows that the cache changes no
-output."""
-
-
-@dataclass(frozen=True)
-class Deps:
-    """What one command depends on, from its traced run: the lines it ran
-    of each Python file, the other files of the checkout it opened to read,
-    and the directories of the checkout it listed, each path from the
-    checkout's root."""
-    lines: dict[str, frozenset[int]]
-    reads: frozenset[str]
-    listed: frozenset[str]
-
-    def to_json(self) -> dict[str, object]:
-        return {"lines": {p: _ranges(ns) for p, ns in sorted(self.lines.items())},
-                "reads": sorted(self.reads), "listed": sorted(self.listed)}
-
-    @staticmethod
-    def from_json(data: dict[str, object]) -> "Deps":
-        lines = data["lines"]
-        reads = data["reads"]
-        listed = data["listed"]
-        if not (isinstance(lines, dict) and isinstance(reads, list)
-                and isinstance(listed, list)):
-            raise ValueError(f"a dependency record entry of no known shape: {data}")
-        return Deps({p: frozenset(n for a, b in rs for n in range(a, b + 1))
-                     for p, rs in lines.items()},
-                    frozenset(reads), frozenset(listed))
-
-
-def _ranges(ns: Iterable[int]) -> list[list[int]]:
-    """`ns` as sorted runs of consecutive numbers, each its first and last."""
-    out: list[list[int]] = []
-    for n in sorted(ns):
-        if out and out[-1][1] == n - 1:
-            out[-1][1] = n
-        else:
-            out.append([n, n])
-    return out
-
-
-def _reading(mode: object, flags: object) -> bool:
-    """Whether an `open` audit event's mode or flags open the file to read."""
-    if isinstance(mode, str):
-        return not any(c in mode for c in "wax")
-    if isinstance(flags, int):
-        return flags & (os.O_WRONLY | os.O_RDWR) == 0
-    raise ValueError(f"an open event with mode {mode!r} and flags {flags!r}")
-
-
-def _in_checkout(path: object) -> str | None:
-    """`path`, an audit event's path argument, from the checkout's root, or
-    None where it is a file descriptor or stands outside the checkout."""
-    if isinstance(path, int) or path is None:
-        return None
-    if not isinstance(path, (str, bytes, os.PathLike)):
-        raise ValueError(f"an audit event's path of no known type: {path!r}")
-    p = Path(os.fsdecode(path)).resolve()
-    root = checkout.ROOT.resolve()
-    return str(p.relative_to(root)) if p.is_relative_to(root) else None
-
-
-def trace(deps_out: Path, cov_out: Path, script: Path, args: Sequence[str]) -> int:
-    """Run `script` with `args` as `__main__`, and write what it depends on
-    to `deps_out`, as `Deps`, and its coverage data to `cov_out`; its exit
-    status."""
-    reads: set[str] = set()
-    listed: set[str] = set()
-
-    def hook(event: str, a: tuple[object, ...]) -> None:
-        if event == "open" and _reading(a[1], a[2]):
-            rel = _in_checkout(a[0])
-            if rel is not None and Path(rel).suffix not in PY_SUFFIXES:
-                reads.add(rel)
-        elif event in LIST_EVENTS:
-            rel = _in_checkout(a[0] if a[0] is not None else ".")
-            if rel is not None:
-                listed.add(rel)
-
-    cov = coverage.Coverage(data_file=str(cov_out), config_file=False,
-                            source=[str(checkout.ROOT / "src"), str(checkout.scripts())],
-                            omit=[str(Path(__file__).resolve())])
-    # A command keeps its own wall-clock limits when traced, and the default
-    # core slows it past them, so that it gives other outputs than untraced.
-    cov.set_option("run:core", "sysmon")
-    sys.argv = [str(script), *args]
-    status: int = 0
-    cov.start()
-    core = dict(cov.sys_info())["core"]
-    if core != SysMonitor.__name__:
-        cov.stop()
-        raise RuntimeError(f"coverage.py traces with the {core} core, not {SysMonitor.__name__}")
-    sys.addaudithook(hook)
-    try:
-        runpy.run_path(str(script), run_name="__main__")
-    except SystemExit as e:
-        if e.code is None or isinstance(e.code, int):
-            status = e.code or 0
-        else:
-            print(e.code, file=sys.stderr)
-            status = 1
-    finally:
-        cov.stop()
-        cov.save()
-        data = cov.get_data()
-        lines = {rel: frozenset(ran) for f in data.measured_files()
-                 if (ran := data.lines(f)) and (rel := _in_checkout(f)) is not None}
-        deps = Deps(lines, frozenset(reads), frozenset(listed))
-        deps_out.write_text(json.dumps(deps.to_json()) + "\n")
-    return status
-
-
-@dataclass(frozen=True)
-class Touched:
-    """A path the change touches, how it touches it, and, for a modified
-    Python file, the line ranges of its recorded text it replaces, each its
-    first line and its count, a count of 0 an insertion after the first
-    line. `unrecorded` is a Python file that stands at the change's base
-    and not at the recorded commit, whose lines no command's record
-    holds."""
-    path: str
-    status: checkout.Change
-    hunks: tuple[tuple[int, int], ...] = ()
-    unrecorded: bool = False
-
-
-_HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+", re.M)
-
-
-def hunks_of(diff: str) -> tuple[tuple[int, int], ...]:
-    """The old side of each hunk of the unified diff `diff`: its first line
-    and its count, which git leaves out where it is 1."""
-    return tuple((int(a), int(b) if b else 1) for a, b in _HUNK_RE.findall(diff))
-
-
-def between(old: str, new: str, *flags: str) -> set[str]:
-    """The paths whose content differs between the commits `old` and `new`,
-    of the statuses that `flags` filter."""
-    return set(filter(None, checkout.git_out(checkout.ROOT, "diff", "--name-only",
-                                             "--no-renames", "-z", *flags, old, new,
-                                             ).split("\0")))
-
-
-def touched_from(base: str, recorded: str) -> list[Touched]:
-    """Each path whose content in the checkout differs from the commit
-    `base` (`checkout.changed_paths`), as the commit `recorded` sees it. A
-    path that stands at `base` and not at `recorded` is `unrecorded` where
-    it is a Python file, and is otherwise added, or deleted where the change
-    deletes it; a path that stands at `recorded` and
-    not at `base` is modified where the change adds it. A modified Python
-    file that differs between the two commits has no hunk, since its hunks
-    number the lines of `base` and not the recorded lines."""
-    moved = between(recorded, base)
-    absent = between(recorded, base, "--diff-filter=A")
-    gone = between(recorded, base, "--diff-filter=D")
-    out: list[Touched] = []
-    for c in checkout.changed_paths(checkout.ROOT, base):
-        status = c.change
-        if c.path in absent:
-            if Path(c.path).suffix in PY_SUFFIXES:
-                out.append(Touched(c.path, status, unrecorded=True))
-                continue
-            if status is not checkout.Change.DELETED:
-                status = checkout.Change.ADDED
-        elif c.path in gone:
-            status = checkout.Change.MODIFIED
-        hunks: tuple[tuple[int, int], ...] = ()
-        if (status is checkout.Change.MODIFIED and Path(c.path).suffix in PY_SUFFIXES
-                and c.path not in moved):
-            hunks = hunks_of(checkout.git_out(checkout.ROOT, "diff", "-U0", "--no-color",
-                                              "--no-ext-diff", base, "--", c.path))
-        out.append(Touched(c.path, status, hunks))
-    return out
-
-
-@dataclass(frozen=True)
-class Function:
-    """A function of a Python text: the first line of its header, its
-    decorators included, the first line of its body, and its last line."""
-    first: int
-    body: int
-    last: int
-
-
-def functions(source: str) -> list[Function]:
-    return [Function(min([n.lineno, *(d.lineno for d in n.decorator_list)]),
-                     n.body[0].lineno, n.end_lineno or n.lineno)
-            for n in ast.walk(ast.parse(source))
-            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
-
-
-def runs_hunks(source: str, hunks: Sequence[tuple[int, int]], ran: frozenset[int]) -> bool:
-    """Whether a command that ran the lines `ran` of the Python text
-    `source` runs a part that `hunks` replace. A hunk inside the body of a
-    function is run where a line of the innermost such function's body
-    ran; a hunk elsewhere, a header among them, runs when the file is
-    imported, so it is run where any line of the file ran. An insertion
-    after a function's last line may stand in its body or after it, so it
-    is taken to stand after it. A file with no
-    hunk is run where any line ran."""
-    if not ran:
-        return False
-    if not hunks:
-        return True
-    fs = functions(source)
-    for start, count in hunks:
-        lo, hi = (start, start + count - 1) if count else (start, start + 1)
-        inside = [f for f in fs if f.first <= lo and hi <= f.last]
-        if not inside:
-            return True
-        f = max(inside, key=lambda f: f.first)
-        header = lo < f.body if count else start < f.body - 1
-        if header or any(f.body <= n <= f.last for n in ran):
-            return True
-    return False
-
-
-def affects(cmd: GateCommand, stem: str, deps: Deps, touched: Sequence[Touched],
-            recorded: dict[str, str]) -> bool:
-    """Whether the changes `touched` can affect `cmd` on `stem`, which
-    depends on `deps`, with `recorded` the recorded text of each Python file
-    they modify or delete. A change affects it where it touches a
-    file of `GATE_READS`, the command's accepted outputs, a file the gate
-    copies for it (`copied`), or a file it opened to read; where it adds or
-    deletes a file in a directory it listed; and where it changes a Python
-    file part of which it runs, as `runs_hunks` decides. A Python file
-    affects it through the lines it runs alone (`PY_SUFFIXES`), so a Python
-    file the change adds affects it through the lines that import it. An
-    `unrecorded` file affects every command, since the record cannot say
-    which commands run it."""
-    accepted = ACCEPTED.relative_to(checkout.ROOT)
-    own = {*GATE_READS, *(str(accepted / f"{cmd.key(stem)}.{e}") for e in cmd.exts)}
-    copied = [p.relative_to(checkout.ROOT) for p in cmd.copied(stem)]
-    for t in touched:
-        if t.unrecorded:
-            return True
-        if t.path in own or any(Path(t.path).is_relative_to(p) for p in copied):
-            return True
-        if Path(t.path).suffix not in PY_SUFFIXES:
-            if t.path in deps.reads or ((t.status.added or t.status is checkout.Change.DELETED)
-                                        and str(Path(t.path).parent) in deps.listed):
-                return True
-        elif t.path in deps.lines and not t.status.added:
-            if runs_hunks(recorded[t.path],
-                          t.hunks if t.status is checkout.Change.MODIFIED else (),
-                          deps.lines[t.path]):
-                return True
-    return False
-
-
-@dataclass(frozen=True)
-class Record:
-    """The dependency record: the commit whose lines it records, and each
-    command's dependencies by its key."""
-    commit: str
-    deps: dict[str, Deps]
-
-    @staticmethod
-    def read(path: Path) -> "Record":
-        data = json.loads(path.read_text())
-        return Record(data["commit"],
-                      {k: Deps.from_json(v) for k, v in data["commands"].items()})
-
-    def write(self, path: Path) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        body = {"commit": self.commit,
-                "commands": {k: d.to_json() for k, d in sorted(self.deps.items())}}
-        write_whole(path, (json.dumps(body) + "\n").encode())
-
-
-def affected(cmds: Sequence[GateCommand], base: str) -> tuple[set[str], str]:
-    """The keys of `cmds` on their stems that the change from the commit
-    `base` can affect, each key with no dependency record among them, and
-    the first line `--affected` prints."""
-    keys = keys_of(cmds)
-    path = deps_file()
-    if not path.exists():
-        return keys, mctx("affected: no dependency record stands at {path}, so every one of "
-                          "the {n} commands runs").format(path=path, n=len(keys))
-    record = Record.read(path)
-    touched = touched_from(base, record.commit)
-    recorded = {t.path: checkout.git_out(checkout.ROOT, "show", f"{record.commit}:{t.path}")
-                for t in touched if Path(t.path).suffix in PY_SUFFIXES
-                and not (t.status.added or t.unrecorded)}
-    run = {k for c in cmds for s in c.stems for k in [c.key(s)]
-           if k not in record.deps or affects(c, s, record.deps[k], touched, recorded)}
-    return run, mctx("affected: {run} of the {n} commands run, by the dependency record of "
-                     "{commit} and the change from {base}").format(
-        run=len(run), n=len(keys), commit=record.commit[:12], base=base)
-
-
-class Gate:
-    """One gate run into `out/gate/`."""
-
-    def __init__(self, out: Path, accepted: Path, timed: bool, traced: bool,
-                 covers: bool) -> None:
-        self.dir = out.resolve() / "gate"
-        self.new = self.dir / "new"
-        self.warm = self.new / "warm"
-        self.wit = self.dir / "wit" / "cur"
-        self.deps = self.dir / "deps"
-        self.cov = self.dir / "cov"
-        self.dropped = self.dir / "dropped"
-        """The outputs, coverage data and dependencies of the runs on the
-        stems of `STEMS` the commands drop."""
-        self.documents = self.dir / "documents"
-        """The copy of `DOCUMENTS` the context commands render."""
-        self.accepted = accepted
-        self.timed = timed
-        """Whether the run makes the warm pass and judges the cold times;
-        `--outputs-only` clears it."""
-        self.traced = traced
-        """Whether each cold command runs under `trace`."""
-        self.covers = covers
-        """Whether each command also runs on the stems of `STEMS` it drops,
-        as `--coverage` gives."""
-        self.times_file = times_file(accepted)
-        self.times: dict[str, float] = (
-            json.loads(self.times_file.read_text()) if self.times_file.exists() else {})
-        self.shown = f"{checkout.shown(self.dir)}/"
-        self.lock = lock_file()
-        self.log_lock = threading.Lock()
-        self.notices = {hold: rwlock.Notice() for hold in rwlock.Hold}
-        """The run's wait line for each hold of the heavy commands' lock."""
-
-    def env(self, cache: Path, hold: rwlock.Hold) -> dict[str, str]:
-        return {**os.environ,
-                rwlock.HOLD_ENV: hold,
-                checkout.CACHE_ENV: str(cache),
-                checkout.SOLVER_FILES_ENV: str(SOLVERS),
-                checkout.WITNESSES_ENV: str(WITNESSES),
-                DOCUMENTS_ENV: str(self.documents),
-                WALL_LIMIT_ENV: str(TIME_LIMIT)}
-
-    def normalize(self, raw: str) -> str:
-        """`raw` with the lines naming the runner and lib dropped, the out
-        directory written as `OUT_MARK`, whether absolute or from the
-        checkout's root, and the times and the duration footer
-        dropped."""
-        lines = [ln for ln in raw.splitlines(keepends=True) if _DROPPED not in ln]
-        text = "".join(lines).replace(f"{self.dir}/", OUT_MARK).replace(self.shown, OUT_MARK)
-        text = FOOTER_RE.sub("", _ELAPSED_RE.sub(" ---", text))
-        return _LIMIT_RE.sub(r"\1Ns", text)
-
-    def hold(self, cold: bool) -> rwlock.Hold:
-        """The hold of the heavy commands' lock a command of the run takes."""
-        return rwlock.Hold.EXCLUSIVE if self.timed and cold else rwlock.Hold.SHARED
-
-    @contextlib.contextmanager
-    def locked(self, cold: bool) -> Iterator[rwlock.Hold]:
-        """The gate's lock file, in a timed run, and then the heavy
-        commands' lock, held for one command; the hold the command runs
-        under."""
-        with contextlib.ExitStack() as stack:
-            if self.timed:
-                fh = stack.enter_context(open(self.lock, "a"))
-                fcntl.flock(fh, fcntl.LOCK_EX if cold else fcntl.LOCK_SH)
-            hold = self.hold(cold)
-            yield stack.enter_context(rwlock.taken(hold, self.notices[hold]))
-
-    def run_one(self, cmd: GateCommand, stem: str, cold: bool, cache: Path,
-                dropped: bool = False) -> tuple[int, float, OutsideCpu | None]:
-        """`cmd` on `stem` under the locks, its normalized output, witness
-        file and exit code written to the pass's directory, or to `dropped`
-        for a stem of `STEMS` it drops; the exit code, the wall time, and,
-        where it runs under an exclusive hold, the outside CPU over its
-        run."""
-        wf = self.wit / f"{stem}.wit.json"
-        if cmd.takes_witness_file:
-            shutil.copyfile(frozen_witness(stem), wf)
-        key = cmd.key(stem)
-        script = [str(checkout.scripts() / cmd.script), *cmd.argv(stem, wf)]
-        deps, cov = ((self.dropped / "deps", self.dropped / "cov") if dropped
-                     else (self.deps, self.cov))
-        if self.traced and cold:
-            script = [str(Path(__file__).resolve()), TRACE, str(deps / f"{key}.json"),
-                      str(cov / f".coverage.{key}"), *script]
-        argv = ["uv", "run", "--project", str(checkout.ROOT), "python", *script]
-        base = (self.dropped if dropped else self.new if cold else self.warm) / key
-        with self.locked(cold) as hold:
-            sample = CpuSample.now() if hold is rwlock.Hold.EXCLUSIVE else None
-            start = time.time()
-            proc = subprocess.Popen(argv, cwd=checkout.ROOT, env=self.env(cache, hold),
-                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-            try:
-                raw, _ = proc.communicate(timeout=TIME_LIMIT)
-                rc = proc.returncode
-            except subprocess.TimeoutExpired:
-                proc.terminate()
-                try:
-                    raw, _ = proc.communicate(timeout=KILL_AFTER)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    raw, _ = proc.communicate()
-                rc = TIMEOUT_RC
-            wall = round(time.time() - start, 1)
-            outside = None if sample is None else sample.outside(CpuSample.now())
-        Path(f"{base}.raw").write_bytes(raw)
-        Path(f"{base}.txt").write_text(self.normalize(raw.decode()))
-        if "wit.json" in cmd.exts:
-            shutil.copyfile(wf, f"{base}.wit.json")
-        Path(f"{base}.rc").write_text(f"{rc}\n")
-        with self.log_lock, open(self.dir / "times.txt", "a") as fh:
-            fh.write(f"{cmd.name} {stem} {'dropped' if dropped else 'pass1' if cold else 'pass2'}"
-                     f" rc={rc} wall={wall}s\n")
-        return rc, wall, outside
-
-    def compare(self, cmd: GateCommand, stem: str, wall: float,
-                outside: OutsideCpu | None) -> list[Line]:
-        """The cold run's lines: a `DIFF` line per output file that differs
-        from the accepted one, and in a timed run a `SLOW`, `LOADED` or
-        `NOTIME` line for its time."""
-        key = cmd.key(stem)
-        lines = [Line(LineKind.DIFF, cmd.name, stem, ext) for ext in cmd.exts
-                 if not _same(self.accepted / f"{key}.{ext}", self.new / f"{key}.{ext}")]
-        if not self.timed:
-            return lines
-        if outside is None:
-            raise ValueError(f"the cold run of {key} in a timed run has no outside CPU")
-        Path(self.new / f"{key}{TIME_EXT}").write_text(f"{wall}\n")
-        accepted = self.times.get(key)
-        if accepted is None:
-            lines.append(Line(LineKind.NOTIME, cmd.name, stem, f"time={wall}s"))
-        elif wall > SLOW_FACTOR * accepted + SLOW_MARGIN:
-            kind = LineKind.LOADED if outside.cores > 1 else LineKind.SLOW
-            lines.append(Line(kind, cmd.name, stem,
-                              f"time={wall}s accepted={accepted}s {outside}"))
-        return lines
-
-    def compare_warm(self, cmd: GateCommand, stem: str) -> list[Line]:
-        """The warm run's lines: a `DIFF` line ending in `warm` per output
-        file that differs from the cold run's."""
-        key = cmd.key(stem)
-        return [Line(LineKind.DIFF, cmd.name, stem, f"{ext} warm") for ext in cmd.exts
-                if not _same(self.new / f"{key}.{ext}", self.warm / f"{key}.{ext}")]
-
-    def stem_sequence(self, stem: str, cmds: Sequence[GateCommand],
-                      dropped: set[str]) -> list[Line]:
-        """Both passes of `cmds` on `stem`, their lines written to the
-        stem's log; a command whose key is in `dropped` runs in the cold
-        pass alone, and gives no line."""
-        cache = self.dir / "cache" / stem
-        shutil.rmtree(cache, ignore_errors=True)
-        cache.mkdir(parents=True)
-        lines: list[Line] = []
-        try:
-            for cold in (True, False) if self.timed else (True,):
-                for cmd in cmds:
-                    if cmd.key(stem) in dropped:
-                        if cold:
-                            self.run_one(cmd, stem, cold, cache, dropped=True)
-                        continue
-                    _, wall, outside = self.run_one(cmd, stem, cold, cache)
-                    lines += (self.compare(cmd, stem, wall, outside) if cold
-                              else self.compare_warm(cmd, stem))
-        finally:
-            (self.dir / f"log-{stem}.txt").write_text("".join(f"{ln}\n" for ln in lines))
-            shutil.rmtree(cache, ignore_errors=True)
-        return lines
-
-    def dropped_keys(self, cmd: GateCommand, keys: set[str]) -> list[str]:
-        """The keys of the runs of `cmd` on the stems of `STEMS` it drops,
-        where the run covers them and `keys` holds the command's key on
-        each of its own stems."""
-        if not self.covers or not keys_of([cmd]) <= keys:
-            return []
-        return [cmd.key(s) for s in dropped_stems(cmd)]
-
-    def coverage_lines(self, cmds: Sequence[GateCommand], keys: set[str]) -> list[str]:
-        """The `coverage:` line of each command of `cmds` that ran on the
-        stems of `STEMS` it drops, after one naming the stems of its traced
-        runs that wrote no dependencies, then one naming the commands that ran on
-        only part of their own stems and so got none."""
-        if not self.covers:
-            return []
-        pruning = pruning_lines()
-        out: list[str] = []
-        for c in cmds:
-            dropped = self.dropped_keys(c, keys)
-            if not dropped:
-                continue
-            own_deps = {s: self.deps / f"{c.key(s)}.json" for s in c.stems}
-            dropped_deps = {s: self.dropped / "deps" / f"{c.key(s)}.json"
-                            for s in dropped_stems(c)}
-            no_data = [s for s, d in (*own_deps.items(), *dropped_deps.items())
-                       if not d.exists()]
-            if no_data:
-                out.append(mctx("coverage: {cmd}: its runs on {stems} gave no coverage data, "
-                                "and count as covering no line").format(
-                    cmd=c.name, stems=", ".join(no_data)))
-            own = _lines_of(own_deps.values())
-            every = _lines_of(dropped_deps.values())
-            gaps = {p: rest for p in sorted(every)
-                    if (rest := every[p] - own.get(p, frozenset()) - pruning.get(p, frozenset()))}
-            if not gaps:
-                out.append(mctx("coverage: {cmd}: its runs on its own stems cover every line "
-                                "its runs on all of STEMS cover").format(cmd=c.name))
-                continue
-            out.append(mctx("coverage: {cmd}: its runs on all of STEMS cover these lines, "
-                            "and its runs on its own stems do not: {lines}").format(
-                cmd=c.name, lines="; ".join(
-                    f"{p} {', '.join(str(a) if a == b else f'{a}-{b}' for a, b in _ranges(ns))}"
-                    for p, ns in gaps.items())))
-        partial = [c.name for c in cmds if dropped_stems(c)
-                   and keys_of([c]) & keys and not keys_of([c]) <= keys]
-        if partial:
-            out.append(mctx("coverage: {cmds}: no coverage line, since not every one of "
-                            "their own stems ran").format(cmds=", ".join(partial)))
-        return out
-
-    def run(self, cmds: Sequence[GateCommand], keys: set[str]) -> list[Line]:
-        for d in (self.new, self.warm, self.wit, self.deps, self.cov):
-            d.mkdir(parents=True, exist_ok=True)
-        dropped = {k for c in cmds for k in self.dropped_keys(c, keys)}
-        if dropped:
-            for d in (self.dropped / "deps", self.dropped / "cov"):
-                d.mkdir(parents=True, exist_ok=True)
-        shutil.rmtree(self.documents, ignore_errors=True)
-        shutil.copytree(DOCUMENTS, self.documents)
-        stems = sorted({s for c in cmds for s in (*c.stems, *dropped_stems(c))
-                        if c.key(s) in keys | dropped})
-        lines: dict[str, list[Line]] = {}
-        errors: list[BaseException] = []
-
-        def sequence(stem: str) -> None:
-            try:
-                lines[stem] = self.stem_sequence(
-                    stem, [c for c in cmds if c.key(stem) in keys | dropped], dropped)
-            except BaseException as e:
-                errors.append(e)
-                raise
-
-        threads = [threading.Thread(target=sequence, args=(s,)) for s in stems]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-        if errors:
-            raise RuntimeError(f"{len(errors)} stem sequences failed") from errors[0]
-        out = [ln for s in stems for ln in lines[s]]
-        (self.dir / "log.txt").write_text("")
-        self.log(out)
-        return out
-
-    def log(self, lines: Iterable[object]) -> None:
-        """`lines` added to the run's log, one per line."""
-        with open(self.dir / "log.txt", "a") as fh:
-            fh.write("".join(f"{ln}\n" for ln in lines))
-
-    def kinds(self) -> tuple[LineKind, ...]:
-        """The kinds of line the run makes, which the last line counts."""
-        return tuple(k for k in LineKind if self.timed or k not in TIME_KINDS)
-
-    def record(self) -> Record:
-        """The dependencies of every command the run traced, with the `HEAD`
-        commit."""
-        deps = {p.stem: Deps.from_json(json.loads(p.read_text()))
-                for p in sorted(self.deps.glob("*.json"))}
-        return Record(head(), deps)
-
-    def accept(self, replace: bool) -> tuple[int, int]:
-        """Each cold time and output written as accepted where none of its
-        name stands, or over it with `replace`; the counts of times and
-        outputs written."""
-        times = {key: float(p.read_text()) for p in sorted(self.new.glob(f"*{TIME_EXT}"))
-                 if _writes(replace, (key := p.name.removesuffix(TIME_EXT)) in self.times)}
-        merged = dict(sorted({**self.times, **times}.items()))
-        self.times_file.parent.mkdir(parents=True, exist_ok=True)
-        write_whole(self.times_file,
-                    (json.dumps(merged, indent=1) + "\n").encode())
-        written = 0
-        for p in sorted(p for ext in EXTS for p in self.new.glob(f"*.{ext}")):
-            dest = self.accepted / p.name
-            if _writes(replace, dest.exists()):
-                shutil.copyfile(p, dest)
-                written += 1
-        return len(times), written
-
-
-def _writes(replace: bool, stands: bool) -> bool:
-    """Whether `--accept` writes a time or output: where none of its name
-    stands, and over one that stands with `--replace`."""
-    return replace or not stands
-
-
-def _lines_of(paths: Iterable[Path]) -> dict[str, frozenset[int]]:
-    """The lines the traced runs whose dependencies `paths` hold ran
-    together, by their file; a path that does not stand adds no line."""
-    out: dict[str, frozenset[int]] = {}
-    for p in paths:
-        if not p.exists():
-            continue
-        for f, ns in Deps.from_json(json.loads(p.read_text())).lines.items():
-            out[f] = out.get(f, frozenset()) | ns
-    return out
-
-
-def _same(a: Path, b: Path) -> bool:
-    return a.exists() and b.exists() and a.read_bytes() == b.read_bytes()
-
-
-def adopt_record(out: Path) -> int:
-    """Write the `RECORD_OUT` under `out` as the dependency record, where
-    its commit is `HEAD`."""
-    path = out.resolve() / "gate" / RECORD_OUT
-    if not path.exists():
-        print(mctx("record: no {path} stands, so the dependency record at {deps} stays as "
-                   "it is").format(path=path, deps=deps_file()))
-        return 0
-    record = Record.read(path)
-    at = head()
-    if record.commit != at:
-        print(mctx("record: {path} records {commit}, and HEAD is {head}").format(
-            path=path, commit=record.commit[:12], head=at[:12]), file=sys.stderr)
-        return 1
-    record.write(deps_file())
-    print(mctx("record: the dependency record of {commit} is written to {deps}").format(
-        commit=record.commit[:12], deps=deps_file()))
-    return 0
+from engine.duration import footer
+from gating.commands import ACCEPTED, COMMANDS, GateCommand, keys_of, stems_listing
+from gating.cpu import CpuSample
+from gating.deps import TRACE, trace
+from gating.deps_record import RECORD_OUT, Record, adopt_record, affected, head_clean
+from gating.records import deps_file, loaded_file, read_loaded
+from gating.run import Gate
 
 
 def main(argv: Sequence[str]) -> int:
@@ -1245,8 +199,9 @@ def run_gate(argv: Sequence[str]) -> int:
                     help="run the cold pass alone and compare its outputs, judging no time")
     picked = ap.add_mutually_exclusive_group()
     picked.add_argument("--affected", metavar="BASE",
-                        help="with --outputs-only, run only the commands that the change "
-                             "from the commit BASE, which it branched from, can affect")
+                        help="run only the commands that the change from the commit BASE, "
+                             "which it branched from, can affect, and in a timed run those "
+                             "loaded.json keeps")
     picked.add_argument("--record-deps", action="store_true",
                         help="with --outputs-only, trace every command and write the "
                              "dependency record")
@@ -1270,10 +225,9 @@ def run_gate(argv: Sequence[str]) -> int:
         ap.error("--replace is given without --accept")
     if a.accept and a.outputs_only:
         ap.error("--accept writes the cold times, which --outputs-only does not judge")
-    if (a.affected is not None or a.record_deps or a.coverage) and not a.outputs_only:
-        ap.error(mctx("--affected, --record-deps and --coverage each run a part or a trace "
-                      "of the sequence, whose times do not compare, so each needs "
-                      "--outputs-only"))
+    if (a.record_deps or a.coverage) and not a.outputs_only:
+        ap.error(mctx("--record-deps and --coverage each run a trace of the sequence, whose "
+                      "times do not compare, so each needs --outputs-only"))
     unknown = [c for c in a.cmds if c not in COMMANDS]
     if unknown:
         ap.error(f"no gate command named {', '.join(unknown)}")
@@ -1282,19 +236,19 @@ def run_gate(argv: Sequence[str]) -> int:
     if a.record_deps and not head_clean():
         ap.error(mctx("--record-deps records the lines of HEAD, and the checkout changes "
                       "a tracked file against it"))
+    timed = not a.outputs_only
     cmds = [COMMANDS[c] for c in a.cmds] or list(COMMANDS.values())
     keys = keys_of(cmds)
     if a.affected is not None:
-        keys, said = affected(cmds, a.affected)
-        print(said, flush=True)
-    records = a.affected is not None and keys == keys_of(COMMANDS.values()) and head_clean()
-    gate = Gate(a.out, a.accepted.resolve(), timed=not a.outputs_only,
+        keys = select(cmds, a.affected, a.accepted.resolve(), timed)
+    records = (not timed and a.affected is not None and keys == keys_of(COMMANDS.values())
+               and head_clean())
+    gate = Gate(a.out, a.accepted.resolve(), timed=timed,
                 traced=a.record_deps or a.coverage or records, covers=a.coverage)
     if a.accept:
         if gate.dir.exists():
             ap.error(f"{gate.dir} exists; give an empty out-dir")
         a.accepted.mkdir(parents=True, exist_ok=True)
-    rwlock.outer(gate.hold(cold=True))
     sample = CpuSample.now() if a.accept else None
     lines = gate.run(cmds, keys)
     if sample is not None:
@@ -1309,7 +263,7 @@ def run_gate(argv: Sequence[str]) -> int:
     print("gate: " + ", ".join(f"{n} {k}" for k, n in counts.items()))
     record_to = deps_file() if a.record_deps else gate.dir / RECORD_OUT if records else None
     if record_to is not None:
-        gate.record().write(record_to)
+        Record.traced(gate.deps).write(record_to)
         print(mctx("deps: the dependencies of {n} commands are written to {path}").format(
             n=len(keys), path=record_to))
     if a.accept:
@@ -1318,6 +272,25 @@ def run_gate(argv: Sequence[str]) -> int:
               f"and {outputs} new accepted outputs to {a.accepted}")
         return 0
     return 1 if any(counts.values()) else 0
+
+
+def select(cmds: Sequence[GateCommand], base: str, accepted: Path, timed: bool) -> set[str]:
+    """The keys of `cmds` an `--affected` run judges: those the change from
+    `base` can affect, and in a timed run those `loaded_file` keeps beside
+    the accepted times of `accepted`; its first lines printed."""
+    run, commit, n = affected(cmds, base)
+    if commit is None:
+        print(mctx("affected: no dependency record stands at {path}, so every one of the "
+                   "{n} commands runs").format(path=deps_file(), n=n), flush=True)
+        return run
+    kept = (read_loaded(loaded_file(accepted)) & keys_of(cmds)) - run if timed else set()
+    print(mctx("affected: {run} of the {n} commands run, by the dependency record of "
+               "{commit} and the change from {base}").format(
+        run=len(run), n=n, commit=commit[:12], base=base), flush=True)
+    if kept:
+        print(mctx("affected: {kept} more commands run, each kept for the LOADED line of "
+                   "an earlier timed run").format(kept=len(kept)), flush=True)
+    return run | kept
 
 
 if __name__ == "__main__":

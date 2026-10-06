@@ -7,9 +7,9 @@ from pathlib import Path
 
 from engine import checkout
 from engine.program import Program
+from gating import commands
 from solver.model import Graph, component_chain, parse_with_lib
 from souffle.engine import SouffleEngine
-from tests.conftest import script
 
 
 def used(engine: SouffleEngine, solver: Path) -> set[str]:
@@ -23,7 +23,6 @@ def used(engine: SouffleEngine, solver: Path) -> set[str]:
 
 
 def test_run_stems_use_every_used_lib_component():
-    gate = script("gate")
     engine = SouffleEngine(cache_dir=None)
     lib = parse_with_lib(engine, "")
     assert isinstance(lib, Program)
@@ -31,8 +30,8 @@ def test_run_stems_use_every_used_lib_component():
     components = {c.name for c in lib.components
                   if c.span is not None and c.span.file is not None
                   and Path(c.span.file).parent == modules}
-    covered = set[str]().union(*(used(engine, gate.SOLVERS / f"{stem}.dl")
-                                 for stem in gate.COMMANDS["run"].stems))
+    covered = set[str]().union(*(used(engine, commands.SOLVERS / f"{stem}.dl")
+                                 for stem in commands.COMMANDS["run"].stems))
     outside: dict[str, list[str]] = {}
     for solver in sorted(checkout.solvers().glob("*.dl")):
         for name in sorted(used(engine, solver) & components - covered):
