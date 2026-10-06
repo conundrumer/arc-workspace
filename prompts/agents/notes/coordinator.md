@@ -17,7 +17,7 @@
 - Launch a ticket analyst with each `bug` ticket you file and each `request` ticket the lines above leave under `tickets/open/`, before you end your turn with no other work.
 
 ## Decisions
-- Where you run no solver pass, read [Decisions](prompts/agents/notes/decisions.md#decisions) before you make a decision on the solver tools or the agents' documents.
+- Where you run no solver pass, read [Decisions](prompts/agents/notes/decisions.md#decisions) before you make a decision on the solver tools or the agents' documents, and before you ask an agent about a choice it made.
 
 ## Changes
 - To edit a document an agent reads, send a request to the `doc-editor` agent.
