@@ -25,6 +25,7 @@
     - `commit` and the commit's hash: a code reviewer's ticket, on the commit its baseline tag names, and an operator's ticket from its After a batch, on `master` at that commit.
     - `ticket` and the ticket's number: a ticket on another ticket.
     - `agent` and the agent's id: the ticket of a supervisor's alert verifier, on the agent it checked, and every ticket no entry above fits, on the agent it concerns, your own included.
+- A subagent's own agent id is the one the line `Your agent id is <id>.` in its context gives, or, where its context holds no such line, the agent id of its own entry in the listing `uv run python scripts/profile_runs.py --running <session id>` prints, with the id `echo $CLAUDE_CODE_SESSION_ID` prints as `<session id>`: the entry whose call in flight is that listing's command.
 
 ## Tracking
 - `tickets/` is in the main tree, the parent of the directory `git rev-parse --path-format=absolute --git-common-dir` prints, and in no other worktree. Git ignores it.
