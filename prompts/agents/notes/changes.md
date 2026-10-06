@@ -26,7 +26,12 @@
 - Merge a change only once it passes, with `uv run python scripts/merge_change.py <worktree> -m <message>`, and commit in no other way.
 - Where that script exits with status 1, leave the worktree as it is. Where it reports that the rebase conflicts, run the change again with a new first editor, and give the old worktree and its branch in your reply. Where it reports a failed check, send what it reports to the change's editor as a finding of its checks. Otherwise, give the worktree and the script's message in your reply.
     - Where the failed check is the gate, give in that finding, for each `DIFF` line that the change's briefs ask for, the accepted output under `tests/gate/accepted/` to update.
+- Where the harness or the permission classifier denies the merge call, give the worktree in your reply with the merge as unfinished.
+- Once a change is merged, move to `tickets/closed/` its ticket, each ticket its Motivation gives as settled that stands under `tickets/blocked/`, and each `question` ticket filed on it, with `fixed`, the change's number and the hash `master` stands at after the merge as the note.
 - Once a change is merged, close each `refactor` ticket whose module a code editor of the change reports it split, with `fixed`, the change's number where it has a ticket, and the hash `master` stands at after the merge as the note. Where that report gives a part of the module as left unsplit, write that part as a log line on the ticket in place of closing it.
+
+### A merge an agent was denied
+- Where you run the merge of a change whose merge call an agent you launched gave as denied, and your merge is denied too, move the change's ticket to `tickets/blocked/`, with a note that opens with `user` and gives the call, the denial's text and the worktree. Where your merge goes through, send the change to an operator for its [After a batch](prompts/agents/operator.md#after-a-batch): to an operator that runs, or in the brief of the next one you launch.
 
 ## budget
 - Do each step your documents give, and finish the work, even where it runs past the budget a `Budget: N minutes` line of your brief or a later message gives.
