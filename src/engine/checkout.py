@@ -69,10 +69,11 @@ def git(tree: Path, *argv: str, stdin: str | None = None,
                           capture_output=True, text=True)
 
 
-def git_out(tree: Path, *argv: str, env: Mapping[str, str] | None = None) -> str:
-    """The stdout of a git command in `tree`, which must succeed: a failure
-    is `GitFailed`."""
-    return _succeeded(tree, argv, git(tree, *argv, env=env))
+def git_out(tree: Path, *argv: str, stdin: str | None = None,
+            env: Mapping[str, str] | None = None) -> str:
+    """The stdout of a git command in `tree`, with `stdin` on its standard
+    input where it is given, which must succeed: a failure is `GitFailed`."""
+    return _succeeded(tree, argv, git(tree, *argv, stdin=stdin, env=env))
 
 
 def git_bytes(tree: Path, *argv: str) -> bytes:
@@ -121,20 +122,73 @@ class Changed:
 
 def changed_paths(tree: Path, base: str, *pathspec: str) -> list[Changed]:
     """Each path that `pathspec` matches whose content in `tree` differs
-    from the commit `base`: first the tracked ones, each side of a rename
-    and each submodule whose checkout differs from its commit or holds
-    changes among them, then the untracked ones git does not ignore, each
-    in git's order. A submodule whose only difference from its commit is
-    untracked files inside it is no changed path. With no `pathspec`,
-    every path."""
+    from the commit `base`: first the tracked ones, each side of a rename,
+    each submodule whose checkout differs from its commit or holds changes,
+    and each path the index of `tree` marks skip-worktree, present in the
+    tree or absent from it, among them, in the order of the index, then the
+    untracked ones git does not ignore, in git's order. A submodule whose
+    only difference from its commit is untracked files inside it is no
+    changed path. A skip-worktree mark on a submodule is a fault
+    (`ValueError`). With no `pathspec`, every path."""
     spec = ["--", *pathspec] if pathspec else []
     named = git_out(tree, "diff", "--name-status", "--no-renames",
                     "--ignore-submodules=untracked", "-z", base, *spec).split("\0")
-    out = [Changed(path, Change(status))
-           for status, path in zip(named[0:-1:2], named[1::2], strict=True)]
+    marked = _skip_worktree(tree, spec)
+    tracked = {path: Change(status)
+               for status, path in zip(named[0:-1:2], named[1::2], strict=True)}
+    for path in marked:
+        tracked.pop(path, None)
+    tracked |= _marked_changes(tree, base, marked)
     untracked = git_out(tree, "ls-files", "--others", "--exclude-standard", "-z",
                         *spec).split("\0")
-    return out + [Changed(p, Change.UNTRACKED) for p in untracked if p]
+    return ([Changed(p, tracked[p]) for p in sorted(tracked, key=os.fsencode)]
+            + [Changed(p, Change.UNTRACKED) for p in untracked if p])
+
+
+_GITLINK = "160000"
+_SYMLINK = "120000"
+
+
+def _skip_worktree(tree: Path, spec: Sequence[str]) -> list[str]:
+    """Each path that `spec` matches and the index of `tree` marks
+    skip-worktree, whose content `git diff` reads from the index in place
+    of the tree. A mark on a submodule is a fault (`ValueError`)."""
+    marked: list[str] = []
+    for entry in git_out(tree, "ls-files", "-v", "-s", "-z", *spec).split("\0"):
+        if not entry.startswith("S "):
+            continue
+        meta, path = entry[2:].split("\t", 1)
+        if meta.split(" ")[0] == _GITLINK:
+            raise ValueError(f"the submodule {path} in {tree} is marked skip-worktree")
+        marked.append(path)
+    return marked
+
+
+def _marked_changes(tree: Path, base: str, marked: Sequence[str]) -> dict[str, Change]:
+    """How each path of `marked` whose content in `tree` differs from the
+    commit `base` differs: its blob, and whether it is a symbolic link, at
+    each side."""
+    if not marked:
+        return {}
+    at_base = {path: (meta.split(" ")[0] == _SYMLINK, meta.split(" ")[2])
+               for entry in git_out(tree, "--literal-pathspecs", "ls-tree", "-z", base,
+                                    "--", *marked).split("\0") if entry
+               for meta, path in [entry.split("\t", 1)]}
+    files = [p for p in marked if (tree / p).is_file() and not (tree / p).is_symlink()]
+    blobs = git_out(tree, "hash-object", "--stdin-paths", stdin="\n".join(files))
+    in_tree = {p: (False, oid) for p, oid in zip(files, blobs.split(), strict=True)}
+    for p in marked:
+        if (tree / p).is_symlink():
+            in_tree[p] = (True, git_out(tree, "hash-object", "--stdin", "--no-filters",
+                                        stdin=os.readlink(tree / p)).strip())
+    out: dict[str, Change] = {}
+    for path in marked:
+        was, now = at_base.get(path), in_tree.get(path)
+        if was == now:
+            continue
+        out[path] = (Change.ADDED if was is None else Change.DELETED if now is None
+                     else Change.TYPE_CHANGED if was[0] != now[0] else Change.MODIFIED)
+    return out
 
 
 def git_common_dir(tree: Path) -> Path:

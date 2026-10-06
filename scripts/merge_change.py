@@ -81,7 +81,9 @@ The script refuses a change, and says why, where:
 - a check, or the submodule setup after the rebase, fails, in which case it
   moves the branch back to the `master` commit it was rebased onto, with
   the change left uncommitted in the worktree and nothing staged;
-- the main tree has uncommitted changes to a path the change touches;
+- the main tree has uncommitted changes to a path the change touches,
+  among them a path the main tree marks skip-worktree whose file there
+  is moved away or holds other content than its commit;
 - a submodule of the worktree holds changes or untracked files, which no
   commit of the worktree's branch can hold;
 - a gitlink in the worktree's index, once the changes are staged, is not
