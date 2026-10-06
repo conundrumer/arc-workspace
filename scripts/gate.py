@@ -73,8 +73,7 @@ times to `new/`. An `--outputs-only` run shares the machine with the other
 heavy commands, and its times measure that load as much as the change, so
 times are judged by one timed gate run on `master` after a batch of merges,
 over the commands the batch can affect (`--affected`).
-A `SLOW` line of that run is filed as a `delay` issue, and blocks no merge.
-A `LOADED` line is not filed as a `delay` issue.
+A `SLOW` line of that run blocks no merge.
 
 `--coverage` traces each cold command: it records the lines of each Python
 file under `src/` and `scripts/` the command runs, through coverage.py, and
