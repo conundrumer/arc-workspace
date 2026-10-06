@@ -243,8 +243,6 @@ bar([Bc, R, Id], P) :- bars.id([Bc, R, P], Id).
 bar_len.item(B, P) :- bar(B, P).
 
 // Two cells of the bar differ in their distance to edge G.
-// @ignore: store — a test of the bar's cells: a stored set drops the test and
-//  keeps no reading of the bar
 .decl bent(b: Bar, g: Dir)
 bent(B, G) :- bar(B, P), bar(B, Q), dir_elem(G), !same_dist(G, P, Q).
 

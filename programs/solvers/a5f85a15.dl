@@ -117,8 +117,6 @@ impl_choice([O, $DerivedAxis()]) :- origin_choice(O), O != $ColumnParity().
     ink(Ky, P) :- grid(Ky, P, Col), !params.bg(Col).
 
     // The diagonal axes on which two ink cells touch.
-    // @ignore: store — the stored axis with params.start_edge gives the
-    //  StoredStep reading, which the concept case holds
     // @claim diagonal-lines
     .init touch = Unanimous<Key, DiagAxis>
     touch.item(Ky, Da) :- ink(Ky, P), neighbor(P, D, Q), ink(Ky, Q), diag_axis_of(D, Da).

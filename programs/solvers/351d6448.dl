@@ -173,10 +173,6 @@ impl_choice([R, Ck, Sc, Ab, Wb, Nb]) :-
     .decl frames(key: Key, k: Frames)  // @input
 
     // A count of cells the grid admits.
-    // @ignore: store — the stored counts are those of the pairs' frame: a
-    //  count past a grid's extent cuts nothing, and a count a larger grid
-    //  needs is missing only where the case is undefined, so the base
-    //  subsumes it
     .decl admitted(key: Key, n: number)
     admitted(Ky, N) :- cell(Ky, P, _), dir_elem(D), dist(P, D, N), N > 0.
 
@@ -189,9 +185,6 @@ impl_choice([R, Ck, Sc, Ab, Wb, Nb]) :-
 
     // A line inside a panel when dividers g wide cut the grid along axis a
     // into n panels.
-    // @ignore: store — the stored lines are those of the pairs' frame: on a
-    //  grid of that frame they are the derived ones, and on another they are
-    //  no line of the grid, so no cut holds and the base subsumes the case
     .decl panel_line(key: Key, a: Axis, g: number, n: number, l: Position)
     panel_line(Ky, A, G, N, L) :-
         line_color.item([Ky, A, L], _), admitted(Ky, G), admitted(Ky, N),
@@ -226,21 +219,14 @@ impl_choice([R, Ck, Sc, Ab, Wb, Nb]) :-
         frames(Ky, [T, C, G, N]), axis_of(T, A),
         cell(Ky, P_grid, Col), divide_slab(P_grid, A, N, G, P_tile, P_intile).
 
-    // @ignore: store — the stored tiles are the pairs' four panels in time
-    //  order: on four panels they are the derived ones, and on another count
-    //  they name tiles the grid lacks, so the base subsumes the case
     .decl succ_panel(key: Key, k: Frames, p_tile: Position, p_tile2: Position)
     succ_panel(Ky, [T, C, G, N], P_tile, P_tile2) :-
         panel(Ky, [T, C, G, N], P_tile, _, _), neighbor(P_tile, T, P_tile2),
         panel(Ky, [T, C, G, N], P_tile2, _, _).
 
-    // @ignore: store — a stored tile of the pairs' four panels, so the base
-    //  subsumes the case, as for succ_panel
     .decl first_step(key: Key, k: Frames, p_tile: Position)
     first_step(Ky, K, P_tile) :- succ_panel(Ky, K, P_tile, _), !succ_panel(Ky, K, _, P_tile).
 
-    // @ignore: store — a stored tile of the pairs' four panels, so the base
-    //  subsumes the case, as for succ_panel
     .decl last_frame(key: Key, k: Frames, p_tile: Position)
     last_frame(Ky, K, P_tile) :- succ_panel(Ky, K, _, P_tile), !succ_panel(Ky, K, P_tile, _).
 
@@ -251,8 +237,9 @@ impl_choice([R, Ck, Sc, Ab, Wb, Nb]) :-
         panel(Ky, K, P_tile, P_intile, Col), panel(Ky, K, P_tile2, P_intile, Col2), Col != Col2.
 
     // The steps whose changes a check compares.
-    // @ignore: store — stored tiles of the pairs' four panels, so the base
-    //  subsumes the case, as for succ_panel
+    // @ignore: store — stored tiles of the pairs' four panels: on four panels
+    //  they are the derived ones, and on another count they name tiles the
+    //  grid lacks, so the base subsumes the case
     .decl checked(key: Key, k: Frames, ck: StepCheck, p_tile: Position)
 
     // The scope s a cell's step is read over.
@@ -285,8 +272,6 @@ impl_choice([R, Ck, Sc, Ab, Wb, Nb]) :-
     .type RunKey = [mo: Motion, p_tile: Position, from: Color, to: Color]
 
     // The sides a motion may move toward.
-    // @ignore: store — the stored side is the one step_dir=stored stores, so the
-    //  case is equivalent to that one
     .decl side(key: Key, ck: StepCheck, sc: StepScope, d: Dir)  // @input
 
     // A cell of a step's recolorings with another cell of them in its scope
@@ -357,9 +342,11 @@ impl_choice([R, Ck, Sc, Ab, Wb, Nb]) :-
 
     // @claim steady-step next-frame
     // @ignore consistent: store — the stored pairs are the pairs' four panels in
-    //  time order, so the base subsumes the case, as for succ_panel
+    //  time order: on four panels they are the derived ones, and on another
+    //  count they name tiles the grid lacks, so the base subsumes the case
     // @ignore demonstration: store — the stored pairs are the pairs' four panels
-    //  in time order, so the base subsumes the case, as for succ_panel
+    //  in time order: on four panels they are the derived ones, and on another
+    //  count they name tiles the grid lacks, so the base subsumes the case
     .init catalog = DemonstrationConsistency<Motion, DemonstratedChoice, Position, Position, Color>
     catalog.value([Ky, M], P_tile, P_intile, Col) :- motion_cell(Ky, M, P_tile, P_intile, Col).
     catalog.demonstration([Ky, [K, Ck, Sc, S]], P_tile, P_tile2) :-
@@ -374,8 +361,9 @@ impl_choice([R, Ck, Sc, Ab, Wb, Nb]) :-
         motion_cell(Ky, M, P_tile, Q, Col2), dist(Q, D_back, 0), Col != Col2.
 
     // The ground: the one color of a frame's back edge.
-    // @ignore: store — the stored tiles are the pairs' four panels, so the base
-    //  subsumes the case, as for succ_panel
+    // @ignore: store — the stored tiles are the pairs' four panels: on four
+    //  panels they are the derived ones, and on another count they name tiles
+    //  the grid lacks, so the base subsumes the case
     .decl back_ground(key: Key, m: MotionKey, p_tile: Position, col: Color)
     back_ground(Ky, M, P_tile, Col) :-
         shift(Ky, M, D, _), opposite(D, D_back),
@@ -486,8 +474,6 @@ impl_choice([R, Ck, Sc, Ab, Wb, Nb]) :-
         change(Ky, K, P_tile, P_intile, _, Col), placed(Ky, K, D, J, P_tile, _, _, _),
         !paint(Ky, K, D, J, P_tile, P_intile, Col).
 
-    // @ignore: store — the stored scope is ZERO, the one scope $WholePanel
-    //  reads on every input, so the case is equivalent to its base
     .decl refuted(key: Key, k: Frames, ck: StepCheck, sc: StepScope, s: Position, d: Dir, j: number)
     refuted(Ky, K, Ck, Sc, S, D, J) :-
         defect(Ky, K, D, J, P_tile, P_intile), checked(Ky, K, Ck, P_tile),
@@ -495,8 +481,6 @@ impl_choice([R, Ck, Sc, Ab, Wb, Nb]) :-
 
     // The last frame with the change moved by a step every checked frame of
     // the scope follows, the step's side kept.
-    // @ignore: store — the stored side is the step's, which step_dir=stored
-    //  stores, so the case is equivalent to that one
     .decl next_frame(key: Key, k: Frames, ck: StepCheck, sc: StepScope, d: Dir, p_intile: Position,
                      col: Color)
     next_frame(Ky, K, Ck, Sc, D, P_intile, Col) :-
@@ -515,12 +499,16 @@ parse.frames($U(), K) :- frames_of(_, _, _, K).
 // The time direction each reading of the panel axis takes.
 .decl time_read(ab: PanelAxis, t: Dir)
 
-// @ignore: store — the stored counts are those of parse.admitted, so the case
-//  that derives them subsumes it, as there
+// @ignore: store — the stored counts are those parse.admitted takes on the
+//  pairs' frame: a count past a grid's extent cuts nothing, and a count a
+//  larger grid needs is missing only where the case is undefined, so the case
+//  that derives them subsumes it
 .decl width_read(wb: DividerWidth, g: number)
 
-// @ignore: store — the stored counts are those of parse.admitted, so the case
-//  that derives them subsumes it, as there
+// @ignore: store — the stored counts are those parse.admitted takes on the
+//  pairs' frame: a count past a grid's extent cuts nothing, and a count a
+//  larger grid needs is missing only where the case is undefined, so the case
+//  that derives them subsumes it
 .decl count_read(nb: PanelCount, n: number)
 
 // The frames each reading of the cut takes, one per time direction it reads.

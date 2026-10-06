@@ -183,16 +183,11 @@
     tile_box.cell([K, G, P_tile], P) :- cut.tile_of([K, G], P, P_tile).
 
     // Each cell's panel and its place in the panel.
-    // @ignore: store — the stored map is defined only on grids of the pairs'
-    //  size, and there it gives the panels FixedPanels cuts, so FixedPanels
-    //  subsumes it
     .decl panel(key: Key, g: Geometry, p: Position, p_tile: Position, p_intile: Position)
     panel(K, G, P, P_tile, P_intile) :-
         cut.tile_of([K, G], P, P_tile), tile_box.box([K, G, P_tile], B), crop(P, B, P_intile).
 
     // The center panel.
-    // @ignore: store — the stored center is defined only on 3×3 panel arrays,
-    //  and there it is the centered panel, so the concept subsumes it
     .decl center(key: Key, g: Geometry, c: Position)
     center(K, G, C) :- panel(K, G, _, C, _), centered(C).
 
@@ -224,10 +219,6 @@
 
     // --- $CornerProbe ---
     // A place in a panel at corner c, or beside it.
-    // @ignore: store — in 3×3 panels the stored places are the ones this
-    //  clause finds; in other panels none matches, CornerProbe falls back at
-    //  every corner and is undefined, so CornerProbe subsumes the stored
-    //  reading
     .decl probe_place(key: Key, g: Geometry, p_intile: Position, c: DiagDir)
     probe_place(K, G, P_intile, Dc) :-
         panel(K, G, _, _, P_intile),

@@ -364,7 +364,6 @@ reach(R, K, P) :- anchor.value(R, P), axis_elem(A), sub_extent(P, A, K).
 reach(R, K, Q) :- reach(R, K, P), dir_elem(D), jump(P, D, K, Q), in(Q, _).
 
 // Some marker lies off the lattice at step k.
-// @ignore: store — the stored reading of the step is StoredStep
 .decl off_step(r: Read, k: number)
 off_step(R, K) :- reach(R, K, _), marker(R, M), !reach(R, K, M).
 

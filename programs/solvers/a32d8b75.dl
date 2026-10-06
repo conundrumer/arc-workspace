@@ -189,9 +189,6 @@
     .decl line_break(ky: Key, a: Axis, l: Position)
     line_break(Ky, A, L) :- cell(Ky, P, Col), !params.sep(Col), axis_elem(A), split(P, A, L, _).
 
-    // @ignore: store — the case that stores the axis is undefined wherever the
-    //  derived axis differs, since a full line of params.sep on the other axis
-    //  crosses the field; the concept case subsumes it
     .decl separator(ky: Key, a: Axis, l: Position)
     separator(Ky, A, L) :- cell(Ky, P, _), axis_elem(A), split(P, A, L, _), !line_break(Ky, A, L).
 
