@@ -11,11 +11,11 @@ from run_profile import (Message, Part, Run, by_agent_type, clock, minutes,
 
 # The terms of a type's budget, which HELP states.
 BUDGET_FACTOR = 2
-WINDOW_RUNS = 5
+MEDIAN_RUNS = 5
 LOW_WAIT_PCT = 10
 
 # A brief line that states a budget, and the opening of a line that words one.
-BUDGET_LINE = re.compile(r"Budget: (\d+(?:\.\d+)?) minutes\.?")
+BUDGET_LINE = re.compile(r"Budget: (\d+(?:\.\d+)?) minutes(?:[.,;:].*)?")
 BUDGET_OPENING = re.compile(r"budget\s*:", re.I)
 LIST_MARKER = re.compile(r"^\s*(?:[-*+]|\d+[.)])?\s*")
 
@@ -59,19 +59,21 @@ def print_budgets(runs: list[Run], since_date: float | None,
                                           "left out of the window").format(run=r.label))
                 elif r.start >= since:
                     window.append(r)
-        if len(window) >= WINDOW_RUNS:
+        if len(window) >= MEDIAN_RUNS:
             basis = mctx("budgeted since {date}").format(date=clock(since))
             chosen = window
         else:
             basis = mctx("budgeted, waits and idle under {pct}% of "
                          "wall").format(pct=LOW_WAIT_PCT)
             chosen = [r for r in rs if low_wait(r)]
-        if not chosen:
-            undecided.append(mctx("{kind}: no budgeted run has waits and idle "
-                                  "under {pct}% of wall, so it has no "
-                                  "budget").format(
-                kind=kind, pct=LOW_WAIT_PCT))
-            continue
+            if len(chosen) < MEDIAN_RUNS:
+                undecided.append(mctx("{kind}: its budgeted runs with waits and "
+                                      "idle under {pct}% of wall number {count}, "
+                                      "fewer than {least}, so it has no "
+                                      "budget").format(
+                    kind=kind, count=len(chosen), pct=LOW_WAIT_PCT,
+                    least=MEDIAN_RUNS))
+                continue
         budget = BUDGET_FACTOR * percentile([r.wall for r in chosen], 50)
         print(f"{kind:<18} {minutes(budget):>7} {len(chosen):>4}  {basis}")
 

@@ -31,11 +31,16 @@ def project_dirs() -> list[Path]:
     return dirs
 
 
+def identical(p: Path, q: Path) -> bool:
+    """Whether the transcripts at `p` and `q` are one file or copies."""
+    return p == q or filecmp.cmp(p, q, shallow=False)
+
+
 def distinct(found: list[Path]) -> list[Path]:
     """`found` less each transcript identical to one before it."""
     out: list[Path] = []
     for p in found:
-        if not any(filecmp.cmp(p, q, shallow=False) for q in out):
+        if not any(identical(p, q) for q in out):
             out.append(p)
     return out
 
@@ -135,7 +140,7 @@ def chain(path: Path) -> list[Path]:
     if not is_subagent(path):
         return [path]
     others = [p for p in distinct(agent_transcripts().get(agent_id(path), []))
-              if not filecmp.cmp(p, path, shallow=False)]
+              if not identical(p, path)]
     run = [path]
     while True:
         before = [p for p in others if p not in run
