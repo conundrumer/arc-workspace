@@ -105,6 +105,7 @@
     //  stages show there. The rule consistent on every pair gives the stage
     //  after the last one. Undefined where no rule is.
     // @witness first-step-gap: ordinary concept
+    // @witness fixed-lead-row: ordinary concept
   | Demo {}
 
 // how the next stage is read from the filled stages
