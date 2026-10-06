@@ -179,8 +179,8 @@ class Snapshot:
         return self.agents
 
     def holding(self, word: str) -> frozenset[int]:
-        #`file_ticket` imports this module.
-        from file_ticket import AGENT_ID
+        #`ticket_log` imports this module.
+        from ticket_log import AGENT_ID
 
         if word not in self.found:
             if AGENT_ID.fullmatch(word):

@@ -1,7 +1,8 @@
 """The numbering of tickets and of sessions, under the main tree's
 `tickets/`: each number and each index reserved by an exclusive create of
-the first free name, and the files of a filing written whole under the
-first free name."""
+the first free name, the files of a filing written whole under the first
+free name, and the path of a ticket found by its number or by the name it
+was filed under before tickets had numbers."""
 
 import fcntl
 import itertools
@@ -13,7 +14,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from controlled_markdown import mctx
-from ticket_vocabulary import ticked
+from ticket_vocabulary import Status, ticked
 from transcripts import Refused, find, forked_from
 
 IDS = "ids"
@@ -139,3 +140,26 @@ def add_session(path: Path, session: str) -> None:
         fcntl.flock(f, fcntl.LOCK_EX)
         if session not in path.read_text().split():
             f.write(f"{session}\n")
+
+
+def statuses(tickets: Path) -> list[Path]:
+    return [tickets / s for s in Status]
+
+
+def ticket_path(tickets: Path, ref: str) -> Path:
+    """The path of the ticket numbered `ref`, or named `ref` where it was
+    filed before tickets had numbers, in whichever status it stands."""
+    stem = ref.removesuffix(".md")
+    if not re.fullmatch(r"[\w.-]+", stem):
+        raise Refused(mctx("`{ref}` is no ticket number or name").format(ref=ref))
+    numbered = bool(TICKET_NUMBER.fullmatch(stem))
+    pattern = f"{stem}_*.md" if numbered else f"{stem}.md"
+    found = sorted(p for d in statuses(tickets) for p in d.glob(pattern))
+    if len(found) == 1:
+        return found[0]
+    if found:
+        raise Refused(mctx("ticket `{ref}` stands at more than one path: {paths}").format(
+            ref=ref, paths=", ".join(str(p) for p in found)))
+    if numbered and (tickets / IDS / stem).exists():
+        raise Refused(mctx("ticket number `{ref}` is reserved, and no ticket has it").format(ref=ref))
+    raise Refused(mctx("no ticket is `{ref}`").format(ref=ref))

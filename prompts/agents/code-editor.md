@@ -27,7 +27,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
     * comment: Six briefs from 2026-09-27 to 2026-10-01 had agents run "before" measurements a file already held.
 - A timing your brief asks for is one run per job, against the seconds already recorded.
 - Where your brief gives the places of `refactor` tickets, fix the defect at each.
-- Before you edit a module, look under `tickets/open/` for a `refactor` ticket that cites it, with a title that ends in `many ideas in one place`. Where one does, split the module first into one module for each subject of that ticket's `Impact` that the module still holds, with the docstring of their package saying what each holds, and then make your edit.
+- Before you edit a module, look under `tickets/open/` for a `refactor` ticket that cites it, with a title that ends in `many ideas in one place`. Where one does, split the module first into one module for each subject of that ticket's `Impact` that the module still holds, with each module's docstring saying what that module holds, and the docstring of their package saying what the package holds as a whole and the rules its modules keep, and then make your edit.
     - The modules of the split, and each file whose imports the split changes, count among the files your brief gives.
     - Where the whole split would run past your budget, move only the subjects your edit touches into modules beside it, and leave the rest at the path the ticket cites.
     - Give in your report each such ticket whose module you split, with the part of it left unsplit, where one is.

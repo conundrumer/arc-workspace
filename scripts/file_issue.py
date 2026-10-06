@@ -11,12 +11,12 @@ from engine import checkout
 from handbook.paths import importable
 
 # `scripts/` is no package: a test loads this module by its path, with
-# `scripts/` off `sys.path`, and `file_ticket` imports from there.
+# `scripts/` off `sys.path`, and the modules below import from there.
 importable(checkout.scripts())
 
-from file_ticket import (NAME_PART, Filing, logged, main_tickets,  # noqa: E402
-                         run, statuses)
-from ticket_numbers import write_after  # noqa: E402
+from file_ticket import NAME_PART, Filing, main_tickets, run  # noqa: E402
+from ticket_log import logged  # noqa: E402
+from ticket_numbers import statuses, write_after  # noqa: E402
 from ticket_vocabulary import Kind, Status  # noqa: E402
 from transcripts import Refused  # noqa: E402
 

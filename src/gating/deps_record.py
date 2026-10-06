@@ -51,8 +51,6 @@ class Record:
 
     @staticmethod
     def traced(deps_dir: Path) -> "Record":
-        """The dependencies of every command whose traced run wrote them
-        under `deps_dir`, with the `HEAD` commit."""
         deps = {p.stem: Deps.from_json(json.loads(p.read_text()))
                 for p in sorted(deps_dir.glob("*.json"))}
         return Record(head(), deps)

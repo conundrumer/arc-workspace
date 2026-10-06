@@ -4,8 +4,7 @@ result is a typed value of its own, not findings, holds its own timed-out
 and failed runs, and its render function prints them, so that the pass
 line and the exit code come from findings alone. A section's lines are
 ordered as typed values before they print, never by a match over printed
-text, and every printed case name goes through `solver.names`. The rows of
-`relation` are in `relation`."""
+text, and every printed case name goes through `solver.names`."""
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass

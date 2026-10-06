@@ -23,8 +23,8 @@ too.
 A document may open with a front matter block, `---` to `---`. `parse` keeps it
 verbatim, `write` puts it back unchanged, and a render leaves it out.
 
-`renderers` holds the renderers. This module holds the rest: the node tree,
-the parser, the formatter, the checks of prose in code, and the registry.
+This module holds the node tree, the parser, the formatter, the checks of
+prose in code, and the registry.
 """
 
 from __future__ import annotations

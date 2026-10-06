@@ -1,5 +1,5 @@
-"""The checks and surveys over the solver model, the finding type, and the
-one rendering module.
+"""The checks and surveys over the solver model, and the findings they
+give and their rendering.
 
 A check answers whether the solver meets a principle, and there is one
 check per principle. A question that no run of one task answers, as one

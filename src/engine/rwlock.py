@@ -1,11 +1,8 @@
 """The readers-writer lock over the repository's heavy commands, which
 every worktree of the repository and every session on the machine share. A
-`run_dl.py` command, a pytest run, each command of an `--outputs-only` gate
-run and each warm command of a timed gate run hold it shared, and run
-alongside each other. A timed gate run holds it exclusively once, over its
-whole cold pass, so that its cold commands share the machine with no other
-heavy command. A gate run holds it shared for each other command it runs,
-and holds nothing between two such commands.
+`run_dl.py` command and a pytest run hold it shared, and run alongside each
+other, and a holder that needs the machine to itself holds it exclusively.
+`scripts/gate.py` gives the holds a gate run takes.
 
 The writer has priority: a writer that waits marks itself pending, and a
 reader that asks after the mark waits until the writer is done, so that a
@@ -21,9 +18,8 @@ files themselves mean nothing.
 A wait lasts as long as the holders it waits for: a writer waits for every
 reader that holds the lock, and every reader that asks after it waits for
 the writer too. A command that has to wait says so on stderr, once, before
-it waits, and a gate run says so once for its cold pass's hold and once
-for all its commands' shared holds (`Notice`), since the text of a wait
-names its holders.
+it waits, and the holder of several holds that share a `Notice` says so
+once for all of them, since the text of a wait names its holders.
 
 A holder names its hold in `HOLD_ENV`, which every process it starts
 inherits, and a gate run names each command's hold in that command's

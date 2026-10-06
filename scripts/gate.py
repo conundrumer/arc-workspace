@@ -14,20 +14,21 @@ accepted times and the dependency record are read, and the exit status.
 The arguments and options follow them, and then the stems each command runs
 on.
 
-A command runs on the stems its `Command.stems` gives, which the end of
-`--help` lists for each command. Every command reads the solver files from
-`tests/gate/solvers/` and the witness files from `tests/gate/witnesses/`.
+A command runs on the stems its definition in `gating.commands` gives,
+which the end of `--help` lists for each command. Every command reads the
+solver files from `tests/gate/solvers/` and the witness files from
+`tests/gate/witnesses/`.
 On each stem, the commands run in the order given, which is the order a
 pass runs them, sharing one run cache from empty: this is the cold pass.
 Then the same sequence runs again with every result cached: this is the
 warm pass. The stems run in parallel, other than in the cold pass of a
-timed run, which runs one command at a time and starts the warm pass once
-it is done.
+timed run, which runs one command at a time.
 
 A command's outputs are its output, in `<key>.txt`, the witness file, in
-`<key>.wit.json`, where its subcommand is in `WITNESS_FILE_SUBS`, and its
-exit code, in `<key>.rc`, with `<key>` its name and stem joined by `-`. A
-command stopped at `TIME_LIMIT` has the exit code `TIMEOUT_RC`.
+`<key>.wit.json`, where its subcommand is in
+`gating.commands.WITNESS_FILE_SUBS`, and its exit code, in `<key>.rc`, with
+`<key>` its name and stem joined by `-`. A command stopped at
+`gating.run.TIME_LIMIT` has the exit code `gating.run.TIMEOUT_RC`.
 
 The cold pass is compared with the accepted outputs and the accepted times,
 so a command's exit code is compared with the accepted one.
@@ -82,54 +83,53 @@ lists, through an audit hook. `<out-dir>/gate/cov/` then holds each
 command's coverage data, which `coverage combine` reads, and
 `<out-dir>/gate/deps/` each command's dependencies.
 With `--coverage`, each command given that runs on a stem list chosen from
-`STEMS` (`dropped_stems`), and runs on each of its own stems, also runs,
-traced, on each stem of `STEMS` it drops, at its place in the stem's
-sequence, its outputs, coverage data and dependencies written under
-`<out-dir>/gate/dropped/` and compared with none. Above the last line, a
-`coverage:` line then gives, for each such command, the lines of `src/` and
-`scripts/` that its runs on all of `STEMS` cover and its runs on its own
-stems do not, the run cache's pruning lines (`pruning_lines`) left out.
+`gating.commands.STEMS` (`gating.commands.dropped_stems`), and runs on each
+of its own stems, also runs, traced, on each stem of `STEMS` it drops, at
+its place in the stem's sequence, its outputs, coverage data and
+dependencies written under `<out-dir>/gate/dropped/` and compared with
+none. Above the last line, a `coverage:` line then gives, for each such
+command, the lines of `src/` and `scripts/` that its runs on all of `STEMS`
+cover and its runs on its own stems do not, the run cache's pruning lines
+(`gating.deps.pruning_lines`) left out.
 A traced run that wrote no dependencies counts as covering no line, and a
 `coverage:` line names the command and each stem of such a run.
 One more `coverage:` line names each command that runs on only part of
 its own stems, as `--affected` may run it, and so gets none.
 
 `--record-deps` traces every command as `--coverage` does, and writes their
-dependencies, with the `HEAD` commit, to the dependency record
-(`deps_file`). It runs on a checkout with no change to a tracked file
-against `HEAD`, so that the lines it records are the lines of that commit.
+dependencies, with the `HEAD` commit, to the dependency record. It runs on
+a checkout with no change to a tracked file against `HEAD`, so that the
+lines it records are the lines of that commit.
 
 `--affected` runs only the commands that the change can affect, as
-`affects` decides, and every command where no dependency record stands. The
-change is the difference between the commit `<base>`, which the change
-branched from, and the checkout. Its first line names the record and the
-base, and counts the commands it runs. In a timed run, it also judges each
-command that `loaded.json` keeps, whether or not the change can affect it,
-and a second line counts those the change cannot affect. A command it runs
-on a stem only for the cache state of a later command it judges gives no
-line, runs in the cold pass alone, and writes its outputs under
+`gating.deps.affects` decides, and every command where no dependency record
+stands. The change is the difference between the commit `<base>`, which the
+change branched from, and the checkout. Its first line names the record and
+the base, and counts the commands it runs. In a timed run, it also judges
+each command that `loaded.json` keeps, whether or not the change can affect
+it, and a second line counts those the change cannot affect. A command it
+runs on a stem only for the cache state of a later command it judges gives
+no line, runs in the cold pass alone, and writes its outputs under
 `<out-dir>/gate/prefix/`. In an `--outputs-only` run, where it runs every
 command, on a checkout with no change to a tracked file against `HEAD`, it
 traces them as `--record-deps` does, and writes their dependencies, with
-the `HEAD` commit, to `<out-dir>/gate/record.json` (`RECORD_OUT`).
+the `HEAD` commit, to `<out-dir>/gate/record.json`.
 
-`--adopt-record` runs no command: it writes the `RECORD_OUT` that an
-earlier run wrote under `<out-dir>` as the dependency record, where its
-commit is the `HEAD` commit of the checkout it runs in, and fails where it
-is another.
-Where no `RECORD_OUT` stands, it says so and leaves the dependency record
-as it is.
+`--adopt-record` runs no command: it writes the `<out-dir>/gate/record.json`
+that an earlier run wrote as the dependency record, where its commit is the
+`HEAD` commit of the checkout it runs in, and fails where it is another.
+Where none stands, it says so and leaves the dependency record as it is.
 
 A command that takes a witness file is given one at
 `<out-dir>/gate/wit/cur/`, copied from `tests/gate/frozen/` before the
-command runs. The `record` commands, `grid` and `relation` read their
-input files from `tests/gate/inputs/`. The `context` command renders each of its readers' contexts from
-`<out-dir>/gate/documents/`, copied from `tests/gate/documents/` before the
-commands run, so a change to the checkout's own documents changes none of
-its outputs. Its readers are the session, codex, and each name
-`tests/gate/documents/` defines for a reader that takes a name. In an output, the path of
-`<out-dir>/gate/` is written as `<out>/gate/`, and a time the command prints
-is dropped.
+command runs. The `record` commands, `grid` and `relation` read their input
+files from `tests/gate/inputs/`. The `context` command renders each of its
+readers' contexts from `<out-dir>/gate/documents/`, copied from
+`tests/gate/documents/` before the commands run, so a change to the
+checkout's own documents changes none of its outputs. Its readers are the
+session, codex, and each name `tests/gate/documents/` defines for a reader
+that takes a name. In an output, the path of `<out-dir>/gate/` is written
+as `<out>/gate/`, and a time the command prints is dropped.
 
 `<out-dir>/gate/new/` holds the cold pass's outputs and times,
 `<out-dir>/gate/new/warm/` the warm pass's outputs, `<out-dir>/gate/times.txt`
@@ -150,11 +150,11 @@ Its accepted outputs, its accepted times, in its own `times.json`, and the
 commands kept for a timed run, in its own `loaded.json`, are read in place
 of those above.
 
-`--accept` takes an `<out-dir>` with no `gate/` under it, runs the gate, and
-then writes each cold time and output as accepted where no accepted time or
-output of its name stands, and over one that stands only with `--replace`,
-so that an accepting run after a regression keeps the faster times. `--accept` and `--outputs-only` are
-not given together.
+`--accept` takes an `<out-dir>` with no `gate/` under it, runs the gate,
+and then writes each cold time and output as accepted where no accepted
+time or output of its name stands, and over one that stands only with
+`--replace`, so that an accepting run after a regression keeps the faster
+times. `--accept` and `--outputs-only` are not given together.
 
 Exit status: without `--accept`, 1 when the last line counts a line of any
 kind, and 0 otherwise; with `--accept`, 0 once the accepted times and
@@ -174,7 +174,7 @@ from gating.cpu import CpuSample
 from gating.deps import TRACE, trace
 from gating.deps_record import RECORD_OUT, Record, adopt_record, affected, head_clean
 from gating.records import deps_file, loaded_file, read_loaded
-from gating.run import Gate
+from gating.run import Gate, Role
 
 
 def main(argv: Sequence[str]) -> int:
@@ -263,7 +263,7 @@ def run_gate(argv: Sequence[str]) -> int:
     print("gate: " + ", ".join(f"{n} {k}" for k, n in counts.items()))
     record_to = deps_file() if a.record_deps else gate.dir / RECORD_OUT if records else None
     if record_to is not None:
-        Record.traced(gate.deps).write(record_to)
+        Record.traced(gate.traced_dirs(Role.JUDGED)[0]).write(record_to)
         print(mctx("deps: the dependencies of {n} commands are written to {path}").format(
             n=len(keys), path=record_to))
     if a.accept:

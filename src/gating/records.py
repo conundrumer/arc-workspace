@@ -36,8 +36,6 @@ def times_file(accepted: Path) -> Path:
 
 
 def loaded_file(accepted: Path) -> Path:
-    """The commands kept for a timed run to judge, beside the accepted
-    times of `accepted`."""
     return times_file(accepted).with_name(LOADED_FILE)
 
 

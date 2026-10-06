@@ -5,8 +5,6 @@ A card states one question, shows the task's pairs, shows the code slices
 the question is about, shows the grids a solver produces for a witness
 input, and ends with a numbered list of options. The user answers by index.
 
-`study.card_spec` holds what a card spec may state.
-
 A card is one file under work/cards/ that the Artifact tool publishes as it
 stands. The tool wraps the file in its own document skeleton, so the page
 opens with its `<title>` and its `<style>`, and holds no `<html>`, `<head>`

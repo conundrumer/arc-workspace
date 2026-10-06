@@ -1,23 +1,19 @@
-"""The agents a run launched, the calls that resumed them, the agents
-pending to it and those whose work is open under it, and the reports of an
-agent that reached its parent."""
+"""The agents a run launched, the calls that resumed them, and the agents
+pending to it, as the HELP of `profile_runs` gives them."""
 
-from collections.abc import Callable
 from dataclasses import dataclass
-from enum import Enum
 from functools import cache
 from pathlib import Path
 from typing import Any
 
+from agent_reports import Report, report_ids, reports_after
 from command_labels import AGENT_TOOLS
 from controlled_markdown import mctx
 from quota import epoch
-from run_reads import (MAIN, LaunchStatus, Status, agent_messages, blocks, is_prompt,
-                       in_background, launch_status, notifications, notified, parent_id,
-                       parent_label, read_meta, results_by_call, run_entries,
-                       session_agents, session_of, session_transcripts, text_of)
-from senders import INTERRUPTED
-from transcripts import Entry, agent_id, chain, entries_back, main_transcript, read_entries
+from run_reads import (blocks, in_background, notified, parent_label, read_meta,
+                       results_by_call, run_entries, session_agents, session_of,
+                       session_transcripts)
+from transcripts import Entry, agent_id, chain, read_entries
 
 # The openings of the message of a SendMessage result where the call resumed
 # the agent it was sent to, and where it queued the message to a running one.
@@ -71,12 +67,8 @@ class Launch:
     call: str
     entries: list[Entry]
 
-    def reports(self, since: float, undecided: list[str]) -> list["Report"]:
-        """The reports of the agent among `entries` after `since`, in the
-        order of their time."""
-        return sorted((r for e in self.entries if epoch(e["timestamp"]) > since
-                       for r in entry_reports(e, self.agent, self.call, undecided)),
-                      key=lambda r: r.time)
+    def reports(self, since: float, undecided: list[str]) -> list[Report]:
+        return reports_after(self.entries, since, self.agent, self.call, undecided)
 
     @property
     def pending(self) -> bool:
@@ -237,272 +229,4 @@ def session_notified(session: Path, agents: set[str],
             for v in notified(e):
                 if v in agents:
                     note_latest(out, v, epoch(e["timestamp"]))
-    return out
-
-
-# The types of a transcript's message entries, the entries of a turn: the
-# message that opens it and its work.
-MESSAGE_TYPES = ("user", "assistant")
-
-
-def turns(entries: list[Entry]) -> tuple[set[int], set[int]]:
-    """The indices of the entries that start a turn and of those that end
-    one. A prompt starts a turn when the next message entry is the model's;
-    a local command, such as /compact, gives the model none. An assistant
-    entry with no tool call ends a turn when it says so, or when the next
-    message entry is a prompt, and the result of a call that ends the turn,
-    such as SubagentHandback, ends one."""
-    starts: set[int] = set()
-    ends: set[int] = set()
-    nxt: Entry | None = None
-    for i in range(len(entries) - 1, -1, -1):
-        e = entries[i]
-        if is_prompt(e) and nxt is not None and nxt.get("type") == "assistant":
-            starts.add(i)
-        if e.get("type") == "assistant" and not blocks(e, "tool_use"):
-            stop = (e.get("message") or {}).get("stop_reason")
-            if stop in ("end_turn", "stop_sequence") or (
-                    nxt is not None and is_prompt(nxt)):
-                ends.add(i)
-        if e.get("toolEndsTurn"):
-            ends.add(i)
-        if e.get("type") in MESSAGE_TYPES or is_prompt(e):
-            nxt = e
-    return starts, ends
-
-
-def idle_after(idle: bool, i: int, entry: Entry, starts: set[int],
-               ends: set[int]) -> bool:
-    """Whether a run is idle after its `i`-th entry, from `idle`, whether it
-    was before it."""
-    if i in ends:
-        return True
-    return idle and entry.get("type") != "assistant" and i not in starts
-
-
-def turn_ended(entries: list[Entry]) -> bool:
-    """Whether the run whose entries are `entries`, or those from one of its
-    timestamped assistant entries on, has ended its turn, or its last
-    message entry is the harness's note that the user interrupted it. An
-    entry with no timestamp moves no turn."""
-    starts, ends = turns(entries)
-    idle = False
-    for i, e in enumerate(entries):
-        if e.get("timestamp"):
-            idle = idle_after(idle, i, e, starts, ends)
-    last = [e for e in entries if e.get("type") in MESSAGE_TYPES][-1:]
-    return idle or any(e.get("type") == "user" and text_of(
-        (e.get("message") or {}).get("content")).startswith(INTERRUPTED)
-        for e in last)
-
-
-@cache
-def has_ended(path: Path) -> bool:
-    """`turn_ended` over the run at `path`, read from its last entry back to
-    its last timestamped assistant entry, which settles it."""
-    tail: list[Entry] = []
-    for p in reversed(chain(path)):
-        for e in entries_back(p):
-            tail.append(e)
-            if e.get("type") == "assistant" and e.get("timestamp"):
-                return turn_ended(tail[::-1])
-    return turn_ended(tail[::-1])
-
-
-def turn_after(path: Path, t: float, undecided: list[str]) -> bool:
-    """Whether the transcript at `path` holds an entry of a turn timestamped
-    after `t`. An entry of a turn with no timestamp counts as not, and an
-    `undecided` line names the run."""
-    out = False
-    for e in read_entries(path):
-        if e.get("type") not in MESSAGE_TYPES:
-            continue
-        if not e.get("timestamp"):
-            undecided.append(mctx("{run}: a `{type}` entry of its transcript has no "
-                                  "timestamp, so it counts as before its parent's "
-                                  "last sign that it reported").format(
-                run=agent_id(path), type=e.get("type")))
-        elif epoch(e["timestamp"]) > t:
-            out = True
-    return out
-
-
-def last_time(path: Path, holds: Callable[[Entry], bool] | None = None) -> float | None:
-    """The time of the last timestamped entry of the run at `path`, or with
-    `holds` the last that `holds` holds of, read from its end, or None where
-    none is."""
-    for p in reversed(chain(path)):
-        for e in entries_back(p):
-            if e.get("timestamp") and (holds is None or holds(e)):
-                return epoch(e["timestamp"])
-    return None
-
-
-def is_turn_entry(entry: Entry) -> bool:
-    return entry.get("type") in MESSAGE_TYPES
-
-
-@dataclass
-class Listed:
-    """An agent `running_agents` gives: the label of its parent, its
-    transcript, its launch, whether its turn has ended, and where it has,
-    the time of its last `user` or `assistant` entry, or None where none
-    gives a time."""
-    parent: str
-    path: Path
-    launch: Launch
-    ended: bool
-    end: float | None
-
-
-def reported_since(a: Launch, since: float | None,
-                   kinds: frozenset["ReportKind"]) -> bool:
-    """Whether the run that launched `a` holds a report of it of one of
-    `kinds` after `since`. The `undecided` lines of that read are dropped:
-    a report it finds settles the agent whatever they name, and where it
-    finds none, the agent's report is read again with them."""
-    return since is not None and any(r.kind in kinds for r in a.reports(since, []))
-
-
-def listing(parent: str, a: Launch, child: Path,
-            undecided: list[str]) -> Listed | None:
-    """The agent of `a`, whose transcript is at `child`, where its work may
-    be open: where its turn is in progress, or where it has ended and the
-    run that launched it holds no report of it after the latest message it
-    received from anyone, which is no earlier than its parent's latest
-    message to it, so its caller reads its report after that message. An
-    agent with a turn-ending report after its last timestamped entry has
-    ended its turn after every message it received, and only the end of its
-    transcript is read."""
-    if reported_since(a, last_time(child), TURN_ENDED):
-        return None
-    if not has_ended(child) and (
-            a.done is None or (child.stat().st_mtime > a.done
-                               and turn_after(child, a.done, undecided))):
-        return Listed(parent, child, a, False, None)
-    if reported_since(a, last_time(child, is_prompt), frozenset(ReportKind)):
-        return None
-    return Listed(parent, child, a, True, last_time(child, is_turn_entry))
-
-
-def running_agents(path: Path, undecided: list[str]) -> list[Listed]:
-    """The agents under the run at `path` whose work may be open, as
-    `listing` gives each, each parent's agents after it."""
-    parents = run_launches(path)[1]
-    out: list[Listed] = []
-    for a in launches(path, undecided):
-        child = a.path
-        if child is None:
-            continue
-        if (listed := listing(parent_label(path), a, child, undecided)):
-            out.append(listed)
-        if agent_id(child) in parents:
-            out.extend(running_agents(child, undecided))
-    return out
-
-
-# Reports.
-
-# The opening of the note of a notification that the agent stopped with work
-# of its own still running.
-STILL_RUNNING = "This agent stopped with background work of its own still running"
-
-
-class ReportKind(Enum):
-    """The entries of a parent's transcript that give a report of an agent,
-    as HELP gives them."""
-    NOTIFICATION = "notification"
-    RESULT = "result"
-    MESSAGE = "message"
-
-
-# The kinds of report that the harness gives the parent once the agent's turn
-# has ended.
-TURN_ENDED = frozenset({ReportKind.NOTIFICATION, ReportKind.RESULT})
-
-
-@dataclass
-class Report:
-    kind: ReportKind
-    time: float
-    text: str
-
-
-def parent_transcripts(path: Path) -> list[Path]:
-    """The transcripts of the parent of the subagent at `path`, under the
-    sessions of that subagent's run: the main transcript of each, or the
-    transcripts of the parent's run."""
-    parent = parent_id(path)
-    sessions = dict.fromkeys(session_of(p) for p in chain(path))
-    if parent == MAIN:
-        return [m for s in sessions if (m := main_transcript(s)).is_file()]
-    runs = [chain(a) for s in sessions if (a := session_agents(s).get(parent))]
-    return list(dict.fromkeys(p for run in runs for p in run))
-
-
-def reports(path: Path, since: float, undecided: list[str]) -> list[Report] | None:
-    """The entries after `since` of the transcripts of the parent of the
-    subagent at `path` that give a report of it, as HELP gives them, in the
-    order of their time, or None where no transcript of its parent is
-    found. Only the lines that hold its agent id or the id of the call that
-    launched it are read, which every such entry's line holds one of."""
-    aid = agent_id(path)
-    found = parent_transcripts(path)
-    if not found:
-        undecided.append(mctx("{run}: no transcript of its parent is found, so "
-                              "whether a report reached it is unknown").format(run=aid))
-        return None
-    call = (read_meta(path) or {}).get("toolUseId")
-    if not call:
-        undecided.append(mctx("{run}: no `.meta.json` of its run gives a `toolUseId`, "
-                              "so the result of its launch cannot be matched").format(run=aid))
-    words = {aid, call} if call else {aid}
-    return sorted((r for p in found for e in read_entries(p, naming=words)
-                   if e.get("timestamp") and epoch(e["timestamp"]) > since
-                   for r in entry_reports(e, aid, call, undecided)),
-                  key=lambda r: r.time)
-
-
-def report_ids(entry: Entry) -> list[str]:
-    """The ids by which an entry of a parent's transcript may give a report
-    of an agent: the ids of each notification it gives, the agent id of
-    each message from an agent it gives, and the id of each call it gives
-    the result of. None for an entry with no timestamp or of the model."""
-    if not entry.get("timestamp") or entry.get("type") == "assistant":
-        return []
-    ids = [*notified(entry),
-           *(who for who, _ in (agent_messages(entry) if is_prompt(entry) else [])),
-           *(b["tool_use_id"] for b in blocks(entry, "tool_result")
-             if b.get("tool_use_id"))]
-    return list(dict.fromkeys(ids))
-
-
-def entry_reports(e: Entry, aid: str | None, call: str | None,
-                  undecided: list[str]) -> list[Report]:
-    """The reports of the agent `aid`, launched by call `call`, that the
-    timestamped entry `e` of its parent's transcripts gives, as HELP gives
-    them."""
-    if e.get("type") == "assistant":
-        return []
-    t = epoch(e["timestamp"])
-    out: list[Report] = []
-    for n in notifications(e):
-        if (aid is None or aid not in n.ids) and call not in n.ids:
-            continue
-        if n.status is None:
-            undecided.append(mctx("{run}: a notification of it at {time} gives "
-                                  "the status `{status}`, of no known form").format(
-                run=aid, time=e["timestamp"], status=n.status_text))
-        elif (n.status is Status.COMPLETED and n.result is not None
-                and not (n.note or "").startswith(STILL_RUNNING)):
-            out.append(Report(ReportKind.NOTIFICATION, t, n.result.strip()))
-    if is_prompt(e):
-        out.extend(Report(ReportKind.MESSAGE, t, text)
-                   for who, text in agent_messages(e) if aid is not None and who == aid)
-    result = e.get("toolUseResult")
-    if call and isinstance(result, dict) and any(
-            b.get("tool_use_id") == call for b in blocks(e, "tool_result")):
-        if launch_status(result, undecided, call) is LaunchStatus.COMPLETED:
-            out.append(Report(ReportKind.RESULT, t,
-                              text_of(result.get("content")).strip()))
     return out

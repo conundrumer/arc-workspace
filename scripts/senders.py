@@ -1,4 +1,4 @@
-"""Who a message to a running agent is from: its parent, an agent it did
+"""Who a message an agent's run receives is from: its parent, an agent it did
 not launch, another sender, or one that is unknown, as the HELP of
 `profile_runs` gives them."""
 
@@ -13,8 +13,8 @@ INTERRUPTED = "[Request interrupted by user"
 
 
 class Origin(Enum):
-    """The kinds of origin the harness gives a message it delivers to a
-    running agent: a notification of the agent's backgrounded work, and a
+    """The kinds of origin the harness gives a message it delivers to an
+    agent's run: a notification of the agent's backgrounded work, and a
     message from the coordinator, the user or another agent."""
     TASK_NOTIFICATION = "task-notification"
     COORDINATOR = "coordinator"

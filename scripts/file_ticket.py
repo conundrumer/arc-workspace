@@ -3,15 +3,12 @@ worktree of it, print a ticket's path, and make a ticket's transitions and
 write its log lines. `HELP`, which `--help` prints, says how an agent files,
 and each subcommand's own help, which its `--help` prints, how an agent calls it."""
 
-import os
 import re
 import subprocess
 import sys
 import textwrap
-import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from enum import StrEnum
 from pathlib import Path
 
 from arc.task import task_file
@@ -20,15 +17,15 @@ from engine import checkout
 from handbook.paths import importable
 
 # `scripts/` is no package: a test loads this module by its path, with
-# `scripts/` off `sys.path`, and `ticket_numbers`, `ticket_vocabulary` and
-# `transcripts` import from there.
+# `scripts/` off `sys.path`, and the modules below import from there.
 importable(checkout.scripts())
 
-from ticket_numbers import (IDS, SESSION_VAR, SESSIONS,  # noqa: E402
-                            TICKET_NUMBER, reserve, session_id, session_index,
-                            write_new)
-from ticket_vocabulary import (Domain, Kind, Resolution, Status,  # noqa: E402
-                               filer_kinds, ticked)
+from ticket_form import (DEFECT_SECTIONS, FIELD, LOG, SECTIONS,  # noqa: E402
+                         checked_kind, heading, sections_example)
+from ticket_log import AGENT_ID, TIME_FORM, Wait, logged, write_log  # noqa: E402
+from ticket_numbers import (SESSION_VAR, SESSIONS, reserve,  # noqa: E402
+                            session_id, session_index, ticket_path, write_new)
+from ticket_vocabulary import Domain, Kind, Resolution, Status, ticked  # noqa: E402
 from transcripts import Refused  # noqa: E402
 
 HELP = mctx("""
@@ -87,146 +84,16 @@ LOG_HELP = mctx("""
     """)
 
 
-
-
-FIELD = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
-"""A field of a ticket's name: kebab words, with no `_`, which separates
-the fields."""
-
 COMMIT = re.compile(r"[0-9a-f]{7,40}")
-
-AGENT_ID = re.compile(r"a[0-9a-f]{16}")
 
 CHANGE_SUBJECT = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)+")
 """The subject of a ticket that asks for a change: its namespace, then
 kebab words."""
 
 ASKS_CHANGE = frozenset({Kind.CHANGE, Kind.REQUEST})
-"""The kinds of a ticket that asks for a change, which takes `change` and
-`CHANGE_SUBJECT` as its domain and subject."""
 
-
-FRONT = r"---\nkind: (?P<kind>\S+)\n(?P<fields>(?:[a-z-]+: .*\n)*)---\n"
-
-TICKET_HEAD = re.compile(FRONT + "# ")
-"""The front matter and title mark of a ticket, or of an issue filed before
-tickets, in the text of a filing command."""
-
-SECTIONS = {Kind.CHANGE: ("Intent", "Motivation", "Scope"),
-            Kind.REQUEST: ("Words", "Transcript")}
-"""The sections of each kind that has its own; every other kind has
-`DEFECT_SECTIONS`."""
-
-DEFECT_SECTIONS = ("Impact", "Evidence")
-
-
-HEADING_MARK = "## "
-
-
-def heading(section: str) -> str:
-    return f"{HEADING_MARK}{section}"
-
-
-def sections_example(sections: tuple[str, ...]) -> str:
-    """`sections` as the form in `HELP` shows them after its title, at the
-    indent of that form."""
-    return "".join(f"\n\n    {heading(s)}\n    <its {s.lower()}>" for s in sections)
-
-
-def body_form(kind: Kind) -> re.Pattern[str]:
-    """The title and sections that follow a `kind` ticket's front matter."""
-    title = r"# .+\n" if kind is Kind.CHANGE else r"# .+: .+\n"
-    sections = SECTIONS.get(kind, DEFECT_SECTIONS)
-    middle = r"(?:.*\n)*".join(f"{heading(s)}\n" for s in sections[:-1])
-    return re.compile(title + r"\n" + middle + r"(?:.*\n)*" + heading(sections[-1]) + r"(?:\n|$)")
-
-
-FIELDS = {Kind.CHANGE: frozenset({"depends-on", "priority"})}
-"""The front matter fields besides `kind` that each kind may give."""
-
-LOG = heading("Log")
-
-TIME_FORM = "%Y-%m-%dT%H:%M:%SZ"
-"""The form of a log line's time, in UTC."""
-
-HEADING = re.compile(rf"^{re.escape(HEADING_MARK)}.*$", re.MULTILINE)
-
-RESOLUTION_WORD = re.compile(r"[a-z]+(?:-[a-z]+)*")
-
-
-class Wait(StrEnum):
-    """What a ticket under `blocked` waits on, the word the note of the line
-    into `blocked` opens with."""
-    USER = "user"
-    CHANGE = "change"
-
-
-WAIT = re.compile(rf"(?:{Wait.USER}|{Wait.CHANGE} (?P<change>{TICKET_NUMBER.pattern}))(?![\w-])")
-"""The opening of the note of a line into `blocked`."""
-
-LOG_LINE = re.compile(rf"^.*? (?P<status>{'|'.join(Status)}) \[(?P<agent>[^\]\s]+)"
-                      rf"(?: (?P<id>{AGENT_ID.pattern}))?\](?:: (?P<note>.*))?$", re.MULTILINE)
-"""A log line, of whatever time form, as the command or a hand wrote it."""
 
 NAME_PART = re.compile(r"[^\s/]+")
-
-
-def statuses(tickets: Path) -> list[Path]:
-    return [tickets / s for s in Status]
-
-
-def check_depends_on(tickets: Path, value: str) -> None:
-    """Refuses a `depends-on` value that is not a list of numbers of
-    tickets the ticket tracker holds."""
-    for n in (part.strip() for part in value.split(",")):
-        if not TICKET_NUMBER.fullmatch(n):
-            raise Refused(mctx("`{n}` in `depends-on` is not a ticket number").format(n=n))
-        ticket_path(tickets, n)
-
-
-def checked_kind(tickets: Path, agent: str, text: str) -> Kind:
-    """The kind of the ticket `text`, refused where `text` does not have
-    the form `--help` shows or `agent` may not file that kind."""
-    head = re.match(FRONT, text)
-    if not head:
-        raise Refused(mctx("the ticket on stdin does not have the form `--help` shows"))
-    try:
-        kind = Kind(head.group("kind"))
-    except ValueError:
-        raise Refused(mctx("`{kind}` is no ticket kind").format(kind=head.group("kind")))
-    kinds = filer_kinds(agent)
-    if kind not in kinds:
-        raise Refused(mctx("`{agent}` files no `{kind}`: it files {kinds}").format(
-            agent=agent, kind=kind, kinds=ticked(k for k in Kind if k in kinds)))
-    keys: list[str] = []
-    for line in head.group("fields").splitlines():
-        key, value = line.split(": ", 1)
-        if key in keys:
-            raise Refused(mctx("the front matter gives `{key}` twice").format(key=key))
-        keys.append(key)
-        if key not in FIELDS.get(kind, frozenset()):
-            raise Refused(mctx("a `{kind}` gives no `{key}`").format(kind=kind, key=key))
-        if key == "priority" and not (value.isdigit() and 0 <= int(value) <= 100):
-            raise Refused(mctx("`priority` `{value}` is not an integer from 0 to 100").format(value=value))
-        if key == "depends-on":
-            check_depends_on(tickets, value)
-    if not body_form(kind).match(text, head.end()):
-        raise Refused(mctx("the ticket on stdin does not have the form `--help` shows"))
-    if re.search(f"^{LOG}$", text, re.MULTILINE):
-        raise Refused(mctx("the ticket on stdin has a `{log}` section, which the command writes").format(log=LOG))
-    return kind
-
-
-def logged(text: str, status: Status, agent: str) -> str:
-    """`text` with a `## Log` that gives its filing time."""
-    return f"{text.rstrip(chr(10))}\n\n{LOG}\n{log_line(status, agent, None, 'filed')}"
-
-
-def log_line(status: Status, agent: str, agent_id: str | None, note: str | None) -> str:
-    """A log line, stamped now."""
-    holder = f"{agent} {agent_id}" if agent_id else agent
-    line = f"{time.strftime(TIME_FORM, time.gmtime())} {status} [{holder}]"
-    return f"{line}: {note}\n" if note else f"{line}\n"
 
 
 def check_subject(tickets: Path, domain: Domain, subject: str) -> None:
@@ -274,147 +141,6 @@ def file_ticket(tickets: Path, domain: str, subject: str, agent: str, text: str)
     return write_new(tickets / status, logged(text, status, agent), [name])
 
 
-def ticket_path(tickets: Path, ref: str) -> Path:
-    """The path of the ticket numbered `ref`, or named `ref` where it was
-    filed before tickets had numbers, in whichever status it stands."""
-    stem = ref.removesuffix(".md")
-    if not re.fullmatch(r"[\w.-]+", stem):
-        raise Refused(mctx("`{ref}` is no ticket number or name").format(ref=ref))
-    numbered = bool(TICKET_NUMBER.fullmatch(stem))
-    pattern = f"{stem}_*.md" if numbered else f"{stem}.md"
-    found = sorted(p for d in statuses(tickets) for p in d.glob(pattern))
-    if len(found) == 1:
-        return found[0]
-    if found:
-        raise Refused(mctx("ticket `{ref}` stands at more than one path: {paths}").format(
-            ref=ref, paths=", ".join(str(p) for p in found)))
-    if numbered and (tickets / IDS / stem).exists():
-        raise Refused(mctx("ticket number `{ref}` is reserved, and no ticket has it").format(ref=ref))
-    raise Refused(mctx("no ticket is `{ref}`").format(ref=ref))
-
-
-def read_ticket(path: Path) -> str:
-    """The text of the ticket at `path`, refused where its file moved after
-    `ticket_path` found it."""
-    try:
-        return path.read_text()
-    except FileNotFoundError:
-        raise Refused(mctx("{path} moved before this call could read it").format(path=path))
-
-
-def check_line(status: Status, moves: bool, agent: str, agent_id: str | None,
-               note: str | None) -> None:
-    """Refuses a log line the ticket notes do not give."""
-    if not FIELD.fullmatch(agent):
-        raise Refused(mctx("`{agent}` is not kebab words").format(agent=agent))
-    if agent_id is not None and not AGENT_ID.fullmatch(agent_id):
-        raise Refused(mctx("`{id}` is no agent id").format(id=agent_id))
-    if agent_id is None and status is Status.ASSIGNED:
-        raise Refused(mctx("an `assigned` line takes your agent id in `--id`"))
-    if note is not None and (not note.strip() or "\n" in note or "\r" in note):
-        raise Refused(mctx("the note is not one line of text"))
-    if moves and status is Status.CLOSED:
-        word = RESOLUTION_WORD.match(note or "")
-        if not word or word.group() not in set(Resolution):
-            raise Refused(mctx("the note of a move into `closed` opens with one of {resolutions}").format(
-                resolutions=ticked(Resolution)))
-
-
-def check_wait(tickets: Path, note: str | None) -> None:
-    """Refuses the note of a line into `blocked` that does not open with
-    what the ticket waits on, or that names as the change it waits on a
-    ticket that is no `change`."""
-    wait = WAIT.match(note or "")
-    if wait is None:
-        raise Refused(mctx("the note of a move into `{blocked}` opens with `{user}` or `{change} <number>`").format(
-            blocked=Status.BLOCKED, user=Wait.USER, change=Wait.CHANGE))
-    if wait["change"] is None:
-        return
-    path = ticket_path(tickets, wait["change"])
-    head = re.match(FRONT, read_ticket(path))
-    if not head or head["kind"] != Kind.CHANGE:
-        raise Refused(mctx("ticket `{n}` is no `change`").format(n=wait["change"]))
-
-
-def log_lines(text: str) -> list[re.Match[str]]:
-    """The lines of `text`'s log that have the form of a log line."""
-    log = [m for m in HEADING.finditer(text) if m.group() == LOG]
-    return list(LOG_LINE.finditer(text, log[-1].end())) if log else []
-
-
-def holder(text: str) -> str | None:
-    """The agent id of the holder of the ticket `text`: the id of the last
-    `assigned` line that gives one, in its bracket or, in a line written
-    before the bracket held it, as its note's first word, among the lines
-    of the log's final run of `assigned` lines. None where none of them
-    gives one."""
-    for line in reversed(log_lines(text)):
-        if line["status"] != Status.ASSIGNED:
-            break
-        if line["id"]:
-            return line["id"]
-        first = (line["note"] or "").split(" ", 1)[0].rstrip(";,.:")
-        if AGENT_ID.fullmatch(first):
-            return first
-    return None
-
-
-def check_take(text: str, agent_id: str) -> None:
-    """Refuses an `assigned` line that gives `agent_id` on a ticket already
-    under `assigned`, unless `agent_id` holds it: such a line on a ticket
-    another agent took is the move that fails."""
-    held = holder(text)
-    if held != agent_id:
-        raise Refused(mctx("the ticket stands under `assigned`, held by {holder}").format(
-            holder=f"`{held}`" if held else "no agent"))
-
-
-def status_of(word: str) -> Status:
-    try:
-        return Status(word)
-    except ValueError:
-        raise Refused(mctx("`{status}` is no status: the statuses are {statuses}").format(
-            status=word, statuses=ticked(Status)))
-
-
-def write_log(tickets: Path, ref: str, status: str, agent: str, source: str, agent_id: str | None,
-              note: str | None) -> Path:
-    """Moves ticket `ref` from `source`'s directory to `status`'s where
-    they differ, then appends a log line to it, and returns its path. The
-    move is a rename, and a call refuses where the ticket no longer stands
-    in `source`, so of two calls that move one file, the later one is
-    refused, as `mv` from `source`'s directory would be."""
-    to, origin = status_of(status), status_of(source)
-    path = ticket_path(tickets, ref)
-    if path.parent.name != origin:
-        raise Refused(mctx("ticket `{ref}` stands in `{actual}`, not `{origin}`").format(
-            ref=ref, actual=path.parent.name, origin=origin))
-    moves = origin != to
-    check_line(to, moves, agent, agent_id, note)
-    if moves and to is Status.BLOCKED:
-        check_wait(tickets, note)
-    text = read_ticket(path)
-    headings = HEADING.findall(text)
-    if not headings or headings[-1] != LOG:
-        raise Refused(mctx("`{log}` is not the last section of {path}").format(log=LOG, path=path))
-    if not moves and to is Status.ASSIGNED and agent_id:
-        check_take(text, agent_id)
-    if moves:
-        target = tickets / to / path.name
-        target.parent.mkdir(exist_ok=True)
-        try:
-            os.rename(path, target)
-        except FileNotFoundError:
-            raise Refused(mctx("{path} moved before this call could move it").format(path=path))
-        path = target
-    with path.open("a") as f:
-        # A line written by hand may lack its newline.
-        if not path.read_text().endswith("\n"):
-            f.write("\n")
-        f.write(log_line(to, agent, agent_id, note))
-    return path
-
-
 def main_tickets() -> Path:
     return checkout.main_worktree(checkout.ROOT) / "tickets"
 
@@ -433,7 +159,6 @@ class Filing:
 
 
 TICKET_FILING = Filing("file_ticket.py", "file_issue.py")
-
 
 
 def filed_in_main(filing: Filing, args: list[str]) -> int | None:
@@ -545,8 +270,6 @@ def main(args: list[str]) -> int:
                    sub.act, sub.filing, args)
     return run(args, HELP.format(**values), 3, lambda domain, subject, agent: file_ticket(
         main_tickets(), domain, subject, agent, sys.stdin.read()), TICKET_FILING, args)
-
-
 
 
 if __name__ == "__main__":

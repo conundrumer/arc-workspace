@@ -53,15 +53,24 @@ _DROPPED = "runner and lib:"
 OUT_MARK = "<out>/gate/"
 
 
+class Label(Enum):
+    """The label of a run's line in `times.txt`."""
+
+    JUDGED = "pass1"
+    WARM = "pass2"
+    DROPPED = "dropped"
+    PREFIX = "prefix"
+
+
 class Role(Enum):
     """What a cold run of a command on a stem is for."""
 
-    JUDGED = "pass1"
+    JUDGED = Label.JUDGED
     """Its outputs, and in a timed run its time, are judged, and in a timed
     run it runs in the warm pass too."""
-    DROPPED = "dropped"
+    DROPPED = Label.DROPPED
     """It runs, traced, on a stem of `STEMS` the command drops."""
-    PREFIX = "prefix"
+    PREFIX = Label.PREFIX
     """It runs only for the cache state that the judged commands after it
     on the stem start from."""
 
@@ -118,8 +127,6 @@ class Gate:
         self.new = self.dir / "new"
         self.warm = self.new / "warm"
         self.wit = self.dir / "wit" / "cur"
-        self.deps = self.dir / "deps"
-        self.cov = self.dir / "cov"
         self.dropped = self.dir / "dropped"
         """The outputs, coverage data and dependencies of the runs on the
         stems of `STEMS` the commands drop."""
@@ -144,6 +151,15 @@ class Gate:
         self.log_lock = threading.Lock()
         self.notice = rwlock.Notice()
         """The run's wait line for the shared holds of its commands."""
+
+    def traced_dirs(self, role: Role) -> tuple[Path, Path]:
+        """The directories of the dependencies and of the coverage data of
+        the traced runs of `role`."""
+        base = self.dropped if role is Role.DROPPED else self.dir
+        return base / "deps", base / "cov"
+
+    def deps_of(self, role: Role, key: str) -> Path:
+        return self.traced_dirs(role)[0] / f"{key}.json"
 
     def env(self, cache: Path, hold: rwlock.Hold) -> dict[str, str]:
         return {**os.environ,
@@ -186,11 +202,9 @@ class Gate:
             shutil.copyfile(frozen_witness(stem), wf)
         key = cmd.key(stem)
         script = [str(checkout.scripts() / cmd.script), *cmd.argv(stem, wf)]
-        deps, cov = ((self.dropped / "deps", self.dropped / "cov") if role is Role.DROPPED
-                     else (self.deps, self.cov))
         if self.traced and cold:
-            script = [str(checkout.ROOT / GATE_SCRIPT), TRACE, str(deps / f"{key}.json"),
-                      str(cov / f".coverage.{key}"), *script]
+            script = [str(checkout.ROOT / GATE_SCRIPT), TRACE, str(self.deps_of(role, key)),
+                      str(self.traced_dirs(role)[1] / f".coverage.{key}"), *script]
         argv = ["uv", "run", "--project", str(checkout.ROOT), "python", *script]
         base = self.directory(role, cold) / key
         with self.held(under) as hold:
@@ -216,9 +230,9 @@ class Gate:
         if "wit.json" in cmd.exts:
             shutil.copyfile(wf, f"{base}.wit.json")
         Path(f"{base}.rc").write_text(f"{rc}\n")
-        label = role.value if cold or role is not Role.JUDGED else "pass2"
+        label = role.value if cold else Label.WARM
         with self.log_lock, open(self.dir / "times.txt", "a") as fh:
-            fh.write(f"{cmd.name} {stem} {label} rc={rc} wall={wall}s\n")
+            fh.write(f"{cmd.name} {stem} {label.value} rc={rc} wall={wall}s\n")
         return rc, wall, outside
 
     def directory(self, role: Role, cold: bool) -> Path:
@@ -281,11 +295,9 @@ class Gate:
 
     @contextlib.contextmanager
     def cold_hold(self, runs: bool) -> Iterator[rwlock.Hold | None]:
-        """In a timed run whose cold pass `runs` a command, the heavy
-        commands' lock held exclusively over the whole cold pass, or the
-        hold the process started under; the hold the cold commands run
-        under. None in an `--outputs-only` run, where each command takes
-        its own shared hold, and where the pass runs no command."""
+        """The hold the cold commands run under, or None where each takes
+        its own. Where the process started under a hold, `rwlock.taken`
+        gives that hold."""
         if not (self.timed and runs):
             yield None
             return
@@ -313,9 +325,8 @@ class Gate:
             dropped = self.dropped_keys(c, keys)
             if not dropped:
                 continue
-            own_deps = {s: self.deps / f"{c.key(s)}.json" for s in c.stems}
-            dropped_deps = {s: self.dropped / "deps" / f"{c.key(s)}.json"
-                            for s in dropped_stems(c)}
+            own_deps = {s: self.deps_of(Role.JUDGED, c.key(s)) for s in c.stems}
+            dropped_deps = {s: self.deps_of(Role.DROPPED, c.key(s)) for s in dropped_stems(c)}
             no_data = [s for s, d in (*own_deps.items(), *dropped_deps.items())
                        if not d.exists()]
             if no_data:
@@ -345,14 +356,12 @@ class Gate:
     def run(self, cmds: Sequence[GateCommand], keys: set[str]) -> list[Line]:
         """The cold pass of `cmds` on their stems, and in a timed run the
         warm pass after it, each stem's lines written to its log; the
-        lines, the stems in order. The cold pass of a timed run runs one command at a
-        time under `cold_hold`, and writes the commands it kept or judged
-        to `loaded_file` before it releases the hold."""
-        for d in (self.new, self.warm, self.wit, self.deps, self.cov):
+        lines, the stems in order."""
+        for d in (self.new, self.warm, self.wit, *self.traced_dirs(Role.JUDGED)):
             d.mkdir(parents=True, exist_ok=True)
         dropped = {k for c in cmds for k in self.dropped_keys(c, keys)}
         if dropped:
-            for d in (self.dropped / "deps", self.dropped / "cov"):
+            for d in self.traced_dirs(Role.DROPPED):
                 d.mkdir(parents=True, exist_ok=True)
         shutil.rmtree(self.documents, ignore_errors=True)
         shutil.copytree(DOCUMENTS, self.documents)

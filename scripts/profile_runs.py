@@ -1,6 +1,6 @@
 """Profile agent runs from their Claude Code transcripts: where each run's
-wall time goes, the budget of each agent type, and the agents running under
-a run. `--help` prints HELP."""
+wall time goes, the budget of each agent type, and the agents under a run
+whose work is open, as `--running` lists them. `--help` prints HELP."""
 
 import argparse
 import sys
@@ -15,9 +15,10 @@ console_importable()
 # `scripts/` off `sys.path`, and the modules below import from there.
 importable(checkout.scripts())
 
-from agent_launches import Listed, pending_agents, running_agents  # noqa: E402
+from agent_launches import pending_agents  # noqa: E402
 from budgets import (BUDGET_FACTOR, LOW_WAIT_PCT, WINDOW_RUNS,  # noqa: E402
                      print_budgets)
+from open_agents import Listed, running_agents  # noqa: E402
 from quota import epoch  # noqa: E402
 from run_prints import (RECENT_CALLS, print_messages,  # noqa: E402
                         print_report, print_running)
@@ -112,7 +113,7 @@ def main(argv: list[str]) -> int:
     types = set(args.type.split(",")) if args.type else None
     undecided: list[str] = []
     runs: list[Run] = []
-    listed: list[tuple[Listed, Run]] = []
+    listed: list[Listed] = []
     if [bool(args.ids), bool(args.running), bool(args.pending)].count(True) != 1:
         print(mctx("refused: give one of IDs, `--running ID` and `--pending ID`"),
               file=sys.stderr)
@@ -122,8 +123,7 @@ def main(argv: list[str]) -> int:
             for agent in pending_agents(find(args.pending), undecided):
                 print(agent)
         elif args.running:
-            listed = [(a, profile(a.path, undecided)) for a in
-                      running_agents(find(args.running), undecided)]
+            listed = running_agents(find(args.running), undecided)
         else:
             paths = list(dict.fromkeys(p for ident in args.ids
                                        for p in transcripts(ident)))

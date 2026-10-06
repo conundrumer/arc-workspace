@@ -147,7 +147,6 @@ def _case_on(case: str, run: Run) -> str:
 
 
 def cases_not_given(run: Run, cases: Iterable[str]) -> list[tuple[str, str]]:
-    """Each of `cases` the run does not give, with its fault line."""
     given = given_cases(run)
     gives = _listed(given) or "no case"
     return [(case, f"{_case_on(case, run)}: the run gives {gives}")

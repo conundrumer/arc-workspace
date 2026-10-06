@@ -9,7 +9,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from agent_launches import idle_after, run_launches, turns
+from agent_launches import run_launches
+from agent_turns import idle_after, turns
 from command_labels import AGENT_TOOLS, POLL, call_command, command_label
 from controlled_markdown import mctx
 from quota import epoch

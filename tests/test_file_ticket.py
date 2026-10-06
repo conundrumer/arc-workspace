@@ -24,7 +24,7 @@ def test_racing_filers_get_distinct_numbers(tmp_path: Path, monkeypatch: pytest.
     with ThreadPoolExecutor(8) as pool:
         paths = list(pool.map(lambda i: module.file_ticket(
             tmp_path, "agent", "a" + "0" * 16, "code-editor", TICKET + f"{i}\n"), range(16)))
-    numbers = [module.TICKET_NUMBER.fullmatch(p.name.split("_")[0]) for p in paths]
+    numbers = [script("ticket_numbers").TICKET_NUMBER.fullmatch(p.name.split("_")[0]) for p in paths]
     assert {m["session"] for m in numbers} == {"2"}
     assert sorted(int(m["n"]) for m in numbers) == list(range(4, 20))
     assert sorted(p.name for p in (tmp_path / "open").iterdir()) == sorted(p.name for p in paths)

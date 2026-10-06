@@ -36,7 +36,7 @@ def check(hook: dict[str, Any]) -> None:
     caller."""
     from agent_launches import pending_agents
     from command_labels import runs_sleep
-    from file_ticket import AGENT_ID
+    from ticket_log import AGENT_ID
     from run_reads import blocks, session_agents, session_of
     from transcripts import main_transcript, read_entries
 
