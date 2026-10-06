@@ -37,6 +37,20 @@ class Table:
 
 
 @dataclass
+class Option:
+    """One answer the user may give, with the cases whose grids stand for it
+    where the options are competing readings."""
+
+    text: str
+    # Each by its name as `Card.dropped` gives it. The page labels each such
+    # case's grid with this option's number. Where any option of a card
+    # names cases, the render fails on a name the run on a witness does not
+    # give, and on a case that run gives that no option names. Naming them
+    # filters no witness. A card names them or gives `dropped`, not both.
+    cases: list[str] = field(default_factory=list[str])
+
+
+@dataclass
 class Card:
     # Names the file written to work/cards/<name>.html, and heads the page.
     name: str
@@ -55,8 +69,8 @@ class Card:
     # The user answers by index, so the options carry the whole decision:
     # each states a position rather than a direction, they exclude each
     # other, and together they cover the answers. The expected answer goes
-    # first.
-    options: list[str] = field(default_factory=list[str])
+    # first. In JSON, an option is its text, or `{"text": ..., "cases": [...]}`.
+    options: list[Option] = field(default_factory=list[Option])
     tables: list[Table] = field(default_factory=list[Table])
     # The `.dl` file to run on each witness, defaulting to the task's own.
     solver: str | None = None
@@ -114,7 +128,44 @@ def card_from_dict(data: dict) -> Card:
         witness: dict(cases)
         for witness, cases in values.pop("captions", {}).items()
     }
-    return Card(codes=codes, tables=tables, captions=captions, **values)
+    options = [_option(o) for o in values.pop("options", [])]
+    card = Card(codes=codes, tables=tables, captions=captions,
+                options=options, **values)
+    _check_option_cases(card)
+    return card
+
+
+def _option(entry: object) -> Option:
+    """An Option from its JSON form. Any form but the two the `options`
+    comment gives is an error: a bare string as `cases` would read as one
+    case per character."""
+    if isinstance(entry, str):
+        return Option(entry)
+    form = 'an option is its text or {"text": ..., "cases": [...]}'
+    if not isinstance(entry, dict) or set(entry) - {"text", "cases"}:
+        raise ValueError(f"{form}, not {entry!r}")
+    text, cases = entry.get("text"), entry.get("cases", [])
+    if not isinstance(text, str) or not isinstance(cases, list) \
+            or not all(isinstance(c, str) for c in cases):
+        raise ValueError(f"{form}, not {entry!r}")
+    return Option(text, list(cases))
+
+
+def _check_option_cases(card: Card) -> None:
+    """Fails on a card that gives both `dropped` and an option's cases, and
+    on a case named under two options."""
+    if card.dropped and any(o.cases for o in card.options):
+        raise ValueError("a card gives `dropped` or the cases of its "
+                         "options, not both")
+    seen: dict[str, int] = {}
+    twice = []
+    for number, option in enumerate(card.options, 1):
+        for case in option.cases:
+            if seen.get(case, number) != number:
+                twice.append(f"{case!r} under options {seen[case]} and {number}")
+            seen.setdefault(case, number)
+    if twice:
+        raise ValueError("cases named under two options: " + "; ".join(twice))
 
 
 def load_card(path: str | Path) -> Card:

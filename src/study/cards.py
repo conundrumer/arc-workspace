@@ -34,7 +34,7 @@ from solver.problems import Fault, WitnessFileRole
 from solver.solve import Assignment, Grids, examples, outcomes, witnessed
 from solver.vocabulary import NUMBER
 from solver.witness import Undefined
-from study.card_spec import Card, CodeSlice, Table
+from study.card_spec import Card, CodeSlice, Option, Table
 
 REPO_ROOT = checkout.ROOT
 
@@ -262,12 +262,22 @@ def _failure_text(solver: Solver, failure: RunFailure | Fault) -> str:
     return "\n".join(failure_lines(solver, failure))
 
 
+def option_of(card: Card, case: str) -> int | None:
+    """The number of the option that names the case; None where no option
+    names it."""
+    return next((number for number, option in enumerate(card.options, 1)
+                 if case in option.cases), None)
+
+
 def _candidate_html(cand: Candidate, card: Card, witness: str) -> str:
     """A case's grid on a witness, or its error text, with the card's
     caption for that witness and case under it."""
     label = cand.label
     if card.dropped:
         label += " · dropped" if cand.label in card.dropped else " · kept"
+    option = option_of(card, cand.label)
+    if option is not None:
+        label += f" · option {option}"
     if cand.error:
         parts = [
             f'<div class="glabel">{html.escape(label)}</div>'
@@ -342,6 +352,15 @@ def run_witnesses(card: Card) -> list[Run]:
     return runs
 
 
+def given_cases(run: Run) -> list[str]:
+    return list(dict.fromkeys(c.label for c in run.candidates))
+
+
+def _gives(given: list[str]) -> str:
+    """The cases a run gives, as a failure message lists them."""
+    return ", ".join(map(repr, given)) or "no case"
+
+
 def diverges(run: Run, dropped: list[str]) -> bool:
     """Whether a dropped case's grid differs from every kept case's grid."""
     kept = [c.grid for c in run.candidates if c.label not in dropped]
@@ -393,8 +412,8 @@ def check_captions(card: Card, runs: list[Run]) -> None:
             wrong.append(f"witness {witness!r}: the page {may} "
                          f"{', '.join(map(repr, labels))}")
         for run in on:
-            given = list(dict.fromkeys(c.label for c in run.candidates))
-            gives = ", ".join(map(repr, given)) or "no case"
+            given = given_cases(run)
+            gives = _gives(given)
             wrong.extend(
                 f"case {case!r} on witness {witness!r}: the run gives {gives}"
                 for case in cases if case not in given
@@ -404,11 +423,37 @@ def check_captions(card: Card, runs: list[Run]) -> None:
                          + "\n".join(wrong))
 
 
+def check_option_cases(card: Card, runs: list[Run]) -> None:
+    """Where any option names cases: fails on each named case the run on a
+    witness does not give, and on each case that run gives that no option
+    names."""
+    named = [case for option in card.options for case in option.cases]
+    if not named:
+        return
+    wrong = []
+    for run in runs:
+        given = given_cases(run)
+        gives = _gives(given)
+        wrong.extend(
+            f"option {option_of(card, case)} names {case!r}: the run on "
+            f"witness {run.label!r} gives {gives}"
+            for case in named if case not in given
+        )
+        wrong.extend(
+            f"case {case!r} on witness {run.label!r}: no option names it"
+            for case in given if case not in named
+        )
+    if wrong:
+        raise ValueError("the cases of the options do not match the cases "
+                         "of the run:\n" + "\n".join(wrong))
+
+
 def witness_section(card: Card) -> list[str]:
     """The witness blocks, and for a card with dropped cases a note when no
     witness input separates a dropped case from the kept ones."""
     runs, fell_back = drawn_runs(card)
     check_captions(card, runs)
+    check_option_cases(card, runs)
     note = (
         "<p>No candidate input separates the dropped case from the kept ones. "
         "The task's first train input follows.</p>"
@@ -441,7 +486,7 @@ def render(card: Card) -> str:
     body.extend(render_table(t) for t in card.tables)
     if card.options:
         body.append("<h2>Options</h2><ol>")
-        body.extend(f"<li>{html.escape(o)}</li>" for o in card.options)
+        body.extend(f"<li>{html.escape(o.text)}</li>" for o in card.options)
         body.append("</ol>")
     return (
         "<!doctype html>\n<html><head><meta charset=\"utf-8\">"
@@ -492,9 +537,10 @@ def theta_card() -> Card:
                       path, (89, 99), [93, 97]),
         ],
         options=[
-            "One parameter: the two facts state one value, and the second is "
-            "derived from the first.",
-            "Two parameters: a sibling task could assign them different values.",
+            Option("One parameter: the two facts state one value, and the "
+                   "second is derived from the first."),
+            Option("Two parameters: a sibling task could assign them "
+                   "different values."),
         ],
         tables=[table],
     )
