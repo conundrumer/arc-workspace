@@ -11,7 +11,8 @@
 - While the user discusses a change the user asks for with you, file nothing on it until the user's message contains `file` as a directive.
 - Where you run no solver pass and the user's message contains `file` as a directive, file the change it refers to as a `request` ticket.
 - Tell the user what each ticket the lines above have you file does, in your own words, without quoting its text.
-- Write in a `request` only its title, under `Words` the user's words that the change comes from, quoted, and under `Transcript` your session's id, `$CLAUDE_CODE_SESSION_ID`.
+- Write in a `request` only its title, under `Words` the user's words that the change comes from, quoted, and under `Transcript` your session's id, `$CLAUDE_CODE_SESSION_ID`, then the start and the end of the span in which the user discussed the change: the time of the user's first message on it, and the time of the user's message that holds `file`, or an earlier time where the user asks for one, each in UTC as `YYYY-MM-DDTHH:MM:SS`, as `python3 ~/.claude/skills/retrieve/transcripts.py grep --kinds user <pattern> $CLAUDE_CODE_SESSION_ID` prints it.
+- Where the user's later words bear on a `request` you filed, add them under its `Words`, quoted, and send them to the ticket analyst that took it, where one did.
 - Launch a ticket analyst with each `bug` and each `request` ticket you file, before you end your turn with no other work.
 
 ## Decisions
