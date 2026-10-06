@@ -3,6 +3,7 @@ project directories, and read their entries."""
 
 import filecmp
 import json
+import re
 from functools import cache
 from pathlib import Path
 from typing import Any
@@ -137,19 +138,73 @@ def chain(path: Path) -> list[Path]:
         run = before + run + after
 
 
+class Snapshot:
+    """The lines of a transcript as they stood when it was read, with the
+    lines that hold each word asked about, and the entries of the lines
+    parsed for such a word."""
+
+    def __init__(self, path: Path) -> None:
+        self.lines = path.read_bytes().splitlines()
+        self.found: dict[str, frozenset[int]] = {}
+        self.agents: dict[str, frozenset[int]] | None = None
+        self.parsed: dict[int, list[Entry]] = {}
+
+    def by_agent(self, agent_id: re.Pattern[str]) -> dict[str, frozenset[int]]:
+        """The lines that hold each agent id, found in one pass."""
+        if self.agents is None:
+            # A lookahead finds each of two ids that overlap.
+            at = re.compile(rb"(?=(%s))" % agent_id.pattern.encode())
+            index: dict[str, set[int]] = {}
+            for i, line in enumerate(self.lines):
+                for aid in at.findall(line):
+                    index.setdefault(aid.decode(), set()).add(i)
+            self.agents = {aid: frozenset(v) for aid, v in index.items()}
+        return self.agents
+
+    def holding(self, word: str) -> frozenset[int]:
+        """The indexes of the lines that hold `word`."""
+        # `file_ticket` imports this module.
+        from file_ticket import AGENT_ID
+
+        if word not in self.found:
+            if AGENT_ID.fullmatch(word):
+                self.found[word] = self.by_agent(AGENT_ID).get(word, frozenset())
+            else:
+                w = word.encode()
+                self.found[word] = frozenset(
+                    i for i, line in enumerate(self.lines) if w in line)
+        return self.found[word]
+
+    def entry(self, i: int) -> list[Entry]:
+        if i not in self.parsed:
+            self.parsed[i] = parse(self.lines[i])
+        return self.parsed[i]
+
+
+def parse(line: str | bytes) -> list[Entry]:
+    """The entry of `line`, or none where it is no JSON."""
+    try:
+        return [json.loads(line)]
+    except json.JSONDecodeError:
+        return []
+
+
+@cache
+def snapshot(path: Path) -> Snapshot:
+    """The transcript at `path` as it stood when this process first read
+    it."""
+    return Snapshot(path)
+
+
 def read_entries(path: Path, naming: set[str] | None = None) -> list[Entry]:
-    """The entries of the transcript at `path`, or with `naming` only those
-    whose line holds one of its words, which spares parsing the rest."""
-    entries: list[Entry] = []
-    with path.open() as fh:
-        for line in fh:
-            if naming is not None and not any(w in line for w in naming):
-                continue
-            try:
-                entries.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-    return entries
+    """The entries of the transcript at `path` as it stood when this process
+    first read it, or with `naming` only those whose line holds one of its
+    words, which spares parsing the rest."""
+    snap = snapshot(path)
+    if naming is None:
+        return [e for line in snap.lines for e in parse(line)]
+    lines = sorted(frozenset[int]().union(*(snap.holding(w) for w in naming)))
+    return [e for i in lines for e in snap.entry(i)]
 
 
 def forked_from(path: Path) -> str | None:
@@ -158,10 +213,7 @@ def forked_from(path: Path) -> str | None:
     None where that line names none."""
     with path.open() as fh:
         first = fh.readline()
-    try:
-        entry = json.loads(first)
-    except json.JSONDecodeError:
-        entry = None
+    entry = next(iter(parse(first)), None)
     if not isinstance(entry, dict):
         raise Refused(mctx("the first line of {path} is no transcript entry").format(path=path))
     fork = entry.get("forkedFrom")

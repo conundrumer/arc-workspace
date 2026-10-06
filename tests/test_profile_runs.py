@@ -3,6 +3,7 @@ shifts without any failure, and the agents pending to a run, which a hook
 reads to deny a wait and which a misread entry drops without any failure."""
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ import pytest
 from tests.conftest import script
 
 profile_runs = script("profile_runs")
+transcripts = sys.modules["transcripts"]
 Part = profile_runs.Part
 
 
@@ -140,6 +142,7 @@ def test_pending(tmp_path: Path) -> None:
     assert profile_runs.pending_agents(path, []) == [A1, A3, A4]
     (agents / f"agent-{A2}.jsonl").write_text(
         "".join(json.dumps(e) + "\n" for e in elsewhere))
+    transcripts.snapshot.cache_clear()
     assert profile_runs.pending_agents(path, []) == [A1, A4]
     resumer = [assistant(90, send("r1", "editor")),
                user(91, answer("r1"), {"success": True, "message": "Resuming agent a000000",
@@ -147,4 +150,5 @@ def test_pending(tmp_path: Path) -> None:
     (agents / f"agent-{A5}.jsonl").write_text(
         "".join(json.dumps(e) + "\n" for e in resumer))
     profile_runs.session_agents.cache_clear()
+    transcripts.snapshot.cache_clear()
     assert profile_runs.pending_agents(path, []) == [A1, A2, A4]
