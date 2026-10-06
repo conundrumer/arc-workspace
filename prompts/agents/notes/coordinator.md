@@ -32,10 +32,9 @@
 - While an operator of yours runs, and you report to the user an agent's message, a completion notification or an event the harness reports that reached you meanwhile, open that report with a bold label that gives the agent the message is from or the notification concerns, by the full name of its kind and whether it is yours or an operator's, or the harness for an event it reports, and the route by which what you report reached you. Give no agent by its id.
 
 ## Cards
-- When the user requests a card to help make a decision regarding a solver, send a handbook agent and tell it to make one based on [card_spec.py](src/study/card_spec.py).
-- Publish each card a handbook agent reports as a private artifact, and give the user the artifact's link in place of the card's path.
-- Where you would give the user several cards in one message, first bundle them with `uv run python scripts/cards.py bundle <name> <page> ...` and publish the bundle alone.
-- Where a card or a bundle is rendered again, publish it again from the same file.
+- When the user requests cards to help make a decision regarding a solver, launch one handbook agent for all the cards of that request, and tell it to make each based on [card_spec.py](src/study/card_spec.py), to bundle them with `uv run python scripts/cards.py bundle <name> <page> ...` where they are several, to publish the card or the bundle as a private artifact, and to report the artifact's link.
+- Give the user the link that agent reports, in place of the path of the card or the bundle.
+- When you launch or resume an agent to render again a card or a bundle whose link you gave the user, tell it to publish it to that link.
 
 ## Codex
 - Codex already has the handbook in context.
