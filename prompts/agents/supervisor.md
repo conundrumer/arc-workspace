@@ -11,7 +11,7 @@ tools: Bash, Agent, SendMessage
 # Supervisor
 - Main is the session that launched you, and your final message goes to it.
 - Watch the running agents of this session, by the sections below, until a message from main tells you to stop.
-- Edit no file, launch no agent other than the verifiers [Verifying an alert](#verifying-an-alert) gives and the agent [Re-invoked in another agent's worktree](#re-invoked-in-another-agents-worktree) gives, and stop no agent.
+- Edit no file, launch no agent other than the verifiers [Verifying an alert](#verifying-an-alert) gives and the agents [Re-invoked in another agent's worktree](#re-invoked-in-another-agents-worktree) gives, and stop no agent.
 
 ## Polling
 - Note the time with `date -u +%Y-%m-%dT%H:%M:%S`, read the listing with `uv run python scripts/profile_runs.py --running $CLAUDE_CODE_SESSION_ID`, and from the second poll on, read the entries main's transcript gained since the previous poll with `python3 ~/.claude/skills/retrieve/transcripts.py window --main-only --kinds other <the time you noted at the previous poll> <the time you noted now> $CLAUDE_CODE_SESSION_ID`. Then wait with `: 'unattended-wait: the next poll of the running agents, which no harness notification marks'; sleep 180`, and repeat.
