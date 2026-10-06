@@ -5,7 +5,8 @@ from collections.abc import Sequence
 from checker.finding import Finding
 from checker.judged import NO_TASK
 from checker.payloads.branches import DeterminationDiffPayload
-from checker.render import finding_lines, in_line_order, line_text
+from checker.render import finding_lines, in_line_order
+from checker.render.locations import line_text
 from checker.render.branches import diff_line, differing, finding_text
 from checker.runs import NoTask
 from controlled_markdown import mctx

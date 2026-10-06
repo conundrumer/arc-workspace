@@ -8,7 +8,7 @@ from pathlib import Path
 
 from checker import Runs
 from checker.branches import entry_outcomes
-from checker.render import commands, relation
+from checker.render import recording, relation, run_pairs
 from cli import text
 from cli.common import (
     LIMITS,
@@ -19,7 +19,8 @@ from cli.common import (
     failure_lines,
     written_grids,
 )
-from cli.record import assign_of, assignment, shown_lines
+from cli.record import shown_lines
+from cli.witness_file import assign_of, assignment
 from engine import Resolved
 from engine.program import RelationName, Scope
 from solver import solve, witness
@@ -54,7 +55,7 @@ def cmd_grid(arg: str, path: str | None = None, every: bool = False,
     (`solver.names.name`); with `only`, the
     case each name denotes, or the solver's cases that stand for it. Then
     each constructor of `Choice` that no case of the solver takes
-    (`commands.untaken_constructor_lines`)."""
+    (`recording.untaken_constructor_lines`)."""
     eng = engine()
     solver = command_solver(arg, eng, task=False)
     if solver is None:
@@ -102,7 +103,7 @@ def cmd_grid(arg: str, path: str | None = None, every: bool = False,
     if not isinstance(of_solver, tuple):
         print("\n".join(failure_lines(solver, of_solver)), file=sys.stderr)
         return 1
-    untaken = commands.untaken_constructor_lines(solver, of_solver)
+    untaken = recording.untaken_constructor_lines(solver, of_solver)
     print("\n".join([*lines, *([""] + untaken if untaken else [])]))
     return 0
 
@@ -155,7 +156,7 @@ def cmd_relation(arg: str, args: list[str],
         return 2
     ran = runs.relations_on(grid, names, at)
     if isinstance(ran, witness.Undefined):
-        print(commands.NO_GRID, file=sys.stderr)
+        print(run_pairs.NO_GRID, file=sys.stderr)
         return 1
     if not isinstance(ran, Mapping):
         print("\n".join(failure_lines(solver, ran)), file=sys.stderr)

@@ -507,8 +507,9 @@ _MARKER_RE = re.compile(rf"^{_MARKER_DASHES}\s*(.*?)\s*{_MARKER_DASHES}$")
 _DASH = "—"
 
 _RETIRED = frozenset({"invariant", "addition", "deviation"})
-_NESTED_WORDS = frozenset({DirectiveWord.APPROXIMATED, DirectiveWord.RELAXED,
-                           DirectiveWord.REASSIGNED})
+_NESTED_WORDS = frozenset(NESTS_UNDER) - {DirectiveWord.WITNESS}
+"""The words whose line is always nested: each word of `NESTS_UNDER` but
+`@witness`, whose line nests only where two spaces or more follow `//`."""
 REVIEW_WORD: Annotated[str,
     quotes("solver-file.md", "Header",
            "A `// review <kind>: <text>` line stands last in the "
@@ -645,14 +646,27 @@ def _plausibility(text: str) -> Plausibility | None:
         return None
 
 
+def _split_colon(tail: str) -> tuple[str, str | None, list[OffPart]]:
+    """`tail` at its first `:`: the text before it; the text after it,
+    None where no `:` stands; and the parts off form of the `:` with no
+    name before it: `COLON` where no `:` stands, `SPACING` where only
+    spaces stand before it, none where nothing does."""
+    head, colon, rest = tail.partition(":")
+    if not colon:
+        return head, None, [OffPart(FormPart.COLON, None)]
+    if head and not head.strip():
+        return head, rest, [OffPart(FormPart.SPACING, None)]
+    return head, rest, []
+
+
 def _colon(tail: str) -> tuple[str | None, list[OffPart]]:
     """The text after the `:` that opens `tail`, and the parts off form
-    where none opens it."""
-    if tail.startswith(":"):
-        return tail[1:], []
-    if tail.lstrip().startswith(":"):
-        return None, [OffPart(FormPart.SPACING, None)]
-    return None, [OffPart(FormPart.COLON, None)]
+    where none opens it (`_split_colon`); `COLON` where other text stands
+    before the first `:`."""
+    head, rest, parts = _split_colon(tail)
+    if head.strip():
+        return None, [OffPart(FormPart.COLON, None)]
+    return (None if parts else rest), parts
 
 
 def _name_colon(tail: str, name: re.Pattern[str], part: FormPart,
@@ -662,15 +676,12 @@ def _name_colon(tail: str, name: re.Pattern[str], part: FormPart,
     between it and the `:` after it, then the `:`: the name, None where
     `optional` and the line gives none; the text after the `:`, None where
     no `:` stands; and the parts off form, the name's as `part`."""
-    head, colon, rest = tail.partition(":")
-    if not colon:
-        return None, None, [OffPart(FormPart.COLON, None)]
+    head, rest, parts = _split_colon(tail)
+    if rest is None:
+        return None, None, parts
     written = head.strip()
     if not written:
-        if not head and optional:
-            return None, rest, []
-        return None, rest, [OffPart(FormPart.SPACING if optional else part,
-                                    None)]
+        return None, rest, parts if optional else [OffPart(part, None)]
     if not name.fullmatch(written):
         return written, rest, [OffPart(part, written)]
     if not head[0].isspace() or head[-1].isspace():

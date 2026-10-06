@@ -37,12 +37,16 @@ class Report:
     text: str
 
 
+def can_report(entry: Entry) -> bool:
+    """Whether `entry` can give a report of an agent or a notification of
+    it: it has a timestamp, and it is not the model's."""
+    return bool(entry.get("timestamp")) and entry.get("type") != "assistant"
+
+
 def entries_after(entries: Iterable[Entry], since: float) -> Iterable[Entry]:
-    """The entries of `entries` timestamped after `since` that are not the
-    model's, the entries that can give a report of an agent or a
-    notification of it."""
-    return (e for e in entries if e.get("timestamp") and e.get("type") != "assistant"
-            and epoch(e["timestamp"]) > since)
+    """The entries of `entries` timestamped after `since` that can give a
+    report of an agent or a notification of it (`can_report`)."""
+    return (e for e in entries if can_report(e) and epoch(e["timestamp"]) > since)
 
 
 def reports_after(entries: Iterable[Entry], since: float, aid: str | None,
@@ -99,7 +103,7 @@ def report_ids(entry: Entry) -> list[str]:
     """An entry of a parent's transcript that gives a report of an agent
     gives, among the ids this function returns, the agent id or the id of
     the call that launched it."""
-    if not entry.get("timestamp") or entry.get("type") == "assistant":
+    if not can_report(entry):
         return []
     ids = [*notified(entry),
            *(who for who, _ in (agent_messages(entry) if is_prompt(entry) else [])),

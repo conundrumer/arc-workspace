@@ -6,14 +6,10 @@ from collections.abc import Sequence
 from checker.finding import Kind
 from checker.judged import NoResult
 from checker.payloads.branches import HomonymsPayload, Unread
-from checker.render import (
-    _ticked,
-    failure_text,
-    finding_lines,
-    in_line_order,
-    line_text,
-    resolution_lines,
-)
+from checker.render import finding_lines, in_line_order
+from checker.render.locations import line_text
+from checker.render.no_result import failure_text
+from checker.render.values import _ticked, resolution_lines
 from checker.render.branches import (
     NOT_BETWEEN,
     cases_suffix,
@@ -136,7 +132,7 @@ def record_lines(entry: Entry, solver: Solver, cases: Sequence[Case],
     """A built witness as `record` prints it: the input, each group of
     cases above the grid they give, or above why their cells describe no
     grid (`undefined_lines`), the cases that give none, and the
-    count line (`checker.render.commands.COUNT_LINE`): how many `cases`,
+    count line (`checker.render.recording.COUNT_LINE`): how many `cases`,
     the witnessed cases the groups were built from, of the `of` cases of
     the solver, and the distinct grids."""
     lines = [mctx("input:"), *(shifted(r, "  ") for r in grid_lines(
@@ -173,7 +169,7 @@ def record_lines(entry: Entry, solver: Solver, cases: Sequence[Case],
             or (r is None and not takes_branch(solver, n)) else None))
             for n, r in silent]
     if of > 1:
-        from checker.render.commands import COUNT_LINE
+        from checker.render.recording import COUNT_LINE
         lines += ["", COUNT_LINE.format(n=len(cases), m=of, g=len(grids))]
     return lines
 

@@ -164,6 +164,13 @@ def outside_work() -> tuple[str, str]:
     return (".", f":(exclude,top){checkout.work().name}")
 
 
+def changed_outside_work(worktree: Path, base: str) -> list[str]:
+    """The paths of `worktree` outside `work` (`outside_work`) whose
+    content differs from the commit `base` (`checkout.changed_paths`),
+    sorted."""
+    return sorted(c.path for c in checkout.changed_paths(worktree, base, *outside_work()))
+
+
 class Refused(Exception):
     """A reason the script does not merge the change."""
 
@@ -347,7 +354,7 @@ def commit(worktree: Path, message: str, main: Path, backup: Path) -> Change:
     if branch == MASTER:
         raise Refused(f"{worktree} stands on {MASTER}")
     base = checkout.git_out(worktree, "merge-base", MASTER, "HEAD").strip()
-    touched = {c.path for c in checkout.changed_paths(worktree, base, *outside_work())}
+    touched = set(changed_outside_work(worktree, base))
     if not touched:
         raise Refused(f"{branch} holds no change against {MASTER}")
     refuse_main_touched(main, touched)
@@ -355,7 +362,7 @@ def commit(worktree: Path, message: str, main: Path, backup: Path) -> Change:
     set_up_submodules(worktree, main)
     refuse_dirty_submodules(worktree)
     before = checkout.git_out(worktree, "rev-parse", "HEAD").strip()
-    committing = bool(checkout.changed_paths(worktree, "HEAD", *outside_work()))
+    committing = bool(changed_outside_work(worktree, "HEAD"))
     stage(worktree, main, backup)
     if committing:
         print(f"merge_change: committing on {branch}", flush=True)
@@ -395,8 +402,7 @@ def unstack(change: Change) -> None:
     hard reset loses none where it holds no change against the branch."""
     if checkout.git_out(change.worktree, "rev-parse", "HEAD").strip() == change.committed:
         return
-    left = sorted(c.path for c in checkout.changed_paths(change.worktree, "HEAD",
-                                                         *outside_work()))
+    left = changed_outside_work(change.worktree, "HEAD")
     if left:
         raise Failed(mctx("{worktree} holds changes made after the stack's rebase, so "
                           "{branch} stays rebased:").format(
@@ -497,7 +503,7 @@ def remove(main: Path, change: Change) -> None:
                            "{branch} stay").format(
             master=MASTER, why=why, worktree=worktree, branch=branch))
 
-    left = sorted(c.path for c in checkout.changed_paths(worktree, "HEAD", *outside_work()))
+    left = changed_outside_work(worktree, "HEAD")
     left += submodule_changes(worktree)
     if left:
         raise stays(mctx("the worktree holds changes made after the commit, in {left}")

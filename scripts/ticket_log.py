@@ -28,7 +28,7 @@ CLOSED_BY = "{fixed} by {change} {number}: {note}"
 """The note of the line that closes a ticket that waits on a change closed
 with `fixed`, with that change's number and note."""
 
-RELEASED_BY = "{change} {number} closed {resolution}"
+UNBLOCKED_BY = "{change} {number} closed {resolution}"
 """The note of the line that moves into `open` a ticket that waits on a
 change closed with another resolution, with that change's number and
 resolution."""
@@ -223,7 +223,7 @@ def log_moves(tickets: Path, ref: str, status: str, agent: str, source: str, age
               note: str | None) -> Moves:
     """Writes the log line as `write_log` does, refused as it refuses, and
     returns the ticket's path, followed, where the line moves a `change`
-    into `closed`, by what `release` returns for it."""
+    into `closed`, by what `unblock` returns for it."""
     to, origin = status_of(status), status_of(source)
     closes = (to is Status.CLOSED and origin is not Status.CLOSED
               and is_change(ticket_path(tickets, ref)))
@@ -233,17 +233,17 @@ def log_moves(tickets: Path, ref: str, status: str, agent: str, source: str, age
     resolution = resolution_of(note)
     # `check_line` refuses a move into `closed` whose note opens with no resolution.
     assert note is not None and resolution is not None
-    moves.add(release(tickets, moves.moved[0], agent, agent_id, resolution, note))
+    moves.add(unblock(tickets, moves.moved[0], agent, agent_id, resolution, note))
     return moves
 
 
-def release(tickets: Path, change: Path, agent: str, agent_id: str | None, resolution: Resolution,
+def unblock(tickets: Path, change: Path, agent: str, agent_id: str | None, resolution: Resolution,
             note: str) -> Moves:
     """Moves each ticket under `blocked` that waits on the change at
     `change`, closed with `resolution` and `note`, in the order of their
     file names, and returns what it did: into `closed`, with the note
     `CLOSED_BY` gives, where `resolution` is `fixed`, and else into `open`,
-    with the note `RELEASED_BY` gives. A ticket that another call moves
+    with the note `UNBLOCKED_BY` gives. A ticket that another call moves
     first is skipped. A ticket whose move is refused for another reason is
     given among the refused, and the moves of the others go on. A ticket
     closed this way that is a `change` moves the tickets that wait on it in
@@ -258,8 +258,8 @@ def release(tickets: Path, change: Path, agent: str, agent_id: str | None, resol
         to, line = Status.CLOSED, CLOSED_BY.format(fixed=resolution, change=Wait.CHANGE, number=number,
                                                    note=note)
     else:
-        to, line = Status.OPEN, RELEASED_BY.format(change=Wait.CHANGE, number=number,
-                                                   resolution=resolution)
+        to, line = Status.OPEN, UNBLOCKED_BY.format(change=Wait.CHANGE, number=number,
+                                                    resolution=resolution)
     for path in sorted((tickets / Status.BLOCKED).glob("*.md")):
         try:
             if waits_on(read_ticket(path)) == number:

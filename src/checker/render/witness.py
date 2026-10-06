@@ -34,14 +34,11 @@ from checker.payloads.witness import (
     VerdictOutputUnknown,
     WitnessEntryMissing,
 )
-from checker.render import (
-    NO_ASSIGN_VALUE,
-    _no_sentence,
-    _ticked,
-    names_text,
-    resolution_lines,
-    where_text,
-)
+from checker.render import _no_sentence
+from checker.render.cases import names_text
+from checker.render.faults import NO_ASSIGN_VALUE
+from checker.render.locations import where_text
+from checker.render.values import _ticked, resolution_lines
 from checker.render.grids import grid_lines, shifted
 from solver.names import name as case_name
 from controlled_markdown import mctx
@@ -94,7 +91,7 @@ def outcome_lines(solver: Solver,
         case tuple():
             grids = (value,)
         case _:
-            from checker.render import failure_text
+            from checker.render.no_result import failure_text
             return [failure_text(value)]
     lines: list[str] = []
     for i, grid in enumerate(grids):

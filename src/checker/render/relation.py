@@ -4,7 +4,8 @@ column's value as `relation` prints it."""
 from collections.abc import Sequence
 
 from checker.judged import value_constructors
-from checker.render import arg_text, joined
+from checker.render.cases import joined
+from checker.render.values import arg_text
 from controlled_markdown import mctx
 from engine import AdtValue, RecordValue, Value
 from solver.aggregate import Solver

@@ -14,7 +14,8 @@ from arc.task import task_file
 from arc.task import GridFormError, read_grid
 from checker.judged import parse_fault
 from checker.readable import finding_of
-from checker.render import commands, finding_lines, run_failed
+from checker.render import commands, finding_lines
+from checker.render.no_result import run_failed
 from checker.runs import Runs
 from cli import text
 from controlled_markdown import mctx

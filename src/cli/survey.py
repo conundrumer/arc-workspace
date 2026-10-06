@@ -18,7 +18,7 @@ from checker.lint.form import (
     keywords_doc,
     known_keywords,
 )
-from checker.render import commands, header_line
+from checker.render import header_line, keywords
 from checker.render.surveys import (
     render_deletions,
     render_derived_constant,
@@ -125,7 +125,7 @@ def _parsed(stem: str, eng: SouffleEngine) -> Solver | None:
     failure = parse_failure(solver)
     if failure is None:
         return solver
-    print(commands.size_unread(stem, failure), file=sys.stderr)
+    print(keywords.size_unread(stem, failure), file=sys.stderr)
     return None
 
 
@@ -164,7 +164,7 @@ def cmd_size(arg: str | None = None) -> int:
         if solver is None:
             bad = True
             continue
-        print(commands.SIZE_ROW.format(count=literal_count(solver.program),
+        print(keywords.SIZE_ROW.format(count=literal_count(solver.program),
                                        stem=stem))
     return 1 if bad else 0
 
@@ -195,16 +195,16 @@ def cmd_keywords(args: list[str] | None = None) -> int:
             if word in known:
                 carriers[word].add(stem)
             else:
-                unknown.append(commands.UNKNOWN_KEYWORD.format(stem=stem,
+                unknown.append(keywords.UNKNOWN_KEYWORD.format(stem=stem,
                                                            word=word))
     for name, words in sections.items():
         print(header_line(name))
         for word in words:
-            print(commands.KEYWORD_ROW.format(n=len(carriers[word]), word=word))
+            print(keywords.KEYWORD_ROW.format(n=len(carriers[word]), word=word))
         print()
     for line in unknown:
         print(line)
-    print(commands.UNKNOWN_KEYWORDS.format(n=len(unknown)))
+    print(keywords.UNKNOWN_KEYWORDS.format(n=len(unknown)))
     return 1 if bad else 0
 
 
@@ -264,7 +264,7 @@ def _since(when: str) -> int:
     committed: set[str] = set()
     for sha, touched in _commit_stems(log, solvers):
         if _rewrite(touched, corpus):
-            print(commands.SKIPPED_REWRITE.format(
+            print(keywords.SKIPPED_REWRITE.format(
                 sha=sha, n=len(touched), total=len(corpus),
                 share=REWRITE_SHARE), file=sys.stderr)
         else:
@@ -274,14 +274,14 @@ def _since(when: str) -> int:
                                  "--name-only", "--pretty=format:commit %H", "--",
                                  solvers)
         kept = committed & {s for _, t in _commit_stems(added, solvers) for s in t}
-        print(commands.WINDOW_REWRITE.format(
+        print(keywords.WINDOW_REWRITE.format(
             n=len(committed), total=len(corpus), share=REWRITE_SHARE,
             kept=len(kept)), file=sys.stderr)
         committed = kept
     in_scope = sorted((committed | worktree) & corpus)
     for stem in in_scope:
         print(stem)
-    print(commands.IN_SCOPE.format(n=len(in_scope)), file=sys.stderr)
+    print(keywords.IN_SCOPE.format(n=len(in_scope)), file=sys.stderr)
     return 0
 
 

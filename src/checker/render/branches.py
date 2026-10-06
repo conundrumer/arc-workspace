@@ -33,17 +33,11 @@ from checker.payloads.branches import (
     StoreValuesPayload,
     Unread,
 )
-from checker.render import (
-    LineForm,
-    _no_sentence,
-    _ticked,
-    arg_text,
-    cases_run_failed,
-    line_list,
-    line_text,
-    under_case,
-    where_text,
-)
+from checker.render import _no_sentence
+from checker.render.cases import under_case
+from checker.render.locations import LineForm, line_list, line_text, where_text
+from checker.render.no_result import cases_run_failed
+from checker.render.values import _ticked, arg_text
 from solver.names import name as case_name
 from checker.store import (
     D4,

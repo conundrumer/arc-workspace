@@ -22,7 +22,7 @@ importable(checkout.scripts())
 
 from ticket_form import (DEFECT_SECTIONS, FIELD, LOG, SECTIONS,  # noqa: E402
                          checked_kind, heading, sections_example)
-from ticket_log import (AGENT_ID, CLOSED_BY, RELEASED_BY, TIME_FORM, Wait,  # noqa: E402
+from ticket_log import (AGENT_ID, CLOSED_BY, TIME_FORM, UNBLOCKED_BY, Wait,  # noqa: E402
                         log_moves, logged)
 from ticket_numbers import (SESSION_VAR, SESSIONS, reserve,  # noqa: E402
                             session_id, session_index, ticket_path, write_new)
@@ -83,7 +83,7 @@ LOG_HELP = mctx("""
     - The note of a line that moves a ticket into `closed` opens with its resolution, one of {resolutions}.
     - Where the line moves a `{change}` ticket into `closed`, the command also moves each ticket under `{blocked}` that waits on that change, and prints the path of each one it moved, one per line, after the change's own path.
     - A ticket waits on the change that the last line of its log whose note opens with what a ticket waits on gives as `{change} <number>`.
-    - Where the change's resolution is `{fixed}`, each ticket that waits on it moves into `closed`, with the note `{closed_by}`. Where the resolution is another, each moves into `open`, with the note `{released_by}`. Each such line takes the `<agent>` and the `--id` of the call.
+    - Where the change's resolution is `{fixed}`, each ticket that waits on it moves into `closed`, with the note `{closed_by}`. Where the resolution is another, each moves into `open`, with the note `{unblocked_by}`. Each such line takes the `<agent>` and the `--id` of the call.
     - A ticket that waits on the change and that another call moves first, the command skips. A `{change}` ticket that the command moves into `closed` this way moves the tickets that wait on it in turn.
     - The command moves those tickets in the order of their file names. Where the move of one is refused for another reason, the command moves the others, prints the path of each ticket it moved, and then refuses, with the change's path and the path of each ticket it did not move, with the reason. That holds as well for the tickets that wait on a `{change}` the command closes this way.
     - The command refuses, and neither moves nor writes, where `{log}` is not the file's last section or the note spans more than one line.
@@ -274,8 +274,8 @@ def help_values() -> dict[str, str]:
                 user=Wait.USER, change=Wait.CHANGE, session_var=SESSION_VAR,
                 closed_by=CLOSED_BY.format(fixed=Resolution.FIXED, change=Wait.CHANGE,
                                            number="<number>", note="<note>"),
-                released_by=RELEASED_BY.format(change=Wait.CHANGE, number="<number>",
-                                               resolution="<resolution>"),
+                unblocked_by=UNBLOCKED_BY.format(change=Wait.CHANGE, number="<number>",
+                                                 resolution="<resolution>"),
                 sessions=SESSIONS, invocation=TICKET_FILING.invocation,
                 subcommands="\n".join(SUBCOMMAND_LINE.format(
                     invocation=TICKET_FILING.invocation, name=name, purpose=sub.purpose)

@@ -19,6 +19,7 @@ from checker.render import (
     Section,
     commands,
     exit_code,
+    recording,
     render,
 )
 from checker.render.branch_blocks import derive_lines, record_lines, store_lines
@@ -42,7 +43,7 @@ from cli.common import (
     print_faults,
     written_grids,
 )
-from cli.record import absent, lined_solver, read_file, target, with_file
+from cli.witness_file import absent, lined_solver, read_file, target, with_file
 from engine import RunFailure, checkout
 from solver import witness
 from solver.model import DeriveBranch
@@ -272,11 +273,11 @@ def _built(solver: Solver, at: Path,
             else runs.case_count
         lines = ["", *record_lines(e, by.solver, by.cases, of), ""]
         if bad[e.id]:
-            lines.append(commands.not_written(
+            lines.append(recording.not_written(
                 e.id, bad[e.id], kind,
                 adds_line(by)))
         elif corpus:
-            lines.append(commands.WOULD_RECORD.format(id=e.id))
+            lines.append(recording.WOULD_RECORD.format(id=e.id))
         elif not problems and lineless(by):
             branch = next(b for b in by.solver.branches
                           if isinstance(b, DeriveBranch)
@@ -286,10 +287,10 @@ def _built(solver: Solver, at: Path,
                 raise ValueError(f"{solver.stem}: a proposed line on no "
                                  f"parameter, `{branch.parameter}`")
             decl = declaration_of(solver.program, param)
-            lines.append(commands.wrote_lineless(e.id, at, branch.proposer,
+            lines.append(recording.wrote_lineless(e.id, at, branch.proposer,
                                                  decl))
         elif not problems:
-            lines.append(commands.WROTE.format(id=e.id, path=at))
+            lines.append(recording.WROTE.format(id=e.id, path=at))
         print("\n".join(commands.judgment_first(lines)))
     print_faults(solver, problems)
     return 2 if problems else 0

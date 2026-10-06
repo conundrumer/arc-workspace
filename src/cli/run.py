@@ -26,7 +26,7 @@ from arc.task import (
 from checker import Finding, Kind, Runs, fault_findings, check_lint
 from checker.branches import check_stored_assignment
 from checker.finding import LINT_SHAPES, is_hint
-from checker.render import Section, commands, exit_code, pass_line, passes
+from checker.render import Section, commands, exit_code, pass_line, passes, run_pairs
 from checker.render.determination import determination_lines
 from checker.sweep import GivingValues, values_giving
 from cli import text
@@ -148,8 +148,8 @@ def _pairs(solver: Solver, runs: Runs
     got = runs.pairs
     if not isinstance(got, tuple):
         names = [p.text for p, _ex in exs]
-        return 0, len(exs), commands.enumeration_failed_lines(names, got), \
-            commands.shared_failure_lines(names, got)
+        return 0, len(exs), run_pairs.enumeration_failed_lines(names, got), \
+            run_pairs.shared_failure_lines(names, got)
     lines: list[str] = []
     failing: list[tuple[str, tuple[CaseOnPair, ...], Example,
                         tuple[GivingValues, ...]]] = []
@@ -157,14 +157,14 @@ def _pairs(solver: Solver, runs: Runs
     giving = values_giving(solver, runs)
     ok = 0
     for pr, (_pid, ex) in zip(got, exs, strict=True):
-        passed = commands.passed(pr.cases)
+        passed = run_pairs.passed(pr.cases)
         ok += passed
         here = tuple(g for g in giving if g.pair == pr.pair)
         if not passed:
             failing.append((pr.pair.text, pr.cases, ex, here))
-        lines += commands.pair_lines(solver, pr.pair.text, pr.cases, ex,
+        lines += run_pairs.pair_lines(solver, pr.pair.text, pr.cases, ex,
                                      shown, here)
-    return ok, len(exs), lines, commands.stem_failure_lines(solver, failing)
+    return ok, len(exs), lines, run_pairs.stem_failure_lines(solver, failing)
 
 
 def check_one(eng: SouffleEngine, solver: Solver, hints: bool) -> Checked:
@@ -464,7 +464,7 @@ def cmd_pairs(arg: str, path: str) -> int:
     runs = Runs(eng, solver, LIMITS)
     solver_cases = runs.cases
     if not isinstance(solver_cases, tuple):
-        print("\n".join(commands.enumeration_failed_lines(
+        print("\n".join(run_pairs.enumeration_failed_lines(
             [pair_name(kind, idx) for kind, pairs in sections
              for idx in range(len(pairs))], solver_cases)))
         return 1 if any(isinstance(e, Example)
@@ -476,13 +476,13 @@ def cmd_pairs(arg: str, path: str) -> int:
             got = outcomes(eng, solver, solver_cases, as_grid(e.input),
                            Assignment(()), LIMITS)
             if isinstance(e, Probe):
-                print("\n".join(commands.probe_lines(
+                print("\n".join(run_pairs.probe_lines(
                     solver, name, [(c, got[c]) for c in solver_cases])))
                 continue
             cases = tuple(_on_pair(c, got[c], e) for c in solver_cases)
-            if not commands.passed(cases):
+            if not run_pairs.passed(cases):
                 failed = True
-            print("\n".join(commands.pair_lines(solver, name, cases, e)))
+            print("\n".join(run_pairs.pair_lines(solver, name, cases, e)))
     return 1 if failed else 0
 
 

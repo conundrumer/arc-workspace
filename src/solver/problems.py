@@ -162,19 +162,19 @@ class FormPart(StrEnum):
     (`solver.annotations.NESTS_UNDER`)."""
     SLUG = "slug"
     """A claim's slug, or a slug a `@claim` line lists, off the slug's
-    form: lowercase letters and digits, in words joined by single `-`."""
+    form, which `checker.render.faults.SLUG_FORM` states."""
     ID = "id"
     """A `@witness` line's id, off the slug's form."""
     PROPOSER = "proposer"
-    """A `@derive` line's proposer, which is one word of letters, digits
-    and `_`."""
+    """A `@derive` line's proposer, missing or off its form, which its
+    sentence in `checker.render.faults.OFF_PART_TEXT` states."""
     RELATION = "relation"
-    """The relation a `@store` or `@ignore` line names, which is letters,
-    digits, `_` and `.`."""
+    """The relation a `@store` or `@ignore` line names, off its form,
+    which its sentence in `checker.render.faults.OFF_PART_TEXT` states."""
     SPACING = "spacing"
-    """The spaces around the name before a `:`: one or more before the
-    name, and none between it and the `:`; with no name, none before the
-    `:`."""
+    """The spaces around the name before a `:`, off their form, which the
+    spacing sentences of `checker.render.faults.OFF_PART_TEXT`, with a name,
+    and `MISSING_PART_TEXT`, with none, state."""
     COLON = "colon"
     """The `:` the form takes, missing."""
     TEXT = "text"
@@ -184,8 +184,8 @@ class FormPart(StrEnum):
     PLAUSIBILITY = "plausibility"
     """A plausibility, missing or no `solver.annotations.Plausibility`."""
     VERDICT = "verdict"
-    """A verdict, missing, or more than one word other than names joined
-    by `&`."""
+    """A verdict, missing or off its form, which its sentence in
+    `checker.render.faults.OFF_PART_TEXT` states."""
     VALUE = "value"
     """The one word of a `@relaxed` or `@reassigned` line, missing or more
     than one."""

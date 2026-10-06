@@ -57,22 +57,12 @@ from checker.domains import (
     MAGNITUDE_TYPES,
 )
 from checker.drop_one import DropOneResult, DroppedFact, Fact, TrainFails
-from checker.render import (
-    arg_text,
-    CASES_RUN_FAILED,
-    run_failed,
-    cases_run_failed,
-    failure_text,
-    file_line,
-    finding_lines,
-    line_text,
-    marker_text,
-    names_text,
-    noun,
-    solver_name,
-    under_case,
-    verb_s,
-)
+from checker.render import finding_lines, noun, verb_s
+from checker.render.cases import names_text, under_case
+from checker.render.lint import marker_text
+from checker.render.locations import file_line, line_text, solver_name
+from checker.render.no_result import CASES_RUN_FAILED, run_failed, cases_run_failed, failure_text
+from checker.render.values import arg_text
 from checker.render.branches import NOT_BETWEEN
 from checker.runs import NoCases
 from checker.sweep import (
