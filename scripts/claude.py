@@ -13,7 +13,8 @@ from handbook.paths import console_importable
 
 console_importable()
 
-from handbook.context import render, sweep_digests, write_agent  # noqa: E402
+from handbook.agents import render, write_agent  # noqa: E402
+from handbook.context import sweep_digests  # noqa: E402
 from solver_console import config  # noqa: E402
 
 

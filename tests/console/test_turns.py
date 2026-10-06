@@ -138,7 +138,7 @@ def test_worker_cmd_stays_well_under_the_argument_limit(srv, tmp_path, monkeypat
     The limit the spawn hits is macOS's 1 MiB over argv and the environment
     together, which is what spawn_worker passes, so the bound is taken over
     both."""
-    from handbook.context import render
+    from handbook.agents import render
     monkeypatch.setattr(srv, "FAKE", False)
     append = tmp_path / "append.md"
     append.write_text(render())   # the repo's own docs and lib.dl

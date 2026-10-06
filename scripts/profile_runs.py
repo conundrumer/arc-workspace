@@ -9,7 +9,7 @@ import time
 
 from controlled_markdown import mctx
 from engine import checkout
-from handbook.context import agent_names, agent_sources
+from handbook.agents import agent_names, agent_sources
 from handbook.paths import console_importable, importable
 
 console_importable()

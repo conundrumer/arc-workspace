@@ -23,7 +23,10 @@ from enum import StrEnum
 from pathlib import Path
 
 from engine import checkout
-from handbook.context import _section, _write_whole, agent_dir, entry_text
+from handbook.agents import agent_dir
+from handbook.context import entry_text
+from handbook.contexts import marked_section
+from handbook.generated import Rendering, write_generated
 from handbook.paths import repo_label
 
 COORDINATOR_DOC = agent_dir() / "notes" / "coordinator.md"
@@ -74,12 +77,12 @@ def coordinator_text(doc: Path = COORDINATOR_DOC) -> str:
 def coordinator_context() -> str:
     """What reaches the coordinator from the session-start hook, as
     `session-start` gives it."""
-    return _section(repo_label(COORDINATOR_PATH), coordinator_text())
+    return marked_section(repo_label(COORDINATOR_PATH), coordinator_text())
 
 
-def write_coordinator(path: Path = COORDINATOR_PATH,
-                      doc: Path = COORDINATOR_DOC) -> Path:
-    return _write_whole(path, coordinator_text(doc))
+def coordinator_rendering(path: Path = COORDINATOR_PATH,
+                          doc: Path = COORDINATOR_DOC) -> Rendering:
+    return Rendering(path, coordinator_text(doc))
 
 
 def entry_point(env: Mapping[str, str]) -> EntryPoint:
@@ -119,8 +122,22 @@ def session_start_text(env: Mapping[str, str], path: Path = COORDINATOR_PATH,
                        doc: Path = COORDINATOR_DOC) -> str:
     """What the session-start hook gives the session `env` describes: the
     coordinator's document, written to `path` first, for a session the user
-    talks with, and nothing for a `claude -p` session."""
+    talks with, and nothing for a `claude -p` session. Claude Code puts a
+    hook's output in the session's context only where the hook exits 0, so
+    where the write fails, the hook gives the failure's text and then the
+    rendering. That text does not count against `HOOK_TEXT_CAP`: past the
+    cap, the session's preview opens with it, and the file Claude Code
+    names holds the rest."""
     if entry_point(env) not in USER_ENTRY_POINTS or print_session(env):
         return ""
-    write_coordinator(path, doc)
-    return path.read_text()
+    rendering = coordinator_rendering(path, doc)
+    try:
+        write_generated([rendering])
+    except (SystemExit, checkout.GitFailed) as e:
+        return f"{_failure(e)}\n\n{rendering.text}"
+    return rendering.text
+
+
+def _failure(e: SystemExit | checkout.GitFailed) -> str:
+    """The text of a failed write of the coordinator's document."""
+    return str(e.code) if isinstance(e, SystemExit) else str(e)

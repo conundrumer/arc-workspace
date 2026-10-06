@@ -1,7 +1,10 @@
 """The solver docs and the lib as a session reads them."""
 
-from handbook.context import (AGENT_MANIFEST, StaleAgents, remove_stale_agents,
-                              write_agent)
+import subprocess
+
+from handbook.agents import write_agent
+from handbook.generated import (Kept, Left, Regenerated, Rendering,
+                                manifest_path, regenerate)
 
 
 def test_the_agent_file_is_written_whole_and_left_alone_when_unchanged(tmp_path):
@@ -19,12 +22,23 @@ def test_the_agent_file_is_written_whole_and_left_alone_when_unchanged(tmp_path)
     assert "- **out** — The output." in path.read_text()
 
 
-def test_only_a_file_the_manifest_lists_is_removed(tmp_path):
-    out = tmp_path / "out"
-    out.mkdir()
-    for name in ("gone.md", "hand.md"):
-        (out / name).write_text("---\nname: x\n---\n")
-    (out / AGENT_MANIFEST).write_text("gone.md\n")
-    stale = remove_stale_agents(out / "handbook.md", tmp_path / "docs")
-    assert stale == StaleAgents([out / "gone.md"], [out / "hand.md"])
-    assert (out / "hand.md").exists() and not (out / "gone.md").exists()
+def test_only_a_listed_ignored_unchanged_file_no_source_renders_is_removed(tmp_path):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / ".gitignore").write_text(".claude/agents/\n/gen/\n")
+    kept = Rendering(tmp_path / "gen" / "kept.md", "kept\n")
+    names = ("gone", "edited", "shown")
+    regenerate([kept, *(Rendering(tmp_path / "gen" / f"{n}.md", f"{n}\n")
+                        for n in names)], tmp_path)
+    shown = tmp_path / "shown.md"
+    shown.write_text("shown\n")
+    manifest = manifest_path(tmp_path)
+    manifest.write_text(manifest.read_text().replace("gen/shown.md", "shown.md"))
+    (tmp_path / "gen" / "edited.md").write_text("by hand\n")
+    done = regenerate([kept], tmp_path)
+    assert done == Regenerated(
+        [tmp_path / "gen" / "gone.md"],
+        [Left(tmp_path / "gen" / "edited.md", Kept.EDITED),
+         Left(shown, Kept.NOT_IGNORED)])
+    assert kept.path.exists() and shown.exists()
+    assert [line.split(" ", 1)[1]
+            for line in manifest.read_text().splitlines()[1:]] == ["gen/kept.md"]

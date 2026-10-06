@@ -13,15 +13,15 @@ import threading
 from pathlib import Path
 
 import controlled_markdown as nm
-from handbook.context import (
+from handbook.agents import (
     AGENT_NAMES,
     AGENT_PATH,
     agent_meta,
     agent_prompt,
     render,
-    sweep_digests,
     write_agent,
 )
+from handbook.context import sweep_digests
 
 from . import config, solvers, store
 

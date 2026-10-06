@@ -1,5 +1,5 @@
 """Print the handbook and the other contexts the repo's readers get.
-handbook.context renders them, and `--help` prints HELP."""
+The `handbook` package renders them, and `--help` prints HELP."""
 
 import json
 import os
@@ -7,21 +7,16 @@ import signal
 import sys
 
 from controlled_markdown import mctx
-from handbook.context import (
-    AGENT_MANIFEST,
-    agent_paths,
-    remove_stale_agents,
-    role_text,
-    section_text,
-    session_text,
-    workflow_bundle,
-    write_agent,
-    write_analyze_next,
-    write_codex,
-    write_interfaces,
-)
+from handbook.agents import (agent_renderings, analyze_next_rendering,
+                             unlisted_agents)
+from handbook.context import (codex_renderings, role_text, section_text,
+                              session_text, workflow_bundle, write_interfaces,
+                              write_wrappers)
+from handbook.coordinator_document import (coordinator_rendering,
+                                           session_start_text)
+from handbook.generated import MANIFEST, regenerate
+from handbook.lib import interface_renderings
 from handbook.libcheck import check
-from handbook.coordinator_document import session_start_text, write_coordinator
 from handbook.paths import REPO_ROOT
 from handbook.readers import (context_at, context_diff, context_text,
                               contexts_diff, contexts_text)
@@ -44,13 +39,14 @@ HELP = mctx("""
         ```
     - The items below say what each form does.
     - With no argument, the command prints the handbook, the passes a session runs, and the lib. That form and `--write` also write the lib's interface files: the `.md` beside each lib source, which the handbook's lib index points to.
-    - `--write` first checks the lib's sources, prints what the checks find and exits 1 when they find anything. Otherwise it writes the files below, which git does not track. A session reads them only when they were written before it started.
-        - One agent under `.claude/agents/` per document under `prompts/agents/`, with the context its document composes as its system prompt, and `.claude/agents/.manifest`, which lists the agent files written there.
+    - `--write` first checks the lib's sources, prints what the checks find and exits 1 when they find anything. Otherwise it writes the files below, which git ignores. A session reads them only when they were written before it started.
+        - One agent under `.claude/agents/` per document under `prompts/agents/`, with the context its document composes as its system prompt, and `.claude/agents/.manifest`, which lists each generated file written in the checkout.
         - `.claude/analyze-next.md`, the steps the `analyze` agent reads after it writes the concept.
         - `.claude/coordinator.md`, the document of the coordinator, the session the user talks with, rendered from `prompts/agents/notes/coordinator.md`.
         - The files a codex session on the repo reads: `AGENTS.md`, [Codex on arc-workspace](prompts/codex.md) rendered, and `.codex/config.toml`, with `docs/codex-style.md` as its developer instructions.
-    - `--write` then removes each agent file that manifest lists whose document under `prompts/agents/` no longer exists, and prints it after `removed`. It leaves in place any file the manifest does not list, and names each such file that has no document on stderr.
-    - `session-start` is the command the session-start hook in `.claude/settings.json` runs. Where Claude Code started the session for the user to talk with, it writes `.claude/coordinator.md` and prints it, and in a `claude -p` session it prints nothing.
+    - Each form that writes a generated file in the checkout, other than `session-start`, first checks that git ignores each one it writes there. Where git does not ignore one, the form writes none, names each such file and `.gitignore`, and exits 1.
+    - `--write` then removes each file that manifest lists and no source renders any more, where git ignores it and it has not changed since it was written, and prints it after `removed`. It names on stderr each listed file it leaves in place, with the reason, and each agent file that has no document and that the manifest does not list.
+    - `session-start` is the command the session-start hook in `.claude/settings.json` runs. Where Claude Code started the session for the user to talk with, it writes `.claude/coordinator.md` and prints it, and in a `claude -p` session it prints nothing. Where that write fails, as where git does not ignore that file, it prints the failure and then the document, and exits 0.
     - `role <name>` prints a role's prompt.
     - `section <where>` prints one section in full, for a reader whose handbook shows that section as a heading alone. `<where>` takes three forms:
         ```
@@ -81,18 +77,24 @@ if __name__ == "__main__":
         if findings := check():
             print("\n".join(findings))
             sys.exit(1)
-        interfaces = write_interfaces()
-        write_agent()
-        stale = remove_stale_agents()
-        agents = [out for _name, out in agent_paths()]
-        for out in (*interfaces, *agents, write_analyze_next(), write_coordinator(),
-                    *write_codex()):
+        interfaces = interface_renderings()
+        rest = [*agent_renderings(), analyze_next_rendering(),
+                coordinator_rendering(), *codex_renderings()]
+        unlisted = unlisted_agents()
+        done = regenerate([*interfaces, *rest])
+        wrappers = write_wrappers()
+        for out in (*(r.path for r in interfaces), wrappers,
+                    *(r.path for r in rest)):
             print(out.relative_to(REPO_ROOT))
-        for out in stale.removed:
+        for out in done.removed:
             print(f"removed {out.relative_to(REPO_ROOT)}")
-        for out in stale.unlisted:
+        for left in done.left:
+            print(f"{left.path.relative_to(REPO_ROOT)}: in {MANIFEST} and "
+                  f"rendered by no source, left in place: {left.why.value}",
+                  file=sys.stderr)
+        for out in unlisted:
             print(f"{out.relative_to(REPO_ROOT)}: no document under "
-                  f"prompts/agents/ and not in {AGENT_MANIFEST}; left in place",
+                  f"prompts/agents/ and not in {MANIFEST}; left in place",
                   file=sys.stderr)
     elif args == ["session-start"]:
         print(session_start_text(os.environ), end="")

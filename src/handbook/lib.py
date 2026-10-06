@@ -1,18 +1,23 @@
 """The lib as its readers read it: its files in include order, parsed into
 items and comments, and each file rendered as documentation, its `//!` and
 `///` comments as prose and the declarations they document in code blocks,
-or as an index, one line per top-level public component."""
+or as an index, one line per top-level public component. An entry
+document's `lib` attribute gives the form the lib renders in after it
+(`LibForm`)."""
 
 from __future__ import annotations
 
+from enum import Enum
 from pathlib import Path
 
 import controlled_markdown as nm
+from controlled_markdown import mctx
 from engine import checkout
 from engine.memo import kept_recent
 from souffle import printer
 from souffle.layout import written_lines
 from handbook import paths
+from handbook.generated import Rendering
 from handbook.items import (
     Comp,
     Decl,
@@ -292,3 +297,51 @@ def lib_component(src: Path, name: str) -> str:
         code = _code_block(_run_code(run, lines, docs))
         return "\n\n".join(p for p in (f"# {name}", prose, code) if p) + "\n"
     raise SystemExit(f"no component `{name}` in `{repo_label(src)}`")
+
+
+def interface_renderings(lib: Path = LIB_SRC) -> list[Rendering]:
+    """The interface file beside each of the lib's sources, each under a
+    line saying it's generated."""
+    return [Rendering(interface_path(path), mctx(
+        "<!-- Generated from {name} by scripts/context.py. -->").format(
+            name=path.name) + "\n\n" + lib_doc(text))
+        for path, text in lib_sources(lib)]
+
+
+class LibForm(Enum):
+    """How the lib renders after an entry document, as its `lib`
+    attribute states."""
+
+    INTERFACE = "interface"
+    INDEX = "index"
+    NONE = "none"
+
+
+def lib_form(document: nm.Node) -> LibForm:
+    """The form an entry document's `lib` attribute states: `interface`
+    where it states none, and an error where it states no form."""
+    value = document.attr("lib")
+    if value is None:
+        return LibForm.INTERFACE
+    try:
+        return LibForm(value.strip())
+    except ValueError:
+        raise SystemExit(
+            f"`lib: {value.strip()}` in {document.source} is no lib form; "
+            "the forms are " + ", ".join(f.value for f in LibForm)) from None
+
+
+def lib_part(lib: Path = LIB_SRC, kind: LibForm = LibForm.INTERFACE) -> str:
+    """The lib's files, each under a heading stating its file: as each file's
+    interface, or as an index pointing at the interface file beside each
+    source. `none` leaves the lib out."""
+    if kind is LibForm.NONE:
+        return ""
+    parts = []
+    for path, text in lib_sources(lib):
+        rel = Path("programs") / path.relative_to(lib.parent)
+        if kind is LibForm.INDEX:
+            parts.append(f"\n---\n\n## {rel} — index\n\n{lib_entries(text)}")
+        else:
+            parts.append(f"\n---\n\n## {rel}\n\n{lib_doc(text)}")
+    return "".join(parts)

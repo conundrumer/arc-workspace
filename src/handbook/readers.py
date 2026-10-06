@@ -18,11 +18,11 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 from engine import checkout
-from handbook.context import (agent_context, agent_dir, agent_names,
-                              codex_context, console_context, console_stages,
-                              role_context, role_dir, role_stems,
-                              session_context, survey_context,
-                              workflow_context, workflow_dir, workflow_names)
+from handbook.agents import agent_dir, agent_names
+from handbook.context import role_dir, role_stems, workflow_dir, workflow_names
+from handbook.contexts import (agent_context, codex_context, console_context,
+                               console_stages, role_context, session_context,
+                               survey_context, workflow_context)
 from handbook.coordinator_document import coordinator_context
 from handbook.paths import DOCUMENTS_ROOT, REPO_ROOT
 
