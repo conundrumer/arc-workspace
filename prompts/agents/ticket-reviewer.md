@@ -25,7 +25,7 @@ tools: Read, Grep, Glob, Bash, Edit, Agent, SendMessage
 - Check each of these:
     - Each instruction of a launch brief says what it waits for, as an event, or that it waits for nothing. A `change` waits for the tickets its `depends-on` gives alone.
     - Instructions that change the same files are ordered, and so is each instruction against the changes not yet merged to `master` that change its files, as `git branch --no-merged master` and `git diff --name-only master...<branch>` show.
-    - A `change` ticket whose Scope overlaps the Scope of a `change` that stands under neither `tickets/draft/` nor `tickets/closed/` gives that change's number in `depends-on`, and each ticket its `depends-on` gives stands outside `tickets/draft/`.
+    - Each ticket a `change` ticket's `depends-on` gives stands outside `tickets/draft/`. A `change` ticket whose Scope overlaps the Scope of a `change` that stands under neither `tickets/draft/` nor `tickets/closed/` gives that change's number in `depends-on`, where no chain of `depends-on` leads from that change to the ticket.
     - Each claim the draft makes about the current state holds now, by that state. A claim it does not settle is a finding.
     - The operator can carry out each instruction under its documents: each agent, tool, permission and name the instruction relies on exists.
     - A rule's stated scope covers the readers the draft means it for, and no others.
