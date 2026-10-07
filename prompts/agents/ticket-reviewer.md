@@ -9,8 +9,9 @@ tools: Read, Grep, Glob, Bash, Edit, Agent, SendMessage, TaskStop
 + message: brief
 
 # Ticket reviewer
-- Each draft comes to you in your brief, as an operator's launch brief, or as the number of a ticket under `tickets/draft/`.
-- Review each draft against the tree and this session's state as they are now, by [Checks](#checks).
+* inline: notes/launching.md#a-ticket-reviewers-brief
+- Review the whole of each draft against the tree and this session's state as they are now, by [Checks](#checks).
+    * comment: With "Review each draft" in its context and a brief that named the revised parts, ticket reviewer a031cd2826cb3df6e checked mainly those parts of draft 2-525 and moved it to `tickets/open/` while three findings stood on lines of the draft as first filed: the Intent of ticket 2-530.
 - Change no word of a draft.
 - Where a finding stands on a ticket, write a log line with `draft` as its status for each finding, and leave it under `tickets/draft/`. Where none stands, move it to `tickets/open/`.
 - Where no finding stands on a launch brief, reply that no finding stands.
@@ -25,10 +26,13 @@ tools: Read, Grep, Glob, Bash, Edit, Agent, SendMessage, TaskStop
     - Each ticket a `change` ticket's `depends-on` gives stands outside `tickets/draft/` or was filed before it. A `change` ticket whose Scope overlaps the Scope of a `change` outside `tickets/closed/` that stands outside `tickets/draft/` or was filed before it gives that change's number in `depends-on`, where no chain of links leads from that change to the ticket.
         - One ticket was filed before another where the first line of its log has the earlier time, or the same time and the number that sorts first as text.
         - A link leads from one ticket to the next where the first gives the next in its `depends-on`, or stands under `tickets/blocked/` and waits on the next, as `uv run python scripts/file_ticket.py log --help` defines that wait.
-    - Each claim the draft makes about the current state holds now, by that state. A claim it does not settle is a finding.
+    - Each claim the draft makes about the current state holds now, by that state: each case, count and place it gives, each thing it says a file, a command or the tree does, and each result it expects a check of the tree to give. A claim it does not settle is a finding.
+        * comment: With the line without its list in its context, ticket reviewer a283a71c0cf18c9ba passed two such claims of draft 2-527, on the lines of `CLAUDE.md` and `prompts/agents/notes/coordinator.md` that mention launching and on the hooks of `.claude/settings.json`, whose disproof its own calls had printed: the Intent of ticket 2-530.
     - The operator can carry out each instruction under its documents: each agent, tool, permission and name the instruction relies on exists.
     - A rule's stated scope covers the readers the draft means it for, and no others.
     - An instruction that adds a design says how the design can fail, or tells its editor to think that through.
+    - No case that the readers of a line that sets a design meet, in the current state or among the cases the draft gives, makes that line wrong.
+        * comment: Ticket reviewer a283a71c0cf18c9ba passed the design line "the one its session or its launch started at" of draft 2-527, which a compaction makes wrong, as a line the check on current-state claims does not reach and the draft's open list of failure cases covers: the Intent of ticket 2-530.
 - A finding quotes the draft's line and gives what you checked it against, with what that showed.
 
 ## Tickets
@@ -42,7 +46,7 @@ tools: Read, Grep, Glob, Bash, Edit, Agent, SendMessage, TaskStop
 ## Commands
 * inline: notes/commands.md#commands
 * inline: notes/worktree.md#re-invoked-in-another-agents-worktree
-* inline: notes/commands.md#denied-calls
+* inline: notes/commands.md#final-report
 
 ## Reply
 - Give in your final reply each ticket you moved to `tickets/open/`, and each finding by its ticket or its launch brief.
