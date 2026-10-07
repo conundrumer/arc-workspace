@@ -13,7 +13,15 @@ from typing import Annotated
 from engine import AdtValue, RecordValue, Value
 from engine.quotes import quotes
 from engine.text import PREFIX, prefixed
-from solver.annotations import CaseMarker, MarkerPart, VerdictWord, pieces
+from solver.annotations import (
+    CaseMarker,
+    DeriveLine,
+    MarkerPart,
+    StoreLine,
+    VerdictWord,
+    WitnessLine,
+    pieces,
+)
 from solver.model import (
     Base,
     Branch,
@@ -254,6 +262,21 @@ def branch_text(branch: Branch) -> str:
             return f"{r}={VerdictWord.STORED}"
         case StoredAtDerive(parameter=p):
             return f"{p}={VerdictWord.STORED}"
+
+
+type VerdictLine = WitnessLine | DeriveLine | StoreLine
+
+
+def verdict_lines(solver: Solver, id: str) -> tuple[VerdictLine, ...]:
+    """The lines that record the verdict of the witness file's entry `id`,
+    in file order: each `@witness` line whose id is `id`, and each `@derive`
+    or `@store` line whose branch `id` names (`branch_text`)."""
+    lines: list[VerdictLine] = [w for w in solver.annotations.witnesses
+                                if w.id == id]
+    lines += [b.line for b in solver.branches
+              if isinstance(b, DeriveBranch | StoreBranch)
+              and b.line is not None and branch_text(b) == id]
+    return tuple(sorted(lines, key=lambda line: line.line))
 
 
 def name(solver: Solver, case: Case | Base) -> str:

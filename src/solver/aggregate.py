@@ -1,9 +1,8 @@
-"""The aggregate `Solver` and its load: the checks of the solver's form
-that `load` runs, and what the model reads of the solver's cases
-(`solver.cases`). `solver.readers` holds the functions that read each
-part of the model from a parsed program."""
+"""The aggregate `Solver` and what `load` reads into it, and what the model
+reads of the solver's cases (`solver.cases`). `solver.readers` holds the
+functions that read each part of the model from a parsed program, and
+`solver.form_checks` the checks of the solver's form that `load` runs."""
 
-from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated
@@ -21,38 +20,24 @@ from engine import (
     RunFailure,
     RunResult,
     Scope,
-    Span,
     Tuples,
 )
 from engine.program import (
-    first_line,
-    dotted,
     own,
     Component,
-    RigidCall,
     RelationDecl,
     TypeDecl,
 )
 from engine.quotes import quotes
 from solver import witness as witness_reader
-from solver.graph import (
-    MAX_DEPTH,
-    by_innermost,
-    component_chain,
-)
 from solver.annotations import (
     Annotations,
     CaseMarker,
     IgnoreForm,
     IgnoreLine,
-    NamedVerdict,
     WitnessLine,
 )
 from solver.problems import (
-    InSolver,
-    InWitnessFile,
-    Named,
-    NameFault,
     ProblemKind,
     Fault,
     WitnessFileRole,
@@ -63,10 +48,9 @@ from solver.vocabulary import (
     IMPL,
     INPUT,
     LIB_FILE,
-    PARAMS_SCOPE,
     PROPOSERS_FILE,
 )
-from solver.witness import AssignRows, Groups, WitnessFile
+from solver.witness import WitnessFile
 from solver.model import (
     Base,
     Branch,
@@ -157,71 +141,6 @@ def parse_with_lib(engine: Engine, text: str) -> Program | ParseFailure:
 # Load
 
 
-def instance_faults(program: Program) -> list[Fault]:
-    """The faults of the instance tree the model walks (`Graph`), each at
-    the solver's line it stands on, or, inside an included component, at
-    the line of the solver's instance its path starts from: a path deeper
-    than `MAX_DEPTH`; an instance of a component no file declares inside
-    an included component (the solver's own are `load`'s); a component
-    that extends one no file declares; and type arguments that are not
-    one per type parameter, of an instance or of a component's base. A
-    RIGID call in `Params` whose block's charts are not one per name it
-    binds is a fault too (`solve._blocks`)."""
-    comps = {c.name: c for c in program.components}
-    by_scope = by_innermost(program.instances)
-    out: list[Fault] = []
-
-    def fault(kind: ProblemKind, span: Span | None, start: int,
-              name: str) -> None:
-        got = Fault(kind, InSolver(span.first if own(span) and span
-                                   is not None else start), Named(name))
-        if got not in out:
-            out.append(got)
-
-    def chain(comp: str | None, start: int) -> list[str | None]:
-        seen = component_chain(comps, comp)
-        for name, base in zip(seen, seen[1:], strict=False):
-            if name is None or base is None:
-                break
-            c = comps[name]
-            if base not in comps:
-                fault(ProblemKind.BASE_OF_NOTHING, c.span, start, base)
-                return seen[:-1]
-            if len(c.base_type_args) != len(comps[base].type_params):
-                fault(ProblemKind.TYPE_ARGUMENTS, c.span, start, base)
-        return seen
-
-    front: list[tuple[tuple[str, ...], str | None, int]] = [((), None, 0)]
-    while front:
-        at, here, start = front.pop(0)
-        for scope in chain(here, start):
-            for name, inst in by_scope.get(scope, {}).items():
-                line = start if at else first_line(inst.span)
-                path = (*at, name)
-                comp = comps.get(inst.component)
-                if comp is None:
-                    if not own(inst.span):
-                        fault(ProblemKind.INSTANCE_OF_NOTHING, inst.span,
-                              line, inst.component)
-                    continue
-                if len(inst.type_args) != len(comp.type_params):
-                    fault(ProblemKind.TYPE_ARGUMENTS, inst.span, line,
-                          inst.component)
-                if len(path) > MAX_DEPTH:
-                    if not any(f.kind is ProblemKind.INSTANCE_UNFOLLOWED
-                               and f.place == InSolver(line) for f in out):
-                        fault(ProblemKind.INSTANCE_UNFOLLOWED, None, line,
-                              dotted(path))
-                    continue
-                front.append((path, comp.name, line))
-    params = PARAMS_SCOPE
-    for m in program.macros:
-        if isinstance(m, RigidCall) and m.scope == params \
-                and program.bound_charts(m) is None:
-            fault(ProblemKind.RIGID_CHARTS, m.span, 0, m.block)
-    return out
-
-
 def branch_witnesses(solver: Solver, ctor: str) -> list[WitnessLine]:
     """The `@witness` lines the branch comment of the constructor named
     `ctor` holds, in file order."""
@@ -268,62 +187,6 @@ def lists_case(solver: Solver, marker: CaseMarker) -> bool:
     from solver.names import Denoted, denote
     return any(isinstance(denote(solver, p.name), Denoted)
                for p in marker.parts)
-
-
-def name_problems(solver: Solver) -> Iterator[Fault]:
-    """The names the solver and its witness file hold that denote nothing:
-    verdicts, markers, named `@ignore` lines, group names, and `assign`
-    keys and the strings of `assign` values (`solver.columns.arg_value`)."""
-    from solver.columns import unknown_strings
-    from solver.names import denote, names_a_constructor
-
-    def check(name: str | tuple[str, ...], line: int
-              ) -> Iterator[Fault]:
-        got = denote(solver, name)
-        if isinstance(got, NameFault):
-            yield got.at(InSolver(line))
-
-    a = solver.annotations
-    for v in (*a.witnesses, *a.derives, *a.stores):
-        if isinstance(v.verdict, NamedVerdict):
-            yield from check(v.verdict.text, v.line)
-    for m in a.markers:
-        listing = lists_case(solver, m)
-        for part in m.parts:
-            if part.prose:
-                continue
-            got = denote(solver, part.name)
-            if not isinstance(got, NameFault):
-                continue
-            if got.kind == ProblemKind.NAME_FORM \
-                    and names_a_constructor(solver, part.name):
-                yield Fault(ProblemKind.NAME_FORM, InSolver(m.line),
-                            Named(part.name))
-            elif listing:
-                yield Fault(ProblemKind.MARKER_NAMES_NOTHING,
-                            InSolver(m.line), Named(part.name))
-    for i in a.ignores:
-        if i.name is not None:
-            yield from check(i.name, i.line)
-    if solver.witness_file is None:
-        return
-    for e in solver.witness_file.entries:
-        if isinstance(e.output, Groups):
-            for g in e.output.groups:
-                for name in g.cases:
-                    got = denote(solver, name)
-                    if isinstance(got, NameFault):
-                        yield got.at(InWitnessFile(e.id, WitnessFileRole.TASK))
-        for key, value in e.assign:
-            if not assignable(solver, key):
-                yield Fault(ProblemKind.ASSIGN_NAMES_NOTHING,
-                            InWitnessFile(e.id, WitnessFileRole.TASK),
-                            Named(key))
-            if isinstance(value, AssignRows):
-                for s in unknown_strings(solver, value.rows):
-                    yield Fault(ProblemKind.ASSIGN_VALUE_UNKNOWN,
-                                InWitnessFile(e.id, WitnessFileRole.TASK),
-                                Named(s))
 
 
 # The solver's cases

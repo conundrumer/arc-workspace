@@ -328,7 +328,8 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
         "derive", partial(audit.derive_or_store, audit.cmd_derive),
         help=mctx("the built-in derivations of stored parameters that fit, "
                   "each a branch; writes each witness it builds into the "
-                  "task's witness file"),
+                  "task's witness file, other than one for a branch whose line "
+                  "records the verdict `other`"),
         description=mctx("Each built-in derivation of a stored parameter, "
                          "a proposer of `programs/proposers.dl`, for which "
                          "some case of the solver that takes its branch fits the "
@@ -346,13 +347,18 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                          "command writes each witness it builds into the "
                          "task's witness file, as `record` writes one, with "
                          "the `@derive` line standing, and keeps a witness "
-                         "the file already holds for the branch."),
+                         "the file already holds for the branch. Where the "
+                         "`@derive` line records the verdict `other`, it "
+                         "writes no witness for the branch, and prints the "
+                         "input and the `record` command that writes the "
+                         "witness with the judged output."),
     )
     store = command(
         "store", partial(audit.derive_or_store, audit.cmd_store),
         help=mctx("the program relations that hold one value on every "
                   "input; writes each witness it builds into the task's "
-                  "witness file"),
+                  "witness file, other than one for a branch whose line "
+                  "records the verdict `other`"),
         description=mctx("Each program relation between `in` and `out` whose "
                          "value over a subset of its columns is the same on "
                          "every input of the task, with the witness that "
@@ -362,7 +368,11 @@ def parser() -> tuple[argparse.ArgumentParser, Collection[str]]:
                          "writes each witness it builds into the task's "
                          "witness file, as `record` writes one, with the `@store` "
                          "line standing, and keeps a witness the file "
-                         "already holds for the branch. A relation with "
+                         "already holds for the branch. Where the `@store` "
+                         "line records the verdict `other`, it writes no "
+                         "witness for the branch, and prints the input and "
+                         "the `record` command that writes the witness with "
+                         "the judged output. A relation with "
                          "more than {cap} rows on some input is not checked: "
                          "that is too many rows to be a stored value."
                          ).format(cap=ROW_CAP),

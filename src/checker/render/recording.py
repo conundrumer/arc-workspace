@@ -2,11 +2,15 @@
 no case takes, the count line of a built witness, and what `record`
 wrote to the witness file or left unwritten."""
 
+import json
+import shlex
 from collections.abc import Sequence
+from pathlib import Path
 
 from checker.render import Section, counted, noun
 from checker.render.grids import grid_lines, shifted
 from checker.render.hints import derive_line_to_add
+from checker.render.locations import line_list
 from checker.render.values import _ticked
 from controlled_markdown import mctx
 from engine import Grid
@@ -16,12 +20,14 @@ from solver.aggregate import Solver
 from solver.model import Case, takes_constructor
 from solver.names import ctor_text
 from solver.witness import (
+    Entry,
     GridChanged,
     GroupsKept,
     JudgedKept,
     NamesRewritten,
     PartitionChanged,
     RecordChange,
+    assign_json,
 )
 
 JUDGED_OUTPUT = mctx("judged output:")
@@ -41,11 +47,44 @@ def not_written(id: str, names: Sequence[str], kind: Section, lineless: bool
     the solver does not hold."""
     if lineless:
         return mctx("wrote no witness `{id}`: the solver has no `@{kind}` "
-                    "line for `{id}`; once the line is written, `{kind}` "
-                    "writes the witness").format(id=id, kind=kind.value)
+                    "line for `{id}`; once the line is written with a "
+                    "verdict other than `other`, `{kind}` writes the "
+                    "witness").format(id=id, kind=kind.value)
     return mctx("wrote no witness `{id}`: its groups name {names}, which "
                 "denote no case of the solver").format(
         id=id, names=_ticked(names))
+
+
+def judged_unwritten(id: str, lines: Sequence[int], command: str,
+                     input: Grid) -> list[str]:
+    """The lines of a witness a survey built and did not write, since
+    `lines` record its verdict `other`, whose witness holds the judged
+    output, which the survey does not know: the `record` command
+    `command` that writes the witness, and the input it reads on stdin
+    above the `---` line and the judged output."""
+    return [mctx("wrote no witness `{id}`: {lines} {verb} the verdict "
+                 "`other`, whose witness holds the judged output; run this "
+                 "command with the input below, a `---` line and the judged "
+                 "output on stdin, to write it").format(
+                     id=id, lines=line_list(lines),
+                     verb=mctx("records") if len(lines) == 1
+                     else mctx("record")),
+            f"  {command}", "", mctx("stdin, above the `---` line:"),
+            *(shifted(r, "  ") for r in grid_lines(input))]
+
+
+def record_command(stem: str, entry: Entry, at: Path | None) -> str:
+    """The `record` command that writes `entry` anew from stdin on the solver
+    `stem`, a task id or a solver file's path, with the entry's `separates`
+    text and its `assign`, into the witness file `at`; into the task's where
+    None."""
+    words = ["uv", "run", "python", "scripts/run_dl.py", "record", stem,
+             entry.id, "--separates", entry.separates]
+    if entry.assign:
+        words += ["--assign", json.dumps(assign_json(entry.assign))]
+    if at is not None:
+        words += ["--witness-file", str(at)]
+    return shlex.join([*words, "-"])
 
 
 def wrote_lineless(id: str, path: object, proposer: str,

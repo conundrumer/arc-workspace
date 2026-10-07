@@ -50,6 +50,10 @@ class ProblemKind(StrEnum):
     line among them."""
     NAME_FORM = "name-form"
     """A name in none of the name forms."""
+    OUTPUT_OFF_VERDICT = "output-off-verdict"
+    """A witness entry's `output` in the form the witness file does not
+    take for the verdict of a line that records the entry, or for no
+    verdict where no line records one (`OutputOffVerdict`)."""
     ASSIGN_NAMES_NOTHING = "assign-names-nothing"
     """An `assign` key that is no parameter and no `@store` relation."""
     ASSIGN_VALUE_UNKNOWN = "assign-value-unknown"
@@ -413,9 +417,28 @@ class OffFormType(StrEnum):
     """A record with a field of an ADT in `Choice`."""
 
 
+class OutputForm(StrEnum):
+    """The form of a witness entry's `output`."""
+
+    GROUPS = "groups"
+    JUDGED = "judged"
+    """A bare grid, the judged output."""
+
+
+@dataclass(frozen=True)
+class OutputOffVerdict:
+    """A witness entry's `output` in the form `held`, against the verdict
+    of the line `line`; None where no line records a verdict for the
+    entry."""
+
+    held: OutputForm
+    line: int | None
+
+
 type Detail = (Quoted | Named | OffForm | ShapeFault | Undecided
                | GridOffLayout | AnchorWithoutStamp | GridCellOffForm
-               | AssignArity | AssignType | CaseColumnOffForm | ParseFailure)
+               | AssignArity | AssignType | CaseColumnOffForm
+               | OutputOffVerdict | ParseFailure)
 
 
 @dataclass(frozen=True)

@@ -11,12 +11,15 @@ from solver import witness as witness_reader
 from solver.model import Params, every_base
 from solver.aggregate import (
     Solver,
-    instance_faults,
     lists_case,
-    name_problems,
     parse_with_lib,
     read_witness,
     solver_file,
+)
+from solver.form_checks import (
+    instance_faults,
+    name_problems,
+    output_form_problems,
 )
 from solver.readers import (
     choice_line,
@@ -121,7 +124,8 @@ def load(stem: str, engine: Engine, path: Path | None = None) -> Solver:
             Named(annotations.representative.task_id)))
     solver = Solver(stem, task_id, program, annotations, choice, branches,
                     params, witness_file, task, lib, tuple(problems), engine)
-    named = (*name_problems(solver), *off_form_case_columns(solver))
+    named = (*name_problems(solver), *output_form_problems(solver),
+             *off_form_case_columns(solver))
     if named:
         solver = Solver(stem, task_id, program, annotations, choice,
                         branches, params, witness_file, task, lib,

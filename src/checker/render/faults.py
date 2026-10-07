@@ -4,7 +4,7 @@ form among them."""
 from collections.abc import Sequence
 
 from checker.finding import FaultPayload, Finding
-from checker.render.locations import LineForm, where_text
+from checker.render.locations import LineForm, line_text, where_text
 from controlled_markdown import mctx
 from engine import GridLayout, ParseFailure, RelationName
 from engine.text import text as code_text
@@ -33,6 +33,8 @@ from solver.problems import (
     Named,
     OffForm,
     OffFormType,
+    OutputForm,
+    OutputOffVerdict,
     ProblemKind,
     Quoted,
     ShapeFault,
@@ -78,6 +80,9 @@ PROBLEM_TEXT: dict[ProblemKind, str] = {
     ProblemKind.NAME_FORM: mctx(
         "`{text}` is in no form [Witness file]"
         "(docs/handbook/solver-file.md#witness-file) lists"),
+    ProblemKind.OUTPUT_OFF_VERDICT: mctx(
+        "{text}; see [Witness file]"
+        "(docs/handbook/solver-file.md#witness-file)"),
     ProblemKind.ASSIGN_NAMES_NOTHING: mctx(
         "the `assign` key `{text}` is no parameter of the solver and no "
         "`@store` line's relation"),
@@ -291,8 +296,31 @@ def detail_text(detail: Detail) -> str:
                         "solver's `GRID_STAMP` layout for `{name}` is "
                         "{lh}x{lw}").format(name=name, h=h, w=w,
                                             lh=layout.height, lw=layout.width)
+        case OutputOffVerdict() as off:
+            return _output_off_verdict_text(off)
         case ParseFailure(line=line, column=column, message=message):
             return f"{line}:{column}: {message}"
+
+
+def _output_off_verdict_text(off: OutputOffVerdict) -> str:
+    """A witness entry's `output` against the verdict that records it, and
+    the form `record` writes in its place."""
+    if off.line is None:
+        if off.held is OutputForm.GROUPS:
+            raise ValueError("groups where no line records a verdict are in "
+                             "the form the witness file takes")
+        return mctx("the `output` is a bare grid, the judged output of the "
+                    "verdict `other`, and no line records a verdict for the "
+                    "entry; write the groups into the entry with `record`")
+    if off.held is OutputForm.GROUPS:
+        return mctx("the `output` holds groups, and {line} records the "
+                    "verdict `other`, whose witness holds the judged output; "
+                    "write the judged output into the entry with "
+                    "`record`").format(line=line_text(off.line))
+    return mctx("the `output` is a bare grid, the judged output of the "
+                "verdict `other`, and {line} records another verdict; write "
+                "the groups into the entry with `record`").format(
+                    line=line_text(off.line))
 
 
 STORAGE_TEXT: dict[Storage, str] = {

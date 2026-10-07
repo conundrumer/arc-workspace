@@ -43,7 +43,9 @@ from cli.common import (
 from cli.witness_file import absent, lined_solver, read_file, target, with_file
 from engine import RunFailure, checkout
 from solver import witness
+from solver.annotations import VerdictWord
 from solver.model import DeriveBranch
+from solver.names import verdict_lines
 from solver.aggregate import Solver
 from solver.readers import declaration_of
 from solver.problems import WitnessFileRole
@@ -234,7 +236,7 @@ def _unrecorded(found: Iterable[Derivation | Found]
             and not x.entry]
 
 
-def _built(solver: Solver, at: Path,
+def _built(arg: str, solver: Solver, at: Path,
            built: Sequence[tuple[Entry, BuiltBy]], corpus: bool,
            runs: Runs, kind: Section, writes_lineless: bool) -> int:
     """Each witness a survey built, as `record` prints it, each followed
@@ -244,7 +246,12 @@ def _built(solver: Solver, at: Path,
     built it with a line the solver does not hold, is not written, and its
     line says why. Under `writes_lineless`, as for the `derive` survey,
     the entry built for a branch with no line is written, its names read
-    with the line standing, and its line says which line to add."""
+    with the line standing, and its line says which line to add. An entry
+    whose verdict a line of the solver records as `other`
+    (`solver.names.verdict_lines`) is not written, since its witness holds
+    the judged output in place of groups: its lines give the `record`
+    command that writes it, on the solver argument `arg` of the command,
+    and the input that command reads."""
     if not built:
         return 0
     if corpus:
@@ -264,8 +271,13 @@ def _built(solver: Solver, at: Path,
 
     bad = {e.id: unnamed(by.solver, by.cases, e) if lineless(by)
            else unnamed(solver, solver_cases, e) for e, by in built}
+    judged = {e.id: [line.line for line in verdict_lines(solver, e.id)
+                     if line.verdict == VerdictWord.OTHER]
+              for e, _by in built}
     problems = () if corpus else witness.put(
-        at, solver.task_id, [e for e, _by in built if not bad[e.id]])
+        at, solver.task_id,
+        [e for e, _by in built if not bad[e.id] and not judged[e.id]])
+    given = None if at == witness.path(solver.task_id) else at
     for e, by in built:
         of = runs.lined_runs(by.solver).case_count if adds_line(by) \
             else runs.case_count
@@ -274,6 +286,10 @@ def _built(solver: Solver, at: Path,
             lines.append(recording.not_written(
                 e.id, bad[e.id], kind,
                 adds_line(by)))
+        elif judged[e.id]:
+            lines += recording.judged_unwritten(
+                e.id, judged[e.id], recording.record_command(
+                    arg, e, given), e.input)
         elif corpus:
             lines.append(recording.WOULD_RECORD.format(id=e.id))
         elif not problems and lineless(by):
@@ -299,7 +315,7 @@ def cmd_derive(arg: str, witness_file: str | None = None,
     """The derivations of the solver's stored parameters, each with its
     witness and the line that records the judgment, then the findings as
     the audit's derive section prints them; each witness it builds is
-    written into the witness file."""
+    written into the witness file as `_built` gives."""
     eng = engine()
     got = _branch_solver(arg, witness_file, eng)
     if got is None:
@@ -312,7 +328,7 @@ def cmd_derive(arg: str, witness_file: str | None = None,
         *commands.judgment_first(derive_lines(solver, survey)), "",
         *commands.judgment_first(commands.indented(solver, Section.DERIVE,
                                                    findings))]))
-    return _built(solver, at, _unrecorded(survey.derivations), corpus, runs,
+    return _built(arg, solver, at, _unrecorded(survey.derivations), corpus, runs,
                   Section.DERIVE, True) or exit_code(findings)
 
 
@@ -320,7 +336,7 @@ def cmd_store(arg: str, witness_file: str | None = None,
               corpus: bool = False) -> int:
     """The relations that hold one value on every input, each with its
     witness and the line that records the judgment; each witness it builds
-    is written into the witness file."""
+    is written into the witness file as `_built` gives."""
     eng = engine()
     got = _branch_solver(arg, witness_file, eng)
     if got is None:
@@ -329,7 +345,7 @@ def cmd_store(arg: str, witness_file: str | None = None,
     runs = Runs(eng, solver, LIMITS)
     survey = runs.store_survey
     print("\n".join(store_lines(solver, survey)))
-    return _built(solver, at, _unrecorded(f for f in survey.listed
+    return _built(arg, solver, at, _unrecorded(f for f in survey.listed
                                           if f.store_branch),
                   corpus, runs, Section.STORE, False)
 
