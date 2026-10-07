@@ -415,8 +415,9 @@ def _ignore_text(p: LintIgnore) -> str:
             if p.sentence == LintSentence.IGNORE_ON_DECL:
                 return mctx("`{d}` states a relation above a `.decl`"
                             ).format(d=directive)
-            return mctx("`{d}` stands immediately above no `.decl` or "
-                        "`.init`").format(d=directive)
+            return mctx("`{d}` stands in no run of `@ignore` lines "
+                        "directly above a `.decl` or `.init`"
+                        ).format(d=directive)
         case _:
             raise ValueError(f"no sentence for {p.sentence}")
 

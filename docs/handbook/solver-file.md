@@ -161,7 +161,7 @@
     - a record used as a type argument of a generic comp
 
 ## Program
-- **`@ignore` directive.** A relation kept despite a hint has `// @ignore: <category> — <reason>` on the line immediately above its declaration, with the category the hint gives.
+- **`@ignore` directive.** A relation kept despite a hint has `// @ignore: <category> — <reason>`, with the category the hint gives, in the run of `@ignore` lines directly above its declaration.
     - The hint does not fire on the relation.
     - Above a `.init`, `// @ignore <relation>: <category> — <reason>` dismisses that one relation of the instance, and the bare form dismisses every relation of it.
 - **`@store` directive.** The relation, or the instance's relation the line names, has one value on every input, and the line is a branch of a choice point on it, at which each case whose base reads the relation takes a branch and whose concept branch is the derived relation, with the relation's value stored per case; the cases that take that branch are cases of the solver.

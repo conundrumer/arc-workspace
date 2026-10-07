@@ -65,7 +65,7 @@
 ## Program
 - Program style applies to the Determine comp and to the program clauses other than the clauses of `impl_choice`, of the enumerators, and of the relations that only `impl_choice` and the enumerators read.
 - The single-consumer hint also applies to relations in Params.
-- The gloss of a relation that carries an `@ignore` directive is in a separate comment immediately above that directive.
+- The gloss of a relation that carries an `@ignore` directive is in a separate comment immediately above its `@ignore` lines.
 
 ### Bans
 - **Literals.** Literals are banned.

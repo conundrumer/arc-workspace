@@ -275,13 +275,13 @@ def _with_relation(f: Finding, on: bool) -> Finding:
 
 @quotes("solver-file.md", "Program",
         "A relation kept despite a hint has `// @ignore: <category> — "
-        "<reason>` on the line immediately above its declaration, with the "
-        "category the hint gives.")
+        "<reason>`, with the category the hint gives, in the run of "
+        "`@ignore` lines directly above its declaration.")
 @quotes("solver-file.md", "Program",
         "The hint does not fire on the relation.")
 @quotes("style.md", "Program",
         "The gloss of a relation that carries an `@ignore` directive is in a "
-        "separate comment immediately above that directive.")
+        "separate comment immediately above its `@ignore` lines.")
 def check_lint(solver: Solver, runs: Runs) -> list[Finding]:
     """Every lint finding and hint of the solver, less the hints an
     `@ignore` line of their category on their relation dismisses, with a

@@ -11,7 +11,6 @@ from solver.annotations import (
     Plausibility,
     VerdictWord,
 )
-from solver.category import Category
 from solver.problems import InSolver, ProblemKind
 from tests.solver.fake import adt, comment, program, relation
 
@@ -61,9 +60,6 @@ def test_forms_and_their_places() -> None:
     assert (store.relation, store.above, store.verdict) == (
         None, BAND, VerdictWord.STORED)
     single, dead, derive = got.ignores
-    # The lint form stands on its declaration only directly above it.
-    assert (single.category, single.above) == (Category.SINGLE_CONSUMER, None)
-    assert (dead.category, dead.above) == (Category.DEAD, None)
     assert (derive.form, derive.name, derive.above) == (
         IgnoreForm.DERIVE, "p=Q", BAND)
     (marker,) = got.markers

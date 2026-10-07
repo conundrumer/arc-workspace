@@ -7,8 +7,8 @@ from engine.quotes import quotes
 
 @quotes("solver-file.md", "Program",
         "A relation kept despite a hint has `// @ignore: <category> — "
-        "<reason>` on the line immediately above its declaration, with the "
-        "category the hint gives.")
+        "<reason>`, with the category the hint gives, in the run of "
+        "`@ignore` lines directly above its declaration.")
 class Category(StrEnum):
     """The closed vocabulary of lint categories an `@ignore: <category>`
     line may name (solver-file.md, the `@ignore` directive under

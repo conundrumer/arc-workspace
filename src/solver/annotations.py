@@ -254,7 +254,8 @@ class ClaimLine:
 
 @quotes("solver-file.md", "Program",
         "A relation kept despite a hint has `// @ignore: <category> — "
-        "<reason>` on the line immediately above its declaration")
+        "<reason>`, with the category the hint gives, in the run of "
+        "`@ignore` lines directly above its declaration.")
 @quotes("solver-file.md", "Program",
         "Above a `.init`, `// @ignore <relation>: <category> — <reason>` "
         "dismisses that one relation of the instance")
@@ -282,8 +283,8 @@ class IgnoreForm(StrEnum):
 
 @quotes("solver-file.md", "Program",
         "**`@ignore` directive.** A relation kept despite a hint has `// "
-        "@ignore: <category> — <reason>` on the line immediately above its "
-        "declaration, with the category the hint gives.")
+        "@ignore: <category> — <reason>`, with the category the hint gives, "
+        "in the run of `@ignore` lines directly above its declaration.")
 @quotes("solver-file.md", "Params",
         "`// @ignore: derive — <reason>` above the parameter records that "
         "every derivation of it fails a case condition")
@@ -821,8 +822,8 @@ def read(program: Program) -> tuple[Annotations, tuple[Fault, ...]]:
     workarounds: list[Workaround] = []
     header_prose: list[Comment] = []
 
-    # Whether each own-line comment is the last of its block but for
-    # continuation lines, for the `@ignore` lines that stand directly above
+    # Whether each own-line comment stands in the run of `@ignore` lines at
+    # the end of its block, for the lint-form `@ignore` lines that stand on
     # their declaration.
     blocks: list[list[Comment]] = []
     for c in owned:
@@ -832,16 +833,19 @@ def read(program: Program) -> tuple[Annotations, tuple[Fault, ...]]:
             blocks[-1].append(c)
         else:
             blocks.append([c])
-    last_of_block: dict[int, bool] = {}
+    in_ignore_run: dict[int, bool] = {}
     for block in blocks:
-        # Each comment's answer is whether every comment after it
-        # continues, so the block is read once from its end.
-        rest_continues = True
+        # Each comment's answer is whether every comment after it is an
+        # `@ignore` line or a continuation line, so the block is read once
+        # from its end.
+        rest_in_run = True
         for c in reversed(block):
-            last_of_block[c.line] = rest_continues
+            in_ignore_run[c.line] = rest_in_run
             r = _content(c)
-            rest_continues = rest_continues and r is not None \
-                and r[0] >= 2 and not r[1].startswith("@")
+            d = _DIRECTIVE_RE.match(r[1]) if r is not None else None
+            rest_in_run = rest_in_run and r is not None and (
+                d[1] == DirectiveWord.IGNORE if d is not None
+                else r[0] >= 2 and not r[1].startswith("@"))
 
     open_field: _Joined | None = None   # a field or claim a continuation joins
     open_claim: _OpenClaim | None = None  # a claim an `@approximated:` joins
@@ -1045,7 +1049,7 @@ def read(program: Program) -> tuple[Annotations, tuple[Fault, ...]]:
              else open_block.reassigned).append(value)
             continue
         if word == DirectiveWord.IGNORE:
-            _ignore(tail, content, line, above, last_of_block[line],
+            _ignore(tail, content, line, above, in_ignore_run[line],
                     ignores, problem, off)
             continue
         if word == DirectiveWord.WORKAROUND:
@@ -1123,14 +1127,15 @@ def _as[T](value: object, kind: type[T]) -> T:
 
 
 def _ignore(tail: str, content: str, line: int, above: DeclId | None,
-            last: bool, out: list[IgnoreLine],
+            in_run: bool, out: list[IgnoreLine],
             problem: Callable[[ProblemKind, int, str | Detail], None],
             off: Callable[[int, str, DirectiveWord, Iterable[OffPart]], None]
             ) -> None:
     """One `@ignore` line (solver-file.md, under "Params" and "Program"). The
-    lint form stands on the declaration directly under it, with no other
-    directive between (solver-file.md, under "Program"); the derive and store
-    forms stand on the declaration their comment block stands above."""
+    lint form stands on the declaration its comment block stands above where
+    only `@ignore` lines and their continuation lines stand between
+    (solver-file.md, under "Program"); the derive and store forms stand on
+    the declaration their comment block stands above."""
     relation, rest, parts = _name_colon(tail, _RELATION_RE,
                                         FormPart.RELATION, True)
     if rest is None or parts:
@@ -1169,7 +1174,7 @@ def _ignore(tail: str, content: str, line: int, above: DeclId | None,
         problem(ProblemKind.UNKNOWN_IGNORE_CATEGORY, line, Named(given))
         return
     out.append(IgnoreLine(IgnoreForm.LINT, category, relation, None, reason,
-                          line, above if last else None))
+                          line, above if in_run else None))
 
 
 # Writing annotation lines
