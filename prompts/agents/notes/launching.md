@@ -79,7 +79,7 @@
     2. Write the output of `git diff HEAD -- programs/solvers/<task_id>.dl programs/witnesses/<task_id>.wit.json` to `uncommitted.diff` in it.
     3. Move into it the task's solver and its witness file, each where it exists, and, before an Analyze pass, each entry of `work/task/<task_id>/` other than `claim` and the numbered directories, or, before a Create pass, `create.md`, each `refine-<n>.md` and `progress.md`.
     4. Run `git update-index --skip-worktree <path>` on the path of each of those two files that `git ls-files <path>` lists.
-- Once each pass you launch on the task for one request or one procedure has ended:
+- Once each pass you launch on the task for one request or one procedure has ended, or the harness or the permission classifier has refused the launch of such a pass while no other such pass runs:
     1. Move the solver and the witness file you set aside back to their paths, each where nothing stands at its path.
     2. Run `git update-index --no-skip-worktree <path>` on each path you marked.
     3. Remove the claim file.

@@ -33,7 +33,7 @@ tools: Bash, Agent, SendMessage, TaskStop
     - a command repeated with nothing changed between the repeats;
     - a claim in the agent's `said:` line that the rest of this listing or of an earlier one contradicts;
     - a turn that has ended, at the time its `turn ended:` line gives, while nothing it backgrounded runs;
-    - a run that has outgrown its task: its open work would cost less in a fresh agent given a hand-over than in that run. A run whose context is below the one at which its documents have it end has not outgrown its task;
+    - a run that has outgrown its task: its open work would cost less in a fresh agent given a hand-over than in that run. A run whose context is below the bound its documents or its entry's header give it has not outgrown its task;
     - an action that the agent's documents forbid, or that departs from its brief.
 - A guess of yours at what the agent is doing rules out no sign.
     * comment: This restates the bullet above. Its earlier form, "the entry, read against the work its task and its commands do", already left a guess outside what rules a sign out, and with it in context supervisor a635f83d72350ec5f launched no verifier in 34 polls: it ruled out a 14.9-minute call with "its code editor was watching that run" (ticket 2-389), and judged a code editor at 157k to 225k tokens of context "Active and making progress" (ticket 2-390).

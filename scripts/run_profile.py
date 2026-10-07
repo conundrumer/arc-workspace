@@ -13,7 +13,7 @@ from agent_launches import run_launches
 from agent_turns import idle_after, turns
 from command_labels import AGENT_TOOLS, POLL, call_command, command_label
 from controlled_markdown import mctx
-from run_reads import (blocks, in_background, is_prompt,
+from run_reads import (blocks, context_size, in_background, is_prompt,
                        message_text, notified, parent_id, read_meta,
                        results_by_call, run_entries, run_type, session_agents,
                        session_of)
@@ -140,16 +140,6 @@ class Call:
 
 # Profiles.
 
-def request_input(entry: Entry) -> int | None:
-    """The input tokens of the request an assistant entry answers, or None
-    where the entry gives no usage."""
-    usage = (entry.get("message") or {}).get("usage")
-    if not isinstance(usage, dict):
-        return None
-    return sum(usage.get(k) or 0 for k in (
-        "input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
-
-
 def launched_type(inp: dict[str, Any], result: dict[str, Any] | None,
                   session: Path) -> str | None:
     """The type of the agent an Agent call launched: the type the call gives,
@@ -216,7 +206,6 @@ def profile(path: Path, undecided: list[str]) -> Run:
     running: dict[str, tuple[Key, float]] = {}   # tool-use id -> key, start
     by_task: dict[str, str] = {}                # task id -> tool-use id
     spans: dict[str, Span] = {}
-    context: int | None = None
     said: str | None = None
     idle = False
     prev: float | None = None
@@ -257,8 +246,6 @@ def profile(path: Path, undecided: list[str]) -> Run:
             elif who is Sender.UNKNOWN:
                 unknown.append(message_text(e))
         if etype == "assistant":
-            tokens = request_input(e)
-            context = context if tokens is None else tokens
             text = "\n".join(b.get("text", "") for b in blocks(e, "text")).strip()
             said = text or said
             for b in blocks(e, "tool_use"):
@@ -294,6 +281,7 @@ def profile(path: Path, undecided: list[str]) -> Run:
     if brief and first is not None:
         messages.insert(0, Message(briefed, first, "\n".join(brief), 0.0))
     cwd = next((e["cwd"] for e in entries if e.get("cwd")), None)
+    context = context_size(reversed(entries))
     in_flight = [spans[tid] for tid in pending if tid in spans]
     backgrounded = [spans[tid] for tid in running if tid in spans]
     for k, start in running.values():

@@ -1,9 +1,11 @@
 """Read the run of an agent from its Claude Code transcripts: its
-`.meta.json`, its entries and the blocks, texts, call results, messages and
-notifications they give, and the session its transcripts belong to."""
+`.meta.json`, its entries and the blocks, texts, call results, messages,
+notifications and request sizes they give, and the session its transcripts
+belong to."""
 
 import json
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
 from functools import cache
@@ -82,14 +84,20 @@ def read_meta(path: Path) -> dict[str, Any] | None:
     """The `.meta.json` of the run of the subagent whose transcript is at
     `path`: each key as the earliest of its transcripts' `.meta.json` files
     that gives the key gives it, or None where none of them has one."""
-    metas = [json.loads(m.read_text()) for p in chain(path)
-             if (m := p.with_suffix(".meta.json")).is_file()]
+    metas = [m for p in chain(path) if (m := transcript_meta(p)) is not None]
     if not metas:
         return None
     out: dict[str, Any] = {}
     for meta in reversed(metas):
         out.update(meta)
     return out
+
+
+def transcript_meta(path: Path) -> dict[str, Any] | None:
+    """The `.meta.json` of the subagent transcript at `path` alone, or None
+    where it has none."""
+    m = path.with_suffix(".meta.json")
+    return json.loads(m.read_text()) if m.is_file() else None
 
 
 def subagent_meta(path: Path) -> dict[str, Any]:
@@ -166,6 +174,24 @@ def session_transcripts(session: Path) -> list[Path]:
     and those of its subagents."""
     main = main_transcript(session)
     return [*([main] if main.is_file() else []), *session_agents(session).values()]
+
+
+def request_input(entry: Entry) -> int | None:
+    """The input tokens of the request an assistant entry answers, or None
+    where the entry gives no usage."""
+    usage = (entry.get("message") or {}).get("usage")
+    if not isinstance(usage, dict):
+        return None
+    return sum(usage.get(k) or 0 for k in (
+        "input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+
+
+def context_size(entries: Iterable[Entry]) -> int | None:
+    """The context of a run whose entries are given last first: the input
+    tokens of its latest request, or None where no assistant entry gives
+    usage."""
+    return next((t for e in entries if e.get("type") == "assistant"
+                 and (t := request_input(e)) is not None), None)
 
 
 def is_prompt(entry: Entry) -> bool:
