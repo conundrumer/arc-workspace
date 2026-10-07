@@ -156,7 +156,9 @@ def survey_store(runs: Runs) -> StoreSurvey:
             f.entry = True
             continue
         searched.append(f)
-    for stop in at_once(lambda f: find_witness(runs, solver, f), searched):
+    relations = list(dict.fromkeys(f.relation for f in searched))
+    for stop in at_once(lambda f: find_witness(runs, solver, f, relations),
+                        searched):
         if stop is not None:
             failed.append(stop)
     empty = {p for p in rels if all(not g.get(p) for g in per_input)}

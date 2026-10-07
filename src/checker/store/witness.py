@@ -2,27 +2,35 @@
 D4 element, or with a stored color swapped for a free one, on which the
 relation's value differs, and the search for it."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
-from checker.branches.cases import counterpart, ordered, with_line
+from checker.branches.cases import (
+    branch_models,
+    counterpart,
+    ordered,
+    with_line,
+)
 from checker.branches.witnesses import (
     BuiltBy,
     NoFit,
+    fitting_both,
     swap_entry,
     witness_divergence,
     witness_targets,
 )
 from checker.finding import AtRelation, Finding, RunKind
-from checker.judged import Swap, no_result, swaps
+from checker.judged import Swap, no_result, stored_colors, swaps
 from checker.runs import Runs
 from checker.store.survey import Found, SearchEnd, case_key, projection
-from engine import Grid, RunFailure
+from engine import Grid, RelationName, RunFailure
 from engine.program import grid_size
 from engine.quotes import quotes
+from solver import pair_runs
 from solver.aggregate import Solver
 from solver.case_types import case_types
+from solver.model import Case
 from solver.outcome import Assignment, Grids
 from engine.program import as_grid
 from solver.run_parts import case_reading
@@ -88,10 +96,57 @@ class FailedRun:
     failure: RunFailure
 
 
+def _taking(solver: Solver, every: Sequence[Case], f: Found) -> list[Case]:
+    """The cases of `every` that take the value's branch (`ordered`), of
+    the bases the value stands for where its rows hold a case column."""
+    return [c for c in ordered(solver, every, f.name)
+            if not f.case_values or c.base in f.bases]
+
+
+def _model_alone(runs: Runs, solver: Solver, lined: Solver,
+                 every: tuple[Case, ...], taking: Sequence[Case], f: Found
+                 ) -> Case | None:
+    """The case the search looks with alone, found without the witnessed
+    cases of `lined`, the solver with the value's line standing. `every`
+    is every case of `lined`, and `taking` those of them that take the
+    branch (`_taking`). The case is the branch's model among `taking`,
+    where the witnessed cases keep it as a branch's model
+    (`solver.pair_runs.branch_models`) and it fits the pairs with its
+    counterpart (`fitting_both`). The witnessed cases that take the
+    branch then hold it, so it is their model too, and `witness_targets`
+    gives it alone. None otherwise."""
+    models = branch_models(solver, taking, f.name)
+    if not models or models[0] not in pair_runs.branch_models(lined, every):
+        return None
+    return models[0] if fitting_both(runs, lined, models, f.name) else None
+
+
+def _swap_cases(runs: Runs, solver: Solver, lined: Solver,
+                taking: Sequence[Case], f: Found, model: Case) -> list[Case]:
+    """The cases whose stored colors give the color swaps (`swaps`), where
+    the search looks with `model` alone (`_model_alone`): `model`, where
+    its stored colors are those of `taking`, every case of `lined` that
+    takes the branch, so that the witnessed cases that take it, which hold
+    `model`, store those colors too; else those witnessed cases."""
+    if stored_colors(runs.engine, solver, [model]) == stored_colors(
+            runs.engine, solver, taking):
+        return [model]
+    return _taking(solver, _judged(runs, lined), f)
+
+
+def _judged(runs: Runs, lined: Solver) -> tuple[Case, ...]:
+    """The judged cases of `lined` (`Runs.lined`), whose enumeration
+    the search read already."""
+    got = runs.lined(lined)
+    assert isinstance(got, tuple)
+    return got
+
+
 @quotes("principles.md", "Witnesses",
         "A branch's witnesses are divergence witnesses between its model "
         "and the concept branch's model.")
-def find_witness(runs: Runs, solver: Solver, f: Found) -> Finding | None:
+def find_witness(runs: Runs, solver: Solver, f: Found,
+                 relations: Sequence[RelationName]) -> Finding | None:
     """The first grid on which the value differs and a case the survey
     looks with (`witness_targets`, among the cases that take the value)
     gives the output a witness needs (`witness_divergence`): the D4 images
@@ -99,24 +154,45 @@ def find_witness(runs: Runs, solver: Solver, f: Found) -> Finding | None:
     relation stands empty on holds no value. It sets `Found.unseparated`
     and `Found.failed`, and records in `Found.ended` how it ended
     (`SearchEnd`, `NoFit`). The failure of the run that enumerates the cases with
-    the branch standing, where it fails."""
+    the branch standing, where it fails.
+
+    The value on a grid is read from one run of `relations`, the
+    relations of every value the survey searches, so that the searches
+    share it. For a value with no `@store` line, the witnessed cases of
+    the solver with its line standing are computed only where the search
+    reads them: not where no case of that solver takes the branch, since
+    they are among its cases; and where the model looks alone
+    (`_model_alone`), only for the color swaps where their stored colors
+    can differ from the model's (`_swap_cases`), and for the entry of a
+    witness found."""
     task = solver.task
     assert task is not None
     branch = f.name
     lined = solver if f.line is not None else with_line(solver, branch)
-    every = runs.cases if f.line is not None else runs.lined(lined)
+    every = runs.cases if f.line is not None \
+        else runs.lined_runs(lined).solver_cases
     if not isinstance(every, tuple):
         f.ended = SearchEnd.CASES_FAILED
         return no_result(every, RunKind.CASE, None, AtRelation(f.relation))
-    cases = [c for c in ordered(solver, every, branch)
-             if not f.case_values or c.base in f.bases]
-    if not cases:
+    judged = every if f.line is not None else None
+    taking = _taking(solver, every, f)
+    alone = None if judged is not None or not taking \
+        else _model_alone(runs, solver, lined, every, taking, f)
+    if alone is None and judged is None and taking:
+        judged = _judged(runs, lined)
+        taking = _taking(solver, judged, f)
+    if not taking:
         f.ended = SearchEnd.UNTAKEN
         return None
-    models = witness_targets(runs, lined, cases, branch)
-    if not models:
-        f.ended = NoFit.NO_FIT
-        return None
+    if alone is not None:
+        models = [alone]
+        swap_from = _swap_cases(runs, solver, lined, taking, f, alone)
+    else:
+        models = witness_targets(runs, lined, taking, branch)
+        swap_from = taking
+        if not models:
+            f.ended = NoFit.NO_FIT
+            return None
     model = models[0]
     other = counterpart(model, branch)
     held_by_case = case_reading(solver, f.relation)
@@ -124,9 +200,10 @@ def find_witness(runs: Runs, solver: Solver, f: Found) -> Finding | None:
     grids: list[tuple[int, Change, Grid]] = []
     for i, ex in enumerate(task.train):
         grids += [(i, d, g) for d, g in d4_images(as_grid(ex.input))]
-    grids += [(s.index, s, s.grid) for s in swaps(runs.engine, solver, task, cases)]
+    grids += [(s.index, s, s.grid)
+              for s in swaps(runs.engine, solver, task, swap_from)]
     for index, change, grid in grids:
-        got = runs.defined_relations(grid, [f.relation])
+        got = runs.defined_relations(grid, relations)
         if isinstance(got, Mapping):
             value = projection(got[f.relation], f, case_key(
                 case_types(solver), types, case_cols), types)
@@ -150,10 +227,12 @@ def find_witness(runs: Runs, solver: Solver, f: Found) -> Finding | None:
         f.move = Move(index, change, grid,
                       isinstance(out, Grids) and out.grids == (grid,))
         f.ended = SearchEnd.FOUND
+        if judged is None:
+            judged = _judged(runs, lined)
         made = swap_entry(runs, lined, f.case_id, branch, index, change,
-                          grid, every)
+                          grid, judged)
         f.built = made if isinstance(made, Entry) else None
-        f.built_by = BuiltBy(lined, every)
+        f.built_by = BuiltBy(lined, judged)
         if not isinstance(made, Entry):
             return no_result(made, RunKind.WITNESS, None,
                              AtRelation(f.relation))
