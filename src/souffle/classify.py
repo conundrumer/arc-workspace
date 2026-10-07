@@ -75,8 +75,8 @@ def _classify(program: Program, relation: RelationName, column: int
     others = [i for i in range(len(cols)) if i != column]
     text = _CLASSING.format(
         rel=relation.name, rows=ROWS, classes=CLASSES,
-        fields=", ".join(f"f{i}: {cols[i].type}" for i in others),
-        case=cols[column].type,
+        fields=", ".join(f"f{i}: {cols[i].type.text}" for i in others),
+        case=cols[column].type.text,
         blank=", ".join("Ch" if i == column else "_"
                         for i in range(len(cols))),
         others=", ".join(names[i] for i in others),

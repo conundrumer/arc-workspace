@@ -12,7 +12,7 @@ from checker.derived_constant import survey_derived_constant
 from checker.determination_plan import survey_determination_plan
 from checker.drop_one import survey_drop_one
 from checker.judged import parse_failure
-from checker.lint.form import (
+from checker.lint.form.header import (
     doc_keywords,
     header_keywords,
     keywords_doc,

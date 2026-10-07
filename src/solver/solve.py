@@ -107,12 +107,8 @@ from solver.columns import (
     ArgOffType,
     ArgUnknown,
 )
-from solver.case_types import (
-    case_values,
-    case_columns,
-    case_types,
-    holds_at,
-)
+from solver.case_columns import case_columns, case_values, holds_at
+from solver.case_types import case_types
 from solver.dependence import dependence
 from solver.cases import cases as cases_of
 from solver.problems import (
@@ -999,7 +995,7 @@ class PerCase:
     a parameter's, `solver.columns.parameter_case_columns`), and each case
     column of a record type with fields outside the case, with the places
     of those fields (`CaseTypes.kept`). A fact holds at each base that
-    holds its case values (`solver.case_types.holds_at`), and the relation's
+    holds its case values (`solver.case_columns.holds_at`), and the relation's
     value at a base is the facts that hold there, each without its case
     part (`value`). Every reading of a parameter's value, the runs, the
     sweep, the determination, `derive`, `store` and the lint, reads each
@@ -1084,14 +1080,14 @@ class PerCase:
 
     def holds(self, solver: Solver, base: Base | None, row: Row) -> bool:
         """Whether `base` holds the fact's case values
-        (`solver.case_types.holds_at`)."""
+        (`solver.case_columns.holds_at`)."""
         return holds_at(solver, base, self.types, self.case, self.key(row))
 
     def written(self, solver: Solver, choice: Choice, base: Base,
                 value: Row) -> list[Row]:
         """The facts that give `value`, a fact without its case part
         (`value`), at `base`: each case column and each case field holds
-        what the base holds at its type (`solver.case_types.case_values`).
+        what the base holds at its type (`solver.case_columns.case_values`).
         Raises `ValueError` where a case column with fields outside the
         case holds no record of those fields, which `value` never
         gives."""
@@ -1274,7 +1270,7 @@ def out_columns(program: Program) -> tuple[int | None, int | None]:
     decl = out_decl(program)
     if decl is None:
         return None, None
-    types = [c.type for c in decl.columns]
+    types = [c.type.text for c in decl.columns]
     case = types.index(CHOICE) if CHOICE in types else None
     res = (types.index(TIEBREAK_RESOLUTION)
            if TIEBREAK_RESOLUTION in types else None)
@@ -2225,9 +2221,9 @@ def determine(engine: Engine, solver: Solver, limits: Limits,
     derived = {p.name: got.relations[RelationName((det_name,), p.name)]
                for p in determined}
     rigid = rigid_parameters(solver)
-    ident_cols = {p.name: [c.type for c in p.columns].index(IDENT)
+    ident_cols = {p.name: [c.type.text for c in p.columns].index(IDENT)
                   for p in determined
-                  if IDENT in [c.type for c in p.columns]}
+                  if IDENT in [c.type.text for c in p.columns]}
     charts = _charts(solver, [p.name for p in determined if p.name in rigid])
     if charts:
         placed = program

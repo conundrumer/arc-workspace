@@ -1,7 +1,7 @@
 """The parsed program an engine gives: declarations, units, macro calls and
 comments, as values with no program text in them."""
 
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from functools import cached_property
@@ -46,20 +46,46 @@ class Scope:
 
 
 @dataclass(frozen=True)
-class RelationName:
-    """A relation as a statement names it: the instance path it is read
-    through, empty for a relation of the statement's own scope, and the
-    relation's name. `params.bg` is `RelationName(("params",), "bg")`."""
+class QualifiedName:
+    """A name as the text writes it: the instance path it is read through,
+    empty for a name of the reading scope, and the last part. Two names of
+    different subclasses are not equal."""
 
     instances: tuple[str, ...]
     name: str
 
     @property
     def text(self) -> str:
-        """The name as a statement writes it, `params.bg`: the one text
-        through which every package prints and compares a relation's
-        name."""
+        """The name as the text writes it, `params.bg`: the one text
+        through which every package prints and compares the name."""
         return dotted((*self.instances, self.name))
+
+
+@dataclass(frozen=True)
+class RelationName(QualifiedName):
+    """A relation as a statement names it. `params.bg` is
+    `RelationName(("params",), "bg")`."""
+
+
+@dataclass(frozen=True)
+class TypeName(QualifiedName):
+    """A type as the text refers to it, at a column, a field, an alias's
+    target, a subtype's base, a union's member, a functor's parameter or
+    result, a cast, or a type argument. `parse.KeyedRegion` is
+    `TypeName(("parse",), "KeyedRegion")`; a primitive's name and a type
+    parameter's name have no instance path."""
+
+    @property
+    def primitive(self) -> "Primitive | None":
+        """The primitive type the name refers to; None where it refers to
+        none."""
+        return None if self.instances else Primitive.named(self.name)
+
+    def argument[T](self, arguments: Mapping[str, T]) -> T | None:
+        """The type argument `arguments`, by type parameter, binds to the
+        parameter the name refers to; None where it binds none, as for a
+        name with an instance path, which refers to no parameter."""
+        return None if self.instances else arguments.get(self.name)
 
 
 # Values
@@ -179,7 +205,7 @@ class TypeField:
     (The syntax `Field`; a header field is `solver.HeaderField`.)"""
 
     name: str
-    type: str
+    type: TypeName
 
 
 @dataclass(frozen=True)
@@ -218,7 +244,7 @@ class AliasType:
     id: DeclId
     name: str
     scope: Scope
-    target: str
+    target: TypeName
     span: Span
 
 
@@ -229,7 +255,7 @@ class SubtypeType:
     id: DeclId
     name: str
     scope: Scope
-    base: str
+    base: TypeName
     span: Span
 
 
@@ -240,7 +266,7 @@ class UnionType:
     id: DeclId
     name: str
     scope: Scope
-    members: tuple[str, ...]
+    members: tuple[TypeName, ...]
     span: Span
 
 
@@ -269,7 +295,7 @@ class Column:
     """A relation's column: its attribute name and type."""
 
     name: str
-    type: str
+    type: TypeName
 
 
 @dataclass(frozen=True)
@@ -301,7 +327,7 @@ class Component:
     type_params: tuple[str, ...]
     base: str | None
     """The component it extends; None where it extends none."""
-    base_type_args: tuple[str, ...]
+    base_type_args: tuple[TypeName, ...]
     span: Span | None
     """None for a component an operation wrote."""
 
@@ -314,7 +340,7 @@ class Instance:
     name: str
     scope: Scope
     component: str
-    type_args: tuple[str, ...]
+    type_args: tuple[TypeName, ...]
     span: Span | None
     """None for an instance an operation wrote."""
 
@@ -326,7 +352,7 @@ class FunctorDecl:
     id: DeclId
     name: str
     params: tuple[TypeField, ...]
-    result: str
+    result: TypeName
     span: Span
     stateful: bool = field(default=False, kw_only=True)
 
@@ -436,7 +462,7 @@ class Cast:
     """`as(term, type)`."""
 
     term: "Term"
-    type: str
+    type: TypeName
 
 
 @dataclass(frozen=True)
@@ -845,10 +871,25 @@ class Program:
 type Declaration = TypeDecl | RelationDecl | Component | Instance | FunctorDecl
 
 
+def type_refs(td: TypeDecl) -> list[TypeName]:
+    """The type names a type declaration's right-hand side names."""
+    match td:
+        case AdtType(constructors=cs):
+            return [f.type for c in cs for f in c.fields]
+        case RecordType(fields=fs):
+            return [f.type for f in fs]
+        case SubtypeType(base=base):
+            return [base]
+        case UnionType(members=members):
+            return list(members)
+        case AliasType(target=target):
+            return [target]
+
+
 def dotted(path: tuple[str, ...]) -> str:
     """A qualified name's text, its parts joined by dots, `params.bg`: the
-    one text of a relation's name (`RelationName.text`), an instance path
-    or a type of a component."""
+    one text of a relation's or a type's name (`QualifiedName.text`) and
+    of an instance path."""
     return ".".join(path)
 
 
@@ -1017,7 +1058,8 @@ def term_of(v: Value) -> Term:
     raise TypeError(f"not a value: {v!r}")
 
 
-type TypeReading[P] = Callable[[str, P], "tuple[TypeDecl | Primitive, P]"]
+type TypeReading[P] = Callable[[TypeName, P],
+                               "tuple[TypeDecl | Primitive, P]"]
 """What a type name read at a place of type `P` stands for: a primitive,
 or the declaration with the place its own names are read at. Raises
 ValueError where nothing answers the name."""
@@ -1039,15 +1081,15 @@ MAX_TYPE_DEPTH = 64
 cycle."""
 
 
-def check_type_depth(name: str, depth: int) -> None:
+def check_type_depth(name: TypeName, depth: int) -> None:
     """Raises ValueError where a reading of a type has gone `depth` names
     deep at the name `name`, past `MAX_TYPE_DEPTH`: the type does not end
     in a declaration."""
     if depth > MAX_TYPE_DEPTH:
-        raise ValueError(f"type `{name}` does not end in a declaration")
+        raise ValueError(f"type `{name.text}` does not end in a declaration")
 
 
-def _kind[P](name: str, at: P, types: TypeReading[P], depth: int
+def _kind[P](name: TypeName, at: P, types: TypeReading[P], depth: int
              ) -> "Primitive | type[AdtType] | type[RecordType]":
     """The kind of the type `name`, read at `at`: the primitive an alias,
     subtype or union of primitives comes to, or the kind of declaration
@@ -1066,7 +1108,7 @@ def _kind[P](name: str, at: P, types: TypeReading[P], depth: int
             return type(decl)
 
 
-def typed_value[S, P](source: S, name: str, at: P, types: TypeReading[P],
+def typed_value[S, P](source: S, name: TypeName, at: P, types: TypeReading[P],
                       reading: ValueReading[S], depth: int = 0
                       ) -> "Value | None":
     """The value of the type `name`, read at `at`, that `source` gives: of
@@ -1080,9 +1122,17 @@ def typed_value[S, P](source: S, name: str, at: P, types: TypeReading[P],
     rejects at compile, so that a run never prints one."""
     check_type_depth(name, depth)
     decl, inner = types(name, at)
+    return declared_value(source, decl, inner, types, reading, depth)
 
-    def of(s: S, n: str) -> "Value | None":
-        return typed_value(s, n, inner, types, reading, depth + 1)
+
+def declared_value[S, P](source: S, decl: "TypeDecl | Primitive", at: P,
+                         types: TypeReading[P], reading: ValueReading[S],
+                         depth: int = 0) -> "Value | None":
+    """The value of the type `decl`, whose own names are read at `at`, that
+    `source` gives, as `typed_value` reads it, `depth` names deep."""
+
+    def of(s: S, n: TypeName) -> "Value | None":
+        return typed_value(s, n, at, types, reading, depth + 1)
 
     def each(parts: Sequence[S], fields: tuple[TypeField, ...]
              ) -> "tuple[Value, ...] | None":
@@ -1100,9 +1150,9 @@ def typed_value[S, P](source: S, name: str, at: P, types: TypeReading[P],
         case SubtypeType(base=base):
             return of(source, base)
         case UnionType(members=members):
-            kinds = {_kind(m, inner, types, depth + 1) for m in members}
+            kinds = {_kind(m, at, types, depth + 1) for m in members}
             if len(kinds) > 1:
-                raise ValueError(f"the union `{name}` has members of "
+                raise ValueError(f"the union `{decl.name}` has members of "
                                  f"different kinds, which Souffle rejects")
             return next((v for m in members
                          if (v := of(source, m)) is not None), None)

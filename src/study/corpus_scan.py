@@ -13,7 +13,7 @@ def equal_literal_params(solver: Solver) -> list[tuple[int, list[str]]]:
     A parameter read by no group is left out; so is a group of one."""
     values: dict[str, int] = {}
     for param in solver.params.parameters:
-        if [c.type for c in param.columns] != [NUMBER]:
+        if [c.type.text for c in param.columns] != [NUMBER]:
             continue
         rows = param.stored
         if not isinstance(rows, tuple) or len(rows) != 1 \

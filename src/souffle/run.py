@@ -47,6 +47,7 @@ from engine.program import (
     Program,
     RecordValue,
     RelationName,
+    TypeName,
     Row,
     Rows,
     Scope,
@@ -767,7 +768,7 @@ class _Printed(Mapping[RelationName, Rows]):
         self._caps = dict(caps)
         self._spans: dict[str, tuple[int, int]] | None = None
         self._sets: dict[str, frozenset[str]] = {}
-        self._types: dict[RelationName, tuple[str, ...]] = {}
+        self._types: dict[RelationName, tuple[TypeName, ...]] = {}
         self._rows: dict[RelationName, Rows] = {}
         self._lock = threading.Lock()
 
@@ -810,7 +811,7 @@ class _Printed(Mapping[RelationName, Rows]):
                     and self._text(r) == other._text(r))
                    or self._set(r) == other._set(r) for r in self._outputs)
 
-    def _column_types(self, rel: RelationName) -> tuple[str, ...]:
+    def _column_types(self, rel: RelationName) -> tuple[TypeName, ...]:
         with self._lock:
             got = self._types.get(rel)
             if got is None:
@@ -874,7 +875,7 @@ def _capped_copy(rel: RelationName, cap: int, tree: Tree, taken: set[str]
     name, numbered, least = f"_cap{k}", f"_cap{k}_n", f"_cap{k}_lo"
     taken.update((name, numbered, least))
     xs = [f"x{i}" for i in range(len(types))]
-    cols = ", ".join(f"{x}: {t}" for x, t in zip(xs, types, strict=True))
+    cols = ", ".join(f"{x}: {t.text}" for x, t in zip(xs, types, strict=True))
     args = ", ".join(xs)
     blanks = ", ".join("_" for _ in xs)
     return name, [
@@ -896,7 +897,7 @@ def _output_decl(tree: Tree, rel: RelationName) -> Hit:
     return hit
 
 
-def _top_level_types(rel: RelationName, tree: Tree) -> list[str] | None:
+def _top_level_types(rel: RelationName, tree: Tree) -> list[TypeName] | None:
     """The name at the top level of each column type of `rel`: a type an
     instance on the way down declares, or one of its components extends,
     is named through that instance, `inst.T`. None where a column's type
@@ -904,19 +905,19 @@ def _top_level_types(rel: RelationName, tree: Tree) -> list[str] | None:
     hit = tree.resolve(rel, Scope(()))
     if hit is None:
         return None
-    out: list[str] = []
+    out: list[TypeName] = []
     for column in hit.decl.columns:
         try:
             decl, place, _start = tree.resolve_type(column.type, hit.place, hit.start)
         except ValueError:
             return None
         if isinstance(decl, Primitive):
-            out.append(decl.value)
+            out.append(TypeName((), decl.value))
             continue
         if len(place) > len(hit.place) \
                 or any(a is not b for a, b in zip(place, hit.place, strict=False)):
             return None
-        out.append(RelationName(rel.instances[:len(place)], decl.name).text)
+        out.append(TypeName(rel.instances[:len(place)], decl.name))
     return out
 
 
@@ -935,7 +936,7 @@ def _readers(rel: RelationName, tree: Tree, width: int
     return _READERS.keyed(tree, rel, lambda: [{} for _ in range(width)])
 
 
-def _read_text(seen: dict[str, Value], text: str, type_name: str,
+def _read_text(seen: dict[str, Value], text: str, type_name: TypeName,
                tree: Tree, hit: Hit) -> Value:
     """The value of `text` in a column of type `type_name` of the
     relation `hit` declares, through the column's reader `seen`

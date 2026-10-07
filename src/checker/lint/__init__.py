@@ -24,7 +24,15 @@ from checker.judged import (
     parse_failure,
     reading_names,
 )
-from checker.lint import bans, form, idioms, names, rewrites
+from checker.lint import bans, idioms, names, rewrites, style
+from checker.lint.form import (
+    case_type,
+    components,
+    declared_types,
+    header,
+    sections,
+    witnesses,
+)
 from checker.lint.view import TOP, View, lint, spanned, view
 from checker.runs import Runs
 from engine import Resolved
@@ -46,29 +54,29 @@ from solver.dependence import dependence, dependent_bases
 type Check = Callable[[Solver, Runs], list[Finding]]
 
 PROGRAM_CHECKS: tuple[Check, ...] = (
-    form.check_family_case, form.check_case_marker, form.check_witness,
-    form.check_header, form.check_keyword, names.check_rigid_chart,
+    case_type.check_family_case, case_type.check_case_marker, witnesses.check_witness,
+    header.check_header, header.check_keyword, names.check_rigid_chart,
     bans.check_orientation_literal, bans.check_nonzero_literal,
     bans.check_arithmetic, bans.check_range, bans.check_ord,
     names.check_reserved_name,
     names.check_shadowed_type, names.check_lib_name,
     names.check_lib_internal, names.check_enumerator_name,
-    form.check_comp_without_entry,
-    form.check_parse_unshared_with_determine, form.check_banned_type,
-    form.check_gloss, form.check_unread_field, form.check_case_section,
-    form.check_case_section_read,
-    form.check_claim, form.check_one_case, bans.check_params_data,
+    components.check_comp_without_entry,
+    components.check_parse_unshared_with_determine, declared_types.check_banned_type,
+    case_type.check_gloss, declared_types.check_unread_field, sections.check_case_section,
+    sections.check_case_section_read,
+    witnesses.check_claim, witnesses.check_one_case, bans.check_params_data,
 )
 """The checks on the solver's form and its bans."""
 
 REWRITE_CHECKS: tuple[Check, ...] = (
     rewrites.check_dead, rewrites.check_alias_inline,
-    rewrites.check_negated_use, rewrites.check_choice_domain,
-    rewrites.check_shared_read, rewrites.check_choice_tag,
+    rewrites.check_negated_use, style.check_choice_domain,
+    style.check_shared_read, rewrites.check_choice_tag,
     bans.check_typed_order, rewrites.check_cross_choice,
     bans.check_raw_aggregate, rewrites.check_subsumed_atom,
     rewrites.check_named_complement, rewrites.check_negated_value,
-    bans.check_long_clause, rewrites.check_decl_placement, rewrites.check_pass_through,
+    bans.check_long_clause, style.check_decl_placement, rewrites.check_pass_through,
     rewrites.check_chain_join, rewrites.check_single_consumer,
     rewrites.check_argmax, rewrites.check_const_join,
     rewrites.check_comp_idiom, idioms.check_lib_idiom,

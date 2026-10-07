@@ -53,13 +53,13 @@ from solver.model import (
 from solver.aggregate import TOP, Solver, lists_case, marker_at
 from solver.columns import ident_keyed
 from solver.graph import Graph, InstancePath
+from solver.case_columns import holds_at
 from solver.case_types import (
     CaseTypes,
     Pattern,
     joined,
     known,
     case_types,
-    holds_at,
 )
 from solver.dependence import Dependence, dependent_bases
 from solver.names import branch_text, marker_lists

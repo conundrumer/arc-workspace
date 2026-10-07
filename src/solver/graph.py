@@ -18,6 +18,7 @@ from engine.program import (
     RelationDecl,
     SubtypeType,
     TypeDecl,
+    TypeName,
     Unit,
     body_atoms,
     dotted,
@@ -239,22 +240,24 @@ class Graph:
                 yield at, path, inst, comp
                 front.append(path)
 
-    def _arg(self, held: Mapping[str, str], arg: str,
+    def _arg(self, held: Mapping[str, str], arg: TypeName,
              scope: tuple[str, ...], at: InstancePath) -> str:
         """A type argument written in the text of `scope`, read at the
         instance path `at`, where `held` gives the arguments in force by
         type parameter: the argument in force where it names a type
         parameter, else the type it names (`type_at`)."""
-        return held[arg] if arg in held else self.type_at(arg, scope, at)
+        got = arg.argument(held)
+        return self.type_at(arg, scope, at) if got is None else got
 
-    def _locate(self, at: InstancePath, rel: RelationName, stop_at_lib: bool
+    def _locate(self, at: InstancePath, instances: tuple[str, ...],
+                stop_at_lib: bool
                 ) -> tuple[InstancePath, Instance | None] | None:
-        """The instance path `rel`'s qualifiers lead to from `at`, each
-        qualifier resolving at the path around it, innermost first; where
-        `stop_at_lib` holds, they stop at the first instance of a lib
-        component, which is given. None where a qualifier names no
-        instance."""
-        for name in rel.instances:
+        """The instance path the qualifiers `instances` of a name lead to
+        from `at`, each qualifier resolving at the path around it,
+        innermost first; where `stop_at_lib` holds, they stop at the first
+        instance of a lib component, which is given. None where a
+        qualifier names no instance."""
+        for name in instances:
             found = self._innermost(
                 at, lambda c: self._instance(c, name) is not None)
             if found is None:
@@ -324,7 +327,7 @@ class Graph:
         """The node a unit of the solver's own text at `at` reads or heads
         by the name `rel`, a relation of an instance of a lib component
         read as the instance; None where no declaration gives it."""
-        got = self._locate(at, rel, True)
+        got = self._locate(at, rel.instances, True)
         if got is None:
             return None
         path, lib = got
@@ -376,13 +379,13 @@ class Graph:
         return dotted((*t.scope.components, t.name)) if own(t.span) \
             else t.name
 
-    def resolve_type(self, name: str, scope: tuple[str, ...]) -> str:
+    def resolve_type(self, name: TypeName, scope: tuple[str, ...]) -> str:
         """The type `name` denotes when read in `scope` at no instance
         (`reading`): a type parameter reads as its own name, and a type a
         component declares by its key (`key_of`)."""
         return self.reading(name, scope, None)
 
-    def type_at(self, name: str, scope: tuple[str, ...], at: InstancePath
+    def type_at(self, name: TypeName, scope: tuple[str, ...], at: InstancePath
                 ) -> str:
         """The type `name` denotes when read in the text of `scope` at
         the instance path `at`, a path that text runs at (`reading`): a
@@ -392,7 +395,7 @@ class Graph:
         reads."""
         return self.reading(name, scope, at)
 
-    def reading(self, name: str, scope: tuple[str, ...],
+    def reading(self, name: TypeName, scope: tuple[str, ...],
                 at: InstancePath | None) -> str:
         """The type `name` denotes when read in the text of `scope`, at
         the instance path `at` where it is not None, then each alias
@@ -403,15 +406,15 @@ class Graph:
         engine's index of the program in the scope that reads it
         (`Index.type_decl`), never by its bare name; a name that denotes no
         declaration and no type argument in force, as a primitive type
-        does, reads as itself. The type is named by its key at the path
+        does, reads as its text. The type is named by its key at the path
         that holds it (`key_at`)."""
         last: str | None = None
         seen: set[tuple[str, InstancePath | None]] = set()
         while True:
             t = self.index.type_decl(name, Scope(scope))
             if t is None:
-                return self.args[at][name] \
-                    if at is not None and name in self.args[at] else name
+                got = None if at is None else name.argument(self.args[at])
+                return name.text if got is None else got
             path = None if at is None else self.holder(t, name, at)
             if not isinstance(t, AliasType):
                 return self.key_at(t, path)
@@ -436,7 +439,7 @@ class Graph:
             return dotted((*path, t.name))
         return self.key_of(t)
 
-    def holder(self, t: TypeDecl, name: str, at: InstancePath
+    def holder(self, t: TypeDecl, name: TypeName, at: InstancePath
                ) -> InstancePath:
         """The instance path that holds the type declaration `t`, which
         `name` denotes when read at `at`: the top level for a type the top
@@ -446,18 +449,17 @@ class Graph:
         Raises `ValueError` where no path of the instance tree does."""
         if not t.scope.components:
             return ()
-        *quals, last = name.split(".")
-        if quals:
-            got = self._locate(at, RelationName(tuple(quals), last), False)
+        if name.instances:
+            got = self._locate(at, name.instances, False)
             if got is None:
-                raise ValueError(f"`{name}` names no instance at "
+                raise ValueError(f"`{name.text}` names no instance at "
                                  f"`{dotted(at)}`")
             at = got[0]
         comp = t.scope.components[-1]
         found = self._innermost(at, lambda c: comp in self._chain(c))
         if found is None:
             raise ValueError(f"no instance at or around `{dotted(at)}` "
-                             f"holds `{name}`")
+                             f"holds `{name.text}`")
         return found
 
 
@@ -467,13 +469,13 @@ class Graph:
         target = t.target if isinstance(t, AliasType) else t.base
         return self.scoped_key(target, t.scope.components)
 
-    def scoped_key(self, name: str, scope: tuple[str, ...]) -> str:
+    def scoped_key(self, name: TypeName, scope: tuple[str, ...]) -> str:
         """The key (`key_of`) of the type declaration `name` denotes when
-        read in the text of `scope` (`Index.type_decl`); the name itself
+        read in the text of `scope` (`Index.type_decl`); the name's text
         where it denotes none, as for a primitive type or a component's
         type parameter."""
         t = self.index.type_decl(name, Scope(scope))
-        return name if t is None else self.key_of(t)
+        return name.text if t is None else self.key_of(t)
 
     def heading(self, node: Node) -> list[Placed]:
         """The units that head the relation of a node `node` gives, each
@@ -637,7 +639,7 @@ class Graph:
         """The relation a unit at `at` names by `rel`, by the instance
         path that declares it in the instance tree and its name; None
         where no declaration gives it."""
-        got = self._locate(at, rel, False)
+        got = self._locate(at, rel.instances, False)
         if got is None:
             return None
         q = self._declaring(got[0], rel.name)

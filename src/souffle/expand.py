@@ -15,6 +15,7 @@ from engine.program import (
     RelationDecl,
     RigidCall,
     Term,
+    TypeName,
     Unit,
     UnitId,
     Wildcard,
@@ -47,11 +48,11 @@ from souffle.parser import (
 )
 
 
-def rigid_rule(head: str, src: str, types: list[str]) -> str:
+def rigid_rule(head: str, src: str, types: list[TypeName]) -> str:
     """The rule that derives `head`, the D4 placements of the chart
     `src`."""
     heads, srcs, atoms = [], [], []
-    for i, t in enumerate(types):
+    for i, t in enumerate(type_name.text for type_name in types):
         if t in RIGID_ACTIONS:
             heads.append(f"A{i}")
             srcs.append(f"B{i}")

@@ -17,8 +17,8 @@ from engine import (
 )
 from engine.program import (
     Primitive,
-    typed_value,
-    TypeReading,
+    declared_value,
+    TypeName,
     ValueReading,
     own,
     AdtType,
@@ -102,7 +102,7 @@ def _column_reading(engine: Engine, program: Program, relation: RelationName
     if got is None:
         raise unresolved(relation)
     decl = _declaration(graph, relation)
-    return ColumnTypes(tuple(c.type for c in decl.columns), tuple(got))
+    return ColumnTypes(tuple(c.type.text for c in decl.columns), tuple(got))
 
 
 def column_names(engine: Engine, program: Program, relation: RelationName
@@ -179,15 +179,17 @@ def arg_value(solver: Solver, arg: AssignArg, type: str
               ) -> Value | ArgOff:
     """An `assign` argument as a value (`_arg_read`), which must be a value
     of `type`, a column type as `column_types` names it, a type parameter
-    read as the type the instance gives it (`engine.program.typed_value`).
-    Raises ValueError for a type name that resolves to no declaration
-    (`_types`)."""
+    read as the type the instance gives it
+    (`engine.program.declared_value`). Raises ValueError for a type name
+    that resolves to no declaration (`_by_key`)."""
     value = _arg_read(solver, arg, _nullary_constructors(solver.program))
     if isinstance(value, ArgUnknown):
         return value
-    fits = typed_value(value, type, _as_named,
-                       _types(solver.engine, solver.program),
-                       _VALUES) is not None
+    by_key = _by_key(solver.engine, solver.program)
+    decl, at = by_key(type)
+    fits = declared_value(value, decl, at,
+                          lambda name, scope: by_key(scope(name)),
+                          _VALUES) is not None
     return value if fits else ArgOffType(type)
 
 
@@ -233,23 +235,24 @@ def _nullary_constructors(program: Program) -> frozenset[str]:
                      for c in t.constructors if not c.fields)
 
 
-type _Scope = Callable[[str], str]
+type _Scope = Callable[[TypeName], str]
 """The reading of a type name in the scope that declares the type it is
 read in, as `column_types` names a type."""
 
 
-def _types(engine: Engine, program: Program) -> TypeReading[_Scope]:
-    """The reading of a type name, as `column_types` names a type: each
-    type the program declares by its key (`Graph.type_decls`), with the
-    reading of a name in the scope that declares it, at the instance path
-    the key gives (`Graph.reading`). Raises ValueError for a name that is
-    neither a primitive nor such a key."""
+def _by_key(engine: Engine, program: Program
+            ) -> Callable[[str], tuple[TypeDecl | Primitive, _Scope]]:
+    """The type a name of a type as `column_types` names it denotes: a
+    primitive, or a type the program declares by its key
+    (`Graph.type_decls`), with the reading of a name in the scope that
+    declares it, at the instance path the key gives (`Graph.reading`).
+    Raises ValueError for a name that is neither a primitive nor such a
+    key."""
     graph = Graph(program, engine)
 
-    def read(name: str, scope: _Scope) -> tuple[TypeDecl | Primitive, _Scope]:
-        key = scope(name)
+    def read(key: str) -> tuple[TypeDecl | Primitive, _Scope]:
         if (primitive := Primitive.named(key)) is not None:
-            return primitive, scope
+            return primitive, _as_named
         held = graph.type_decls.get(key)
         if held is None:
             raise ValueError(f"type `{key}` resolves to no declaration")
@@ -261,8 +264,8 @@ def _types(engine: Engine, program: Program) -> TypeReading[_Scope]:
     return read
 
 
-def _as_named(name: str) -> str:
-    return name
+def _as_named(name: TypeName) -> str:
+    return name.text
 
 
 _VALUES = ValueReading[Value](

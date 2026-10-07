@@ -17,7 +17,8 @@ from engine.engine import (
     RunResult,
 )
 from engine import checkout
-from engine.program import DeclId, GridLayout, Instance, Program, RelationName, Scope
+from engine.program import (DeclId, GridLayout, Instance, Program, RelationName,
+                            Scope, TypeName)
 from souffle import classify, expand, ops, parser, printer, render
 from souffle.index import index_of
 from souffle.run import Runner
@@ -48,7 +49,7 @@ class SouffleEngine:
                           base_dir)
 
     def lib_instance(self, lib: Path, instance: str, component: str,
-                     type_arguments: Sequence[str]) -> Program | ParseFailure:
+                     type_arguments: Sequence[TypeName]) -> Program | ParseFailure:
         """A program that includes the lib file `lib` and instantiates
         `component` at `type_arguments` as `instance`."""
         # The printer reads no id of the instance it prints.

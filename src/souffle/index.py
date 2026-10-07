@@ -24,6 +24,7 @@ from engine.program import (
     RigidCall,
     Scope,
     TypeDecl,
+    TypeName,
     Unit,
     UnitId,
     Wildcard,
@@ -49,7 +50,7 @@ class TypeRef:
     """A type name and where it is read: the instances on the way down,
     and the place in the innermost one's chain whose text names it."""
 
-    name: str
+    name: TypeName
     place: tuple[Level, ...]
     start: int
 
@@ -58,7 +59,7 @@ class TypeRef:
 class Hit:
     decl: RelationDecl
     through: tuple[DeclId, ...]
-    type_arguments: tuple[tuple[str, str], ...]
+    type_arguments: tuple[tuple[str, TypeName], ...]
     place: tuple[Level, ...]
     """The instances on the way down to the declaration."""
     start: int
@@ -99,10 +100,10 @@ class Tree:
             cur = self.comp(base, cur[:-1]) if base else None
         return out
 
-    def base_arguments(self, path: Path) -> tuple[tuple[str, str], ...]:
+    def base_arguments(self, path: Path) -> tuple[tuple[str, TypeName], ...]:
         """The type argument each base of `path` gets from the component
         that extends it."""
-        out: list[tuple[str, str]] = []
+        out: list[tuple[str, TypeName]] = []
         chain = self.chain(path)
         for below, base in zip(chain, chain[1:], strict=False):
             params = self.comps[base].type_params
@@ -169,7 +170,7 @@ class Tree:
 
     def _down(self, init: Instance, rest: tuple[str, ...], rel: str) -> Hit | None:
         through: list[DeclId] = []
-        args: list[tuple[str, str]] = []
+        args: list[tuple[str, TypeName]] = []
         place: tuple[Level, ...] = ()
         start = 0
         while True:
@@ -194,7 +195,7 @@ class Tree:
             start, init = hit
             rest = rest[1:]
 
-    def resolve_type(self, name: str, place: tuple[Level, ...], start: int,
+    def resolve_type(self, name: TypeName, place: tuple[Level, ...], start: int,
                      depth: int = 0
                      ) -> tuple[TypeDecl | Primitive, tuple[Level, ...], int]:
         """What the type `name` stands for, read at `place` in the text at
@@ -204,31 +205,40 @@ class Tree:
         `T` in the instance `o`. Raises ValueError where nothing answers the
         name."""
         check_type_depth(name, depth)
-        if (primitive := Primitive.named(name)) is not None:
+        if (primitive := name.primitive) is not None:
             return primitive, (), 0
-        head, dot, rest = name.partition(".")
+        head, rest = _first_instance(name)
         for k in range(len(place) - 1, -1, -1):
             level = place[k]
             first = start if k == len(place) - 1 else place[k + 1].outer_start
             for j in range(first, len(level.chain)):
                 c = level.chain[j]
-                if not dot:
-                    if (ref := level.env.get(c, {}).get(name)) is not None:
+                if rest is None:
+                    if (ref := name.argument(level.env.get(c, {}))) is not None:
                         return self.resolve_type(ref.name, ref.place, ref.start, depth + 1)
-                    if (t := self.types.get(c, {}).get(name)) is not None:
+                    if (t := self.types.get(c, {}).get(name.name)) is not None:
                         return t, place[:k + 1], j
                 elif (init := self.inits.get(c, {}).get(head)) is not None:
                     inner = self.enter(place[:k + 1], j, init)
                     if inner is None:
                         break
                     return self.resolve_type(rest, inner, 0, depth + 1)
-        if not dot and (t := self.types.get((), {}).get(name)) is not None:
+        if rest is None and (t := self.types.get((), {}).get(name.name)) is not None:
             return t, (), 0
-        if dot and (init := self.inits.get((), {}).get(head)) is not None:
+        if rest is not None and (init := self.inits.get((), {}).get(head)) is not None:
             inner = self.enter((), 0, init)
             if inner is not None:
                 return self.resolve_type(rest, inner, 0, depth + 1)
-        raise ValueError(f"no declaration of type `{name}`")
+        raise ValueError(f"no declaration of type `{name.text}`")
+
+
+def _first_instance(name: TypeName) -> tuple[str, TypeName | None]:
+    """The first instance `name` is read through, and the name read in
+    that instance; the name's own part and None where it is read through
+    none."""
+    if not name.instances:
+        return name.name, None
+    return name.instances[0], TypeName(name.instances[1:], name.name)
 
 
 class SouffleIndex:
@@ -329,15 +339,15 @@ class SouffleIndex:
         path = self.tree.comp(name, scope.components)
         return None if path is None else self.tree.comps[path]
 
-    def type_decl(self, name: str, scope: Scope) -> TypeDecl | None:
-        head, dot, rest = name.partition(".")
+    def type_decl(self, name: TypeName, scope: Scope) -> TypeDecl | None:
+        head, rest = _first_instance(name)
         for texts in self.tree.levels(scope.components):
             for p in texts:
                 comp = self.tree.comps.get(p)
-                if not dot:
-                    if comp is not None and name in comp.type_params:
+                if rest is None:
+                    if comp is not None and name.name in comp.type_params:
                         return None
-                    if (t := self.tree.types.get(p, {}).get(name)) is not None:
+                    if (t := self.tree.types.get(p, {}).get(name.name)) is not None:
                         return t
                 elif (init := self.tree.inits.get(p, {}).get(head)) is not None:
                     path = self.tree.comp(init.component, init.scope.components)

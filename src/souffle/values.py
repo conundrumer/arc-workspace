@@ -8,6 +8,7 @@ from engine.program import (
     RecordValue,
     Term,
     TypeDecl,
+    TypeName,
     TypeReading,
     Value,
     ValueReading,
@@ -48,7 +49,7 @@ innermost chain (`Tree.resolve_type`)."""
 def _types(tree: Tree) -> TypeReading[_Place]:
     """The reading of a type name at a place in `tree`."""
 
-    def read(name: str, at: _Place) -> tuple[TypeDecl | Primitive, _Place]:
+    def read(name: TypeName, at: _Place) -> tuple[TypeDecl | Primitive, _Place]:
         decl, inner, start = tree.resolve_type(name, *at)
         return decl, (inner, start)
 
@@ -110,7 +111,7 @@ constructor with its prefix and, where it has fields, its argument
 list."""
 
 
-def printed(text: str, type_name: str, tree: Tree, place: tuple[Level, ...],
+def printed(text: str, type_name: TypeName, tree: Tree, place: tuple[Level, ...],
             start: int) -> Value:
     """A value as Souffle prints it in a column of type `type_name`, the
     name read at `place` in the text at `start` of the innermost chain
@@ -119,5 +120,5 @@ def printed(text: str, type_name: str, tree: Tree, place: tuple[Level, ...],
     cannot read it."""
     got = typed_value(text, type_name, (place, start), _types(tree), _PRINTED)
     if got is None:
-        raise ValueError(f"`{text}` is no value of type `{type_name}`")
+        raise ValueError(f"`{text}` is no value of type `{type_name.text}`")
     return got

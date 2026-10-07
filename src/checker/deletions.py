@@ -47,7 +47,7 @@ from engine.program import (
 from engine.quotes import quotes
 from solver.model import bases_of, choice_bases, Case
 from solver.aggregate import Solver, enumerated, enumerates, run_empty
-from solver.case_types import case_columns
+from solver.case_columns import case_columns
 from solver.dependence import (
     Dependence,
     dependence,

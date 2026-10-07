@@ -40,7 +40,7 @@ def _comp_decls(comp: Comp, comps: dict[str, tuple[Comp, list[str]]]
     out = [_WrappedDecl(it.name, it.input,
                         Qualifier.INLINE in it.qualifiers,
                         tuple(c.name for c in it.columns),
-                        tuple(c.type for c in it.columns))
+                        tuple(c.type.text for c in it.columns))
            for it in comp.items if isinstance(it, Decl) and not _hidden(it)]
     if comp.base is not None:
         if comp.base not in comps:

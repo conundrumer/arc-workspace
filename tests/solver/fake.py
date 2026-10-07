@@ -32,6 +32,7 @@ from engine import (
 from engine.engine import Classed, GridMisfit
 from souffle.index import index_of
 from engine.program import (
+    TypeName,
     AdtType,
     Column,
     Component,
@@ -67,7 +68,8 @@ def relation(id: int, name: str, line: int, scope: tuple[str, ...] = (),
              columns: Sequence[tuple[str, str]] = (),
              file: str | None = None) -> RelationDecl:
     return RelationDecl(DeclId(id), name, Scope(scope), tuple(
-        Column(n, t) for n, t in columns), (), (), span(line, file=file))
+        Column(n, TypeName((), t)) for n, t in columns), (), (),
+        span(line, file=file))
 
 
 def component(id: int, name: str, first: int, last: int,

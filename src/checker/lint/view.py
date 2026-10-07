@@ -14,9 +14,7 @@ from checker.runs import Runs
 from engine import Index, Resolved, Role
 from engine.memo import ByIdentity
 from engine.program import (
-    AdtType,
     Aggregate,
-    AliasType,
     Atom,
     AtomLiteral,
     BodyLiteral,
@@ -28,14 +26,11 @@ from engine.program import (
     FunctorDecl,
     Instance,
     RecordTerm,
-    RecordType,
     RelationDecl,
     Scope,
     Span,
-    SubtypeType,
     Term,
     TypeDecl,
-    UnionType,
     Unit,
     UnitId,
     Variable,
@@ -326,7 +321,7 @@ class View:
         if not isinstance(d, RelationDecl) or len(d.columns) != len(atom.args):
             return None
         subst = dict(r.type_arguments)
-        return [subst.get(c.type, c.type) for c in d.columns]
+        return [(c.type.argument(subst) or c.type).text for c in d.columns]
 
     def head(self, unit: Unit) -> RelationDecl | None:
         return self.relation(unit, unit.head)
@@ -478,21 +473,6 @@ class View:
         take the names only its expansion writes; its placed relations
         stay."""
         return [r for r in self.own_relations if r.chart_of is None]
-
-
-def type_refs(td: TypeDecl) -> list[str]:
-    """The type names a type declaration's right-hand side names."""
-    match td:
-        case AdtType(constructors=cs):
-            return [f.type for c in cs for f in c.fields]
-        case RecordType(fields=fs):
-            return [f.type for f in fs]
-        case SubtypeType(base=base):
-            return [base]
-        case UnionType(members=members):
-            return list(members)
-        case AliasType(target=target):
-            return [target]
 
 
 def tag_fact(u: Unit) -> bool:

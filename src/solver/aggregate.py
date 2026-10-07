@@ -47,6 +47,7 @@ from engine.program import (
     RelationDecl,
     Term,
     TypeDecl,
+    TypeName,
 )
 from engine.quotes import quotes
 from solver import witness as witness_reader
@@ -215,7 +216,8 @@ def read_lib(program: Program) -> Lib:
     the constants are the lib's `#define` names whose value is a
     constant."""
     lib_types = [t for t in program.types if not own(t.span)]
-    links = {t.name: t.target for t in lib_types if isinstance(t, AliasType)}
+    links = {t.name: t.target.text for t in lib_types
+             if isinstance(t, AliasType)}
     box = {BOX} | {n for n in links if followed(links, n)[-1] == BOX} \
         if any(t.name == BOX for t in lib_types) else set[str]()
     constants: dict[str, Value] = {}
@@ -233,7 +235,7 @@ def read_lib(program: Program) -> Lib:
         if len(left) == len(pending):
             break
         pending = left
-    elems = {r.name: r.columns[0].type for r in program.relations
+    elems = {r.name: r.columns[0].type.text for r in program.relations
              if not own(r.span) and r.scope == TOP
              and r.name.endswith(ELEM_SUFFIX) and len(r.columns) == 1}
 
@@ -265,14 +267,14 @@ def read_lib(program: Program) -> Lib:
 # Reading the case type
 
 
-type _OwnType = Callable[[str, Scope], TypeDecl | None]
+type _OwnType = Callable[[TypeName, Scope], TypeDecl | None]
 """The type of the solver's own text a name denotes when read in a scope
 (`Index.type_decl`); None where it denotes none or a lib type."""
 
 
 def _own_type(index: Index) -> _OwnType:
     """`_OwnType` through `index`."""
-    def read(name: str, scope: Scope) -> TypeDecl | None:
+    def read(name: TypeName, scope: Scope) -> TypeDecl | None:
         t = index.type_decl(name, scope)
         return t if t is not None and own(t.span) else None
     return read
@@ -310,7 +312,7 @@ def read_choice(program: Program, index: Index, problems: list[Fault]
     or a record whose fields are ADTs, each ADT a choice point, and each ADT a
     field of a constructor stands in takes a point of its own."""
     types = _own_type(index)
-    root = types(CHOICE, TOP)
+    root = types(TypeName((), CHOICE), TOP)
     if root is None:
         return None
     if isinstance(root, AdtType):

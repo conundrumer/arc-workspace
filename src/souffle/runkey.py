@@ -9,7 +9,6 @@ from engine.memo import ByIdentity
 from engine.program import (
     AdtType,
     Aggregate,
-    AliasType,
     BodyLiteral,
     Cast,
     ConstructorTerm,
@@ -17,15 +16,13 @@ from engine.program import (
     Disjunction,
     GridCall,
     Program,
-    RecordType,
     RelationDecl,
-    SubtypeType,
     Term,
     TypeDecl,
-    UnionType,
     own,
     literal_terms,
     subterms,
+    type_refs,
 )
 from souffle.index import index_of
 from souffle.layout import CompBlock, IncludeBlock, Layout, Segment, layout_of
@@ -93,14 +90,14 @@ def _named_types(program: Program, relations: tuple[RelationDecl, ...]
     so that a qualified name keeps every type of that name."""
     names: set[str] = set()
     for r in relations:
-        names.update(c.type for c in r.columns)
+        names.update(c.type.name for c in r.columns)
     for c in program.components:
-        names.update(c.base_type_args)
+        names.update(a.name for a in c.base_type_args)
     for i in program.instances:
-        names.update(i.type_args)
+        names.update(a.name for a in i.type_args)
     for f in program.functors:
-        names.update(p.type for p in f.params)
-        names.add(f.result)
+        names.update(p.type.name for p in f.params)
+        names.add(f.result.name)
     terms: list[Term] = [d.value for d in program.defines if d.value is not None]
     for u in program.units:
         terms += u.head.args
@@ -116,10 +113,9 @@ def _named_types(program: Program, relations: tuple[RelationDecl, ...]
     by_ctor = {c.name: t.name for t in program.types
                if isinstance(t, AdtType) for c in t.constructors}
     names.update(by_ctor[c] for c in constructors if c in by_ctor)
-    names = {n.rsplit(".", 1)[-1] for n in names}
     kept: dict[DeclId, TypeDecl] = {t.id: t for t in program.types if not own(t.span)}
     for t in kept.values():
-        names.update(_type_refs(t))
+        names.update(n.name for n in type_refs(t))
     while True:
         more = [t for t in program.types
                 if t.id not in kept and t.name in names]
@@ -127,24 +123,8 @@ def _named_types(program: Program, relations: tuple[RelationDecl, ...]
             break
         for t in more:
             kept[t.id] = t
-            names.update(n.rsplit(".", 1)[-1] for n in _type_refs(t))
+            names.update(n.name for n in type_refs(t))
     return tuple(t for t in program.types if t.id in kept)
-
-
-def _type_refs(t: TypeDecl) -> Iterator[str]:
-    """The type names a type declaration names."""
-    match t:
-        case AdtType():
-            for c in t.constructors:
-                yield from (f.type for f in c.fields)
-        case RecordType():
-            yield from (f.type for f in t.fields)
-        case AliasType():
-            yield t.target
-        case SubtypeType():
-            yield t.base
-        case UnionType():
-            yield from t.members
 
 
 def _body_terms(body: tuple[BodyLiteral, ...]) -> Iterator[Term]:
@@ -157,11 +137,11 @@ def _body_terms(body: tuple[BodyLiteral, ...]) -> Iterator[Term]:
 
 
 def _term_names(t: Term, types: set[str], constructors: set[str]) -> None:
-    """Add the type names `t` casts to into `types`, and the constructor
-    names it applies into `constructors`."""
+    """Add the last part of each type name `t` casts to into `types`, and
+    the constructor names it applies into `constructors`."""
     match t:
         case Cast(type=type_):
-            types.add(type_)
+            types.add(type_.name)
         case ConstructorTerm(name=name):
             constructors.add(name)
         case Aggregate(expr=expr, body=body):

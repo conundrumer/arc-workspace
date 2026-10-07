@@ -256,9 +256,9 @@ def _unordered_types(solver: Solver, v: View) -> frozenset[str]:
         for t in v.program.types:
             if t.name in out:
                 continue
-            if isinstance(t, SubtypeType) and t.base in out \
+            if isinstance(t, SubtypeType) and t.base.text in out \
                     or isinstance(t, UnionType) and all(
-                        m in out for m in t.members):
+                        m.text in out for m in t.members):
                 out.add(t.name)
                 changed = True
     return frozenset(out)

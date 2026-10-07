@@ -58,7 +58,7 @@ before the size."""
 def columns(cs: Iterable[Column]) -> str:
     """A relation's columns as its `.decl` line writes them between the
     parentheses."""
-    return ", ".join(f"{c.name}: {c.type}" for c in cs)
+    return ", ".join(f"{c.name}: {c.type.text}" for c in cs)
 
 
 def text(part: Part) -> str:
@@ -109,7 +109,7 @@ def text(part: Part) -> str:
             e = "" if expr is None else f" {text(expr)}"
             return f"{op.value}{e} : {{ {_joined(body)} }}"
         case Cast(term=inner, type=type_name):
-            return f"as({text(inner)}, {type_name})"
+            return f"as({text(inner)}, {type_name.text})"
         case GridLayout(form=form, stamp=stamp, height=h, width=w):
             return (f"GRID_{'STAMP_' if stamp else ''}"
                     f"{GRID_FORM_SEGMENT[form]}{h}x{w}")

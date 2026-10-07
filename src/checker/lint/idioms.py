@@ -75,10 +75,10 @@ class Columns:
     v: View
 
     def __post_init__(self) -> None:
-        self.records = {t.name: [f.type for f in t.fields]
+        self.records = {t.name: [f.type.text for f in t.fields]
                         for t in self.v.program.types
                         if isinstance(t, RecordType)}
-        self.ctors = {c.name: [f.type for f in c.fields]
+        self.ctors = {c.name: [f.type.text for f in c.fields]
                       for t in self.v.program.types
                       if isinstance(t, AdtType) for c in t.constructors}
         self._grounded: dict[object, frozenset[int]] = {}
@@ -170,10 +170,10 @@ def _elem_tables(v: View) -> tuple[dict[str, str], dict[str, set[str]]]:
         if own(t.span):
             continue
         if isinstance(t, SubtypeType):
-            wider.setdefault(t.name, set()).add(t.base)
+            wider.setdefault(t.name, set()).add(t.base.text)
         elif isinstance(t, UnionType):
             for m in t.members:
-                wider.setdefault(m, set()).add(t.name)
+                wider.setdefault(m.text, set()).add(t.name)
     for ws in wider.values():
         ws.difference_update(PRIMITIVES)
     changed = True
@@ -337,7 +337,7 @@ def _delta_out(v: View) -> dict[str, int]:
         if name not in decls or rules is None or len(rules) != 1:
             return None
         d, u = decls[name], rules[0]
-        at = [i for i, c in enumerate(d.columns) if c.type in boxes]
+        at = [i for i, c in enumerate(d.columns) if c.type.text in boxes]
         if len(at) != 1 or len(u.head.args) != len(d.columns):
             return None
         out = u.head.args[at[0]]

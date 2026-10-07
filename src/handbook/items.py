@@ -149,13 +149,13 @@ def _view(p: Parsed) -> Program:
         if c.span is None or not own(c.span):
             continue
         comp = Comp(c.name, c.span.first, c.span.last, c.type_params,
-                    c.base, c.base_type_args)
+                    c.base, tuple(a.text for a in c.base_type_args))
         comps[(*c.scope.components, c.name)] = comp
         placed.append((c.span.first, c.scope, comp))
     for t in p.types:
         if not own(t.span):
             continue
-        form: SubtypeForm | OtherForm = SubtypeForm(t.base) \
+        form: SubtypeForm | OtherForm = SubtypeForm(t.base.text) \
             if isinstance(t, SubtypeType) else OtherForm()
         assert isinstance(t, AdtType | RecordType | AliasType | SubtypeType
                           | UnionType)

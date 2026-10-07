@@ -348,7 +348,7 @@ def stored_colors(engine: Engine, solver: Solver, cases: Iterable[Case]
     bases = choice_bases(cases)
     out: set[int] = set()
     for p in solver.params.parameters:
-        cols = [i for i, c in enumerate(p.columns) if c.type == COLOR]
+        cols = [i for i, c in enumerate(p.columns) if c.type.text == COLOR]
         got = by_base(solver, parameter_reading(solver, p.name),
                       stored_facts(engine, solver, p), bases)
         out |= {v for _base, rows in got for r in rows for i in cols

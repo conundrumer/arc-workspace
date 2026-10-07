@@ -25,7 +25,7 @@ from solver.aggregate import (
     read_witness,
     solver_file,
 )
-from solver.case_types import off_form_case_columns
+from solver.case_columns import off_form_case_columns
 from solver.problems import (
     Fault,
     InSolver,

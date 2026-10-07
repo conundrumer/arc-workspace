@@ -60,6 +60,7 @@ from engine.program import (
     Term,
     TypeDecl,
     TypeField,
+    TypeName,
     UnaryOperator,
     UnaryTerm,
     UnionType,
@@ -118,9 +119,10 @@ RIGID_IDENTITY = frozenset({"Color", "number", "Ident", "symbol", "Example"})
 """The column types a D4 action leaves as they are."""
 
 
-def rigid_type_acts(type_name: str) -> bool:
-    return (type_name in RIGID_ACTIONS or type_name in RIGID_AXIS_ACTIONS
-            or type_name in RIGID_IDENTITY)
+def rigid_type_acts(type_name: TypeName) -> bool:
+    text = type_name.text
+    return (text in RIGID_ACTIONS or text in RIGID_AXIS_ACTIONS
+            or text in RIGID_IDENTITY)
 
 
 DIRECTIVE_WORDS = frozenset({"comp", "decl", "init", "type", "functor", "plan",
@@ -447,7 +449,7 @@ class _Parser:
         self.expect(">")
         return tuple(out)
 
-    def type_args(self) -> tuple[str, ...]:
+    def type_args(self) -> tuple[TypeName, ...]:
         if not self.at("<"):
             return ()
         self.next()
@@ -458,13 +460,13 @@ class _Parser:
         self.expect(">")
         return tuple(out)
 
-    def type_name(self) -> str:
-        name = self.ident("type name").text
+    def type_name(self) -> TypeName:
+        parts = [self.ident("type name").text]
         while (self.at(".") and self.peek(1).kind == "ident"
                and self.peek(1).text not in DIRECTIVE_WORDS):
             self.next()
-            name += "." + self.next().text
-        return name
+            parts.append(self.next().text)
+        return TypeName(tuple(parts[:-1]), parts[-1])
 
     def fields(self, close: str) -> tuple[TypeField, ...]:
         out: list[TypeField] = []
@@ -595,7 +597,7 @@ class _Parser:
                 self.next()
                 params.append(TypeField(first.text, self.type_name()))
             else:
-                params.append(TypeField("", first.text))
+                params.append(TypeField("", TypeName((), first.text)))
             if not self.at(")"):
                 self.expect(",")
         self.next()
@@ -739,13 +741,13 @@ class _Parser:
                 fields = self.fields(")")
                 for f in fields:
                     if not rigid_type_acts(f.type):
-                        raise self.fail(t, f"RIGID column type {f.type!r} has no D4 action")
+                        raise self.fail(t, f"RIGID column type {f.type.text!r} has no D4 action")
                 span = self.span(t)
                 chart = RelationDecl(self.b.decl_id(), rename[name], scope,
                                      tuple(Column(f.name, f.type) for f in fields),
                                      (), (), span, chart_of=block)
                 placed = RelationDecl(self.b.decl_id(), placed_name(block, name), scope,
-                                      (Column("d4", "D4"),
+                                      (Column("d4", TypeName((), "D4")),
                                        *(Column(f.name, f.type) for f in fields)),
                                       (), (), span)
                 self.b.relations += [chart, placed]

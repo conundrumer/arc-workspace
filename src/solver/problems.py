@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from engine import GridLayout, ParseFailure, RelationName
+from engine import GridLayout, ParseFailure, RelationName, TypeName
 from engine.quotes import quotes
 
 if TYPE_CHECKING:
@@ -399,13 +399,13 @@ class CaseColumnOffForm:
 
     relation: str
     column: str
-    type: str
+    type: TypeName
     kind: "OffFormType"
 
 
 class OffFormType(StrEnum):
     """What a column that carries the case is, other than `Choice`
-    (`solver.case_types.case_columns`)."""
+    (`solver.case_columns.case_columns`)."""
 
     ADT = "adt"
     """An ADT in `Choice`."""

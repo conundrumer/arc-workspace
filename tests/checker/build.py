@@ -65,9 +65,10 @@ class Builder:
 
     def relation(self, name: str, *columns: tuple[str, str], line: int,
                  scope: Scope = TOP) -> RelationDecl:
-        from engine.program import Column
+        from engine.program import Column, TypeName
         d = RelationDecl(self._id(), name, scope,
-                         tuple(Column(n, t) for n, t in columns), (), (),
+                         tuple(Column(n, TypeName((), t)) for n, t in columns),
+                         (), (),
                          span(line))
         self.relations.append(d)
         return d

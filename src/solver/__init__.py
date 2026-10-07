@@ -13,6 +13,7 @@ values, its case type, branches and cases; `solver.aggregate`, the
 aggregate `Solver` and its load; `solver.columns`, the column types of the
 program's relations and the reading of an `assign` argument;
 `solver.case_types`, where the program holds a case value;
+`solver.case_columns`, what a base holds at a case column;
 `solver.dependence`, which parts of the solver's own text each base's
 derivation of `out` depends on; and `solver.cases`, the solver's cases. A
 check of the solver's form that `load` runs imports a later module inside

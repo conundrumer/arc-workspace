@@ -55,6 +55,7 @@ from engine.program import (
     Span,
     Term,
     TypeDecl,
+    TypeName,
     Unit,
     UnitId,
     Value,
@@ -70,7 +71,7 @@ __all__ = [
     "RemoveAtom", "RemoveColumn", "RemoveDisjunct", "RemoveFact",
     "RemoveUnit", "Rendered",
     "RenderedLine", "Resolved", "Role", "Row", "Rows", "RunFailure",
-    "RunResult", "Scope", "Span", "Term", "Tuples", "TypeDecl",
+    "RunResult", "Scope", "Span", "Term", "Tuples", "TypeDecl", "TypeName",
     "UndefinedOutput", "UngroundedVariable", "Unit", "UnitId", "Unresolved",
     "Value", "WallLimit", "fact_text", "guard", "quoted", "quotes",
 ]

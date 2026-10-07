@@ -19,6 +19,7 @@ from engine.program import (
     Rows,
     Scope,
     TypeDecl,
+    TypeName,
     UnitId,
 )
 
@@ -64,7 +65,7 @@ class Resolved:
 
     declaration: DeclId
     through: tuple[DeclId, ...]
-    type_arguments: tuple[tuple[str, str], ...]
+    type_arguments: tuple[tuple[str, TypeName], ...]
 
 
 @dataclass(frozen=True)
@@ -102,7 +103,7 @@ class Index(Protocol):
         first, as far as the bases resolve and until one comes again."""
         ...
 
-    def type_decl(self, name: str, scope: Scope) -> TypeDecl | None:
+    def type_decl(self, name: TypeName, scope: Scope) -> TypeDecl | None:
         """The type declaration `name` denotes when read in the text of
         `scope`: declared there, in a component it extends, or in a text
         around it; `o.T` reads `T` in the component of the instance `o`.

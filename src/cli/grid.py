@@ -151,7 +151,7 @@ def cmd_relation(arg: str, args: list[str],
             continue
         names.append(rel)
         columns.append((tuple(c.name for c in decl.columns),
-                        tuple(c.type for c in decl.columns)))
+                        tuple(c.type.text for c in decl.columns)))
     if unknown:
         return 2
     ran = runs.relations_on(grid, names, at)

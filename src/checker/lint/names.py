@@ -67,11 +67,11 @@ def _declared_names(d: RelationDecl | TypeDecl | Component | Instance
         case RecordType(name=name, fields=fs):
             return [name, *(f.name for f in fs)]
         case Instance(name=name, type_args=targs):
-            return [name, *targs]
+            return [name, *(a.text for a in targs)]
         case FunctorDecl(name=name):
             return [name]
         case Component(name=name, type_params=ps, base_type_args=bs):
-            return [name, *ps, *bs]
+            return [name, *ps, *(a.text for a in bs)]
         case _:
             return [d.name]
 
@@ -132,7 +132,7 @@ def check_shadowed_type(solver: Solver, runs: Runs) -> list[Finding]:
                 Category.SHADOWED_TYPE, LintSentence.SHADOWED_TYPE,
                 (t, i.component)))
             for i in v.own_instances
-            for t in i.type_args
+            for t in (a.text for a in i.type_args)
             if t in _inner_types(v, v.index.component(i.component, i.scope))]
 
 
@@ -291,12 +291,12 @@ def check_enumerator_name(solver: Solver, runs: Runs) -> list[Finding]:
     if choice is None or choice.record is None:
         return []
     v = view(solver, runs)
-    fields = {f.type for f in choice.record}
+    fields = {f.type.text for f in choice.record}
     enums = v.enumerators - {ENUMERATOR}
     return [lint(d.span.first, LintNamed(
                 Category.ENUMERATOR_NAME, LintSentence.ENUMERATOR_NAME,
                 (d.name, t, enumerator_name(t))))
             for d in sorted(v.written_relations, key=lambda d: d.span.first)
             if d.scope == TOP and d.name in enums and len(d.columns) == 1
-            and (t := d.columns[0].type) in fields
+            and (t := d.columns[0].type.text) in fields
             and d.name != enumerator_name(t)]

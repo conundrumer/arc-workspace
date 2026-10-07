@@ -274,7 +274,7 @@ def detail_text(detail: Detail) -> str:
                         "`{t}`, {kind}, and the case column of a relation "
                         "in Params is in the form of `out`'s, of type "
                         "`Choice`").format(column=column, relation=relation,
-                                           t=t, kind=kind)
+                                           t=t.text, kind=kind)
         case AssignType(name=name, column=column, type=t, arg=arg):
             return mctx("`{name}` gives `{arg}` in the column `{column}`, "
                         "and that column takes a value of type `{t}`; see "

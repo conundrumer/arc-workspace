@@ -16,7 +16,7 @@ from functools import cache
 
 from cli.common import LIMITS
 from engine.engine import ParseFailure, Tuples
-from engine.program import (AdtValue, RecordValue, RelationName, Value, cell_place,
+from engine.program import (AdtValue, RecordValue, RelationName, TypeName, Value, cell_place,
                             offset_place)
 from handbook.lib import LIB_SRC
 from souffle import SouffleEngine
@@ -172,7 +172,8 @@ def call(component: str, type_args: Sequence[StrEnum], grid: GridTypes,
     whose type is `grid.offset` as a displacement. Raises `CallError` where
     the program fails to parse, the run fails, or a value cannot cross."""
     engine = _engine()
-    program = engine.lib_instance(LIB_SRC, INSTANCE, component, type_args)
+    program = engine.lib_instance(LIB_SRC, INSTANCE, component,
+                                  [TypeName((), t) for t in type_args])
     if isinstance(program, ParseFailure):
         raise CallError(program)
     facts = {RelationName((INSTANCE,), name):

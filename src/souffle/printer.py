@@ -32,6 +32,7 @@ from engine.program import (
     SubtypeType,
     Term,
     TypeField,
+    TypeName,
     UnaryTerm,
     UnionType,
     Unit,
@@ -65,7 +66,7 @@ def term(t: Term) -> str:
         case IntrinsicCall(functor, args):
             return f"{functor.value}({terms(args)})"
         case Cast(inner, type_name):
-            return f"as({term(inner)}, {type_name})"
+            return f"as({term(inner)}, {type_name.text})"
         case FunctorCall(name, args):
             return f"@{name}({terms(args)})"
         case UnaryTerm(op, arg):
@@ -134,11 +135,16 @@ def unit(u: Unit) -> str:
 
 
 def fields(fs: tuple[TypeField, ...]) -> str:
-    return ", ".join(f"{f.name}: {f.type}" if f.name else f.type for f in fs)
+    return ", ".join(f"{f.name}: {f.type.text}" if f.name else f.type.text
+                     for f in fs)
 
 
 def type_args(args: tuple[str, ...]) -> str:
     return f"<{', '.join(args)}>" if args else ""
+
+
+def type_arg_texts(args: tuple[TypeName, ...]) -> str:
+    return type_args(tuple(a.text for a in args))
 
 
 def signature(cs: tuple[Column, ...], qualifiers: tuple[Qualifier, ...],
@@ -156,11 +162,11 @@ def subtypes(names: tuple[str, ...], base: str) -> str:
 def declaration(d: object) -> str:
     match d:
         case SubtypeType(_, name, _, base):
-            return subtypes((name,), base)
+            return subtypes((name,), base.text)
         case AliasType(_, name, _, target):
-            return f".type {name} = {target}"
+            return f".type {name} = {target.text}"
         case UnionType(_, name, _, members):
-            return f".type {name} = {' | '.join(members)}"
+            return f".type {name} = {' | '.join(m.text for m in members)}"
         case RecordType(_, name, _, fs):
             return f".type {name} = [{fields(fs)}]"
         case AdtType(_, name, _, ctors):
@@ -169,12 +175,12 @@ def declaration(d: object) -> str:
         case RelationDecl(_, name, _, cs, qualifiers, domain):
             return f".decl {name}{signature(cs, qualifiers, domain)}"
         case Instance(_, name, _, comp, args):
-            return f".init {name} = {comp}{type_args(args)}"
+            return f".init {name} = {comp}{type_arg_texts(args)}"
         case FunctorDecl(_, name, params, result):
             stateful = " stateful" if d.stateful else ""
-            return f".functor {name}({fields(params)}): {result}{stateful}"
+            return f".functor {name}({fields(params)}): {result.text}{stateful}"
         case Component(_, name, _, params, base, base_args):
-            extends = f" : {base}{type_args(base_args)}" if base else ""
+            extends = f" : {base}{type_arg_texts(base_args)}" if base else ""
             return f".comp {name}{type_args(params)}{extends} {{"
     raise TypeError(f"not a declaration: {d!r}")
 
