@@ -9,7 +9,8 @@ from checker.judged import no_result
 from checker.payloads.branches import ExcludedPayload, IdleIgnorePayload
 from checker.runs import Runs
 from engine import RelationName, RunFailure
-from solver.aggregate import Solver, branch_under, ignore_targets
+from solver.aggregate import Solver, branch_under
+from solver.readers import ignore_targets
 from solver.annotations import IgnoreForm, IgnoreLine
 from solver.cases import cases
 from solver.model import Case, DeriveBranch, StoreBranch
@@ -77,7 +78,7 @@ def bare_ignored(solver: Solver, form: IgnoreForm
                  ) -> list[tuple[RelationName, str | None]]:
     """What the bare `@ignore: derive` or `@ignore: store` lines of `form`
     exclude: each target relation, with the line's proposer
-    (`solver.aggregate.ignore_targets`)."""
+    (`solver.readers.ignore_targets`)."""
     return [(t, i.proposer) for i in solver.annotations.ignores
             if i.form is form and i.name is None
             for t in ignore_targets(solver.program, i)]

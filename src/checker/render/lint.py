@@ -40,7 +40,7 @@ from solver.annotations import (
     ignore_text,
     marker_line,
 )
-from solver.category import HINTS, Category
+from solver.category import HINTS
 from solver.model import Case
 
 FORM_RULE = "`// @rule <slug>: <text>`"
@@ -238,14 +238,6 @@ CODE_TEXT: dict[LintSentence, Callable[[LintCode], str]] = {
         binder=p.names[0]),
 }
 """The sentence of each `LintCode` finding."""
-
-FRAGMENT_CATEGORIES = frozenset({
-    Category.RIGID_CHART, Category.ORIENTATION_LITERAL,
-    Category.NONZERO_LITERAL, Category.ARITHMETIC, Category.RANGE,
-    Category.ORD, Category.PARAMS_DATA,
-})
-"""The categories whose message is the code fragment that fires."""
-
 
 def part_text(part: MarkerPart) -> str:
     """One name of a case marker as the marker writes it."""

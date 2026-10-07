@@ -195,12 +195,6 @@ def names_in(text: str) -> list[str]:
     return out
 
 
-def _places(solver: Solver, ctor: str) -> int:
-    """How many choice points the constructor `ctor` stands at."""
-    choice = solver.choice
-    return 0 if choice is None else len(constructor_places(choice, ctor))
-
-
 def marker_lists(solver: Solver, marker: CaseMarker, base: Base | None
                  ) -> bool:
     """Whether some part of a case marker lists `base` (`lists`)."""

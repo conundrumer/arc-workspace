@@ -50,7 +50,8 @@ from solver.model import (
     StoreBranch,
     non_concept_at,
 )
-from solver.aggregate import TOP, Solver, lists_case, marker_at
+from solver.aggregate import TOP, Solver, lists_case
+from solver.readers import marker_at
 from solver.columns import ident_keyed
 from solver.graph import Graph, InstancePath
 from solver.case_columns import holds_at

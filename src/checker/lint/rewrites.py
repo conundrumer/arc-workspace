@@ -63,7 +63,8 @@ from engine.program import (
 from engine.quotes import quotes
 from solver.category import Category
 from solver.model import Section
-from solver.aggregate import Solver, section_at
+from solver.aggregate import Solver
+from solver.readers import section_at
 from solver.case_types import (
     compared,
     substituted_atom,
@@ -1099,7 +1100,7 @@ def _line(u: Unit) -> int:
 
 
 def unit_section(v: View, u: Unit) -> Section:
-    """The section a unit stands in (`solver.aggregate.section_at`)."""
+    """The section a unit stands in (`solver.readers.section_at`)."""
     return section_at(v.solver, u.scope, _line(u))
 
 

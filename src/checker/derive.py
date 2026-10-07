@@ -58,12 +58,8 @@ from engine.program import own
 from engine.quotes import quotes
 from solver.annotations import DeriveLine, IgnoreForm
 from solver.model import Case, DeriveBranch, Parameter
-from solver.aggregate import (
-    Solver,
-    declaration_of,
-    proposer_names,
-    proposers_program,
-)
+from solver.aggregate import Solver
+from solver.readers import declaration_of, proposer_names, proposers_program
 from solver.graph import Graph
 from solver.names import branch_text
 from solver.problems import (
@@ -98,7 +94,7 @@ class Proposer:
 
 def proposers(engine: Engine, program: Program) -> dict[str, Proposer]:
     """Each proposer of the proposers program by name
-    (`solver.aggregate.proposer_names`)."""
+    (`solver.readers.proposer_names`)."""
     out: dict[str, Proposer] = {}
     graph = Graph(program, engine)
     for name in proposer_names(program):

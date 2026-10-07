@@ -50,11 +50,8 @@ from solver.model import (
     Case,
     other_branches,
 )
-from solver.aggregate import (
-    Solver,
-    marker_at,
-    row_value,
-)
+from solver.aggregate import Solver
+from solver.readers import marker_at, row_value
 from solver.graph import Node
 from solver.dependence import (
     dependence,

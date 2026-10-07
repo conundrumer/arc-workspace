@@ -76,22 +76,12 @@ def git_out(tree: Path, *argv: str, stdin: str | None = None,
     return _succeeded(tree, argv, git(tree, *argv, stdin=stdin, env=env))
 
 
-def git_bytes(tree: Path, *argv: str) -> bytes:
-    """The stdout of a git command in `tree` as bytes, for output that is
-    no text, like an archive. The command must succeed: a failure is
-    `GitFailed`."""
-    done = subprocess.run(["git", *argv], cwd=tree, capture_output=True)
-    return _succeeded(tree, argv, done)
-
-
-def _succeeded[T: (str, bytes)](tree: Path, argv: Sequence[str],
-                                done: subprocess.CompletedProcess[T]) -> T:
+def _succeeded(tree: Path, argv: Sequence[str],
+               done: subprocess.CompletedProcess[str]) -> str:
     """The stdout of the git command `done`, which ran `argv` in `tree`; a
     nonzero exit is `GitFailed`."""
     if done.returncode != 0:
-        stderr = done.stderr
-        raise GitFailed(tree, argv, stderr if isinstance(stderr, str)
-                        else stderr.decode(errors="replace"))
+        raise GitFailed(tree, argv, done.stderr)
     return done.stdout
 
 

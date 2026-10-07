@@ -16,7 +16,7 @@ from solver.aggregate import Solver
 from solver.model import Case
 from solver.names import name as case_name
 from solver.outcome import Grids, Outcome, is_result
-from solver.solve import AltKind, Candidate, CaseOnPair, alt_kind, as_grid, out_columns
+from solver.solve import AltKind, CaseOnPair, alt_kind, as_grid, out_columns
 from solver.witness import Undefined, output_key
 
 NO_GRID = mctx("no case emitted a grid")
@@ -61,12 +61,6 @@ ALT_NAME = {
     AltKind.TIEBREAK: mctx("the tiebreak alt"),
 }
 """A pair's alt by name, in a reason."""
-
-
-def _stored_name(candidate: Candidate, ex: Example) -> str:
-    if candidate is Candidate.OUTPUT or ex.alt is None:
-        return mctx("the stored output")
-    return ALT_NAME[alt_kind(ex.alt)]
 
 
 def _stored(ex: Example) -> list[list[tuple[str, Grid]]]:

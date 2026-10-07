@@ -7,7 +7,8 @@ from collections.abc import Iterator, Sequence
 from itertools import product
 
 from engine import RecordValue, RelationName, Value
-from solver.aggregate import Solver, declaration_of, instance_of
+from solver.aggregate import Solver
+from solver.readers import declaration_of, instance_of
 from solver.case_types import CaseTypes, case_types
 from solver.columns import (
     column_types,

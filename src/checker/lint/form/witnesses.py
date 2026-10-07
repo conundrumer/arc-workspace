@@ -39,11 +39,8 @@ from solver.model import (
     Choice,
     concept_branch,
 )
-from solver.aggregate import (
-    choice_line,
-    Solver,
-    branch_witnesses,
-)
+from solver.aggregate import Solver, branch_witnesses
+from solver.readers import choice_line
 from solver.vocabulary import (
     PARSE,
 )

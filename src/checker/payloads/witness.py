@@ -158,13 +158,6 @@ type AnnotationPayload = (ApproximatedWithoutWitness | ApproximationUnwitnessed
 """A verdict that names no case is the fault
 `NAME_DENOTES_NO_CASE`, not one of these."""
 
-ANNOTATION_SHAPES = (ApproximatedWithoutWitness, ApproximationUnwitnessed,
-                     ForeignUnderApproximated, RelaxedNotScene,
-                     RelaxedNoClaim, VerdictOutputUnknown,
-                     WitnessEntryMissing, ReassignedMismatch,
-                     StandsElsewhere, NoDivergence, BranchUnwitnessed)
-"""The classes of `AnnotationPayload`, for an `isinstance` test."""
-
 
 type PointBranch = ConstructorBranch | Branch | DerivedAtStore
 """The branch a case takes at one choice point: a constructor, a `@derive`

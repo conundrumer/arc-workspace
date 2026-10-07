@@ -38,7 +38,8 @@ from solver.vocabulary import (
     IDENT,
 )
 from solver.witness import AssignArg
-from solver.aggregate import Solver, parameter
+from solver.aggregate import Solver
+from solver.readers import parameter
 
 
 # Column types
@@ -61,7 +62,7 @@ def parameter_case_columns(types: Sequence[str]) -> tuple[int, ...]:
 
 def parameter_columns(solver: Solver, name: str) -> "ColumnTypes":
     """The column types of the parameter `name` as the program reads it
-    (`solver.aggregate.parameter`, `column_reading`)."""
+    (`solver.readers.parameter`, `column_reading`)."""
     return column_reading(solver.engine, solver.program,
                           parameter(solver, name))
 

@@ -572,9 +572,6 @@ class _Parser:
         self.b.types.append(decl)
         return self.piece(start, [(key, decl)])
 
-    def last_line(self) -> int:
-        return self.toks[self.pos - 1].line
-
     def constructor(self) -> ConstructorDecl:
         at = self.peek()
         before = [t.text for t in self.toks[max(0, self.pos - 2):self.pos]
@@ -1042,18 +1039,3 @@ def parse(text: str, base_dir: Path) -> SouffleProgram | ParseFailure:
                      key=lambda c: (c.file is not None, c.file or "", c.line, c.column))),
         tuple(build.includes), tuple(build.defines),
         layout=Layout(tuple(segments)))
-
-
-def parse_term(text: str, defined: frozenset[str] = frozenset()) -> Term:
-    """One term as a text writes it. Raises ValueError where `text` is no
-    term."""
-    build = _Build(Path("."))
-    build.defined |= defined
-    try:
-        p = _Parser(build, text, None, Path("."))
-        term = p.expr()
-        if p.peek().kind != "eof":
-            raise ValueError(f"unexpected {p.peek().text!r} after the term")
-    except _Fail as e:
-        raise ValueError(e.message) from None
-    return term

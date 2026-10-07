@@ -11,19 +11,21 @@ from solver import witness as witness_reader
 from solver.model import Params, every_base
 from solver.aggregate import (
     Solver,
-    choice_line,
     instance_faults,
     lists_case,
     name_problems,
     parse_with_lib,
+    read_witness,
+    solver_file,
+)
+from solver.readers import (
+    choice_line,
     proposer_names,
     proposers_program,
     read_branches,
     read_choice,
     read_lib,
     read_params,
-    read_witness,
-    solver_file,
 )
 from solver.case_columns import off_form_case_columns
 from solver.problems import (

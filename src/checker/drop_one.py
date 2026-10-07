@@ -19,7 +19,7 @@ from checker.variants import (
 from engine import Program, RemoveFact, Row, RunFailure
 from engine.quotes import quotes
 from solver.aggregate import Solver
-from solver.aggregate import parameter
+from solver.readers import parameter
 from solver.solve import (
     stored_facts,
     PerCase,

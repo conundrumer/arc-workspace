@@ -15,13 +15,8 @@ from solver.model import (
     StoreBranch,
     every_base,
 )
-from solver.aggregate import (
-    Solver,
-    branch_under,
-    enumerated,
-    enumerates,
-    ignore_targets,
-)
+from solver.aggregate import Solver, branch_under, enumerated, enumerates
+from solver.readers import ignore_targets
 from solver.columns import ident_keyed
 
 

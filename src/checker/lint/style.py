@@ -24,7 +24,8 @@ from engine.program import (
 from engine.quotes import quotes
 from solver.category import Category
 from solver.model import bases_of, Section, UnderMarker, Unmarked, Parameter
-from solver.aggregate import Solver, lists_case, section_at
+from solver.aggregate import Solver, lists_case
+from solver.readers import section_at
 from solver.dependence import dependence
 from solver.solve import per_case
 from solver.vocabulary import (
@@ -132,7 +133,7 @@ class InComp:
 
 @dataclass(frozen=True)
 class InSection:
-    """A top-level section (`solver.aggregate.section_at`)."""
+    """A top-level section (`solver.readers.section_at`)."""
 
     section: Section
 

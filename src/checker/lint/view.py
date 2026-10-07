@@ -43,7 +43,8 @@ from engine.program import literal_terms as top_terms
 from engine.program import subterms as direct_subterms
 from solver.annotations import CaseMarker
 from solver.category import HINTS
-from solver.aggregate import TOP, Solver, marker_at
+from solver.aggregate import TOP, Solver
+from solver.readers import marker_at
 from solver.vocabulary import (
     DETERMINE,
     ENUMERATOR,
@@ -174,12 +175,6 @@ def disjunctions(unit: Unit) -> Iterator[Disjunction]:
             yield lit
             for b in lit.branches:
                 stack.extend(b)
-
-
-def same_atom(a: Atom, b: Atom) -> bool:
-    """Two atoms that name one relation with the same arguments, wherever
-    they stand."""
-    return a.relation == b.relation and a.args == b.args
 
 
 def placed(lit: BodyLiteral | Atom, line: int
@@ -339,7 +334,7 @@ class View:
                      ) -> list[tuple[Unit, int, CaseMarker | None]]:
         """Each fact of `decl` (`defs`) on a line of the file, with that
         line and the case marker it stands under
-        (`solver.aggregate.marker_at`), None above the first marker that lists
+        (`solver.readers.marker_at`), None above the first marker that lists
         a case. A fact an operation wrote stands on no line."""
         return [(u, u.span.first,
                  marker_at(self.solver, u.scope, u.span.first))
@@ -365,11 +360,6 @@ class View:
         `Parse` and `Params`."""
         return scope == TOP or (len(scope.components) == 1
                                 and scope.components[0] in STOCK_COMPS)
-
-    def style_scope(self, scope: Scope) -> bool:
-        """A scope program style applies to: the program scopes but
-        `Params`."""
-        return self.program_scope(scope) and self.comp_of(scope) != PARAMS
 
     @cached_property
     def enumeration(self) -> frozenset[str]:

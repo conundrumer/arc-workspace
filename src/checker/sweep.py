@@ -39,7 +39,8 @@ from solver.model import (
     Unmarked,
     derived_parameters,
 )
-from solver.aggregate import Solver, declaration_of, lists_case
+from solver.aggregate import Solver, lists_case
+from solver.readers import declaration_of
 from solver.columns import ColumnTypes
 from solver.dependence import dependence
 from solver.names import marker_lists

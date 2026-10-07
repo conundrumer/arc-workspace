@@ -7,7 +7,6 @@ from enum import StrEnum
 
 from checker.payloads.branches import BranchesPayload
 from checker.payloads.witness import (  # noqa: F401  (re-exported)
-    ANNOTATION_SHAPES,
     AnnotationPayload,
     ApproximatedWithoutWitness,
     ApproximationUnwitnessed,

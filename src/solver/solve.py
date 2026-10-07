@@ -82,17 +82,19 @@ from solver.model import (
     every_base,
 )
 from solver.aggregate import (
-    based_choice,
     branch_witnesses,
     TOP,
     assignable,
     store_branch,
     is_concept_case,
     Solver,
-    row_value,
     enumerates,
-    parameter,
     has_determine,
+)
+from solver.readers import (
+    based_choice,
+    row_value,
+    parameter,
     instance_of,
     proposer_names,
     proposers_program,

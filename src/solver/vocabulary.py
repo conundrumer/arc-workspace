@@ -64,11 +64,6 @@ ENUMERATOR: Annotated[str,
 """The relation that enumerates the cases."""
 IMPL = RelationName((), ENUMERATOR)
 """`impl_choice` as a run names it."""
-CASE_COLUMN: Annotated[str,
-    quotes("solver-file.md", "Cases",
-           "**`impl_choice`.** The relation that enumerates the cases is "
-           "`impl_choice`, and its column is `ch`.")] = "ch"
-"""`impl_choice`'s column."""
 INPUT = RelationName((), "in")
 """The input grid's cells (lib.dl, the runner contract)."""
 OUTPUT: Annotated[RelationName,
