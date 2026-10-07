@@ -3,7 +3,6 @@ solver reads: the file the caller names or the task's, read in place
 of the task's, and the assignment the object states."""
 
 import sys
-from dataclasses import replace
 from pathlib import Path
 
 from checker.render import commands
@@ -15,6 +14,7 @@ from solver.aggregate import Solver, grid_stored, read_witness
 from solver.problems import Fault, InWitnessFile, WitnessFileRole
 from solver.outcome import Assignment
 from solver.group_runs import assigned
+from solver.witness_swap import with_witness_file
 from solver.witness import AssignValue, WitnessFile, assign_with_grids
 
 
@@ -48,16 +48,17 @@ def read_file(solver: Solver, path: Path, role: WitnessFileRole
 
 
 def with_file(solver: Solver, path: Path) -> Solver | None:
-    """The solver with the witness file at `path` in place of the task's;
-    None, with the file's problems on stderr, where it is off its
-    shape."""
+    """The solver with the witness file at `path` in place of the task's,
+    with the faults of that file in place of those of the task's
+    (`with_witness_file`); None, with the file's problems on stderr, where
+    it is off its shape."""
     if not path.exists():
-        return replace(solver, witness_file=None)
+        return with_witness_file(solver, None)
     file, problems = read_file(solver, path, WitnessFileRole.TASK)
     if file is None or problems:
         print_faults(solver, problems)
         return None
-    return replace(solver, witness_file=file)
+    return with_witness_file(solver, file)
 
 
 def lined_solver(solver: Solver, at: Path) -> Solver | None:

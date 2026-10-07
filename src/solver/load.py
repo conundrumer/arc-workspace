@@ -1,6 +1,7 @@
 """`load`, the one entry that builds a solver's `Solver` from its file."""
 
 import re
+from dataclasses import replace
 from pathlib import Path
 
 from arc import task as arc_task
@@ -16,11 +17,7 @@ from solver.aggregate import (
     read_witness,
     solver_file,
 )
-from solver.form_checks import (
-    instance_faults,
-    name_problems,
-    output_form_problems,
-)
+from solver.form_checks import instance_faults, name_problems
 from solver.readers import (
     choice_line,
     proposer_names,
@@ -31,6 +28,7 @@ from solver.readers import (
     read_params,
 )
 from solver.case_columns import off_form_case_columns
+from solver.witness_swap import with_witness_file
 from solver.problems import (
     Fault,
     InSolver,
@@ -110,12 +108,6 @@ def load(stem: str, engine: Engine, path: Path | None = None) -> Solver:
         task: Task | None = arc_task.load(task_id)
     except FileNotFoundError:
         task = None
-    witness_file = None
-    wpath = witness_reader.path(task_id)
-    if wpath.exists():
-        witness_file, file_problems = read_witness(
-            wpath.read_text(), params, WitnessFileRole.TASK)
-        problems += file_problems
     if annotations.representative is not None and not solver_file(
             annotations.representative.task_id).exists():
         problems.append(Fault(
@@ -123,11 +115,12 @@ def load(stem: str, engine: Engine, path: Path | None = None) -> Solver:
             InSolver(annotations.representative.line),
             Named(annotations.representative.task_id)))
     solver = Solver(stem, task_id, program, annotations, choice, branches,
-                    params, witness_file, task, lib, tuple(problems), engine)
-    named = (*name_problems(solver), *output_form_problems(solver),
-             *off_form_case_columns(solver))
-    if named:
-        solver = Solver(stem, task_id, program, annotations, choice,
-                        branches, params, witness_file, task, lib,
-                        tuple(problems) + named, engine)
-    return solver
+                    params, None, task, lib, tuple(problems), engine)
+    solver = replace(solver, problems=(
+        *problems, *name_problems(solver), *off_form_case_columns(solver)))
+    wpath = witness_reader.path(task_id)
+    if not wpath.exists():
+        return solver
+    witness_file, file_problems = read_witness(
+        wpath.read_text(), params, WitnessFileRole.TASK)
+    return with_witness_file(solver, witness_file, file_problems)

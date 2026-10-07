@@ -13,6 +13,7 @@ from checker.finding import (
 from checker.runs import Runs
 from solver.aggregate import Solver
 from solver.problems import Fault, InSolver, InWitnessFile, WitnessFileRole
+from solver.witness_swap import in_file
 
 
 def where_of(problem: Fault) -> Where:
@@ -46,8 +47,4 @@ def fault_findings(solver: Solver, runs: Runs) -> list[Finding]:
 def _in_unread_task_file(problem: Fault, runs: Runs) -> bool:
     """Whether `problem` stands in the solver's own witness file while
     the runs read another file in its place."""
-    match problem.place:
-        case InWitnessFile(file=WitnessFileRole.TASK):
-            return runs.file_role is not WitnessFileRole.TASK
-        case InSolver() | InWitnessFile():
-            return False
+    return in_file(problem) and runs.file_role is not WitnessFileRole.TASK
