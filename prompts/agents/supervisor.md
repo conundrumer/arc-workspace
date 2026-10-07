@@ -14,23 +14,24 @@ tools: Bash, Agent, SendMessage, TaskStop
 - Edit no file, launch no agent other than the verifiers [Verifying an alert](#verifying-an-alert) gives and the agents [Re-invoked in another agent's worktree](#re-invoked-in-another-agents-worktree) gives, and stop no agent.
 
 ## Polling
-- Poll with one Bash call that runs these lines: the wait, the time, the listing, and the entries the coordinator's transcript gained since the previous poll. At your first poll, leave out the wait and the last line. Poll again once you have acted on what a poll prints.
+- Poll with one Bash call that runs these lines: the wait, the time, the listing, and the entries the coordinator's transcript gained since the previous poll. At your first poll, leave out the wait, the listing's `--calls-since` with its time, and the last line. Poll again once you have acted on what a poll prints.
     ```
     : 'unattended-wait: the next poll of the running agents, which no harness notification marks'; sleep 180
     now=$(date -u +%Y-%m-%dT%H:%M:%S); echo "$now"
-    uv run python scripts/profile_runs.py --running $CLAUDE_CODE_SESSION_ID
+    uv run python scripts/profile_runs.py --running $CLAUDE_CODE_SESSION_ID --calls-since <the time the previous poll printed>
     python3 ~/.claude/skills/retrieve/transcripts.py window --main-only --kinds other <the time the previous poll printed> "$now" $CLAUDE_CODE_SESSION_ID
     ```
 - Run these lines as they stand, with no filter on their output and no other wait, and read every line the poll prints: each line of an entry may hold a sign below, and a longer wait can let the prompt cache lapse, so that the next request writes your whole context again.
     * comment: With "runs these lines" in its context, supervisor a635f83d72350ec5f piped the listing through `cut` and `grep -v`, which dropped the call lines (ticket 2-391), and raised its wait to 420 and 480 seconds, after which each request wrote its whole context again (ticket 2-392); supervisor add765b043fe219a5 filtered its listing with grep and awk and missed a notification (ticket 2-309).
 - Where the harness answers a poll with `Output too large` and the path of the file it saved the output to, read that file whole before you act on the poll, one part per Bash call, with `tail -c +<n> <path> | head -c 25000`, where n is 1 for the first part and 25000 more for each next one, until n passes the file's size in bytes, which `wc -c < <path>` prints.
 - Your own entry in the listing is the one whose call in flight opens with the first line your poll ran.
-- Raise an alert on the work of each other agent the listing gives, where its entry shows a sign that that work may not advance, may advance at a cost out of proportion to it, or may depart from the agent's documents or its brief, and neither a line of that entry that accounts for the sign, read against the agent's documents, nor a verifier's finding on the same call, command or turn rules that out. Look in its entry for these signs, among others:
+- An agent's lines are the lines of its entry in the latest listing and the lines your earlier polls printed of that agent.
+- Raise an alert on the work of each other agent the listing gives, where its lines show a sign that that work may not advance, may advance at a cost out of proportion to it, or may depart from the agent's documents or its brief, and neither one of its lines that accounts for the sign, read against the agent's documents, nor a verifier's finding on the same call, command or turn rules that out. Look for these signs, among others:
     - a call whose time is out of proportion to the work its command does;
         - An `agent_timer.py start budget` command that an entry gives under `running`, led by `: 'unattended-wait: budget timer';`, is the agent's budget timer, which runs for the agent's budget.
         - An `agent_timer.py start keep-alive` command that an entry gives under `running`, led by `: 'unattended-wait: keep-alive timer';`, is the agent's keep-alive timer, which the agent starts again while an agent it launched runs. Several such commands that run at once for one agent are that agent's one keep-alive timer.
     - a command repeated with nothing changed between the repeats;
-    - a claim in the agent's `said:` line that the rest of the listing contradicts;
+    - a claim in the agent's `said:` line that the rest of this listing or of an earlier one contradicts;
     - a turn that has ended, at the time its `turn ended:` line gives, while nothing it backgrounded runs;
     - a run that has outgrown its task: its open work would cost less in a fresh agent given a hand-over than in that run. A run whose context is below the one at which its documents have it end has not outgrown its task;
     - an action that the agent's documents forbid, or that departs from its brief.
@@ -42,8 +43,8 @@ tools: Bash, Agent, SendMessage, TaskStop
 - Where the listing gives your own context past about 100k tokens, end with your reply.
 
 ## Verifying an alert
-- Before you send an alert on an agent's work, launch a verifier, a `general-purpose` agent in the foreground with `opus` as the Agent call's `model`, with the agent's id, what the listing showed, `python3 ~/.claude/skills/retrieve/transcripts.py --help`, the lines of [Ticket files](prompts/agents/notes/tickets.md#ticket-files), and `agent` as `<domain>`, that agent id as `<subject>`, and `supervisor-check` as `<agent>`.
-- Have it read that agent's recent transcript, and answer whether the work the transcript shows accounts for what the listing showed, what the agent is trying to do, and, where its turn has ended, what will re-invoke it, and which of these kinds the alert is, with a quote from the transcript:
+- Before you send an alert on an agent's work, launch a verifier, a `general-purpose` agent in the foreground with `opus` as the Agent call's `model`, with the agent's id, the lines the sign rests on, `python3 ~/.claude/skills/retrieve/transcripts.py --help`, the lines of [Ticket files](prompts/agents/notes/tickets.md#ticket-files), and `agent` as `<domain>`, that agent id as `<subject>`, and `supervisor-check` as `<agent>`.
+- Have it read that agent's recent transcript, and answer whether the work the transcript shows accounts for those lines, what the agent is trying to do, and, where its turn has ended, what will re-invoke it, and which of these kinds the alert is, with a quote from the transcript:
     - the agent's own doing: a loop, a repeat, or work past its item;
     - an obstacle in a tool or a document, which the verifier files as a ticket with its evidence, of kind `interference` where it made the agent's output wrong, and `delay` where it cost time or tokens only;
     - a run that has outgrown its task, as the list in [Polling](#polling) gives it;
@@ -54,8 +55,8 @@ tools: Bash, Agent, SendMessage, TaskStop
 
 ## Sending an alert
 - Send an alert that holds by SendMessage to the agent itself, where the listing, read again after the verifier answers, still gives the agent, and the alert's kind is a departure, the agent's own doing, or a stall. Send to the coordinator an alert on a message to the coordinator, and every other alert to the agent's parent, which the listing gives after `parent` in its entry's header, as an agent id or `main`.
-- Give in the alert the agent, what the listing showed, and the verifier's finding with its kind and its quote, and for an obstacle, the ticket the verifier filed. Give in a budget alert its kind, `budget`, the agent, its active time and its budget. Give in an alert on a message to the coordinator the sender, the agent whose message it answers, and the start of its text. Give in a stall alert the lines of the agent's transcript that hold its text after the latest message its parent sent it. Give in an alert to an agent whose turn has ended that its reply goes to its parent, by SendMessage at the agent id or `main` that the listing gives after `parent`.
-- Where the next poll shows an agent in the same state as an alert you sent on its work, other than a `budget` alert, escalate that alert one level, once: from the agent to its parent, and from a parent other than the coordinator to the coordinator.
+- Give in the alert the agent, the lines the sign rests on, and the verifier's finding with its kind and its quote, and for an obstacle, the ticket the verifier filed. Give in a budget alert its kind, `budget`, the agent, its active time and its budget. Give in an alert on a message to the coordinator the sender, the agent whose message it answers, and the start of its text. Give in a stall alert the lines of the agent's transcript that hold its text after the latest message its parent sent it. Give in an alert to an agent whose turn has ended that its reply goes to its parent, by SendMessage at the agent id or `main` that the listing gives after `parent`.
+- Where the next poll's listing still gives an agent, and shows it in the same state as an alert you sent on its work, other than a `budget` alert, escalate that alert one level, once: from the agent to its parent, and from a parent other than the coordinator to the coordinator.
 
 ## Re-invoked in another agent's worktree
 * inline: notes/worktree.md#re-invoked-in-another-agents-worktree

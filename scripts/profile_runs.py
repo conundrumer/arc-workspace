@@ -6,6 +6,7 @@ is open, as `--open` gives it. `--help` prints HELP."""
 import argparse
 import sys
 import time
+from datetime import UTC, datetime
 
 from controlled_markdown import mctx
 from engine import checkout
@@ -31,7 +32,7 @@ HELP = mctx("""
     - Usage:
         ```
         uv run python scripts/profile_runs.py ID [ID ...] [--type TYPE[,TYPE]] [--pct P] [--top N] [--runs] [--since DATE]
-        uv run python scripts/profile_runs.py --running ID
+        uv run python scripts/profile_runs.py --running ID [--calls-since TIME]
         uv run python scripts/profile_runs.py --pending ID
         uv run python scripts/profile_runs.py --open ID
         ```
@@ -65,6 +66,7 @@ HELP = mctx("""
         - each call it has in flight, with its label, its command and the time since the call;
         - each command or agent it backgrounded that is still running, with its label, its command and the time since the call;
         - its last {recent} calls in order, each with its label, its command and its duration, or `pending`.
+    - `--calls-since TIME`, an ISO datetime read in UTC where it gives no offset, keeps of each listed agent's last {recent} calls only those that ended at or after TIME, and those that are pending. It prints them after `recent since` and TIME in UTC, as `YYYY-MM-DDTHH:MM:SSZ`, and where it keeps none, prints `none` after TIME.
     - `--pending ID` prints the agent id of each agent pending to the run ID, one per line, in launch order, where ID is a session id or an agent id. An agent is pending to the run that launched it from the Agent call that launched it, or from the last SendMessage call that resumed it, by the run or by any agent of the run's sessions, main among them, until the run holds the result of that Agent call, where the result does not say the agent runs in the background, or until any transcript of the session holds a notification of the agent, a notification that it stopped with work of its own still running among them. A SendMessage call to an agent whose result says neither that it resumed the agent nor that it queued the message resumes none, and an `undecided` line on stderr names it.
     - `--open ID` prints `open` where the work of the run ID is open, by the rule by which `--running` lists an agent, applied to the run ID, and `not open` otherwise, where ID is an agent id. An ID that names a session's main transcript is refused.
     - The messages from a listed agent's parent are its brief, the messages its first turn answers, and each later message its parent sent: one the harness gives as from the parent's agent id, or, for an agent `main` launched, as from the coordinator or queued with no tag. The origin the harness gives a queued message is the one its attachment gives. A notification of the agent's own backgrounded work, a message from an agent it launched, from the user, from another agent, or, for an agent `main` did not launch, from the coordinator or queued with no tag, and a note of the harness are none. A message from another agent is one the harness gives as from an agent id other than the parent's and those of the agents it launched. A later message whose sender is none of these is unknown, and an `undecided` line on stderr names it.
@@ -88,6 +90,11 @@ def iso_date(text: str) -> float:
     return epoch(text)
 
 
+def utc_time(text: str) -> float:
+    t = datetime.fromisoformat(text)
+    return (t if t.tzinfo else t.replace(tzinfo=UTC)).timestamp()
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=HELP,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -95,6 +102,11 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--running", metavar="ID",
                     help=mctx("list the agents under the run ID whose work "
                               "is open"))
+    ap.add_argument("--calls-since", type=utc_time, metavar="TIME",
+                    help=mctx("with `--running`, print of each agent's last "
+                              "calls only those that ended at or after TIME "
+                              "or are pending: an ISO datetime, in UTC where "
+                              "it gives no offset"))
     ap.add_argument("--pending", metavar="ID",
                     help=mctx("list the agents pending to the run ID"))
     ap.add_argument("--open", metavar="ID",
@@ -124,6 +136,10 @@ def main(argv: list[str]) -> int:
                    "and `--open ID`"),
               file=sys.stderr)
         return 2
+    if args.calls_since is not None and not args.running:
+        print(mctx("refused: `--calls-since` goes with `--running ID` alone"),
+              file=sys.stderr)
+        return 2
     try:
         if args.pending:
             for agent in pending_agents(find(args.pending), undecided):
@@ -146,7 +162,7 @@ def main(argv: list[str]) -> int:
         print(mctx("refused: {reason}").format(reason=e), file=sys.stderr)
         return 2
     if args.running:
-        print_running(listed, time.time(), undecided)
+        print_running(listed, time.time(), args.calls_since, undecided)
     elif not runs and not args.pending and not args.open:
         print(mctx("refused: no run to profile"), file=sys.stderr)
         return 2
