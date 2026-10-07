@@ -72,7 +72,8 @@ run's commands in flight. The warm pass starts after the cold pass releases
 its hold, since a warm command that asked for a shared hold while the run
 holds the lock exclusively would wait for the run itself. Where the run has
 to wait for the lock, it says so on stderr once for the cold pass's hold,
-and once for its commands' shared holds.
+and once for its commands' shared holds, which wait only for the cold pass
+of another timed run.
 
 `--outputs-only` runs the cold pass alone, and compares its outputs alone:
 it prints `DIFF` lines, and no `SLOW`, `LOADED` or `NOTIME` line, and writes no

@@ -9,17 +9,22 @@ reader that asks after the mark waits until the writer is done, so that a
 steady flow of readers cannot starve it. The lock is two files in the
 common git directory, each held through `flock`. A writer holds
 `PENDING_FILE` exclusively from its request to its release, and that hold
-is the mark. A reader holds `PENDING_FILE` exclusively only while it asks
-for `LOCK_FILE`. A reader holds `LOCK_FILE` shared, and a writer holds it
-exclusively. The kernel releases a hold when its process ends, however it
-ends, so a holder that crashes or is killed leaves no hold behind, and the
-files themselves mean nothing.
+is the mark. A reader holds `PENDING_FILE` shared only while it asks for
+`LOCK_FILE`, so readers do not wait for each other there. A reader holds
+`LOCK_FILE` shared, and a writer holds it exclusively. No writer holds
+`LOCK_FILE` while a reader holds `PENDING_FILE`, so a reader's hold of
+`PENDING_FILE` lasts an instant, and a writer that asks for the mark gets
+it once no reader is in that instant. The kernel releases a hold when its
+process ends, however it ends, so a holder that crashes or is killed leaves
+no hold behind, and the files themselves mean nothing.
 
 A wait lasts as long as the holders it waits for: a writer waits for every
 reader that holds the lock, and every reader that asks after it waits for
-the writer too. A command that has to wait says so on stderr, once, before
-it waits, and the holder of several holds that share a `Notice` says so
-once for all of them, since the text of a wait names its holders.
+the writer too. A reader waits only where a writer holds the mark, and a
+reader that asks while only readers hold the lock or ask for it does not
+wait. A command that has to wait says so on stderr, once, before it waits,
+and the holder of several holds that share a `Notice` says so once for all
+of them, since the text of a wait names its holders.
 
 A holder names its hold in `HOLD_ENV`, which every process it starts
 inherits, and a gate run names each command's hold in that command's
@@ -123,12 +128,11 @@ def lock_files(hold: Hold, directory: Path, notice: Notice) -> Iterator[None]:
         return text
 
     with open(directory / PENDING_FILE, "a") as pending, open(path, "a") as lock:
-        _take(pending, fcntl.LOCK_EX, notice, line)
+        op = fcntl.LOCK_SH if hold is Hold.SHARED else fcntl.LOCK_EX
+        _take(pending, op, notice, line)
+        _take(lock, op, notice, line)
         if hold is Hold.SHARED:
-            _take(lock, fcntl.LOCK_SH, notice, line)
             fcntl.flock(pending, fcntl.LOCK_UN)
-        else:
-            _take(lock, fcntl.LOCK_EX, notice, line)
         yield
 
 

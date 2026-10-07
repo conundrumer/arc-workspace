@@ -12,9 +12,13 @@ and prints the ones it changed. With no path, both read the set under
 documents is one word wherever it is written. `render` prints the first path as
 ordinary Markdown, with its includes resolved from the files they name, and it
 takes its paths as given. A path that names a directory stands for every `.md`
-file under it. A name in a message is relative to the current directory.
+file under it, and a path that names no file or directory is reported on one
+line, with exit status 2. `-h` or `--help`, given as any argument, prints the
+usage and exits 0. A name in a message is relative to the current directory.
 """
 
+import errno
+import os
 import subprocess
 import sys
 import tomllib
@@ -87,6 +91,8 @@ def collect(names: list[str]) -> list[Path]:
     out: list[Path] = []
     for name in names:
         path = Path(name)
+        if not path.exists():
+            raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), name)
         out.extend(sorted(path.rglob("*.md")) if path.is_dir() else [path])
     return out
 
@@ -214,6 +220,9 @@ def show(paths: list[Path]) -> int:
 def main(argv: list[str]) -> int:
     usage = (f"usage: {argv[0]} check|fmt [paths...]\n"
              f"       {argv[0]} render <path> [paths...]")
+    if {"-h", "--help"} & set(argv[1:]):
+        print(usage)
+        return 0
     command, names = (argv[1] if argv[1:] else ""), argv[2:]
     if command not in ("check", "fmt", "render"):
         print(usage, file=sys.stderr)
@@ -223,7 +232,11 @@ def main(argv: list[str]) -> int:
     if not names:
         print(usage, file=sys.stderr)
         return 2
-    paths = collect(names)
+    try:
+        paths = collect(names)
+    except FileNotFoundError as err:
+        print(f"{err.filename}: {err.strerror}", file=sys.stderr)
+        return 2
     try:
         if command == "check":
             whole = not argv[2:]
