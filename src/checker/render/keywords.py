@@ -1,6 +1,6 @@
 """The lines of `keywords`, `since` and `size`."""
 
-from checker.render.faults import detail_text
+from checker.render.faults import parse_failure_text
 from controlled_markdown import mctx
 from engine import ParseFailure
 
@@ -19,4 +19,4 @@ SIZE_UNREAD = mctx("{stem}: {error}")
 
 
 def size_unread(stem: str, failure: ParseFailure) -> str:
-    return SIZE_UNREAD.format(stem=stem, error=detail_text(failure))
+    return SIZE_UNREAD.format(stem=stem, error=parse_failure_text(failure))

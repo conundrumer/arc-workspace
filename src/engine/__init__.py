@@ -15,6 +15,7 @@ from engine.engine import (
     Limits,
     Occurrence,
     ParseFailure,
+    Part,
     RelationValue,
     RemovalTarget,
     RemoveAtom,
@@ -61,17 +62,16 @@ from engine.program import (
     Value,
 )
 from engine.quotes import guard, quoted, quotes
-from engine.text import fact_text
 
 __all__ = [
     "AdtValue", "Atom", "BodyLiteral", "Cast", "Comment", "CompileError", "CpuLimit",
     "DeclId", "Engine", "Exited", "Grid", "GridCell", "GridForm", "GridLayout", "GridInput", "MemberCell", "GridValue", "Index",
-    "IndexedGrids", "InputValue", "Limits", "Occurrence", "ParseFailure",
+    "IndexedGrids", "InputValue", "Limits", "Occurrence", "ParseFailure", "Part",
     "Program", "RecordValue", "RelationName", "RelationValue", "RemovalTarget",
     "RemoveAtom", "RemoveColumn", "RemoveDisjunct", "RemoveFact",
     "RemoveUnit", "Rendered",
     "RenderedLine", "Resolved", "Role", "Row", "Rows", "RunFailure",
     "RunResult", "Scope", "Span", "Term", "Tuples", "TypeDecl", "TypeName",
     "UndefinedOutput", "UngroundedVariable", "Unit", "UnitId", "Unresolved",
-    "Value", "WallLimit", "fact_text", "guard", "quoted", "quotes",
+    "Value", "WallLimit", "guard", "quoted", "quotes",
 ]

@@ -48,7 +48,6 @@ from engine.program import (
     UnitId,
     own,
 )
-from engine.text import text as code_text
 from engine.quotes import quotes
 from solver.annotations import TrailingWord
 from solver.category import Category
@@ -111,7 +110,7 @@ def _bans(solver: Solver, runs: Runs, category: Category) -> list[Finding]:
         hit: tuple[Category, str] | None = None
         match node:
             case NumberTerm(value=value) if value != 0:
-                hit = (Category.NONZERO_LITERAL, code_text(node))
+                hit = (Category.NONZERO_LITERAL, solver.engine.text(node))
             case DefinedName(name=name) if name in macros:
                 hit = (Category.ORIENTATION_LITERAL, name)
             case BinaryTerm(op=op) | UnaryTerm(op=op):
@@ -231,7 +230,7 @@ def check_params_data(solver: Solver, runs: Runs) -> list[Finding]:
                 if isinstance(node, NumberTerm) and node.value != 0 \
                         and not (axis and node.value == 1):
                     out.append(lint(line, LintFragment(
-                        Category.PARAMS_DATA, code_text(node)),
+                        Category.PARAMS_DATA, solver.engine.text(node)),
                         (u.id,)))
     return out
 

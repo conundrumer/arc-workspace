@@ -36,4 +36,4 @@ def souffle_text(solver: Solver, value: Value, type_name: str) -> str:
         else {p.type for p in solver.choice.points}
     if type_name in points and isinstance(value, AdtValue):
         return joined(value_constructors(value))
-    return arg_text(value, type_name, solver.lib)
+    return arg_text(value, type_name, solver)

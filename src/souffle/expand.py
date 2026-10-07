@@ -22,7 +22,6 @@ from engine.program import (
     cell_place,
     offset_place,
 )
-from engine.text import columns
 from souffle import printer
 from souffle.layout import (
     CompBlock,
@@ -46,6 +45,7 @@ from souffle.parser import (
     placed_name,
     parse,
 )
+from souffle.text import columns
 
 
 def rigid_rule(head: str, src: str, types: list[TypeName]) -> str:

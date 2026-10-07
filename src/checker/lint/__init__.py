@@ -24,7 +24,7 @@ from checker.judged import (
     parse_failure,
     reading_names,
 )
-from checker.lint import bans, idioms, names, rewrites, style
+from checker.lint import bans, constants, idioms, names, rewrites, style
 from checker.lint.form import (
     case_type,
     components,
@@ -79,7 +79,7 @@ REWRITE_CHECKS: tuple[Check, ...] = (
     rewrites.check_named_complement, rewrites.check_negated_value,
     bans.check_long_clause, style.check_decl_placement, rewrites.check_pass_through,
     rewrites.check_chain_join, rewrites.check_single_consumer,
-    rewrites.check_argmax, rewrites.check_const_join,
+    rewrites.check_argmax, constants.check_const_join,
     rewrites.check_comp_idiom, idioms.check_lib_idiom,
     idioms.check_domain_enumerator,
     rewrites.check_common_subexpr,

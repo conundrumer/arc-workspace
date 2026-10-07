@@ -53,7 +53,7 @@ from engine.memo import ByIdentity
 from souffle.expand import expand, grid_facts
 from souffle.index import Tree, held_index, hold, index_of, tree_of
 from souffle.layout import next_decl, next_unit
-from engine.text import text as code_text
+from souffle.text import text as code_text
 from souffle.values import NotConstant, constant
 
 # remove

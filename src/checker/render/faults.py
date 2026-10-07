@@ -6,8 +6,7 @@ from collections.abc import Sequence
 from checker.finding import FaultPayload, Finding
 from checker.render.locations import LineForm, line_list, line_text, where_text
 from controlled_markdown import mctx
-from engine import GridLayout, ParseFailure, RelationName
-from engine.text import text as code_text
+from engine import Engine, GridLayout, ParseFailure, RelationName
 from solver import names
 from solver.aggregate import Solver
 from solver.annotations import (
@@ -233,7 +232,7 @@ def off_form_text(detail: OffForm) -> str:
         text=detail.text, parts="; ".join(parts))
 
 
-def detail_text(detail: Detail) -> str:
+def detail_text(engine: Engine, detail: Detail) -> str:
     """The part of a fault its sentence names."""
     match detail:
         case Quoted(text=text):
@@ -255,7 +254,8 @@ def detail_text(detail: Detail) -> str:
         case UndecidedDetail(form=form, name=name):
             return name if name is not None else form.value
         case AnchorWithoutStamp(name=name, storage=storage):
-            stored = (mctx("in a `{form}` call").format(form=code_text(storage))
+            stored = (mctx("in a `{form}` call").format(
+                form=engine.text(storage))
                       if isinstance(storage, GridLayout) else STORAGE_TEXT[storage])
             return mctx("`{name}` a grid with an anchor, and the solver "
                         "stores `{name}` {stored}, not by one `GRID_STAMP` "
@@ -265,7 +265,7 @@ def detail_text(detail: Detail) -> str:
             return mctx("`{name}` the value {v} at row {r}, column {c}, and "
                         "its `{form}` layout takes 1 for a member and 0 for "
                         "an empty cell").format(
-                            name=name, v=v, r=r, c=c, form=code_text(layout))
+                            name=name, v=v, r=r, c=c, form=engine.text(layout))
         case AssignArity(name=name, given=given, expected=expected,
                          per_case=per_case):
             text = mctx("`{name}` has facts of {got} arguments, and the "
@@ -310,8 +310,13 @@ def detail_text(detail: Detail) -> str:
                         "is judged").format(
                 other=line_list(other), verb=records(other),
                 another=line_list(another), verb2=records(another))
-        case ParseFailure(line=line, column=column, message=message):
-            return f"{line}:{column}: {message}"
+        case ParseFailure():
+            return parse_failure_text(detail)
+
+
+def parse_failure_text(failure: ParseFailure) -> str:
+    """Where parsing stopped, and the parser's message."""
+    return f"{failure.line}:{failure.column}: {failure.message}"
 
 
 def records(lines: Sequence[int]) -> str:
@@ -352,5 +357,5 @@ it."""
 def reading_lines(solver: Solver, f: Finding, p: FaultPayload,
                    form: LineForm) -> list[str]:
     text = PROBLEM_TEXT[p.problem.kind].format(
-        text=detail_text(p.problem.detail))
+        text=detail_text(solver.engine, p.problem.detail))
     return [f"{where_text(solver, f.where, form)}: {text}"]

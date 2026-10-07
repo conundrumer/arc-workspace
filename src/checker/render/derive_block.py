@@ -93,10 +93,10 @@ def derive_lines(solver: Solver, survey: object) -> list[str]:
                     d.proposer.name, d.line.plausibility,
                     d.line.verdict)))
             continue
-        lines.append("  " + hint_line(Hint(HintKind.DERIVE, d.proposer.name,
-                                           site=d.rigid)))
-        lines.append("  " + hint_line(Hint(HintKind.IGNORE_DERIVE,
-                                           d.proposer.name)))
+        lines.append("  " + hint_line(solver.engine, Hint(
+            HintKind.DERIVE, d.proposer.name, site=d.rigid)))
+        lines.append("  " + hint_line(solver.engine, Hint(
+            HintKind.IGNORE_DERIVE, d.proposer.name)))
     return lines
 
 

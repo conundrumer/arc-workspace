@@ -12,6 +12,7 @@ from solver.annotations import (
     VerdictWord,
 )
 from solver.problems import InSolver, ProblemKind
+from souffle.engine import SouffleEngine
 from tests.solver.fake import adt, comment, program, relation
 
 BAND = DeclId(9)
@@ -41,7 +42,7 @@ def test_forms_and_their_places() -> None:
             comment(24, "// @relaxed even"),
             comment(25, "// --- Cut, Lattice(a=B): the two ---"),
         ])
-    got, problems = annotations.read(parsed)
+    got, problems = annotations.read(SouffleEngine(), parsed)
     assert [(f.word, f.value) for f in got.header] == [
         ("keywords", "lines panels")]
     assert [c.line for c in got.header_prose] == [3]

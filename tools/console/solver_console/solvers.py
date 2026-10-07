@@ -126,10 +126,14 @@ def header_end(lines: list[str]) -> int:
 _ENGINE: list[Engine] = []
 
 
-def _parsed(text: str) -> Program | ParseFailure:
+def _engine() -> Engine:
     if not _ENGINE:
         _ENGINE.append(engine())
-    return _ENGINE[0].parse(text, config.SOLVERS)
+    return _ENGINE[0]
+
+
+def _parsed(text: str) -> Program | ParseFailure:
+    return _engine().parse(text, config.SOLVERS)
 
 
 def _annotations(text: str) -> Annotations:
@@ -140,7 +144,7 @@ def _annotations(text: str) -> Annotations:
         lines = text.splitlines(True)
         program = _parsed("".join(lines[:header_end(lines)]))
     assert isinstance(program, Program), program
-    return read_annotations(program)[0]
+    return read_annotations(_engine(), program)[0]
 
 
 _CONTINUATION = re.compile(r"^\s*//\s{2,}[^\s@]")
@@ -397,7 +401,7 @@ def witness_view(item_id: str) -> dict | None:
     program = _parsed(solver_text(item_id))
     if isinstance(program, ParseFailure):
         return {"error": f"{program.line}:{program.column}: {program.message}"}
-    a = read_annotations(program)[0]
+    a = read_annotations(_engine(), program)[0]
     blocks = _witness_blocks(a)
     blocks.update(_derive_blocks(program, a))
     for entry in entries:

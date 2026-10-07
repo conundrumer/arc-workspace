@@ -87,10 +87,9 @@ from checker.sweep import (
 )
 from checker.variants import OnTest, TimedOut
 from controlled_markdown import mctx
-from engine import RecordValue, Row, RunFailure, checkout
+from engine import Engine, RecordValue, Row, RunFailure, checkout
 from engine.quotes import quotes
-from engine.text import text as code_text
-from solver.model import Case, Lib
+from solver.model import Case
 from solver.aggregate import Solver, has_determine
 from solver.names import cover
 from solver.names import name as case_name
@@ -106,11 +105,11 @@ def deletion_doc() -> Path:
 # Deletions
 
 
-def _head_text(q: Quoted) -> str:
+def _head_text(engine: Engine, q: Quoted) -> str:
     """A clause's head, with `<= <atom>` for a subsumptive clause."""
     if q.dominating is None:
-        return code_text(q.head)
-    return f"{code_text(q.head)} <= {code_text(q.dominating)}"
+        return engine.text(q.head)
+    return f"{engine.text(q.head)} <= {engine.text(q.dominating)}"
 
 
 _KIND_ORDER = {k: i for i, k in enumerate(DeletionKind)}
@@ -124,15 +123,15 @@ def _label(r: DeletionRow) -> str:
     return f"determination {r.kind}" if r.determination else str(r.kind)
 
 
-def quote_text(q: Quote) -> str:
+def quote_text(engine: Engine, q: Quote) -> str:
     """What a deletion row quotes between backticks: a removed part and
     its clause's head read as two quoted fragments."""
     match q:
         case Quoted(part=None):
-            return _head_text(q)
+            return _head_text(engine, q)
         case Quoted(part=part):
-            return (", ".join(code_text(x) for x in part or ())
-                    + f"` in `{_head_text(q)}")
+            return (", ".join(engine.text(x) for x in part or ())
+                    + f"` in `{_head_text(engine, q)}")
         case ColumnName(relation=r, column=c):
             return f"{r}.{c}"
 
@@ -170,7 +169,7 @@ def render_deletions(solver: Solver, result: DeletionResult) -> list[str]:
 
     def entries(group: list[DeletionRow]) -> list[str]:
         return [f"{ROW}- {file_line(solver.stem, r.line)}: {_label(r)} "
-                f"`{quote_text(r.quote)}`"
+                f"`{quote_text(solver.engine, r.quote)}`"
                 for r in group]
 
     apart = (DeletionKind.UNGROUNDED, DeletionKind.BOUND_ENUMERATOR)
@@ -203,7 +202,7 @@ def render_deletions(solver: Solver, result: DeletionResult) -> list[str]:
         lines.append("")
         lines += _section("timed-out")
         lines += [f"{ROW}- {file_line(solver.stem, t.line)}: {t.kind} "
-                  f"`{quote_text(t.quote)}`: "
+                  f"`{quote_text(solver.engine, t.quote)}`: "
                   f"{' '.join(finding_lines(solver, t.finding))}"
                   for t in sorted(report.timed_out, key=lambda t: (
                       t.line, _KIND_ORDER[t.kind]))]
@@ -213,21 +212,23 @@ def render_deletions(solver: Solver, result: DeletionResult) -> list[str]:
 # Values as the sweep, drop-one and the determination plan print them
 
 
-def row_text(row: Row, types: Sequence[str], lib: Lib) -> str:
+def row_text(row: Row, types: Sequence[str], solver: Solver) -> str:
     """A row of a parameter, as `(<value>, ...)`."""
-    return "(" + ", ".join(arg_text(v, t, lib)
+    return "(" + ", ".join(arg_text(v, t, solver)
                            for v, t in zip(row, types, strict=True)) + ")"
 
 
-def rows_text(rows: Iterable[Row], types: Sequence[str], lib: Lib) -> str:
+def rows_text(rows: Iterable[Row], types: Sequence[str], solver: Solver
+              ) -> str:
     """Rows of a parameter (`row_text`) in the order given, separated by
     commas."""
-    return ", ".join(row_text(r, types, lib) for r in rows)
+    return ", ".join(row_text(r, types, solver) for r in rows)
 
 
-def rows_list(rows: Iterable[Row], types: Sequence[str], lib: Lib) -> str:
+def rows_list(rows: Iterable[Row], types: Sequence[str], solver: Solver
+              ) -> str:
     """A list of rows of a parameter (`rows_text`), in brackets."""
-    return f"[{rows_text(rows, types, lib)}]"
+    return f"[{rows_text(rows, types, solver)}]"
 
 
 # Drop-one
@@ -238,7 +239,7 @@ SWEEP_NOTE = mctx("an enumerable parameter, so `sweep` can report the same "
 
 
 def _fact_text(solver: Solver, f: Fact) -> str:
-    return f"{f.parameter}{row_text(f.row, f.types, solver.lib)}"
+    return f"{f.parameter}{row_text(f.row, f.types, solver)}"
 
 
 def render_drop_one(solver: Solver, result: DropOneResult) -> list[str]:
@@ -333,7 +334,7 @@ def render_derived_constant(solver: Solver, result: ConstantResult
                         key=lambda c: [(p.instances, p.name)
                                        for p in c.paths]):
             rows = sorted(c.rows, key=row_key)
-            shown = ", ".join(", ".join(code_text(v) for v in row)
+            shown = ", ".join(", ".join(solver.engine.text(v) for v in row)
                               for row in rows[:SHOWN_TUPLES])
             more = "" if len(rows) <= SHOWN_TUPLES else ", …"
             lines.append(f"  {', '.join(p.text for p in c.paths)}: "
@@ -387,18 +388,19 @@ def _value_text(v: PlanValue) -> str:
     return under_case(v.parameter, v.name)
 
 
-def _settled_note(settled: Settled, types: Sequence[str], lib: Lib) -> str:
+def _settled_note(settled: Settled, types: Sequence[str], solver: Solver
+                  ) -> str:
     """What a covered line says of a parameter's values in the joint
     enumeration, rows of `types`: `pairs-exact` with the value where the
     train pairs leave one value, `pairs-ambiguous(n)` where they leave n,
     whose values the `JUDGE_FREE` section lists, and no verdict where a
     value is unjudged."""
-    surviving = rows_text(settled.surviving, types, lib)
+    surviving = rows_text(settled.surviving, types, solver)
     if not settled.unjudged:
         if len(settled.surviving) == 1:
             return f"pairs-exact: {surviving}"
         return f"pairs-ambiguous({len(settled.surviving)})"
-    unjudged = rows_text(settled.unjudged, types, lib)
+    unjudged = rows_text(settled.unjudged, types, solver)
     if not settled.surviving:
         return mctx("unjudged, since a run timed out: {unjudged}").format(
             unjudged=unjudged)
@@ -457,11 +459,10 @@ def render_determination_plan(solver: Solver, result: PlanResult,
                      "this plan is not made, since {failed}").format(
                          failed=CASES_RUN_FAILED)
                 + _make_run(result.failure)]
-    lib = solver.lib
     types = dict(result.types)
 
     def shown_of(param: PlanValue) -> Callable[[Row], str]:
-        return lambda r: row_text(r, types[param], lib)
+        return lambda r: row_text(r, types[param], solver)
 
     joint = result.joint
     baseline = joint if isinstance(joint, TimedOut) else None
@@ -503,7 +504,8 @@ def render_determination_plan(solver: Solver, result: PlanResult,
             return ""
         note = f"{best[0]} {verdict_text(best[1])}"
         if param in surviving:
-            note += f", {_settled_note(surviving[param], types[param], lib)}"
+            settled = _settled_note(surviving[param], types[param], solver)
+            note += f", {settled}"
         return f"({note})"
 
     def state(param: PlanValue) -> str:
@@ -533,7 +535,7 @@ def render_determination_plan(solver: Solver, result: PlanResult,
                 "{param}, giving the rows of each case: {cases}")))
     section(JUDGE_FREE,
             [f"{_value_text(p)}: " + _also_admits(
-                surviving[p].stored, surviving[p].extras(), types[p], lib)
+                surviving[p].stored, surviving[p].extras(), types[p], solver)
              for p in open_valued])
     if over:
         section(mctx("over the enumeration limit ({joint} > {limit}); "
@@ -722,28 +724,28 @@ def _scope_clause(r: ValueSweep | SetSweep) -> str | None:
 
 
 def _also_admits(stored: Sequence[Row], extras: Sequence[Row],
-                 types: Sequence[str], lib: Lib) -> str:
+                 types: Sequence[str], solver: Solver) -> str:
     """A parameter's stored rows and the values beyond them that the
     train pairs also admit."""
     return mctx("stored {stored}; {not_pinned}: they also admit {shown}"
-                ).format(stored=rows_text(stored, types, lib),
+                ).format(stored=rows_text(stored, types, solver),
                          not_pinned=NOT_PINNED.format(what=mctx("the value")),
-                         shown=rows_list(extras, types, lib))
+                         shown=rows_list(extras, types, solver))
 
 
 def _value_line(solver: Solver, r: ValueSweep, undetermined: bool) -> str:
-    types, lib = r.types, solver.lib
+    types = r.types
     clause = _scope_clause(r)
     scope = "" if clause is None else f" ({clause})"
 
     def one(v: Row) -> str:
-        return row_text(v, types, lib)
+        return row_text(v, types, solver)
 
     def shown(vs: Sequence[Row]) -> str:
-        return rows_text(vs, types, lib)
+        return rows_text(vs, types, solver)
 
     def listed(vs: Sequence[Row]) -> str:
-        return rows_list(vs, types, lib)
+        return rows_list(vs, types, solver)
 
     gap_parts = (_gap_clauses(r.gaps, listed)
                  + _timed_clauses(solver, [*r.timed, *r.extras.timed], one))
@@ -758,7 +760,7 @@ def _value_line(solver: Solver, r: ValueSweep, undetermined: bool) -> str:
                                  shown=listed(r.stored), mark=mark,
                                  scope=scope)
         return "; ".join([head] + gap_parts)
-    parts = [_also_admits(r.stored, r.extras.values, types, lib),
+    parts = [_also_admits(r.stored, r.extras.values, types, solver),
              *_test_clauses(r.extras, undetermined, listed)]
     passing = r.extras.group(OnTest.PASSED)
     if kind := [e for e in passing
@@ -770,18 +772,18 @@ def _value_line(solver: Solver, r: ValueSweep, undetermined: bool) -> str:
     return f"{_swept(solver, r)}: " + "; ".join(parts + gap_parts) + scope
 
 
-def _set_text(v: SetValue, types: Sequence[str], lib: Lib) -> str:
+def _set_text(v: SetValue, types: Sequence[str], solver: Solver) -> str:
     """A set value: its rows (`row_text`) in order (`set_rows`), in
     braces."""
-    return "{" + rows_text(set_rows(v), types, lib) + "}"
+    return "{" + rows_text(set_rows(v), types, solver) + "}"
 
 
 def _set_line(solver: Solver, r: SetSweep) -> str:
-    types, lib = r.types, solver.lib
+    types = r.types
     scope = _scope_clause(r) or mctx("every single-row change swept")
 
     def one(v: frozenset[Row]) -> str:
-        return _set_text(v, types, lib)
+        return _set_text(v, types, solver)
 
     def many(vs: Sequence[frozenset[Row]]) -> str:
         return "[" + ", ".join(one(v) for v in vs) + "]"
@@ -850,7 +852,7 @@ def _sorted_list(values: Iterable[Row], r: CaseSets[Row],
                  solver: Solver) -> str:
     """A set of a parameter's rows, in order (`row_key`), as a list
     (`rows_list`)."""
-    return rows_list(sorted(values, key=row_key), r.types, solver.lib)
+    return rows_list(sorted(values, key=row_key), r.types, solver)
 
 
 def _cases_line(solver: Solver, r: CaseSets[Row]) -> str:
@@ -916,10 +918,10 @@ def giving_text(solver: Solver, g: GivingValues) -> str:
     value is a set of rows, a judgment the reader makes, and each row
     whose run failed."""
     def one(v: Row) -> str:
-        return row_text(v, g.types, solver.lib)
+        return row_text(v, g.types, solver)
 
     def listed(vs: Sequence[Row]) -> str:
-        return rows_list(vs, g.types, solver.lib)
+        return rows_list(vs, g.types, solver)
 
     case = case_name(solver, g.case)
     parts = [mctx("{param} holds the rows {held} at {case}").format(

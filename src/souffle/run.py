@@ -54,12 +54,12 @@ from engine.program import (
     Value,
     cell_place,
 )
-from engine.text import PREFIX, fact_text
 from souffle.expand import expand
 from souffle.grounding import ungrounded
 from souffle.index import Hit, Tree, tree_of
 from souffle.render import lines_text, rendered_for_run
 from souffle.runkey import included_files, reached
+from souffle.text import PREFIX, declared, fact_text
 from souffle.values import printed
 
 FIRST_ERROR_RE = re.compile(r"^Error:", re.M)
@@ -875,7 +875,7 @@ def _capped_copy(rel: RelationName, cap: int, tree: Tree, taken: set[str]
     name, numbered, least = f"_cap{k}", f"_cap{k}_n", f"_cap{k}_lo"
     taken.update((name, numbered, least))
     xs = [f"x{i}" for i in range(len(types))]
-    cols = ", ".join(f"{x}: {t.text}" for x, t in zip(xs, types, strict=True))
+    cols = declared(zip(xs, types, strict=True))
     args = ", ".join(xs)
     blanks = ", ".join("_" for _ in xs)
     return name, [

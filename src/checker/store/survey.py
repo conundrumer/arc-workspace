@@ -332,9 +332,7 @@ class Found:
     @property
     def asks_line(self) -> bool:
         """The survey asks for a `@store` line, or a bare `@ignore: store`
-        line, on the value: it has no `@store` line, a `@store` branch
-        stores it (`store_branch`), and its witness search did not end
-        with no witness on every grid (`no_witness`)."""
+        line, on the value."""
         return self.line is None and self.store_branch and not self.no_witness
 
     @property

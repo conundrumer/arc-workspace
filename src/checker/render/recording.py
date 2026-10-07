@@ -14,9 +14,8 @@ from checker.render.hints import derive_line_to_add
 from checker.render.locations import line_list
 from checker.render.values import _ticked
 from controlled_markdown import mctx
-from engine import Grid
+from engine import Engine, Grid
 from engine.program import RelationDecl
-from engine.text import text as code_text
 from solver.aggregate import Solver
 from solver.model import Case, takes_constructor
 from solver.names import ctor_text
@@ -87,7 +86,7 @@ def record_command(stem: str, entry: Entry, at: Path | None) -> str:
     return shlex.join([*words, "-"])
 
 
-def wrote_lineless(id: str, path: object, proposer: str,
+def wrote_lineless(engine: Engine, id: str, path: object, proposer: str,
                    decl: RelationDecl) -> str:
     """The line of a witness the `derive` survey wrote for a derivation
     with no `@derive` line: its groups name the branch, which the solver
@@ -95,8 +94,8 @@ def wrote_lineless(id: str, path: object, proposer: str,
     return mctx("wrote witness `{id}` to {path}; its groups name `{id}`, so "
                 "add `{line}` above `{decl}`, its verdict read from this "
                 "witness").format(
-        id=id, path=path, decl=code_text(decl),
-        line=derive_line_to_add(proposer))
+        id=id, path=path, decl=engine.text(decl),
+        line=derive_line_to_add(engine, proposer))
 
 
 FORMATTED = mctx("formatted {path}")
@@ -140,7 +139,8 @@ def untaken_constructor_lines(solver: Solver, cases: Sequence[Case]
     choice = solver.choice
     if choice is None:
         return []
-    return [mctx("no case takes {ctor}").format(ctor=ctor_text(c.name))
+    return [mctx("no case takes {ctor}").format(
+                ctor=ctor_text(solver.engine, c.name))
             for p in choice.points for c in p.constructors
             if not any(takes_constructor(choice, k.base, c) for k in cases)]
 

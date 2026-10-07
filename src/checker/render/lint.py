@@ -20,13 +20,12 @@ from checker.finding import (
     LintRun,
     LintSentence,
 )
-from checker.render.faults import detail_text
+from checker.render.faults import parse_failure_text
 from checker.render.locations import LineForm, line_text, where_text
 from checker.render.no_result import failure_text
 from checker.render.values import _codes, _ticked
 from controlled_markdown import mctx
-from engine import CpuLimit, ParseFailure, WallLimit, checkout
-from engine.text import text as code_text
+from engine import CpuLimit, Engine, ParseFailure, WallLimit, checkout
 from solver import names
 from solver.aggregate import Solver
 from solver.annotations import (
@@ -204,43 +203,44 @@ COUNTED_TEXT: dict[LintSentence, Callable[[LintCounted], str]] = {
 }
 """The sentence of each `LintCounted` finding."""
 
-CODE_TEXT: dict[LintSentence, Callable[[LintCode], str]] = {
-    LintSentence.ALIAS: lambda p: mctx("`{head}` is `{atom}` renamed").format(
-        head=code_text(p.code[0]), atom=code_text(p.code[1])),
-    LintSentence.NEGATED_USE: lambda p: mctx(
+CODE_TEXT: dict[LintSentence, Callable[[Engine, LintCode], str]] = {
+    LintSentence.ALIAS: lambda e, p: mctx(
+        "`{head}` is `{atom}` renamed").format(
+        head=e.text(p.code[0]), atom=e.text(p.code[1])),
+    LintSentence.NEGATED_USE: lambda e, p: mctx(
         "`{code}` ⇒ `{parts}`").format(
-        code=_codes(p.code), parts=_codes(p.rewritten)),
-    LintSentence.CHOICE_TAG: lambda p: mctx(
+        code=_codes(e, p.code), parts=_codes(e, p.rewritten)),
+    LintSentence.CHOICE_TAG: lambda e, p: mctx(
         "same body under `{one}` and `{other}`; one clause ranges over the "
-        "tags").format(one=code_text(p.code[0]), other=code_text(p.code[1])),
-    LintSentence.CROSS_CHOICE: lambda p: mctx(
+        "tags").format(one=e.text(p.code[0]), other=e.text(p.code[1])),
+    LintSentence.CROSS_CHOICE: lambda e, p: mctx(
         "branches bind {tags}; see "
         "[Disjunction](docs/handbook/style.md#disjunction)").format(
-        tags=", ".join(f"`{code_text(c)}`" for c in p.code)),
-    LintSentence.ATOM_TWICE: lambda p: mctx(
-        "`{atom}` appears twice in the body").format(atom=code_text(p.code[0])),
-    LintSentence.ATOM_ADDS_NOTHING: lambda p: mctx(
+        tags=", ".join(f"`{e.text(c)}`" for c in p.code)),
+    LintSentence.ATOM_TWICE: lambda e, p: mctx(
+        "`{atom}` appears twice in the body").format(atom=e.text(p.code[0])),
+    LintSentence.ATOM_ADDS_NOTHING: lambda e, p: mctx(
         "`{atom}` adds nothing next to `{other}`").format(
-        atom=code_text(p.code[0]), other=code_text(p.code[1])),
-    LintSentence.NEGATED_VALUE: lambda p: mctx(
+        atom=e.text(p.code[0]), other=e.text(p.code[1])),
+    LintSentence.NEGATED_VALUE: lambda e, p: mctx(
         "`{code}` ⇒ `{rewritten}`").format(
-        code=_codes(p.code), rewritten=_codes(p.rewritten)),
-    LintSentence.NAMED_COMPLEMENT: lambda p: mctx(
+        code=_codes(e, p.code), rewritten=_codes(e, p.rewritten)),
+    LintSentence.NAMED_COMPLEMENT: lambda e, p: mctx(
         "`{code}` ⇒ `{rewritten}`").format(
-        code=_codes(p.code), rewritten=_codes(p.rewritten)),
-    LintSentence.LIB_IDIOM: lambda p: mctx(
+        code=_codes(e, p.code), rewritten=_codes(e, p.rewritten)),
+    LintSentence.LIB_IDIOM: lambda e, p: mctx(
         "`{code}` ⇒ `{rewritten}`").format(
-        code=_codes(p.code), rewritten=_codes(p.rewritten)),
-    LintSentence.COMP_IDIOM_MEMBER: lambda p: mctx(
+        code=_codes(e, p.code), rewritten=_codes(e, p.rewritten)),
+    LintSentence.COMP_IDIOM_MEMBER: lambda e, p: mctx(
         "`{code}` states the other member of a two-member type; write "
-        "`{rewritten}`").format(code=_codes(p.code),
-                                rewritten=_codes(p.rewritten)),
-    LintSentence.COMP_IDIOM_IMAGE: lambda p: mctx(
+        "`{rewritten}`").format(code=_codes(e, p.code),
+                                rewritten=_codes(e, p.rewritten)),
+    LintSentence.COMP_IDIOM_IMAGE: lambda e, p: mctx(
         "`{code}` through `{link}` is `{comp}`").format(
-        code=_codes(p.code), link=p.names[0], comp=p.names[1]),
-    LintSentence.DOMAIN_ENUMERATOR: lambda p: mctx(
+        code=_codes(e, p.code), link=p.names[0], comp=p.names[1]),
+    LintSentence.DOMAIN_ENUMERATOR: lambda e, p: mctx(
         "`{atom}`; `{var}` is already bound by `{binder}`").format(
-        atom=code_text(p.code[0]), var=code_text(p.code[1]),
+        atom=e.text(p.code[0]), var=e.text(p.code[1]),
         binder=p.names[0]),
 }
 """The sentence of each `LintCode` finding."""
@@ -256,7 +256,7 @@ def marker_text(m: CaseMarker) -> str:
     return parts + (f": {m.gloss}" if m.gloss else "")
 
 
-def _marked_text(p: LintMarked) -> str:
+def _marked_text(engine: Engine, p: LintMarked) -> str:
     match p.sentence:
         case LintSentence.SHARED_UNREAD:
             return mctx("`{name}` is shared, and the cases {cases} never "
@@ -278,13 +278,13 @@ def _marked_text(p: LintMarked) -> str:
                         "\"Case markers\" in "
                         "[Cases](docs/handbook/solver-file.md#cases)").format(
                 cases=_ticked(p.cases), rel=p.name,
-                marker=_marker_line(p.marker))
+                marker=_marker_line(engine, p.marker))
         case LintSentence.SHARED_FACT_MARKED:
             return mctx("`{name}` is declared above the case markers and "
                         "has no case column, and this fact of it stands "
                         "under `{marker}`; move the fact to its "
                         "declaration").format(
-                name=p.name, marker=_marker_line(p.marker))
+                name=p.name, marker=_marker_line(engine, p.marker))
         case LintSentence.MARKER_LISTS_NO_CASE:
             return mctx("`{name}` is under the marker `{marker}`, which "
                         "lists no case; see "
@@ -305,16 +305,16 @@ def _marker_or_none(m: CaseMarker | None) -> str:
     return marker_text(m)
 
 
-def _marker_line(m: CaseMarker | None) -> str:
+def _marker_line(engine: Engine, m: CaseMarker | None) -> str:
     """A marked lint finding's marker as its comment line
     (`solver.annotations.marker_line`)."""
-    return marker_line(_marker_or_none(m))
+    return marker_line(engine, _marker_or_none(m))
 
 
-def _case_value_text(p: LintCaseValue) -> str:
+def _case_value_text(engine: Engine, p: LintCaseValue) -> str:
     values = (mctx("the case value {values}") if len(p.values) == 1
               else mctx("the case values {values}")).format(
-        values=_ticked([code_text(v) for v in p.values]))
+        values=_ticked([engine.text(v) for v in p.values]))
     match p.sentence:
         case LintSentence.CASE_SECTION_BEFORE:
             return mctx("the clause contains {values} and stands before the "
@@ -322,7 +322,7 @@ def _case_value_text(p: LintCaseValue) -> str:
         case LintSentence.CASE_SECTION_UNDER:
             return mctx("the clause contains {values} and stands under "
                         "`{marker}`").format(
-                values=values, marker=_marker_line(p.marker))
+                values=values, marker=_marker_line(engine, p.marker))
         case _:
             raise ValueError(f"no sentence for {p.sentence}")
 
@@ -378,7 +378,7 @@ def _family_text(p: LintFamily) -> str:
         case LintSentence.FAMILY_NOT_PARSED, ParseFailure() as failure:
             return mctx("`{task}` does not parse ({error}), so `{case}` "
                         "cannot be checked against its `Choice`").format(
-                task=p.task_id, case=p.case, error=detail_text(failure))
+                task=p.task_id, case=p.case, error=parse_failure_text(failure))
         case LintSentence.FAMILY_RECORD, None:
             return mctx("`{task}`'s `Choice` is a record, so the line takes "
                         "no case").format(task=p.task_id)
@@ -432,11 +432,11 @@ def lint_message(solver: Solver, p: LintPayload) -> str:
         case LintCounted(sentence=s):
             return COUNTED_TEXT[s](p)
         case LintCode(sentence=s):
-            return CODE_TEXT[s](p)
+            return CODE_TEXT[s](solver.engine, p)
         case LintMarked():
-            return _marked_text(p)
+            return _marked_text(solver.engine, p)
         case LintCaseValue():
-            return _case_value_text(p)
+            return _case_value_text(solver.engine, p)
         case LintLabeled():
             return _labeled_text(p)
         case LintRun():

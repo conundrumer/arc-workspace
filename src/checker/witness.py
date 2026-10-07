@@ -401,7 +401,7 @@ def check_separates(solver: Solver, runs: Runs) -> list[Finding]:
             got = denoted_cases(solver, n, solver_cases)
             if not isinstance(got, NameFault):
                 named |= got
-        for n in names_in(entry.separates):
+        for n in names_in(solver.engine, entry.separates):
             if n in written:
                 continue
             case = model_named(solver, n, solver_cases)

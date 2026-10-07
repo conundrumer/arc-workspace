@@ -4,6 +4,7 @@ add."""
 from dataclasses import dataclass
 from enum import StrEnum
 
+from engine import Engine
 from solver.annotations import (
     IgnoreForm,
     Slot,
@@ -39,29 +40,30 @@ class Hint:
     alone: bool = False
 
 
-def derive_line_to_add(proposer: str) -> str:
+def derive_line_to_add(engine: Engine, proposer: str) -> str:
     """The `@derive` line of `proposer` for the agent to add, its
     plausibility and verdict left as slots."""
-    return comment_text(derive_text(proposer, Slot.PLAUSIBILITY,
-                                    Slot.VERDICT))
+    return comment_text(engine, derive_text(proposer, Slot.PLAUSIBILITY,
+                                            Slot.VERDICT))
 
 
-def hint_line(h: Hint) -> str:
+def hint_line(engine: Engine, h: Hint) -> str:
     """The line the session adds, as the `derive` and `store` reports
     print it ([Program](docs/handbook/solver-file.md#program))."""
     if h.kind == HintKind.DERIVE:
         add = "add:" if h.site is None \
-            else f"add above `RIGID({h.site}, …)`:"
+            else f"add above `{engine.rigid_text(h.site)}`:"
         assert h.proposer is not None
-        return f"{add} " + derive_line_to_add(h.proposer)
+        return f"{add} " + derive_line_to_add(engine, h.proposer)
     named = h.relation if h.site is not None else None
-    add = "add:" if h.site is None else f"add above `.init {h.site}`:"
+    add = "add:" if h.site is None \
+        else f"add above `{engine.init_text(h.site)}`:"
     if h.kind == HintKind.STORE:
-        return f"{add} " + comment_text(store_text(
+        return f"{add} " + comment_text(engine, store_text(
             named, Slot.PLAUSIBILITY, Slot.VERDICT))
     lead = f"{add} " if h.alone and h.site is not None else "or:  "
     if h.kind == HintKind.IGNORE_DERIVE:
-        return lead + comment_text(ignore_text(
+        return lead + comment_text(engine, ignore_text(
             named, IgnoreForm.DERIVE, Slot.REASON, h.proposer))
-    return lead + comment_text(ignore_text(named, IgnoreForm.STORE,
-                                           Slot.REASON))
+    return lead + comment_text(engine, ignore_text(named, IgnoreForm.STORE,
+                                                   Slot.REASON))

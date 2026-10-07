@@ -7,12 +7,12 @@ nowhere else."""
 import re
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
+from functools import cache
 from itertools import combinations
 from typing import Annotated
 
-from engine import AdtValue, RecordValue, Value
+from engine import AdtValue, Engine, RecordValue, Value
 from engine.quotes import quotes
-from engine.text import PREFIX, prefixed
 from solver.annotations import (
     CaseMarker,
     DeriveLine,
@@ -83,9 +83,10 @@ SEPARATOR: Annotated[str,
 """What joins the parts of a name."""
 
 
-def ctor_text(ctor: str) -> str:
-    """A constructor as a name writes it: `$Drawn`."""
-    return PREFIX + ctor
+def ctor_text(engine: Engine, ctor: str) -> str:
+    """A constructor as a name writes it: `$Drawn`, the constructor's value
+    with no fields as the engine writes it."""
+    return engine.text(AdtValue(ctor, ()))
 
 
 def denote(solver: Solver, name: str | tuple[str, ...]
@@ -125,7 +126,7 @@ def denote(solver: Solver, name: str | tuple[str, ...]
             if branch is None:
                 return _problem(ProblemKind.NAME_DENOTES_NO_CASE, text)
             branches.append(branch)
-        elif (ctor := prefixed(part)) is not None \
+        elif (ctor := solver.engine.prefixed(part)) is not None \
                 and _CTOR_RE.fullmatch(ctor):
             ctor_parts.append(ctor)
         else:
@@ -177,26 +178,34 @@ def names_a_constructor(solver: Solver, text: str) -> bool:
         return False
     words = {c.name for p in choice.points for c in p.constructors}
     words |= {"-".join(camel_words(w)) for w in words}
+
+    def bare(piece: str) -> str:
+        return solver.engine.prefixed(piece) or piece
+
     return any(
-        (m := re.match(r"\$?([\w-]+)", piece.strip())) is not None
-        and m[1] in words
+        (m := re.match(r"[\w-]+", bare(piece.strip()))) is not None
+        and m[0] in words
         for piece in pieces(text))
 
 
-_PROSE_WORD = r"[\w.]+=\w+|\$?[A-Za-z]\w*"
-_PROSE_NAME_RE = re.compile(rf"(?:{_PROSE_WORD})(?:\s*&\s*(?:{_PROSE_WORD}))*")
+@cache
+def _prose_name_re(prefix: str) -> re.Pattern[str]:
+    """The pattern of a name in prose (`names_in`), a constructor written
+    with `prefix`."""
+    word = rf"[\w.]+=\w+|(?:{re.escape(prefix)})?[A-Za-z]\w*"
+    return re.compile(rf"(?:{word})(?:\s*&\s*(?:{word}))*")
 
 
-def names_in(text: str) -> list[str]:
+def names_in(engine: Engine, text: str) -> list[str]:
     """The names in the one form (solver-file.md, under "Witness file") that
     prose, an entry's `separates` text among it, holds, each once, in text
     order: the runs of words joined by ` & `, a word with `=`, a constructor
     with its `$`, or `concept`. A bare word is prose. No other reader
     finds a name in prose."""
     out: list[str] = []
-    for m in _PROSE_NAME_RE.finditer(text):
+    for m in _prose_name_re(engine.constructor_prefix()).finditer(text):
         n = m.group(0)
-        if ("&" in n or "=" in n or prefixed(n) is not None
+        if ("&" in n or "=" in n or engine.prefixed(n) is not None
                 or n == VerdictWord.CONCEPT) \
                 and n not in out:
             out.append(n)
@@ -297,8 +306,8 @@ def name(solver: Solver, case: Case | Base) -> str:
     if choice is not None and case.base is not None:
         for point, ctor in constructors_taken(choice, case.base):
             if not is_concept_branch(point, ctor) \
-                    and ctor_text(ctor) not in parts:
-                parts.append(ctor_text(ctor))
+                    and ctor_text(solver.engine, ctor) not in parts:
+                parts.append(ctor_text(solver.engine, ctor))
     parts += [branch_text(b) for b in solver.branches if b in case.branches]
     parts += [branch_text(b) for b in case.branches
               if b not in solver.branches and not isinstance(b, StoredAtDerive)]
@@ -523,22 +532,23 @@ def _parts(solver: Solver, case: Case, points: Collection[Branch]
     return tuple(out)
 
 
-def part_text(part: _Part | ConstructorBranch) -> str:
+def part_text(engine: Engine, part: _Part | ConstructorBranch) -> str:
     """One part of a name: a constructor with its `$`, a `@derive` or
     `@store` branch, `<param>=stored`, or `<rel>=derived`."""
     match part:
         case _Ctor(name=n) | ConstructorBranch(name=n):
-            return ctor_text(n)
+            return ctor_text(engine, n)
         case DerivedAtStore(store=store):
             return derived_text(store)
         case _:
             return branch_text(part)
 
 
-def part_name(parts: Sequence[_Part | ConstructorBranch]) -> str:
+def part_name(engine: Engine, parts: Sequence[_Part | ConstructorBranch]
+              ) -> str:
     """A partial name's text: its parts joined in the order given, as
     `_parts` gives them."""
-    return SEPARATOR.join(part_text(p) for p in parts)
+    return SEPARATOR.join(part_text(engine, p) for p in parts)
 
 
 type _Key = tuple[int, bool, str]
@@ -594,7 +604,7 @@ def cover(solver: Solver, chosen: Collection[Case] | Collection[Base],
                 if mask & ~target:
                     continue
                 inside.append(frozenset(sub))
-                offer(mask, r, part_name(sub))
+                offer(mask, r, part_name(solver.engine, sub))
 
     concept = 0
     for c in universe:

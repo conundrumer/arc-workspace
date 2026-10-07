@@ -9,7 +9,6 @@ from pathlib import Path
 
 from arc.task import COLORS
 from engine.engine import ParseFailure
-from engine.text import GRID_FORM_SEGMENT, PREFIX
 from engine.program import (
     AdtType,
     Aggregate,
@@ -81,6 +80,7 @@ from souffle.layout import (
     Text,
 )
 from souffle.lexer import LINE_DIRECTIVE_RE, LexError, RawComment, Token, lex
+from souffle.text import GRID_FORM_SEGMENT, PREFIX
 
 _FORM_OF_SEGMENT = {v: k for k, v in GRID_FORM_SEGMENT.items()}
 GRID_RE = re.compile(r"GRID_(STAMP_)?("

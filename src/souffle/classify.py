@@ -7,10 +7,10 @@ from pathlib import Path
 from engine.engine import Classed
 from engine.memo import ByIdentity
 from engine.program import DeclId, Program, RelationName, Scope, UnitId
-from engine.text import columns
 from souffle import parser
 from souffle.index import tree_of
 from souffle.layout import next_decl, next_unit
+from souffle.text import columns, declared
 
 ROWS = "_cls_out"
 """The classified relation's rows at each class's representative."""
@@ -75,7 +75,7 @@ def _classify(program: Program, relation: RelationName, column: int
     others = [i for i in range(len(cols)) if i != column]
     text = _CLASSING.format(
         rel=relation.name, rows=ROWS, classes=CLASSES,
-        fields=", ".join(f"f{i}: {cols[i].type.text}" for i in others),
+        fields=declared((f"f{i}", cols[i].type) for i in others),
         case=cols[column].type.text,
         blank=", ".join("Ch" if i == column else "_"
                         for i in range(len(cols))),

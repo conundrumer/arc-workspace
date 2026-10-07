@@ -7,9 +7,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Annotated
 
-from engine import Comment, DeclId, Program, UnitId
+from engine import Comment, DeclId, Engine, Program, UnitId
 from engine.program import AdtType, Span, own
-from engine.text import line_comment, split_top
 from engine.quotes import quotes
 from solver.category import Category
 from solver.problems import (
@@ -351,10 +350,10 @@ class CaseMarker:
     line: int
 
 
-def marker_line(text: str) -> str:
+def marker_line(engine: Engine, text: str) -> str:
     """The comment line of a case marker whose text between its dashes is
     `text`, as the solver writes it."""
-    return line_comment(f"{_MARKER_DASHES} {text} {_MARKER_DASHES}")
+    return engine.line_comment(f"{_MARKER_DASHES} {text} {_MARKER_DASHES}")
 
 
 @quotes("solver-file.md", "File structure",
@@ -714,12 +713,12 @@ def _read_judgment(rest: str | None
     return plausibility, _verdict(written), off
 
 
-def _marker(text: str, line: int) -> CaseMarker:
+def _marker(engine: Engine, text: str, line: int) -> CaseMarker:
     """`<names>[: gloss]`: the names split at the commas that stand outside
     parentheses, each kept as written, for `names.denote` to read
     (solver-file.md, under "Cases")."""
     head, colon, gloss = text.partition(":")
-    parts = [MarkerPart(name) for name in split_top(head) if name]
+    parts = [MarkerPart(name) for name in engine.split_top(head) if name]
     return CaseMarker(tuple(parts), gloss.strip() if colon else None, line)
 
 
@@ -763,7 +762,8 @@ def _holds(span: Span | None, line: int) -> bool:
     return own(span) and span is not None and span.first <= line <= span.last
 
 
-def read(program: Program) -> tuple[Annotations, tuple[Fault, ...]]:
+def read(engine: Engine, program: Program
+         ) -> tuple[Annotations, tuple[Fault, ...]]:
     """The annotations the program's comments carry, positioned through
     each comment's `above` link and its indentation, and what could not be
     read.
@@ -893,7 +893,7 @@ def read(program: Program) -> tuple[Annotations, tuple[Fault, ...]]:
                     open_field.end = line
                 continue
             if (m := _MARKER_RE.match(content)) and m[1].strip("-").strip():
-                markers.append(_marker(m[1], line))
+                markers.append(_marker(engine, m[1], line))
                 close()
                 continue
             plain = _PLAIN_FIELD_RE.match(content) if in_header else None
@@ -1201,10 +1201,10 @@ def _named(relation: str | None) -> str:
     return f" {relation}" if relation is not None else ""
 
 
-def comment_text(line: str) -> str:
+def comment_text(engine: Engine, line: str) -> str:
     """An annotation line as a `//` comment of the solver file
-    (`engine.text.line_comment`)."""
-    return line_comment(line)
+    (`engine.Engine.line_comment`)."""
+    return engine.line_comment(line)
 
 
 def verdict_text(verdict: Verdict | Slot) -> str:

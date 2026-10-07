@@ -40,6 +40,7 @@ from checker.store.survey import (
     member_key,
 )
 from controlled_markdown import mctx
+from engine import Engine
 from solver.aggregate import Solver
 from solver.annotations import DirectiveWord, IgnoreForm, at_word
 from solver.names import name as case_name
@@ -221,14 +222,15 @@ def _no_witness_why(solver: Solver, f: Found) -> str:
                              f"{f.ended!r} with no reason it found no witness")
 
 
-def _store_hints(f: Found, alone: bool = False) -> list[str]:
+def _store_hints(engine: Engine, f: Found, alone: bool = False
+                 ) -> list[str]:
 
     named, site = f.named, f.site
     if alone:
-        return [hint_line(Hint(HintKind.IGNORE_STORE, relation=named,
+        return [hint_line(engine, Hint(HintKind.IGNORE_STORE, relation=named,
                                site=site, alone=True))]
-    return [hint_line(Hint(HintKind.STORE, relation=named, site=site)),
-            hint_line(Hint(HintKind.IGNORE_STORE, relation=named,
+    return [hint_line(engine, Hint(HintKind.STORE, relation=named, site=site)),
+            hint_line(engine, Hint(HintKind.IGNORE_STORE, relation=named,
                            site=site))]
 
 
@@ -282,11 +284,12 @@ def store_lines(solver: Solver, survey: StoreSurvey) -> list[str]:
         elif f.asks_line:
             lines += ["  " + ln for ln in drawn(f)]
             lines.append("  " + _witness_line(solver, f))
-            lines += ["  " + ln for ln in _store_hints(f)]
+            lines += ["  " + ln for ln in _store_hints(solver.engine, f)]
         elif f.store_branch:
             lines.append("  " + _witness_line(solver, f))
         elif f.asks_params:
-            lines += ["  " + ln for ln in _store_hints(f, alone=True)]
+            lines += ["  " + ln
+                      for ln in _store_hints(solver.engine, f, alone=True)]
         elif f.kind is not ValueKind.OWNED:
             lines += ["  " + ln for ln in drawn(f)]
             lines.append("  " + mctx("no case: the value {why}").format(

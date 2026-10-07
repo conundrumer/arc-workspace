@@ -14,8 +14,8 @@ from engine.program import (
     ValueReading,
 )
 from engine.program import term_value, typed_value
-from engine.text import prefixed, split_top
 from souffle.index import Level, Tree
+from souffle.text import prefixed, split_top
 
 
 class NotConstant(Exception):

@@ -211,7 +211,7 @@ def _member_text(solver: Solver, types: Sequence[str],
         if isinstance(v, tuple):
             return f"({', '.join(str(x) for x in v)})"
         if isinstance(v, (int, str, AdtValue, RecordValue)):
-            return arg_text(v, t, solver.lib)
+            return arg_text(v, t, solver)
         return str(v)
 
     if len(member) == 1:

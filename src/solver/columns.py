@@ -28,7 +28,6 @@ from engine.program import (
     TypeDecl,
 )
 from engine.quotes import quotes
-from engine.text import prefixed
 from solver.graph import (
     Graph,
     followed,
@@ -210,7 +209,7 @@ def _arg_read(solver: Solver, arg: AssignArg, ctors: frozenset[str]
         return RecordValue(tuple(fields))
     if isinstance(arg, int):
         return arg
-    if (name := prefixed(arg)) is not None:
+    if (name := solver.engine.prefixed(arg)) is not None:
         return AdtValue(name, ()) if name in ctors else ArgUnknown(arg)
     got = solver.lib.constants.get(arg)
     return ArgUnknown(arg) if got is None else got

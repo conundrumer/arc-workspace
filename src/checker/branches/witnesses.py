@@ -165,7 +165,14 @@ def witness_targets(runs: Runs, solver: Solver, cases: Sequence[Case],
     models = branch_models(solver, cases, branch)
     fit = fitting_both(runs, solver, list(dict.fromkeys(
         [*models, *ordered(solver, cases, branch)])), branch)
-    return [c for c in models if c in fit] or fit
+    return looked_with(models, fit)
+
+
+def looked_with(models: Sequence[Case], fit: Sequence[Case]) -> list[Case]:
+    """The cases a survey looks with (`witness_targets`), from the branch's
+    models and the cases of `fit`, those that fit the pairs with their
+    counterparts."""
+    return [c for c in models if c in fit] or list(fit)
 
 
 def fitting_both(runs: Runs, solver: Solver, cases: Sequence[Case],

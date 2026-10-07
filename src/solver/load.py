@@ -79,7 +79,7 @@ def load(stem: str, engine: Engine, path: Path | None = None) -> Solver:
     else:
         program = parsed
         lib = read_lib(program)
-    annotations, read_problems = annotations_reader.read(program)
+    annotations, read_problems = annotations_reader.read(engine, program)
     problems += read_problems
     declared = {c.name for c in program.components}
     problems += [Fault(ProblemKind.INSTANCE_OF_NOTHING,

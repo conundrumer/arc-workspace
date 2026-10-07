@@ -1,5 +1,6 @@
 """The operations a language implements for the rest: parse, index, the
-rewrites that return a new program, run, expand and render."""
+rewrites that return a new program, run, expand, render, and the text of a
+part of a program in the language's syntax."""
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -9,18 +10,22 @@ from typing import Protocol
 
 from engine.program import (
     Atom,
+    BodyLiteral,
     Component,
     DeclId,
     Grid,
     GridLayout,
     Program,
+    RelationDecl,
     RelationName,
     Row,
     Rows,
     Scope,
+    Term,
     TypeDecl,
     TypeName,
     UnitId,
+    Value,
 )
 
 # Parse
@@ -320,6 +325,10 @@ class Rendered:
     lines: tuple[RenderedLine, ...]
 
 
+type Part = Term | Atom | BodyLiteral | Value | RelationDecl | GridLayout
+"""What `Engine.text` renders."""
+
+
 @dataclass(frozen=True)
 class Classed:
     """A program with the rules `Engine.classify` adds: `rows` holds the
@@ -410,4 +419,41 @@ class Engine(Protocol):
         """`program` as text, each line with its origin line, and never a
         `#line` directive. The engine renders a program to run it or for a
         command to print."""
+        ...
+
+    def text(self, part: Part) -> str:
+        """`part` as the solver writes it, for a message: a term with the
+        parentheses it was written with, a value as the engine prints it,
+        a symbol in quotes, a declaration as its declaring line, and a
+        GRID layout as the name of its macro."""
+        ...
+
+    def prefixed(self, text: str) -> str | None:
+        """The constructor whose name `text` writes with the prefix a
+        constructor carries in a value, a term or a case's name; None
+        where `text` carries no such prefix."""
+        ...
+
+    def line_comment(self, content: str) -> str:
+        """A line comment of `content` as the solver writes it."""
+        ...
+
+    def split_top(self, text: str) -> list[str]:
+        """`text` split at the commas outside brackets and parentheses,
+        each part stripped; none for a text of spaces alone."""
+        ...
+
+    def constructor_prefix(self) -> str:
+        """The prefix a constructor's name carries in a value, a term or a
+        case's name (`prefixed`)."""
+        ...
+
+    def init_text(self, instance: str) -> str:
+        """The declaration of the instance `instance` as a message names
+        it: its declaring line up to its name."""
+        ...
+
+    def rigid_text(self, block: str) -> str:
+        """The RIGID call of the block `block` as a message names it, its
+        body elided."""
         ...

@@ -180,8 +180,9 @@ def _shape_only(path: Path) -> int:
         return 2
     _file, problems = witness.read(path.read_text(), WitnessFileRole.GIVEN)
     if problems:
+        eng = engine()
         for p in problems:
-            print(commands.shape_problem_line(path, p))
+            print(commands.shape_problem_line(eng, path, p))
         return 1
     print(commands.WITNESS_FILE_OK)
     return 0
@@ -301,8 +302,8 @@ def _built(arg: str, solver: Solver, at: Path,
                 raise ValueError(f"{solver.stem}: a proposed line on no "
                                  f"parameter, `{branch.parameter}`")
             decl = declaration_of(solver.program, param)
-            lines.append(recording.wrote_lineless(e.id, at, branch.proposer,
-                                                 decl))
+            lines.append(recording.wrote_lineless(
+                solver.engine, e.id, at, branch.proposer, decl))
         elif not problems:
             lines.append(recording.WROTE.format(id=e.id, path=at))
         print("\n".join(commands.judgment_first(lines)))

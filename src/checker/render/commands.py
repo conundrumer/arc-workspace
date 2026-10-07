@@ -21,7 +21,7 @@ from checker.render.locations import LineForm, file_name, solver_name
 from checker.render.no_result import failure_text
 from checker.render.grids import GridRow, shifted
 from controlled_markdown import mctx
-from engine import RunFailure
+from engine import Engine, RunFailure
 from solver.annotations import verdict_text
 from solver.aggregate import Solver
 from solver.problems import Fault
@@ -211,9 +211,10 @@ def indented(solver: Solver, section: Section,
                                                  else [])
 
 
-def shape_problem_line(path: Path, problem: Fault) -> str:
+def shape_problem_line(engine: Engine, path: Path, problem: Fault) -> str:
     """A witness file's shape problem, checked with no solver."""
-    return f"{path}: {problem.kind.value}: {detail_text(problem.detail)}"
+    return (f"{path}: {problem.kind.value}: "
+            f"{detail_text(engine, problem.detail)}")
 
 
 def stem_head(stem: str) -> str:

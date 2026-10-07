@@ -42,6 +42,7 @@ from checker.render.values import _ticked, resolution_lines
 from checker.render.grids import grid_lines, shifted
 from solver.names import name as case_name
 from controlled_markdown import mctx
+from engine import Engine
 from solver import names
 from solver.annotations import Slot, comment_text, verdict_text, witness_text
 from solver.aggregate import Solver
@@ -117,16 +118,16 @@ def _params(names: Sequence[str]) -> str:
     return _ticked(sorted(names)) or mctx("no parameter")
 
 
-def _ref_name(ref: BranchRef) -> str:
+def _ref_name(engine: Engine, ref: BranchRef) -> str:
     """A branch in the one name form (`solver.names.part_text`)."""
-    return names.part_text(ref)
+    return names.part_text(engine, ref)
 
 
-def _branches_text(parts: Sequence[PointBranch]) -> str:
+def _branches_text(engine: Engine, parts: Sequence[PointBranch]) -> str:
     """One side of a branch difference as one name: the branch it takes
     at each point where the two sides differ, joined as a name
     (`solver.names.part_name`)."""
-    return f"`{names.part_name(parts)}`"
+    return f"`{names.part_name(engine, parts)}`"
 
 
 def _assign_text(assign: Sequence[tuple[str, AssignValue]]) -> str:
@@ -169,7 +170,7 @@ def _annotation_text(solver: Solver, p: AnnotationPayload) -> str:
         case BranchUnwitnessed(constructor=c):
             return mctx("`{name}` is no concept branch and has no "
                         "`@witness` line; add `{line}`").format(
-                name=c, line=comment_text(witness_text(
+                name=c, line=comment_text(solver.engine, witness_text(
                     Slot.ID, Slot.PLAUSIBILITY, Slot.VERDICT)))
         case ReassignedMismatch(reassigned=r, assigned=a):
             return mctx("the `@reassigned` lines give {named}; the "
@@ -184,7 +185,8 @@ def _annotation_text(solver: Solver, p: AnnotationPayload) -> str:
                          "output or neither is defined, so `{id}` is no "
                          "witness of `{branch}` ").format(
                 id=w, model=case_name(solver, m),
-                first=case_name(solver, first), branch=_ref_name(b))
+                first=case_name(solver, first),
+                branch=_ref_name(solver.engine, b))
                 + _WITNESSES)
 
 
@@ -193,7 +195,8 @@ def _pairs_lines(solver: Solver, p: UnseparatedPayload | SubsumedPayload
     """A branch difference and the pairs it holds: how many of the pairs
     that differ by it alone, and the names of the branches both cases of
     each such pair take elsewhere."""
-    a, b = _branches_text(p.a), _branches_text(p.b)
+    a, b = (_branches_text(solver.engine, p.a),
+            _branches_text(solver.engine, p.b))
     n, of = len(p.contexts.cases), p.of
     if isinstance(p, UnseparatedPayload):
         head = mctx("no witness separates {a} from {b}").format(a=a, b=b)
@@ -363,7 +366,8 @@ def try_lines(solver: Solver, result: "TryResult") -> list[str]:
             p = x.finding.payload
             assert isinstance(p, UnseparatedPayload)
             lines.append("  " + mctx("{a} from {b}: {count}").format(
-                a=_branches_text(p.a), b=_branches_text(p.b),
+                a=_branches_text(solver.engine, p.a),
+                b=_branches_text(solver.engine, p.b),
                 count=counted(len(p.contexts.cases), x.left)))
     if result.subsumed:
         lines.append(mctx("subsumed branch differences it shows defined and "
@@ -373,7 +377,8 @@ def try_lines(solver: Solver, result: "TryResult") -> list[str]:
             assert isinstance(p, SubsumedPayload)
             lines.append("  " + mctx(
                 "{a} defined and differing from {b}: {count}").format(
-                a=_branches_text(p.a), b=_branches_text(p.b),
+                a=_branches_text(solver.engine, p.a),
+                b=_branches_text(solver.engine, p.b),
                 count=counted(len(p.contexts.cases), x.left)))
     if not result.unseparated and not result.subsumed:
         lines.append(mctx("it separates no unseparated pair and shows no "

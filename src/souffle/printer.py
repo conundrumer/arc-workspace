@@ -1,5 +1,6 @@
 """Each part of a program as Souffle text, in one canonical form."""
 
+from engine.engine import Part
 from engine.program import (
     AdtType,
     Aggregate,
@@ -9,26 +10,16 @@ from engine.program import (
     BinaryOperator,
     BinaryTerm,
     BodyLiteral,
-    BoolLiteral,
-    Cast,
     Column,
-    Comparison,
     Component,
-    ConstructorTerm,
-    DefinedName,
-    Disjunction,
-    FunctorCall,
     FunctorDecl,
     GridCall,
     Instance,
-    IntrinsicCall,
     NumberTerm,
     Qualifier,
-    RecordTerm,
     RecordType,
     RelationDecl,
     RigidCall,
-    StringTerm,
     SubtypeType,
     Term,
     TypeField,
@@ -36,51 +27,33 @@ from engine.program import (
     UnaryTerm,
     UnionType,
     Unit,
-    Variable,
-    Wildcard,
 )
-from engine.text import PREFIX, columns
-from engine.text import text as layout_name
 from souffle.parser import BINARY, UNARY_PRECEDENCE, chart_prefix
+from souffle.text import (columns, decl_line, declared, form, init_head,
+                          rigid_head, unary_lead)
+from souffle.text import text as layout_name
 
 PRECEDENCE = {op: prec for prec, op in BINARY.values()}
 INDENT = "    "
 
 
 def term(t: Term) -> str:
-    match t:
-        case Variable(name):
-            return name
-        case Wildcard():
-            return "_"
-        case NumberTerm(value):
-            return repr(value) if isinstance(value, float) else str(value)
-        case StringTerm(value):
-            return f'"{value}"'
-        case DefinedName(name):
-            return name
-        case ConstructorTerm(name, args):
-            return f"{PREFIX}{name}({terms(args)})"
-        case RecordTerm(args):
-            return f"[{terms(args)}]"
-        case IntrinsicCall(functor, args):
-            return f"{functor.value}({terms(args)})"
-        case Cast(inner, type_name):
-            return f"as({term(inner)}, {type_name.text})"
-        case FunctorCall(name, args):
-            return f"@{name}({terms(args)})"
+    return _part(t)
+
+
+def _part(p: Part) -> str:
+    """`p` in the canonical form: a unary or binary term with the
+    parentheses its operands need, any other part in the form the message
+    rendering shares (`souffle.text.form`)."""
+    match p:
         case UnaryTerm(op, arg):
-            word = op.value if op.value == "-" else op.value + " "
-            return word + _operand(arg, UNARY_PRECEDENCE + 1)
+            return unary_lead(op) + _operand(arg, UNARY_PRECEDENCE + 1)
         case BinaryTerm(op, lhs, rhs):
             prec = PRECEDENCE[op]
             right = op is BinaryOperator.POW
             return (f"{_operand(lhs, prec + 1 if right else prec)} {op.value} "
                     f"{_operand(rhs, prec if right else prec + 1)}")
-        case Aggregate(op, expr, body):
-            lead = op.value if expr is None else f"{op.value} {term(expr)}"
-            return f"{lead} : {{ {conj(body)} }}"
-    raise TypeError(f"not a term: {t!r}")
+    return form(p, _part)
 
 
 def _operand(t: Term, least: int) -> str:
@@ -100,20 +73,11 @@ def terms(ts: tuple[Term, ...]) -> str:
 
 
 def atom(a: Atom) -> str:
-    return f"{a.relation.text}({terms(a.args)})"
+    return _part(a)
 
 
 def literal(lit: BodyLiteral) -> str:
-    match lit:
-        case AtomLiteral(a, negated):
-            return ("!" if negated else "") + atom(a)
-        case Comparison(op, lhs, rhs):
-            return f"{term(lhs)} {op.value} {term(rhs)}"
-        case Disjunction(branches):
-            return "(" + " ; ".join(conj(b) for b in branches) + ")"
-        case BoolLiteral(value):
-            return "true" if value else "false"
-    raise TypeError(f"not a literal: {lit!r}")
+    return _part(lit)
 
 
 def conj(body: tuple[BodyLiteral, ...]) -> str:
@@ -135,8 +99,7 @@ def unit(u: Unit) -> str:
 
 
 def fields(fs: tuple[TypeField, ...]) -> str:
-    return ", ".join(f"{f.name}: {f.type.text}" if f.name else f.type.text
-                     for f in fs)
+    return declared((f.name, f.type) for f in fs)
 
 
 def type_args(args: tuple[str, ...]) -> str:
@@ -175,7 +138,7 @@ def declaration(d: object) -> str:
         case RelationDecl(_, name, _, cs, qualifiers, domain):
             return f".decl {name}{signature(cs, qualifiers, domain)}"
         case Instance(_, name, _, comp, args):
-            return f".init {name} = {comp}{type_arg_texts(args)}"
+            return f"{init_head(name)} = {comp}{type_arg_texts(args)}"
         case FunctorDecl(_, name, params, result):
             stateful = " stateful" if d.stateful else ""
             return f".functor {name}({fields(params)}): {result.text}{stateful}"
@@ -199,9 +162,9 @@ def rigid_call(call: RigidCall, charts: list[RelationDecl], body: list[str],
     statement of its body, with chart names as the body writes them."""
     prefix = chart_prefix(call.block)
     inner = indent + INDENT
-    lines = [f"RIGID({call.block},"]
+    lines = [rigid_head(call.block)]
     for d in charts:
-        lines.append(f"{inner}.decl {d.name.removeprefix(prefix)}({columns(d.columns)})")
+        lines.append(inner + decl_line(d.name.removeprefix(prefix), d.columns))
     lines += [inner + b.replace(prefix, "") for b in body]
     lines.append(f"{indent})")
     return "\n".join(lines)

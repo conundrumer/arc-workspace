@@ -1,16 +1,21 @@
 """The one rendering of a part of a program for a message: a term, an
 atom, a body literal, a value or a relation's declaration, as the solver
-writes it."""
+writes it (`text`); a value as a fact file holds it; a line comment; and
+the readings of a constructor's prefix and of a list at its top-level
+commas. Each form the message rendering shares with the printer's
+canonical form is written once here (`form`, `declared`, `decl_line`,
+`init_head`, `rigid_head`, `unary_lead`). The packages outside `souffle` reach this module through
+`engine.Engine`."""
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
+from engine.engine import Part
 from engine.program import (
     AdtValue,
     Aggregate,
     Atom,
     AtomLiteral,
     BinaryTerm,
-    BodyLiteral,
     BoolLiteral,
     Cast,
     Column,
@@ -27,7 +32,7 @@ from engine.program import (
     RecordValue,
     RelationDecl,
     StringTerm,
-    Term,
+    TypeName,
     UnaryOperator,
     UnaryTerm,
     Value,
@@ -45,9 +50,6 @@ def prefixed(text: str) -> str | None:
     with; None where it starts with none."""
     return text.removeprefix(PREFIX) if text.startswith(PREFIX) else None
 
-type Part = Term | Atom | BodyLiteral | Value | RelationDecl | GridLayout
-"""What `text` renders."""
-
 
 GRID_FORM_SEGMENT: dict[GridForm, str] = {
     GridForm.DENSE: "", GridForm.MASK: "MASK_", GridForm.SPARSE: "SPARSE_"}
@@ -55,10 +57,86 @@ GRID_FORM_SEGMENT: dict[GridForm, str] = {
 before the size."""
 
 
+def declared(pairs: Iterable[tuple[str, TypeName]]) -> str:
+    """Columns or fields as a declaration writes them: each `<name>:
+    <type>`, a field with no name as its type alone, joined by `, `."""
+    return ", ".join(f"{name}: {t.text}" if name else t.text
+                     for name, t in pairs)
+
+
 def columns(cs: Iterable[Column]) -> str:
     """A relation's columns as its `.decl` line writes them between the
     parentheses."""
-    return ", ".join(f"{c.name}: {c.type.text}" for c in cs)
+    return declared((c.name, c.type) for c in cs)
+
+
+def decl_line(name: str, cs: Iterable[Column]) -> str:
+    """A relation's `.decl` line with no qualifier: its name and its
+    columns."""
+    return f".decl {name}({columns(cs)})"
+
+
+def init_head(instance: str) -> str:
+    """An `.init` line up to its instance's name."""
+    return f".init {instance}"
+
+
+def rigid_head(block: str) -> str:
+    """A RIGID call up to the comma after its block's name."""
+    return f"RIGID({block},"
+
+
+def rigid_elided(block: str) -> str:
+    """A RIGID call with its body elided, as a message names it."""
+    return f"{rigid_head(block)} …)"
+
+
+def unary_lead(op: UnaryOperator) -> str:
+    """A unary operator as it stands before its operand."""
+    return op.value if op == UnaryOperator.NEGATE else op.value + " "
+
+
+def form(part: Part, of: Callable[[Part], str]) -> str:
+    """`part` in the form the message rendering and the printer share,
+    each part inside it as `of` writes it. Raises `TypeError` for a unary
+    or binary term, whose parentheses each renderer writes its own way,
+    and for a value, a declaration and a GRID layout."""
+    def joined(parts: "tuple[Part, ...]") -> str:
+        return ", ".join(of(p) for p in parts)
+
+    match part:
+        case Atom(relation=relation, args=args):
+            return f"{relation.text}({joined(args)})"
+        case AtomLiteral(atom=atom, negated=negated):
+            return ("!" if negated else "") + of(atom)
+        case Comparison(op=op, lhs=lhs, rhs=rhs):
+            return f"{of(lhs)} {op.value} {of(rhs)}"
+        case BoolLiteral(value=value):
+            return "true" if value else "false"
+        case Disjunction(branches=branches):
+            return "(" + " ; ".join(joined(b) for b in branches) + ")"
+        case Variable(name=name) | DefinedName(name=name):
+            return name
+        case Wildcard():
+            return "_"
+        case NumberTerm(value=value):
+            return str(value)
+        case StringTerm(value=value):
+            return f'"{value}"'
+        case ConstructorTerm(name=name, args=args):
+            return f"{PREFIX}{name}({joined(args)})"
+        case RecordTerm(args=args):
+            return f"[{joined(args)}]"
+        case IntrinsicCall(functor=functor, args=args):
+            return f"{functor.value}({joined(args)})"
+        case FunctorCall(name=name, args=args):
+            return f"@{name}({joined(args)})"
+        case Aggregate(op=op, expr=expr, body=body):
+            lead = op.value if expr is None else f"{op.value} {of(expr)}"
+            return f"{lead} : {{ {joined(body)} }}"
+        case Cast(term=inner, type=type_name):
+            return f"as({of(inner)}, {type_name.text})"
+    raise TypeError(f"no shared form for {part!r}")
 
 
 def text(part: Part) -> str:
@@ -71,49 +149,17 @@ def text(part: Part) -> str:
     match part:
         case bool() | int() | float() | str() | AdtValue() | RecordValue():
             return _value(part, quoted=True)
-        case Atom(relation=relation, args=args):
-            return f"{relation.text}({_joined(args)})"
         case RelationDecl(name=name, columns=cs):
-            return f".decl {name}({columns(cs)})"
-        case AtomLiteral(atom=atom, negated=negated):
-            return ("!" if negated else "") + text(atom)
-        case Comparison(op=op, lhs=lhs, rhs=rhs):
-            return f"{text(lhs)} {op.value} {text(rhs)}"
-        case BoolLiteral(value=value):
-            return "true" if value else "false"
-        case Disjunction(branches=branches):
-            return "(" + " ; ".join(_joined(b) for b in branches) + ")"
-        case Variable(name=name) | DefinedName(name=name):
-            return name
-        case Wildcard():
-            return "_"
-        case NumberTerm(value=value):
-            return str(value)
-        case StringTerm(value=value):
-            return f'"{value}"'
-        case ConstructorTerm(name=name, args=args):
-            return f"{PREFIX}{name}({_joined(args)})"
-        case RecordTerm(args=args):
-            return f"[{_joined(args)}]"
-        case IntrinsicCall(functor=functor, args=args):
-            return f"{functor.value}({_joined(args)})"
-        case FunctorCall(name=name, args=args):
-            return f"@{name}({_joined(args)})"
+            return decl_line(name, cs)
         case UnaryTerm(op=op, arg=arg):
-            space = "" if op == UnaryOperator.NEGATE else " "
-            return f"{op.value}{space}{text(arg)}"
+            return unary_lead(op) + text(arg)
         case BinaryTerm(op=op, lhs=lhs, rhs=rhs, parens=parens):
             inner = f"{text(lhs)} {op.value} {text(rhs)}"
             return f"({inner})" if parens else inner
-        case Aggregate(op=op, expr=expr, body=body):
-            e = "" if expr is None else f" {text(expr)}"
-            return f"{op.value}{e} : {{ {_joined(body)} }}"
-        case Cast(term=inner, type=type_name):
-            return f"as({text(inner)}, {type_name.text})"
-        case GridLayout(form=form, stamp=stamp, height=h, width=w):
+        case GridLayout(form=grid_form, stamp=stamp, height=h, width=w):
             return (f"GRID_{'STAMP_' if stamp else ''}"
-                    f"{GRID_FORM_SEGMENT[form]}{h}x{w}")
-    raise TypeError(f"no text for {part!r}")
+                    f"{GRID_FORM_SEGMENT[grid_form]}{h}x{w}")
+    return form(part, text)
 
 
 def line_comment(content: str) -> str:
@@ -142,10 +188,6 @@ def _value(value: Value, quoted: bool) -> str:
             return f"{PREFIX}{name}(" + ", ".join(_value(a, quoted) for a in args) + ")"
         case RecordValue(fields=fields):
             return "[" + ", ".join(_value(f, quoted) for f in fields) + "]"
-
-
-def _joined(parts: "tuple[Part, ...]") -> str:
-    return ", ".join(text(p) for p in parts)
 
 
 def split_top(text: str) -> list[str]:

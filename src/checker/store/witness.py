@@ -16,6 +16,7 @@ from checker.branches.witnesses import (
     BuiltBy,
     NoFit,
     fitting_both,
+    looked_with,
     swap_entry,
     witness_divergence,
     witness_targets,
@@ -114,11 +115,13 @@ def _model_alone(runs: Runs, solver: Solver, lined: Solver,
     (`solver.pair_runs.branch_models`) and it fits the pairs with its
     counterpart (`fitting_both`). The witnessed cases that take the
     branch then hold it, so it is their model too, and `witness_targets`
-    gives it alone. None otherwise."""
+    gives it alone (`looked_with`). None otherwise."""
     models = branch_models(solver, taking, f.name)
     if not models or models[0] not in pair_runs.branch_models(lined, every):
         return None
-    return models[0] if fitting_both(runs, lined, models, f.name) else None
+    model = models[0]
+    fit = fitting_both(runs, lined, models, f.name)
+    return model if looked_with([model], fit) == [model] else None
 
 
 def _swap_cases(runs: Runs, solver: Solver, lined: Solver,

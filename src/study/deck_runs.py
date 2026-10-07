@@ -190,7 +190,9 @@ def drawn_by_default(run: Loaded, entry: Entry) -> bool:
 
 def shown_root(root: Path) -> str:
     """A checkout as an error names it: as `checkout.shown` prints it, and
-    the checkout the command runs in by its absolute path."""
+    the checkout the command runs in by its absolute path, since
+    `checkout.shown` gives `.` for it, which names no checkout a reader of
+    the error can tell apart."""
     if root.resolve() == checkout.ROOT.resolve():
         return root.resolve().as_posix()
     return checkout.shown(root).as_posix()
