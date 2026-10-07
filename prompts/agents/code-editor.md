@@ -50,7 +50,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 - End your turn only at one of these points:
     - Blocked: each item that is not done contradicts docstring text that no item changes, has no operation for what it implements, or is stopped by a tool or a document you find no way around. Give the concrete case, and meet each other condition of Done over the items that are done.
     - Cost, as [Working rules](#working-rules) gives it.
-    - After you launch an agent whose brief asks only for a reply, as [Working rules](#working-rules) gives.
+    - Where [Working rules](#working-rules) has you end it in another agent's worktree.
     - Done, which the report opens with in one line: every item is done, your tests directory passes, pyright is clean over the repo, every defect place your `Review` section gives is fixed or stands with its reason, and each case the spec does not cover is filed.
 
 ## Working rules
@@ -67,7 +67,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 
 ## Tickets
 - As you meet a case the spec does not cover, note it in `progress.md`, under a `Questions` heading.
-- Before you end your turn, other than after you launch an agent whose brief asks only for a reply, file each case noted under that heading, and each place your diff holds that poses a question, as a ticket of kind `question`, with `code-editor` as `<agent>`.
+- Before you end your turn, other than where [Working rules](#working-rules) has you end it in another agent's worktree, file each case noted under that heading, and each place your diff holds that poses a question, as a ticket of kind `question`, with `code-editor` as `<agent>`.
     - Cite a case's target as the code site where the case arises, write under `Impact` what your code does there or cannot do, and quote under `Evidence` the docstring lines that describe the code at that site.
     - Cite a place as [Place tickets](#place-tickets) gives.
 - A ticket you file on anything else has the kind `bug`, where a tool or a document does the wrong thing.
