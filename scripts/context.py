@@ -30,7 +30,7 @@ HELP = mctx("""
         uv run python scripts/context.py section <where>  # print one section
         uv run python scripts/context.py workflow <name>  # print every role, as JSON
         uv run python scripts/context.py contexts         # list the readers
-        uv run python scripts/context.py contexts --diff <commit>  # the readers whose context changed since a commit
+        uv run python scripts/context.py contexts --diff <commit>  # the readers whose context or linked sections changed since a commit
         uv run python scripts/context.py context <reader> [args]  # one reader's context
         uv run python scripts/context.py context --at <commit> <reader> [args]    # that context at a commit
         uv run python scripts/context.py context --diff <commit> <reader> [args]  # its diff since a commit
@@ -54,11 +54,14 @@ HELP = mctx("""
         ```
     - `workflow <name>` prints, as JSON, the text of every role under `prompts/roles/`, from which a run of that workflow takes the ones it uses. A name with no script under `.claude/workflows/` is an error.
     - `contexts` lists each reader the `context` command knows, with the argument it takes and that argument's values.
-    - `contexts --diff <commit>` prints, one per line as a `context` command line, each reader with its argument whose context the change since the commit alters, and nothing for any other reader. The commit's tree is written once, and its readers render there.
+    - `contexts --diff <commit>` prints, one per line as a `context` command line, each reader with its argument whose context the change since the commit alters, or whose context leads by a chain of links to a section whose text the change alters, and nothing for any other reader. The commit's tree is written once, and its readers render there.
         - A reader both sides define is altered where its context at the commit, rendered as `context --at` renders it, differs from its context in the worktree. A render at the commit that fails is an error.
         - A reader only one side defines is altered, and its line ends in `(added)` where the worktree defines it and in `(removed)` where the commit does. The commit's readers are the ones its own `contexts` lists.
+        - A chain of links starts at a link in the context to a document of the set `[tool.controlled_markdown]` in `pyproject.toml` names, and each later link stands in the target of the one before, on either side. A link that names no heading targets the whole document, and a link to another file ends no chain.
+        - Under a reader's line, an indented line stands for each chain of links that leads its context, on either side, to a section whose text the change alters, as the checkout's code renders that section on each side, a section a side lacks as empty. A chain holds no target twice. The line names that section, then after `via` the targets of the chain's links before it, the last one linked from the context. A section is left out where the reader's context diff already removes and adds each of its changed lines, or where its whole document is listed and holds each of them.
+        - The line of a reader whose context is the same on both sides and leads by such a chain to such a section ends in `(linked)`.
     - `context <reader> [args]` prints that reader's context, each part under a `==== <what follows> ====` line.
-    - `context --at <commit> <reader> [args]` prints that context as the commit's tree renders it, with the commit's own code, and `context --diff <commit> <reader> [args]` prints the unified diff from that render to the one of the worktree. Where only one side defines the reader, as `contexts --diff` marks it, `--diff` takes the other side's context as empty, so an added reader's diff gains every line and a removed one's loses every line. Any other failed render is an error. Neither form changes the worktree: git writes the commit's tree into a temporary directory, and the render runs there.
+    - `context --at <commit> <reader> [args]` prints that context as the commit's tree renders it, with the commit's own code, and `context --diff <commit> <reader> [args]` prints the unified diff from that render to the one of the worktree, then the unified diff of each section that `contexts --diff` lists under that reader, under the lines it lists there for that section. Where only one side defines the reader, as `contexts --diff` marks it, `--diff` takes the other side's context as empty, so an added reader's diff gains every line and a removed one's loses every line. Any other failed render is an error. Neither form changes the worktree: git writes the commit's tree into a temporary directory, and the render runs there.
     """)
 
 # The lines of the usage block of HELP, which the command exits with on

@@ -1,5 +1,6 @@
 """The readers the `context` command knows, and their contexts at a commit
-and the diff of each since one."""
+and the diff of each since one, with the diff of each section a reader
+reaches by links."""
 
 from __future__ import annotations
 
@@ -9,6 +10,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from collections import deque
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
@@ -16,7 +18,9 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
+import controlled_markdown as nm
 from controlled_markdown import mctx
+from controlled_markdown.__main__ import collect, configured, repo_root
 from engine import checkout
 from handbook.agents import agent_dir, agent_names
 from handbook.context import role_dir, role_stems, workflow_dir, workflow_names
@@ -173,11 +177,22 @@ def context_at(commit: str, reader: str, args: list[str]) -> str:
         return _render_in(tree, commit, reader, args)
 
 
+def _unified(before: str, after: str, head: str, commit: str) -> str:
+    """The unified diff from `before`, the text `head` names at `commit`,
+    to `after`, its text in the checkout."""
+    return "".join(difflib.unified_diff(
+        before.splitlines(keepends=True), after.splitlines(keepends=True),
+        fromfile=f"{head} at {commit}", tofile=head))
+
+
 def context_diff(commit: str, reader: str, args: list[str]) -> str:
     """The unified diff from one reader's context at `commit`, as
     `context_at` renders it in a detached worktree of `commit`, to its
-    context in the checkout. Empty where the two are the same. A side that
-    does not define the reader, as `contexts_diff` finds it, gives an empty
+    context in the checkout, then the unified diff of the text of each
+    target it reaches by links that the change alters, as
+    `_linked_changes` finds them, under one line for each chain that
+    leads to it (`LinkedChange.chain_lines`). Empty where none of these differ. A side that does not
+    define the reader, as `contexts_diff` finds it, gives an empty
     context, so the diff of an added reader gains every line and that of a
     removed one loses every line. A reader neither side defines, and a
     render that fails, are faults."""
@@ -185,12 +200,13 @@ def context_diff(commit: str, reader: str, args: list[str]) -> str:
     with _tree_at(commit) as tree:
         then = call in _calls_in(tree, commit)
         before = _render_in(tree, commit, reader, args) if then else ""
-    now = call in reader_calls()
-    after = context_text(reader, args) if now or not then else ""
-    head = _command(reader, args)
-    return "".join(difflib.unified_diff(
-        before.splitlines(keepends=True), after.splitlines(keepends=True),
-        fromfile=f"{head} at {commit}", tofile=head))
+        now = call in reader_calls()
+        after = context_text(reader, args) if now or not then else ""
+        linked = _linked_changes(before, after, *_sides(tree, commit))
+    return (_unified(before, after, _command(reader, args), commit)
+            + "".join("".join(f"{line}\n" for line in c.chain_lines())
+                      + _unified(c.before, c.after, str(c.target), commit)
+                      for c in linked))
 
 
 CONTEXTS_LINE_RE = re.compile(r"context (\S+)(?: (<[^>]*>))? *(.*)")
@@ -214,23 +230,246 @@ def _calls_in(tree: Path, commit: str) -> list[tuple[str, list[str]]]:
     return calls
 
 
+@dataclass(frozen=True, order=True)
+class LinkTarget:
+    """What a link to a document names: the document, by its path from the
+    root of the side it is read on, and the id of one of its sections,
+    empty where the link names the whole document."""
+
+    path: Path
+    ident: str
+
+    def __str__(self) -> str:
+        return f"{self.path}#{self.ident}" if self.ident else str(self.path)
+
+
+def _text_links(text: str) -> Iterator[tuple[str, str]]:
+    """Every link in a rendered text, as its path and its id, as
+    `controlled_markdown`'s `links` finds them in each line outside a
+    fenced code block."""
+    lines: list[nm.Node] = []
+    fence: str | None = None
+    for line in text.splitlines():
+        match = nm.FENCE_RE.match(line.strip())
+        if fence is None and match:
+            fence = match.group(1)
+        elif fence is not None:
+            if match and match.group(1).startswith(fence) and not match.group(2).strip():
+                fence = None
+        else:
+            lines.append(nm.Node(nm.CONTENT, text=line))
+    holder = nm.Node(nm.DOCUMENT)
+    holder.children = lines
+    for _node, _label, path, ident in nm.links(holder):
+        yield path, ident
+
+
+class _Side:
+    """The documents of one side of a change, read under `root`, the tree
+    `where` names: the document set its `[tool.controlled_markdown]` table
+    names, and the text of each link target as the checkout's
+    `controlled_markdown` renders it, None where the side has no such
+    document or no such section in it."""
+
+    def __init__(self, root: Path, where: str) -> None:
+        self.root = root
+        self.where = where
+        if repo_root(root).resolve() != root.resolve():
+            raise SystemExit(mctx("No document set is configured at {root}, "
+                                  "{where}.").format(root=root, where=where))
+        self.documents = {p.resolve() for p in collect(configured(root))}
+        self.registry = nm.Registry(root)
+        self.texts: dict[LinkTarget, str | None] = {}
+        self.outlinks: dict[LinkTarget, list[LinkTarget]] = {}
+
+    def target(self, path: str, ident: str,
+               holder: LinkTarget | None) -> LinkTarget | None:
+        """The target of a link with `path` and `ident` in the text of
+        `holder`, a reader's context where None; None where the link names
+        no document of the set. A link relative to its holder in a
+        context, which names no file it stands in, is a fault."""
+        if holder is None and path.startswith(("./", "../")):
+            raise SystemExit(mctx("A context at {where} links `{path}`, relative "
+                                  "to no file.").format(where=self.where, path=path))
+        file = nm.target_of(path, self.root / (holder.path if holder else ""),
+                            self.root)
+        if file not in self.documents:
+            return None
+        return LinkTarget(file.relative_to(self.root.resolve()), ident)
+
+    def text(self, target: LinkTarget) -> str | None:
+        """The text of `target` on this side; None where the side has no
+        such document or no such section in it."""
+        if target not in self.texts:
+            self.texts[target] = self._render(target)
+        return self.texts[target]
+
+    def _render(self, target: LinkTarget) -> str | None:
+        file = (self.root / target.path).resolve()
+        if file not in self.documents:
+            return None
+        try:
+            document = self.registry.open(file)
+        except nm.ControlledMarkdownError as e:
+            raise SystemExit(mctx("A document at {where} does not parse: "
+                                  "{error}").format(where=self.where, error=e))
+        if not target.ident:
+            return nm.render(document, self.registry)
+        node = self.registry.ids[document.source].get(target.ident)
+        if node is None:
+            return None
+        body = nm.Node(nm.DOCUMENT, source=document.source)
+        body.children = [node]
+        return nm.render(body, self.registry)
+
+    def links(self, target: LinkTarget) -> list[LinkTarget]:
+        """The targets the links in the text of `target` name, a link to
+        a section of its own document included."""
+        if target not in self.outlinks:
+            text = (self.text(target) or "").replace("](#", f"]({target.path}#")
+            self.outlinks[target] = [
+                t for path, ident in _text_links(text)
+                if (t := self.target(path, ident, target)) is not None]
+        return self.outlinks[target]
+
+    def _firsts(self, context: str) -> list[LinkTarget]:
+        """The targets the links in `context` name, each once, in the order
+        the context first links them."""
+        found = (self.target(path, ident, None) for path, ident in _text_links(context))
+        return list(dict.fromkeys(t for t in found if t is not None))
+
+    def reached(self, context: str) -> list[LinkTarget]:
+        """Each target a chain of links leads `context` to: a chain's first
+        link stands in the context, and each later one in the text of the
+        target of the one before."""
+        seen = dict.fromkeys(self._firsts(context))
+        queue: deque[LinkTarget] = deque(seen)
+        while queue:
+            for after in self.links(queue.popleft()):
+                if after not in seen:
+                    seen[after] = None
+                    queue.append(after)
+        return list(seen)
+
+    def chains(self, context: str, goals: set[LinkTarget]
+               ) -> dict[LinkTarget, list[tuple[LinkTarget, ...]]]:
+        """Each chain of links that leads `context` to a target in `goals`,
+        as the targets of its links, the goal last, with no target twice,
+        by goal. The chains of a goal come in the order of a depth-first
+        walk that takes the links of each text in the order they stand."""
+        toward = set(goals)
+        sources = self.reached(context)
+        while True:
+            more = {t for t in sources if t not in toward
+                    and any(after in toward for after in self.links(t))}
+            if not more:
+                break
+            toward |= more
+        out: dict[LinkTarget, list[tuple[LinkTarget, ...]]] = {g: [] for g in goals}
+
+        def walk(chain: tuple[LinkTarget, ...]) -> None:
+            if chain[-1] in goals:
+                out[chain[-1]].append(chain)
+            for after in self.links(chain[-1]):
+                if after in toward and after not in chain:
+                    walk((*chain, after))
+
+        for first in self._firsts(context):
+            if first in toward:
+                walk((first,))
+        return out
+
+
+@dataclass(frozen=True)
+class LinkedChange:
+    """A link target whose text the change alters, and that a chain of
+    links leads a reader's context to: each such chain, as `_Side.chains`
+    gives it, those of the checkout first, then those only the commit
+    has; and its text on each side, empty where that side has no such
+    document or no such section in it."""
+
+    target: LinkTarget
+    chains: tuple[tuple[LinkTarget, ...], ...]
+    before: str
+    after: str
+
+    @property
+    def lines(self) -> set[str]:
+        """The lines the change removes from the target's text and adds to
+        it (`_changed_lines`)."""
+        return _changed_lines(self.before, self.after)
+
+    def chain_lines(self) -> list[str]:
+        """One line for each chain: the target, then after `via` the targets
+        of the chain's links before it, the last one linked from the
+        context."""
+        return [" via ".join(str(t) for t in reversed(chain)) for chain in self.chains]
+
+
+def _changed_lines(before: str, after: str) -> set[str]:
+    """The lines a unified diff from `before` to `after` removes and adds,
+    each with its `-` or `+`, the blank ones left out."""
+    diff = difflib.unified_diff(before.splitlines(), after.splitlines(),
+                                lineterm="", n=0)
+    return {line for line in diff
+            if line[:1] in "+-" and line[1:].strip()
+            and not line.startswith(("+++", "---"))}
+
+
+def _linked_changes(before: str, after: str, then: _Side,
+                    now: _Side) -> list[LinkedChange]:
+    """Each link target a reader with the context `before` at the commit
+    and `after` in the checkout reaches on either side, whose text differs
+    between the sides, in target order. A target is left out where the
+    reader's own context diff already removes and adds each line its text
+    diff does, or where a link to the whole of its document is listed and
+    its text diff is part of that document's."""
+    shown = _changed_lines(before, after)
+    found: list[LinkedChange] = []
+    for target in sorted(set(now.reached(after)) | set(then.reached(before))):
+        then_text, now_text = then.text(target) or "", now.text(target) or ""
+        change = LinkedChange(target, (), then_text, now_text)
+        if then_text != now_text and not change.lines <= shown:
+            found.append(change)
+    goals = {c.target for c in found}
+    now_chains, then_chains = now.chains(after, goals), then.chains(before, goals)
+    found = [LinkedChange(c.target, tuple(dict.fromkeys(
+                 now_chains[c.target] + then_chains[c.target])), c.before, c.after)
+             for c in found]
+    whole = {c.target.path: c.lines for c in found if not c.target.ident}
+    return [c for c in found if not c.target.ident
+            or not c.lines <= whole.get(c.target.path, set())]
+
+
 class ReaderChange(StrEnum):
     """How a change alters a reader's context: only the checkout defines
-    the reader, only the commit does, or both do and its contexts
-    differ."""
+    the reader, only the commit does, both do and its contexts differ, or
+    both do and only the text of a target it reaches by links differs
+    (`_linked_changes`)."""
 
     ADDED = "added"
     REMOVED = "removed"
     CHANGED = "changed"
+    LINKED = "linked"
+
+
+def _sides(tree: Path, commit: str) -> tuple[_Side, _Side]:
+    """The documents at `commit`, read in `tree`, its tree, and those of
+    the checkout, read under `DOCUMENTS_ROOT`."""
+    return _Side(tree, commit), _Side(DOCUMENTS_ROOT, "the checkout")
 
 
 def contexts_diff(commit: str) -> str:
     """Each reader, with its arguments, whose context the change since
-    `commit` alters, one per line, marked with its `ReaderChange` where
-    only one side defines it. A reader both sides define is altered where
-    its context at `commit`, as `context_at` renders it in a detached
+    `commit` alters, or the text of a target it reaches by links, one per
+    line, marked with its `ReaderChange` other than `CHANGED`, and after
+    it, one indented line for each chain that leads to each target whose
+    text the change alters, as `_linked_changes` finds them
+    (`LinkedChange.chain_lines`). A reader both sides define is altered
+    where its context at `commit`, as `context_at` renders it in a detached
     worktree of `commit`, differs from its context in the checkout; a
-    render at `commit` that fails is a fault.
+    render at `commit` that fails is a fault. A side that does not define
+    a reader gives it an empty context.
     The checkout's readers come first, in `reader_calls` order, then the
     ones only the commit defines."""
     now = reader_calls()
@@ -239,16 +478,24 @@ def contexts_diff(commit: str) -> str:
         both = [c for c in now if c in then]
         with ThreadPoolExecutor() as pool:
             befores = list(pool.map(lambda c: _render_in(tree, commit, *c), both))
-    rendered = {_command(*c): before for c, before in zip(both, befores, strict=True)}
-    changes = [(c, ReaderChange.ADDED if c not in then else ReaderChange.CHANGED)
-               for c in now]
-    changes += [(c, ReaderChange.REMOVED) for c in then if c not in now]
-    out = []
-    for (reader, args), change in changes:
-        command = _command(reader, args)
-        if change is ReaderChange.CHANGED:
-            if rendered[command] != context_text(reader, args):
-                out.append(f"{command}\n")
-        else:
-            out.append(f"{command} ({change})\n")
+        rendered = {_command(*c): before for c, before in zip(both, befores, strict=True)}
+        changes = [(c, ReaderChange.ADDED if c not in then else ReaderChange.CHANGED)
+                   for c in now]
+        changes += [(c, ReaderChange.REMOVED) for c in then if c not in now]
+        then_side, now_side = _sides(tree, commit)
+        out = []
+        for (reader, args), change in changes:
+            command = _command(reader, args)
+            before = (rendered[command] if change is ReaderChange.CHANGED
+                      else _render_in(tree, commit, reader, args)
+                      if change is ReaderChange.REMOVED else "")
+            after = "" if change is ReaderChange.REMOVED else context_text(reader, args)
+            linked = _linked_changes(before, after, then_side, now_side)
+            if change is ReaderChange.CHANGED and before == after:
+                if not linked:
+                    continue
+                change = ReaderChange.LINKED
+            mark = "" if change is ReaderChange.CHANGED else f" ({change})"
+            out.append(f"{command}{mark}\n")
+            out += [f"    {line}\n" for c in linked for line in c.chain_lines()]
     return "".join(out)
