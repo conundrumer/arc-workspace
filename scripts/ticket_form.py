@@ -39,7 +39,7 @@ def title(path: Path, text: str) -> str:
     return text[head.end():].split("\n", 1)[0]
 
 
-SECTIONS = {Kind.CHANGE: ("Intent", "Motivation", "Scope"),
+SECTIONS = {Kind.CHANGE: ("Intent", "Motivation", "Scope", "Grounds"),
             Kind.REQUEST: ("Words", "Transcript")}
 """The sections of each kind that has its own; every other kind has
 `DEFECT_SECTIONS`."""

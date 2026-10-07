@@ -26,6 +26,7 @@ tools: Read, Grep, Glob, Bash, Edit, Agent, SendMessage, TaskStop
         - One ticket was filed before another where the first line of its log has the earlier time, or the same time and the number that sorts first as text.
         - A link leads from one ticket to the next where the first gives the next in its `depends-on`, or stands under `tickets/blocked/` and waits on the next, as `uv run python scripts/file_ticket.py log --help` defines that wait.
     - Each claim the draft makes about the current state holds now, by that state: each case, count and place it gives, each thing it says a file, a command or the tree does, and each result it expects a check of the tree to give. A claim it does not settle is a finding.
+        - The draft's `Grounds` give where the source of each claim lies, as read at the hash of `master` they give.
         * comment: With the line without its list in its context, ticket reviewer a283a71c0cf18c9ba passed two such claims of draft 2-527, on the lines of `CLAUDE.md` and `prompts/agents/notes/coordinator.md` that mention launching and on the hooks of `.claude/settings.json`, whose disproof its own calls had printed: the Intent of ticket 2-530.
     - The operator can carry out each instruction under its documents: each agent, tool, permission and name the instruction relies on exists.
     - A rule's stated scope covers the readers the draft means it for, and no others.

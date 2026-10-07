@@ -50,6 +50,7 @@
 
 ### The user's part
 - Bring the user a decision only where every option, after you reframe the problem, still has a defensible reason against it.
+    - An option that departs from the user's words, a ruling of the user or a line of [Principles](docs/handbook/principles.md) has such a reason, which no reframe removes. Where every option left departs from one of them, bring the decision to the user at once.
     - Give one line per option, the default first, with the option's consequence for the goals, and where the option changes a solver, that solver's code before and after.
     - Where the user does not rule on the decision, carry out its default.
 - Tell the user, without waiting on them, each change that affects the user directly, in one line, with the solver's code before and after where the user judges it by that code. A change affects the user directly where it does one of these:
