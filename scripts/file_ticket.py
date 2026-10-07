@@ -21,7 +21,7 @@ from handbook.paths import importable
 # `scripts/` off `sys.path`, and the modules below import from there.
 importable(checkout.scripts())
 
-from ticket_form import (DEFECT_SECTIONS, FIELD, LOG, SECTIONS,  # noqa: E402
+from ticket_form import (DEFECT_SECTIONS, FIELD, LOG, NAME_FORM, SECTIONS,  # noqa: E402
                          TicketName, checked_kind, heading, sections_example)
 from ticket_log import (AGENT_ID, CLOSED_BY, TIME_FORM, UNBLOCKED_BY, Wait,  # noqa: E402
                         log_moves, logged)
@@ -52,7 +52,7 @@ HELP = mctx("""
     - Numbers order with every bare number before every `<session>-<n>` number. Bare numbers compare as integers, and `<session>-<n>` numbers compare by `<session>`, then by `<n>`, each as an integer.
     - The session that files is the one whose id the filing agent's shell holds in `{session_var}`, in a subagent as in the main session. The command refuses a filing where the shell holds none.
     - A session's index has a file under `tickets/{sessions}/`, named by the index, that holds the session's id. A session forked from another takes the index of the session it was forked from, and the file then holds both ids, one per line.
-    - The command reserves the ticket's number, names the ticket `<number>_<domain>_<subject>_<agent>.md`, writes it under `tickets/draft/` for a `change` and `tickets/open/` for any other kind in the main tree, with the filing time in the first line of its `## Log`, and prints the path it wrote.
+    - The command reserves the ticket's number, names the ticket `{name_form}`, writes it under `tickets/draft/` for a `change` and `tickets/open/` for any other kind in the main tree, with the filing time in the first line of its `## Log`, and prints the path it wrote.
     - Run from a worktree, the command files with the main tree's copy of `scripts/file_ticket.py`, and refuses where the main tree has none.
     - Each `<number>` in `depends-on` is the number of a ticket the ticket tracker holds.
     - The command refuses, and writes nothing, where the text on stdin does not have the form above.
@@ -97,7 +97,7 @@ TO_SETTLE_HELP = mctx("""
         - each `{change_kind}`, which an operator runs;
         - each `{question}` filed on a change whose ticket stands outside `tickets/closed/`, which the ticket analyst of that change decides before its merge;
         - each `{refactor}` whose title ends in `{many_ideas}`, which the editor that next edits its module carries out first.
-    - A `{question}` is filed on a change where its `<domain>` is `{change_domain}` and its `<subject>` is the number of that change's ticket.
+    - A `{question}` with the `<domain>` `{change_domain}` is filed on the change its `<subject>` gives.
     - The command prints the number of each ticket the list holds, one per line, in the order of numbers, or `{empty}` where it holds none.
     - The command refuses where a number the call gives names no ticket, where the front matter of a ticket the list would hold gives no kind, where a `{refactor}` it would hold has no title, or where a `{question}` filed on a change names no ticket the ticket tracker holds.
     """)
@@ -199,10 +199,8 @@ def filed_in_main(filing: Filing, args: list[str]) -> int | None:
 
 def run(args: Sequence[str | None], help_text: str, count: int | None,
         act: Callable[..., Path | int | str], filing: Filing | None, argv: list[str]) -> int:
-    """Runs a command that takes `count` arguments, or any number of them
-    where `count` is None, and stdin where `act` reads it, printing what
-    `act` returns. A `filing` runs in the main tree's copy of its script,
-    given `argv`, the call's arguments."""
+    """`argv` is the call's arguments as given, which the main tree's copy
+    of a `filing` takes in place of `args`."""
     if args and args[0] in ("--help", "-h"):
         print(help_text)
         return 0
@@ -236,8 +234,6 @@ def log_args(args: list[str]) -> list[str | None]:
 
 
 def settle_command(*given: str) -> str:
-    """The numbers `to_settle` gives for the calling session and `given`,
-    one per line, or `EMPTY`."""
     tickets = main_tickets()
     numbers = to_settle(tickets, session_index(tickets, session_id()), given)
     return "\n".join(numbers) if numbers else EMPTY
@@ -303,7 +299,7 @@ def help_values() -> dict[str, str]:
                                            number="<number>", note="<note>"),
                 unblocked_by=UNBLOCKED_BY.format(change=Wait.CHANGE, number="<number>",
                                                  resolution="<resolution>"),
-                sessions=SESSIONS, invocation=TICKET_FILING.invocation,
+                sessions=SESSIONS, invocation=TICKET_FILING.invocation, name_form=NAME_FORM,
                 question=Kind.QUESTION, refactor=Kind.REFACTOR, change_kind=Kind.CHANGE,
                 change_domain=Domain.CHANGE,
                 many_ideas=MANY_IDEAS, empty=EMPTY,

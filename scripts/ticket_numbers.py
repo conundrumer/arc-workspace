@@ -42,6 +42,11 @@ def number_parts(number: str) -> tuple[int | None, int]:
     parts = TICKET_NUMBER.fullmatch(number)
     if parts is None:
         raise Refused(mctx("`{number}` is no ticket number").format(number=number))
+    return matched_parts(parts)
+
+
+def matched_parts(parts: re.Match[str]) -> tuple[int | None, int]:
+    """The parts `number_parts` gives, of a match of `TICKET_NUMBER`."""
     return (int(parts["session"]) if parts["session"] else None, int(parts["n"]))
 
 
@@ -56,8 +61,8 @@ def reserve(tickets: Path, session: int) -> str:
     """Reserves the next number of a ticket of the session with index
     `session` by an exclusive create of its file under `tickets/ids/`."""
     ids = tickets / IDS
-    taken = (n for p in ids.glob("*") if TICKET_NUMBER.fullmatch(p.name)
-             for s, n in [number_parts(p.name)] if s == session)
+    taken = (n for p in ids.glob("*") if (number := TICKET_NUMBER.fullmatch(p.name))
+             for s, n in [matched_parts(number)] if s == session)
     return write_after(ids, "", taken, lambda n: f"{session}-{n}").name
 
 
@@ -162,11 +167,10 @@ def statuses(tickets: Path) -> list[Path]:
     return [tickets / s for s in Status]
 
 
-def ticket_number(path: Path) -> str | None:
-    """The number of the ticket at `path`, which its file name opens with.
-    None for a ticket filed before tickets had numbers."""
-    number = TICKET_NUMBER.fullmatch(path.name.split("_", 1)[0])
-    return number.group() if number else None
+def ticket_status(path: Path) -> Status:
+    """The status the ticket at `path`, a path `ticket_path` gives or one
+    under the directory of a status, stands in."""
+    return Status(path.parent.name)
 
 
 def ticket_path(tickets: Path, ref: str) -> Path:

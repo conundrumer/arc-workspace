@@ -5,9 +5,9 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from controlled_markdown import mctx
-from ticket_form import ticket_kind, ticket_name, title
+from ticket_form import ticket_kind, ticket_name, ticket_number, title
 from ticket_log import read_ticket
-from ticket_numbers import number_order, number_parts, ticket_number, ticket_path
+from ticket_numbers import number_order, number_parts, ticket_path, ticket_status
 from ticket_vocabulary import Domain, Kind, Status
 from transcripts import Refused
 
@@ -29,7 +29,7 @@ def settled_elsewhere(tickets: Path, path: Path) -> bool:
         case Kind.QUESTION:
             name = ticket_name(path)
             return (name.domain is Domain.CHANGE
-                    and ticket_path(tickets, name.subject).parent.name != Status.CLOSED)
+                    and ticket_status(ticket_path(tickets, name.subject)) is not Status.CLOSED)
         case Kind.REFACTOR:
             return title(path, text).endswith(MANY_IDEAS)
         case _:
@@ -40,9 +40,9 @@ def to_settle(tickets: Path, session: int, given: Iterable[str]) -> list[str]:
     """The numbers of the list of `to-settle`, for the session with index
     `session` and the numbers `given`. A ticket filed before tickets had
     numbers belongs to no session."""
-    open_dir = tickets / Status.OPEN
-    paths = {p for p in open_dir.glob("*.md")
+    paths = {p for p in (tickets / Status.OPEN).glob("*.md")
              if (number := ticket_number(p)) and number_parts(number)[0] == session}
-    paths.update(p for p in (ticket_path(tickets, ref) for ref in given) if p.parent == open_dir)
+    paths.update(p for p in (ticket_path(tickets, ref) for ref in given)
+                 if ticket_status(p) is Status.OPEN)
     numbers = [ticket_name(p).number for p in sorted(paths) if not settled_elsewhere(tickets, p)]
     return sorted(numbers, key=number_order)

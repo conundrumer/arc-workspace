@@ -9,8 +9,8 @@ from enum import StrEnum
 from pathlib import Path
 
 from controlled_markdown import mctx
-from ticket_form import FIELD, HEADING, LOG, ticket_kind
-from ticket_numbers import TICKET_NUMBER, ticket_number, ticket_path
+from ticket_form import FIELD, HEADING, LOG, ticket_kind, ticket_number
+from ticket_numbers import TICKET_NUMBER, ticket_path, ticket_status
 from ticket_vocabulary import Kind, Resolution, Status, ticked
 from transcripts import Refused
 
@@ -178,10 +178,10 @@ def status_of(word: str) -> Status:
 
 
 def check_status(path: Path, ref: str, status: Status) -> None:
-    """Refuses ticket `ref`, at `path`, where it stands outside `status`."""
-    if path.parent.name != status:
+    actual = ticket_status(path)
+    if actual is not status:
         raise Moved(mctx("ticket `{ref}` stands in `{actual}`, not `{status}`").format(
-            ref=ref, actual=path.parent.name, status=status))
+            ref=ref, actual=actual, status=status))
 
 
 def write_log(tickets: Path, ref: str, status: str, agent: str, source: str, agent_id: str | None,
