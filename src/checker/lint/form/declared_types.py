@@ -95,7 +95,7 @@ def check_banned_type(solver: Solver, runs: Runs) -> list[Finding]:
     sanctioned: set[DeclId] = set()
     sanction([d for n in (CHOICE, TIEBREAK_RESOLUTION)
               if (d := resolved(TypeName((), n), TOP)) is not None], object)
-    demonstrated = demonstrated_choice(solver, runs)
+    demonstrated = resolved(TypeName((), DEMONSTRATED_CHOICE), TOP)
     if demonstrated is not None and demonstrated.id in {
             d.id for i in v.own_instances
             if (of := v.index.component(i.component, i.scope)) is not None

@@ -3,11 +3,10 @@ call whose `timeout` is over `TIMEOUT_BOUND` ms, and a timed wait whose text
 names, by agent id, an agent pending to the caller, as
 `profile_runs.py --pending` gives the agents pending to a run.
 
-The bound applies only where the hook input gives an agent id. A call with
-`run_in_background` true, or with no `timeout`, is allowed. Where
-`run_in_background` is not a bool, or `timeout` is not a number, the hook
-allows the call past the bound and says why on stderr. A call denied for its
-timeout is not checked for a pending agent.
+The bound enforces the command notes' line on a foreground call's timeout.
+Only the subagent definitions under `.claude/agents/` hold that line, so the
+main session's calls are outside the bound. A Monitor call or a background Bash call holds no turn
+while the prompt cache can lapse, so neither is bound.
 
 Where the hook cannot tell the caller, or its check fails on its own error,
 it allows the call and says why on stderr, so it can fail to deny a wait but
@@ -44,13 +43,13 @@ def deny_pending(agents: list[str]) -> None:
     ).format(agents=", ".join(agents)))
 
 
-def over_bound(hook: dict[str, Any]) -> bool:
-    """Deny the subagent's foreground Bash call `hook` gives where its
-    `timeout` is over `TIMEOUT_BOUND`, and say whether it did."""
+def over_bound(tool: str, inp: dict[str, Any], subagent: bool) -> bool:
+    """Deny the call of `tool` with input `inp` where it is a subagent's
+    foreground Bash call whose `timeout` is over `TIMEOUT_BOUND`, and say
+    whether it did."""
     from controlled_markdown import mctx
 
-    inp = hook["tool_input"]
-    if hook["tool_name"] != "Bash" or not hook.get("agent_id"):
+    if tool != "Bash" or not subagent:
         return False
     background = inp.get("run_in_background", False)
     timeout = inp.get("timeout")
@@ -85,9 +84,10 @@ def check(hook: dict[str, Any]) -> None:
     from run_reads import blocks, session_agents, session_of
     from transcripts import main_transcript, read_entries
 
-    if over_bound(hook):
-        return
     tool, inp = hook["tool_name"], hook["tool_input"]
+    caller = hook.get("agent_id")
+    if over_bound(tool, inp, bool(caller)):
+        return
     if tool == "Bash":
         text = inp["command"]
         if not runs_sleep(text):
@@ -101,7 +101,6 @@ def check(hook: dict[str, Any]) -> None:
     if not named:
         return
     session = session_of(Path(hook["transcript_path"]))
-    caller = hook.get("agent_id")
     if caller:
         path = session_agents(session).get(caller)
         if path is None:
