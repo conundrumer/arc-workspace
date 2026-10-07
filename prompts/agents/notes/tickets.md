@@ -2,7 +2,7 @@
 - The statements on filing and tracking a ticket that more than one entry point inlines or links.
 
 ## pass-tickets
-- What you file a ticket on is a doc line or a tool behavior that cost the pass time or tokens, or that made its output wrong, or a step that a line below has you file a `delay` ticket for; a problem in the task's own files is not one.
+- What you file a ticket on is a doc line or a tool behavior that added to the pass's time or token cost, or that made its output wrong, or a step that a line below has you file a `delay` ticket for; a problem in the task's own files is not one.
 - As each one happens, note it in `work/task/<task_id>/progress.md`, under a heading that is the name of this pass's report.
 - When the report's other sections are settled, file a ticket for each one noted under that heading, whether or not an earlier pass hit it, with `task` as `<domain>`, the task id as `<subject>`, and your agent's name as `<agent>`.
     - Give each ticket the kind `interference` or `delay`.

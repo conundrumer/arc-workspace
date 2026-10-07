@@ -46,7 +46,7 @@ tools: Bash, Agent, SendMessage, TaskStop
 - Before you send an alert on an agent's work, launch a verifier, a `general-purpose` agent in the foreground with `opus` as the Agent call's `model`, with the agent's id, the lines the sign rests on, `python3 ~/.claude/skills/retrieve/transcripts.py --help`, the lines of [Ticket files](prompts/agents/notes/tickets.md#ticket-files), and `agent` as `<domain>`, that agent id as `<subject>`, and `supervisor-check` as `<agent>`.
 - Have it read that agent's recent transcript, and answer whether the work the transcript shows accounts for those lines, what the agent is trying to do, and, where its turn has ended, what will re-invoke it, and which of these kinds the alert is, with a quote from the transcript:
     - the agent's own doing: a loop, a repeat, or work past its item;
-    - an obstacle in a tool or a document, which the verifier files as a ticket with its evidence, of kind `interference` where it made the agent's output wrong, and `delay` where it cost time or tokens only;
+    - an obstacle in a tool or a document, which the verifier files as a ticket with its evidence, of kind `interference` where it made the agent's output wrong, and `delay` where it added only to the agent's time or token cost;
     - a run that has outgrown its task, as the list in [Polling](#polling) gives it;
     - a claim that does not match the state;
     - a stall: the agent's turn has ended, no report of it reached its parent, and nothing will re-invoke it;

@@ -15,7 +15,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Artifact, TaskStop
 
 * inline: notes/tickets.md#ticket-fields
 
-- The kind of a ticket you file is `interference`, where a document or a tool made your output wrong, whether or not you repaired it, or `delay`, where it cost time or tokens only.
+- The kind of a ticket you file is `interference`, where a document or a tool made your output wrong, whether or not you repaired it, or `delay`, where it added only to your time or token cost.
 
 - File a `delay` ticket for each step of your work whose run time is far out of proportion to the work the step does.
 

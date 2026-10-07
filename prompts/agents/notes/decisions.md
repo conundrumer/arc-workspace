@@ -59,19 +59,19 @@
     - It changes how the user's own Claude Code sessions behave.
     - It changes what the user must learn or do.
     - It moves or loses a persistent working file, or rewrites git history.
-    - It clearly moves token or rate-limit use, machine load, or the time the process takes.
+    - It clearly moves token cost or rate-limit use, machine load, or the time the process takes.
 - Bring the user nothing else unless the user asks for it.
 
 ### The user's preferences
 - Make the agents do their best work efficiently before you bring the solvers to their best form.
-- Save tokens first and time second, and count about 30 minutes saved as worth about 150k tokens: split work that can run in parallel on disjoint files and run its parts at once, with no contention and no excess coordination between agents.
+- Save token cost first and time second, and count about 30 minutes saved as worth about $5 of token cost: split work that can run in parallel on disjoint files and run its parts at once, with no contention and no excess coordination between agents.
 - Spend no run the work does not need, recompute no output or measurement that a file already holds, record nothing that nothing reads afterwards, and keep no state in a second copy.
 - Keep the process, the code and their semantics in their best state, with maintainable code and good software practice the user need not ask for: fix the cause of a failure as well as the state it left, and keep no backwards compatibility with an old form.
 - Keep the process fast, on no more of the user's CPU than it needs: find slowness yourself, check time as you check output so that performance does not regress, fix machine load through the cost of the work and never by a cap on agents or commands, and keep a merge's gate under a minute.
 - Where the cause of a fault is a behavior of the harness that no change to the tree alters, find that cause only as far as placing it in the harness and choosing among these options needs, and take the first that applies. An agent's choice that departs from its documents is no such behavior. This line rules over the preference for the general option and over fixing the cause of a failure as well as the state it left.
     1. Where a line of the tree states or relies on a behavior the harness lacks, make the cheapest change that makes that line hold: drop the reliance or the claim, or have a tool report less or `undecided`.
     2. Where the fault loses work or leaves work stuck, take the cheapest workaround that prevents that, counting what building it costs and what it costs after, in each reader's context or on each call, and accept the loss it leaves.
-    3. Where it costs time or tokens alone, accept it with no change, and close its ticket `wontfix` with that loss in the note, unless the loss you see in this instance and in the earlier tickets of the fault exceeds what the cheapest workaround costs.
+    3. Where its loss is time or token cost alone, accept it with no change, and close its ticket `wontfix` with that loss in the note, unless the loss you see in this instance and in the earlier tickets of the fault exceeds what the cheapest workaround costs.
 - Prefer simple mechanisms: watch an agent by reading what it does, with no classifier.
 - Think a design through for how it can fail before it is implemented, and tell the agent that implements it to do so.
 - Take an agent's position: review the tool by reading a pass's transcript call by call, check a claim that an agent wasted work against its procedure, and where an agent departed from a rule, ask it about that departure before its document or the tool changes, and take its answer as the evidence.
