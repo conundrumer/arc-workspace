@@ -50,8 +50,8 @@ class Group:
 
 @dataclass
 class Span:
-    """A call's span: its label, its command, the time of the call, its
-    tool-use id and the time of its result."""
+    """`call` is the call's tool-use id, and `end` the time of its
+    result."""
     label: str
     command: str
     start: float
@@ -302,7 +302,6 @@ def minutes(s: float) -> str:
 
 
 def clock(t: float | None) -> str:
-    """The epoch time `t` as the tool prints a time, in UTC to the minute."""
     return time.strftime(MINUTE_FORM, time.gmtime(t)) if t is not None else "?"
 
 

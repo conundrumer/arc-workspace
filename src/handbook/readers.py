@@ -71,12 +71,12 @@ CONTEXT_READERS = {
 """Each reader the `context` command knows, by name."""
 
 
-def calls_of(name: str, form: str | None,
-           values: list[str]) -> list[tuple[str, list[str]]]:
+def calls_of[N: str](name: N, form: str | None,
+                     values: list[str]) -> list[tuple[N, list[str]]]:
     return [(name, [v]) for v in values] if form else [(name, [])]
 
 
-def reader_calls() -> list[tuple[str, list[str]]]:
+def reader_calls() -> list[tuple[ReaderName, list[str]]]:
     """Each reader the `context` command knows, with each argument list it
     takes."""
     return [call for name, reader in CONTEXT_READERS.items()
@@ -84,11 +84,12 @@ def reader_calls() -> list[tuple[str, list[str]]]:
 
 
 def context_command(reader: str, args: list[str]) -> str:
-    """The `context` command line that prints one reader's context."""
+    """The `context` command line that prints one reader's context. The
+    reader may be one that only a commit's code knows (`reader_diffs`)."""
     return " ".join(["context", reader, *args])
 
 
-def _usage(reader: str, form: ArgumentForm | None) -> str:
+def _usage(reader: ReaderName, form: ArgumentForm | None) -> str:
     return context_command(reader, [form] if form else [])
 
 
@@ -103,12 +104,16 @@ def contexts_text() -> str:
     return "\n".join(out) + "\n"
 
 
-def context_text(reader: str, args: list[str]) -> str:
-    """One reader's whole context, in the order it arrives."""
-    if reader not in CONTEXT_READERS:
+def reader_named(name: str) -> ReaderName:
+    if name not in CONTEXT_READERS:
         raise SystemExit("no reader named "
-                         f"`{reader}`\n{contexts_text()}".rstrip())
-    known = CONTEXT_READERS[ReaderName(reader)]
+                         f"`{name}`\n{contexts_text()}".rstrip())
+    return ReaderName(name)
+
+
+def context_text(reader: ReaderName, args: list[str]) -> str:
+    """One reader's whole context, in the order it arrives."""
+    known = CONTEXT_READERS[reader]
     form = known.form
     if len(args) != (1 if form else 0):
         raise SystemExit(f"usage: {_usage(reader, form)}")

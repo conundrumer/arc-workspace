@@ -18,8 +18,8 @@ class LineKind(StrEnum):
     """A time over the accepted one, where the outside CPU is over one
     core."""
     NOTIME = "NOTIME"
-    """A command with no accepted time taken after the sequence it ran
-    after: none at all, or one taken after another sequence."""
+    """A time with no accepted time it is compared with, as
+    `scripts/gate.py --help` gives."""
 
 
 TIME_KINDS = frozenset({LineKind.SLOW, LineKind.LOADED, LineKind.NOTIME})

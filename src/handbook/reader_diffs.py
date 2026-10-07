@@ -22,7 +22,8 @@ from controlled_markdown import mctx
 from engine import checkout
 from handbook.linked import LinkedChange, LinkTarget, linked_changes, sides
 from handbook.paths import DOCUMENTS_ROOT, REPO_ROOT
-from handbook.readers import calls_of, context_command, context_text, reader_calls
+from handbook.readers import (calls_of, context_command, context_text, reader_calls,
+                              reader_named)
 
 
 CONTEXT_SCRIPT = (checkout.scripts() / "context.py").relative_to(checkout.ROOT)
@@ -200,7 +201,7 @@ def _side_contexts(call: tuple[str, list[str]], then: dict[str, str],
     does not define the reader gives an empty context, and a reader neither
     side defines is a fault (`context_text`)."""
     before = then.get(context_command(*call))
-    after = context_text(*call) if now or before is None else ""
+    after = context_text(reader_named(call[0]), call[1]) if now or before is None else ""
     return "" if before is None else before, after
 
 
@@ -254,8 +255,9 @@ def contexts_diff(commit: str) -> str:
     with _tree_at(commit) as tree:
         then = _calls_in(tree, commit)
         rendered = _renders_in(tree, commit, then)
-        changes = [(c, ReaderChange.ADDED if c not in then else ReaderChange.CHANGED)
-                   for c in now]
+        changes: list[tuple[tuple[str, list[str]], ReaderChange]] = [
+            (c, ReaderChange.ADDED if c not in then else ReaderChange.CHANGED)
+            for c in now]
         changes += [(c, ReaderChange.REMOVED) for c in then if c not in now]
         then_side, now_side = sides(tree, commit)
         out = []

@@ -18,7 +18,7 @@ from handbook.libcheck import check
 from handbook.paths import REPO_ROOT
 from handbook.reader_diffs import (context_at, context_diff, contexts_diff,
                                    update_diff)
-from handbook.readers import context_text, contexts_text
+from handbook.readers import context_text, contexts_text, reader_named
 
 HELP = mctx("""
     - Usage:
@@ -129,7 +129,7 @@ if __name__ == "__main__":
             sys.exit(f"usage: {sys.argv[0]} context --update <commit> <commit> <reader> [args]")
         print(update_diff(args[2], args[3], args[4], args[5:]), end="")
     elif args and args[0] == "context":
-        print(context_text(args[1] if args[1:] else "", args[2:]), end="")
+        print(context_text(reader_named(args[1] if args[1:] else ""), args[2:]), end="")
     elif args:
         sys.exit(f"usage:\n{USAGE}")
     else:

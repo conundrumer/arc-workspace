@@ -63,6 +63,7 @@
 - The check reads nothing else in a code file as a document, and it reports each finding in a code file at that file's own line.
 - A docstring, or a comment in Python or JavaScript, holds only a rule or a reason the code does not show, or an index that leads a reader to what the code holds.
     - Where your edit meets text in one that restates the code it sits beside, cut that text in place of updating it.
+    - A rule that the `--help` text of a script under [scripts](scripts) states stands in that text alone, and a docstring or a comment of the code that carries the rule out leads its reader to that text where the reader needs the rule.
 - The `--help` text of a script under [scripts](scripts) gives in its first thirty lines what its reader most needs to run the script, most often its usage forms, and where the text runs past thirty lines, those lines say what the rest holds.
     - Where the usage forms do not fit in thirty lines, the text is split into parts the reader prints one at a time, each part meets the rule, and the first thirty lines of the script's bare `--help` give the command that prints each part.
 

@@ -105,17 +105,12 @@ def notified_turns(nodes: list[Node]) -> dict[str, float]:
 
 def listing(n: Node, parent_open: bool, told: dict[str, float],
             undecided: list[str]) -> Listed | None:
-    """The agent of `n` where its work is open: where its turn is in
-    progress, or where it has ended, the work of its parent is open, as
-    `parent_open` gives it, and the run that launched it holds no report of
-    it and no notification that it stopped, as `stopped_after` gives one,
-    after the latest message it received from anyone, and no report of it
-    after its parent's latest message to it. A settled agent has ended its
-    turn after every message it received, and only the end of its
-    transcript is read. Its turn is in progress where `in_progress` holds
-    and, where `told` gives its agent id a time, `turn_open` holds with that
-    time. The parent's latest message comes from the agent's profile, so it
-    is read only where the other reads leave the work open."""
+    """The agent of `n` where its work is open, by the rule the `--running`
+    item of `profile_runs.py --help` gives, with the work of its parent open
+    where `parent_open` holds. A settled agent has ended its turn after every
+    message it received, and only the end of its transcript is read. The
+    parent's latest message comes from the agent's profile, so it is read
+    only where the other reads leave the work open."""
     a, child = n.launch, n.path
     if n.settled:
         return None
@@ -208,12 +203,11 @@ def every_node(nodes: list[Node]) -> list[Node]:
 def listed_under(nodes: list[Node], parent_open: bool, told: dict[str, float],
                  undecided: list[str]) -> list[Listed]:
     """`listing` of each of `nodes`, whose parent's work is open where
-    `parent_open` holds, each followed by those of the agents under it. Of
-    what a listed agent's run backgrounded that is still running, an agent
-    under it that `listing` does not give is left out of its `running`, and
-    an agent `launched_under` gives no `Node` is kept, with an `undecided`
-    line: `launches` writes one where no transcript gives its launch, and
-    `unreached` the others."""
+    `parent_open` holds, each followed by those of the agents under it,
+    with each listed agent's `running` as `--running` in
+    `profile_runs.py --help` gives it. Of the `undecided` lines that rule
+    asks for, `launches` writes the one of an agent whose launch no
+    transcript gives, and `unreached` the others."""
     out: list[Listed] = []
     for n in nodes:
         listed = listing(n, parent_open, told, undecided)
@@ -231,10 +225,9 @@ def listed_under(nodes: list[Node], parent_open: bool, told: dict[str, float],
 
 
 def unreached(listed: Listed, undecided: list[str]) -> None:
-    """Name in `undecided` each agent the run of `listed` launched in the
-    background that is still running and whose transcript is known, where
-    `launched_under` read no launch of that run, since no `.meta.json` of
-    its sessions gives it as a parent."""
+    """The `undecided` line of each agent the run of `listed` launched
+    whose transcript is known, where `launched_under` read no launch of that
+    run, as `--running` in `profile_runs.py --help` gives it."""
     running = {m.call for m in listed.run.backgrounded}
     for a in launches(listed.path, undecided):
         if a.call in running and a.path is not None:

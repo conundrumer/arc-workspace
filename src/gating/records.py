@@ -15,9 +15,8 @@ from gating.commands import ACCEPTED
 TIMES_FILE = "accepted-times.json"
 """The accepted times, a JSON object from `<name>-<stem>` to an object
 with the keys `seconds`, the time, and `after`, the sequence it was timed
-after: a list of the runs before it on its stem, in their order, each a
-list of the command's key and the list of the arguments it ran with
-(`times_file`, `AcceptedTime`)."""
+after: a list of runs, each a list of the command's key and the list of its
+arguments (`times_file`, `AcceptedTime`)."""
 LOADED_FILE = "loaded.json"
 """The keys of the commands kept for a timed run to judge, a JSON list
 (`loaded_file`)."""
@@ -44,13 +43,12 @@ def times_file(accepted: Path) -> Path:
 
 
 type RunSequence = tuple[tuple[str, tuple[str, ...]], ...]
-"""The runs before a command on its stem, in their order, each its key and
-the arguments it ran with."""
+"""The sequence a time was timed after, as `scripts/gate.py --help` gives
+it."""
 
 
 @dataclass(frozen=True)
 class AcceptedTime:
-    """An accepted time: its seconds and the sequence it was timed after."""
     seconds: float
     after: RunSequence
 

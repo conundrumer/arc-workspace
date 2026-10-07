@@ -203,8 +203,6 @@ def caller_id(hook: dict[str, Any]) -> str | None:
 
 
 def hook_session(hook: dict[str, Any]) -> Path:
-    """The session directory of the hook input `hook`: the session of its
-    `transcript_path`."""
     return session_of(Path(hook["transcript_path"]))
 
 

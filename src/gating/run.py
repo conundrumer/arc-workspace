@@ -185,9 +185,11 @@ class Gate:
         checkout's root, and the times and the duration footer
         dropped."""
         lines = [ln for ln in raw.splitlines(keepends=True) if _DROPPED not in ln]
-        text = "".join(lines).replace(f"{self.dir}/", OUT_MARK).replace(self.shown, OUT_MARK)
-        text = FOOTER_RE.sub("", _ELAPSED_RE.sub(" ---", text))
+        text = FOOTER_RE.sub("", _ELAPSED_RE.sub(" ---", self.marked("".join(lines))))
         return _LIMIT_RE.sub(r"\1Ns", text)
+
+    def marked(self, text: str) -> str:
+        return text.replace(f"{self.dir}/", OUT_MARK).replace(self.shown, OUT_MARK)
 
     @contextlib.contextmanager
     def held(self, under: rwlock.Hold | None) -> Iterator[rwlock.Hold]:
@@ -204,16 +206,12 @@ class Gate:
         return self.wit / f"{stem}.wit.json"
 
     def arguments(self, cmd: GateCommand, stem: str) -> tuple[str, ...]:
-        """The script and arguments of `cmd` on `stem`, as an accepted time
-        records them: a path under `out/gate/` written from `OUT_MARK`, and
-        another path written as `checkout.shown` prints it."""
+        """The script and arguments of `cmd` on `stem`, as a `RunSequence`
+        records them: each absolute path as a command's output prints it,
+        after `normalize`."""
         def recorded(arg: str) -> str:
             path = Path(arg)
-            if not path.is_absolute():
-                return arg
-            if path.is_relative_to(self.dir):
-                return f"{OUT_MARK}{path.relative_to(self.dir)}"
-            return str(checkout.shown(path))
+            return self.marked(str(checkout.shown(path))) if path.is_absolute() else arg
         return (cmd.script, *map(recorded, cmd.argv(stem, self.witness_file(stem))))
 
     def run_one(self, cmd: GateCommand, stem: str, role: Role, cold: bool, cache: Path,
@@ -273,9 +271,8 @@ class Gate:
                 outside: OutsideCpu | None) -> list[Line]:
         """The cold run's lines: a `DIFF` line per output file that differs
         from the accepted one, and in a timed run a `SLOW`, `LOADED` or
-        `NOTIME` line for its time, which ran after `after`. The time is
-        compared with an accepted time only where that time was taken after
-        the same sequence."""
+        `NOTIME` line for its time, which ran after `after`, as
+        `scripts/gate.py --help` gives each."""
         key = cmd.key(stem)
         lines = [Line(LineKind.DIFF, cmd.name, stem, ext) for ext in cmd.exts
                  if not same(self.accepted / f"{key}.{ext}", self.new / f"{key}.{ext}")]
@@ -296,7 +293,6 @@ class Gate:
         return lines
 
     def standing(self, key: str, after: RunSequence) -> float | None:
-        """The accepted time of `key`, where it was taken after `after`."""
         accepted = self.times.get(key)
         return accepted.seconds if accepted is not None and accepted.after == after else None
 
@@ -391,10 +387,8 @@ class Gate:
     def run(self, cmds: Sequence[GateCommand], keys: set[str]) -> list[Line]:
         """The cold pass of `cmds` on their stems, and in a timed run the
         warm pass after it, each stem's lines written to its log; the
-        lines, the stems in order. A timed run runs the commands in the
-        order of `COMMANDS`, and on each stem every command of `COMMANDS`
-        before the last one it judges there, so that each time follows the
-        stem's full sequence."""
+        lines, the stems in order. The commands of a timed run are those
+        `scripts/gate.py --help` gives, in its order."""
         for d in (self.new, self.warm, self.wit, *self.traced_dirs(Role.JUDGED)):
             d.mkdir(parents=True, exist_ok=True)
         dropped = {k for c in cmds for k in self.dropped_keys(c, keys)}
@@ -445,10 +439,9 @@ class Gate:
         return tuple(k for k in LineKind if self.timed or k not in TIME_KINDS)
 
     def accept(self, replace: bool) -> tuple[int, int]:
-        """Each cold time, with its sequence, written as accepted where no
-        accepted time of its name stands after the same sequence, or over it
-        with `replace`, and each output where none of its name stands, or
-        over it with `replace`; the counts of times and outputs written."""
+        """Each cold time and each output written as accepted where
+        `--accept` writes it, as `scripts/gate.py --help` gives; the counts of
+        times and outputs written."""
         times = {key: t for key, t in self.cold_times.items()
                  if _writes(replace, self.standing(key, t.after) is not None)}
         keep_times(self.times_file, {**self.times, **times})
@@ -462,6 +455,4 @@ class Gate:
 
 
 def _writes(replace: bool, stands: bool) -> bool:
-    """Whether `--accept` writes a time or output: where none that it is
-    compared with stands, and over one that stands with `--replace`."""
     return replace or not stands
