@@ -1,22 +1,22 @@
 # Decision notes
-- The goals every decision on the solver tools and the agents' documents is made from, how a decision is made, and which decisions reach the user.
+- The user's goals, how a decision on the solver tools or the agents' documents is made, and which decisions reach the user.
 
 ## Decisions
 
-### The ladder
-1. ARC-AGI-2 tasks solved by principled solvers that agents produce, with less of the user over time.
-2. Each solver is principled and pure. It is principled when [Principles](docs/handbook/principles.md) justifies each of its parts. It is pure when it reads as the concept, with nothing verbose and nothing shaped to one task.
-3. Everything around the agents is arranged so that they produce the best solvers. In particular, the tool computes what the principles define, reports what an agent can act on, leaves judgments to the agent, runs fast, and never reports what is not so.
-4. The passes test that arrangement, and a fault of it that a pass shows is fixed in the documents, the tool or the pass structure. A behavior of the harness is no part of that arrangement.
-5. The checker changes without breaking as the handbook changes.
-6. The process improves as it runs: each miss changes the brief or the document that caused it.
+### The user's goals
+1. A winning write-up for the ARC-AGI-2 Grand Prize, of a neurosymbolic program synthesis approach, with its artifacts open-sourced.
+2. A corpus of solvers that encodes the priors the synthesis rests on, which is why each solver must be good.
+3. Both reached with less of the user over time, at low cost.
+
+- Each decision on the solver tools and the agents' documents serves these goals. They guide how each other line is read and how a question or a fault is resolved: none is a rule a case must meet, and none overrides a line. Where two goals conflict, the one listed first weighs more.
 
 ### Rule and intent
 - [Principles](docs/handbook/principles.md) is the theory.
 - [Procedure](docs/handbook/procedure.md), [Solver file](docs/handbook/solver-file.md), the text the tool prints, [Case inclusion: the decision history](docs/wf-solver/case-rule-history.md), [The user's preferences](#the-users-preferences) and the user's other past words are support: they show what was intended, and none of them is a rule on its own.
     - Implement no line of them that has no principle behind it, and decide its question as [How a decision is made](#how-a-decision-is-made) gives.
-- The agents' definitions, the spec, and the lines after the ladder are support too. The spec of a code change is the docstrings of the modules it touches. Where a support line and a rung of the ladder disagree, follow the rung, and have the line rewritten.
-- Have a support line added only where a rule is missing, and have a miss fixed by a change to the line that caused it.
+- The agents' definitions, the spec, and the lines after the goals are support too. The spec of a code change is the docstrings of the modules it touches. Where a line, read for its intent, works against a goal, have it rewritten.
+- Have a support line added only where a rule is missing.
+- Have a fix of agent-facing text that misled an agent change the line that misled it. Agent-facing text is each text an agent reads: the documents, the briefs, the text a tool prints, its `--help` included, and a hook's message.
 
 ### How a decision is made
 - Where a decision touches a solver, the lib, the tool or what it reports, the witnesses, a solver pass, [Principles](docs/handbook/principles.md) or [Case inclusion: the decision history](docs/wf-solver/case-rule-history.md), read [Decisions on solver work](prompts/agents/notes/decisions.md#decisions-on-solver-work) as well.
@@ -25,7 +25,7 @@
 - Before you state a reason, verify each claim it depends on. State with each reason its ground, or where it has none, its assumption.
 - Rest no default on an assumption a ground rules out.
 - Churn is no reason against an option, and a risk to behavior is one.
-- Before you make a decision, write in one line the rung it bears on and what each option does to that rung.
+- Before you make a decision, write in one line the goal it bears on and what each option does to that goal.
 - Check a reported problem against the state that produced it.
 - Prefer the general option, the one that settles the other instances of the question too, and the tooling change only where the problem needs the rule enforced.
     * comment: With the lines of [Decision notes](prompts/agents/notes/decisions.md) "Make no option the default that fits only the instance that raised the decision." and "Prefer the general option, the one that settles the other instances of the question too, and where tooling can enforce the rule, the tooling change." in its context, an assignee added a hook that parsed every agent's Bash call to deny a harmless pattern, on the evidence of one solver read that cost one extra command: ticket 2-153, on ticket 3-4.
@@ -42,7 +42,7 @@
     2. A ground determines it through a reading of the user's intent or of an existing convention, and that reading admits no other.
     3. The grounds permit more than one option, and the default is defensible from them.
     4. No ground bears on it.
-- Record a decision where the rule it makes lives, as the rule alone, and record what it was made from and its discretion tier in the log of the ticket it settles or in your reply: a line of [Principles](docs/handbook/principles.md); a support line; a history entry, by its date; or, for the code's shape, the rung it serves.
+- Record a decision where the rule it makes lives, as the rule alone, and record what it was made from and its discretion tier in the log of the ticket it settles or in your reply: a line of [Principles](docs/handbook/principles.md); a support line; a history entry, by its date; or, for the code's shape, the goal it serves.
     - Record each line you write before a decision or a resolution in the same place, beside what the decision was made from.
 - The history of a decision is in the session transcripts, and `python3 ~/.claude/skills/retrieve/transcripts.py --help` lists the subcommands that read them.
 - Take agents' reports as evidence of what is there, never of what the principles or the spec should be.
@@ -50,10 +50,11 @@
 
 ### The user's part
 - Bring the user a decision only where every option, after you reframe the problem, still has a defensible reason against it.
-    - Give one line per option, the default first, with the option's consequence for the rungs, and where a rung is judged by reading solver code, that solver's code before and after.
+    - Give one line per option, the default first, with the option's consequence for the goals, and where the option changes a solver, that solver's code before and after.
     - Where the user does not rule on the decision, carry out its default.
 - Tell the user, without waiting on them, each change that affects the user directly, in one line, with the solver's code before and after where the user judges it by that code. A change affects the user directly where it does one of these:
     - It changes what the user reads, judges or uses. The user judges solver code, a concept an Analyze pass wrote and [Principles](docs/handbook/principles.md).
+        - The user judges a solver's code by whether it is principled and pure. It is principled when [Principles](docs/handbook/principles.md) justifies each of its parts. It is pure when it reads as the concept, with nothing verbose and nothing shaped to one task.
     - It changes how the user's own Claude Code sessions behave.
     - It changes what the user must learn or do.
     - It moves or loses a persistent working file, or rewrites git history.
@@ -85,6 +86,9 @@
 - Choose a label for its use in deciding how to act on what it labels.
 
 ## Decisions on solver work
+- The agents produce good solvers through the arrangement around them, which is made so that the tool computes what the principles define, reports what an agent can act on, leaves judgments to the agent, and never reports what is not so.
+- The solver passes test that arrangement, and what a pass shows of a fault in it is evidence for a change to the documents, the tool or the pass structure. A behavior of the harness is no part of that arrangement.
+- Build the checker to change without breaking as the handbook changes.
 - Where a default breaks a line of [Principles](docs/handbook/principles.md), the decision becomes whether to amend that line.
 - Where a check or survey runs slowly, change how its runs are made and batched before you reconsider what it computes.
 - Run a solver pass that ran under a wrong rule again once the rule is fixed, in place of patching its output.

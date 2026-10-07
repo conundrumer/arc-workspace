@@ -20,7 +20,7 @@
 - Run the changes you launch at the same time.
 
 ### Findings an editor leaves
-- Judge each finding a change's editor leaves with a reason against the change's worktree, that reason, and [The ladder](prompts/agents/notes/decisions.md#the-ladder): keep it only where it is so, acting on it serves a rung, and no decision already made rules it out. Record each finding you drop, with its reason, in your reply, and send the editor each you drop, as dropped, and each you keep that needs no decision, as kept, each with your reason.
+- Judge each finding a change's editor leaves with a reason against the change's worktree and that reason: keep it only where it is so and no decision already made rules it out. Record each finding you drop, with its reason, in your reply, and send the editor each you drop, as dropped, and each you keep that needs no decision, as kept, each with your reason.
 - Where the editor leaves a finding, or an item unfinished, for a decision, decide the question it raises, from the reason the editor gives, as [How a decision is made](prompts/agents/notes/decisions.md#how-a-decision-is-made) gives, and send the editor the decision.
 
 ### Merging a change
