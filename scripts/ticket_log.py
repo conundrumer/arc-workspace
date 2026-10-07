@@ -192,27 +192,26 @@ def check_status(path: Path, number: TicketNumber, status: Status) -> None:
             ref=number, actual=actual, status=status))
 
 
-def write_log(tickets: Path, path: Path, number: TicketNumber, status: str, agent: str,
-              source: str, agent_id: str | None, note: str | None) -> Path:
+def write_log(tickets: Path, path: Path, number: TicketNumber, status: Status, agent: str,
+              source: Status, agent_id: str | None, note: str | None) -> Path:
     """Moves ticket `number`, at `path`, from `source`'s directory to `status`'s where
     they differ, then appends a log line to it, and returns its path. The
     move is a rename, and a call refuses where the ticket no longer stands
     in `source`, so of two calls that move one file, the later one is
     refused, as `mv` from `source`'s directory would be."""
-    to, origin = status_of(status), status_of(source)
-    check_status(path, number, origin)
-    moves = origin != to
-    check_line(to, moves, agent, agent_id, note)
-    if moves and to is Status.BLOCKED:
+    check_status(path, number, source)
+    moves = source is not status
+    check_line(status, moves, agent, agent_id, note)
+    if moves and status is Status.BLOCKED:
         check_wait(tickets, note)
     text = read_ticket(path)
     headings = HEADING.findall(text)
     if not headings or headings[-1] != LOG:
         raise Refused(mctx("`{log}` is not the last section of {path}").format(log=LOG, path=path))
-    if not moves and to is Status.ASSIGNED and agent_id:
+    if not moves and status is Status.ASSIGNED and agent_id:
         check_take(text, agent_id)
     if moves:
-        target = tickets / to / path.name
+        target = tickets / status / path.name
         target.parent.mkdir(exist_ok=True)
         try:
             os.rename(path, target)
@@ -223,7 +222,7 @@ def write_log(tickets: Path, path: Path, number: TicketNumber, status: str, agen
         # A line written by hand may lack its newline.
         if not path.read_text().endswith("\n"):
             f.write("\n")
-        f.write(log_line(to, agent, agent_id, note))
+        f.write(log_line(status, agent, agent_id, note))
     return path
 
 
@@ -240,14 +239,13 @@ class Moves:
         self.refused += other.refused
 
 
-def log_moves(tickets: Path, number: TicketNumber, status: str, agent: str, source: str,
+def log_moves(tickets: Path, number: TicketNumber, status: Status, agent: str, source: Status,
               agent_id: str | None, note: str | None) -> Moves:
     """Writes the log line as `write_log` does, refused as it refuses, and
     returns the ticket's path, followed, where the line moves a `change`
     into `closed`, by what `unblock` returns for it."""
-    to, origin = status_of(status), status_of(source)
     path = ticket_path(tickets, number)
-    closes = to is Status.CLOSED and origin is not Status.CLOSED and is_change(path)
+    closes = status is Status.CLOSED and source is not Status.CLOSED and is_change(path)
     moves = Moves([write_log(tickets, path, number, status, agent, source, agent_id, note)])
     if not closes:
         return moves

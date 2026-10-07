@@ -25,7 +25,7 @@ from ticket_files import FIELD, NAME_FORM, TicketName, ticket_path  # noqa: E402
 from ticket_form import (DEFECT_SECTIONS, LOG, SECTIONS, checked_kind, heading,  # noqa: E402
                          sections_example)
 from ticket_log import (AGENT_ID, CLOSED_BY, TIME_FORM, UNBLOCKED_BY, Wait,  # noqa: E402
-                        log_moves, logged)
+                        log_moves, logged, status_of)
 from ticket_numbers import (SESSION_VAR, SESSIONS, reserve, session_id,  # noqa: E402
                             session_index, ticket_number, write_new)
 from ticket_settle import MANY_IDEAS, to_settle  # noqa: E402
@@ -205,7 +205,7 @@ def run(args: Sequence[str | None], help_text: str, count: int | None,
 
 
 def log_args(args: list[str]) -> list[str | None]:
-    """The arguments of `log` as `log_moves` takes them after `tickets`,
+    """The arguments of `log` as `log_command` takes them, as text,
     with None for an agent id or a note the call does not give. Arguments
     in another form come back as given, which `run` refuses by their
     count."""
@@ -230,7 +230,8 @@ def log_command(ref: str, status: str, agent: str, source: str, agent_id: str | 
     """Runs `log_moves` and returns the paths it moved tickets to, one per
     line. Where it gives a refused ticket, prints those paths, then refuses
     with the change's path and each refused ticket's path and reason."""
-    moves = log_moves(main_tickets(), ticket_number(ref), status, agent, source, agent_id, note)
+    moves = log_moves(main_tickets(), ticket_number(ref), status_of(status), agent, status_of(source),
+                      agent_id, note)
     paths = "\n".join(map(str, moves.moved))
     if not moves.refused:
         return paths

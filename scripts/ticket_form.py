@@ -6,7 +6,7 @@ from pathlib import Path
 
 from controlled_markdown import mctx
 from ticket_files import ticket_path
-from ticket_numbers import parsed_number
+from ticket_numbers import ticket_number
 from ticket_vocabulary import Kind, filer_kinds, ticked
 from transcripts import Refused
 
@@ -14,8 +14,10 @@ FRONT = r"---\nkind: (?P<kind>\S+)\n(?P<fields>(?:[a-z-]+: .*\n)*)---\n"
 
 
 TICKET_HEAD = re.compile(FRONT + "# ")
-"""The front matter and title mark of a ticket, or of an issue filed before
-tickets, in the text of a filing command."""
+"""The front matter and title mark of a ticket: at the start of a ticket's
+file, for `title`, and in a Bash command, for `call_command` in
+`command_labels`, where each match is the head of a ticket the command
+files."""
 
 
 def front_kind(head: re.Match[str]) -> Kind:
@@ -81,10 +83,7 @@ def check_depends_on(tickets: Path, value: str) -> None:
     """Refuses a `depends-on` value that is not a list of numbers of
     tickets the ticket tracker holds."""
     for text in (part.strip() for part in value.split(",")):
-        number = parsed_number(text)
-        if number is None:
-            raise Refused(mctx("`{n}` in `depends-on` is not a ticket number").format(n=text))
-        ticket_path(tickets, number)
+        ticket_path(tickets, ticket_number(text))
 
 
 def checked_kind(tickets: Path, agent: str, text: str) -> Kind:
