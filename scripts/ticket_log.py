@@ -17,8 +17,13 @@ from transcripts import Refused
 AGENT_ID = re.compile(r"a[0-9a-f]{16}")
 
 
-TIME_FORM = "%Y-%m-%dT%H:%M:%SZ"
+_TO_MINUTE = "%Y-%m-%dT%H:%M"
+
+TIME_FORM = _TO_MINUTE + ":%SZ"
 """The form of a log line's time, in UTC."""
+
+MINUTE_FORM = _TO_MINUTE + "Z"
+"""`TIME_FORM` cut to the minute."""
 
 
 def utc_stamp(t: float) -> str:

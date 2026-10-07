@@ -48,8 +48,14 @@ arity (`AssignArity`) or by type (`AssignType`)."""
 NO_ASSIGN_VALUE = mctx("no lib constant and no constructor without "
                        "arguments of an ADT the solver or the lib declares")
 """What an `assign` string value that refers to nothing is not."""
-SEE_WITNESS_FILE = mctx("{text}; see [Witness file]"
-                        "(docs/handbook/solver-file.md#witness-file)")
+WITNESS_FILE = mctx("[Witness file](docs/handbook/solver-file.md#witness-file)")
+
+
+def _witness_file(text: str) -> str:
+    return text.replace("{witness_file}", WITNESS_FILE)
+
+
+SEE_WITNESS_FILE = _witness_file(mctx("{text}; see {witness_file}"))
 """A fault's text, then the handbook section that gives the witness
 file's form."""
 OTHER_HOLDS_JUDGED = mctx("the verdict `other`, whose witness holds the "
@@ -82,9 +88,8 @@ PROBLEM_TEXT: dict[ProblemKind, str] = {
         "the witness file is off its shape: ") + SEE_WITNESS_FILE,
     ProblemKind.NAME_DENOTES_NO_CASE: mctx(
         "the name `{text}` denotes no case of the solver"),
-    ProblemKind.NAME_FORM: mctx(
-        "`{text}` is in no form [Witness file]"
-        "(docs/handbook/solver-file.md#witness-file) lists"),
+    ProblemKind.NAME_FORM: _witness_file(mctx(
+        "`{text}` is in no form {witness_file} lists")),
     ProblemKind.OUTPUT_OFF_VERDICT: SEE_WITNESS_FILE,
     ProblemKind.VERDICTS_DISAGREE: SEE_WITNESS_FILE,
     ProblemKind.ASSIGN_NAMES_NOTHING: mctx(

@@ -130,9 +130,7 @@ def agent_id(path: Path) -> str:
 def first_parent(path: Path) -> str | None:
     """The `parentUuid` of the first entry of the transcript at `path`, with
     only the lines up to that entry parsed."""
-    snap = snapshot(path)
-    first = next((e for i in range(len(snap.lines)) for e in snap.entry(i)),
-                 None)
+    first = next(entries_forward(path), None)
     return first.get("parentUuid") if first is not None else None
 
 
@@ -241,6 +239,14 @@ def read_entries(path: Path, naming: set[str] | None = None) -> list[Entry]:
         return [e for line in snap.lines for e in parse(line)]
     lines = sorted(frozenset[int]().union(*(snap.holding(w) for w in naming)))
     return [e for i in lines for e in snap.entry(i)]
+
+
+def entries_forward(path: Path) -> Iterator[Entry]:
+    """The entries of the transcript at `path` as it stood when this process
+    first read it, in their order, each line parsed only when it is reached."""
+    snap = snapshot(path)
+    for i in range(len(snap.lines)):
+        yield from snap.entry(i)
 
 
 def entries_back(path: Path) -> Iterator[Entry]:

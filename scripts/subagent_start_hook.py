@@ -3,10 +3,9 @@ own agent id, the `agent_id` of the hook input, and then records the
 commits whose documents it starts at (`reader_commits.start_agent`), where
 it has none yet.
 
-The hook never stops a launch. Where the input is not a `SubagentStart`
-input, or gives no `agent_id`, or an `agent_id` that is not of the form a
-ticket's log line takes, the hook prints nothing, says why on stderr, and
-exits 0. A record that fails is said on stderr alone."""
+Where the input is not a `SubagentStart` input, or gives no `agent_id`, or
+an `agent_id` that is not of the form a ticket's log line takes, the hook
+gives no agent id."""
 
 import json
 import sys

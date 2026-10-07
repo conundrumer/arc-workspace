@@ -101,16 +101,10 @@ UPDATE = "reader_update"
 """The name a failed diff run is said under on stderr."""
 
 
-# The readers of the `context` command whose context a running reader has:
-# the coordinator's, and an agent's, which takes its type.
-COORDINATOR_READER = "coordinator"
-AGENT_READER = "agent"
-
-
 def _records(hook: dict[str, Any]) -> Path:
-    from run_reads import session_of
+    from run_reads import hook_session
 
-    return session_of(Path(hook["transcript_path"])) / RECORDS
+    return hook_session(hook) / RECORDS
 
 
 def record_path(hook: dict[str, Any]) -> Path:
@@ -218,6 +212,7 @@ def reader_call(hook: dict[str, Any]) -> tuple[str, list[str]] | None:
     a subagent whose type has no document. A caller of unknown type is a
     fault."""
     from handbook.agents import agent_names
+    from handbook.reader_names import ReaderName
     from run_reads import MAIN, UNKNOWN_TYPE, agent_type, caller_transcript
 
     path = caller_transcript(hook)
@@ -225,8 +220,8 @@ def reader_call(hook: dict[str, Any]) -> tuple[str, list[str]] | None:
     if kind is None:
         raise ValueError(UNKNOWN_TYPE.format(path=path))
     if kind == MAIN:
-        return COORDINATOR_READER, []
-    return (AGENT_READER, [kind]) if kind in agent_names() else None
+        return ReaderName.COORDINATOR, []
+    return (ReaderName.AGENT, [kind]) if kind in agent_names() else None
 
 
 def _documents_differ(tree: Path, before: str, after: str) -> bool:
@@ -260,15 +255,16 @@ def update_text(tree: Path, after: str, context: str, instructions: str,
     done = subprocess.run(argv, cwd=tree, env=checkout.tree_env(),
                           capture_output=True, text=True)
     fields = {"after": after, "context": context, "instructions": instructions,
-              "command": " ".join(argv)}
+              "command": " ".join(argv),
+              "opening": mctx(
+                  "Your working tree is at commit {after}, and your documents "
+                  "there may differ from the ones you hold").format(after=after)}
     if done.returncode != 0:
         failed = mctx(
-            "Your working tree is at commit {after}, and your documents there "
-            "may differ from the ones you hold: your own context may be at "
-            "commit {context}, and the project instructions, `CLAUDE.md`, at "
-            "commit {instructions}. The diff of your documents between those "
-            "commits could not be computed: `{command}` exited {code} and "
-            "wrote what follows. Before you act by a document of yours, run "
+            "{opening}: your own context may be at commit {context}, and the "
+            "project instructions, `CLAUDE.md`, at commit {instructions}. The "
+            "diff of your documents between those commits could not be "
+            "computed: `{command}` exited {code} and wrote what follows. Before you act by a document of yours, run "
             "`git diff --stat <commit> {after}` in your working tree with each "
             "of those two commits, and read again each file it lists that your "
             "context or `CLAUDE.md` holds or has you read."
@@ -278,9 +274,8 @@ def update_text(tree: Path, after: str, context: str, instructions: str,
     if not done.stdout.strip():
         return None
     head = mctx(
-        "Your working tree is at commit {after}, and your documents there may "
-        "differ from the ones you hold. The diff below, which `{command}` "
-        "prints, runs from the oldest commit you may hold each of them at: "
+        "{opening}. The diff below, which `{command}` prints, runs from the "
+        "oldest commit you may hold each of them at: "
         "your own context from commit {context}, and the project instructions, "
         "`CLAUDE.md`, from commit {instructions}. So you may already hold some "
         "of its changes. From now on, act by your context and `CLAUDE.md` as "

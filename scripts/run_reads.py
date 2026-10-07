@@ -132,10 +132,16 @@ def run_type(path: Path) -> tuple[str, str]:
     return kind, (read_meta(path) or {}).get("description", "")
 
 
+def meta_parent(meta: dict[str, Any]) -> str:
+    """The agent id of the parent of the agent whose `.meta.json` is
+    `meta`, or `main`, which it gives by naming no parent."""
+    return meta.get("parentAgentId") or MAIN
+
+
 def parent_id(path: Path) -> str:
-    """The agent id of the parent of the agent whose transcript is at
-    `path`, or `main`, which its `.meta.json` gives by naming no parent."""
-    return subagent_meta(path).get("parentAgentId") or MAIN
+    """The parent of the agent whose transcript is at `path`
+    (`meta_parent`)."""
+    return meta_parent(subagent_meta(path))
 
 
 def run_entries(path: Path) -> list[Entry]:
@@ -196,11 +202,17 @@ def caller_id(hook: dict[str, Any]) -> str | None:
     return hook.get("agent_id") or None
 
 
+def hook_session(hook: dict[str, Any]) -> Path:
+    """The session directory of the hook input `hook`: the session of its
+    `transcript_path`."""
+    return session_of(Path(hook["transcript_path"]))
+
+
 def caller_transcript(hook: dict[str, Any]) -> Path:
-    """The transcript of the caller of the hook input `hook`, under the
-    session its `transcript_path` gives (`caller_id`). Raises `ValueError`
-    where the session holds no transcript of the caller."""
-    session = session_of(Path(hook["transcript_path"]))
+    """The transcript of the caller of the hook input `hook`, under its
+    session (`hook_session`, `caller_id`). Raises `ValueError` where the
+    session holds no transcript of the caller."""
+    session = hook_session(hook)
     caller = caller_id(hook)
     if caller is None:
         return main_transcript(session)

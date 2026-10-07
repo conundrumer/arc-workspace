@@ -18,6 +18,7 @@ from run_reads import (agent_type, blocks, context_size, in_background,
                        results_by_call, run_entries, run_type, session_agents,
                        session_of)
 from senders import Sender, sender
+from ticket_log import MINUTE_FORM
 from transcripts import Entry, agent_id, epoch, is_subagent
 
 
@@ -300,13 +301,9 @@ def minutes(s: float) -> str:
     return f"{s / 60:.1f}m"
 
 
-CLOCK_FORM = "%Y-%m-%dT%H:%MZ"
-"""The form of a time the tool prints, in UTC: `ticket_log.TIME_FORM` cut to
-the minute."""
-
-
 def clock(t: float | None) -> str:
-    return time.strftime(CLOCK_FORM, time.gmtime(t)) if t is not None else "?"
+    """The epoch time `t` as the tool prints a time, in UTC to the minute."""
+    return time.strftime(MINUTE_FORM, time.gmtime(t)) if t is not None else "?"
 
 
 def one_line(text: str, tail: bool = False) -> str:

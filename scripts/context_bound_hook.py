@@ -1,16 +1,15 @@
 """PreToolUse hook on Agent: denies the Agent call of an operator subagent
 whose context is past `CONTEXT_BOUND` tokens, other than the launch of a
-reply-only agent, a `general-purpose` agent on `haiku`. `past_bound` is the
-test of the bound, which `profile_runs.py --running` marks on its listing as
-well.
+reply-only agent, a `general-purpose` agent on `haiku`. The test of the
+bound is two functions: `bounded` gives the agent types the bound holds for,
+and `past_bound` tests a context against `CONTEXT_BOUND`. `check` calls
+both, and so does `run_prints.print_running`, which on the
+`profile_runs.py --running` listing marks each agent of a bounded type with
+the bound, and with `past` where `past_bound` holds.
 
 The context is read from the end of the caller's own transcript. Where the
 hook cannot tell the caller's agent type or context, it allows the call and
-says why on stderr.
-
-The hook gives its caller the update of its documents as well
-(`reader_commits.reader_update`), in the output that allows or denies the
-call."""
+says why on stderr."""
 
 import sys
 from typing import Any

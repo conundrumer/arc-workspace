@@ -11,11 +11,7 @@ while the prompt cache can lapse, so neither is bound.
 Where the hook cannot tell the caller, it allows the call and says why on
 stderr, so it can fail to deny a wait but never denies one wrongly. A call
 whose input gives no agent id (`run_reads.caller_id`) is the main session's
-only where the main transcript holds it.
-
-The hook gives its caller the update of its documents as well
-(`reader_commits.reader_update`), in the output that allows or denies the
-call."""
+only where the main transcript holds it."""
 
 import sys
 from typing import Any

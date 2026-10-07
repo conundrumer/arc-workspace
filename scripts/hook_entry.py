@@ -13,7 +13,10 @@ None (`reader_commits.reader_update`). Claude Code reads one output of a
 hook, and puts its `additionalContext` in the caller's context whether or
 not the output denies the call, so the entry prints one output that holds
 both parts. The update records the delivery only where its block ends
-without an error, after the output is printed."""
+without an error, after the output is printed.
+
+What the entry runs for every hook stands in this docstring alone, and in no
+hook's docstring."""
 
 import json
 import sys

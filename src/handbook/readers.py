@@ -15,6 +15,7 @@ from handbook.contexts import (agent_context, codex_context, console_context,
                                survey_context, workflow_context)
 from handbook.coordinator_document import coordinator_context
 from handbook.paths import DOCUMENTS_ROOT
+from handbook.reader_names import ReaderName
 
 
 class ArgumentForm(StrEnum):
@@ -51,18 +52,21 @@ def _console_stages(root: Path) -> list[str]:
 
 
 CONTEXT_READERS = {
-    "coordinator": Reader(None, _no_values, lambda _a: coordinator_context()),
-    "session": Reader(None, _no_values, lambda _a: session_context()),
-    "codex": Reader(None, _no_values, lambda _a: codex_context()),
-    "agent": Reader(ArgumentForm.NAME, lambda r: agent_names(agent_dir(r)),
-                    lambda a: agent_context(a[0])),
-    "role": Reader(ArgumentForm.NAME, lambda r: role_stems(role_dir(r)),
-                   lambda a: role_context(a[0])),
-    "console": Reader(ArgumentForm.STAGE, _console_stages,
-                      lambda a: console_context(a[0])),
-    "survey": Reader(None, _no_values, lambda _a: survey_context()),
-    "workflow": Reader(ArgumentForm.NAME, lambda r: workflow_names(workflow_dir(r)),
-                       lambda a: workflow_context(a[0])),
+    ReaderName.COORDINATOR: Reader(None, _no_values,
+                                   lambda _a: coordinator_context()),
+    ReaderName.SESSION: Reader(None, _no_values, lambda _a: session_context()),
+    ReaderName.CODEX: Reader(None, _no_values, lambda _a: codex_context()),
+    ReaderName.AGENT: Reader(ArgumentForm.NAME,
+                             lambda r: agent_names(agent_dir(r)),
+                             lambda a: agent_context(a[0])),
+    ReaderName.ROLE: Reader(ArgumentForm.NAME, lambda r: role_stems(role_dir(r)),
+                            lambda a: role_context(a[0])),
+    ReaderName.CONSOLE: Reader(ArgumentForm.STAGE, _console_stages,
+                               lambda a: console_context(a[0])),
+    ReaderName.SURVEY: Reader(None, _no_values, lambda _a: survey_context()),
+    ReaderName.WORKFLOW: Reader(ArgumentForm.NAME,
+                                lambda r: workflow_names(workflow_dir(r)),
+                                lambda a: workflow_context(a[0])),
 }
 """Each reader the `context` command knows, by name."""
 
@@ -104,7 +108,7 @@ def context_text(reader: str, args: list[str]) -> str:
     if reader not in CONTEXT_READERS:
         raise SystemExit("no reader named "
                          f"`{reader}`\n{contexts_text()}".rstrip())
-    known = CONTEXT_READERS[reader]
+    known = CONTEXT_READERS[ReaderName(reader)]
     form = known.form
     if len(args) != (1 if form else 0):
         raise SystemExit(f"usage: {_usage(reader, form)}")

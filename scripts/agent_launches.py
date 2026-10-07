@@ -11,8 +11,8 @@ from typing import Any
 from agent_reports import Report, report_ids, reports_after
 from command_labels import AGENT_TOOLS
 from controlled_markdown import mctx
-from run_reads import (MAIN, blocks, in_background, notified, parent_label,
-                       read_meta, results_by_call, run_entries,
+from run_reads import (blocks, in_background, meta_parent, notified,
+                       parent_label, read_meta, results_by_call, run_entries,
                        run_sessions, session_agents, session_transcripts)
 from transcripts import Entry, agent_id, chain, epoch, find, read_entries
 
@@ -36,7 +36,7 @@ def session_launches(session: Path) -> tuple[dict[str, Path], dict[str, frozense
             continue
         if meta.get("toolUseId"):
             by_call[meta["toolUseId"]] = chain(p)[-1]
-        children.setdefault(meta.get("parentAgentId") or MAIN, set()).add(aid)
+        children.setdefault(meta_parent(meta), set()).add(aid)
     return by_call, {k: frozenset(v) for k, v in children.items()}
 
 
