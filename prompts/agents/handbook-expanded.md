@@ -2,7 +2,7 @@
 name: handbook-expanded
 description: "For work that references the handbook and the lib's full interface, every component's relations and their docs: work on a task's solver, and the part of a change in the lib or in a solver under `programs/solvers/`. Its final reply is its report, which gives each item of its brief, and of each later request, as done or as unfinished with its reason."
 model: opus
-tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
+tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 ---
 
 + lib: interface

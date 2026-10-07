@@ -3,7 +3,7 @@ name: create
 description: Runs Create on the task the brief names: writes the solver from the Analyze files, develops it, and pins its cases to witnesses.
 model: opus
 effort: high
-tools: Read, Grep, Glob, Bash, Edit, Write
+tools: Read, Grep, Glob, Bash, Edit, Write, TaskStop
 ---
 
 + lib: interface

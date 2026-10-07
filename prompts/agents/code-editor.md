@@ -2,7 +2,7 @@
 name: code-editor
 description: Edits the code under `src/` and `scripts/` against the spec, the docstrings of the modules it touches, for its part of a change. Its final reply is its report, which gives each item of its brief, and of each later request, as done or as unfinished with its reason.
 model: opus
-tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage
+tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
 ---
 
 + lib: none

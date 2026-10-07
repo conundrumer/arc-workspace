@@ -3,7 +3,7 @@ name: refine
 description: Runs Refine on the task the brief names: reconciles the solver with the latest report, then simplifies and prunes.
 model: opus
 effort: high
-tools: Read, Grep, Glob, Bash, Edit, Write
+tools: Read, Grep, Glob, Bash, Edit, Write, TaskStop
 ---
 
 + lib: interface

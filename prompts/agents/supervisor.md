@@ -2,7 +2,7 @@
 name: supervisor
 description: Watches the agents of the session, and sends each alert it raises on an agent to that agent, its parent or the coordinator.
 model: opus
-tools: Bash, Agent, SendMessage
+tools: Bash, Agent, SendMessage, TaskStop
 ---
 
 + lib: none

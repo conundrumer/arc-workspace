@@ -1,7 +1,11 @@
 # Command notes
-- The statements on running commands, waiting on them, and sending a final reply, that more than one entry point inlines.
+- The statements on commands, and on sending a final reply, that more than one entry point inlines.
 
 ## commands
+* inline: #waiting-on-commands
+* inline: #ending-commands
+
+## waiting-on-commands
 - Run each command in the foreground, with a timeout of 240000 ms on the Bash call, other than a budget timer your documents have you start.
 - End your turn only once each command you started has finished, other than that timer.
 - Where the harness moves a command to the background, wait in a foreground Bash call with a timeout of 240000 ms, whose until-loop gives up just under that timeout, and repeat the call until the command's completion notification has arrived.
@@ -9,11 +13,19 @@
         * comment: Without the hook's script given here, a doc reviewer checking this section searched for it from `/`, and macOS prompted the user for access to the user's media: ticket `1791149774-commands-review-doc-reviewer-1`.
     - Loop on the completion where you can observe it, and otherwise on the time alone.
 
+## ending-commands
+- End a command of yours that runs in the background with the command a line of your documents gives to end it, and where none does, with `TaskStop` and the ID the harness gave that command. Signal no process that you pick by its name or by its command line.
+- Call `TaskStop` on a command of yours and on nothing else.
+- The process tree of a process ID is that process ID, and each process ID that `pgrep -P <process ID>` prints for a process ID of the tree.
+- Before you call `TaskStop`, take the process tree of each process ID that `lsof -t <the command's output file>` prints. Once `TaskStop` returns, end each process of those trees that still runs with `kill <process ID>`.
+- Where you start a process with `&` or `nohup`, print its process ID with `echo $!` in that Bash call. To end it, take the process tree of that process ID, and end each process of that tree with `kill <process ID>`.
+
 ## background-work
 - When you end your turn while a command of yours runs on in the background and no agent you launched is running, the harness reports you to the session that launched you as stopped. It does not while an agent you launched is running.
 - While no agent you launched is running, other than one that a notification has said has not reported yet:
-    * inline: #commands
+    * inline: #waiting-on-commands
     - Wait on a command you ran in the background yourself as on one the harness moved there.
+* inline: #ending-commands
 - While an agent you launched is running, other than one that a notification has said has not reported yet, run each command that can outlast the Bash call's default timeout in the background, and when no other work is ready, start your keep-alive timer where you launched no agent in this turn whose brief asks only for a reply, then end your turn with a line that names each agent you launched and each command of yours that is still running, and run no other command to wait on them. The harness resumes you when an agent sends you a message, when one of them that no agent has resumed by SendMessage completes, or when a command of yours that runs in the background completes.
     - Start your keep-alive timer by running this command in the background, with your own agent id as `<agent id>`:
         ```

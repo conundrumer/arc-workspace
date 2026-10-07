@@ -3,7 +3,7 @@ name: analyze
 description: Runs Analyze on the task the brief names: states the concept, forms every other branch, and gives each branch's standing.
 model: opus
 effort: high
-tools: Read, Grep, Glob, Bash, Write
+tools: Read, Grep, Glob, Bash, Write, TaskStop
 ---
 
 + lib: index
