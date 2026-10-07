@@ -1,7 +1,7 @@
 """The numbering of tickets and of sessions, under the main tree's
-`tickets/`: each number and each index reserved by an exclusive create of
-the first free name, and the files of a filing written whole under the
-first free name."""
+`tickets/`: a ticket's number with its parts, each number and each index
+reserved by an exclusive create of the first free name, and the files of a
+filing written whole under the first free name."""
 
 import fcntl
 import itertools
@@ -10,6 +10,7 @@ import re
 import tempfile
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 from controlled_markdown import mctx
@@ -35,34 +36,48 @@ TICKET_NUMBER = re.compile(rf"(?:(?P<session>{COUNT.pattern})-)?(?P<n>{COUNT.pat
 before a number gave the filing session's index."""
 
 
-def number_parts(number: str) -> tuple[int | None, int]:
-    """The session index and the `<n>` of the ticket number `number`, with
-    None as the index of a bare number, which belongs to no session."""
-    parts = TICKET_NUMBER.fullmatch(number)
-    if parts is None:
-        raise Refused(mctx("`{number}` is no ticket number").format(number=number))
-    return matched_parts(parts)
+@dataclass(frozen=True)
+class TicketNumber:
+    """A ticket's number: the index of the session that filed it, None for
+    a bare number, which belongs to no session, and its `<n>`."""
+    session: int | None
+    n: int
+
+    def __str__(self) -> str:
+        return str(self.n) if self.session is None else f"{self.session}-{self.n}"
+
+    @property
+    def order(self) -> tuple[int, int]:
+        """The key that orders ticket numbers as the `HELP` of `file_ticket`
+        gives."""
+        return (0 if self.session is None else self.session, self.n)
 
 
-def matched_parts(parts: re.Match[str]) -> tuple[int | None, int]:
-    """The parts `number_parts` gives, of a match of `TICKET_NUMBER`."""
-    return (int(parts["session"]) if parts["session"] else None, int(parts["n"]))
+def matched_number(parts: re.Match[str]) -> TicketNumber:
+    """The number of a match of `TICKET_NUMBER`, or of a pattern that holds
+    its groups."""
+    return TicketNumber(int(parts["session"]) if parts["session"] else None, int(parts["n"]))
 
 
-def number_order(number: str) -> tuple[int, int]:
-    """The key that orders ticket numbers as the `HELP` of `file_ticket`
-    gives."""
-    session, n = number_parts(number)
-    return (0 if session is None else session, n)
+def parsed_number(text: str) -> TicketNumber | None:
+    parts = TICKET_NUMBER.fullmatch(text)
+    return None if parts is None else matched_number(parts)
 
 
-def reserve(tickets: Path, session: int) -> str:
+def ticket_number(text: str) -> TicketNumber:
+    number = parsed_number(text)
+    if number is None:
+        raise Refused(mctx("`{number}` is no ticket number").format(number=text))
+    return number
+
+
+def reserve(tickets: Path, session: int) -> TicketNumber:
     """Reserves the next number of a ticket of the session with index
     `session` by an exclusive create of its file under `tickets/ids/`."""
     ids = tickets / IDS
-    taken = (n for p in ids.glob("*") if (number := TICKET_NUMBER.fullmatch(p.name))
-             for s, n in [matched_parts(number)] if s == session)
-    return write_after(ids, "", taken, lambda n: f"{session}-{n}").name
+    taken = (number.n for p in ids.glob("*")
+             if (number := parsed_number(p.name)) and number.session == session)
+    return ticket_number(write_after(ids, "", taken, lambda n: str(TicketNumber(session, n))).name)
 
 
 @contextmanager
@@ -162,5 +177,5 @@ def add_session(path: Path, session: str) -> None:
             f.write(f"{session}\n")
 
 
-def is_reserved(tickets: Path, number: str) -> bool:
-    return (tickets / IDS / number).exists()
+def is_reserved(tickets: Path, number: TicketNumber) -> bool:
+    return (tickets / IDS / str(number)).exists()

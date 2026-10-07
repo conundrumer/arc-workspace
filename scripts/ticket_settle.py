@@ -5,10 +5,10 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from controlled_markdown import mctx
-from ticket_files import ticket_files, ticket_name, ticket_number, ticket_path, ticket_status
+from ticket_files import TicketName, ticket_files, ticket_name, ticket_path, ticket_status
 from ticket_form import ticket_kind, title
 from ticket_log import read_ticket
-from ticket_numbers import number_order, number_parts
+from ticket_numbers import TicketNumber, ticket_number
 from ticket_vocabulary import Domain, Kind, Status
 from transcripts import Refused
 
@@ -17,9 +17,10 @@ MANY_IDEAS = "many ideas in one place"
 than one subject."""
 
 
-def settled_elsewhere(tickets: Path, path: Path) -> bool:
+def settled_elsewhere(tickets: Path, path: Path, name: TicketName) -> bool:
     """Whether the list of `to-settle` leaves out the open ticket at
-    `path`, refused where that command's help gives it refuses."""
+    `path`, named `name`, refused where that command's help gives it
+    refuses."""
     text = read_ticket(path)
     kind = ticket_kind(text)
     match kind:
@@ -28,22 +29,19 @@ def settled_elsewhere(tickets: Path, path: Path) -> bool:
         case Kind.CHANGE:
             return True
         case Kind.QUESTION:
-            name = ticket_name(path)
-            return (name.domain is Domain.CHANGE
-                    and ticket_status(ticket_path(tickets, name.subject)) is not Status.CLOSED)
+            return (name.domain is Domain.CHANGE and ticket_status(
+                ticket_path(tickets, ticket_number(name.subject))) is not Status.CLOSED)
         case Kind.REFACTOR:
             return title(path, text).endswith(MANY_IDEAS)
         case _:
             return False
 
 
-def to_settle(tickets: Path, session: int, given: Iterable[str]) -> list[str]:
+def to_settle(tickets: Path, session: int, given: Iterable[TicketNumber]) -> list[TicketNumber]:
     """The numbers of the list of `to-settle`, for the session with index
-    `session` and the numbers `given`. A ticket filed before tickets had
-    numbers belongs to no session."""
-    paths = {p for p in ticket_files(tickets, Status.OPEN)
-             if (number := ticket_number(p)) and number_parts(number)[0] == session}
-    paths.update(p for p in (ticket_path(tickets, ref) for ref in given)
-                 if ticket_status(p) is Status.OPEN)
-    numbers = [ticket_name(p).number for p in sorted(paths) if not settled_elsewhere(tickets, p)]
-    return sorted(numbers, key=number_order)
+    `session` and the numbers `given`."""
+    names = {p: ticket_name(p) for p in ticket_files(tickets, Status.OPEN)}
+    paths = {p for p, name in names.items() if name.number.session == session}
+    paths.update(p for p in (ticket_path(tickets, number) for number in given) if p in names)
+    numbers = [names[p].number for p in sorted(paths) if not settled_elsewhere(tickets, p, names[p])]
+    return sorted(numbers, key=lambda number: number.order)

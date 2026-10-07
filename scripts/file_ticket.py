@@ -27,7 +27,7 @@ from ticket_form import (DEFECT_SECTIONS, LOG, SECTIONS, checked_kind, heading, 
 from ticket_log import (AGENT_ID, CLOSED_BY, TIME_FORM, UNBLOCKED_BY, Wait,  # noqa: E402
                         log_moves, logged)
 from ticket_numbers import (SESSION_VAR, SESSIONS, reserve, session_id,  # noqa: E402
-                            session_index, write_new)
+                            session_index, ticket_number, write_new)
 from ticket_settle import MANY_IDEAS, to_settle  # noqa: E402
 from ticket_vocabulary import Domain, Kind, Resolution, Status, ticked  # noqa: E402
 from transcripts import Refused  # noqa: E402
@@ -71,7 +71,6 @@ SUBCOMMAND_HELP = mctx("""
 
 PATH_HELP = mctx("""
     - The ticket is the one with that number, in whichever status it stands.
-    - The command takes the name of a ticket filed before tickets had numbers in place of `<number>` too.
     """)
 
 LOG_HELP = mctx("""
@@ -115,9 +114,6 @@ kebab words."""
 ASKS_CHANGE = frozenset({Kind.CHANGE, Kind.REQUEST})
 
 
-NAME_PART = re.compile(r"[^\s/]+")
-
-
 def check_subject(tickets: Path, domain: Domain, subject: str) -> None:
     """Refuses a `subject` that is no id of a thing of `domain`: a task
     with no file, a ticket the ticket tracker does not hold, a hash of no commit, or
@@ -126,7 +122,7 @@ def check_subject(tickets: Path, domain: Domain, subject: str) -> None:
         case Domain.TASK:
             known = task_file(subject).exists()
         case Domain.CHANGE | Domain.TICKET:
-            ticket_path(tickets, subject)
+            ticket_path(tickets, ticket_number(subject))
             known = True
         case Domain.COMMIT:
             known = bool(COMMIT.fullmatch(subject)) and checkout.git(
@@ -167,41 +163,30 @@ def main_tickets() -> Path:
     return checkout.main_worktree(checkout.ROOT) / "tickets"
 
 
-@dataclass(frozen=True)
-class Filing:
-    """A filing command: its script under `scripts/`, and the script to
-    file with where the main tree has no copy of it."""
-    script: str
-    fallback: str
+SCRIPT = "file_ticket.py"
 
-    @property
-    def invocation(self) -> str:
-        """The command that runs the script, as a help text writes it."""
-        return f"uv run python scripts/{self.script}"
+INVOCATION = f"uv run python scripts/{SCRIPT}"
+"""The command that runs this script, as a help text writes it."""
 
 
-TICKET_FILING = Filing("file_ticket.py", "file_issue.py")
-
-
-def filed_in_main(filing: Filing, args: list[str]) -> int | None:
-    """Runs the main tree's copy of `filing` with `args` and this process's
-    stdin, and returns its exit status, where this copy is another one;
-    None where this copy is the main tree's."""
+def filed_in_main(args: list[str]) -> int | None:
+    """Runs the main tree's copy of this script with `args` and this
+    process's stdin, and returns its exit status, where this copy is
+    another one; None where this copy is the main tree's."""
     main = checkout.main_worktree(checkout.ROOT)
-    copy = main / "scripts" / filing.script
-    if (checkout.scripts() / filing.script).resolve() == copy.resolve():
+    copy = main / "scripts" / SCRIPT
+    if (checkout.scripts() / SCRIPT).resolve() == copy.resolve():
         return None
     if not copy.exists():
-        raise Refused(mctx("the main tree has no `scripts/{script}`: file with `scripts/{fallback}`").format(
-            script=filing.script, fallback=filing.fallback))
+        raise Refused(mctx("the main tree has no `scripts/{script}`").format(script=SCRIPT))
     return subprocess.run(["uv", "run", "--project", str(main), "python", str(copy), *args],
                           env=checkout.tree_env()).returncode
 
 
 def run(args: Sequence[str | None], help_text: str, count: int | None,
-        act: Callable[..., Path | int | str], filing: Filing | None, argv: list[str]) -> int:
+        act: Callable[..., Path | int | str], in_main: bool, argv: list[str]) -> int:
     """`argv` is the call's arguments as given, which the main tree's copy
-    of a `filing` takes in place of `args`."""
+    takes in place of `args` where `in_main` holds."""
     if args and args[0] in ("--help", "-h"):
         print(help_text)
         return 0
@@ -209,7 +194,7 @@ def run(args: Sequence[str | None], help_text: str, count: int | None,
         print(help_text, file=sys.stderr)
         return 2
     try:
-        status = filed_in_main(filing, argv) if filing else None
+        status = filed_in_main(argv) if in_main else None
         if status is not None:
             return status
         print(act(*args))
@@ -236,8 +221,8 @@ def log_args(args: list[str]) -> list[str | None]:
 
 def settle_command(*given: str) -> str:
     tickets = main_tickets()
-    numbers = to_settle(tickets, session_index(tickets, session_id()), given)
-    return "\n".join(numbers) if numbers else EMPTY
+    numbers = to_settle(tickets, session_index(tickets, session_id()), map(ticket_number, given))
+    return "\n".join(map(str, numbers)) if numbers else EMPTY
 
 
 def log_command(ref: str, status: str, agent: str, source: str, agent_id: str | None,
@@ -245,7 +230,7 @@ def log_command(ref: str, status: str, agent: str, source: str, agent_id: str | 
     """Runs `log_moves` and returns the paths it moved tickets to, one per
     line. Where it gives a refused ticket, prints those paths, then refuses
     with the change's path and each refused ticket's path and reason."""
-    moves = log_moves(main_tickets(), ref, status, agent, source, agent_id, note)
+    moves = log_moves(main_tickets(), ticket_number(ref), status, agent, source, agent_id, note)
     paths = "\n".join(map(str, moves.moved))
     if not moves.refused:
         return paths
@@ -265,22 +250,21 @@ class Subcommand:
     detail: str
     count: int | None
     act: Callable[..., Path | int | str]
-    filing: Filing | None
+    in_main: bool
     parse: Callable[[list[str]], Sequence[str | None]] = list
 
 
 SUBCOMMANDS = {
     "log": Subcommand(mctx("makes a transition of a ticket and writes its log line"),
                       " <number> <status> <agent> --from <current status> [--id <agent id>] [<note>]",
-                      LOG_HELP, 6, log_command,
-                      TICKET_FILING, log_args),
+                      LOG_HELP, 6, log_command, True, log_args),
     "path": Subcommand(mctx("prints the path of a ticket"), " <number>", PATH_HELP, 1,
-                       lambda ref: ticket_path(main_tickets(), ref), None),
+                       lambda ref: ticket_path(main_tickets(), ticket_number(ref)), False),
     "index": Subcommand(mctx("prints the index of your session"), "", "", 0,
-                        lambda: session_index(main_tickets(), session_id()), TICKET_FILING),
+                        lambda: session_index(main_tickets(), session_id()), True),
     "to-settle": Subcommand(mctx("prints the open tickets an operator gives a ticket analyst to settle "
                                  "after a batch"),
-                            " [<number> ...]", TO_SETTLE_HELP, None, settle_command, None),
+                            " [<number> ...]", TO_SETTLE_HELP, None, settle_command, False),
 }
 """Each subcommand, by the word that calls it, in the order `HELP` gives
 their lines."""
@@ -300,12 +284,12 @@ def help_values() -> dict[str, str]:
                                            number="<number>", note="<note>"),
                 unblocked_by=UNBLOCKED_BY.format(change=Wait.CHANGE, number="<number>",
                                                  resolution="<resolution>"),
-                sessions=SESSIONS, invocation=TICKET_FILING.invocation, name_form=NAME_FORM,
+                sessions=SESSIONS, invocation=INVOCATION, name_form=NAME_FORM,
                 question=Kind.QUESTION, refactor=Kind.REFACTOR, change_kind=Kind.CHANGE,
                 change_domain=Domain.CHANGE,
                 many_ideas=MANY_IDEAS, empty=EMPTY,
                 subcommands="\n".join(SUBCOMMAND_LINE.format(
-                    invocation=TICKET_FILING.invocation, name=name, purpose=sub.purpose)
+                    invocation=INVOCATION, name=name, purpose=sub.purpose)
                     for name, sub in SUBCOMMANDS.items()))
 
 
@@ -320,9 +304,9 @@ def main(args: list[str]) -> int:
     values = help_values()
     if args[:1] and (sub := SUBCOMMANDS.get(args[0])):
         return run(sub.parse(args[1:]), subcommand_help(args[0], sub, values), sub.count,
-                   sub.act, sub.filing, args)
+                   sub.act, sub.in_main, args)
     return run(args, HELP.format(**values), 3, lambda domain, subject, agent: file_ticket(
-        main_tickets(), domain, subject, agent, sys.stdin.read()), TICKET_FILING, args)
+        main_tickets(), domain, subject, agent, sys.stdin.read()), True, args)
 
 
 if __name__ == "__main__":
