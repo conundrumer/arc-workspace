@@ -228,6 +228,7 @@ class LintSentence(StrEnum):
     UNKNOWN_KEYWORD = "unknown keyword"
     NO_KEYWORDS = "no keywords"
     NO_RULE = "no rule"
+    NO_DEMONSTRATED_CHOICE = "no demonstrated choice"
     GLOSS_ABOVE = "gloss above"
     OWN_LINE = "own line"
     CONCEPT_WITNESS = "concept witness"

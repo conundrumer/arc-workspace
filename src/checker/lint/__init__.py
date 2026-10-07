@@ -55,7 +55,8 @@ type Check = Callable[[Solver, Runs], list[Finding]]
 
 PROGRAM_CHECKS: tuple[Check, ...] = (
     case_type.check_family_case, case_type.check_case_marker, witnesses.check_witness,
-    header.check_header, header.check_keyword, names.check_rigid_chart,
+    header.check_header, header.check_keyword,
+    header.check_demonstrated_choice, names.check_rigid_chart,
     bans.check_orientation_literal, bans.check_nonzero_literal,
     bans.check_arithmetic, bans.check_range, bans.check_ord,
     names.check_reserved_name,

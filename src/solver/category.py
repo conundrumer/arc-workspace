@@ -39,6 +39,7 @@ class Category(StrEnum):
     RANGE = "range"
     ORD = "ord"
     BANNED_TYPE = "banned type"
+    DEMONSTRATED_CHOICE = "demonstrated choice"
     PARAMS_DATA = "params data"
     DEAD = "dead"
     ALIAS_INLINE = "alias-inline"

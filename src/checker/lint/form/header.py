@@ -1,14 +1,17 @@
-"""The lint checks on a solver's header: the header's form and the
-keywords it names, with the handbook's list of those keywords."""
+"""The lint checks on a solver's header: the header's form, the
+keywords it names, with the handbook's list of those keywords, and what a
+keyword asks of the program."""
 
 import re
 from pathlib import Path
+from typing import Annotated
 
 from checker.finding import (
     Finding,
     LintNamed,
     LintSentence,
 )
+from checker.lint.form.declared_types import demonstrated_choice
 from checker.lint.view import (
     lint,
 )
@@ -37,7 +40,10 @@ def keywords_doc() -> Path:
 
 KEYWORD_BULLET = re.compile(r"^- `([^`]+)`")
 
-
+INDUCE: Annotated[str,
+    quotes("keywords.md", "Transformation",
+           "`induce` — the input pairs content with the content a rule maps "
+           "it to, and that rule varies per input")] = "induce"
 
 
 def doc_keywords(written: str) -> dict[str, list[str]]:
@@ -146,3 +152,23 @@ def check_keyword(solver: Solver, runs: Runs) -> list[Finding]:
     return [lint(line, LintNamed(
                 Category.KEYWORD, LintSentence.UNKNOWN_KEYWORD, (w,)))
             for w in words if w not in known]
+
+
+@quotes("procedure.md", "Every pass",
+        "If the solver's `@keywords:` line carries `induce`, judge by "
+        "[Demonstrated choice](docs/handbook/solver-file.md#demonstrated-choice) "
+        "whether the task is a nested task, and where it is, give the solver "
+        "the case that section gives.")
+def check_demonstrated_choice(solver: Solver, runs: Runs) -> list[Finding]:
+    """A `@keywords:` line that carries `induce` in a solver that declares
+    no `DemonstratedChoice` at the top level. A sibling's keywords stand
+    in its representative's header, so a sibling gets none. Serves the
+    concept's form: the rules a nested task's inputs demonstrate stand as
+    the constructors of `DemonstratedChoice`."""
+    got = header_keywords(solver)
+    if got is None or INDUCE not in got[1] \
+            or demonstrated_choice(solver, runs) is not None:
+        return []
+    return [lint(got[0], LintNamed(
+        Category.DEMONSTRATED_CHOICE, LintSentence.NO_DEMONSTRATED_CHOICE,
+        ()))]

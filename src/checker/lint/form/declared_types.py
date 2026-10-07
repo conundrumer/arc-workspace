@@ -1,7 +1,7 @@
 """The lint checks on the types a solver declares and reads: a type a
 solver may not declare, and a field of the case type that no unit
-reads; with the literals of a unit, which other checks of the form
-read."""
+reads; with the literals of a unit and the solver's top-level
+`DemonstratedChoice`, which other checks of the form read."""
 
 from collections.abc import Mapping
 
@@ -95,7 +95,7 @@ def check_banned_type(solver: Solver, runs: Runs) -> list[Finding]:
     sanctioned: set[DeclId] = set()
     sanction([d for n in (CHOICE, TIEBREAK_RESOLUTION)
               if (d := resolved(TypeName((), n), TOP)) is not None], object)
-    demonstrated = resolved(TypeName((), DEMONSTRATED_CHOICE), TOP)
+    demonstrated = demonstrated_choice(solver, runs)
     if demonstrated is not None and demonstrated.id in {
             d.id for i in v.own_instances
             if (of := v.index.component(i.component, i.scope)) is not None
@@ -109,6 +109,13 @@ def check_banned_type(solver: Solver, runs: Runs) -> list[Finding]:
     return [lint(t.span.first, LintNamed(
                 Category.BANNED_TYPE, LintSentence.BANNED_TYPE, (t.name,)))
             for t, linted in scoped if linted and t.id not in sanctioned]
+
+
+def demonstrated_choice(solver: Solver, runs: Runs) -> TypeDecl | None:
+    """The `DemonstratedChoice` the solver declares at the top level; None
+    where it declares none there."""
+    return _type_among(runs, TypeName((), DEMONSTRATED_CHOICE), TOP,
+                       {t.id: t for t in view(solver, runs).own_types})
 
 
 def _type_among[T](runs: Runs, name: TypeName, scope: Scope,

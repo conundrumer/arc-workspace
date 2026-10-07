@@ -118,6 +118,12 @@ LINT_TEXT: dict[LintSentence, Callable[[tuple[str, ...], tuple[str, ...]],
         "`{0}` is not in keywords.md; propose it in the review").format(*n),
     LintSentence.NO_KEYWORDS: lambda n, _: mctx(
         "the header carries `@keywords:` or `@representative:`"),
+    LintSentence.NO_DEMONSTRATED_CHOICE: lambda n, _: mctx(
+        "the `@keywords:` line carries `induce`, and the solver declares no "
+        "`DemonstratedChoice` at the top level; add the case "
+        "[Demonstrated choice](docs/handbook/solver-file.md#demonstrated-choice) "
+        "gives, or remove `induce` from `@keywords:` and raise the matter in "
+        "the review"),
     LintSentence.NO_RULE: lambda n, _: mctx(
         "the header has no `@rule` line; a rule is {form}").format(
         form=FORM_RULE),

@@ -17,6 +17,8 @@
 - **Keywords.**
     - If no keyword in [Keywords](docs/handbook/keywords.md) fits, propose one in the review, and add it to the solver's `@keywords:` line.
     - If an existing keyword's gloss should change, propose it in the review.
+    - If the solver's `@keywords:` line carries `induce`, judge by [Demonstrated choice](docs/handbook/solver-file.md#demonstrated-choice) whether the task is a nested task, and where it is, give the solver the case that section gives.
+        * comment: The Create pass on 2ccd9fef took `induce` from its gloss, did not follow the gloss's link to Demonstrated choice, and wrote no catalog case, as change ticket 4-47 records.
 
 ## Every session
 - **Cleanup.** When the user says `cleanup`, run [Simplify](#simplify), then [Prune](#prune).

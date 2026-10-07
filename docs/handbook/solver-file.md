@@ -202,8 +202,16 @@
 
 ## Demonstrated choice
 - `DemonstratedChoice` is the `Demonstrated` type argument of a `DemonstrationConsistency` instance.
-- Its constructors name the rules the input may demonstrate.
-- The rule that applies to an input is a rule for which the instance's `consistent` relation holds on a demonstrated pair of that input, and no parameter stores it.
+- A nested task is a task whose every input holds an inner task: demonstrated pairs, and the answer that inner task asks for, in one of these forms.
+    - A demonstrated pair beside an object left to complete, where the answer is that object's completion.
+    - A sequence, where each consecutive pair, an element and the next, is a demonstrated pair, nothing is held out, and the answer is the element after the last.
+- A case that reads a `DemonstrationConsistency` instance solves the inner task of each input of a nested task.
+- That case's catalog, the constructors of `DemonstratedChoice`, holds the rules the task's inputs demonstrate, test inputs included, normally one per input.
+    - Each rule is a general rule, with clauses of its own that read from the input what that rule needs.
+- The rule that applies to an input is a rule for which the instance's `consistent` relation holds on every demonstrated pair of that input, and no parameter stores it.
+- In a nested task, substantial code that detects and constructs each input's rule through one parameterized mechanism, general enough to produce every input's rule, is the sign that those rules belong in the catalog.
+    * comment: The solver passes on 20a9e565, a nested task, built a parameterized construction of each input's rule in place of a catalog, as change ticket 4-38 records.
+- The solver of a task that is not a nested task defines no `DemonstratedChoice`.
 - An ADT whose constructors are joined to predictions with no demonstration selecting among them is a disjunction, and is written as one.
 
 ## Witness file
