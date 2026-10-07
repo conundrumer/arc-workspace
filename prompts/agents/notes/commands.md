@@ -45,6 +45,7 @@
 ## resumed-agents
 - While an agent you resumed by SendMessage runs, the harness does not deliver your report, and its completion may not reach you.
 - Where you need that agent's answer, ask it, in the message that resumes it, to send that answer to you by SendMessage. Then wait for that message or for a file it writes, and for nothing else of it.
+- Where a message asks you to send its sender an answer by SendMessage, send that answer by SendMessage to the agent id that message came from, once you have done what it asks, with each item of that message as done or as unfinished with its reason, in a message apart from your final reply.
 - The harness delivers as your report the text of the last turn you end. Where a notification resumes you after your final reply, end that turn with the report you gave at your final reply: your final reply in full, or the one line that says where it went.
 
 ## coordinator
