@@ -10,8 +10,12 @@ from agent_reports import (TURN_ENDED, Report, ReportKind, parent_transcripts, r
 from agent_turns import has_ended, is_turn_entry, last_time, turn_after
 from controlled_markdown import mctx
 from run_profile import Run, Span, profile
-from run_reads import is_prompt, parent_label
-from transcripts import agent_id, is_subagent
+from run_reads import LaunchStatus, blocks, is_prompt, member, notified, parent_label
+from transcripts import agent_id, chain, is_subagent, read_entries
+
+# The key of the result of a Bash call that runs in the background, which
+# gives that call's task id.
+BACKGROUND_TASK = "backgroundTaskId"
 
 
 @dataclass
@@ -61,17 +65,23 @@ def parent_reports(r: Run, undecided: list[str],
 class Node:
     """An agent a run launched, as `listing` reads it: `parent` is the label
     of that run and `launcher` the path of its transcript, `path` the
-    agent's transcript, `under` the agents it launched, `settled` whether a
-    turn-ending report of it follows its last timestamped entry, and
-    `in_progress` whether, where it is not settled, its turn is in progress
-    by `turn_open` with the run's last sign that it reported."""
+    agent's transcript, `under` the agents it launched, or None where
+    `nodes_under` has not read them, `settled` whether a turn-ending report
+    of it follows its last timestamped entry, and `in_progress` whether,
+    where it is not settled, its turn is in progress by `turn_open` with
+    the run's last sign that it reported, and once `settle_turns` has read
+    it, with the latest notification of it as well. `own` is what
+    `own_work` gives and `busy` what `is_busy` gives, each None where it
+    has not been read."""
     parent: str
     launcher: Path
     launch: Launch
     path: Path
-    under: list["Node"]
+    under: list["Node"] | None
     settled: bool
     in_progress: bool
+    own: list[str] | None = None
+    busy: bool | None = None
 
 
 def turn_open(path: Path, sign: float | None, undecided: list[str]) -> bool:
@@ -83,7 +93,7 @@ def turn_open(path: Path, sign: float | None, undecided: list[str]) -> bool:
         path.stat().st_mtime > sign and turn_after(path, sign, undecided)))
 
 
-def node(launcher: Path, a: Launch, path: Path, under: list[Node],
+def node(launcher: Path, a: Launch, path: Path, under: list[Node] | None,
          undecided: list[str]) -> Node:
     settled = reported_since(a, last_time(path), TURN_ENDED)
     return Node(parent_label(launcher), launcher, a, path, under, settled,
@@ -103,19 +113,34 @@ def notified_turns(nodes: list[Node]) -> dict[str, float]:
                               for n, t in zip(left, starts)))
 
 
-def listing(n: Node, parent_open: bool, told: dict[str, float],
-            undecided: list[str]) -> Listed | None:
+def settle_turns(nodes: list[Node], undecided: list[str]) -> None:
+    """Set the `in_progress` of each of `nodes` by `turn_open` with the
+    latest notification of it, where `notified_turns` gives one."""
+    told = notified_turns(nodes)
+    for n in nodes:
+        t = told.get(n.launch.agent or "")
+        if n.in_progress and t is not None:
+            n.in_progress = turn_open(n.path, t, undecided)
+
+
+def listing(n: Node, parent_open: bool, undecided: list[str]) -> Listed | None:
     """The agent of `n` where its work is open, by the rule the `--running`
     item of `profile_runs.py --help` gives, with the work of its parent open
-    where `parent_open` holds. A settled agent has ended its turn after every
-    message it received, and only the end of its transcript is read. The
-    parent's latest message comes from the agent's profile, so it is read
-    only where the other reads leave the work open."""
+    where `parent_open` holds: by `by_rule`, or where that gives it as not
+    open, by `unknown_work`."""
+    return by_rule(n, parent_open, undecided) or unknown_work(n, undecided)
+
+
+def by_rule(n: Node, parent_open: bool, undecided: list[str]) -> Listed | None:
+    """`listing` but for the case of `unknown_work`. A settled agent has
+    ended its turn after every message it received, and only the end of its
+    transcript is read. The parent's latest message comes from the agent's
+    profile, so it is read only where the other reads leave the work
+    open."""
     a, child = n.launch, n.path
     if n.settled:
         return None
-    t = told.get(a.agent or "")
-    if n.in_progress and (t is None or turn_open(child, t, undecided)):
+    if n.in_progress:
         return Listed(n.parent, child, a, profile(child, undecided), False, None, None)
     if not parent_open:
         return None
@@ -131,30 +156,110 @@ def listing(n: Node, parent_open: bool, told: dict[str, float],
     return Listed(n.parent, child, a, run, True, last_time(child, is_turn_entry), found)
 
 
+def unknown_work(n: Node, undecided: list[str]) -> Listed | None:
+    """The agent of `n` where its turn has ended and work of its own still
+    runs, as the `--running` item of `profile_runs.py --help` gives that
+    work, with the `undecided` line that names it with that work: the
+    agents under it that `is_busy` gives, and `own_work`."""
+    below = [agent_id(m.path) for m in every_node(nodes_under(n, undecided), undecided)
+             if is_busy(m, undecided)]
+    own = own_work(n, undecided)
+    if not below and not own:
+        return None
+    undecided.append(mctx("{run}: its turn has ended while work of its own still "
+                          "runs: {work}; whether its work is open is unknown, and "
+                          "it counts as open").format(
+        run=agent_id(n.path), work=", ".join([*below, *own])))
+    run = profile(n.path, undecided)
+    return Listed(n.parent, n.path, n.launch, run, True,
+                  last_time(n.path, is_turn_entry), parent_reports(run, undecided, n.launch))
+
+
+def is_busy(n: Node, undecided: list[str]) -> bool:
+    """Whether the agent of `n` is work that still runs for each run above
+    it: its turn is in progress, `own_work` gives it work, or an agent under
+    it is busy. Read once for each agent."""
+    if n.busy is None:
+        n.busy = (n.in_progress or bool(own_work(n, undecided))
+                  or any(is_busy(m, undecided) for m in nodes_under(n, undecided)))
+    return n.busy
+
+
+def own_work(n: Node, undecided: list[str]) -> list[str]:
+    """What the run of `n` backgrounded that is still running, other than an
+    agent `nodes_under` gives: each command, by its label, and each agent,
+    by its agent id where its launch gives one, or else by its label. Its
+    profile is read only where `may_still_run` holds, and once for each
+    agent."""
+    if n.own is None:
+        n.own = []
+        reached = {m.launch.call for m in nodes_under(n, undecided)}
+        if may_still_run(n.path, reached):
+            agents = {a.call: a.agent for a in launches(n.path, undecided)}
+            n.own = [agents.get(m.call) or f"`{m.label}`"
+                     for m in profile(n.path, undecided).backgrounded
+                     if m.call not in reached]
+    return n.own
+
+
+def may_still_run(path: Path, reached: set[str]) -> bool:
+    """Whether a Bash call or an agent the run at `path` ran in the
+    background may still run: a result in its transcripts gives such a call
+    or the call that launched such an agent, other than a call of
+    `reached`, and no notification in them
+    gives the id of that call or, for a Bash call, its task id. Only the
+    lines that hold `BACKGROUND_TASK`, the status of an agent launched in
+    the background or such an id are read, and `profile` settles which
+    calls still run, among them one whose notifications give only the
+    agent id."""
+    started: list[set[str]] = []
+    for p in chain(path):
+        for e in read_entries(p, naming={BACKGROUND_TASK,
+                                         LaunchStatus.ASYNC_LAUNCHED.value}):
+            r = e.get("toolUseResult")
+            if e.get("type") != "user" or not isinstance(r, dict):
+                continue
+            calls = {str(b["tool_use_id"]) for b in blocks(e, "tool_result")
+                     if b.get("tool_use_id")}
+            if r.get(BACKGROUND_TASK):
+                started.append({str(r[BACKGROUND_TASK]), *calls})
+            elif member(LaunchStatus, r.get("status")) is LaunchStatus.ASYNC_LAUNCHED:
+                if not calls & reached:
+                    started.append(calls)
+    if not started:
+        return False
+    told = {v for p in chain(path) for e in read_entries(p, naming=set().union(*started))
+            if e.get("type") != "assistant" for v in notified(e)}
+    return any(not ids & told for ids in started)
+
+
 def running_agents(path: Path, undecided: list[str]) -> list[Listed]:
     """The agents under the run at `path` whose work is open, as `listing`
-    gives each, each parent's agents after it, with one `notified_turns`
+    gives each, each parent's agents after it, with one `settle_turns`
     over them and the runs above it."""
     up = ancestry(path, undecided)
     down = launched_under(path, undecided)
-    told = notified_turns([*up, *every_node(down)])
-    return listed_under(down, open_along(up, told, undecided), told, undecided)
+    if up:
+        up[-1].under = down
+    settle_turns([*up, *every_node(down, undecided)], undecided)
+    return listed_under(down, open_along(up, undecided), undecided)
 
 
 def work_open(path: Path, undecided: list[str]) -> bool:
     """Whether the work of the run at `path` is open: where it is the main
     transcript, or where `listing` gives it from its parent's run, read up
-    its parents by `ancestry`, with one `notified_turns` over them."""
+    its parents by `ancestry`, with one `settle_turns` over them."""
     up = ancestry(path, undecided)
-    return open_along(up, notified_turns(up), undecided)
+    settle_turns(up, undecided)
+    return open_along(up, undecided)
 
 
 def ancestry(path: Path, undecided: list[str]) -> list[Node]:
     """The run at `path`, where it is a subagent, and each run above it
-    that is a subagent, each as a `Node` with no agents under it, from the
-    top. Where no transcript of a run's parent gives its launch, its work is
-    unknown and counts as open, the runs above it are left out, and an
-    `undecided` line names it."""
+    that is a subagent, each as a `Node` whose agents under it are not read,
+    from the top. Where no transcript of a run's parent gives its launch,
+    its work is unknown and counts as open, the runs above it are left out,
+    and an `undecided` line names it."""
     out: list[Node] = []
     while is_subagent(path):
         aid = agent_id(path)
@@ -167,18 +272,18 @@ def ancestry(path: Path, undecided: list[str]) -> list[Node]:
                                   "agent it launched whose turn has ended is listed as "
                                   "under a parent whose work is open").format(run=aid))
             break
-        out.append(node(found[-1], launch, launch.path, [], undecided))
+        out.append(node(found[-1], launch, launch.path, None, undecided))
         path = found[-1]
     return out[::-1]
 
 
-def open_along(up: list[Node], told: dict[str, float], undecided: list[str]) -> bool:
+def open_along(up: list[Node], undecided: list[str]) -> bool:
     """Whether the work of the last run of `up` is open, read down from the
     first, whose parent's work counts as open, or where `up` is empty,
     True."""
     is_open = True
     for n in up:
-        is_open = listing(n, is_open, told, undecided) is not None
+        is_open = listing(n, is_open, undecided) is not None
     return is_open
 
 
@@ -196,11 +301,21 @@ def launched_under(path: Path, undecided: list[str]) -> list[Node]:
     return out
 
 
-def every_node(nodes: list[Node]) -> list[Node]:
-    return [m for n in nodes for m in (n, *every_node(n.under))]
+def nodes_under(n: Node, undecided: list[str]) -> list[Node]:
+    """The agents the run of `n` launched, as `launched_under` gives them,
+    read once, with `settle_turns` over each agent under them."""
+    if n.under is None:
+        n.under = launched_under(n.path, undecided)
+        settle_turns(every_node(n.under, undecided), undecided)
+    return n.under
 
 
-def listed_under(nodes: list[Node], parent_open: bool, told: dict[str, float],
+def every_node(nodes: list[Node], undecided: list[str]) -> list[Node]:
+    return [m for n in nodes
+            for m in (n, *every_node(nodes_under(n, undecided), undecided))]
+
+
+def listed_under(nodes: list[Node], parent_open: bool,
                  undecided: list[str]) -> list[Listed]:
     """`listing` of each of `nodes`, whose parent's work is open where
     `parent_open` holds, each followed by those of the agents under it,
@@ -210,13 +325,14 @@ def listed_under(nodes: list[Node], parent_open: bool, told: dict[str, float],
     transcript gives, and `unreached` the others."""
     out: list[Listed] = []
     for n in nodes:
-        listed = listing(n, parent_open, told, undecided)
-        below = listed_under(n.under, listed is not None, told, undecided)
+        under = nodes_under(n, undecided)
+        listed = listing(n, parent_open, undecided)
+        below = listed_under(under, listed is not None, undecided)
         if listed:
-            if not n.under and listed.run.backgrounded:
+            if not under and listed.run.backgrounded:
                 unreached(listed, undecided)
             shown = {b.launch.call for b in below}
-            closed = {c.launch.call for c in n.under} - shown
+            closed = {c.launch.call for c in under} - shown
             listed.running = [m for m in listed.run.backgrounded
                               if m.call not in closed]
             out.append(listed)
