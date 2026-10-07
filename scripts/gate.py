@@ -19,8 +19,9 @@ A command runs on the stems its definition in `gating.commands` gives,
 which the end of `--help` lists for each command. Every command reads the
 solver files from `tests/gate/solvers/` and the witness files from
 `tests/gate/witnesses/`.
-On each stem, the commands run in the order given, which is the order a
-pass runs them, sharing one run cache from empty: this is the cold pass.
+On each stem, the commands run in the order given, or in a timed run in the
+order of `gating.commands.COMMANDS`, which is the order a pass runs them,
+sharing one run cache from empty: this is the cold pass.
 Then the same sequence runs again with every result cached: this is the
 warm pass. The stems run in parallel, other than in the cold pass of a
 timed run, which runs one command at a time.
@@ -34,7 +35,8 @@ A command's outputs are its output, in `<key>.txt`, the witness file, in
 The cold pass is compared with the accepted outputs and the accepted times,
 so a command's exit code is compared with the accepted one.
 A `DIFF` line names an output file that differs, and a `NOTIME` line a
-command with no accepted time. A time over 1.25 times the accepted time plus
+command with no accepted time taken after the sequence it now runs after.
+A time over 1.25 times the accepted time plus
 1 s gives a `SLOW` or a `LOADED` line, which gives the outside CPU: the CPU
 time that processes outside the gate's process tree used over the command's
 run, the machine's busy CPU time less the gate tree's own. Where the outside
@@ -42,8 +44,12 @@ CPU is over one core on average, the line is a `LOADED` line, and otherwise
 a `SLOW` line. With `--accept`, a line above the last line gives the outside
 CPU over the whole run. A command's time depends on what the commands before it
 on its stem cached, so times compare only where the sequence runs in full up
-to it: on each stem, a timed run runs each command given before the last one
-whose time it judges. The warm pass is
+to it: on each stem, a timed run runs every gate command before the last one
+whose time it judges, whether or not it was given, and an accepted time
+records the key and the arguments of each command that ran before it on its
+stem. A command it runs on a stem only for the cache state of a later
+command it judges gives no line, runs in the cold pass alone, and writes
+its outputs under `<out-dir>/gate/prefix/`. The warm pass is
 compared with the cold pass: a `DIFF` line ending in `warm` names an output
 file that differs between them. The last line counts the lines of each kind,
 and the duration footer (`engine.duration`) follows it on stderr.
@@ -108,10 +114,7 @@ stands. The change is the difference between the commit `<base>`, which the
 change branched from, and the checkout. Its first line names the record and
 the base, and counts the commands it runs. In a timed run, it also judges
 each command that `loaded.json` keeps, whether or not the change can affect
-it, and a second line counts those the change cannot affect. A command it
-runs on a stem only for the cache state of a later command it judges gives
-no line, runs in the cold pass alone, and writes its outputs under
-`<out-dir>/gate/prefix/`. In an `--outputs-only` run, where it runs every
+it, and a second line counts those the change cannot affect. In an `--outputs-only` run, where it runs every
 command, on a checkout with no change to a tracked file against `HEAD`, it
 traces them as `--record-deps` does, and writes their dependencies, with
 the `HEAD` commit, to `<out-dir>/gate/record.json`.
@@ -143,8 +146,8 @@ both passes' wall times, and `<out-dir>/gate/log.txt` the lines printed
 above the last line.
 
 The accepted times depend on the machine, so every worktree of the
-repository reads them from one file: `times.json` under `.cache/gate/` of
-the main worktree, the directory that holds the repository's common git
+repository reads them from one file: `accepted-times.json` under
+`.cache/gate/` of the main worktree, the directory that holds the repository's common git
 directory. The dependency record is read and written there too, as
 `deps.json`, and so is the commit `--since-timed` keeps, as `timed.json`.
 So are the commands that a timed run gives a `LOADED` line, as
@@ -153,16 +156,17 @@ So are the commands that a timed run gives a `LOADED` line, as
 accepted outputs are read from the worktree the gate runs in.
 
 `--accepted` names an accepted directory other than `tests/gate/accepted/`.
-Its accepted outputs, its accepted times, in its own `times.json`, the
-commands kept for a timed run, in its own `loaded.json`, and the commit
+Its accepted outputs, its accepted times, in its own
+`accepted-times.json`, the commands kept for a timed run, in its own `loaded.json`, and the commit
 `--since-timed` keeps, in its own `timed.json`, are read in place of those
 above.
 
 `--accept` takes an `<out-dir>` with no `gate/` under it, runs the gate,
-and then writes each cold time and output as accepted where no accepted
-time or output of its name stands, and over one that stands only with
-`--replace`, so that an accepting run after a regression keeps the faster
-times. `--accept` and `--outputs-only` are not given together.
+and then writes each cold time, with its sequence, as accepted where no
+accepted time of its name stands after the same sequence, and each output
+where no accepted output of its name stands, and over a time or output
+that stands only with `--replace`, so that an accepting run after a
+regression keeps the faster times. `--accept` and `--outputs-only` are not given together.
 
 Exit status: without `--accept`, 1 when the last line counts a line of any
 kind, and 0 otherwise; with `--accept`, 0 once the accepted times and
@@ -200,7 +204,8 @@ def run_gate(argv: Sequence[str]) -> int:
     ap.add_argument("cmds", nargs="*", metavar="cmd",
                     help=f"one of {', '.join(COMMANDS)}; every one by default, in that order")
     ap.add_argument("--accept", action="store_true",
-                    help="write the run's times and outputs as accepted where none stands")
+                    help="write the run's times and outputs as accepted where none they are "
+                         "compared with stands")
     ap.add_argument("--replace", action="store_true",
                     help="with --accept, write every time and output over the accepted one")
     ap.add_argument("--outputs-only", action="store_true",

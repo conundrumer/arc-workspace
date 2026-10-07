@@ -3,7 +3,6 @@ commands' lock they take, the comparison of their outputs and times, and
 the writing of its times and outputs as accepted."""
 
 import contextlib
-import json
 import os
 import re
 import shutil
@@ -18,8 +17,8 @@ from cli.common import WALL_LIMIT_ENV
 from controlled_markdown import mctx
 from engine import checkout, rwlock
 from engine.duration import FOOTER_RE
-from engine.memo import write_whole
 from gating.commands import (
+    COMMANDS,
     DOCUMENTS,
     EXTS,
     SOLVERS,
@@ -33,7 +32,15 @@ from gating.commands import (
 from gating.cpu import CpuSample, OutsideCpu
 from gating.deps import GATE_SCRIPT, TRACE, lines_of, pruning_lines, ranges
 from gating.lines import TIME_KINDS, Line, LineKind, same
-from gating.records import keep_loaded, loaded_file, times_file
+from gating.records import (
+    AcceptedTime,
+    RunSequence,
+    keep_loaded,
+    keep_times,
+    loaded_file,
+    read_times,
+    times_file,
+)
 from handbook.paths import DOCUMENTS_ENV
 
 TIME_EXT = ".time"
@@ -144,8 +151,10 @@ class Gate:
         """Whether each command also runs on the stems of `STEMS` it drops,
         as `--coverage` gives."""
         self.times_file = times_file(accepted)
-        self.times: dict[str, float] = (
-            json.loads(self.times_file.read_text()) if self.times_file.exists() else {})
+        self.times = read_times(self.times_file)
+        self.cold_times: dict[str, AcceptedTime] = {}
+        """The time of each judged cold run, with the sequence it ran
+        after."""
         self.loaded_file = loaded_file(accepted)
         self.shown = f"{checkout.shown(self.dir)}/"
         self.log_lock = threading.Lock()
@@ -191,13 +200,29 @@ class Gate:
         with rwlock.taken(rwlock.Hold.SHARED, self.notice) as hold:
             yield hold
 
+    def witness_file(self, stem: str) -> Path:
+        return self.wit / f"{stem}.wit.json"
+
+    def arguments(self, cmd: GateCommand, stem: str) -> tuple[str, ...]:
+        """The script and arguments of `cmd` on `stem`, as an accepted time
+        records them: a path under `out/gate/` written from `OUT_MARK`, and
+        another path written as `checkout.shown` prints it."""
+        def recorded(arg: str) -> str:
+            path = Path(arg)
+            if not path.is_absolute():
+                return arg
+            if path.is_relative_to(self.dir):
+                return f"{OUT_MARK}{path.relative_to(self.dir)}"
+            return str(checkout.shown(path))
+        return (cmd.script, *map(recorded, cmd.argv(stem, self.witness_file(stem))))
+
     def run_one(self, cmd: GateCommand, stem: str, role: Role, cold: bool, cache: Path,
                 under: rwlock.Hold | None) -> tuple[int, float, OutsideCpu | None]:
         """`cmd` on `stem` under the hold `held` gives, its normalized
         output, witness file and exit code written to the directory of its
         pass or its role; the exit code, the wall time, and, where it runs
         under an exclusive hold, the outside CPU over its run."""
-        wf = self.wit / f"{stem}.wit.json"
+        wf = self.witness_file(stem)
         if cmd.takes_witness_file:
             shutil.copyfile(frozen_witness(stem), wf)
         key = cmd.key(stem)
@@ -244,11 +269,13 @@ class Gate:
             case Role.PREFIX:
                 return self.prefix
 
-    def compare(self, cmd: GateCommand, stem: str, wall: float,
+    def compare(self, cmd: GateCommand, stem: str, wall: float, after: RunSequence,
                 outside: OutsideCpu | None) -> list[Line]:
         """The cold run's lines: a `DIFF` line per output file that differs
         from the accepted one, and in a timed run a `SLOW`, `LOADED` or
-        `NOTIME` line for its time."""
+        `NOTIME` line for its time, which ran after `after`. The time is
+        compared with an accepted time only where that time was taken after
+        the same sequence."""
         key = cmd.key(stem)
         lines = [Line(LineKind.DIFF, cmd.name, stem, ext) for ext in cmd.exts
                  if not same(self.accepted / f"{key}.{ext}", self.new / f"{key}.{ext}")]
@@ -257,14 +284,21 @@ class Gate:
         if outside is None:
             raise ValueError(f"the cold run of {key} in a timed run has no outside CPU")
         Path(self.new / f"{key}{TIME_EXT}").write_text(f"{wall}\n")
-        accepted = self.times.get(key)
+        self.cold_times[key] = AcceptedTime(wall, after)
+        accepted = self.standing(key, after)
         if accepted is None:
-            lines.append(Line(LineKind.NOTIME, cmd.name, stem, f"time={wall}s"))
+            other = ", accepted after another sequence" if key in self.times else ""
+            lines.append(Line(LineKind.NOTIME, cmd.name, stem, f"time={wall}s{other}"))
         elif wall > SLOW_FACTOR * accepted + SLOW_MARGIN:
             kind = LineKind.LOADED if outside.cores > 1 else LineKind.SLOW
             lines.append(Line(kind, cmd.name, stem,
                               f"time={wall}s accepted={accepted}s {outside}"))
         return lines
+
+    def standing(self, key: str, after: RunSequence) -> float | None:
+        """The accepted time of `key`, where it was taken after `after`."""
+        accepted = self.times.get(key)
+        return accepted.seconds if accepted is not None and accepted.after == after else None
 
     def compare_warm(self, cmd: GateCommand, stem: str) -> list[Line]:
         """The warm run's lines: a `DIFF` line ending in `warm` per output
@@ -277,10 +311,11 @@ class Gate:
              lines: list[Line]) -> None:
         """The cold pass of `runs` on `stem`, under the hold `held` gives,
         the lines of its judged runs added to `lines`."""
-        for cmd, role in runs:
+        for i, (cmd, role) in enumerate(runs):
             _, wall, outside = self.run_one(cmd, stem, role, True, self.cache(stem), under)
             if role is Role.JUDGED:
-                lines += self.compare(cmd, stem, wall, outside)
+                after = tuple((c.key(stem), self.arguments(c, stem)) for c, _ in runs[:i])
+                lines += self.compare(cmd, stem, wall, after, outside)
 
     def warm_pass(self, stem: str, runs: Sequenced, lines: list[Line]) -> None:
         """The warm pass of the judged runs of `runs` on `stem`, each under
@@ -356,7 +391,10 @@ class Gate:
     def run(self, cmds: Sequence[GateCommand], keys: set[str]) -> list[Line]:
         """The cold pass of `cmds` on their stems, and in a timed run the
         warm pass after it, each stem's lines written to its log; the
-        lines, the stems in order."""
+        lines, the stems in order. A timed run runs the commands in the
+        order of `COMMANDS`, and on each stem every command of `COMMANDS`
+        before the last one it judges there, so that each time follows the
+        stem's full sequence."""
         for d in (self.new, self.warm, self.wit, *self.traced_dirs(Role.JUDGED)):
             d.mkdir(parents=True, exist_ok=True)
         dropped = {k for c in cmds for k in self.dropped_keys(c, keys)}
@@ -367,7 +405,8 @@ class Gate:
         shutil.copytree(DOCUMENTS, self.documents)
         stems = sorted({s for c in cmds for s in (*c.stems, *dropped_stems(c))
                         if c.key(s) in keys | dropped})
-        runs = {s: sequence(s, cmds, keys, dropped, prefixed=self.timed) for s in stems}
+        order = list(COMMANDS.values()) if self.timed else cmds
+        runs = {s: sequence(s, order, keys, dropped, prefixed=self.timed) for s in stems}
         if any(r is Role.PREFIX for s in stems for _, r in runs[s]):
             self.prefix.mkdir(parents=True, exist_ok=True)
         lines: dict[str, list[Line]] = {s: [] for s in stems}
@@ -406,15 +445,13 @@ class Gate:
         return tuple(k for k in LineKind if self.timed or k not in TIME_KINDS)
 
     def accept(self, replace: bool) -> tuple[int, int]:
-        """Each cold time and output written as accepted where none of its
-        name stands, or over it with `replace`; the counts of times and
-        outputs written."""
-        times = {key: float(p.read_text()) for p in sorted(self.new.glob(f"*{TIME_EXT}"))
-                 if _writes(replace, (key := p.name.removesuffix(TIME_EXT)) in self.times)}
-        merged = dict(sorted({**self.times, **times}.items()))
-        self.times_file.parent.mkdir(parents=True, exist_ok=True)
-        write_whole(self.times_file,
-                    (json.dumps(merged, indent=1) + "\n").encode())
+        """Each cold time, with its sequence, written as accepted where no
+        accepted time of its name stands after the same sequence, or over it
+        with `replace`, and each output where none of its name stands, or
+        over it with `replace`; the counts of times and outputs written."""
+        times = {key: t for key, t in self.cold_times.items()
+                 if _writes(replace, self.standing(key, t.after) is not None)}
+        keep_times(self.times_file, {**self.times, **times})
         written = 0
         for p in sorted(p for ext in EXTS for p in self.new.glob(f"*.{ext}")):
             dest = self.accepted / p.name
@@ -425,6 +462,6 @@ class Gate:
 
 
 def _writes(replace: bool, stands: bool) -> bool:
-    """Whether `--accept` writes a time or output: where none of its name
-    stands, and over one that stands with `--replace`."""
+    """Whether `--accept` writes a time or output: where none that it is
+    compared with stands, and over one that stands with `--replace`."""
     return replace or not stands

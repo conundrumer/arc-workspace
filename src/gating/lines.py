@@ -18,7 +18,8 @@ class LineKind(StrEnum):
     """A time over the accepted one, where the outside CPU is over one
     core."""
     NOTIME = "NOTIME"
-    """A command with no accepted time."""
+    """A command with no accepted time taken after the sequence it ran
+    after: none at all, or one taken after another sequence."""
 
 
 TIME_KINDS = frozenset({LineKind.SLOW, LineKind.LOADED, LineKind.NOTIME})
