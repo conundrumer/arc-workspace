@@ -4,16 +4,15 @@ action does.
 
 The state of each timer is in files under `/tmp`, named by the timer's
 kind and the agent's id, so a start or a stop from any worktree reaches the
-same timer, and one of one kind never reaches a timer of the other. The
-timer runs while its process holds an exclusive lock on
+same timer. The timer runs while its process holds an exclusive lock on
 `/tmp/<kind>-<agent id>.timer`, which the system releases when that process
 ends, however it ends. So a pid file left by a timer that ended, or a pid
 that another process now has, never counts as a running timer.
 
-A keep-alive start joins a running keep-alive timer, since the agent needs
-only one of them to end. A budget start fails where a budget timer runs,
-since a budget counts from its own start, which a timer started earlier
-cannot give."""
+A keep-alive start waits on a running keep-alive timer since the agent
+needs only one of them to end, and a budget start fails where a budget
+timer runs since a budget counts from its own start, which a timer started
+earlier cannot give."""
 
 import argparse
 import fcntl
@@ -42,9 +41,24 @@ class Kind(StrEnum):
 
     @property
     def fixed_seconds(self) -> int | None:
-        """The seconds a timer of this kind sleeps; None where its start
-        gives them."""
+        """The seconds a timer of this kind sleeps, which its start does
+        not give; None where its start gives them."""
         return KEEP_ALIVE_SECONDS if self is Kind.KEEP_ALIVE else None
+
+
+class Action(StrEnum):
+    START = "start"
+    STOP = "stop"
+
+
+class StateFile(StrEnum):
+    """A file of a timer's state, by its suffix: the file whose lock the
+    running timer holds, the lock that serializes the starts and stops of
+    the timer, and the running timer's pid."""
+
+    TIMER = "timer"
+    LOCK = "lock"
+    PID = "pid"
 
 
 KEEP_ALIVE_SECONDS = 240
@@ -68,15 +82,13 @@ class Timer:
     kind: Kind
     agent: str
 
-    def state_file(self, suffix: str) -> Path:
+    def state_file(self, suffix: StateFile) -> Path:
         return STATE_DIR / f"{self.kind}-{self.agent}.{suffix}"
 
     def open(self) -> int:
-        return os.open(self.state_file("timer"), os.O_RDWR | os.O_CREAT, 0o600)
+        return os.open(self.state_file(StateFile.TIMER), os.O_RDWR | os.O_CREAT, 0o600)
 
     def status(self, line: str, **fields: object) -> str:
-        """The status line `line`, filled with `fields`, after the prefix
-        that names the timer."""
         return f"{self.kind} {self.agent}: {line.format(**fields)}"
 
     def say(self, line: str, **fields: object) -> None:
@@ -86,7 +98,7 @@ class Timer:
     def serialized(self) -> Iterator[None]:
         """Holds the lock that serializes the starts and stops of this
         timer."""
-        with open(self.state_file("lock"), "a") as f:
+        with open(self.state_file(StateFile.LOCK), "a") as f:
             fcntl.flock(f, fcntl.LOCK_EX)
             try:
                 yield
@@ -119,7 +131,7 @@ def start(timer: Timer, seconds: int | None) -> None:
     if seconds is None:
         raise ValueError(f"a {timer.kind} start is given no seconds")
     fd = timer.open()
-    pid_file = timer.state_file("pid")
+    pid_file = timer.state_file(StateFile.PID)
     with timer.serialized():
         runs = timer_runs(fd)
         holder = pid_file.read_text().strip() if runs else ""
@@ -152,7 +164,7 @@ def start(timer: Timer, seconds: int | None) -> None:
 
 def stop(timer: Timer, seconds: int | None) -> None:
     fd = timer.open()
-    pid_file = timer.state_file("pid")
+    pid_file = timer.state_file(StateFile.PID)
     with timer.serialized():
         if not timer_runs(fd):
             pid_file.write_text("")
@@ -169,28 +181,31 @@ def stop(timer: Timer, seconds: int | None) -> None:
     timer.say(mctx("timer {pid} stopped"), pid=pid)
 
 
-ACTIONS: dict[str, Callable[[Timer, int | None], None]] = {"start": start, "stop": stop}
+ACTIONS: dict[Action, Callable[[Timer, int | None], None]] = {
+    Action.START: start, Action.STOP: stop}
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=textwrap.dedent(HELP).format(seconds=KEEP_ALIVE_SECONDS),
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("action", choices=ACTIONS)
+    parser.add_argument("action", choices=[str(a) for a in Action])
     parser.add_argument("kind", choices=[str(k) for k in Kind])
     parser.add_argument("agent_id")
     parser.add_argument("seconds", type=int, nargs="?")
     args = parser.parse_args()
+    action = Action(args.action)
     kind = Kind(args.kind)
     agent: str = args.agent_id
     given: int | None = args.seconds
     if not AGENT_ID.fullmatch(agent):
         parser.error(mctx("`{agent}` is not an agent id").format(agent=agent))
-    if (args.action == "start" and kind is Kind.BUDGET) != (given is not None):
-        parser.error(mctx("seconds are given with a budget start, and with no other call"))
+    if (action is Action.START and kind.fixed_seconds is None) != (given is not None):
+        parser.error(mctx("seconds are given with a start of {kinds}, and with no other call").format(
+            kinds=" or ".join(f"`{k}`" for k in Kind if k.fixed_seconds is None)))
     if given is not None and given <= 0:
         parser.error(mctx("the seconds are {seconds}, not a positive number").format(seconds=given))
-    ACTIONS[args.action](Timer(kind, agent), kind.fixed_seconds or given)
+    ACTIONS[action](Timer(kind, agent), kind.fixed_seconds or given)
 
 
 if __name__ == "__main__":

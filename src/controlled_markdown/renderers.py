@@ -15,6 +15,7 @@ from controlled_markdown import (
     CODE_OF,
     COMMENT,
     CONTENT,
+    DOCUMENT,
     FENCE_RE,
     HEADING,
     INCLUDE,
@@ -34,11 +35,12 @@ from controlled_markdown import (
     _closes,
     _walk,
     escape,
-    parse,
+    links,
     relative,
+    relative_link,
+    relative_to_no_file,
     slug,
     target_of,
-    write,
 )
 
 VARIABLE_RE = re.compile(r"\{\{([A-Za-z0-9_.-]+)\}\}")
@@ -264,7 +266,7 @@ def _rooted(text: str, node: Node, st: _State) -> str:
     def one(m):
         path = m.group(2).partition("#")[0]
         if (not path or SCHEME_RE.match(m.group(2))
-                or not path.startswith(("./", "../"))):
+                or not relative_link(path)):
             return m.group(0)
         whole = (base.parent / path).resolve()
         rooted = relative(whole, st.reg.root)
@@ -517,28 +519,36 @@ def _tidy(out: list[str]) -> str:
 
 
 # A line of ordinary Markdown that is an ATX heading, with its text, its
-# indent taken off. A fence or a heading stands at an indent of three spaces
-# at most.
+# indent taken off. A heading stands at an indent of three spaces at most.
 MD_HEADING_RE = re.compile(r"^#{1,6}(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$")
 MD_INDENT = 3
 
 
-def markdown_headings(text: str) -> list[str]:
-    """The text of each ATX heading in ordinary Markdown, the lines of its
-    fenced code blocks left out."""
-    out: list[str] = []
+def outside_fences(text: str) -> Iterator[str]:
+    """Each line of ordinary Markdown outside its fenced code blocks, the
+    fence lines left out. A fence counts at any indent, since a render nests
+    a code block under a list item at that item's indent."""
     fence = ""
     for line in text.split("\n"):
-        lead = len(line) - len(line.lstrip(" "))
-        if lead > MD_INDENT:
-            continue
-        body = line[lead:]
+        body = line.strip()
         if fence:
             if _closes(body, fence):
                 fence = ""
         elif (m := FENCE_RE.match(body)) is not None:
             fence = m.group(1)
-        elif (h := MD_HEADING_RE.match(body)) is not None:
+        else:
+            yield line
+
+
+def markdown_headings(text: str) -> list[str]:
+    """The text of each ATX heading in ordinary Markdown, the lines of its
+    fenced code blocks left out (`outside_fences`)."""
+    out: list[str] = []
+    for line in outside_fences(text):
+        lead = len(line) - len(line.lstrip(" "))
+        if lead > MD_INDENT:
+            continue
+        if (h := MD_HEADING_RE.match(line[lead:])) is not None:
             out.append(h.group(1) or "")
     return out
 
@@ -576,19 +586,13 @@ def _anchored(node: Node, st: _State, shown: set[int],
     own, written as a heading whose anchor no other heading of the render
     repeats. `shown` holds the headings the render writes as headings, by
     `id`, and `anchors` counts the headings of each anchor."""
-    base = st.reg.file(node.source)
-
     def one(m: re.Match[str]) -> str:
         target = m.group(2)
         path, _, ident = target.partition("#")
         if SCHEME_RE.match(target) or not ident:
             return m.group(0)
-        if base is None and path.startswith(("./", "../")):
-            raise ControlledMarkdownError(
-                node.source, node.line, "link-anchor",
-                f"`{target}` is relative to a document read from no file")
-        file = target_of(path, base or Path(node.source), st.reg.root)
-        copies = st.whole.get((file, ident))
+        file = _link_file(node, path, st)
+        copies = None if file is None else st.whole.get((file, ident))
         if copies is None:
             return m.group(0)
         heading = copies[0] if len(copies) == 1 else None
@@ -599,6 +603,22 @@ def _anchored(node: Node, st: _State, shown: set[int],
 
     return "".join(part if part.startswith("`") else LINK_RE.sub(one, part)
                    for part in SPAN_RE.split(node.text))
+
+
+def _link_file(node: Node, path: str, st: _State) -> Path | None:
+    """The file a link with `path` in the text of `node` names
+    (`target_of`); None for a link to a section of its own document, in a
+    document read from no file, which names no file (`_carry`). A link
+    relative to its document, in a document read from no file, is a
+    fault."""
+    base = st.reg.file(node.source)
+    if relative_to_no_file(path, base):
+        raise ControlledMarkdownError(
+            node.source, node.line, "link-anchor",
+            f"`{path}` is relative to a document read from no file")
+    if base is None and not path:
+        return None
+    return target_of(path, base, st.reg.root)
 
 
 def _state(reg: Registry | None, values: dict | None) -> _State:
@@ -644,9 +664,12 @@ def full(document: Node, reg: Registry | None = None,
     nested lists, quotes as blockquotes, code nodes as fenced blocks.
     `after` is the Markdown a caller sets after it (`_lay_out`)."""
     st = _state(reg, values)
+    return _lay_out(_expanded(document, st), st, after)
+
+
+def _expanded(document: Node, st: _State) -> list[Node]:
     _require(document, st)
-    return _lay_out(_expand(document.children, st, (), st.reg.rel(document), ()),
-                    st, after)
+    return _expand(document.children, st, (), st.reg.rel(document), ())
 
 
 def headings(document: Node, reg: Registry | None = None,
@@ -682,10 +705,19 @@ def render(document: Node, reg: Registry | None = None,
     return full(document, reg, values, after)
 
 
-
-# ---------------------------------------------------------------- round trip
-
-
-def round_trips(document: Node) -> bool:
-    """Whether the formatter's output parses back to the same tree."""
-    return parse(write(document), document.source).shape() == document.shape()
+def render_linked(document: Node, reg: Registry | None = None
+                  ) -> tuple[str, list[tuple[Path, str]]]:
+    """A document as `render` gives it with no values, and the target of
+    each link it holds, the links its includes and inlines bring among
+    them, in the order it holds them: the file the link names, and the id
+    of a section, empty where the link names the whole file. The targets
+    are those of the links that name a file: a link to a section of the
+    document that holds it names that document's file, and names none in a
+    document read from no file."""
+    st = _state(reg, None)
+    nodes = _expanded(document, st)
+    holder = Node(DOCUMENT, source=document.source)
+    holder.children = nodes
+    found = [(file, ident) for node, _text, path, ident in links(holder, own=True)
+             if (file := _link_file(node, path, st)) is not None]
+    return _lay_out(nodes, st), found

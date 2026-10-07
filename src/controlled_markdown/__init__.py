@@ -25,10 +25,11 @@ verbatim, `write` puts it back unchanged, and a render leaves it out.
 
 The package holds Controlled Markdown as a whole: this module holds the
 parser, the formatter and the registry, `nodes` the node tree, `prose` the
-checks of prose in code, and `renderers` the renderers. This module gives
-every name of the package. `nodes` imports nothing from the package;
-`prose` and `renderers` import from this module, which gives their names
-once the rest of it is defined.
+checks of prose in code, `document_set` the checks of a document set with
+the links a node's text holds, `renderers` the renderers, and `round_trip`
+the formatter's round trip. This module gives every name of the package.
+`nodes` imports nothing from the package; each other module imports from
+this module, which gives their names once the rest of it is defined.
 """
 
 from __future__ import annotations
@@ -579,6 +580,26 @@ TEXT_OF = "text"
 READERS = (CODE_OF, QUOTE_OF, TEXT_OF, "if", "unless")
 
 
+from controlled_markdown.document_set import (  # noqa: E402
+    reached as reached,
+    carried as carried,
+    check_closure as check_closure,
+    PARTIALS as PARTIALS,
+    partials as partials,
+    inline_sites as inline_sites,
+    PARTIAL_SITES as PARTIAL_SITES,
+    check_partial_sites as check_partial_sites,
+    check_blocks as check_blocks,
+    LINK_RE as LINK_RE,
+    SPAN_RE as SPAN_RE,
+    EXTERNAL_RE as EXTERNAL_RE,
+    SCHEME_RE as SCHEME_RE,
+    links as links,
+    relative_link as relative_link,
+    relative_to_no_file as relative_to_no_file,
+    target_of as target_of,
+    check_links as check_links,
+)
 from controlled_markdown.prose import (  # noqa: E402
     mctx as mctx,
     dedent as dedent,
@@ -605,21 +626,6 @@ from controlled_markdown.prose import (  # noqa: E402
     DL_DOC_RE as DL_DOC_RE,
     dl_fragments as dl_fragments,
     check_dl_comments as check_dl_comments,
-    reached as reached,
-    carried as carried,
-    check_closure as check_closure,
-    PARTIALS as PARTIALS,
-    partials as partials,
-    inline_sites as inline_sites,
-    PARTIAL_SITES as PARTIAL_SITES,
-    check_partial_sites as check_partial_sites,
-    check_blocks as check_blocks,
-    LINK_RE as LINK_RE,
-    SPAN_RE as SPAN_RE,
-    SCHEME_RE as SCHEME_RE,
-    links as links,
-    target_of as target_of,
-    check_links as check_links,
 )
 from controlled_markdown.renderers import brief as brief  # noqa: E402
 from controlled_markdown.renderers import entries as entries  # noqa: E402
@@ -627,6 +633,8 @@ from controlled_markdown.renderers import full as full  # noqa: E402
 from controlled_markdown.renderers import gist as gist  # noqa: E402
 from controlled_markdown.renderers import headings as headings  # noqa: E402
 from controlled_markdown.renderers import markdown_headings as markdown_headings  # noqa: E402
+from controlled_markdown.renderers import outside_fences as outside_fences  # noqa: E402
 from controlled_markdown.renderers import render as render  # noqa: E402
-from controlled_markdown.renderers import round_trips as round_trips  # noqa: E402
+from controlled_markdown.renderers import render_linked as render_linked  # noqa: E402
 from controlled_markdown.renderers import variables as variables  # noqa: E402
+from controlled_markdown.round_trip import round_trips as round_trips  # noqa: E402
