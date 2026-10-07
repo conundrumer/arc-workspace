@@ -1,20 +1,14 @@
 """The form of a ticket's text, which a filing gives on stdin: its front
-matter, its title and its sections, and the fields of its file's name."""
+matter, its title and its sections."""
 
 import re
-from collections.abc import Callable, Iterable
-from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 from controlled_markdown import mctx
-from ticket_numbers import TICKET_NUMBER, ticket_path
-from ticket_vocabulary import Domain, Kind, filer_kinds, ticked
+from ticket_files import ticket_path
+from ticket_numbers import TICKET_NUMBER
+from ticket_vocabulary import Kind, filer_kinds, ticked
 from transcripts import Refused
-
-FIELD = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
-"""A field of a ticket's name: kebab words, with no `_`, which separates
-the fields."""
-
 
 FRONT = r"---\nkind: (?P<kind>\S+)\n(?P<fields>(?:[a-z-]+: .*\n)*)---\n"
 
@@ -22,61 +16,6 @@ FRONT = r"---\nkind: (?P<kind>\S+)\n(?P<fields>(?:[a-z-]+: .*\n)*)---\n"
 TICKET_HEAD = re.compile(FRONT + "# ")
 """The front matter and title mark of a ticket, or of an issue filed before
 tickets, in the text of a filing command."""
-
-
-PATTERN = "pattern"
-"""The key of the metadata of a field of `TicketName` that gives the
-pattern its text in a ticket's file name matches."""
-
-
-@dataclass(frozen=True)
-class TicketName:
-    """The fields of a ticket's file name, in their order in it."""
-    number: str = field(metadata={PATTERN: TICKET_NUMBER})
-    domain: Domain = field(metadata={PATTERN: FIELD})
-    subject: str = field(metadata={PATTERN: FIELD})
-    agent: str = field(metadata={PATTERN: FIELD})
-
-    @property
-    def file_name(self) -> str:
-        return joined_name(getattr(self, f.name) for f in fields(self))
-
-
-def joined_name(parts: Iterable[str], literal: Callable[[str], str] = str) -> str:
-    """A ticket's file name with `parts` as its fields, and the text
-    between and after them as `literal` gives it."""
-    return literal("_").join(parts) + literal(".md")
-
-
-NAME_FORM = joined_name(f"<{f.name}>" for f in fields(TicketName))
-"""The form of a ticket's file name, as a help text writes it."""
-
-TICKET_NAME = re.compile(joined_name(
-    (f"(?P<{f.name}>{f.metadata[PATTERN].pattern})" for f in fields(TicketName)), re.escape))
-
-
-def name_fields(path: Path) -> TicketName | None:
-    """The fields of the name of the ticket at `path`, None where the name
-    does not have the form `NAME_FORM` gives, as the name of a ticket filed
-    before tickets had numbers does not."""
-    name = TICKET_NAME.fullmatch(path.name)
-    if name is None or name["domain"] not in set(Domain):
-        return None
-    return TicketName(name["number"], Domain(name["domain"]), name["subject"], name["agent"])
-
-
-def ticket_name(path: Path) -> TicketName:
-    name = name_fields(path)
-    if name is None:
-        raise Refused(mctx("{path} is not named `{form}`").format(path=path, form=NAME_FORM))
-    return name
-
-
-def ticket_number(path: Path) -> str | None:
-    """The number of the ticket at `path`, None for a ticket filed before
-    tickets had numbers."""
-    name = name_fields(path)
-    return name.number if name else None
 
 
 def front_kind(head: re.Match[str]) -> Kind:

@@ -4,6 +4,7 @@ prints, says how an agent calls it."""
 
 import re
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from controlled_markdown import mctx
@@ -15,8 +16,9 @@ from handbook.paths import importable
 importable(checkout.scripts())
 
 from file_ticket import NAME_PART, Filing, main_tickets, run  # noqa: E402
+from ticket_files import SUFFIX, statuses  # noqa: E402
 from ticket_log import logged  # noqa: E402
-from ticket_numbers import statuses, write_after  # noqa: E402
+from ticket_numbers import write_after  # noqa: E402
 from ticket_vocabulary import Kind, Status  # noqa: E402
 from transcripts import Refused  # noqa: E402
 
@@ -71,12 +73,14 @@ def file_legacy(tickets: Path, unix_time: str, source: str, agent: str, text: st
     except ValueError:
         raise Refused(mctx("`{kind}` is no issue kind").format(kind=old))
     text = text.replace(f"kind: {old}\n", f"kind: {kind}\n", 1).replace("\n## Effect\n", "\n## Impact\n", 1)
-    prefix = f"{unix_time}-{source}-{agent}-"
-    taken = (int(m.group(1)) for d in statuses(tickets)
-             for p in d.glob(f"{prefix}*.md")
-             if (m := re.fullmatch(re.escape(prefix) + r"(\d+)\.md", p.name)))
+
+    def name(i: str, escape: Callable[[str], str] = str) -> str:
+        return escape(f"{unix_time}-{source}-{agent}-") + i + escape(SUFFIX)
+
+    taken = (int(m.group(1)) for d in statuses(tickets) for p in d.glob(name("*"))
+             if (m := re.fullmatch(name(r"(\d+)", re.escape), p.name)))
     return write_after(tickets / Status.OPEN, logged(text, Status.OPEN, agent), taken,
-                       lambda n: f"{prefix}{n}.md")
+                       lambda n: name(str(n)))
 
 
 def legacy_main(args: list[str]) -> int:

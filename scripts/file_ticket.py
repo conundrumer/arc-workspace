@@ -21,12 +21,13 @@ from handbook.paths import importable
 # `scripts/` off `sys.path`, and the modules below import from there.
 importable(checkout.scripts())
 
-from ticket_form import (DEFECT_SECTIONS, FIELD, LOG, NAME_FORM, SECTIONS,  # noqa: E402
-                         TicketName, checked_kind, heading, sections_example)
+from ticket_files import FIELD, NAME_FORM, TicketName, ticket_path  # noqa: E402
+from ticket_form import (DEFECT_SECTIONS, LOG, SECTIONS, checked_kind, heading,  # noqa: E402
+                         sections_example)
 from ticket_log import (AGENT_ID, CLOSED_BY, TIME_FORM, UNBLOCKED_BY, Wait,  # noqa: E402
                         log_moves, logged)
-from ticket_numbers import (SESSION_VAR, SESSIONS, reserve,  # noqa: E402
-                            session_id, session_index, ticket_path, write_new)
+from ticket_numbers import (SESSION_VAR, SESSIONS, reserve, session_id,  # noqa: E402
+                            session_index, write_new)
 from ticket_settle import MANY_IDEAS, to_settle  # noqa: E402
 from ticket_vocabulary import Domain, Kind, Resolution, Status, ticked  # noqa: E402
 from transcripts import Refused  # noqa: E402

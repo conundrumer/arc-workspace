@@ -9,8 +9,9 @@ from enum import StrEnum
 from pathlib import Path
 
 from controlled_markdown import mctx
-from ticket_form import FIELD, HEADING, LOG, ticket_kind, ticket_number
-from ticket_numbers import TICKET_NUMBER, ticket_path, ticket_status
+from ticket_files import FIELD, ticket_files, ticket_number, ticket_path, ticket_status
+from ticket_form import HEADING, LOG, ticket_kind
+from ticket_numbers import TICKET_NUMBER
 from ticket_vocabulary import Kind, Resolution, Status, ticked
 from transcripts import Refused
 
@@ -274,7 +275,7 @@ def unblock(tickets: Path, change: Path, agent: str, agent_id: str | None, resol
     else:
         to, line = Status.OPEN, UNBLOCKED_BY.format(change=Wait.CHANGE, number=number,
                                                     resolution=resolution)
-    for path in sorted((tickets / Status.BLOCKED).glob("*.md")):
+    for path in ticket_files(tickets, Status.BLOCKED):
         try:
             if waits_on(read_ticket(path)) == number:
                 moves.add(log_moves(tickets, path.name, to, agent, Status.BLOCKED, agent_id, line))

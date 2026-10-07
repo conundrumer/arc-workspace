@@ -5,9 +5,10 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from controlled_markdown import mctx
-from ticket_form import ticket_kind, ticket_name, ticket_number, title
+from ticket_files import ticket_files, ticket_name, ticket_number, ticket_path, ticket_status
+from ticket_form import ticket_kind, title
 from ticket_log import read_ticket
-from ticket_numbers import number_order, number_parts, ticket_path, ticket_status
+from ticket_numbers import number_order, number_parts
 from ticket_vocabulary import Domain, Kind, Status
 from transcripts import Refused
 
@@ -40,7 +41,7 @@ def to_settle(tickets: Path, session: int, given: Iterable[str]) -> list[str]:
     """The numbers of the list of `to-settle`, for the session with index
     `session` and the numbers `given`. A ticket filed before tickets had
     numbers belongs to no session."""
-    paths = {p for p in (tickets / Status.OPEN).glob("*.md")
+    paths = {p for p in ticket_files(tickets, Status.OPEN)
              if (number := ticket_number(p)) and number_parts(number)[0] == session}
     paths.update(p for p in (ticket_path(tickets, ref) for ref in given)
                  if ticket_status(p) is Status.OPEN)
