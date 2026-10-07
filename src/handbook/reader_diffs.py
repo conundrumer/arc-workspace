@@ -199,7 +199,7 @@ def _side_contexts(call: tuple[str, list[str]], then: dict[str, str],
     the contexts of the readers the commit defines as `_renders_in` gives
     them, and `now`, whether the checkout defines the reader. A side that
     does not define the reader gives an empty context, and a reader neither
-    side defines is a fault (`context_text`)."""
+    side defines is a fault (`reader_named`)."""
     before = then.get(context_command(*call))
     after = context_text(reader_named(call[0]), call[1]) if now or before is None else ""
     return "" if before is None else before, after

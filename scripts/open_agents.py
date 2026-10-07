@@ -9,13 +9,11 @@ from agent_reports import (TURN_ENDED, Report, ReportKind, parent_transcripts, r
                            stopped_after)
 from agent_turns import has_ended, is_turn_entry, last_time, turn_after
 from controlled_markdown import mctx
-from run_profile import Run, Span, profile
-from run_reads import LaunchStatus, blocks, is_prompt, member, notified, parent_label
-from transcripts import agent_id, chain, is_subagent, read_entries
-
-# The key of the result of a Bash call that runs in the background, which
-# gives that call's task id.
-BACKGROUND_TASK = "backgroundTaskId"
+from run_profile import (Run, Span, agent_calls, background_ends, backgrounds,
+                         profile)
+from run_reads import (BACKGROUND_TASK, LaunchStatus, blocks, is_prompt, parent_label,
+                       run_entries)
+from transcripts import agent_id, is_subagent
 
 
 @dataclass
@@ -114,8 +112,6 @@ def notified_turns(nodes: list[Node]) -> dict[str, float]:
 
 
 def settle_turns(nodes: list[Node], undecided: list[str]) -> None:
-    """Set the `in_progress` of each of `nodes` by `turn_open` with the
-    latest notification of it, where `notified_turns` gives one."""
     told = notified_turns(nodes)
     for n in nodes:
         t = told.get(n.launch.agent or "")
@@ -149,11 +145,8 @@ def by_rule(n: Node, parent_open: bool, undecided: list[str]) -> Listed | None:
             reported_since(a, received, frozenset(ReportKind))
             or stopped_after(a.entries, received, a.agent, a.call, undecided)):
         return None
-    run = profile(child, undecided)
-    found = parent_reports(run, undecided, a)
-    if found:
-        return None
-    return Listed(n.parent, child, a, run, True, last_time(child, is_turn_entry), found)
+    listed = turn_ended(n, undecided)
+    return None if listed.found else listed
 
 
 def unknown_work(n: Node, undecided: list[str]) -> Listed | None:
@@ -170,15 +163,20 @@ def unknown_work(n: Node, undecided: list[str]) -> Listed | None:
                           "runs: {work}; whether its work is open is unknown, and "
                           "it counts as open").format(
         run=agent_id(n.path), work=", ".join([*below, *own])))
+    return turn_ended(n, undecided)
+
+
+def turn_ended(n: Node, undecided: list[str]) -> Listed:
+    """The agent of `n` as listed where its turn has ended, with the reports
+    `parent_reports` gives from its launch."""
     run = profile(n.path, undecided)
     return Listed(n.parent, n.path, n.launch, run, True,
                   last_time(n.path, is_turn_entry), parent_reports(run, undecided, n.launch))
 
 
 def is_busy(n: Node, undecided: list[str]) -> bool:
-    """Whether the agent of `n` is work that still runs for each run above
-    it: its turn is in progress, `own_work` gives it work, or an agent under
-    it is busy. Read once for each agent."""
+    """Whether the agent of `n` is work of its own of each run above it, as
+    the `--running` item of `profile_runs.py --help` gives that work."""
     if n.busy is None:
         n.busy = (n.in_progress or bool(own_work(n, undecided))
                   or any(is_busy(m, undecided) for m in nodes_under(n, undecided)))
@@ -186,15 +184,13 @@ def is_busy(n: Node, undecided: list[str]) -> bool:
 
 
 def own_work(n: Node, undecided: list[str]) -> list[str]:
-    """What the run of `n` backgrounded that is still running, other than an
-    agent `nodes_under` gives: each command, by its label, and each agent,
-    by its agent id where its launch gives one, or else by its label. Its
-    profile is read only where `may_still_run` holds, and once for each
-    agent."""
+    """The work of its own of the run of `n`, as the `--running` item of
+    `profile_runs.py --help` gives it, other than an agent `nodes_under`
+    gives."""
     if n.own is None:
         n.own = []
         reached = {m.launch.call for m in nodes_under(n, undecided)}
-        if may_still_run(n.path, reached):
+        if may_still_run(n.path, reached, undecided):
             agents = {a.call: a.agent for a in launches(n.path, undecided)}
             n.own = [agents.get(m.call) or f"`{m.label}`"
                      for m in profile(n.path, undecided).backgrounded
@@ -202,35 +198,22 @@ def own_work(n: Node, undecided: list[str]) -> list[str]:
     return n.own
 
 
-def may_still_run(path: Path, reached: set[str]) -> bool:
-    """Whether a Bash call or an agent the run at `path` ran in the
-    background may still run: a result in its transcripts gives such a call
-    or the call that launched such an agent, other than a call of
-    `reached`, and no notification in them
-    gives the id of that call or, for a Bash call, its task id. Only the
-    lines that hold `BACKGROUND_TASK`, the status of an agent launched in
-    the background or such an id are read, and `profile` settles which
-    calls still run, among them one whose notifications give only the
-    agent id."""
-    started: list[set[str]] = []
-    for p in chain(path):
-        for e in read_entries(p, naming={BACKGROUND_TASK,
-                                         LaunchStatus.ASYNC_LAUNCHED.value}):
-            r = e.get("toolUseResult")
-            if e.get("type") != "user" or not isinstance(r, dict):
-                continue
-            calls = {str(b["tool_use_id"]) for b in blocks(e, "tool_result")
-                     if b.get("tool_use_id")}
-            if r.get(BACKGROUND_TASK):
-                started.append({str(r[BACKGROUND_TASK]), *calls})
-            elif member(LaunchStatus, r.get("status")) is LaunchStatus.ASYNC_LAUNCHED:
-                if not calls & reached:
-                    started.append(calls)
-    if not started:
+def may_still_run(path: Path, reached: set[str], undecided: list[str]) -> bool:
+    """Whether a call the run at `path` backgrounded, other than a call of
+    `reached`, may still run. Only the lines that name such a call or its
+    ids are read, which spares `profile` the whole run where none still
+    runs."""
+    results = run_entries(path, {BACKGROUND_TASK, LaunchStatus.ASYNC_LAUNCHED.value})
+    calls = {str(b["tool_use_id"]) for e in results for b in blocks(e, "tool_result")
+             if b.get("tool_use_id")} - reached
+    if not calls:
         return False
-    told = {v for p in chain(path) for e in read_entries(p, naming=set().union(*started))
-            if e.get("type") != "assistant" for v in notified(e)}
-    return any(not ids & told for ids in started)
+    found = {c: b for c, b in backgrounds(results, agent_calls(run_entries(path, calls)),
+                                          undecided).items() if c in calls}
+    if not found:
+        return False
+    ids = set().union(*(b.ids for b in found.values()))
+    return None in background_ends(found, run_entries(path, ids)).values()
 
 
 def running_agents(path: Path, undecided: list[str]) -> list[Listed]:
@@ -302,8 +285,6 @@ def launched_under(path: Path, undecided: list[str]) -> list[Node]:
 
 
 def nodes_under(n: Node, undecided: list[str]) -> list[Node]:
-    """The agents the run of `n` launched, as `launched_under` gives them,
-    read once, with `settle_turns` over each agent under them."""
     if n.under is None:
         n.under = launched_under(n.path, undecided)
         settle_turns(every_node(n.under, undecided), undecided)

@@ -24,6 +24,12 @@ AGENT_MESSAGE = re.compile(r'<agent-message from="([^"]+)"')
 AGENT_MESSAGE_END = "</agent-message>"
 NOTIFICATION = re.compile(r"<task-notification>(.*?)</task-notification>", re.S)
 TAG = re.compile(r"<(task-id|tool-use-id)>([^<]+)</\1>")
+BACKGROUND_TASK = "backgroundTaskId"
+"""The key of the result of a Bash call that runs in the background, which
+gives that call's task id."""
+OUTPUT_FILE = re.compile(r"Output is being written to: (\S+?)\.?(?:\s|$)")
+"""The text of a tool result that names the file a command that runs in the
+background writes its output to."""
 
 
 def member[E: Enum](kind: type[E], value: object) -> E | None:
@@ -144,10 +150,11 @@ def parent_id(path: Path) -> str:
     return meta_parent(subagent_meta(path))
 
 
-def run_entries(path: Path) -> list[Entry]:
+def run_entries(path: Path, naming: set[str] | None = None) -> list[Entry]:
     """The entries of the run of the agent whose transcript is at `path`,
-    across its transcripts."""
-    return [e for p in chain(path) for e in read_entries(p)]
+    across its transcripts, or with `naming` only those `read_entries`
+    gives with it."""
+    return [e for p in chain(path) for e in read_entries(p, naming=naming)]
 
 
 def blocks(entry: Entry, kind: str) -> list[dict[str, Any]]:
@@ -164,6 +171,13 @@ def text_of(content: Any) -> str:
         return "\n".join(b.get("text", "") for b in content
                          if isinstance(b, dict) and b.get("type") == "text")
     return ""
+
+
+def output_file(block: dict[str, Any]) -> Path | None:
+    """The file the `tool_result` block `block` names as the one its
+    command writes its output to, or None where it names none."""
+    m = OUTPUT_FILE.search(text_of(block.get("content")))
+    return Path(m.group(1)) if m else None
 
 
 def results_by_call(entries: list[Entry]) -> dict[str, dict[str, Any]]:

@@ -31,7 +31,8 @@ from run_prints import (RECENT_CALLS, print_messages,  # noqa: E402
                         print_report, print_running)
 from run_profile import (COMMAND_WIDTH, Run, clock, minutes,  # noqa: E402
                          part_split, print_groups, print_types, profile)
-from run_reads import agent_type, blocks, run_type, text_of  # noqa: E402
+from run_reads import (BACKGROUND_TASK, agent_type, blocks, run_type,  # noqa: E402
+                       text_of)
 from ticket_log import utc_stamp  # noqa: E402
 from transcripts import (Entry, Refused, agent_id, agent_transcripts,  # noqa: E402
                          bare_id, epoch, find, is_subagent, read_entries, transcripts)
@@ -63,7 +64,8 @@ HELP = mctx("""
     - A turn starts at a message the model answers, so a local command such as `/compact` starts none. It ends at the model's last entry, or at the result of a call that ends it, such as SubagentHandback.
     - Calls that are pending at once share an interval in equal parts. While the model works, backgrounded work that runs goes to `model`.
     - A poll is a Bash call that runs `sleep` and none of the known commands, in a loop or not. A command the harness moves to the background on its timeout counts under its own label up to then, and under `bg LABEL` after.
-    - One run prints its parts and its labels by time, with each label's share of the wall time and its calls, and for backgrounded work the time it ran from launch to its notification.
+    - A command the run backgrounded runs until a notification of it in the run's transcripts, other than in an assistant entry. Where none follows, it runs while a process holds open the output file its result names, and where no process holds that file, it ended when the file was last written. Where its result names no file, or that file is gone, whether it runs is unknown, and it counts as running. Where `lsof` writes to stderr when it lists the files open in that file's directory, which files a process holds open is unknown, and the ID is refused.
+    - One run prints its parts and its labels by time, with each label's share of the wall time and its calls, and for backgrounded work the time it ran from launch to its notification, or for a command that ended with none, to its end.
     - One run of a subagent, completed or not, also prints each message from its parent, as `--running` defines those messages: the time it arrived, its active time, which is the run's wall time less `idle` over that message's period, and the budget in force for it, which is the budget `--running` gives from the messages up to it. A message whose active time is past its budget is marked `past budget`. A message with no budget in force prints none, and a run with an unknown message prints no active time and no budget.
     - One run of a subagent also prints, after `report to the parent:`, the latest entry of its parent's transcripts after the parent's latest message to it that gives a report of it, with the entry's time, its kind and the start of its text, or where none does, `none after the message at` and that message's time. The parent's transcripts are, under each session of the run, the main transcript where the parent is `main`, and otherwise the transcripts of the parent's run. An entry gives a report where it is:
         - `notification`: a notification of the agent with the status `completed` and a result, other than one whose note says the agent stopped with background work of its own still running;
@@ -146,7 +148,7 @@ def left_open(entries: list[Entry], call: str) -> list[list[str]] | None:
             if e.get("type") == "user" and b.get("tool_use_id") == call:
                 r = e.get("toolUseResult")
                 r = r if isinstance(r, dict) else {}
-                if b.get("is_error") or r.get("backgroundTaskId") or r.get("interrupted"):
+                if b.get("is_error") or r.get(BACKGROUND_TASK) or r.get("interrupted"):
                     return None
                 out = r.get("stdout")
                 text = out if isinstance(out, str) else text_of(b.get("content"))

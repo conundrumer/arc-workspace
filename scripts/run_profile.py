@@ -2,10 +2,12 @@
 Code transcripts, and its print, as the HELP of `profile_runs` gives them."""
 
 import math
+import subprocess
 import time
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -13,13 +15,13 @@ from agent_launches import run_launches
 from agent_turns import idle_after, turns
 from command_labels import AGENT_TOOLS, POLL, call_command, command_label
 from controlled_markdown import mctx
-from run_reads import (agent_type, blocks, context_size, in_background,
-                       is_prompt, message_text, notified, parent_id,
-                       results_by_call, run_entries, run_type, session_agents,
-                       session_of)
+from run_reads import (BACKGROUND_TASK, agent_type, blocks, context_size,
+                       in_background, is_prompt, message_text, notified,
+                       output_file, parent_id, results_by_call, run_entries,
+                       run_type, session_agents, session_of)
 from senders import Sender, sender
 from ticket_log import MINUTE_FORM
-from transcripts import Entry, agent_id, epoch, is_subagent
+from transcripts import Entry, Refused, agent_id, epoch, is_subagent
 
 
 class Part(Enum):
@@ -39,6 +41,9 @@ MOVED = ("timedOutAfterMs", "assistantAutoBackgrounded", "backgroundedByUser")
 # The characters of a call's command or of an agent's text output that
 # `--running` prints.
 COMMAND_WIDTH = 160
+# The keys of a call's result that give an id a notification of the call
+# gives.
+TASK_KEYS = (BACKGROUND_TASK, "taskId", "agentId")
 
 
 @dataclass
@@ -137,7 +142,84 @@ class Call:
     `background` once its result says it runs in the background."""
     pending: Key
     background: Key | None
-    task_ids: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class Background:
+    """A call whose result says it runs in the background: the ids a
+    notification of it gives, its tool-use id among them, and for a Bash
+    call, the output file its result names, or None where it names none."""
+    ids: frozenset[str]
+    output: Path | None
+
+
+# Backgrounded calls.
+
+def agent_calls(entries: Iterable[Entry]) -> set[str]:
+    return {str(b.get("id")) for e in entries if e.get("type") == "assistant"
+            for b in blocks(e, "tool_use") if b.get("name") in AGENT_TOOLS}
+
+
+def backgrounds(entries: Iterable[Entry], agent_calls: set[str],
+                undecided: list[str]) -> dict[str, Background]:
+    """Each call among `entries` that runs in the background, by its
+    tool-use id, where `agent_calls` are the tool-use ids of Agent calls."""
+    out: dict[str, Background] = {}
+    for e in entries:
+        r = e.get("toolUseResult")
+        if e.get("type") != "user" or not isinstance(r, dict):
+            continue
+        bash = bool(r.get(BACKGROUND_TASK))
+        for b in blocks(e, "tool_result"):
+            if not b.get("tool_use_id"):
+                continue
+            call = str(b["tool_use_id"])
+            if bash or (call in agent_calls and in_background(r, undecided, call)):
+                out[call] = Background(
+                    frozenset({call, *(str(r[k]) for k in TASK_KEYS if r.get(k))}),
+                    output_file(b) if bash else None)
+    return out
+
+
+def background_ends(found: dict[str, Background],
+                    entries: Iterable[Entry]) -> dict[str, float | None]:
+    """When each call of `found` ended, as the HELP of `profile_runs` gives
+    it, from the notifications among `entries`, or None where it still runs
+    or whether it runs is unknown."""
+    told: dict[str, float] = {}
+    for e in entries:
+        if e.get("type") != "assistant" and e.get("timestamp"):
+            t = epoch(e["timestamp"])
+            for ident in notified(e):
+                told[ident] = min(t, told.get(ident, t))
+    ends: dict[str, float | None] = {
+        call: min((told[i] for i in b.ids if i in told), default=None)
+        for call, b in found.items()}
+    files = {call: b.output for call, b in found.items()
+             if ends[call] is None and b.output is not None and b.output.is_file()}
+    for call, f in files.items():
+        if str(f.resolve()) not in held_in(f.resolve().parent):
+            try:
+                ends[call] = f.stat().st_mtime
+            except FileNotFoundError:
+                pass
+    return ends
+
+
+@cache
+def held_in(directory: Path) -> frozenset[str]:
+    """The paths of the files in `directory` that a process holds open, as
+    `lsof` gives them, read once, so each reader of a run sees one state,
+    and one `lsof` call serves the runs of a session."""
+    # lsof exits 1 where it finds no open file as well as on a fault, so
+    # only its stderr tells a fault.
+    out = subprocess.run(["lsof", "-F", "n", "+d", str(directory)],
+                         capture_output=True, text=True)
+    if out.stderr.strip():
+        raise Refused(mctx("which files in {dir} a process holds open is unknown: "
+                           "lsof says {err}").format(dir=directory,
+                                                     err=out.stderr.strip()))
+    return frozenset(line[1:] for line in out.stdout.splitlines() if line.startswith("n"))
 
 
 # Profiles.
@@ -153,14 +235,12 @@ def launched_type(inp: dict[str, Any], result: dict[str, Any] | None,
     return agent_type(path) if path else None
 
 
-def classify(block: dict[str, Any], result: dict[str, Any] | None,
+def classify(block: dict[str, Any], result: dict[str, Any] | None, launched: bool,
              session: Path, undecided: list[str], run: str) -> Call:
+    """Where the time of the call `block` goes, where `launched` is whether
+    it runs in the background."""
     name, inp = block.get("name"), block.get("input") or {}
     r = result or {}
-    task_ids = [str(r[k]) for k in ("backgroundTaskId", "taskId", "agentId") if r.get(k)]
-    launched = bool(r.get("backgroundTaskId")) or (
-        name in AGENT_TOOLS and result is not None
-        and in_background(result, undecided, str(block.get("id"))))
     if name in AGENT_TOOLS:
         kind = launched_type(inp, result, session)
         if kind is None:
@@ -168,20 +248,20 @@ def classify(block: dict[str, Any], result: dict[str, Any] | None,
             undecided.append(mctx("{run}: the agent type of call {call} is "
                                   "unknown").format(run=run, call=block.get("id")))
         key = (Part.WAITS, f"agent {kind}")
-        return Call(key, key if launched else None, task_ids)
+        return Call(key, key if launched else None)
     if name in WAIT_TOOLS:
-        return Call((Part.WAITS, name), None, task_ids)
+        return Call((Part.WAITS, name), None)
     if name != "Bash":
-        return Call((Part.TOOLS, str(name)), None, task_ids)
+        return Call((Part.TOOLS, str(name)), None)
     label = command_label(inp.get("command", ""))
     background = (Part.WAITS, f"bg {label}")
     moved = launched and any(k in r for k in MOVED)
     if launched and not moved:
-        return Call(background, background, task_ids)
+        return Call(background, background)
     if inp.get("run_in_background"):
-        return Call(background, None, task_ids)
+        return Call(background, None)
     pending = (Part.WAITS, POLL) if label == POLL else (Part.TOOLS, label)
-    return Call(pending, background if launched else None, task_ids)
+    return Call(pending, background if launched else None)
 
 
 def profile(path: Path, undecided: list[str]) -> Run:
@@ -190,6 +270,8 @@ def profile(path: Path, undecided: list[str]) -> Run:
     session = session_of(path)
     entries = run_entries(path)
     results = results_by_call(entries)
+    found = backgrounds(entries, agent_calls(entries), undecided)
+    bg_ends = background_ends(found, entries)
     starts, ends = turns(entries)
     # The index of the prompt the model first answers: the brief is the
     # prompts up to it.
@@ -205,7 +287,6 @@ def profile(path: Path, undecided: list[str]) -> Run:
     calls: dict[str, Call] = {}
     pending: dict[str, Key] = {}
     running: dict[str, tuple[Key, float]] = {}   # tool-use id -> key, start
-    by_task: dict[str, str] = {}                # task id -> tool-use id
     spans: dict[str, Span] = {}
     said: str | None = None
     idle = False
@@ -221,20 +302,32 @@ def profile(path: Path, undecided: list[str]) -> Run:
             group(k).time += d / len(keys)
             parts[k[0]] += d / len(keys)
 
+    def spend(d: float) -> None:
+        if pending:
+            share(pending.values(), d)
+        elif not idle:
+            parts[Part.MODEL] += d
+        elif running:
+            share([k for k, _ in running.values()], d)
+        else:
+            parts[Part.IDLE] += d
+
+    def close(tid: str, at: float) -> None:
+        k, start = running.pop(tid)
+        group(k).ran += max(at, start) - start
+
     for i, e in enumerate(entries):
         if not e.get("timestamp"):
             continue
         t = epoch(e["timestamp"])
         if prev is not None and t > prev:
-            d = t - prev
-            if pending:
-                share(pending.values(), d)
-            elif not idle:
-                parts[Part.MODEL] += d
-            elif running:
-                share([k for k, _ in running.values()], d)
-            else:
-                parts[Part.IDLE] += d
+            for at, tid in sorted((x, tid) for tid in running
+                                  if (x := bg_ends[tid]) is not None and x < t):
+                at = max(at, prev)
+                spend(at - prev)
+                prev = at
+                close(tid, at)
+            spend(t - prev)
         prev = t if prev is None else max(t, prev)
         first = t if first is None else first
         etype = e.get("type")
@@ -251,8 +344,8 @@ def profile(path: Path, undecided: list[str]) -> Run:
             said = text or said
             for b in blocks(e, "tool_use"):
                 tid = b.get("id", "")
-                c = calls[tid] = classify(b, results.get(tid), session,
-                                          undecided, label)
+                c = calls[tid] = classify(b, results.get(tid), tid in found,
+                                          session, undecided, label)
                 pending[tid] = c.pending
                 spans[tid] = Span(c.pending[1], call_command(b, undecided, label), t, tid)
                 group(c.pending).calls += 1
@@ -267,16 +360,9 @@ def profile(path: Path, undecided: list[str]) -> Run:
                     if c.background != c.pending:
                         group(c.background).calls += 1
                     running[tid] = (c.background, t)
-                    for task in c.task_ids:
-                        by_task[task] = tid
         idle = idle_after(idle, i, e, starts, ends)
         if i in ends:
             pending.clear()
-        for ident in notified(e) if etype != "assistant" else []:
-            tid = by_task.get(ident, ident)
-            if tid in running:
-                k, start = running.pop(tid)
-                group(k).ran += t - start
     end = prev or 0.0
     brief = [message_text(e) for e in entries[:briefed + 1] if is_prompt(e)]
     if brief and first is not None:
@@ -284,9 +370,10 @@ def profile(path: Path, undecided: list[str]) -> Run:
     cwd = next((e["cwd"] for e in entries if e.get("cwd")), None)
     context = context_size(reversed(entries))
     in_flight = [spans[tid] for tid in pending if tid in spans]
-    backgrounded = [spans[tid] for tid in running if tid in spans]
-    for k, start in running.values():
-        group(k).ran += end - start
+    backgrounded = [spans[tid] for tid in running
+                    if bg_ends[tid] is None and tid in spans]
+    for tid in list(running):
+        close(tid, end if (at := bg_ends[tid]) is None else at)
     wall = end - first if first is not None else 0.0
     if first is None:
         undecided.append(mctx("{run}: no entry gives a time, so its start "
