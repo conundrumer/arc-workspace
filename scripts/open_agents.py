@@ -1,7 +1,7 @@
 """The agents under a run whose work is open, as `--running` of
 `profile_runs` lists them."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from agent_launches import Launch, launches, notified_after, run_launches
@@ -9,7 +9,7 @@ from agent_reports import (TURN_ENDED, Report, ReportKind, parent_transcripts, r
                            stopped_after)
 from agent_turns import has_ended, is_turn_entry, last_time, turn_after
 from controlled_markdown import mctx
-from run_profile import Run, profile
+from run_profile import Run, Span, profile
 from run_reads import is_prompt, parent_label
 from transcripts import agent_id, is_subagent
 
@@ -18,7 +18,9 @@ from transcripts import agent_id, is_subagent
 class Listed:
     """An agent `running_agents` gives. `end` is None where its turn has
     not ended or no `user` or `assistant` entry gives a time, and `found`
-    is None where its turn has not ended or `parent_reports` gives None."""
+    is None where its turn has not ended or `parent_reports` gives None.
+    `running` is what its run backgrounded that is still running, as
+    `listed_under` gives it."""
     parent: str
     path: Path
     launch: Launch
@@ -26,6 +28,7 @@ class Listed:
     ended: bool
     end: float | None
     found: list[Report] | None
+    running: list[Span] = field(default_factory=list)
 
 
 def reported_since(a: Launch, since: float | None,
@@ -205,11 +208,38 @@ def every_node(nodes: list[Node]) -> list[Node]:
 def listed_under(nodes: list[Node], parent_open: bool, told: dict[str, float],
                  undecided: list[str]) -> list[Listed]:
     """`listing` of each of `nodes`, whose parent's work is open where
-    `parent_open` holds, each followed by those of the agents under it."""
+    `parent_open` holds, each followed by those of the agents under it. Of
+    what a listed agent's run backgrounded that is still running, an agent
+    under it that `listing` does not give is left out of its `running`, and
+    an agent `launched_under` gives no `Node` is kept, with an `undecided`
+    line: `launches` writes one where no transcript gives its launch, and
+    `unreached` the others."""
     out: list[Listed] = []
     for n in nodes:
         listed = listing(n, parent_open, told, undecided)
+        below = listed_under(n.under, listed is not None, told, undecided)
         if listed:
+            if not n.under and listed.run.backgrounded:
+                unreached(listed, undecided)
+            shown = {b.launch.call for b in below}
+            closed = {c.launch.call for c in n.under} - shown
+            listed.running = [m for m in listed.run.backgrounded
+                              if m.call not in closed]
             out.append(listed)
-        out.extend(listed_under(n.under, listed is not None, told, undecided))
+        out.extend(below)
     return out
+
+
+def unreached(listed: Listed, undecided: list[str]) -> None:
+    """Name in `undecided` each agent the run of `listed` launched in the
+    background that is still running and whose transcript is known, where
+    `launched_under` read no launch of that run, since no `.meta.json` of
+    its sessions gives it as a parent."""
+    running = {m.call for m in listed.run.backgrounded}
+    for a in launches(listed.path, undecided):
+        if a.call in running and a.path is not None:
+            undecided.append(mctx("{run}: no `.meta.json` gives it as the parent of "
+                                  "{agent}, so whether the work of {agent} is open "
+                                  "is unknown, and its launch is kept under "
+                                  "`running:`").format(run=listed.run.label,
+                                                       agent=agent_id(a.path)))

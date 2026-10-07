@@ -49,11 +49,12 @@ class Group:
 
 @dataclass
 class Span:
-    """A call's span: its label, its command, the time of the call
-    and the time of its result."""
+    """A call's span: its label, its command, the time of the call, its
+    tool-use id and the time of its result."""
     label: str
     command: str
     start: float
+    call: str
     end: float | None = None
 
 
@@ -252,7 +253,7 @@ def profile(path: Path, undecided: list[str]) -> Run:
                 c = calls[tid] = classify(b, results.get(tid), session,
                                           undecided, label)
                 pending[tid] = c.pending
-                spans[tid] = Span(c.pending[1], call_command(b, undecided, label), t)
+                spans[tid] = Span(c.pending[1], call_command(b, undecided, label), t, tid)
                 group(c.pending).calls += 1
         elif etype == "user":
             for b in blocks(e, "tool_result"):

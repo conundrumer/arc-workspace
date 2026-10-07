@@ -47,7 +47,7 @@ def print_running(agents: list[Listed], now: float, calls_since: float | None,
             print_ended(r, listed.end, now, undecided)
             print_report_line(r, listed.found)
         print(f"  said: {one_line(r.said, tail=True) if r.said is not None else '-'}")
-        for title, spans in (("in flight", r.in_flight), ("running", r.backgrounded)):
+        for title, spans in (("in flight", r.in_flight), ("running", listed.running)):
             if spans:
                 print(f"  {title}:")
             for m in spans:
