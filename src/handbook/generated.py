@@ -148,11 +148,8 @@ def _ignored(root: Path, paths: list[PurePosixPath]) -> set[PurePosixPath]:
     if not paths:
         return set()
     stdin = "".join(f"{p}\0" for p in paths)
-    done = checkout.git(root, "check-ignore", "-z", "--stdin", stdin=stdin)
     # 0: some path is ignored; 1: none is.
-    if done.returncode not in (0, 1):
-        raise checkout.GitFailed(root, ["check-ignore", "-z", "--stdin"],
-                                 done.stderr)
+    done = checkout.git_answer(root, "check-ignore", "-z", "--stdin", stdin=stdin)
     return {PurePosixPath(p) for p in done.stdout.split("\0") if p}
 
 

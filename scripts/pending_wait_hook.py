@@ -11,71 +11,66 @@ while the prompt cache can lapse, so neither is bound.
 Where the hook cannot tell the caller, it allows the call and says why on
 stderr, so it can fail to deny a wait but never denies one wrongly. A call
 whose input gives no agent id (`run_reads.caller_id`) is the main session's
-only where the main transcript holds it."""
+only where the main transcript holds it.
 
-import json
+The hook gives its caller the update of its documents as well
+(`reader_commits.reader_update`), in the output that allows or denies the
+call."""
+
 import sys
 from typing import Any
 
-from hook_entry import CHECK_FAILED, run_hook
+from hook_entry import run_pre_tool_use
 
 HOOK = "pending_wait_hook"
 TIMEOUT_BOUND = 240000
 
 
-def deny(reason: str) -> None:
-    print(json.dumps({"hookSpecificOutput": {
-        "hookEventName": "PreToolUse",
-        "permissionDecision": "deny",
-        "permissionDecisionReason": reason}}))
-
-
-def deny_pending(agents: list[str]) -> None:
+def pending_reason(agents: list[str]) -> str:
     from controlled_markdown import mctx
 
-    deny(mctx(
+    return mctx(
         "Blocked: this call waits on {agents}, which you launched and which "
         "has not reported since its launch or its last resume, by you or by "
         "another agent, so end your turn now, and the harness re-invokes you "
         "when it reports."
-    ).format(agents=", ".join(agents)))
+    ).format(agents=", ".join(agents))
 
 
-def over_bound(tool: str, inp: dict[str, Any], subagent: bool) -> bool:
-    """Deny the call of `tool` with input `inp` where it is a subagent's
-    foreground Bash call whose `timeout` is over `TIMEOUT_BOUND`, and say
-    whether it did."""
+def over_bound(tool: str, inp: dict[str, Any], subagent: bool) -> str | None:
+    """The reason to deny the call of `tool` with input `inp` where it is a
+    subagent's foreground Bash call whose `timeout` is over `TIMEOUT_BOUND`,
+    and None for any other call."""
     from controlled_markdown import mctx
 
     if tool != "Bash" or not subagent:
-        return False
+        return None
     background = inp.get("run_in_background", False)
     timeout = inp.get("timeout")
     if not isinstance(background, bool):
         print(f"{HOOK}: allowed past the bound: `run_in_background` is "
               f"{background!r}, not a bool", file=sys.stderr)
-        return False
+        return None
     if background or timeout is None:
-        return False
+        return None
     if isinstance(timeout, bool) or not isinstance(timeout, int | float):
         print(f"{HOOK}: allowed past the bound: `timeout` is {timeout!r}, "
               "not a number", file=sys.stderr)
-        return False
+        return None
     if timeout <= TIMEOUT_BOUND:
-        return False
-    deny(mctx(
+        return None
+    return mctx(
         "Blocked: this foreground Bash call has a timeout of {timeout} ms, "
         "over the bound of {bound} ms, whatever timeout your documents give. "
         "Run the same call again with a timeout of at most {bound} ms. Where "
         "the command outlasts it, the harness moves the command to the "
         "background, and you wait on it as your documents give."
-    ).format(timeout=timeout, bound=TIMEOUT_BOUND))
-    return True
+    ).format(timeout=timeout, bound=TIMEOUT_BOUND)
 
 
-def check(hook: dict[str, Any]) -> None:
-    """Deny the call `hook` gives where it is over the bound or waits on an
-    agent pending to its caller."""
+def check(hook: dict[str, Any]) -> str | None:
+    """The reason to deny the call `hook` gives where it is over the bound
+    or waits on an agent pending to its caller, and None otherwise."""
     from agent_launches import pending_agents
     from command_labels import runs_sleep
     from ticket_log import AGENT_ID
@@ -83,12 +78,12 @@ def check(hook: dict[str, Any]) -> None:
     from transcripts import is_subagent, read_entries
 
     tool, inp = hook["tool_name"], hook["tool_input"]
-    if over_bound(tool, inp, caller_id(hook) is not None):
-        return
+    if (bound := over_bound(tool, inp, caller_id(hook) is not None)) is not None:
+        return bound
     if tool == "Bash":
         text = inp["command"]
         if not runs_sleep(text):
-            return
+            return None
     elif tool == "Monitor":
         text = f"{inp['command']}\n{inp['description']}"
     else:
@@ -96,7 +91,7 @@ def check(hook: dict[str, Any]) -> None:
                          f"the input gives tool `{tool}`")
     named = set(AGENT_ID.findall(text))
     if not named:
-        return
+        return None
     path = caller_transcript(hook)
     if not is_subagent(path):
         call = hook["tool_use_id"]
@@ -105,17 +100,18 @@ def check(hook: dict[str, Any]) -> None:
             print(f"{HOOK}: allowed: the hook input gives no agent id, and the "
                   f"main transcript {path} does not hold call {call}, so the "
                   "caller is unknown", file=sys.stderr)
-            return
+            return None
     undecided: list[str] = []
     waited = [a for a in pending_agents(path, undecided) if a in named]
     for line in undecided:
         print(f"{HOOK}: undecided: {line}", file=sys.stderr)
-    if waited:
-        deny_pending(waited)
+    return pending_reason(waited) if waited else None
 
 
 def main() -> int:
-    return run_hook(HOOK, CHECK_FAILED, check)
+    from reader_commits import reader_update
+
+    return run_pre_tool_use(HOOK, check, reader_update)
 
 
 if __name__ == "__main__":

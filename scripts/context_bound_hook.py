@@ -6,13 +6,16 @@ well.
 
 The context is read from the end of the caller's own transcript. Where the
 hook cannot tell the caller's agent type or context, it allows the call and
-says why on stderr."""
+says why on stderr.
+
+The hook gives its caller the update of its documents as well
+(`reader_commits.reader_update`), in the output that allows or denies the
+call."""
 
 import sys
 from typing import Any
 
-from hook_entry import CHECK_FAILED, run_hook
-from pending_wait_hook import deny
+from hook_entry import run_pre_tool_use
 
 HOOK = "context_bound_hook"
 OPERATOR = "operator"
@@ -36,17 +39,19 @@ def reply_only(inp: dict[str, Any]) -> bool:
         and inp.get("model") == REPLY_ONLY_MODEL
 
 
-def deny_past(context: int) -> None:
+def past_reason(context: int) -> str:
     from controlled_markdown import mctx
 
-    deny(mctx(
+    return mctx(
         "Blocked: your context is {context:,} tokens, past the operator's "
         "bound of {bound:,} tokens. Past that bound you end as your "
         "documents give for your context."
-    ).format(context=context, bound=CONTEXT_BOUND))
+    ).format(context=context, bound=CONTEXT_BOUND)
 
 
-def check(hook: dict[str, Any]) -> None:
+def check(hook: dict[str, Any]) -> str | None:
+    """The reason to deny the Agent call `hook` gives where its caller is
+    past the bound, and None otherwise."""
     from run_reads import UNKNOWN_TYPE, agent_type, caller_transcript, context_size
     from transcripts import entries_back
 
@@ -55,26 +60,27 @@ def check(hook: dict[str, Any]) -> None:
         raise ValueError(f"the hook is registered on Agent, and the input "
                          f"gives tool `{tool}`")
     if reply_only(inp):
-        return
+        return None
     path = caller_transcript(hook)
     kind = agent_type(path)
     if kind is None:
         print(f"{HOOK}: allowed: {UNKNOWN_TYPE.format(path=path)}",
               file=sys.stderr)
-        return
+        return None
     if not bounded(kind):
-        return
+        return None
     context = context_size(entries_back(path))
     if context is None:
         print(f"{HOOK}: allowed: no assistant entry of {path} gives usage, so "
               "the context is unknown", file=sys.stderr)
-        return
-    if past_bound(context):
-        deny_past(context)
+        return None
+    return past_reason(context) if past_bound(context) else None
 
 
 def main() -> int:
-    return run_hook(HOOK, CHECK_FAILED, check)
+    from reader_commits import reader_update
+
+    return run_pre_tool_use(HOOK, check, reader_update)
 
 
 if __name__ == "__main__":

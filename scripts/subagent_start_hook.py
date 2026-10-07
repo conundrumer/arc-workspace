@@ -1,16 +1,18 @@
 """SubagentStart hook: gives each subagent, in its context at its start, its
-own agent id, the `agent_id` of the hook input.
+own agent id, the `agent_id` of the hook input, and then records the
+commits whose documents it starts at (`reader_commits.start_agent`), where
+it has none yet.
 
 The hook never stops a launch. Where the input is not a `SubagentStart`
 input, or gives no `agent_id`, or an `agent_id` that is not of the form a
 ticket's log line takes, the hook prints nothing, says why on stderr, and
-exits 0."""
+exits 0. A record that fails is said on stderr alone."""
 
 import json
 import sys
 from typing import Any
 
-from hook_entry import run_hook
+from hook_entry import run_hook, run_part
 
 HOOK = "subagent_start_hook"
 
@@ -37,8 +39,17 @@ def give(hook: dict[str, Any]) -> None:
         "hookEventName": "SubagentStart", "additionalContext": context(hook)}}))
 
 
+def act(hook: dict[str, Any]) -> None:
+    from reader_commits import RECORD_FAILED, start_agent
+
+    try:
+        give(hook)
+    finally:
+        run_part(HOOK, RECORD_FAILED, lambda: start_agent(hook))
+
+
 def main() -> int:
-    return run_hook(HOOK, "gave no agent id", give)
+    return run_hook(HOOK, "gave no agent id", act)
 
 
 if __name__ == "__main__":

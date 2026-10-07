@@ -76,6 +76,17 @@ def git_out(tree: Path, *argv: str, stdin: str | None = None,
     return _succeeded(tree, argv, git(tree, *argv, stdin=stdin, env=env))
 
 
+def git_answer(tree: Path, *argv: str,
+               stdin: str | None = None) -> subprocess.CompletedProcess[str]:
+    """What a git command in `tree` that answers by its exit status did,
+    with `stdin` on its standard input where it is given: an exit of 0 or 1
+    is the answer, and any other exit is `GitFailed`."""
+    done = git(tree, *argv, stdin=stdin)
+    if done.returncode not in (0, 1):
+        raise GitFailed(tree, argv, done.stderr)
+    return done
+
+
 def _succeeded(tree: Path, argv: Sequence[str],
                done: subprocess.CompletedProcess[str]) -> str:
     """The stdout of the git command `done`, which ran `argv` in `tree`; a

@@ -1,5 +1,7 @@
 """A reader's context rendered in a tree of a commit, and its diff since
-that commit, with the diff of each section it reaches by links."""
+that commit, with the diff of each section it reaches by links; and the
+diff of what a running reader holds, its context and the project
+instructions Claude Code gives it beside its context."""
 
 from __future__ import annotations
 
@@ -11,19 +13,25 @@ import sys
 import tempfile
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
 
 from controlled_markdown import mctx
 from engine import checkout
-from handbook.linked import linked_changes, sides
-from handbook.paths import REPO_ROOT
+from handbook.linked import LinkedChange, LinkTarget, linked_changes, sides
+from handbook.paths import DOCUMENTS_ROOT, REPO_ROOT
 from handbook.readers import calls_of, context_command, context_text, reader_calls
 
 
 CONTEXT_SCRIPT = (checkout.scripts() / "context.py").relative_to(checkout.ROOT)
 """The command that prints a reader's context, from a checkout's root."""
+
+PROJECT_INSTRUCTIONS = Path("CLAUDE.md")
+"""The project instructions, from a checkout's root: the file Claude Code
+puts in the context of each session and subagent in the checkout, beside
+the session's or the agent's own context."""
 
 
 @contextmanager
@@ -80,26 +88,101 @@ def _unified(before: str, after: str, head: str, commit: str) -> str:
         fromfile=f"{head} at {commit}", tofile=head))
 
 
-def context_diff(commit: str, reader: str, args: list[str]) -> str:
-    """The unified diff from one reader's context at `commit`, as
-    `context_at` renders it in a detached worktree of `commit`, to its
-    context in the checkout, then the unified diff of the text of each
-    target it reaches by links that the change alters, as
-    `linked_changes` finds them, under one line for each chain that
-    leads to it (`LinkedChange.chain_lines`). Empty where none of these differ. The
-    contexts of a reader one side does not define, as `contexts_diff`
-    finds it, are those `_side_contexts` gives, so the diff of an added
-    reader gains every line and that of a removed one loses every line. A
-    render that fails is a fault."""
+@dataclass(frozen=True)
+class _TextDiff:
+    """A text a reader holds whole, at `commit` and in the checkout, under
+    `head`, with each change to a target it reaches by links, as
+    `linked_changes` finds them."""
+
+    head: str
+    commit: str
+    before: str
+    after: str
+    linked: list[LinkedChange]
+
+
+def _text_diff(head: str, before: str, after: str, tree: Path,
+               commit: str) -> _TextDiff:
+    """The diff of a text from `before`, at `commit`, whose tree is `tree`,
+    to `after`, in the checkout."""
+    return _TextDiff(head, commit, before, after,
+                     linked_changes(before, after, *sides(tree, commit)))
+
+
+def _diff_text(diffs: list[_TextDiff]) -> str:
+    """The unified diff of each text of `diffs`, then the unified diff of
+    each target they reach by links, in target order, under one line for
+    each chain that leads to it (`LinkedChange.chain_lines`). A target
+    whose change two of them give with the same text on each side stands
+    once, under the chains of both, and a target that is one of the texts
+    stands only as that text, which the reader holds whole. Empty where none
+    of these differ."""
+    held = {d.head for d in diffs}
+    linked: dict[tuple[LinkTarget, str, str], tuple[str, list[str]]] = {}
+    for d in diffs:
+        for c in d.linked:
+            if str(c.target) in held:
+                continue
+            commit, lines = linked.setdefault((c.target, c.before, c.after),
+                                              (d.commit, []))
+            lines += [line for line in c.chain_lines() if line not in lines]
+    return ("".join(_unified(d.before, d.after, d.head, d.commit) for d in diffs)
+            + "".join("".join(f"{line}\n" for line in lines)
+                      + _unified(before, after, str(target), commit)
+                      for (target, before, after), (commit, lines)
+                      in sorted(linked.items(), key=lambda item: item[0][0])))
+
+
+def _context_sides(tree: Path, commit: str, reader: str,
+                   args: list[str]) -> tuple[str, str]:
+    """One reader's context at `commit`, as `context_at` renders it in
+    `tree`, the tree of `commit`, and in the checkout. The contexts of a
+    reader one side does not define, as `contexts_diff` finds it, are those
+    `_side_contexts` gives, so the diff of an added reader gains every line
+    and that of a removed one loses every line. A render that fails is a
+    fault."""
     call = (reader, args)
+    then = _renders_in(tree, commit, [c for c in _calls_in(tree, commit) if c == call])
+    return _side_contexts(call, then, call in reader_calls())
+
+
+def context_diff(commit: str, reader: str, args: list[str]) -> str:
+    """The diff of one reader's context since `commit` (`_context_sides`),
+    with the sections it reaches by links, as `_diff_text` gives it."""
     with _tree_at(commit) as tree:
-        then = _renders_in(tree, commit, [c for c in _calls_in(tree, commit) if c == call])
-        before, after = _side_contexts(call, then, call in reader_calls())
-        linked = linked_changes(before, after, *sides(tree, commit))
-    return (_unified(before, after, context_command(reader, args), commit)
-            + "".join("".join(f"{line}\n" for line in c.chain_lines())
-                      + _unified(c.before, c.after, str(c.target), commit)
-                      for c in linked))
+        before, after = _context_sides(tree, commit, reader, args)
+        return _diff_text([_text_diff(context_command(reader, args),
+                                      before, after, tree, commit)])
+
+
+def update_diff(context_commit: str, instructions_commit: str, reader: str,
+                args: list[str]) -> str:
+    """The diff of what a running reader holds: its context since
+    `context_commit` (`_context_sides`), and the project instructions since
+    `instructions_commit`, a side that has no such file as an empty text,
+    with the sections each reaches by links, as `_diff_text` gives them. A
+    chain from the project instructions starts at them. One tree serves
+    two commits that are the same."""
+    with ExitStack() as stack:
+        context_tree = stack.enter_context(_tree_at(context_commit))
+        instructions_tree = (context_tree if instructions_commit == context_commit
+                             else stack.enter_context(_tree_at(instructions_commit)))
+        before, after = _context_sides(context_tree, context_commit, reader, args)
+        context = _text_diff(context_command(reader, args), before, after,
+                             context_tree, context_commit)
+        before, after = (_text_or_empty(root / PROJECT_INSTRUCTIONS)
+                         for root in (instructions_tree, DOCUMENTS_ROOT))
+        instructions = _text_diff(str(PROJECT_INSTRUCTIONS), before, after,
+                                  instructions_tree, instructions_commit)
+    start = LinkTarget(PROJECT_INSTRUCTIONS, "")
+    instructions = replace(instructions, linked=[
+        replace(c, chains=tuple((start, *chain) for chain in c.chains))
+        for c in instructions.linked])
+    return _diff_text([context, instructions])
+
+
+def _text_or_empty(path: Path) -> str:
+    return path.read_text() if path.exists() else ""
 
 
 def _renders_in(tree: Path, commit: str,

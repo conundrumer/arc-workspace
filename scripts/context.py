@@ -16,7 +16,8 @@ from handbook.coordinator_document import (coordinator_rendering,
 from handbook.generated import MANIFEST
 from handbook.libcheck import check
 from handbook.paths import REPO_ROOT
-from handbook.reader_diffs import context_at, context_diff, contexts_diff
+from handbook.reader_diffs import (context_at, context_diff, contexts_diff,
+                                   update_diff)
 from handbook.readers import context_text, contexts_text
 
 HELP = mctx("""
@@ -34,6 +35,7 @@ HELP = mctx("""
         uv run python scripts/context.py context <reader> [args]  # one reader's context
         uv run python scripts/context.py context --at <commit> <reader> [args]    # that context at a commit
         uv run python scripts/context.py context --diff <commit> <reader> [args]  # its diff since a commit
+        uv run python scripts/context.py context --update <commit> <commit> <reader> [args]  # what a running reader gets
         ```
     - The items below say what each form does.
     - With no argument, the command prints the handbook, the passes a session runs, and the lib. That form and `--write` also write the lib's interface files: the `.md` beside each lib source, which the handbook's lib index points to.
@@ -44,7 +46,7 @@ HELP = mctx("""
         - The files a codex session on the repo reads: `AGENTS.md`, [Codex on arc-workspace](prompts/codex.md) rendered, and `.codex/config.toml`, with `docs/codex-style.md` as its developer instructions.
     - Each form that writes a generated file in the checkout, other than `session-start`, first checks that git ignores each one it writes there. Where git does not ignore one, the form writes none, names each such file and `.gitignore`, and exits 1.
     - `--write` then removes each file that manifest lists and no source renders any more, where git ignores it and it has not changed since it was written, and prints it after `removed`. It names on stderr each listed file it leaves in place, with the reason, and each agent file that has no document and that the manifest does not list.
-    - `session-start` is the command the session-start hook in `.claude/settings.json` runs. Where Claude Code started the session for the user to talk with, it writes `.claude/coordinator.md` and prints it, and in a `claude -p` session it prints nothing. Where that write fails, as where git does not ignore that file, it prints the failure and then the document, and exits 0.
+    - `session-start` is the command the session-start hook in `.claude/settings.json` runs. Where Claude Code started the session for the user to talk with, it writes `.claude/coordinator.md` and prints it, and in a `claude -p` session it prints nothing. Where that write fails, as where git does not ignore that file, it prints the failure and then the document, and exits 0. It then records the checkout's `HEAD` for the session the hook input on stdin names. Where it printed the document, it also records that `HEAD` for the coordinator at a `startup` or a `clear` source, and at a `compact` or a `resume` source only where the coordinator has no record yet, as `scripts/reader_commits.py` gives.
     - `role <name>` prints a role's prompt.
     - `section <where>` prints one section in full, for a reader whose handbook shows that section as a heading alone. `<where>` takes three forms:
         ```
@@ -62,6 +64,7 @@ HELP = mctx("""
         - The line of a reader whose context is the same on both sides and leads by such a chain to such a section ends in `(linked)`.
     - `context <reader> [args]` prints that reader's context, each part under a `==== <what follows> ====` line.
     - `context --at <commit> <reader> [args]` prints that context as the commit's tree renders it, with the commit's own code, and `context --diff <commit> <reader> [args]` prints the unified diff from that render to the one of the worktree, then the unified diff of each section that `contexts --diff` lists under that reader, under the lines it lists there for that section. Where only one side defines the reader, as `contexts --diff` marks it, `--diff` takes the other side's context as empty, so an added reader's diff gains every line and a removed one's loses every line. Any other failed render is an error. Neither form changes the worktree: git writes the commit's tree into a temporary directory, and the render runs there.
+    - `context --update <commit> <commit> <reader> [args]` prints what `context --diff` prints for that reader since the first commit, then the unified diff of `CLAUDE.md`, the project instructions Claude Code gives each session and subagent beside its context, since the second commit, a side that has no `CLAUDE.md` as an empty text, then the diff of each section a chain of links from either leads to, each under its lines. A chain from `CLAUDE.md` ends its line in `via CLAUDE.md`. A section whose diff both give with the same text on each side stands once, under the lines of both, and `CLAUDE.md` stands only as itself, whole.
     """)
 
 # The lines of the usage block of HELP, which the command exits with on
@@ -100,7 +103,13 @@ if __name__ == "__main__":
                   f"prompts/agents/ and not in {MANIFEST}; left in place",
                   file=sys.stderr)
     elif args == ["session-start"]:
-        print(session_start_text(os.environ), end="")
+        text = session_start_text(os.environ)
+        print(text, end="", flush=True)
+        from hook_entry import run_hook
+        from reader_commits import RECORD_FAILED, start_session
+
+        run_hook("session-start", RECORD_FAILED,
+                 lambda hook: start_session(hook, coordinator=bool(text)))
     elif len(args) == 2 and args[0] == "role":
         print(role_text(args[1]), end="")
     elif len(args) == 2 and args[0] == "section":
@@ -115,6 +124,10 @@ if __name__ == "__main__":
         if len(args) < 4:
             sys.exit(f"usage: {sys.argv[0]} context {args[1]} <commit> <reader> [args]")
         print(AT_COMMIT[args[1]](args[2], args[3], args[4:]), end="")
+    elif args[:2] == ["context", "--update"]:
+        if len(args) < 5:
+            sys.exit(f"usage: {sys.argv[0]} context --update <commit> <commit> <reader> [args]")
+        print(update_diff(args[2], args[3], args[4], args[5:]), end="")
     elif args and args[0] == "context":
         print(context_text(args[1] if args[1:] else "", args[2:]), end="")
     elif args:

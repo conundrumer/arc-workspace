@@ -21,7 +21,7 @@
 
 ## Changes
 - To edit a document an agent reads, send a request to the `doc-editor` agent.
-- Before you launch an agent, read [Launching notes](prompts/agents/notes/launching.md).
+- Before you launch an agent, read [Launching notes](prompts/agents/notes/launching.md), where your context does not hold it.
 - Where you run no solver pass, read [Changes](prompts/agents/notes/changes.md#changes) before you change the code or the documents.
 - While an operator of yours runs, run no change yourself, and file it as a ticket once [Tickets](#tickets) has you file it.
 
