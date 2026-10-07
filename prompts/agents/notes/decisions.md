@@ -88,7 +88,7 @@
 - Keep no relation in the lib for convenience, a site count included, use no ADT as another way to write a disjunction, and count boilerplate in atoms.
 
 ## Decisions on the agents' documents
-- Write the documents first to serve the agents that read them, and check new agent-facing text against each agent it reaches before a pass runs on it.
+- Write the documents first to serve the agents that read them, and check new agent-facing text against each agent it reaches before a pass runs on it: at the point where the text has that agent act, the agent, with only what its context holds there, can tell that the text applies and can do what it says.
 - The user writes no text: an agent makes each edit, and checks it, and the text it touches, for a change of meaning it was not meant to make.
 - Keep instructions few, since a model follows a limited number of them: leave load-bearing text no misreading, add no verbosity in a rewrite, give an intuitive rule few words, restate no other document, and give no agent instructions on how to follow the document that is its body.
 - Structure the documents so that changes to them run in parallel, as changes to code do, and so that they make evident which agent takes a kind of work and lead each agent to what it needs.
