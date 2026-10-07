@@ -1,6 +1,7 @@
 """Profile agent runs from their Claude Code transcripts: where each run's
 wall time goes, the budget of each agent type, and the agents under a run
-whose work is open, as `--running` lists them. `--help` prints HELP."""
+whose work is open, as `--running` lists them, and whether one run's work
+is open, as `--open` gives it. `--help` prints HELP."""
 
 import argparse
 import sys
@@ -18,13 +19,13 @@ importable(checkout.scripts())
 from agent_launches import pending_agents  # noqa: E402
 from budgets import (BUDGET_FACTOR, LOW_WAIT_PCT, MEDIAN_RUNS,  # noqa: E402
                      print_budgets)
-from open_agents import Listed, running_agents  # noqa: E402
+from open_agents import Listed, running_agents, work_open  # noqa: E402
 from run_prints import (RECENT_CALLS, print_messages,  # noqa: E402
                         print_report, print_running)
 from run_profile import (COMMAND_WIDTH, Run, clock, minutes,  # noqa: E402
                          part_split, print_groups, print_types, profile)
 from run_reads import run_type  # noqa: E402
-from transcripts import Refused, epoch, find, transcripts  # noqa: E402
+from transcripts import Refused, epoch, find, is_subagent, transcripts  # noqa: E402
 
 HELP = mctx("""
     - Usage:
@@ -32,8 +33,9 @@ HELP = mctx("""
         uv run python scripts/profile_runs.py ID [ID ...] [--type TYPE[,TYPE]] [--pct P] [--top N] [--runs] [--since DATE]
         uv run python scripts/profile_runs.py --running ID
         uv run python scripts/profile_runs.py --pending ID
+        uv run python scripts/profile_runs.py --open ID
         ```
-    - The items below say what an ID names, how a run's wall time is cut into parts, what one run and several runs print, the budget of each agent type, what `--running` and `--pending` print, and how a call's command is printed. The options follow them.
+    - The items below say what an ID names, how a run's wall time is cut into parts, what one run and several runs print, the budget of each agent type, what `--running`, `--pending` and `--open` print, and how a call's command is printed. The options follow them.
     - An ID is an agent id, a session id, or the path of a `.jsonl` transcript. A session brings its main transcript, as type `main`, and the run of each of its subagents. A run is the transcript of one agent, or where the top-level session takes a new session id while a subagent runs, that subagent's transcripts under each session's directory: each one under a later session goes on from the one before it, its first entry answering that one's last. A run's agent type, description and launching call are those the earliest of its transcripts' `.meta.json` files that gives each gives.
     - A run's wall time, from its first entry to its last, is cut at each entry's time, and each interval goes to one part:
         - `tools`: a tool call is pending. A Bash call is labelled by the known commands it runs, joined by ` + `: `gate`, `merge_change.py`, `materialize.py`, `pytest`, `pyright`, and `run_dl.py` with its subcommand. A Bash call that runs none is labelled by the first program it runs past setup, and any other call by its tool.
@@ -64,6 +66,7 @@ HELP = mctx("""
         - each command or agent it backgrounded that is still running, with its label, its command and the time since the call;
         - its last {recent} calls in order, each with its label, its command and its duration, or `pending`.
     - `--pending ID` prints the agent id of each agent pending to the run ID, one per line, in launch order, where ID is a session id or an agent id. An agent is pending to the run that launched it from the Agent call that launched it, or from the last SendMessage call that resumed it, by the run or by any agent of the run's sessions, main among them, until the run holds the result of that Agent call, where the result does not say the agent runs in the background, or until any transcript of the session holds a notification of the agent, a notification that it stopped with work of its own still running among them. A SendMessage call to an agent whose result says neither that it resumed the agent nor that it queued the message resumes none, and an `undecided` line on stderr names it.
+    - `--open ID` prints `open` where the work of the run ID is open, by the rule by which `--running` lists an agent, applied to the run ID, and `not open` otherwise, where ID is an agent id. An ID that names a session's main transcript is refused.
     - The messages from a listed agent's parent are its brief, the messages its first turn answers, and each later message its parent sent: one the harness gives as from the parent's agent id, or, for an agent `main` launched, as from the coordinator or queued with no tag. The origin the harness gives a queued message is the one its attachment gives. A notification of the agent's own backgrounded work, a message from an agent it launched, from the user, from another agent, or, for an agent `main` did not launch, from the coordinator or queued with no tag, and a note of the harness are none. A message from another agent is one the harness gives as from an agent id other than the parent's and those of the agents it launched. A later message whose sender is none of these is unknown, and an `undecided` line on stderr names it.
     - The period of a message from the parent runs from it to the next message from the parent or from another agent, or to the run's last entry.
     - A listed agent's active time is its wall time less `idle` over the period of the latest message from its parent, with its wall time running to now where that period and its turn have not ended. An agent with an unknown message has no active time and no budget.
@@ -94,6 +97,8 @@ def main(argv: list[str]) -> int:
                               "is open"))
     ap.add_argument("--pending", metavar="ID",
                     help=mctx("list the agents pending to the run ID"))
+    ap.add_argument("--open", metavar="ID",
+                    help=mctx("print whether the work of the run ID is open"))
     ap.add_argument("--type", help=mctx("profile only runs of these agent "
                                         "types, separated by commas"))
     ap.add_argument("--pct", type=float, default=90,
@@ -113,14 +118,23 @@ def main(argv: list[str]) -> int:
     undecided: list[str] = []
     runs: list[Run] = []
     listed: list[Listed] = []
-    if [bool(args.ids), bool(args.running), bool(args.pending)].count(True) != 1:
-        print(mctx("refused: give one of IDs, `--running ID` and `--pending ID`"),
+    if [bool(args.ids), bool(args.running), bool(args.pending),
+            bool(args.open)].count(True) != 1:
+        print(mctx("refused: give one of IDs, `--running ID`, `--pending ID` "
+                   "and `--open ID`"),
               file=sys.stderr)
         return 2
     try:
         if args.pending:
             for agent in pending_agents(find(args.pending), undecided):
                 print(agent)
+        elif args.open:
+            path = find(args.open)
+            if not is_subagent(path):
+                raise Refused(mctx("`{ident}` names a session, not an agent")
+                              .format(ident=args.open))
+            print(mctx("open") if work_open(path, undecided)
+                  else mctx("not open"))
         elif args.running:
             listed = running_agents(find(args.running), undecided)
         else:
@@ -133,7 +147,7 @@ def main(argv: list[str]) -> int:
         return 2
     if args.running:
         print_running(listed, time.time(), undecided)
-    elif not runs and not args.pending:
+    elif not runs and not args.pending and not args.open:
         print(mctx("refused: no run to profile"), file=sys.stderr)
         return 2
     elif len(runs) == 1 or args.runs:
