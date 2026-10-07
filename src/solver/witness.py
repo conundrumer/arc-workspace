@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Annotated, Any, cast
 
 from arc.jsonio import format_file
 from arc.task import as_grid as task_grid
-from engine import Grid, RunFailure, Value, checkout
+from engine import Grid, Value, checkout
 from engine.memo import write_whole
 from engine.program import as_grid, grid_lists
 from engine.quotes import quotes
@@ -20,7 +20,6 @@ from solver.problems import (
     InWitnessFile,
     ProblemKind,
     Fault,
-    NameFault,
     ShapeFault,
     WitnessFileRole,
 )
@@ -535,101 +534,6 @@ def members(outcomes: Outcomes, group: Group) -> tuple["Case", ...]:
     """The cases a group of `grouped(solver, outcomes)` holds: those that
     give its grid."""
     return tuple(c for c, g in outcomes if same_output(g, group.grid))
-
-
-@dataclass(frozen=True)
-class JudgedKept:
-    """A judged output, which a run leaves as it is."""
-
-
-@dataclass(frozen=True)
-class GroupsKept:
-    """The groups a run gives list the cases the file's groups list, each
-    by the name the file gives it, with the same grids."""
-
-
-@quotes("solver-file.md", "Witness file",
-        "the fewest names whose cases together are exactly the cases that "
-        "give this output")
-@dataclass(frozen=True)
-class NamesRewritten:
-    """The file's groups list, by other names, the cases the run's groups
-    list, with the same grids: the names of each file group denote together
-    (`solver.names.denoted_cases`) the cases of the run's group, and the
-    run's names replace them."""
-
-
-@dataclass(frozen=True)
-class PartitionChanged:
-    """The groups a run gives split the solver's cases otherwise than the
-    file's groups do: `newly` cases of the solver the file lists in no
-    group, and `gone` names of the file that denote no case of the
-    solver."""
-
-    newly: int
-    gone: int
-
-
-@dataclass(frozen=True)
-class GridChanged:
-    """The groups a run gives split the solver's cases as the file's
-    groups do, and a group's grid differs from the file's: `groups`
-    holds the names of each such group, as the run names its cases."""
-
-    groups: tuple[tuple[str, ...], ...]
-
-
-type RecordChange = (JudgedKept | GroupsKept | NamesRewritten
-                     | PartitionChanged | GridChanged)
-"""What running a witness of the file again changes in its entry."""
-
-
-def _listing[T](groups: Sequence[tuple[frozenset[T], GroupGrid]]
-                ) -> frozenset[tuple[frozenset[T], GroupGrid]]:
-    """Groups as what each lists and its grid, in no order."""
-    return frozenset(groups)
-
-
-def rerecorded(solver: "Solver", entry: Entry,
-               run: Callable[[], Outcomes | RunFailure | Fault]
-               ) -> tuple[Entry, RecordChange] | RunFailure | Fault:
-    """The entry with its groups built again (`grouped`) from what `run`
-    gives, the solver's cases on the entry's input at its `assign`, and
-    what that changes in it; a judged output stays, and `run` is not
-    called for it. The failure where `run` gives no outcomes."""
-    from solver.names import denoted_cases
-    if isinstance(entry.output, RejectedOutput):
-        return entry, JudgedKept()
-    outcomes = run()
-    if not isinstance(outcomes, tuple):
-        return outcomes
-    groups = grouped(solver, outcomes)
-    got = replace(entry, output=groups)
-    if _listing([(frozenset(g.cases), g.grid) for g in groups.groups]) \
-            == _listing([(frozenset(g.cases), g.grid)
-                         for g in entry.output.groups]):
-        return got, GroupsKept()
-    among = [c for c, _g in outcomes]
-    old: list[tuple[frozenset["Case"], GroupGrid]] = []
-    listing_none = 0
-    for g in entry.output.groups:
-        listed: set["Case"] = set()
-        for n in g.cases:
-            denoted = denoted_cases(solver, n, among)
-            if isinstance(denoted, NameFault) or not denoted:
-                listing_none += 1
-            else:
-                listed |= denoted
-        old.append((frozenset(listed), g.grid))
-    new = [(frozenset(members(outcomes, g)), g) for g in groups.groups]
-    if listing_none or {cs for cs, _g in old} != {cs for cs, _g in new}:
-        was = {c for cs, _g in old for c in cs}
-        return got, PartitionChanged(len(set(among) - was), listing_none)
-    held = _listing(old)
-    moved = tuple(g.cases for cs, g in new if (cs, g.grid) not in held)
-    if not moved:
-        return got, NamesRewritten()
-    return got, GridChanged(moved)
 
 
 def with_grids(file: WitnessFile, grid_names: frozenset[str]) -> WitnessFile:

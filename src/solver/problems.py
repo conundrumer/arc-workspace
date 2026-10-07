@@ -54,6 +54,10 @@ class ProblemKind(StrEnum):
     """A witness entry's `output` in the form the witness file does not
     take for the verdict of a line that records the entry, or for no
     verdict where no line records one (`OutputOffVerdict`)."""
+    VERDICTS_DISAGREE = "verdicts-disagree"
+    """Lines that record the verdict of one witness entry, some `other`
+    and some another verdict, so no form of its `output` fits them all
+    (`VerdictsDisagree`)."""
     ASSIGN_NAMES_NOTHING = "assign-names-nothing"
     """An `assign` key that is no parameter and no `@store` relation."""
     ASSIGN_VALUE_UNKNOWN = "assign-value-unknown"
@@ -435,10 +439,20 @@ class OutputOffVerdict:
     line: int | None
 
 
+@dataclass(frozen=True)
+class VerdictsDisagree:
+    """The lines that record a witness entry's verdict: `other`, those
+    that record `other`, and `another`, those that record another
+    verdict, each in file order."""
+
+    other: tuple[int, ...]
+    another: tuple[int, ...]
+
+
 type Detail = (Quoted | Named | OffForm | ShapeFault | Undecided
                | GridOffLayout | AnchorWithoutStamp | GridCellOffForm
                | AssignArity | AssignType | CaseColumnOffForm
-               | OutputOffVerdict | ParseFailure)
+               | OutputOffVerdict | VerdictsDisagree | ParseFailure)
 
 
 @dataclass(frozen=True)

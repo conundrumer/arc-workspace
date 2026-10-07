@@ -22,6 +22,7 @@ from solver.problems import (
     OutputForm,
     OutputOffVerdict,
     ProblemKind,
+    VerdictsDisagree,
     WitnessFileRole,
 )
 from solver.vocabulary import PARAMS_SCOPE
@@ -147,6 +148,18 @@ def name_problems(solver: Solver) -> Iterator[Fault]:
                                 Named(s))
 
 
+def split_verdict_lines(solver: Solver, id: str
+                        ) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    """The lines that record the verdict of the witness file's entry `id`
+    (`solver.names.verdict_lines`), in file order: those that record
+    `other`, and those that record another verdict."""
+    lines = verdict_lines(solver, id)
+    return (tuple(line.line for line in lines
+                  if line.verdict == VerdictWord.OTHER),
+            tuple(line.line for line in lines
+                  if line.verdict != VerdictWord.OTHER))
+
+
 @quotes("solver-file.md", "Witness file",
         "\"output\": Group[] // when the verdict is not other: one group per "
         "distinct output")
@@ -158,19 +171,25 @@ def output_form_problems(solver: Solver) -> Iterator[Fault]:
     (`solver.names.verdict_lines`), one fault per such line: groups under
     the verdict `other`, and a bare grid under any other verdict. An entry
     that holds a bare grid where no line records a verdict for it is a
-    fault too, and one that holds groups there is not."""
+    fault too, and one that holds groups there is not. An entry whose
+    lines record `other` and another verdict both has no form that fits
+    them, and is one fault that names those lines, whatever its
+    `output`."""
     if solver.witness_file is None:
         return
     for e in solver.witness_file.entries:
         held = OutputForm.GROUPS if isinstance(e.output, Groups) \
             else OutputForm.JUDGED
         place = InWitnessFile(e.id, WitnessFileRole.TASK)
-        lines = verdict_lines(solver, e.id)
-        if not lines and held is OutputForm.JUDGED:
+        other, another = split_verdict_lines(solver, e.id)
+        if other and another:
+            yield Fault(ProblemKind.VERDICTS_DISAGREE, place,
+                        VerdictsDisagree(other, another))
+            continue
+        if not other and not another and held is OutputForm.JUDGED:
             yield Fault(ProblemKind.OUTPUT_OFF_VERDICT, place,
                         OutputOffVerdict(held, None))
-        for line in lines:
-            judged = line.verdict == VerdictWord.OTHER
-            if judged != (held is OutputForm.JUDGED):
-                yield Fault(ProblemKind.OUTPUT_OFF_VERDICT, place,
-                            OutputOffVerdict(held, line.line))
+        off = another if held is OutputForm.JUDGED else other
+        for line in off:
+            yield Fault(ProblemKind.OUTPUT_OFF_VERDICT, place,
+                        OutputOffVerdict(held, line))

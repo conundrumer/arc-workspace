@@ -4,7 +4,7 @@ form among them."""
 from collections.abc import Sequence
 
 from checker.finding import FaultPayload, Finding
-from checker.render.locations import LineForm, line_text, where_text
+from checker.render.locations import LineForm, line_list, line_text, where_text
 from controlled_markdown import mctx
 from engine import GridLayout, ParseFailure, RelationName
 from engine.text import text as code_text
@@ -39,6 +39,7 @@ from solver.problems import (
     Quoted,
     ShapeFault,
     Storage,
+    VerdictsDisagree,
 )
 from solver.problems import Undecided as UndecidedDetail
 
@@ -81,6 +82,9 @@ PROBLEM_TEXT: dict[ProblemKind, str] = {
         "`{text}` is in no form [Witness file]"
         "(docs/handbook/solver-file.md#witness-file) lists"),
     ProblemKind.OUTPUT_OFF_VERDICT: mctx(
+        "{text}; see [Witness file]"
+        "(docs/handbook/solver-file.md#witness-file)"),
+    ProblemKind.VERDICTS_DISAGREE: mctx(
         "{text}; see [Witness file]"
         "(docs/handbook/solver-file.md#witness-file)"),
     ProblemKind.ASSIGN_NAMES_NOTHING: mctx(
@@ -298,8 +302,21 @@ def detail_text(detail: Detail) -> str:
                                             lh=layout.height, lw=layout.width)
         case OutputOffVerdict() as off:
             return _output_off_verdict_text(off)
+        case VerdictsDisagree(other=other, another=another):
+            return mctx("{other} {verb} the verdict `other`, whose witness "
+                        "holds the judged output, and {another} {verb2} "
+                        "another verdict, whose witness holds groups; make "
+                        "these lines agree on whether the witness's output "
+                        "is judged").format(
+                other=line_list(other), verb=records(other),
+                another=line_list(another), verb2=records(another))
         case ParseFailure(line=line, column=column, message=message):
             return f"{line}:{column}: {message}"
+
+
+def records(lines: Sequence[int]) -> str:
+    """The verb of `lines` as the subject of a sentence."""
+    return mctx("records") if len(lines) == 1 else mctx("record")
 
 
 def _output_off_verdict_text(off: OutputOffVerdict) -> str:

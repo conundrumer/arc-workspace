@@ -16,7 +16,6 @@ from solver.witness import (
     Entry,
     Group,
     Groups,
-    RejectedOutput,
     WitnessFile,
 )
 
@@ -63,7 +62,6 @@ def test_record_all_keeps_each_witness_but_its_groups_and_writes_nothing_on_a_fa
     entries = [
         Entry("a", "keep against fill", g, (("fill", AssignRows(((7,),))),),
               Groups((Group(("$Keep",), ((0, 0),)),))),
-        Entry("b", "judged", g, (), RejectedOutput(((5, 5),))),
         Entry("c", "c", ((3,),), (), Groups((Group(("$Keep",), ((3,),)),))),
     ]
     target.write_text(witness.text(WitnessFile(STEM, tuple(entries))))
@@ -84,10 +82,9 @@ def test_record_all_keeps_each_witness_but_its_groups_and_writes_nothing_on_a_fa
     file, problems = witness.read(target.read_text(), WitnessFileRole.TASK)
     assert problems == ()
     assert file is not None
-    a, b, c = file.entries
+    a, c = file.entries
     assert a == Entry("a", "keep against fill", g, entries[0].assign, Groups((
         Group(("concept",), g), Group(("$Fill",), ((7, 7),)))))
-    assert b == entries[1]
     assert c.output == Groups((Group(("concept",), ((3,),)),
                                Group(("$Fill",), ((5,),))))
     assert not (solvers.parent / "witnesses" / f"{STEM}.wit.json").exists()

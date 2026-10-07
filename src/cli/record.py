@@ -30,16 +30,9 @@ from engine import RunFailure
 from solver import witness
 from solver.model import Case
 from solver.aggregate import Solver
-from solver.problems import Fault, WitnessFileRole
-from solver.witness import (
-    Entry,
-    Groups,
-    PartitionChanged,
-    RejectedOutput,
-    WitnessFile,
-    grouped,
-    rerecorded,
-)
+from solver.problems import Fault, InWitnessFile, WitnessFileRole
+from solver.witness import Entry, Groups, RejectedOutput, WitnessFile, grouped
+from solver.witness_changes import JudgedReplaced, PartitionChanged, rerecorded
 
 # A run of the solver's cases on an entry's input
 
@@ -48,9 +41,13 @@ type Failure = RunFailure | Fault
 
 
 def _entry_failure(entry_id: str, solver: Solver, failure: Failure) -> str:
-    """The line of an entry whose run again gave no result."""
-    return commands.entry_line(entry_id, "; ".join(failure_lines(solver,
-                                                                 failure)))
+    """The line of an entry whose run again gave no result; a fault placed
+    in the entry names it already."""
+    text = "; ".join(failure_lines(solver, failure))
+    if isinstance(failure, Fault) \
+            and failure.place == InWitnessFile(entry_id, WitnessFileRole.TASK):
+        return text
+    return commands.entry_line(entry_id, text)
 
 
 def shown_lines(solver: Solver, entry: Entry, cases: Iterable[Case], of: int
@@ -283,7 +280,8 @@ def cmd_record_all(arg: str, witness_file: str | None = None) -> int:
     """Run every witness of the file again, as `cmd_rerecord` runs one;
     the file is written once, where its text is not what the writer
     writes (group order included), and not where any run fails. Changed
-    groups are counted where the cases a group holds changed."""
+    groups are counted where the cases a group holds changed, or where
+    groups replaced a judged output."""
     eng = engine()
     got = _file_of(arg, witness_file, eng)
     if got is None:
@@ -303,7 +301,7 @@ def cmd_record_all(arg: str, witness_file: str | None = None) -> int:
             print(_entry_failure(e.id, solver, got))
             continue
         entry, change = got
-        changed += isinstance(change, PartitionChanged)
+        changed += isinstance(change, PartitionChanged | JudgedReplaced)
         print(commands.entry_line(e.id, recording.rerecord_text(change)))
         out.append(entry)
     n = len(entries)

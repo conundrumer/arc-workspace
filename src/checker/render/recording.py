@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from checker.render import Section, counted, noun
+from checker.render.faults import records
 from checker.render.grids import grid_lines, shifted
 from checker.render.hints import derive_line_to_add
 from checker.render.locations import line_list
@@ -19,15 +20,15 @@ from engine.text import text as code_text
 from solver.aggregate import Solver
 from solver.model import Case, takes_constructor
 from solver.names import ctor_text
-from solver.witness import (
-    Entry,
+from solver.witness import Entry, assign_json
+from solver.witness_changes import (
     GridChanged,
     GroupsKept,
     JudgedKept,
+    JudgedReplaced,
     NamesRewritten,
     PartitionChanged,
     RecordChange,
-    assign_json,
 )
 
 JUDGED_OUTPUT = mctx("judged output:")
@@ -67,8 +68,7 @@ def judged_unwritten(id: str, lines: Sequence[int], command: str,
                  "command with the input below, a `---` line and the judged "
                  "output on stdin, to write it").format(
                      id=id, lines=line_list(lines),
-                     verb=mctx("records") if len(lines) == 1
-                     else mctx("record")),
+                     verb=records(lines)),
             f"  {command}", "", mctx("stdin, above the `---` line:"),
             *(shifted(r, "  ") for r in grid_lines(input))]
 
@@ -109,7 +109,8 @@ def _witnesses(n: int) -> str:
 
 def rerecorded_all(n: int, path: object, changed: int) -> str:
     """The line of `record --all` that wrote the file: how many witnesses
-    ran, and how many of them changed groups."""
+    ran, and how many of them changed groups, a judged output replaced by
+    groups among them."""
     return mctx("re-recorded {witnesses} in {path}: {changed} with changed "
                 "groups").format(witnesses=_witnesses(n), path=path,
                                  changed=changed)
@@ -146,6 +147,8 @@ def untaken_constructor_lines(solver: Solver, cases: Sequence[Case]
 
 GROUPS_KEPT = mctx("groups unchanged")
 JUDGED_KEPT = mctx("judged output kept")
+JUDGED_REPLACED = mctx("judged output replaced by groups, as no line "
+                       "records the verdict `other` for the witness")
 GROUPS_CHANGED = mctx("groups changed: {newly} {cases} newly listed, {gone} "
                       "no longer listed")
 GRID_CHANGED = mctx("grid changed in {groups}: {names}")
@@ -158,6 +161,8 @@ def rerecord_text(change: RecordChange) -> str:
     match change:
         case JudgedKept():
             return JUDGED_KEPT
+        case JudgedReplaced():
+            return JUDGED_REPLACED
         case GroupsKept():
             return GROUPS_KEPT
         case NamesRewritten():
