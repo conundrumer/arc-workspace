@@ -1,7 +1,8 @@
 """File a ticket under the main tree's `tickets/`, from the main tree or any
-worktree of it, print a ticket's path, and make a ticket's transitions and
-write its log lines. `HELP`, which `--help` prints, says how an agent files,
-and each subcommand's own help, which its `--help` prints, how an agent calls it."""
+worktree of it, print a ticket's path, make a ticket's transitions and
+write its log lines, and list the open tickets a ticket analyst settles.
+`HELP`, which `--help` prints, says how an agent files, and each
+subcommand's own help, which its `--help` prints, how an agent calls it."""
 
 import re
 import subprocess
@@ -21,11 +22,12 @@ from handbook.paths import importable
 importable(checkout.scripts())
 
 from ticket_form import (DEFECT_SECTIONS, FIELD, LOG, SECTIONS,  # noqa: E402
-                         checked_kind, heading, sections_example)
+                         TicketName, checked_kind, heading, sections_example)
 from ticket_log import (AGENT_ID, CLOSED_BY, TIME_FORM, UNBLOCKED_BY, Wait,  # noqa: E402
                         log_moves, logged)
 from ticket_numbers import (SESSION_VAR, SESSIONS, reserve,  # noqa: E402
                             session_id, session_index, ticket_path, write_new)
+from ticket_settle import MANY_IDEAS, to_settle  # noqa: E402
 from ticket_vocabulary import Domain, Kind, Resolution, Status, ticked  # noqa: E402
 from transcripts import Refused  # noqa: E402
 
@@ -89,6 +91,19 @@ LOG_HELP = mctx("""
     - The command refuses, and neither moves nor writes, where `{log}` is not the file's last section or the note spans more than one line.
     """)
 
+TO_SETTLE_HELP = mctx("""
+    - The list holds each ticket under `tickets/open/` that your session filed or whose number the call gives.
+    - The list leaves out:
+        - each `{change_kind}`, which an operator runs;
+        - each `{question}` filed on a change whose ticket stands outside `tickets/closed/`, which the ticket analyst of that change decides before its merge;
+        - each `{refactor}` whose title ends in `{many_ideas}`, which the editor that next edits its module carries out first.
+    - A `{question}` is filed on a change where its `<domain>` is `{change_domain}` and its `<subject>` is the number of that change's ticket.
+    - The command prints the number of each ticket the list holds, one per line, in the order of numbers, or `{empty}` where it holds none.
+    - The command refuses where a number the call gives names no ticket, where the front matter of a ticket the list would hold gives no kind, where a `{refactor}` it would hold has no title, or where a `{question}` filed on a change names no ticket the ticket tracker holds.
+    """)
+
+EMPTY = mctx("the list is empty")
+
 
 COMMIT = re.compile(r"[0-9a-f]{7,40}")
 
@@ -143,7 +158,7 @@ def file_ticket(tickets: Path, domain: str, subject: str, agent: str, text: str)
         check_subject(tickets, dom, subject)
     status = Status.DRAFT if kind is Kind.CHANGE else Status.OPEN
     number = reserve(tickets, session_index(tickets, session_id()))
-    name = f"{number}_{dom}_{subject}_{agent}.md"
+    name = TicketName(number, dom, subject, agent).file_name
     return write_new(tickets / status, logged(text, status, agent), [name])
 
 
@@ -182,15 +197,16 @@ def filed_in_main(filing: Filing, args: list[str]) -> int | None:
                           env=checkout.tree_env()).returncode
 
 
-def run(args: Sequence[str | None], help_text: str, count: int, act: Callable[..., Path | int | str],
-        filing: Filing | None, argv: list[str]) -> int:
-    """Runs a command that takes `count` arguments, and stdin where `act`
-    reads it, printing what `act` returns. A `filing` runs in the main
-    tree's copy of its script, given `argv`, the call's arguments."""
+def run(args: Sequence[str | None], help_text: str, count: int | None,
+        act: Callable[..., Path | int | str], filing: Filing | None, argv: list[str]) -> int:
+    """Runs a command that takes `count` arguments, or any number of them
+    where `count` is None, and stdin where `act` reads it, printing what
+    `act` returns. A `filing` runs in the main tree's copy of its script,
+    given `argv`, the call's arguments."""
     if args and args[0] in ("--help", "-h"):
         print(help_text)
         return 0
-    if len(args) != count:
+    if count is not None and len(args) != count:
         print(help_text, file=sys.stderr)
         return 2
     try:
@@ -219,6 +235,14 @@ def log_args(args: list[str]) -> list[str | None]:
     return [*head, options["--from"], options.get("--id"), rest[0] if rest else None]
 
 
+def settle_command(*given: str) -> str:
+    """The numbers `to_settle` gives for the calling session and `given`,
+    one per line, or `EMPTY`."""
+    tickets = main_tickets()
+    numbers = to_settle(tickets, session_index(tickets, session_id()), given)
+    return "\n".join(numbers) if numbers else EMPTY
+
+
 def log_command(ref: str, status: str, agent: str, source: str, agent_id: str | None,
                 note: str | None) -> str:
     """Runs `log_moves` and returns the paths it moved tickets to, one per
@@ -242,7 +266,7 @@ class Subcommand:
     purpose: str
     args: str
     detail: str
-    count: int
+    count: int | None
     act: Callable[..., Path | int | str]
     filing: Filing | None
     parse: Callable[[list[str]], Sequence[str | None]] = list
@@ -257,6 +281,9 @@ SUBCOMMANDS = {
                        lambda ref: ticket_path(main_tickets(), ref), None),
     "index": Subcommand(mctx("prints the index of your session"), "", "", 0,
                         lambda: session_index(main_tickets(), session_id()), TICKET_FILING),
+    "to-settle": Subcommand(mctx("prints the open tickets an operator gives a ticket analyst to settle "
+                                 "after a batch"),
+                            " [<number> ...]", TO_SETTLE_HELP, None, settle_command, None),
 }
 """Each subcommand, by the word that calls it, in the order `HELP` gives
 their lines."""
@@ -277,6 +304,9 @@ def help_values() -> dict[str, str]:
                 unblocked_by=UNBLOCKED_BY.format(change=Wait.CHANGE, number="<number>",
                                                  resolution="<resolution>"),
                 sessions=SESSIONS, invocation=TICKET_FILING.invocation,
+                question=Kind.QUESTION, refactor=Kind.REFACTOR, change_kind=Kind.CHANGE,
+                change_domain=Domain.CHANGE,
+                many_ideas=MANY_IDEAS, empty=EMPTY,
                 subcommands="\n".join(SUBCOMMAND_LINE.format(
                     invocation=TICKET_FILING.invocation, name=name, purpose=sub.purpose)
                     for name, sub in SUBCOMMANDS.items()))

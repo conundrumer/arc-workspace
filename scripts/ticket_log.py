@@ -9,7 +9,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from controlled_markdown import mctx
-from ticket_form import FIELD, FRONT, HEADING, LOG
+from ticket_form import FIELD, HEADING, LOG, ticket_kind
 from ticket_numbers import TICKET_NUMBER, ticket_number, ticket_path
 from ticket_vocabulary import Kind, Resolution, Status, ticked
 from transcripts import Refused
@@ -93,8 +93,7 @@ def resolution_of(note: str | None) -> Resolution | None:
 
 def is_change(path: Path) -> bool:
     """Whether the ticket at `path` is a `change`."""
-    head = re.match(FRONT, read_ticket(path))
-    return head is not None and head["kind"] == Kind.CHANGE
+    return ticket_kind(read_ticket(path)) is Kind.CHANGE
 
 
 def check_line(status: Status, moves: bool, agent: str, agent_id: str | None,
@@ -178,6 +177,13 @@ def status_of(word: str) -> Status:
             status=word, statuses=ticked(Status)))
 
 
+def check_status(path: Path, ref: str, status: Status) -> None:
+    """Refuses ticket `ref`, at `path`, where it stands outside `status`."""
+    if path.parent.name != status:
+        raise Moved(mctx("ticket `{ref}` stands in `{actual}`, not `{status}`").format(
+            ref=ref, actual=path.parent.name, status=status))
+
+
 def write_log(tickets: Path, ref: str, status: str, agent: str, source: str, agent_id: str | None,
               note: str | None) -> Path:
     """Moves ticket `ref` from `source`'s directory to `status`'s where
@@ -187,9 +193,7 @@ def write_log(tickets: Path, ref: str, status: str, agent: str, source: str, age
     refused, as `mv` from `source`'s directory would be."""
     to, origin = status_of(status), status_of(source)
     path = ticket_path(tickets, ref)
-    if path.parent.name != origin:
-        raise Moved(mctx("ticket `{ref}` stands in `{actual}`, not `{origin}`").format(
-            ref=ref, actual=path.parent.name, origin=origin))
+    check_status(path, ref, origin)
     moves = origin != to
     check_line(to, moves, agent, agent_id, note)
     if moves and to is Status.BLOCKED:

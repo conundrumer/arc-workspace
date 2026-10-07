@@ -36,12 +36,28 @@ TICKET_NUMBER = re.compile(rf"(?:(?P<session>{COUNT.pattern})-)?(?P<n>{COUNT.pat
 before a number gave the filing session's index."""
 
 
+def number_parts(number: str) -> tuple[int | None, int]:
+    """The session index and the `<n>` of the ticket number `number`, with
+    None as the index of a bare number, which belongs to no session."""
+    parts = TICKET_NUMBER.fullmatch(number)
+    if parts is None:
+        raise Refused(mctx("`{number}` is no ticket number").format(number=number))
+    return (int(parts["session"]) if parts["session"] else None, int(parts["n"]))
+
+
+def number_order(number: str) -> tuple[int, int]:
+    """The key that orders ticket numbers as the `HELP` of `file_ticket`
+    gives."""
+    session, n = number_parts(number)
+    return (0 if session is None else session, n)
+
+
 def reserve(tickets: Path, session: int) -> str:
     """Reserves the next number of a ticket of the session with index
     `session` by an exclusive create of its file under `tickets/ids/`."""
     ids = tickets / IDS
-    taken = (int(m["n"]) for p in ids.glob("*")
-             if (m := TICKET_NUMBER.fullmatch(p.name)) and m["session"] == str(session))
+    taken = (n for p in ids.glob("*") if TICKET_NUMBER.fullmatch(p.name)
+             for s, n in [number_parts(p.name)] if s == session)
     return write_after(ids, "", taken, lambda n: f"{session}-{n}").name
 
 

@@ -60,7 +60,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write, Agent, SendMessage, TaskStop
         - File a `DIFF` line unbisected where it stands at that commit, where no `affected:` line of that run gives one, or where it ends in `warm` and its step at `master` does not print it, and say which in the ticket.
     5. Release the tickets, as [Change tickets](#change-tickets) gives.
     6. Where a change the batch merged changes `src/`, `scripts/` or `tests/`, run a code review as [Code](#code) gives, and take the next step once the code reviewer has returned.
-    7. List every ticket of your session, and each one the coordinator names to you, under `tickets/open/` whose kind is not `change`, other than the `question` tickets filed on a change not yet merged and the `refactor` tickets whose title ends in `many ideas in one place`. Where the list holds a ticket, launch a ticket analyst with the tickets it holds, and after the last procedure your brief gives, wait for that ticket analyst to return.
+    7. Run `uv run python scripts/file_ticket.py to-settle [<number> ...]`, with the number of each ticket the coordinator names to you. Where it lists a ticket, launch a ticket analyst with the tickets it lists, and after the last procedure your brief gives, wait for that ticket analyst to return.
 
 ## Commands
 * inline: notes/commands.md#background-work
