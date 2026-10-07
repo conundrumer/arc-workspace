@@ -13,6 +13,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from hook_entry import run_hook
+
 HOOK = "pending_wait_hook"
 
 
@@ -77,12 +79,7 @@ def check(hook: dict[str, Any]) -> None:
 
 
 def main() -> int:
-    try:
-        check(json.loads(sys.stdin.read()))
-    except Exception as e:
-        print(f"{HOOK}: allowed: the check failed: {type(e).__name__}: {e}",
-              file=sys.stderr)
-    return 0
+    return run_hook(HOOK, "allowed: the check failed", check)
 
 
 if __name__ == "__main__":

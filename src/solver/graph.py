@@ -165,8 +165,8 @@ class Graph:
         """Each type the program declares by each key a reading of a type
         names it by (`key_at`), with the instance path its own text is read
         at (`reading`): the top level for a type the top level declares, the
-        path that holds it for a record type of the solver's own text that a
-        component declares, under its key there, and none for any other
+        path that holds it for a type that takes a key per instance
+        (`keyed_per_instance`), under its key there, and none for any other
         type a component declares, under its key (`key_of`). Souffle takes
         one declaration of a name in a scope, so a key has one declaration.
         Raises `ValueError` where a key names two declarations."""
@@ -174,8 +174,7 @@ class Graph:
             self.type_decls.setdefault(
                 self.key_of(t), (t, None if t.scope.components else ()))
         for t in program.types:
-            if t.scope.components and own(t.span) \
-                    and isinstance(t, RecordType):
+            if self.keyed_per_instance(t):
                 for q in self._at.get(t.scope.components[-1], []):
                     key = self.key_at(t, q)
                     held = self.type_decls.get(key)
@@ -428,16 +427,21 @@ class Graph:
     def key_at(self, t: TypeDecl, path: InstancePath | None) -> str:
         """The key of the type declaration `t` read at the instance path
         `path` that holds it, or at no instance where `path` is None
-        (`reading`): its
-        key (`key_of`), but for a record type of the solver's own text that
-        a component declares, read at an instance path, the path and its
-        name joined by dots, as Souffle names it at that instance. Its
-        fields read through that instance's type arguments, so the record
-        takes one key per instance."""
-        if path is not None and t.scope.components and own(t.span) \
-                and isinstance(t, RecordType):
+        (`reading`): its key (`key_of`), but for a type that takes a key per
+        instance (`keyed_per_instance`), read at an instance path, the path
+        and its name joined by dots, as Souffle names it at that
+        instance."""
+        if path is not None and self.keyed_per_instance(t):
             return dotted((*path, t.name))
         return self.key_of(t)
+
+    @staticmethod
+    def keyed_per_instance(t: TypeDecl) -> bool:
+        """Whether `t` is a record type of the solver's own text that a
+        component declares. Its fields read through the type arguments of
+        the instance that holds it, so it takes one key per instance."""
+        return bool(t.scope.components) and own(t.span) \
+            and isinstance(t, RecordType)
 
     def holder(self, t: TypeDecl, name: TypeName, at: InstancePath
                ) -> InstancePath:
