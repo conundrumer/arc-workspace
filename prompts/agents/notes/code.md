@@ -11,7 +11,9 @@
     : 'unattended-wait: budget timer'; uv run python scripts/agent_timer.py start budget <agent id> <seconds>
     ```
 - When the notification that the timer completed reaches you, where you did not end it, finish the step you are on, write what is done and what is left in `progress.md`, and end your turn with a reply that says the budget is passed.
-- When the first message from a subagent other than your parent reaches you, and before your final reply, end the timer: run `uv run python scripts/agent_timer.py stop budget <agent id>`.
+- When the first message from a subagent other than your parent reaches you, end the timer: run `uv run python scripts/agent_timer.py stop budget <agent id>`.
+- Before your final reply, where the timer runs, end it that way.
+    - Its start has completed once `pgrep -f 'agent_timer[.]py start budget <agent id>'` prints nothing.
 
 ## place-kinds
 - Defects:
