@@ -10,9 +10,8 @@ steady flow of readers cannot starve it. The lock is two files in the
 common git directory, each held through `flock`. A writer holds
 `PENDING_FILE` exclusively from its request to its release, and that hold
 is the mark. A reader holds `PENDING_FILE` shared only while it asks for
-`LOCK_FILE`, so readers do not wait for each other there. A reader holds
-`LOCK_FILE` shared, and a writer holds it exclusively. No writer holds
-`LOCK_FILE` while a reader holds `PENDING_FILE`, so a reader's hold of
+`LOCK_FILE`. A reader holds `LOCK_FILE` shared, and a writer holds it
+exclusively. No writer holds `LOCK_FILE` while a reader holds `PENDING_FILE`, so a reader's hold of
 `PENDING_FILE` lasts an instant, and a writer that asks for the mark gets
 it once no reader is in that instant. The kernel releases a hold when its
 process ends, however it ends, so a holder that crashes or is killed leaves

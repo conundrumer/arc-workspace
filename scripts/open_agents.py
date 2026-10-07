@@ -167,8 +167,7 @@ def unknown_work(n: Node, undecided: list[str]) -> Listed | None:
 
 
 def turn_ended(n: Node, undecided: list[str]) -> Listed:
-    """The agent of `n` as listed where its turn has ended, with the reports
-    `parent_reports` gives from its launch."""
+    """The agent of `n` as listed where its turn has ended."""
     run = profile(n.path, undecided)
     return Listed(n.parent, n.path, n.launch, run, True,
                   last_time(n.path, is_turn_entry), parent_reports(run, undecided, n.launch))

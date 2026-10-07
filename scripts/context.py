@@ -68,7 +68,7 @@ HELP = mctx("""
     """)
 
 # The lines of the usage block of HELP, which the command exits with on
-# arguments of no known form.
+# arguments of no known form, and on a form given too few arguments.
 USAGE = "\n".join(line.strip() for line in HELP.split("```")[1].splitlines()
                   if line.strip())
 
@@ -120,17 +120,13 @@ if __name__ == "__main__":
         print(contexts_text(), end="")
     elif len(args) == 3 and args[:2] == ["contexts", "--diff"]:
         print(contexts_diff(args[2]), end="")
-    elif args[:1] == ["context"] and args[1:2] and args[1] in AT_COMMIT:
-        if len(args) < 4:
-            sys.exit(f"usage: {sys.argv[0]} context {args[1]} <commit> <reader> [args]")
+    elif (len(args) >= 4 and args[0] == "context"
+          and args[1] in AT_COMMIT):
         print(AT_COMMIT[args[1]](args[2], args[3], args[4:]), end="")
-    elif args[:2] == ["context", "--update"]:
-        if len(args) < 5:
-            sys.exit(f"usage: {sys.argv[0]} context --update <commit> <commit> <reader> [args]")
+    elif len(args) >= 5 and args[:2] == ["context", "--update"]:
         print(update_diff(args[2], args[3], args[4], args[5:]), end="")
-    elif args and args[0] == "context":
-        if len(args) < 2:
-            sys.exit(f"usage: {sys.argv[0]} context <reader> [args]")
+    elif (len(args) >= 2 and args[0] == "context"
+          and not args[1].startswith("--")):
         print(context_text(reader_named(args[1]), args[2:]), end="")
     elif args:
         sys.exit(f"usage:\n{USAGE}")
