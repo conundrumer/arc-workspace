@@ -37,6 +37,9 @@ tools: Read, Grep, Glob, Bash, Agent, SendMessage, TaskStop
 
 * include: ../../src/controlled_markdown/templating.md
 
+## The user's goals
+* inline: notes/decisions.md#the-users-goals
+
 ## Commands
 * inline: notes/commands.md#commands
 * inline: notes/commands.md#final-report

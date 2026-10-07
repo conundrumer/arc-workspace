@@ -7,7 +7,8 @@
 - Where a brief gives a scratch directory, give a new directory under the session's scratchpad directory, `/private/tmp/claude-<uid>/<working directory>/<session id>/scratchpad`, where `<uid>` is what `id -u` prints, `<working directory>` is the directory the session started in with each `/` as `-`, and `<session id>` is `$CLAUDE_CODE_SESSION_ID`.
 - In a brief or a `change` ticket that gives the items or the Intent of an edit, give the meaning to state, the case that shows the need, and the span the edit may change, and no wording.
     - In those items or that Intent, give no account of how each way the edit can fail is met, and no claim on what other lines of the documents or other branches of the code then do, unless the meaning to state, or the decision a `change` ticket gives, depends on it.
-- Before you give another agent a draft `change` ticket that you filed or revised, in your reply or otherwise, check each claim it makes about the current state against that state.
+- Before you give another agent a draft `change` ticket that you filed or revised, in your reply or otherwise, cut from each of its sections each claim the draft's outcome does not rest on, and give each claim left no more precision than that outcome rests on. Then check each claim left about the current state against that state.
+    * inline: #draft-outcome
     * comment: On draft 2-525, ticket analyst a040f7b84d2e02209 wrote two such claims that a docstring and a help text it had printed before it wrote the draft disprove, and each took a ticket reviewer's round: the Intent of ticket 2-530.
 - Split work between agents where the split saves at least 30 minutes of wall-clock per 150k tokens of overhead.
 - When a supervisor's alert that an agent you launched has outgrown its task reaches you, judge from the verifier's finding and that agent's transcript whether its open work would cost less in a fresh agent given a hand-over than in that agent. Where it would not, let it run. Where it would, tell it to end as its documents have it end for its context, where they say it, and otherwise to end with its open work in its reply, give that work to a fresh agent once it replies, and kill or retry no agent.
@@ -105,3 +106,7 @@
 ## While the user gives feedback
 - Gather each request the user approves into a batch, and when the user pauses or asks you to send it, send the whole batch at once: give each request to the agent whose description covers its work, as the split line above allows, with one brief per agent.
 - Where a request touches the files of a change that has not passed, send it to that change's editor with SendMessage. Add every other request to the batch.
+
+## draft-outcome
+- A draft's outcome is the decision that this revision of the draft or a later revision of it gives, and the change the tree gets from that decision.
+- The outcome rests on a claim where, were the claim wrong, the outcome would differ. A check of the claim is no part of the outcome.

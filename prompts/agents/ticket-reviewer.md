@@ -15,6 +15,9 @@ tools: Read, Grep, Glob, Bash, Edit, Agent, SendMessage, TaskStop
 - Change no word of a draft.
 - Where a finding stands on a ticket, write a log line with `draft` as its status for each finding, and leave it under `tickets/draft/`. Where none stands, move it to `tickets/open/`.
 
+## The user's goals
+* inline: notes/decisions.md#the-users-goals
+
 ## Checks
 - Report nothing on a draft's wording where the operator would carry out the draft the same way under other words.
 - Read the operator's documents with `uv run python scripts/context.py context agent operator`, and the documents of each agent the draft has the operator launch or message with `uv run python scripts/context.py context agent <name>`.
@@ -25,7 +28,8 @@ tools: Read, Grep, Glob, Bash, Edit, Agent, SendMessage, TaskStop
     - Each ticket a `change` ticket's `depends-on` gives stands outside `tickets/draft/` or was filed before it. A `change` ticket whose Scope overlaps the Scope of a `change` outside `tickets/closed/` that stands outside `tickets/draft/` or was filed before it gives that change's number in `depends-on`, where no chain of links leads from that change to the ticket.
         - One ticket was filed before another where the first line of its log has the earlier time, or the same time and the number that sorts first as text.
         - A link leads from one ticket to the next where the first gives the next in its `depends-on`, or stands under `tickets/blocked/` and waits on the next, as `uv run python scripts/file_ticket.py log --help` defines that wait.
-    - Each claim the draft makes about the current state holds now, by that state: each case, count and place it gives, each thing it says a file, a command or the tree does, and each result it expects a check of the tree to give. A claim it does not settle is a finding.
+    - Each claim the draft makes about the current state that the draft's outcome rests on holds now, by that state: each case, count and place it gives, each thing it says a file, a command or the tree does, and each result it expects a check of the tree to give. Such a claim that you do not settle is a finding.
+        * inline: notes/launching.md#draft-outcome
         - The draft's `Grounds` give where the source of each claim lies, as read at the hash of `master` they give.
         * comment: With the line without its list in its context, ticket reviewer a283a71c0cf18c9ba passed two such claims of draft 2-527, on the lines of `CLAUDE.md` and `prompts/agents/notes/coordinator.md` that mention launching and on the hooks of `.claude/settings.json`, whose disproof its own calls had printed: the Intent of ticket 2-530.
     - The operator can carry out each instruction under its documents: each agent, tool, permission and name the instruction relies on exists.
