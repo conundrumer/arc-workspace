@@ -14,7 +14,7 @@ from checker.payloads.branches import DerivedDataPayload, DeterminationDiffPaylo
 from checker.runs import NoTask, Runs
 from engine.quotes import quotes
 from solver.aggregate import Solver
-from solver.solve import Determined, NoDetermine
+from solver.determine import Determined, NoDetermine
 
 
 @quotes("principles.md", "Stored or derived",

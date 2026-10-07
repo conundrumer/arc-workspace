@@ -40,7 +40,8 @@ from solver.columns import ident_keyed
 from solver.model import Case, StoreBranch
 from solver.names import cover
 from solver.problems import ProblemKind
-from solver.solve import PairId, row_key
+from solver.pair_runs import PairId
+from solver.run_parts import row_key
 
 
 def line_findings(runs: Runs, solver: Solver, rels: Sequence[RelationName],
@@ -54,12 +55,10 @@ def line_findings(runs: Runs, solver: Solver, rels: Sequence[RelationName],
     that take two values of it, a name that denotes other relations too,
     an entry that witnesses nothing, and a value no case that reads the
     relation has; then the named `@ignore: store` lines that exclude no
-    case; then each value with no `@store` line whose witness search
-    found a witness, or did not run to its end, or did not run, as on a
-    value with homonyms or with an entry in the witness file, and each
-    color the concept case reads that asks for a Params parameter. A
-    value with no `@store` line whose search ran on every grid and found
-    no witness (`Found.no_witness`) gives no finding."""
+    case; then each value the survey asks for a `@store` line
+    (`Found.asks_line`), with a second finding where its name denotes
+    other relations too, and each color the concept case reads that asks
+    for a Params parameter."""
     out: list[Finding] = []
     unread = {f.relation for f in found
               if f.kind is ValueKind.OWNED and not f.depended}
@@ -128,7 +127,7 @@ def line_findings(runs: Runs, solver: Solver, rels: Sequence[RelationName],
             continue
         names = shown(f)
         where = AtRelation(f.relation)
-        if f.store_branch and f.line is None and not f.no_witness:
+        if f.asks_line:
             out.append(Finding(Kind.MISSING_BRANCH_LINE, where,
                                MissingLinePayload(f.name, names)))
         if f.homonyms and f.line is None:

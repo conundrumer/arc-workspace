@@ -16,7 +16,7 @@ from checker.judged import (AnyCase, NoCase, VerdictCase, parse_fault,
                             verdict_case)
 from checker.payloads.witness import VerdictOutputUnknown
 from checker.render import finding_lines
-from checker.render.branch_blocks import takes_branch, undefined_text
+from checker.render.built import takes_branch, undefined_text
 from checker.runs import witness_file_role
 from cli.common import LIMITS, engine
 from engine import Engine, Grid, RunFailure, checkout
@@ -29,7 +29,8 @@ from solver.load import load
 from solver.model import Case
 from solver.names import denote, model_of
 from solver.problems import Fault, InSolver, NameFault, WitnessFileRole
-from solver.solve import Grids, assignment, outcomes
+from solver.solve import assignment, outcomes
+from solver.outcome import Grids
 from solver.witness import Entry, RejectedOutput, Undefined, WitnessFile
 from study.card_runs import run_failure_text
 from study.deck_spec import CardSpec, Option
@@ -188,12 +189,11 @@ def drawn_by_default(run: Loaded, entry: Entry) -> bool:
 
 
 def shown_root(root: Path) -> str:
-    """A checkout as an error names it."""
-    here = checkout.ROOT.resolve()
-    there = root.resolve()
-    if there != here and there.is_relative_to(here):
-        return there.relative_to(here).as_posix()
-    return there.as_posix()
+    """A checkout as an error names it: as `checkout.shown` prints it, and
+    the checkout the command runs in by its absolute path."""
+    if root.resolve() == checkout.ROOT.resolve():
+        return root.resolve().as_posix()
+    return checkout.shown(root).as_posix()
 
 
 def run_card(spec: CardSpec) -> CardRuns:

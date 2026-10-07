@@ -45,16 +45,10 @@ from solver.aggregate import is_concept as concept_base
 from solver.names import Denoted, cover, denote, model_of
 from solver.problems import Fault, Named, NameFault, ProblemKind
 from solver.outcome import Grids, is_result
-from solver.solve import (
-    CaseOnPair,
-    PairId,
-    PairRuns,
-    VariantBound,
-    as_grid,
-    by_base,
-    parameter_reading,
-    stored_facts,
-)
+from engine.program import as_grid
+from solver.determine import stored_facts
+from solver.pair_runs import CaseOnPair, PairId, PairRuns
+from solver.run_parts import VariantBound, by_base, parameter_reading
 from solver.vocabulary import COLOR
 from solver.witness import Undefined
 
@@ -341,9 +335,9 @@ def swapped(grid: Grid, a: int, b: int) -> Grid:
 
 def stored_colors(engine: Engine, solver: Solver, cases: Iterable[Case]
                   ) -> frozenset[int]:
-    """Every color the parameters' stored facts (`solver.solve.stored_facts`)
+    """Every color the parameters' stored facts (`solver.determine.stored_facts`)
     hold in a `Color` column at the bases of `cases`
-    (`solver.solve.by_base`). A case has no base only in a solver with no
+    (`solver.run_parts.by_base`). A case has no base only in a solver with no
     `Choice`, where no parameter has a case column."""
     bases = choice_bases(cases)
     out: set[int] = set()

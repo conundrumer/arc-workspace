@@ -94,7 +94,7 @@ from solver.model import Case, Lib
 from solver.aggregate import Solver, has_determine
 from solver.names import cover
 from solver.names import name as case_name
-from solver.solve import row_key
+from solver.run_parts import row_key
 from solver.vocabulary import NUMBER
 
 

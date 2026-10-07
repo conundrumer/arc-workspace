@@ -15,7 +15,7 @@ from pathlib import Path
 from arc.task import Example
 from engine import Grid, checkout
 from engine.program import as_grid, grid_size
-from solver.solve import examples
+from solver.pair_runs import examples
 from study.cards import card_id, page, page_path, write_page
 from study.deck_grids import Cell, contested, svg
 from study.deck_runs import (CardRuns, NoGrid, NoGridKind, Output, Slot,

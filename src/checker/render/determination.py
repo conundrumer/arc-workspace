@@ -12,7 +12,7 @@ from checker.runs import NoTask
 from controlled_markdown import mctx
 from engine.program import dotted
 from solver.aggregate import Solver
-from solver.solve import Determined, DetermineResult, NoDetermine
+from solver.determine import Determined, DetermineResult, NoDetermine
 
 
 def determination_lines(solver: Solver, result: DetermineResult | NoTask,

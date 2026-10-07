@@ -46,7 +46,7 @@ from solver import names
 from solver.annotations import Slot, comment_text, verdict_text, witness_text
 from solver.aggregate import Solver
 from solver.outcome import Grids, Outcome
-from solver.solve import PairId
+from solver.pair_runs import PairId
 from solver.witness import (
     AssignValue,
     GroupGrid,
@@ -57,7 +57,7 @@ from solver.witness import (
 )
 
 if TYPE_CHECKING:
-    from checker.witness import TryResult
+    from checker.witness_try import TryResult
 
 WITNESS_KINDS = frozenset({
     Kind.DRIFT, Kind.UNLISTED, Kind.ANNOTATION, Kind.UNSEPARATED,
@@ -347,7 +347,7 @@ def try_lines(solver: Solver, result: "TryResult") -> list[str]:
     prints them, the unseparated branch differences whose pairs it
     separates, and the subsumed ones whose pairs it shows defined and
     differing; it writes nothing."""
-    from checker.render.branch_blocks import record_lines
+    from checker.render.built import record_lines
 
     lines = record_lines(result.entry, solver, result.cases,
                          result.of) + [""]

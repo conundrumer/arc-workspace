@@ -9,6 +9,7 @@ from enum import StrEnum
 from checker.branches.cases import counterpart, ordered, with_line
 from checker.branches.witnesses import (
     BuiltBy,
+    NoFit,
     swap_entry,
     witness_divergence,
     witness_targets,
@@ -18,11 +19,13 @@ from checker.judged import Swap, no_result, swaps
 from checker.runs import Runs
 from checker.store.survey import Found, SearchEnd, case_key, projection
 from engine import Grid, RunFailure
+from engine.program import grid_size
 from engine.quotes import quotes
 from solver.aggregate import Solver
 from solver.case_types import case_types
 from solver.outcome import Assignment, Grids
-from solver.solve import as_grid, case_reading
+from engine.program import as_grid
+from solver.run_parts import case_reading
 from solver.witness import Entry
 
 
@@ -45,7 +48,7 @@ type Change = D4 | Swap
 def d4_images(grid: Grid) -> list[tuple[D4, Grid]]:
     """The seven other images of a grid under D4."""
     g = [list(r) for r in grid]
-    h, w = len(g), len(g[0])
+    h, w = grid_size(g)
     rot = [[g[h - 1 - r][c] for r in range(h)] for c in range(w)]
 
     def lr(x: list[list[int]]) -> list[list[int]]:
@@ -95,7 +98,7 @@ def find_witness(runs: Runs, solver: Solver, f: Found) -> Finding | None:
     of each train input in turn, then a color swap of each. A grid the
     relation stands empty on holds no value. It sets `Found.unseparated`
     and `Found.failed`, and records in `Found.ended` how it ended
-    (`SearchEnd`). The failure of the run that enumerates the cases with
+    (`SearchEnd`, `NoFit`). The failure of the run that enumerates the cases with
     the branch standing, where it fails."""
     task = solver.task
     assert task is not None
@@ -112,7 +115,7 @@ def find_witness(runs: Runs, solver: Solver, f: Found) -> Finding | None:
         return None
     models = witness_targets(runs, lined, cases, branch)
     if not models:
-        f.ended = SearchEnd.NO_FIT
+        f.ended = NoFit.NO_FIT
         return None
     model = models[0]
     other = counterpart(model, branch)

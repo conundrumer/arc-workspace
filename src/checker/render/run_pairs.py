@@ -12,11 +12,14 @@ from checker.render.surveys import giving_text
 from checker.sweep import GivingValues
 from controlled_markdown import mctx
 from engine import Grid, RunFailure
+from engine.program import grid_size
 from solver.aggregate import Solver
 from solver.model import Case
 from solver.names import name as case_name
 from solver.outcome import Grids, Outcome, is_result
-from solver.solve import AltKind, CaseOnPair, alt_kind, as_grid, out_columns
+from engine.program import as_grid
+from solver.pair_runs import AltKind, CaseOnPair, alt_kind
+from solver.out_grids import out_columns
 from solver.witness import Undefined, output_key
 
 NO_GRID = mctx("no case emitted a grid")
@@ -97,8 +100,8 @@ def _diff(expected: Grid, actual: Grid) -> list[str]:
     """Expected then actual, with the count of cells that differ."""
     lines = [mctx("expected:"), *grid_lines(expected), mctx("actual:"),
              *grid_lines(actual)]
-    eh, ew = len(expected), len(expected[0]) if expected else 0
-    ah, aw = len(actual), len(actual[0]) if actual else 0
+    eh, ew = grid_size(expected)
+    ah, aw = grid_size(actual)
     if (eh, ew) == (ah, aw) and eh > 0:
         n = sum(1 for r in range(eh) for c in range(ew)
                 if expected[r][c] != actual[r][c])
@@ -201,7 +204,7 @@ def _drawn_outputs(solver: Solver, cases: Sequence[CaseOnPair],
     or none, are no candidate of the pair (`_reasons`), its grids against
     the stored output, or why it is undefined (`undefined_lines`), under
     the fewest names of the cases that give it (`pair_failure_lines`)."""
-    from checker.render.branch_blocks import undefined_lines
+    from checker.render.built import undefined_lines
 
     by: dict[object, tuple[Grids | Undefined, list[Case]]] = {}
     for c in cases:

@@ -23,10 +23,13 @@ from engine.program import (
     Component,
     Qualifier,
     body_atoms,
+    grid_size,
 )
 from engine.quotes import quotes
 from solver.aggregate import TOP, Solver
-from solver.solve import as_grid, at_once, examples
+from engine.program import as_grid
+from solver.pair_runs import examples
+from solver.group_runs import at_once
 from solver.vocabulary import INPUT, OUTPUT, RUN_RELATIONS
 
 CONTROL_SEED = 7
@@ -181,7 +184,7 @@ def controls(grids: list[Grid]) -> list[Grid]:
                          for row in grid))
     first = grids[0]
     palette = sorted(colors([first]))
-    height, width = len(first), len(first[0])
+    height, width = grid_size(first)
     out.append(tuple(tuple(rng.choice(palette)
                            for _ in range(max(1, width - 1)))
                      for _ in range(max(1, height + 1))))

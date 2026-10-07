@@ -27,7 +27,7 @@ from solver.model import bases_of, Section, UnderMarker, Unmarked, Parameter
 from solver.aggregate import Solver, lists_case
 from solver.readers import section_at
 from solver.dependence import dependence
-from solver.solve import per_case
+from solver.run_parts import per_case
 from solver.vocabulary import (
     OUTPUT,
 )
@@ -67,7 +67,7 @@ def check_choice_domain(solver: Solver, runs: Runs) -> list[Finding]:
 def check_shared_read(solver: Solver, runs: Runs) -> list[Finding]:
     """A parameter under a marker that lists no case, below a marker that
     lists one; a fact under a marker of a shared parameter with no case
-    column (`solver.solve.per_case`); a fact of a parameter with a case
+    column (`solver.run_parts.per_case`); a fact of a parameter with a case
     column outside the marker of its case (`case_column_facts`); and a
     shared parameter some case of the solver never reads
     (`solver.dependence.Dependence.reads_parameter`), or that no case reads,

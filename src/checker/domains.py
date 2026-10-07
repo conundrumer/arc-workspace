@@ -7,9 +7,9 @@ from enum import StrEnum
 
 from arc.task import Task
 from engine import RecordValue, Row, Value
-from engine.program import offset_place
+from engine.program import grid_size, offset_place
 from solver.model import Lib
-from solver.solve import row_key, value_key
+from solver.run_parts import row_key, value_key
 from solver.vocabulary import BOX, COLOR, NUMBER, OFFSET
 
 MAGNITUDE_TYPES = frozenset({BOX, OFFSET})
@@ -66,8 +66,7 @@ def color_domain(task: Task) -> list[Value]:
 
 def number_domain(task: Task) -> list[int]:
     """0 up to the largest dimension of a known grid."""
-    dims = [d for g in _known_grids(task)
-            for d in (len(g), len(g[0]) if g else 0)]
+    dims = [d for g in _known_grids(task) for d in grid_size(g)]
     return list(range(max(dims, default=0) + 1))
 
 

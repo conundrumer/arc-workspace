@@ -8,7 +8,7 @@ from engine import Grid
 from solver.annotations import ClaimKind, Verdict
 from solver.model import Branch, Case, ConstructorBranch, DerivedAtStore
 from solver.outcome import Outcome
-from solver.solve import PairId
+from solver.pair_runs import PairId
 from solver.witness import AssignValue, GroupGrid, RejectedOutput
 
 type BranchRef = ConstructorBranch | Branch

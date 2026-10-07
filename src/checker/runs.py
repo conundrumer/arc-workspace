@@ -22,25 +22,24 @@ from solver.cases import cases
 from solver.names import Denoted, branch_text, name as case_name
 from solver.problems import Fault, WitnessFileRole
 from solver.outcome import Assignment, Outcome
-from solver.solve import (
+from solver.solve import assignment, outcomes_on, relations_at
+from solver.determine import (
     DetermineResult,
-    PairRuns,
     ParamDiff,
     Restrict,
-    TaskSection,
-    assignment,
-    branch_model,
-    case_groups,
     determine,
-    outcomes_on,
-    pairs,
-    per_case,
-    recorded_inputs,
-    relations_at,
-    at_bases,
     variation,
+)
+from solver.pair_runs import (
+    PairRuns,
+    TaskSection,
+    branch_model,
+    pairs,
+    recorded_inputs,
     witnessed,
 )
+from solver.group_runs import case_groups
+from solver.run_parts import per_case, at_bases
 from solver.witness import Entry, Undefined, WitnessFile
 
 if TYPE_CHECKING:
@@ -68,7 +67,7 @@ def base_order(solver: Solver, base: Base) -> BaseOrder:
 class NoCases:
     """The run that enumerates the solver's cases failed, so a survey
     reads no value of a parameter that stores a value per case
-    (`solver.solve.per_case`), whose bases that run gives."""
+    (`solver.run_parts.per_case`), whose bases that run gives."""
 
     failure: RunFailure
 
@@ -81,7 +80,7 @@ class NoTask:
 
 def holding(groups: Iterable[Sequence[Case]], has: Callable[[Case], bool]
             ) -> list[Case]:
-    """Every case of each of `groups` (`solver.solve.case_groups`) that
+    """Every case of each of `groups` (`solver.group_runs.case_groups`) that
     holds a case for which `has` is true, in the groups' order."""
     return [c for g in groups if any(has(c) for c in g) for c in g]
 
@@ -187,7 +186,7 @@ class Runs:
                         ) -> tuple[Base, ...] | RunFailure | None:
         """For a parameter that stores a value per case (`per_case`), each
         base (`bases`) at which its stored and its determined value differ:
-        a row of the diff holds there (`solver.solve.at_bases`), whether the
+        a row of the diff holds there (`solver.run_parts.at_bases`), whether the
         row is stored or determined; the failure of the run that enumerates
         the solver's cases where it fails; None for a parameter with no
         case column, whose one value differs."""
@@ -204,7 +203,7 @@ class Runs:
     def judged(self) -> Judged | RunFailure:
         """The program's judged cases with their runs: its witnessed cases
         (`witnessed`), and every case of the groups that hold one of them
-        (`solver.solve.case_groups`, as `batches` makes the runs); the
+        (`solver.group_runs.case_groups`, as `batches` makes the runs); the
         failure of the run that enumerates the solver's cases where it
         fails."""
         found = self.witnessed
@@ -236,7 +235,7 @@ class Runs:
     @cached_property
     def witnessed(self) -> tuple[Case, ...] | RunFailure:
         """The witnessed cases of the solver's cases
-        (`solver.solve.witnessed`), from the runs of every case of the
+        (`solver.pair_runs.witnessed`), from the runs of every case of the
         solver on every recorded input, the given file's entries in place
         of the task's, held in these runs; the failure of the run that
         enumerates the solver's cases where it fails. On the runs of the
@@ -261,7 +260,7 @@ class Runs:
         run in the batches of `batches`, each group of a batch
         (`case_groups`) that holds a case these runs lack on some input run
         on the inputs where a case is lacking, and held
-        (`solver.solve.RunOn`)."""
+        (`solver.pair_runs.RunOn`)."""
         missing = [(g, a) for g, a in inputs
                    if any((g, a, c) not in self._outcomes for c in every)]
         for batch in self.batches(every):
@@ -286,7 +285,7 @@ class Runs:
 
     @cached_property
     def determined(self) -> DetermineResult | NoTask:
-        """`solver.solve.determine` of the solver; `NoTask` where the
+        """`solver.determine.determine` of the solver; `NoTask` where the
         solver's task has no task file, whose examples it runs over."""
         if self.solver.task is None:
             return NoTask()
@@ -316,7 +315,7 @@ class Runs:
 
     @cached_property
     def pairs(self) -> tuple[PairRuns, ...] | RunFailure:
-        """`solver.solve.pairs` of the solver's witnessed cases."""
+        """`solver.pair_runs.pairs` of the solver's witnessed cases."""
         cases = self.cases
         if not isinstance(cases, tuple):
             return cases
@@ -413,7 +412,7 @@ class Runs:
     @cached_property
     def recorded(self) -> tuple[tuple[Grid, Assignment], ...]:
         """The recorded inputs, each at its assignment
-        (`solver.solve.recorded_inputs`)."""
+        (`solver.pair_runs.recorded_inputs`)."""
         return tuple(recorded_inputs(self.engine, self.solver, self.entries,
                                      self.file_role))
 
@@ -547,7 +546,7 @@ class Runs:
         (`lined_runs`): its judged cases. With `derived`, the `@derive`
         branch of a derivation no line holds: the judged cases of these
         runs' solver and the branch's model among the cases of `solver`
-        (`solver.solve.branch_model`), in the order of those cases, and no
+        (`solver.pair_runs.branch_model`), in the order of those cases, and no
         witnessed case of `solver` is computed, since a derivation with no
         line is judged on its model alone. The failure of the run that
         enumerates either solver's cases where it fails."""
@@ -574,7 +573,7 @@ class Runs:
     def _restricted(self, bases: Sequence[Base | None],
                     kept: tuple[Case, ...] | None = None) -> "Runs":
         """The runs of the solver with `impl_choice` holding `bases`
-        alone (`solver.solve.Restrict`)."""
+        alone (`solver.determine.Restrict`)."""
         program = variation(self.engine, self.solver,
                             Restrict(tuple(base_case(b) for b in bases)))
         return Runs(self.engine, replace(self.solver, program=program),

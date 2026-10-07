@@ -55,7 +55,7 @@ class ConstructorBranch:
 class ChoicePoint:
     """An ADT that stands in `Choice`: where it stands, as the path of
     record fields and constructors from the `Choice` root, its type, and its
-    constructors, the concept branch first. (The old `models.Site`.)"""
+    constructors, the concept branch first."""
 
     path: tuple[str, ...]
     type: str

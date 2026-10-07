@@ -21,16 +21,14 @@ from checker.render import (
     recording,
     render,
 )
-from checker.render.branch_blocks import derive_lines, record_lines, store_lines
+from checker.render.built import record_lines
+from checker.render.derive_block import derive_lines
+from checker.render.store_block import store_lines
 from checker.render.witness import try_lines
 from checker.store.survey import Found
-from checker.witness import (
-    TRY_ID,
-    WITNESS_CHECKS,
-    TryResult,
-    check_case_conditions,
-    survey_witness_try,
-)
+from checker.case_conditions import check_case_conditions
+from checker.witness import WITNESS_CHECKS
+from checker.witness_try import TRY_ID, TryResult, survey_witness_try
 from cli import text
 from cli.common import (
     LIMITS,
@@ -161,7 +159,7 @@ def cmd_witness(arg: str | None, file: str | None = None,
 
 def _try(eng: SouffleEngine, solver: Solver, path: str) -> int:
     """`witness --try`: the grid at `path` as a candidate witness
-    (`checker.witness.survey_witness_try`); nothing is written."""
+    (`checker.witness_try.survey_witness_try`); nothing is written."""
     grids = written_grids(path, 1, text.TRY_ONE_GRID)
     if grids is None:
         return 2

@@ -18,7 +18,8 @@ from solver.model import Case, DeriveBranch, StoreBranch
 from solver.names import denoted_cases
 from solver.outcome import Assignment, Grids, Outcome, group_grid, is_result
 from solver.problems import Fault, NameFault, WitnessFileRole
-from solver.solve import assignment, entry_assignments
+from solver.solve import assignment
+from solver.pair_runs import entry_assignments
 from solver.witness import (
     Entry,
     GroupGrid,
@@ -31,12 +32,18 @@ if TYPE_CHECKING:
     from checker.store.witness import Change
 
 
-class NoWitness(StrEnum):
-    """Why a survey builds no witness of a branch."""
+class NoFit(StrEnum):
+    """The end of a witness search, of a branch or of a value, in which no
+    case that takes it fits the pairs with its counterpart
+    (`witness_targets`), so the search runs on no input."""
 
     NO_FIT = "no fit"
-    """No case that takes the branch fits the pairs with its counterpart
-    (`witness_targets`), so the survey runs on no input."""
+
+
+class NoWitness(StrEnum):
+    """Why a survey builds no witness of a branch, but where no case that
+    takes it fits the pairs (`NoFit`)."""
+
     NOT_ONE_COLOR = "not one color"
     """The parameter's stored value is other than one color."""
     NO_FREE_COLOR = "no free color"
@@ -128,9 +135,9 @@ class Unwitnessed:
     witness file serves either; and the first case the survey looks with
     (`witness_targets`), with its counterpart, which no input shows apart
     (`shows_apart`). Where it looks with no case, `swap` is
-    `NoWitness.NO_FIT` and `pair` None."""
+    `NoFit.NO_FIT` and `pair` None."""
 
-    swap: NoWitness | FailedOn
+    swap: NoWitness | NoFit | FailedOn
     pair: tuple[Case, Case] | None
 
 
@@ -173,13 +180,13 @@ def fitting_both(runs: Runs, solver: Solver, cases: Sequence[Case],
 
 def swap_witness(runs: Runs, solver: Solver, cases: Sequence[Case],
                  branch: DeriveBranch | StoreBranch, color: int | None
-                 ) -> SwapWitness | NoWitness | FailedOn:
+                 ) -> SwapWitness | NoWitness | NoFit | FailedOn:
     """The color-swap witness of `branch` (`judged.swaps`): the first
     swapped train input on which a case the survey looks with
     (`witness_targets`) gives the output a witness needs
     (`witness_divergence`, principles.md, under "Witnesses"). `color` is
     the one color the branch's value holds; None where it holds other
-    than one color. `NoWitness.NO_FIT` where the survey looks with no
+    than one color. `NoFit.NO_FIT` where the survey looks with no
     case."""
     task = solver.given_task
     if color is None:
@@ -189,7 +196,7 @@ def swap_witness(runs: Runs, solver: Solver, cases: Sequence[Case],
         return NoWitness.NO_FREE_COLOR
     models = witness_targets(runs, solver, cases, branch)
     if not models:
-        return NoWitness.NO_FIT
+        return NoFit.NO_FIT
     failed: FailedOn | None = None
     for s in found:
         got = witness_divergence(runs, solver, models, branch, s.grid,
@@ -203,7 +210,7 @@ def swap_witness(runs: Runs, solver: Solver, cases: Sequence[Case],
 
 def recorded_witness(runs: Runs, solver: Solver, cases: Sequence[Case],
                      branch: DeriveBranch | StoreBranch,
-                     swap: NoWitness | FailedOn
+                     swap: NoWitness | NoFit | FailedOn
                      ) -> RecordedWitness | Unwitnessed:
     """The first input of the witness file, each at its entry's
     assignment, on which a case the survey looks with
@@ -211,12 +218,12 @@ def recorded_witness(runs: Runs, solver: Solver, cases: Sequence[Case],
     (`witness_divergence`, principles.md, under "Witnesses"): the
     recorded inputs a survey looks on beside the color swaps, `swap`
     saying why no color swap serves. `Unwitnessed` where none does, and
-    with `NoWitness.NO_FIT` where it looks with no case; an entry whose
+    with `NoFit.NO_FIT` where it looks with no case; an entry whose
     `assign` names nothing is the fault `fault_findings` reports, and is
     passed over."""
     models = witness_targets(runs, solver, cases, branch)
     if not models:
-        return Unwitnessed(NoWitness.NO_FIT, None)
+        return Unwitnessed(NoFit.NO_FIT, None)
     for e, assign in entry_assignments(runs.engine, runs.solver, runs.entries,
                                        runs.file_role):
         got = witness_divergence(runs, solver, models, branch, e.input,

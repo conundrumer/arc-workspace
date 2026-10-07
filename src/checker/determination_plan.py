@@ -31,20 +31,22 @@ from engine.quotes import quotes
 from solver.model import Base, Case, base_case
 from solver.aggregate import Solver
 from solver.readers import proposers_program
-from solver.solve import (
+from solver.determine import (
     stored_facts,
     Determined,
     FixParam,
     NoDetermine,
     Proposals,
-    TaskSection,
-    at_once,
+    probe,
+    variation,
+)
+from solver.pair_runs import TaskSection
+from solver.group_runs import at_once
+from solver.run_parts import (
     parameter_reading,
     per_case,
-    probe,
     by_base,
     row_key,
-    variation,
     with_rows_at,
 )
 from solver.vocabulary import IDENT
@@ -78,7 +80,7 @@ class DomainName(StrEnum):
 @dataclass(frozen=True)
 class AtCase:
     """The value of a parameter that stores a value per case
-    (`solver.solve.PerCase`) at `base`; `order` is where the base stands
+    (`solver.run_parts.PerCase`) at `base`; `order` is where the base stands
     among the bases (`checker.runs.base_order`)."""
 
     parameter: str

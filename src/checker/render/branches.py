@@ -43,14 +43,11 @@ from checker.store.survey import member_key
 from checker.store.witness import D4, Change
 from controlled_markdown import mctx
 from engine import AdtValue, RecordValue
-from solver.annotations import DirectiveWord, IgnoreForm, at_word
+from solver.annotations import DirectiveWord, IgnoreForm, at_word, ignore_text
 from solver.model import DeriveBranch, StoreBranch
 from solver.aggregate import Solver
 from solver.names import branch_text
-from solver.solve import (
-    PairId,
-    TaskSection,
-)
+from solver.pair_runs import PairId, TaskSection
 from solver.witness import (
     Entry,
 )
@@ -100,7 +97,7 @@ def transform_text(change: Change) -> str:
 
 def train_text(index: int) -> str:
     """The train input of `index`, as a pair is named
-    (`solver.solve.PairId.text`)."""
+    (`solver.pair_runs.PairId.text`)."""
     return PairId(TaskSection.TRAIN, index).text
 
 
@@ -375,3 +372,38 @@ def keyed_text(keys: Sequence[str]) -> str:
     """Why a value keyed by an id is stored at no case."""
     return mctx("varies by {keys}, an id the runner stores nothing under"
                 ).format(keys=_ticked(keys))
+
+
+COUNTERPART = mctx("the case that differs from it by this branch alone")
+"""The counterpart of a case that takes a branch, as a block names it."""
+
+
+def no_fit_text(taken: str) -> str:
+    """The sentence of `checker.branches.witnesses.NoFit.NO_FIT`, with
+    `taken` the word for what the search is of: the branch or the
+    value."""
+    return mctx("no case that takes the {taken} fits the pairs along with "
+                "{counterpart}").format(taken=taken, counterpart=COUNTERPART)
+
+
+def filed_witness(name: str) -> str:
+    """The witness line of a branch whose witness the witness file holds
+    under its name."""
+    return mctx("witness: `{case}` in the witness file").format(case=name)
+
+
+def moved_witness(train: int, change: Change) -> str:
+    """The witness line of a branch whose witness is a train input under
+    a change."""
+    return mctx("witness: {grid} {change}").format(
+        grid=train_text(train), change=transform_text(change))
+
+
+def ignored_text(form: IgnoreForm) -> str:
+    """A branch whose bare `@ignore` line of `form` stands in place of
+    its directive line (`IgnoreForm.directive`)."""
+    word = form.directive
+    if word is None:
+        raise ValueError(f"`@ignore: {form}` stands in place of no line")
+    return mctx("`{ignore}` stands in place of its `{word}` line").format(
+        ignore=ignore_text(None, form), word=at_word(word))

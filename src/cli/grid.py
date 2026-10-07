@@ -23,7 +23,7 @@ from cli.record import shown_lines
 from cli.witness_file import assign_of, assignment
 from engine import Resolved
 from engine.program import RelationName, Scope
-from solver import solve, witness
+from solver import pair_runs, witness
 from solver.model import Case
 from solver.aggregate import Solver
 from solver.names import Denoted, denote, name
@@ -88,7 +88,7 @@ def cmd_grid(arg: str, path: str | None = None, every: bool = False,
                 print(text.NO_CASE_NAMED.format(stem=solver.stem, name=value),
                       file=sys.stderr)
                 return 2
-            stand_ins = solve.stand_ins(solver, solver_cases, denoted)
+            stand_ins = pair_runs.stand_ins(solver, solver_cases, denoted)
             if not stand_ins:
                 print(text.NO_WITNESSED_TAKES.format(name=value), file=sys.stderr)
                 return 2

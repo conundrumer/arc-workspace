@@ -14,7 +14,7 @@ from solver import witness
 from solver.aggregate import Solver, grid_stored, read_witness
 from solver.problems import Fault, InWitnessFile, WitnessFileRole
 from solver.outcome import Assignment
-from solver.solve import assigned
+from solver.group_runs import assigned
 from solver.witness import AssignValue, WitnessFile, assign_with_grids
 
 

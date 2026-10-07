@@ -47,13 +47,8 @@ from solver.model import Case
 from solver.aggregate import Solver, has_determine
 from solver.problems import Fault
 from solver.outcome import Assignment, Outcome
-from solver.solve import (
-    CaseOnPair,
-    candidates,
-    examples,
-    matching,
-    outcomes,
-)
+from solver.solve import outcomes
+from solver.pair_runs import CaseOnPair, candidates, examples, matching
 from souffle import SouffleEngine
 
 COLLISIONS = frozenset({Category.RESERVED_NAME, Category.SHADOWED_TYPE,
@@ -488,5 +483,5 @@ def cmd_pairs(arg: str, path: str) -> int:
 
 def _on_pair(case: Case, o: Outcome, ex: Example) -> CaseOnPair:
     """What `case` gives on a pair, and the candidates its grids match,
-    as `solver.solve.pairs` judges a case of the solver."""
+    as `solver.pair_runs.pairs` judges a case of the solver."""
     return CaseOnPair(case, o, matching(candidates(ex), o))

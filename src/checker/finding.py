@@ -39,7 +39,8 @@ from solver.annotations import CaseMarker, DirectiveWord, IgnoreLine
 from solver.category import Category
 from solver.model import Case
 from solver.problems import Fault, ProblemKind, WitnessFileRole
-from solver.solve import PairId, VariantBound
+from solver.pair_runs import PairId
+from solver.run_parts import VariantBound
 
 
 class Kind(StrEnum):

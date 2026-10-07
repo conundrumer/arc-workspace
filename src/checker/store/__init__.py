@@ -4,16 +4,16 @@ is the same on every input of the task, with its witness, and the
 findings on the solver's `@store` lines and on those relations. This
 module runs the survey.
 
-`checker.store.survey` holds the values the survey finds and what it
-judges of each; `checker.store.witness` the witness of a value and the
-search for it; `checker.store.lines` the findings on the `@store` lines
-and on the values. `survey` imports neither of the others at its top
-level, and they import `survey`.
+`checker.store.relations` holds the relations the survey reads;
+`checker.store.survey` the values the survey finds and what it judges of
+each; `checker.store.stored` whether a value is stored already, and
+whether the concept case reads it; `checker.store.witness` the witness of
+a value and the search for it; `checker.store.lines` the findings on the
+`@store` lines and on the values. `relations` imports no other module of
+the package, `survey` imports none at its top level, and `stored`,
+`witness` and `lines` import `survey`.
 
-The survey asks for a `@store` line, or a bare `@ignore: store` line, on
-each value with no `@store` line, but on a value whose witness search ran
-on every grid with no run failed and found no witness
-(`Found.no_witness`)."""
+The values the survey asks for a `@store` line are `Found.asks_line`'s."""
 
 from collections.abc import Mapping, Sequence
 
@@ -29,19 +29,15 @@ from checker.judged import (
 from checker.payloads.branches import NotCheckedPayload, RowCapPayload
 from checker.runs import Runs
 from checker.store.lines import line_findings
-from checker.store.survey import (
-    ROW_CAP,
-    Found,
+from checker.store.relations import between
+from checker.store.stored import (
     StoredAlready,
-    StoreSurvey,
-    ValueKind,
-    analyze,
-    between,
     concept_runs,
     concept_section,
     read_back,
     stored_already,
 )
+from checker.store.survey import ROW_CAP, Found, StoreSurvey, ValueKind, analyze
 from checker.store.witness import find_witness
 from engine import RelationName, Row
 from engine.quotes import quotes
@@ -50,7 +46,9 @@ from solver.annotations import IgnoreForm
 from solver.dependence import dependence
 from solver.graph import Graph
 from solver.model import Base, Case, StoreBranch, bases_of, every_base
-from solver.solve import PairId, as_grid, at_once, examples
+from engine.program import as_grid
+from solver.pair_runs import PairId, examples
+from solver.group_runs import at_once
 
 
 def _bases(solver: Solver, solver_cases: Sequence[Case]

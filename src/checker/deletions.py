@@ -52,16 +52,9 @@ from solver.dependence import (
     Dependence,
     dependence,
 )
-from solver.solve import (
-    Determined,
-    NoDetermine,
-    Remove,
-    at_once,
-    case_groups,
-    variant_bound,
-    variant_limits,
-    variation,
-)
+from solver.determine import Determined, NoDetermine, Remove, variation
+from solver.group_runs import at_once, case_groups
+from solver.run_parts import variant_bound, variant_limits
 from solver.vocabulary import DETERMINE, IMPL, OUTPUT
 
 

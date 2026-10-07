@@ -20,16 +20,10 @@ from engine import Program, RemoveFact, Row, RunFailure
 from engine.quotes import quotes
 from solver.aggregate import Solver
 from solver.readers import parameter
-from solver.solve import (
-    stored_facts,
-    PerCase,
-    Remove,
-    TaskSection,
-    at_once,
-    by_base,
-    parameter_reading,
-    variation,
-)
+from solver.determine import stored_facts, Remove, variation
+from solver.pair_runs import TaskSection
+from solver.group_runs import at_once
+from solver.run_parts import PerCase, by_base, parameter_reading
 
 
 @dataclass(frozen=True)
@@ -74,7 +68,7 @@ type DropOneResult = DropOneReport | TrainFails | TimedOut
 
 def sweeps_values(solver: Solver, value_types: Sequence[str]) -> bool:
     """Whether the sweep enumerates a parameter's values: each column of
-    its value (`solver.solve.PerCase.value_types`) has a candidate
+    its value (`solver.run_parts.PerCase.value_types`) has a candidate
     domain."""
     return enumerable(value_types, solver.lib)
 
@@ -137,7 +131,7 @@ def _tried(solver: Solver, runs: Runs, reading: PerCase, rows: list[Row]
            ) -> list[Row] | RunFailure:
     """The facts of `rows`, a parameter's stored facts, that drop-one
     cuts: the facts at each base of the cases the checks read
-    (`solver.solve.by_base`) that holds more than one, a parameter with no
+    (`solver.run_parts.by_base`) that holds more than one, a parameter with no
     case column holding every fact; the failure of the run that
     enumerates the cases where it fails."""
     got = by_base(solver, reading, rows, runs.bases)

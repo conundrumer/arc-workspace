@@ -289,9 +289,9 @@ def check_lint(solver: Solver, runs: Runs) -> list[Finding]:
     nothing, and is a lint finding at its line. A hint on a line of more
     than one relation stays unless each of them carries such a line. A
     banned-form finding on a line no derivation of the concept case reads
-    names the cases that read it (`_branch_forms`). The findings come in the old report's order:
-    the form checks, the idle `@ignore` lines, the rewrite checks, then
-    the hints. A solver that does not parse gives none: `fault_findings`
+    names the cases that read it (`_branch_forms`). The findings come in
+    this order: the form checks, the idle `@ignore` lines, the rewrite
+    checks, then the hints. A solver that does not parse gives none: `fault_findings`
     reports the failure, and no line of it is known to belong to a
     relation.
     It is the composition of the lint checks, each of which names what it

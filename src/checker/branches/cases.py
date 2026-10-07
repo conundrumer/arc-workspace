@@ -15,7 +15,7 @@ from solver.model import (
     StoredAtDerive,
 )
 from solver.names import Denoted
-from solver.solve import (
+from solver.pair_runs import (
     CaseOnPair,
     PairId,
     PairRuns,
@@ -29,7 +29,7 @@ from solver.solve import (
 def pair_runs(runs: Runs, solver: Solver, cases: Sequence[Case]
               ) -> tuple[PairRuns, ...]:
     """The cases of `cases` on the train and test pairs, as
-    `solver.solve.pairs` runs a case of the solver, pair by pair: a case
+    `solver.pair_runs.pairs` runs a case of the solver, pair by pair: a case
     runs on a pair only while it has missed no pair before, since Fit
     (`judged.fit`) reads a case's first miss alone, so a pair's runs hold
     the cases that ran there. The cases share runs
@@ -115,7 +115,7 @@ def ordered(solver: Solver, cases: Sequence[Case],
 def branch_models(solver: Solver, cases: Sequence[Case],
                   branch: DeriveBranch | StoreBranch) -> list[Case]:
     """The cases of `cases` a branch's witness is judged on: the branch's
-    model (`solver.solve.branch_model`); none where no case of `cases`
+    model (`solver.pair_runs.branch_model`); none where no case of `cases`
     takes it."""
     got = branch_model(solver, cases, Denoted((), (branch,)))
     return [] if got is None else [got]

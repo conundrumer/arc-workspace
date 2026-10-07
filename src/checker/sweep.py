@@ -46,25 +46,29 @@ from solver.dependence import dependence
 from solver.names import marker_lists
 from solver.names import name as case_label
 from solver.outcome import Grids
-from solver.solve import (
+from solver.determine import (
     stored_facts,
+    Determined,
+    FixParam,
+    rigid_charts,
+    variation,
+)
+from solver.pair_runs import (
     PairId,
     fits_pairs,
     matches_every,
     Candidate,
-    Determined,
-    FixParam,
+    TaskSection,
+)
+from solver.group_runs import at_once
+from solver.run_parts import (
     PerCase,
     parameter_reading,
     by_base,
     with_rows_at,
-    TaskSection,
-    at_once,
-    rigid_charts,
     row_key,
-    variation,
 )
-from solver.solve import candidates as pair_candidates
+from solver.pair_runs import candidates as pair_candidates
 from solver.vocabulary import NUMBER
 from solver.witness import Undefined
 
@@ -99,7 +103,7 @@ class GivingValues:
     """A parameter that holds several values at a case that gives no
     output on a train pair (`values_giving`): the case, the first train
     pair on which it gives none, the parameter, its value's column types
-    (`solver.solve.PerCase.value_types`), the values it holds at the
+    (`solver.run_parts.PerCase.value_types`), the values it holds at the
     case, those of them under which alone the case gives its train
     outputs, in the order of `held`, and each value whose run failed.
     `giving` is short of `held`, and empty only where a run failed."""
@@ -380,7 +384,7 @@ def _passing_every(got: Profile,
                    ) -> frozenset[Case]:
     """The base cases (`solver.model.base_case`) whose grids are a
     candidate of every pair of the profile `got`
-    (`solver.solve.matches_every`), `cands` those pairs' candidates in
+    (`solver.pair_runs.matches_every`), `cands` those pairs' candidates in
     order."""
     if not got:
         return frozenset()
@@ -520,7 +524,7 @@ class _Fix:
 @dataclass(frozen=True)
 class _AtBase:
     """Where a sweep of a parameter that stores a value per case
-    (`solver.solve.PerCase`) writes a candidate: at `base`, with the rows
+    (`solver.run_parts.PerCase`) writes a candidate: at `base`, with the rows
     of `stored` that hold at another base kept."""
 
     base: Base
@@ -940,7 +944,7 @@ def _fixes(solver: Solver, runs: Runs, relation: str, stored: list[Row]
     """What a sweep of the parameter `relation` fixes, each with the
     stored value it compares against: the parameter's rows, or, where it
     stores a value per case, its value at each base of the cases the
-    checks read (`solver.solve.by_base`); the failure of the run that
+    checks read (`solver.run_parts.by_base`); the failure of the run that
     enumerates the cases where it fails."""
     pc = parameter_reading(solver, relation)
     got = by_base(solver, pc, stored, runs.bases)

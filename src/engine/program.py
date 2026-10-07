@@ -185,9 +185,9 @@ def offset_place(dr: int, dc: int) -> tuple[int, int, int, int]:
 
 
 def grid_size(grid: Sequence[Sequence[int]]) -> tuple[int, int]:
-    """The height and width of `grid`, a grid of one row or more, as a task
-    file and a witness file give it."""
-    return len(grid), len(grid[0])
+    """The height and width of `grid`, as a task file and a witness file give
+    it: `(0, 0)` for a grid of no row."""
+    return len(grid), len(grid[0]) if grid else 0
 
 
 def grid_lists(grid: Grid) -> list[list[int]]:

@@ -23,8 +23,7 @@ from solver.problems import WitnessFileRole
 
 
 class LineForm(StrEnum):
-    """How a section writes a line of the solver, as the old tool wrote it
-    there."""
+    """How a section writes a line of the solver."""
 
     FILE = "file"
     """`<stem>.dl:N`, the lint section's form."""

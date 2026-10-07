@@ -23,26 +23,28 @@ from engine import (
 from solver.model import Case
 from solver.aggregate import Solver
 from solver.outcome import Assignment, Grids, Outcome
-from solver.solve import (
+from engine.program import as_grid
+from solver.determine import (
     Determined,
     DetermineResult,
-    GroupRuns,
     NoDetermine,
+    determine,
+)
+from solver.pair_runs import (
     PairId,
     TaskSection,
-    as_grid,
-    at_once,
-    VariantBound,
-    variant_bound,
-    variant_limits,
     candidates,
-    determine,
     examples,
-    group_runs,
     matching,
+)
+from solver.group_runs import (
+    GroupRuns,
+    at_once,
+    group_runs,
     read_case,
     read_run,
 )
+from solver.run_parts import VariantBound, variant_bound, variant_limits
 from solver.witness import Undefined
 
 type Entry = frozenset[tuple[Case, tuple[Grid, ...]]]
@@ -81,7 +83,7 @@ EVERY_SECTION = (TaskSection.TRAIN, TaskSection.TEST)
 def pairs_of(solver: Solver, sections: Collection[TaskSection]
              = EVERY_SECTION) -> list[tuple[PairId, Example]]:
     """The task's pairs of `sections`, in the order of
-    `solver.solve.examples`."""
+    `solver.pair_runs.examples`."""
     task = solver.task
     if task is None:
         return []
@@ -189,7 +191,7 @@ def entry(engine: Engine, solver: Solver, cases: Sequence[Case],
 def restricted(reference: Profile, cases: Collection[Case]) -> Profile:
     """`reference` read on `cases` alone, each entry with the runs that
     hold them, where `cases` are whole groups of the runs
-    (`solver.solve.case_groups`), so that a profile of `cases` compares
+    (`solver.group_runs.case_groups`), so that a profile of `cases` compares
     with it run by run (`entry`)."""
     out: list[Entry] = []
     for e in reference:
@@ -314,7 +316,7 @@ def determines(engine: Engine, solver: Solver, limits: Limits,
                ) -> bool | NoDetermine | NoTask | TimedOut:
     """`reproduces` of the solver's determination run; of a variant's,
     where the stored program's determination spent `measured` CPU seconds
-    (`solver.solve.determine`)."""
+    (`solver.determine.determine`)."""
     return reproduces(NoTask() if solver.task is None
                       else determine(engine, solver, limits, measured),
                       None if measured is None else variant_bound(measured))
