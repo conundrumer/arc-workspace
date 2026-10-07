@@ -32,13 +32,17 @@ from controlled_markdown import (
     ControlledMarkdownError,
     Node,
     Registry,
+    Reference,
+    RelativeToNoFile,
+    Rule,
     _closes,
     _walk,
     escape,
     links,
+    reference,
     relative,
     relative_link,
-    relative_to_no_file,
+    resolve_reference,
     slug,
     target_of,
 )
@@ -94,12 +98,12 @@ def _fill(text: str, node: Node, st: _State) -> str:
         name = m.group(1)
         if name not in st.values:
             raise ControlledMarkdownError(node.source, node.line,
-                                      "variable-missing",
+                                      Rule.VARIABLE_MISSING,
                                       f"no value for `{name}`")
         value = str(st.values[name])
         if "\n" in value:
             raise ControlledMarkdownError(node.source, node.line,
-                                      "variable-block",
+                                      Rule.VARIABLE_BLOCK,
                                       f"the value of `{name}` holds a line "
                                       f"break, which fits a `code` or a "
                                       f"`quote` directive only")
@@ -212,10 +216,9 @@ def _reached(node: Node, st: _State, seen: tuple[str, ...]) -> set[str]:
             return set()
         return _names(document.children, st, seen + (document.source,),
                       st.reg.rel(document))
-    value = (node.attr(INLINE) or "").strip()
-    where, _, ident = value.partition("#")
-    where, ident = where.strip(), ident.strip()
-    document = _document_at(node, where, st) if where else _own_document(node, st)
+    ref = reference(node.attr(INLINE) or "")
+    document = _referenced_document(node, ref, st)
+    ident = ref.ident or ""
     key = f"{document.source}#{ident}"
     target = st.reg.ids.get(document.source, {}).get(ident)
     if target is None or key in seen:
@@ -227,7 +230,7 @@ def _value_of(node: Node, name: str, st: _State) -> str:
     """The value a `code`, a `quote`, or a `text` directive names."""
     key = (node.attr(name) or "").strip()
     if key not in st.values:
-        raise ControlledMarkdownError(node.source, node.line, "variable-missing",
+        raise ControlledMarkdownError(node.source, node.line, Rule.VARIABLE_MISSING,
                                   f"no value for `{key}`")
     return str(st.values[key])
 
@@ -264,11 +267,11 @@ def _rooted(text: str, node: Node, st: _State) -> str:
         return text
 
     def one(m):
-        path = m.group(2).partition("#")[0]
+        path = reference(m.group(2)).path
         if (not path or SCHEME_RE.match(m.group(2))
                 or not relative_link(path)):
             return m.group(0)
-        whole = (base.parent / path).resolve()
+        whole = resolve_reference(path, base)
         rooted = relative(whole, st.reg.root)
         return f"[{m.group(1)}]({rooted}{m.group(2)[len(path):]})"
 
@@ -293,12 +296,12 @@ def _include(node: Node, st: _State, seen: tuple[str, ...],
     """
     where = (node.attr(INCLUDE) or "").strip()
     if not where or "#" in where:
-        raise ControlledMarkdownError(node.source, node.line, "include-missing",
+        raise ControlledMarkdownError(node.source, node.line, Rule.INCLUDE_MISSING,
                                   f"`{where}` is not a path; a section is "
                                   f"reached with `inline`")
     document = _document_at(node, where, st)
     if document.source in seen:
-        raise ControlledMarkdownError(node.source, node.line, "include-cycle",
+        raise ControlledMarkdownError(node.source, node.line, Rule.INCLUDE_CYCLE,
                                   f"`{where}` includes itself")
     seen = seen + (document.source,)
     drop = drop + tuple(_split_list(node.attr("exclude")))
@@ -320,21 +323,20 @@ def _inline(node: Node, st: _State, seen: tuple[str, ...],
     under it.
     """
     value = (node.attr(INLINE) or "").strip()
-    where, hashed, ident = value.partition("#")
-    where, ident = where.strip(), ident.strip()
-    if not hashed or not ident:
-        raise ControlledMarkdownError(node.source, node.line, "inline-missing",
+    ref = reference(value)
+    ident = ref.ident
+    if not ident:
+        raise ControlledMarkdownError(node.source, node.line, Rule.INLINE_MISSING,
                                   f"`{value}` names no section; a whole "
                                   f"document is reached with `include`")
-    document = (_document_at(node, where, st) if where
-                else _own_document(node, st))
+    document = _referenced_document(node, ref, st)
     key = f"{document.source}#{ident}"
     if key in seen:
-        raise ControlledMarkdownError(node.source, node.line, "inline-cycle",
+        raise ControlledMarkdownError(node.source, node.line, Rule.INLINE_CYCLE,
                                   f"`{value}` inlines itself")
     target = st.reg.ids.get(document.source, {}).get(ident)
     if target is None:
-        raise ControlledMarkdownError(node.source, node.line, "inline-missing",
+        raise ControlledMarkdownError(node.source, node.line, Rule.INLINE_MISSING,
                                   f"no section in {st.reg.rel(document)} "
                                   f"carries the id `{ident}`")
     left_out = st.left_out
@@ -352,28 +354,37 @@ def _abridged(node: Node, st: _State) -> set[Path] | str | None:
     if value == "all":
         return "all"
     base = st.reg.file(node.source)
-    root = base.parent if base is not None else Path()
-    return {(root / part).resolve() for part in _split_list(value)}
+    return {resolve_reference(part, base) if base is not None
+            else Path(part).resolve() for part in _split_list(value)}
+
+
+def _referenced_document(node: Node, ref: Reference, st: _State) -> Node:
+    return (_document_at(node, ref.path, st) if ref.path
+            else _own_document(node, st))
 
 
 def _own_document(node: Node, st: _State) -> Node:
     """The document a directive sits in."""
     document = st.reg.documents.get(node.source)
     if document is None:
-        raise ControlledMarkdownError(node.source, node.line, "inline-missing",
+        raise ControlledMarkdownError(node.source, node.line, Rule.INLINE_MISSING,
                                   f"`{node.source}` is not in the registry")
     return document
 
 
 def _document_at(node: Node, where: str, st: _State) -> Node:
-    """The document at `where`, relative to the file the directive sits in."""
+    """The document at `where`, relative to the file the directive sits in.
+    An empty `where` names no document."""
+    missing = ControlledMarkdownError(node.source, node.line, Rule.INCLUDE_MISSING,
+                                  f"no document at `{where}`")
+    if not where:
+        raise missing
     base = st.reg.file(node.source)
-    path = (base.parent / where) if base is not None else Path(where)
+    path = resolve_reference(where, base) if base is not None else Path(where)
     try:
         return st.reg.open(path)
     except OSError:
-        raise ControlledMarkdownError(node.source, node.line, "include-missing",
-                                  f"no document at `{where}`") from None
+        raise missing from None
 
 
 def _document_nodes(document: Node, st: _State, seen: tuple[str, ...],
@@ -588,7 +599,8 @@ def _anchored(node: Node, st: _State, shown: set[int],
     `id`, and `anchors` counts the headings of each anchor."""
     def one(m: re.Match[str]) -> str:
         target = m.group(2)
-        path, _, ident = target.partition("#")
+        ref = reference(target)
+        path, ident = ref.path, ref.ident
         if SCHEME_RE.match(target) or not ident:
             return m.group(0)
         file = _link_file(node, path, st)
@@ -612,13 +624,14 @@ def _link_file(node: Node, path: str, st: _State) -> Path | None:
     relative to its document, in a document read from no file, is a
     fault."""
     base = st.reg.file(node.source)
-    if relative_to_no_file(path, base):
-        raise ControlledMarkdownError(
-            node.source, node.line, "link-anchor",
-            f"`{path}` is relative to a document read from no file")
     if base is None and not path:
         return None
-    return target_of(path, base, st.reg.root)
+    try:
+        return target_of(path, base, st.reg.root)
+    except RelativeToNoFile:
+        raise ControlledMarkdownError(
+            node.source, node.line, Rule.LINK_ANCHOR,
+            f"`{path}` is relative to a document read from no file") from None
 
 
 def _state(reg: Registry | None, values: dict | None) -> _State:
@@ -645,12 +658,12 @@ def _require(document: Node, st: _State) -> None:
     missing = sorted(used - set(st.values))
     if missing:
         raise ControlledMarkdownError(document.source, line,
-                                  "variable-missing",
+                                  Rule.VARIABLE_MISSING,
                                   f"no value for {_listed(missing)}")
     extra = sorted(set(st.values) - used)
     if extra:
         raise ControlledMarkdownError(document.source, line,
-                                  "variable-unused",
+                                  Rule.VARIABLE_UNUSED,
                                   f"nothing reads {_listed(extra)}")
 
 
@@ -711,13 +724,16 @@ def render_linked(document: Node, reg: Registry | None = None
     each link it holds, the links its includes and inlines bring among
     them, in the order it holds them: the file the link names, and the id
     of a section, empty where the link names the whole file. The targets
-    are those of the links that name a file: a link to a section of the
-    document that holds it names that document's file, and names none in a
-    document read from no file."""
+    are those of the links that name a file (`_link_file`)."""
     st = _state(reg, None)
     nodes = _expanded(document, st)
-    holder = Node(DOCUMENT, source=document.source)
-    holder.children = nodes
+    holder = Node(DOCUMENT, source=document.source, children=nodes)
     found = [(file, ident) for node, _text, path, ident in links(holder, own=True)
              if (file := _link_file(node, path, st)) is not None]
     return _lay_out(nodes, st), found
+
+
+def section_document(document: Node, section: Node) -> Node:
+    """A document node that holds `section`, a section of `document`, on its
+    own, so that a render gives that section alone."""
+    return Node(DOCUMENT, source=document.source, children=[section])

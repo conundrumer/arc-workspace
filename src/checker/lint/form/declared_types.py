@@ -74,10 +74,9 @@ def check_banned_type(solver: Solver, runs: Runs) -> list[Finding]:
     v = view(solver, runs)
     scoped = [(t, t.scope == TOP or t.scope.components[:1] in
                ((DETERMINE,), (PARSE,))) for t in v.own_types]
-    own_types = {t.id: t for t, _ in scoped}
 
     def resolved(name: TypeName, scope: Scope) -> TypeDecl | None:
-        return _type_among(runs, name, scope, own_types)
+        return _type_among(runs, name, scope, v.own_types_by_id)
 
     def refs(t: TypeDecl) -> list[TypeDecl]:
         return [d for r in type_refs(t)
@@ -95,7 +94,7 @@ def check_banned_type(solver: Solver, runs: Runs) -> list[Finding]:
     sanctioned: set[DeclId] = set()
     sanction([d for n in (CHOICE, TIEBREAK_RESOLUTION)
               if (d := resolved(TypeName((), n), TOP)) is not None], object)
-    demonstrated = _demonstrated_among(runs, own_types)
+    demonstrated = demonstrated_choice(solver, runs)
     if demonstrated is not None and demonstrated.id in {
             d.id for i in v.own_instances
             if (of := v.index.component(i.component, i.scope)) is not None
@@ -114,13 +113,8 @@ def check_banned_type(solver: Solver, runs: Runs) -> list[Finding]:
 def demonstrated_choice(solver: Solver, runs: Runs) -> TypeDecl | None:
     """The `DemonstratedChoice` the solver declares at the top level; None
     where it declares none there."""
-    return _demonstrated_among(runs, {t.id: t for t in view(solver, runs).own_types})
-
-
-def _demonstrated_among[T](runs: Runs, among: Mapping[DeclId, T]) -> T | None:
-    """The top-level `DemonstratedChoice` among `among`, the solver's own
-    types by id (`_type_among`)."""
-    return _type_among(runs, TypeName((), DEMONSTRATED_CHOICE), TOP, among)
+    return _type_among(runs, TypeName((), DEMONSTRATED_CHOICE), TOP,
+                       view(solver, runs).own_types_by_id)
 
 
 def _type_among[T](runs: Runs, name: TypeName, scope: Scope,

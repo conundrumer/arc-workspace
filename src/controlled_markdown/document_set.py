@@ -18,9 +18,12 @@ from controlled_markdown import (
     parse,
     QUOTE,
     Registry,
+    Rule,
     slug,
     TABLE,
     _walk,
+    reference,
+    resolve_reference,
 )
 
 
@@ -41,9 +44,8 @@ def reached(entry: Path, registry: Registry) -> set[str]:
             for name in (INCLUDE, INLINE):
                 if not node.has(name):
                     continue
-                where = (node.attr(name) or "").strip().partition("#")[0]
-                if where:
-                    walk(path.parent / where)
+                where = reference(node.attr(name) or "").path
+                walk(resolve_reference(where, path))
 
     walk(entry)
     return out
@@ -79,17 +81,13 @@ def check_closure(entries: list[Path], document_set: set[Path],
         document = registry.documents[source]
         file = registry.sources[source]
         for node in carried(document):
-            if node.kind == CODE or not node.text:
-                continue
-            for _, _, path, _ in _text_links(node):
-                if not path:
-                    continue
+            for _, _, path, _ in _node_links(node):
                 target = target_of(path, file, root)
                 if target not in document_set:
                     continue
                 if registry.rel(registry.open(target)) not in inside:
                     raise ControlledMarkdownError(
-                        source, node.line, "handbook-link",
+                        source, node.line, Rule.HANDBOOK_LINK,
                         f"`{path}` is a document the handbook does not carry")
 
 
@@ -118,12 +116,11 @@ def inline_sites(documents: list[tuple[Path, Node]]) -> dict[tuple[Path, str], i
             value = node.attr(INLINE)
             if value is None:
                 continue
-            where, hashed, ident = value.strip().partition("#")
-            where, ident = where.strip(), ident.strip()
-            if not hashed or not ident:
+            ref = reference(value)
+            if not ref.ident:
                 continue
-            target = (file.parent / where).resolve() if where else file
-            out[(target, ident)] = out.get((target, ident), 0) + 1
+            target = resolve_reference(ref.path, file)
+            out[(target, ref.ident)] = out.get((target, ref.ident), 0) + 1
     return out
 
 
@@ -145,7 +142,7 @@ def check_partial_sites(
             count = sites.get((file.resolve(), ident), 0)
             if count < PARTIAL_SITES:
                 out.append(ControlledMarkdownError(
-                    heading.source, heading.line, "partial-sites",
+                    heading.source, heading.line, Rule.PARTIAL_SITES,
                     f"`{ident}` is a partial inlined at {count} "
                     f"{'site' if count == 1 else 'sites'}; a partial is "
                     f"inlined at two sites at least"))
@@ -161,7 +158,7 @@ def check_blocks(node: Node) -> None:
         if child.kind in (CODE, QUOTE, TABLE):
             if seen:
                 raise ControlledMarkdownError(child.source, child.line,
-                                          "block-repeat",
+                                          Rule.BLOCK_REPEAT,
                                           "a line carries one code node, "
                                           "quote, or table at most")
             seen = True
@@ -176,11 +173,15 @@ EXTERNAL_RE = re.compile(r"^[a-z][a-z0-9+.-]*:|^//")
 SCHEME_RE = re.compile(rf"{EXTERNAL_RE.pattern}|^#")
 
 
-def _node_links(node: Node) -> Iterator[tuple[Node, str, str, str]]:
-    """Every link in one node's text to a target in the repo, as (node,
-    text, path, slug), the path empty where the link names a section of the
-    document that holds it. A backtick span is literal, so a link written
+def _node_links(node: Node, own: bool = False
+                ) -> Iterator[tuple[Node, str, str, str]]:
+    """Every link in one node's text to a target in the repo that names a
+    path, and with `own` every link to a section of the document that holds
+    it as well, with an empty path, as (node, text, path, slug). A code
+    node holds no link, and a backtick span is literal, so a link written
     inside one is text."""
+    if node.kind == CODE:
+        return
     for part in SPAN_RE.split(node.text):
         if part.startswith("`"):
             continue
@@ -188,24 +189,16 @@ def _node_links(node: Node) -> Iterator[tuple[Node, str, str, str]]:
             target = m.group(2)
             if EXTERNAL_RE.match(target):
                 continue
-            path, _, slug = target.partition("#")
-            yield node, m.group(1), path, slug
-
-
-def _text_links(node: Node) -> Iterator[tuple[Node, str, str, str]]:
-    """Every link in one node's text that names a path."""
-    return (link for link in _node_links(node) if link[2])
+            ref = reference(target)
+            if ref.path or own:
+                yield node, m.group(1), ref.path, ref.ident or ""
 
 
 def links(node: Node, own: bool = False) -> Iterator[tuple[Node, str, str, str]]:
-    """Every link under `node` that names a path, and with `own` every link
-    to a section of the document that holds it as well, with an empty
-    path."""
-    read = _node_links if own else _text_links
+    """Every link under `node`, as `_node_links` gives the links of each
+    node."""
     for child in _walk(node):
-        if child.kind == CODE or not child.text:
-            continue
-        yield from read(child)
+        yield from _node_links(child, own)
 
 
 def relative_link(path: str) -> bool:
@@ -214,11 +207,9 @@ def relative_link(path: str) -> bool:
     return path.startswith(("./", "../"))
 
 
-def relative_to_no_file(path: str, file: Path | None) -> bool:
-    """Whether a link with `path`, in text read from `file`, None where the
-    text was read from no file, is relative to a file the text has none of:
-    a fault in any text."""
-    return file is None and relative_link(path)
+class RelativeToNoFile(ValueError):
+    """A link relative to the file that holds it, in text read from no
+    file: a fault in any text (`target_of`)."""
 
 
 def target_of(path: str, file: Path | None, root: Path | None = None) -> Path:
@@ -230,8 +221,8 @@ def target_of(path: str, file: Path | None, root: Path | None = None) -> Path:
     if path and not relative_link(path):
         return ((root or Path.cwd()) / path).resolve()
     if file is None:
-        raise ValueError(f"`{path}` is relative to text read from no file")
-    return (file.parent / path).resolve() if path else file.resolve()
+        raise RelativeToNoFile(f"`{path}` is relative to text read from no file")
+    return resolve_reference(path, file)
 
 
 def check_links(document: Node, file: Path, root: Path | None = None) -> None:
@@ -241,20 +232,20 @@ def check_links(document: Node, file: Path, root: Path | None = None) -> None:
     for node, text, path, ident in links(document):
         target = target_of(path, file, root)
         if not target.exists():
-            raise ControlledMarkdownError(node.source, node.line, "link-missing",
+            raise ControlledMarkdownError(node.source, node.line, Rule.LINK_MISSING,
                                       f"nothing at `{path}`")
         if not ident:
             continue
         if not target.is_file():
-            raise ControlledMarkdownError(node.source, node.line, "link-missing",
+            raise ControlledMarkdownError(node.source, node.line, Rule.LINK_MISSING,
                                       f"`{path}` is a directory and holds no "
                                       f"heading `{ident}`")
         heads = {slug(h.text): h.text for h in _walk(
             parse(target.read_text(), str(target))) if h.kind == HEADING}
         if ident not in heads:
-            raise ControlledMarkdownError(node.source, node.line, "link-missing",
+            raise ControlledMarkdownError(node.source, node.line, Rule.LINK_MISSING,
                                       f"no heading `{ident}` in `{path}`")
         if text != heads[ident]:
-            raise ControlledMarkdownError(node.source, node.line, "link-text",
+            raise ControlledMarkdownError(node.source, node.line, Rule.LINK_TEXT,
                                       f"a link to a heading reads as that "
                                       f"heading: `{heads[ident]}`")

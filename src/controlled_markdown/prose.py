@@ -23,6 +23,7 @@ from controlled_markdown import (
     HEADING,
     Node,
     parse,
+    Rule,
 )
 from controlled_markdown.document_set import check_blocks, check_links
 
@@ -84,7 +85,7 @@ def _py_fragments(tree, path: Path, source: str):
                 yield from values(v)
         else:
             raise ControlledMarkdownError(
-                source, node.lineno, "mctx-literal",
+                source, node.lineno, Rule.MCTX_LITERAL,
                 "`mctx` takes a string or a dict of them, written out")
 
     def tagged(func) -> bool:
@@ -124,7 +125,7 @@ def _js_fragments(text: str, path: Path, source: str):
             elif ch == "`":
                 if depth:
                     raise ControlledMarkdownError(
-                        source, line + "".join(body).count("\n"), "mctx-nested",
+                        source, line + "".join(body).count("\n"), Rule.MCTX_NESTED,
                         "a backtick inside an `mctx` literal opens a nested "
                         "one")
                 break
@@ -157,7 +158,7 @@ def _holed(fragment: Fragment) -> str:
     def js_hole(m):
         if not HOLE_NAME_RE.match(m.group(1).strip()):
             raise ControlledMarkdownError(
-                fragment.source, fragment.line, "hole-name",
+                fragment.source, fragment.line, Rule.HOLE_NAME,
                 f"`${{{m.group(1)}}}` is not a name; a fragment leaves a hole "
                 f"for a value the program computes above it")
         return FILLED
@@ -183,7 +184,7 @@ def check_fragment(fragment: Fragment, root: Path | None = None) -> None:
         return
     if "\n" in text:
         raise ControlledMarkdownError(
-            fragment.source, 1, "fragment-break",
+            fragment.source, 1, Rule.FRAGMENT_BREAK,
             "a fragment that is one statement holds one line")
     node = Node(CONTENT, text=text, source=fragment.source, line=1)
     document = Node(DOCUMENT, source=fragment.source)
@@ -248,7 +249,7 @@ def check_paths(path: Path, source: str, root: Path) -> None:
     for line, value in _named_paths(path, path.read_text()):
         if not (root / value).exists():
             raise ControlledMarkdownError(
-                source, line, "path-missing",
+                source, line, Rule.PATH_MISSING,
                 f"no file at `{value}`")
 
 
@@ -287,7 +288,7 @@ def _quote(node: ast.Call, source: str) -> Quote:
               and isinstance(v.value, str)]
     if len(values) != 3 or len(node.args) + len(node.keywords) != 3:
         raise ControlledMarkdownError(
-            source, node.lineno, "quote-literal",
+            source, node.lineno, Rule.QUOTE_LITERAL,
             "a `quotes` call takes three string literals: the document, the "
             "heading and the words")
     return Quote(node.lineno, *values)
@@ -342,17 +343,17 @@ def check_quotes(path: Path, source: str) -> list[ControlledMarkdownError]:
         document = checkout.handbook() / q.document
         if not document.is_file():
             errors.append(ControlledMarkdownError(
-                source, q.line, "quote-document",
+                source, q.line, Rule.QUOTE_DOCUMENT,
                 f"no handbook document `{q.document}`"))
             continue
         under = handbook_sections(document).get(q.heading)
         if under is None:
             errors.append(ControlledMarkdownError(
-                source, q.line, "quote-heading",
+                source, q.line, Rule.QUOTE_HEADING,
                 f"no heading \"{q.heading}\" in `{q.document}`"))
         elif not any(_squeezed(q.words) in body for body in under):
             errors.append(ControlledMarkdownError(
-                source, q.line, "quote-words",
+                source, q.line, Rule.QUOTE_WORDS,
                 f"not under \"{q.heading}\" in `{q.document}`: "
                 f"\"{_squeezed(q.words)}\""))
     return errors
@@ -365,21 +366,23 @@ def check_quote_rule(shown: Callable[[Path], str]
     gives it."""
     from checker.quoting import (PRINCIPLES, Breach, checks_and_surveys,
                                  unquoted)
-    sentence = {
-        Breach.GUARD: "`{name}` carries a `guard`, which only a hint or lint "
-                      "check may carry",
-        Breach.MISSING: "`{name}` carries no `quotes`",
-        Breach.PRINCIPLE: "`{name}` carries no `quotes` from `{principles}`",
+    broken = {
+        Breach.GUARD: (Rule.QUOTE_GUARD,
+                       "`{name}` carries a `guard`, which only a hint or "
+                       "lint check may carry"),
+        Breach.MISSING: (Rule.QUOTE_MISSING, "`{name}` carries no `quotes`"),
+        Breach.PRINCIPLE: (Rule.QUOTE_PRINCIPLE,
+                           "`{name}` carries no `quotes` from `{principles}`"),
     }
     errors: list[ControlledMarkdownError] = []
     for u in unquoted(checks_and_surveys()):
         lines, first = inspect.getsourcelines(u.function)
         at = first + next(i for i, ln in enumerate(lines)
                           if ln.lstrip().startswith(("def ", "async def ")))
+        rule, sentence = broken[u.breach]
         errors.append(ControlledMarkdownError(
-            shown(Path(inspect.getfile(u.function))), at, u.breach.value,
-            sentence[u.breach].format(name=u.function.__name__,
-                                      principles=PRINCIPLES)))
+            shown(Path(inspect.getfile(u.function))), at, rule,
+            sentence.format(name=u.function.__name__, principles=PRINCIPLES)))
     return errors
 
 

@@ -1,5 +1,4 @@
-"""The formatter's round trip: whether `write`'s output parses back to the
-same tree."""
+"""The formatter's round trip."""
 
 from __future__ import annotations
 

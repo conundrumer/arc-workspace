@@ -280,6 +280,10 @@ class View:
         return [t for t in self.program.types if own(t.span)]
 
     @cached_property
+    def own_types_by_id(self) -> dict[DeclId, TypeDecl]:
+        return {t.id: t for t in self.own_types}
+
+    @cached_property
     def own_components(self) -> list[Component]:
         return [c for c in self.program.components if own(c.span)]
 

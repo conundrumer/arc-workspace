@@ -128,8 +128,8 @@ def section_text(where: str, docs: Path = DOCS_DIR) -> str:
     a render shows, slugified, so a reader runs the command off the lines in
     front of them. A render leaves no line out, so the section arrives with
     the glosses and the drafts an edition excludes."""
-    name, sep, ident = where.partition("#")
-    name, ident = name.strip(), ident.strip()
+    ref = nm.reference(where)
+    name, sep, ident = ref.path, ref.ident is not None, ref.ident or ""
     if name.endswith(".dl"):
         src = DOCUMENTS_ROOT / name
         if not src.exists():
@@ -153,9 +153,7 @@ def section_text(where: str, docs: Path = DOCS_DIR) -> str:
         if node is None:
             raise SystemExit(
                 f"no section `{ident}` in {registry.rel(document)}")
-    body = nm.Node(nm.DOCUMENT, source=document.source)
-    body.children = [node]
-    return nm.render(body, registry)
+    return nm.render(nm.section_document(document, node), registry)
 
 
 def _bare_section(registry: nm.Registry, heading: str, docs: Path

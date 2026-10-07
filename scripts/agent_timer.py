@@ -9,10 +9,10 @@ same timer. The timer runs while its process holds an exclusive lock on
 ends, however it ends. So a pid file left by a timer that ended, or a pid
 that another process now has, never counts as a running timer.
 
-A keep-alive start waits on a running keep-alive timer since the agent
-needs only one of them to end, and a budget start fails where a budget
-timer runs since a budget counts from its own start, which a timer started
-earlier cannot give."""
+What a start does where a timer of its kind runs, as `HELP` gives it,
+rests on two reasons: an agent needs only one keep-alive timer to end, and
+a budget counts from its own start, which a timer started earlier cannot
+give."""
 
 import argparse
 import fcntl

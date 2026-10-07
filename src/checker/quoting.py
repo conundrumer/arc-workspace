@@ -15,7 +15,7 @@ import pkgutil
 import textwrap
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
-from enum import StrEnum
+from enum import Enum, auto
 
 import checker
 import checker.lint
@@ -33,14 +33,14 @@ PRINCIPLES = "principles.md"
 type Function = Callable[..., object]
 
 
-class Breach(StrEnum):
+class Breach(Enum):
     """How a check or survey breaks the rule."""
 
-    MISSING = "quote-missing"
+    MISSING = auto()
     """It carries neither `quotes` nor a `guard`."""
-    GUARD = "quote-guard"
+    GUARD = auto()
     """It carries a `guard` and is no hint or lint check."""
-    PRINCIPLE = "quote-principle"
+    PRINCIPLE = auto()
     """It is a check that is neither a hint nor a lint, and carries no
     `quotes` from `principles.md`."""
 
