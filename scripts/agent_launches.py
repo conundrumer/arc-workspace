@@ -1,5 +1,6 @@
-"""The agents a run launched, the calls that resumed them, and the agents
-pending to it, as the HELP of `profile_runs` gives them."""
+"""The agents a run launched, the calls that resumed them, the agents
+pending to it, and the runs under it, as the HELP of `profile_runs` gives
+them."""
 
 from dataclasses import dataclass
 from functools import cache
@@ -9,10 +10,10 @@ from typing import Any
 from agent_reports import Report, report_ids, reports_after
 from command_labels import AGENT_TOOLS
 from controlled_markdown import mctx
-from run_reads import (blocks, in_background, notified, parent_label, read_meta,
-                       results_by_call, run_entries, session_agents, session_of,
-                       session_transcripts)
-from transcripts import Entry, agent_id, chain, epoch, read_entries
+from run_reads import (MAIN, blocks, in_background, notified, parent_label,
+                       read_meta, results_by_call, run_entries, session_agents,
+                       session_of, session_transcripts)
+from transcripts import Entry, agent_id, chain, epoch, find, read_entries
 
 # The openings of the message of a SendMessage result where the call resumed
 # the agent it was sent to, and where it queued the message to a running one.
@@ -23,16 +24,18 @@ QUEUED = "Message queued"
 @cache
 def session_launches(session: Path) -> tuple[dict[str, Path], dict[str, frozenset[str]]]:
     """The transcripts of a session's agents by the Agent call that launched
-    each, and the agent ids of the agents each subagent launched, by its
-    agent id, as their `.meta.json` files give them."""
+    each, and the agent ids of the agents each run launched, by its agent
+    id, or `MAIN` for the session's main transcript, as their `.meta.json`
+    files give them."""
     by_call: dict[str, Path] = {}
     children: dict[str, set[str]] = {}
     for aid, p in session_agents(session).items():
-        meta = read_meta(p) or {}
+        meta = read_meta(p)
+        if meta is None:
+            continue
         if meta.get("toolUseId"):
             by_call[meta["toolUseId"]] = chain(p)[-1]
-        if meta.get("parentAgentId"):
-            children.setdefault(meta["parentAgentId"], set()).add(aid)
+        children.setdefault(meta.get("parentAgentId") or MAIN, set()).add(aid)
     return by_call, {k: frozenset(v) for k, v in children.items()}
 
 
@@ -47,6 +50,20 @@ def run_launches(path: Path) -> tuple[dict[str, Path], dict[str, frozenset[str]]
         for k, v in kids.items():
             children[k] = children.get(k, frozenset()) | v
     return by_call, children
+
+
+def runs_under(path: Path) -> list[Path]:
+    """The last transcript of each run under the run at `path`: the agents
+    it launched, the agents those launched, and so on, by `run_launches`."""
+    out: dict[str, Path] = {}
+    todo = [path]
+    while todo:
+        p = todo.pop()
+        for aid in sorted(run_launches(p)[1].get(parent_label(p), frozenset())):
+            if aid not in out:
+                out[aid] = find(aid)
+                todo.append(out[aid])
+    return list(out.values())
 
 
 @dataclass

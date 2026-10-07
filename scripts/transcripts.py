@@ -95,7 +95,7 @@ def find(ident: str) -> Path:
             raise Refused(mctx("no file `{path}`").format(path=path))
         return path
     for found in (sorted(p for d in project_dirs() for p in d.glob(f"*/{ident}.jsonl")),
-                  agent_transcripts().get(ident.removeprefix("agent-"), [])):
+                  agent_transcripts().get(bare_id(ident), [])):
         path = one_of(ident, found)
         if path:
             return path
@@ -117,8 +117,14 @@ def transcripts(ident: str) -> list[Path]:
         session_directory(path)))]
 
 
+def bare_id(ident: str) -> str:
+    """The agent id `ident` gives, with or without the `agent-` prefix of
+    its transcript's name."""
+    return ident.removeprefix("agent-")
+
+
 def agent_id(path: Path) -> str:
-    return path.stem.removeprefix("agent-")
+    return bare_id(path.stem)
 
 
 def first_parent(path: Path) -> str | None:

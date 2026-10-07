@@ -21,6 +21,11 @@ TIME_FORM = "%Y-%m-%dT%H:%M:%SZ"
 """The form of a log line's time, in UTC."""
 
 
+def utc_stamp(t: float) -> str:
+    """The epoch time `t` in `TIME_FORM`."""
+    return time.strftime(TIME_FORM, time.gmtime(t))
+
+
 RESOLUTION_WORD = re.compile(r"[a-z]+(?:-[a-z]+)*")
 
 
@@ -62,7 +67,7 @@ def logged(text: str, status: Status, agent: str) -> str:
 def log_line(status: Status, agent: str, agent_id: str | None, note: str | None) -> str:
     """A log line, stamped now."""
     holder = f"{agent} {agent_id}" if agent_id else agent
-    line = f"{time.strftime(TIME_FORM, time.gmtime())} {status} [{holder}]"
+    line = f"{utc_stamp(time.time())} {status} [{holder}]"
     return f"{line}: {note}\n" if note else f"{line}\n"
 
 

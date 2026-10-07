@@ -1,12 +1,15 @@
 """Profile agent runs from their Claude Code transcripts: where each run's
-wall time goes, the budget of each agent type, and the agents under a run
+wall time goes, the budget of each agent type, the runs under a run since
+an operator's previous call of `--under` on it, the agents under a run
 whose work is open, as `--running` lists them, and whether one run's work
 is open, as `--open` gives it. `--help` prints HELP."""
 
 import argparse
 import sys
 import time
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 
 from controlled_markdown import mctx
 from engine import checkout
@@ -17,17 +20,25 @@ console_importable()
 # `scripts/` off `sys.path`, and the modules below import from there.
 importable(checkout.scripts())
 
-from agent_launches import pending_agents  # noqa: E402
+from agent_launches import pending_agents, runs_under  # noqa: E402
+from agent_turns import first_time, last_time  # noqa: E402
 from budgets import (BUDGET_FACTOR, LOW_WAIT_PCT, MEDIAN_RUNS,  # noqa: E402
                      print_budgets)
-from context_bound_hook import CONTEXT_BOUND  # noqa: E402
+from command_labels import programs  # noqa: E402
+from context_bound_hook import CONTEXT_BOUND, OPERATOR  # noqa: E402
 from open_agents import Listed, running_agents, work_open  # noqa: E402
 from run_prints import (RECENT_CALLS, print_messages,  # noqa: E402
                         print_report, print_running)
 from run_profile import (COMMAND_WIDTH, Run, clock, minutes,  # noqa: E402
                          part_split, print_groups, print_types, profile)
-from run_reads import run_type  # noqa: E402
-from transcripts import Refused, find, is_subagent, transcripts  # noqa: E402
+from run_reads import agent_type, blocks, run_type, text_of  # noqa: E402
+from ticket_log import utc_stamp  # noqa: E402
+from transcripts import (Entry, Refused, agent_id, agent_transcripts,  # noqa: E402
+                         bare_id, epoch, find, is_subagent, read_entries, transcripts)
+
+UNDER = "--under"
+"""The option of the mode that profiles the runs under a run since an
+operator's previous call of it."""
 
 ISO_TIME = mctx("an ISO date or datetime, in UTC where it gives no offset")
 """The times `utc_time` reads."""
@@ -36,11 +47,12 @@ HELP = mctx("""
     - Usage:
         ```
         uv run python scripts/profile_runs.py ID [ID ...] [--type TYPE[,TYPE]] [--pct P] [--top N] [--runs] [--since DATE]
+        uv run python scripts/profile_runs.py --under ID [--pct P] [--top N] [--since DATE]
         uv run python scripts/profile_runs.py --running ID [--calls-since TIME]
         uv run python scripts/profile_runs.py --pending ID
         uv run python scripts/profile_runs.py --open ID
         ```
-    - The items below say what an ID names, the zone of the times the tool reads and prints, how a run's wall time is cut into parts, what one run and several runs print, the budget of each agent type, what `--running`, `--pending` and `--open` print, and how a call's command is printed. The options follow them.
+    - The items below say what an ID names, the zone of the times the tool reads and prints, how a run's wall time is cut into parts, what one run and several runs print, the budget of each agent type, what `--under`, `--running`, `--pending` and `--open` print, and how a call's command is printed. The options follow them.
     - An ID is an agent id, a session id, or the path of a `.jsonl` transcript. A session brings its main transcript, as type `main`, and the run of each of its subagents. A run is the transcript of one agent, or where the top-level session takes a new session id while a subagent runs, that subagent's transcripts under each session's directory: each one under a later session goes on from the one before it, its first entry answering that one's last. A run's agent type, description and launching call are those the earliest of its transcripts' `.meta.json` files that gives each gives.
     - Each time the tool prints is in UTC, as `YYYY-MM-DDTHH:MMZ` where no item below gives another form. A DATE or TIME it reads is {iso_time}.
     - A run's wall time, from its first entry to its last, is cut at each entry's time, and each interval goes to one part:
@@ -63,6 +75,10 @@ HELP = mctx("""
         - The window of a type that has an agent document under `prompts/agents/` is the runs whose first entry is at or after the last commit that changed that document, a document it includes or inlines, a lib file its rendered prompt holds, a script under `scripts/` its rendered prompt names, or a package under `src/` its rendered prompt runs with `-m`, and not a module such a script or package imports. `--since DATE` sets the window of every type to the runs whose first entry is at or after DATE. Where the window holds at least {median_runs} budgeted runs of the type, the median is taken over them.
         - A type with no agent document has a window only with `--since`, and a type whose paths no commit changed has none, and an `undecided` line on stderr names it.
         - Otherwise it is taken over the type's budgeted runs whose `waits` and `idle` together are under {low_wait_pct}% of wall time, where at least {median_runs} runs are such. A type with fewer such runs gets no budget, and an `undecided` line on stderr names it with their count as its reason.
+    - `--under ID` profiles the runs under the run ID, where ID is a session id or an agent id: the agents whose `.meta.json` gives the run ID as `parentAgentId`, or for a session gives none, the agents whose `.meta.json` gives one of those, and so on.
+        - Its previous call is the latest call of `--under` on the same ID, as the call writes it, with or without the `agent-` prefix, made by an agent of type `{operator}` in any transcript under the project directories that changed at or after the run ID's first entry, whose result says it completed in the foreground with no error and was not interrupted, and whose result holds one `left open:` line, read from the result's `stdout`, or where the result gives none, from its content. A line counts only where a line break ends it. A call whose result holds more than one such line counts as none, and an `undecided` line on stderr names that call. A call's time is the time of the entry that makes it.
+        - Where a previous call stands, it considers the runs whose last timestamped entry is after that call's time and each run that call's `left open:` line gives, and where none stands, every run under the ID. Of those, it takes each run whose work is not open, by the rule by which `--running` lists an agent, as `--open` gives it, and leaves out the others.
+        - It prints `previous call:` and that call's time, as `YYYY-MM-DDTHH:MM:SSZ`, with `by` and the agent id of the agent that made it, or `none`; then `left open:` and the agent id of each run it left out, separated by spaces, or `none`; then `runs taken:` and their count; then the line `--runs` prints for each run taken, in the order of their first entries, and what one run or more than one run prints.
     - `--running ID` lists the agents under the run ID whose work is open, where ID is a session id or an agent id, and a run that goes on under a later session is listed under that session's id. Of the agents the run launched, the agents those launched, and so on, an agent's work is open where its turn is in progress, whether or not its parent's work is open, or where its turn has ended, its parent's work is open, and no report of it reached its parent after the parent's latest message to it, as `report to the parent:` gives a report, read here from each transcript of the parent's run. A parent's work is open where the parent is `main` or listed, and the run ID's work is open where it is `main` or would be listed under `main`. Where no transcript of the parent of the run ID, or of a parent above it, gives its launch, whether its work is open is unknown, it counts as open, and an `undecided` line on stderr names it. An agent's turn counts as ended where it has ended, where its last entry is the harness's note that the user interrupted it, or where its parent has its result or a notification of it and its transcript holds no `user` or `assistant` entry timestamped after the latest of those, so an attachment the harness writes after the turn has ended does not count. A report after the latest message the agent received from anyone closes its work, whether or not the parent's latest message to it is known, and so does a notification of it after that message, of any status but `running`, other than one whose note says the agent stopped with background work of its own still running. Otherwise, an agent whose turn has ended is listed where the parent's latest message to it is unknown. The agents are listed in launch order, each parent's agents after it. In an agent's shell, `$CLAUDE_CODE_SESSION_ID` holds the id of the top-level session, in a subagent as well, so `--running $CLAUDE_CODE_SESSION_ID` lists the agents of the whole session whose work is open. For each agent it prints:
         - its agent id, type and launch description, its parent, which is the agent id of the agent that launched it or `main`, the time since its first entry, its active time with the time of the message it is measured from and, where that message's period has ended, the time it ended, its budget, and its context size in tokens, which is the input of its last request, followed, for an agent of type `operator`, by `bound` and the operator's bound of {bound} tokens, led by `past` where its context is past that bound;
         - its working directory, as its first entry gives it;
@@ -89,7 +105,7 @@ HELP = mctx("""
     """).format(factor=BUDGET_FACTOR, median_runs=MEDIAN_RUNS,
                 low_wait_pct=LOW_WAIT_PCT, recent=RECENT_CALLS,
                 width=COMMAND_WIDTH, bound=f"{CONTEXT_BOUND:,}",
-                iso_time=ISO_TIME)
+                iso_time=ISO_TIME, operator=OPERATOR)
 
 
 def utc_time(text: str) -> float:
@@ -97,10 +113,129 @@ def utc_time(text: str) -> float:
     return (t if t.tzinfo else t.replace(tzinfo=UTC)).timestamp()
 
 
+def calls_under(command: str, ident: str) -> bool:
+    """Whether the Bash command `command` runs this tool with `UNDER` on the
+    run `ident`, as it writes the ID, with or without the `agent-` prefix."""
+    want = bare_id(ident)
+    for prog, rest in programs(command):
+        if prog != Path(__file__).name:
+            continue
+        for i, word in enumerate(rest):
+            given = (rest[i + 1] if word == UNDER and i + 1 < len(rest)
+                     else word.removeprefix(UNDER + "=")
+                     if word.startswith(UNDER + "=") else None)
+            if given is not None and bare_id(given) == want:
+                return True
+    return False
+
+
+LEFT_OPEN = mctx("left open:")
+"""What leads the line of `UNDER` that gives the runs it left out because
+their work is open."""
+
+NO_RUN = mctx("none")
+"""What the `LEFT_OPEN` line gives where it left out no run."""
+
+
+def left_open(entries: list[Entry], call: str) -> list[list[str]] | None:
+    """The agent ids each `LEFT_OPEN` line of the result of the Bash call
+    `call` among `entries` gives, one list per line, where that result says
+    it completed in the foreground with no error, or None otherwise."""
+    for e in entries:
+        for b in blocks(e, "tool_result"):
+            if e.get("type") == "user" and b.get("tool_use_id") == call:
+                r = e.get("toolUseResult")
+                r = r if isinstance(r, dict) else {}
+                if b.get("is_error") or r.get("backgroundTaskId") or r.get("interrupted"):
+                    return None
+                out = r.get("stdout")
+                text = out if isinstance(out, str) else text_of(b.get("content"))
+                # The last piece has no line break after it, so a pipe or
+                # the harness may have cut it.
+                ids = [line.removeprefix(LEFT_OPEN).split()
+                       for line in text.split("\n")[:-1] if line.startswith(LEFT_OPEN)]
+                return [[] if words == [NO_RUN] else [bare_id(w) for w in words]
+                        for words in ids]
+    return None
+
+
+@dataclass(frozen=True)
+class Previous:
+    """The previous call of `UNDER` on a run: its time, the agent id of the
+    operator that made it, and the agent ids its `LEFT_OPEN` line gives."""
+    time: float
+    agent: str
+    left: frozenset[str]
+
+
+def previous_call(path: Path, ident: str, undecided: list[str]) -> Previous | None:
+    """The previous call of `UNDER` on the run at `path`, which `ident`
+    names, as HELP gives that call, or None where none stands."""
+    start = first_time(path)
+    found: Previous | None = None
+    for p in (p for ps in agent_transcripts().values() for p in ps):
+        if start is not None and p.stat().st_mtime < start:
+            continue
+        if agent_type(p) != OPERATOR:
+            continue
+        calls = read_entries(p, naming={UNDER})
+        made = {b["id"]: epoch(e["timestamp"]) for e in calls
+                if e.get("type") == "assistant" and e.get("timestamp")
+                for b in blocks(e, "tool_use")
+                if b.get("name") == "Bash" and b.get("id")
+                and calls_under(str((b.get("input") or {}).get("command", "")), ident)}
+        if not made:
+            continue
+        results = read_entries(p, naming=set(made))
+        for call, t in made.items():
+            lines = left_open(results, call)
+            if not lines:
+                continue
+            if len(lines) > 1:
+                undecided.append(mctx(
+                    "the result of the call of `{under}` at {time} by {agent} "
+                    "holds {n} `{left}` lines, so it counts as no call").format(
+                        under=UNDER, time=utc_stamp(t),
+                        agent=agent_id(p), n=len(lines), left=LEFT_OPEN))
+                continue
+            if found is None or t > found.time:
+                found = Previous(t, agent_id(p), frozenset(lines[0]))
+    return found
+
+
+def runs_since(path: Path, ident: str, undecided: list[str]) -> list[Path]:
+    """The runs `UNDER` takes under the run at `path`, which `ident` names,
+    with its first lines printed."""
+    previous = previous_call(path, ident, undecided)
+    if previous is None:
+        print(mctx("previous call: none"))
+    else:
+        print(mctx("previous call: {time} by {agent}").format(
+            time=utc_stamp(previous.time),
+            agent=previous.agent))
+    taken: list[Path] = []
+    left: list[str] = []
+    for p in runs_under(path):
+        last = last_time(p)
+        if not (previous is None or agent_id(p) in previous.left
+                or (last is not None and last > previous.time)):
+            continue
+        if work_open(p, undecided):
+            left.append(agent_id(p))
+        else:
+            taken.append(p)
+    print(LEFT_OPEN, " ".join(left) or NO_RUN)
+    print(mctx("runs taken: {n}").format(n=len(taken)))
+    return taken
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=HELP,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("ids", nargs="*", metavar="ID")
+    ap.add_argument(UNDER, metavar="ID",
+                    help=mctx("profile the runs under the run ID since an "
+                              "operator's previous call of this on it"))
     ap.add_argument("--running", metavar="ID",
                     help=mctx("list the agents under the run ID whose work "
                               "is open"))
@@ -130,11 +265,14 @@ def main(argv: list[str]) -> int:
     undecided: list[str] = []
     runs: list[Run] = []
     listed: list[Listed] = []
-    if [bool(args.ids), bool(args.running), bool(args.pending),
+    if [bool(args.ids), bool(args.under), bool(args.running), bool(args.pending),
             bool(args.open)].count(True) != 1:
-        print(mctx("refused: give one of IDs, `--running ID`, `--pending ID` "
-                   "and `--open ID`"),
+        print(mctx("refused: give one of IDs, `--under ID`, `--running ID`, "
+                   "`--pending ID` and `--open ID`"),
               file=sys.stderr)
+        return 2
+    if args.under and args.type is not None:
+        print(mctx("refused: `--under` takes no `--type`"), file=sys.stderr)
         return 2
     if args.calls_since is not None and not args.running:
         print(mctx("refused: `--calls-since` goes with `--running ID` alone"),
@@ -154,19 +292,23 @@ def main(argv: list[str]) -> int:
         elif args.running:
             listed = running_agents(find(args.running), undecided)
         else:
-            paths = list(dict.fromkeys(p for ident in args.ids
-                                       for p in transcripts(ident)))
+            paths = (runs_since(find(args.under), args.under, undecided)
+                     if args.under else
+                     list(dict.fromkeys(p for ident in args.ids
+                                        for p in transcripts(ident))))
             runs = [profile(p, undecided) for p in paths
                     if not types or run_type(p)[0] in types]
+            if args.under:
+                runs.sort(key=lambda r: (r.start is None, r.start or 0.0))
     except Refused as e:
         print(mctx("refused: {reason}").format(reason=e), file=sys.stderr)
         return 2
     if args.running:
         print_running(listed, time.time(), args.calls_since, undecided)
-    elif not runs and not args.pending and not args.open:
+    elif not runs and not args.pending and not args.open and not args.under:
         print(mctx("refused: no run to profile"), file=sys.stderr)
         return 2
-    elif len(runs) == 1 or args.runs:
+    elif runs and (len(runs) == 1 or args.runs or args.under):
         for r in runs:
             print(f"{r.label} {r.agent_type} {clock(r.start)}: {r.description}\n"
                   f"  wall {minutes(r.wall)}  {part_split(r.parts)}")

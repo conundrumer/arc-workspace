@@ -8,7 +8,8 @@ from pathlib import Path
 from controlled_markdown import mctx
 from run_reads import blocks, is_prompt, text_of
 from senders import INTERRUPTED
-from transcripts import Entry, agent_id, chain, entries_back, epoch, read_entries
+from transcripts import (Entry, agent_id, chain, entries_back, epoch, read_entries,
+                         snapshot)
 
 # The types of a transcript's message entries, the entries of a turn: the
 # message that opens it and its work.
@@ -102,6 +103,18 @@ def last_time(path: Path, holds: Callable[[Entry], bool] | None = None) -> float
         for e in entries_back(p):
             if e.get("timestamp") and (holds is None or holds(e)):
                 return epoch(e["timestamp"])
+    return None
+
+
+def first_time(path: Path) -> float | None:
+    """The time of the first timestamped entry of the run at `path`, with
+    only the lines up to it parsed."""
+    for p in chain(path):
+        snap = snapshot(p)
+        for i in range(len(snap.lines)):
+            for e in snap.entry(i):
+                if e.get("timestamp"):
+                    return epoch(e["timestamp"])
     return None
 
 

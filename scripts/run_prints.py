@@ -2,8 +2,6 @@
 from a run's parent, and of the run's report to that parent, as the HELP of
 `profile_runs` gives them."""
 
-import time
-
 from agent_reports import Report
 from budgets import budgets_in_force, of_budget
 from context_bound_hook import CONTEXT_BOUND, bounded, past_bound
@@ -11,7 +9,7 @@ from controlled_markdown import mctx
 from open_agents import Listed, parent_reports
 from run_profile import Run, Span, clock, minutes, one_line
 from run_reads import MAIN
-from ticket_log import TIME_FORM
+from ticket_log import utc_stamp
 
 # The number of a listed agent's last calls that `--running` prints.
 RECENT_CALLS = 8
@@ -59,7 +57,7 @@ def print_running(agents: list[Listed], now: float, calls_since: float | None,
             print("  recent:")
         else:
             recent = [m for m in recent if m.end is None or m.end >= calls_since]
-            since_text = time.strftime(TIME_FORM, time.gmtime(calls_since))
+            since_text = utc_stamp(calls_since)
             none = "" if recent else " " + mctx("none")
             print("  " + mctx("recent since {time}:{none}").format(
                 time=since_text, none=none))
